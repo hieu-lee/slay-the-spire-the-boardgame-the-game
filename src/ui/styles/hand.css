@@ -106,3 +106,60 @@
   border-radius: 50%;
   background: rgb(0 0 0 / 55%);
 }
+
+/* The video game keeps keyword explanations beside the enlarged card. */
+.card-keyword-tips {
+  position: fixed;
+  z-index: 200;
+  top: 0;
+  left: 0;
+  display: none;
+  width: min(14rem, calc(100vw - 1rem));
+  max-height: calc(100vh - 1rem);
+  overflow: auto;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: #f6f0df;
+  font-family: Georgia, 'Times New Roman', serif;
+  text-align: left;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+}
+
+.card-keyword-tip {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.55rem 0.65rem;
+  background: linear-gradient(145deg, rgb(38 48 49 / 0.98), rgb(23 29 31 / 0.98));
+  border: 2px solid #6d7c7d;
+  border-radius: 7px;
+  box-shadow: 0 4px 0 rgb(0 0 0 / 0.35), 0 8px 16px rgb(0 0 0 / 0.45);
+  font-size: clamp(0.68rem, 1.2vw, 0.88rem);
+  line-height: 1.25;
+}
+
+.card-keyword-tip strong {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #f2cf65;
+  font-size: 1.08em;
+}
+
+.card-keyword-tip strong .icon {
+  flex: 0 0 auto;
+  filter: drop-shadow(0 1px 1px #000);
+}
+
+.card-keyword-tips[data-open] {
+  display: flex;
+  pointer-events: auto;
+}
+
+.card-keyword-tips[data-pinned] {
+  overscroll-behavior: contain;
+}
+
+.card-keyword-tips[data-open][data-overlaps-card]:not([data-pinned]) {
+  pointer-events: none;
+}

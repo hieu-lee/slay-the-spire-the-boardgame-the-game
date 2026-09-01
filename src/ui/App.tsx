@@ -144,6 +144,232 @@ export function App() {
   const [localOpen, setLocalOpen] = useState(false)
   const [settings, setSettings] = useGameSettings()
   useEffect(() => settings.sfxVolume > 0 ? installSoundEffects() : undefined, [settings.sfxVolume])
+  useEffect(() => {
+    let shiftHeld = false
+    let preferFocus = false
+    let pointerActive = false
+    let active: HTMLElement | null = null
+    let pinned: HTMLElement | null = null
+    let dismissed: HTMLElement | null = null
+    let repositionFrame = 0
+    const cardOf = (target: EventTarget | null) => target instanceof Element
+      ? target.closest<HTMLElement>('[data-keyword-help-id]') : null
+    const tooltipOf = (card: HTMLElement) => document.getElementById(card.dataset.keywordHelpId ?? '')
+    const cardForTooltip = (target: EventTarget | null) => {
+      const tooltip = target instanceof Element ? target.closest<HTMLElement>('.card-keyword-tips') : null
+      return tooltip?.id
+        ? document.querySelector<HTMLElement>(`[data-keyword-help-id="${CSS.escape(tooltip.id)}"]`)
+        : null
+    }
+    const place = (card: HTMLElement, tooltip: HTMLElement) => {
+      tooltip.setAttribute('data-open', '')
+      const cardBox = card.getBoundingClientRect()
+      const width = tooltip.offsetWidth
+      const height = tooltip.offsetHeight
+      const gap = 9
+      const margin = 8
+      const right = cardBox.right + gap
+      const left = cardBox.left - width - gap
+      const centered = cardBox.left + (cardBox.width - width) / 2
+      const candidates: [number, number][] = window.innerWidth <= 700
+        ? [[centered, cardBox.top - height - gap], [centered, cardBox.bottom + gap]]
+        : [[right, cardBox.bottom - height], [left, cardBox.bottom - height],
+            [right, cardBox.top - height - gap], [left, cardBox.top - height - gap],
+            [centered, cardBox.top - height - gap], [centered, cardBox.bottom + gap]]
+      for (const x of [margin, (window.innerWidth - width) / 2, window.innerWidth - width - margin]) {
+        for (const y of [margin, (window.innerHeight - height) / 2, window.innerHeight - height - margin]) {
+          candidates.push([x, y])
+        }
+      }
+      const anchors = [...document.querySelectorAll<HTMLElement>(
+        'button, a[href], input, select, textarea, [role="button"]',
+      )]
+        .map((element) => element.getBoundingClientRect())
+        .filter((box) => box.right > 0 && box.bottom > 0 && box.left < window.innerWidth && box.top < window.innerHeight)
+      const powerZoom = document.querySelector<HTMLElement>('.power__zoom')?.getBoundingClientRect()
+      const positioned = candidates.map(([candidateLeft, candidateTop]) => {
+        const x = Math.max(margin, Math.min(candidateLeft, window.innerWidth - width - margin))
+        const y = Math.max(margin, Math.min(candidateTop, window.innerHeight - height - margin))
+        const overlap = anchors.reduce((total, box) => total +
+          Math.max(0, Math.min(x + width, box.right) - Math.max(x, box.left)) *
+          Math.max(0, Math.min(y + height, box.bottom) - Math.max(y, box.top)), 0)
+        const powerOverlap = powerZoom
+          ? Math.max(0, Math.min(x + width, powerZoom.right) - Math.max(x, powerZoom.left)) *
+            Math.max(0, Math.min(y + height, powerZoom.bottom) - Math.max(y, powerZoom.top))
+          : 0
+        return { x, y, overlap, powerOverlap }
+      }).sort((a, b) => Number(a.powerOverlap > 0) - Number(b.powerOverlap > 0) ||
+        a.powerOverlap - b.powerOverlap || a.overlap - b.overlap)[0]!
+      tooltip.style.left = `${positioned.x}px`
+      tooltip.style.top = `${positioned.y}px`
+      tooltip.toggleAttribute('data-overlaps-card', positioned.overlap > 0)
+    }
+    const hide = () => {
+      if (active) tooltipOf(active)?.removeAttribute('data-open')
+      active = null
+    }
+    const show = (card: HTMLElement | null) => {
+      if (pointerActive) return hide()
+      if (!card) {
+        dismissed = null
+        return hide()
+      }
+      if (card === dismissed) return hide()
+      dismissed = null
+      let tooltip = tooltipOf(card)
+      if (!tooltip) {
+        (card as HTMLElement & { mountKeywordHelp?: () => void }).mountKeywordHelp?.()
+        return
+      }
+      if (active !== card) hide()
+      active = card
+      place(card, tooltip)
+      if (pinned === card) tooltip.setAttribute('data-pinned', '')
+    }
+    const current = () => {
+      const focus = document.querySelector<HTMLElement>(':focus-visible[data-keyword-help-id]')
+      const hover = document.querySelector<HTMLElement>(':hover[data-keyword-help-id]')
+        ?? cardForTooltip(document.querySelector('.card-keyword-tips[data-open]:hover'))
+      return preferFocus ? focus ?? hover : hover ?? focus
+    }
+    const unpin = () => {
+      if (pinned) tooltipOf(pinned)?.removeAttribute('data-pinned')
+      pinned?.removeAttribute('data-keyword-help')
+      pinned = null
+    }
+    const pin = (target: EventTarget | null) => {
+      const card = cardOf(target)
+      if (!card) return
+      if (card === pinned) return show(card)
+      unpin()
+      pinned = card
+      pinned.setAttribute('data-keyword-help', '')
+      show(card)
+      tooltipOf(card)?.setAttribute('data-pinned', '')
+    }
+    const keydown = (event: KeyboardEvent) => {
+      if (active && (!active.isConnected || !tooltipOf(active)?.hasAttribute('data-open'))) active = null
+      if (event.key === 'Escape' && active) {
+        dismissed = active
+        hide()
+        event.preventDefault()
+        return
+      }
+      dismissed = null
+      preferFocus = true
+      if (event.key !== 'Shift') {
+        if (!shiftHeld || !pinned) return
+        if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return
+        const tooltip = tooltipOf(pinned)
+        if (!tooltip) return
+        const amount = event.key === 'ArrowDown' ? 40 : event.key === 'ArrowUp' ? -40
+          : event.key === 'PageDown' ? tooltip.clientHeight * 0.8
+            : event.key === 'PageUp' ? tooltip.clientHeight * -0.8 : null
+        if (amount !== null) tooltip.scrollBy({ top: amount })
+        else if (event.key === 'Home') tooltip.scrollTop = 0
+        else if (event.key === 'End') tooltip.scrollTop = tooltip.scrollHeight
+        else return
+        event.preventDefault()
+        return
+      }
+      shiftHeld = true
+      pin(current())
+    }
+    const keyup = (event: KeyboardEvent) => {
+      if (event.key !== 'Shift') return
+      shiftHeld = false
+      unpin()
+      show(current())
+    }
+    const pointerover = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') dismissed = null
+      preferFocus = false
+      const card = cardOf(event.target)
+      if (!card || (card === active && tooltipOf(card)?.hasAttribute('data-open'))) return
+      if (shiftHeld) pin(card)
+      else show(card)
+    }
+    const pointerdown = (event: PointerEvent) => {
+      if (!cardOf(event.target)) return
+      pointerActive = true
+      hide()
+    }
+    const pointerend = (event: PointerEvent) => {
+      if (!pointerActive) return
+      pointerActive = false
+      if (event.pointerType === 'touch') {
+        dismissed = cardOf(event.target)
+        return hide()
+      }
+      queueMicrotask(() => show(pinned ?? current()))
+    }
+    const pointerout = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') return
+      const card = cardOf(event.target) ?? cardForTooltip(event.target)
+      if (!card || cardOf(event.relatedTarget) === card || cardForTooltip(event.relatedTarget) === card || pinned === card) return
+      queueMicrotask(() => show(current()))
+    }
+    const ready = (event: Event) => {
+      const card = cardOf(event.target)
+      if (card && (card === pinned || card === current())) show(card)
+    }
+    const focusin = (event: FocusEvent) => {
+      const card = cardOf(event.target)
+      if (!card) return
+      if (shiftHeld) pin(card)
+      else show(card)
+    }
+    const focusout = () => {
+      queueMicrotask(() => pinned ? show(pinned) : show(current()))
+    }
+    const reset = () => {
+      shiftHeld = false
+      preferFocus = false
+      pointerActive = false
+      dismissed = null
+      unpin()
+      hide()
+    }
+    const reposition = () => {
+      if (!active || repositionFrame) return
+      repositionFrame = requestAnimationFrame(() => {
+        repositionFrame = 0
+        if (active) show(active)
+      })
+    }
+    document.addEventListener('keydown', keydown)
+    document.addEventListener('keyup', keyup)
+    document.addEventListener('pointerover', pointerover)
+    document.addEventListener('pointerdown', pointerdown)
+    document.addEventListener('pointerup', pointerend)
+    document.addEventListener('pointercancel', pointerend)
+    document.addEventListener('pointerout', pointerout)
+    document.addEventListener('card-keyword-help-ready', ready)
+    document.addEventListener('card-keyword-help-reposition', reposition)
+    document.addEventListener('focusin', focusin)
+    document.addEventListener('focusout', focusout)
+    document.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    window.addEventListener('blur', reset)
+    return () => {
+      cancelAnimationFrame(repositionFrame)
+      reset()
+      document.removeEventListener('keydown', keydown)
+      document.removeEventListener('keyup', keyup)
+      document.removeEventListener('pointerover', pointerover)
+      document.removeEventListener('pointerdown', pointerdown)
+      document.removeEventListener('pointerup', pointerend)
+      document.removeEventListener('pointercancel', pointerend)
+      document.removeEventListener('pointerout', pointerout)
+      document.removeEventListener('card-keyword-help-ready', ready)
+      document.removeEventListener('card-keyword-help-reposition', reposition)
+      document.removeEventListener('focusin', focusin)
+      document.removeEventListener('focusout', focusout)
+      document.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+      window.removeEventListener('blur', reset)
+    }
+  }, [])
   return (
     <Suspense fallback={<main className="app-loading" role="status">Loading…</main>}>
       <div className="game-mode" hidden={online}>

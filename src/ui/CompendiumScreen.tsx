@@ -3,7 +3,7 @@ import { CARDS, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import { assetPath, cardImagePath, cardThumbPath } from '../game/assets.ts'
 import { StatusIcon } from './Icon.tsx'
-import { cardAccessibleName, cardPlayText, revealDecodedImage } from './Card.tsx'
+import { CardKeywordHelp, cardAccessibleName, cardPlayText, revealDecodedImage } from './Card.tsx'
 import { CardFace } from './CardFace.tsx'
 
 type Pool = CardDef['owner'] | 'all'
@@ -158,11 +158,12 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
             const showUpgrade = upgraded && Boolean(card.upgrade)
             const face = faceOf(card, showUpgrade)
             return (
-              <button type="button" className={`compendium-card compendium-card--${card.owner}`}
-                key={card.id} onClick={() => setSelected(card)}
-                aria-label={`${cardAccessibleName(face)}, ${face.rarity}`}>
-                <ScannedCardFace def={face} upgraded={showUpgrade} />
-              </button>
+              <CardKeywordHelp def={face} key={card.id}>{(keywordHelpProps) => (
+                <button {...keywordHelpProps} type="button" className={`compendium-card compendium-card--${card.owner}`}
+                  onClick={() => setSelected(card)} aria-label={`${cardAccessibleName(face)}, ${face.rarity}`}>
+                  <ScannedCardFace def={face} upgraded={showUpgrade} />
+                </button>
+              )}</CardKeywordHelp>
             )
           })}
         </div>
@@ -174,9 +175,12 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
           aria-label={`${cardAccessibleName(selectedFace)}, ${selectedFace.rarity}, card detail`}
           onClose={() => setSelected(null)}>
           <button type="button" onClick={() => detailRef.current?.close()} aria-label="Close card detail">×</button>
-          <span className="compendium__detail-card">
-            <ScannedCardFace def={selectedFace} upgraded={upgraded && Boolean(selected?.upgrade)} full />
-          </span>
+          <CardKeywordHelp def={selectedFace}>{(keywordHelpProps) => (
+            <span {...keywordHelpProps} className="compendium__detail-card" role="group" tabIndex={0}
+              aria-label={cardAccessibleName(selectedFace)}>
+              <ScannedCardFace def={selectedFace} upgraded={upgraded && Boolean(selected?.upgrade)} full />
+            </span>
+          )}</CardKeywordHelp>
         </dialog>
       ) : null}
     </main>
