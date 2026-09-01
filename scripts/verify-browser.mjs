@@ -14676,9 +14676,9 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => document.querySelector('.campfire')?.getAttribute('data-party-size') === '4')
 const customCampfireLayouts = []
-for (const characters of [
-  ['guardian', 'hermit', 'hexaghost', 'slime_boss'],
-  ['ironclad', 'guardian', 'silent', 'hermit'],
+for (const [characters, expected] of [
+  [['guardian', 'hermit', 'hexaghost', 'slime_boss'], 'slime_boss_guardian_hexaghost_hermit'],
+  [['ironclad', 'guardian', 'silent', 'hermit'], 'ironclad_silent_guardian_hermit'],
 ]) {
   await page.evaluate((party) => {
     const debug = window.__STS_DEBUG__
@@ -14686,28 +14686,22 @@ for (const characters of [
     run.players = run.players.map((player, index) => ({ ...player, character: party[index], dead: false }))
     debug.setRun(run)
   }, characters)
-  await page.waitForFunction((party) => {
-    const campfire = document.querySelector('.campfire[data-character-cutouts="true"]')
-    return campfire?.querySelectorAll('.campfire__party img').length === party.length
-  }, characters)
+  await page.waitForFunction((name) => getComputedStyle(document.querySelector('.campfire'))
+    .backgroundImage.includes(`/${name}_firecamp.webp`), expected)
   customCampfireLayouts.push(await page.locator('.campfire').evaluate(async (campfire) => {
     const url = getComputedStyle(campfire).backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1] ?? ''
-    const images = [...campfire.querySelectorAll('.campfire__party img')]
-    await Promise.all(images.map((image) => image.decode()))
+    const image = new Image()
+    image.src = url
+    await image.decode()
     return {
       scene: new URL(url).pathname,
-      characters: images.map((image) => new URL(image.src).pathname.split('/').pop()),
-      decoded: images.every((image) => image.naturalWidth > 0 && image.naturalHeight > 0),
+      decoded: image.naturalWidth === 1672 && image.naturalHeight === 941,
     }
   }))
 }
-check('Downfall-only and mixed parties render every rear-view character on the empty campfire scene', () => {
-  assert(customCampfireLayouts.every((layout) => layout.scene.endsWith('/empty_firecamp.png')),
-    JSON.stringify(customCampfireLayouts))
-  assertDeepEqual(customCampfireLayouts[0].characters,
-    ['guardian-back.webp', 'hermit-back.webp', 'hexaghost-back.webp', 'slime_boss-back.webp'])
-  assertDeepEqual(customCampfireLayouts[1].characters,
-    ['ironclad-back.webp', 'guardian-back.webp', 'silent-back.webp', 'hermit-back.webp'])
+check('Downfall-only and mixed parties select their complete baked campfire scenes', () => {
+  assert(customCampfireLayouts[0].scene.endsWith('/slime_boss_guardian_hexaghost_hermit_firecamp.webp'))
+  assert(customCampfireLayouts[1].scene.endsWith('/ironclad_silent_guardian_hermit_firecamp.webp'))
   assert(customCampfireLayouts.every((layout) => layout.decoded), JSON.stringify(customCampfireLayouts))
 })
 await page.evaluate(() => {
@@ -14717,7 +14711,7 @@ await page.evaluate(() => {
   run.players = run.players.map((player, index) => ({ ...player, character: characters[index] }))
   debug.setRun(run)
 })
-await page.waitForFunction(() => !document.querySelector('.campfire')?.hasAttribute('data-character-cutouts'))
+await page.waitForFunction(() => getComputedStyle(document.querySelector('.campfire')).backgroundImage.includes('/ironclad_silent_defect_watcher_firecamp.png'))
 const campfireResponsiveLayouts = []
 for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 }, { width: 667, height: 375 }]) {
   await page.setViewportSize(viewport)

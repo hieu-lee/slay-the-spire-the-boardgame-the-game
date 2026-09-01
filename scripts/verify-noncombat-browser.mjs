@@ -166,6 +166,25 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('heading', { name: 'Campfire' }).waitFor()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players[0].character = 'guardian'
+  debug.setRun(run)
+})
+await page.waitForFunction(() => getComputedStyle(document.querySelector('.campfire')).backgroundImage.includes('/guardian_firecamp.webp'))
+const downfallCampfireScene = await page.locator('.campfire').evaluate(async (campfire) => {
+  const url = getComputedStyle(campfire).backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1] ?? ''
+  const image = new Image()
+  image.src = url
+  await image.decode()
+  return { url, width: image.naturalWidth, height: image.naturalHeight }
+})
+await page.screenshot({ path: join(outDir, 'campfire-guardian-desktop.png'), fullPage: true })
+check('a Downfall campfire renders its complete baked scene', () => {
+  assert(downfallCampfireScene.url.endsWith('/guardian_firecamp.webp'), downfallCampfireScene.url)
+  assertDeepEqual([downfallCampfireScene.width, downfallCampfireScene.height], [1672, 941])
+})
 const localNightTerrorsRestDisabled = await page.getByRole('button', { name: /^Rest/ }).evaluateAll((buttons) =>
   buttons.length > 0 && buttons.every((button) => button.disabled))
 await page.evaluate(() => {
@@ -1897,6 +1916,12 @@ check('leaving the shop returns to the arrival scene and local play waits for ev
 
 await page.evaluate(() => window.__STS_DEBUG__.setViewer('p1'))
 await setRoom('treasure')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.roomState.offers.p1 = 'black_powder'
+  debug.setRun(run)
+})
 await page.getByRole('heading', { name: 'Choose a Relic' }).waitFor()
 await page.screenshot({ path: join(outDir, 'treasure-4p-desktop.png'), fullPage: true })
 const treasureName = await page.locator('.treasure-relic > strong').textContent()
@@ -1921,13 +1946,15 @@ const treasureFallbackShape = await treasureFallback.evaluate((node) => ({
   width: Math.round(node.getBoundingClientRect().width),
 }))
 check('Treasure gives the active seat one dominant face-up relic choice', () => {
-  assertEqual(treasureName, 'Anchor')
+  assertEqual(treasureName, 'Black Powder')
   assertEqual(takeRelicButtons, 1)
 })
 check('a missing item scan falls back to a generated card face that still prints the item', () => {
   assert(treasureFallbackShape.name.length > 0, 'generated face printed no name')
   assert(treasureFallbackShape.rules.length > 0, 'generated face printed no rules')
   assertEqual(treasureFallbackShape.kind, 'Relic')
+  assert(!/\[[a-z][^\]]*\]/.test(treasureFallbackShape.rules), treasureFallbackShape.rules)
+  assert(treasureFallbackShape.icon.endsWith('/assets/relic-icons/black_powder.png'), treasureFallbackShape.icon)
   assert(treasureFallbackShape.icon.startsWith('/assets/relic-icons/'),
     `generated face used icon "${treasureFallbackShape.icon}"`)
   // Drawn at a size the printed text can actually be read at, not as a thumbnail.

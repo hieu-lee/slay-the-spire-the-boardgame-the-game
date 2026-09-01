@@ -2566,6 +2566,71 @@ export const DOWNFALL_BOSS_RELICS = DOWNFALL_ITEMS_MANIFEST.bossRelics
 export const DOWNFALL_COLORLESS_CARDS = DOWNFALL_ITEMS_MANIFEST.colorlessCards
 export const HEARTS_BOONS = DOWNFALL_ITEMS_MANIFEST.heartsBoons
 
+const DISPLAY_TOKENS = {
+  'yellow-card-reward': ['Rare Card Reward', 'Rare Card Rewards', 'a Rare Card Reward'],
+  'up-arrow-card-reward': ['Upgraded Card Reward', 'Upgraded Card Rewards', 'an Upgraded Card Reward'],
+  'card-reward': ['Card Reward', 'Card Rewards', 'a Card Reward'],
+  relic: ['Relic', 'Relics', 'a Relic'],
+  potion: ['Potion', 'Potions', 'a Potion'],
+  damage: ['damage', 'damage', 'damage'],
+  block: ['Block', 'Block', 'Block'],
+  energy: ['Energy', 'Energy', '1 Energy'],
+  strength: ['Strength', 'Strength', '1 Strength'],
+  weak: ['Weak', 'Weak', '1 Weak'],
+  vulnerable: ['Vulnerable', 'Vulnerable', '1 Vulnerable'],
+  dazed: ['Dazed', 'Dazed', '1 Dazed'],
+  slimed: ['Slimed', 'Slimed', '1 Slimed'],
+  burn: ['Burn', 'Burn', '1 Burn'],
+} as const
+
+/** Converts the physical expansion's icon transcription into polished player-facing prose. */
+export function formatDownfallText(text: string): string {
+  let formatted = text
+    .replace(/all \[dazed\], \[slimed\], and \[burn\]/gi, 'all Dazed, Slimed, and Burn')
+    .replace(/any \[dazed\], \[burn\], \[slimed\], or Curses/gi, 'any Dazed, Burn, Slimed, or Curses')
+    .replace(/At \?: Gain 2 gold when you enter the room\./g, 'When you enter an Event room: Gain 2 gold.')
+    .replace(/\b(that|your|any|all) \[(strength|weak|vulnerable|dazed|slimed|burn)\]/gi,
+      (_match, modifier: string, token: string) => `${modifier} ${DISPLAY_TOKENS[token as keyof typeof DISPLAY_TOKENS][0]}`)
+    .replace(/\[gold:(\d+)\]/g, '$1 Gold')
+    .replace(/\[die ([^\]]+)\]:?/g, 'On a $1:')
+    .replace(/\[treasure\]/g, 'Relic')
+    .replace(/\[event\]/g, 'Event')
+    .replace(/\[merchant\]/g, 'Merchant')
+    .replace(/\[encounter\]/g, 'Encounter')
+    .replace(/\[mode-shift\] to all players\./g, 'All players Mode Shift.')
+    .replace(/\[mode-shift\]/g, 'Mode Shift')
+
+  for (const [token, [singular, plural, bare]] of Object.entries(DISPLAY_TOKENS)) {
+    formatted = formatted
+      .replace(new RegExp(`(\\d+) \\[${token}\\]`, 'g'), (_match, count: string) =>
+        `${count} ${count === '1' ? singular : plural}`)
+      .replace(new RegExp(`(?:\\[${token}\\](?: +(?=\\[${token}\\]))?)+`, 'g'), (match) => {
+        const count = match.match(/\[/g)?.length ?? 1
+        return count === 1 ? bare : `${count} ${plural}`
+      })
+  }
+
+  return formatted
+    .replace(/one of their Relic/g, 'one of their Relics')
+    .replace(/Add Relic/g, 'Add a Relic')
+    .replace(/\b(\d+) gold\b/g, '$1 Gold')
+    .replace(/\bpotions?\b/g, (potion) => potion === 'potion' ? 'Potion' : 'Potions')
+    .replace(/\bALL players\b/g, 'All players')
+    .replace(/Your 0 cost Attacks deal \+1 damage on each damage\. \(Include X\.\)/g,
+      'Your 0 cost Attacks deal +1 damage per damage icon. (Include X.)')
+    .replace(/1 damage, 1 damage, 1 damage\. Treat each damage as a separate 0 cost Attack\./g,
+      'Deal 1 damage three times. Treat each hit as a separate 0 cost Attack.')
+    .replace(/(^|[.:] )(\d+) Block(?=\.|,| to| if)/g,
+      (_match, prefix: string, count: string) => `${prefix}Gain ${count} Block`)
+    .replace(/a Encounter/g, 'an Encounter')
+    .replace(/Gain Relic/g, 'Gain a Relic')
+    .replace(/gains Relic/g, 'gains a Relic')
+    .replace(/Gain Potion/g, 'Gain a Potion')
+    .replace(/gains Potion/g, 'gains a Potion')
+    .replace(/(^|: )(\d+) (Weak|Vulnerable)(?=\.| to all players)/g,
+      (_match, prefix: string, count: string, status: string) => `${prefix}Apply ${count} ${status}`)
+}
+
 const DOWNFALL_RELIC_VARIANTS = new Set([
   'ninja_scroll', 'vajra', 'nilrys_codex', 'duality', 'happy_flower', 'ink_bottle', 'the_boot',
   'enchiridion', 'snecko_eye', 'wrist_blade',

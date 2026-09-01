@@ -7,6 +7,7 @@ import { createRun } from '../src/game/run/setup.ts'
 import {
   DOWNFALL_EVENT_DECKS,
   DOWNFALL_EVENT_DECK_SOURCES,
+  DOWNFALL_EVENT_CARDS,
   DOWNFALL_EVENT_ICON_LEGEND,
   DOWNFALL_EVENT_SOURCE,
   DOWNFALL_EVENT_SOURCE_ENTRIES,
@@ -175,6 +176,13 @@ check('every icon-only or semantically unnamed source detail remains explicit', 
   assert.equal(ambiguous.flatMap((event) => event.ambiguities).length, 7)
   assert(ambiguous.some((event) => event.title === 'World of Goop' && event.ambiguities[0].includes('visual token')))
   assert(ambiguous.some((event) => event.title === 'Mysterious Sphere' && event.ambiguities[0].includes('icon-only')))
+})
+
+check('player-facing event prose contains no raw icon transcription tokens', () => {
+  const prose = DOWNFALL_EVENT_CARDS.flatMap((card) => [
+    card.prompt ?? '', card.rule ?? '', ...card.options.flatMap((option) => [option.label, option.description]),
+  ])
+  assert(prose.every((text) => !/\[[a-z][^\]]*\]/.test(text)))
 })
 
 check('the grouped manifest completeness audit agrees with the isolated catalog', () => {
