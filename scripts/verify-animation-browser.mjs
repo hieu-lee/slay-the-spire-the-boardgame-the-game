@@ -525,8 +525,8 @@ try {
         return result
       })
       check(reduced.animation === 'none' && reduced.willChange === 'auto' &&
-        mobile.display !== 'none' && mobile.animation !== 'none',
-      `phone lost PC enemy motes or desktop reduced motion stayed active ${JSON.stringify({ reduced, mobile })}`)
+        mobile.display !== 'none' && mobile.animation === 'none' && mobile.willChange === 'auto',
+      `enemy motes still move between actions ${JSON.stringify({ reduced, mobile })}`)
     }
   }
 
@@ -755,7 +755,6 @@ try {
       const compositorProbe = {}
       for (const [name, selector] of Object.entries({
         body: `.seat[data-player-id="${ids.actorId}"] .seat__portrait > img`,
-        aura: `.seat[data-player-id="${ids.actorId}"] .stance-aura`,
         pose: `.seat[data-player-id="${ids.actorId}"] .character-attack__pose--watcher-cast`,
         meteor: `.seat[data-player-id="${ids.actorId}"] .character-attack__meteor`,
         impact: `.seat[data-player-id="${ids.actorId}"] .character-attack__meteor-impact`,
@@ -768,7 +767,7 @@ try {
           : []
       }
       check(Object.values(compositorProbe).every((reasons) => reasons.some((reason) => reason.includes('will-change'))),
-        `watcher: animated layers were not promoted by Chrome ${JSON.stringify(compositorProbe)}`)
+        `watcher: active attack layers were not promoted by Chrome ${JSON.stringify(compositorProbe)}`)
       await page.evaluate(() => {
         window.__WATCHER_FRAME_PROFILE__ = new Promise((resolve) => {
           const frameGaps = []

@@ -103,9 +103,6 @@
   text-shadow: none;
 }
 
-/* A composited opacity fade rather than an animated box-shadow: a four-player
-   board can carry sixteen of these, and repainting each one forever is a cost
-   nobody asked for. */
 .power::after {
   content: '';
   position: absolute;
@@ -113,28 +110,5 @@
   border-radius: 3px;
   box-shadow: 0 0 7px rgb(214 176 96 / 0.55);
   opacity: 0;
-  animation: power-idle 4s ease-in-out infinite;
   pointer-events: none;
-}
-
-.power--open::after,
-.power:hover::after {
-  animation: none;
-  opacity: 0;
-}
-
-@keyframes power-idle {
-  0%,
-  100% {
-    opacity: 0;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html:not([data-mobile-performance='true']) .power::after {
-    animation: none;
-  }
 }

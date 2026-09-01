@@ -220,8 +220,6 @@
   object-position: center bottom;
   transform-origin: center bottom;
   filter: drop-shadow(0 0.6rem 0.35rem rgb(0 0 0 / 0.62));
-  animation: actor-idle 3.4s ease-in-out infinite;
-  animation-delay: calc(var(--stage-row, 0) * -0.43s);
 }
 
 .seat__portrait > img[src$='/watcher.webp'] {
@@ -237,8 +235,6 @@
   background: center / contain no-repeat url('/assets/combat/vfx/hero-motes.webp');
   opacity: 0.28;
   pointer-events: none;
-  animation: actor-motes 4.8s ease-in-out infinite;
-  animation-delay: calc(var(--stage-row, 0) * -0.61s);
 }
 
 .seat__portrait::after,
@@ -432,8 +428,6 @@
   mix-blend-mode: normal;
   mask-image: none;
   transform-origin: center bottom;
-  animation: actor-idle 3.8s ease-in-out infinite;
-  animation-delay: calc(var(--stage-index, 0) * -0.47s);
 }
 
 .enemy--boss .enemy__portrait > .enemy__art--cutout {
@@ -514,14 +508,6 @@
 .enemy__portrait:has(> .enemy__art--cutout)::before {
   background-image: url('/assets/combat/vfx/enemy-motes.webp');
   opacity: 0.2;
-  animation-duration: 5.4s;
-  animation-delay: calc(var(--stage-index, 0) * -0.67s);
-}
-
-@keyframes actor-idle {
-  0%, 100% { translate: 0 0; scale: 1; }
-  48% { translate: 0 -1.5%; scale: 1.012 0.992; }
-  72% { translate: 0 -0.4%; scale: 0.996 1.006; }
 }
 
 @keyframes boss-melee-dash {
@@ -544,9 +530,4 @@
   from { opacity: 0; transform: scaleX(0.08) scaleY(0.45); }
   18%, 72% { opacity: 1; }
   to { opacity: 0; transform: scaleX(1) scaleY(1); }
-}
-
-@keyframes actor-motes {
-  0%, 100% { opacity: 0.14; transform: translateY(2%) scale(0.96); }
-  50% { opacity: 0.32; transform: translateY(-3%) scale(1.02); }
 }

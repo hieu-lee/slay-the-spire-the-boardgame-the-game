@@ -28,11 +28,14 @@
   min-width: 0;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
+  scrollbar-width: none;
   padding: 0;
   background: none;
   box-shadow: none;
   filter: none;
 }
+
+.relic-actions > section:not(:has(details[open]))::-webkit-scrollbar { display: none; }
 
 .relic-actions > section:not(:has(details[open])) > button,
 .relic-actions > section:not(:has(details[open])) > details,
