@@ -67,7 +67,7 @@ function card(
     id: id(name), name, owner: 'slime_boss', deck, sheetIndex,
     upgradedSheetIndex: type === 'slime' && deck === 'starter' ? undefined : sheetIndex,
     type: type === 'slime' ? 'power' : type,
-    ...(type === 'slime' ? { cardKind: 'slime' as const } : {}),
+    ...(type === 'slime' ? { cardKind: 'slime' as const, resolvesOnPlay: true } : {}),
     rarity, multiplicity, cost, printedText, effects, ...extra,
   }
 }

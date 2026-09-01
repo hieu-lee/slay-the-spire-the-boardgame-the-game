@@ -66,6 +66,9 @@ for (const [name, levelCount] of expected) {
     assert.equal(Object.keys(card.upgrade?.slimeLevels ?? card.slimeLevels ?? {}).length, levelCount, `${name} upgraded level table`)
   }
 }
+assert.ok(Object.values(SLIME_BOSS_CARDS)
+  .filter((card) => card.cardKind === 'slime')
+  .every((card) => card.resolvesOnPlay), 'every Slime resolves its printed “When played” effects')
 
 const bruiser = bruiserSlime('audit-bruiser')
 assert.equal(growSlime(bruiser, 99), 1, 'Grow caps at Bruiser level 2')
@@ -538,6 +541,30 @@ lethalMassive = playCard(lethalMassive, player.id, massiveLick.uid, {
 assert.equal(lethalMassive.players[0].block, 0,
   'Massive Slime resolved later Command effects after its hit ended combat')
 
+const immediateSlime = (name, uid) => ({ uid, defId: byName.get(name).id, upgraded: false })
+let massiveOnPlay = createCombat(createRng(563), [{
+  ...player, character: 'slime_boss', hand: [immediateSlime('Massive Slime', 'massive-on-play')], energy: 3, block: 0,
+}], [{ ...enemy, uid: 'massive-on-play-target', hp: 10, maxHp: 10 }])
+massiveOnPlay = playCard(massiveOnPlay, player.id, 'massive-on-play', {
+  enemyUid: 'massive-on-play-target', playerId: player.id,
+})
+assert.equal(massiveOnPlay.enemies[0].hp, 6, 'Massive Slime did not deal its printed when-played damage')
+assert.equal(massiveOnPlay.players[0].block, 2, 'Massive Slime did not gain its printed when-played Block')
+
+let stickyOnPlay = createCombat(createRng(564), [{
+  ...player, character: 'slime_boss', hand: [immediateSlime('Sticky Slime', 'sticky-on-play')], energy: 3,
+}], [{ ...enemy, uid: 'sticky-on-play-left' }, { ...enemy, uid: 'sticky-on-play-right', row: 1 }])
+stickyOnPlay = playCard(stickyOnPlay, player.id, 'sticky-on-play', { enemyUid: null, playerId: player.id })
+assert.deepEqual(stickyOnPlay.enemies.map((held) => held.weak), [1, 1],
+  'Sticky Slime did not apply its printed when-played Weak to ALL enemies')
+
+let psychicOnPlay = createCombat(createRng(565), [{
+  ...player, character: 'slime_boss', hand: [immediateSlime('Psychic Slime', 'psychic-on-play')],
+  draw: [immediateSlime('Strike', 'psychic-draw-one'), immediateSlime('Defend', 'psychic-draw-two')], energy: 3,
+}], [enemy])
+psychicOnPlay = playCard(psychicOnPlay, player.id, 'psychic-on-play', { enemyUid: null, playerId: player.id })
+assert.equal(psychicOnPlay.players[0].hand.length, 2, 'Psychic Slime did not draw its printed cards when played')
+
 const emptyOverexert = { uid: 'empty-overexert', defId: byName.get('Overexert').id, upgraded: false }
 const emptyOverexertCombat = createCombat(createRng(569), [{
   ...player, character: 'slime_boss', hand: [emptyOverexert], draw: [], discard: [], energy: 3,
@@ -603,13 +630,13 @@ assert.equal(defenseWhirl.players[0].nextAttackRapidFire, 1,
   'Defense-Mode Overexert consumed the next-Attack Rapid Fire bonus')
 let attackWhirl = queueWhirl(5692, 1, true)
 attackWhirl = playCardCopy(attackWhirl, player.id, {
-  enemyUid: null, playerId: player.id, corruptedShardMode: 'attack',
+  enemyUid: enemy.uid, playerId: player.id, corruptedShardMode: 'attack',
 })
 assert(attackWhirl.pendingCardCopy, 'Overexert did not repeat a variable Guardian card chosen as an Attack')
 assert.equal(attackWhirl.pendingCardCopy.sourceNames.length, 5,
   'Attack-Mode Overexert did not apply Vantage and No Holds Barred after choosing the mode')
 while (attackWhirl.pendingCardCopy) {
-  attackWhirl = playCardCopy(attackWhirl, player.id, { enemyUid: null, playerId: player.id })
+  attackWhirl = playCardCopy(attackWhirl, player.id, { enemyUid: enemy.uid, playerId: player.id })
 }
 assert.equal(attackWhirl.players[0].cardsPlayedThisTurn, 7,
   'Attack-Mode Overexert did not resolve both plays and their Rapid Fire copies')
