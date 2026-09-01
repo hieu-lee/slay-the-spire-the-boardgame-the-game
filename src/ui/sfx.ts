@@ -30,18 +30,41 @@ const BOSS_TRACKS = {
   4: assetPath('bgm/the-heart.mp3'),
 } as const
 
-type BossCombat = { phase: string; enemies: readonly { defId: string; ascension?: number; isBoss: boolean }[] }
+const HALLWAY_TRACKS: Record<number, readonly string[]> = {
+  1: [assetPath('bgm/exordium.mp3'), assetPath('bgm/battle-trance.mp3')],
+  2: [assetPath('bgm/the-city.mp3'), assetPath('bgm/escape-plan.mp3')],
+  3: [assetPath('bgm/dramatic-entrance.mp3'), assetPath('bgm/the-beyond.mp3')],
+  4: [assetPath('bgm/the-ending.mp3')],
+}
 
-function bossTrack(combat?: BossCombat | null) {
+const ELITE_TRACK = assetPath('bgm/facing-the-elite.mp3')
+
+type MusicCombat = { combatId: string; phase: string; enemies: readonly { defId: string; ascension?: number; actionIndex?: number; isBoss: boolean }[] }
+type MusicRun = { act: number; combat?: MusicCombat | null }
+
+function hallwayTrack(act: number, combatId: string) {
+  const tracks = HALLWAY_TRACKS[act]
+  if (!tracks) return
+  const hash = [...combatId].reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 0)
+  return tracks[hash % tracks.length]
+}
+
+function combatTrack(run?: MusicRun | null) {
+  const combat = run?.combat
   if (!combat || combat.phase === 'won' || combat.phase === 'lost') return
   const boss = combat.enemies.find((enemy) => enemy.isBoss)
   const act = boss && enemyDef(boss.defId, boss.ascension).bossAct
-  return act ? BOSS_TRACKS[act] : undefined
+  if (act) return BOSS_TRACKS[act]
+  const lagavulin = combat.enemies.find((enemy) => enemy.defId === 'lagavulin')
+  const lagavulinDef = lagavulin && enemyDef(lagavulin.defId, lagavulin.ascension)
+  const sleeping = lagavulinDef?.pattern.kind === 'cube' &&
+    lagavulinDef.pattern.slots[lagavulin!.actionIndex ?? 0]?.actions.some((action) => action.kind === 'idle')
+  return lagavulin && !sleeping ? ELITE_TRACK : hallwayTrack(run.act, combat.combatId)
 }
 
-/** Loop the appropriate act theme while a boss combat is active. */
-export function useBossFightMusic(combat?: BossCombat | null, enabled = true, volume = 20) {
-  const track = enabled ? bossTrack(combat) : undefined
+/** Loop the original game's act theme while combat is active. */
+export function useCombatMusic(run?: MusicRun | null, enabled = true, volume = 20) {
+  const track = enabled ? combatTrack(run) : undefined
   const audio = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
