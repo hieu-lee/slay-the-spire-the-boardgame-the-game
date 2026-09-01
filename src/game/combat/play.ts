@@ -109,8 +109,10 @@ function presentationEnemyScope(
   energyCharged = energySpent,
 ): TargetScope {
   const active = def.modes ? { ...def, modes: undefined, effects: [...effects] } : def
-  return cardNeedsEnemy(active, actor, includeEvokes, energySpent, false, attachedGemId, undefined, energyCharged)
-    ? def.target ?? 'enemy' : 'self'
+  if (!cardNeedsEnemy(active, actor, includeEvokes, energySpent, false,
+    attachedGemId, undefined, energyCharged)) return 'self'
+  if (def.id === 'guardian_prismatic_barrier') return 'row'
+  return def.target ?? 'enemy'
 }
 
 function presentationCardContext(

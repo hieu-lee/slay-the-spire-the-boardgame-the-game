@@ -17,10 +17,20 @@ import type { CardInstance, Enemy, GuardianMode, OrbType, Player } from '../type
 import { slimeDef } from '../downfall/slime-boss.ts'
 import type { SlimeBossEffect } from '../downfall/slime-boss.ts'
 
+const GUARDIAN_ROW_CARDS = new Set(['guardian_prismatic_spray', 'guardian_sentry_beam'])
+const GUARDIAN_UPGRADED_ROW_CARDS = new Set(['guardian_roll_attack', 'guardian_vent_steam'])
+const GUARDIAN_ATTACK_MODE_ROW_CARDS = new Set([
+  'guardian_guardian_whirl', 'guardian_giga_beam', 'guardian_refracted_beam',
+])
+
 export function effectiveCombatCardDef(def: CardDef, guardianMode?: GuardianMode | null): CardDef {
-  return def.guardianVariableType && guardianMode === 'defense'
+  const effective: CardDef = def.guardianVariableType && guardianMode === 'defense'
     ? { ...def, type: 'skill' }
     : def
+  const targetsRow = GUARDIAN_ROW_CARDS.has(def.id) ||
+    GUARDIAN_UPGRADED_ROW_CARDS.has(def.id) && def.guardian?.sourceText.includes('[aoe]') === true ||
+    GUARDIAN_ATTACK_MODE_ROW_CARDS.has(def.id) && guardianMode === 'attack'
+  return targetsRow ? { ...effective, target: 'row' } : effective
 }
 
 export function cardReferencesGuardianMode(def: CardDef, attachedGemId?: string): boolean {
@@ -720,6 +730,7 @@ export function cardNeedsEnemy(
 ): boolean {
   if (def.type === 'power' && (def.trigger || (def.activeAbility && !forActivation))) return false
   if ((def.target ?? 'enemy') === 'allEnemies') return false
+  if (def.target === 'row') return true
   if ((attachedGemId && ['guardian_emerald', 'guardian_garnet', 'guardian_ruby'].includes(attachedGemId)) ||
     attachedGemId === 'guardian_peridot' && (!actor || actor.hand?.some((card) => card.uid !== sourceCardUid &&
       cardDef(card.defId).guardian?.printedType.startsWith('Gem')))) return true

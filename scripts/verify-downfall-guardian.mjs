@@ -46,6 +46,7 @@ import {
   endPlayerTurn,
   endTurnAbilities,
   enemyTurn,
+  effectiveCombatCardDef,
   playCard,
   playCardCopy,
   playCost,
@@ -532,6 +533,27 @@ check('Guardian Powers execute their printed live combat rules', () => {
   assert.equal(combat.players[0].guardianMode, 'defense')
 })
 
+check('Guardian area effects hit one chosen row and the boss', () => {
+  const player = createRun(426, [{ id: 'p1', name: 'Guardian', character: 'guardian' }]).players[0]
+  player.energy = 3
+  player.hand = [{ uid: 'sentry', defId: 'guardian_sentry_beam', upgraded: false }]
+  const enemy = (uid, row, isBoss = false) => ({
+    uid, defId: 'jaw_worm', row, isBoss, hp: 20, maxHp: 20, block: 0, strength: 0,
+    vulnerable: 0, weak: 0, poison: 0, goldReward: 0, cardReward: null,
+    actionIndex: 0, abilityUsed: false, dead: false,
+  })
+  let combat = createCombat({ seed: 426, calls: 0 }, [player], [
+    enemy('row-0', 0), enemy('row-1', 1), enemy('boss', 2, true),
+  ], 'guardian-area')
+  combat = playCard(combat, 'p1', 'sentry', { enemyUid: 'row-0', playerId: 'p1' })
+  assert.deepEqual(combat.enemies.map(({ hp }) => hp), [17, 20, 17])
+
+  assert.equal(effectiveCombatCardDef(faceOf(CARDS.guardian_sentry_beam, false), 'attack').target, 'row')
+  assert.equal(effectiveCombatCardDef(faceOf(CARDS.guardian_roll_attack, true), 'attack').target, 'row')
+  assert.equal(effectiveCombatCardDef(faceOf(CARDS.guardian_guardian_whirl, false), 'attack').target, 'row')
+  assert.equal(effectiveCombatCardDef(faceOf(CARDS.guardian_guardian_whirl, false), 'defense').target, undefined)
+})
+
 check('active Powers remain usable during legal Start- and End-of-Turn windows', () => {
   const enemy = () => ({ uid: 'e1', defId: 'jaw_worm', row: 0, isBoss: false, hp: 20, maxHp: 20,
     block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0,
@@ -610,17 +632,23 @@ check('reviewed Guardian Power timing, selection, and Retain rules resolve exact
 
   let player = fresh(434)
   player.energy = 5
+  player.strength = 2
+  player.weak = 2
   player.hand = [
     { uid: 'repulsor', defId: 'guardian_repulsor', upgraded: false },
     { uid: 'crystallize', defId: 'guardian_crystallize', upgraded: false, attachedGemId: 'guardian_ruby' },
     { uid: 'strike', defId: 'guardian_strike', upgraded: false },
   ]
   let combat = createCombat({ seed: 434, calls: 0 }, [player], [enemy()], 'guardian-live-timing')
+  combat.enemies[0].vulnerable = 2
   combat = playCard(combat, 'p1', 'repulsor')
   assert.equal(combat.players[0].guardianMode, 'defense', 'Repulsor did not Mode Shift when played')
   combat = playCard(combat, 'p1', 'crystallize', { enemyUid: 'e1', playerId: 'p1' })
+  combat.players[0].guardianMode = 'attack'
+  combat.players[0].vigorSpentThisTurn = 1
   combat = playCard(combat, 'p1', 'strike', { enemyUid: 'e1', playerId: 'p1' })
-  assert.equal(combat.enemies[0].hp, 27, 'Crystallize did not add its socketed Ruby to a starter Strike')
+  assert.deepEqual([combat.enemies[0].hp, combat.players[0].weak, combat.enemies[0].vulnerable], [24, 1, 1],
+    'Crystallize Ruby damage did not ignore Strength, Weak, Vulnerable, and Vigor')
   combat = endPlayerTurn(combat)
   combat = startPlayerTurn(enemyTurn(combat))
   assert.equal(combat.players[0].energy, 4,
@@ -932,6 +960,19 @@ check('Guardian card and socket choices are enforced by the shared play path', (
   combat = createCombat({ seed: 431, calls: 0 }, prismRun.players, [foe], 'guardian-prismatic-onyx')
   combat = playCard(combat, 'p1', 'prism', { enemyUid: null, playerId: null })
   assert.deepEqual(combat.players.map((player) => [player.weak, player.vulnerable]), [[0, 0], [0, 0]])
+
+  const prismDamageRun = createRun(4311, [{ id: 'p1', name: 'Guardian', character: 'guardian' }])
+  prismDamageRun.players[0].hand = [{ uid: 'prism-damage', defId: 'guardian_prismatic_barrier', upgraded: false,
+    attachedGemId: 'guardian_ruby' }]
+  prismDamageRun.players[0].energy = 3
+  combat = createCombat({ seed: 4311, calls: 0 }, prismDamageRun.players, [
+    foe,
+    { ...foe, uid: 'e2' },
+    { ...foe, uid: 'boss', row: 1, isBoss: true },
+  ], 'guardian-prismatic-ruby')
+  combat = playCard(combat, 'p1', 'prism-damage', { enemyUid: 'e1', playerId: 'p1' })
+  assert.deepEqual(combat.presentationEvents.at(-1).enemyIds, ['e1', 'e2', 'boss'])
+  assert.equal(combat.presentationEvents.at(-1).enemyRow, 0)
 
   const peridotRun = createRun(432, [{ id: 'p1', name: 'Guardian', character: 'guardian' }])
   peridotRun.players[0].hand = [{ uid: 'peridot-harden', defId: 'guardian_harden', upgraded: false,

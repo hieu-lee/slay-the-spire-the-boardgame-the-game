@@ -11,6 +11,10 @@ type CardFaceProps = {
   illustration?: boolean
 }
 
+export function cardTypeLabel(def: CardDef): string {
+  return def.cardKind === 'slime' ? 'Slime' : def.guardian?.printedType ?? def.type
+}
+
 /** Repo-native card face shown underneath an optional publisher scan. */
 export function CardFace({
   def, cost = def.cost, rules, className = '', illustration = true,
@@ -30,7 +34,7 @@ export function CardFace({
       {hasIllustration
         ? <img className="card-face__illustration" src={cardArtPath(def)} alt="" loading="lazy" />
         : <span className="card-face__illustration card-face__illustration--empty" />}
-      <span className="card-face__type">{def.guardian?.printedType ?? def.type}</span>
+      <span className="card-face__type">{cardTypeLabel(def)}</span>
       <span className="card-face__rules">{rules}</span>
     </span>
   )

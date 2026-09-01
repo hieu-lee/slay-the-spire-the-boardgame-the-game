@@ -173,7 +173,7 @@ function requirementsOf(
     spentShivs,
     enemyChoices,
     playerChoices,
-    hitsRow: def.target === 'row',
+    hitsRow: def.target === 'row' || def.id === 'guardian_prismatic_barrier' && needsEnemy,
     choice,
     slimeChoice: slimeAmount > 0 ? { amount: slimeAmount, minimum: slimeUpTo ? 0 : slimeAmount } : null,
     hermitDieRelicChoice: dieRelic?.kind === 'triggerDieRelic'

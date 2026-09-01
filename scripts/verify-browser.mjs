@@ -1238,6 +1238,8 @@ let downfallReducedMotionStopped = false
 let guardianModeOrb = null
 let guardianModePortrait = null
 let slimeHudAccess = null
+let slimeHudKeywordTips = null
+let slimeHudCommandTips = null
 let slimeHudOverlapsEndTurn = true
 let hexaghostVisualState = null
 let hermitChamberInteractions = null
@@ -1253,7 +1255,7 @@ for (const fixture of [
     card: { uid: 'ui-hud-bruiser', defId: 'slime_boss_bruiser_slime', upgraded: false },
     level: 2, vigor: 3, commandsThisTurn: 1, vigorLossAtEndOfTurn: 0,
   }, {
-    card: { uid: 'ui-hud-armored', defId: 'slime_boss_armored_slime', upgraded: false },
+    card: { uid: 'ui-hud-armored', defId: 'slime_boss_armored_slime', upgraded: true },
     level: 3, vigor: 4, commandsThisTurn: 1, vigorLossAtEndOfTurn: 0,
   }] } },
 ]) {
@@ -1269,7 +1271,7 @@ for (const fixture of [
     window.__STS_DEBUG__.setRun(next)
   }, { run: combatAppearanceRun, fixture })
   const mechanicChips = page.locator(fixture.character === 'slime_boss'
-    ? '.combat__slime-status > span'
+    ? '.combat__slime-chip'
     : '.seat__mechanic')
   downfallMechanicLabels[fixture.character] = await mechanicChips.allInnerTexts()
   if (fixture.character === 'hexaghost') {
@@ -1299,7 +1301,7 @@ for (const fixture of [
       src: image.getAttribute('src'),
       loaded: image.complete && image.naturalWidth === 128 && image.naturalHeight === 128,
       layer: image.dataset.layer,
-      direction: getComputedStyle(image).animationDirection,
+      animation: getComputedStyle(image).animationName,
     })),
     generatedLayersHidden: getComputedStyle(pip, '::before').display === 'none' &&
       getComputedStyle(pip, '::after').display === 'none',
@@ -1344,6 +1346,28 @@ for (const fixture of [
       if (index + 1 < await mechanicChips.count()) await page.keyboard.press('Tab')
     }
     slimeHudAccess = chips
+    slimeHudKeywordTips = []
+    slimeHudCommandTips = []
+    await page.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    })
+    for (let index = 0; index < await mechanicChips.count(); index++) {
+      const chip = mechanicChips.nth(index)
+      await page.mouse.move(5, 5)
+      await page.keyboard.down('Shift')
+      await chip.hover()
+      await page.waitForFunction((element) => document.getElementById(element.dataset.keywordHelpId)
+        ?.hasAttribute('data-open'), await chip.elementHandle())
+      slimeHudKeywordTips.push(await chip.evaluate((element) =>
+        [...document.getElementById(element.dataset.keywordHelpId).querySelectorAll('.card-keyword-tip strong')]
+          .map((tip) => tip.textContent)))
+      slimeHudCommandTips.push(await chip.evaluate((element) =>
+        [...document.getElementById(element.dataset.keywordHelpId).querySelectorAll('.card-keyword-tip')]
+          .find((tip) => tip.querySelector('strong')?.textContent === 'Current Command')
+          ?.querySelector('span')?.textContent))
+      if (index === 1) await page.screenshot({ path: join(outDir, 'downfall-slime-active-keyword-help.png') })
+      await page.keyboard.up('Shift')
+    }
     slimeHudOverlapsEndTurn = await page.evaluate(() => {
       const status = document.querySelector('.combat__slime-status')?.getBoundingClientRect()
       const endTurn = document.querySelector('.combat__end-turn')?.getBoundingClientRect()
@@ -1500,7 +1524,7 @@ downfallEnergyOrbs.hermit = await page.locator('.pip--energy').evaluate((pip) =>
     src: image.getAttribute('src'),
     loaded: image.complete && image.naturalWidth === 128 && image.naturalHeight === 128,
     layer: image.dataset.layer,
-    direction: getComputedStyle(image).animationDirection,
+    animation: getComputedStyle(image).animationName,
     })),
   generatedLayersHidden: getComputedStyle(pip, '::before').display === 'none' &&
     getComputedStyle(pip, '::after').display === 'none',
@@ -1563,6 +1587,8 @@ const triggerAfterHover = await chamberTrigger.evaluate((trigger) => ({
 const chamberHoverEffect = triggerAfterHover.transform !== triggerBeforeHover.transform &&
   triggerAfterHover.filter !== triggerBeforeHover.filter
 await chamberTrigger.click()
+await page.waitForFunction(() => [...document.querySelectorAll('.hand .card')]
+  .every((card) => card.getAnimations().every((animation) => animation.playState !== 'running')))
 const loadedHermitLayout = await page.evaluate(() => {
   const cards = [...document.querySelectorAll('.hand .card')]
   const boxes = cards.map((card) => card.getBoundingClientRect())
@@ -1874,8 +1900,8 @@ check('Downfall mechanics use compact combat HUDs without clipping the hand', ()
     guardian: ['Vigor 3'],
     hexaghost: [],
     slime_boss: [
-      'Bruiser · L2 · Vigor 3 · Cmd 1',
-      'Armored · L3 · Vigor 4 · Cmd 1',
+      'Bruiser · L2 · Strength 3 · Cmd 1',
+      'Armored · L3 · Strength 4 · Cmd 1',
     ],
     hermit: [],
   })
@@ -1901,6 +1927,18 @@ check('Downfall mechanics use compact combat HUDs without clipping the hand', ()
   assert(!slimeHudOverlapsEndTurn, 'Slime status overlaps End turn in the narrow HUD')
   assert(slimeHudAccess?.[0]?.label?.includes('ready to Command'), 'Bruiser command availability is missing')
   assert(slimeHudAccess?.[1]?.label?.includes('Command limit reached'), 'Armored command limit is missing')
+  assert(slimeHudAccess?.every((chip) => chip.label?.includes('Strength') && !chip.label.includes('Vigor')),
+    `Slime status uses Guardian terminology: ${JSON.stringify(slimeHudAccess)}`)
+  assert(slimeHudAccess?.[0]?.label?.includes('level 2 Command: deal 2 damage') &&
+    slimeHudAccess?.[1]?.label?.includes('level 3 Command: gain 6 Block, then apply 1 Vulnerable'),
+  `Slime status omits current Command rules: ${JSON.stringify(slimeHudAccess)}`)
+  assert(slimeHudKeywordTips?.[0]?.includes('Slime Hit'),
+    `active Bruiser Slime help is missing level hit rules: ${JSON.stringify(slimeHudKeywordTips)}`)
+  assert(slimeHudKeywordTips?.[1]?.includes('Vulnerable') && slimeHudKeywordTips[1].includes('Block'),
+    `active Armored Slime help is missing level rules: ${JSON.stringify(slimeHudKeywordTips)}`)
+  assertDeepEqual(slimeHudCommandTips,
+    ['level 2 Command: deal 2 damage', 'level 3 Command: gain 6 Block, then apply 1 Vulnerable'],
+    'active Slime help omits the exact current Command rule')
   assert(hermitHudLayout.setupPanelRemoved, 'Hermit Load still renders a panel over the combat stage')
   assert(targetedLoadLayout.handCardDisabled, 'targeted Hermit Curse is exposed as a dead direct-Load button')
   assertEqual(targetedLoadLayout.targetChoices, 3, 'targeted Hermit Curse does not offer every living enemy')
@@ -1944,11 +1982,8 @@ check('Downfall characters use the original PC-mod Energy orb layers', () => {
       `${character} Energy orb assets: ${JSON.stringify(orb.images)}`)
     assert(orb.generatedLayersHidden, `${character} still shows the generated Ironclad orb`)
     assert(orb.cleanBackdrop, `${character} Energy orb still has the old square backdrop`)
-    const directions = Object.fromEntries(orb.images.map(({ layer, direction }) => [layer, direction]))
-    assertDeepEqual(directions, character === 'guardian'
-      ? { 6: 'normal', 1: 'normal', 2: 'reverse', 3: 'normal', 4: 'reverse', 5: 'normal', 7: 'normal' }
-      : { 1: 'reverse', 2: 'reverse', 3: 'normal', 4: 'reverse', 5: 'normal', 6: 'normal' },
-    `${character} Energy orb rotation directions`)
+    assert(orb.images.every(({ animation }) => animation === 'none'),
+      `${character} Energy orb layers still have ambient motion: ${JSON.stringify(orb.images)}`)
   }
   assertDeepEqual(Object.keys(downfallEmptyEnergyOrbs).sort(), ['guardian', 'hermit', 'hexaghost', 'slime_boss'])
   for (const [character, images] of Object.entries(downfallEmptyEnergyOrbs)) {
@@ -1957,16 +1992,14 @@ check('Downfall characters use the original PC-mod Energy orb layers', () => {
     assert(images.every(({ src, loaded, layer }) => loaded && src?.endsWith(
       `/layer${layer}${layer === baseLayer ? '' : 'd'}.png`)),
     `${character} empty Energy orb assets: ${JSON.stringify(images)}`)
-    assert(images.every(({ layer, duration }) => duration === (layer === 1 ? '5s'
-      : layer === 2 || layer === 3 ? '45s'
-      : layer === 4 || layer === 5 ? '72s' : '0s')),
-    `${character} empty Energy orb speeds: ${JSON.stringify(images)}`)
+    assert(images.every(({ duration }) => duration === '0s'),
+      `${character} empty Energy orb layers still have ambient motion: ${JSON.stringify(images)}`)
   }
   assertEqual(guardianModeOrb?.activeTransition, '0.7s', 'Guardian mode orb transition')
   assert(guardianModeOrb?.defenseTransform?.startsWith('matrix(0.7'),
     `Guardian defense orb did not ease to 70%: ${guardianModeOrb?.defenseTransform}`)
   assertEqual(guardianModeOrb?.reducedTransition, '0s', 'Guardian reduced-motion transition')
-  assertEqual(guardianModeOrb?.mobileTransition, '0s', 'Guardian mobile-performance transition')
+  assertEqual(guardianModeOrb?.mobileTransition, '0.7s', 'Guardian mobile-performance transition')
   assert(downfallReducedMotionStopped, 'reduced motion does not stop the Downfall Energy orb layers')
 })
 await page.setViewportSize({ width: 1440, height: 900 })
@@ -2117,6 +2150,228 @@ await page.keyboard.press('Escape')
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 
 if (args.includes('--downfall-ui-only')) {
+  const downfallKeywordTips = await page.evaluate(async () => {
+    const [{ CARDS, faceOf }, { cardAccessibleName, cardKeywordTips }, { cardTypeLabel }] = await Promise.all([
+      import('/src/game/cards.ts'), import('/src/ui/Card.tsx'), import('/src/ui/CardFace.tsx'),
+    ])
+    const names = (id) => cardKeywordTips(CARDS[id]).map((tip) => tip.name)
+    return {
+      guardianModes: names('guardian_sentry_beam'),
+      guardianAccessibleName: cardAccessibleName(CARDS.guardian_sentry_beam),
+      guardianStrikeFaces: [cardAccessibleName(CARDS.guardian_strike),
+        cardAccessibleName(faceOf(CARDS.guardian_strike, true))],
+      guardianIcons: [names('guardian_sentry_beam'), names('guardian_disrupt')],
+      guardianGem: [names('guardian_prismatic_barrier'), names('guardian_gem_cannon')],
+      prismaticNoGem: [names('guardian_prismatic_barrier'), names('guardian_prismatic_spray')],
+      heat: [names('kindle'), names('bad_omen'), names('sear'), names('burning_touch')],
+      poltergeist: {
+        tips: names('poltergeist'),
+        accessibleName: cardAccessibleName(CARDS.poltergeist),
+      },
+      virus: names('virus'),
+      hermit: [names('hermit_fully_loaded'), names('hermit_snapshot'), names('hermit_itchy_trigger')],
+      rummageLoadText: cardKeywordTips(CARDS.hermit_rummage).find((tip) => tip.name === 'Load')?.text,
+      hermitReach: names('hermit_misfire'),
+      hermitNestedHits: [names('hermit_headshot'), names('hermit_golden_bullet'), names('hermit_roulette')],
+      nestedRowReach: [names('hermit_roulette'), names('forked_flame'), names('living_bomb')],
+      printedRowReach: [names('hermit_malice'),
+        cardKeywordTips(faceOf(CARDS.guardian_laser_turret, true)).map((tip) => tip.name)],
+      slimeBoss: [names('slime_boss_slime_slap'), names('slime_boss_lick'),
+        names('slime_boss_bruiser_slime'), names('slime_boss_massive_slime')],
+      slimeReach: names('slime_boss_flame_tackle'),
+      armoredSlime: names('slime_boss_armored_slime'),
+      evolutionSlime: names('slime_boss_evolution_slime'),
+      evolutionSlimeRules: cardAccessibleName(CARDS.slime_boss_evolution_slime),
+      massiveSlimeType: cardTypeLabel(CARDS.slime_boss_massive_slime),
+      massiveSlimeAccessibleName: cardAccessibleName(CARDS.slime_boss_massive_slime),
+      rawAccessibleTokens: Object.values(CARDS)
+        .filter((def) => ['guardian', 'hermit', 'hexaghost', 'slime_boss', 'colorless'].includes(def.owner))
+        .flatMap((def) => [def, faceOf(def, true)])
+        .map((def) => cardAccessibleName(def))
+        .filter((name) => name.includes('[')),
+    }
+  })
+  check('Downfall cards expose their character keywords through shared card help', () => {
+    for (const keyword of ['Guardian Modes', 'Mode Shift', 'Vigor']) {
+      assert(downfallKeywordTips.guardianModes.includes(keyword), `Sentry Beam is missing ${keyword}`)
+    }
+    assert(!downfallKeywordTips.guardianAccessibleName.includes('[') &&
+      downfallKeywordTips.guardianAccessibleName.includes('Mode Shift'),
+    `Sentry Beam accessible name has raw tokens: ${downfallKeywordTips.guardianAccessibleName}`)
+    assert(downfallKeywordTips.guardianStrikeFaces[0].includes('1 damage') &&
+      downfallKeywordTips.guardianStrikeFaces[1].includes('2 damage'),
+    `base and upgraded Guardian rules were mixed: ${JSON.stringify(downfallKeywordTips.guardianStrikeFaces)}`)
+    for (const keyword of ['Hit', 'Area effect']) {
+      assert(downfallKeywordTips.guardianIcons[0].includes(keyword), `Sentry Beam is missing ${keyword}`)
+    }
+    assert(downfallKeywordTips.guardianGem[0].includes('Area effect') &&
+      !downfallKeywordTips.guardianGem[0].includes('All in a row'),
+    'Prismatic Barrier mislabels its defensive area effect')
+    assert(downfallKeywordTips.prismaticNoGem[0].includes('Block') &&
+      !downfallKeywordTips.prismaticNoGem[0].includes('Hit') &&
+      !downfallKeywordTips.prismaticNoGem[0].includes('Vulnerable'),
+    `Prismatic Barrier infers effects from its meta rule: ${downfallKeywordTips.prismaticNoGem[0]}`)
+    assert(downfallKeywordTips.prismaticNoGem[1].includes('Hit') &&
+      !downfallKeywordTips.prismaticNoGem[1].includes('Block') &&
+      !downfallKeywordTips.prismaticNoGem[1].includes('Vulnerable'),
+    `Prismatic Spray infers effects from its meta rule: ${downfallKeywordTips.prismaticNoGem[1]}`)
+    assert(downfallKeywordTips.guardianIcons[1].includes('Vulnerable'), 'Disrupt is missing Vulnerable')
+    for (const keyword of ['Gem', 'Socket']) {
+      assert(downfallKeywordTips.guardianGem[0].includes(keyword), `Prismatic Barrier is missing ${keyword}`)
+    }
+    assert(downfallKeywordTips.guardianGem[1].includes('Gem'), 'Gem Cannon is missing Gem')
+    assert(downfallKeywordTips.heat[0].includes('Advance'), 'Kindle is missing Advance')
+    assert(downfallKeywordTips.heat[1].includes('Retract'), 'Bad Omen is missing Retract')
+    assert(downfallKeywordTips.heat[2].includes('Heat'), 'Sear is missing Heat')
+    assert(downfallKeywordTips.heat[3].includes('Soulburn'), 'Burning Touch is missing Soulburn')
+    assert(downfallKeywordTips.poltergeist.tips.includes('Retract') &&
+      downfallKeywordTips.poltergeist.accessibleName.includes('whenever you Retract'),
+    `Poltergeist is missing its additional trigger: ${JSON.stringify(downfallKeywordTips.poltergeist)}`)
+    assert(!downfallKeywordTips.virus.includes('Hit'), 'Virus non-Hit damage is mislabeled as a Hit')
+    assert(downfallKeywordTips.hermit[0].includes('Chamber') && downfallKeywordTips.hermit[0].includes('Load'),
+      'Fully Loaded is missing Chamber or Load')
+    assert(downfallKeywordTips.hermit[1].includes('Dead On'), 'Snapshot is missing Dead On')
+    assert(downfallKeywordTips.hermit[2].includes('Rapid Fire'), 'Itchy Trigger is missing Rapid Fire')
+    assertEqual(downfallKeywordTips.rummageLoadText,
+      'Store a card in the Chamber. If that slot is occupied, discard its current card first.',
+      'Rummage has an incorrect hand-only Load explanation')
+    assert(downfallKeywordTips.hermitReach.includes('All in a row'), 'Misfire is missing row reach')
+    assert(downfallKeywordTips.hermitNestedHits.every((tips) => tips.includes('Hit')),
+      `nested Hermit hits are missing: ${JSON.stringify(downfallKeywordTips.hermitNestedHits)}`)
+    assert(downfallKeywordTips.nestedRowReach.every((tips) => tips.includes('All in a row')),
+      `nested row effects are missing their reach: ${JSON.stringify(downfallKeywordTips.nestedRowReach)}`)
+    assert(downfallKeywordTips.printedRowReach.every((tips) => tips.includes('All in a row')),
+      `printed row effects are missing their reach: ${JSON.stringify(downfallKeywordTips.printedRowReach)}`)
+    assert(downfallKeywordTips.slimeBoss[0].includes('Grow'), 'Slime Slap is missing Grow')
+    assert(downfallKeywordTips.slimeBoss[1].includes('Command'), 'Lick is missing Command')
+    assert(downfallKeywordTips.slimeBoss[2].includes('Slime'), 'Bruiser Slime is missing Slime')
+    assert(downfallKeywordTips.slimeBoss[2].includes('Slime Hit'), 'Bruiser Slime is missing its level hit rules')
+    assert(downfallKeywordTips.slimeBoss[3].includes('Slime') &&
+      !downfallKeywordTips.slimeBoss[3].includes('Power'), 'Massive Slime is mislabeled as a Power')
+    assert(downfallKeywordTips.slimeBoss[3].includes('Hit') &&
+      downfallKeywordTips.slimeBoss[3].includes('Slime Hit'), 'Massive Slime is missing one of its hit rule sets')
+    assert(downfallKeywordTips.slimeReach.includes('All Enemies'), 'Flame Tackle is missing all-enemy reach')
+    assert(downfallKeywordTips.armoredSlime.includes('Vulnerable') &&
+      downfallKeywordTips.armoredSlime.includes('Block'), 'Armored Slime is missing its level rules')
+    assert(downfallKeywordTips.evolutionSlime.includes('Strength'),
+      'Evolution Slime is missing its level Strength rules')
+    assert(downfallKeywordTips.evolutionSlime.includes('All Enemies'),
+      'Evolution Slime is missing its level 3 all-enemy Command reach')
+    assert(downfallKeywordTips.evolutionSlimeRules.includes('level 1 Command:') &&
+      downfallKeywordTips.evolutionSlimeRules.includes('level 3 Command against every enemy:') &&
+      downfallKeywordTips.evolutionSlimeRules.includes(
+        'level 6 Command against every enemy: deal 6 damage, then gain 2 Block, then gain 1 Strength'),
+    `Evolution Slime accessible rules omit its Commands: ${downfallKeywordTips.evolutionSlimeRules}`)
+    assert(downfallKeywordTips.massiveSlimeType === 'Slime', 'Massive Slime face is mislabeled')
+    assert(downfallKeywordTips.massiveSlimeAccessibleName.includes(', Slime,') &&
+      !downfallKeywordTips.massiveSlimeAccessibleName.includes(', Power,'),
+    'Massive Slime accessible name is mislabeled')
+    assertDeepEqual(downfallKeywordTips.rawAccessibleTokens, [],
+      'Downfall accessible card names contain raw icon tokens')
+  })
+  await page.evaluate((run) => {
+    const next = structuredClone(run)
+    const player = next.combat.players[0]
+    Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+    Object.assign(player, {
+      character: 'guardian', guardianMode: 'attack', energy: 3,
+      hand: [{ uid: 'ui-keyword-socketed-strike', defId: 'guardian_strike', upgraded: false,
+        attachedGemId: 'guardian_amethyst' },
+      { uid: 'ui-keyword-crystallized-strike', defId: 'guardian_strike', upgraded: false },
+      { uid: 'ui-keyword-crystallize-hand', defId: 'guardian_crystallize', upgraded: false,
+        attachedGemId: 'guardian_ruby' }],
+      powers: [
+        { uid: 'ui-keyword-crystallize', defId: 'guardian_crystallize', upgraded: false,
+          attachedGemId: 'guardian_ruby' },
+        { uid: 'ui-keyword-socketed-power', defId: 'guardian_floating_orbs', upgraded: false,
+          attachedGemId: 'guardian_ruby' },
+      ],
+    })
+    next.combat.players = [player]
+    window.__STS_DEBUG__.setRun(next)
+  }, combatAppearanceRun)
+  const socketedKeywordCards = [{
+    card: page.getByRole('button', { name: /^Strike,.*socketed with Amethyst:/ }), expected: 'Mode Shift',
+  }, {
+    card: page.getByRole('button', { name: /^Strike,.*socketed with Ruby:/ }), expected: 'Gem Power damage',
+  }, {
+    card: page.getByRole('button', { name: /^Crystallize, cost 1,.*socketed with Ruby:/ }),
+    expected: 'Gem Power damage', excluded: 'Hit',
+  }, {
+    card: page.getByRole('button', { name: /^Floating Orbs,.*socketed with Ruby: 1 damage\./ }),
+    expected: 'Gem', excluded: 'Hit',
+  }]
+  const socketedKeywordTips = []
+  await page.keyboard.down('Shift')
+  for (const [index, { card: socketedKeywordCard, expected, excluded }] of socketedKeywordCards.entries()) {
+    await socketedKeywordCard.hover()
+    await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)
+      ?.hasAttribute('data-open'), await socketedKeywordCard.elementHandle())
+    const tips = await socketedKeywordCard.evaluate((card) =>
+      [...document.getElementById(card.dataset.keywordHelpId).querySelectorAll('.card-keyword-tip')]
+        .map((tip) => ({ name: tip.querySelector('strong')?.textContent, text: tip.lastElementChild?.textContent })))
+    socketedKeywordTips.push({ names: tips.map((tip) => tip.name), tips, expected, excluded })
+    if (index === 3) await shot('downfall-guardian-socketed-power-keyword-help')
+  }
+  const floatingOrbsGem = await page.locator('.power__zoom .card__gem').getAttribute('title')
+  check('socketed hand cards and Powers include their exact attached Gem in shared card help', () => {
+    assert(socketedKeywordTips.every(({ names, expected, excluded }) =>
+      names.includes(expected) && !names.includes('Unplayable') && (!excluded || !names.includes(excluded))),
+      `attached Gem help is wrong: ${JSON.stringify(socketedKeywordTips)}`)
+    assert(socketedKeywordTips[0].names.includes('Amethyst'),
+      `Amethyst rule is not visible: ${JSON.stringify(socketedKeywordTips[0])}`)
+    assert(socketedKeywordTips[1].names.includes('Hit') &&
+      socketedKeywordTips[1].names.includes('Gem Power damage'),
+    `Crystallize inheritance omits its Gem Power exception: ${JSON.stringify(socketedKeywordTips[1])}`)
+    assert(socketedKeywordTips[2].names.includes('Ruby') &&
+      socketedKeywordTips[2].names.includes('Gem Power damage'),
+    `in-hand Gem Power exception is not visible: ${JSON.stringify(socketedKeywordTips[2])}`)
+    assert(socketedKeywordTips[3].names.includes('Ruby') &&
+      socketedKeywordTips[3].names.includes('Gem Power damage') &&
+      socketedKeywordTips[3].tips.find((tip) => tip.name === 'Ruby')?.text === '1 damage.' &&
+      socketedKeywordTips[3].tips.find((tip) => tip.name === 'Gem Power damage')?.text
+        .includes('ignores Strength, Weak, Vulnerable, and Vigor'),
+    `Gem Power exception is not visible: ${JSON.stringify(socketedKeywordTips[3])}`)
+    assert(floatingOrbsGem?.startsWith('Ruby: 1 damage.'), floatingOrbsGem)
+  })
+  await page.keyboard.up('Shift')
+  await page.mouse.move(5, 5)
+  await page.evaluate((run) => {
+    const next = structuredClone(run)
+    const player = next.combat.players[0]
+    Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+    Object.assign(player, {
+      character: 'guardian', guardianMode: 'attack', energy: 3,
+      hand: [{ uid: 'ui-prismatic-barrier-row', defId: 'guardian_prismatic_barrier', upgraded: false,
+        attachedGemId: 'guardian_ruby' }],
+      powers: [],
+    })
+    next.combat.players = [player]
+    window.__STS_DEBUG__.setRun(next)
+  }, combatAppearanceRun)
+  await page.getByRole('button', { name: /^Prismatic Barrier,/ }).click()
+  const prismaticBarrierPrompt = await page.locator('.prompt').textContent()
+  check('Prismatic Barrier advertises the row hit from an offensive attached Gem', () => {
+    assert(/whole row/.test(prismaticBarrierPrompt ?? ''),
+      `Prismatic Barrier prompt omits its attached Gem row: ${prismaticBarrierPrompt}`)
+  })
+  await page.evaluate((run) => {
+    const next = structuredClone(run)
+    const player = next.combat.players[0]
+    Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+    Object.assign(player, {
+      character: 'hexaghost', heat: 2, soulburn: 0, hand: [],
+      powers: [{ uid: 'ui-keyword-poltergeist-power', defId: 'poltergeist', upgraded: false }],
+    })
+    next.combat.players = [player]
+    window.__STS_DEBUG__.setRun(next)
+  }, combatAppearanceRun)
+  const poltergeistPowerLabel = await page.locator('.power[aria-label^="Poltergeist,"]').getAttribute('aria-label')
+  check('played Downfall Powers keep their complete accessible rules', () => {
+    assert(poltergeistPowerLabel?.includes('whenever you Advance') &&
+      poltergeistPowerLabel.includes('whenever you Retract'),
+    `played Poltergeist omits a trigger: ${poltergeistPowerLabel}`)
+  })
   await page.setViewportSize({ width: 1518, height: 720 })
   await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), oneLoadedHermitRun)
   await page.waitForFunction(() => document.querySelector('.hermit-chamber-trigger'))
@@ -2129,6 +2384,23 @@ if (args.includes('--downfall-ui-only')) {
     await page.locator('.hermit-chamber-trigger').click()
   }
   await page.locator('.hand .card--chamber-drawn').waitFor()
+  const downfallKeywordCard = page.locator('.hand .card--chamber-drawn')
+  await page.keyboard.down('Shift')
+  await downfallKeywordCard.hover()
+  await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+    await downfallKeywordCard.elementHandle())
+  const downfallKeywordBoard = await downfallKeywordCard.evaluate((card) => ({
+    describedBy: Boolean(card.getAttribute('aria-describedby')),
+    tips: [...document.getElementById(card.dataset.keywordHelpId).querySelectorAll('.card-keyword-tip strong')]
+      .map((tip) => tip.textContent),
+  }))
+  check('a Downfall Chamber card renders accessible keyword help on hover', () => {
+    assert(downfallKeywordBoard.describedBy)
+    assert(downfallKeywordBoard.tips.includes('Dead On'))
+  })
+  await shot('downfall-hermit-keyword-help')
+  await page.keyboard.up('Shift')
+  await page.mouse.move(5, 5)
   await page.waitForTimeout(400)
   const chamberStartDistance = await page.evaluate(() => {
     const card = document.querySelector('.hand .card--chamber-drawn')?.getBoundingClientRect()
@@ -2467,9 +2739,9 @@ await page.evaluate((run) => {
   const player = next.combat.players[0]
   next.combat.enemies = [next.combat.enemies[0]]
   Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
-  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, vulnerable: 1, dead: false })
   Object.assign(player, {
-    character: 'guardian', guardianMode: 'attack', vigor: 0, strength: 0, weak: 0, hand: [
+    character: 'guardian', guardianMode: 'attack', vigor: 0, strength: 2, weak: 1, hand: [
       { uid: 'ui-jasper-a', defId: 'guardian_defend', upgraded: false },
       { uid: 'ui-jasper-b', defId: 'guardian_strike', upgraded: false },
     ], exhaust: [], powers: [
@@ -2497,7 +2769,8 @@ await page.getByRole('button', { name: 'Confirm 2' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].exhaust.length === 2)
 downfallChoiceResults.guardianPowerGems = await page.evaluate(() => {
   const combat = window.__STS_DEBUG__.getRun().combat
-  return [combat.enemies[0].hp, combat.players[0].exhaust.length]
+  return [combat.enemies[0].hp, combat.players[0].exhaust.length,
+    combat.players[0].weak, combat.enemies[0].vulnerable]
 })
 
 await page.evaluate((run) => {
@@ -2861,8 +3134,8 @@ check('Downfall combat choices are reachable from the real card UI', () => {
     'Defense Mode Guardian Whirl keeps its Attack discount and targets an ally')
   assertDeepEqual(downfallChoiceResults.guardianPowerBeam, [3, 17, true],
     'Defense Mode Power Beam chooses and plays a Power for 0 Energy')
-  assertDeepEqual(downfallChoiceResults.guardianPowerGems, [19, 2],
-    'Floating Orbs collects offensive and private Jasper socket choices')
+  assertDeepEqual(downfallChoiceResults.guardianPowerGems, [19, 2, 1, 1],
+    'Gem Power damage ignores Strength, Weak, Vulnerable, and Vigor')
   assertDeepEqual(downfallChoiceResults.guardianGemFinder,
     [['ui-finder-jasper-draw-b'], ['ui-finder-exhaust-a']],
     'Gem Finder submits private Scry and socketed Gem choices atomically')

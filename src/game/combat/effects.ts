@@ -635,11 +635,11 @@ function resolveGuardianCard(
     case 'guardian_resilient_plate': block((upgraded ? 4 : 3) + (defense ? powers : 0)); break
     case 'guardian_overload': draw(upgraded ? 5 : 4); break
     case 'guardian_prismatic_barrier': block(upgraded ? 2 : 1, true, 'allPlayers'); break
-    case 'guardian_prismatic_spray': hit(upgraded ? 2 : 1, undefined, 'allEnemies'); break
+    case 'guardian_prismatic_spray': hit(upgraded ? 2 : 1, undefined, 'row'); break
     case 'guardian_tune_up': block(upgraded ? 3 : 2); if (attack) doEffect({ kind: 'discountNextAttack' }); break
     case 'guardian_stasis_field': doEffect({ kind: 'blockChoices', amount: 1, targets: upgraded ? 4 : 3 }, scope, 'anyPlayer'); break
     case 'guardian_strike_for_strike': hit(upgraded ? 2 : 1); if (attack) doEffect({ kind: 'gainBlockFromLastHit' }); break
-    case 'guardian_sentry_beam': hit(upgraded ? 4 : 3, undefined, 'allEnemies'); if (attack) { vigor(); modeShift() } break
+    case 'guardian_sentry_beam': hit(upgraded ? 4 : 3, undefined, 'row'); if (attack) { vigor(); modeShift() } break
     case 'guardian_disrupt': block(upgraded ? 2 : 1); doEffect({ kind: 'applyVulnerable', amount: 1 }); break
     case 'guardian_charge_core': vigor(); break
     case 'guardian_crystal_edge': hit(upgraded ? 2 : 1); draw(1); break
@@ -653,10 +653,10 @@ function resolveGuardianCard(
     case 'guardian_suspension': block(upgraded ? 2 : 1); if (otherGemsInHand > 0) block(1); break
     case 'guardian_fortify': block(upgraded ? 3 : 2); if (attack) draw(2); break
     case 'guardian_walker_claw': hit(1, upgraded ? 3 : 2); break
-    case 'guardian_roll_attack': hit(actor.block, undefined, upgraded ? 'allEnemies' : scope); break
+    case 'guardian_roll_attack': hit(actor.block, undefined, upgraded ? 'row' : scope); break
     case 'guardian_orbwalk': break
-    case 'guardian_guardian_whirl': if (attack) hit(x + Number(upgraded), undefined, 'allEnemies'); else block(x + Number(upgraded), true, 'anyPlayer'); break
-    case 'guardian_vent_steam': if (attack) doEffect({ kind: 'applyVulnerable', amount: 1 }, upgraded ? 'allEnemies' : scope); else doEffect({ kind: 'applyWeak', amount: 1 }, upgraded ? 'allEnemies' : scope); break
+    case 'guardian_guardian_whirl': if (attack) hit(x + Number(upgraded), undefined, 'row'); else block(x + Number(upgraded), true, 'anyPlayer'); break
+    case 'guardian_vent_steam': if (attack) doEffect({ kind: 'applyVulnerable', amount: 1 }, upgraded ? 'row' : scope); else doEffect({ kind: 'applyWeak', amount: 1 }, upgraded ? 'row' : scope); break
     case 'guardian_turbocharge':
       if (context.sourcePowerUid) {
         attack ? vigor() : doEffect({ kind: 'gainEnergy', amount: 1 })
@@ -728,7 +728,7 @@ function resolveGuardianCard(
     case 'guardian_body_crash': { const paid = Math.min(actor.block, context.guardianBlockSpend ?? 0); actor.block -= paid; hit(paid * paid); break }
     case 'guardian_spiker_protocol': if (context.sourcePowerUid) doEffect({ kind: 'damagePerAttackIntent', amount: upgraded ? 4 : 3 }); break
     case 'guardian_evade': block(upgraded ? 3 : 2); if (defense) block(actor.block); break
-    case 'guardian_giga_beam': if (attack) { hit(upgraded ? 7 : 5, undefined, 'allEnemies'); actor.guardianMode = 'attack'; actor.guardianModeLocked = true } break
+    case 'guardian_giga_beam': if (attack) { hit(upgraded ? 7 : 5, undefined, 'row'); actor.guardianMode = 'attack'; actor.guardianModeLocked = true } break
     case 'guardian_revenge_protocol': break
     case 'guardian_armored_protocol': break
     case 'guardian_gem_finder':
@@ -761,7 +761,7 @@ function resolveGuardianCard(
     case 'guardian_floating_orbs': break
     case 'guardian_time_capacitor': vigor(powers); break
     case 'guardian_destroy': hit((upgraded ? 5 : 4) + gemsInHand * (upgraded ? 5 : 4)); break
-    case 'guardian_refracted_beam': if (attack) hit(0, upgraded ? 4 : 3, 'allEnemies'); else for (let i = 0; i < (upgraded ? 4 : 3); i++) block(0, true, 'allPlayers'); break
+    case 'guardian_refracted_beam': if (attack) hit(0, upgraded ? 4 : 3, 'row'); else for (let i = 0; i < (upgraded ? 4 : 3); i++) block(0, true, 'allPlayers'); break
     case 'guardian_forecasting': if (context.sourcePowerUid && defense) {
       const before = new Set(actor.hand.map((card) => card.uid))
       draw(2)
@@ -776,7 +776,7 @@ function resolveGuardianCard(
     if (id === 'guardian_bauble_burst' && context.sourceAttachedGemId === 'guardian_jasper') {
       doEffect({ kind: 'exhaustAny', amount: 6 })
     } else {
-      const gemScope = prismatic ? 'allEnemies' : scope
+      const gemScope = prismatic ? 'row' : scope
       const gemSupportScope = prismatic ? 'allPlayers' : supportScope
       resolveGuardianGem(state, actor, context.sourceAttachedGemId,
         gemScope, gemSupportScope, context, source)
@@ -796,8 +796,22 @@ function resolveGuardianGem(
 ): void {
   const otherGemsInHand = actor.hand.filter((held) => held.uid !== context.sourceCardUid &&
     cardDef(held.defId).guardian?.printedType.startsWith('Gem')).length
+  const sourcePower = context.sourcePowerUid
+    ? actor.powers.find((power) => power.uid === context.sourcePowerUid)
+    : undefined
+  const sourceFace = context.sourceCardId
+    ? faceOf(cardDef(context.sourceCardId), context.sourceCardUpgraded ?? false)
+    : sourcePower
+      ? faceOf(cardDef(sourcePower.defId), sourcePower.upgraded)
+      : undefined
+  const inheritedFromCrystallize = context.sourceCardId !== undefined &&
+    isStarterStrikeOrDefend(context.sourceCardId, 'Strike') && actor.powers.some((power) =>
+      power.defId === 'guardian_crystallize' && power.attachedGemId === id)
+  const gemContext = sourceFace?.guardian?.printedType === 'Gem Power' || inheritedFromCrystallize
+    ? { ...context, guardianGemPowerDamage: true }
+    : context
   const doEffect = (effect: Effect, targetScope = scope, allyScope = supportScope) =>
-    applyEffect(state, actor, effect, targetScope, allyScope, context, source)
+    applyEffect(state, actor, effect, targetScope, allyScope, gemContext, source)
   switch (id) {
     case 'guardian_amethyst': if (context.guardianModeShift) shiftGuardianModeLive(state, actor); break
     case 'guardian_emerald': doEffect({ kind: 'applyWeak', amount: 1 }); break
@@ -838,7 +852,8 @@ export function applyEffect(
   deferVulnerableSpend = false,
 ): void {
   const slimeCommand = context.slimeCommand === true
-  const mods = slimeCommand
+  const ignoresHitModifiers = slimeCommand || context.guardianGemPowerDamage === true
+  const mods = ignoresHitModifiers
     ? { strength: 0, weak: 0, wrath: false, wrathAttackDamageBonus: 0 }
     : attackerModsOfPlayer(actor)
   /** Who the log should credit: the ongoing effect if there is one, else the player. */
@@ -924,7 +939,7 @@ export function applyEffect(
         const sourceFace = context.sourceCardId
           ? faceOf(cardDef(context.sourceCardId), context.sourceCardUpgraded ?? false)
           : undefined
-        const guardianDamageBonus = actor.guardianMode === 'attack' &&
+        const guardianDamageBonus = !ignoresHitModifiers && actor.guardianMode === 'attack' &&
           (context.sourceCardType === 'attack' || context.sourceCardType === 'skill')
           ? actor.vigorSpentThisTurn * (actor.powers.some((power) => power.defId === 'guardian_orbwalk') ? 2 : 1)
           : 0
@@ -955,7 +970,7 @@ export function applyEffect(
           const slow = abilities.find((ability) => ability.kind === 'slow')
           const flying = abilities.find((ability) => ability.kind === 'flying')
           let amount = each + (slow?.kind === 'slow' ? slow.damagePerHit : 0)
-          amount = hitDamage(amount, mods, { vulnerable: slimeCommand ? 0 : vulnerableAtStart })
+          amount = hitDamage(amount, mods, { vulnerable: ignoresHitModifiers ? 0 : vulnerableAtStart })
           if (actor.damageDealtZeroThisTurn) amount = 0
           if (flying?.kind === 'flying') amount = Math.min(amount, flying.maxDamagePerHit)
           const result = damageEnemy(state, target, amount, !slimeCommand && context.sourceCardType !== undefined)
@@ -979,7 +994,9 @@ export function applyEffect(
             if (gained > 0) poisonEvents += 1
           }
         }
-        if (!slimeCommand && !deferVulnerableSpend && vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
+        if (!ignoresHitModifiers && !deferVulnerableSpend && vulnerableAtStart > 0) {
+          target.vulnerable = vulnerableAtStart - 1
+        }
         // One line for the whole attack, not one per swing: a five-hit card
         // would otherwise bury the round in near-identical lines.
         const name = enemyLabel(state.enemies, target)
@@ -1012,7 +1029,8 @@ export function applyEffect(
       }
       // The attacker's own Weak is spent by attacking, exactly as an enemy's is
       // (p.24). One token per attack, however many targets or hits it had.
-      if (!slimeCommand && !deferWeakSpend && targets.length > 0 && actor.weak > 0 && !playerWeakIsRetained(state)) {
+      if (!ignoresHitModifiers && !deferWeakSpend && targets.length > 0 && actor.weak > 0 &&
+        !playerWeakIsRetained(state)) {
         actor.weak -= 1
         // Logged because it is usually the reason the attack underperformed.
         note(`${actor.name} spends a Weak`)

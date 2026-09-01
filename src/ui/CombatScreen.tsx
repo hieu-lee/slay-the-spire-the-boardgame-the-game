@@ -138,7 +138,7 @@ import { chosenDieRelicAbilities, potionDef, relicDef } from '../game/relics.ts'
 import { CAPS, DOWNFALL_CHARACTER_IDS } from '../game/types.ts'
 import type { CardInstance, DownfallCharacterId, Enemy, Player } from '../game/types.ts'
 import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
-import { Card } from './Card.tsx'
+import { Card, CardKeywordHelp, slimeCommandText } from './Card.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
@@ -627,8 +627,13 @@ function CombatScreenView({
     }
   }, [chamberOpen, viewerId])
 
+  function handCardElements() {
+    return Array.from(handRef.current?.children ?? []).filter((element): element is HTMLElement =>
+      element instanceof HTMLElement && element.classList.contains('card'))
+  }
+
   function handCardRects(cards: readonly CardInstance[]) {
-    const elements = Array.from(handRef.current?.children ?? [])
+    const elements = handCardElements()
     return new Map(cards.flatMap((card, index) => {
       const element = elements[index]
       return element instanceof HTMLElement ? [[card.uid, element.getBoundingClientRect()] as const] : []
@@ -640,7 +645,7 @@ function CombatScreenView({
     if (chamberReflowFrame.current !== null) window.cancelAnimationFrame(chamberReflowFrame.current)
     chamberReflowFrame.current = window.requestAnimationFrame(() => {
       chamberReflowFrame.current = null
-      const elements = Array.from(handRef.current?.children ?? [])
+      const elements = handCardElements()
       cards.forEach((card, index) => {
         const element = elements[index]
         const prior = before.get(card.uid)
@@ -666,7 +671,7 @@ function CombatScreenView({
     }
     const cards = [...viewer.chamber, ...viewer.hand]
     const before = handCardRects(cards)
-    const elements = Array.from(handRef.current?.children ?? [])
+    const elements = handCardElements()
     const target = chamberTriggerRef.current?.getBoundingClientRect()
     if (!target || elements.length < viewer.chamber.length) {
       setChamberClosing(false)
@@ -3114,7 +3119,6 @@ function CombatScreenView({
   function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>, chamber = false) {
     if (event.button !== 0) return
     const canDrag = chamber ? chamberCardCanStartDrag(card) : cardCanStartDrag(card)
-    const def = faceOf(cardDef(card.defId), card.upgraded)
     const staged = chamber ? stageHermitChamberViewer(viewer!, card,
       state.pendingHermitChamberPlays?.[0]?.playerId === viewerId &&
       state.pendingHermitChamberPlays[0].cardUids[0] === card.uid &&
@@ -3128,7 +3132,7 @@ function CombatScreenView({
       startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
       needsEnemy: pending?.needsEnemy ?? false,
       needsPlayer: pending ? !pending.needsEnemy && (pending.needsAlly || pending.playerChoices > 0) : false,
-      hitsRow: def.target === 'row',
+      hitsRow: pending?.hitsRow ?? false,
       element: event.currentTarget,
       scrollElement,
       scrollLeft: scrollElement?.scrollLeft ?? 0,
@@ -3943,16 +3947,21 @@ function CombatScreenView({
         {viewer.character === 'slime_boss' && viewer.slimes.length > 0 ? (
           <span className="combat__slime-status" aria-label="Slime status">
             {viewer.slimes.map((slime) => {
-              const def = cardDef(slime.card.defId)
+              const def = faceOf(cardDef(slime.card.defId), slime.card.upgraded)
               const name = def.name.replace(/ Slime\+?$/, '')
               const commandReady = def.slimeCommandLimit === undefined ||
                 slime.commandsThisTurn < def.slimeCommandLimit
-              return <span key={slime.card.uid} tabIndex={0}
-                aria-label={`${def.name}, level ${slime.level}, Vigor ${slime.vigor}, ` +
-                  `${slime.commandsThisTurn} Commands this turn, ` +
-                  (commandReady ? 'ready to Command' : 'Command limit reached')}>
-                {name} · L{slime.level} · Vigor {slime.vigor} · Cmd {slime.commandsThisTurn}
-              </span>
+              const commandText = slimeCommandText(def, slime.level)
+              return <CardKeywordHelp key={slime.card.uid} def={def}
+                extraTips={[{ name: 'Current Command', text: commandText }]}>{(keywordHelpProps) => (
+                <span {...keywordHelpProps} className="combat__slime-chip" tabIndex={0}
+                  aria-label={`${def.name}, level ${slime.level}, Strength ${slime.vigor}, ` +
+                    `${slime.commandsThisTurn} Commands this turn, ` +
+                    `${commandReady ? 'ready to Command' : 'Command limit reached'}, ` +
+                    commandText}>
+                  {name} · L{slime.level} · Strength {slime.vigor} · Cmd {slime.commandsThisTurn}
+                </span>
+              )}</CardKeywordHelp>
             })}
           </span>
         ) : null}
@@ -5775,6 +5784,7 @@ function CombatScreenView({
               style={{ '--deal-index': index } as React.CSSProperties}
               fan={fanOf(index, visibleHand.length)}
               card={chamberCard ? displayedCard : shownCard}
+              gemPowerDamage={attachedGemId !== card.attachedGemId || undefined}
               cost={card.uid === forcedCardUid ? 0 : playCost(def, cardViewer, displayedCard)}
               playable={chamberCard ? chamberPlayable : hermitSetupPending ? setupPlayable :
                 !usingCard &&

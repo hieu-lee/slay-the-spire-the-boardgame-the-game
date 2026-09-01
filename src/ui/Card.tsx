@@ -6,7 +6,7 @@ import type { CardDef } from '../game/cards.ts'
 import type { Amount, Condition, CountOf, Effect, EnemyTokenKind } from '../game/cards.ts'
 import type { HandEndOfTurnEffect } from '../game/cards.ts'
 import { cardThumbPath } from '../game/assets.ts'
-import { CardFace } from './CardFace.tsx'
+import { CardFace, cardTypeLabel } from './CardFace.tsx'
 import { Icon, StatusIcon } from './Icon.tsx'
 import type { IconName, StatusIconName } from './icons.ts'
 import type { CardInstance } from '../game/types.ts'
@@ -23,6 +23,8 @@ type CardProps = {
   selected?: boolean
   /** Chosen as the subject of another card's discard or exhaust effect. */
   picked?: boolean
+  /** The attached Gem came from a Gem Power such as Crystallize. */
+  gemPowerDamage?: boolean
   /** Position in the fan, -1 (leftmost) to 1 (rightmost), 0 in the middle. */
   fan?: number
   onClick?: (card: CardInstance) => void
@@ -165,6 +167,13 @@ function timesText(times: Amount): string {
 }
 
 function effectText(effect: Effect): string {
+  if ((effect as { kind: string }).kind === 'gainSlimeVigor') {
+    const slimeEffect = effect as unknown as {
+      amount: number; temporary?: boolean; commandAfter?: boolean
+    }
+    return `gain ${slimeEffect.amount} Strength${slimeEffect.commandAfter ? ', then Command it' : ''}` +
+      `${slimeEffect.temporary ? `, lose that ${slimeEffect.amount} Strength at end of turn` : ''}`
+  }
   const condition = effect.when ? ` if ${conditionText(effect.when)}` : ''
   switch (effect.kind) {
     case 'sequence': return `${effect.effects.map(effectText).join(', then ')}${condition}`
@@ -369,23 +378,23 @@ function handEndOfTurnText(effect: HandEndOfTurnEffect): string {
   }
 }
 
-const rulesTextCache = new Map<string, string>()
-
 const CARD_KEYWORD_TIPS = [
   ['Ethereal', /\bethereal\b/i, 'If this card is in your hand at end of turn, Exhaust it.'],
   ['Exhaust', /__exhaust__/, 'An Exhausted card is removed for this combat and returns to its deck afterward.'],
   ['Retain', /\bretain(?:ed)?\b/i, 'A retained card stays in its owner’s hand at end of turn.'],
   ['Scry', /\bscry\b/i, 'Look at the top cards of your draw pile. Discard any, then return the rest on top in the same order.'],
-  ['All in a row', /\baffects a whole row\b/i, 'Affects all enemies in one row and always also the boss.', 'aoe'],
-  ['All Enemies', /\baffects every enemy\b/i, 'Affects every row and the boss.'],
+  ['All in a row', /\baffects a whole row\b|__row__/i, 'Affects all enemies in one row and always also the boss.', 'aoe'],
+  ['All Enemies', /\baffects every enemy\b|__all_enemies__/i, 'Affects every row and the boss.'],
+  ['Area effect', /\[aoe\]/i, 'Applies the marked effect to its whole group: damage or debuffs affect one enemy row and the boss; Block affects every player.', 'aoe'],
   ['Unplayable', /\bunplayable\b/i, 'This card cannot be played.'],
-  ['Hit', /__hit__/, 'Damage modified by Strength, Weak, and Vulnerable.', 'attack'],
+  ['Hit', /__hit__/i, 'Damage modified by Strength, Weak, and Vulnerable.', 'attack'],
+  ['Slime Hit', /__slime_hit__/, 'Only this Slime’s Strength modifies these hits; enemy Vulnerable and Slime Boss Attack modifiers do not.', 'attack'],
   ['Status', /\bstatus\b/i, 'A temporary card that leaves your deck after combat.'],
-  ['Vulnerable', /\bvulnerable\b/i, 'Each hit against this target is doubled, then removes 1 Vulnerable.', 'vulnerable'],
-  ['Weak', /\bweak\b/i, 'Each hit this character deals gets −1 damage, then removes 1 Weak.', 'weak'],
-  ['Strength', /\bstrength\b/i, 'Adds 1 damage to every hit for each Strength. Maximum 8.', 'strength'],
-  ['Poison', /\bpoison(?:ed)?\b/i, 'At end of turn, the enemy loses 1 HP per Poison. Block does not stop it.', 'poison'],
-  ['Block', /\bblock(?:ed|ing)?\b/i, 'Prevents 1 damage per Block. Player Block is capped at 20.', 'block'],
+  ['Vulnerable', /\bvulnerable\b|\[debuff\]/i, 'Each hit against this target is doubled, then removes 1 Vulnerable.', 'vulnerable'],
+  ['Weak', /\bweak\b|__weak__/i, 'Each hit this character deals gets −1 damage, then removes 1 Weak.', 'weak'],
+  ['Strength', /\bstrength\b|__strength__/i, 'Adds 1 damage to every hit for each Strength. Maximum 8.', 'strength'],
+  ['Poison', /\bpoison(?:ed)?\b|__poison__/i, 'At end of turn, the enemy loses 1 HP per Poison. Block does not stop it.', 'poison'],
+  ['Block', /\bblock(?:ed|ing)?\b|__block__/i, 'Prevents 1 damage per Block. Player Block is capped at 20.', 'block'],
   ['Daze', /\bdaze\b/i, 'A Daze is Ethereal and Unplayable.', 'daze'],
   ['Burn', /\bburn\b/i, 'If Burn remains in your hand at end of turn, take its damage.', 'burn'],
   ['Shiv', /\bshivs?\b/i, 'Spend a Shiv to deal 1 damage as a separate hit. Shivs are not cards.', 'shiv'],
@@ -399,14 +408,41 @@ const CARD_KEYWORD_TIPS = [
   ['Orb', /\borbs?\b|__orb__/i, 'Channel into an open slot; if every slot is full, Evoke an Orb first.', undefined, 'orb'],
   ['Power', /\bpowers?\b/i, 'A played Power stays face-up until Exhausted or combat ends.', undefined, 'power'],
   ['Energy', /\benergy\b/i, 'Spend Energy to play cards. Unspent Energy is normally lost at end of turn.', 'energy'],
+  ['Grow', /\bgrow\b/i, 'Choose a Slime and increase its level by 1, up to its maximum.'],
+  ['Command', /\bcommand\b/i, 'Choose a Slime and activate the ability at its current level.'],
+  ['Slime', /\bslimes?\b|__slime__/i, 'A played Slime stays in your Powers area for combat. Its level determines its Command ability.'],
+  ['Heat', /\bheat\b/i, 'Hexaghost starts at 1 Heat and can have 1–6. Some cards gain bonuses at a Heat threshold.'],
+  ['Advance', /\badvance\b/i, 'Gain 1 Heat. At Heat 6, this still counts as an Advance.'],
+  ['Retract', /\bretract\b/i, 'Lose 1 Heat. At Heat 1, this still counts as a Retract.'],
+  ['Soulburn', /\bsoulburns?\b/i, 'Spend whenever you could play a card to deal damage equal to your Heat. Soulburns are not cards. Maximum 6.'],
+  ['Guardian Modes', /\b(?:Attack|Defense) Mode\b/i, 'Card effects may change by Mode; being in a Mode has no passive effect by itself.'],
+  ['Mode Shift', /\bmode shift\b|\[mode-shift\]/i, 'Switch between Attack Mode and Defense Mode.'],
+  ['Vigor', /\bvigor\b|\[vigor\]/i, 'Spend whenever you could play a card. Each spent Vigor adds +1 per hit in Attack Mode or +1 per Block icon in Defense Mode on your Attacks and Skills this turn. Maximum 4.'],
+  ['Gem', /\bgems?\b|__guardian_gem__/i, 'A transparent Gem permanently augments the Guardian card it is attached to.'],
+  ['Socket', /\bsocket\b/i, 'When you add this card to your deck, reveal and attach a Guardian Gem to it.'],
+  ['Chamber', /\bchamber\b/i, 'Stores cards outside your hand. They stay between turns and can be played normally.'],
+  ['Load', /\bload(?:ed|ing)?\b/i, 'Store a card in the Chamber. If that slot is occupied, discard its current card first.'],
+  ['Dead On', /\bdead on\b/i, 'Gain the listed bonus when this card is played from the Chamber.'],
+  ['Rapid Fire', /\brapid fire\b/i, 'Play the card one additional time per Rapid Fire. Each copy may choose a different target and cannot trigger Rapid Fire again.'],
 ] as const
 
+export function slimeCommandText(def: CardDef, level: number): string {
+  const effects = def.slimeLevels?.[level]
+  if (!effects) return ''
+  const allEnemies = def.slimeTarget === 'allEnemies' ||
+    def.id === 'slime_boss_evolution_slime' && level >= 3
+  return `level ${level} Command${allEnemies ? ' against every enemy' : ''}: ` +
+    effects.map(effectText).join(', then ')
+}
+
 export function cardRulesText(def: CardDef): string {
-  const cacheKey = `${def.id}\0${def.name}`
-  const cached = rulesTextCache.get(cacheKey)
-  if (cached !== undefined) return cached
   const printed = def.printedText ?? def.guardian?.sourceText
-  if (printed) return printed
+  const slimeRules = Object.keys(def.slimeLevels ?? {})
+    .map(Number).sort((left, right) => left - right)
+    .map((level) => slimeCommandText(def, level)).join('; ')
+  if (printed) {
+    return [printed, slimeRules].filter(Boolean).join(', ')
+  }
   const rules = [
     // A row always takes the boss too, wherever the boss stands (p.15). Saying
     // only "a whole row" tells a player picking a distant row that the boss is
@@ -428,9 +464,12 @@ export function cardRulesText(def: CardDef): string {
     def.trigger ? triggerText(def.trigger) : '',
     def.activeAbility ? 'activate once per turn during your turn' : '',
     def.oncePerTurn && !def.activeAbility ? 'once per turn' : '',
+    slimeRules,
     ...(def.modes
       ? def.modes.map((mode) => `choose ${mode.effects.map(effectText).join(' and ')}`)
       : def.effects.map(effectText)),
+    ...(def.additionalTriggers ?? []).map(({ trigger, effects }) =>
+      `${triggerText(trigger)}, ${effects.map(effectText).join(', then ')}`),
     ...(def.persistentEffects ?? []).map(effectText),
     ...(def.handEndOfTurn ?? []).map(handEndOfTurnText),
     ...(def.discardReaction?.effects ?? []).map((effect) =>
@@ -448,7 +487,6 @@ export function cardRulesText(def: CardDef): string {
   ]
     .filter(Boolean)
     .join(', ')
-  rulesTextCache.set(cacheKey, rules)
   return rules
 }
 
@@ -457,42 +495,107 @@ export function cardPlayText(def: CardDef, cost = def.cost): string {
     .filter(Boolean).join(', ')
 }
 
+export function cardRuleDescription(def: CardDef): string {
+  const tokens: Readonly<Record<string, string>> = {
+    damage: 'damage', block: 'Block', copy: 'copy', vigor: 'Vigor', energy: 'Energy', strength: 'Strength',
+    'mode-shift': 'Mode Shift', debuff: 'Vulnerable', weak: 'Weak', aoe: 'area effect', hp: 'HP', remove: 'remove',
+    vulnerable: 'Vulnerable',
+  }
+  return cardRulesText(def).replace(/\[([a-z-]+)\]/gi, (token, name: string) => tokens[name.toLowerCase()] ?? token)
+}
+
 export function cardAccessibleName(def: CardDef, cost = def.cost): string {
-  const [playability, ...rules] = cardPlayText(def, cost).split(', ')
-  return [def.name, playability, def.guardian?.printedType ?? def.type, ...rules].filter(Boolean).join(', ')
+  const [playability] = cardPlayText(def, cost).split(', ')
+  return [def.name, playability, cardTypeLabel(def), cardRuleDescription(def)].filter(Boolean).join(', ')
+}
+
+function flattenEffects(effects: readonly Effect[]): Effect[] {
+  return effects.flatMap((effect) => {
+    const nested = effect.kind === 'sequence' || effect.kind === 'deadOnEffects' ? effect.effects
+      : effect.kind === 'branch' ? [...effect.effects, ...effect.otherwise]
+      : effect.kind === 'discardChamber' ? effect.then ?? []
+      : effect.kind === 'roulette' ? Object.values(effect.byRoll).flat()
+      : []
+    return [effect, ...flattenEffects(nested)]
+  })
 }
 
 export function cardKeywordTips(def: CardDef): readonly {
   name: string; text: string; icon?: IconName; statusIcon?: StatusIconName
 }[] {
-  const effects = [
+  const effects = flattenEffects([
     ...def.effects,
     ...(def.modes ?? []).flatMap((mode) => mode.effects),
     ...(def.persistentEffects ?? []),
     ...(def.discardReaction?.effects ?? []),
     ...(def.exhaustReaction?.effects ?? []),
-  ]
-  const hit = effects.some((effect) => effect.kind === 'hit' || effect.kind === 'hitChoices' ||
-    effect.kind === 'hitPerExhaust' || effect.kind === 'gainHitPoison')
-  const orb = effects.some((effect) => /Orb/.test(effect.kind) ||
+    ...(def.additionalTriggers ?? []).flatMap((entry) => entry.effects),
+  ])
+  const slimeEffects = flattenEffects(Object.values(def.slimeLevels ?? {}).flat())
+  const hasHit = (entries: readonly Effect[]) => entries.some((effect) =>
+    effect.kind === 'hit' || effect.kind === 'hitChoices' ||
+    effect.kind === 'rowHit' || effect.kind === 'hitPerExhaust' || effect.kind === 'gainHitPoison' ||
+    effect.kind === 'goldenBullet')
+  const hit = hasHit(effects)
+  const slimeHit = hasHit(slimeEffects)
+  const allEffects = [...effects, ...slimeEffects]
+  const orb = allEffects.some((effect) => /Orb/.test(effect.kind) ||
     effect.kind === 'channel' || effect.kind === 'evoke' || effect.kind === 'fission')
+  const vulnerable = allEffects.some((effect) => effect.kind === 'applyVulnerable' ||
+    effect.kind === 'vulnerableChoices')
+  const weak = allEffects.some((effect) => effect.kind === 'applyWeak' || effect.kind === 'weakChoices')
+  const block = allEffects.some((effect) => effect.kind === 'block' || effect.kind === 'blockChoices')
+  const poison = allEffects.some((effect) => effect.kind === 'poison' || effect.kind === 'poisonChoices' ||
+    effect.kind === 'multiplyPoison' || effect.kind === 'gainHitPoison')
+  const strength = allEffects.some((effect) => effect.kind === 'gainStrength' ||
+    effect.kind === 'gainTemporaryStrength' || effect.kind === 'doubleStrength' ||
+    (effect as { kind: string }).kind === 'gainSlimeVigor')
   const cardRules = cardRulesText(def)
+  const keywordRules = cardRules.replace(
+    /All \[damage\], \[block\], \[debuff\] on this card have (\[aoe\])\.?/gi,
+    '$1',
+  )
   const exhaust = /\bexhaust/i.test(cardRules.replace('ethereal, exhausts at end of turn if still in hand', ''))
-  const rules = `${def.type} ${def.unplayable ? 'unplayable' : ''} ${def.id === 'daze' || def.id === 'burn' ? def.id : ''} ${hit ? '__hit__' : ''} ${orb ? '__orb__' : ''} ${exhaust ? '__exhaust__' : ''} ${cardRules}`
+  const guardianGem = def.guardian?.printedType.includes('Gem')
+  const cardType = def.cardKind === 'slime' ? '__slime__' : def.type
+  const hitType = `${hit || (def.owner === 'guardian' && /\[damage\]/i.test(keywordRules)) ? '__hit__' : ''} ` +
+    `${slimeHit ? '__slime_hit__' : ''}`
+  const target = def.slimeTarget ?? def.target
+  const reachesRow = allEffects.some((effect) => effect.kind === 'rowHit' ||
+    (effect.kind === 'useAllSoulburn' && effect.target === 'row')) || /\b(?:a|any) row\b/i.test(keywordRules)
+  const reachesAllEnemies = target === 'allEnemies' || def.id === 'slime_boss_evolution_slime'
+  const reach = target === 'row' || reachesRow ? '__row__' : reachesAllEnemies ? '__all_enemies__' : ''
+  const rules = `${cardType} ${def.unplayable ? 'unplayable' : ''} ${def.id === 'daze' || def.id === 'burn' ? def.id : ''} ${hitType} ${reach} ${vulnerable ? 'vulnerable' : ''} ${weak ? '__weak__' : ''} ${block ? '__block__' : ''} ${poison ? '__poison__' : ''} ${strength ? '__strength__' : ''} ${orb ? '__orb__' : ''} ${exhaust ? '__exhaust__' : ''} ${guardianGem ? '__guardian_gem__' : ''} ${keywordRules}`
   return CARD_KEYWORD_TIPS
     .filter(([, pattern]) => pattern.test(rules))
     .map(([name, , text, icon, statusIcon]) => ({ name, text, icon, statusIcon }))
 }
 
-export function CardKeywordHelp({ def, children }: {
+export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips = [], children }: {
   def: CardDef
+  additionalDef?: CardDef | null
+  gemPowerDamage?: boolean
+  extraTips?: readonly { name: string, text: string, icon?: IconName, statusIcon?: StatusIconName }[]
   children: (props: {
     ref?: (element: HTMLElement | null) => void
     'aria-describedby'?: string
     'data-keyword-help-id'?: string
   }) => React.ReactNode
 }) {
-  const tips = cardKeywordTips(def)
+  const attachedTips = additionalDef ? cardKeywordTips(additionalDef) : []
+  const attachedGemPowerDamage = (gemPowerDamage ?? def.guardian?.printedType === 'Gem Power') &&
+    attachedTips.some((tip) => tip.name === 'Hit')
+  const additionalTips = additionalDef ? [
+    { name: additionalDef.name, text: cardRuleDescription(additionalDef) },
+    ...attachedTips.filter((tip) => tip.name !== 'Unplayable' && !(tip.name === 'Hit' && attachedGemPowerDamage)),
+    ...(attachedGemPowerDamage ? [{
+      name: 'Gem Power damage',
+      text: 'Damage printed by a Gem on a Gem Power ignores Strength, Weak, Vulnerable, and Vigor.',
+      icon: 'attack' as IconName,
+    }] : []),
+  ] : []
+  const tips = [...cardKeywordTips(def), ...additionalTips, ...extraTips]
+    .filter((tip, index, all) => all.findIndex((candidate) => candidate.name === tip.name) === index)
   const tooltipId = `card-keyword-help-${useId()}`
   const anchorRef = useRef<HTMLElement | null>(null)
   const [mounted, setMounted] = useState(false)
@@ -504,7 +607,7 @@ export function CardKeywordHelp({ def, children }: {
   }, [])
   useEffect(() => {
     if (mounted && tips.length > 0) anchorRef.current?.dispatchEvent(new Event('card-keyword-help-ready', { bubbles: true }))
-  }, [def.id, mounted, tips.length])
+  }, [additionalDef?.id, def.id, mounted, tips.length])
   const host = mounted && anchorRef.current ? anchorRef.current.closest('dialog') ?? document.body : null
   const props = tips.length > 0 ? {
     ref: setAnchor,
@@ -545,6 +648,7 @@ export function Card({
   playable = true,
   selected = false,
   picked = false,
+  gemPowerDamage,
   fan = 0,
   onClick,
   onPointerDown,
@@ -569,7 +673,8 @@ export function Card({
     .filter(Boolean)
     .join(' ')
 
-  return <CardKeywordHelp def={def}>{(keywordHelpProps) => (
+  return <CardKeywordHelp def={def} additionalDef={attachedGem}
+    gemPowerDamage={gemPowerDamage}>{(keywordHelpProps) => (
     <button
       {...keywordHelpProps}
       type="button"
@@ -598,7 +703,7 @@ export function Card({
         onClick?.(card)
       }}
       aria-label={`${cardAccessibleName(def, cost)}${attachedGem
-        ? `, socketed with ${attachedGem.name}: ${cardRulesText(attachedGem)}` : ''}`}
+        ? `, socketed with ${attachedGem.name}: ${cardRuleDescription(attachedGem)}` : ''}`}
       aria-pressed={selected || picked}
       title={def.name}
     >
@@ -626,7 +731,7 @@ export function Card({
       /> : null}
       <CardFace def={def} cost={cost} rules={cardRulesText(def)} illustration={scanUnavailable} />
       {attachedGem ? <img className="card__gem" src={cardThumbPath(attachedGem, false)} alt=""
-        draggable={false} title={`${attachedGem.name}: ${cardRulesText(attachedGem)}`} /> : null}
+        draggable={false} title={`${attachedGem.name}: ${cardRuleDescription(attachedGem)}`} /> : null}
       {def.target === 'row' ? (
         // The burst printed on Cleave and its like. Marked hidden because
         // `accessibleName` already says "affects a whole row" — announced here as
