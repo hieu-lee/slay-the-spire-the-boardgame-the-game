@@ -75,9 +75,9 @@
   filter: drop-shadow(0 0 0.24rem rgb(255 255 255 / 0.52));
 }
 
-.token--orb-lightning::before { background-image: url('/assets/combat/vfx/actions/lightning-channel.webp'); animation: orb-lightning-idle 1.25s steps(2, jump-none) infinite; }
-.token--orb-frost::before { background-image: url('/assets/combat/vfx/actions/frost-channel.webp'); animation: orb-frost-idle 2.8s ease-in-out infinite; }
-.token--orb-dark::before { background-image: url('/assets/combat/vfx/actions/dark-channel.webp'); animation: orb-dark-idle 4.2s linear infinite; }
+.token--orb-lightning::before { background-image: url('/assets/combat/vfx/actions/lightning-channel.webp'); }
+.token--orb-frost::before { background-image: url('/assets/combat/vfx/actions/frost-channel.webp'); }
+.token--orb-dark::before { background-image: url('/assets/combat/vfx/actions/dark-channel.webp'); }
 
 /* `top`/`height` used to be percentages of the portrait box (-8% / 70%),
    which reached far enough down to sit the orbs over the top third or so of
@@ -175,22 +175,6 @@
   line-height: 1;
   text-align: center;
   text-shadow: -1px -1px 0 #111, 1px -1px 0 #111, -1px 1px 0 #111, 1px 1px 0 #111, 0 0 0.28rem #000;
-}
-
-@keyframes orb-lightning-idle {
-  0%, 100% { opacity: 0.88; transform: rotate(-2deg) scale(0.98); filter: brightness(0.92) drop-shadow(0 0 0.2rem #dfff34); }
-  50% { opacity: 1; transform: rotate(2deg) scale(1.04); filter: brightness(1.2) drop-shadow(0 0 0.38rem #f5ff60); }
-}
-
-@keyframes orb-frost-idle {
-  0%, 100% { transform: translateY(2%) scale(0.97); filter: brightness(0.95) drop-shadow(0 0 0.22rem #85eeff); }
-  50% { transform: translateY(-4%) scale(1.03); filter: brightness(1.12) drop-shadow(0 0 0.38rem #c4f8ff); }
-}
-
-@keyframes orb-dark-idle {
-  from { transform: rotate(0deg) scale(0.98); filter: brightness(0.86) drop-shadow(0 0 0.24rem #8c3de0); }
-  50% { filter: brightness(1.08) drop-shadow(0 0 0.42rem #da63ff); }
-  to { transform: rotate(360deg) scale(0.98); filter: brightness(0.86) drop-shadow(0 0 0.24rem #8c3de0); }
 }
 
 /* On a narrow screen the row stacks the seat above the enemy, so the row needs

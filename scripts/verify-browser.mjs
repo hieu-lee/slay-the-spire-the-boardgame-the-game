@@ -9285,29 +9285,40 @@ const idleMotion = await page.evaluate(() => {
   const enemyPortrait = document.querySelector('.enemy:not(.enemy--dead) .enemy__portrait')
   const seatArt = seatPortrait?.querySelector('img')
   const enemyArt = enemyPortrait?.querySelector('.enemy__art--cutout')
+  const power = document.createElement('span')
+  power.className = 'power'
+  document.body.append(power)
+  const powerGlowAnimation = getComputedStyle(power, '::after').animationName
+  power.remove()
   return {
     seat: seatArt ? getComputedStyle(seatArt).animationName : '',
     enemy: enemyArt ? getComputedStyle(enemyArt).animationName : '',
     seatMotes: seatPortrait ? getComputedStyle(seatPortrait, '::before').backgroundImage : '',
     enemyMotes: enemyPortrait ? getComputedStyle(enemyPortrait, '::before').backgroundImage : '',
+    seatMotesAnimation: seatPortrait ? getComputedStyle(seatPortrait, '::before').animationName : '',
+    enemyMotesAnimation: enemyPortrait ? getComputedStyle(enemyPortrait, '::before').animationName : '',
+    powerGlowAnimation,
   }
 })
-check('living players and enemies have grounded idle animation', () => {
-  assertEqual(idleMotion.seat, 'actor-idle')
-  assertEqual(idleMotion.enemy, 'actor-idle')
+check('combat stays still between actions', () => {
+  assertEqual(idleMotion.seat, 'none')
+  assertEqual(idleMotion.enemy, 'none')
   assert(idleMotion.seatMotes.includes('/assets/combat/vfx/hero-motes.webp'), idleMotion.seatMotes)
   assert(idleMotion.enemyMotes.includes('/assets/combat/vfx/enemy-motes.webp'), idleMotion.enemyMotes)
+  assertEqual(idleMotion.seatMotesAnimation, 'none')
+  assertEqual(idleMotion.enemyMotesAnimation, 'none')
+  assertEqual(idleMotion.powerGlowAnimation, 'none')
 })
 const hoverEnemy = page.locator('.enemy:not(:disabled)').first()
 await hoverEnemy.hover()
 await page.waitForTimeout(300)
 const hoverScale = await hoverEnemy.locator('.enemy__art--cutout').evaluate((art) =>
   new DOMMatrix(getComputedStyle(art).transform).a)
-check('idle motion composes with the enemy hover zoom', () => {
+check('enemy hover zoom works without idle movement', () => {
   assert(hoverScale > 1.03, `hover scale stayed at ${hoverScale}`)
 })
 await page.mouse.move(0, 0)
-await shot('09a-combat-idle-animation')
+await shot('09a-combat-still')
 
 async function publishPresentationEvent(event) {
   return page.evaluate((nextEvent) => {
@@ -9410,8 +9421,8 @@ check('Watcher Calm and Wrath use distinct accessible portrait auras instead of 
   assert(wrathPresentation.label.includes('wrath stance'), wrathPresentation.label)
   assert(calmPresentation.image.includes('watcher-calm-aura.webp'), calmPresentation.image)
   assert(wrathPresentation.image.includes('watcher-wrath-aura.webp'), wrathPresentation.image)
-  assertEqual(calmPresentation.animation, 'calm-aura')
-  assertEqual(wrathPresentation.animation, 'wrath-aura')
+  assertEqual(calmPresentation.animation, 'none')
+  assertEqual(wrathPresentation.animation, 'none')
 })
 
 const vfxActor = () => page.locator('.combat-vfx--actor').last()
@@ -11449,32 +11460,14 @@ for (const character of ['ironclad', 'silent', 'defect', 'watcher']) {
     animation: getComputedStyle(pip, '::after').animationName,
   })))
 }
-check('each character has a distinct animated energy orb', () => {
+check('each character has a distinct static energy orb', () => {
   assertDeepEqual(energyOrbVariants.map(({ character }) => character), ['ironclad', 'silent', 'defect', 'watcher'])
   assertEqual(new Set(energyOrbVariants.map(({ shape }) => shape)).size, 4, 'orb silhouettes')
   assertEqual(new Set(energyOrbVariants.map(({ liquid }) => liquid)).size, 4, 'orb liquids')
   assert(energyOrbVariants.every(({ flow }) => flow !== 'none'), 'every orb needs a liquid-flow layer')
-  assert(energyOrbVariants.every(({ animation }) => animation === 'energy-liquid-flow'),
-    'every liquid-flow layer needs to move')
+  assert(energyOrbVariants.every(({ animation }) => animation === 'none'),
+    'energy liquid movement must stay disabled')
 })
-
-const energyFlowStart = await page.locator('.pip--energy').evaluate((pip) =>
-  getComputedStyle(pip, '::after').backgroundPosition)
-await page.waitForTimeout(160)
-const energyFlowEnd = await page.locator('.pip--energy').evaluate((pip) =>
-  getComputedStyle(pip, '::after').backgroundPosition)
-check('the energy liquid visibly flows over time', () => {
-  assert(energyFlowStart !== energyFlowEnd,
-    `the liquid stayed frozen at ${energyFlowStart}`)
-})
-
-await page.emulateMedia({ reducedMotion: 'reduce' })
-const reducedEnergyMotion = await page.locator('.pip--energy').evaluate((pip) =>
-  getComputedStyle(pip, '::after').animationName)
-check('the energy liquid respects reduced motion', () => {
-  assertEqual(reducedEnergyMotion, 'none')
-})
-await page.emulateMedia({ reducedMotion: 'no-preference' })
 
 const energyDrawStack = await page.evaluate(() => {
   const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
@@ -14340,6 +14333,7 @@ await page.evaluate(() => {
 })
 await page.setViewportSize({ width: 320, height: 568 })
 await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > .potion-chip > button').length === 8)
+await page.locator('.relic-actions > section > .potion-chip').first().hover()
 const scrollableRelicStrip = await page.locator('.relic-actions > section').evaluate((strip) => {
   strip.scrollLeft = strip.scrollWidth
   const outer = strip.getBoundingClientRect()
@@ -14349,12 +14343,16 @@ const scrollableRelicStrip = await page.locator('.relic-actions > section').eval
     scrollWidth: strip.scrollWidth,
     withinViewport: outer.left >= 0 && outer.right <= innerWidth,
     lastReachable: Boolean(last && last.left >= outer.left && last.right <= outer.right),
+    scrollbarWidth: getComputedStyle(strip).scrollbarWidth,
+    webkitScrollbarDisplay: getComputedStyle(strip, '::-webkit-scrollbar').display,
   }
 })
-check('a full simple Relic strip scrolls to every activation on a narrow phone', () => {
+check('hovered simple Relics scroll without scrollbar chrome on a narrow phone', () => {
   assert(scrollableRelicStrip.scrollWidth > scrollableRelicStrip.clientWidth, JSON.stringify(scrollableRelicStrip))
   assert(scrollableRelicStrip.withinViewport, JSON.stringify(scrollableRelicStrip))
   assert(scrollableRelicStrip.lastReachable, JSON.stringify(scrollableRelicStrip))
+  assertEqual(scrollableRelicStrip.scrollbarWidth, 'none')
+  assertEqual(scrollableRelicStrip.webkitScrollbarDisplay, 'none')
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__

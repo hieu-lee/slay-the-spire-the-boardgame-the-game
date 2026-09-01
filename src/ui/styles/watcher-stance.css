@@ -1,6 +1,4 @@
-/* Watcher stance is part of her silhouette, not another status label. The two
-   generated textures differ in shape as well as colour, while CSS supplies the
-   quiet ambient motion. */
+/* Watcher stance is part of her silhouette, not another status label. */
 .stance-aura {
   position: absolute;
   z-index: 0;
@@ -8,30 +6,16 @@
   background: center / contain no-repeat;
   mix-blend-mode: screen;
   pointer-events: none;
-  will-change: opacity, transform;
 }
 
 .stance-aura--calm {
   background-image: url('/assets/combat/vfx/actions/watcher-calm-aura.webp');
   filter: drop-shadow(0 0 0.45rem rgb(218 246 255 / 0.72));
   opacity: 0.82;
-  animation: calm-aura 2.2s ease-in-out infinite;
 }
 
 .stance-aura--wrath {
   background-image: url('/assets/combat/vfx/actions/watcher-wrath-aura.webp');
   filter: drop-shadow(0 0 0.5rem rgb(255 54 37 / 0.82));
   opacity: 0.9;
-  animation: wrath-aura 1.05s ease-in-out infinite;
-}
-
-@keyframes calm-aura {
-  0%, 100% { opacity: 0.66; transform: rotate(-2deg) scale(0.96); }
-  50% { opacity: 0.92; transform: rotate(2deg) translateY(-2%) scale(1.03); }
-}
-
-@keyframes wrath-aura {
-  0%, 100% { opacity: 0.7; transform: rotate(-4deg) scale(0.94); }
-  38% { opacity: 1; transform: rotate(3deg) translateY(-3%) scale(1.06); }
-  68% { opacity: 0.8; transform: rotate(-1deg) scale(1); }
 }

@@ -267,11 +267,6 @@
   background-size: 145% 145%;
   mix-blend-mode: screen;
   filter: blur(1px);
-  animation: energy-liquid-flow 3.8s ease-in-out infinite alternate;
-}
-
-@keyframes energy-liquid-flow {
-  to { background-position: 84% 72%; transform: rotate(9deg) scale(1.08); }
 }
 
 .pip--energy .icon-value {
@@ -292,10 +287,6 @@
   color: #fff8dc;
   -webkit-text-stroke: 1px #1d1010;
   text-shadow: 0 2px 2px #000, 0 0 0.32rem #000;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html:not([data-mobile-performance='true']) .pip--energy::after { animation: none; }
 }
 
 .pile {
