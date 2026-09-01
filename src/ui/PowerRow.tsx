@@ -8,12 +8,12 @@ import type { CardInstance } from '../game/types.ts'
 import type { StatusIconName } from './Icon.tsx'
 import { statusIconPath } from './icons.ts'
 import { CardFace } from './CardFace.tsx'
-import { CardKeywordHelp, cardRulesText } from './Card.tsx'
+import { CardKeywordHelp, cardRuleDescription, cardRulesText } from './Card.tsx'
 
 type PowerRowProps = { powers: CardInstance[] }
 
 /** The enlarged card or text fallback, and where to put it. */
-type Zoom = { uid: string; src: string; def: CardDef; description: string; x: number; y: number; pinned: boolean; loaded: boolean }
+type Zoom = { uid: string; src: string; def: CardDef; attachedGem?: CardDef; description: string; x: number; y: number; pinned: boolean; loaded: boolean }
 
 const ZOOM_WIDTH = 190
 const ZOOM_HEIGHT = ZOOM_WIDTH * (4 / 3)
@@ -154,6 +154,7 @@ export function PowerRow({ powers }: PowerRowProps) {
       uid: card.uid,
       src: cardThumbPath(cardDef(card.defId), card.upgraded),
       def: faceOf(cardDef(card.defId), card.upgraded),
+      attachedGem: card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : undefined,
       description,
       x,
       y,
@@ -167,6 +168,7 @@ export function PowerRow({ powers }: PowerRowProps) {
       <ul className="powers" aria-label="Powers in play">
         {powers.map((card) => {
           const def = faceOf(cardDef(card.defId), card.upgraded)
+          const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : null
           const countdown = def.effects.find((effect) =>
             effect.kind === 'countdownDamage' || effect.kind === 'countdownExhaust')
           const buffer = def.effects.find((effect) => effect.kind === 'preventHpLoss')
@@ -174,14 +176,17 @@ export function PowerRow({ powers }: PowerRowProps) {
           const counterLimit = countdown?.cubes ?? (buffer?.kind === 'preventHpLoss' && buffer.uses > 1
             ? buffer.uses
             : undefined)
-          const described = `${describePower(def)}${counterLimit
+          const isDownfall = ['guardian', 'hermit', 'hexaghost', 'slime_boss'].includes(def.owner) ||
+            def.printedText !== undefined
+          const described = `${isDownfall ? `${def.name}, ${cardRuleDescription(def)}` : describePower(def)}${attachedGem
+            ? `, socketed with ${attachedGem.name}: ${cardRuleDescription(attachedGem)}` : ''}${counterLimit
             ? `, ${card.counter ?? 0} of ${counterLimit} cubes`
             : conjure ? `, ${card.counter ?? 0} cubes` : ''}`
           const showing = zoom?.uid === card.uid
           return (
             <li key={card.uid}>
               {/* A button, not a bare tile, keeps every Power keyboard-accessible. */}
-              <CardKeywordHelp def={def}>{(keywordHelpProps) => (
+              <CardKeywordHelp def={def} additionalDef={attachedGem}>{(keywordHelpProps) => (
               <button
                 {...keywordHelpProps}
                 type="button"
@@ -230,6 +235,9 @@ export function PowerRow({ powers }: PowerRowProps) {
                 {zoom.description}
               </span>
               <CardFace def={zoom.def} rules={cardRulesText(zoom.def)} className="power__zoom-card" />
+              {zoom.attachedGem ? <img className="card__gem"
+                src={cardThumbPath(zoom.attachedGem, false)} alt="" draggable={false}
+                title={`${zoom.attachedGem.name}: ${cardRuleDescription(zoom.attachedGem)}`} /> : null}
               <img
                 key={zoom.src}
                 className="power__zoom-image"

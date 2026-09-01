@@ -94,8 +94,6 @@ check('the potion deck matches all 29 physical cards and their copies', () => {
   assertEqual(expectedDeck.length, 29, 'the physical deck has 29 potion cards')
   assertDeepEqual(POTION_DECK, expectedDeck)
   assertEqual(new Set(POTION_DECK).size, 21)
-  assertEqual(Object.keys(POTIONS).length, 21, 'the potion catalog should not contain digital-only entries')
-
   for (const row of physical) {
     const id = idFor(row.name)
     const def = potionDef(id)

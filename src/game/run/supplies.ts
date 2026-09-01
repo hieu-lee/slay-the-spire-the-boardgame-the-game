@@ -8,6 +8,7 @@
 import type { RunState } from './types.ts'
 import type { ItemDecks } from '../acquisition.ts'
 import { isColorlessUnlocked } from '../campaign.ts'
+import { potionDef } from '../relics.ts'
 
 /** Keep the compatibility deck fields as mirrors of the one physical item supply. */
 export function mirrorItemSupplies(state: RunState, itemDecks: ItemDecks): RunState {
@@ -33,5 +34,6 @@ export function mirrorLegacySupplies(state: RunState): RunState {
 
 /** Daily modifiers may use Colorless rewards without unlocking the Merchant pile. */
 export function merchantItemDecks(state: Pick<RunState, 'campaignProgress'>, itemDecks: ItemDecks): ItemDecks {
-  return isColorlessUnlocked(state.campaignProgress) ? itemDecks : { ...itemDecks, colorless: [] }
+  const merchantPriced = { ...itemDecks, potions: itemDecks.potions.filter((id) => potionDef(id).cost !== undefined) }
+  return isColorlessUnlocked(state.campaignProgress) ? merchantPriced : { ...merchantPriced, colorless: [] }
 }

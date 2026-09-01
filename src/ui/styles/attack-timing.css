@@ -72,6 +72,10 @@
   animation-duration: var(--silent-attack-duration, 1900ms);
   animation-timing-function: linear;
 }
+.seat.seat--attack-hexaghost .seat__portrait > img { animation: none; }
+.seat.seat--attack-hexaghost:has(.character-attack__pose--hexaghost-state.is-loaded) .seat__portrait > img {
+  animation: attack-downfall-hexaghost 2000ms both;
+}
 
 .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
 .seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
@@ -80,6 +84,9 @@
   animation-name: attack-defect;
   animation-delay: 0s;
 }
+.seat--attack-slime_boss .seat__portrait > img,
+.seat--attack-guardian .seat__portrait > img,
+.seat--attack-hermit .seat__portrait > img { animation-name: attack-downfall; }
 
 .seat--attack-ironclad .character-attack--ironclad {
   animation-duration: 1800ms;
@@ -125,6 +132,18 @@
   66.67%, 100% { opacity: 1; }
   77.78% { transform: translateY(2%) scale(0.99); }
   88.89% { transform: translateY(-1%) scale(1.01); }
+}
+
+@keyframes attack-downfall {
+  0%, 66.66% { opacity: 0; transform: translateY(0) scale(1); }
+  66.67%, 100% { opacity: 1; }
+  80% { transform: translateY(1%) scale(0.99, 1.01); }
+  90% { transform: translateY(-1%) scale(1.01, 0.99); }
+}
+
+@keyframes attack-downfall-hexaghost {
+  0%, 99.99% { opacity: 0; }
+  100% { opacity: 1; }
 }
 
 .character-attack {
@@ -204,6 +223,44 @@
 .character-attack__pose--defect-release { animation: defect-release-pose 1650ms both; }
 .character-attack__pose--watcher-charge { animation: watcher-charge-pose 1650ms both; }
 .character-attack__pose--watcher-cast { animation: watcher-cast-pose 1650ms both; }
+.character-attack__pose--downfall-ready { animation: downfall-ready-pose 1650ms both; }
+.character-attack__pose--downfall-impact { animation: downfall-impact-pose 1650ms both; }
+.character-attack__pose--hexaghost-state { opacity: 0; }
+.seat--attack-hexaghost .character-attack__pose--hexaghost-state.is-loaded {
+  animation: hexaghost-state-visibility 2000ms linear both;
+}
+.seat--attack-hexaghost .character-attack__pose--hexaghost-state.is-fallback.is-loaded {
+  animation-name: hexaghost-fallback-motion;
+}
+
+@keyframes hexaghost-state-visibility {
+  0%, 99.99% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes hexaghost-fallback-motion {
+  0% { opacity: 1; transform: rotate(-4deg) scale(0.96); }
+  27% { opacity: 1; transform: rotate(7deg) scale(1.05); }
+  45%, 62% { opacity: 1; transform: translateX(3%) scale(1.04, 0.98); }
+  72%, 99.99% { opacity: 1; transform: translateX(0) scale(1); }
+  100% { opacity: 0; }
+}
+
+@keyframes downfall-ready-pose {
+  0%, 33.32% { opacity: 1; }
+  33.33%, 100% { opacity: 0; }
+  0% { transform: translate(-2%, 1%) rotate(-2deg) scale(0.98); }
+  18% { transform: translate(0) rotate(0) scale(1); }
+  33.32% { transform: translate(2%, -1%) rotate(1deg) scale(1.02); }
+}
+
+@keyframes downfall-impact-pose {
+  0%, 33.32%, 66.67%, 100% { opacity: 0; }
+  33.33%, 66.66% { opacity: 1; }
+  33.33% { transform: translate(1%, 0) rotate(1deg) scale(1.02); }
+  50% { transform: translate(3%, 1%) rotate(2deg) scale(1.04); }
+  66.66% { transform: translate(0) rotate(0) scale(1); }
+}
 
 @keyframes ironclad-ready-pose {
   0%, 34.99% { opacity: 1; }
@@ -342,6 +399,34 @@
   12% { opacity: 1; }
   82% { opacity: 1; }
   100% { opacity: 0; transform: translate(var(--attack-target-x), var(--attack-target-y)) rotate(18deg) scale(1.05); }
+}
+
+.character-attack__hexaghost-flame {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  width: 5rem;
+  aspect-ratio: 1;
+  opacity: 0;
+  filter: drop-shadow(0 0 0.35rem #b9ff58);
+  will-change: opacity, transform;
+  animation: hexaghost-flame-flight 900ms calc(550ms + var(--attack-delay)) cubic-bezier(0.18, 0.7, 0.2, 1) both;
+}
+
+.character-attack__hexaghost-flame > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+@keyframes hexaghost-flame-flight {
+  0% { opacity: 0; transform: translate(0) translate(-50%, -50%) scale(0.45); }
+  8%, 92% { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform: translate(var(--attack-target-x), var(--attack-target-y)) translate(-50%, -50%) scale(1.05);
+  }
 }
 
 .character-attack__core {

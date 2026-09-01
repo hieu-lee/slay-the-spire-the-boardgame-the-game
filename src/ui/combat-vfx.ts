@@ -1,7 +1,7 @@
 import { CARDS, faceOf, type CardDef, type Effect } from '../game/cards.ts'
 import { assetPath } from '../game/assets.ts'
 import { POTIONS } from '../game/relics.ts'
-import type { CharacterId, OrbType } from '../game/types.ts'
+import type { CardType, CharacterId, OrbType } from '../game/types.ts'
 
 export type VfxFamily =
   | 'slash' | 'blunt' | 'projectile' | 'poison' | 'shiv' | 'lightning' | 'frost' | 'dark'
@@ -44,6 +44,16 @@ const BOSS_ATTACK_ART = new Map<string, readonly [scale: number, contactLeft: nu
   ['time_eater', [0.836, 42]],
 ])
 
+const SHORT_BOSS_ATTACK_ART = new Set([
+  'downfall_corrupted', 'downfall_dark_core', 'downfall_demon', 'downfall_pc_defect',
+  'downfall_pc_ironclad', 'downfall_pc_neow', 'downfall_pc_silent',
+  'spire_shield',
+])
+
+export function bossAttackDurationFor(artId: string): number {
+  return SHORT_BOSS_ATTACK_ART.has(artId) ? 580 : 1830
+}
+
 export function bossAttackScaleFor(artId: string): number {
   return BOSS_ATTACK_ART.get(artId)?.[0] ?? 1
 }
@@ -64,25 +74,37 @@ const TONE_COLORS: Readonly<Record<string, string>> = {
   'astral-cyan': '#72efff',
   'astral-violet': '#b58aff',
   'blast-orange': '#ff7a2a',
+  'brew-amber': '#d8a844',
   'blood-red': '#d83344',
+  'cactus-lime': '#9ecb45',
   'calm-white': '#eefcff',
   'chaos-green': '#7bd15c',
   'chaos-rainbow': '#ef7cff',
   'cleansing-blue': '#6cc8ff',
+  'clever-teal': '#45c6b2',
+  'cultist-crimson': '#b94e6d',
+  'destiny-copper': '#c98255',
   'electric-cyan': '#61eaff',
   'electric-gold': '#ffd75a',
   'ember-orange': '#ff8a32',
   'energy-blue': '#4a9fff',
+  'energy-mint': '#62dba2',
   'fairy-gold': '#ffe18a',
   'flame-orange': '#ff6b24',
   'focus-blue': '#41d1ff',
   'fortune-purple': '#aa6cff',
+  'fruit-coral': '#f47f6b',
   'ghost-white': '#e8faff',
   'guard-blue': '#55b9ff',
   'impact-ochre': '#e7a43a',
+  'greed-gold': '#dcb84c',
+  'liquid-violet': '#8066d9',
   'mantra-cyan': '#62e8ff',
   'mantra-violet': '#bd7aff',
   'memory-blue': '#689cff',
+  'mystery-indigo': '#6f7fd1',
+  'nails-silver': '#bbc4d1',
+  'pizzaz-pink': '#df65aa',
   'prismatic': '#f28cff',
   'purity-white': '#fff6d8',
   'speed-cyan': '#51f2dc',
@@ -91,11 +113,13 @@ const TONE_COLORS: Readonly<Record<string, string>> = {
   'storm-gold': '#f4c84c',
   'strength-red': '#ff5148',
   'tempest-cyan': '#38c8ff',
+  'transform-aqua': '#49bfc5',
   'thunder-gold': '#ffd24d',
   'venom-green': '#83e044',
   'voltaic-blue': '#6abfff',
   'vulnerable-red': '#ff5f45',
   'weak-grey': '#aeb5c1',
+  'whale-navy': '#5275aa',
   'wrath-red': '#ff4438',
 }
 
@@ -139,6 +163,7 @@ export function shivVfxRecipe(): VfxRecipe {
 const CARD_OVERRIDES: Readonly<Record<string, VfxRecipe>> = {
   strike_ironclad: recipe('slash', 'lunge', 'ironclad-strike', 'ember-orange'),
   bash: recipe('blunt', 'lunge', 'ironclad-bash', 'impact-ochre'),
+  strike_hexaghost: recipe('projectile', 'cast', 'hexaghost-flame-impact', 'chaos-green'),
 
   thunder_strike: recipe('lightning', 'cast', 'lightning-channel', 'thunder-gold'),
 
@@ -179,23 +204,36 @@ const POTION_RECIPES: Readonly<Record<string, VfxRecipe>> = {
   attack_potion: recipe('buff', 'drink', 'potion-burst', 'ember-orange'),
   block_potion: recipe('block', 'drink', 'guard-bloom', 'guard-blue'),
   blood_potion: recipe('buff', 'drink', 'potion-burst', 'blood-red'),
+  bottle_of_nails: recipe('projectile', 'throw', 'potion-burst', 'nails-silver'),
+  cactus_juice: recipe('buff', 'drink', 'potion-burst', 'cactus-lime'),
+  clever_concoction: recipe('utility', 'drink', 'potion-burst', 'clever-teal'),
+  cultist_potion: recipe('buff', 'drink', 'potion-burst', 'cultist-crimson'),
   cunning_potion: recipe('shiv', 'drink', 'potion-burst', 'steel-green'),
+  destiny_draught: recipe('draw', 'drink', 'potion-burst', 'destiny-copper'),
   distilled_chaos: recipe('draw', 'drink', 'potion-burst', 'chaos-rainbow'),
+  energy_drink: recipe('buff', 'drink', 'potion-burst', 'energy-mint'),
   energy_potion: recipe('buff', 'drink', 'potion-burst', 'energy-blue'),
   entropic_brew: recipe('utility', 'drink', 'potion-burst', 'prismatic'),
   explosive_potion: recipe('projectile', 'throw', 'potion-burst', 'blast-orange'),
   fairy_in_a_bottle: recipe('buff', 'none', 'potion-burst', 'fairy-gold'),
   fire_potion: recipe('projectile', 'throw', 'potion-burst', 'flame-orange'),
   flex_potion: recipe('buff', 'drink', 'potion-burst', 'strength-red'),
+  fruit_juice: recipe('buff', 'drink', 'potion-burst', 'fruit-coral'),
   gamblers_brew: recipe('utility', 'drink', 'potion-burst', 'fortune-purple'),
   ghost_in_a_jar: recipe('buff', 'drink', 'potion-burst', 'ghost-white'),
+  greed_potion: recipe('projectile', 'throw', 'potion-burst', 'greed-gold'),
   liquid_memories: recipe('draw', 'drink', 'potion-burst', 'memory-blue'),
+  liquid_void: recipe('exhaust', 'drink', 'potion-burst', 'liquid-violet'),
+  mystery_potion: recipe('utility', 'drink', 'potion-burst', 'mystery-indigo'),
+  pizzaz_potion: recipe('buff', 'drink', 'potion-burst', 'pizzaz-pink'),
   purity_potion: recipe('exhaust', 'drink', 'potion-burst', 'purity-white'),
   skill_potion: recipe('buff', 'drink', 'potion-burst', 'focus-blue'),
   snecko_oil: recipe('draw', 'drink', 'potion-burst', 'chaos-green'),
   swift_potion: recipe('draw', 'drink', 'potion-burst', 'speed-cyan'),
+  transforming_brew: recipe('utility', 'drink', 'potion-burst', 'transform-aqua'),
   vulnerable_potion: recipe('debuff', 'throw', 'potion-burst', 'vulnerable-red'),
   weak_potion: recipe('debuff', 'throw', 'potion-burst', 'weak-grey'),
+  whale_ale: recipe('buff', 'drink', 'potion-burst', 'whale-navy'),
 }
 
 const actorAttack: Record<CharacterId, VfxRecipe> = {
@@ -203,10 +241,15 @@ const actorAttack: Record<CharacterId, VfxRecipe> = {
   silent: recipe('slash', 'lunge', 'silent-shiv', 'steel-green'),
   defect: recipe('projectile', 'cast', 'magic-burst', 'voltaic-blue'),
   watcher: recipe('blunt', 'lunge', 'magic-burst', 'astral-violet'),
+  slime_boss: recipe('blunt', 'lunge', 'magic-burst', 'chaos-green'),
+  guardian: recipe('blunt', 'lunge', 'guard-bloom', 'guard-blue'),
+  hexaghost: recipe('projectile', 'cast', 'hexaghost-flame-impact', 'chaos-green'),
+  hermit: recipe('projectile', 'lunge', 'magic-burst', 'impact-ochre'),
 }
 
 const actorTone: Record<CharacterId, string> = {
   ironclad: 'ember-orange', silent: 'venom-green', defect: 'voltaic-blue', watcher: 'astral-violet',
+  slime_boss: 'chaos-green', guardian: 'guard-blue', hexaghost: 'chaos-green', hermit: 'impact-ochre',
 }
 
 function allEffects(def: CardDef, mode?: number): Effect[] {
@@ -220,7 +263,7 @@ function allEffects(def: CardDef, mode?: number): Effect[] {
   ]
 }
 
-function fallbackRecipe(character: CharacterId, def: CardDef, mode?: number): VfxRecipe {
+function fallbackRecipe(character: CharacterId, def: CardDef, mode?: number, resolvedType = def.type): VfxRecipe {
   const effects = allEffects(def, mode)
   const has = (...kinds: Effect['kind'][]) => effects.some((effect) => kinds.includes(effect.kind))
 
@@ -232,7 +275,8 @@ function fallbackRecipe(character: CharacterId, def: CardDef, mode?: number): Vf
   if (has('gainShiv', 'gainShivPerDiscard', 'useAllShivs', 'gainShivDamageBonus')) return shiv
   if (has('enterStance')) return recipe('stance', 'cast', 'magic-burst', actorTone[character])
   if (has('gainMiracle')) return recipe('mantra', 'cast', 'watcher-pray', 'mantra-cyan')
-  if (has('hit', 'hitChoices', 'hitPerExhaust')) return actorAttack[character]
+  if (character === 'hexaghost' && resolvedType === 'attack') return actorAttack.hexaghost
+  if (has('hit', 'rowHit', 'hitChoices', 'hitPerExhaust', 'copyLastAttack')) return actorAttack[character]
   if (has('damage', 'damagePerAttackIntent', 'execute')) {
     return recipe('projectile', 'cast', 'magic-burst', actorTone[character])
   }
@@ -240,19 +284,22 @@ function fallbackRecipe(character: CharacterId, def: CardDef, mode?: number): Vf
     return recipe('block', 'recoil', 'guard-bloom', actorTone[character])
   }
   if (has('channel', 'channelDieOrb')) return recipe('utility', 'cast', 'magic-burst', actorTone[character])
-  if (has('applyWeak', 'applyVulnerable', 'clearTargetBlock')) {
+  if (has('applyWeak', 'applyVulnerable', 'weakChoices', 'vulnerableChoices', 'clearTargetBlock')) {
     return recipe('debuff', 'cast', 'magic-burst', actorTone[character])
   }
-  if (has('draw', 'drawThenDiscard', 'drawToHandSize', 'cycleHand', 'searchDraw', 'recoverDiscard', 'recoverExhaust')) {
+  if (has('draw', 'drawThenDiscard', 'drawToHandSize', 'cycleHand', 'searchDraw', 'recoverDiscard', 'recoverExhaust', 'recoverExhaustToDraw')) {
     return recipe('draw', 'cast', 'magic-burst', actorTone[character])
   }
   if (has('discard', 'discardAny', 'discardNonRetain', 'topdeck')) {
     return recipe('discard', 'cast', 'magic-burst', actorTone[character])
   }
-  if (has('exhaustFromHand', 'exhaustHand', 'exhaustDrawPile', 'removeAllOrbs')) {
+  if (has('exhaustFromHand', 'exhaustHand', 'exhaustDrawPile', 'removeAllOrbs', 'exhaustNextCard')) {
     return recipe('exhaust', 'cast', 'magic-burst', actorTone[character])
   }
-  if (def.type === 'attack') return actorAttack[character]
+  if (def.guardianVariableType && resolvedType === 'skill') {
+    return recipe('block', 'recoil', 'guard-bloom', actorTone[character])
+  }
+  if (resolvedType === 'attack') return actorAttack[character]
   if (def.type === 'power' || effects.length > 0) return recipe('buff', 'cast', 'magic-burst', actorTone[character])
   return recipe('utility', 'none', 'magic-burst', actorTone[character])
 }
@@ -263,11 +310,12 @@ export function cardVfxRecipe(
   cardId: string,
   mode?: number,
   upgraded = cardId.endsWith('+'),
+  resolvedType?: CardType,
 ): VfxRecipe {
   const baseId = cardId.endsWith('+') ? cardId.slice(0, -1) : cardId
   const base = CARDS[baseId]
   if (!base) throw new Error(`unknown card id: ${cardId}`)
-  return CARD_OVERRIDES[baseId] ?? fallbackRecipe(character, faceOf(base, upgraded), mode)
+  return CARD_OVERRIDES[baseId] ?? fallbackRecipe(character, faceOf(base, upgraded), mode, resolvedType)
 }
 
 export function potionVfxRecipe(potionId: string): VfxRecipe {

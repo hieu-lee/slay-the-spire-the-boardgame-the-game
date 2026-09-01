@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { campfireScenePath } from '../game/assets.ts'
+import { campfireCharacterImagePath, campfireScenePath, campfireUsesCharacterCutouts } from '../game/assets.ts'
 import { canUpgradeCard } from '../game/run.ts'
 import type { PublicSeat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import type { CampfireDecision } from '../game/run.ts'
@@ -26,17 +26,24 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
   const coffee = player.relics.some((relic) => relic.defId === 'coffee_dripper')
   const hammer = player.relics.some((relic) => relic.defId === 'fusion_hammer')
   const peacePipe = player.relics.some((relic) => relic.defId === 'peace_pipe')
+  const straightRazor = player.relics.some((relic) => relic.defId === 'straight_razor')
   const restHeal = 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0)
   const ready = decision?.choice === 'rest' || decision?.choice === 'leave' || decision?.choice === 'ruby' || decision?.cardUid !== undefined
   const alive = seats.some((seat) => seat.playerId === player.id)
+  const seatCharacters = seats.map((seat) => seat.character)
+  const characterCutouts = campfireUsesCharacterCutouts(seatCharacters)
 
   useEffect(() => {
     if (saved) setDecision(saved)
-  }, [saved?.cardUid, saved?.choice])
+  }, [saved?.cardUid, saved?.choice, saved?.removeCardUid, saved?.transformCardUid])
 
   return (
-    <section className="campfire" data-party-size={seats.length}
-      style={{ '--campfire-scene': `url("${new URL(campfireScenePath(seats.map((seat) => seat.character)), window.location.href).href}")` } as CSSProperties}>
+    <section className="campfire" data-party-size={seats.length} data-character-cutouts={characterCutouts || undefined}
+      style={{ '--campfire-scene': `url("${new URL(campfireScenePath(seatCharacters), window.location.href).href}")` } as CSSProperties}>
+      {characterCutouts ? <div className="campfire__party" aria-hidden="true"
+        style={{ '--campfire-party-size': seats.length } as CSSProperties}>
+        {seats.map((seat) => <img key={seat.playerId} src={campfireCharacterImagePath(seat.character)} alt="" />)}
+      </div> : null}
       <div className="campfire__prompt">
       <h2><Icon name="burn" size={26} /> Campfire <small>Rest Site</small></h2>
       {alive ? <div className="campfire__player">
@@ -58,7 +65,18 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
         </div>
         {decision?.choice === 'rest' && peacePipe ? <div className="campfire__deck campfire__deck--remove">
           {deck.filter((card) => card.defId !== 'ascenders_bane').map((card) => <Card key={card.uid} card={card} selected={card.uid === decision.removeCardUid}
-            onClick={() => setDecision({ ...decision, removeCardUid: decision.removeCardUid === card.uid ? undefined : card.uid })} />)}
+            onClick={() => setDecision({
+              ...decision,
+              removeCardUid: decision.removeCardUid === card.uid ? undefined : card.uid,
+              transformCardUid: decision.removeCardUid !== card.uid && decision.transformCardUid === card.uid
+                ? undefined : decision.transformCardUid,
+            })} />)}
+        </div> : null}
+        {decision?.choice === 'rest' && straightRazor ? <div className="campfire__deck campfire__deck--transform">
+          {deck.filter((card) => card.defId !== 'ascenders_bane' && card.uid !== decision.removeCardUid).map((card) =>
+            <Card key={card.uid} card={card} selected={card.uid === decision.transformCardUid}
+              onClick={() => setDecision({ ...decision,
+                transformCardUid: decision.transformCardUid === card.uid ? undefined : card.uid })} />)}
         </div> : null}
         {decision?.choice === 'smith' ? (
           <div className="campfire__deck campfire__deck--smith">

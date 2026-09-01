@@ -1,31 +1,36 @@
 import { shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
+import type { RuleSet } from './meta.ts'
+import type { CharacterId } from './types.ts'
+import { HEARTS_BOONS } from './downfall/items.ts'
 
 export type NeowRewardKind = 'card' | 'rare' | 'colorless' | 'potion' | 'relic'
 
 export type NeowEffect =
-  | { kind: 'upgrade'; count: 1 | 2; random?: boolean }
-  | { kind: 'remove'; count: 1 | 2 }
-  | { kind: 'transform'; count: 1 | 2 }
-  | { kind: 'gold'; amount: 3 | 5 | 10 }
-  | { kind: 'loseGold'; amount: 3 }
-  | { kind: 'loseHp'; amount: 2 | 3 }
-  | { kind: 'reward'; reward: NeowRewardKind; count: 1 | 2 }
-  | { kind: 'randomRare' }
-  | { kind: 'relic' }
-  | { kind: 'potions'; count: 3 }
+  | { kind: 'upgrade'; count: 1 | 2; random?: boolean; starter?: 'strike' | 'defend' }
+  | { kind: 'remove'; count: 1 | 2; starter?: 'strike' | 'defend' }
+  | { kind: 'transform'; count: 1 | 2; upgrade?: boolean }
+  | { kind: 'gold'; amount: number }
+  | { kind: 'loseGold'; amount: number }
+  | { kind: 'loseHp'; amount: number }
+  | { kind: 'loseMaxHp'; amount: number }
+  | { kind: 'reward'; reward: NeowRewardKind; count: 1 | 2 | 3; look?: 3 | 5; upgraded?: boolean }
+  | { kind: 'randomRare'; upgraded?: boolean }
+  | { kind: 'randomCards'; source: 'card' | 'colorless'; count: 1 | 2; upgraded?: boolean }
+  | { kind: 'relic'; choices?: 1 | 3 }
+  | { kind: 'potions'; count: 2 | 3 }
   | { kind: 'curse' }
 
 export type NeowImmediateReward = Extract<NeowEffect,
-  { kind: 'upgrade' | 'remove' | 'transform' | 'gold' | 'randomRare' }>
-export type NeowQueuedEffect = NeowRewardKind | Exclude<NeowEffect,
-  { kind: 'reward' | 'potions' | 'relic' }>
+  { kind: 'upgrade' | 'remove' | 'transform' | 'gold' | 'randomRare' | 'randomCards' }>
+export type NeowQueuedEffect = NeowRewardKind | NeowEffect
 
 export type NeowOption = { label: string; effects: readonly NeowEffect[] }
 export type NeowCard = {
   id: string
   text: string
   unlocked: boolean
+  source?: 'heart'
   options: readonly [NeowOption, NeowOption, NeowOption]
 }
 
@@ -35,17 +40,24 @@ export type NeowRewardOffer = {
   /** Exact face-up cards, kept so resolution never trusts a client-provided effect. */
   cardsDrawn: string[]
   raresDrawn: string[]
-  prismaticDraws?: Array<{ source: 'ironclad' | 'silent' | 'defect' | 'watcher' | 'colorless'; cardId: string; rareId?: string }>
+  upgraded?: boolean
+  look?: 3 | 5
+  prismaticDraws?: Array<{ source: CharacterId | 'colorless'; cardId: string; rareId?: string }>
+  /** Face-up Guardian Gems reserved when this offer revealed a Socket card. */
+  guardianGems?: string[]
 }
 
 export type NeowPlayerState = {
   cardId: string
   redGoldPending: boolean
   redRewardPending: boolean
+  /** Heart's Boon gives three independent opening Card Rewards. */
+  redRewardsRemaining?: number
   redReward: NeowRewardOffer | null
   blueOption: number | null
   pendingEffect: NeowImmediateReward | null
   rewardKind: NeowRewardKind | null
+  rewardRequest?: { look?: 3 | 5; upgraded?: boolean; relicChoices?: 1 | 3 }
   reward: NeowRewardOffer | null
   rewardQueue: NeowQueuedEffect[]
   done: boolean
@@ -54,6 +66,8 @@ export type NeowPlayerState = {
 export type NeowState = {
   /** Remaining face-down cards. Transport redacts this field. */
   deck: string[]
+  /** Separate physical Heart's Boon deck, absent in legacy/base-only saves. */
+  heartDeck?: string[]
   players: Record<string, NeowPlayerState>
 }
 
@@ -71,6 +85,53 @@ const randomRare = (): NeowEffect => ({ kind: 'randomRare' })
 const relic = (): NeowEffect => ({ kind: 'relic' })
 const potions = (): NeowEffect => ({ kind: 'potions', count: 3 })
 const curse = (): NeowEffect => ({ kind: 'curse' })
+
+const boonEffects: readonly (readonly [NeowEffect[], NeowEffect[], NeowEffect[]])[] = [
+  [[{ kind: 'reward', reward: 'colorless', count: 1 }], [{ kind: 'potions', count: 2 }], [{ kind: 'upgrade', count: 1, starter: 'strike' }, { kind: 'upgrade', count: 1, starter: 'defend' }, { kind: 'loseMaxHp', amount: 1 }]],
+  [[{ kind: 'reward', reward: 'card', count: 1 }], [{ kind: 'gold', amount: 8 }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'upgrade', count: 1, starter: 'strike' }, { kind: 'upgrade', count: 1, starter: 'defend' }, { kind: 'loseGold', amount: 3 }]],
+  [[{ kind: 'remove', count: 1 }], [{ kind: 'gold', amount: 8 }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'transform', count: 1, upgrade: true }, { kind: 'loseHp', amount: 2 }]],
+  [[{ kind: 'upgrade', count: 2, starter: 'strike' }, { kind: 'loseHp', amount: 1 }], [{ kind: 'potions', count: 2 }], [{ kind: 'reward', reward: 'colorless', count: 1, upgraded: true }, { kind: 'loseHp', amount: 3 }]],
+  [[{ kind: 'transform', count: 1 }], [{ kind: 'randomRare' }], [{ kind: 'reward', reward: 'card', count: 1, upgraded: true }, { kind: 'loseMaxHp', amount: 2 }]],
+  [[{ kind: 'reward', reward: 'card', count: 1 }], [{ kind: 'relic' }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'remove', count: 2 }, { kind: 'loseGold', amount: 3 }]],
+  [[{ kind: 'potions', count: 2 }], [{ kind: 'upgrade', count: 2, starter: 'strike' }, { kind: 'loseHp', amount: 1 }], [{ kind: 'remove', count: 2 }, { kind: 'loseMaxHp', amount: 2 }]],
+  [[{ kind: 'transform', count: 1 }], [{ kind: 'upgrade', count: 2, starter: 'strike' }, { kind: 'loseHp', amount: 1 }], [{ kind: 'reward', reward: 'rare', count: 1 }, { kind: 'curse' }]],
+  [[{ kind: 'upgrade', count: 1 }], [{ kind: 'transform', count: 1 }], [{ kind: 'reward', reward: 'rare', count: 1 }, { kind: 'loseMaxHp', amount: 2 }]],
+  [[{ kind: 'upgrade', count: 1 }], [{ kind: 'relic' }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'gold', amount: 11 }, { kind: 'loseMaxHp', amount: 2 }]],
+  [[{ kind: 'remove', count: 2, starter: 'defend' }], [{ kind: 'upgrade', count: 1 }], [{ kind: 'transform', count: 1, upgrade: true }, { kind: 'loseMaxHp', amount: 1 }]],
+  [[{ kind: 'gold', amount: 8 }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'remove', count: 1 }], [{ kind: 'transform', count: 1, upgrade: true }, { kind: 'loseGold', amount: 3 }]],
+  [[{ kind: 'upgrade', count: 1 }], [{ kind: 'randomRare' }], [{ kind: 'relic', choices: 3 }, { kind: 'curse' }]],
+  [[{ kind: 'potions', count: 3 }], [{ kind: 'gold', amount: 11 }, { kind: 'loseMaxHp', amount: 2 }], [{ kind: 'reward', reward: 'card', count: 1, upgraded: true }, { kind: 'curse' }]],
+  [[{ kind: 'remove', count: 1 }], [{ kind: 'randomCards', source: 'colorless', count: 2 }], [{ kind: 'relic', choices: 3 }, { kind: 'loseMaxHp', amount: 2 }]],
+  [[{ kind: 'reward', reward: 'colorless', count: 1 }], [{ kind: 'gold', amount: 8 }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'randomCards', source: 'card', count: 2 }]],
+  [[{ kind: 'randomRare' }], [{ kind: 'relic' }, { kind: 'loseGold', amount: 3 }], [{ kind: 'randomCards', source: 'colorless', count: 1, upgraded: true }, { kind: 'loseHp', amount: 1 }]],
+  [[{ kind: 'gold', amount: 5 }], [{ kind: 'reward', reward: 'colorless', count: 1 }], [{ kind: 'reward', reward: 'card', count: 3 }, { kind: 'loseMaxHp', amount: 1 }]],
+  [[{ kind: 'potions', count: 3 }], [{ kind: 'upgrade', count: 1 }], [{ kind: 'reward', reward: 'card', count: 1, upgraded: true }, { kind: 'loseHp', amount: 3 }]],
+  [[{ kind: 'potions', count: 3 }], [{ kind: 'remove', count: 2, starter: 'defend' }], [{ kind: 'reward', reward: 'card', count: 1, look: 5 }, { kind: 'loseGold', amount: 1 }, { kind: 'loseHp', amount: 1 }]],
+]
+
+export function formatHeartBoonLabel(label: string): string {
+  return label
+    .replace(/(?:(\d+) )?\[yellow-card-reward\]/g, (_token, count?: string) =>
+      count ? `${count} Rare Card Reward${count === '1' ? '' : 's'}` : 'a Rare Card Reward')
+    .replace(/(?:(\d+) )?\[up-arrow-card-reward\]/g, (_token, count?: string) =>
+      count ? `${count} Upgraded Card Reward${count === '1' ? '' : 's'}` : 'an Upgraded Card Reward')
+    .replace(/(?:(\d+) )?\[card-reward\]/g, (_token, count?: string) =>
+      count ? `${count} Card Reward${count === '1' ? '' : 's'}` : 'a Card Reward')
+    .replace(/(?:(\d+) )?\[relic\]/g, (_token, count?: string) =>
+      count ? `${count} Relic${count === '1' ? '' : 's'}` : 'a Relic')
+    .replace(/(?:(\d+) )?\[potion\]/g, (_token, count?: string) =>
+      `${count ? `${count} ` : ''}${count === undefined || count === '1' ? 'Potion' : 'Potions'}`)
+}
+
+export const HEARTS_BOON_CARDS: readonly NeowCard[] = HEARTS_BOONS.map((boon, index) => ({
+  id: `heart_boon_${String(index).padStart(2, '0')}`,
+  text: boon.speech,
+  source: 'heart' as const,
+  unlocked: index >= 14,
+  options: boon.options.map((label, optionIndex) => ({
+    label: formatHeartBoonLabel(label), effects: boonEffects[index]![optionIndex]!,
+  })) as unknown as NeowCard['options'],
+}))
 
 /** Exact 14-card base deck plus the six cards in the Colorless unlock box. */
 export const NEOW_CARDS: readonly NeowCard[] = [
@@ -170,4 +231,23 @@ export function dealNeow(rng: RngState, playerIds: readonly string[], colorlessU
   }
 }
 
-export const neowCard = (id: string): NeowCard | undefined => NEOW_CARDS.find((card) => card.id === id)
+export function dealBlessings(
+  rng: RngState,
+  players: readonly { id: string }[],
+  prototypesUnlocked: boolean,
+  ruleset: RuleSet,
+): { deck: string[]; heartDeck: string[]; dealt: Record<string, string> } {
+  if (players.length < 1 || players.length > 4 || new Set(players.map(({ id }) => id)).size !== players.length) {
+    throw new Error('Blessings require 1 to 4 unique players')
+  }
+  const deck = shuffle(rng, (ruleset === 'downfall' ? HEARTS_BOON_CARDS : NEOW_CARDS)
+    .filter((card) => prototypesUnlocked || !card.unlocked).map((card) => card.id))
+  return {
+    dealt: Object.fromEntries(players.map((player, index) => [player.id, deck[index]!])),
+    deck: ruleset === 'base' ? deck.slice(players.length) : [],
+    heartDeck: ruleset === 'downfall' ? deck.slice(players.length) : [],
+  }
+}
+
+export const neowCard = (id: string): NeowCard | undefined =>
+  NEOW_CARDS.find((card) => card.id === id) ?? HEARTS_BOON_CARDS.find((card) => card.id === id)

@@ -29,7 +29,9 @@ export const COMBAT_OUTCOME_SOUND_DELAY_MS = 2_400
 
 export const isCharacterAttack = ({ event, recipe }: ActiveCombatVfx): boolean =>
   event.kind !== 'potion' && event.kind !== 'orb' && event.enemyIds.length > 0 &&
-  (event.kind === 'shiv' || cardDef(event.sourceId).type === 'attack' || OFFENSIVE_VFX_FAMILIES.has(recipe.family))
+  (event.kind === 'shiv' ||
+    event.kind === 'card' && (event.resolvedType ?? cardDef(event.sourceId).type) === 'attack' ||
+    OFFENSIVE_VFX_FAMILIES.has(recipe.family))
 
 export function characterAttackContactMs(
   state: CombatState,
@@ -43,13 +45,14 @@ export function characterAttackContactMs(
     event,
     recipe: event.kind === 'shiv'
       ? shivVfxRecipe()
-      : cardVfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded),
+      : cardVfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded, event.resolvedType),
   }
   if (!isCharacterAttack(active)) return 0
   const targetIndex = Math.max(0, event.enemyIds.indexOf(targetId))
   if (actor.character === 'silent') return 1_025 + targetIndex * 70
   if (actor.character === 'defect') return 1_110 + targetIndex * 70
   if (actor.character === 'watcher') return 1_050 + targetIndex * 70
+  if (actor.character === 'hexaghost') return 1_450 + targetIndex * 70
   return 630
 }
 

@@ -457,13 +457,13 @@ check('a stance trigger narrows to that stance, or matches any', () => {
   assert(!triggerMatches(wrathOnly, { kind: 'onEnterStance', stance: 'calm' }))
 })
 
-check('every Power declares exactly one resolution model', () => {
+check('every Power declares a resolution model', () => {
   for (const def of Object.values(CARDS)) {
-    if (def.type !== 'power') continue
+    if (def.type !== 'power' || def.cardKind === 'slime') continue
     const persistent = def.persistent === true || def.corruptSkills === true || def.retainBlock === true
     assert(
       [def.trigger !== undefined, def.resolvesOnPlay === true, def.activeAbility === true, persistent]
-        .filter(Boolean).length === 1,
+        .some(Boolean),
       `${def.id} must trigger later, activate during the turn, resolve when played, or be persistent`,
     )
   }

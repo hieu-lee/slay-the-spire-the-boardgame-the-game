@@ -332,6 +332,19 @@ button.pile:hover { filter: brightness(1.15); }
   text-align: center;
 }
 
+.end-turn-effects__choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: min(28rem, calc(100vw - 2rem));
+  gap: 0.35rem;
+  pointer-events: auto;
+}
+
+.end-turn-effects__choices button {
+  padding: 0.35rem 0.65rem;
+}
+
 .end-turn-effect {
   pointer-events: auto;
   animation: end-turn-effect-arrive 280ms var(--ease-out, ease-out) both;

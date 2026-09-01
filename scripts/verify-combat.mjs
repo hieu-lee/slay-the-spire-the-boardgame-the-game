@@ -51,6 +51,7 @@ import { damagePlayer } from '../src/game/combat/effects.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { createRng } from '../src/game/rng.ts'
 import { CAPS } from '../src/game/types.ts'
+import { DOWNFALL_COLORLESS_CARD_DEFS } from '../src/game/downfall/items.ts'
 import {
   advanceAct,
   createRun,
@@ -200,6 +201,7 @@ check('accepted card and potion actions append bounded public presentation event
     upgraded: true,
     copied: false,
     energy: 2,
+    resolvedType: 'attack',
     enemyIds: ['target'],
     playerIds: [],
   }])
@@ -326,6 +328,7 @@ check('copied and modal card resolutions publish their actual presentation metad
     upgraded: false,
     copied: true,
     energy: 1,
+    resolvedType: 'attack',
     enemyIds: ['e1'],
     playerIds: [],
   })
@@ -338,6 +341,7 @@ check('copied and modal card resolutions publish their actual presentation metad
     upgraded: false,
     copied: false,
     energy: 0,
+    resolvedType: 'attack',
     enemyIds: ['e1'],
     playerIds: [],
   })
@@ -723,6 +727,12 @@ check('the discard prompt appears only when the arrangement can matter', () => {
     makePlayer({ hand: [instance('bash'), instance('defend_ironclad')], draw: [instance('claw')] }),
   ], [makeEnemy()]))
   assertEqual(clawed.phase, 'discard', 'a Claw makes the top of the discard pile worth choosing')
+
+  const chambered = beginEndPlayerTurn(combat([
+    makePlayer({ character: 'hermit', hand: [instance('bash'), instance('defend_ironclad')],
+      chamber: [instance('claw')] }),
+  ], [makeEnemy()]))
+  assertEqual(chambered.phase, 'discard', 'a loaded Claw makes the top of the discard pile worth choosing')
 
   const single = beginEndPlayerTurn(combat([
     makePlayer({ hand: [instance('bash')], draw: [instance('claw')] }),
@@ -1670,6 +1680,8 @@ check('giving up ends only an active fight and records a party defeat immediatel
   assertEqual(actBoundary.phase, 'defeat', 'giving up at a nonterminal Act boundary did not end the run')
   const pending = {
     ...run,
+    pendingGuardianSockets: [{ playerId: 'p1', cardUid: 'abandoned-socket',
+      gemIds: ['guardian_ruby'], source: 'gain' }],
     players: run.players.map((player, index) => index === 0
       ? { ...player, relics: [...player.relics, { defId: 'war_paint', spent: false, pending: true }] }
       : player),
@@ -1677,6 +1689,7 @@ check('giving up ends only an active fight and records a party defeat immediatel
   const abandonedPending = giveUpRun(pending)
   assert(!abandonedPending.players.some((player) => player.relics.some((relic) => relic.pending)),
     'surrender retained an unresolved one-shot relic')
+  assertDeepEqual(abandonedPending.pendingGuardianSockets, [], 'surrender retained an unresolved Socket')
   assertEqual(finishRun(abandonedPending).campaign.finalized, true,
     'an abandoned relic choice blocked campaign finalization')
 })
@@ -2771,11 +2784,20 @@ check('every newly transcribed card does what its face prints', () => {
   const dedicated = new Set([
     'deva_form', 'omniscience', 'vault', 'talk_to_the_hand', 'tantrum', 'weave',
     'conjure_blade', 'deus_ex_machina', 'foreign_influence', 'omega', 'reach_heaven', 'study',
+    // Exhaustive inventory and focused mechanics live in verify-downfall-hexaghost.mjs.
+    ...Object.values(CARDS).filter((def) => def.owner === 'hexaghost').map((def) => def.id),
+    // Exhaustive inventory, handler dispatch, Mode/Vigor, and Socket rules live in verify-downfall-guardian.mjs.
+    ...Object.values(CARDS).filter((def) => def.owner === 'guardian').map((def) => def.id),
+    // Exhaustive inventory and focused Grow/Command/Vigor outcomes live in verify-downfall-slime.mjs.
+    ...Object.values(CARDS).filter((def) => def.owner === 'slime_boss').map((def) => def.id),
+    // Exact faces and focused executable clauses live in verify-downfall-items.mjs.
+    ...Object.keys(DOWNFALL_COLORLESS_CARD_DEFS),
   ])
   // Checks earlier in THIS process register `fixture_*` cards into the table;
   // they are scaffolding, not printed cards.
   const uncovered = Object.keys(CARDS).filter(
-    (id) => !id.startsWith('fixture_') && !LEGACY.has(id) && !covered.has(id) && !dedicated.has(id),
+    (id) => CARDS[id].owner !== 'hermit' && !id.startsWith('fixture_') &&
+      !LEGACY.has(id) && !covered.has(id) && !dedicated.has(id),
   )
   assertEqual(
     uncovered.length,
@@ -2960,6 +2982,22 @@ check('Watcher Batch 1 resolves physical targeting, restrictions, and modal effe
   state = playCard(state, 'p1', costly.uid, { enemyUid: 'e1', playerId: null })
   assertEqual(state.players[0].energy, 0, 'the discounted Attack costs no Energy')
   assertEqual(state.players[0].freeAttacksThisTurn, 0, 'the Attack consumes Swivel')
+
+  const nextRoundSwivel = instance('swivel')
+  const paidAllyAttack = instance('strike_ironclad')
+  let stalePartyDiscount = combat([
+    makePlayer({ character: 'watcher', draw: [nextRoundSwivel] }),
+    makePlayer({ id: 'p2', name: 'Ironclad', character: 'ironclad', row: 1, draw: [paidAllyAttack] }),
+  ], [makeEnemy({ row: 1, hp: 20 })])
+  stalePartyDiscount.phase = 'roundEnd'
+  stalePartyDiscount.partyAttackDiscount = true
+  stalePartyDiscount = startPlayerTurn(stalePartyDiscount)
+  stalePartyDiscount = playCard(stalePartyDiscount, 'p1', nextRoundSwivel.uid,
+    { enemyUid: null, playerId: 'p1' })
+  stalePartyDiscount = playCard(stalePartyDiscount, 'p2', paidAllyAttack.uid,
+    { enemyUid: 'e1', playerId: null })
+  assertEqual(stalePartyDiscount.players[0].freeAttacksThisTurn, 1,
+    'an expired party discount consumed another player\'s fresh Swivel')
 
   const repeatedRagnarok = instance('ragnarok')
   const repeated = playCard(combat(
@@ -3182,6 +3220,95 @@ check('Watcher generated-choice batch resolves physical effects and server-deriv
   assertEqual(cardModeIsAvailable(
     faceOf(cardDef('foreign_influence'), false), redactedState, redactedState.players[0], 1, 0,
   ), true, 'Foreign Influence enables a copied Grand Finale when the public draw count is zero')
+})
+
+check('Guardian variable cards preserve their played Mode for copies', () => {
+  const setup = (mode) => {
+    const foreign = instance('foreign_influence')
+    const whirl = instance('guardian_guardian_whirl')
+    const state = combat([
+      makePlayer({ character: 'watcher', guardianMode: null, hand: [foreign], energy: 2 }),
+      makePlayer({ id: 'p2', name: 'Guardian', character: 'guardian', guardianMode: mode,
+        vigor: 0, vigorSpentThisTurn: 0, hand: [whirl], energy: 2 }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })])
+    state.players[1].guardianMode = mode
+    return { foreign, whirl, state: playCard(state, 'p2', whirl.uid, {
+      enemyUid: 'e1', playerId: 'p2', energySpent: 2,
+    }) }
+  }
+
+  const defense = setup('defense')
+  assertEqual(defense.state.players[1].hand.length, 0, 'Defense Mode Guardian Whirl was rejected')
+  assertEqual(defense.state.players[1].block, 2, 'Defense Mode Guardian Whirl did not grant Block')
+  assertEqual(defense.state.enemies[0].hp, 20)
+  assertEqual(defense.state.playedCardsThisTurn[0].type, 'skill')
+  assertEqual(playCard(defense.state, 'p1', defense.foreign.uid, {
+    enemyUid: null, playerId: null, mode: 1,
+  }), defense.state, 'Foreign Influence copied a Guardian card played as a Defense Mode Skill')
+
+  const attack = setup('attack')
+  assertEqual(attack.state.players[1].block, 0)
+  assertEqual(attack.state.enemies[0].hp, 18)
+  assertEqual(attack.state.playedCardsThisTurn[0].type, 'attack')
+  let state = playCard(attack.state, 'p1', attack.foreign.uid, {
+    enemyUid: null, playerId: null, mode: 1,
+  })
+  assertEqual(state.phase, 'copy')
+  assertEqual(playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' }), state,
+    'a foreign Guardian copy resolved without choosing its Corrupted Shard Mode')
+  state = playCardCopy(state, 'p1', {
+    enemyUid: null, playerId: 'p1', corruptedShardMode: 'defense',
+  })
+  assertEqual(state.players[0].guardianMode, 'defense')
+  assertEqual(state.players[0].relics.filter((relic) => relic.defId === 'corrupted_shard').length, 1)
+  assertEqual(state.playedCardsThisTurn.at(-1).type, 'skill')
+  assertEqual(state.players[0].block, 0, 'a free copied X card spent Energy it did not pay')
+  assertEqual(state.enemies[0].hp, 18)
+
+  const foreign = instance('foreign_influence')
+  const orbSlam = instance('guardian_orb_slam')
+  let fixedMode = combat([
+    makePlayer({ character: 'watcher', guardianMode: null, hand: [foreign], energy: 2 }),
+    makePlayer({ id: 'p2', name: 'Guardian', character: 'guardian', guardianMode: 'defense',
+      vigor: 0, vigorSpentThisTurn: 0, hand: [orbSlam], energy: 2 }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })])
+  fixedMode = playCard(fixedMode, 'p2', orbSlam.uid, { enemyUid: 'e1', playerId: null })
+  fixedMode = playCard(fixedMode, 'p1', foreign.uid, { enemyUid: null, playerId: null, mode: 1 })
+  fixedMode = playCardCopy(fixedMode, 'p1', {
+    enemyUid: 'e1', playerId: null, corruptedShardMode: 'defense',
+  })
+  assertEqual(fixedMode.players[0].block, 1,
+    'the copied Orb Slam did not resolve its Defense Mode bonus')
+})
+
+check('Corrupted Shard waits for a card that references Guardian Mode', () => {
+  const strike = instance('guardian_strike')
+  const curlUp = instance('guardian_curl_up')
+  let state = combat([makePlayer({
+    character: 'watcher', guardianMode: null, hand: [strike, curlUp], energy: 3,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].guardianMode, null,
+    'a plain foreign Guardian card consumed the Corrupted Shard mode choice')
+  assertEqual(playCard(state, 'p1', curlUp.uid, { enemyUid: null, playerId: 'p1' }), state,
+    'a mode-referencing Guardian card resolved without the Corrupted Shard choice')
+  state = playCard(state, 'p1', curlUp.uid, {
+    enemyUid: null, playerId: 'p1', corruptedShardMode: 'defense',
+  })
+  assertEqual(state.players[0].guardianMode, 'defense')
+
+  const barrier = { ...instance('guardian_prismatic_barrier'), attachedGemId: 'guardian_opal' }
+  const draw = [instance('strike_watcher'), instance('defend_watcher')]
+  state = combat([makePlayer({
+    character: 'watcher', guardianMode: null, hand: [barrier], draw, energy: 3,
+  })], [makeEnemy()])
+  assertEqual(playCard(state, 'p1', barrier.uid, { enemyUid: null, playerId: 'p1' }), state,
+    'an attached mode-referencing Gem resolved without the Corrupted Shard choice')
+  state = playCard(state, 'p1', barrier.uid, {
+    enemyUid: null, playerId: 'p1', corruptedShardMode: 'defense',
+  })
+  assertEqual(state.players[0].guardianMode, 'defense')
+  assertEqual(state.players[0].hand.length, 2, 'socketed Opal did not use the chosen Defense Mode')
 })
 
 check('Watcher Retain lifecycle applies Establishment and retained-card bonuses', () => {
@@ -4909,6 +5036,17 @@ check('later end-turn Lightning retargets after overkill and skips when no targe
   assert(skipped.pendingSummons.length > 0, 'Slime Boss lost its queued Split')
 })
 
+check('interactive end-turn preparation clears Stasis and respects prevent-Block', () => {
+  const retained = { ...instance('guardian_defend'), stasisRetained: true }
+  const state = combat([makePlayer({
+    character: 'guardian', hand: [retained], orbs: ['lightning'],
+    powers: [instance('panic_button')], relics: [{ defId: 'orichalcum', spent: false }],
+  })], [makeEnemy()])
+  const staged = beginEndTurnResolution(state)
+  assertEqual(staged.players[0].hand[0].stasisRetained, undefined)
+  assertEqual(staged.players[0].block, 0, 'Orichalcum bypassed Panic Button during interactive resolution')
+})
+
 check('Loop repeats only the selected Lightning slot after overkill', () => {
   const loop = instance('loop')
   const state = combat([makePlayer({
@@ -5298,10 +5436,13 @@ check('Flame Barrier damages only enemies whose current intent attacks its playe
   }
 })
 
-check('Snecko next-card cost is the shared displayed and enforced play cost', () => {
+check('player cost effects are ordered before enemy Confusion', () => {
   const bash = faceOf(cardDef('bash'), false)
   assertEqual(playCost(bash, makePlayer({ nextCardCost: 0 })), 0)
   assertEqual(playCost(bash, makePlayer({ nextCardCost: 3 })), 3)
+  assertEqual(playCost(bash, makePlayer({ nextCardCost: 3, freeCardsThisTurn: 1 })), 0)
+  assertEqual(playCost(bash, makePlayer({ nextCardCost: 3, freeCardsThisTurn: 1,
+    enemyNextCardCost: 2 })), 2)
 })
 
 check('Rampage counts the whole Exhaust pile after its upgraded Exhaust resolves', () => {
@@ -9173,11 +9314,13 @@ check('a changed die drives the Mystic action that actually resolves', () => {
   assertEqual(resolved.enemies[0].strength, 1, 'the pictured Mystic strengthens on 6')
 })
 
-check('the post-roll window rejects unrelated manual Relics', () => {
+check('the post-roll window permits ordinary turn abilities but still locks die-changing Relics', () => {
   const card = instance('defend_ironclad')
   const state = { ...combat([makePlayer({ hand: [card], relics: [{ defId: 'blue_candle', spent: false }] })],
     [makeEnemy()]), phase: 'start' }
-  assertEqual(activateRelic(state, 'p1', 0, { cardUids: [card.uid] }), state)
+  const activated = activateRelic(state, 'p1', 0, { cardUids: [card.uid] })
+  assert(activated !== state)
+  assertEqual(activated.players[0].exhaust[0].uid, card.uid)
   const pending = { ...state, players: [{ ...state.players[0], relics: [{ defId: 'the_abacus', spent: false }] }],
     startTurnProgress: { choices: [] } }
   assertEqual(activateRelic(pending, 'p1', 0), pending)
@@ -9501,10 +9644,14 @@ check('Distilled Chaos prunes queued cards moved out of hand by an earlier card'
   assertEqual(state.startTurnProgress, undefined)
 })
 
-check('Mark of Pain caps combat healing at 6 HP', () => {
+check('base Mark of Pain caps healing at 6 HP', () => {
   const state = combat([makePlayer({ hp: 5, maxHp: 10, potions: ['blood_potion'],
     relics: [{ defId: 'mark_of_pain', spent: false }] })], [makeEnemy()])
   assertEqual(activatePotion(state, 'p1', 'blood_potion').players[0].hp, 6)
+
+  const downfall = createCombat(createRng(9042), [makePlayer({ hp: 5, maxHp: 8, potions: ['blood_potion'],
+    relics: [{ defId: 'mark_of_pain', spent: false }] })], [makeEnemy()], undefined, [], 3, {}, false, 'downfall')
+  assertEqual(activatePotion(downfall, 'p1', 'blood_potion').players[0].hp, 7)
 })
 
 check('Ninja Scroll respects the shared Shiv supply and throws overflow immediately', () => {

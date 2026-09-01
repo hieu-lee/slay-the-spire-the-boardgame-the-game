@@ -28,6 +28,20 @@ check('setup modifiers use the finite physical supplies', () => {
   assert(run.players.every((player) => player.relics.some((relic) => relic.defId === 'prismatic_shard')))
 })
 
+check('Shiny queues Guardian Sockets during initial and Catch Up setup', () => {
+  const options = { mode: 'custom', modifiers: ['shiny'], ruleset: 'downfall' }
+  const initial = createRun(1, [{ id: 'guardian', name: 'Guardian', character: 'guardian' }],
+    0, createCampaignProgress(), false, false, options)
+  assert(initial.pendingGuardianSockets.length > 0)
+  assertEqual(initial.guardianGemDeck.length, 24 - initial.pendingGuardianSockets.length)
+
+  let run = createRun(2, [party[0]], 0, createCampaignProgress(), false, false, options)
+  run = { ...run, phase: 'map', neow: null, act: 2, map: { ...run.map, act: 2, position: null } }
+  const caught = beginCatchUp(run, [{ id: 'guardian', name: 'Guardian', character: 'guardian' }])
+  assert(caught.pendingGuardianSockets.length > 0)
+  assertEqual(caught.guardianGemDeck.length, 24 - caught.pendingGuardianSockets.length)
+})
+
 check('Quick Start grants each player one row at a time and stages no future offer', () => {
   let run = createRun(32, party, 0, createCampaignProgress(), false, false, { quickStartAct: 2 })
   run = { ...run, phase: 'setup', neow: null }

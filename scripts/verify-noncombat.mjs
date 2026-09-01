@@ -8,7 +8,7 @@ import {
   resolveRelicReward,
   resolveCourierOffer,
 } from '../src/game/noncombat.ts'
-import { bottomCardChoices, createItemDecks, merchantRemovalCost, potionLimit, transformCard } from '../src/game/acquisition.ts'
+import { bottomCardChoices, createItemDecks, gainRelic, merchantRemovalCost, potionLimit, transformCard } from '../src/game/acquisition.ts'
 import { createPlayer, createRun, decideCourier, enterRoom, revealCourier, resolveCombat, roomChoices } from '../src/game/run.ts'
 import { activatePotion } from '../src/game/combat.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
@@ -39,6 +39,15 @@ check('shared physical decks are deterministic but seed-sensitive', () => {
   for (const id of ['clumsy', 'injury', 'parasite', 'regret']) assertEqual(decks.curses.filter((curse) => curse === id).length, 2)
 })
 
+check('mixed Downfall parties keep every inactive character reward stack available', () => {
+  const decks = createItemDecks(createRng(808), true, createCampaignProgress(),
+    ['ironclad', 'hexaghost'], 'downfall')
+  assertDeepEqual(Object.keys(decks.characterCards).sort(),
+    ['defect', 'guardian', 'hermit', 'silent', 'slime_boss', 'watcher'])
+  assertDeepEqual(Object.keys(decks.characterRares).sort(),
+    ['defect', 'guardian', 'hermit', 'silent', 'slime_boss', 'watcher'])
+})
+
 check('Merchant reveals exact physical inventory and redraws only unsellable Old Coin', () => {
   const party = players()
   const decks = createItemDecks(createRng(2), true)
@@ -49,6 +58,17 @@ check('Merchant reveals exact physical inventory and redraws only unsellable Old
   assertDeepEqual(shop.potions, ['fairy_in_a_bottle', 'fire_potion', 'swift_potion'])
   assertEqual(shop.colorless.length, 3)
   for (const player of party) assert(shop.cards[player.id].choices.length >= 3)
+})
+
+check('Merchant preserves duplicate base faces and replaces them only under Downfall rules', () => {
+  const owner = players(1)[0]
+  owner.cardRewards = ['anger', 'anger', 'claw', 'bash']
+  const base = createMerchant(createItemDecks(createRng(202), true), [owner], undefined, 'base')
+  assertDeepEqual(base.cards[owner.id].choices, ['anger', 'anger', 'claw'])
+  assertDeepEqual(base.cards[owner.id].cardsDrawn, ['anger', 'anger', 'claw'])
+  const downfall = createMerchant(createItemDecks(createRng(203), true), [owner], undefined, 'downfall')
+  assertDeepEqual(downfall.cards[owner.id].choices, ['anger', 'claw', 'bash'])
+  assertDeepEqual(downfall.cards[owner.id].cardsDrawn, ['anger', 'anger', 'claw', 'bash'])
 })
 
 check('one seat cannot forge another player contribution', () => {
@@ -82,6 +102,24 @@ check('non-combat relic gains use canonical finite-use and pending instances', (
   const resolved = resolveRelicReward(wingReward, decks, party, false)
   assertEqual(resolved?.players[0].relics.at(-1)?.uses, 3)
   assertEqual(resolved?.players[1].relics.at(-1)?.pending, true)
+})
+
+check('Potion Belt draws two potions through the shared and Treasure acquisition boundaries', () => {
+  const top = ['block_potion', 'energy_potion']
+  for (const route of ['shared', 'treasure']) {
+    const party = players(1)
+    const decks = createItemDecks(createRng(306), false)
+    decks.potions = [...top]
+    let owner
+    if (route === 'shared') owner = gainRelic(party[0], 'potion_belt', decks.potions, 0)
+    else {
+      owner = resolveRelicReward({
+        kind: 'treasure', offers: { p1: 'potion_belt' }, playerIds: ['p1'], decisions: { p1: 'take' },
+      }, decks, party, false)?.players[0]
+    }
+    assertDeepEqual(owner?.potions, top, `${route} omitted Potion Belt's on-acquire potions`)
+    assertDeepEqual(decks.potions, [], `${route} did not consume the shared potion supply`)
+  }
 })
 
 check('Merchant card gains apply and exhaust the matching Egg', () => {

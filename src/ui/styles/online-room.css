@@ -154,6 +154,18 @@
   text-align: center;
 }
 
+.app-shell--combat > .online-error {
+  position: fixed;
+  z-index: 90;
+  top: 4rem;
+  left: 50%;
+  max-width: calc(100% - 2rem);
+  padding: 0.35rem 0.65rem;
+  background: rgb(20 15 14 / 0.94);
+  border: 1px solid currentColor;
+  transform: translateX(-50%);
+}
+
 .online-mutations {
   display: flex;
   flex-direction: column;

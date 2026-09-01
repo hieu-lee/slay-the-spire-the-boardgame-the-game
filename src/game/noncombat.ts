@@ -16,6 +16,10 @@ import {
 import type { ItemDecks, RewardDraw } from './acquisition.ts'
 import { potionDef, relicDef } from './relics.ts'
 import type { Player } from './types.ts'
+import { mayBuyGuardianSocketCard } from './downfall/guardian.ts'
+import { cardHasGuardianSocket, drawGuardianGemChoices } from './run/guardian-gems.ts'
+import { rulesetForCharacters } from './meta.ts'
+import type { RuleSet } from './meta.ts'
 
 export type MerchantState = {
   kind: 'merchant'
@@ -25,6 +29,8 @@ export type MerchantState = {
   cards: Record<string, RewardDraw>
   removalUsed: string[]
   purchasedCards: Record<string, string[]>
+  guardianGems: Record<string, string[]>
+  socketCardsBought: Record<string, number>
 }
 
 export type TreasureDecision = 'take' | 'skip' | 'sapphire' | number
@@ -72,7 +78,7 @@ export function resolveCourierOffer(
   if (ownerIndex < 0) return null
   const paid = pay(players, payments)
   let owner = paid[ownerIndex]!
-  if (offer.kind === 'relic') owner = gainRelic(owner, offer.id)
+  if (offer.kind === 'relic') owner = gainRelic(owner, offer.id, itemDecks.potions, ascension)
   else {
     if (owner.relics.some((relic) => relic.defId === 'sozu')) return null
     if (discardPotionId) {
@@ -81,7 +87,7 @@ export function resolveCourierOffer(
       owner = { ...owner, potions: owner.potions.filter((_id, index) => index !== at) }
       bottomItems(itemDecks.potions, [discardPotionId])
     }
-    if (owner.potions.length >= potionLimit(ascension)) return null
+    if (owner.potions.length >= potionLimit(ascension, owner)) return null
     owner = gainPotion(owner, offer.id, ascension)
   }
   paid[ownerIndex] = owner
@@ -100,15 +106,29 @@ function pay(players: readonly Player[], payments: Readonly<Record<string, numbe
   return players.map((player) => ({ ...player, gold: player.gold - (payments[player.id] ?? 0) }))
 }
 
-export function createMerchant(itemDecks: ItemDecks, players: readonly Player[]): MerchantState {
+export function createMerchant(
+  itemDecks: ItemDecks,
+  players: readonly Player[],
+  guardianGemDeck?: string[],
+  ruleset: RuleSet = rulesetForCharacters(players.map((player) => player.character)),
+): MerchantState {
+  const cards = Object.fromEntries(players.map((player) =>
+    [player.id, drawCardChoices(player, 3, ruleset === 'downfall')]))
+  const guardianGems = Object.fromEntries(players.map((player) => {
+    const reveal = cards[player.id]!.choices.some(cardHasGuardianSocket) && guardianGemDeck
+      ? drawGuardianGemChoices(guardianGemDeck, 2) : []
+    return [player.id, reveal]
+  }))
   return {
     kind: 'merchant',
     relics: drawItems(itemDecks.relics, 3, new Set(['old_coin'])),
     potions: drawItems(itemDecks.potions, 3),
     colorless: drawItems(itemDecks.colorless, 3),
-    cards: Object.fromEntries(players.map((player) => [player.id, drawCardChoices(player)])),
+    cards,
     removalUsed: [],
     purchasedCards: {},
+    guardianGems,
+    socketCardsBought: {},
   }
 }
 
@@ -146,7 +166,7 @@ export function buyFromMerchant(
   const nextShop: MerchantState = { ...shop }
 
   if (purchase.section === 'relic') {
-    owner = gainRelic(owner, id)
+    owner = gainRelic(owner, id, itemDecks.potions, ascension)
     nextShop.relics = shop.relics.map((value, index) => index === purchase.slot ? null : value)
   } else if (purchase.section === 'potion') {
     const recipientId = purchase.potionRecipientId ?? buyer.id
@@ -160,10 +180,12 @@ export function buyFromMerchant(
       recipient = { ...recipient, potions: recipient.potions.filter((_potion, index) => index !== discardIndex) }
       bottomItems(itemDecks.potions, [purchase.discardPotionId])
     }
-    if (recipient.potions.length >= potionLimit(ascension)) return null
+    if (recipient.potions.length >= potionLimit(ascension, recipient)) return null
     paid[recipientIndex] = gainPotion(recipient, id, ascension)
     nextShop.potions = shop.potions.map((value, index) => index === purchase.slot ? null : value)
   } else {
+    if (purchase.section === 'card' && cardHasGuardianSocket(id) &&
+      !mayBuyGuardianSocketCard(shop.socketCardsBought?.[buyer.id] ?? 0)) return null
     const uid = nextCardUid(paid)()
     owner = addCard(owner, id, uid)
     if (purchase.section === 'colorless') {
@@ -179,6 +201,10 @@ export function buyFromMerchant(
       nextShop.purchasedCards = {
         ...shop.purchasedCards,
         [buyer.id]: [...(shop.purchasedCards[buyer.id] ?? []), id],
+      }
+      if (cardHasGuardianSocket(id)) {
+        nextShop.socketCardsBought = { ...shop.socketCardsBought, [buyer.id]: (shop.socketCardsBought?.[buyer.id] ?? 0) + 1 }
+        nextShop.guardianGems = { ...shop.guardianGems, [buyer.id]: [] }
       }
     }
   }
@@ -271,6 +297,7 @@ export function resolveRelicReward(
   itemDecks: ItemDecks,
   players: readonly Player[],
   sapphireHeld: boolean,
+  ascension = 0,
 ): { players: Player[]; sapphire: boolean } | null {
   const ids = reward.playerIds
   if (!ids.every((id) => reward.decisions[id] !== undefined)) return null
@@ -291,9 +318,9 @@ export function resolveRelicReward(
     }
     if (relicId === 'old_coin') {
       bottom.push(relicId)
-      return gainRelic(player, relicId)
+      return gainRelic(player, relicId, itemDecks.potions, ascension)
     }
-    return gainRelic(player, relicId)
+    return gainRelic(player, relicId, itemDecks.potions, ascension)
   })
   if (reward.sharedOffers) for (const [index, relicId] of reward.sharedOffers.entries()) {
     if (relicId && !Object.values(reward.decisions).includes(index)) bottom.push(relicId)

@@ -27,10 +27,12 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CAPS, CARDS, GOLDEN_TICKET, ROOM_LABEL, cardNeedsEnemy, enteringRoom, lightningRowTarget, previewCardChoice, roomChoices } from '../src/game/state.ts'
+import { CAPS, CARDS, GOLDEN_TICKET, ROOM_LABEL, cardNeedsEnemy, enteringRoom, lightningRowTarget, preparePlayerTurn, preparePlayerTurnThroughDraw, previewCardChoice, resumePlayerTurnAfterDraw, roomChoices } from '../src/game/state.ts'
 import { createMerchant, createRelicReward } from '../src/game/noncombat.ts'
 import { createEventRoom } from '../src/game/event-room.ts'
 import { EVENT_DEFINITIONS } from '../src/game/events.ts'
+import { fireTriggers } from '../src/game/combat/effects.ts'
+import { pendingTriggerAbility } from '../src/game/combat/end-turn.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, assertThrows, report } from './lib/harness.mjs'
 
 /** Every string that appears anywhere in a structure, at any depth. */
@@ -297,6 +299,28 @@ check('disconnect snapshots tolerate legacy partial run markers', () => {
   assertEqual(markDisconnected(room, seat.token).run, null)
 })
 
+check('persisted legacy players gain safe Downfall defaults before snapshots', () => {
+  const { room, a } = twoSeatRoom()
+  for (const player of [...room.run.players, ...room.run.combat.players]) {
+    for (const key of ['chamber', 'chamberSlots', 'heat', 'soulburn', 'guardianMode', 'vigor',
+      'vigorSpentThisTurn', 'slimes', 'lootChests']) delete player[key]
+  }
+  const directory = mkdtempSync(join(tmpdir(), 'sts-downfall-legacy-'))
+  const file = join(directory, 'rooms.json')
+  try {
+    writeFileSync(file, JSON.stringify({ rooms: [room] }))
+    const restored = createStore({ file }).rooms.get(room.code)
+    const visible = snapshotFor(restored, a.token).run.combat.players.find((player) => player.id === a.playerId)
+    assertDeepEqual(visible.chamber, [])
+    assertDeepEqual(visible.slimes, [])
+    assertEqual(visible.heat, 0)
+    assertEqual(visible.soulburn, 0)
+    assertEqual(visible.guardianMode, null)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 suite('give-up authority')
 
 check('all eligible players must vote yes and the vote survives reconnect', () => {
@@ -307,6 +331,7 @@ check('all eligible players must vote yes and the vote survives reconnect', () =
   assertEqual(room.run.phase, 'combat', 'one yes vote surrendered the party')
   room.run.courier.offer = { playerId: a.playerId, kind: 'potion', id: 'block_potion' }
   room.courierPledge = { playerId: a.playerId, id: 'block_potion', payments: { [a.playerId]: 1 } }
+  room.powerPreviews = { [a.playerId]: { powerUid: 'stale-preview', cards: [] } }
   markDisconnected(room, b.token)
   joinRoom(room, { token: b.token })
   assertEqual(snapshotFor(room, b.token).giveUpVote.votes[a.playerId], true)
@@ -314,6 +339,7 @@ check('all eligible players must vote yes and the vote survives reconnect', () =
   assertEqual(room.run.phase, 'defeat')
   assertEqual(room.run.courier.offer, null)
   assertEqual(room.courierPledge, undefined)
+  assertEqual(room.powerPreviews, undefined)
   assertEqual(snapshotFor(room, a.token).giveUpVote, undefined)
 })
 
@@ -468,7 +494,7 @@ suite('Neow authority')
 
 check('Neow deals public faces without leaking its remaining deck and blocks normal play', () => {
   const room = createRoom(createStore(), { code: 'NEOWAA' })
-  const seats = CHARACTERS.map((character, index) => joinRoom(room, { name: `Player ${index + 1}`, character }))
+  const seats = CHARACTERS.slice(0, MAX_SEATS).map((character, index) => joinRoom(room, { name: `Player ${index + 1}`, character }))
   startRun(room, seats[0].token, { seed: 410 })
   const hidden = [...room.run.neow.deck]
   const snapshot = snapshotFor(room, seats[1].token)
@@ -1066,6 +1092,9 @@ check('Golden Ticket reveals are server-authored, reconnect-safe, and do not lea
   const owner = room.run.players.find((player) => player.id === a.playerId)
   owner.cardRewards = ['shrug_it_off', GOLDEN_TICKET, 'pommel_strike', 'cleave']
   owner.rareRewards = ['feed', 'limit_break']
+  const combatOwner = room.run.combat.players.find((player) => player.id === a.playerId)
+  combatOwner.cardRewards = [...owner.cardRewards]
+  combatOwner.rareRewards = [...owner.rareRewards]
   apply(room, a.token, { kind: 'resolveCombat' })
   const hidden = snapshotFor(room, b.token)
   assert(!allStrings(hidden).includes('feed'), 'a future rare leaked before the Ticket reveal')
@@ -3195,6 +3224,112 @@ check('Unload keeps every mandatory Shiv target authoritative across reconnect s
   assertEqual(mine.attacksPlayedThisTurn, 3)
 })
 
+check('Worthy Sacrifice keeps its hand choice private and owner-authoritative', () => {
+  const { room, a, b } = twoSeatRoom()
+  const owner = room.run.combat.players.find((player) => player.id === a.playerId)
+  const first = { uid: 'room-worthy-first', defId: 'strike_hexaghost', upgraded: false }
+  const chosen = { uid: 'room-worthy-chosen', defId: 'defend_hexaghost', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(owner, {
+    character: 'hexaghost', hand: [], draw: [first, chosen], discard: [], exhaust: [],
+    powers: [{ uid: 'room-worthy', defId: 'worthy_sacrifice', upgraded: false }],
+  })
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const mine = snapshotFor(room, a.token)
+  const peer = snapshotFor(room, b.token)
+  const ability = mine.startTurnAbilities.find((entry) => entry.id.includes('room-worthy'))
+  assertDeepEqual(ability.exhaustCards.map((card) => card.uid), [first.uid, chosen.uid])
+  assert(!allStrings(peer).includes(first.uid) && !allStrings(peer).includes(chosen.uid),
+    'Worthy Sacrifice leaked its owner\'s hand to a teammate')
+
+  const coordinator = mine.startTurnCoordinatorId === a.playerId ? a : b
+  apply(room, coordinator.token, {
+    kind: 'resolveStartTurn', choices: mine.startTurnAbilities.map((entry) => ({
+      id: entry.id,
+      enemyUid: entry.targets?.[0]?.uid,
+      targetPlayerId: entry.players?.[0]?.id,
+      exhaustUids: entry.id === ability.id ? [chosen.uid] : undefined,
+      shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+    })),
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assert(resolved.exhaust.some((card) => card.uid === chosen.uid))
+  assert(resolved.hand.some((card) => card.uid === first.uid))
+
+  const disconnected = twoSeatRoom()
+  const absent = disconnected.room.run.combat.players.find((player) => player.id === disconnected.a.playerId)
+  Object.assign(disconnected.room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(absent, {
+    character: 'hexaghost', hand: [], draw: [first, chosen], discard: [], exhaust: [],
+    powers: [
+      { uid: 'room-worthy-disconnected-1', defId: 'worthy_sacrifice', upgraded: false },
+      { uid: 'room-worthy-disconnected-2', defId: 'worthy_sacrifice', upgraded: false },
+    ],
+  })
+  apply(disconnected.room, disconnected.a.token, { kind: 'startTurn' })
+  markDisconnected(disconnected.room, disconnected.a.token)
+  const fallback = snapshotFor(disconnected.room, disconnected.b.token)
+  assertEqual(fallback.startTurnCoordinatorId, disconnected.b.playerId)
+  assert(!allStrings(fallback).includes(first.uid) && !allStrings(fallback).includes(chosen.uid),
+    'the disconnected Worthy Sacrifice fallback leaked its deterministic card')
+  apply(disconnected.room, disconnected.b.token, {
+    kind: 'resolveStartTurn', choices: fallback.startTurnAbilities.map((entry) => ({
+      id: entry.id,
+      enemyUid: entry.targets?.[0]?.uid,
+      targetPlayerId: entry.players?.[0]?.id,
+      shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+    })),
+  })
+  const absentResolved = disconnected.room.run.combat.players
+    .find((player) => player.id === disconnected.a.playerId)
+  assertDeepEqual(absentResolved.exhaust.map((card) => card.uid), [first.uid, chosen.uid],
+    'duplicate Worthy Sacrifice powers reused one disconnected fallback card')
+  assertEqual(absentResolved.hand.length, 0)
+})
+
+check('peer pending Hermit triggers stay render-safe and private', () => {
+  const { room, a, b } = twoSeatRoom()
+  const hermit = room.run.combat.players.find((player) => player.id === a.playerId)
+  const held = { uid: 'room-hermit-private-hand', defId: 'strike_hermit', upgraded: false }
+  const chambered = { uid: 'room-hermit-private-chamber', defId: 'defend_hermit', upgraded: false }
+  Object.assign(hermit, {
+    character: 'hermit', hand: [held], chamber: [chambered], chamberSlots: 2,
+    powers: [{ uid: 'room-called-shot', defId: 'hermit_called_shot', upgraded: false }],
+  })
+  room.run.combat.pendingTriggers = [{
+    id: 0, playerId: a.playerId, sourceId: 'power:room-called-shot',
+  }]
+
+  const mine = snapshotFor(room, a.token).run.combat.pendingTriggerAbility
+  const peerSnapshot = snapshotFor(room, b.token)
+  const peer = peerSnapshot.run.combat.pendingTriggerAbility
+  assertDeepEqual(mine.hermitChoices.loadCards, [])
+  assertDeepEqual(mine.hermitChoices.chamberCards.map((card) => card.uid), [chambered.uid])
+  assertEqual(peer, null)
+  assert(!allStrings(peerSnapshot).includes(held.uid) && !allStrings(peerSnapshot).includes(chambered.uid),
+    'a pending Hermit trigger leaked private cards to its peer')
+
+  const grudge = { uid: 'room-combo-private-grudge', defId: 'hermit_grudge', upgraded: false }
+  const drawn = { uid: 'room-combo-private-draw', defId: 'hermit_defend', upgraded: false }
+  Object.assign(hermit, {
+    hand: [held], draw: [grudge, drawn], discard: [], chamber: [],
+    powers: [{ uid: 'room-combo', defId: 'hermit_combo', upgraded: false }],
+  })
+  room.run.combat.enemies = [
+    { ...room.run.combat.enemies[0], uid: 'room-combo-e1', row: 0 },
+    { ...room.run.combat.enemies[0], uid: 'room-combo-e2', row: 1 },
+  ]
+  room.run.combat.pendingTriggers = [{ id: 1, playerId: a.playerId, sourceId: 'power:room-combo' }]
+  const comboMine = snapshotFor(room, a.token).run.combat.pendingTriggerAbility
+  const comboPeer = snapshotFor(room, b.token)
+  assertDeepEqual(comboMine.hermitChoices.loadCards.map((card) => card.uid), [held.uid, grudge.uid, drawn.uid])
+  assertDeepEqual(comboMine.targets.map(({ uid }) => uid), ['room-combo-e1', 'room-combo-e2'])
+  assertEqual(comboPeer.run.combat.pendingTriggerAbility, null)
+  assert(!allStrings(comboPeer).includes(grudge.uid) && !allStrings(comboPeer).includes(drawn.uid),
+    'Combo preview leaked post-draw cards to its peer')
+})
+
 check('Infinite Blades pauses Start of Turn for authoritative overflow choices', () => {
   const { room, a, b } = twoSeatRoom()
   const ann = room.run.combat.players.find((player) => player.id === a.playerId)
@@ -4400,6 +4535,47 @@ check('Exhume moves one public Exhaust card into only its owner\'s private hand'
     'Exhume left its recovered card visible to a teammate')
 })
 
+check('Downfall multi-card Exhaust recovery is explicit and authoritative online', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const breath = { uid: 'room-deep-breath', defId: 'deep_breath', upgraded: true }
+  const exhausted = [
+    { uid: 'room-recover-a', defId: 'strike_ironclad', upgraded: false },
+    { uid: 'room-recover-b', defId: 'defend_ironclad', upgraded: false },
+    { uid: 'room-recover-leave', defId: 'bash', upgraded: false },
+  ]
+  Object.assign(actor, { hand: [breath], exhaust: exhausted, discard: [], energy: 3 })
+  const before = JSON.stringify(room.run)
+  for (const recoverExhaustUids of [undefined, [exhausted[0].uid], [exhausted[0].uid, exhausted[0].uid]]) {
+    let refused = null
+    try {
+      apply(room, a.token, { kind: 'playCard', cardUid: breath.uid, recoverExhaustUids, preflight: true })
+    } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError', 'a malformed Deep Breath choice was accepted')
+    assertEqual(JSON.stringify(room.run), before, 'a refused Deep Breath mutated room authority')
+  }
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: breath.uid,
+    recoverExhaustUids: [exhausted[1].uid, exhausted[0].uid], preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(resolved.discard.map((card) => card.uid), [exhausted[1].uid, exhausted[0].uid])
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [exhausted[2].uid, breath.uid])
+
+  const expedition = { uid: 'room-eerie-expedition', defId: 'eerie_expedition', upgraded: false }
+  const eerieCards = [
+    { uid: 'room-eerie-a', defId: 'strike_hexaghost', upgraded: false },
+    { uid: 'room-eerie-b', defId: 'defend_hexaghost', upgraded: false },
+  ]
+  Object.assign(resolved, { character: 'hexaghost', hand: [expedition], exhaust: eerieCards,
+    draw: [], discard: [], energy: 3 })
+  apply(room, a.token, { kind: 'playCard', cardUid: expedition.uid,
+    recoverExhaustUids: [eerieCards[1].uid], preflight: true })
+  const eerieResolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(eerieResolved.draw.map((card) => card.uid), [eerieCards[1].uid])
+  assertDeepEqual(eerieResolved.exhaust.map((card) => card.uid), [eerieCards[0].uid, expedition.uid])
+})
+
 check('post-reveal card choices stay private, survive reconnects, and lock the table', () => {
   const { room, a, b } = twoSeatRoom()
   const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)
@@ -4670,7 +4846,504 @@ check('post-reveal card choices stay private, survive reconnects, and lock the t
   assertEqual(mine().energy, 6, 'the committed Miracle did not pay toward Acrobatics')
 })
 
-check('a disconnected reveal resolves without skipping a third connected player', () => {
+check('Hermit Chamber draw-then-Load previews stay private and survive reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const coalescence = { uid: 'room-coalescence', defId: 'hermit_coalescence', upgraded: false }
+  const hidden = [0, 1].map((index) => ({
+    uid: `room-hermit-hidden-${index}`, defId: index === 0 ? 'hermit_strike' : 'hermit_defend', upgraded: false,
+  }))
+  Object.assign(mine, { character: 'hermit', chamber: [coalescence], chamberSlots: 2, draw: hidden, hand: [], energy: 3 })
+  const runBefore = JSON.stringify(room.run)
+  const revealed = apply(room, a.token, { kind: 'previewHermitChamberCard', cardUid: coalescence.uid })
+  assertEqual(revealed.snapshot.cardPreview.kind, 'loadAny')
+  assertEqual(revealed.snapshot.cardPreview.chamber, true)
+  assertDeepEqual(revealed.snapshot.cardPreview.cards.map((card) => card.uid), hidden.map((card) => card.uid))
+  assertEqual(JSON.stringify(room.run), runBefore, 'Chamber preview advanced authoritative state')
+  assertEqual(snapshotFor(room, b.token).cardPreview, undefined, 'a teammate saw the Chamber preview')
+  assert(!allStrings(snapshotFor(room, b.token)).includes(hidden[0].uid), 'a Chamber draw leaked to a teammate')
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).cardPreview?.chamber, true, 'reconnect lost the Chamber preview')
+  apply(room, a.token, {
+    kind: 'playHermitChamberCard', cardUid: coalescence.uid, loadUids: [hidden[1].uid], preflight: true,
+  })
+  assertEqual(snapshotFor(room, a.token).cardPreview, undefined)
+  assertDeepEqual(room.run.combat.players.find((player) => player.id === a.playerId).chamber.map((card) => card.uid),
+    [hidden[1].uid])
+})
+
+check('disconnect settles Feint into a full Chamber with a targeted Curse', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const feint = { uid: 'room-disconnected-feint', defId: 'hermit_feint', upgraded: false }
+  const grudge = { uid: 'room-disconnected-grudge', defId: 'hermit_grudge', upgraded: false }
+  const chamber = [
+    { uid: 'room-disconnected-chamber-a', defId: 'hermit_strike', upgraded: false },
+    { uid: 'room-disconnected-chamber-b', defId: 'hermit_defend', upgraded: false },
+  ]
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, weak: 0, vulnerable: 0 })
+  Object.assign(mine, {
+    character: 'hermit', hand: [feint], draw: [grudge,
+      { uid: 'room-disconnected-feint-draw', defId: 'hermit_defend', upgraded: false }],
+    discard: [], chamber, chamberSlots: 2, energy: 3,
+  })
+  const preview = apply(room, a.token, { kind: 'previewCard', cardUid: feint.uid }).snapshot.cardPreview
+  assertEqual(preview.kind, 'load')
+  assertEqual(preview.cards[0].uid, grudge.uid)
+  markDisconnected(room, a.token)
+  apply(room, b.token, { kind: 'endTurn' })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(room.cardPreviews?.[a.playerId], undefined, 'the disconnected Feint preview stayed locked')
+  assert(resolved.chamber.some((card) => card.uid === grudge.uid), 'the fallback did not Load the revealed Curse')
+  assert(resolved.discard.some((card) => card.uid === chamber[0].uid), 'the fallback did not replace a Chamber card')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 8,
+    'the fallback did not choose a target for Grudge')
+})
+
+check('paid Chamber previews lock Spreading Slime targets before revealing cards', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const coalescence = { uid: 'room-charged-coalescence', defId: 'hermit_coalescence', upgraded: false }
+  const hidden = { uid: 'room-charged-hidden', defId: 'hermit_defend', upgraded: false }
+  const spreading = {
+    card: { uid: 'room-charged-spreading', defId: 'slime_boss_spreading_slime', upgraded: false },
+    level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+  }
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0 })
+  Object.assign(mine, { character: 'slime_boss', chamber: [coalescence], chamberSlots: 2,
+    draw: [hidden], hand: [], energy: 3, nextCardCost: 2, slimes: [spreading] })
+  assertThrows(() => apply(room, a.token, {
+    kind: 'previewHermitChamberCard', cardUid: coalescence.uid,
+  }), 'a paid Chamber card revealed before choosing its Spreading target')
+  const preview = apply(room, a.token, {
+    kind: 'previewHermitChamberCard', cardUid: coalescence.uid, slimeEnemyUids: [target.uid],
+  }).snapshot.cardPreview
+  assertDeepEqual(preview.slimeEnemyUids, [target.uid])
+  assert(!allStrings(snapshotFor(room, b.token)).includes(hidden.uid), 'a charged Chamber draw leaked')
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertDeepEqual(snapshotFor(room, a.token).cardPreview.slimeEnemyUids, [target.uid],
+    'reconnect lost the committed Spreading target')
+  assertThrows(() => apply(room, a.token, {
+    kind: 'playHermitChamberCard', cardUid: coalescence.uid, loadUids: [], slimeEnemyUids: [], preflight: true,
+  }), 'the final Chamber play changed its revealed Spreading target')
+  apply(room, a.token, {
+    kind: 'playHermitChamberCard', cardUid: coalescence.uid, loadUids: [],
+    slimeEnemyUids: [target.uid], preflight: true,
+  })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 8,
+    'the paid Chamber play dropped its Spreading target')
+})
+
+check('disconnect resolves a committed mandatory Chamber preview before its fallback', () => {
+  const { room, a } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const coalescence = { uid: 'room-mandatory-coalescence', defId: 'hermit_coalescence', upgraded: false }
+  const hidden = { uid: 'room-mandatory-hidden', defId: 'hermit_defend', upgraded: false }
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0 })
+  Object.assign(mine, {
+    character: 'slime_boss', chamber: [coalescence], chamberSlots: 2, draw: [hidden], hand: [],
+    energy: 3, nextCardCost: 2,
+    slimes: [{
+      card: { uid: 'room-mandatory-spreading', defId: 'slime_boss_spreading_slime', upgraded: false },
+      level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+    }],
+  })
+  room.run.combat.pendingHermitChamberPlays = [{
+    playerId: a.playerId, sourceCardId: 'hermit_fan_the_hammer', cardUids: [coalescence.uid], free: false,
+  }]
+  apply(room, a.token, {
+    kind: 'previewHermitChamberCard', cardUid: coalescence.uid, slimeEnemyUids: [target.uid],
+  })
+  markDisconnected(room, a.token)
+  assertEqual(room.run.combat.pendingHermitChamberPlays?.length ?? 0, 0,
+    'disconnect left the mandatory Chamber play unresolved')
+  assertEqual(room.cardPreviews?.[a.playerId], undefined, 'the mandatory Chamber preview stayed locked')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 8,
+    'disconnect abandoned the committed mandatory Chamber play or lost its Slime target')
+})
+
+check('Hermit Chamber forwards generic topdeck choices authoritatively', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const warcry = { uid: 'room-chamber-warcry', defId: 'warcry', upgraded: true }
+  const held = { uid: 'room-chamber-held', defId: 'strike_ironclad', upgraded: false }
+  const hidden = [0, 1].map((index) => ({
+    uid: `room-chamber-warcry-hidden-${index}`, defId: 'defend_ironclad', upgraded: false,
+  }))
+  Object.assign(mine, {
+    character: 'hermit', chamber: [warcry], chamberSlots: 2, draw: hidden, hand: [held], energy: 3,
+  })
+  const preview = apply(room, a.token, {
+    kind: 'previewHermitChamberCard', cardUid: warcry.uid,
+  }).snapshot.cardPreview
+  assertEqual(preview.kind, 'topdeck')
+  assertEqual(preview.chamber, true)
+  assert(!allStrings(snapshotFor(room, b.token)).includes(hidden[1].uid),
+    'a generic Chamber topdeck preview leaked to a teammate')
+
+  apply(room, a.token, {
+    kind: 'playHermitChamberCard', cardUid: warcry.uid,
+    topdeckUids: [hidden[1].uid], preflight: true,
+  })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).draw[0].uid, hidden[1].uid)
+})
+
+check('Downfall combat side actions stay authoritative and disconnected Plunder cannot deadlock', () => {
+  const { room, a } = twoSeatRoom()
+  let mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(target, { hp: 20, maxHp: 20, block: 0 })
+  Object.assign(mine, {
+    character: 'hexaghost', heat: 2, soulburn: 1,
+    powers: [{ uid: 'room-extra-crispy', defId: 'extra_crispy', upgraded: false }],
+  })
+  apply(room, a.token, {
+    kind: 'spendSoulburn', enemyUid: target.uid, extraCrispyPowerUid: 'room-extra-crispy',
+  })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 16)
+  assert(room.run.combat.powerTriggersUsedThisTurn.includes(`${a.playerId}/power:room-extra-crispy`))
+
+  mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  Object.assign(mine, {
+    character: 'slime_boss', strength: 0,
+    powers: [{ uid: 'room-rain', defId: 'slime_boss_rain_of_goop', upgraded: false, counter: 1 }],
+    slimes: [{ card: { uid: 'room-slime', defId: 'slime_boss_bruiser_slime', upgraded: false },
+      level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0 }],
+  })
+  fireTriggers(room.run.combat, { kind: 'startOfTurn' })
+  const triggerId = room.run.combat.pendingTriggers[0].id
+  apply(room, a.token, { kind: 'resolveTrigger', triggerId, slimeUids: [] })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).strength, 1)
+
+  room.run.combat.pendingPlunderSwitches = [{ playerId: a.playerId, sourceUid: target.uid }]
+  assertDeepEqual(snapshotFor(room, a.token).run.combat.pendingPlunderSwitches,
+    [{ playerId: a.playerId, sourceUid: target.uid }])
+  markDisconnected(room, a.token)
+  assertDeepEqual(room.run.combat.pendingPlunderSwitches, [], 'disconnected Plunder owner deadlocked combat')
+})
+
+check('a disconnected Slime trigger keeps its automatic Slime and enemy target', () => {
+  const { room, a } = twoSeatRoom()
+  const owner = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0 })
+  Object.assign(owner, {
+    character: 'slime_boss',
+    powers: [{ uid: 'disconnect-minion-master', defId: 'slime_boss_minion_master', upgraded: false }],
+    slimes: [{
+      card: { uid: 'disconnect-bruiser', defId: 'slime_boss_bruiser_slime', upgraded: false },
+      level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+    }],
+  })
+  room.run.combat.pendingTriggers = [{
+    id: 991, playerId: a.playerId, sourceId: 'power:disconnect-minion-master',
+  }]
+  markDisconnected(room, a.token)
+  assertEqual(room.run.combat.pendingTriggers.length, 0, 'the disconnected targeted trigger stayed queued')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 9,
+    'the disconnected trigger dropped its automatic Slime enemy target')
+})
+
+check('Guardian printed start-turn Mode Shift choice is authoritative online', () => {
+  const { room, a } = twoSeatRoom()
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  Object.assign(player, { character: 'guardian', guardianMode: 'attack', guardianModeLocked: false })
+  room.run.combat = preparePlayerTurn({ ...room.run.combat, phase: 'roundEnd' })
+  const abilities = snapshotFor(room, a.token).startTurnAbilities
+  const mode = abilities.find((ability) => ability.guardianModeShift)
+  assert(mode)
+  const choices = (guardianModeShift) => abilities.map((ability) => ({
+    id: ability.id,
+    guardianModeShift: ability.id === mode.id ? guardianModeShift : undefined,
+    enemyUid: ability.targets?.[0]?.uid,
+    targetPlayerId: ability.players?.[0]?.id,
+    exhaustUids: ability.exhaustCards?.slice(0, 1).map((card) => card.uid),
+    shivEnemyUids: Array(ability.overflowShivs).fill(null),
+    evokeSlots: [],
+    evokeEnemyUids: [],
+  }))
+  let malformed = null
+  try { apply(room, a.token, { kind: 'resolveStartTurn', choices: choices('yes') }) } catch (error) {
+    malformed = error
+  }
+  assertEqual(malformed?.name, 'RoomError', 'a non-boolean Mode Shift choice was accepted')
+  apply(room, a.token, { kind: 'resolveStartTurn', choices: choices(true) })
+  assertEqual(room.run.combat.players.find((candidate) => candidate.id === a.playerId).guardianMode, 'defense')
+})
+
+check('Gem Finder Scry preview is private and required online', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const finder = { uid: 'room-gem-finder', defId: 'guardian_gem_finder', upgraded: false }
+  const hidden = [0, 1, 2].map((index) => ({
+    uid: `room-gem-${index}`, defId: 'guardian_strike', upgraded: false,
+  }))
+  Object.assign(mine, { character: 'guardian', powers: [finder], draw: hidden })
+  Object.assign(room.run.combat, { phase: 'start', startTurnStage: 'effects', startTurnProgress: undefined })
+  const revealed = apply(room, a.token, { kind: 'previewPowerChoice', powerUid: finder.uid })
+  assertDeepEqual(revealed.snapshot.powerPreview.cards.map((card) => card.uid), hidden.map((card) => card.uid))
+  assertEqual(snapshotFor(room, b.token).powerPreview, undefined)
+  assertEqual(snapshotFor(room, b.token).cardChoicePlayerId, a.playerId,
+    'teammates were not told whose Power preview paused the table')
+  assert(!allStrings(snapshotFor(room, b.token)).includes(hidden[0].uid), 'Gem Finder leaked a draw card')
+  apply(room, a.token, { kind: 'activatePower', powerUid: finder.uid, scryDiscardUids: [hidden[1].uid], preflight: true })
+  assertEqual(room.run.combat.phase, 'start')
+  assertEqual(snapshotFor(room, a.token).powerPreview, undefined)
+  assertDeepEqual(room.run.combat.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid),
+    [hidden[1].uid])
+})
+
+check('a disconnected Gem Finder preview resolves before end-turn advancement', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const finder = { uid: 'room-abandoned-gem-finder', defId: 'guardian_gem_finder', upgraded: false }
+  const hidden = [0, 1, 2].map((index) => ({
+    uid: `room-abandoned-gem-${index}`, defId: 'guardian_strike', upgraded: false,
+  }))
+  Object.assign(mine, { character: 'guardian', powers: [finder], draw: hidden })
+  apply(room, b.token, { kind: 'endTurn' })
+  apply(room, a.token, { kind: 'previewPowerChoice', powerUid: finder.uid })
+  markDisconnected(room, a.token)
+  assertEqual(room.powerPreviews?.[a.playerId], undefined, 'the disconnected Power preview stayed locked')
+  assertEqual(snapshotFor(room, b.token).cardChoicePlayerId, undefined,
+    'the disconnected Power preview still blocked the connected seat')
+})
+
+check('Revenge Protocol forced cards resolve and disconnect safely during discard', () => {
+  {
+    const { room, a } = twoSeatRoom()
+    const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+    const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+    const strike = { uid: 'room-revenge-strike', defId: 'guardian_strike', upgraded: false }
+    Object.assign(actor, {
+      character: 'guardian', guardianMode: 'attack', hand: [strike], energy: 3,
+      powers: [{ uid: 'room-revenge', defId: 'guardian_revenge_protocol', upgraded: false }],
+    })
+    room.run.combat.phase = 'discard'
+    const before = target.hp
+    apply(room, a.token, { kind: 'activatePower', powerUid: 'room-revenge', cardUid: strike.uid, preflight: true })
+    assertEqual(room.run.combat.startTurnProgress.forcedCard.cardUid, strike.uid)
+    apply(room, a.token, { kind: 'playCard', cardUid: strike.uid, enemyUid: target.uid, preflight: true })
+    assertEqual(room.run.combat.phase, 'discard')
+    assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, before - 1)
+  }
+
+  {
+    const { room, a, b } = twoSeatRoom()
+    const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+    const strike = { uid: 'room-abandoned-revenge', defId: 'guardian_strike', upgraded: false }
+    Object.assign(actor, {
+      character: 'guardian', guardianMode: 'attack', hand: [strike], energy: 3,
+      powers: [{ uid: 'room-abandoned-revenge-power', defId: 'guardian_revenge_protocol', upgraded: false }],
+    })
+    room.run.combat.phase = 'discard'
+    apply(room, a.token, {
+      kind: 'activatePower', powerUid: 'room-abandoned-revenge-power', cardUid: strike.uid, preflight: true,
+    })
+    markDisconnected(room, a.token)
+    const combat = snapshotFor(room, b.token).run.combat
+    assertEqual(combat.startTurnProgress, undefined)
+    assert(combat.players.find((player) => player.id === a.playerId).discard.some((card) => card.uid === strike.uid))
+  }
+})
+
+check('Guardian Socket choices are visible, owner-authorized, and not blocked by another acquisition', () => {
+  const { room, a, b } = twoSeatRoom()
+  const owner = room.run.players.find((player) => player.id === a.playerId)
+  const host = { uid: 'room-socket-host', defId: 'guardian_crystal_edge', upgraded: false }
+  owner.deck.push(host)
+  owner.relics.push({ uid: 'room-pending-relic', defId: 'war_paint', spent: false, pending: true })
+  room.run.phase = 'map'
+  room.run.combat = null
+  room.run.pendingGuardianSockets = [{
+    playerId: a.playerId, cardUid: host.uid,
+    gemIds: ['guardian_ruby', 'guardian_onyx'], source: 'gain',
+  }]
+  assertDeepEqual(snapshotFor(room, a.token).run.pendingGuardianSockets[0].gemIds,
+    ['guardian_ruby', 'guardian_onyx'])
+  const peer = snapshotFor(room, b.token).run.pendingGuardianSockets[0]
+  assertDeepEqual(peer, { playerId: a.playerId })
+  assert(!allStrings(snapshotFor(room, b.token)).includes(host.uid), 'a Guardian Socket leaked its private host card')
+  assert(!allStrings(snapshotFor(room, b.token)).includes('guardian_ruby'), 'a Guardian Socket leaked its private Gems')
+  assertThrows(() => apply(room, b.token, { kind: 'resolveGuardianSocket', gemId: 'guardian_ruby' }),
+    'a teammate resolved another player\'s Socket')
+  const resolved = apply(room, a.token, { kind: 'resolveGuardianSocket', gemId: 'guardian_onyx' })
+  assertEqual(resolved.changed, true)
+  const updated = room.run.players.find((player) => player.id === a.playerId)
+  assertEqual(updated.deck.find((card) => card.uid === host.uid).attachedGemId, 'guardian_onyx')
+  assert(updated.relics.some((relic) => relic.pending), 'resolving the Socket consumed the unrelated Relic choice')
+})
+
+check('resolving a Guardian Socket settles the next disconnected owner', () => {
+  const { room, a, b } = twoSeatRoom()
+  const first = { uid: 'room-socket-first', defId: 'guardian_crystal_edge', upgraded: false }
+  const second = { uid: 'room-socket-second', defId: 'guardian_harden', upgraded: false }
+  room.run.players.find((player) => player.id === a.playerId).deck.push(first)
+  room.run.players.find((player) => player.id === b.playerId).deck.push(second)
+  room.run.phase = 'map'
+  room.run.combat = null
+  room.run.pendingGuardianSockets = [
+    { playerId: a.playerId, cardUid: first.uid, gemIds: ['guardian_ruby'], source: 'gain' },
+    { playerId: b.playerId, cardUid: second.uid, gemIds: ['guardian_onyx'], source: 'gain' },
+  ]
+  markDisconnected(room, b.token)
+  assertEqual(room.run.pendingGuardianSockets.length, 2)
+  apply(room, a.token, { kind: 'resolveGuardianSocket', gemId: 'guardian_ruby' })
+  assertDeepEqual(room.run.pendingGuardianSockets, [])
+  assertEqual(room.run.players.find((player) => player.id === b.playerId).deck
+    .find((card) => card.uid === second.uid).attachedGemId, 'guardian_onyx')
+})
+
+check('Stasis Engine keeps its hand target private and only its owner can resolve it', () => {
+  const { room, a, b } = twoSeatRoom()
+  const owner = room.run.combat.players.find((player) => player.id === b.playerId)
+  const cards = [
+    { uid: 'private-stasis-a', defId: 'defend_silent', upgraded: false },
+    { uid: 'private-stasis-b', defId: 'strike_silent', upgraded: false },
+  ]
+  owner.hand = cards
+  owner.powers = [{ uid: 'room-stasis-engine', defId: 'guardian_stasis_engine', upgraded: false }]
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const mine = snapshotFor(room, b.token)
+  const peer = snapshotFor(room, a.token)
+  const stasis = mine.endTurnAbilities.find((ability) => ability.label.includes('Stasis Engine'))
+  assert(stasis.targets.some((target) => target.uid === cards[1].uid))
+  assert(!allStrings(peer).includes(cards[0].uid) && !allStrings(peer).includes(cards[1].uid),
+    'Stasis Engine leaked a private hand UID')
+  assert(!allStrings(peer).includes('Defend') && !allStrings(peer).includes('Strike'),
+    'Stasis Engine leaked a private card name')
+  assert(peer.endTurnAbilities[0].targets[0].uid.startsWith('private-card-'),
+    'a teammate can identify the private Stasis target')
+  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: stasis.id, targetUid: cards[1].uid })
+  assert(room.run.combat.players.find((player) => player.id === b.playerId).hand
+    .some((card) => card.uid === cards[1].uid && card.stasisRetained))
+})
+
+check('each owner resolves their private Stasis target in sequence', () => {
+  const { room, a, b } = twoSeatRoom()
+  const owners = [a, b].map((seat, index) => {
+    const player = room.run.combat.players.find((candidate) => candidate.id === seat.playerId)
+    player.hand = [{ uid: `private-stasis-${index}`, defId: index ? 'strike_silent' : 'strike_ironclad', upgraded: false }]
+    player.powers = [{ uid: `room-stasis-${index}`, defId: 'guardian_stasis_engine', upgraded: false }]
+    return player
+  })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const ownerIds = new Set(owners.map((owner) => owner.id))
+  const first = snapshotFor(room, a.token).endTurnAbilities[0]
+  assertEqual(first.playerId, a.playerId)
+  assertEqual(first.targets[0].uid, owners[0].hand[0].uid)
+  assert(snapshotFor(room, b.token).endTurnAbilities[0].targets[0].uid.startsWith('private-card-'))
+  apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: first.id, targetUid: owners[0].hand[0].uid })
+  const second = snapshotFor(room, b.token).endTurnAbilities[0]
+  assertEqual(second.playerId, b.playerId)
+  assertEqual(second.targets[0].uid, owners[1].hand[0].uid)
+  assert(snapshotFor(room, a.token).endTurnAbilities[0].targets[0].uid.startsWith('private-card-'))
+  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: second.id, targetUid: owners[1].hand[0].uid })
+  for (const [index, owner] of room.run.combat.players.filter((player) => ownerIds.has(player.id)).entries()) {
+    assert(owner.hand.some((card) => card.uid === `private-stasis-${index}` && card.stasisRetained))
+  }
+})
+
+check('Floating Orbs Gem choices stay authoritative and private online', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(target, { hp: 20, maxHp: 20, block: 0 })
+  const hidden = [0, 1].map((index) => ({
+    uid: `room-orbs-hidden-${index}`, defId: 'guardian_defend', upgraded: false,
+  }))
+  Object.assign(mine, {
+    character: 'guardian',
+    hand: hidden,
+    powers: [
+      { uid: 'room-ruby-orbs', defId: 'guardian_floating_orbs', upgraded: false,
+        attachedGemId: 'guardian_ruby' },
+      { uid: 'room-jasper-orbs', defId: 'guardian_floating_orbs', upgraded: false,
+        attachedGemId: 'guardian_jasper' },
+    ],
+  })
+  assert(!allStrings(snapshotFor(room, b.token)).includes(hidden[0].uid), 'Floating Orbs leaked a hand card')
+  apply(room, a.token, {
+    kind: 'activatePower', powerUid: 'room-ruby-orbs', enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 19)
+  apply(room, a.token, {
+    kind: 'activatePower', powerUid: 'room-jasper-orbs', exhaustUids: hidden.map((card) => card.uid), preflight: true,
+  })
+  assertDeepEqual(room.run.combat.players.find((player) => player.id === a.playerId).exhaust.map((card) => card.uid),
+    hidden.map((card) => card.uid))
+
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  const overCap = [0, 1, 2, 3].map((index) => ({
+    uid: `room-orbs-cap-${index}`, defId: 'guardian_defend', upgraded: false,
+  }))
+  Object.assign(player, {
+    hand: overCap,
+    exhaust: [],
+    powers: [{ uid: 'room-capped-orbs', defId: 'guardian_floating_orbs', upgraded: false,
+      attachedGemId: 'guardian_jasper' }],
+  })
+  assertThrows(() => apply(room, a.token, {
+    kind: 'activatePower', powerUid: 'room-capped-orbs', exhaustUids: overCap.map((card) => card.uid), preflight: true,
+  }), 'Floating Orbs Jasper accepted more than three cards')
+  assertDeepEqual(player.hand.map((card) => card.uid), overCap.map((card) => card.uid))
+  assertDeepEqual(player.exhaust, [])
+})
+
+check('Defense-mode Power Beam validates and chains the chosen online Power for 0 Energy', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(mine, {
+    character: 'guardian', guardianMode: 'defense', energy: 5,
+    hand: [{ uid: 'room-power-beam', defId: 'guardian_power_beam', upgraded: false }],
+    discard: [{ uid: 'room-power-beam-choice', defId: 'guardian_future_plans', upgraded: false }],
+  })
+  assertThrows(() => apply(room, a.token, {
+    kind: 'playCard', cardUid: 'room-power-beam', enemyUid: target.uid, preflight: true,
+  }), 'Power Beam accepted a missing online Power choice')
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: 'room-power-beam', enemyUid: target.uid,
+    guardianPowerCardUid: 'room-power-beam-choice', preflight: true,
+  })
+  assertEqual(snapshotFor(room, a.token).run.combat.startTurnProgress.forcedCard.cardUid,
+    'room-power-beam-choice')
+  assertEqual(snapshotFor(room, b.token).run.combat.startTurnProgress.forcedCard.cardUid, null,
+    'Power Beam leaked the private forced Power uid')
+  apply(room, a.token, { kind: 'playCard', cardUid: 'room-power-beam-choice', preflight: true })
+  const updated = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(updated.energy, 3)
+  assert(updated.powers.some((power) => power.uid === 'room-power-beam-choice'))
+})
+
+check('a Chamber-played Power Beam preserves its private online Power choice', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(mine, {
+    character: 'guardian', guardianMode: 'defense', energy: 5,
+    chamber: [{ uid: 'room-chamber-power-beam', defId: 'guardian_power_beam', upgraded: false }],
+    chamberSlots: 2,
+    discard: [{ uid: 'room-chamber-power-choice', defId: 'guardian_future_plans', upgraded: false }],
+  })
+  apply(room, a.token, {
+    kind: 'playHermitChamberCard', cardUid: 'room-chamber-power-beam',
+    enemyUid: target.uid, guardianPowerCardUid: 'room-chamber-power-choice', preflight: true,
+  })
+  assertEqual(snapshotFor(room, a.token).run.combat.startTurnProgress.forcedCard.cardUid,
+    'room-chamber-power-choice')
+  assertEqual(snapshotFor(room, b.token).run.combat.startTurnProgress.forcedCard.cardUid, null,
+    'Chamber Power Beam leaked the private forced Power uid')
+})
+
+check('a disconnected charged reveal preserves its Slime target without skipping a third player', () => {
   const room = createRoom(createStore(), { code: 'THREEA' })
   const a = joinRoom(room, { name: 'Ann', character: 'ironclad' })
   const b = joinRoom(room, { name: 'Bo', character: 'silent' })
@@ -4684,7 +5357,17 @@ check('a disconnected reveal resolves without skipping a third connected player'
   }))
   mine().discard = []
   mine().energy = 3
-  apply(room, a.token, { kind: 'previewCard', cardUid: 'three-acrobatics' })
+  mine().character = 'slime_boss'
+  mine().nextCardCost = 2
+  mine().slimes = [{
+    card: { uid: 'three-spreading', defId: 'slime_boss_spreading_slime', upgraded: false },
+    level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+  }]
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0 })
+  apply(room, a.token, {
+    kind: 'previewCard', cardUid: 'three-acrobatics', slimeEnemyUids: [target.uid],
+  })
   assertEqual(snapshotFor(room, b.token).cardChoicePlayerId, a.playerId,
     'teammates were not told whose private reveal paused the table')
   markDisconnected(room, a.token)
@@ -4692,6 +5375,8 @@ check('a disconnected reveal resolves without skipping a third connected player'
   assertEqual(room.run.combat.phase, 'player', 'the disconnected fallback skipped the third player')
   assertEqual(room.cardPreviews?.[a.playerId], undefined, 'the disconnected preview stayed locked')
   assert(!mine().hand.some((card) => card.uid === 'three-acrobatics'), 'the committed card was not resolved')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 8,
+    'the disconnected fallback dropped the committed Spreading Slime target')
   assert(snapshotFor(room, b.token).endTurnDecided.includes(b.playerId), 'the connected end-turn vote was lost')
   assert(!snapshotFor(room, b.token).endTurnDecided.includes(c.playerId), 'the third player was marked done')
   joinRoom(room, { token: a.token })
@@ -5239,6 +5924,94 @@ check('an Echo Form Multi-Cast copy cannot forge its original Energy payment', (
   assertDeepEqual(resolved.orbs, [null, 'frost', 'lightning'])
   assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [17, 14])
   assertEqual(room.run.combat.phase, 'player')
+})
+
+check('a copied X payment does not trigger Spreading Slime during a private reveal', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const card = { uid: 'room-copy-x-preview', defId: 'dagger_throw', upgraded: false }
+  const hidden = { uid: 'room-copy-x-hidden', defId: 'defend_silent', upgraded: false }
+  Object.assign(actor, {
+    character: 'slime_boss', hand: [], draw: [hidden], discard: [], energy: 0,
+    slimes: [{
+      card: { uid: 'room-copy-x-spreading', defId: 'slime_boss_spreading_slime', upgraded: false },
+      level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+    }],
+  })
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0 })
+  room.run.combat.phase = 'copy'
+  room.run.combat.pendingCardCopy = {
+    playerId: actor.id, card, energySpent: 2, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Double Tap'],
+  }
+  const preview = apply(room, a.token, {
+    kind: 'previewCardCopy', cardUid: card.uid, enemyUid: target.uid,
+  }).snapshot.cardPreview
+  assertDeepEqual(preview.slimeEnemyUids, [], 'the copied X value was mistaken for charged Energy')
+  markDisconnected(room, a.token)
+  assertEqual(room.run.combat.phase, 'player', 'disconnect abandoned a committed copied-card reveal')
+  assertEqual(room.cardPreviews?.[a.playerId], undefined, 'the resolved copied-card preview stayed locked')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 8,
+    'disconnect skipped the committed copy or incorrectly Commanded from copied Energy')
+})
+
+check('disconnect consumes one committed preview before skipping queued same-card copies', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const card = { uid: 'room-repeated-copy-preview', defId: 'third_eye', upgraded: false }
+  const hidden = [0, 1, 2].map((index) => ({
+    uid: `room-repeated-copy-hidden-${index}`, defId: 'defend_watcher', upgraded: false,
+  }))
+  Object.assign(actor, { character: 'watcher', hand: [], draw: hidden, discard: [], energy: 0, block: 0 })
+  room.run.combat.phase = 'copy'
+  room.run.combat.pendingCardCopy = {
+    playerId: actor.id, card, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Echo Form', 'Echo Form'],
+  }
+  apply(room, a.token, { kind: 'previewCardCopy', cardUid: card.uid })
+  markDisconnected(room, a.token)
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.block, 2, 'a stale preview resolved the next uncommitted same-card copy')
+  assertEqual(room.run.combat.pendingCardCopy, undefined, 'the uncommitted queued copy stayed pending')
+  assertEqual(room.cardPreviews?.[a.playerId], undefined, 'the consumed queued-copy preview stayed locked')
+})
+
+for (const [label, defId, draw] of [
+  ['Overexert', 'slime_boss_overexert', [
+    { uid: 'room-overexert-choice', defId: 'strike_ironclad', upgraded: false },
+    { uid: 'room-overexert-other', defId: 'defend_ironclad', upgraded: false },
+  ]],
+  ['Replication', 'slime_boss_replication', [
+    { uid: 'room-replication-choice', defId: 'slime_boss_scrappy_slime', upgraded: false },
+  ]],
+]) check(`disconnect settles a committed ${label} private search`, () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const card = { uid: `room-${label.toLowerCase()}-preview`, defId, upgraded: false }
+  Object.assign(actor, { character: 'slime_boss', hand: [card], draw, discard: [], energy: 3, slimes: [] })
+  const preview = apply(room, a.token, { kind: 'previewCard', cardUid: card.uid }).snapshot.cardPreview
+  assertEqual(preview.kind, 'search')
+  markDisconnected(room, a.token)
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.cardPreviews?.[a.playerId], undefined, `${label} preview stayed locked after disconnect`)
+  assertEqual(room.run.combat.pendingCardCopy, undefined, `${label} left its selected forced card pending`)
+  assert(!room.run.combat.players.find((player) => player.id === a.playerId).hand
+    .some((held) => held.uid === card.uid), `${label} was skipped after revealing its search`)
+})
+
+check('disconnect settles Overexert when its private search has no eligible card', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const card = { uid: 'room-empty-overexert-preview', defId: 'slime_boss_overexert', upgraded: false }
+  Object.assign(actor, { character: 'slime_boss', hand: [card], draw: [], discard: [], energy: 3, slimes: [] })
+  const preview = apply(room, a.token, { kind: 'previewCard', cardUid: card.uid }).snapshot.cardPreview
+  assertDeepEqual(preview.cards, [], 'empty Overexert preview exposed a phantom choice')
+  markDisconnected(room, a.token)
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.cardPreviews?.[a.playerId], undefined, 'empty Overexert stayed locked after disconnect')
+  assert(!room.run.combat.players.find((player) => player.id === a.playerId).hand
+    .some((held) => held.uid === card.uid), 'empty Overexert was skipped after revealing its zero-card search')
 })
 
 check('Seek keeps the draw pile and searched cards private and server-authoritative', () => {
@@ -5828,11 +6601,11 @@ check('each character starts on its printed hit points', () => {
   }
 })
 
-check('every character draws its documented opening hand', () => {
+check('every base character draws its documented opening hand', () => {
   // Five cards (p.12), except the Silent: Ring of the Snake is her starting
   // relic and draws 2 more at the start of combat, so she opens on seven.
   const OPENING_HAND = { ironclad: 5, silent: 7, defect: 5, watcher: 5 }
-  for (const character of CHARACTERS) {
+  for (const character of CHARACTERS.slice(0, 4)) {
     const room = createRoom(createStore(), { code: 'AAAAAF' })
     const seat = joinRoom(room, { character })
     startRun(room, seat.token, { seed: 7 })
@@ -7959,6 +8732,34 @@ check('shared Event reward previews serialize across seats and reconnect', () =>
   assert(JSON.stringify(room.run.roomState.rewardOffers[b.playerId][0]) !== JSON.stringify(offer))
 })
 
+check('online Event Socket rewards publish their Gem offer and resolve after reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  const owner = room.run.players.find((player) => player.id === a.playerId)
+  Object.assign(owner, {
+    character: 'guardian',
+    cardRewards: ['guardian_crystal_edge', 'guardian_orb_slam', 'guardian_overload'],
+  })
+  room.run.guardianGemDeck = ['guardian_ruby', 'guardian_onyx']
+  room.run.roomState = createEventRoom({
+    ...EVENT_DEFINITIONS.cursed_tome,
+    instanceId: 'test-online-event-socket', act: 1, minAscension: 0, requiresColorlessUnlock: false,
+  })
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['skim'] } })
+  const gems = ['guardian_ruby', 'guardian_onyx']
+  assertDeepEqual(snapshotFor(room, a.token).run.roomState.guardianGemOffers[a.playerId][0], gems)
+  assertDeepEqual(snapshotFor(room, b.token).run.roomState.guardianGemOffers[a.playerId][0], gems)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertDeepEqual(snapshotFor(room, a.token).run.roomState.guardianGemOffers[a.playerId][0], gems)
+  apply(room, a.token, { kind: 'event', decision: {
+    optionIds: ['skim'], rewardIndexes: [0], guardianGemIds: ['guardian_onyx'],
+  } })
+  assertEqual(room.run.players.find((player) => player.id === a.playerId).deck
+    .find((card) => card.defId === 'guardian_crystal_edge').attachedGemId, 'guardian_onyx')
+})
+
 check('party Event item staging has one authoritative owner', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.phase = 'room'
@@ -8670,6 +9471,303 @@ check('Orb channel presentation events stay public and actor-only across room sn
     playerIds: [],
     orb: 'dark',
   }])
+})
+
+check('resolved Guardian card types stay public across room snapshots', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.presentationEvents = [{
+    seq: 1,
+    kind: 'card',
+    upgraded: false,
+    copied: false,
+    energy: 2,
+    resolvedType: 'skill',
+    actorId: a.playerId,
+    sourceId: 'guardian_guardian_whirl',
+    enemyIds: [],
+    playerIds: [b.playerId],
+  }]
+  assertEqual(snapshotFor(room, b.token).run.combat.presentationEvents[0].resolvedType, 'skill')
+})
+
+check('Hermit Chamber identities and pending choices survive reconnect without leaking to peers', () => {
+  const { room, a, b } = twoSeatRoom()
+  const owner = room.run.combat.players.find((player) => player.id === a.playerId)
+  owner.character = 'hermit'
+  owner.chamberSlots = 2
+  owner.chamber = [{ uid: 'private-snapshot', defId: 'hermit_snapshot', upgraded: false }]
+  owner.energy = 3
+  room.run.combat.pendingHermitChamberPlays = [{
+    playerId: a.playerId, sourceCardId: 'hermit_fan_the_hammer', cardUids: ['private-snapshot'], free: true,
+  }]
+  const mine = snapshotFor(room, a.token).run.combat
+  const peer = snapshotFor(room, b.token).run.combat
+  assertEqual(mine.players.find((player) => player.id === a.playerId).chamber[0].uid, 'private-snapshot')
+  assertEqual(peer.players.find((player) => player.id === a.playerId).chamber, null)
+  assertEqual(peer.players.find((player) => player.id === a.playerId).chamberCount, 1)
+  assert(!JSON.stringify(peer).includes('private-snapshot'))
+  markDisconnected(room, a.token)
+  assertEqual(room.run.combat.pendingHermitChamberPlays.length, 0)
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).chamber.length, 0)
+  let forged
+  try {
+    apply(room, b.token, { kind: 'playHermitChamberCard', cardUid: 'private-snapshot', enemyUid: room.run.combat.enemies[0].uid })
+  } catch (error) { forged = error }
+  assertEqual(forged?.name, 'RoomError')
+
+  joinRoom(room, { token: a.token })
+  const reconnected = room.run.combat.players.find((player) => player.id === a.playerId)
+  room.run.combat.pendingHermitSetupLoads = [{ playerId: a.playerId }]
+  reconnected.miracles = 1
+  reconnected.energy = 2
+  for (const action of [{ kind: 'spendMiracle' }, { kind: 'endTurn' }]) {
+    let bypass
+    try { apply(room, a.token, action) } catch (error) { bypass = error }
+    assertEqual(bypass?.name, 'RoomError', `${action.kind} bypassed a mandatory Hermit setup choice`)
+  }
+  assertEqual(reconnected.miracles, 1)
+  assertEqual(reconnected.energy, 2)
+  const beforeChamber = reconnected.chamber.length
+  markDisconnected(room, a.token)
+  assertEqual(room.run.combat.pendingHermitSetupLoads.length, 0)
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).chamber.length, beforeChamber + 1)
+
+  joinRoom(room, { token: a.token })
+  room.run.combat.pendingHermitStrengthRewards = [{ playerId: a.playerId, sourceUid: 'bounty' }]
+  const beforeStrength = room.run.combat.players[0].strength
+  markDisconnected(room, a.token)
+  assertEqual(room.run.combat.pendingHermitStrengthRewards.length, 0)
+  assertEqual(room.run.combat.players[0].strength, beforeStrength + 1)
+})
+
+check('die Relic hand choices stay owner-authoritative and settle on disconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const owner = room.run.combat.players.find((player) => player.id === b.playerId)
+  const cards = [
+    { uid: 'private-wheel-a', defId: 'strike_silent', upgraded: false },
+    { uid: 'private-wheel-b', defId: 'defend_silent', upgraded: false },
+  ]
+  owner.character = 'hermit'
+  owner.chamber = []
+  owner.chamberSlots = 2
+  owner.hand = cards
+  owner.relics = [{ defId: 'wheel_of_change', spent: false }]
+  owner.powers = [{ uid: 'private-combo', defId: 'hermit_combo', upgraded: false }]
+  room.run.combat.pendingDieRelicChoices = [{
+    playerId: b.playerId, relicDefId: 'wheel_of_change', abilityIndex: 0,
+    sourceLabel: 'Cheat', enemyUid: null, targetPlayerId: b.playerId,
+  }]
+  room.run.combat.pendingTriggers = [{ id: 999, playerId: b.playerId, sourceId: 'power:private-combo' }]
+  assert(!JSON.stringify(snapshotFor(room, a.token)).includes('private-wheel-a'))
+  let forged
+  try {
+    apply(room, a.token, { kind: 'resolveDieRelicChoice', discardUids: cards.map(({ uid }) => uid) })
+  } catch (error) { forged = error }
+  assertEqual(forged?.name, 'RoomError')
+  apply(room, b.token, { kind: 'resolveDieRelicChoice', discardUids: cards.map(({ uid }) => uid) })
+  assertDeepEqual(room.run.combat.players.find((player) => player.id === b.playerId)
+    .discard.slice(-2).map(({ uid }) => uid), cards.map(({ uid }) => uid))
+  assertEqual(room.run.combat.pendingTriggers[0]?.sourceId, 'power:private-combo',
+    'the room resolved Combo before the die Relic owner payment')
+  room.run.combat.pendingTriggers = []
+
+  const disconnectCards = [
+    { uid: 'disconnect-wheel-a', defId: 'strike_silent', upgraded: false },
+    { uid: 'disconnect-wheel-b', defId: 'defend_silent', upgraded: false },
+  ]
+  room.run.combat.players.find((player) => player.id === b.playerId).hand = disconnectCards
+  room.run.combat.pendingDieRelicChoices = [{
+    playerId: b.playerId, relicDefId: 'wheel_of_change', abilityIndex: 0,
+    sourceLabel: 'Cheat', enemyUid: null, targetPlayerId: b.playerId,
+  }]
+  markDisconnected(room, b.token)
+  assertEqual(room.run.combat.pendingDieRelicChoices.length, 0)
+  assertDeepEqual(room.run.combat.players.find((player) => player.id === b.playerId)
+    .discard.slice(-2).map(({ uid }) => uid), disconnectCards.map(({ uid }) => uid))
+})
+
+check('Mysterious Sphere shows only the viewer opening hand before its party choice', () => {
+  const { room, a } = twoSeatRoom()
+  const prepared = structuredClone(room.run.combat)
+  prepared.players[0].hand = [{ uid: 'sphere-opening-card', defId: 'strike_ironclad', upgraded: false }]
+  prepared.die = 6
+  prepared.startTurnProgress = { choices: [{ id: 'future-start-effect' }] }
+  prepared.log = [...prepared.log, 'future sphere roll and start effect']
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({
+    ...EVENT_DEFINITIONS.living_wall, instanceId: 'test-sphere-preview', act: 3,
+    minAscension: 0, requiresColorlessUnlock: false,
+  })
+  room.run.roomState.preparedCombat = prepared
+  const preview = snapshotFor(room, a.token).run.roomState.preparedCombat
+  assertEqual(preview.players.find((player) => player.id === a.playerId).hand[0].uid, 'sphere-opening-card')
+  assertDeepEqual(Object.keys(preview).sort(), ['enemies', 'players'])
+  assertDeepEqual(preview.enemies.map(({ defId, row }) => ({ defId, row })),
+    prepared.enemies.map(({ defId, row }) => ({ defId, row })))
+  assert(!('actionIndex' in preview.enemies[0]), 'the prepared enemy future action leaked')
+  assert(!JSON.stringify(preview).includes('future sphere roll and start effect'))
+})
+
+check('Mysterious Sphere resolves private Foresight before Draw and pauses before Roll', () => {
+  const { room, a, b } = twoSeatRoom()
+  let prepared = structuredClone(room.run.combat)
+  const owner = prepared.players.find((player) => player.id === a.playerId)
+  owner.powers = [{ uid: 'sphere-foresight', defId: 'foresight', upgraded: false }]
+  owner.hand = []
+  owner.draw = Array.from({ length: 6 }, (_, index) => ({
+    uid: `sphere-scry-secret-${index}`, defId: index % 2 ? 'defend_watcher' : 'strike_watcher', upgraded: false,
+  }))
+  for (const player of prepared.players.filter((player) => player.id !== a.playerId)) {
+    player.hand = []
+    player.draw = Array.from({ length: 5 }, (_, index) => ({
+      uid: `sphere-peer-draw-${index}`, defId: 'defend_silent', upgraded: false,
+    }))
+    player.discard = []
+  }
+  Object.assign(prepared, {
+    turn: 0, phase: 'player', die: 6, startTurnProgress: undefined, pendingTriggers: [],
+    pendingCardCopy: undefined,
+  })
+  prepared = preparePlayerTurnThroughDraw(prepared)
+  const callsBeforeDraw = prepared.rng.calls
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({
+    ...EVENT_DEFINITIONS.living_wall, instanceId: 'test-sphere-scry', act: 3,
+    minAscension: 0, requiresColorlessUnlock: false,
+  })
+  room.run.roomState.preparedCombat = prepared
+
+  const mine = snapshotFor(room, a.token).run.roomState
+  const peer = snapshotFor(room, b.token).run.roomState
+  assertEqual(mine.preparedStartTurnScry.playerId, a.playerId)
+  assertEqual(mine.preparedStartTurnScry.cards.length, 3)
+  assertEqual(peer.preparedStartTurnScry.cards, null)
+  assert(!allStrings(peer).some((value) => value.startsWith('sphere-scry-secret-')),
+    'the private Foresight reveal leaked before Draw')
+  assertThrows(() => apply(room, b.token, { kind: 'event', playerId: b.playerId,
+    decision: { optionIds: ['change'] } }), 'the party chose before the private Scry')
+
+  apply(room, a.token, {
+    kind: 'resolveStartTurnScry', sourceId: mine.preparedStartTurnScry.id,
+    discardUids: [mine.preparedStartTurnScry.cards[0].uid],
+  })
+  const paused = room.run.roomState.preparedCombat
+  assertEqual(paused.players.find((player) => player.id === a.playerId).hand.length, 5)
+  assert(paused.startTurnProgress?.pauseAfterDraw, 'the event did not pause immediately after Draw')
+  assertEqual(paused.die, 6, 'the prepared combat rolled before the event choice')
+  assertEqual(paused.rng.calls, callsBeforeDraw, 'the hidden Roll consumed RNG before the event choice')
+  const resumed = resumePlayerTurnAfterDraw(paused)
+  assert(resumed.rng.calls > paused.rng.calls, 'the shared Roll did not resume after the event choice')
+
+  const disconnected = structuredClone(prepared)
+  room.run.roomState.preparedCombat = disconnected
+  markDisconnected(room, a.token)
+  assertEqual(room.run.roomState.preparedCombat.startTurnProgress?.beforeDraw, undefined,
+    'disconnect left the prepared private Scry unresolved')
+  assert(room.run.roomState.preparedCombat.startTurnProgress?.pauseAfterDraw,
+    'disconnect fallback did not continue through Draw to the event pause')
+})
+
+check('Mysterious Sphere resolves each private Hermit setup before exposing the opening hand', () => {
+  const { room, a, b } = twoSeatRoom()
+  const prepared = structuredClone(room.run.combat)
+  const owner = prepared.players.find((player) => player.id === a.playerId)
+  const setup = { uid: 'sphere-hermit-setup', defId: 'hermit_strike', upgraded: false }
+  owner.character = 'hermit'
+  owner.hand = [setup]
+  owner.draw = Array.from({ length: 5 }, (_, index) => ({
+    uid: `sphere-opening-${index}`, defId: 'hermit_defend', upgraded: false,
+  }))
+  owner.chamber = []
+  owner.chamberSlots = 2
+  prepared.turn = 0
+  prepared.phase = 'player'
+  prepared.pendingHermitSetupLoads = [{ playerId: a.playerId }]
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({
+    ...EVENT_DEFINITIONS.living_wall, instanceId: 'test-sphere-hermit', act: 3,
+    minAscension: 0, requiresColorlessUnlock: false,
+  })
+  room.run.roomState.preparedCombat = prepared
+  const privatePreview = snapshotFor(room, a.token).run.roomState.preparedCombat
+  const peerPreview = snapshotFor(room, b.token).run.roomState.preparedCombat
+  assertEqual(privatePreview.players.find((player) => player.id === a.playerId).hand[0].uid, setup.uid)
+  assert(!allStrings(peerPreview).includes(setup.uid), 'the Hermit setup card leaked to a teammate')
+  assertDeepEqual(peerPreview.enemies.map(({ defId, row }) => ({ defId, row })),
+    prepared.enemies.map(({ defId, row }) => ({ defId, row })), 'the public encounter was hidden during setup')
+  assertThrows(() => apply(room, b.token, { kind: 'event', playerId: b.playerId,
+    decision: { optionIds: ['change'] } }), 'a party choice bypassed the Hermit setup')
+  apply(room, a.token, { kind: 'resolveHermitSetupLoad', cardUid: setup.uid, enemyUid: null })
+  const opened = room.run.roomState.preparedCombat.players.find((player) => player.id === a.playerId)
+  assertEqual(room.run.roomState.preparedCombat.pendingHermitSetupLoads.length, 0)
+  assertEqual(opened.chamber[0].uid, setup.uid)
+  assertEqual(opened.hand.length, 5)
+
+  const disconnected = structuredClone(prepared)
+  disconnected.pendingHermitSetupLoads = [{ playerId: b.playerId }]
+  const disconnectedOwner = disconnected.players.find((player) => player.id === b.playerId)
+  disconnectedOwner.character = 'hermit'
+  disconnectedOwner.hand = [{ uid: 'sphere-disconnect-setup', defId: 'hermit_defend', upgraded: false }]
+  disconnectedOwner.draw = Array.from({ length: 5 }, (_, index) => ({
+    uid: `sphere-disconnect-opening-${index}`, defId: 'hermit_defend', upgraded: false,
+  }))
+  disconnectedOwner.chamber = []
+  disconnectedOwner.chamberSlots = 2
+  room.run.roomState.preparedCombat = disconnected
+  markDisconnected(room, b.token)
+  assertEqual(room.run.roomState.preparedCombat.pendingHermitSetupLoads.length, 0)
+  assertEqual(room.run.roomState.preparedCombat.players.find((player) => player.id === b.playerId).hand.length, 5)
+})
+
+check('Mysterious Sphere settles disconnected owners after Scry ordering and resolution', () => {
+  const prepare = (room, a, b) => {
+    const combat = structuredClone(room.run.combat)
+    for (const [index, player] of combat.players.entries()) {
+      player.powers = [{ uid: `sphere-double-foresight-${index}`, defId: 'foresight', upgraded: false }]
+      player.hand = []
+      player.draw = Array.from({ length: 6 }, (_, cardIndex) => ({
+        uid: `sphere-double-${index}-${cardIndex}`,
+        defId: index === 0 ? 'strike_watcher' : 'defend_watcher', upgraded: false,
+      }))
+    }
+    Object.assign(combat, { turn: 0, phase: 'player', startTurnProgress: undefined, pendingTriggers: [] })
+    room.run.phase = 'room'
+    room.run.combat = null
+    room.run.roomState = createEventRoom({
+      ...EVENT_DEFINITIONS.living_wall, instanceId: `sphere-double-${a.playerId}-${b.playerId}`, act: 3,
+      minAscension: 0, requiresColorlessUnlock: false,
+    })
+    room.run.roomState.preparedCombat = preparePlayerTurnThroughDraw(combat)
+  }
+
+  {
+    const { room, a, b } = twoSeatRoom()
+    prepare(room, a, b)
+    markDisconnected(room, b.token)
+    const abilities = snapshotFor(room, a.token).run.roomState.preparedStartTurnScryAbilities
+    const mine = abilities.find((ability) => ability.playerId === a.playerId)
+    const absent = abilities.find((ability) => ability.playerId === b.playerId)
+    apply(room, a.token, { kind: 'orderStartTurnScries', order: [absent.id, mine.id] })
+    assertEqual(snapshotFor(room, a.token).run.roomState.preparedStartTurnScry.playerId, a.playerId,
+      'ordering did not settle the disconnected first Scry owner')
+  }
+
+  {
+    const { room, a, b } = twoSeatRoom()
+    prepare(room, a, b)
+    markDisconnected(room, b.token)
+    const abilities = snapshotFor(room, a.token).run.roomState.preparedStartTurnScryAbilities
+    const mine = abilities.find((ability) => ability.playerId === a.playerId)
+    const absent = abilities.find((ability) => ability.playerId === b.playerId)
+    apply(room, a.token, { kind: 'orderStartTurnScries', order: [mine.id, absent.id] })
+    const preview = snapshotFor(room, a.token).run.roomState.preparedStartTurnScry
+    apply(room, a.token, { kind: 'resolveStartTurnScry', sourceId: preview.id, discardUids: [] })
+    assert(room.run.roomState.preparedCombat.startTurnProgress?.pauseAfterDraw,
+      'resolving a connected Scry did not settle the next disconnected owner')
+  }
 })
 
 report('co-op rooms')

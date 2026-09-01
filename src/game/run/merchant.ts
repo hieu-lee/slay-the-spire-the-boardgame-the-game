@@ -6,9 +6,11 @@ import { drawItems } from '../acquisition.ts'
 import { currentQuickSetupStep } from '../meta.ts'
 import { buyFromMerchant, closeMerchant, removeAtMerchant, resolveCourierOffer } from '../noncombat.ts'
 import type { CourierOffer, MerchantPurchase } from '../noncombat.ts'
+import { cardHasGuardianSocket, queueGuardianSocket } from './guardian-gems.ts'
+import { hasPendingRelicAcquisition } from './rules.ts'
 
 export function purchaseAtMerchant(state: RunState, purchase: MerchantPurchase): RunState {
-  if (state.phase !== 'room' || state.roomState?.kind !== 'merchant') return state
+  if (state.phase !== 'room' || state.roomState?.kind !== 'merchant' || hasPendingRelicAcquisition(state)) return state
   const eligible = state.setup?.kind === 'catch-up'
     ? state.players.filter((player) => state.setup!.playerIds.includes(player.id)) : state.players
   if (!eligible.some((player) => player.id === purchase.buyerId)) return state
@@ -16,7 +18,16 @@ export function purchaseAtMerchant(state: RunState, purchase: MerchantPurchase):
   itemDecks.potions = [...state.potionDeck]
   const result = buyFromMerchant(state.roomState, itemDecks, eligible, state.ascension, purchase)
   const byId = result && new Map(result.players.map((player) => [player.id, player]))
-  return result ? mirrorItemSupplies({ ...state, roomState: result.shop, players: state.players.map((player) => byId?.get(player.id) ?? player) }, itemDecks) : state
+  if (!result) return state
+  let next = mirrorItemSupplies({ ...state, roomState: result.shop,
+    players: state.players.map((player) => byId?.get(player.id) ?? player) }, itemDecks)
+  const defId = purchase.section === 'card' ? state.roomState.cards[purchase.buyerId]?.choices[purchase.slot] : undefined
+  if (defId && cardHasGuardianSocket(defId)) {
+    const before = new Set(state.players.find((player) => player.id === purchase.buyerId)?.deck.map((card) => card.uid) ?? [])
+    const card = next.players.find((player) => player.id === purchase.buyerId)?.deck.find((held) => !before.has(held.uid))
+    if (card) next = queueGuardianSocket(next, purchase.buyerId, card.uid, 'merchant', state.roomState.guardianGems?.[purchase.buyerId] ?? [])
+  }
+  return next
 }
 
 export function removeAtCurrentMerchant(
@@ -35,14 +46,16 @@ export function removeAtCurrentMerchant(
 }
 
 export function finishMerchant(state: RunState): RunState {
-  if (state.phase !== 'room' || state.roomState?.kind !== 'merchant') return state
+  if (state.phase !== 'room' || state.roomState?.kind !== 'merchant' || hasPendingRelicAcquisition(state)) return state
   const itemDecks = structuredClone(state.itemDecks)
   const eligible = state.setup?.kind === 'catch-up'
     ? state.players.filter((player) => state.setup!.playerIds.includes(player.id)) : state.players
   const closed = closeMerchant(state.roomState, itemDecks, eligible)
   const byId = new Map(closed.map((player) => [player.id, player]))
   const players = state.players.map((player) => byId.get(player.id) ?? player)
-  const next = mirrorItemSupplies({ ...state, phase: state.setup ? 'setup' : 'map', roomState: null, players, log: [...state.log, 'The party leaves the Merchant.'] }, itemDecks)
+  const guardianGemDeck = [...(state.guardianGemDeck ?? []), ...Object.values(state.roomState.guardianGems ?? {}).flat()]
+  const next = mirrorItemSupplies({ ...state, phase: state.setup ? 'setup' : 'map', roomState: null, players,
+    guardianGemDeck, log: [...state.log, 'The party leaves the Merchant.'] }, itemDecks)
   return state.setup && currentQuickSetupStep(state.setup)?.kind === 'merchant' ? finishQuickSetup(next) : next
 }
 

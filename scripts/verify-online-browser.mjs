@@ -1436,6 +1436,46 @@ try {
   })
 
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const comboGrudge = { uid: 'online-combo-grudge', defId: 'hermit_grudge', upgraded: false }
+  const comboDraw = { uid: 'online-combo-draw', defId: 'hermit_defend', upgraded: false }
+  Object.assign(annLive, {
+    character: 'hermit', hand: [{ uid: 'online-combo-hand', defId: 'hermit_strike', upgraded: false }],
+    draw: [comboGrudge, comboDraw], discard: [], chamber: [], chamberSlots: 2,
+    powers: [{ uid: 'online-combo-power', defId: 'hermit_combo', upgraded: false }], drawLocked: false,
+  })
+  liveRoom.run.combat.pendingTriggers = [{
+    id: 812, playerId: annLive.id, sourceId: 'power:online-combo-power',
+  }]
+  liveRoom.run.combat.pendingDieRelicChoices = []
+  liveRoom.run.combat.enemies = [
+    { ...liveRoom.run.combat.enemies[0], uid: 'online-combo-left', defId: 'cultist', row: 0, hp: 10, maxHp: 10, dead: false },
+    { ...liveRoom.run.combat.enemies[0], uid: 'online-combo-right', defId: 'cultist', row: 1, hp: 10, maxHp: 10, dead: false },
+  ]
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.getByText("Ann's Combo — choose Hermit card choices").waitFor()
+  const comboOwnerSnapshot = await snapshot(a)
+  const comboPeerSnapshot = await snapshot(b)
+  const ownerComboCards = comboOwnerSnapshot.run.combat.pendingTriggerAbility.hermitChoices.loadCards
+    .map((card) => card.uid)
+  const peerComboText = JSON.stringify(comboPeerSnapshot)
+  await a.getByRole('checkbox', { name: 'Load Grudge' }).check()
+  await a.getByText("Ann's Combo — choose an enemy").waitFor()
+  await a.getByRole('button', { name: /Cultist/ }).last().click()
+  await a.getByText("Ann's Combo — choose an enemy").waitFor({ state: 'hidden' })
+  check('online Combo sends its owner the authoritative post-draw Load preview without leaking it', () => {
+    assert(ownerComboCards.includes(comboGrudge.uid) && ownerComboCards.includes(comboDraw.uid),
+      `owner Combo preview was incomplete: ${ownerComboCards.join(', ')}`)
+    assertEqual(comboPeerSnapshot.run.combat.pendingTriggerAbility, null)
+    assert(!peerComboText.includes(comboGrudge.uid) && !peerComboText.includes(comboDraw.uid),
+      'online Combo preview leaked post-draw cards to a peer')
+    assertEqual(liveRoom.run.combat.pendingTriggers.length, 0)
+    assert(liveRoom.run.combat.players.find((player) => player.name === 'Ann').chamber
+      .some((card) => card.uid === comboGrudge.uid))
+  })
+  annLive.character = 'ironclad'
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
     hand: [
@@ -2376,6 +2416,70 @@ try {
     assertEqual(bo.block, 1)
   })
   liveRoom.run.combat.players.forEach((player) => { player.block = 0 })
+
+  const guardianCombatRestore = structuredClone(liveRoom.run.combat)
+  const guardian = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const guardianAlly = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  guardian.hand = [{ uid: 'online-guardian-whirl-refusal', defId: 'guardian_guardian_whirl', upgraded: false }]
+  Object.assign(guardian, { character: 'guardian', guardianMode: 'defense', energy: 2, block: 0 })
+  Object.assign(guardianAlly, { miracles: 1, energy: 0, block: 0, dead: false })
+  const publishGuardianFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishGuardianFixture.ok, 'could not publish the Guardian refusal fixture')
+  await a.getByRole('button', { name: /^Guardian Whirl,/ }).click()
+  await a.getByRole('button', { name: 'Spend 2' }).click()
+  let guardianRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const body = JSON.parse(route.request().postData())
+    body.action.playerId = 'gone'
+    const response = await route.fetch({ postData: JSON.stringify(body) })
+    guardianRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.locator('button.seat').filter({ hasText: 'Bo' }).click()
+  for (let attempt = 0; attempt < 50 && guardianRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  const expectedGuardianConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedGuardianConflict >= 0, 'the refused Guardian Whirl did not surface as an HTTP conflict')
+  failures.splice(expectedGuardianConflict, 1)
+  await a.waitForFunction(() => {
+    const card = [...document.querySelectorAll('button')]
+      .some((button) => button.getAttribute('aria-label')?.startsWith('Guardian Whirl,'))
+    const prompt = document.querySelector('.prompt')?.textContent ?? ''
+    return !card || prompt.includes('Choose Energy for Guardian Whirl') || prompt.includes('Choose who gets it')
+  })
+  const restoredSpend = a.getByRole('button', { name: 'Spend 2' })
+  if (await restoredSpend.count()) await restoredSpend.click()
+  await a.waitForFunction(() => {
+    const card = [...document.querySelectorAll('button')]
+      .some((button) => button.getAttribute('aria-label')?.startsWith('Guardian Whirl,'))
+    const prompt = document.querySelector('.prompt')?.textContent ?? ''
+    return !card || prompt.includes('Choose who gets it') || prompt.toLowerCase().includes('enemy')
+  })
+  const restoredGuardian = await a.evaluate(() => ({
+    card: [...document.querySelectorAll('button')]
+      .some((button) => button.getAttribute('aria-label')?.startsWith('Guardian Whirl,')),
+    prompt: document.querySelector('.prompt')?.textContent ?? '',
+  }))
+  check('a refused Defense Mode Guardian card restages its effective Skill targets', () => {
+    assertEqual(guardianRefusalStatus, 409)
+    assert(!restoredGuardian.prompt.toLowerCase().includes('enemy'), restoredGuardian.prompt)
+  })
+  if (restoredGuardian.card) await a.locator('button.seat--targetable').filter({ hasText: 'Bo' }).click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Guardian Whirl,')))
+  const completedGuardian = await snapshot(a)
+  check('the restored Guardian Whirl can still assign Block to its ally', () => {
+    const ann = completedGuardian.run.combat.players.find((player) => player.name === 'Ann')
+    const bo = completedGuardian.run.combat.players.find((player) => player.name === 'Bo')
+    assertEqual(ann.block, 0)
+    assertEqual(bo.block, 2)
+  })
+  liveRoom.run.combat = guardianCombatRestore
 
   const annBeforeStorm = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeStorm = liveRoom.run.combat.players.find((player) => player.name === 'Bo')

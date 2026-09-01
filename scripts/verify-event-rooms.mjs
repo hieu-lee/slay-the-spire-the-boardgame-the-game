@@ -42,6 +42,20 @@ check('Bonfire applies only the removed card rarity rider', () => {
   assertEqual(result?.players[0].hp, result?.players[0].maxHp)
 })
 
+check('Purifier removes Hermit Curses by printed type while preserving Ascender\'s Bane', () => {
+  const state = setup('purifier', 1)
+  state.players[0].deck.push(
+    { uid: 'hermit-curse', defId: 'hermit_scorn', upgraded: false },
+    { uid: 'base-curse', defId: 'regret', upgraded: false },
+    { uid: 'bane', defId: 'ascenders_bane', upgraded: false },
+  )
+  const result = resolveEventDecision(state.event, state.rng, state.decks, state.players, 0, 'p1', {
+    optionIds: ['cleanse'],
+  })
+  assertDeepEqual(result?.players[0].deck.filter(({ uid }) => ['hermit-curse', 'base-curse', 'bane'].includes(uid))
+    .map(({ uid }) => uid), ['bane'])
+})
+
 check('Events honor Mark of Pain, Ectoplasm, Sozu, and canonical Relic state', () => {
   const library = setup('the_library', 1)
   library.players[0].hp = 4
@@ -126,6 +140,27 @@ check('Ascension 4 potion capacity cannot be bypassed by Events', () => {
   const openPass = resolveEventDecision(open.event, open.rng, open.decks, open.players, 0, 'p1', { optionIds: ['buy_one'], potionRecipientId: 'p2' })
   assertEqual(openPass?.players[0].potions.length, 0)
   assertEqual(openPass?.players[1].potions.length, 1)
+})
+
+check('Potion Belt capacity applies to Event potion gains', () => {
+  const state = setup('woman_in_blue', 1, 4)
+  state.players[0].potions = ['fire_potion', 'swift_potion']
+  state.players[0].relics.push({ defId: 'potion_belt', spent: false })
+  const gained = resolveEventDecision(state.event, state.rng, state.decks, state.players, 4, 'p1', {
+    optionIds: ['buy_one'],
+  })
+  assertEqual(gained?.players[0].potions.length, 3)
+})
+
+check('an Event-acquired Potion Belt immediately draws two shared potions', () => {
+  const state = setup('ancient_temple', 1)
+  state.decks.relics = ['potion_belt']
+  state.decks.potions = ['block_potion', 'energy_potion']
+  const gained = resolveEventDecision(state.event, state.rng, state.decks, state.players, 0, 'p1', {
+    optionIds: ['go_inside'],
+  })
+  assertDeepEqual(gained?.players[0].potions, ['block_potion', 'energy_potion'])
+  assertDeepEqual(state.decks.potions, [])
 })
 
 check('Event Gold costs accept exact contributions from the party', () => {
@@ -385,6 +420,7 @@ check('Forgotten Altar removes its revealed Relic, not another random Relic', ()
   assert(!run.players[0].relics.some((relic) => relic.defId === 'anchor'))
   assert(run.players[0].relics.some((relic) => relic.defId === 'akabeko'))
   assert(run.players[0].relics.some((relic) => relic.defId === 'happy_flower'))
+  assert(run.itemDecks.relics.includes('anchor'), 'the offered ordinary Relic was not returned to its deck')
 })
 
 check('Mind Bloom War reserves no reward before combat and records a seeded Act I Boss hook', () => {
@@ -797,6 +833,20 @@ check('card exchanges wait for the target owner and survive as serializable room
   assert(accepted.players[1].deck.some((card) => card.uid === offered.uid))
 })
 
+check('card exchanges preserve an attached Guardian Gem', () => {
+  let run = inEvent('note_for_yourself', 2)
+  const socketed = { uid: 'traded-socket', defId: 'guardian_harden', upgraded: false,
+    attachedGemId: 'guardian_ruby' }
+  const returned = run.players[1].deck[0]
+  run.players[0].deck = [socketed]
+  run = chooseEvent(run, 'p1', {
+    optionIds: ['exchange'], cardUids: [socketed.uid], targetPlayerId: 'p2',
+  })
+  run = chooseEvent(run, 'p2', { optionIds: ['accept_trade'], cardUids: [returned.uid] })
+  assertEqual(run.players[1].deck.find((card) => card.uid === socketed.uid)?.attachedGemId, 'guardian_ruby')
+  assertDeepEqual(run.pendingGuardianSockets, [])
+})
+
 check('other-character rewards reject inherited and malformed deck targets', () => {
   const run = inEvent('note_for_yourself', 1)
   assertDeepEqual(chooseEvent(run, 'p1', { optionIds: ['take'], targetPlayerId: '__proto__' }), run)
@@ -900,6 +950,8 @@ check('inactive character rewards preserve an unchosen duplicate', () => {
   run.itemDecks.characterCards.silent = ['backflip', 'backflip', 'acrobatics']
   run.itemDecks.characterRares.silent = []
   run = chooseEvent(run, 'p1', { optionIds: ['take'], targetPlayerId: 'silent' })
+  assertDeepEqual(run.roomState.rewardOffers.p1[0], ['backflip', 'backflip', 'acrobatics'],
+    'base Event rewards must preserve physical duplicate faces')
   run = chooseEvent(run, 'p1', { optionIds: ['take'], targetPlayerId: 'silent', rewardIndexes: [0] })
   assertDeepEqual(run.itemDecks.characterCards.silent, ['backflip', 'acrobatics'])
 })

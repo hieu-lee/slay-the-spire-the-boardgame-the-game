@@ -54,11 +54,13 @@ page.setDefaultNavigationTimeout(30_000)
 const consoleErrors = []
 const pageErrors = []
 const requestFailures = []
+const requestedUrls = new Set()
 const auditErrors = (currentPage) => {
   currentPage.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
   currentPage.on('pageerror', (error) => pageErrors.push(String(error)))
+  currentPage.on('request', (request) => requestedUrls.add(request.url()))
   currentPage.on('requestfailed', (request) =>
     request.failure()?.errorText !== 'net::ERR_ABORTED' || !/\/assets\/(?:bgm|sfx)\//.test(request.url())
       ? requestFailures.push(`${request.url()} ${request.failure()?.errorText ?? ''}`)
@@ -530,7 +532,7 @@ const characterSelection = await page.locator('.start-menu__character-select').e
 await shot('00-title-character-select')
 await page.getByRole('button', { name: 'Back', exact: true }).click()
 check('Single Player opens a contained visual character picker before starting', () => {
-  assertEqual(characterSelection.choices, 4)
+  assertEqual(characterSelection.choices, 8)
   assert(characterSelection.contained, 'character selection needs a nested scrollbar')
   assert(characterSelection.heroContained, 'selected character art leaves the selection frame')
   for (const [name, special] of Object.entries({
@@ -594,7 +596,17 @@ const upgradedZeroCostNames = await page.locator('.compendium-card').evaluateAll
   cards.map((card) => card.getAttribute('aria-label')))
 await page.getByRole('button', { name: 'Any energy cost', exact: true }).click()
 await page.getByPlaceholder('Search').fill('')
+await page.getByRole('button', { name: 'Guardian' }).click()
+await page.getByPlaceholder('Search').fill('Crystal Edge')
+const guardianGemLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
+const guardianGemFallbackType = await page.locator('.compendium-card .card-face__type').first().textContent()
 await page.getByRole('button', { name: 'Curses' }).click()
+await page.getByPlaceholder('Search').fill('Scorn')
+const hermitCurseLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
+await page.getByRole('checkbox', { name: 'curse', exact: true }).check()
+const curseRarityLabels = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByRole('checkbox', { name: 'curse', exact: true }).uncheck()
 await page.getByPlaceholder('Search').fill('Clumsy')
 const curseUpgradeSource = await page.locator('.compendium-card img').first().getAttribute('src')
 // Waited for, not sampled. The grid reads the 448px thumbnail tier and the zoom
@@ -632,7 +644,7 @@ await page.getByPlaceholder('Search').fill('')
 await page.getByRole('button', { name: 'Ironclad' }).click()
 await shot('00a-compendium')
 check('the compendium filters the real card catalog and opens card detail', () => {
-  assertEqual(poolIconView.length, 8, 'one painted icon per card pool')
+  assertEqual(poolIconView.length, 12, 'one painted icon per card pool')
   assert(poolIconView.every((entry) => entry.loaded && entry.source?.includes('/assets/menu/compendium-icons/')),
     `compendium pool icons did not load: ${JSON.stringify(poolIconView)}`)
   assert(poolIconView.every((entry) => entry.border.every((width) => width === '0px')),
@@ -653,6 +665,11 @@ check('the compendium filters the real card catalog and opens card detail', () =
   assert(upgradedBashSource?.endsWith('ironclad__starter__bash+.webp'), upgradedBashSource)
   assert(upgradedZeroCostNames.some((label) => label?.startsWith('Havoc+, cost 0,')),
     `upgraded cost filter omitted Havoc+: ${upgradedZeroCostNames.join(' / ')}`)
+  assert(guardianGemLabel?.includes(', Gem Attack,'), guardianGemLabel)
+  assertEqual(guardianGemFallbackType, 'Gem Attack')
+  assert(hermitCurseLabel?.startsWith('Scorn') && hermitCurseLabel.includes(', unplayable, curse,'), hermitCurseLabel)
+  assert(curseRarityLabels.length > 0 && curseRarityLabels.every((label) => label?.endsWith(', curse')),
+    `curse rarity filtering leaked: ${curseRarityLabels.join(' / ')}`)
   assertEqual(detailOpen, 1)
   assert(detailModal, 'card detail should use native modal semantics')
   assert(curseUpgradeSource?.endsWith('curses__clumsy.webp') && !curseUpgradeSource.includes('clumsy+'),
@@ -787,15 +804,28 @@ check('a new local run presents Neow and deals one public face per seat', () => 
 await page.getByRole('button', { name: 'Skip 3 Gold' }).click()
 await page.getByRole('button', { name: 'Reveal Card Reward' }).click()
 await page.getByRole('heading', { name: 'Choose a Card' }).waitFor()
+await page.locator('.neow-action--offer .card').first().waitFor()
+const neowRewardChoiceCount = await page.evaluate(() =>
+  Object.values(window.__STS_DEBUG__.getRun().neow.players)[0].redReward.choices.length)
 const neowRewardCards = await page.locator('.neow-action--offer .card').evaluateAll((cards) => cards.map((card) => {
   const box = card.getBoundingClientRect()
   return { top: box.top, bottom: box.bottom, visible: box.top >= 0 && box.bottom <= innerHeight }
 }))
+const baseNeowRewardTitle = await page.locator('.neow-action--offer .card').first().getAttribute('title')
+await page.evaluate(() => {
+  const run = structuredClone(window.__STS_DEBUG__.getRun())
+  Object.values(run.neow.players)[0].redReward.upgraded = true
+  window.__STS_DEBUG__.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.neow-action--offer .card')?.getAttribute('title')?.endsWith('+'))
+const upgradedNeowRewardTitle = await page.locator('.neow-action--offer .card').first().getAttribute('title')
 const staleNeowRewardLabel = await page.getByText('Resolve face-up reward', { exact: true }).count()
 await shot('00b-neow-card-reward')
 check('Neow shows complete face-up reward cards on the desktop stage', () => {
-  assertEqual(neowRewardCards.length, 3)
+  assert(neowRewardChoiceCount > 0, 'Neow revealed no selectable card')
+  assertEqual(neowRewardCards.length, neowRewardChoiceCount)
   assert(neowRewardCards.some((card) => card.visible), `no complete reward card is visible: ${JSON.stringify(neowRewardCards)}`)
+  assertEqual(upgradedNeowRewardTitle, `${baseNeowRewardTitle}+`, 'an upgraded Boon offer rendered its base card face')
   assertEqual(staleNeowRewardLabel, 0)
 })
 await bypassNeow()
@@ -900,6 +930,23 @@ check('the opening map starts scrolled to its reachable room', async () => {
     'the opening encounter is outside the map scrollport')
 })
 
+await page.evaluate(() => {
+  const run = structuredClone(window.__STS_DEBUG__.getRun())
+  run.meta.ruleset = 'downfall'
+  run.actBossDefId = 'downfall_inferno'
+  run.selfBossRerolled = false
+  window.__STS_DEBUG__.setRun(run)
+})
+const selfBossReroll = page.getByRole('button', { name: 'Reroll The Inferno' })
+await selfBossReroll.waitFor()
+await selfBossReroll.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().actBossDefId !== 'downfall_inferno')
+const rerolledBoss = (await readRun()).actBossDefId
+check('the opening map exposes and spends the optional Downfall self-boss reroll', () => {
+  assert(rerolledBoss !== 'downfall_inferno', 'the self-boss was not rerolled')
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), opening)
+await page.waitForFunction((boss) => window.__STS_DEBUG__.getRun().actBossDefId === boss, opening.actBossDefId)
 const rowSwitchPanel = page.getByText('Switch rows before the next combat', { exact: true }).locator('..')
 const rowSwitches = rowSwitchPanel.locator('select')
 const rowSwitchCount = await rowSwitches.count()
@@ -1182,6 +1229,1943 @@ await page.evaluate(() => {
 await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/facing-the-elite.mp3'), awakeEliteMusicBefore)
 check('combat music follows each act and Lagavulin changes themes when it wakes', () => {
   assert(true)
+})
+
+const downfallMechanicLabels = {}
+const downfallEnergyOrbs = {}
+const downfallEmptyEnergyOrbs = {}
+let downfallReducedMotionStopped = false
+let guardianModeOrb = null
+let guardianModePortrait = null
+let slimeHudAccess = null
+let slimeHudKeywordTips = null
+let slimeHudCommandTips = null
+let slimeHudOverlapsEndTurn = true
+let hexaghostVisualState = null
+let hermitChamberInteractions = null
+let corruptedShardChamberLayout = null
+for (const fixture of [
+  { character: 'guardian', name: 'Guardian', fields: {
+    guardianMode: 'attack', vigor: 3, chamberSlots: 1,
+    chamber: [{ uid: 'ui-shard-chamber', defId: 'hermit_defend', upgraded: false }],
+    relics: [{ defId: 'corrupted_shard', spent: false }],
+  } },
+  { character: 'hexaghost', name: 'Hexaghost', fields: { heat: 2, soulburn: 1 } },
+  { character: 'slime_boss', name: 'Slime Boss', fields: { slimes: [{
+    card: { uid: 'ui-hud-bruiser', defId: 'slime_boss_bruiser_slime', upgraded: false },
+    level: 2, vigor: 3, commandsThisTurn: 1, vigorLossAtEndOfTurn: 0,
+  }, {
+    card: { uid: 'ui-hud-armored', defId: 'slime_boss_armored_slime', upgraded: true },
+    level: 3, vigor: 4, commandsThisTurn: 1, vigorLossAtEndOfTurn: 0,
+  }] } },
+]) {
+  await page.setViewportSize(fixture.character === 'slime_boss'
+    ? { width: 390, height: 844 }
+    : { width: 1440, height: 900 })
+  await page.evaluate(({ run, fixture }) => {
+    const next = structuredClone(run)
+    Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingHermitSetupLoads: [] })
+    Object.assign(next.combat.players[0], { character: fixture.character, name: fixture.name, chamber: [], chamberSlots: 0,
+      guardianMode: null, heat: 0, soulburn: 0, slimes: [], ...fixture.fields })
+    next.combat.players = [next.combat.players[0]]
+    window.__STS_DEBUG__.setRun(next)
+  }, { run: combatAppearanceRun, fixture })
+  const mechanicChips = page.locator(fixture.character === 'slime_boss'
+    ? '.combat__slime-chip'
+    : '.seat__mechanic')
+  downfallMechanicLabels[fixture.character] = await mechanicChips.allInnerTexts()
+  if (fixture.character === 'hexaghost') {
+    await page.waitForFunction(() => {
+      const portrait = document.querySelector('.seat__portrait > img')
+      const flame = document.querySelector('button[aria-label^="Spend Soulburn"] .item-icon-image')
+      return portrait?.getAttribute('src')?.endsWith('/hexaghost-heat-2.webp') &&
+        portrait.complete && portrait.naturalWidth === 512 && flame?.complete && flame.naturalWidth === 512
+    })
+    hexaghostVisualState = await page.getByRole('button', { name: 'Spend Soulburn, 1 available' }).evaluate((button) => {
+      const portrait = document.querySelector('.seat__portrait > img')
+      const icon = button.querySelector('.item-icon-image')
+      return {
+        portrait: portrait?.getAttribute('src'),
+        icon: icon?.getAttribute('src'),
+        iconLoaded: icon?.complete && icon.naturalWidth === 512,
+        count: button.textContent?.trim(),
+      }
+    })
+  }
+  await page.waitForFunction((expected) => {
+    const images = [...document.querySelectorAll('.pip--energy .energy-orb__layers > img')]
+    return images.length === expected && images.every((image) => image.complete && image.naturalWidth === 128)
+  }, fixture.character === 'guardian' ? 7 : 6)
+  downfallEnergyOrbs[fixture.character] = await page.locator('.pip--energy').evaluate((pip) => ({
+    images: [...pip.querySelectorAll('.energy-orb__layers > img')].map((image) => ({
+      src: image.getAttribute('src'),
+      loaded: image.complete && image.naturalWidth === 128 && image.naturalHeight === 128,
+      layer: image.dataset.layer,
+      animation: getComputedStyle(image).animationName,
+    })),
+    generatedLayersHidden: getComputedStyle(pip, '::before').display === 'none' &&
+      getComputedStyle(pip, '::after').display === 'none',
+    cleanBackdrop: getComputedStyle(pip).boxShadow === 'none' && getComputedStyle(pip).backgroundImage === 'none',
+  }))
+  await page.evaluate(() => {
+    const next = structuredClone(window.__STS_DEBUG__.getRun())
+    next.combat.players[0].energy = 0
+    window.__STS_DEBUG__.setRun(next)
+  })
+  await page.waitForFunction((expected) => {
+    const images = [...document.querySelectorAll('.pip--energy .energy-orb__layers > img')]
+    return images.length === expected && images.every((image) => image.complete && image.naturalWidth === 128)
+  }, fixture.character === 'guardian' ? 7 : 6)
+  downfallEmptyEnergyOrbs[fixture.character] = await page.locator('.pip--energy').evaluate((pip) =>
+    [...pip.querySelectorAll('.energy-orb__layers > img')].map((image) => ({
+      src: image.getAttribute('src'),
+      loaded: image.complete && image.naturalWidth === 128 && image.naturalHeight === 128,
+      layer: Number(image.dataset.layer),
+      duration: getComputedStyle(image).animationDuration,
+    })))
+  await page.evaluate(() => {
+    const next = structuredClone(window.__STS_DEBUG__.getRun())
+    next.combat.players[0].energy = 3
+    window.__STS_DEBUG__.setRun(next)
+  })
+  if (fixture.character === 'slime_boss') {
+    const chips = []
+    await mechanicChips.first().focus()
+    for (let index = 0; index < await mechanicChips.count(); index++) {
+      const chip = mechanicChips.nth(index)
+      chips.push(await chip.evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        const meta = element.parentElement?.getBoundingClientRect()
+        return {
+          focusable: element.tabIndex === 0,
+          focused: document.activeElement === element,
+          visible: !!meta && box.left >= meta.left - 1 && box.right <= meta.right + 1,
+          label: element.getAttribute('aria-label'),
+        }
+      }))
+      if (index + 1 < await mechanicChips.count()) await page.keyboard.press('Tab')
+    }
+    slimeHudAccess = chips
+    slimeHudKeywordTips = []
+    slimeHudCommandTips = []
+    await page.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    })
+    for (let index = 0; index < await mechanicChips.count(); index++) {
+      const chip = mechanicChips.nth(index)
+      await page.mouse.move(5, 5)
+      await page.keyboard.down('Shift')
+      await chip.hover()
+      await page.waitForFunction((element) => document.getElementById(element.dataset.keywordHelpId)
+        ?.hasAttribute('data-open'), await chip.elementHandle())
+      slimeHudKeywordTips.push(await chip.evaluate((element) =>
+        [...document.getElementById(element.dataset.keywordHelpId).querySelectorAll('.card-keyword-tip strong')]
+          .map((tip) => tip.textContent)))
+      slimeHudCommandTips.push(await chip.evaluate((element) =>
+        [...document.getElementById(element.dataset.keywordHelpId).querySelectorAll('.card-keyword-tip')]
+          .find((tip) => tip.querySelector('strong')?.textContent === 'Current Command')
+          ?.querySelector('span')?.textContent))
+      if (index === 1) await page.screenshot({ path: join(outDir, 'downfall-slime-active-keyword-help.png') })
+      await page.keyboard.up('Shift')
+    }
+    slimeHudOverlapsEndTurn = await page.evaluate(() => {
+      const status = document.querySelector('.combat__slime-status')?.getBoundingClientRect()
+      const endTurn = document.querySelector('.combat__end-turn')?.getBoundingClientRect()
+      return !status || !endTurn || status.left < endTurn.right && status.right > endTurn.left &&
+        status.top < endTurn.bottom && status.bottom > endTurn.top
+    })
+  }
+  await page.screenshot({ path: join(outDir, `downfall-${fixture.character}-compact-hud.png`) })
+  if (fixture.character === 'guardian') {
+    const layer = page.locator('.energy-orb__layers > img[data-layer="6"]')
+    const portrait = page.locator('.seat__portrait > img[data-guardian-mode]')
+    const attackIdle = await portrait.getAttribute('src')
+    const attackAria = await page.locator('.seat[data-player-id]').getAttribute('aria-label')
+    const activeTransition = await layer.evaluate((image) => getComputedStyle(image).transitionDuration)
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.players[0].guardianMode = 'defense'
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.locator('.seat__portrait > img[data-guardian-transition="to-defense"]').waitFor()
+    const toDefense = await portrait.getAttribute('src')
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: join(outDir, 'downfall-guardian-transforming.png') })
+    await page.waitForTimeout(350)
+    const defenseIdle = await portrait.getAttribute('src')
+    const defenseAria = await page.locator('.seat[data-player-id]').getAttribute('aria-label')
+    await page.screenshot({ path: join(outDir, 'downfall-guardian-defense-hud.png') })
+    const defenseTransform = await layer.evaluate((image) => getComputedStyle(image).transform)
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.players[0].guardianMode = 'attack'
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.locator('.seat__portrait > img[data-guardian-transition="to-attack"]').waitFor()
+    const toAttack = await portrait.getAttribute('src')
+    await page.waitForTimeout(650)
+    const returnedAttackIdle = await portrait.getAttribute('src')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.players[0].guardianMode = 'defense'
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.waitForTimeout(50)
+    const reducedPortrait = await portrait.evaluate((image) => ({
+      src: image.getAttribute('src'),
+      transition: image.dataset.guardianTransition,
+    }))
+    const reducedTransition = await layer.evaluate((image) => getComputedStyle(image).transitionDuration)
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.evaluate(() => { document.documentElement.dataset.mobilePerformance = 'true' })
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.players[0].guardianMode = 'attack'
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.locator('.seat__portrait > img[data-guardian-transition="to-attack"]').waitFor()
+    const mobilePortrait = await portrait.getAttribute('src')
+    const mobileTransition = await layer.evaluate((image) => getComputedStyle(image).transitionDuration)
+    await page.evaluate(() => { delete document.documentElement.dataset.mobilePerformance })
+    guardianModeOrb = { activeTransition, defenseTransform, reducedTransition, mobileTransition }
+    guardianModePortrait = { attackIdle, attackAria, toDefense, defenseIdle, defenseAria, toAttack,
+      returnedAttackIdle, reducedPortrait, mobilePortrait }
+    const shardTrigger = page.getByRole('button', { name: /Chamber, 1 of 1 slots filled/ })
+    await shardTrigger.waitFor()
+    const shardLoadedAsset = await shardTrigger.locator('img').getAttribute('src')
+    await shardTrigger.click()
+    await page.locator('.hand .card--chamber-drawn').waitFor()
+    corruptedShardChamberLayout = await page.evaluate((loadedAsset) => ({
+      availableOutsideHermit: document.querySelector('.hand-area')?.dataset.character === 'guardian' &&
+        document.querySelector('.hand-area')?.dataset.hasChamber === 'true',
+      loadedAsset: loadedAsset === '/assets/icons/hermit-chamber-loaded.png',
+      chamberCardFirst: document.querySelector('.hand .card')?.classList.contains('card--chamber-drawn') === true,
+      panelRemoved: !document.querySelector('.hermit-chamber'),
+    }), shardLoadedAsset)
+    await shardTrigger.click()
+    await page.waitForFunction(() => !document.querySelector('.chamber-return-flight') &&
+      document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+        '/assets/icons/hermit-chamber-loaded.png')
+    await page.waitForTimeout(250)
+  }
+}
+
+await page.setViewportSize({ width: 1518, height: 720 })
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, {
+    phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [{ playerId: player.id }],
+  })
+  Object.assign(player, {
+    character: 'hermit', name: 'Hermit', energy: 3, chamberSlots: 2, chamber: [], slimes: [], guardianMode: null,
+    hand: [{ uid: 'ui-targeted-grudge', defId: 'hermit_grudge', upgraded: false }],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const targetedLoadPrompt = page.getByRole('region', { name: 'Hermit start-of-combat Load target' })
+await targetedLoadPrompt.waitFor()
+const targetedLoadLayout = {
+  handCardDisabled: await page.locator('.hand .card').getAttribute('aria-disabled') === 'true',
+  targetChoices: await targetedLoadPrompt.getByRole('button').count(),
+  resolved: false,
+}
+await targetedLoadPrompt.getByRole('button').first().click()
+await page.waitForFunction(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return combat.pendingHermitSetupLoads.length === 0 && combat.players[0].chamber[0]?.defId === 'hermit_grudge'
+})
+targetedLoadLayout.resolved = true
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, {
+    phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [{ playerId: player.id }],
+  })
+  Object.assign(player, {
+    character: 'hermit', name: 'Hermit', energy: 3, chamberSlots: 2, chamber: [], slimes: [], guardianMode: null,
+    hand: [
+      { uid: 'ui-compact-snapshot', defId: 'hermit_snapshot', upgraded: false },
+      { uid: 'ui-mobile-hermit-strike', defId: 'hermit_strike', upgraded: false },
+      { uid: 'ui-mobile-hermit-defend', defId: 'hermit_defend', upgraded: false },
+    ],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.locator('[aria-label="Hermit start-of-combat Load"]').waitFor()
+await page.waitForFunction(() => {
+  const images = [...document.querySelectorAll('.pip--energy .energy-orb__layers > img')]
+  return images.length === 6 && images.every((image) => image.complete && image.naturalWidth === 128)
+})
+await page.waitForTimeout(800)
+downfallMechanicLabels.hermit = await page.locator('.seat__mechanic').allInnerTexts()
+const hermitHudLayout = await page.evaluate(() => {
+  const chamber = document.querySelector('.hermit-chamber')?.getBoundingClientRect()
+  const card = document.querySelector('.hand .card')?.getBoundingClientRect()
+  const hp = document.querySelector('.row--viewer .seat > .bar')?.getBoundingClientRect()
+  const overlap = (a, b) => a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  return {
+    setupPanelRemoved: !document.querySelector('.combat > .hermit-prompt--compact'),
+    setupCardPlayable: document.querySelector('.hand .card')?.getAttribute('aria-disabled') === 'false',
+    setupCardHighlighted: document.querySelector('.hand .card')?.classList.contains('card--load-choice') === true,
+    setupCardGlow: getComputedStyle(document.querySelector('.hand .card')).filter.includes('drop-shadow'),
+    chamberHidden: !chamber,
+    cardContained: !!card && card.top >= 0 && card.bottom <= innerHeight,
+    cardClearHp: !overlap(card, hp),
+    battleLogHidden: !document.querySelector('.combat-log-drawer, .combat__enemy-report'),
+    documentContained: document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth,
+  }
+})
+downfallEnergyOrbs.hermit = await page.locator('.pip--energy').evaluate((pip) => ({
+  images: [...pip.querySelectorAll('.energy-orb__layers > img')].map((image) => ({
+    src: image.getAttribute('src'),
+    loaded: image.complete && image.naturalWidth === 128 && image.naturalHeight === 128,
+    layer: image.dataset.layer,
+    animation: getComputedStyle(image).animationName,
+    })),
+  generatedLayersHidden: getComputedStyle(pip, '::before').display === 'none' &&
+    getComputedStyle(pip, '::after').display === 'none',
+  cleanBackdrop: getComputedStyle(pip).boxShadow === 'none' && getComputedStyle(pip).backgroundImage === 'none',
+}))
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.players[0].energy = 0
+  window.__STS_DEBUG__.setRun(next)
+})
+await page.waitForFunction(() => {
+  const images = [...document.querySelectorAll('.pip--energy .energy-orb__layers > img')]
+  return images.length === 6 && images.every((image) => image.complete && image.naturalWidth === 128)
+})
+downfallEmptyEnergyOrbs.hermit = await page.locator('.pip--energy').evaluate((pip) =>
+  [...pip.querySelectorAll('.energy-orb__layers > img')].map((image) => ({
+    src: image.getAttribute('src'),
+    loaded: image.complete && image.naturalWidth === 128 && image.naturalHeight === 128,
+    layer: Number(image.dataset.layer),
+    duration: getComputedStyle(image).animationDuration,
+  })))
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.players[0].energy = 3
+  window.__STS_DEBUG__.setRun(next)
+})
+await page.screenshot({ path: join(outDir, 'downfall-hermit-compact-hud.png') })
+await page.getByRole('button', { name: /^Snapshot,/ }).click()
+await page.waitForFunction(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return combat.pendingHermitSetupLoads.length === 0 && combat.players[0].chamber[0]?.defId === 'hermit_snapshot'
+})
+const chamberTrigger = page.getByRole('button', { name: /Chamber, 1 of 2 slots filled/ })
+await page.waitForTimeout(450)
+const closedHermitLayout = await page.evaluate(() => {
+  const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
+  const trigger = document.querySelector('.hermit-chamber-trigger')?.getBoundingClientRect()
+  const expectedGap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.75
+  return {
+    panelHidden: !document.querySelector('.hermit-chamber'),
+    chamberCardsHidden: !document.querySelector('.hand .card--chamber-drawn'),
+    loadedAsset: document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+      '/assets/icons/hermit-chamber-loaded.png',
+    sameSize: !!energy && !!trigger && Math.abs(energy.width - trigger.width) < 0.5 &&
+      Math.abs(energy.height - trigger.height) < 0.5,
+    directlyRight: !!energy && !!trigger && Math.abs(trigger.left - energy.right - expectedGap) < 0.5 &&
+      Math.abs(trigger.top - energy.top) < 0.5,
+  }
+})
+const triggerBeforeHover = await chamberTrigger.evaluate((trigger) => ({
+  transform: getComputedStyle(trigger).transform,
+  filter: getComputedStyle(trigger).filter,
+}))
+await chamberTrigger.hover()
+await page.waitForTimeout(180)
+const triggerAfterHover = await chamberTrigger.evaluate((trigger) => ({
+  transform: getComputedStyle(trigger).transform,
+  filter: getComputedStyle(trigger).filter,
+}))
+const chamberHoverEffect = triggerAfterHover.transform !== triggerBeforeHover.transform &&
+  triggerAfterHover.filter !== triggerBeforeHover.filter
+await chamberTrigger.click()
+await page.waitForFunction(() => [...document.querySelectorAll('.hand .card')]
+  .every((card) => card.getAnimations().every((animation) => animation.playState !== 'running')))
+const loadedHermitLayout = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.hand .card')]
+  const boxes = cards.map((card) => card.getBoundingClientRect())
+  return {
+    panelRemoved: !document.querySelector('.hermit-chamber'),
+    emptyAsset: document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+      '/assets/icons/hermit-chamber.png',
+    expanded: document.querySelector('.hermit-chamber-trigger')?.getAttribute('aria-expanded') === 'true',
+    allCardsInHand: cards.length === 3,
+    chamberFirst: cards[0]?.classList.contains('card--chamber-drawn') === true && cards[0]?.title === 'Snapshot',
+    chamberDealAnimated: getComputedStyle(cards[0]).animationName === 'card-draw',
+    cardsContained: boxes.every((card) => card.left < innerWidth && card.right > 0 &&
+      card.top >= 0 && card.bottom <= innerHeight),
+  }
+})
+await page.screenshot({ path: join(outDir, 'downfall-hermit-chamber-in-hand.png') })
+const oneLoadedHermitRun = await readRun()
+
+const chamberCard = page.locator('.hand .card--chamber-drawn')
+const chamberCardBox = await chamberCard.boundingBox()
+const chamberTargetBox = await page.locator('.enemy:not(.enemy--dead)').first().boundingBox()
+assert(chamberCardBox && chamberTargetBox, 'Hermit Chamber drag fixture is not visible')
+await page.mouse.move(chamberCardBox.x + chamberCardBox.width / 2, chamberCardBox.y + chamberCardBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(
+  chamberCardBox.x + chamberCardBox.width / 2 + (chamberTargetBox.x - chamberCardBox.x) / 4,
+  chamberCardBox.y + chamberCardBox.height / 2 + (chamberTargetBox.y - chamberCardBox.y) / 4,
+  { steps: 2 },
+)
+await page.locator('.card-drag').waitFor()
+await page.evaluate(() => {
+  window.__STS_DEBUG__.setRun(structuredClone(window.__STS_DEBUG__.getRun()))
+})
+const chamberDragSurvivedRefresh = await page.locator('.card-drag').count() === 1
+await page.mouse.move(chamberTargetBox.x + chamberTargetBox.width / 2,
+  chamberTargetBox.y + Math.min(10, chamberTargetBox.height / 4), { steps: 6 })
+await page.mouse.up()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 0)
+await page.locator('.card-flight').waitFor()
+const chamberPlayAnimated = await page.locator('.card-flight').count() === 1
+const dragResult = await readRun()
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.combat.players[0].chamber = [{ uid: 'ui-chamber-defend', defId: 'hermit_defend', upgraded: false }]
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+await page.locator('.hand .card--chamber-drawn').waitFor()
+const blockBeforeChamberClick = (await readRun()).combat.players[0].block
+await page.locator('.hand .card--chamber-drawn').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 0)
+const clickResult = await readRun()
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const owner = next.combat.players[0]
+  owner.energy = 3
+  owner.row = 0
+  owner.chamber = [{ uid: 'ui-chamber-ally-defend', defId: 'hermit_defend', upgraded: true }]
+  const ally = structuredClone(owner)
+  Object.assign(ally, {
+    id: 'ui-chamber-ally', name: 'Ally', character: 'ironclad', row: 1,
+    chamberSlots: 0, chamber: [], hand: [], draw: [], block: 0,
+  })
+  next.combat.players = [owner, ally]
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+await page.locator('.hand .card--chamber-drawn').waitFor()
+await page.waitForTimeout(400)
+const allyChamberCardBox = await page.locator('.hand .card--chamber-drawn').boundingBox()
+const allySeatBox = await page.locator('.seat[data-player-id="ui-chamber-ally"] .seat__portrait').boundingBox()
+assert(allyChamberCardBox && allySeatBox, 'Chamber ally-target drag fixture is not visible')
+await page.mouse.move(allyChamberCardBox.x + allyChamberCardBox.width / 2,
+  allyChamberCardBox.y + allyChamberCardBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(allySeatBox.x + allySeatBox.width / 2, allySeatBox.y + allySeatBox.height / 2, { steps: 6 })
+await page.mouse.up()
+await page.waitForFunction(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return combat.players[0].chamber.length === 0 && combat.players[1].block === 2
+})
+const allyDragResult = await readRun()
+await page.waitForFunction(() => !document.querySelector('.card-flight'))
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(player, {
+    energy: 1,
+    hand: [{ uid: 'ui-quickdraw-hand-defend', defId: 'hermit_defend', upgraded: false }],
+    draw: [{ uid: 'ui-quickdraw-draw-strike', defId: 'hermit_strike', upgraded: false }],
+    chamber: [{ uid: 'ui-chamber-quickdraw', defId: 'hermit_quickdraw', upgraded: false }],
+  })
+  next.combat.players = [player]
+  next.combat.enemies = next.combat.enemies.slice(0, 2)
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
+  await page.locator('.hermit-chamber-trigger').click()
+}
+const chamberQuickdraw = page.locator('.hand .card--chamber-drawn[title="Quickdraw"]')
+await chamberQuickdraw.waitFor()
+await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
+await chamberQuickdraw.click()
+await page.waitForTimeout(100)
+const quickdrawPreviewBeforeTarget = await page.locator('.choice-modal[open]').count()
+await chamberQuickdraw.click()
+await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[title="Quickdraw"]')
+  ?.getAttribute('aria-pressed') === 'false')
+const quickdrawTargetCanceled = await page.locator('.choice-modal[open]').count() === 0
+await chamberQuickdraw.click()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.locator('.choice-modal[open]').waitFor()
+const quickdrawPreviewAfterTarget = await page.locator('.choice-modal[open] .card').count()
+hermitChamberInteractions = {
+  dragSurvivedRefresh: chamberDragSurvivedRefresh,
+  dragSpentCard: dragResult.combat.players[0].chamber.length === 0,
+  dragHitEnemy: dragResult.combat.enemies.some((enemy, index) =>
+    enemy.hp < oneLoadedHermitRun.combat.enemies[index].hp),
+  playedCardAnimated: chamberPlayAnimated,
+  clickSpentCard: clickResult.combat.players[0].chamber.length === 0,
+  clickPlayedUntargeted: clickResult.combat.players[0].block > blockBeforeChamberClick,
+  allyTargeted: allyDragResult.combat.players[1].block === 2,
+  quickdrawHiddenBeforeTarget: quickdrawPreviewBeforeTarget === 0,
+  quickdrawTargetCanceled,
+  quickdrawRevealedAfterTarget: quickdrawPreviewAfterTarget > 0,
+}
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  Object.assign(next.combat.players[0], {
+    energy: 3,
+    hand: [
+      { uid: 'ui-full-chamber-hand-defend', defId: 'hermit_defend', upgraded: false },
+      { uid: 'ui-full-chamber-hand-strike', defId: 'hermit_strike', upgraded: false },
+    ],
+    chamber: [
+    { uid: 'ui-full-chamber-grudge', defId: 'hermit_grudge', upgraded: false },
+    { uid: 'ui-full-chamber-malice', defId: 'hermit_malice', upgraded: false },
+    ],
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
+if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
+  await page.locator('.hermit-chamber-trigger').click()
+}
+await page.waitForFunction(() => document.querySelectorAll('.hand .card--chamber-drawn').length === 2)
+await page.waitForTimeout(450)
+const fullHermitChamberLayout = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.hand .card')]
+  const boxes = cards.map((card) => card.getBoundingClientRect())
+  return {
+    panelRemoved: !document.querySelector('.hermit-chamber'),
+    allCardsInHand: cards.length === 4,
+    chamberCardsFirst: cards.slice(0, 2).every((card) => card.classList.contains('card--chamber-drawn')),
+    chamberCardsReachable: boxes.slice(0, 2).every((card) => card.left < innerWidth && card.right > 0),
+    cardsVerticallyContained: boxes.every((card) => card.top >= 0 && card.bottom <= innerHeight),
+    emptyAsset: document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+      '/assets/icons/hermit-chamber.png',
+  }
+})
+await page.screenshot({ path: join(outDir, 'downfall-hermit-full-chamber-hand.png') })
+await page.emulateMedia({ reducedMotion: 'reduce' })
+downfallReducedMotionStopped = await page.locator('.energy-orb__layers > img').evaluateAll((images) =>
+  images.every((image) => getComputedStyle(image).animationName === 'none'))
+await page.emulateMedia({ reducedMotion: 'no-preference' })
+await page.waitForTimeout(450)
+const responsiveChamberLayouts = []
+for (const viewport of [
+  { width: 769, height: 1024 },
+  { width: 768, height: 360 },
+  { width: 844, height: 390 },
+  { width: 667, height: 375 },
+  { width: 568, height: 320 },
+  { width: 390, height: 844 },
+]) {
+  await page.setViewportSize(viewport)
+  const layout = await page.evaluate(() => {
+    const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
+    const trigger = document.querySelector('.hermit-chamber-trigger')?.getBoundingClientRect()
+    const expectedGap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.75
+    const cards = [...document.querySelectorAll('.hand .card')]
+    const boxes = cards.map((card) => card.getBoundingClientRect())
+    const combatantElements = [...document.querySelectorAll([
+      '.row--viewer .seat__portrait',
+      '.row--viewer .seat__name',
+      '.row--viewer .seat > .bar',
+      '.board .enemy__portrait',
+      '.board .enemy > .bar',
+    ].join(','))]
+    const combatants = combatantElements.map((element) => element.getBoundingClientRect())
+    const viewerPortrait = document.querySelector('.row--viewer .seat__portrait')?.getBoundingClientRect()
+    const enemyPortraits = [...document.querySelectorAll('.board .enemy__portrait')]
+      .map((element) => element.getBoundingClientRect())
+    const board = document.querySelector('.board')?.getBoundingClientRect()
+    const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+    return {
+      panelRemoved: !document.querySelector('.hermit-chamber'),
+      triggerMatchesEnergy: !!energy && !!trigger && Math.abs(energy.width - trigger.width) < 0.5 &&
+        Math.abs(energy.height - trigger.height) < 0.5 &&
+        Math.abs(trigger.left - energy.right - expectedGap) < 0.5 && Math.abs(trigger.top - energy.top) < 0.5,
+      allCardsInHand: cards.length === 4,
+      chamberCardsFirst: cards.slice(0, 2).every((card) => card.classList.contains('card--chamber-drawn')),
+      chamberCardsReachable: boxes.slice(0, 2).every((card) => card.left < innerWidth && card.right > 0),
+      cardsVerticallyContained: boxes.every((card) => card.top >= 0 && card.bottom <= innerHeight),
+      cardsClearCombatants: boxes.every((card) => combatants.every((combatant) => !overlaps(card, combatant))),
+      combatantsSeparated: !!viewerPortrait && enemyPortraits.every((enemy) => !overlaps(viewerPortrait, enemy)),
+      combatantsVisible: !!board && combatants.every((combatant) =>
+        Math.max(0, Math.min(combatant.bottom, board.bottom) - Math.max(combatant.top, board.top)) >=
+          combatant.height * 0.8),
+      documentContained: document.documentElement.scrollWidth <= innerWidth + 2 &&
+        document.documentElement.scrollHeight <= innerHeight + 2,
+    }
+  })
+  responsiveChamberLayouts.push({ viewport, ...layout })
+  await page.screenshot({ path: join(outDir, `downfall-hermit-chamber-hand-${viewport.width}x${viewport.height}.png`) })
+}
+await page.setViewportSize({ width: 390, height: 844 })
+await page.evaluate(() => {
+  document.documentElement.dataset.mobilePerformance = 'true'
+})
+await page.waitForTimeout(100)
+const chamberMobileMotionStopped = await page.locator('.energy-orb__layers > img').evaluateAll((images) =>
+  images.every((image) => getComputedStyle(image).animationName === 'none'))
+
+await page.setViewportSize({ width: 1518, height: 720 })
+await page.evaluate((run) => {
+  delete document.documentElement.dataset.mobilePerformance
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, {
+    phase: 'player', ruleset: 'downfall', pendingHermitSetupLoads: [],
+    pendingHermitStrengthRewards: [{ playerId: player.id, sourceUid: 'ui-dead-or-alive' }],
+  })
+  Object.assign(player, { character: 'hermit', name: 'Hermit', chamberSlots: 2, chamber: [] })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const deadOrAlivePrompt = page.getByRole('region', { name: 'Dead or Alive reward' })
+await deadOrAlivePrompt.waitFor()
+const deadOrAliveLayout = await deadOrAlivePrompt.evaluate((prompt) => {
+  const box = prompt.getBoundingClientRect()
+  const hp = document.querySelector('.row--viewer .seat > .bar')?.getBoundingClientRect()
+  const overlap = (a, b) => a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  return {
+    contained: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
+    positioned: getComputedStyle(prompt).position === 'absolute',
+    clearHp: !overlap(box, hp),
+  }
+})
+await page.screenshot({ path: join(outDir, 'downfall-hermit-dead-or-alive.png') })
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const viewer = next.combat.players[0]
+  const hermit = {
+    ...viewer,
+    id: 'ui-private-hermit',
+    name: 'Other Hermit',
+    row: viewer.row + 1,
+    character: 'hermit',
+    chamberSlots: 2,
+    chamber: [{ uid: 'ui-private-chamber-card', defId: 'hermit_snapshot', upgraded: false }],
+  }
+  next.combat.players = [viewer, hermit]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const opponentChamberLabels = await page.locator('.seat__mechanic').filter({ hasText: 'Chamber' }).count()
+await page.setViewportSize({ width: 390, height: 844 })
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const actor = next.combat.players[0]
+  actor.hand = [
+    { uid: 'ui-die-1', defId: 'defend_ironclad', upgraded: false },
+    { uid: 'ui-die-2', defId: 'bash', upgraded: false },
+    { uid: 'ui-die-3', defId: 'strike_ironclad', upgraded: false },
+    { uid: 'ui-die-4', defId: 'defend_ironclad', upgraded: false },
+    { uid: 'ui-die-5', defId: 'strike_ironclad', upgraded: false },
+  ]
+  next.combat.players = [actor]
+  next.combat.pendingDieRelicChoices = [{
+    playerId: actor.id,
+    relicDefId: 'wheel_of_change',
+    abilityIndex: 0,
+    sourceLabel: 'Compact prompt fixture',
+    enemyUid: null,
+    targetPlayerId: actor.id,
+  }]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const dieRelicPrompt = page.locator('.hermit-prompt--cards')
+await dieRelicPrompt.waitFor()
+const dieRelicResolve = dieRelicPrompt.getByRole('button', { name: /Resolve/ })
+await dieRelicResolve.scrollIntoViewIfNeeded()
+const dieRelicLayout = await dieRelicPrompt.evaluate((prompt) => {
+  const box = prompt.getBoundingClientRect()
+  const cards = [...prompt.querySelectorAll('.card')].map((card) => card.getBoundingClientRect())
+  const resolve = [...prompt.querySelectorAll('button')].at(-1)?.getBoundingClientRect()
+  return {
+    promptContained: box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight && box.left >= 0,
+    cards: cards.length,
+    cardsContained: cards.every((card) => card.left >= 0 && card.right <= innerWidth),
+    resolveContained: !!resolve && resolve.top >= 0 && resolve.bottom <= innerHeight,
+    overflowY: getComputedStyle(prompt).overflowY,
+  }
+})
+await page.screenshot({ path: join(outDir, 'downfall-die-relic-compact.png') })
+check('Downfall mechanics use compact combat HUDs without clipping the hand', () => {
+  assertDeepEqual(downfallMechanicLabels, {
+    guardian: ['Vigor 3'],
+    hexaghost: [],
+    slime_boss: [
+      'Bruiser · L2 · Strength 3 · Cmd 1',
+      'Armored · L3 · Strength 4 · Cmd 1',
+    ],
+    hermit: [],
+  })
+  assertDeepEqual(guardianModePortrait, {
+    attackIdle: '/assets/combat/characters/guardian.webp',
+    attackAria: 'Guardian, 10 of 10 hit points, row 1, Attack Mode, Vigor 3',
+    toDefense: '/assets/combat/characters/guardian-to-defense.webp',
+    defenseIdle: '/assets/combat/characters/guardian-defense.webp',
+    defenseAria: 'Guardian, 10 of 10 hit points, row 1, Defense Mode, Vigor 3',
+    toAttack: '/assets/combat/characters/guardian-to-attack.webp',
+    returnedAttackIdle: '/assets/combat/characters/guardian.webp',
+    reducedPortrait: { src: '/assets/combat/characters/guardian-defense.webp', transition: undefined },
+    mobilePortrait: '/assets/combat/characters/guardian-to-attack.webp',
+  }, 'Guardian mode is shown by the body transformation instead of duplicate text')
+  assertDeepEqual(hexaghostVisualState, {
+    portrait: '/assets/combat/characters/hexaghost-heat-2.webp',
+    icon: '/assets/icons/hexaghost-flame.png',
+    iconLoaded: true,
+    count: '1',
+  })
+  assert(slimeHudAccess?.every((chip) => chip.focusable && chip.focused && chip.visible),
+    `Slime status chips are not keyboard-reachable in the narrow HUD: ${JSON.stringify(slimeHudAccess)}`)
+  assert(!slimeHudOverlapsEndTurn, 'Slime status overlaps End turn in the narrow HUD')
+  assert(slimeHudAccess?.[0]?.label?.includes('ready to Command'), 'Bruiser command availability is missing')
+  assert(slimeHudAccess?.[1]?.label?.includes('Command limit reached'), 'Armored command limit is missing')
+  assert(slimeHudAccess?.every((chip) => chip.label?.includes('Strength') && !chip.label.includes('Vigor')),
+    `Slime status uses Guardian terminology: ${JSON.stringify(slimeHudAccess)}`)
+  assert(slimeHudAccess?.[0]?.label?.includes('level 2 Command: deal 2 damage') &&
+    slimeHudAccess?.[1]?.label?.includes('level 3 Command: gain 6 Block, then apply 1 Vulnerable'),
+  `Slime status omits current Command rules: ${JSON.stringify(slimeHudAccess)}`)
+  assert(slimeHudKeywordTips?.[0]?.includes('Slime Hit'),
+    `active Bruiser Slime help is missing level hit rules: ${JSON.stringify(slimeHudKeywordTips)}`)
+  assert(slimeHudKeywordTips?.[1]?.includes('Vulnerable') && slimeHudKeywordTips[1].includes('Block'),
+    `active Armored Slime help is missing level rules: ${JSON.stringify(slimeHudKeywordTips)}`)
+  assertDeepEqual(slimeHudCommandTips,
+    ['level 2 Command: deal 2 damage', 'level 3 Command: gain 6 Block, then apply 1 Vulnerable'],
+    'active Slime help omits the exact current Command rule')
+  assert(hermitHudLayout.setupPanelRemoved, 'Hermit Load still renders a panel over the combat stage')
+  assert(targetedLoadLayout.handCardDisabled, 'targeted Hermit Curse is exposed as a dead direct-Load button')
+  assertEqual(targetedLoadLayout.targetChoices, 3, 'targeted Hermit Curse does not offer every living enemy')
+  assert(targetedLoadLayout.resolved, 'targeted Hermit Curse did not resolve from its target prompt')
+  assert(hermitHudLayout.setupCardPlayable, 'Hermit Load card is not directly selectable from the hand')
+  assert(hermitHudLayout.setupCardHighlighted, 'Hermit Load card does not have the PC-style choice glow')
+  assert(hermitHudLayout.setupCardGlow, 'Hermit Load card choice glow is overridden by combat styling')
+  assert(hermitHudLayout.chamberHidden, 'an empty Hermit Chamber still occupies the combat stage')
+  assert(hermitHudLayout.cardContained, 'Hermit hand card is clipped by the viewport')
+  assert(hermitHudLayout.cardClearHp, 'Hermit Load card overlaps the player HP bar')
+  assert(hermitHudLayout.battleLogHidden, 'combat rendered the removed battle-log UI')
+  assert(hermitHudLayout.documentContained, 'Hermit combat HUD creates document overflow')
+  assert(Object.values(closedHermitLayout).every(Boolean),
+    `Hermit Chamber trigger is not orb-sized and adjacent: ${JSON.stringify(closedHermitLayout)}`)
+  assert(chamberHoverEffect, 'Hermit Chamber trigger has no hover/focus feedback')
+  assert(Object.values(hermitChamberInteractions).every(Boolean),
+    `Hermit Chamber cards do not behave like hand cards: ${JSON.stringify(hermitChamberInteractions)}`)
+  assert(Object.values(loadedHermitLayout).every(Boolean),
+    `loaded Chamber cards are not surfaced in the hand: ${JSON.stringify(loadedHermitLayout)}`)
+  assert(Object.values(fullHermitChamberLayout).every(Boolean),
+    `full Hermit Chamber hand is not collision-safe: ${JSON.stringify(fullHermitChamberLayout)}`)
+  assert(responsiveChamberLayouts.every(({ viewport: _viewport, ...layout }) => Object.values(layout).every(Boolean)),
+    `responsive Chamber hand is clipped: ${JSON.stringify(responsiveChamberLayouts)}`)
+  assert(chamberMobileMotionStopped, 'mobile-performance mode does not stop the Energy orb layers')
+  assert(Object.values(corruptedShardChamberLayout).every(Boolean),
+    `Corrupted Shard cannot access its Chamber: ${JSON.stringify(corruptedShardChamberLayout)}`)
+  assert(deadOrAliveLayout.contained && deadOrAliveLayout.positioned && deadOrAliveLayout.clearHp,
+    `Dead or Alive prompt breaks combat layout: ${JSON.stringify(deadOrAliveLayout)}`)
+  assertEqual(opponentChamberLabels, 0, 'another player can see the Hermit Chamber fill count')
+  assert(dieRelicLayout.promptContained, 'Die Relic prompt escapes the compact viewport')
+  assertEqual(dieRelicLayout.cards, 5, 'Die Relic prompt does not expose the full hand')
+  assert(dieRelicLayout.cardsContained, 'Die Relic cards escape the compact viewport horizontally')
+  assert(dieRelicLayout.resolveContained, 'Die Relic resolution action cannot be reached by scrolling')
+  assertEqual(dieRelicLayout.overflowY, 'auto', 'Die Relic prompt cannot scroll vertically')
+})
+check('Downfall characters use the original PC-mod Energy orb layers', () => {
+  assertDeepEqual(Object.keys(downfallEnergyOrbs).sort(), ['guardian', 'hermit', 'hexaghost', 'slime_boss'])
+  for (const [character, orb] of Object.entries(downfallEnergyOrbs)) {
+    assertEqual(orb.images.length, character === 'guardian' ? 7 : 6, `${character} Energy orb layer count`)
+    assert(orb.images.every(({ src, loaded }) => loaded && src?.includes(`/combat/energy-orbs/${character}/`)),
+      `${character} Energy orb assets: ${JSON.stringify(orb.images)}`)
+    assert(orb.generatedLayersHidden, `${character} still shows the generated Ironclad orb`)
+    assert(orb.cleanBackdrop, `${character} Energy orb still has the old square backdrop`)
+    assert(orb.images.every(({ animation }) => animation === 'none'),
+      `${character} Energy orb layers still have ambient motion: ${JSON.stringify(orb.images)}`)
+  }
+  assertDeepEqual(Object.keys(downfallEmptyEnergyOrbs).sort(), ['guardian', 'hermit', 'hexaghost', 'slime_boss'])
+  for (const [character, images] of Object.entries(downfallEmptyEnergyOrbs)) {
+    const baseLayer = character === 'guardian' ? 7 : 6
+    assertEqual(images.length, character === 'guardian' ? 7 : 6, `${character} empty Energy orb layer count`)
+    assert(images.every(({ src, loaded, layer }) => loaded && src?.endsWith(
+      `/layer${layer}${layer === baseLayer ? '' : 'd'}.png`)),
+    `${character} empty Energy orb assets: ${JSON.stringify(images)}`)
+    assert(images.every(({ duration }) => duration === '0s'),
+      `${character} empty Energy orb layers still have ambient motion: ${JSON.stringify(images)}`)
+  }
+  assertEqual(guardianModeOrb?.activeTransition, '0.7s', 'Guardian mode orb transition')
+  assert(guardianModeOrb?.defenseTransform?.startsWith('matrix(0.7'),
+    `Guardian defense orb did not ease to 70%: ${guardianModeOrb?.defenseTransform}`)
+  assertEqual(guardianModeOrb?.reducedTransition, '0s', 'Guardian reduced-motion transition')
+  assertEqual(guardianModeOrb?.mobileTransition, '0.7s', 'Guardian mobile-performance transition')
+  assert(downfallReducedMotionStopped, 'reduced motion does not stop the Downfall Energy orb layers')
+})
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
+await page.setViewportSize({ width: 390, height: 844 })
+await page.evaluate(async (run) => {
+  const { beginEndTurnResolution } = await import('/src/game/combat.ts')
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [] })
+  Object.assign(player, {
+    character: 'guardian', stance: 'neutral', orbs: [null, null, null],
+    hand: Array.from({ length: 6 }, (_, index) => ({
+      uid: `ui-stasis-choice-${index}`, defId: 'guardian_defend', upgraded: false,
+    })),
+    powers: [{ uid: 'ui-stasis-engine', defId: 'guardian_stasis_engine', upgraded: false }],
+  })
+  next.combat.players = [player]
+  next.combat = beginEndTurnResolution(next.combat)
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const stasisChoices = page.getByRole('group', { name: /Resolve .*Stasis Engine/ })
+const stasisChoiceLayout = await stasisChoices.evaluate((group) => {
+  const boxes = [...group.querySelectorAll('button')].map((button) => button.getBoundingClientRect())
+  return {
+    insideViewport: boxes.every((box) => box.left >= 0 && box.right <= innerWidth),
+    rows: new Set(boxes.map((box) => Math.round(box.top))).size,
+  }
+})
+await stasisChoices.getByRole('button', { name: 'Defend' }).first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand[0]?.stasisRetained === true)
+check('Stasis Engine can resolve its private hand target from the sequential end-turn UI', async () => {
+  assert((await readRun()).combat.players[0].hand[0]?.stasisRetained)
+  assert(stasisChoiceLayout.insideViewport && stasisChoiceLayout.rows > 1,
+    `phone Stasis choices did not wrap inside the viewport: ${JSON.stringify(stasisChoiceLayout)}`)
+})
+
+await page.evaluate(async (run) => {
+  const { beginEndTurnResolution } = await import('/src/game/combat.ts')
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [] })
+  Object.assign(player, {
+    character: 'hexaghost', stance: 'neutral', orbs: [null, null, null], hand: [],
+    powers: [{ uid: 'ui-invincible', defId: 'invincible', upgraded: false }],
+  })
+  next.combat.players = [player]
+  next.combat = beginEndTurnResolution(next.combat)
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const invincibleChoices = page.getByRole('group', { name: /Resolve .*Invincible/ })
+await invincibleChoices.getByRole('button', { name: 'Keep Invincible' }).click()
+await page.waitForFunction(() => !document.querySelector('.end-turn-effects'))
+check('Invincible can keep its Power from the sequential end-turn UI', async () => {
+  assert((await readRun()).combat.players[0].powers.some((power) => power.uid === 'ui-invincible'))
+})
+
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const template = next.combat.enemies[0]
+  next.combat.phase = 'enemy'
+  next.combat.enemies = [{
+    ...template, uid: 'short-boss-duration', defId: 'downfall_inferno', row: 0,
+    isBoss: true, hp: 20, maxHp: 20, block: 0, actionIndex: 0, dead: false,
+  }]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction(() => document.querySelector('.enemy--boss[data-animation="attack"]'))
+const shortBossAttackMotion = await page.locator('.enemy--boss[data-animation="attack"]').evaluate((boss) => ({
+  cssVariable: getComputedStyle(boss).getPropertyValue('--boss-attack-duration').trim(),
+  animationDuration: getComputedStyle(boss.querySelector('.enemy__art--cutout')).animationDuration,
+}))
+await page.waitForFunction(() => document.querySelector('.enemy--boss')?.getAttribute('data-animation') === 'idle')
+check('short Downfall boss attacks play exactly one matching motion cycle', () => {
+  assertDeepEqual(shortBossAttackMotion, { cssVariable: '580ms', animationDuration: '0.58s' })
+})
+
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+await page.keyboard.press('Escape')
+await pauseMenu.waitFor()
+await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = 'hidden' })
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const template = next.combat.enemies[0]
+  next.combat.phase = 'enemy'
+  next.combat.enemies = [{
+    ...template, uid: 'watcher-boss-animation', defId: 'downfall_wrathful', row: 0,
+    isBoss: true, hp: 20, maxHp: 20, block: 0, actionIndex: 0, dead: false,
+  }]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction(() => document.querySelector(
+  '.enemy--boss[data-boss-art="downfall_pc_watcher"][data-animation="attack"]'))
+const watcherBossMotion = await page.locator('.enemy--boss[data-animation="attack"]').evaluate((boss) => {
+  const seat = document.querySelector('.seat:not(.seat--dead) .seat__portrait')
+  const meteor = getComputedStyle(seat, '::before')
+  const impact = getComputedStyle(seat, '::after')
+  return {
+    art: boss.querySelector('.enemy__art--cutout')?.getAttribute('src'),
+    duration: getComputedStyle(boss).getPropertyValue('--boss-attack-duration').trim(),
+    meteorImage: meteor.backgroundImage.includes('/assets/combat/vfx/actions/watcher-meteor.webp'),
+    meteorAnimation: meteor.animationName,
+    meteorDelay: meteor.animationDelay,
+    impactImage: impact.backgroundImage.includes('/assets/combat/vfx/actions/watcher-meteor-impact.webp'),
+    impactAnimation: impact.animationName,
+    impactDelay: impact.animationDelay,
+  }
+})
+await page.waitForTimeout(500)
+const watcherBeforeContact = await page.locator('.seat:not(.seat--dead) .seat__portrait').first().evaluate((seat) => ({
+  meteorOpacity: Number(getComputedStyle(seat, '::before').opacity),
+  impactOpacity: Number(getComputedStyle(seat, '::after').opacity),
+}))
+await shot('02d-downfall-watcher-boss-meteor')
+await page.waitForFunction(() => {
+  const seat = document.querySelector('.seat:not(.seat--dead) .seat__portrait')
+  return seat && Number(getComputedStyle(seat, '::after').opacity) > 0
+})
+const watcherAfterContact = await page.locator('.seat:not(.seat--dead) .seat__portrait').first().evaluate((seat) => ({
+  meteorOpacity: Number(getComputedStyle(seat, '::before').opacity),
+  impactOpacity: Number(getComputedStyle(seat, '::after').opacity),
+}))
+await shot('02e-downfall-watcher-boss-impact')
+await page.waitForFunction(() => document.querySelector('.enemy--boss')?.getAttribute('data-animation') === 'idle')
+check('boss Watcher swings down before a right-to-left meteor and landing-only impact', () => {
+  assertDeepEqual(watcherBossMotion, {
+    art: '/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp',
+    duration: '1830ms',
+    meteorImage: true,
+    meteorAnimation: 'boss-watcher-meteor-fall',
+    meteorDelay: '0.23s',
+    impactImage: true,
+    impactAnimation: 'boss-watcher-meteor-impact',
+    impactDelay: '0.73s',
+  })
+  assert(watcherBeforeContact.meteorOpacity > 0 && watcherBeforeContact.impactOpacity === 0,
+    `Watcher impact appeared before contact: ${JSON.stringify(watcherBeforeContact)}`)
+  assert(watcherAfterContact.meteorOpacity === 0 && watcherAfterContact.impactOpacity > 0,
+    `Watcher landing did not replace the meteor: ${JSON.stringify(watcherAfterContact)}`)
+})
+await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = '' })
+await page.keyboard.press('Escape')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
+if (args.includes('--downfall-ui-only')) {
+  const downfallKeywordTips = await page.evaluate(async () => {
+    const [{ CARDS, faceOf }, { cardAccessibleName, cardKeywordTips }, { cardTypeLabel }] = await Promise.all([
+      import('/src/game/cards.ts'), import('/src/ui/Card.tsx'), import('/src/ui/CardFace.tsx'),
+    ])
+    const names = (id) => cardKeywordTips(CARDS[id]).map((tip) => tip.name)
+    return {
+      guardianModes: names('guardian_sentry_beam'),
+      guardianAccessibleName: cardAccessibleName(CARDS.guardian_sentry_beam),
+      guardianStrikeFaces: [cardAccessibleName(CARDS.guardian_strike),
+        cardAccessibleName(faceOf(CARDS.guardian_strike, true))],
+      guardianIcons: [names('guardian_sentry_beam'), names('guardian_disrupt')],
+      guardianGem: [names('guardian_prismatic_barrier'), names('guardian_gem_cannon')],
+      prismaticNoGem: [names('guardian_prismatic_barrier'), names('guardian_prismatic_spray')],
+      heat: [names('kindle'), names('bad_omen'), names('sear'), names('burning_touch')],
+      poltergeist: {
+        tips: names('poltergeist'),
+        accessibleName: cardAccessibleName(CARDS.poltergeist),
+      },
+      virus: names('virus'),
+      hermit: [names('hermit_fully_loaded'), names('hermit_snapshot'), names('hermit_itchy_trigger')],
+      rummageLoadText: cardKeywordTips(CARDS.hermit_rummage).find((tip) => tip.name === 'Load')?.text,
+      hermitReach: names('hermit_misfire'),
+      hermitNestedHits: [names('hermit_headshot'), names('hermit_golden_bullet'), names('hermit_roulette')],
+      nestedRowReach: [names('hermit_roulette'), names('forked_flame'), names('living_bomb')],
+      printedRowReach: [names('hermit_malice'),
+        cardKeywordTips(faceOf(CARDS.guardian_laser_turret, true)).map((tip) => tip.name)],
+      slimeBoss: [names('slime_boss_slime_slap'), names('slime_boss_lick'),
+        names('slime_boss_bruiser_slime'), names('slime_boss_massive_slime')],
+      slimeReach: names('slime_boss_flame_tackle'),
+      armoredSlime: names('slime_boss_armored_slime'),
+      evolutionSlime: names('slime_boss_evolution_slime'),
+      evolutionSlimeRules: cardAccessibleName(CARDS.slime_boss_evolution_slime),
+      massiveSlimeType: cardTypeLabel(CARDS.slime_boss_massive_slime),
+      massiveSlimeAccessibleName: cardAccessibleName(CARDS.slime_boss_massive_slime),
+      rawAccessibleTokens: Object.values(CARDS)
+        .filter((def) => ['guardian', 'hermit', 'hexaghost', 'slime_boss', 'colorless'].includes(def.owner))
+        .flatMap((def) => [def, faceOf(def, true)])
+        .map((def) => cardAccessibleName(def))
+        .filter((name) => name.includes('[')),
+    }
+  })
+  check('Downfall cards expose their character keywords through shared card help', () => {
+    for (const keyword of ['Guardian Modes', 'Mode Shift', 'Vigor']) {
+      assert(downfallKeywordTips.guardianModes.includes(keyword), `Sentry Beam is missing ${keyword}`)
+    }
+    assert(!downfallKeywordTips.guardianAccessibleName.includes('[') &&
+      downfallKeywordTips.guardianAccessibleName.includes('Mode Shift'),
+    `Sentry Beam accessible name has raw tokens: ${downfallKeywordTips.guardianAccessibleName}`)
+    assert(downfallKeywordTips.guardianStrikeFaces[0].includes('1 damage') &&
+      downfallKeywordTips.guardianStrikeFaces[1].includes('2 damage'),
+    `base and upgraded Guardian rules were mixed: ${JSON.stringify(downfallKeywordTips.guardianStrikeFaces)}`)
+    for (const keyword of ['Hit', 'Area effect']) {
+      assert(downfallKeywordTips.guardianIcons[0].includes(keyword), `Sentry Beam is missing ${keyword}`)
+    }
+    assert(downfallKeywordTips.guardianGem[0].includes('Area effect') &&
+      !downfallKeywordTips.guardianGem[0].includes('All in a row'),
+    'Prismatic Barrier mislabels its defensive area effect')
+    assert(downfallKeywordTips.prismaticNoGem[0].includes('Block') &&
+      !downfallKeywordTips.prismaticNoGem[0].includes('Hit') &&
+      !downfallKeywordTips.prismaticNoGem[0].includes('Vulnerable'),
+    `Prismatic Barrier infers effects from its meta rule: ${downfallKeywordTips.prismaticNoGem[0]}`)
+    assert(downfallKeywordTips.prismaticNoGem[1].includes('Hit') &&
+      !downfallKeywordTips.prismaticNoGem[1].includes('Block') &&
+      !downfallKeywordTips.prismaticNoGem[1].includes('Vulnerable'),
+    `Prismatic Spray infers effects from its meta rule: ${downfallKeywordTips.prismaticNoGem[1]}`)
+    assert(downfallKeywordTips.guardianIcons[1].includes('Vulnerable'), 'Disrupt is missing Vulnerable')
+    for (const keyword of ['Gem', 'Socket']) {
+      assert(downfallKeywordTips.guardianGem[0].includes(keyword), `Prismatic Barrier is missing ${keyword}`)
+    }
+    assert(downfallKeywordTips.guardianGem[1].includes('Gem'), 'Gem Cannon is missing Gem')
+    assert(downfallKeywordTips.heat[0].includes('Advance'), 'Kindle is missing Advance')
+    assert(downfallKeywordTips.heat[1].includes('Retract'), 'Bad Omen is missing Retract')
+    assert(downfallKeywordTips.heat[2].includes('Heat'), 'Sear is missing Heat')
+    assert(downfallKeywordTips.heat[3].includes('Soulburn'), 'Burning Touch is missing Soulburn')
+    assert(downfallKeywordTips.poltergeist.tips.includes('Retract') &&
+      downfallKeywordTips.poltergeist.accessibleName.includes('whenever you Retract'),
+    `Poltergeist is missing its additional trigger: ${JSON.stringify(downfallKeywordTips.poltergeist)}`)
+    assert(!downfallKeywordTips.virus.includes('Hit'), 'Virus non-Hit damage is mislabeled as a Hit')
+    assert(downfallKeywordTips.hermit[0].includes('Chamber') && downfallKeywordTips.hermit[0].includes('Load'),
+      'Fully Loaded is missing Chamber or Load')
+    assert(downfallKeywordTips.hermit[1].includes('Dead On'), 'Snapshot is missing Dead On')
+    assert(downfallKeywordTips.hermit[2].includes('Rapid Fire'), 'Itchy Trigger is missing Rapid Fire')
+    assertEqual(downfallKeywordTips.rummageLoadText,
+      'Store a card in the Chamber. If that slot is occupied, discard its current card first.',
+      'Rummage has an incorrect hand-only Load explanation')
+    assert(downfallKeywordTips.hermitReach.includes('All in a row'), 'Misfire is missing row reach')
+    assert(downfallKeywordTips.hermitNestedHits.every((tips) => tips.includes('Hit')),
+      `nested Hermit hits are missing: ${JSON.stringify(downfallKeywordTips.hermitNestedHits)}`)
+    assert(downfallKeywordTips.nestedRowReach.every((tips) => tips.includes('All in a row')),
+      `nested row effects are missing their reach: ${JSON.stringify(downfallKeywordTips.nestedRowReach)}`)
+    assert(downfallKeywordTips.printedRowReach.every((tips) => tips.includes('All in a row')),
+      `printed row effects are missing their reach: ${JSON.stringify(downfallKeywordTips.printedRowReach)}`)
+    assert(downfallKeywordTips.slimeBoss[0].includes('Grow'), 'Slime Slap is missing Grow')
+    assert(downfallKeywordTips.slimeBoss[1].includes('Command'), 'Lick is missing Command')
+    assert(downfallKeywordTips.slimeBoss[2].includes('Slime'), 'Bruiser Slime is missing Slime')
+    assert(downfallKeywordTips.slimeBoss[2].includes('Slime Hit'), 'Bruiser Slime is missing its level hit rules')
+    assert(downfallKeywordTips.slimeBoss[3].includes('Slime') &&
+      !downfallKeywordTips.slimeBoss[3].includes('Power'), 'Massive Slime is mislabeled as a Power')
+    assert(downfallKeywordTips.slimeBoss[3].includes('Hit') &&
+      downfallKeywordTips.slimeBoss[3].includes('Slime Hit'), 'Massive Slime is missing one of its hit rule sets')
+    assert(downfallKeywordTips.slimeReach.includes('All Enemies'), 'Flame Tackle is missing all-enemy reach')
+    assert(downfallKeywordTips.armoredSlime.includes('Vulnerable') &&
+      downfallKeywordTips.armoredSlime.includes('Block'), 'Armored Slime is missing its level rules')
+    assert(downfallKeywordTips.evolutionSlime.includes('Strength'),
+      'Evolution Slime is missing its level Strength rules')
+    assert(downfallKeywordTips.evolutionSlime.includes('All Enemies'),
+      'Evolution Slime is missing its level 3 all-enemy Command reach')
+    assert(downfallKeywordTips.evolutionSlimeRules.includes('level 1 Command:') &&
+      downfallKeywordTips.evolutionSlimeRules.includes('level 3 Command against every enemy:') &&
+      downfallKeywordTips.evolutionSlimeRules.includes(
+        'level 6 Command against every enemy: deal 6 damage, then gain 2 Block, then gain 1 Strength'),
+    `Evolution Slime accessible rules omit its Commands: ${downfallKeywordTips.evolutionSlimeRules}`)
+    assert(downfallKeywordTips.massiveSlimeType === 'Slime', 'Massive Slime face is mislabeled')
+    assert(downfallKeywordTips.massiveSlimeAccessibleName.includes(', Slime,') &&
+      !downfallKeywordTips.massiveSlimeAccessibleName.includes(', Power,'),
+    'Massive Slime accessible name is mislabeled')
+    assertDeepEqual(downfallKeywordTips.rawAccessibleTokens, [],
+      'Downfall accessible card names contain raw icon tokens')
+  })
+  await page.evaluate((run) => {
+    const next = structuredClone(run)
+    const player = next.combat.players[0]
+    Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+    Object.assign(player, {
+      character: 'guardian', guardianMode: 'attack', energy: 3,
+      hand: [{ uid: 'ui-keyword-socketed-strike', defId: 'guardian_strike', upgraded: false,
+        attachedGemId: 'guardian_amethyst' },
+      { uid: 'ui-keyword-crystallized-strike', defId: 'guardian_strike', upgraded: false },
+      { uid: 'ui-keyword-crystallize-hand', defId: 'guardian_crystallize', upgraded: false,
+        attachedGemId: 'guardian_ruby' }],
+      powers: [
+        { uid: 'ui-keyword-crystallize', defId: 'guardian_crystallize', upgraded: false,
+          attachedGemId: 'guardian_ruby' },
+        { uid: 'ui-keyword-socketed-power', defId: 'guardian_floating_orbs', upgraded: false,
+          attachedGemId: 'guardian_ruby' },
+      ],
+    })
+    next.combat.players = [player]
+    window.__STS_DEBUG__.setRun(next)
+  }, combatAppearanceRun)
+  const socketedKeywordCards = [{
+    card: page.getByRole('button', { name: /^Strike,.*socketed with Amethyst:/ }), expected: 'Mode Shift',
+  }, {
+    card: page.getByRole('button', { name: /^Strike,.*socketed with Ruby:/ }), expected: 'Gem Power damage',
+  }, {
+    card: page.getByRole('button', { name: /^Crystallize, cost 1,.*socketed with Ruby:/ }),
+    expected: 'Gem Power damage', excluded: 'Hit',
+  }, {
+    card: page.getByRole('button', { name: /^Floating Orbs,.*socketed with Ruby: 1 damage\./ }),
+    expected: 'Gem', excluded: 'Hit',
+  }]
+  const socketedKeywordTips = []
+  await page.keyboard.down('Shift')
+  for (const [index, { card: socketedKeywordCard, expected, excluded }] of socketedKeywordCards.entries()) {
+    await socketedKeywordCard.hover()
+    await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)
+      ?.hasAttribute('data-open'), await socketedKeywordCard.elementHandle())
+    const tips = await socketedKeywordCard.evaluate((card) =>
+      [...document.getElementById(card.dataset.keywordHelpId).querySelectorAll('.card-keyword-tip')]
+        .map((tip) => ({ name: tip.querySelector('strong')?.textContent, text: tip.lastElementChild?.textContent })))
+    socketedKeywordTips.push({ names: tips.map((tip) => tip.name), tips, expected, excluded })
+    if (index === 3) await shot('downfall-guardian-socketed-power-keyword-help')
+  }
+  const floatingOrbsGem = await page.locator('.power__zoom .card__gem').getAttribute('title')
+  check('socketed hand cards and Powers include their exact attached Gem in shared card help', () => {
+    assert(socketedKeywordTips.every(({ names, expected, excluded }) =>
+      names.includes(expected) && !names.includes('Unplayable') && (!excluded || !names.includes(excluded))),
+      `attached Gem help is wrong: ${JSON.stringify(socketedKeywordTips)}`)
+    assert(socketedKeywordTips[0].names.includes('Amethyst'),
+      `Amethyst rule is not visible: ${JSON.stringify(socketedKeywordTips[0])}`)
+    assert(socketedKeywordTips[1].names.includes('Hit') &&
+      socketedKeywordTips[1].names.includes('Gem Power damage'),
+    `Crystallize inheritance omits its Gem Power exception: ${JSON.stringify(socketedKeywordTips[1])}`)
+    assert(socketedKeywordTips[2].names.includes('Ruby') &&
+      socketedKeywordTips[2].names.includes('Gem Power damage'),
+    `in-hand Gem Power exception is not visible: ${JSON.stringify(socketedKeywordTips[2])}`)
+    assert(socketedKeywordTips[3].names.includes('Ruby') &&
+      socketedKeywordTips[3].names.includes('Gem Power damage') &&
+      socketedKeywordTips[3].tips.find((tip) => tip.name === 'Ruby')?.text === '1 damage.' &&
+      socketedKeywordTips[3].tips.find((tip) => tip.name === 'Gem Power damage')?.text
+        .includes('ignores Strength, Weak, Vulnerable, and Vigor'),
+    `Gem Power exception is not visible: ${JSON.stringify(socketedKeywordTips[3])}`)
+    assert(floatingOrbsGem?.startsWith('Ruby: 1 damage.'), floatingOrbsGem)
+  })
+  await page.keyboard.up('Shift')
+  await page.mouse.move(5, 5)
+  await page.evaluate((run) => {
+    const next = structuredClone(run)
+    const player = next.combat.players[0]
+    Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+    Object.assign(player, {
+      character: 'guardian', guardianMode: 'attack', energy: 3,
+      hand: [{ uid: 'ui-prismatic-barrier-row', defId: 'guardian_prismatic_barrier', upgraded: false,
+        attachedGemId: 'guardian_ruby' }],
+      powers: [],
+    })
+    next.combat.players = [player]
+    window.__STS_DEBUG__.setRun(next)
+  }, combatAppearanceRun)
+  await page.getByRole('button', { name: /^Prismatic Barrier,/ }).click()
+  const prismaticBarrierPrompt = await page.locator('.prompt').textContent()
+  check('Prismatic Barrier advertises the row hit from an offensive attached Gem', () => {
+    assert(/whole row/.test(prismaticBarrierPrompt ?? ''),
+      `Prismatic Barrier prompt omits its attached Gem row: ${prismaticBarrierPrompt}`)
+  })
+  await page.evaluate((run) => {
+    const next = structuredClone(run)
+    const player = next.combat.players[0]
+    Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+    Object.assign(player, {
+      character: 'hexaghost', heat: 2, soulburn: 0, hand: [],
+      powers: [{ uid: 'ui-keyword-poltergeist-power', defId: 'poltergeist', upgraded: false }],
+    })
+    next.combat.players = [player]
+    window.__STS_DEBUG__.setRun(next)
+  }, combatAppearanceRun)
+  const poltergeistPowerLabel = await page.locator('.power[aria-label^="Poltergeist,"]').getAttribute('aria-label')
+  check('played Downfall Powers keep their complete accessible rules', () => {
+    assert(poltergeistPowerLabel?.includes('whenever you Advance') &&
+      poltergeistPowerLabel.includes('whenever you Retract'),
+    `played Poltergeist omits a trigger: ${poltergeistPowerLabel}`)
+  })
+  await page.setViewportSize({ width: 1518, height: 720 })
+  await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), oneLoadedHermitRun)
+  await page.waitForFunction(() => document.querySelector('.hermit-chamber-trigger'))
+  await page.waitForTimeout(200)
+  check('both Chamber states are preloaded before the first toggle', () => {
+    assert([...requestedUrls].some((url) => url.endsWith('hermit-chamber.png')))
+    assert([...requestedUrls].some((url) => url.endsWith('hermit-chamber-loaded.png')))
+  })
+  if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
+    await page.locator('.hermit-chamber-trigger').click()
+  }
+  await page.locator('.hand .card--chamber-drawn').waitFor()
+  const downfallKeywordCard = page.locator('.hand .card--chamber-drawn')
+  await page.keyboard.down('Shift')
+  await downfallKeywordCard.hover()
+  await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+    await downfallKeywordCard.elementHandle())
+  const downfallKeywordBoard = await downfallKeywordCard.evaluate((card) => ({
+    describedBy: Boolean(card.getAttribute('aria-describedby')),
+    tips: [...document.getElementById(card.dataset.keywordHelpId).querySelectorAll('.card-keyword-tip strong')]
+      .map((tip) => tip.textContent),
+  }))
+  check('a Downfall Chamber card renders accessible keyword help on hover', () => {
+    assert(downfallKeywordBoard.describedBy)
+    assert(downfallKeywordBoard.tips.includes('Dead On'))
+  })
+  await shot('downfall-hermit-keyword-help')
+  await page.keyboard.up('Shift')
+  await page.mouse.move(5, 5)
+  await page.waitForTimeout(400)
+  const chamberStartDistance = await page.evaluate(() => {
+    const card = document.querySelector('.hand .card--chamber-drawn')?.getBoundingClientRect()
+    const chamber = document.querySelector('.hermit-chamber-trigger')?.getBoundingClientRect()
+    return card && chamber ? Math.hypot(
+      card.left + card.width / 2 - chamber.left - chamber.width / 2,
+      card.top + card.height / 2 - chamber.top - chamber.height / 2,
+    ) : 0
+  })
+  await page.locator('.hermit-chamber-trigger').click()
+  await page.locator('.chamber-return-flight').waitFor()
+  await page.waitForTimeout(80)
+  const chamberReturnStarted = await page.evaluate(() => ({
+    emptyAsset: document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+      '/assets/icons/hermit-chamber.png',
+    collapsed: document.querySelector('.hermit-chamber-trigger')?.getAttribute('aria-expanded') === 'false',
+    chamberCardLeftHand: !document.querySelector('.hand .card--chamber-drawn'),
+    flightAnimating: getComputedStyle(document.querySelector('.chamber-return-flight')).animationName ===
+      'chamber-card-return',
+    handReflowAnimating: [...document.querySelectorAll('.hand .card')]
+      .some((card) => card.getAnimations().some((animation) => animation.playState === 'running')),
+  }))
+  await page.waitForTimeout(240)
+  const chamberMidDistance = await page.evaluate(() => {
+    const card = document.querySelector('.chamber-return-flight')?.getBoundingClientRect()
+    const chamber = document.querySelector('.hermit-chamber-trigger')?.getBoundingClientRect()
+    return card && chamber ? Math.hypot(
+      card.left + card.width / 2 - chamber.left - chamber.width / 2,
+      card.top + card.height / 2 - chamber.top - chamber.height / 2,
+    ) : Infinity
+  })
+  await page.screenshot({ path: join(outDir, 'downfall-hermit-chamber-returning.png') })
+  await page.waitForFunction(() => !document.querySelector('.chamber-return-flight') &&
+    document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+      '/assets/icons/hermit-chamber-loaded.png')
+  const chamberReturnRun = await readRun()
+  const chamberReturnLayout = {
+    ...chamberReturnStarted,
+    flewTowardChamber: chamberStartDistance > 0 && chamberMidDistance < chamberStartDistance,
+    contactVisible: await page.locator('.hermit-chamber-trigger')
+      .evaluate((trigger) => trigger.classList.contains('hermit-chamber-trigger--contact')),
+    stayedPrivate: chamberReturnRun.combat.players[0].chamber[0]?.uid === 'ui-compact-snapshot' &&
+      !chamberReturnRun.combat.players[0].hand.some((card) => card.uid === 'ui-compact-snapshot'),
+    hiddenFromHand: await page.locator('.hand .card--chamber-drawn, .chamber-return-flight').count() === 0,
+    loadedAsset: await page.locator('.hermit-chamber-trigger img').getAttribute('src') ===
+      '/assets/icons/hermit-chamber-loaded.png',
+  }
+  check('Chamber cards and the hand return smoothly', () => {
+    assert(Object.values(chamberReturnLayout).every(Boolean),
+      `Chamber close animation is discontinuous: ${JSON.stringify(chamberReturnLayout)}`)
+  })
+  await page.locator('.hermit-chamber-trigger').click()
+  await page.locator('.hand .card--chamber-drawn').waitFor()
+  const scrolledHand = await page.locator('.hand-scroll').evaluate((hand) => {
+    hand.style.width = '12rem'
+    hand.scrollLeft = Math.min(24, hand.scrollWidth - hand.clientWidth)
+    return { left: hand.scrollLeft, overflow: hand.scrollWidth - hand.clientWidth }
+  })
+  await page.locator('.hermit-chamber-trigger').click()
+  await page.locator('.chamber-return-flight').waitFor()
+  await page.waitForTimeout(80)
+  const scrollDuringClose = await page.locator('.hand-scroll').evaluate((hand) => hand.scrollLeft)
+  check('closing the Chamber preserves a scrolled hand position', () => {
+    assert(scrolledHand.overflow > 0 && scrolledHand.left > 0,
+      `test hand did not overflow: ${JSON.stringify(scrolledHand)}`)
+    assert(scrollDuringClose > 0,
+      `Chamber close reset the hand scroll position: ${scrollDuringClose}`)
+  })
+  await page.waitForFunction(() => !document.querySelector('.chamber-return-flight'))
+  await page.locator('.hand-scroll').evaluate((hand) => { hand.style.width = '' })
+  await page.locator('.hermit-chamber-trigger').click()
+  await page.locator('.hand .card--chamber-drawn').waitFor()
+  await page.getByRole('button', { name: 'End turn', exact: true }).click()
+  await page.locator('.chamber-return-flight').waitFor()
+  const phaseWhileReturning = (await readRun()).combat.phase
+  const combatLocked = await page.locator('.combat').evaluate((combat) =>
+    combat.inert && combat.getAttribute('aria-busy') === 'true')
+  const normalCard = await page.locator('.hand .card:not(.card--chamber-drawn)').first().boundingBox()
+  const selectedBeforeBlockedClick = await page.locator('.hand .card--selected').count()
+  if (normalCard) await page.mouse.click(normalCard.x + normalCard.width / 2, normalCard.y + normalCard.height / 2)
+  await page.waitForTimeout(60)
+  const selectedAfterBlockedClick = await page.locator('.hand .card--selected').count()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase !== 'player')
+  check('End turn locks combat until Chamber cards reach the Chamber', () => {
+    assertEqual(phaseWhileReturning, 'player')
+    assert(combatLocked, 'combat was not inert while Chamber cards returned')
+    assertEqual(selectedAfterBlockedClick, selectedBeforeBlockedClick)
+  })
+  await page.evaluate((run) => {
+    const next = structuredClone(run)
+    const player = next.combat.players[0]
+    Object.assign(next.combat, {
+      phase: 'player', startTurnProgress: undefined, pendingTriggers: [], pendingDistilled: undefined,
+    })
+    Object.assign(player, {
+      character: 'hermit', hand: [], chamberSlots: 2,
+      chamber: [{ uid: 'ui-auto-end-chamber-defend', defId: 'hermit_defend', upgraded: false }],
+      energy: 1, shivs: 0, soulburn: 0, miracles: 0, potions: [], powers: [], relics: [],
+    })
+    next.combat.players = [player]
+    next.combat.enemies = [{
+      ...next.combat.enemies[0], defId: 'slime_boss', isBoss: true, row: player.row, hp: 20, maxHp: 20,
+    }]
+    window.__STS_DEBUG__.setRun(next)
+  }, oneLoadedHermitRun)
+  await page.waitForTimeout(650)
+  const chamberAutoEndPhase = (await readRun()).combat.phase
+  check('a playable Chamber card prevents local solo auto-end', () => {
+    assertEqual(chamberAutoEndPhase, 'player')
+  })
+  await page.setViewportSize({ width: 390, height: 844 })
+  const soloBossSeatContained = await page.locator('.row--viewer .row__seat').evaluate((seat) => {
+    const box = seat.getBoundingClientRect()
+    return box.left >= 0 && box.right <= innerWidth
+  })
+  await page.screenshot({ path: join(outDir, 'downfall-hermit-solo-boss-390x844.png') })
+  check('compact solo boss fights keep the viewer seat onscreen', () => {
+    assert(soloBossSeatContained, 'the single-row viewer seat is clipped by compact spacing')
+  })
+  check('the focused Downfall browser run reported no errors', () => {
+    assert(consoleErrors.length === 0, `console errors:\n    ${consoleErrors.join('\n    ')}`)
+    assert(pageErrors.length === 0, `page errors:\n    ${pageErrors.join('\n    ')}`)
+    assert(requestFailures.length === 0, `failed requests:\n    ${requestFailures.join('\n    ')}`)
+  })
+  await browser.close()
+  await server.close()
+  report('Downfall combat UI')
+  process.exit(process.exitCode ?? 0)
+}
+
+const evilBossSoundCount = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const template = next.combat.enemies[0]
+  next.combat.phase = 'enemy'
+  next.combat.enemies = [
+    ['downfall_inferno', 0],
+    ['downfall_witch', 1],
+    ['downfall_orb_master', 0],
+    ['downfall_wrathful', 0],
+  ].map(([defId, actionIndex], index) => ({
+    ...template,
+    uid: `evil-hero-${index}`,
+    defId,
+    row: 0,
+    isBoss: true,
+    hp: 20,
+    maxHp: 20,
+    block: 0,
+    actionIndex,
+    dead: false,
+  }))
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.keyboard.press('Escape')
+await pauseMenu.waitFor()
+await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = 'hidden' })
+await page.waitForFunction(() => document.querySelectorAll('.enemy--boss img[src$="-attack.webp"]').length === 4)
+const evilBossAttackSources = await page.locator('.enemy--boss img[src$="-attack.webp"]').evaluateAll((images) =>
+  images.map((image) => image.getAttribute('src')))
+await shot('02c-downfall-evil-hero-boss-attacks')
+check('evil hero boss attack fixture renders four clean left-attacking animation assets', () => {
+  assertDeepEqual(evilBossAttackSources, [
+    '/assets/combat/enemies/animations/downfall_pc_ironclad-attack.webp',
+    '/assets/combat/enemies/animations/downfall_pc_silent-attack.webp',
+    '/assets/combat/enemies/animations/downfall_pc_defect-attack.webp',
+    '/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp',
+  ])
+})
+await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = '' })
+await page.keyboard.press('Escape')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+await page.evaluate((count) => { window.__SFX_PLAYS__.length = count }, evilBossSoundCount)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'guardian', guardianMode: 'attack', energy: 3,
+    powers: [{ uid: 'ui-crystallize', defId: 'guardian_crystallize', upgraded: false,
+      attachedGemId: 'guardian_amethyst' }],
+    hand: [{ uid: 'ui-crystallize-strike', defId: 'guardian_strike', upgraded: false }],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const socketedCard = page.getByRole('button', { name: /^Strike,.*socketed with Amethyst:/ })
+await socketedCard.waitFor()
+const socketedGem = await socketedCard.locator('img.card__gem').evaluate((image) => ({
+  source: image.getAttribute('src'),
+  title: image.getAttribute('title'),
+  loaded: image.complete && image.naturalWidth > 0,
+}))
+check('Crystallize inheritance shows and announces the exact official Gem face on starter Strikes', () => {
+  assert(socketedGem.source?.endsWith('/guardian__normal__amethyst.webp'), socketedGem.source)
+  assert(socketedGem.title?.startsWith('Amethyst:'), socketedGem.title)
+  assert(socketedGem.loaded, 'the socketed Gem thumbnail did not decode')
+})
+
+await page.evaluate(async (run) => {
+  const { preparePlayerTurn } = await import('/src/game/combat.ts')
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(player, { character: 'guardian', guardianMode: 'attack', guardianModeLocked: false,
+    hand: [], powers: [] })
+  next.combat.players = [player]
+  next.combat = preparePlayerTurn({ ...next.combat, phase: 'roundEnd' })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('group', { name: /Mode Shift\?/ }).waitFor()
+await page.getByRole('button', { name: 'Mode Shift', exact: true }).click()
+await page.getByRole('button', { name: 'Resolve start of turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].guardianMode === 'defense')
+check('Guardian can make the printed optional Mode Shift at start of turn', async () => {
+  assertEqual((await readRun()).combat.players[0].guardianMode, 'defense')
+})
+
+const downfallChoiceResults = {}
+const downfallCardAssets = []
+async function readDownfallCardAsset(name) {
+  const image = page.getByRole('button', { name }).locator('img.card__art')
+  await image.waitFor()
+  await image.evaluate((element) => element.decode())
+  return image.evaluate((element) => ({ source: element.getAttribute('src'), width: element.naturalWidth }))
+}
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', energy: 3, block: 2, vigor: 1, vigorSpentThisTurn: 0,
+    hand: [{ uid: 'ui-body-crash', defId: 'guardian_body_crash', upgraded: false }],
+    chamber: [], slimes: [], soulburn: 0, guardianMode: 'defense', powers: [],
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+downfallCardAssets.push(await readDownfallCardAsset(/^Body Crash,/))
+await page.getByRole('button', { name: /^Body Crash,/ }).click()
+await page.getByRole('button', { name: 'Spend 0 Vigor' }).click()
+await page.getByRole('button', { name: 'Spend 2 Block' }).click()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.guardian = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.players[0].block, combat.enemies[0].hp]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  const ally = structuredClone(player)
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'guardian', energy: 3, block: 0, vigor: 0, vigorSpentThisTurn: 0,
+    hand: [{ uid: 'ui-stasis-field', defId: 'guardian_stasis_field', upgraded: false }],
+    chamber: [], slimes: [], soulburn: 0, guardianMode: 'attack', powers: [],
+  })
+  Object.assign(ally, {
+    id: 'ui-guardian-ally', name: 'Defect', character: 'defect', row: player.row + 1,
+    hand: [], draw: [], discard: [], exhaust: [], powers: [], block: 0, dead: false,
+  })
+  next.combat.players = [player, ally]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Stasis Field,/ }).click()
+await page.locator('button.seat').nth(0).click()
+await page.locator('button.seat').nth(1).click()
+await page.locator('button.seat').nth(1).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.guardianStasis = await page.evaluate(() =>
+  window.__STS_DEBUG__.getRun().combat.players.map((player) => player.block))
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  const ally = structuredClone(player)
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [],
+    pendingHermitSetupLoads: [], partyAttackDiscount: false })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', energy: 2, block: 0, vigor: 0, vigorSpentThisTurn: 0,
+    freeAttacksThisTurn: 1,
+    hand: [{ uid: 'ui-guardian-whirl', defId: 'guardian_guardian_whirl', upgraded: false }],
+    chamber: [], slimes: [], soulburn: 0, guardianMode: 'defense', powers: [],
+  })
+  Object.assign(ally, {
+    id: 'ui-whirl-ally', name: 'Defect', character: 'defect', row: player.row + 1,
+    hand: [], draw: [], discard: [], exhaust: [], powers: [], block: 0, dead: false,
+  })
+  next.combat.players = [player, ally]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Guardian Whirl,/ }).click()
+await page.getByRole('button', { name: 'Spend 2' }).click()
+await page.locator('.seat--targetable:not(.seat--viewer)').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.guardianWhirl = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.players[0].freeAttacksThisTurn, combat.players[1].block, combat.enemies[0].hp,
+    combat.presentationEvents.at(-1)?.resolvedType]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [],
+    pendingHermitSetupLoads: [], startTurnProgress: undefined })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', energy: 5, block: 0, vigor: 0, vigorSpentThisTurn: 0,
+    hand: [{ uid: 'ui-power-beam', defId: 'guardian_power_beam', upgraded: false }],
+    discard: [{ uid: 'ui-power-beam-choice', defId: 'guardian_future_plans', upgraded: false }],
+    chamber: [], slimes: [], soulburn: 0, guardianMode: 'defense', powers: [],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+downfallCardAssets.push(await readDownfallCardAsset(/^Power Beam,/))
+await page.getByRole('button', { name: /^Power Beam,/ }).click()
+await page.getByRole('button', { name: 'Play Future Plans for 0' }).click()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].powers
+  .some((power) => power.uid === 'ui-power-beam-choice'))
+downfallChoiceResults.guardianPowerBeam = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.players[0].energy, combat.enemies[0].hp,
+    combat.players[0].powers.some((power) => power.uid === 'ui-power-beam-choice')]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, vulnerable: 1, dead: false })
+  Object.assign(player, {
+    character: 'guardian', guardianMode: 'attack', vigor: 0, strength: 2, weak: 1, hand: [
+      { uid: 'ui-jasper-a', defId: 'guardian_defend', upgraded: false },
+      { uid: 'ui-jasper-b', defId: 'guardian_strike', upgraded: false },
+    ], exhaust: [], powers: [
+      { uid: 'ui-floating-ruby', defId: 'guardian_floating_orbs', upgraded: false, attachedGemId: 'guardian_ruby' },
+      { uid: 'ui-floating-jasper', defId: 'guardian_floating_orbs', upgraded: false, attachedGemId: 'guardian_jasper' },
+    ], powerTriggersUsedThisTurn: [],
+  })
+  next.combat.players = [player]
+  next.combat.powerTriggersUsedThisTurn = []
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const rubyOrbs = page.getByRole('button', { name: 'Use Floating Orbs with Ruby' })
+await rubyOrbs.click()
+await page.waitForFunction(() =>
+  document.querySelector('[aria-label="Use Floating Orbs with Ruby"]')?.getAttribute('aria-pressed') === 'true')
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp === 19)
+const jasperOrbs = page.getByRole('button', { name: 'Use Floating Orbs with Jasper' })
+await jasperOrbs.click()
+await page.waitForFunction(() =>
+  document.querySelector('[aria-label="Use Floating Orbs with Jasper"]')?.getAttribute('aria-pressed') === 'true')
+await page.getByLabel('Exhaust Defend').check()
+await page.getByLabel('Exhaust Strike').check()
+await page.getByRole('button', { name: 'Confirm 2' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].exhaust.length === 2)
+downfallChoiceResults.guardianPowerGems = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.enemies[0].hp, combat.players[0].exhaust.length,
+    combat.players[0].weak, combat.enemies[0].vulnerable]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', guardianMode: 'attack', hand: [
+      { uid: 'ui-finder-hand-a', defId: 'guardian_defend', upgraded: false },
+      { uid: 'ui-finder-hand-b', defId: 'guardian_strike', upgraded: false },
+    ], draw: [
+      { uid: 'ui-finder-draw-a', defId: 'guardian_defend', upgraded: false },
+      { uid: 'ui-finder-draw-b', defId: 'guardian_strike', upgraded: false },
+      { uid: 'ui-finder-draw-c', defId: 'guardian_harden', upgraded: false },
+    ], discard: [], exhaust: [], powers: [
+      { uid: 'ui-finder-ruby', defId: 'guardian_gem_finder', upgraded: false, attachedGemId: 'guardian_ruby' },
+    ], powerTriggersUsedThisTurn: [],
+  })
+  next.combat.players = [player]
+  next.combat.powerTriggersUsedThisTurn = []
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: 'Use Gem Finder with Ruby' }).click()
+await page.getByRole('button', { name: 'Confirm Scry' }).waitFor()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+assertEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp), 20,
+  'Gem Finder resolved its Ruby before the private Scry was confirmed')
+await page.locator('.prompt').getByRole('button', { name: 'Defend', exact: true }).click()
+await page.getByRole('button', { name: 'Confirm Scry' }).click()
+await page.waitForFunction(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return combat.enemies[0].hp === 19 && combat.players[0].discard.some((card) => card.uid === 'ui-finder-draw-a')
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', guardianMode: 'attack', hand: [
+      { uid: 'ui-finder-exhaust-a', defId: 'guardian_defend', upgraded: false },
+      { uid: 'ui-finder-exhaust-b', defId: 'guardian_strike', upgraded: false },
+    ], draw: [
+      { uid: 'ui-finder-jasper-draw-a', defId: 'guardian_defend', upgraded: false },
+      { uid: 'ui-finder-jasper-draw-b', defId: 'guardian_strike', upgraded: false },
+      { uid: 'ui-finder-jasper-draw-c', defId: 'guardian_harden', upgraded: false },
+    ], discard: [], exhaust: [], powers: [
+      { uid: 'ui-finder-jasper', defId: 'guardian_gem_finder', upgraded: false, attachedGemId: 'guardian_jasper' },
+    ], powerTriggersUsedThisTurn: [],
+  })
+  next.combat.players = [player]
+  next.combat.powerTriggersUsedThisTurn = []
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: 'Use Gem Finder with Jasper' }).click()
+await page.locator('.prompt').getByRole('button', { name: 'Strike', exact: true }).click()
+await page.getByRole('button', { name: 'Confirm Scry' }).click()
+await page.getByRole('button', { name: 'Scry confirmed' }).waitFor()
+assertEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].discard.length), 0,
+  'Gem Finder resolved its Scry before Jasper was confirmed')
+await page.getByLabel('Exhaust Defend').check()
+await page.getByRole('button', { name: 'Confirm 1' }).click()
+await page.waitForFunction(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return player.discard.some((card) => card.uid === 'ui-finder-jasper-draw-b') &&
+    player.exhaust.some((card) => card.uid === 'ui-finder-exhaust-a')
+})
+downfallChoiceResults.guardianGemFinder = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return [player.discard.map((card) => card.uid), player.exhaust.map((card) => card.uid)]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'guardian', energy: 3, powers: [], discard: [],
+    hand: [{ uid: 'ui-deep-breath', defId: 'deep_breath', upgraded: true }],
+    exhaust: [
+      { uid: 'ui-deep-strike', defId: 'guardian_strike', upgraded: false },
+      { uid: 'ui-deep-defend', defId: 'guardian_defend', upgraded: false },
+    ],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Deep Breath\+,/ }).click()
+await page.getByRole('button', { name: /^Strike,/ }).click()
+await page.getByRole('button', { name: /^Defend,/ }).click()
+await page.getByRole('button', { name: 'Put selected cards on top of your discard pile' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].discard.length === 2)
+downfallChoiceResults.deepBreath = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return [player.discard.map((card) => card.uid), player.exhaust.map((card) => card.uid)]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'hexaghost', energy: 3, powers: [], draw: [],
+    hand: [{ uid: 'ui-eerie-expedition', defId: 'eerie_expedition', upgraded: false }],
+    exhaust: [
+      { uid: 'ui-eerie-strike', defId: 'strike_hexaghost', upgraded: false },
+      { uid: 'ui-eerie-defend', defId: 'defend_hexaghost', upgraded: false },
+    ],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Eerie Expedition,/ }).click()
+await page.getByRole('dialog', { name: 'Choose up to 2 cards from your Exhaust pile' }).waitFor()
+await page.getByRole('button', { name: /^Strike,/ }).click()
+await page.getByRole('button', { name: 'Put selected card on top of your draw pile' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].draw.length === 1)
+downfallChoiceResults.eerieExpedition = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return [player.draw.map((card) => card.uid), player.exhaust.map((card) => card.uid)]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'slime_boss', energy: 3,
+    hand: [{ uid: 'ui-lick', defId: 'slime_boss_lick', upgraded: false }], chamber: [], soulburn: 0,
+    slimes: [{ card: { uid: 'ui-bruiser', defId: 'slime_boss_bruiser_slime', upgraded: false },
+      level: 1, vigor: 0, temporaryVigor: 0, vigorTriggerUsedThisTurn: false }], powers: [],
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+downfallCardAssets.push(await readDownfallCardAsset(/^Lick,/))
+await page.getByRole('button', { name: /^Lick,/ }).click()
+await page.getByRole('button', { name: /Bruiser Slime · level 1/ }).click()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.slime = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'slime_boss', energy: 3, powers: [], slimes: [], discard: [],
+    hand: [{ uid: 'ui-replication', defId: 'slime_boss_replication', upgraded: false }],
+    draw: [{ uid: 'ui-replication-slime', defId: 'slime_boss_bruiser_slime', upgraded: false }],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Replication,/ }).click()
+const replicationDialog = page.getByRole('dialog', { name: 'Choose a Slime from your draw pile' })
+await replicationDialog.getByRole('button', { name: /^Bruiser Slime,/ }).click()
+downfallChoiceResults.replicationPrompt = await replicationDialog.getByRole('button', {
+  name: 'Play selected Slime and shuffle',
+}).innerText()
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.phase = 'enemy'
+  window.__STS_DEBUG__.setRun(next)
+})
+await replicationDialog.waitFor({ state: 'hidden' })
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'slime_boss', energy: 3, powers: [], slimes: [], discard: [], draw: [],
+    hand: [{ uid: 'ui-empty-replication', defId: 'slime_boss_replication', upgraded: false }],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Replication,/ }).click()
+const emptyReplicationDialog = page.getByRole('dialog', { name: 'No Slime is in your draw pile' })
+downfallChoiceResults.emptyReplicationPrompt = await emptyReplicationDialog.getByRole('button', {
+  name: 'Shuffle and continue',
+}).innerText()
+await emptyReplicationDialog.getByRole('button', { name: 'Shuffle and continue' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'slime_boss', guardianMode: null, energy: 3, powers: [], slimes: [], discard: [],
+    hand: [{ uid: 'ui-overexert', defId: 'slime_boss_overexert', upgraded: false }],
+    draw: [
+      { uid: 'ui-overexert-whirl', defId: 'guardian_guardian_whirl', upgraded: false },
+      { uid: 'ui-overexert-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Overexert,/ }).click()
+const overexertDialog = page.getByRole('dialog', { name: 'Choose a playable card from your hand' })
+await overexertDialog.getByRole('button', { name: /^Guardian Whirl,/ }).click()
+downfallChoiceResults.overexertDefensePrompt = await overexertDialog.getByRole('button', {
+  name: 'Play selected card',
+}).innerText()
+await overexertDialog.getByRole('button', { name: /^Guardian Whirl,/ }).click()
+await overexertDialog.getByRole('button', { name: /^Strike,/ }).click()
+downfallChoiceResults.overexertPrompt = await overexertDialog.getByRole('button', {
+  name: 'Play selected Attack twice',
+}).innerText()
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.phase = 'enemy'
+  window.__STS_DEBUG__.setRun(next)
+})
+await overexertDialog.waitFor({ state: 'hidden' })
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'slime_boss', energy: 3, powers: [], slimes: [], discard: [], draw: [],
+    hand: [{ uid: 'ui-empty-overexert', defId: 'slime_boss_overexert', upgraded: false }],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Overexert,/ }).click()
+const emptyOverexertDialog = page.getByRole('dialog', { name: 'No playable card remains' })
+downfallChoiceResults.emptyOverexertPrompt = await emptyOverexertDialog.getByRole('button', { name: 'Continue' }).innerText()
+await emptyOverexertDialog.getByRole('button', { name: 'Continue' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'hexaghost', energy: 3, heat: 1, soulburn: 2,
+    hand: [{ uid: 'ui-living-bomb', defId: 'living_bomb', upgraded: false }], chamber: [], slimes: [], powers: [],
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+downfallCardAssets.push(await readDownfallCardAsset(/^Living Bomb,/))
+await page.getByRole('button', { name: /^Living Bomb,/ }).click()
+for (let index = 0; index < 3; index++) await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.hexaghost = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.players[0].soulburn, combat.enemies[0].hp]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, weak: 0, vulnerable: 0, dead: false })
+  Object.assign(player, {
+    character: 'hexaghost', energy: 3, heat: 2, soulburn: 0,
+    hand: [{ uid: 'ui-bright-ritual', defId: 'bright_ritual', upgraded: false }],
+    chamber: [], slimes: [], powers: [],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Bright Ritual,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.brightRitual = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.players[0].heat, combat.enemies[0].weak, combat.enemies[0].vulnerable]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'hermit', energy: 3, chamber: [], chamberSlots: 2, slimes: [], soulburn: 0, powers: [],
+    hand: [
+      { uid: 'ui-covet', defId: 'hermit_covet', upgraded: false },
+      { uid: 'ui-hermit-strike', defId: 'hermit_strike', upgraded: false },
+    ],
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+downfallCardAssets.push(await readDownfallCardAsset(/^Covet,/))
+await page.getByRole('button', { name: /^Covet,/ }).click()
+const loadDialog = page.getByRole('dialog', { name: /Choose 1 to Load/ })
+await loadDialog.getByRole('button', { name: /^Strike,/ }).click()
+await loadDialog.getByRole('button', { name: 'Load 1 card' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 1)
+downfallChoiceResults.hermit = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber[0].defId)
+
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  const player = next.combat.players[0]
+  const chamberCard = player.chamber[0]
+  player.cardPlayLocked = true
+  next.combat.pendingHermitChamberPlays = [{
+    playerId: player.id, sourceCardId: 'ui-mandatory-chamber', cardUids: [chamberCard.uid], free: true,
+  }]
+  window.__STS_DEBUG__.setRun(next)
+})
+await page.getByRole('button', { name: 'Skip unplayable Strike' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.pendingHermitChamberPlays.length === 0)
+downfallChoiceResults.hermitMandatorySkip = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return [player.chamber[0]?.defId, player.hand.length]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'hermit', energy: 3, chamberSlots: 2, slimes: [], soulburn: 0, powers: [],
+    chamber: [
+      { uid: 'ui-full-old', defId: 'hermit_defend', upgraded: false },
+      { uid: 'ui-full-kept', defId: 'hermit_strike', upgraded: false },
+    ],
+    hand: [
+      { uid: 'ui-full-covet', defId: 'hermit_covet', upgraded: false },
+      { uid: 'ui-full-load', defId: 'hermit_snapshot', upgraded: false },
+    ],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Covet,/ }).click()
+const fullLoadDialog = page.getByRole('dialog', { name: /Choose 1 to Load/ })
+await fullLoadDialog.getByRole('button', { name: /^Snapshot,/ }).click()
+await fullLoadDialog.getByRole('button', { name: 'Load 1 card' }).click()
+await page.locator('.prompt__mode').filter({ hasText: /^Defend$/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.hermitFullChamber = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return [player.chamber.map((card) => card.defId), player.discard.map((card) => card.defId)]
+})
+
+check('Downfall combat choices are reachable from the real card UI', () => {
+  assertDeepEqual(downfallCardAssets.map(({ width }) => width), [448, 448, 448, 448, 448],
+    'Downfall hand cards use decoded scan thumbnails')
+  assert(downfallCardAssets.every(({ source }) => source?.startsWith('/assets/cards-sm/')),
+    `Downfall card scan paths: ${JSON.stringify(downfallCardAssets)}`)
+  assertDeepEqual(downfallChoiceResults.guardian, [0, 16], 'Guardian spends chosen Block after its Vigor choice')
+  assertDeepEqual(downfallChoiceResults.guardianStasis, [2, 1],
+    'Guardian assigns every Stasis Field Block icon independently')
+  assertDeepEqual(downfallChoiceResults.guardianWhirl, [1, 2, 20, 'skill'],
+    'Defense Mode Guardian Whirl keeps its Attack discount and targets an ally')
+  assertDeepEqual(downfallChoiceResults.guardianPowerBeam, [3, 17, true],
+    'Defense Mode Power Beam chooses and plays a Power for 0 Energy')
+  assertDeepEqual(downfallChoiceResults.guardianPowerGems, [19, 2, 1, 1],
+    'Gem Power damage ignores Strength, Weak, Vulnerable, and Vigor')
+  assertDeepEqual(downfallChoiceResults.guardianGemFinder,
+    [['ui-finder-jasper-draw-b'], ['ui-finder-exhaust-a']],
+    'Gem Finder submits private Scry and socketed Gem choices atomically')
+  assertDeepEqual(downfallChoiceResults.deepBreath,
+    [['ui-deep-strike', 'ui-deep-defend'], ['ui-deep-breath']],
+    'Deep Breath requires and preserves the chosen Exhaust-pile order')
+  assertDeepEqual(downfallChoiceResults.eerieExpedition,
+    [['ui-eerie-strike'], ['ui-eerie-defend', 'ui-eerie-expedition']],
+    'Eerie Expedition permits a partial up-to selection')
+  assertEqual(downfallChoiceResults.slime, 19, 'Slime Boss can choose and Command a Slime')
+  assertEqual(downfallChoiceResults.replicationPrompt, 'Play selected Slime and shuffle')
+  assertEqual(downfallChoiceResults.emptyReplicationPrompt, 'Shuffle and continue')
+  assertEqual(downfallChoiceResults.overexertDefensePrompt, 'Play selected card')
+  assertEqual(downfallChoiceResults.overexertPrompt, 'Play selected Attack twice')
+  assertEqual(downfallChoiceResults.emptyOverexertPrompt, 'Continue')
+  assertDeepEqual(downfallChoiceResults.hexaghost, [0, 17], 'Hexaghost assigns every Soulburn hit')
+  assertDeepEqual(downfallChoiceResults.brightRitual, [1, 0, 0],
+    'low-Heat Bright Ritual plays without inactive enemy target prompts')
+  assertEqual(downfallChoiceResults.hermit, 'hermit_strike', 'Hermit can choose a card to Load')
+  assertDeepEqual(downfallChoiceResults.hermitMandatorySkip, ['hermit_strike', 0],
+    'an impossible mandatory Chamber play can advance without moving its card')
+  assertDeepEqual(downfallChoiceResults.hermitFullChamber,
+    [['hermit_snapshot', 'hermit_strike'], ['hermit_defend', 'hermit_covet']],
+    'full Chamber Load lets the player choose and discard the replaced card')
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
+const musicBeforeBoss = await page.evaluate(() => window.__SFX_PLAYS__)
+check('ordinary combat does not start boss music', () => {
+  assert(!musicBeforeBoss.some((sound) => sound.startsWith('/assets/bgm/')))
 })
 const bossMusic = [
   ['hexaghost', 'the-guardian-emerges.mp3'],
@@ -1616,7 +3600,7 @@ await page.locator('.enemy').first().click()
 const afterPlay = await readState()
 
 check('clicking a card then an enemy actually plays it', () => {
-  assertEqual(afterPlay.players[0].hand.length, 4, 'the card leaves hand')
+  assertEqual(afterPlay.players[0].hand.length, beforePlay.players[0].hand.length - 1, 'the card leaves hand')
   assertEqual(afterPlay.players[0].energy, 2, 'energy is spent')
   assertEqual(afterPlay.players[0].discard.length, 1, 'and the card is discarded')
   assert(
@@ -1930,7 +3914,7 @@ await page.evaluate((run) => {
   Object.assign(player, {
     character: 'watcher',
     hand: [{ uid: 'drag-ragnarok', defId: 'ragnarok', upgraded: false }],
-    draw: [], discard: [], exhaust: [], energy: 3,
+    draw: [], discard: [], exhaust: [], slimes: [], energy: 3,
   })
   next.combat.enemies = next.combat.enemies.slice(0, 2)
   for (const enemy of next.combat.enemies) Object.assign(enemy, {
@@ -12513,7 +14497,31 @@ await page.evaluate((viewerId) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   run.players = run.players.map((player) => player.id === viewerId
-    ? { ...player, potions: ['entropic_brew', 'energy_potion', 'energy_potion'] }
+    ? { ...player, potions: ['entropic_brew', 'energy_potion', 'energy_potion', 'energy_potion'],
+        relics: [...player.relics.filter((relic) => relic.defId !== 'potion_belt'), { defId: 'potion_belt', spent: false }] }
+    : { ...player, potions: ['fire_potion', 'skill_potion', 'block_potion'],
+        relics: [...player.relics.filter((relic) => relic.defId !== 'potion_belt'), { defId: 'potion_belt', spent: false }] })
+  debug.setRun(run)
+}, potionViewerId)
+await page.waitForFunction(() => {
+  const use = document.querySelector('[aria-label="Use Entropic Brew"]')
+  const give = document.querySelector('[aria-label="Give Entropic Brew"]')
+  return use && !use.hasAttribute('aria-expanded') && give && !give.disabled
+})
+const potionBeltActions = await page.locator('.outside-potions').evaluate((bar) => ({
+  brewExpanded: bar.querySelector('[aria-label="Use Entropic Brew"]')?.getAttribute('aria-expanded'),
+  giveDisabled: bar.querySelector('[aria-label="Give Entropic Brew"]')?.disabled,
+}))
+check('Potion Belt capacity permits a direct Brew use and a trade to a three-Potion recipient', () => {
+  assertEqual(potionBeltActions.brewExpanded, null)
+  assertEqual(potionBeltActions.giveDisabled, false)
+})
+await page.evaluate((viewerId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players = run.players.map((player) => player.id === viewerId
+    ? { ...player, potions: ['entropic_brew', 'energy_potion', 'energy_potion'],
+        relics: player.relics.filter((relic) => relic.defId !== 'potion_belt') }
     : player)
   debug.setRun(run)
 }, potionViewerId)
@@ -12667,6 +14675,49 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForFunction(() => document.querySelector('.campfire')?.getAttribute('data-party-size') === '4')
+const customCampfireLayouts = []
+for (const characters of [
+  ['guardian', 'hermit', 'hexaghost', 'slime_boss'],
+  ['ironclad', 'guardian', 'silent', 'hermit'],
+]) {
+  await page.evaluate((party) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.players = run.players.map((player, index) => ({ ...player, character: party[index], dead: false }))
+    debug.setRun(run)
+  }, characters)
+  await page.waitForFunction((party) => {
+    const campfire = document.querySelector('.campfire[data-character-cutouts="true"]')
+    return campfire?.querySelectorAll('.campfire__party img').length === party.length
+  }, characters)
+  customCampfireLayouts.push(await page.locator('.campfire').evaluate(async (campfire) => {
+    const url = getComputedStyle(campfire).backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1] ?? ''
+    const images = [...campfire.querySelectorAll('.campfire__party img')]
+    await Promise.all(images.map((image) => image.decode()))
+    return {
+      scene: new URL(url).pathname,
+      characters: images.map((image) => new URL(image.src).pathname.split('/').pop()),
+      decoded: images.every((image) => image.naturalWidth > 0 && image.naturalHeight > 0),
+    }
+  }))
+}
+check('Downfall-only and mixed parties render every rear-view character on the empty campfire scene', () => {
+  assert(customCampfireLayouts.every((layout) => layout.scene.endsWith('/empty_firecamp.png')),
+    JSON.stringify(customCampfireLayouts))
+  assertDeepEqual(customCampfireLayouts[0].characters,
+    ['guardian-back.webp', 'hermit-back.webp', 'hexaghost-back.webp', 'slime_boss-back.webp'])
+  assertDeepEqual(customCampfireLayouts[1].characters,
+    ['ironclad-back.webp', 'guardian-back.webp', 'silent-back.webp', 'hermit-back.webp'])
+  assert(customCampfireLayouts.every((layout) => layout.decoded), JSON.stringify(customCampfireLayouts))
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const characters = ['ironclad', 'silent', 'defect', 'watcher']
+  run.players = run.players.map((player, index) => ({ ...player, character: characters[index] }))
+  debug.setRun(run)
+})
+await page.waitForFunction(() => !document.querySelector('.campfire')?.hasAttribute('data-character-cutouts'))
 const campfireResponsiveLayouts = []
 for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 }, { width: 667, height: 375 }]) {
   await page.setViewportSize(viewport)
@@ -12895,6 +14946,22 @@ const peacePipeNextControl = await page.getByRole('button', { name: 'Next campfi
 check('Peace Pipe keeps local player navigation available with or without a removal', () => {
   assert(peacePipeSkipControl, 'the next-player control is hidden or covered before the optional removal is chosen')
   assert(peacePipeNextControl, 'the next-player control stayed hidden or covered after a Peace Pipe choice')
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players[0].relics.push({ defId: 'straight_razor', spent: false })
+  debug.setRun(run)
+})
+await page.locator('.campfire__prompt').getByRole('button', { name: /Rest/ }).click()
+const sharedCampfireCard = page.locator('.campfire__deck--transform .card').first()
+await sharedCampfireCard.click()
+await page.locator('.campfire__deck--remove .card').first().click()
+const staleCampfireTransforms = await page.locator('.campfire__deck--transform .card.is-selected').count()
+check('Peace Pipe clears Straight Razor when both selected the same card', () => {
+  assertEqual(staleCampfireTransforms, 0,
+    'removing the transform target left a stale hidden selection')
 })
 
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'campfire-solo'))
@@ -14416,8 +16483,28 @@ const calendarHpChanges = calendarAfter.enemies.map((enemy, index) =>
   enemy.hp - calendarBefore.enemies[index].hp)
 check('Loaded Die lets Stone Calendar choose and damage an enemy', () => {
   assert(calendarTargetName?.includes('→'), `Stone Calendar had no target: ${calendarTargetName}`)
+  assert(calendarTargetName?.includes('die 4'), `Stone Calendar ability had no die-face label: ${calendarTargetName}`)
   assertDeepEqual(calendarHpChanges.sort((a, b) => a - b), [-4, ...Array(calendarHpChanges.length - 1).fill(0)])
   assertEqual(calendarAfter.players[0].relics[0].spent, true)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const combat = run.combat
+  const actor = combat.players[0]
+  actor.powers = [{ uid: 'ui-combo-priority', defId: 'hermit_combo', upgraded: false }]
+  combat.phase = 'player'
+  combat.pendingTriggers = [{ id: 9191, playerId: actor.id, sourceId: 'power:ui-combo-priority' }]
+  combat.pendingDieRelicChoices = [{
+    playerId: actor.id, relicDefId: 'wheel_of_change', abilityIndex: 0,
+    sourceLabel: 'Cheat', enemyUid: null, targetPlayerId: actor.id,
+  }]
+  debug.setRun(run)
+})
+await page.getByRole('status').filter({ hasText: 'Cheat — finish the chosen die Relic' }).waitFor()
+const staleComboControls = await page.locator('.prompt').getByText(/Combo/).count()
+check('a pending Cheat payment hides stale Combo controls', () => {
+  assertEqual(staleComboControls, 0)
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -14425,6 +16512,9 @@ await page.evaluate(() => {
   const actor = run.combat.players[0]
   run.combat.phase = 'start'
   run.combat.die = 3
+  run.combat.pendingTriggers = []
+  run.combat.pendingDieRelicChoices = []
+  actor.powers = []
   actor.potions = ['gamblers_brew']
   actor.relics = [
     { defId: 'dollys_mirror', spent: false },
@@ -14800,6 +16890,16 @@ for (const [engineName, phoneBrowser, deviceName] of [
     await phonePage.setViewportSize({ width: 568, height: 320 })
     await phonePage.waitForFunction(() => innerWidth >= 1280 && innerHeight >= 700)
   } else {
+    await phonePage.evaluate(() => {
+      const run = structuredClone(window.__STS_DEBUG__.getRun())
+      const player = run.combat.players[0]
+      if (player.hand.filter((card) => card.defId.startsWith('strike')).length < 2) {
+        player.hand.push({ uid: 'mobile-cancel-strike', defId: 'strike_ironclad', upgraded: false })
+        window.__STS_DEBUG__.setRun(run)
+      }
+    })
+    await phonePage.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand
+      .filter((card) => card.defId.startsWith('strike')).length >= 2)
     const before = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand.length)
     const attackIndex = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand
       .findIndex((card) => card.defId.startsWith('strike')))
@@ -15193,6 +17293,9 @@ for (const [engineName, phoneBrowser, deviceName] of [
     return lowest?.dataset.room ?? null
   })
   if (lowestRoom) {
+    await phonePage.locator(`.map:not([inert]) [data-room="${lowestRoom}"]`).evaluate((node) =>
+      node.scrollIntoView({ block: 'end' }))
+    await phonePage.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     await tap(phonePage.locator(`.map:not([inert]) [data-room="${lowestRoom}"]`))
     await phonePage.waitForFunction(() => document.querySelector('.room--reading'),
       null, { timeout: 4000 }).catch(() => {})
