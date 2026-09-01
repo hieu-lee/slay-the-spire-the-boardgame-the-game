@@ -14,6 +14,7 @@ import {
   DOWNFALL_RELICS,
   DOWNFALL_RELIC_DECK,
   downfallRelicId,
+  formatDownfallText,
   itemId as downfallItemId,
   resolveDownfallItem,
 } from './downfall/items.ts'
@@ -402,7 +403,7 @@ function registerDownfallRelics(): void {
     const rule = resolved.rule
     const base = Object.values(RELICS).find((candidate) => candidate.name === item.name)
     const def: RelicDef = {
-      id, name: item.name, pool, effects: [], text: item.text, rule: item.text,
+      id, name: item.name, pool, effects: [], text: formatDownfallText(item.text), rule: formatDownfallText(item.text),
       ...(base?.cost === undefined ? {} : { cost: base.cost }),
     }
     if (rule.kind === 'abilities') {
@@ -732,7 +733,7 @@ for (const item of DOWNFALL_POTIONS) {
     effects: rule.kind === 'effects' ? [...rule.effects] : [],
     target: id === 'greed_potion' ? 'enemy' : undefined,
     supportTarget: id === 'whale_ale' ? 'allPlayers' : undefined,
-    text: item.text,
+    text: formatDownfallText(item.text),
   }
 }
 

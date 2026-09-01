@@ -2,7 +2,7 @@ import { shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
 import type { RuleSet } from './meta.ts'
 import type { CharacterId } from './types.ts'
-import { HEARTS_BOONS } from './downfall/items.ts'
+import { formatDownfallText, HEARTS_BOONS } from './downfall/items.ts'
 
 export type NeowRewardKind = 'card' | 'rare' | 'colorless' | 'potion' | 'relic'
 
@@ -110,17 +110,7 @@ const boonEffects: readonly (readonly [NeowEffect[], NeowEffect[], NeowEffect[]]
 ]
 
 export function formatHeartBoonLabel(label: string): string {
-  return label
-    .replace(/(?:(\d+) )?\[yellow-card-reward\]/g, (_token, count?: string) =>
-      count ? `${count} Rare Card Reward${count === '1' ? '' : 's'}` : 'a Rare Card Reward')
-    .replace(/(?:(\d+) )?\[up-arrow-card-reward\]/g, (_token, count?: string) =>
-      count ? `${count} Upgraded Card Reward${count === '1' ? '' : 's'}` : 'an Upgraded Card Reward')
-    .replace(/(?:(\d+) )?\[card-reward\]/g, (_token, count?: string) =>
-      count ? `${count} Card Reward${count === '1' ? '' : 's'}` : 'a Card Reward')
-    .replace(/(?:(\d+) )?\[relic\]/g, (_token, count?: string) =>
-      count ? `${count} Relic${count === '1' ? '' : 's'}` : 'a Relic')
-    .replace(/(?:(\d+) )?\[potion\]/g, (_token, count?: string) =>
-      `${count ? `${count} ` : ''}${count === undefined || count === '1' ? 'Potion' : 'Potions'}`)
+  return formatDownfallText(label)
 }
 
 export const HEARTS_BOON_CARDS: readonly NeowCard[] = HEARTS_BOONS.map((boon, index) => ({

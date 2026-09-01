@@ -13,6 +13,7 @@ import {
   conditionMet,
   downfallRelicBaseId,
   downfallRelicId,
+  formatDownfallText,
   heartBoon,
   heartBoonOptionCosts,
   itemId,
@@ -79,6 +80,23 @@ assert.deepEqual(DOWNFALL_ITEMS_MANIFEST.completenessAudit.totals, {
   manifestRecords: 194,
   unrepresentedPhysicalIndices: 0,
 })
+assert.equal(formatDownfallText('At ?: Gain 2 gold when you enter the room.'),
+  'When you enter an Event room: Gain 2 Gold.')
+assert.equal(formatDownfallText('Start of combat: 2 [block].'), 'Start of combat: Gain 2 Block.')
+assert.equal(formatDownfallText('[vulnerable] to all players.'), 'Apply 1 Vulnerable to all players.')
+assert.equal(formatDownfallText('ALL players gain 2 potions and 3 gold.'),
+  'All players gain 2 Potions and 3 Gold.')
+assert.equal(formatDownfallText('If you have any [dazed], [burn], [slimed], or Curses in your hand.'),
+  'If you have any Dazed, Burn, Slimed, or Curses in your hand.')
+assert.equal(formatDownfallText('[mode-shift] to all players.'), 'All players Mode Shift.')
+assert.equal(formatDownfallText('Each player reveals one of their [treasure].'),
+  'Each player reveals one of their Relics.')
+assert.equal(formatDownfallText('Add [treasure] to all combat rewards.'),
+  'Add a Relic to all combat rewards.')
+assert.equal(formatDownfallText('Your 0 cost Attacks deal +1 damage on each [damage]. (Include X.)'),
+  'Your 0 cost Attacks deal +1 damage per damage icon. (Include X.)')
+assert.equal(formatDownfallText('1 [damage], 1 [damage], 1 [damage]. Treat each [damage] as a separate 0 cost Attack.'),
+  'Deal 1 damage three times. Treat each hit as a separate 0 cost Attack.')
 
 const ids = physicalCardIds()
 assert.equal(ids.length, 242)
@@ -231,7 +249,7 @@ for (const [name, id] of Object.entries(variantIds)) {
   assert.equal(downfallRelicBaseId(id), itemId(name))
   assert.equal(resolveNamed(name === 'Enchiridion' || name === 'Snecko Eye' || name === 'Wrist Blade'
     ? DOWNFALL_BOSS_RELICS : DOWNFALL_RELICS, name, true).kind, 'downfall')
-  assert.equal(RELICS[id].text, [...DOWNFALL_RELICS, ...DOWNFALL_BOSS_RELICS].find((item) => item.name === name).text)
+  assert.equal(RELICS[id].text, formatDownfallText([...DOWNFALL_RELICS, ...DOWNFALL_BOSS_RELICS].find((item) => item.name === name).text))
   assert.equal(RELICS[id].cost, RELICS[itemId(name)].cost, `${name} keeps its physical merchant price`)
 }
 assert.ok(Object.values(variantIds).slice(0, 7).every((id) => DOWNFALL_RELIC_DECK.includes(id)))
@@ -275,6 +293,10 @@ for (const id of sourceUnknownPotionIds) {
   assert.ok(POTIONS[id].effects.length > 0 || SPECIAL_POTION_RUNTIME_IDS.has(id),
     `${id} is registered without a generic Effect or a native runtime dispatcher`)
 }
+assert(Object.values(RELICS).every(({ text, rule }) => !/\[[a-z][^\]]*\]/.test(`${text} ${rule ?? ''}`)),
+  'registered relic prose must not expose icon transcription tokens')
+assert(Object.values(POTIONS).every(({ text }) => !/\[[a-z][^\]]*\]/.test(text)),
+  'registered potion prose must not expose icon transcription tokens')
 assert.equal(SPECIAL_POTION_RUNTIME_IDS.size, 8, 'all eight non-generic prototype Potions have native dispatch')
 
 assert.equal(HEARTS_BOON_CARDS.length, 20)
@@ -286,6 +308,8 @@ for (const [index, card] of HEARTS_BOON_CARDS.entries()) {
   assert.deepEqual(card.options.map(({ label }) => label), HEARTS_BOONS[index].options.map(formatHeartBoonLabel))
   assert.ok(card.options.every(({ effects }) => effects.length > 0), `${card.id} has an unresolved option`)
 }
+assert(HEARTS_BOON_CARDS.every((card) => card.options.every(({ label }) => !/\[[a-z][^\]]*\]/.test(label))),
+  'Heart Boon labels must not expose icon transcription tokens')
 const mixedDeal = dealBlessings(createRng(47), [
   { id: 'base', character: 'ironclad' }, { id: 'downfall', character: 'guardian' },
 ], false, 'downfall')

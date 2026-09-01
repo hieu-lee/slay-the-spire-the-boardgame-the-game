@@ -48,7 +48,6 @@ const enemyRoot = join(publicRoot, 'assets/enemies')
 const combatEnemyRoot = join(publicRoot, 'assets/combat/enemies')
 const bossAnimationRoot = join(combatEnemyRoot, 'animations')
 const combatCharacterRoot = join(publicRoot, 'assets/combat/characters')
-const campfireCharacterRoot = join(publicRoot, 'assets/noncombat/campfire')
 const merchantCharacterRoot = join(publicRoot, 'assets/noncombat/merchant/characters')
 const combatVfxRoot = join(publicRoot, 'assets/combat/vfx')
 const combatActionVfxRoot = join(combatVfxRoot, 'actions')
@@ -75,7 +74,6 @@ const enemyFiles = listing(enemyRoot, '.webp')
 const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
 const bossAnimationFiles = listing(bossAnimationRoot, '.webp')
 const combatCharacterFiles = listing(combatCharacterRoot, '.webp')
-const campfireCharacterFiles = listing(campfireCharacterRoot, '-back.webp')
 const merchantCharacterFiles = listing(merchantCharacterRoot, '-standing.webp')
 const combatVfxFiles = listing(combatVfxRoot, '.webp')
 const combatActionVfxFiles = listing(combatActionVfxRoot, '.webp')
@@ -90,7 +88,7 @@ const optionalRelicIconFiles = new Set(['hexaghost_starting_relic.png'])
 const requiredRelicIconFiles = relicIconFiles.filter((file) => !optionalRelicIconFiles.has(file))
 const potionIconFiles = listing(potionIconRoot, '.png')
 const compendiumIconFiles = listing(compendiumIconRoot, '.webp')
-const campfireSceneFiles = listing(campfireRoot, '.png')
+const campfireSceneFiles = [...listing(campfireRoot, '_firecamp.png'), ...listing(campfireRoot, '_firecamp.webp')]
 
 const cardIndex = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json'), 'utf8'))
 
@@ -125,7 +123,6 @@ const ENEMY_CUTOUT_EDGE = [256, 512]
 const CHARACTER_HERO_EDGE = [700, 1536]
 /** Every other character cutout: combat seats, roster thumbs, lobby seats. */
 const CHARACTER_CUTOUT_EDGE = [256, 512]
-const CAMPFIRE_CHARACTER_EDGE = [512, 816]
 const MERCHANT_CHARACTER_EDGE = [256, 576]
 const DIE_ICON_EDGE = 128
 /** Matches THUMB_WIDTH in scripts/sync-card-assets.mjs. */
@@ -140,22 +137,34 @@ const REQUIRED_ICONS = [
 
 suite('assets')
 
-check('every campfire party resolves to one complete wide PNG scene', () => {
-  const characters = ['ironclad', 'silent', 'defect', 'watcher']
-  const expected = Array.from({ length: 15 }, (_, index) => characters
-    .filter((_, characterIndex) => (index + 1) & (1 << characterIndex)))
-    .map((party) => campfireScenePath(party).split('/').pop())
-    .sort()
+check('every campfire party resolves to one complete wide scene', () => {
+  const characters = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit']
+  const parties = []
+  const choose = (start, party) => {
+    if (party.length > 0) parties.push([...party])
+    if (party.length === 4) return
+    for (let index = start; index < characters.length; index += 1) {
+      party.push(characters[index])
+      choose(index + 1, party)
+      party.pop()
+    }
+  }
+  choose(0, [])
+  const expected = parties.map((party) => campfireScenePath(party).split('/').pop()).sort()
   const scenes = [...expected, 'empty_firecamp.png'].sort()
   assertDeepEqual(campfireSceneFiles.sort(), scenes)
   for (const file of scenes) {
-    const bytes = readFileSync(join(campfireRoot, file))
-    assert(bytes.subarray(1, 4).toString() === 'PNG', `${file} is not a PNG`)
-    assert(bytes.readUInt32BE(16) === 1672 && bytes.readUInt32BE(20) === 941,
-      `${file} is not 1672x941`)
+    if (file.endsWith('.png')) {
+      const bytes = readFileSync(join(campfireRoot, file))
+      assert(bytes.subarray(1, 4).toString() === 'PNG', `${file} is not a PNG`)
+      assert(bytes.readUInt32BE(16) === 1672 && bytes.readUInt32BE(20) === 941, `${file} is not 1672x941`)
+    } else {
+      const info = spawnSync('webpinfo', ['-summary', join(campfireRoot, file)], { encoding: 'utf8' })
+      assert(info.status === 0 && /Width: 1672[\s\S]*Height: 941/.test(info.stdout), `${file} is not 1672x941 WebP`)
+    }
   }
-  assert(scenes.reduce((bytes, file) => bytes + statSync(join(campfireRoot, file)).size, 0) < 32 * 1024 * 1024,
-    'campfire scenes exceed 32 MiB')
+  assert(scenes.reduce((bytes, file) => bytes + statSync(join(campfireRoot, file)).size, 0) < 96 * 1024 * 1024,
+    'campfire scenes exceed 96 MiB')
 })
 
 check('sound effects are complete, compact, and decodable', () => {
@@ -856,23 +865,14 @@ print(json.dumps(faults))
   }
 })
 
-check('Downfall noncombat poses are complete, transparent, and edge-capped', () => {
-  const base = ['ironclad', 'silent', 'defect', 'watcher']
+check('Downfall merchant poses are complete, transparent, and edge-capped', () => {
   const downfall = ['guardian', 'hermit', 'hexaghost', 'slime_boss']
-  assertDeepEqual(
-    campfireCharacterFiles.sort(),
-    [...base, ...downfall].map((id) => `${id}-back.webp`).sort(),
-    'mixed-party campfire pose inventory',
-  )
   assertDeepEqual(
     merchantCharacterFiles.filter((file) => downfall.some((id) => file === `${id}-standing.webp`)).sort(),
     downfall.map((id) => `${id}-standing.webp`).sort(),
     'Downfall merchant pose inventory',
   )
-  const groups = [
-    [campfireCharacterRoot, [...base, ...downfall].map((id) => `${id}-back.webp`), CAMPFIRE_CHARACTER_EDGE],
-    [merchantCharacterRoot, downfall.map((id) => `${id}-standing.webp`), MERCHANT_CHARACTER_EDGE],
-  ]
+  const groups = [[merchantCharacterRoot, downfall.map((id) => `${id}-standing.webp`), MERCHANT_CHARACTER_EDGE]]
   for (const [root, names, [floor, cap]] of groups) {
     const result = spawnSync('webpinfo', ['-summary', ...names.map((file) => join(root, file))], { encoding: 'utf8' })
     assert(result.status === 0, result.stderr || 'could not inspect Downfall noncombat poses')
@@ -1028,6 +1028,14 @@ check('generated status, relic, and potion icons have transparent backgrounds', 
 import sys, json
 from PIL import Image
 faults = []
+restored_relics = {
+    "battle_buddies.png", "black_powder.png", "chronometer.png", "clasped_locket.png",
+    "dented_plate.png", "dueling_glove.png", "forbidden_fruit.png", "fuel_canister.png",
+    "greed_ooze.png", "knowing_skull.png", "kunai.png", "makeshift_battery.png",
+    "pantograph.png", "potion_belt.png", "sack_of_gems.png", "shot_glass.png",
+    "shuriken.png", "snecko_egg.png", "straight_razor.png", "teleportation_stone.png",
+    "the_broken_seal.png", "thimble_helm.png", "unceasing_top.png", "wheel_of_change.png",
+}
 for name in sys.argv[1:]:
     alpha = Image.open(name).convert("RGBA").getchannel("A")
     w, h = alpha.size
@@ -1039,6 +1047,8 @@ for name in sys.argv[1:]:
         faults.append(f"{name}: corners={corners}, visible={visible:.3f}")
     elif "/potion-icons/" in name.replace("\\\\", "/") and bbox and min(bbox[0], bbox[1], w - bbox[2], h - bbox[3]) < 8:
         faults.append(f"{name}: alpha bounds {bbox} still contain the old inventory tile")
+    elif name.replace("\\\\", "/").split("/")[-1] in restored_relics and (visible > 0.5 or not bbox or min(bbox[0], bbox[1], w - bbox[2], h - bbox[3]) < 8):
+        faults.append(f"{name}: visible={visible:.3f}, alpha bounds={bbox}; relic still looks like a framed tile")
 print(json.dumps(faults))
 `
   const result = spawnSync('python3', ['-c', probe, ...files], { encoding: 'utf8' })
@@ -1124,7 +1134,8 @@ check('every artwork file fully decodes', () => {
     [powerIconRoot, 'png', powerIconFiles.length],
     [relicIconRoot, 'png', relicIconFiles.length],
     [potionIconRoot, 'png', potionIconFiles.length],
-    [campfireRoot, 'png', campfireSceneFiles.length],
+    [campfireRoot, 'png', listing(campfireRoot, '.png').length],
+    [campfireRoot, 'webp', listing(campfireRoot, '.webp').length],
   ]) {
     if (count === 0) continue
     const result = spawnSync('ffmpeg', [

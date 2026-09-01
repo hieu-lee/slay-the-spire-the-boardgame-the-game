@@ -1,4 +1,5 @@
 import type { EventCard, EventEffect, EventOption } from '../events.ts'
+import { formatDownfallText } from './items.ts'
 
 /** Official public-v1.47 Downfall event decks from the decoded TTS save. */
 export const DOWNFALL_EVENT_SOURCE = {
@@ -185,13 +186,13 @@ export const DOWNFALL_EVENTS: readonly DownfallEventDef[] = DOWNFALL_EVENT_SOURC
   scope: eventScope(event),
   route: eventRoute(event),
   firstEventRedraw: [event.setup_text, event.routing_text].some((text) => text?.includes('If this is the first [event]')),
-  choices: event.choices.map((choice) => ({ ...choice, id: slug(choice.label), effects: eventEffects(`downfall_event_act${event.act}_${slug(event.title)}`, choice.label) })),
+  choices: event.choices.map((choice) => ({ ...choice, outcome: formatDownfallText(choice.outcome), id: slug(choice.label), effects: eventEffects(`downfall_event_act${event.act}_${slug(event.title)}`, choice.label) })),
   options: event.choices.length > 0
-    ? event.choices.map((choice) => ({ id: slug(choice.label), label: choice.label, description: choice.outcome, effects: eventEffects(`downfall_event_act${event.act}_${slug(event.title)}`, choice.label) }))
+    ? event.choices.map((choice) => ({ id: slug(choice.label), label: choice.label, description: formatDownfallText(choice.outcome), effects: eventEffects(`downfall_event_act${event.act}_${slug(event.title)}`, choice.label) }))
     : [{
       id: eventRoute(event) === 'merchant' ? 'shop' : 'fight',
       label: eventRoute(event) === 'merchant' ? 'Shop' : 'Fight!',
-      description: event.routing_text ?? '',
+      description: formatDownfallText(event.routing_text ?? ''),
       effects: [fx(eventRoute(event) === 'merchant' ? 'merchant' : 'combat', eventRoute(event) === 'encounter' ? { room: 'encounter' } : {})],
     }],
 }))
@@ -222,8 +223,8 @@ export const DOWNFALL_EVENT_CARDS: readonly EventCard[] = DOWNFALL_PHYSICAL_EVEN
   const event = DOWNFALL_EVENTS_BY_ID[physical.eventId]!
   return {
     id: event.id, name: event.name, scope: event.scope,
-    prompt: event.flavor_text ?? event.setup_text ?? event.routing_text,
-    options: event.options, rule: event.setup_text ?? event.routing_text,
+    prompt: formatDownfallText(event.flavor_text ?? event.setup_text ?? event.routing_text ?? ''),
+    options: event.options, rule: formatDownfallText(event.setup_text ?? event.routing_text ?? ''),
     instanceId: physical.id, act: physical.act, minAscension: 3,
     requiresColorlessUnlock: false, firstEventRedraw: event.firstEventRedraw,
   }
