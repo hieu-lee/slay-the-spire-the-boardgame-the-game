@@ -436,7 +436,7 @@ function starterDefend(owner: CharacterId): CardDef {
 export const CARDS: Record<string, CardDef> = {
   strike_silent: starterStrike('silent'),
   defend_silent: starterDefend('silent'),
-  strike_defect: starterStrike('defect'),
+  strike_defect: { ...starterStrike('defect'), upgrade: { cost: 0 } },
   defend_defect: starterDefend('defect'),
   strike_watcher: starterStrike('watcher'),
   defend_watcher: starterDefend('watcher'),

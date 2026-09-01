@@ -489,6 +489,15 @@ check('enemy Block absorbs damage before HP', () => {
   assertEqual(next.enemies[0].hp, 5, 'Strike+ deals 2, one absorbed by Block')
 })
 
+check('Defect Strike+ costs 0 and keeps its printed 1 damage', () => {
+  const strike = instance('strike_defect', true)
+  const next = playCard(combat([
+    makePlayer({ character: 'defect', hand: [strike], energy: 0 }),
+  ], [makeEnemy({ hp: 2 })]), 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(next.enemies[0].hp, 1)
+  assertEqual(next.players[0].energy, 0)
+})
+
 check('an enemy reduced to zero HP dies and combat is won', () => {
   const strike = instance('strike_ironclad')
   const state = combat([makePlayer({ hand: [strike] })], [makeEnemy({ hp: 1 })])
