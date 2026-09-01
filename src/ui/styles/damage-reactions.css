@@ -397,6 +397,10 @@
     --card-width: clamp(4.75rem, 13vh, 5.75rem);
   }
 
+  .combat {
+    --combat-bar-height: 3.5rem;
+  }
+
   .card-face__rules {
     padding: 2.5%;
     line-height: 1.05;
@@ -407,7 +411,7 @@
   }
 
   .combat__bar {
-    min-height: 2.55rem;
+    min-height: var(--combat-bar-height);
     padding: 0.35rem 0.55rem;
   }
 

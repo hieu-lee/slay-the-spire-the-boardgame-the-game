@@ -22,6 +22,8 @@ type EnemyCardProps = {
   die: number
   acting?: boolean
   animateBoss?: boolean
+  /** A player attack is still presenting; bosses begin only after it clears. */
+  deferBossAttack?: boolean
   targeted?: boolean
   disabled?: boolean
   hitBeats?: { beat: number; damage: number; delayMs: number }[]
@@ -271,6 +273,7 @@ export function EnemyCard({
   die,
   acting = false,
   animateBoss = false,
+  deferBossAttack = false,
   targeted = false,
   disabled = false,
   hitBeats = [],
@@ -295,26 +298,28 @@ export function EnemyCard({
     art: string
     artId: string
   } | null>(null)
+  const [awaitingNextEnemyPhase, setAwaitingNextEnemyPhase] = useState(acting)
   const displayBeat = useRef(0)
   const displayedEventSeq = useRef(visualEventSeq)
   const visualSignature = JSON.stringify(enemy)
   const priorActual = useRef({
     signature: visualSignature, eventSeq: visualEventSeq, resetKey: visualResetKey,
   })
+  const resetVisuals = !stageVisualDamage || visualResetKey !== priorActual.current.resetKey
   useEffect(() => {
     const changed = visualSignature !== priorActual.current.signature
     const newEvent = visualEventSeq > priorActual.current.eventSeq
-    const reset = visualResetKey !== priorActual.current.resetKey
     priorActual.current = {
       signature: visualSignature, eventSeq: visualEventSeq, resetKey: visualResetKey,
     }
-    if (reset || !stageVisualDamage) {
+    if (resetVisuals) {
       for (const timer of displayTimers.current.values()) clearTimeout(timer)
       displayTimers.current.clear()
       pendingVisuals.current.clear()
       if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
       bossAttackTimer.current = null
       setPresentedBossAttack(null)
+      setAwaitingNextEnemyPhase(acting)
       displayedEventSeq.current = visualEventSeq
       setVisibleEnemy(enemy)
       return
@@ -348,7 +353,7 @@ export function EnemyCard({
       displayedEventSeq.current = pending.eventSeq
       setVisibleEnemy(pending.enemy)
     }, delay))
-  }, [enemy, stageVisualDamage, visualContactMs, visualEventSeq, visualResetKey, visualSignature])
+  }, [acting, enemy, resetVisuals, visualContactMs, visualEventSeq, visualResetKey, visualSignature])
   useEffect(() => () => {
     for (const timer of displayTimers.current.values()) clearTimeout(timer)
     pendingVisuals.current.clear()
@@ -360,8 +365,13 @@ export function EnemyCard({
   const animatedBoss = Boolean(visibleEnemy.isBoss && animateBoss && !visibleEnemy.dead)
   const currentBossArtId = def.artId ?? def.id
   const currentBossAttackArt = bossAnimationImagePath(def, 'attack')
-  const bossAttackTriggered = Boolean(animatedBoss && acting &&
+  const bossAttackRequested = Boolean(animatedBoss && acting &&
     actions.some((action) => action.kind === 'attack' || action.kind === 'attackSequence'))
+  useLayoutEffect(() => {
+    if (!acting) setAwaitingNextEnemyPhase(false)
+  }, [acting])
+  const bossAttackTriggered = bossAttackRequested && !deferBossAttack &&
+    !resetVisuals && !awaitingNextEnemyPhase
   const bossAttacking = Boolean(animatedBoss && presentedBossAttack)
   useEffect(() => {
     if (!bossAttackTriggered) return

@@ -855,6 +855,9 @@ function CombatScreenView({
     !['slash', 'blunt', 'projectile', 'poison', 'shiv', 'lightning', 'dark', 'debuff']
       .includes(recipe.family))
   const enemyVfxFor = (enemy: Enemy) => activeVfx.filter(({ event }) => event.enemyIds.includes(enemy.uid))
+  // The enemy phase stays open until the prior player attacks clear, so bosses
+  // start after that shared presentation window while player attacks remain concurrent.
+  const characterAttacksActive = !prefersReducedMotion && activeVfx.some(isCharacterAttack)
   const [characterAttacks, setCharacterAttacks] = useState<Record<string, CharacterAttackMotion[]>>({})
   useLayoutEffect(() => {
     const board = boardRef.current
@@ -1972,6 +1975,7 @@ function CombatScreenView({
 
   useEffect(() => {
     if (!autoAdvance || voluntaryActionsBlocked || state.phase !== 'enemy' && state.phase !== 'roundEnd') return undefined
+    if (state.phase === 'enemy' && characterAttacksActive) return undefined
     let cancelled = false
     const timer = window.setTimeout(async () => {
       const shouldRetry = (outcome: ActionOutcome | void) => outcome && (
@@ -1996,7 +2000,8 @@ function CombatScreenView({
       } else onChange?.(startPlayerTurnWithChoices(state))
     }, 730)
     return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [autoAdvance, autoAdvanceRetry, authoritativeRefresh, state.phase, state.turn, voluntaryActionsBlocked])
+  }, [autoAdvance, autoAdvanceRetry, authoritativeRefresh, characterAttacksActive, state.phase, state.turn,
+    voluntaryActionsBlocked])
 
   function finishTurn() {
     if (chamberClosing) return
@@ -5158,6 +5163,7 @@ function CombatScreenView({
                 die={state.die}
                 acting={state.phase === 'enemy' && !prefersReducedMotion}
                 animateBoss={!prefersReducedMotion}
+                deferBossAttack={characterAttacksActive}
                 falling={falling.has(enemy.uid)}
                 visualContactMs={prefersReducedMotion ? 0 : characterAttackContactMs(state, enemy.uid,
                   latestTargetPresentationEvent(state.presentationEvents, enemy.uid))}

@@ -12,7 +12,7 @@
   display: flex;
   align-items: center;
   gap: 0.4rem 1rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
   font-size: 0.85rem;
   color: var(--ink-dim);
@@ -44,16 +44,23 @@
 
 .combat__actions {
   margin-left: auto;
+  flex: 1;
+  min-width: 0;
   display: flex;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
   justify-content: flex-end;
 }
+
+.combat__actions::-webkit-scrollbar { display: none; }
 
 .combat__result {
   position: absolute;
   z-index: 80;
-  top: 3.2rem;
+  top: calc(var(--combat-bar-height) + 0.25rem);
   right: 0;
   left: 0;
   margin: 0;
