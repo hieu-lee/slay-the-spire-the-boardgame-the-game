@@ -318,6 +318,90 @@ try {
   await page.waitForTimeout(0)
   check(await page.locator('.hand .card').count() === 20,
     'an out-and-back hand scroll emitted a card-playing click')
+
+  await page.evaluate(({ base }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(base)
+    run.combat.combatId = `${run.combat.combatId}-stable-layout`
+    run.combat.phase = 'player'
+    run.combat.players[0].potions = ['weak_potion']
+    debug.setRun(run)
+  }, { base: template.combat })
+  await page.getByRole('button', { name: 'Use Weak Potion' }).waitFor()
+  const stageBounds = () => page.locator('.combat').evaluate((combat) => {
+    const box = (selector) => combat.querySelector(selector).getBoundingClientRect().toJSON()
+    return { board: box('.board'), seat: box('.seat') }
+  })
+  const potionStage = await stageBounds()
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.players[0].potions = []
+    debug.setRun(run)
+  })
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Use Weak Potion"]'))
+  const plainStage = await stageBounds()
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.phase = 'won'
+    debug.setRun(run)
+  })
+  await page.locator('.combat__result--won').waitFor()
+  const victoryStage = await stageBounds()
+  for (const [name, stage] of [['no potion', plainStage], ['victory', victoryStage]]) {
+    check(['top', 'bottom', 'height'].every((key) =>
+      Math.abs(stage.board[key] - potionStage.board[key]) <= 1 &&
+      Math.abs(stage.seat[key] - potionStage.seat[key]) <= 1),
+    `${name} shifted the combat stage ${JSON.stringify({ potionStage, stage })}`)
+  }
+  const victoryHud = await page.locator('.combat').evaluate((combat) => {
+    const box = (selector) => combat.querySelector(selector).getBoundingClientRect().toJSON()
+    return { bar: box('.combat__bar'), result: box('.combat__result') }
+  })
+  check(victoryHud.result.top >= victoryHud.bar.bottom - 1,
+    `Victory banner overlaps the HUD ${JSON.stringify(victoryHud)}`)
+  await page.locator('.combat').screenshot({ path: join(output, `desktop-${browserName}-stable-victory-stage.png`) })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.evaluate(({ base }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(base)
+    run.combat.phase = 'player'
+    Object.assign(run.combat.players[0], {
+      character: 'slime_boss', name: 'Slime Boss',
+      slimes: [{ card: { uid: 'animation-hud-slime', defId: 'slime_boss_bruiser_slime', upgraded: false },
+        level: 2, vigor: 3, commandsThisTurn: 1, vigorLossAtEndOfTurn: 0 }],
+    })
+    debug.setRun(run)
+  }, { base: template.combat })
+  await page.locator('.combat__slime-status').waitFor()
+  const compactSlimeHud = await page.locator('.combat__bar').evaluate((bar) => {
+    const box = (element) => element?.getBoundingClientRect().toJSON()
+    return {
+      bar: box(bar), status: box(bar.querySelector('.combat__slime-status')),
+      actions: box(bar.querySelector('.combat__actions')), width: document.documentElement.scrollWidth,
+    }
+  })
+  check(compactSlimeHud.status.bottom <= compactSlimeHud.bar.bottom + 1 &&
+    compactSlimeHud.status.top >= compactSlimeHud.actions.bottom - 1 && compactSlimeHud.width <= 391,
+  `mobile Slime Boss HUD wrapped, clipped, or overflowed ${JSON.stringify(compactSlimeHud)}`)
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.phase = 'won'
+    debug.setRun(run)
+  })
+  await page.locator('.combat__result--won').waitFor()
+  const compactSlimeResult = await page.locator('.combat').evaluate((combat) => {
+    const box = (selector) => combat.querySelector(selector).getBoundingClientRect().toJSON()
+    return { status: box('.combat__slime-status'), result: box('.combat__result') }
+  })
+  check(compactSlimeResult.result.top >= compactSlimeResult.status.bottom - 1,
+    `mobile result overlaps the Slime Boss HUD ${JSON.stringify(compactSlimeResult)}`)
+  await page.setViewportSize({ width: 1440, height: 900 })
+
   const bossIds = [
     'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'corrupt_heart',
     'deca', 'donu', 'guardian_attack', 'guardian_defensive', 'hexaghost', 'slime_boss',
@@ -535,6 +619,95 @@ try {
   let timingActionIndex = 0
   while (timingActionIndex < 8 && !actionsForEnemy({ ...timingBoss, actionIndex: timingActionIndex }, template.combat.die)
     .some((action) => action.kind === 'attack' || action.kind === 'attackSequence')) timingActionIndex++
+  await page.evaluate(({ base, enemy, actionIndex }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(base)
+    run.combat.combatId = `${run.combat.combatId}-mounted-enemy-snapshot`
+    run.combat.enemies = [{ ...enemy, uid: 'mounted-enemy-snapshot', actionIndex }]
+    run.combat.phase = 'enemy'
+    debug.setRun(run)
+  }, { base: template.combat, enemy: timingBoss, actionIndex: timingActionIndex })
+  const mountedSnapshotBoss = page.locator('.enemy--boss[data-enemy-id="mounted-enemy-snapshot"]')
+  await mountedSnapshotBoss.waitFor()
+  await page.waitForFunction(() =>
+    document.querySelector('.enemy--boss[data-enemy-id="mounted-enemy-snapshot"]')?.getAttribute('data-animation') === 'idle')
+  await page.waitForTimeout(100)
+  check(await mountedSnapshotBoss.getAttribute('data-animation') === 'idle',
+    'mounting an enemy-phase snapshot replayed the boss attack')
+  await setPhase('player')
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase === 'player')
+  await setPhase('enemy')
+  await page.waitForFunction(() =>
+    document.querySelector('.enemy--boss[data-enemy-id="mounted-enemy-snapshot"]')?.getAttribute('data-animation') === 'attack')
+  await page.evaluate(({ base, enemy, actionIndex }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(base)
+    run.combat.combatId = `${run.combat.combatId}-boss-restore`
+    run.combat.enemies = [{ ...enemy, actionIndex }]
+    run.combat.phase = 'player'
+    debug.setRun(run)
+  }, { base: template.combat, enemy: timingBoss, actionIndex: timingActionIndex })
+  await page.waitForFunction(() =>
+    document.querySelector('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')?.getAttribute('data-animation') === 'idle')
+  await setPhase('enemy')
+  await page.waitForFunction(() =>
+    document.querySelector('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')?.getAttribute('data-animation') === 'attack')
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.combatId = `${run.combat.combatId}-restored`
+    debug.setRun(run)
+  })
+  await page.waitForFunction(() =>
+    document.querySelector('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')?.getAttribute('data-animation') === 'idle')
+  await page.waitForTimeout(100)
+  check(await page.locator('.enemy--boss[data-enemy-def="awakened_one_phase_1"]').getAttribute('data-animation') === 'idle',
+    'restoring an enemy-phase snapshot replayed the boss attack')
+  await page.evaluate(({ base, enemy, actionIndex }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(base)
+    run.combat.combatId = `${run.combat.combatId}-boss-after-heroes`
+    const ironclad = run.combat.players[0]
+    const silent = { ...ironclad, id: 'sequence-silent', row: ironclad.row + 1,
+      character: 'silent', name: 'Silent' }
+    run.combat.players = [ironclad, silent]
+    run.combat.enemies = [{ ...enemy, actionIndex }]
+    run.combat.phase = 'player'
+    run.combat.presentationEvents = []
+    debug.setRun(run)
+  }, { base: template.combat, enemy: timingBoss, actionIndex: timingActionIndex })
+  const sequencingBoss = page.locator('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')
+  await page.waitForFunction(() =>
+    document.querySelector('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')?.getAttribute('data-animation') === 'idle')
+  await page.locator('.seat[data-player-id="sequence-silent"]').waitFor()
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const [ironclad, silent] = run.combat.players
+    const target = run.combat.enemies[0]
+    run.combat.presentationEvents = [
+      { seq: 1_800_001, kind: 'card', actorId: ironclad.id, sourceId: 'strike_ironclad',
+        enemyIds: [target.uid], playerIds: [], upgraded: false, copied: false, energy: 1 },
+      { seq: 1_800_002, kind: 'card', actorId: silent.id, sourceId: 'predator',
+        enemyIds: [target.uid], playerIds: [], upgraded: false, copied: false, energy: 1 },
+    ]
+    run.combat.phase = 'enemy'
+    debug.setRun(run)
+  })
+  await page.locator('.character-attack--ironclad, .character-attack--silent').first().waitFor()
+  await page.waitForTimeout(1_900)
+  check(await sequencingBoss.getAttribute('data-animation') === 'idle' &&
+    await page.locator('.character-attack').count() > 0 &&
+    await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.phase === 'enemy'),
+  'boss attack overlapped the concurrent character attacks')
+  await page.waitForFunction(() =>
+    document.querySelector('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')?.getAttribute('data-animation') === 'attack')
+  check(await page.locator('.character-attack').count() === 0,
+    'boss attack began before every character attack presentation completed')
+
   const watcherTimingBoss = { ...timingBoss, uid: 'watcher-timing-boss', defId: 'downfall_wrathful' }
   let watcherTimingActionIndex = 0
   while (watcherTimingActionIndex < 8 && !actionsForEnemy(
@@ -1421,11 +1594,17 @@ try {
     run.combat.players = [run.combat.players[0]]
     Object.assign(run.combat.players[0], { hp: 999, maxHp: 999, dead: false })
     run.combat.enemies = [{ ...enemy, uid: 'iphone-boss', actionIndex, hp: 999, maxHp: 999, dead: false }]
-    run.combat.phase = 'enemy'
+    run.combat.phase = 'player'
     debug.setRun(run)
   }, { base: phoneFixture, enemy: timingBoss, actionIndex: timingActionIndex })
   const phoneBoss = phone.locator('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')
   await phoneBoss.locator('.enemy__art--cutout').waitFor()
+  await phone.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.phase = 'enemy'
+    debug.setRun(run)
+  })
   await phone.waitForFunction(() =>
     document.querySelector('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')?.getAttribute('data-animation') === 'attack')
   const iphoneBossAnimation = await phoneBoss.evaluate((boss) => ({

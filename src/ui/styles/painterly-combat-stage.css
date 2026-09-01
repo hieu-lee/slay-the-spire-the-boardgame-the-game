@@ -27,6 +27,7 @@
 }
 
 .combat {
+  --combat-bar-height: 4rem;
   position: relative;
   isolation: isolate;
   gap: 0;
@@ -41,7 +42,7 @@
 .combat__bar {
   position: relative;
   z-index: 70;
-  min-height: 2.9rem;
+  min-height: var(--combat-bar-height);
   padding: 0.5rem clamp(0.75rem, 2vw, 2rem);
   color: #dfd4bb;
   background: none;
@@ -83,6 +84,10 @@
 }
 
 @media (max-width: 480px) {
+  .combat:has(.combat__slime-status) { --combat-bar-height: 6rem; }
+
+  .combat__bar:has(.combat__slime-status) { flex-wrap: wrap; }
+
   .combat__slime-status {
     order: 4;
     width: 100%;
