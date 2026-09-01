@@ -72,7 +72,10 @@
   animation-duration: var(--silent-attack-duration, 1900ms);
   animation-timing-function: linear;
 }
-.seat.seat--attack-hexaghost .seat__portrait > img { animation-duration: 2000ms; }
+.seat.seat--attack-hexaghost .seat__portrait > img { animation: none; }
+.seat.seat--attack-hexaghost:has(.character-attack__pose--hexaghost-state.is-loaded) .seat__portrait > img {
+  animation: attack-downfall-hexaghost 2000ms both;
+}
 
 .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
 .seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
@@ -84,7 +87,6 @@
 .seat--attack-slime_boss .seat__portrait > img,
 .seat--attack-guardian .seat__portrait > img,
 .seat--attack-hermit .seat__portrait > img { animation-name: attack-downfall; }
-.seat--attack-hexaghost .seat__portrait > img { animation-name: attack-downfall-hexaghost; }
 
 .seat--attack-ironclad .character-attack--ironclad {
   animation-duration: 1800ms;
@@ -140,10 +142,8 @@
 }
 
 @keyframes attack-downfall-hexaghost {
-  0%, 72.49% { opacity: 0; transform: translateY(0) scale(1); }
-  72.5%, 100% { opacity: 1; }
-  84% { transform: translateY(1%) scale(0.99, 1.01); }
-  92% { transform: translateY(-1%) scale(1.01, 0.99); }
+  0%, 99.99% { opacity: 0; }
+  100% { opacity: 1; }
 }
 
 .character-attack {
@@ -225,11 +225,25 @@
 .character-attack__pose--watcher-cast { animation: watcher-cast-pose 1650ms both; }
 .character-attack__pose--downfall-ready { animation: downfall-ready-pose 1650ms both; }
 .character-attack__pose--downfall-impact { animation: downfall-impact-pose 1650ms both; }
-.character-attack--hexaghost .character-attack__pose--downfall-ready {
-  animation: hexaghost-ready-pose 2000ms both;
+.character-attack__pose--hexaghost-state { opacity: 0; }
+.seat--attack-hexaghost .character-attack__pose--hexaghost-state.is-loaded {
+  animation: hexaghost-state-visibility 2000ms linear both;
 }
-.character-attack--hexaghost .character-attack__pose--downfall-impact {
-  animation: hexaghost-impact-pose 2000ms both;
+.seat--attack-hexaghost .character-attack__pose--hexaghost-state.is-fallback.is-loaded {
+  animation-name: hexaghost-fallback-motion;
+}
+
+@keyframes hexaghost-state-visibility {
+  0%, 99.99% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes hexaghost-fallback-motion {
+  0% { opacity: 1; transform: rotate(-4deg) scale(0.96); }
+  27% { opacity: 1; transform: rotate(7deg) scale(1.05); }
+  45%, 62% { opacity: 1; transform: translateX(3%) scale(1.04, 0.98); }
+  72%, 99.99% { opacity: 1; transform: translateX(0) scale(1); }
+  100% { opacity: 0; }
 }
 
 @keyframes downfall-ready-pose {
@@ -246,22 +260,6 @@
   33.33% { transform: translate(1%, 0) rotate(1deg) scale(1.02); }
   50% { transform: translate(3%, 1%) rotate(2deg) scale(1.04); }
   66.66% { transform: translate(0) rotate(0) scale(1); }
-}
-
-@keyframes hexaghost-ready-pose {
-  0%, 27.49% { opacity: 1; }
-  27.5%, 100% { opacity: 0; }
-  0% { transform: rotate(-4deg) scale(0.96); }
-  14% { transform: rotate(2deg) scale(1.02); }
-  27.49% { transform: rotate(7deg) scale(1.05); }
-}
-
-@keyframes hexaghost-impact-pose {
-  0%, 27.49%, 72.5%, 100% { opacity: 0; }
-  27.5%, 72.49% { opacity: 1; }
-  27.5% { transform: translateX(1%) scale(1.01); }
-  45%, 62% { transform: translateX(3%) scale(1.04, 0.98); }
-  72.49% { transform: translateX(0) scale(1); }
 }
 
 @keyframes ironclad-ready-pose {

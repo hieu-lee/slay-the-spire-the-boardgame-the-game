@@ -554,7 +554,7 @@ check('every boss has transparent idle and left-facing attack animation assets',
   assert(missing.length === 0, `missing boss animations:\n    ${missing.join('\n    ')}`)
 
   const probe = `
-import sys, json, os, subprocess
+import sys, json, os, re, subprocess
 from collections import deque
 from PIL import Image, ImageChops
 faults = []
@@ -590,8 +590,13 @@ for name in sys.argv[3:]:
         continue
     boxes = []
     mux = subprocess.run(["webpmux", "-info", name], check=True, capture_output=True, text=True).stdout
+    loop_match = re.search(r"Loop Count\\s*:\\s*(\\d+)", mux)
+    loop = int(loop_match.group(1)) if loop_match else None
     durations = [int(line.split()[6]) for line in mux.splitlines()
                  if line.lstrip()[:1].isdigit() and line.split()[0].endswith(":" )]
+    one_shot = name.endswith("downfall_pc_watcher-attack.webp") or re.search(r"hexaghost-heat-\\d-attack\\.webp$", name)
+    if one_shot and loop != 1:
+        faults.append(f"{name}: one-shot attack has loop count {loop}")
     for frame in range(im.n_frames):
         im.seek(frame)
         rgba = im.convert("RGBA")
@@ -744,6 +749,9 @@ check('bundled combat cutouts are sized for their render box, with transparency'
     'defect-charge.webp', 'defect-hero.webp', 'defect-release.webp', 'defect.webp',
     'guardian-hero.webp', 'guardian-impact.webp', 'guardian-ready.webp', 'guardian.webp',
     'hermit-hero.webp', 'hermit-impact.webp', 'hermit-ready.webp', 'hermit.webp',
+    ...Array.from({ length: 7 }, (_, heat) => [
+      `hexaghost-heat-${heat}-attack.webp`, `hexaghost-heat-${heat}.webp`,
+    ]).flat(),
     'hexaghost-hero.webp', 'hexaghost-impact.webp', 'hexaghost-ready.webp', 'hexaghost.webp',
     'ironclad-hero.webp', 'ironclad-impact.webp', 'ironclad-ready.webp', 'ironclad.webp',
     'silent-hero.webp', 'silent-throw.webp', 'silent.webp',
@@ -777,7 +785,7 @@ check('bundled combat cutouts are sized for their render box, with transparency'
   assert(faults.length === 0, `invalid combat cutouts:\n    ${faults.join('\n    ')}`)
 
   const probe = `
-import sys, json
+import sys, json, re
 from PIL import Image
 faults = []
 for name in sys.argv[1:]:
@@ -794,12 +802,39 @@ for name in sys.argv[1:]:
         faults.append(f"{label}: less than 5% of its canvas is transparent")
     elif bbox is None or min(bbox[2] - bbox[0], bbox[3] - bbox[1]) < 0.30 * min(w, h) or max(bbox[2] - bbox[0], bbox[3] - bbox[1]) < 0.55 * max(w, h):
         faults.append(f"{label}: visible art is undersized ({bbox})")
+    heat = re.fullmatch(r"hexaghost-heat-(\d)\.webp", label)
+    if heat:
+        pixels = im.load()
+        green = {(x, y) for y in range(h) for x in range(w)
+                 if pixels[x, y][3] > 80 and pixels[x, y][1] > 170
+                 and pixels[x, y][1] > pixels[x, y][0] * 1.25
+                 and pixels[x, y][1] > pixels[x, y][2] * 1.25}
+        components = 0
+        while green:
+            stack = [green.pop()]
+            area = 0
+            while stack:
+                x, y = stack.pop()
+                area += 1
+                for point in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                    if point in green:
+                        green.remove(point)
+                        stack.append(point)
+            components += area > 500
+        if components != int(heat.group(1)):
+            faults.append(f"{label}: expected {heat.group(1)} visible flames, found {components}")
 print(json.dumps(faults))
 `
   const pixelResult = spawnSync('python3', ['-c', probe, ...files], { encoding: 'utf8' })
   assert(pixelResult.status === 0, pixelResult.stderr || 'combat cutout pixel audit requires python3 + Pillow')
   const pixelFaults = JSON.parse(pixelResult.stdout.trim().split('\n').pop())
   assert(pixelFaults.length === 0, `combat cutouts have opaque backgrounds:\n    ${pixelFaults.join('\n    ')}`)
+
+  const flameIcon = readFileSync(join(iconRoot, 'hexaghost-flame.png'))
+  assert(flameIcon.subarray(1, 4).toString() === 'PNG', 'Hexaghost flame action icon is not a PNG')
+  assert(flameIcon.readUInt32BE(16) === 512 && flameIcon.readUInt32BE(20) === 512,
+    'Hexaghost flame action icon is not 512x512')
+  assertEqual(flameIcon[25], 6, 'Hexaghost flame action icon is not RGBA')
 })
 
 check('Downfall noncombat poses are complete, transparent, and edge-capped', () => {

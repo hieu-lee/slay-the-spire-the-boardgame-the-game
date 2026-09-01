@@ -192,6 +192,34 @@ function chargedCardEnergy(def: CardDef, player: Player, card: CardInstance): nu
   return typeof cost === 'number' ? cost : undefined
 }
 
+function HexaghostAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, attackSeq }: {
+  asset?: Blob
+  assetPath: string
+  fallbackAsset: string
+  attackSeq: number
+}) {
+  const [replayAsset] = useState(asset)
+  const [src, setSrc] = useState<string | undefined>(() => replayAsset ? undefined : fallbackAsset)
+  const [loaded, setLoaded] = useState(false)
+  useEffect(() => {
+    if (!replayAsset) return
+    const url = URL.createObjectURL(replayAsset)
+    setSrc(url)
+    return () => URL.revokeObjectURL(url)
+  }, [replayAsset])
+  if (!src) return null
+  return (
+    <span
+      className={['character-attack__pose', 'character-attack__pose--hexaghost-state',
+        replayAsset ? '' : 'is-fallback', loaded ? 'is-loaded' : ''].filter(Boolean).join(' ')}
+      data-attack-asset={sourceAsset}
+      data-attack-seq={attackSeq}
+    >
+      <img src={src} alt="" onLoad={() => setLoaded(true)} />
+    </span>
+  )
+}
+
 function CombatScreenView({
   state,
   act,
@@ -349,6 +377,35 @@ function CombatScreenView({
   }
   const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
+  const [hexaghostAttackBlobs, setHexaghostAttackBlobs] = useState<Map<string, Blob>>(() => new Map())
+  const hexaghostAttackAssets = state.players.some((player) => player.character === 'hexaghost' && !player.dead)
+    ? Array.from({ length: 7 }, (_, heat) =>
+      assetPath(`combat/characters/hexaghost-heat-${heat}-attack.webp`)).join('|')
+    : ''
+  useEffect(() => {
+    const controller = new AbortController()
+    const assets = hexaghostAttackAssets.split('|').filter(Boolean)
+    setHexaghostAttackBlobs((current) => new Map(assets
+      .filter((src) => current.has(src))
+      .map((src) => [src, current.get(src)!])))
+    assets.forEach((src) => {
+      void fetch(src, { signal: controller.signal }).then(async (response) => {
+        if (!response.ok) return
+        const blob = await response.blob()
+        const decodeUrl = URL.createObjectURL(blob)
+        try {
+          const image = new Image()
+          image.src = decodeUrl
+          await image.decode?.()
+        } finally {
+          URL.revokeObjectURL(decodeUrl)
+        }
+        if (controller.signal.aborted) return
+        setHexaghostAttackBlobs((current) => new Map(current).set(src, blob))
+      }).catch(() => undefined)
+    })
+    return () => controller.abort()
+  }, [hexaghostAttackAssets])
   const hermitSetupPending = state.pendingHermitSetupLoads?.[0]?.playerId === viewerId
   const hermitStrengthPending = state.pendingHermitStrengthRewards?.[0]?.playerId === viewerId
   const dieRelicPending = state.pendingDieRelicChoices?.[0]
@@ -3693,7 +3750,7 @@ function CombatScreenView({
                   type="button"
                   className={spendingSoulburn ? 'is-chosen' : undefined}
                   disabled={Boolean(pending?.choiceCards)}
-                  aria-label="Spend Soulburn"
+                  aria-label={`Spend Soulburn, ${viewer.soulburn} available`}
                   aria-pressed={spendingSoulburn}
                   onClick={() => {
                     setPending(null)
@@ -3706,7 +3763,10 @@ function CombatScreenView({
                     setExtraCrispySoulburn(false)
                     setSpendingSoulburn((current) => !current)
                   }}
-                >Soulburn {viewer.soulburn}</button>
+                >
+                  <img className="item-icon-image" src={assetPath('icons/hexaghost-flame.png')} alt="" />
+                  <span aria-hidden="true">{viewer.soulburn}</span>
+                </button>
               ) : null}
               {spendingSoulburn && extraCrispyPower ? (
                 <button type="button" className={extraCrispySoulburn ? 'is-chosen' : undefined}
@@ -4750,6 +4810,7 @@ function CombatScreenView({
         className="board"
         data-rows={rows.length}
         data-crowded={livingEnemies(state).length >= 3 || undefined}
+        data-hexaghost-attack-assets-ready={hexaghostAttackBlobs.size || undefined}
         ref={boardRef}
         tabIndex={0}
         aria-label="Combat board"
@@ -4819,6 +4880,12 @@ function CombatScreenView({
           const characterAttackMotions = occupant ? characterAttacks[occupant.id] ?? [] : []
           const characterAttack = characterAttackMotions.at(-1)
           const latestCharacterAttackSeq = characterAttack?.active.event.seq
+          const occupantHeat = occupant?.character === 'hexaghost'
+            ? Math.max(0, Math.min(6, occupant.heat))
+            : 0
+          const hexaghostAttackAsset = assetPath(
+            `combat/characters/hexaghost-heat-${occupantHeat}-attack.webp`,
+          )
           return (
             <div
               className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
@@ -4877,8 +4944,10 @@ function CombatScreenView({
                           <span className={`stance-aura stance-aura--${occupant.stance}`} />
                         ) : null}
                         <img
-                          key={`${occupant.character}-${characterAttack?.active.event.seq ?? latestActorVfx?.event.seq ?? 'idle'}`}
-                          src={assetPath(`combat/characters/${occupant.character}.webp`)}
+                          key={`${occupant.character}-${occupantHeat}-${characterAttack?.active.event.seq ?? latestActorVfx?.event.seq ?? 'idle'}`}
+                          src={assetPath(occupant.character === 'hexaghost'
+                            ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
+                            : `combat/characters/${occupant.character}.webp`)}
                           data-vfx-seq={latestActorVfx?.event.seq}
                           alt=""
                           onError={(event) => { event.currentTarget.style.display = 'none' }}
@@ -4905,7 +4974,8 @@ function CombatScreenView({
                                 </span>
                               </>
                             ) : null}
-                            {DOWNFALL_CHARACTER_IDS.includes(occupant.character as (typeof DOWNFALL_CHARACTER_IDS)[number]) &&
+                            {occupant.character !== 'hexaghost' &&
+                            DOWNFALL_CHARACTER_IDS.includes(occupant.character as (typeof DOWNFALL_CHARACTER_IDS)[number]) &&
                             characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <>
                                 <span className="character-attack__pose character-attack__pose--downfall-ready">
@@ -4915,6 +4985,16 @@ function CombatScreenView({
                                   <img src={assetPath(`combat/characters/${occupant.character}-impact.webp`)} alt="" />
                                 </span>
                               </>
+                            ) : null}
+                            {occupant.character === 'hexaghost' &&
+                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
+                              <HexaghostAttackPose
+                                key={characterAttack.active.event.seq}
+                                attackSeq={characterAttack.active.event.seq}
+                                assetPath={hexaghostAttackAsset}
+                                fallbackAsset={assetPath(`combat/characters/hexaghost-heat-${occupantHeat}.webp`)}
+                                asset={hexaghostAttackBlobs.get(hexaghostAttackAsset)}
+                              />
                             ) : null}
                             {occupant.character === 'silent' &&
                             characterAttack.active.event.seq === latestCharacterAttackSeq ? (
@@ -5056,9 +5136,6 @@ function CombatScreenView({
                       {occupant.character === 'hermit' && occupant.id === viewerId && occupant.chamberSlots > 0 &&
                       occupant.chamber.length === 0 ? (
                         <span className="seat__mechanic">Chamber {occupant.chamber.length}/{occupant.chamberSlots}</span>
-                      ) : null}
-                      {occupant.character === 'hexaghost' ? (
-                        <span className="seat__mechanic">Heat {occupant.heat}</span>
                       ) : null}
                       {occupant.strengthLossAtEndOfTurn > 0 ? (
                         <span className="seat__pending">

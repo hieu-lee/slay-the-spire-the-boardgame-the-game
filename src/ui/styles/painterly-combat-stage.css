@@ -518,6 +518,46 @@
   animation: awakened-claw-scratch 550ms 730ms ease-out both;
 }
 
+.board:has(.enemy--boss.enemy--acting[data-boss-art='downfall_pc_watcher'])
+  .seat:not(.seat--dead) .seat__portrait::before {
+  z-index: 5;
+  inset: auto;
+  top: -210%;
+  left: 110%;
+  width: 125%;
+  aspect-ratio: 1;
+  background: center / contain no-repeat url('/assets/combat/vfx/actions/watcher-meteor.webp');
+  filter: drop-shadow(0 0 0.38rem #ff442d);
+  opacity: 0;
+  animation: boss-watcher-meteor-fall 500ms 230ms cubic-bezier(0.32, 0, 0.8, 0.24) both;
+}
+
+.board:has(.enemy--boss.enemy--acting[data-boss-art='downfall_pc_watcher'])
+  .seat:not(.seat--dead) .seat__portrait::after {
+  z-index: 5;
+  inset: auto auto -16% 50%;
+  width: 140%;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 0;
+  background: center / contain no-repeat url('/assets/combat/vfx/actions/watcher-meteor-impact.webp');
+  filter: none;
+  opacity: 0;
+  animation: boss-watcher-meteor-impact 550ms 730ms ease-out forwards;
+}
+
+@keyframes boss-watcher-meteor-fall {
+  0% { opacity: 0; transform: translate(0) scaleX(-1); }
+  8%, 99% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-140%, 210%) scaleX(-1); }
+}
+
+@keyframes boss-watcher-meteor-impact {
+  0% { opacity: 1; transform: translateX(-50%) scale(0.7); }
+  78% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) scale(1.08); }
+}
+
 .enemy--boss.enemy--acting[data-enemy-def='awakened_one_phase_2']::after {
   right: 145%;
   bottom: 8%;

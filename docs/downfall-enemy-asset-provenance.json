@@ -73,7 +73,7 @@
       "sourceKind": "pc-downfall-extraction",
       "source": "docs/downfall-enemy-sources/pc/watcher.webp",
       "upstreamCode": "src/main/java/charbosses/bosses/Watcher/CharBossWatcher.java",
-      "pipeline": "PC Downfall extraction -> style-matched ImageGen two-hand staff thrust -> transparent ten-frame animated WebP",
+      "pipeline": "PC Downfall extraction -> direct OpenAI Image API gpt-image-2 native-transparent idle/raise/windup/swing/impact keyframes -> same-camera ten-frame downward staff swing; mirrored hero meteor and landing impact are layered at runtime",
       "runtime": [
         "public/assets/combat/enemies/downfall_pc_watcher.webp",
         "public/assets/combat/enemies/animations/downfall_pc_watcher-idle.webp",
@@ -82,12 +82,12 @@
       "sourceSha256": "e84c385aac820e94f6244e3ddc7408f76bdf54a8af475c9154992c6202492f96",
       "upstreamCodeSha256": "48e3552e6e2a7a6de8ba3713e39947d360052f6564ecb6b2004f1a7b2fe67340",
       "runtimeSha256": {
-      "public/assets/combat/enemies/downfall_pc_watcher.webp": "141d897be797bcc3fec16cb49582de4fac2b161e60b1e77d238ce1976590a7e4",
-      "public/assets/combat/enemies/animations/downfall_pc_watcher-idle.webp": "7c99a5e5f74f434eff06da0a0b76030a0f86c7044de9221fb296d455050269d1",
-      "public/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp": "ba2ff94f6b836b550e88ce69176e36be94acea067772b213c26c15eae29e00f8"
+      "public/assets/combat/enemies/downfall_pc_watcher.webp": "57bd58a0138b02b108f88f3d130df2d09d597f52e512d2d0b7d9f7d02457b8ee",
+      "public/assets/combat/enemies/animations/downfall_pc_watcher-idle.webp": "fed8774036ed908716f1086f779f372c476e654b11eda99996deed243c88a24c",
+      "public/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp": "30fea4c6c68bd8f8466e263037a9c6013870c64eacc057a84481a45e484a69f5"
       },
-      "pipelineArtifact": "docs/downfall-enemy-sources/pc/watcher-staff-thrust-keyframe.webp",
-    "pipelineArtifactSha256": "1876ba19d6274344522e0ebefc6b9a0df00281fc8c16fb4620080da73f852e4e"
+      "pipelineArtifact": "docs/downfall-enemy-sources/pc/watcher-impact-keyframe.webp",
+    "pipelineArtifactSha256": "c1e7604e854c3ca1fe9e4b59a6c373688f68ff135670c677d5b98f0b30adc0de"
     },
     {
       "artId": "downfall_pc_neow",

@@ -464,6 +464,7 @@ export function EnemyCard({
       data-enemy-def={def.id}
       data-boss-act={def.bossAct}
       data-attack-motion={bossAttackMotion}
+      data-boss-art={visibleEnemy.isBoss ? bossArtId : undefined}
       data-animation={animatedBoss ? bossAttacking ? 'attack' : 'idle' : 'static'}
       data-row={enemy.row}
       style={{

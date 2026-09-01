@@ -1236,6 +1236,7 @@ let downfallReducedMotionStopped = false
 let guardianModeOrb = null
 let slimeHudAccess = null
 let slimeHudOverlapsEndTurn = true
+let hexaghostVisualState = null
 for (const fixture of [
   { character: 'guardian', name: 'Guardian', fields: { guardianMode: 'attack', vigor: 3 } },
   { character: 'hexaghost', name: 'Hexaghost', fields: { heat: 2, soulburn: 1 } },
@@ -1262,6 +1263,24 @@ for (const fixture of [
     ? '.combat__slime-status > span'
     : '.seat__mechanic')
   downfallMechanicLabels[fixture.character] = await mechanicChips.allInnerTexts()
+  if (fixture.character === 'hexaghost') {
+    await page.waitForFunction(() => {
+      const portrait = document.querySelector('.seat__portrait > img')
+      const flame = document.querySelector('button[aria-label^="Spend Soulburn"] .item-icon-image')
+      return portrait?.getAttribute('src')?.endsWith('/hexaghost-heat-2.webp') &&
+        portrait.complete && portrait.naturalWidth === 512 && flame?.complete && flame.naturalWidth === 512
+    })
+    hexaghostVisualState = await page.getByRole('button', { name: 'Spend Soulburn, 1 available' }).evaluate((button) => {
+      const portrait = document.querySelector('.seat__portrait > img')
+      const icon = button.querySelector('.item-icon-image')
+      return {
+        portrait: portrait?.getAttribute('src'),
+        icon: icon?.getAttribute('src'),
+        iconLoaded: icon?.complete && icon.naturalWidth === 512,
+        count: button.textContent?.trim(),
+      }
+    })
+  }
   await page.waitForFunction((expected) => {
     const images = [...document.querySelectorAll('.pip--energy .energy-orb__layers > img')]
     return images.length === expected && images.every((image) => image.complete && image.naturalWidth === 128)
@@ -1716,12 +1735,18 @@ await page.screenshot({ path: join(outDir, 'downfall-die-relic-compact.png') })
 check('Downfall mechanics use compact combat HUDs without clipping the hand', () => {
   assertDeepEqual(downfallMechanicLabels, {
     guardian: ['Attack · Vigor 3'],
-    hexaghost: ['Heat 2'],
+    hexaghost: [],
     slime_boss: [
       'Bruiser · L2 · Vigor 3 · Cmd 1',
       'Armored · L3 · Vigor 4 · Cmd 1',
     ],
     hermit: ['Chamber 0/2'],
+  })
+  assertDeepEqual(hexaghostVisualState, {
+    portrait: '/assets/combat/characters/hexaghost-heat-2.webp',
+    icon: '/assets/icons/hexaghost-flame.png',
+    iconLoaded: true,
+    count: '1',
   })
   assert(slimeHudAccess?.every((chip) => chip.focusable && chip.focused && chip.visible),
     `Slime status chips are not keyboard-reachable in the narrow HUD: ${JSON.stringify(slimeHudAccess)}`)
@@ -1885,6 +1910,70 @@ await page.waitForFunction(() => document.querySelector('.enemy--boss')?.getAttr
 check('short Downfall boss attacks play exactly one matching motion cycle', () => {
   assertDeepEqual(shortBossAttackMotion, { cssVariable: '580ms', animationDuration: '0.58s' })
 })
+
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+await page.keyboard.press('Escape')
+await pauseMenu.waitFor()
+await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = 'hidden' })
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const template = next.combat.enemies[0]
+  next.combat.phase = 'enemy'
+  next.combat.enemies = [{
+    ...template, uid: 'watcher-boss-animation', defId: 'downfall_wrathful', row: 0,
+    isBoss: true, hp: 20, maxHp: 20, block: 0, actionIndex: 0, dead: false,
+  }]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction(() => document.querySelector(
+  '.enemy--boss[data-boss-art="downfall_pc_watcher"][data-animation="attack"]'))
+const watcherBossMotion = await page.locator('.enemy--boss[data-animation="attack"]').evaluate((boss) => {
+  const seat = document.querySelector('.seat:not(.seat--dead) .seat__portrait')
+  const meteor = getComputedStyle(seat, '::before')
+  const impact = getComputedStyle(seat, '::after')
+  return {
+    art: boss.querySelector('.enemy__art--cutout')?.getAttribute('src'),
+    duration: getComputedStyle(boss).getPropertyValue('--boss-attack-duration').trim(),
+    meteorImage: meteor.backgroundImage.includes('/assets/combat/vfx/actions/watcher-meteor.webp'),
+    meteorAnimation: meteor.animationName,
+    meteorDelay: meteor.animationDelay,
+    impactImage: impact.backgroundImage.includes('/assets/combat/vfx/actions/watcher-meteor-impact.webp'),
+    impactAnimation: impact.animationName,
+    impactDelay: impact.animationDelay,
+  }
+})
+await page.waitForTimeout(500)
+const watcherBeforeContact = await page.locator('.seat:not(.seat--dead) .seat__portrait').first().evaluate((seat) => ({
+  meteorOpacity: Number(getComputedStyle(seat, '::before').opacity),
+  impactOpacity: Number(getComputedStyle(seat, '::after').opacity),
+}))
+await shot('02d-downfall-watcher-boss-meteor')
+await page.waitForTimeout(400)
+const watcherAfterContact = await page.locator('.seat:not(.seat--dead) .seat__portrait').first().evaluate((seat) => ({
+  meteorOpacity: Number(getComputedStyle(seat, '::before').opacity),
+  impactOpacity: Number(getComputedStyle(seat, '::after').opacity),
+}))
+await shot('02e-downfall-watcher-boss-impact')
+await page.waitForFunction(() => document.querySelector('.enemy--boss')?.getAttribute('data-animation') === 'idle')
+check('boss Watcher swings down before a right-to-left meteor and landing-only impact', () => {
+  assertDeepEqual(watcherBossMotion, {
+    art: '/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp',
+    duration: '1830ms',
+    meteorImage: true,
+    meteorAnimation: 'boss-watcher-meteor-fall',
+    meteorDelay: '0.23s',
+    impactImage: true,
+    impactAnimation: 'boss-watcher-meteor-impact',
+    impactDelay: '0.73s',
+  })
+  assert(watcherBeforeContact.meteorOpacity > 0 && watcherBeforeContact.impactOpacity === 0,
+    `Watcher impact appeared before contact: ${JSON.stringify(watcherBeforeContact)}`)
+  assert(watcherAfterContact.meteorOpacity === 0 && watcherAfterContact.impactOpacity > 0,
+    `Watcher landing did not replace the meteor: ${JSON.stringify(watcherAfterContact)}`)
+})
+await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = '' })
+await page.keyboard.press('Escape')
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 
 if (args.includes('--downfall-ui-only')) {
