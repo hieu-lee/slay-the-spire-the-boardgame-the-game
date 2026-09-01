@@ -2354,6 +2354,10 @@ const keywordCard = page.getByRole('button', { name: /^Shockwave,/ })
 await page.waitForFunction((card) => !card.classList.contains('card--drawn'), await keywordCard.elementHandle())
 await page.mouse.move(5, 5)
 await keywordCard.hover()
+await page.waitForTimeout(50)
+const hoverOnlyStayedHidden = await keywordCard.evaluate((card) =>
+  !document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'))
+await page.keyboard.down('Shift')
 await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
   await keywordCard.elementHandle())
 const hoverKeywordTips = await keywordCard.evaluate((card) => {
@@ -2381,8 +2385,10 @@ await hoverTooltip.hover()
 const hoverTooltipHoverable = await hoverTooltip.getAttribute('data-open') !== null
 await page.keyboard.press('Escape')
 const hoverTooltipDismissed = await hoverTooltip.getAttribute('data-open') === null
+await page.keyboard.up('Shift')
 await page.mouse.move(5, 5)
 await keywordCard.hover()
+await page.keyboard.down('Shift')
 await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
   await keywordCard.elementHandle())
 const keywordCardBox = await keywordCard.boundingBox()
@@ -2399,7 +2405,6 @@ await page.mouse.move(5, 5)
 await keywordCard.hover()
 await shot('02c-card-keyword-help')
 await page.mouse.move(5, 5)
-await page.keyboard.down('Shift')
 await keywordCard.hover()
 await page.mouse.move(5, 5)
 await page.waitForFunction((card) =>
@@ -2452,6 +2457,7 @@ const pointerFollowsFocus = await page.locator('.card[data-keyword-help]').evalu
 await page.keyboard.up('Shift')
 await page.mouse.move(5, 5)
 await aoeCard.hover()
+await page.keyboard.down('Shift')
 await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
   await aoeCard.elementHandle())
 const aoeKeywordTips = await aoeCard.evaluate((card) => {
@@ -2490,7 +2496,6 @@ const playedPowerZoom = page.locator('.power__zoom')
 await playedPower.focus()
 await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
   await playedPower.elementHandle())
-await page.keyboard.down('Shift')
 await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-pinned'),
   await playedPower.elementHandle())
 const playedPowerKeywordTips = await playedPower.evaluate((card) => {
@@ -2554,6 +2559,10 @@ await page.getByRole('button', { name: 'Discard pile, 1 card' }).click()
 const cardDialog = page.locator('dialog.card-collection[open]')
 const dialogCard = cardDialog.getByRole('button', { name: /^Shockwave,/ })
 await dialogCard.hover()
+await page.waitForTimeout(50)
+const dialogHoverStayedHidden = await dialogCard.evaluate((card) =>
+  !document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'))
+await page.keyboard.down('Shift')
 await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
   await dialogCard.elementHandle())
 const dialogTooltip = await dialogCard.evaluate((card) => {
@@ -2566,6 +2575,7 @@ const dialogTooltip = await dialogCard.evaluate((card) => {
   }
 })
 await shot('02e-card-dialog-keyword-help')
+await page.keyboard.up('Shift')
 await cardDialog.getByRole('button', { name: 'Close' }).click()
 const symbolKeywordTips = await page.evaluate(async () => {
   const [{ CARDS }, { cardKeywordTips }] = await Promise.all([
@@ -2587,7 +2597,8 @@ const symbolKeywordTips = await page.evaluate(async () => {
     neutral: cardKeywordTips(CARDS.empty_body),
   }
 })
-check('card hover explains every printed keyword and Shift pins the board until release', () => {
+check('card keyword help appears only while Shift is held', () => {
+  assert(hoverOnlyStayedHidden, 'hover alone should not show keyword help')
   assertDeepEqual(hoverKeywordTips.map((tip) => tip.name), ['Exhaust', 'All in a row', 'Vulnerable', 'Weak'])
   assert(hoverKeywordTips.every((tip) => tip.visible && tip.text), 'every keyword panel should be visible and explained')
   assert(hoverKeywordTips.some((tip) => tip.name === 'All in a row' &&
@@ -2649,6 +2660,7 @@ check('card hover explains every printed keyword and Shift pins the board until 
   assert(responsivePlayedPowerLayout.open && responsivePlayedPowerLayout.pinned &&
     responsivePlayedPowerLayout.inViewport && !responsivePlayedPowerLayout.overlaps,
   `responsive Power help layout failed: ${JSON.stringify(responsivePlayedPowerLayout)}`)
+  assert(dialogHoverStayedHidden, 'hover alone should not show keyword help in card dialogs')
   assertDeepEqual(dialogTooltip, { hostedByDialog: true, filter: 'none', inViewport: true })
 })
 if (args.includes('--keyword-tooltips-only')) {
@@ -2664,6 +2676,7 @@ if (args.includes('--keyword-tooltips-only')) {
   check('leaving before a lazy keyword board mounts does not open a stale board', () => assert(fastExitStayedClosed))
   await page.setViewportSize({ width: 390, height: 844 })
   await keywordCard.hover()
+  await page.keyboard.down('Shift')
   await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
     await keywordCard.elementHandle())
   const mobileTooltipInViewport = await keywordCard.evaluate((card) => {
@@ -2671,6 +2684,7 @@ if (args.includes('--keyword-tooltips-only')) {
     return box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight
   })
   await shot('02f-card-keyword-help-mobile')
+  await page.keyboard.up('Shift')
   check('keyword help stays inside a mobile viewport', () => assert(mobileTooltipInViewport))
   await page.setViewportSize({ width: 844, height: 320 })
   const chokeCard = fastExitCard
@@ -2710,6 +2724,10 @@ if (args.includes('--keyword-tooltips-only')) {
   await page.getByPlaceholder('Search').fill('Shockwave')
   const compendiumCard = page.locator('.compendium-card').first()
   await compendiumCard.hover()
+  await page.waitForTimeout(50)
+  const compendiumHoverStayedHidden = await compendiumCard.evaluate((card) =>
+    !document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'))
+  await page.keyboard.down('Shift')
   await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
     await compendiumCard.elementHandle())
   const compendiumGridHelp = await compendiumCard.evaluate((card) => {
@@ -2726,6 +2744,7 @@ if (args.includes('--keyword-tooltips-only')) {
     return tooltip.parentElement === card.closest('dialog') && tooltip.hasAttribute('data-open')
   })
   await shot('02h-compendium-keyword-help')
+  await page.keyboard.up('Shift')
   await page.getByRole('button', { name: 'Close card detail' }).click()
   await page.getByPlaceholder('Search').fill('Calculated Gamble')
   const upgradeToggleCard = page.locator('.compendium-card').first()
@@ -2762,6 +2781,7 @@ if (args.includes('--keyword-tooltips-only')) {
   check('compendium grid and detail cards expose keyword help', () => {
     assert(compendiumLazyHelp.cards > 200 && compendiumLazyHelp.mounted <= compendiumLazyHelp.baseline,
       `inactive compendium cards mounted tooltip portals: ${JSON.stringify(compendiumLazyHelp)}`)
+    assert(compendiumHoverStayedHidden, 'hover alone should not show keyword help in the Compendium')
     assert(compendiumGridHelp)
     assert(compendiumDetailHelp)
     assertDeepEqual(editableShiftNavigation, {

@@ -213,7 +213,7 @@ export function App() {
       active = null
     }
     const show = (card: HTMLElement | null) => {
-      if (pointerActive) return hide()
+      if (!shiftHeld || pointerActive) return hide()
       if (!card) {
         dismissed = null
         return hide()
