@@ -1,12 +1,14 @@
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import type { Amount, Condition, CountOf, Effect, EnemyTokenKind } from '../game/cards.ts'
 import type { HandEndOfTurnEffect } from '../game/cards.ts'
 import { cardThumbPath } from '../game/assets.ts'
 import { CardFace } from './CardFace.tsx'
-import { Icon } from './Icon.tsx'
+import { Icon, StatusIcon } from './Icon.tsx'
+import type { IconName, StatusIconName } from './icons.ts'
 import type { CardInstance } from '../game/types.ts'
 import type { Trigger } from '../game/triggers.ts'
 
@@ -315,6 +317,36 @@ function handEndOfTurnText(effect: HandEndOfTurnEffect): string {
 
 const rulesTextCache = new Map<string, string>()
 
+const CARD_KEYWORD_TIPS = [
+  ['Ethereal', /\bethereal\b/i, 'If this card is in your hand at end of turn, Exhaust it.'],
+  ['Exhaust', /__exhaust__/, 'An Exhausted card is removed for this combat and returns to its deck afterward.'],
+  ['Retain', /\bretain(?:ed)?\b/i, 'A retained card stays in its owner’s hand at end of turn.'],
+  ['Scry', /\bscry\b/i, 'Look at the top cards of your draw pile. Discard any, then return the rest on top in the same order.'],
+  ['All in a row', /\baffects a whole row\b/i, 'Affects all enemies in one row and always also the boss.', 'aoe'],
+  ['All Enemies', /\baffects every enemy\b/i, 'Affects every row and the boss.'],
+  ['Unplayable', /\bunplayable\b/i, 'This card cannot be played.'],
+  ['Hit', /__hit__/, 'Damage modified by Strength, Weak, and Vulnerable.', 'attack'],
+  ['Status', /\bstatus\b/i, 'A temporary card that leaves your deck after combat.'],
+  ['Vulnerable', /\bvulnerable\b/i, 'Each hit against this target is doubled, then removes 1 Vulnerable.', 'vulnerable'],
+  ['Weak', /\bweak\b/i, 'Each hit this character deals gets −1 damage, then removes 1 Weak.', 'weak'],
+  ['Strength', /\bstrength\b/i, 'Adds 1 damage to every hit for each Strength. Maximum 8.', 'strength'],
+  ['Poison', /\bpoison(?:ed)?\b/i, 'At end of turn, the enemy loses 1 HP per Poison. Block does not stop it.', 'poison'],
+  ['Block', /\bblock(?:ed|ing)?\b/i, 'Prevents 1 damage per Block. Player Block is capped at 20.', 'block'],
+  ['Daze', /\bdaze\b/i, 'A Daze is Ethereal and Unplayable.', 'daze'],
+  ['Burn', /\bburn\b/i, 'If Burn remains in your hand at end of turn, take its damage.', 'burn'],
+  ['Shiv', /\bshivs?\b/i, 'Spend a Shiv to deal 1 damage as a separate hit. Shivs are not cards.', 'shiv'],
+  ['Miracle', /\bmiracles?\b/i, 'Spend a Miracle at any time to gain 1 Energy.', 'miracle'],
+  ['Neutral', /\bneutral\b/i, 'The Watcher’s default Stance. Entering Neutral ends Calm or Wrath; leaving it grants no extra effect.'],
+  ['Calm', /\bcalm\b/i, 'Leaving Calm grants 2 Energy.'],
+  ['Wrath', /\bwrath\b/i, 'Hits deal +1 damage; ending your turn in Wrath deals 1 damage to you.'],
+  ['Lightning', /\blightning\b/i, 'Deals 1 damage at end of turn and 2 damage when Evoked.'],
+  ['Frost', /\bfrost\b/i, 'Grants 1 Block at end of turn and 1 Block when Evoked.'],
+  ['Dark', /\bdark\b/i, 'When Evoked, deals 3 damage plus 1 per Power you have in play.'],
+  ['Orb', /\borbs?\b|__orb__/i, 'Channel into an open slot; if every slot is full, Evoke an Orb first.', undefined, 'orb'],
+  ['Power', /\bpowers?\b/i, 'A played Power stays face-up until Exhausted or combat ends.', undefined, 'power'],
+  ['Energy', /\benergy\b/i, 'Spend Energy to play cards. Unspent Energy is normally lost at end of turn.', 'energy'],
+] as const
+
 export function cardRulesText(def: CardDef): string {
   const cacheKey = `${def.id}\0${def.name}`
   const cached = rulesTextCache.get(cacheKey)
@@ -374,6 +406,75 @@ export function cardAccessibleName(def: CardDef, cost = def.cost): string {
   return [def.name, playability, def.type, ...rules].filter(Boolean).join(', ')
 }
 
+export function cardKeywordTips(def: CardDef): readonly {
+  name: string; text: string; icon?: IconName; statusIcon?: StatusIconName
+}[] {
+  const effects = [
+    ...def.effects,
+    ...(def.modes ?? []).flatMap((mode) => mode.effects),
+    ...(def.persistentEffects ?? []),
+    ...(def.discardReaction?.effects ?? []),
+    ...(def.exhaustReaction?.effects ?? []),
+  ]
+  const hit = effects.some((effect) => effect.kind === 'hit' || effect.kind === 'hitChoices' ||
+    effect.kind === 'hitPerExhaust' || effect.kind === 'gainHitPoison')
+  const orb = effects.some((effect) => /Orb/.test(effect.kind) ||
+    effect.kind === 'channel' || effect.kind === 'evoke' || effect.kind === 'fission')
+  const cardRules = cardRulesText(def)
+  const exhaust = /\bexhaust/i.test(cardRules.replace('ethereal, exhausts at end of turn if still in hand', ''))
+  const rules = `${def.type} ${def.unplayable ? 'unplayable' : ''} ${def.id === 'daze' || def.id === 'burn' ? def.id : ''} ${hit ? '__hit__' : ''} ${orb ? '__orb__' : ''} ${exhaust ? '__exhaust__' : ''} ${cardRules}`
+  return CARD_KEYWORD_TIPS
+    .filter(([, pattern]) => pattern.test(rules))
+    .map(([name, , text, icon, statusIcon]) => ({ name, text, icon, statusIcon }))
+}
+
+export function CardKeywordHelp({ def, children }: {
+  def: CardDef
+  children: (props: {
+    ref?: (element: HTMLElement | null) => void
+    'aria-describedby'?: string
+    'data-keyword-help-id'?: string
+  }) => React.ReactNode
+}) {
+  const tips = cardKeywordTips(def)
+  const tooltipId = `card-keyword-help-${useId()}`
+  const anchorRef = useRef<HTMLElement | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const setAnchor = useCallback((element: HTMLElement | null) => {
+    const previous = anchorRef.current as (HTMLElement & { mountKeywordHelp?: () => void }) | null
+    if (previous) delete previous.mountKeywordHelp
+    anchorRef.current = element
+    if (element) (element as HTMLElement & { mountKeywordHelp?: () => void }).mountKeywordHelp = () => setMounted(true)
+  }, [])
+  useEffect(() => {
+    if (mounted && tips.length > 0) anchorRef.current?.dispatchEvent(new Event('card-keyword-help-ready', { bubbles: true }))
+  }, [def.id, mounted, tips.length])
+  const host = mounted && anchorRef.current ? anchorRef.current.closest('dialog') ?? document.body : null
+  const props = tips.length > 0 ? {
+    ref: setAnchor,
+    'aria-describedby': `${tooltipId}-description`,
+    'data-keyword-help-id': tooltipId,
+  } : mounted ? { ref: setAnchor } : {}
+  return <>
+    {children(props)}
+    {tips.length > 0 ? <span className="visually-hidden" id={`${tooltipId}-description`}>
+      {tips.map((tip) => `${tip.name}: ${tip.text}`).join(' ')}
+    </span> : null}
+    {host && tips.length > 0 ? createPortal(
+      <span className="card-keyword-tips" id={tooltipId} role="tooltip">
+        {tips.map((tip) => (
+          <span className="card-keyword-tip" key={tip.name}>
+            <strong>{tip.icon ? <Icon name={tip.icon} size={18} />
+              : tip.statusIcon ? <StatusIcon name={tip.statusIcon} size={18} /> : null}{tip.name}</strong>
+            <span>{tip.text}</span>
+          </span>
+        ))}
+      </span>,
+      host,
+    ) : null}
+  </>
+}
+
 /** The energy cost badge, or nothing at all for an unplayable card (p.24). */
 function costLabel(def: CardDef, cost = def.cost): string {
   if (def.unplayable) return '—'
@@ -410,8 +511,9 @@ export function Card({
     .filter(Boolean)
     .join(' ')
 
-  return (
+  return <CardKeywordHelp def={def}>{(keywordHelpProps) => (
     <button
+      {...keywordHelpProps}
       type="button"
       className={className}
       data-sfx="card"
@@ -473,5 +575,5 @@ export function Card({
         </span>
       ) : null}
     </button>
-  )
+  )}</CardKeywordHelp>
 }

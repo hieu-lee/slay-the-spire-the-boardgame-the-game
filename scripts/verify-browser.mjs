@@ -2337,6 +2337,484 @@ await page.waitForFunction((expectFallback) => {
     images.every((image) => image.complete && image.naturalWidth > 0))
 }, !artSynced)
 
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.combat.players[0].hand = [
+    { uid: 'keyword-help-shockwave', defId: 'shockwave', upgraded: false },
+    { uid: 'keyword-help-cleave', defId: 'cleave', upgraded: false },
+    { uid: 'keyword-help-choke', defId: 'choke', upgraded: false },
+    { uid: 'keyword-help-loop', defId: 'loop', upgraded: false },
+  ]
+  next.combat.players[0].discard = [
+    { uid: 'keyword-help-dialog-shockwave', defId: 'shockwave', upgraded: false },
+  ]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const keywordCard = page.getByRole('button', { name: /^Shockwave,/ })
+await page.waitForFunction((card) => !card.classList.contains('card--drawn'), await keywordCard.elementHandle())
+await page.mouse.move(5, 5)
+await keywordCard.hover()
+await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+  await keywordCard.elementHandle())
+const hoverKeywordTips = await keywordCard.evaluate((card) => {
+  const tooltip = document.getElementById(card.dataset.keywordHelpId)
+  return Array.from(tooltip.querySelectorAll('.card-keyword-tip')).map((tip) => ({
+    name: tip.querySelector('strong')?.textContent,
+    text: tip.querySelector('span')?.textContent,
+    icon: tip.querySelector('img')?.getAttribute('src') ?? null,
+    visible: tooltip.hasAttribute('data-open'),
+  }))
+})
+const hoverTooltipA11y = await keywordCard.evaluate((card) => {
+  const tooltip = document.getElementById(card.dataset.keywordHelpId)
+  const description = document.getElementById(card.getAttribute('aria-describedby'))
+  const box = tooltip.getBoundingClientRect()
+  return {
+    describedBy: Boolean(description?.textContent.includes('Vulnerable:')),
+    role: tooltip.getAttribute('role'),
+    inViewport: box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+  }
+})
+const hoverTooltipId = await keywordCard.getAttribute('data-keyword-help-id')
+const hoverTooltip = page.locator(`[id="${hoverTooltipId}"]`)
+await hoverTooltip.hover()
+const hoverTooltipHoverable = await hoverTooltip.getAttribute('data-open') !== null
+await page.keyboard.press('Escape')
+const hoverTooltipDismissed = await hoverTooltip.getAttribute('data-open') === null
+await page.mouse.move(5, 5)
+await keywordCard.hover()
+await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+  await keywordCard.elementHandle())
+const keywordCardBox = await keywordCard.boundingBox()
+assert(keywordCardBox, 'keyword card did not render a pointer target')
+await page.mouse.move(keywordCardBox.x + keywordCardBox.width / 2, keywordCardBox.y + keywordCardBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(keywordCardBox.x + keywordCardBox.width / 2 + 20, keywordCardBox.y + keywordCardBox.height / 2)
+await page.waitForTimeout(50)
+const pointerDownDismissed = await keywordCard.evaluate((card) =>
+  !document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'))
+await page.mouse.up()
+await keywordCard.evaluate((card) => card.blur())
+await page.mouse.move(5, 5)
+await keywordCard.hover()
+await shot('02c-card-keyword-help')
+await page.mouse.move(5, 5)
+await page.keyboard.down('Shift')
+await keywordCard.hover()
+await page.mouse.move(5, 5)
+await page.waitForFunction((card) =>
+  card.hasAttribute('data-keyword-help') && document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+  await keywordCard.elementHandle())
+const pinnedCardBox = await keywordCard.boundingBox()
+assert(pinnedCardBox, 'pinned keyword card did not render a pointer target')
+await page.mouse.move(pinnedCardBox.x + pinnedCardBox.width / 2, pinnedCardBox.y + pinnedCardBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(5, 5)
+await page.waitForTimeout(50)
+const shiftDragHidden = await keywordCard.evaluate((card) =>
+  !document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'))
+await page.mouse.up()
+await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+  await keywordCard.elementHandle())
+await keywordCard.evaluate((card) => card.blur())
+const shiftPinned = await keywordCard.evaluate((card) => {
+  const tooltip = document.getElementById(card.dataset.keywordHelpId)
+  return { pinned: card.hasAttribute('data-keyword-help'), visible: tooltip.hasAttribute('data-open') }
+})
+await page.keyboard.up('Shift')
+await page.waitForFunction((card) =>
+  !document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'), await keywordCard.elementHandle())
+const shiftReleased = await keywordCard.evaluate((card) => {
+  const tooltip = document.getElementById(card.dataset.keywordHelpId)
+  return { pinned: card.hasAttribute('data-keyword-help'), visible: tooltip.hasAttribute('data-open') }
+})
+const aoeCard = page.getByRole('button', { name: /^Cleave,/ })
+await page.waitForFunction((card) => !card.classList.contains('card--drawn'), await aoeCard.elementHandle())
+await page.keyboard.down('Shift')
+await keywordCard.hover()
+await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+await aoeCard.hover()
+const blurReleased = await page.locator('.card[data-keyword-help]').count() === 0
+await page.keyboard.up('Shift')
+await page.mouse.move(5, 5)
+await keywordCard.focus()
+await page.keyboard.down('Shift')
+await aoeCard.focus()
+const focusShiftPinned = await page.locator('.card[data-keyword-help]').evaluateAll((cards) => cards.map((card) => card.title))
+await page.keyboard.up('Shift')
+await keywordCard.hover()
+await aoeCard.focus()
+await page.keyboard.down('Shift')
+const focusWinsHover = await page.locator('.card[data-keyword-help]').evaluateAll((cards) => cards.map((card) => card.title))
+await page.mouse.move(5, 5)
+await keywordCard.hover()
+const pointerFollowsFocus = await page.locator('.card[data-keyword-help]').evaluateAll((cards) => cards.map((card) => card.title))
+await page.keyboard.up('Shift')
+await page.mouse.move(5, 5)
+await aoeCard.hover()
+await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+  await aoeCard.elementHandle())
+const aoeKeywordTips = await aoeCard.evaluate((card) => {
+  const tooltip = document.getElementById(card.dataset.keywordHelpId)
+  return Array.from(tooltip.querySelectorAll('.card-keyword-tip')).map((tip) => ({
+    name: tip.querySelector('strong')?.textContent,
+    icon: tip.querySelector('img')?.getAttribute('src') ?? null,
+  }))
+})
+await shot('02d-card-aoe-keyword-help')
+const keywordLoopCard = page.getByRole('button', { name: /^Loop,/ })
+await aoeCard.evaluate((card) => card.blur())
+await page.mouse.move(5, 5)
+await keywordLoopCard.hover()
+await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+  await keywordLoopCard.elementHandle())
+const resourceKeywordTips = await keywordLoopCard.evaluate((card) => {
+  const tooltip = document.getElementById(card.dataset.keywordHelpId)
+  return Array.from(tooltip.querySelectorAll('.card-keyword-tip')).map((tip) => ({
+    name: tip.querySelector('strong')?.textContent,
+    icon: tip.querySelector('img')?.getAttribute('src') ?? null,
+  }))
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].powers = [
+    { uid: 'keyword-help-played-power', defId: 'loop', upgraded: false },
+    { uid: 'keyword-help-second-power', defId: 'capacitor', upgraded: false },
+  ]
+  debug.setRun(run)
+})
+const playedPower = page.locator('.power').first()
+await playedPower.click()
+const playedPowerZoom = page.locator('.power__zoom')
+await playedPower.focus()
+await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+  await playedPower.elementHandle())
+await page.keyboard.down('Shift')
+await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-pinned'),
+  await playedPower.elementHandle())
+const playedPowerKeywordTips = await playedPower.evaluate((card) => {
+  const tooltip = document.getElementById(card.dataset.keywordHelpId)
+  return Array.from(tooltip.querySelectorAll('.card-keyword-tip')).map((tip) => ({
+    name: tip.querySelector('strong')?.textContent,
+    icon: tip.querySelector('img')?.getAttribute('src') ?? null,
+  }))
+})
+const playedPowerLayout = await playedPower.evaluate((card) => {
+  const tooltip = document.getElementById(card.dataset.keywordHelpId)
+  const help = tooltip.getBoundingClientRect()
+  const zoom = document.querySelector('.power__zoom').getBoundingClientRect()
+  return {
+    overlaps: help.left < zoom.right && help.right > zoom.left && help.top < zoom.bottom && help.bottom > zoom.top,
+    inViewport: help.left >= 0 && help.top >= 0 && help.right <= innerWidth && help.bottom <= innerHeight,
+  }
+})
+await shot('02i-played-power-keyword-help')
+await page.evaluate(() => {
+  window.__KEYWORD_READY_COUNT__ = 0
+  document.addEventListener('card-keyword-help-ready', () => { window.__KEYWORD_READY_COUNT__ += 1 })
+})
+const secondPlayedPower = page.locator('.power').nth(1)
+await secondPlayedPower.click()
+await page.waitForFunction(() => window.__KEYWORD_READY_COUNT__ > 0)
+await page.waitForFunction((card) => {
+  const help = document.getElementById(card.dataset.keywordHelpId)?.getBoundingClientRect()
+  const zoom = document.querySelector('.power__zoom')?.getBoundingClientRect()
+  return help && zoom && !(help.left < zoom.right && help.right > zoom.left && help.top < zoom.bottom && help.bottom > zoom.top)
+}, await secondPlayedPower.elementHandle())
+const playedPowerTransferStayedPinned = await secondPlayedPower.evaluate((card) =>
+  document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-pinned'))
+await page.keyboard.up('Shift')
+await page.keyboard.press('Escape')
+await playedPowerZoom.waitFor({ state: 'detached' })
+  await page.setViewportSize({ width: 600, height: 500 })
+await playedPower.click()
+  await playedPower.focus()
+  await page.keyboard.down('Shift')
+  await secondPlayedPower.click()
+  await page.waitForTimeout(100)
+  const responsivePlayedPowerLayout = await secondPlayedPower.evaluate((card) => {
+    const tooltip = document.getElementById(card.dataset.keywordHelpId)
+    const help = tooltip?.getBoundingClientRect()
+    const zoom = document.querySelector('.power__zoom')?.getBoundingClientRect()
+    return {
+      help: help && { left: help.left, top: help.top, right: help.right, bottom: help.bottom },
+      zoom: zoom && { left: zoom.left, top: zoom.top, right: zoom.right, bottom: zoom.bottom },
+      open: tooltip?.hasAttribute('data-open'),
+      pinned: tooltip?.hasAttribute('data-pinned'),
+      inViewport: Boolean(help && help.left >= 0 && help.top >= 0 && help.right <= innerWidth && help.bottom <= innerHeight),
+      overlaps: Boolean(help && zoom && help.left < zoom.right && help.right > zoom.left && help.top < zoom.bottom && help.bottom > zoom.top),
+    }
+  })
+await page.keyboard.up('Shift')
+await page.keyboard.press('Escape')
+await playedPowerZoom.waitFor({ state: 'detached' })
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.getByRole('button', { name: 'Discard pile, 1 card' }).click()
+const cardDialog = page.locator('dialog.card-collection[open]')
+const dialogCard = cardDialog.getByRole('button', { name: /^Shockwave,/ })
+await dialogCard.hover()
+await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+  await dialogCard.elementHandle())
+const dialogTooltip = await dialogCard.evaluate((card) => {
+  const tooltip = document.getElementById(card.dataset.keywordHelpId)
+  const box = tooltip.getBoundingClientRect()
+  return {
+    hostedByDialog: tooltip.parentElement === card.closest('dialog'),
+    filter: getComputedStyle(tooltip).filter,
+    inViewport: box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+  }
+})
+await shot('02e-card-dialog-keyword-help')
+await cardDialog.getByRole('button', { name: 'Close' }).click()
+const symbolKeywordTips = await page.evaluate(async () => {
+  const [{ CARDS }, { cardKeywordTips }] = await Promise.all([
+    import('/src/game/cards.ts'), import('/src/ui/Card.tsx'),
+  ])
+  return {
+    status: cardKeywordTips(CARDS.power_through),
+    retain: cardKeywordTips(CARDS.equilibrium),
+    power: cardKeywordTips(CARDS.loop),
+    unplayable: cardKeywordTips(CARDS.daze),
+    burn: cardKeywordTips(CARDS.burn),
+    allEnemies: cardKeywordTips(CARDS.the_bomb),
+    nonHit: [cardKeywordTips(CARDS.pain), cardKeywordTips(CARDS.buffer)],
+    exhaustReferences: [cardKeywordTips(CARDS.buffer), cardKeywordTips(CARDS.the_bomb), cardKeywordTips(CARDS.rampage)],
+    hitPoison: cardKeywordTips(CARDS.envenom),
+    shiv: cardKeywordTips(CARDS.blade_dance),
+    orbMechanics: [cardKeywordTips(CARDS.chaos), cardKeywordTips(CARDS.zap), cardKeywordTips(CARDS.dual_cast)],
+    scry: cardKeywordTips(CARDS.foresight),
+    neutral: cardKeywordTips(CARDS.empty_body),
+  }
+})
+check('card hover explains every printed keyword and Shift pins the board until release', () => {
+  assertDeepEqual(hoverKeywordTips.map((tip) => tip.name), ['Exhaust', 'All in a row', 'Vulnerable', 'Weak'])
+  assert(hoverKeywordTips.every((tip) => tip.visible && tip.text), 'every keyword panel should be visible and explained')
+  assert(hoverKeywordTips.some((tip) => tip.name === 'All in a row' &&
+    tip.text === 'Affects all enemies in one row and always also the boss.'), 'AoE help should not imply a hit')
+  assertDeepEqual(hoverKeywordTips.map((tip) => tip.icon), [
+    null, '/assets/icons/aoe.png', '/assets/icons/vulnerable.png', '/assets/icons/weak.png',
+  ])
+  assertDeepEqual(hoverTooltipA11y, { describedBy: true, role: 'tooltip', inViewport: true })
+  assert(hoverTooltipHoverable, 'keyword help should remain visible while the board itself is hovered')
+  assert(hoverTooltipDismissed, 'Escape should dismiss hover or focus keyword help')
+  assert(pointerDownDismissed, 'starting a card pointer interaction should dismiss keyword help')
+  assertDeepEqual(shiftPinned, { pinned: true, visible: true })
+  assert(shiftDragHidden, 'a pinned board should stay hidden while its card is dragged')
+  assertDeepEqual(shiftReleased, { pinned: false, visible: false })
+  assert(blurReleased, 'window blur should release Shift-pinned keyword help')
+  assertDeepEqual(focusShiftPinned, ['Cleave'])
+  assertDeepEqual(focusWinsHover, ['Cleave'])
+  assertDeepEqual(pointerFollowsFocus, ['Shockwave'])
+  assertDeepEqual(symbolKeywordTips.status.map((tip) => [tip.name, tip.icon, tip.text]), [
+    ['Block', 'block', 'Prevents 1 damage per Block. Player Block is capped at 20.'],
+    ['Daze', 'daze', 'A Daze is Ethereal and Unplayable.'],
+  ])
+  assert(symbolKeywordTips.retain.some((tip) => tip.name === 'Retain' &&
+    tip.text === 'A retained card stays in its owner’s hand at end of turn.'), 'Retain help should not change its target')
+  assert(symbolKeywordTips.power.some((tip) => tip.name === 'Power'), 'Power cards should explain their printed type')
+  assertDeepEqual(symbolKeywordTips.unplayable.map((tip) => [tip.name, tip.icon ?? null]), [
+    ['Ethereal', null], ['Unplayable', null], ['Status', null], ['Daze', 'daze'],
+  ])
+  assert(symbolKeywordTips.burn.some((tip) => tip.name === 'Burn' && tip.icon === 'burn'),
+    'Burn itself should explain its named symbol')
+  assert(symbolKeywordTips.allEnemies.some((tip) => tip.name === 'All Enemies'), 'ALL Enemies should explain its reach')
+  assert(symbolKeywordTips.nonHit.every((tips) => tips.every((tip) => tip.name !== 'Hit')),
+    'HP-loss wording should not be mistaken for a Hit')
+  assert(symbolKeywordTips.exhaustReferences.every((tips) => tips.some((tip) => tip.name === 'Exhaust')),
+    'all printed Exhaust references should explain Exhaust')
+  assert(symbolKeywordTips.hitPoison.some((tip) => tip.name === 'Hit' && tip.icon === 'attack'),
+    'effects that explicitly modify each Hit should explain the Hit symbol')
+  assert(symbolKeywordTips.shiv.some((tip) => tip.name === 'Shiv' &&
+    tip.text === 'Spend a Shiv to deal 1 damage as a separate hit. Shivs are not cards.'),
+  'Shiv help should not describe the token as a card')
+  assert(symbolKeywordTips.orbMechanics.every((tips) =>
+    tips.some((tip) => tip.name === 'Orb' && tip.statusIcon === 'orb')),
+  'Channel and Evoke mechanics should explain the Orb symbol')
+  assert(symbolKeywordTips.scry.some((tip) => tip.name === 'Scry' &&
+    tip.text === 'Look at the top cards of your draw pile. Discard any, then return the rest on top in the same order.'),
+  'Scry help should preserve the remaining cards’ order')
+  assert(symbolKeywordTips.neutral.some((tip) => tip.name === 'Neutral' &&
+    tip.text.includes('default Stance')), 'entering Neutral should explain the stance')
+  assertDeepEqual(aoeKeywordTips, [
+    { name: 'All in a row', icon: '/assets/icons/aoe.png' },
+    { name: 'Hit', icon: '/assets/icons/attack.png' },
+  ])
+  assert(resourceKeywordTips.some((tip) => tip.name === 'Orb' && tip.icon === '/assets/status-icons/orb.png'))
+  assert(resourceKeywordTips.some((tip) => tip.name === 'Power' && tip.icon === '/assets/status-icons/power.png'))
+  assert(playedPowerKeywordTips.some((tip) => tip.name === 'Orb' && tip.icon === '/assets/status-icons/orb.png'))
+  assert(playedPowerKeywordTips.some((tip) => tip.name === 'Power' && tip.icon === '/assets/status-icons/power.png'))
+  assertDeepEqual(playedPowerLayout, { overlaps: false, inViewport: true })
+  assert(playedPowerTransferStayedPinned, 'switching between in-play Powers should refresh pinned keyword help')
+  assert(responsivePlayedPowerLayout.open && responsivePlayedPowerLayout.pinned &&
+    responsivePlayedPowerLayout.inViewport && !responsivePlayedPowerLayout.overlaps,
+  `responsive Power help layout failed: ${JSON.stringify(responsivePlayedPowerLayout)}`)
+  assertDeepEqual(dialogTooltip, { hostedByDialog: true, filter: 'none', inViewport: true })
+})
+if (args.includes('--keyword-tooltips-only')) {
+  const fastExitCard = page.getByRole('button', { name: /^Choke,/ })
+  await page.mouse.move(5, 5)
+  await fastExitCard.evaluate((card) => {
+    card.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+    card.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: document.body }))
+  })
+  await page.waitForTimeout(50)
+  const fastExitStayedClosed = await fastExitCard.evaluate((card) =>
+    !document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'))
+  check('leaving before a lazy keyword board mounts does not open a stale board', () => assert(fastExitStayedClosed))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await keywordCard.hover()
+  await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+    await keywordCard.elementHandle())
+  const mobileTooltipInViewport = await keywordCard.evaluate((card) => {
+    const box = document.getElementById(card.dataset.keywordHelpId).getBoundingClientRect()
+    return box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight
+  })
+  await shot('02f-card-keyword-help-mobile')
+  check('keyword help stays inside a mobile viewport', () => assert(mobileTooltipInViewport))
+  await page.setViewportSize({ width: 844, height: 320 })
+  const chokeCard = fastExitCard
+  await page.mouse.move(5, 5)
+  await page.keyboard.down('Shift')
+  await chokeCard.hover()
+  await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-pinned'),
+    await chokeCard.elementHandle())
+  const landscapeTooltip = await chokeCard.evaluate((card) => {
+    const tooltip = document.getElementById(card.dataset.keywordHelpId)
+    return {
+      overflow: tooltip.scrollHeight > tooltip.clientHeight,
+      pointerEvents: getComputedStyle(tooltip).pointerEvents,
+    }
+  })
+  await page.keyboard.press('End')
+  const landscapeKeyboardScrolled = await chokeCard.evaluate((card) =>
+    document.getElementById(card.dataset.keywordHelpId).scrollTop > 0)
+  await shot('02g-card-keyword-help-landscape')
+  await page.keyboard.up('Shift')
+  check('a pinned tall board scrolls on a short landscape viewport', () => {
+    assertDeepEqual(landscapeTooltip, { overflow: true, pointerEvents: 'auto' })
+    assert(landscapeKeyboardScrolled, 'Shift+End should scroll the pinned board')
+  })
+  await page.setViewportSize({ width: 1024, height: 720 })
+  const mountedKeywordHelpBeforeCompendium = await page.locator('.card-keyword-tips').count()
+  await page.keyboard.press('Escape')
+  if (!await pauseMenu.count()) await page.keyboard.press('Escape')
+  await pauseMenu.getByRole('button', { name: 'Compendium' }).focus()
+  await page.keyboard.press('Enter')
+  await page.locator('.compendium').waitFor()
+  const compendiumLazyHelp = {
+    cards: await page.locator('.compendium-card').count(),
+    baseline: mountedKeywordHelpBeforeCompendium,
+    mounted: await page.locator('.card-keyword-tips').count(),
+  }
+  await page.getByPlaceholder('Search').fill('Shockwave')
+  const compendiumCard = page.locator('.compendium-card').first()
+  await compendiumCard.hover()
+  await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+    await compendiumCard.elementHandle())
+  const compendiumGridHelp = await compendiumCard.evaluate((card) => {
+    const tooltip = document.getElementById(card.dataset.keywordHelpId)
+    return tooltip.parentElement === document.body && tooltip.hasAttribute('data-open')
+  })
+  await compendiumCard.click()
+  const compendiumDetail = page.locator('.compendium__detail-card')
+  await compendiumDetail.hover()
+  await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+    await compendiumDetail.elementHandle())
+  const compendiumDetailHelp = await compendiumDetail.evaluate((card) => {
+    const tooltip = document.getElementById(card.dataset.keywordHelpId)
+    return tooltip.parentElement === card.closest('dialog') && tooltip.hasAttribute('data-open')
+  })
+  await shot('02h-compendium-keyword-help')
+  await page.getByRole('button', { name: 'Close card detail' }).click()
+  await page.getByPlaceholder('Search').fill('Calculated Gamble')
+  const upgradeToggleCard = page.locator('.compendium-card').first()
+  await page.mouse.move(5, 5)
+  await page.keyboard.down('Shift')
+  await upgradeToggleCard.hover()
+  await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-pinned'),
+    await upgradeToggleCard.elementHandle())
+  const compendiumSearch = page.getByPlaceholder('Search')
+  await compendiumSearch.focus()
+  await compendiumSearch.evaluate((input) => input.setSelectionRange(0, 0))
+  await page.keyboard.press('End')
+  const editableShiftNavigation = await compendiumSearch.evaluate((input) => ({
+    start: input.selectionStart,
+    end: input.selectionEnd,
+    length: input.value.length,
+  }))
+  await page.getByLabel('View upgrades').check()
+  const upgradedHasNoKeywordHelp = await upgradeToggleCard.evaluate((card) => !card.dataset.keywordHelpId)
+  const staleEscapePrevented = await page.evaluate(() => {
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    document.dispatchEvent(event)
+    return event.defaultPrevented
+  })
+  await page.getByLabel('View upgrades').uncheck()
+  await page.mouse.move(5, 5)
+  await upgradeToggleCard.hover()
+  await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
+    await upgradeToggleCard.elementHandle())
+  const restoredKeywordHelp = await upgradeToggleCard.evaluate((card) =>
+    document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open') &&
+      document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-pinned'))
+  await page.keyboard.up('Shift')
+  check('compendium grid and detail cards expose keyword help', () => {
+    assert(compendiumLazyHelp.cards > 200 && compendiumLazyHelp.mounted <= compendiumLazyHelp.baseline,
+      `inactive compendium cards mounted tooltip portals: ${JSON.stringify(compendiumLazyHelp)}`)
+    assert(compendiumGridHelp)
+    assert(compendiumDetailHelp)
+    assertDeepEqual(editableShiftNavigation, {
+      start: 0, end: editableShiftNavigation.length, length: editableShiftNavigation.length,
+    }, 'pinned help should not intercept Shift+navigation in editable fields')
+    assert(upgradedHasNoKeywordHelp, 'the upgraded zero-keyword face should remove keyword help')
+    assert(!staleEscapePrevented, 'a removed keyword board should not swallow Escape')
+    assert(restoredKeywordHelp, 'returning to the base face should restore pinned keyword help')
+  })
+  const touchContext = await browser.newContext({ ...devices['iPhone 13'] })
+  const touchPage = await touchContext.newPage()
+  auditErrors(touchPage)
+  await touchPage.goto(base)
+  await touchPage.locator('#root').waitFor()
+  await touchPage.evaluate(() => {
+    window.__TOUCH_EVENTS__ = []
+    for (const type of ['pointerover', 'pointerdown', 'pointerup', 'pointerout', 'focusin']) {
+      document.addEventListener(type, (event) => window.__TOUCH_EVENTS__.push({
+        type, pointerType: event.pointerType ?? null,
+      }))
+    }
+    const card = document.createElement('button')
+    card.dataset.keywordHelpId = 'touch-keyword-help'
+    Object.assign(card.style, { position: 'fixed', left: '40px', top: '40px', width: '120px', height: '160px' })
+    const tooltip = document.createElement('span')
+    tooltip.id = 'touch-keyword-help'
+    tooltip.className = 'card-keyword-tips'
+    tooltip.textContent = 'Touch help'
+    document.body.append(card, tooltip)
+  })
+  await touchPage.touchscreen.tap(100, 100)
+  await touchPage.waitForTimeout(50)
+  const touchHelpState = await touchPage.evaluate(() => ({
+    open: document.getElementById('touch-keyword-help').hasAttribute('data-open'),
+    events: window.__TOUCH_EVENTS__,
+    hovered: document.querySelector('[data-keyword-help-id="touch-keyword-help"]').matches(':hover'),
+    focused: document.activeElement?.dataset.keywordHelpId === 'touch-keyword-help',
+  }))
+  await touchContext.close()
+  check('touching a card does not leave sticky keyword help open', () =>
+    assert(!touchHelpState.open, JSON.stringify(touchHelpState)))
+  check('the focused browser run reported no errors', () => {
+    assertDeepEqual(consoleErrors, [])
+    assertDeepEqual(pageErrors, [])
+    assertDeepEqual(requestFailures, [])
+  })
+  await browser.close()
+  await server.close()
+  report('browser keyword tooltips')
+  process.exit()
+}
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
 // Card art must actually load; a broken path renders an empty box that no state
 // assertion would catch.
 const artStatus = await page.evaluate(() =>

@@ -8,7 +8,7 @@ import type { CardInstance } from '../game/types.ts'
 import type { StatusIconName } from './Icon.tsx'
 import { statusIconPath } from './icons.ts'
 import { CardFace } from './CardFace.tsx'
-import { cardRulesText } from './Card.tsx'
+import { CardKeywordHelp, cardRulesText } from './Card.tsx'
 
 type PowerRowProps = { powers: CardInstance[] }
 
@@ -80,6 +80,13 @@ export function PowerRow({ powers }: PowerRowProps) {
       setZoom(null)
     }
   }, [powers, zoom])
+
+  useEffect(() => {
+    if (!zoom) return undefined
+    const frame = requestAnimationFrame(() =>
+      document.dispatchEvent(new Event('card-keyword-help-reposition')))
+    return () => cancelAnimationFrame(frame)
+  }, [zoom?.uid, zoom?.x, zoom?.y])
 
   // While a card is pinned, Escape has to work from anywhere and the card must
   // not sit at coordinates measured against a window that has since changed
@@ -174,7 +181,9 @@ export function PowerRow({ powers }: PowerRowProps) {
           return (
             <li key={card.uid}>
               {/* A button, not a bare tile, keeps every Power keyboard-accessible. */}
+              <CardKeywordHelp def={def}>{(keywordHelpProps) => (
               <button
+                {...keywordHelpProps}
                 type="button"
                 className={['power', showing ? 'power--open' : ''].filter(Boolean).join(' ')}
                 aria-expanded={showing}
@@ -203,6 +212,7 @@ export function PowerRow({ powers }: PowerRowProps) {
                   <span className="power__counter" aria-hidden="true">{card.counter ?? 0}/{counterLimit}</span>
                 ) : null}
               </button>
+              )}</CardKeywordHelp>
             </li>
           )
         })}
