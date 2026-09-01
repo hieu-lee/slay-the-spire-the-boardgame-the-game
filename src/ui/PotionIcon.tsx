@@ -43,7 +43,6 @@ export function PotionTooltipAnchor({
   const pointerActivating = useRef(false)
   const pointerActivatedAt = useRef(Number.NEGATIVE_INFINITY)
   const [hovered, setHovered] = useState(false)
-  const [tipHovered, setTipHovered] = useState(false)
   const [focused, setFocused] = useState(false)
   const [dismissed, setDismissed] = useState<false | 'manual' | 'superseded'>(false)
   const [position, setPosition] = useState({ left: 0, top: 0 })
@@ -58,7 +57,7 @@ export function PotionTooltipAnchor({
   // hover state is noise that would hold this panel open after the player had
   // moved on — and `onMouseLeave` may never arrive to clear it. Where there is
   // no hover, only the tap and real focus open the panel.
-  const showing = (readingTap || focused || (!tapToRead && (hovered || tipHovered))) && !dismissed
+  const showing = (readingTap || focused || (!tapToRead && hovered)) && !dismissed
 
   const claimTooltip = () => tooltipListeners.forEach((listener) => listener(owner))
 
@@ -73,23 +72,12 @@ export function PotionTooltipAnchor({
     window.clearTimeout(leaveTimer.current)
     claimTooltip()
     if (dismissed === 'superseded') setDismissed(false)
-    setTipHovered(false)
     setHovered(true)
   }
   const leaveAnchor = () => {
     window.clearTimeout(leaveTimer.current)
     leaveTimer.current = window.setTimeout(() => setHovered(false), 150)
   }
-  const enterTip = () => {
-    window.clearTimeout(leaveTimer.current)
-    setHovered(false)
-    setTipHovered(true)
-  }
-  const leaveTip = () => {
-    window.clearTimeout(leaveTimer.current)
-    leaveTimer.current = window.setTimeout(() => setTipHovered(false), 150)
-  }
-
   useLayoutEffect(() => {
     if (!showing || !anchor.current || !tip.current) return
     const trigger = anchor.current.getBoundingClientRect()
@@ -112,7 +100,6 @@ export function PotionTooltipAnchor({
       if (event.key !== 'Escape') return
       if (anchor.current?.closest('dialog[open]')) event.preventDefault()
       event.stopPropagation()
-      setTipHovered(false)
       setReadingTap(false)
       setDismissed('manual')
     }
@@ -138,14 +125,13 @@ export function PotionTooltipAnchor({
   }, [readingTap])
 
   useEffect(() => {
-    if (!hovered && !tipHovered && !focused && !readingTap) setDismissed(false)
-  }, [hovered, tipHovered, focused, readingTap])
+    if (!hovered && !focused && !readingTap) setDismissed(false)
+  }, [hovered, focused, readingTap])
 
   useEffect(() => {
     const closeOther = (activeOwner: object) => {
       if (activeOwner === owner) return
       setHovered(false)
-      setTipHovered(false)
       setReadingTap(false)
       setDismissed('superseded')
     }
@@ -253,8 +239,8 @@ export function PotionTooltipAnchor({
       {readingTap && confirmLabel ? `${itemName}. ${itemText} Activate again to ${confirmLabel}.` : ''}
     </span>
     {showing ? createPortal(<span ref={tip}
-      className={`relic-tip potion-tip${readingTap || (!tapToRead && (hovered || tipHovered)) ? ' potion-tip--hoverable' : ''}`} aria-hidden="true"
-      style={position} onMouseEnter={enterTip} onMouseLeave={leaveTip}
+      className={`relic-tip potion-tip${readingTap ? ' potion-tip--hoverable' : ''}`} aria-hidden="true"
+      style={position}
       // `--hoverable` is the only thing that makes this panel hit-testable
       // (chrome/relic-bar.css). Without it while a tap holds the panel open,
       // the 320px box is a click-through lid: a tap on the rules is delivered
