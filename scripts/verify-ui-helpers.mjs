@@ -209,6 +209,11 @@ check('iconic cards and modes keep audible identities', () => {
     'Hexaghost attacks use their green flame impact')
   assert(cardSfxRecipe('hexaghost', 'strike_hexaghost').layers.some((layer) => layer.sound === 'enemy'),
     'Hexaghost green flame keeps an impact cue')
+  const shardSoulburn = cardVfxRecipe('ironclad', 'strike_hexaghost')
+  assertDeepEqual([shardSoulburn.asset, shardSoulburn.tone], ['hexaghost-flame-impact', 'chaos-green'],
+    'Corrupted Shard Soulburn uses the same green flame for non-Hexaghost actors')
+  assert(cardSfxRecipe('ironclad', 'strike_hexaghost').layers.some((layer) => layer.sound === 'enemy'),
+    'Corrupted Shard Soulburn keeps the green flame impact cue')
   assert(signature(cardSfxRecipe('ironclad', 'bash')) !== signature(cardSfxRecipe('watcher', 'bash')),
     'the acting character colors a cross-character card')
   assertEqual(new Set([0, 1, 2].map((mode) => signature(cardSfxRecipe('watcher', 'wish', mode)))).size, 3,

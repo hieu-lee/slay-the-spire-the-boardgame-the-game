@@ -293,6 +293,17 @@ export function spendSoulburn(
   const actor = findPlayer(next, playerId)!
   actor.soulburn -= 1
   actor.soulburnUsedThisTurn = true
+  addPresentationEvent(next, {
+    kind: 'card',
+    actorId: actor.id,
+    sourceId: 'strike_hexaghost',
+    upgraded: false,
+    copied: false,
+    energy: 0,
+    resolvedType: 'attack',
+    enemyIds: [enemyUid],
+    playerIds: [],
+  })
   const bonus = actor.nextSoulburnDamageBonus ?? 0
   actor.nextSoulburnDamageBonus = 0
   const multiplier = crispy ? 2 : 1

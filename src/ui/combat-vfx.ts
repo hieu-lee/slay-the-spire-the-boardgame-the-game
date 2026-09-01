@@ -163,6 +163,7 @@ export function shivVfxRecipe(): VfxRecipe {
 const CARD_OVERRIDES: Readonly<Record<string, VfxRecipe>> = {
   strike_ironclad: recipe('slash', 'lunge', 'ironclad-strike', 'ember-orange'),
   bash: recipe('blunt', 'lunge', 'ironclad-bash', 'impact-ochre'),
+  strike_hexaghost: recipe('projectile', 'cast', 'hexaghost-flame-impact', 'chaos-green'),
 
   thunder_strike: recipe('lightning', 'cast', 'lightning-channel', 'thunder-gold'),
 

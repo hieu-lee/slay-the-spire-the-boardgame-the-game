@@ -72,7 +72,12 @@ export type UnknownPotionAction = { refreshAttempt: number; potionId: string; co
 
 export type UnknownPowerAction = { refreshAttempt: number; powerUid: string }
 
-export type UnknownCardAction = { refreshAttempt: number; cardUid: string; copy: boolean; copiesBefore?: number }
+export type UnknownCardAction = {
+  refreshAttempt: number
+  cardUid: string
+  source: 'hand' | 'chamber' | 'copy'
+  copiesBefore?: number
+}
 
 export type MotionKey = 'energy' | 'draw' | 'discard' | 'exhaust'
 
@@ -84,6 +89,7 @@ export type CardFlight = {
 
 export type CardDrag = {
   card: CardInstance
+  chamber: boolean
   pointerId: number
   startX: number
   startY: number
@@ -120,6 +126,7 @@ export type EndTurnEffectDrag = {
 
 export type MotionSnapshot = {
   hand: readonly CardInstance[]
+  chamber: readonly CardInstance[]
   energy: number
   draw: number
   discard: number
@@ -199,6 +206,8 @@ export type Pending = {
   } | null
   /** Private post-draw/Scry cards; null means choose from the visible hand. */
   choiceCards: CardInstance[] | null
+  /** A Chamber target must be committed before its private cards are revealed. */
+  choicePreviewPending?: boolean
   choiceConfirmed: boolean
   picked: string[]
   slimeChoice: { amount: number; minimum: number } | null

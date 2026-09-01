@@ -58,13 +58,18 @@ const resolveImmediate = (run, gain = true) => {
 
 const inventory = NEOW_CARDS.map((card) => card.options.map((option) => option.label))
 
-check("Heart's Boon labels name Rare rewards and pluralize Potions", () => {
+check("Heart's Boon labels name every printed reward icon and pluralize counted items", () => {
   assertEqual(formatHeartBoonLabel('Gain [yellow-card-reward].'), 'Gain a Rare Card Reward.')
+  assertEqual(formatHeartBoonLabel('Gain [up-arrow-card-reward].'), 'Gain an Upgraded Card Reward.')
+  assertEqual(formatHeartBoonLabel('Gain [card-reward] from the colorless rewards.'),
+    'Gain a Card Reward from the colorless rewards.')
+  assertEqual(formatHeartBoonLabel('Look at 3 [relic] and gain 1 of your choice.'),
+    'Look at 3 Relics and gain 1 of your choice.')
+  assertEqual(formatHeartBoonLabel('Gain [relic].'), 'Gain a Relic.')
   assertEqual(formatHeartBoonLabel('Gain [potion].'), 'Gain Potion.')
   assertEqual(formatHeartBoonLabel('Gain 1 [potion].'), 'Gain 1 Potion.')
   assertEqual(formatHeartBoonLabel('Gain 3 [potion].'), 'Gain 3 Potions.')
-  assert(HEARTS_BOON_CARDS.every((card) => card.options.every((option) =>
-    !option.label.includes('[yellow-card-reward]') && !option.label.includes('[potion]'))))
+  assert(HEARTS_BOON_CARDS.every((card) => card.options.every((option) => !/\[[a-z-]+\]/.test(option.label))))
 })
 
 check('the exact 14 base and six Colorless-unlocked faces are transcribed', () => {

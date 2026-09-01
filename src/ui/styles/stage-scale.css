@@ -346,3 +346,21 @@
     bottom: calc(var(--card-width) * var(--card-ratio) + 3rem);
   }
 }
+
+@media (orientation: landscape) and (max-height: 26.25rem) {
+  .row__seat .seat__portrait,
+  .board .enemy__portrait { bottom: calc(3rem * var(--stage-scale) + 4.75rem); }
+
+  .row__seat .seat__name { bottom: calc(1.55rem * var(--stage-scale) + 4.75rem); }
+
+  .row__seat .seat .bar,
+  .board .enemy .bar { bottom: calc(0.35rem * var(--stage-scale) + 4.75rem); }
+
+  .board .enemy .tokens { bottom: 3.7rem; }
+}
+
+@media (max-width: 48.125rem) {
+  .board:not([data-rows='1']) .row--viewer .row__seat {
+    translate: -7.5rem 0;
+  }
+}

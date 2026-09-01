@@ -162,6 +162,20 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 
 // Weighted alpha PCA of watcher-meteor.webp: tail-to-nose y/x.
 const WATCHER_METEOR_FALL_SLOPE = 0.7113856 / 0.7028019
+const CHAMBER_RETURN_MS = 460
+const CHAMBER_RETURN_STAGGER_MS = 35
+const CHAMBER_REFLOW_MS = 420
+
+type ChamberReturnFlight = {
+  card: CardInstance
+  left: number
+  top: number
+  width: number
+  height: number
+  x: number
+  y: number
+  index: number
+}
 
 const dieRelicChoiceLabel = (owner: string, relic: string, faces: readonly number[]): string =>
   `${owner}: ${relic} · die ${faces.join('/')}`
@@ -220,6 +234,51 @@ function HexaghostAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, att
   )
 }
 
+function GuardianPortrait({ mode, animate, restartKey }: {
+  mode: 'attack' | 'defense'
+  animate: boolean
+  restartKey: number | string
+}) {
+  const previousMode = useRef(mode)
+  const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [transition, setTransition] = useState<'to-attack' | 'to-defense' | null>(null)
+  useEffect(() => {
+    for (const direction of ['attack', 'defense']) {
+      const image = new Image()
+      image.src = assetPath(`combat/characters/guardian-to-${direction}.webp`)
+    }
+    return () => {
+      if (transitionTimer.current) clearTimeout(transitionTimer.current)
+    }
+  }, [])
+  useLayoutEffect(() => {
+    if (transitionTimer.current) clearTimeout(transitionTimer.current)
+    const previous = previousMode.current
+    previousMode.current = mode
+    if (!animate || previous === mode) {
+      setTransition(null)
+      return
+    }
+    setTransition(mode === 'defense' ? 'to-defense' : 'to-attack')
+  }, [animate, mode])
+  const file = transition
+    ? `guardian-${transition}.webp`
+    : mode === 'defense' ? 'guardian-defense.webp' : 'guardian.webp'
+  return <img
+    key={`${transition ?? mode}-${restartKey}`}
+    src={assetPath(`combat/characters/${file}`)}
+    data-guardian-mode={mode}
+    data-guardian-transition={transition ?? undefined}
+    data-vfx-seq={typeof restartKey === 'number' ? restartKey : undefined}
+    alt=""
+    onLoad={() => {
+      if (!transition) return
+      transitionTimer.current = setTimeout(() => setTransition(null), 600)
+    }}
+    onError={(event) => { event.currentTarget.style.display = 'none' }}
+  />
+}
+
 function CombatScreenView({
   state,
   act,
@@ -258,6 +317,10 @@ function CombatScreenView({
   const [spendingShiv, setSpendingShiv] = useState(false)
   const [spendingSoulburn, setSpendingSoulburn] = useState(false)
   const [extraCrispySoulburn, setExtraCrispySoulburn] = useState(false)
+  const [chamberOpen, setChamberOpen] = useState(false)
+  const [chamberClosing, setChamberClosing] = useState(false)
+  const [chamberContact, setChamberContact] = useState(false)
+  const [chamberReturnFlights, setChamberReturnFlights] = useState<ChamberReturnFlight[]>([])
   const [pendingPotion, setPendingPotion] = useState<string | null>(null)
   const [pendingPowerUid, setPendingPowerUid] = useState<string | null>(null)
   const [powerChamberUids, setPowerChamberUids] = useState<string[]>([])
@@ -319,7 +382,7 @@ function CombatScreenView({
   const unknownPotionAction = useRef<UnknownPotionAction | null>(null)
   const unknownPowerAction = useRef<UnknownPowerAction | null>(null)
   const unknownCardAction = useRef<UnknownCardAction | null>(null)
-  const armedCardFlight = useRef<CardInstance | null>(null)
+  const armedCardFlight = useRef<{ card: CardInstance; chamber: boolean } | null>(null)
   const cardDragStart = useRef<CardDragStart | null>(null)
   const cardDragLive = useRef<CardDrag | null>(null)
   const cardDragFrame = useRef<number | null>(null)
@@ -328,6 +391,14 @@ function CombatScreenView({
   const cardDragArrow = useRef<SVGPathElement | null>(null)
   const cardDragArrowShadow = useRef<SVGPathElement | null>(null)
   const suppressCardClick = useRef<string | null>(null)
+  const chamberCloseTimer = useRef<number | null>(null)
+  const chamberContactTimer = useRef<number | null>(null)
+  const chamberReflowFrame = useRef<number | null>(null)
+  const handRevealFrame = useRef<number | null>(null)
+  const chamberTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const handScrollRef = useRef<HTMLDivElement | null>(null)
+  const handRef = useRef<HTMLDivElement | null>(null)
+  const chamberViewerId = useRef(viewerId)
   const endTurnEffectDragStart = useRef<EndTurnEffectDrag | null>(null)
   const endTurnEffectDragLive = useRef<EndTurnEffectDrag | null>(null)
   const endTurnEffectDragFrame = useRef<number | null>(null)
@@ -437,20 +508,29 @@ function CombatScreenView({
     else onChange?.(resolvePlunderRowSwitch(state, viewerId, row))
   }
 
-  function submitHermitChamber(card: CardInstance, enemyUid: string | null = null) {
+  function submitHermitChamber(
+    card: CardInstance,
+    enemyUid: string | null = null,
+    targetPlayerId: string | null = null,
+  ) {
     const def = faceOf(cardDef(card.defId), card.upgraded)
     const required = state.pendingHermitChamberPlays?.[0]
     const staged = stageHermitChamberViewer(viewer!, card,
       required?.playerId === viewerId && required.cardUids[0] === card.uid && required.free)
-    if (cardNeedsChoicePreview(def, state, staged.player)) {
-      requestChamberChoicePreview(card, enemyUid)
-      return
-    }
-    stageOrCommit({
+    const next = {
       ...pendingFor(staged.card, null, state, staged.player, false, undefined, true),
       chamberPlay: true,
       enemyUid,
-    })
+    }
+    if (cardNeedsChoicePreview(def, state, staged.player) && next.needsEnemy && enemyUid === null) {
+      setPending({ ...next, choice: null, choicePreviewPending: true })
+      return
+    }
+    stageOrCommit(targetPlayerId
+      ? next.playerChoices > 0
+        ? { ...next, playerIds: [targetPlayerId] }
+        : { ...next, playerId: targetPlayerId }
+      : next)
   }
 
   function skipUnplayableHermitChamber(card: CardInstance) {
@@ -475,6 +555,169 @@ function CombatScreenView({
   const triggerSlimeEnemyAmount = triggerSlimeEnemyLabels.length
   const pendingPlunder = state.pendingPlunderSwitches?.[0]
   const voluntaryActionsBlocked = mandatoryChoicePending(state)
+  const requiredHermitChamberCard = state.pendingHermitChamberPlays?.[0]
+  useEffect(() => {
+    if (requiredHermitChamberCard?.playerId === viewerId) {
+      if (chamberCloseTimer.current !== null) window.clearTimeout(chamberCloseTimer.current)
+      if (chamberContactTimer.current !== null) window.clearTimeout(chamberContactTimer.current)
+      if (chamberReflowFrame.current !== null) window.cancelAnimationFrame(chamberReflowFrame.current)
+      chamberCloseTimer.current = null
+      chamberContactTimer.current = null
+      chamberReflowFrame.current = null
+      setChamberClosing(false)
+      setChamberContact(false)
+      setChamberReturnFlights([])
+      setChamberOpen(true)
+    }
+  }, [requiredHermitChamberCard?.playerId, requiredHermitChamberCard?.cardUids[0], viewerId])
+  useEffect(() => () => {
+    if (chamberCloseTimer.current !== null) window.clearTimeout(chamberCloseTimer.current)
+    if (chamberContactTimer.current !== null) window.clearTimeout(chamberContactTimer.current)
+    if (chamberReflowFrame.current !== null) window.cancelAnimationFrame(chamberReflowFrame.current)
+    if (handRevealFrame.current !== null) window.cancelAnimationFrame(handRevealFrame.current)
+  }, [])
+  useEffect(() => {
+    if (state.phase === 'player') return
+    if (chamberCloseTimer.current !== null) window.clearTimeout(chamberCloseTimer.current)
+    if (chamberContactTimer.current !== null) window.clearTimeout(chamberContactTimer.current)
+    if (chamberReflowFrame.current !== null) window.cancelAnimationFrame(chamberReflowFrame.current)
+    chamberCloseTimer.current = null
+    chamberContactTimer.current = null
+    chamberReflowFrame.current = null
+    setChamberClosing(false)
+    setChamberContact(false)
+    setChamberReturnFlights([])
+    setChamberOpen(false)
+  }, [state.phase])
+  useEffect(() => {
+    if (chamberViewerId.current === viewerId) return
+    chamberViewerId.current = viewerId
+    if (chamberCloseTimer.current !== null) window.clearTimeout(chamberCloseTimer.current)
+    if (chamberContactTimer.current !== null) window.clearTimeout(chamberContactTimer.current)
+    if (chamberReflowFrame.current !== null) window.cancelAnimationFrame(chamberReflowFrame.current)
+    chamberCloseTimer.current = null
+    chamberContactTimer.current = null
+    chamberReflowFrame.current = null
+    setChamberClosing(false)
+    setChamberContact(false)
+    setChamberReturnFlights([])
+    setChamberOpen(false)
+  }, [viewerId])
+  useEffect(() => {
+    if (!viewer?.chamberSlots) return
+    for (const file of ['icons/hermit-chamber.png', 'icons/hermit-chamber-loaded.png']) {
+      const image = new Image()
+      image.src = assetPath(file)
+    }
+  }, [viewer?.chamberSlots])
+  useEffect(() => {
+    if (!chamberOpen) return
+    const revealChamberCards = () => {
+      if (handRevealFrame.current !== null) window.cancelAnimationFrame(handRevealFrame.current)
+      handRevealFrame.current = window.requestAnimationFrame(() => {
+        handRevealFrame.current = null
+        if (handScrollRef.current) handScrollRef.current.scrollLeft = 0
+      })
+    }
+    revealChamberCards()
+    window.addEventListener('resize', revealChamberCards)
+    return () => {
+      window.removeEventListener('resize', revealChamberCards)
+      if (handRevealFrame.current !== null) window.cancelAnimationFrame(handRevealFrame.current)
+    }
+  }, [chamberOpen, viewerId])
+
+  function handCardRects(cards: readonly CardInstance[]) {
+    const elements = Array.from(handRef.current?.children ?? [])
+    return new Map(cards.flatMap((card, index) => {
+      const element = elements[index]
+      return element instanceof HTMLElement ? [[card.uid, element.getBoundingClientRect()] as const] : []
+    }))
+  }
+
+  function animateHandReflow(before: Map<string, DOMRect>, cards: readonly CardInstance[]) {
+    if (reducedMotion) return
+    if (chamberReflowFrame.current !== null) window.cancelAnimationFrame(chamberReflowFrame.current)
+    chamberReflowFrame.current = window.requestAnimationFrame(() => {
+      chamberReflowFrame.current = null
+      const elements = Array.from(handRef.current?.children ?? [])
+      cards.forEach((card, index) => {
+        const element = elements[index]
+        const prior = before.get(card.uid)
+        if (!(element instanceof HTMLElement) || !prior) return
+        const current = element.getBoundingClientRect()
+        element.animate([
+          { translate: `${prior.left - current.left}px ${prior.top - current.top}px` },
+          { translate: '0 0' },
+        ], { duration: CHAMBER_REFLOW_MS, easing: 'cubic-bezier(0.16, 0.8, 0.24, 1)' })
+      })
+    })
+  }
+
+  function closeChamber(after?: () => void) {
+    if (chamberCloseTimer.current !== null) window.clearTimeout(chamberCloseTimer.current)
+    if (!chamberOpen || reducedMotion || !viewer || viewer.chamber.length === 0) {
+      chamberCloseTimer.current = null
+      setChamberClosing(false)
+      setChamberReturnFlights([])
+      setChamberOpen(false)
+      after?.()
+      return
+    }
+    const cards = [...viewer.chamber, ...viewer.hand]
+    const before = handCardRects(cards)
+    const elements = Array.from(handRef.current?.children ?? [])
+    const target = chamberTriggerRef.current?.getBoundingClientRect()
+    if (!target || elements.length < viewer.chamber.length) {
+      setChamberClosing(false)
+      setChamberReturnFlights([])
+      setChamberOpen(false)
+      after?.()
+      return
+    }
+    setChamberContact(false)
+    setChamberReturnFlights(viewer.chamber.flatMap((card, index) => {
+      const element = elements[index]
+      if (!(element instanceof HTMLElement)) return []
+      const start = element.getBoundingClientRect()
+      return [{
+        card,
+        left: start.left,
+        top: start.top,
+        width: start.width,
+        height: start.height,
+        x: target.left + target.width / 2 - start.left - start.width / 2,
+        y: target.top + target.height / 2 - start.top - start.height / 2,
+        index,
+      }]
+    }))
+    setChamberClosing(true)
+    setChamberOpen(false)
+    animateHandReflow(before, viewer.hand)
+    const duration = CHAMBER_RETURN_MS + (viewer.chamber.length - 1) * CHAMBER_RETURN_STAGGER_MS
+    chamberCloseTimer.current = window.setTimeout(() => {
+      chamberCloseTimer.current = null
+      setChamberClosing(false)
+      setChamberReturnFlights([])
+      setChamberContact(true)
+      chamberContactTimer.current = window.setTimeout(() => {
+        chamberContactTimer.current = null
+        setChamberContact(false)
+      }, 240)
+      after?.()
+    }, duration)
+  }
+
+  function toggleChamber() {
+    if (chamberClosing) return
+    if (chamberOpen) closeChamber()
+    else if (viewer) {
+      const before = handCardRects(viewer.hand)
+      setChamberContact(false)
+      setChamberOpen(true)
+      animateHandReflow(before, [...viewer.chamber, ...viewer.hand])
+    }
+  }
   useEffect(() => {
     setTriggerHermitLoadUids([])
     setTriggerHermitChamberUids([])
@@ -698,6 +941,7 @@ function CombatScreenView({
     if (!viewer) return
     const next: MotionSnapshot = {
       hand: viewer.hand,
+      chamber: viewer.chamber,
       energy: viewer.energy,
       draw: drawCount ?? viewer.draw.length,
       discard: viewer.discard.length,
@@ -712,8 +956,11 @@ function CombatScreenView({
     const before = motionBaseline.current
     motionBaseline.current = next
     const activeDrag = cardDragStart.current
-    if (activeDrag && (restored || !next.hand.some((card) => card.uid === activeDrag.card.uid) ||
-      !cardCanStartDrag(activeDrag.card))) clearCardDrag()
+    const draggedCards = activeDrag?.chamber ? next.chamber : next.hand
+    if (activeDrag && (restored || !draggedCards.some((card) => card.uid === activeDrag.card.uid) ||
+      !(activeDrag.chamber ? chamberCardCanStartDrag(activeDrag.card) : cardCanStartDrag(activeDrag.card)))) {
+      clearCardDrag()
+    }
 
     if (!before) {
       if (!reducedMotion && animateOpeningHand && next.hand.length > 0) {
@@ -739,17 +986,19 @@ function CombatScreenView({
 
     const armed = armedCardFlight.current
     let landing: MotionKey | null = null
-    if (armed && before.hand.some((card) => card.uid === armed.uid) &&
-      !next.hand.some((card) => card.uid === armed.uid)) {
+    const beforeSource = armed?.chamber ? before.chamber : before.hand
+    const nextSource = armed?.chamber ? next.chamber : next.hand
+    if (armed && beforeSource.some((card) => card.uid === armed.card.uid) &&
+      !nextSource.some((card) => card.uid === armed.card.uid)) {
       const destination = cardMotionDestination(
-        armed.uid,
+        armed.card.uid,
         viewer,
-        faceOf(cardDef(armed.defId), armed.upgraded).toDrawTop === true,
+        faceOf(cardDef(armed.card.defId), armed.card.upgraded).toDrawTop === true,
       )
       landing = !reducedMotion && destination !== 'stage' ? destination : null
       flightBeat.current += 1
       const beat = flightBeat.current
-      if (!reducedMotion) setCardFlights((current) => [...current, { beat, card: armed, destination }])
+      if (!reducedMotion) setCardFlights((current) => [...current, { beat, card: armed.card, destination }])
       armedCardFlight.current = null
       if (!reducedMotion) {
         const timerKey = `flight:${beat}` as const
@@ -815,12 +1064,13 @@ function CombatScreenView({
       }
     }
     const card = unknownCardAction.current
-    const cardCommitted = card?.copy
+    const cardCommitted = card?.source === 'copy'
       ? state.pendingCardCopy?.card.uid !== card.cardUid ||
         (card.copiesBefore !== undefined && state.pendingCardCopy.sourceNames.length < card.copiesBefore)
-      : current && !current.hand.some((held) => held.uid === card?.cardUid)
+      : current && !(card?.source === 'chamber' ? current.chamber : current.hand)
+        .some((held) => held.uid === card?.cardUid)
     if (card && ((authoritativeRefresh !== undefined && authoritativeRefresh > card.refreshAttempt) || cardCommitted)) {
-      if (shouldDisarmCardFlight(!card.copy, cardCommitted === true)) armedCardFlight.current = null
+      if (shouldDisarmCardFlight(card.source !== 'copy', cardCommitted === true)) armedCardFlight.current = null
       unknownCardAction.current = null
       cardActionPending.current = false
       setUsingCard(false)
@@ -1052,9 +1302,11 @@ function CombatScreenView({
     const livingPlayers = new Set(state.players.filter((player) => !player.dead).map((player) => player.id))
     setPending((current) => {
       if (!current) return current
-      if (current.cardInHand
-        ? !viewer.hand.some((card) => card.uid === current.card.uid)
-        : state.pendingCardCopy?.playerId !== viewer.id || state.pendingCardCopy.card.uid !== current.card.uid) return null
+      if (current.chamberPlay
+        ? !viewer.chamber.some((card) => card.uid === current.card.uid)
+        : current.cardInHand
+          ? !viewer.hand.some((card) => card.uid === current.card.uid)
+          : state.pendingCardCopy?.playerId !== viewer.id || state.pendingCardCopy.card.uid !== current.card.uid) return null
       const def = faceOf(cardDef(current.card.defId), current.card.upgraded)
       if (current.cardInHand && !cardPlayConditionMet(def, state, viewer, drawCount)) return null
       const recover = def.effects.find((effect) => effect.kind === 'recoverDiscard')
@@ -1391,6 +1643,20 @@ function CombatScreenView({
   const endTurnCount = decidedPlayerIds && livingPlayers.length > 1
     ? `${confirmedDiscards}/${livingPlayers.length}`
     : null
+  const chamberCardsVisible = chamberOpen
+  const visibleHand = chamberCardsVisible ? [...viewer.chamber, ...viewer.hand] : viewer.hand
+  const visibleChamberUids = chamberCardsVisible
+    ? new Set(viewer.chamber.map((card) => card.uid))
+    : new Set<string>()
+  const requiredChamberCard = requiredHermitChamberCard?.playerId === viewer.id
+    ? viewer.chamber.find((card) => card.uid === requiredHermitChamberCard.cardUids[0])
+    : undefined
+  const requiredChamberStaged = requiredChamberCard
+    ? stageHermitChamberViewer(viewer, requiredChamberCard, requiredHermitChamberCard?.free)
+    : undefined
+  const requiredChamberUnplayable = requiredChamberStaged
+    ? !canAfford(state, requiredChamberStaged.player, requiredChamberStaged.card)
+    : false
   const discardableHand = viewer.hand.filter((card) =>
     !card.endTurnProtected && !card.retainThisTurn && !cardHasRetain(viewer, card))
   const retainAllowance = viewer.retainCardsThisTurn ?? 0
@@ -1728,6 +1994,15 @@ function CombatScreenView({
   }, [autoAdvance, autoAdvanceRetry, authoritativeRefresh, state.phase, state.turn, voluntaryActionsBlocked])
 
   function finishTurn() {
+    if (chamberClosing) return
+    if (chamberOpen) {
+      closeChamber(finishTurnNow)
+      return
+    }
+    finishTurnNow()
+  }
+
+  function finishTurnNow() {
     if (!viewer) return
     if (pending?.choiceCards) return
     if (state.phase === 'player') {
@@ -1766,6 +2041,7 @@ function CombatScreenView({
   // hands are private and shared turn order is meaningful, so clients never
   // guess on behalf of the party.
   const viewerHasLegalAction = !voluntaryActionsBlocked && (viewer.hand.some((card) => canAfford(state, viewer, card, false, drawCount)) ||
+    viewer.chamber.some(chamberCardCanStartDrag) ||
     viewer.shivs > 0 || viewer.soulburn > 0 || viewer.miracles > 0 && viewer.energy < CAPS.energy && (
       viewer.relics.some((relic) => relic.defId === 'ice_cream') ||
       viewer.hand.some((card) => canAfford(state, viewer, card, true, drawCount))) ||
@@ -2223,7 +2499,9 @@ function CombatScreenView({
       }
       return
     }
-    if (next.cardInHand) armedCardFlight.current = next.card
+    if (next.cardInHand || next.chamberPlay) {
+      armedCardFlight.current = { card: next.card, chamber: next.chamberPlay }
+    }
     const action = {
       kind: next.chamberPlay ? 'playHermitChamberCard' : next.cardInHand ? 'playCard' : 'playCardCopy',
       cardUid: next.card.uid,
@@ -2247,16 +2525,18 @@ function CombatScreenView({
         if (outcome?.status === 'unknown') {
           const current = stateRef.current.players.find((player) => player.id === viewerId)
           const currentCopy = stateRef.current.pendingCardCopy
-          const copiesBefore = next.cardInHand ? undefined : state.pendingCardCopy?.sourceNames.length
+          const source = next.chamberPlay ? 'chamber' : next.cardInHand ? 'hand' : 'copy'
+          const copiesBefore = source === 'copy' ? state.pendingCardCopy?.sourceNames.length : undefined
           const refreshAttempt = outcome.refreshAttempt ?? refreshRef.current
-          const committed = next.cardInHand
-            ? current && !current.hand.some((card) => card.uid === next.card.uid)
-            : currentCopy?.card.uid !== next.card.uid ||
+          const committed = source === 'copy'
+            ? currentCopy?.card.uid !== next.card.uid ||
               (copiesBefore !== undefined && currentCopy.sourceNames.length < copiesBefore)
+            : current && !(source === 'chamber' ? current.chamber : current.hand)
+              .some((card) => card.uid === next.card.uid)
           const refreshed = refreshAttempt !== undefined && refreshRef.current !== undefined &&
             refreshRef.current > refreshAttempt
           if (committed || refreshed) {
-            if (refreshed && shouldDisarmCardFlight(next.cardInHand, committed === true)) {
+            if (refreshed && shouldDisarmCardFlight(next.cardInHand || next.chamberPlay, committed === true)) {
               armedCardFlight.current = null
             }
             unlock()
@@ -2265,11 +2545,12 @@ function CombatScreenView({
             unknownCardAction.current = {
               refreshAttempt,
               cardUid: next.card.uid,
-              copy: !next.cardInHand,
+              source,
               copiesBefore,
             }
           } else {
-            if (current?.hand.some((card) => card.uid === next.card.uid)) armedCardFlight.current = null
+            if ((next.chamberPlay ? current?.chamber : current?.hand)
+              ?.some((card) => card.uid === next.card.uid)) armedCardFlight.current = null
             unlock()
           }
           return
@@ -2278,14 +2559,25 @@ function CombatScreenView({
         if (outcome?.status === 'refused' || outcome?.status === 'reconciled') {
           const authoritative = reconciliation(outcome)
           if (!authoritative) {
-            if (shouldDisarmCardFlight(next.cardInHand, false)) armedCardFlight.current = null
+            if (shouldDisarmCardFlight(next.cardInHand || next.chamberPlay, false)) armedCardFlight.current = null
             return
           }
-          if (next.cardInHand
-            ? !authoritative.player.hand?.some((card) => card.uid === next.card.uid)
-            : authoritative.combat.pendingCardCopy?.card.uid !== next.card.uid) return
-          if (next.cardInHand) armedCardFlight.current = null
-          const authoritativePlayer = { ...authoritative.player, chamber: authoritative.player.chamber ?? [] }
+          if (next.chamberPlay
+            ? !authoritative.player.chamber?.some((card) => card.uid === next.card.uid)
+            : next.cardInHand
+              ? !authoritative.player.hand?.some((card) => card.uid === next.card.uid)
+              : authoritative.combat.pendingCardCopy?.card.uid !== next.card.uid) return
+          if (next.cardInHand || next.chamberPlay) armedCardFlight.current = null
+          const authoritativePlayer: Player = {
+            ...viewer!,
+            ...authoritative.player,
+            deck: authoritative.player.deck ?? viewer!.deck,
+            draw: viewer!.draw,
+            hand: authoritative.player.hand ?? viewer!.hand,
+            chamber: authoritative.player.chamber ?? [],
+            cardRewards: viewer!.cardRewards,
+            rareRewards: viewer!.rareRewards,
+          }
           if (next.choiceCards &&
             (next.choice?.kind === 'recover' || next.choice?.kind === 'recoverExhaust')) {
             setMiracleOnCard(usingMiracle)
@@ -2309,34 +2601,42 @@ function CombatScreenView({
           }
           if (next.choiceCards) {
             setMiracleOnCard(usingMiracle)
-            if (next.cardInHand) requestChoicePreview(next.card, next.enemyUid, next)
+            if (next.chamberPlay) requestChamberChoicePreview(next.card, next.enemyUid, next)
+            else if (next.cardInHand) requestChoicePreview(next.card, next.enemyUid, next)
             else requestCopyChoicePreview(next.enemyUid)
             return
           }
+          const chamberCard = next.chamberPlay
+            ? authoritativePlayer.chamber.find((card) => card.uid === next.card.uid)
+            : undefined
+          const pendingPlayer = chamberCard
+            ? stageHermitChamberViewer(authoritativePlayer, chamberCard).player
+            : authoritativePlayer
           const def = effectiveCombatCardDef(
-            faceOf(cardDef(next.card.defId), next.card.upgraded), authoritativePlayer.guardianMode,
+            faceOf(cardDef(next.card.defId), next.card.upgraded), pendingPlayer.guardianMode,
           )
           const overflowShivs = overflowShivCount(authoritative.combat,
             cardShivsOnPlay(def, next.choice?.kind === 'discardAny' ? next.picked.length : 0))
-          const spentShivs = cardShivChoiceCount(def, authoritativePlayer)
+          const spentShivs = cardShivChoiceCount(def, pendingPlayer)
           const enemyChoices = cardEnemyChoiceCount(def, undefined, state, viewer!)
           const playerChoices = cardPlayerChoiceCount(def)
-          const cost = next.cardInHand ? playCost(def, authoritativePlayer, next.card) : 0
-          const energySpent = next.cardInHand ? cost === 'X' ? null : 0
+          const physicalCard = next.cardInHand || next.chamberPlay
+          const cost = physicalCard ? playCost(def, pendingPlayer, next.card) : 0
+          const energySpent = physicalCard ? cost === 'X' ? null : 0
             : authoritative.combat.pendingCardCopy?.energySpent ?? 0
-          const effectEnergy = next.cardInHand && def.cost === 'X' && cost !== 'X' ? cost : energySpent
-          const needsEnemy = cardNeedsEnemy(def, authoritativePlayer, false, effectEnergy ?? undefined,
+          const effectEnergy = physicalCard && def.cost === 'X' && cost !== 'X' ? cost : energySpent
+          const needsEnemy = cardNeedsEnemy(def, pendingPlayer, false, effectEnergy ?? undefined,
             false, next.card.attachedGemId, next.card.uid,
-            next.cardInHand && typeof cost === 'number' ? cost : undefined) || spentShivs > 0 ||
+            physicalCard && typeof cost === 'number' ? cost : undefined) || spentShivs > 0 ||
             overflowShivs > 0 || enemyChoices > 0
           const needsAlly = (def.supportTarget === 'anyPlayer' ||
-            guardianCardNeedsAlly(def, authoritativePlayer, next.card.attachedGemId)) &&
+            guardianCardNeedsAlly(def, pendingPlayer, next.card.attachedGemId)) &&
             authoritative.combat.players.filter((player) => !player.dead).length > 1
           const needsSwitch = def.effects.some((effect) => effect.kind === 'switchRows') &&
             authoritative.combat.players.filter((player) => !player.dead).length > 1
           setMiracleOnCard(usingMiracle)
           if (needsEnemy || needsAlly || playerChoices > 0 || needsSwitch || def.modes || next.choice ||
-            nextEvokeChoice(def, authoritativePlayer, [], undefined, effectEnergy ?? 0)) {
+            nextEvokeChoice(def, pendingPlayer, [], undefined, effectEnergy ?? 0)) {
             setPending({
               ...next,
               energySpent,
@@ -2811,15 +3111,20 @@ function CombatScreenView({
     setArmedEndTurnAbilityId((current) => current === ability.id ? null : ability.id)
   }
 
-  function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>) {
+  function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>, chamber = false) {
     if (event.button !== 0) return
-    const canDrag = cardCanStartDrag(card)
+    const canDrag = chamber ? chamberCardCanStartDrag(card) : cardCanStartDrag(card)
     const def = faceOf(cardDef(card.defId), card.upgraded)
-    const pending = canDrag ? pendingFor(card, null, state, viewer!) : null
+    const staged = chamber ? stageHermitChamberViewer(viewer!, card,
+      state.pendingHermitChamberPlays?.[0]?.playerId === viewerId &&
+      state.pendingHermitChamberPlays[0].cardUids[0] === card.uid &&
+      state.pendingHermitChamberPlays[0].free) : null
+    const pending = canDrag ? pendingFor(staged?.card ?? card, null, state, staged?.player ?? viewer!,
+      false, undefined, chamber) : null
     const scrollElement = event.currentTarget.closest('.hand-scroll') as HTMLDivElement | null
     event.currentTarget.setPointerCapture(event.pointerId)
     cardDragStart.current = {
-      card, pointerId: event.pointerId,
+      card, chamber, pointerId: event.pointerId,
       startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
       needsEnemy: pending?.needsEnemy ?? false,
       needsPlayer: pending ? !pending.needsEnemy && (pending.needsAlly || pending.playerChoices > 0) : false,
@@ -2872,6 +3177,7 @@ function CombatScreenView({
       if (!active || !move) return
       const next: CardDrag = {
         card: active.card,
+        chamber: active.chamber,
         pointerId: active.pointerId,
         startX: active.startX,
         startY: active.startY,
@@ -2906,6 +3212,15 @@ function CombatScreenView({
   function cardCanStartDrag(card: CardInstance) {
     return !usingCard && !pending && !pendingTrigger && !endTurnResolving && state.phase === 'player' &&
       !forcedCard && !distilled && !relicScry && canAfford(state, viewer!, card, miracleOnCard, drawCount)
+  }
+
+  function chamberCardCanStartDrag(card: CardInstance) {
+    const required = state.pendingHermitChamberPlays?.[0]
+    const staged = stageHermitChamberViewer(viewer!, card,
+      required?.playerId === viewerId && required.cardUids[0] === card.uid && required.free)
+    return !usingCard && !pending && !pendingTrigger && !endTurnResolving && !forcedCard &&
+      state.phase === 'player' && (required?.cardUids[0] === card.uid || !voluntaryActionsBlocked) &&
+      canAfford(state, staged.player, staged.card)
   }
 
   function clearCardDrag() {
@@ -2946,7 +3261,8 @@ function CombatScreenView({
     }, 0)
     if (!start.canDrag || wasScrolling) return
     if (lifted && (!needsEnemy || targetUid) && (!needsPlayer || targetPlayerId)) {
-      onCardClick(start.card, targetUid, targetPlayerId)
+      if (start.chamber) submitHermitChamber(start.card, targetUid, targetPlayerId)
+      else onCardClick(start.card, targetUid, targetPlayerId)
     }
   }
 
@@ -3136,6 +3452,10 @@ function CombatScreenView({
       stageOrCommit({ ...pending, soulburnEnemyUids: [...pending.soulburnEnemyUids, enemy.uid] })
       return
     }
+    if (pending?.chamberPlay && pending.choicePreviewPending) {
+      requestChamberChoicePreview(pending.card, enemy.uid, pending)
+      return
+    }
     if (pending && pendingEvokeTarget >= 0 && choiceSatisfied) {
       const targets = [...pending.evokeEnemyUids]
       if (pendingEvokeUsesRows) {
@@ -3153,7 +3473,8 @@ function CombatScreenView({
     const normalTargetNeeded = pendingNeedsCardEnemy && !pending.enemyUid
     if (normalTargetNeeded) {
       if (pendingDef && cardNeedsChoicePreview(pendingDef, state, viewer!)) {
-        if (pending.cardInHand) requestChoicePreview(pending.card, enemy.uid, pending)
+        if (pending.chamberPlay) requestChamberChoicePreview(pending.card, enemy.uid, pending)
+        else if (pending.cardInHand) requestChoicePreview(pending.card, enemy.uid, pending)
         else requestCopyChoicePreview(enemy.uid)
         return
       }
@@ -3384,7 +3705,7 @@ function CombatScreenView({
       ? pendingDef.modes[pending.mode]?.effects ?? []
       : pendingDef.effects).some((effect) => effect.kind === 'hitChoices'))
   const independentPlayerPending = Boolean(pending && pending.playerIds.length < pending.playerChoices)
-  const copySource = pending?.cardInHand !== false && pendingDef?.id !== 'burst'
+  const copySource = (pending?.cardInHand !== false || pending?.chamberPlay) && pendingDef?.id !== 'burst'
     ? (pendingEffectiveDef?.type === 'attack' || pendingEffectiveDef?.type === 'skill') && (viewer.doubledCardsThisTurn ?? 0) > 0
       ? 'Echo Form'
       : pendingEffectiveDef?.type === 'attack' && (viewer.tripledAttacksThisTurn ?? 0) > 0
@@ -3407,7 +3728,7 @@ function CombatScreenView({
           ? `${activeCopyName} copy (${activeCopy.sourceNames[0]})`
           : `original ${activeCopyName} after ${activeCopy.sourceNames[0]} copy`
     : null
-  const originalTarget = pending?.cardInHand === false
+  const originalTarget = pending?.cardInHand === false && !pending.chamberPlay
     ? ` for ${copyResolutionLabel ?? pendingDef?.name ?? 'card'}`
     : ''
   // Shared across every row-target prompt below so "the boss is always
@@ -3598,6 +3919,8 @@ function CombatScreenView({
   return (
     <div
       className="combat"
+      inert={chamberClosing}
+      aria-busy={chamberClosing || undefined}
       data-act={stageAct}
       data-character={viewer.character}
       data-phase={state.phase}
@@ -3841,7 +4164,7 @@ function CombatScreenView({
                   ends when everyone says so, and being told who the table is
                   waiting on is the whole reason a second screen existed. */}
               {!forcedCard && !distilled ? <button type="button" ref={endTurnRef} className="combat__end-turn" onClick={finishTurn}
-                disabled={Boolean(pending?.choiceCards) || Boolean(pendingTrigger) || endTurnResolving}>
+                disabled={Boolean(pending?.choiceCards) || Boolean(pendingTrigger) || endTurnResolving || chamberClosing}>
                 {state.phase === 'discard'
                   ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} ${viewer.name} (${confirmedDiscards}/${livingPlayers.length})`
                   : endTurnCount ? `End turn ${endTurnCount}` : 'End turn'}
@@ -4309,7 +4632,7 @@ function CombatScreenView({
           {pendingDef?.modes && !modeSatisfied ? pendingDef.modes.map((mode, index) => (
             <button type="button" className="prompt__mode" key={mode.label}
               disabled={!cardModeIsAvailable(pendingDef, state, viewer!, index, drawCount,
-                pending.cardInHand ? pending.card.uid : undefined) ||
+                pending.cardInHand || pending.chamberPlay ? pending.card.uid : undefined) ||
                 (mode.effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct) &&
                   cardEnemyChoiceCount(pendingDef, index, state, viewer!) > state.enemies.filter((enemy) => !enemy.dead).length)}
               onClick={() => onModeClick(index)}>
@@ -4639,7 +4962,7 @@ function CombatScreenView({
         <dialog ref={choiceDialogRef} className="choice-modal" aria-labelledby="choice-modal-title"
           onCancel={(event) => {
             event.preventDefault()
-            if (pending.cardInHand &&
+            if ((pending.cardInHand || pending.chamberPlay) &&
               (pending.choice?.kind === 'recover' || pending.choice?.kind === 'recoverExhaust')) setPending(null)
           }}>
           <div className="choice-modal__panel">
@@ -4741,7 +5064,7 @@ function CombatScreenView({
                   ? pending.picked.length === 0 ? 'Load none' : `Load ${pending.picked.length} card${pending.picked.length === 1 ? '' : 's'}`
                 : choiceNeeded === 0 ? 'Continue' : `Discard selected card${choiceNeeded === 1 ? '' : 's'}`}
             </button>
-            {pending.cardInHand &&
+          {(pending.cardInHand || pending.chamberPlay) &&
             (pending.choice.kind === 'recover' || pending.choice.kind === 'recoverExhaust') ? (
               <button type="button" className="prompt__cancel" onClick={() => setPending(null)}>Cancel</button>
             ) : null}
@@ -4943,15 +5266,23 @@ function CombatScreenView({
                         {occupant.character === 'watcher' && occupant.stance !== 'neutral' ? (
                           <span className={`stance-aura stance-aura--${occupant.stance}`} />
                         ) : null}
-                        <img
-                          key={`${occupant.character}-${occupantHeat}-${characterAttack?.active.event.seq ?? latestActorVfx?.event.seq ?? 'idle'}`}
-                          src={assetPath(occupant.character === 'hexaghost'
-                            ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
-                            : `combat/characters/${occupant.character}.webp`)}
-                          data-vfx-seq={latestActorVfx?.event.seq}
-                          alt=""
-                          onError={(event) => { event.currentTarget.style.display = 'none' }}
-                        />
+                        {occupant.character === 'guardian' && occupant.guardianMode ? (
+                          <GuardianPortrait
+                            mode={occupant.guardianMode}
+                            animate={!prefersReducedMotion}
+                            restartKey={characterAttack?.active.event.seq ?? latestActorVfx?.event.seq ?? 'idle'}
+                          />
+                        ) : (
+                          <img
+                            key={`${occupant.character}-${occupantHeat}-${characterAttack?.active.event.seq ?? latestActorVfx?.event.seq ?? 'idle'}`}
+                            src={assetPath(occupant.character === 'hexaghost'
+                              ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
+                              : `combat/characters/${occupant.character}.webp`)}
+                            data-vfx-seq={latestActorVfx?.event.seq}
+                            alt=""
+                            onError={(event) => { event.currentTarget.style.display = 'none' }}
+                          />
+                        )}
                         {characterAttackMotions.map((characterAttack) => (
                           <span
                             className={`character-attack character-attack--${occupant.character}`}
@@ -5129,13 +5460,7 @@ function CombatScreenView({
                       </span>
                       <span className="seat__meta">
                       {occupant.character === 'guardian' && occupant.guardianMode ? (
-                        <span className="seat__mechanic">
-                          {occupant.guardianMode === 'attack' ? 'Attack' : 'Defense'} · Vigor {occupant.vigor}
-                        </span>
-                      ) : null}
-                      {occupant.character === 'hermit' && occupant.id === viewerId && occupant.chamberSlots > 0 &&
-                      occupant.chamber.length === 0 ? (
-                        <span className="seat__mechanic">Chamber {occupant.chamber.length}/{occupant.chamberSlots}</span>
+                        <span className="seat__mechanic">Vigor {occupant.vigor}</span>
                       ) : null}
                       {occupant.strengthLossAtEndOfTurn > 0 ? (
                         <span className="seat__pending">
@@ -5353,7 +5678,8 @@ function CombatScreenView({
           ))}
         </section>
       ) : null}
-      <footer className="hand-area" data-character={viewer.character}>
+      <footer className="hand-area" data-character={viewer.character}
+        data-has-chamber={viewer.chamberSlots > 0 || undefined}>
         <div className="hand-area__stats">
           <span className={[
             'pip',
@@ -5368,6 +5694,29 @@ function CombatScreenView({
             </span> : null}
             <IconValue name="energy" value={viewer.energy} size={26} />
           </span>
+          {viewer.chamberSlots > 0 ? (
+            <button ref={chamberTriggerRef} type="button" className={[
+              'hermit-chamber-trigger',
+              chamberContact ? 'hermit-chamber-trigger--contact' : '',
+            ].filter(Boolean).join(' ')}
+              aria-expanded={chamberOpen}
+              aria-label={`Chamber, ${viewer.chamber.length} of ${viewer.chamberSlots} slots filled`}
+              title={chamberClosing ? 'Returning Chamber cards' : chamberOpen
+                ? 'Return Chamber cards' : 'Show Chamber cards'}
+              disabled={chamberClosing}
+              onClick={toggleChamber}>
+              <img src={assetPath(chamberOpen || chamberClosing || viewer.chamber.length === 0
+                ? 'icons/hermit-chamber.png'
+                : 'icons/hermit-chamber-loaded.png')} alt="" />
+              <span aria-hidden="true">{viewer.chamber.length}/{viewer.chamberSlots}</span>
+            </button>
+          ) : null}
+          {requiredChamberCard && requiredChamberUnplayable ? (
+            <button type="button" className="prompt__mode hermit-chamber-skip"
+              onClick={() => skipUnplayableHermitChamber(requiredChamberCard)}>
+              Skip unplayable {cardDef(requiredChamberCard.defId).name}
+            </button>
+          ) : null}
           <span className={['pile', motionActive.has('draw')
             ? `motion-pulse-${motionBeats.draw % 2}` : ''].filter(Boolean).join(' ')}
             data-pile="draw" title="Draw pile">
@@ -5389,63 +5738,45 @@ function CombatScreenView({
             ))}
           </span>
         </div>
-        {viewer.chamber.length > 0 ? (
-          <section className="hermit-chamber" aria-label={`Chamber, ${viewer.chamber.length} of ${viewer.chamberSlots} slots filled`}>
-            <strong>Chamber {viewer.chamber.length}/{viewer.chamberSlots}</strong>
-            <div className="hermit-chamber__cards">
-              {viewer.chamber.map((card) => {
-                const pendingChamber = state.pendingHermitChamberPlays?.[0]
-                const required = pendingChamber?.playerId === viewer.id && pendingChamber.cardUids[0] === card.uid
-                const staged = stageHermitChamberViewer(viewer, card, required && pendingChamber.free)
-                const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), staged.player.guardianMode)
-                const needsEnemy = cardNeedsEnemy(def, staged.player, true, undefined, false, undefined,
-                  staged.card.uid, chargedCardEnergy(def, staged.player, staged.card))
-                const affordable = canAfford(state, staged.player, staged.card)
-                const playable = !usingCard && !pendingTrigger && !endTurnResolving && !forcedCard &&
-                  state.phase === 'player' && (required || !voluntaryActionsBlocked) &&
-                  affordable
-                return <span key={card.uid} className="hermit-chamber__card">
-                  <Card card={card} cost={playCost(def, staged.player, staged.card)}
-                    playable={playable && (!needsEnemy || livingEnemies(state).length === 1)}
-                    onClick={() => submitHermitChamber(card, needsEnemy ? livingEnemies(state)[0]?.uid ?? null : null)} />
-                  {required && !affordable ? <button type="button" className="prompt__mode"
-                    onClick={() => skipUnplayableHermitChamber(card)}>Skip unplayable {def.name}</button> : null}
-                  {needsEnemy && livingEnemies(state).length > 1 ? (
-                    <span className="hermit-chamber__targets">
-                      {livingEnemies(state).map((enemy) => <button key={enemy.uid} type="button" className="prompt__mode"
-                        disabled={!playable}
-                        onClick={() => submitHermitChamber(card, enemy.uid)}>{enemyLabel(state.enemies, enemy)}</button>)}
-                    </span>
-                  ) : null}
-                </span>
-              })}
-            </div>
-          </section>
-        ) : null}
         {/* Fanned, the way a hand is actually held: each card tilted and
             lifted by its distance from the middle. The angle is set here
             because only the component knows how many cards there are. */}
-        <div className="hand-scroll" onWheel={(event) => {
+        <div ref={handScrollRef} className="hand-scroll" onWheel={(event) => {
           event.currentTarget.scrollLeft += event.deltaX || (event.shiftKey ? event.deltaY : 0)
-        }}><div className="hand" data-count={viewer.hand.length}>
-          {viewer.hand.map((card, index) => {
+        }}><div ref={handRef} className="hand" data-count={visibleHand.length}>
+          {visibleHand.map((card, index) => {
+            const chamberCard = visibleChamberUids.has(card.uid)
+            const required = chamberCard && requiredHermitChamberCard?.playerId === viewer.id &&
+              requiredHermitChamberCard.cardUids[0] === card.uid
+            const staged = chamberCard
+              ? stageHermitChamberViewer(viewer, card, required && requiredHermitChamberCard?.free)
+              : null
+            const cardViewer = staged?.player ?? viewer
+            const displayedCard = staged?.card ?? card
             const attachedGemId = guardianGemForCard(viewer, card)
             const shownCard = attachedGemId === card.attachedGemId ? card : { ...card, attachedGemId }
-            const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), viewer.guardianMode)
-            const setupTarget = hermitSetupPending && hermitTargetedCurses.has(card.defId)
+            const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), cardViewer.guardianMode)
+            const setupTarget = !chamberCard && hermitSetupPending && hermitTargetedCurses.has(card.defId)
               ? livingEnemies(state).length === 1 ? livingEnemies(state)[0] : undefined
               : null
-            const setupPlayable = hermitSetupPending && (!hermitTargetedCurses.has(card.defId) || Boolean(setupTarget))
+            const setupPlayable = !chamberCard && hermitSetupPending &&
+              (!hermitTargetedCurses.has(card.defId) || Boolean(setupTarget))
+            const chamberCancelable = chamberCard && pending?.chamberPlay && pending.card.uid === card.uid &&
+              (pending.choicePreviewPending || !pending.choiceCards || pending.choice?.kind === 'recover' ||
+                pending.choice?.kind === 'recoverExhaust')
+            const chamberPlayable = chamberCard && !chamberClosing &&
+              (chamberCardCanStartDrag(card) || chamberCancelable)
             return <Card
               key={card.uid}
               className={[drawnCards.has(card.uid) ? 'card--drawn' : '',
                 cardDrag?.card.uid === card.uid ? 'card--dragging' : '',
+                chamberCard ? 'card--chamber-drawn' : '',
                 setupPlayable ? 'card--load-choice' : ''].filter(Boolean).join(' ') || undefined}
               style={{ '--deal-index': index } as React.CSSProperties}
-              fan={fanOf(index, viewer.hand.length)}
-              card={shownCard}
-              cost={card.uid === forcedCardUid ? 0 : playCost(def, viewer, card)}
-              playable={hermitSetupPending ? setupPlayable :
+              fan={fanOf(index, visibleHand.length)}
+              card={chamberCard ? displayedCard : shownCard}
+              cost={card.uid === forcedCardUid ? 0 : playCost(def, cardViewer, displayedCard)}
+              playable={chamberCard ? chamberPlayable : hermitSetupPending ? setupPlayable :
                 !usingCard &&
                 !pendingTrigger &&
                 !endTurnResolving &&
@@ -5467,18 +5798,47 @@ function CombatScreenView({
               }
               selected={pending?.card.uid === card.uid}
               picked={pending?.picked.includes(card.uid) === true}
-              onClick={hermitSetupPending
+              onClick={chamberCard
+                ? () => {
+                  if (suppressCardClick.current === card.uid) {
+                    suppressCardClick.current = null
+                    return
+                  }
+                  if (chamberCancelable) {
+                    setPending(null)
+                    return
+                  }
+                  submitHermitChamber(card, cardNeedsEnemy(def, cardViewer, true, undefined, false,
+                    undefined, displayedCard.uid, chargedCardEnergy(def, cardViewer, displayedCard)) &&
+                    livingEnemies(state).length === 1 ? livingEnemies(state)[0]?.uid ?? null : null)
+                }
+                : hermitSetupPending
                 ? () => setupPlayable && submitHermitSetup(card, setupTarget?.uid ?? null)
                 : activateCard}
-              onPointerDown={hermitSetupPending ? undefined : (event) => onCardPointerDown(card, event)}
-              onPointerMove={hermitSetupPending ? undefined : onCardPointerMove}
-              onPointerUp={hermitSetupPending ? undefined : finishCardDrag}
-              onPointerCancel={hermitSetupPending ? undefined : cancelCardDrag}
-              onLostPointerCapture={hermitSetupPending ? undefined : cancelCardDrag}
+              onPointerDown={hermitSetupPending && !chamberCard
+                ? undefined
+                : (event) => onCardPointerDown(card, event, chamberCard)}
+              onPointerMove={hermitSetupPending && !chamberCard ? undefined : onCardPointerMove}
+              onPointerUp={hermitSetupPending && !chamberCard ? undefined : finishCardDrag}
+              onPointerCancel={hermitSetupPending && !chamberCard ? undefined : cancelCardDrag}
+              onLostPointerCapture={hermitSetupPending && !chamberCard ? undefined : cancelCardDrag}
             />
           })}
         </div></div>
       </footer>
+      {chamberReturnFlights.map((flight) => (
+        <div key={flight.card.uid} className="chamber-return-flight" style={{
+          left: flight.left,
+          top: flight.top,
+          width: flight.width,
+          height: flight.height,
+          '--chamber-return-x': `${flight.x}px`,
+          '--chamber-return-y': `${flight.y}px`,
+          '--chamber-return-index': flight.index,
+        } as React.CSSProperties} aria-hidden="true" inert>
+          <Card card={flight.card} playable={false} />
+        </div>
+      ))}
       {cardDrag ? (
         <>
           {cardDrag.needsEnemy || cardDrag.needsPlayer ? (

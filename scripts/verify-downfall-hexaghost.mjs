@@ -89,6 +89,18 @@ assert.equal(characterRewardDeck('hexaghost', true, progress).length, 16, 'physi
   assert.equal(next.players[0].soulburn, 0)
   assert.equal(next.players[0].nextSoulburnDamageBonus, 0)
   assert.equal(next.players[0].soulburnUsedThisTurn, true)
+  assert.deepEqual(next.presentationEvents.at(-1), {
+    seq: 1,
+    kind: 'card',
+    actorId: 'p1',
+    sourceId: 'strike_hexaghost',
+    upgraded: false,
+    copied: false,
+    energy: 0,
+    resolvedType: 'attack',
+    enemyIds: ['e1'],
+    playerIds: [],
+  }, 'spending Soulburn reuses Hexaghost green-flame flight, impact, and SFX presentation')
 }
 
 // Corrupted Shard grants every character the full foreign-character board resource loop.

@@ -54,11 +54,13 @@ page.setDefaultNavigationTimeout(30_000)
 const consoleErrors = []
 const pageErrors = []
 const requestFailures = []
+const requestedUrls = new Set()
 const auditErrors = (currentPage) => {
   currentPage.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
   currentPage.on('pageerror', (error) => pageErrors.push(String(error)))
+  currentPage.on('request', (request) => requestedUrls.add(request.url()))
   currentPage.on('requestfailed', (request) =>
     request.failure()?.errorText !== 'net::ERR_ABORTED' || !/\/assets\/(?:bgm|sfx)\//.test(request.url())
       ? requestFailures.push(`${request.url()} ${request.failure()?.errorText ?? ''}`)
@@ -1234,11 +1236,18 @@ const downfallEnergyOrbs = {}
 const downfallEmptyEnergyOrbs = {}
 let downfallReducedMotionStopped = false
 let guardianModeOrb = null
+let guardianModePortrait = null
 let slimeHudAccess = null
 let slimeHudOverlapsEndTurn = true
 let hexaghostVisualState = null
+let hermitChamberInteractions = null
+let corruptedShardChamberLayout = null
 for (const fixture of [
-  { character: 'guardian', name: 'Guardian', fields: { guardianMode: 'attack', vigor: 3 } },
+  { character: 'guardian', name: 'Guardian', fields: {
+    guardianMode: 'attack', vigor: 3, chamberSlots: 1,
+    chamber: [{ uid: 'ui-shard-chamber', defId: 'hermit_defend', upgraded: false }],
+    relics: [{ defId: 'corrupted_shard', spent: false }],
+  } },
   { character: 'hexaghost', name: 'Hexaghost', fields: { heat: 2, soulburn: 1 } },
   { character: 'slime_boss', name: 'Slime Boss', fields: { slimes: [{
     card: { uid: 'ui-hud-bruiser', defId: 'slime_boss_bruiser_slime', upgraded: false },
@@ -1345,21 +1354,76 @@ for (const fixture of [
   await page.screenshot({ path: join(outDir, `downfall-${fixture.character}-compact-hud.png`) })
   if (fixture.character === 'guardian') {
     const layer = page.locator('.energy-orb__layers > img[data-layer="6"]')
+    const portrait = page.locator('.seat__portrait > img[data-guardian-mode]')
+    const attackIdle = await portrait.getAttribute('src')
+    const attackAria = await page.locator('.seat[data-player-id]').getAttribute('aria-label')
     const activeTransition = await layer.evaluate((image) => getComputedStyle(image).transitionDuration)
     await page.evaluate(() => {
       const next = structuredClone(window.__STS_DEBUG__.getRun())
       next.combat.players[0].guardianMode = 'defense'
       window.__STS_DEBUG__.setRun(next)
     })
-    await page.waitForTimeout(750)
+    await page.locator('.seat__portrait > img[data-guardian-transition="to-defense"]').waitFor()
+    const toDefense = await portrait.getAttribute('src')
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: join(outDir, 'downfall-guardian-transforming.png') })
+    await page.waitForTimeout(350)
+    const defenseIdle = await portrait.getAttribute('src')
+    const defenseAria = await page.locator('.seat[data-player-id]').getAttribute('aria-label')
+    await page.screenshot({ path: join(outDir, 'downfall-guardian-defense-hud.png') })
     const defenseTransform = await layer.evaluate((image) => getComputedStyle(image).transform)
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.players[0].guardianMode = 'attack'
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.locator('.seat__portrait > img[data-guardian-transition="to-attack"]').waitFor()
+    const toAttack = await portrait.getAttribute('src')
+    await page.waitForTimeout(650)
+    const returnedAttackIdle = await portrait.getAttribute('src')
     await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.players[0].guardianMode = 'defense'
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.waitForTimeout(50)
+    const reducedPortrait = await portrait.evaluate((image) => ({
+      src: image.getAttribute('src'),
+      transition: image.dataset.guardianTransition,
+    }))
     const reducedTransition = await layer.evaluate((image) => getComputedStyle(image).transitionDuration)
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(() => { document.documentElement.dataset.mobilePerformance = 'true' })
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.players[0].guardianMode = 'attack'
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.locator('.seat__portrait > img[data-guardian-transition="to-attack"]').waitFor()
+    const mobilePortrait = await portrait.getAttribute('src')
     const mobileTransition = await layer.evaluate((image) => getComputedStyle(image).transitionDuration)
     await page.evaluate(() => { delete document.documentElement.dataset.mobilePerformance })
     guardianModeOrb = { activeTransition, defenseTransform, reducedTransition, mobileTransition }
+    guardianModePortrait = { attackIdle, attackAria, toDefense, defenseIdle, defenseAria, toAttack,
+      returnedAttackIdle, reducedPortrait, mobilePortrait }
+    const shardTrigger = page.getByRole('button', { name: /Chamber, 1 of 1 slots filled/ })
+    await shardTrigger.waitFor()
+    const shardLoadedAsset = await shardTrigger.locator('img').getAttribute('src')
+    await shardTrigger.click()
+    await page.locator('.hand .card--chamber-drawn').waitFor()
+    corruptedShardChamberLayout = await page.evaluate((loadedAsset) => ({
+      availableOutsideHermit: document.querySelector('.hand-area')?.dataset.character === 'guardian' &&
+        document.querySelector('.hand-area')?.dataset.hasChamber === 'true',
+      loadedAsset: loadedAsset === '/assets/icons/hermit-chamber-loaded.png',
+      chamberCardFirst: document.querySelector('.hand .card')?.classList.contains('card--chamber-drawn') === true,
+      panelRemoved: !document.querySelector('.hermit-chamber'),
+    }), shardLoadedAsset)
+    await shardTrigger.click()
+    await page.waitForFunction(() => !document.querySelector('.chamber-return-flight') &&
+      document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+        '/assets/icons/hermit-chamber-loaded.png')
+    await page.waitForTimeout(250)
   }
 }
 
@@ -1469,188 +1533,261 @@ await page.waitForFunction(() => {
   const combat = window.__STS_DEBUG__.getRun().combat
   return combat.pendingHermitSetupLoads.length === 0 && combat.players[0].chamber[0]?.defId === 'hermit_snapshot'
 })
-const loadedHermitLayout = await page.evaluate(() => {
-  const chamber = document.querySelector('.hermit-chamber')?.getBoundingClientRect()
+const chamberTrigger = page.getByRole('button', { name: /Chamber, 1 of 2 slots filled/ })
+await page.waitForTimeout(450)
+const closedHermitLayout = await page.evaluate(() => {
   const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
-  const card = document.querySelector('.hand .card')?.getBoundingClientRect()
-  const overlap = (a, b) => a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  const trigger = document.querySelector('.hermit-chamber-trigger')?.getBoundingClientRect()
+  const expectedGap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.75
   return {
-    chamberContained: !!chamber && chamber.left >= 0 && chamber.right <= innerWidth,
-    chamberClearEnergy: !overlap(chamber, energy),
-    chamberClearHand: !overlap(chamber, card),
+    panelHidden: !document.querySelector('.hermit-chamber'),
+    chamberCardsHidden: !document.querySelector('.hand .card--chamber-drawn'),
+    loadedAsset: document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+      '/assets/icons/hermit-chamber-loaded.png',
+    sameSize: !!energy && !!trigger && Math.abs(energy.width - trigger.width) < 0.5 &&
+      Math.abs(energy.height - trigger.height) < 0.5,
+    directlyRight: !!energy && !!trigger && Math.abs(trigger.left - energy.right - expectedGap) < 0.5 &&
+      Math.abs(trigger.top - energy.top) < 0.5,
   }
 })
-await page.screenshot({ path: join(outDir, 'downfall-hermit-loaded-chamber.png') })
+const triggerBeforeHover = await chamberTrigger.evaluate((trigger) => ({
+  transform: getComputedStyle(trigger).transform,
+  filter: getComputedStyle(trigger).filter,
+}))
+await chamberTrigger.hover()
+await page.waitForTimeout(180)
+const triggerAfterHover = await chamberTrigger.evaluate((trigger) => ({
+  transform: getComputedStyle(trigger).transform,
+  filter: getComputedStyle(trigger).filter,
+}))
+const chamberHoverEffect = triggerAfterHover.transform !== triggerBeforeHover.transform &&
+  triggerAfterHover.filter !== triggerBeforeHover.filter
+await chamberTrigger.click()
+const loadedHermitLayout = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.hand .card')]
+  const boxes = cards.map((card) => card.getBoundingClientRect())
+  return {
+    panelRemoved: !document.querySelector('.hermit-chamber'),
+    emptyAsset: document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+      '/assets/icons/hermit-chamber.png',
+    expanded: document.querySelector('.hermit-chamber-trigger')?.getAttribute('aria-expanded') === 'true',
+    allCardsInHand: cards.length === 3,
+    chamberFirst: cards[0]?.classList.contains('card--chamber-drawn') === true && cards[0]?.title === 'Snapshot',
+    chamberDealAnimated: getComputedStyle(cards[0]).animationName === 'card-draw',
+    cardsContained: boxes.every((card) => card.left < innerWidth && card.right > 0 &&
+      card.top >= 0 && card.bottom <= innerHeight),
+  }
+})
+await page.screenshot({ path: join(outDir, 'downfall-hermit-chamber-in-hand.png') })
 const oneLoadedHermitRun = await readRun()
+
+const chamberCard = page.locator('.hand .card--chamber-drawn')
+const chamberCardBox = await chamberCard.boundingBox()
+const chamberTargetBox = await page.locator('.enemy:not(.enemy--dead)').first().boundingBox()
+assert(chamberCardBox && chamberTargetBox, 'Hermit Chamber drag fixture is not visible')
+await page.mouse.move(chamberCardBox.x + chamberCardBox.width / 2, chamberCardBox.y + chamberCardBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(
+  chamberCardBox.x + chamberCardBox.width / 2 + (chamberTargetBox.x - chamberCardBox.x) / 4,
+  chamberCardBox.y + chamberCardBox.height / 2 + (chamberTargetBox.y - chamberCardBox.y) / 4,
+  { steps: 2 },
+)
+await page.locator('.card-drag').waitFor()
 await page.evaluate(() => {
-  const next = structuredClone(window.__STS_DEBUG__.getRun())
-  next.combat.players[0].chamber = [
+  window.__STS_DEBUG__.setRun(structuredClone(window.__STS_DEBUG__.getRun()))
+})
+const chamberDragSurvivedRefresh = await page.locator('.card-drag').count() === 1
+await page.mouse.move(chamberTargetBox.x + chamberTargetBox.width / 2,
+  chamberTargetBox.y + Math.min(10, chamberTargetBox.height / 4), { steps: 6 })
+await page.mouse.up()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 0)
+await page.locator('.card-flight').waitFor()
+const chamberPlayAnimated = await page.locator('.card-flight').count() === 1
+const dragResult = await readRun()
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.combat.players[0].chamber = [{ uid: 'ui-chamber-defend', defId: 'hermit_defend', upgraded: false }]
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+await page.locator('.hand .card--chamber-drawn').waitFor()
+const blockBeforeChamberClick = (await readRun()).combat.players[0].block
+await page.locator('.hand .card--chamber-drawn').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 0)
+const clickResult = await readRun()
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const owner = next.combat.players[0]
+  owner.energy = 3
+  owner.row = 0
+  owner.chamber = [{ uid: 'ui-chamber-ally-defend', defId: 'hermit_defend', upgraded: true }]
+  const ally = structuredClone(owner)
+  Object.assign(ally, {
+    id: 'ui-chamber-ally', name: 'Ally', character: 'ironclad', row: 1,
+    chamberSlots: 0, chamber: [], hand: [], draw: [], block: 0,
+  })
+  next.combat.players = [owner, ally]
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+await page.locator('.hand .card--chamber-drawn').waitFor()
+await page.waitForTimeout(400)
+const allyChamberCardBox = await page.locator('.hand .card--chamber-drawn').boundingBox()
+const allySeatBox = await page.locator('.seat[data-player-id="ui-chamber-ally"] .seat__portrait').boundingBox()
+assert(allyChamberCardBox && allySeatBox, 'Chamber ally-target drag fixture is not visible')
+await page.mouse.move(allyChamberCardBox.x + allyChamberCardBox.width / 2,
+  allyChamberCardBox.y + allyChamberCardBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(allySeatBox.x + allySeatBox.width / 2, allySeatBox.y + allySeatBox.height / 2, { steps: 6 })
+await page.mouse.up()
+await page.waitForFunction(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return combat.players[0].chamber.length === 0 && combat.players[1].block === 2
+})
+const allyDragResult = await readRun()
+await page.waitForFunction(() => !document.querySelector('.card-flight'))
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(player, {
+    energy: 1,
+    hand: [{ uid: 'ui-quickdraw-hand-defend', defId: 'hermit_defend', upgraded: false }],
+    draw: [{ uid: 'ui-quickdraw-draw-strike', defId: 'hermit_strike', upgraded: false }],
+    chamber: [{ uid: 'ui-chamber-quickdraw', defId: 'hermit_quickdraw', upgraded: false }],
+  })
+  next.combat.players = [player]
+  next.combat.enemies = next.combat.enemies.slice(0, 2)
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
+  await page.locator('.hermit-chamber-trigger').click()
+}
+const chamberQuickdraw = page.locator('.hand .card--chamber-drawn[title="Quickdraw"]')
+await chamberQuickdraw.waitFor()
+await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
+await chamberQuickdraw.click()
+await page.waitForTimeout(100)
+const quickdrawPreviewBeforeTarget = await page.locator('.choice-modal[open]').count()
+await chamberQuickdraw.click()
+await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[title="Quickdraw"]')
+  ?.getAttribute('aria-pressed') === 'false')
+const quickdrawTargetCanceled = await page.locator('.choice-modal[open]').count() === 0
+await chamberQuickdraw.click()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.locator('.choice-modal[open]').waitFor()
+const quickdrawPreviewAfterTarget = await page.locator('.choice-modal[open] .card').count()
+hermitChamberInteractions = {
+  dragSurvivedRefresh: chamberDragSurvivedRefresh,
+  dragSpentCard: dragResult.combat.players[0].chamber.length === 0,
+  dragHitEnemy: dragResult.combat.enemies.some((enemy, index) =>
+    enemy.hp < oneLoadedHermitRun.combat.enemies[index].hp),
+  playedCardAnimated: chamberPlayAnimated,
+  clickSpentCard: clickResult.combat.players[0].chamber.length === 0,
+  clickPlayedUntargeted: clickResult.combat.players[0].block > blockBeforeChamberClick,
+  allyTargeted: allyDragResult.combat.players[1].block === 2,
+  quickdrawHiddenBeforeTarget: quickdrawPreviewBeforeTarget === 0,
+  quickdrawTargetCanceled,
+  quickdrawRevealedAfterTarget: quickdrawPreviewAfterTarget > 0,
+}
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  Object.assign(next.combat.players[0], {
+    energy: 3,
+    hand: [
+      { uid: 'ui-full-chamber-hand-defend', defId: 'hermit_defend', upgraded: false },
+      { uid: 'ui-full-chamber-hand-strike', defId: 'hermit_strike', upgraded: false },
+    ],
+    chamber: [
     { uid: 'ui-full-chamber-grudge', defId: 'hermit_grudge', upgraded: false },
     { uid: 'ui-full-chamber-malice', defId: 'hermit_malice', upgraded: false },
-  ]
+    ],
+  })
   window.__STS_DEBUG__.setRun(next)
-})
+}, oneLoadedHermitRun)
+await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
+if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
+  await page.locator('.hermit-chamber-trigger').click()
+}
+await page.waitForFunction(() => document.querySelectorAll('.hand .card--chamber-drawn').length === 2)
+await page.waitForTimeout(450)
 const fullHermitChamberLayout = await page.evaluate(() => {
-  const chamber = document.querySelector('.hermit-chamber')
-  const chamberBox = chamber?.getBoundingClientRect()
-  const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
-  const cards = [...document.querySelectorAll('.hand .card')].map((card) => card.getBoundingClientRect())
-  const overlap = (a, b) => a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  const cards = [...document.querySelectorAll('.hand .card')]
+  const boxes = cards.map((card) => card.getBoundingClientRect())
   return {
-    chamberContained: !!chamberBox && chamberBox.left >= 0 && chamberBox.right <= innerWidth,
-    chamberClearEnergy: !overlap(chamberBox, energy),
-    chamberClearHand: cards.every((card) => !overlap(chamberBox, card)),
-    boundedWidth: !!chamberBox && chamberBox.width <= 405,
-    overflowReady: !!chamber && getComputedStyle(chamber).overflowX === 'auto',
+    panelRemoved: !document.querySelector('.hermit-chamber'),
+    allCardsInHand: cards.length === 4,
+    chamberCardsFirst: cards.slice(0, 2).every((card) => card.classList.contains('card--chamber-drawn')),
+    chamberCardsReachable: boxes.slice(0, 2).every((card) => card.left < innerWidth && card.right > 0),
+    cardsVerticallyContained: boxes.every((card) => card.top >= 0 && card.bottom <= innerHeight),
+    emptyAsset: document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+      '/assets/icons/hermit-chamber.png',
   }
 })
-await page.screenshot({ path: join(outDir, 'downfall-hermit-full-chamber.png') })
-await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), oneLoadedHermitRun)
+await page.screenshot({ path: join(outDir, 'downfall-hermit-full-chamber-hand.png') })
 await page.emulateMedia({ reducedMotion: 'reduce' })
 downfallReducedMotionStopped = await page.locator('.energy-orb__layers > img').evaluateAll((images) =>
   images.every((image) => getComputedStyle(image).animationName === 'none'))
 await page.emulateMedia({ reducedMotion: 'no-preference' })
-await page.setViewportSize({ width: 769, height: 1024 })
-const tabletLoadedHermitLayout = await page.evaluate(() => {
-  const chamber = document.querySelector('.hermit-chamber')?.getBoundingClientRect()
-  const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
-  const hp = document.querySelector('.row--viewer .seat > .bar')?.getBoundingClientRect()
-  const cards = [...document.querySelectorAll('.hand .card')].map((card) => card.getBoundingClientRect())
-  const intents = [...document.querySelectorAll('.enemy__intent .intent')].map((intent) => intent.getBoundingClientRect())
-  const mechanics = [...document.querySelectorAll('.seat__mechanic')].map((mechanic) => mechanic.getBoundingClientRect())
-  const overlap = (a, b) => a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
-  return {
-    chamberContained: !!chamber && chamber.left >= 0 && chamber.right <= innerWidth && chamber.top >= 0,
-    chamberClearEnergy: !overlap(chamber, energy),
-    chamberClearHp: !overlap(chamber, hp),
-    chamberClearCards: cards.every((card) => !overlap(chamber, card)),
-    chamberClearIntents: intents.every((intent) => !overlap(chamber, intent)),
-    chamberClearMechanics: mechanics.every((mechanic) => !overlap(chamber, mechanic)),
-    cardsVisible: cards.length === 2 && cards.every((card) => card.left >= 0 && card.right <= innerWidth && card.bottom <= innerHeight),
-  }
-})
-await page.screenshot({ path: join(outDir, 'downfall-hermit-loaded-chamber-tablet.png') })
-const landscapeLoadedHermitLayouts = []
-for (const viewport of [{ width: 768, height: 360 }, { width: 844, height: 390 }]) {
+await page.waitForTimeout(450)
+const responsiveChamberLayouts = []
+for (const viewport of [
+  { width: 769, height: 1024 },
+  { width: 768, height: 360 },
+  { width: 844, height: 390 },
+  { width: 667, height: 375 },
+  { width: 568, height: 320 },
+  { width: 390, height: 844 },
+]) {
   await page.setViewportSize(viewport)
   const layout = await page.evaluate(() => {
-    const chamber = document.querySelector('.hermit-chamber')?.getBoundingClientRect()
-    const turnControls = [...document.querySelectorAll('.combat__turn, .combat__die, .combat__phase, .combat__slime-status')]
-      .map((control) => control.getBoundingClientRect())
     const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
-    const hp = document.querySelector('.row--viewer .seat > .bar')?.getBoundingClientRect()
-    const hpBars = [...document.querySelectorAll('.row--viewer .seat > .bar, .board .enemy .bar')]
-      .map((bar) => bar.getBoundingClientRect())
-    const contentBox = (element) => {
-      if (!element) return undefined
-      const range = document.createRange()
-      range.selectNodeContents(element)
-      return range.getBoundingClientRect()
-    }
-    const enemyNames = [...document.querySelectorAll('.enemy__name')].map(contentBox)
-    const name = contentBox(document.querySelector('.row--viewer .seat__name'))
-    const portrait = document.querySelector('.row--viewer .seat__portrait')?.getBoundingClientRect()
-    const endTurn = document.querySelector('.combat__end-turn')?.getBoundingClientRect()
-    const cards = [...document.querySelectorAll('.hand .card')].map((card) => card.getBoundingClientRect())
-    const piles = [...document.querySelectorAll('.hand-area .pile__stack')].map((pile) => pile.getBoundingClientRect())
-    const intents = [...document.querySelectorAll('.enemy__intent .intent')].map((intent) => intent.getBoundingClientRect())
-    const mechanics = [...document.querySelectorAll('.seat__mechanic')].map((mechanic) => mechanic.getBoundingClientRect())
-    const overlap = (a, b) => a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+    const trigger = document.querySelector('.hermit-chamber-trigger')?.getBoundingClientRect()
+    const expectedGap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.75
+    const cards = [...document.querySelectorAll('.hand .card')]
+    const boxes = cards.map((card) => card.getBoundingClientRect())
+    const combatantElements = [...document.querySelectorAll([
+      '.row--viewer .seat__portrait',
+      '.row--viewer .seat__name',
+      '.row--viewer .seat > .bar',
+      '.board .enemy__portrait',
+      '.board .enemy > .bar',
+    ].join(','))]
+    const combatants = combatantElements.map((element) => element.getBoundingClientRect())
+    const viewerPortrait = document.querySelector('.row--viewer .seat__portrait')?.getBoundingClientRect()
+    const enemyPortraits = [...document.querySelectorAll('.board .enemy__portrait')]
+      .map((element) => element.getBoundingClientRect())
+    const board = document.querySelector('.board')?.getBoundingClientRect()
+    const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
     return {
-      chamberContained: !!chamber && chamber.left >= 0 && chamber.right <= innerWidth && chamber.top >= 0 && chamber.bottom <= innerHeight,
-      chamberClearTurnControls: turnControls.every((control) => !overlap(chamber, control)),
-      chamberClearEnergy: !overlap(chamber, energy),
-      chamberClearHp: !overlap(chamber, hp),
-      chamberClearEndTurn: !overlap(chamber, endTurn),
-      chamberClearCards: cards.every((card) => !overlap(chamber, card)),
-      chamberClearIntents: intents.every((intent) => !overlap(chamber, intent)),
-      chamberClearMechanics: mechanics.every((mechanic) => !overlap(chamber, mechanic)),
-      cardsVisible: cards.length === 2 && cards.every((card) => card.left >= 0 && card.right <= innerWidth && card.bottom <= innerHeight),
-      hpContained: !!hp && hp.top >= 0 && hp.bottom <= innerHeight,
-      allHpContained: hpBars.length === 4 && hpBars.every((bar) => bar.top >= 0 && bar.bottom <= innerHeight),
-      enemyHpClearNames: hpBars.slice(1).every((bar) => enemyNames.every((name) => !overlap(bar, name))),
-      nameContained: !!name && name.top >= 0 && name.bottom <= innerHeight,
-      viewerNameClearEnemies: enemyNames.every((enemy) => !overlap(name, enemy)),
-      cardsClearViewer: cards.every((card) => !overlap(card, portrait) && !overlap(card, name) && !overlap(card, hp)),
-      cardsClearEnergy: cards.every((card) => !overlap(card, energy)),
-      cardsClearPiles: cards.every((card) => piles.every((pile) => !overlap(card, pile))),
+      panelRemoved: !document.querySelector('.hermit-chamber'),
+      triggerMatchesEnergy: !!energy && !!trigger && Math.abs(energy.width - trigger.width) < 0.5 &&
+        Math.abs(energy.height - trigger.height) < 0.5 &&
+        Math.abs(trigger.left - energy.right - expectedGap) < 0.5 && Math.abs(trigger.top - energy.top) < 0.5,
+      allCardsInHand: cards.length === 4,
+      chamberCardsFirst: cards.slice(0, 2).every((card) => card.classList.contains('card--chamber-drawn')),
+      chamberCardsReachable: boxes.slice(0, 2).every((card) => card.left < innerWidth && card.right > 0),
+      cardsVerticallyContained: boxes.every((card) => card.top >= 0 && card.bottom <= innerHeight),
+      cardsClearCombatants: boxes.every((card) => combatants.every((combatant) => !overlaps(card, combatant))),
+      combatantsSeparated: !!viewerPortrait && enemyPortraits.every((enemy) => !overlaps(viewerPortrait, enemy)),
+      combatantsVisible: !!board && combatants.every((combatant) =>
+        Math.max(0, Math.min(combatant.bottom, board.bottom) - Math.max(combatant.top, board.top)) >=
+          combatant.height * 0.8),
+      documentContained: document.documentElement.scrollWidth <= innerWidth + 2 &&
+        document.documentElement.scrollHeight <= innerHeight + 2,
     }
   })
-  landscapeLoadedHermitLayouts.push({ viewport, ...layout })
-  await page.screenshot({ path: join(outDir, `downfall-hermit-loaded-chamber-${viewport.width}x${viewport.height}.png`) })
+  responsiveChamberLayouts.push({ viewport, ...layout })
+  await page.screenshot({ path: join(outDir, `downfall-hermit-chamber-hand-${viewport.width}x${viewport.height}.png`) })
 }
-await page.setViewportSize({ width: 390, height: 844 })
-await page.evaluate((run) => {
-  const next = structuredClone(run)
-  next.combat.enemies = [{
-    ...next.combat.enemies[0], defId: 'slime_boss', isBoss: true, dead: false, hp: 35, maxHp: 35,
-  }]
-  window.__STS_DEBUG__.setRun(next)
-}, oneLoadedHermitRun)
-await page.locator('.enemy--boss').waitFor()
-const singleBossPortraitLayout = await page.evaluate(() => {
-  const boss = document.querySelector('.enemy--boss')
-  const chamber = document.querySelector('.hermit-chamber')?.getBoundingClientRect()
-  const mechanics = [...document.querySelectorAll('.enemy--boss .enemy__intent, .enemy--boss .enemy__ability, .enemy--boss .tokens')]
-    .map((element) => element.getBoundingClientRect())
-  const overlap = (a, b) => a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
-  return {
-    width: boss?.getBoundingClientRect().width ?? 0,
-    crowded: boss?.closest('.board')?.dataset.crowded ?? null,
-    chamberClearMechanics: mechanics.every((mechanic) => !overlap(chamber, mechanic)),
-  }
-})
-await page.screenshot({ path: join(outDir, 'downfall-hermit-single-boss-mobile.png') })
-await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), oneLoadedHermitRun)
 await page.setViewportSize({ width: 390, height: 844 })
 await page.evaluate(() => {
   document.documentElement.dataset.mobilePerformance = 'true'
 })
-await page.waitForTimeout(800)
-await page.locator('.hand-scroll, .hand').evaluateAll((elements) => {
-  for (const element of elements) element.scrollLeft = 0
-})
-const mobileLoadedHermitLayout = await page.evaluate(() => {
-  const chamber = document.querySelector('.hermit-chamber')?.getBoundingClientRect()
-  const hand = document.querySelector('.hand')
-  const handStyle = hand && getComputedStyle(hand)
-  const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
-  const hp = document.querySelector('.row--viewer .seat > .bar')?.getBoundingClientRect()
-  const portrait = document.querySelector('.row--viewer .seat__portrait')?.getBoundingClientRect()
-  const name = document.querySelector('.row--viewer .seat__name')?.getBoundingClientRect()
-  const enemyPortraits = [...document.querySelectorAll('.board .enemy__portrait')]
-    .map((enemy) => enemy.getBoundingClientRect())
-  const enemyNames = [...document.querySelectorAll('.enemy__head')].map((enemy) => enemy.getBoundingClientRect())
-  const cards = [...document.querySelectorAll('.hand .card')].map((card) => card.getBoundingClientRect())
-  const chamberCard = document.querySelector('.hermit-chamber__cards .card')?.getBoundingClientRect()
-  const intents = [...document.querySelectorAll('.enemy__intent .intent')].map((intent) => intent.getBoundingClientRect())
-  const overlap = (a, b) => a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
-  return {
-    chamberContained: !!chamber && chamber.left >= 0 && chamber.right <= innerWidth && chamber.top >= 0,
-    chamberClearEnergy: !overlap(chamber, energy),
-    chamberClearHp: !overlap(chamber, hp),
-    viewerClearEnemies: enemyPortraits.every((enemy) => !overlap(portrait, enemy)) &&
-      enemyNames.every((enemy) => !overlap(name, enemy)),
-    chamberClearIntents: intents.every((intent) => !overlap(chamber, intent)),
-    chamberCardWidth: chamberCard?.width ?? Infinity,
-    cardsVisible: cards.length === 2 && cards.every((card) => card.left >= 0 && card.left < innerWidth && card.bottom <= innerHeight),
-    cardsClearEnergy: cards.every((card) => !overlap(energy, card)),
-    chamberClearCards: cards.every((card) => !overlap(chamber, card)),
-    orbMotionStopped: [...document.querySelectorAll('.energy-orb__layers > img')]
-      .every((image) => getComputedStyle(image).animationName === 'none'),
-    cards: cards.map(({ left, right, top, bottom }) => ({ left, right, top, bottom })),
-    handStyle: handStyle && {
-      justifyContent: handStyle.justifyContent,
-      paddingLeft: handStyle.paddingLeft,
-      paddingRight: handStyle.paddingRight,
-      rect: (() => {
-        const { left, right, width } = hand.getBoundingClientRect()
-        return { left, right, width, scrollLeft: hand.scrollLeft, scrollWidth: hand.scrollWidth }
-      })(),
-    },
-  }
-})
-await page.screenshot({ path: join(outDir, 'downfall-hermit-loaded-chamber-mobile.png') })
+await page.waitForTimeout(100)
+const chamberMobileMotionStopped = await page.locator('.energy-orb__layers > img').evaluateAll((images) =>
+  images.every((image) => getComputedStyle(image).animationName === 'none'))
+
 await page.setViewportSize({ width: 1518, height: 720 })
 await page.evaluate((run) => {
   delete document.documentElement.dataset.mobilePerformance
@@ -1734,14 +1871,25 @@ const dieRelicLayout = await dieRelicPrompt.evaluate((prompt) => {
 await page.screenshot({ path: join(outDir, 'downfall-die-relic-compact.png') })
 check('Downfall mechanics use compact combat HUDs without clipping the hand', () => {
   assertDeepEqual(downfallMechanicLabels, {
-    guardian: ['Attack · Vigor 3'],
+    guardian: ['Vigor 3'],
     hexaghost: [],
     slime_boss: [
       'Bruiser · L2 · Vigor 3 · Cmd 1',
       'Armored · L3 · Vigor 4 · Cmd 1',
     ],
-    hermit: ['Chamber 0/2'],
+    hermit: [],
   })
+  assertDeepEqual(guardianModePortrait, {
+    attackIdle: '/assets/combat/characters/guardian.webp',
+    attackAria: 'Guardian, 10 of 10 hit points, row 1, Attack Mode, Vigor 3',
+    toDefense: '/assets/combat/characters/guardian-to-defense.webp',
+    defenseIdle: '/assets/combat/characters/guardian-defense.webp',
+    defenseAria: 'Guardian, 10 of 10 hit points, row 1, Defense Mode, Vigor 3',
+    toAttack: '/assets/combat/characters/guardian-to-attack.webp',
+    returnedAttackIdle: '/assets/combat/characters/guardian.webp',
+    reducedPortrait: { src: '/assets/combat/characters/guardian-defense.webp', transition: undefined },
+    mobilePortrait: '/assets/combat/characters/guardian-to-attack.webp',
+  }, 'Guardian mode is shown by the body transformation instead of duplicate text')
   assertDeepEqual(hexaghostVisualState, {
     portrait: '/assets/combat/characters/hexaghost-heat-2.webp',
     icon: '/assets/icons/hexaghost-flame.png',
@@ -1765,31 +1913,20 @@ check('Downfall mechanics use compact combat HUDs without clipping the hand', ()
   assert(hermitHudLayout.cardClearHp, 'Hermit Load card overlaps the player HP bar')
   assert(hermitHudLayout.battleLogHidden, 'combat rendered the removed battle-log UI')
   assert(hermitHudLayout.documentContained, 'Hermit combat HUD creates document overflow')
-  assert(loadedHermitLayout.chamberContained, 'loaded Hermit Chamber escapes the viewport')
-  assert(loadedHermitLayout.chamberClearEnergy, 'loaded Hermit Chamber overlaps the Energy orb')
-  assert(loadedHermitLayout.chamberClearHand, 'loaded Hermit Chamber overlaps the hand')
+  assert(Object.values(closedHermitLayout).every(Boolean),
+    `Hermit Chamber trigger is not orb-sized and adjacent: ${JSON.stringify(closedHermitLayout)}`)
+  assert(chamberHoverEffect, 'Hermit Chamber trigger has no hover/focus feedback')
+  assert(Object.values(hermitChamberInteractions).every(Boolean),
+    `Hermit Chamber cards do not behave like hand cards: ${JSON.stringify(hermitChamberInteractions)}`)
+  assert(Object.values(loadedHermitLayout).every(Boolean),
+    `loaded Chamber cards are not surfaced in the hand: ${JSON.stringify(loadedHermitLayout)}`)
   assert(Object.values(fullHermitChamberLayout).every(Boolean),
-    `full Hermit Chamber is not collision-safe: ${JSON.stringify(fullHermitChamberLayout)}`)
-  assert(Object.values(tabletLoadedHermitLayout).every(Boolean),
-    `tablet loaded Hermit layout has a collision: ${JSON.stringify(tabletLoadedHermitLayout)}`)
-  assert(landscapeLoadedHermitLayouts.every(({ viewport: _viewport, ...layout }) => Object.values(layout).every(Boolean)),
-    `landscape loaded Hermit layout has a collision: ${JSON.stringify(landscapeLoadedHermitLayouts)}`)
-  assert(mobileLoadedHermitLayout.chamberContained, 'mobile loaded Hermit Chamber escapes the viewport')
-  assert(mobileLoadedHermitLayout.chamberClearEnergy, 'mobile loaded Hermit Chamber overlaps the Energy orb')
-  assert(mobileLoadedHermitLayout.chamberClearHp, 'mobile loaded Hermit Chamber overlaps the player HP bar')
-  assert(mobileLoadedHermitLayout.viewerClearEnemies, 'mobile Hermit overlaps an enemy portrait or name')
-  assert(mobileLoadedHermitLayout.chamberClearIntents, 'mobile loaded Hermit Chamber overlaps enemy intents')
-  assert(mobileLoadedHermitLayout.chamberCardWidth < 50,
-    `mobile Hermit Chamber card is not compact: ${mobileLoadedHermitLayout.chamberCardWidth}px`)
-  assert(mobileLoadedHermitLayout.cardsVisible,
-    `mobile loaded Hermit hand cards are clipped: ${JSON.stringify(mobileLoadedHermitLayout)}`)
-  assert(mobileLoadedHermitLayout.cardsClearEnergy, 'mobile Hermit Energy orb overlaps the hand')
-  assert(mobileLoadedHermitLayout.chamberClearCards, 'mobile loaded Hermit Chamber overlaps the hand')
-  assert(mobileLoadedHermitLayout.orbMotionStopped, 'mobile-performance mode does not stop the Energy orb layers')
-  assert(singleBossPortraitLayout.width > 100,
-    `mobile single boss was compacted to ${singleBossPortraitLayout.width}px`)
-  assertEqual(singleBossPortraitLayout.crowded, null, 'single-boss board was marked crowded')
-  assert(singleBossPortraitLayout.chamberClearMechanics, 'mobile Chamber overlaps single-boss mechanics')
+    `full Hermit Chamber hand is not collision-safe: ${JSON.stringify(fullHermitChamberLayout)}`)
+  assert(responsiveChamberLayouts.every(({ viewport: _viewport, ...layout }) => Object.values(layout).every(Boolean)),
+    `responsive Chamber hand is clipped: ${JSON.stringify(responsiveChamberLayouts)}`)
+  assert(chamberMobileMotionStopped, 'mobile-performance mode does not stop the Energy orb layers')
+  assert(Object.values(corruptedShardChamberLayout).every(Boolean),
+    `Corrupted Shard cannot access its Chamber: ${JSON.stringify(corruptedShardChamberLayout)}`)
   assert(deadOrAliveLayout.contained && deadOrAliveLayout.positioned && deadOrAliveLayout.clearHp,
     `Dead or Alive prompt breaks combat layout: ${JSON.stringify(deadOrAliveLayout)}`)
   assertEqual(opponentChamberLabels, 0, 'another player can see the Hermit Chamber fill count')
@@ -1949,7 +2086,10 @@ const watcherBeforeContact = await page.locator('.seat:not(.seat--dead) .seat__p
   impactOpacity: Number(getComputedStyle(seat, '::after').opacity),
 }))
 await shot('02d-downfall-watcher-boss-meteor')
-await page.waitForTimeout(400)
+await page.waitForFunction(() => {
+  const seat = document.querySelector('.seat:not(.seat--dead) .seat__portrait')
+  return seat && Number(getComputedStyle(seat, '::after').opacity) > 0
+})
 const watcherAfterContact = await page.locator('.seat:not(.seat--dead) .seat__portrait').first().evaluate((seat) => ({
   meteorOpacity: Number(getComputedStyle(seat, '::before').opacity),
   impactOpacity: Number(getComputedStyle(seat, '::after').opacity),
@@ -1977,6 +2117,137 @@ await page.keyboard.press('Escape')
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 
 if (args.includes('--downfall-ui-only')) {
+  await page.setViewportSize({ width: 1518, height: 720 })
+  await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), oneLoadedHermitRun)
+  await page.waitForFunction(() => document.querySelector('.hermit-chamber-trigger'))
+  await page.waitForTimeout(200)
+  check('both Chamber states are preloaded before the first toggle', () => {
+    assert([...requestedUrls].some((url) => url.endsWith('hermit-chamber.png')))
+    assert([...requestedUrls].some((url) => url.endsWith('hermit-chamber-loaded.png')))
+  })
+  if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
+    await page.locator('.hermit-chamber-trigger').click()
+  }
+  await page.locator('.hand .card--chamber-drawn').waitFor()
+  await page.waitForTimeout(400)
+  const chamberStartDistance = await page.evaluate(() => {
+    const card = document.querySelector('.hand .card--chamber-drawn')?.getBoundingClientRect()
+    const chamber = document.querySelector('.hermit-chamber-trigger')?.getBoundingClientRect()
+    return card && chamber ? Math.hypot(
+      card.left + card.width / 2 - chamber.left - chamber.width / 2,
+      card.top + card.height / 2 - chamber.top - chamber.height / 2,
+    ) : 0
+  })
+  await page.locator('.hermit-chamber-trigger').click()
+  await page.locator('.chamber-return-flight').waitFor()
+  await page.waitForTimeout(80)
+  const chamberReturnStarted = await page.evaluate(() => ({
+    emptyAsset: document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+      '/assets/icons/hermit-chamber.png',
+    collapsed: document.querySelector('.hermit-chamber-trigger')?.getAttribute('aria-expanded') === 'false',
+    chamberCardLeftHand: !document.querySelector('.hand .card--chamber-drawn'),
+    flightAnimating: getComputedStyle(document.querySelector('.chamber-return-flight')).animationName ===
+      'chamber-card-return',
+    handReflowAnimating: [...document.querySelectorAll('.hand .card')]
+      .some((card) => card.getAnimations().some((animation) => animation.playState === 'running')),
+  }))
+  await page.waitForTimeout(240)
+  const chamberMidDistance = await page.evaluate(() => {
+    const card = document.querySelector('.chamber-return-flight')?.getBoundingClientRect()
+    const chamber = document.querySelector('.hermit-chamber-trigger')?.getBoundingClientRect()
+    return card && chamber ? Math.hypot(
+      card.left + card.width / 2 - chamber.left - chamber.width / 2,
+      card.top + card.height / 2 - chamber.top - chamber.height / 2,
+    ) : Infinity
+  })
+  await page.screenshot({ path: join(outDir, 'downfall-hermit-chamber-returning.png') })
+  await page.waitForFunction(() => !document.querySelector('.chamber-return-flight') &&
+    document.querySelector('.hermit-chamber-trigger img')?.getAttribute('src') ===
+      '/assets/icons/hermit-chamber-loaded.png')
+  const chamberReturnRun = await readRun()
+  const chamberReturnLayout = {
+    ...chamberReturnStarted,
+    flewTowardChamber: chamberStartDistance > 0 && chamberMidDistance < chamberStartDistance,
+    contactVisible: await page.locator('.hermit-chamber-trigger')
+      .evaluate((trigger) => trigger.classList.contains('hermit-chamber-trigger--contact')),
+    stayedPrivate: chamberReturnRun.combat.players[0].chamber[0]?.uid === 'ui-compact-snapshot' &&
+      !chamberReturnRun.combat.players[0].hand.some((card) => card.uid === 'ui-compact-snapshot'),
+    hiddenFromHand: await page.locator('.hand .card--chamber-drawn, .chamber-return-flight').count() === 0,
+    loadedAsset: await page.locator('.hermit-chamber-trigger img').getAttribute('src') ===
+      '/assets/icons/hermit-chamber-loaded.png',
+  }
+  check('Chamber cards and the hand return smoothly', () => {
+    assert(Object.values(chamberReturnLayout).every(Boolean),
+      `Chamber close animation is discontinuous: ${JSON.stringify(chamberReturnLayout)}`)
+  })
+  await page.locator('.hermit-chamber-trigger').click()
+  await page.locator('.hand .card--chamber-drawn').waitFor()
+  const scrolledHand = await page.locator('.hand-scroll').evaluate((hand) => {
+    hand.style.width = '12rem'
+    hand.scrollLeft = Math.min(24, hand.scrollWidth - hand.clientWidth)
+    return { left: hand.scrollLeft, overflow: hand.scrollWidth - hand.clientWidth }
+  })
+  await page.locator('.hermit-chamber-trigger').click()
+  await page.locator('.chamber-return-flight').waitFor()
+  await page.waitForTimeout(80)
+  const scrollDuringClose = await page.locator('.hand-scroll').evaluate((hand) => hand.scrollLeft)
+  check('closing the Chamber preserves a scrolled hand position', () => {
+    assert(scrolledHand.overflow > 0 && scrolledHand.left > 0,
+      `test hand did not overflow: ${JSON.stringify(scrolledHand)}`)
+    assert(scrollDuringClose > 0,
+      `Chamber close reset the hand scroll position: ${scrollDuringClose}`)
+  })
+  await page.waitForFunction(() => !document.querySelector('.chamber-return-flight'))
+  await page.locator('.hand-scroll').evaluate((hand) => { hand.style.width = '' })
+  await page.locator('.hermit-chamber-trigger').click()
+  await page.locator('.hand .card--chamber-drawn').waitFor()
+  await page.getByRole('button', { name: 'End turn', exact: true }).click()
+  await page.locator('.chamber-return-flight').waitFor()
+  const phaseWhileReturning = (await readRun()).combat.phase
+  const combatLocked = await page.locator('.combat').evaluate((combat) =>
+    combat.inert && combat.getAttribute('aria-busy') === 'true')
+  const normalCard = await page.locator('.hand .card:not(.card--chamber-drawn)').first().boundingBox()
+  const selectedBeforeBlockedClick = await page.locator('.hand .card--selected').count()
+  if (normalCard) await page.mouse.click(normalCard.x + normalCard.width / 2, normalCard.y + normalCard.height / 2)
+  await page.waitForTimeout(60)
+  const selectedAfterBlockedClick = await page.locator('.hand .card--selected').count()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase !== 'player')
+  check('End turn locks combat until Chamber cards reach the Chamber', () => {
+    assertEqual(phaseWhileReturning, 'player')
+    assert(combatLocked, 'combat was not inert while Chamber cards returned')
+    assertEqual(selectedAfterBlockedClick, selectedBeforeBlockedClick)
+  })
+  await page.evaluate((run) => {
+    const next = structuredClone(run)
+    const player = next.combat.players[0]
+    Object.assign(next.combat, {
+      phase: 'player', startTurnProgress: undefined, pendingTriggers: [], pendingDistilled: undefined,
+    })
+    Object.assign(player, {
+      character: 'hermit', hand: [], chamberSlots: 2,
+      chamber: [{ uid: 'ui-auto-end-chamber-defend', defId: 'hermit_defend', upgraded: false }],
+      energy: 1, shivs: 0, soulburn: 0, miracles: 0, potions: [], powers: [], relics: [],
+    })
+    next.combat.players = [player]
+    next.combat.enemies = [{
+      ...next.combat.enemies[0], defId: 'slime_boss', isBoss: true, row: player.row, hp: 20, maxHp: 20,
+    }]
+    window.__STS_DEBUG__.setRun(next)
+  }, oneLoadedHermitRun)
+  await page.waitForTimeout(650)
+  const chamberAutoEndPhase = (await readRun()).combat.phase
+  check('a playable Chamber card prevents local solo auto-end', () => {
+    assertEqual(chamberAutoEndPhase, 'player')
+  })
+  await page.setViewportSize({ width: 390, height: 844 })
+  const soloBossSeatContained = await page.locator('.row--viewer .row__seat').evaluate((seat) => {
+    const box = seat.getBoundingClientRect()
+    return box.left >= 0 && box.right <= innerWidth
+  })
+  await page.screenshot({ path: join(outDir, 'downfall-hermit-solo-boss-390x844.png') })
+  check('compact solo boss fights keep the viewer seat onscreen', () => {
+    assert(soloBossSeatContained, 'the single-row viewer seat is clipped by compact spacing')
+  })
   check('the focused Downfall browser run reported no errors', () => {
     assert(consoleErrors.length === 0, `console errors:\n    ${consoleErrors.join('\n    ')}`)
     assert(pageErrors.length === 0, `page errors:\n    ${pageErrors.join('\n    ')}`)

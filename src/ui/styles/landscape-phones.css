@@ -21,6 +21,9 @@ html[data-mobile-performance='true'] .choice-modal::backdrop {
 
   html:not([data-mobile-performance='true']) :is(
     .hand .card--drawn,
+    .hand .card--chamber-drawn,
+    .chamber-return-flight,
+    .hermit-chamber-trigger--contact,
     .card-flight,
     .motion-pulse-0,
     .motion-pulse-1,
@@ -33,6 +36,7 @@ html[data-mobile-performance='true'] .choice-modal::backdrop {
   html:not([data-mobile-performance='true']) .token--orb::before { animation: none; }
 
   html:not([data-mobile-performance='true']) .card-flight { display: none; }
+  html:not([data-mobile-performance='true']) .chamber-return-flight { display: none; }
 
   html:not([data-mobile-performance='true']) :is(
     .seat__portrait > img,

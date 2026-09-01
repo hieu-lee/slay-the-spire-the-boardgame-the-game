@@ -111,7 +111,14 @@ const boonEffects: readonly (readonly [NeowEffect[], NeowEffect[], NeowEffect[]]
 
 export function formatHeartBoonLabel(label: string): string {
   return label
-    .replaceAll('[yellow-card-reward]', 'a Rare Card Reward')
+    .replace(/(?:(\d+) )?\[yellow-card-reward\]/g, (_token, count?: string) =>
+      count ? `${count} Rare Card Reward${count === '1' ? '' : 's'}` : 'a Rare Card Reward')
+    .replace(/(?:(\d+) )?\[up-arrow-card-reward\]/g, (_token, count?: string) =>
+      count ? `${count} Upgraded Card Reward${count === '1' ? '' : 's'}` : 'an Upgraded Card Reward')
+    .replace(/(?:(\d+) )?\[card-reward\]/g, (_token, count?: string) =>
+      count ? `${count} Card Reward${count === '1' ? '' : 's'}` : 'a Card Reward')
+    .replace(/(?:(\d+) )?\[relic\]/g, (_token, count?: string) =>
+      count ? `${count} Relic${count === '1' ? '' : 's'}` : 'a Relic')
     .replace(/(?:(\d+) )?\[potion\]/g, (_token, count?: string) =>
       `${count ? `${count} ` : ''}${count === undefined || count === '1' ? 'Potion' : 'Potions'}`)
 }

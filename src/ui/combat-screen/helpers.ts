@@ -330,6 +330,9 @@ export function revealViewerRow(board: HTMLElement | null, row: HTMLElement | nu
  */
 export function describeSeat(player: Player): string {
   const parts = [`${player.name}, ${player.hp} of ${player.maxHp} hit points, row ${player.row + 1}`]
+  if (player.character === 'guardian' && player.guardianMode) {
+    parts.push(`${player.guardianMode === 'attack' ? 'Attack' : 'Defense'} Mode`, `Vigor ${player.vigor}`)
+  }
   const tokens: [string, number][] = [
     ['Block', player.block],
     ['Strength', player.strength],

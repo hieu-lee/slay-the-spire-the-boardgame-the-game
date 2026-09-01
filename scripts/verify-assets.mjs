@@ -747,7 +747,8 @@ print(json.dumps(faults))
 check('bundled combat cutouts are sized for their render box, with transparency', () => {
   const expectedCharacters = [
     'defect-charge.webp', 'defect-hero.webp', 'defect-release.webp', 'defect.webp',
-    'guardian-hero.webp', 'guardian-impact.webp', 'guardian-ready.webp', 'guardian.webp',
+    'guardian-defense.webp', 'guardian-hero.webp', 'guardian-impact.webp', 'guardian-ready.webp',
+    'guardian-to-attack.webp', 'guardian-to-defense.webp', 'guardian.webp',
     'hermit-hero.webp', 'hermit-impact.webp', 'hermit-ready.webp', 'hermit.webp',
     ...Array.from({ length: 7 }, (_, heat) => [
       `hexaghost-heat-${heat}-attack.webp`, `hexaghost-heat-${heat}.webp`,
@@ -835,6 +836,24 @@ print(json.dumps(faults))
   assert(flameIcon.readUInt32BE(16) === 512 && flameIcon.readUInt32BE(20) === 512,
     'Hexaghost flame action icon is not 512x512')
   assertEqual(flameIcon[25], 6, 'Hexaghost flame action icon is not RGBA')
+  for (const name of ['hermit-chamber.png', 'hermit-chamber-loaded.png']) {
+    const chamberIcon = readFileSync(join(iconRoot, name))
+    assert(chamberIcon.subarray(1, 4).toString() === 'PNG', `${name} is not a PNG`)
+    assert(chamberIcon.readUInt32BE(16) === 512 && chamberIcon.readUInt32BE(20) === 512,
+      `${name} is not 512x512`)
+    assertEqual(chamberIcon[25], 6, `${name} is not RGBA`)
+  }
+
+  for (const direction of ['attack', 'defense']) {
+    const animation = join(combatCharacterRoot, `guardian-to-${direction}.webp`)
+    const mux = spawnSync('webpmux', ['-info', animation], { encoding: 'utf8' })
+    assert(mux.status === 0, mux.stderr || `could not inspect Guardian ${direction} transformation`)
+    assert(/Loop Count\s*:\s*1/.test(mux.stdout), `Guardian ${direction} transformation is not one-shot`)
+    assert(/Number of frames:\s*5/.test(mux.stdout), `Guardian ${direction} transformation does not use five frames`)
+    assertEqual([...mux.stdout.matchAll(/\s(\d+)\s+none\s+no\s+\d+\s+lossy/g)]
+      .reduce((sum, frame) => sum + Number(frame[1]), 0), 600,
+    `Guardian ${direction} transformation duration`)
+  }
 })
 
 check('Downfall noncombat poses are complete, transparent, and edge-capped', () => {
@@ -1001,6 +1020,9 @@ check('generated status, relic, and potion icons have transparent backgrounds', 
     ...statusIconFiles.map((name) => join(statusIconRoot, name)),
     ...requiredRelicIconFiles.map((name) => join(relicIconRoot, name)),
     ...potionIconFiles.map((name) => join(potionIconRoot, name)),
+    join(iconRoot, 'hexaghost-flame.png'),
+    join(iconRoot, 'hermit-chamber.png'),
+    join(iconRoot, 'hermit-chamber-loaded.png'),
   ]
   const probe = `
 import sys, json
@@ -1012,8 +1034,11 @@ for name in sys.argv[1:]:
     corners = [alpha.getpixel((0, 0)), alpha.getpixel((w - 1, 0)),
                alpha.getpixel((0, h - 1)), alpha.getpixel((w - 1, h - 1))]
     visible = sum(1 for value in alpha.getdata() if value > 32) / (w * h)
+    bbox = alpha.point(lambda value: 255 if value > 32 else 0).getbbox()
     if max(corners) > 8 or visible < 0.01:
         faults.append(f"{name}: corners={corners}, visible={visible:.3f}")
+    elif "/potion-icons/" in name.replace("\\\\", "/") and bbox and min(bbox[0], bbox[1], w - bbox[2], h - bbox[3]) < 8:
+        faults.append(f"{name}: alpha bounds {bbox} still contain the old inventory tile")
 print(json.dumps(faults))
 `
   const result = spawnSync('python3', ['-c', probe, ...files], { encoding: 'utf8' })
