@@ -492,6 +492,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const pendingSocket = run.pendingGuardianSockets?.[0]
   const pendingSocketOwner = run.players.find((player) => player.id === pendingSocket?.playerId)
   const pendingAcquisition = hasPendingRelicAcquisition(run) || Boolean(pendingSocket)
+  const activeNeowProgress = run.neow?.players[snapshot.you.playerId]
+    ?? Object.values(run.neow?.players ?? {}).find((progress) => progress !== null)
+  const heartBoon = activeNeowProgress?.card?.source === 'heart'
   // Derived once: the map prompt needs the list twice, for the guard and for the
   // labels, and each label compares against the whole set.
   const wingTargets = wingChoices(run.map, viewer)
@@ -719,7 +722,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         ascension={run.ascension}
         enabled={room.connection === 'connected' && !pendingAcquisition}
         disabledMessage={room.connection !== 'connected'
-          ? 'Reconnecting… your Blessing is preserved.'
+          ? `Reconnecting… your ${heartBoon ? 'Boon' : 'Blessing'} is preserved.`
           : snapshot.pendingRelicStatus
             ? `Waiting for ${snapshot.pendingRelicStatus.playerName} to resolve ${relicDef(snapshot.pendingRelicStatus.relicId).name}.`
             : undefined}

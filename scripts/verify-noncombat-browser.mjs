@@ -230,14 +230,17 @@ await page.evaluate((run) => {
 }, soloNeowRun)
 await page.getByRole('heading', { name: 'The Heart’s Boon' }).waitFor()
 const heartsBoonNeowLayout = await page.evaluate(() => {
-  const neow = document.querySelector('.neow-screen__neow')
+  const heart = document.querySelector('.neow-screen__neow')
   const hero = document.querySelector('.neow-screen__hero')
-  const neowBox = neow?.getBoundingClientRect()
+  const heartBox = heart?.getBoundingClientRect()
   const heroBox = hero?.getBoundingClientRect()
   return {
-    decoded: neow instanceof HTMLImageElement && neow.complete && neow.naturalWidth > 0,
-    visible: !!neowBox && neowBox.width > 0 && neowBox.height > 0 && neowBox.left < innerWidth,
-    rightOfHero: !!neowBox && !!heroBox && neowBox.left > heroBox.right,
+    alt: heart?.getAttribute('alt'),
+    src: heart?.getAttribute('src'),
+    dialog: document.querySelector('.neow-face blockquote')?.textContent?.trim(),
+    decoded: heart instanceof HTMLImageElement && heart.complete && heart.naturalWidth > 0,
+    visible: !!heartBox && heartBox.width > 0 && heartBox.height > 0 && heartBox.left < innerWidth,
+    rightOfHero: !!heartBox && !!heroBox && heartBox.left > heroBox.right,
   }
 })
 const heartsBoonPotionLabel = await page.getByRole('button', { name: 'Gain 2 Potions.' }).isVisible()
@@ -251,6 +254,20 @@ const heartsBoonRareLabel = await page.getByRole('button', {
   name: 'Gain a Rare Card Reward. Lose 2 max HP.',
 }).isVisible()
 await page.screenshot({ path: join(outDir, 'hearts-boon-neow-present.png'), fullPage: true })
+await page.setViewportSize({ width: 390, height: 844 })
+const compactHeartsBoonLayout = await page.evaluate(() => {
+  const heart = document.querySelector('.neow-screen__neow')?.getBoundingClientRect()
+  const action = document.querySelector('.neow-action')?.getBoundingClientRect()
+  if (!heart || !action) return null
+  return {
+    heart: { top: heart.top, right: heart.right, bottom: heart.bottom, left: heart.left },
+    action: { top: action.top, right: action.right, bottom: action.bottom, left: action.left },
+    overlap: Math.max(0, Math.min(heart.right, action.right) - Math.max(heart.left, action.left)) *
+      Math.max(0, Math.min(heart.bottom, action.bottom) - Math.max(heart.top, action.top)),
+  }
+})
+await page.screenshot({ path: join(outDir, 'hearts-boon-neow-compact.png'), fullPage: true })
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), soloNeowRun)
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 await page.evaluate(() => {
@@ -336,10 +353,15 @@ check('solo Neow dialogue stays on-screen beside Neow', () => {
   `solo Neow choices clip near the compact breakpoint: ${JSON.stringify(soloNeowBoundaryLayouts)}`)
 })
 
-check('The Heart’s Boon keeps Neow on the right side of the scene', () => {
-  assert(heartsBoonNeowLayout.decoded, 'Neow art did not decode on the Heart boon screen')
-  assert(heartsBoonNeowLayout.visible, 'Neow escaped or disappeared from the Heart boon screen')
-  assert(heartsBoonNeowLayout.rightOfHero, 'Neow did not stay opposite the Downfall hero')
+check('The Heart’s Boon shows the Heart and its printed dialogue on the right', () => {
+  assertEqual(heartsBoonNeowLayout.alt, 'The Heart')
+  assertEqual(heartsBoonNeowLayout.src, '/assets/combat/enemies/corrupt_heart.webp')
+  assertEqual(heartsBoonNeowLayout.dialog, '“PROVE your worth...”')
+  assert(heartsBoonNeowLayout.decoded, 'Heart art did not decode on the Heart’s Boon screen')
+  assert(heartsBoonNeowLayout.visible, 'The Heart escaped or disappeared from the Heart’s Boon screen')
+  assert(heartsBoonNeowLayout.rightOfHero, 'The Heart did not stay opposite the Downfall hero')
+  assertEqual(compactHeartsBoonLayout?.overlap, 0,
+    `Heart is covered by the action panel on a compact screen: ${JSON.stringify(compactHeartsBoonLayout)}`)
   assert(heartsBoonPotionLabel, 'the Potion option kept its raw icon token or wrong plurality')
   assert(heartsBoonRareLabel, 'the Rare Card Reward option kept its raw icon token')
 })
@@ -3456,12 +3478,20 @@ liveRoom.run.players[1].relics = liveRoom.run.players[1].relics.filter((relic) =
 liveRoom.version += 1
 rooms.publishRoom(create.snapshot.code)
 await neowPage.waitForFunction(() => [...document.querySelectorAll('.neow-action button')].some((button) => !button.disabled))
+liveRoom.run.neow.players[onlineSeats[0].playerId].cardId = 'heart_boon_00'
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await neowPage.getByRole('heading', { name: 'The Heart’s Boon' }).waitFor()
+const onlineHeartArt = await neowPage.locator('.neow-screen__neow').evaluate((image) => ({
+  alt: image.getAttribute('alt'), src: image.getAttribute('src'),
+}))
 rooms.dropConnection(create.snapshot.code, onlineSeats[0].token)
 const disconnectedNeow = await neowPage.waitForFunction(() => {
   const screen = document.querySelector('.neow-screen')
   const wrapper = screen?.closest('.online-mutations')
   return Boolean(screen && wrapper?.hasAttribute('inert'))
 }, undefined, { timeout: 5000 }).then((handle) => handle.jsonValue())
+const disconnectedHeartBoon = await neowPage.getByRole('status').filter({ hasText: 'Reconnecting… your Boon is preserved.' }).count()
 const onlineNeowContained = await neowPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
 // The reconnect banner displaces the scene out of the shell's positional `1fr`
 // row, so this is where the `.neow-screen` height rules are load-bearing. What
@@ -3509,6 +3539,8 @@ check('online Neow is public, authoritative, and inert during reconnect', () => 
   assertEqual(liveRoom.run.neow.players[onlineSeats[0].playerId].redReward, null)
   assert(onlineNeowSelectionSurvived, 'another seat snapshot cleared an in-progress Neow card selection')
   assert(onlinePendingRelicLock, 'another seat\'s pending Astrolabe left online Neow choices enabled')
+  assertDeepEqual(onlineHeartArt, { alt: 'The Heart', src: '/assets/combat/enemies/corrupt_heart.webp' })
+  assertEqual(disconnectedHeartBoon, 1, 'Downfall reconnect called the Heart’s Boon a Blessing')
   assert(disconnectedNeow, 'disconnected Neow controls remained interactive')
   assert(onlineNeowContained, 'online Neow overflowed the compact desktop viewport')
   for (const sample of neowFloorScroll) {

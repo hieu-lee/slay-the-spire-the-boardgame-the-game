@@ -66,7 +66,7 @@ check("Heart's Boon labels name every printed reward icon and pluralize counted 
   assertEqual(formatHeartBoonLabel('Look at 3 [relic] and gain 1 of your choice.'),
     'Look at 3 Relics and gain 1 of your choice.')
   assertEqual(formatHeartBoonLabel('Gain [relic].'), 'Gain a Relic.')
-  assertEqual(formatHeartBoonLabel('Gain [potion].'), 'Gain Potion.')
+  assertEqual(formatHeartBoonLabel('Gain [potion].'), 'Gain a Potion.')
   assertEqual(formatHeartBoonLabel('Gain 1 [potion].'), 'Gain 1 Potion.')
   assertEqual(formatHeartBoonLabel('Gain 3 [potion].'), 'Gain 3 Potions.')
   assert(HEARTS_BOON_CARDS.every((card) => card.options.every((option) => !/\[[a-z-]+\]/.test(option.label))))

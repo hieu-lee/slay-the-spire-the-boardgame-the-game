@@ -32,6 +32,26 @@
   pointer-events: none;
 }
 
+/* Downfall opens with the Heart addressing the intruders. Keep the shared
+   ceremony layout, but give its square cutout the scale and pink aura of the
+   public playtest scene rather than treating it as Neow's wide whale art. */
+.neow-screen--heart {
+  --neow-width: min(45vw, 42rem);
+  background:
+    radial-gradient(circle at 74% 42%, rgb(249 110 193 / .3), transparent 24%),
+    linear-gradient(180deg, rgb(5 7 8 / .18), rgb(4 5 6 / .25) 55%, rgb(2 3 4 / .82)),
+    url('/assets/backgrounds/boss-act-4.webp') center / cover no-repeat;
+}
+
+.neow-screen__neow--heart {
+  right: 9vw;
+  bottom: 6rem;
+  width: var(--neow-width);
+  max-height: min(72vh, 44rem);
+  object-fit: contain;
+  filter: drop-shadow(0 0 1.35rem rgb(249 110 193 / .62)) drop-shadow(0 1.5rem 2rem #000c);
+}
+
 .neow-screen__hero {
   position: absolute;
   z-index: 1;
@@ -247,3 +267,11 @@
 .neow-card-choice > div { display: flex; gap: .65rem; padding: .5rem 0; overflow-x: auto; }
 .neow-card-choice .card { flex: 0 0 min(180px, 58vw); }
 .neow-card-choice > button { width: 100%; }
+
+@media (max-width: 36rem) {
+  .neow-screen--heart .neow-screen__neow--heart {
+    right: 3vw;
+    bottom: 15rem;
+    width: min(58vw, 24rem);
+  }
+}
