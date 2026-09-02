@@ -13,7 +13,7 @@ import type {
   TreasureDecision,
 } from "../game/noncombat.ts";
 import { courierCost } from "../game/noncombat.ts";
-import { merchantCardCost, potionLimit } from "../game/acquisition.ts";
+import { merchantCardCost, merchantRelicCost, potionLimit } from "../game/acquisition.ts";
 import { relicOptionLabel, RelicOptionText } from "./RelicChip.tsx";
 import { useHoverUnavailable } from "./touch-input.ts";
 import { Card } from "./Card.tsx";
@@ -351,9 +351,7 @@ function MerchantScreen({
         <div className="merchant-shelf merchant-shelf--relics" aria-label="Relics">
           <h3>Relics</h3>
           {room.relics.map((id, slot) => {
-            const cost = id
-              ? Math.max(0, (relicDef(id).cost ?? 99) - (slot === 0 ? 1 : 0))
-              : null;
+            const cost = id ? merchantRelicCost(id, slot) : null;
             const funding =
               cost === null ? null : pledge(buyer.id, "relic", slot, cost);
             return (

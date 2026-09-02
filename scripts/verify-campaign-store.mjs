@@ -328,6 +328,50 @@ try {
       prismaticDraws: oldPrismaticReveal.draws,
     } : offer),
   }
+
+  const legacyDownfallBoss = createRoom(store, { code: 'OLDDFB' })
+  const downfallSeat = joinRoom(legacyDownfallBoss, { name: 'Ghost', character: 'hexaghost' })
+  startRun(legacyDownfallBoss, downfallSeat.token, { seed: 7348 })
+  legacyDownfallBoss.run.phase = 'reward'
+  legacyDownfallBoss.run.neow = null
+  legacyDownfallBoss.run.rewardDestination = 'victory'
+  const legacyDownfallPlayer = legacyDownfallBoss.run.players[0]
+  const originalDownfallCards = [...legacyDownfallPlayer.cardRewards]
+  const originalDownfallRares = [...legacyDownfallPlayer.rareRewards]
+  const originalDownfallBossRelics = [...legacyDownfallBoss.run.bossRelicDeck]
+  const oldDownfallDraws = originalDownfallCards.slice(0, 3)
+  legacyDownfallBoss.run.rewards = [{
+    playerId: downfallSeat.playerId,
+    cardReward: true,
+    cardSource: 'ordinary',
+    choices: oldDownfallDraws,
+    cardsDrawn: oldDownfallDraws,
+    raresDrawn: [],
+    upgraded: false,
+    potion: false,
+    relic: null,
+    bossRelics: false,
+  }]
+
+  const legacyDownfallRareOnly = createRoom(store, { code: 'OLDDRF' })
+  const rareOnlySeat = joinRoom(legacyDownfallRareOnly, { name: 'Rare Ghost', character: 'hexaghost' })
+  startRun(legacyDownfallRareOnly, rareOnlySeat.token, { seed: 7349 })
+  legacyDownfallRareOnly.run.phase = 'reward'
+  legacyDownfallRareOnly.run.neow = null
+  legacyDownfallRareOnly.run.rewardDestination = 'victory'
+  legacyDownfallRareOnly.run.players[0].cardRewards = []
+  const rareOnlyRares = [...legacyDownfallRareOnly.run.players[0].rareRewards]
+  const rareOnlyBossRelics = [...legacyDownfallRareOnly.run.bossRelicDeck]
+  legacyDownfallRareOnly.run.rewards = [{
+    playerId: rareOnlySeat.playerId,
+    cardReward: false,
+    cardSource: 'ordinary',
+    choices: null,
+    upgraded: false,
+    potion: false,
+    relic: null,
+    bossRelics: false,
+  }]
   saveStore(store)
   const curseMigrated = createStore({ file })
   check('restart migrates legacy Relic-followed-by-Curse queues and preserves Omamori order', () => {
@@ -379,6 +423,33 @@ try {
     })
     apply(bossMigrated, bossSeats[0].token, { kind: 'cardReward', choice: 'reveal', sources })
     assertDeepEqual(bossMigrated.run.rewards[0].choices, choices)
+  })
+
+  const downfallBossMigrated = createStore({ file }).rooms.get('OLDDFB')
+  check('restart replaces open legacy Downfall boss rewards with Rare Cards and Boss Relics', () => {
+    const offer = downfallBossMigrated.run.rewards[0]
+    assertEqual(offer.cardSource, 'rare')
+    assertEqual(offer.choices, null)
+    assertEqual(offer.relic, false)
+    assertDeepEqual(offer.bossRelics, originalDownfallBossRelics.slice(0, 3))
+    assertDeepEqual(downfallBossMigrated.run.bossRelicDeck, originalDownfallBossRelics.slice(3))
+    assertDeepEqual(downfallBossMigrated.run.players[0].cardRewards,
+      [...originalDownfallCards.slice(3), ...oldDownfallDraws])
+    assertDeepEqual(downfallBossMigrated.run.players[0].rareRewards, originalDownfallRares)
+    joinRoom(downfallBossMigrated, { token: downfallSeat.token })
+    apply(downfallBossMigrated, downfallSeat.token, { kind: 'cardReward', choice: 'reveal' })
+    assertDeepEqual(downfallBossMigrated.run.rewards[0].choices, originalDownfallRares.slice(0, 3))
+  })
+
+  const downfallRareOnlyMigrated = createStore({ file }).rooms.get('OLDDRF')
+  check('restart restores a legacy Downfall boss Rare Reward when its normal deck was empty', () => {
+    const offer = downfallRareOnlyMigrated.run.rewards[0]
+    assertEqual(offer.cardReward, true)
+    assertEqual(offer.cardSource, 'rare')
+    assertEqual(offer.relic, false)
+    assertDeepEqual(offer.bossRelics, rareOnlyBossRelics.slice(0, 3))
+    assertDeepEqual(downfallRareOnlyMigrated.run.bossRelicDeck, rareOnlyBossRelics.slice(3))
+    assertDeepEqual(downfallRareOnlyMigrated.run.players[0].rareRewards, rareOnlyRares)
   })
 
   const prismaticMigrated = createStore({ file }).rooms.get('OLDPRI')

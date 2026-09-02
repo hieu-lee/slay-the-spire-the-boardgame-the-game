@@ -6,7 +6,10 @@ import {
   DOWNFALL_BOSS_RELIC_DECK,
   DOWNFALL_COLORLESS_CARDS,
   DOWNFALL_ITEMS_MANIFEST,
+  DOWNFALL_POTION_COSTS,
+  DOWNFALL_POTION_DECK,
   DOWNFALL_POTIONS,
+  DOWNFALL_RELIC_COSTS,
   DOWNFALL_RELICS,
   DOWNFALL_RELIC_DECK,
   HEARTS_BOONS,
@@ -284,15 +287,23 @@ for (const item of everyItem) {
 }
 assert.equal(everyItem.length, 194, 'the executable audit must visit every manifest record')
 
-const sourceUnknownPotionIds = DOWNFALL_POTIONS
-  .map(({ name }) => itemId(name))
-  .filter((id) => POTIONS[id]?.cost === undefined)
-assert.deepEqual(sourceUnknownPotionIds, [
-  'transforming_brew', 'energy_drink', 'mystery_potion', 'pizzaz_potion', 'greed_potion',
-  'liquid_void', 'fruit_juice', 'clever_concoction', 'destiny_draught', 'cultist_potion',
-  'bottle_of_nails', 'cactus_juice', 'whale_ale',
-], 'prototype Potion faces without a printed price stay explicitly source-unknown')
-for (const id of sourceUnknownPotionIds) {
+assert.deepEqual(DOWNFALL_RELIC_COSTS, {
+  teleportation_stone: 7, thimble_helm: 7, dueling_glove: 7, sack_of_gems: 6,
+  black_powder: 8, kunai: 7, clasped_locket: 6, fuel_canister: 9, snecko_egg: 6,
+  greed_ooze: 7, potion_belt: 6, shot_glass: 9, makeshift_battery: 7,
+  straight_razor: 9, unceasing_top: 5, pantograph: 7, the_broken_seal: 8,
+}, 'expansion-only Relic prices match their printed coins')
+assert.deepEqual(DOWNFALL_POTION_COSTS, {
+  transforming_brew: 4, energy_drink: 2, mystery_potion: 2, pizzaz_potion: 3,
+  greed_potion: 3, liquid_void: 3, fruit_juice: 3, clever_concoction: 3,
+  destiny_draught: 3, cultist_potion: 4, bottle_of_nails: 4, cactus_juice: 3,
+  whale_ale: 2,
+}, 'expansion-only Potion prices match their printed coins')
+assert.ok(DOWNFALL_RELIC_DECK.filter((id) => id !== 'old_coin').every((id) => RELICS[id]?.cost !== undefined),
+  'every purchasable Downfall Relic has a printed Merchant price')
+assert.ok(DOWNFALL_POTION_DECK.every((id) => POTIONS[id]?.cost !== undefined),
+  'every Downfall Potion has a printed Merchant price')
+for (const id of Object.keys(DOWNFALL_POTION_COSTS)) {
   assert.ok(POTIONS[id].effects.length > 0 || SPECIAL_POTION_RUNTIME_IDS.has(id),
     `${id} is registered without a generic Effect or a native runtime dispatcher`)
 }
@@ -352,9 +363,10 @@ assert.equal(painHealed.players.find(({ id }) => id === 'base').hp, 7,
   'Downfall Mark of Pain must not retain the base-game healing cap')
 const merchantPotions = merchantItemDecks(integration, {
   ...integration.itemDecks,
-  potions: [...sourceUnknownPotionIds, 'block_potion'],
+  potions: [...Object.keys(DOWNFALL_POTION_COSTS), 'block_potion'],
 }).potions
-assert.deepEqual(merchantPotions, ['block_potion'], 'unpublished prices cannot silently become merchant prices')
+assert.deepEqual(merchantPotions, [...Object.keys(DOWNFALL_POTION_COSTS), 'block_potion'],
+  'every printed Downfall Potion price remains available at the Merchant')
 
 const duplicate = drawCardChoices({ cardRewards: ['anger', 'anger', 'claw', 'bash'], rareRewards: [] }, 3, true)
 assert.deepEqual(duplicate.cardsDrawn, ['anger', 'anger', 'claw', 'bash'])

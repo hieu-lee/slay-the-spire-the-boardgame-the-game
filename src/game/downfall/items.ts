@@ -2655,6 +2655,21 @@ export const DOWNFALL_BOSS_RELIC_DECK = DOWNFALL_BOSS_RELICS.flatMap((item) => A
 export const DOWNFALL_COLORLESS_DECK = DOWNFALL_COLORLESS_CARDS.flatMap((item) => Array(item.multiplicity).fill(itemId(item.name)))
 export const CORRUPTED_SHARD_SUPPLY = 4
 
+/** Merchant prices transcribed from the coin printed on each v1.47 expansion-only item. */
+export const DOWNFALL_RELIC_COSTS: Readonly<Record<string, number>> = {
+  teleportation_stone: 7, thimble_helm: 7, dueling_glove: 7, sack_of_gems: 6,
+  black_powder: 8, kunai: 7, clasped_locket: 6, fuel_canister: 9, snecko_egg: 6,
+  greed_ooze: 7, potion_belt: 6, shot_glass: 9, makeshift_battery: 7,
+  straight_razor: 9, unceasing_top: 5, pantograph: 7, the_broken_seal: 8,
+}
+
+export const DOWNFALL_POTION_COSTS: Readonly<Record<string, 2 | 3 | 4>> = {
+  transforming_brew: 4, energy_drink: 2, mystery_potion: 2, pizzaz_potion: 3,
+  greed_potion: 3, liquid_void: 3, fruit_juice: 3, clever_concoction: 3,
+  destiny_draught: 3, cultist_potion: 4, bottle_of_nails: 4, cactus_juice: 3,
+  whale_ale: 2,
+}
+
 export type DownfallCondition =
   | { kind: 'hpAtLeast'; amount: number }
   | { kind: 'attacksPlayedAtLeast'; amount: number }

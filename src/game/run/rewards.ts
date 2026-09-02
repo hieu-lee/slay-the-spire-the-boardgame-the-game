@@ -33,7 +33,7 @@ import { cardIsCurse, isStarterStrikeOrDefend } from '../cards.ts'
 import { decideRelicReward, resolveRelicReward as resolveRoomRelicReward } from '../noncombat.ts'
 import type { TreasureDecision } from '../noncombat.ts'
 import { bottomGuardianGems, cardHasGuardianSocket, drawGuardianGemChoices, queueGuardianSocket, queueNewGuardianSockets, revealGuardianDraftGems } from './guardian-gems.ts'
-import { createRelicInstance, relicDef } from '../relics.ts'
+import { bossRelicOfferSize, createRelicInstance, relicDef } from '../relics.ts'
 import type { CardInstance, Player } from '../types.ts'
 import { CHARACTER_IDS } from '../types.ts'
 
@@ -138,8 +138,15 @@ export function availableRewardSources(state: RunState, rare: boolean): RewardSo
 /** Repair open Act I-II boss rewards written before their yellow icon was classified as Rare. */
 export function migrateLegacyBossRareRewards(state: RunState): RunState {
   if (state.phase !== 'reward' || state.act > 2 || state.rewardDestination !== 'victory') return state
-  const stale = state.rewards.filter((offer) => !offer.cardSource)
+  const legacyDownfallBosses = state.meta.ruleset === 'downfall'
+    ? state.rewards.filter((offer) => offer.cardSource === 'ordinary' &&
+      offer.relic === null && offer.bossRelics === false)
+    : []
+  const stale = state.rewards.filter((offer) => !offer.cardSource || legacyDownfallBosses.includes(offer))
   if (stale.length === 0) return state
+  const bossChoices = legacyDownfallBosses.length > 0
+    ? state.bossRelicDeck.slice(0, bossRelicOfferSize(state.players.filter((player) => !player.dead).length))
+    : undefined
   const bottomKnownDraws = (deck: string[], drawn: readonly string[]) => {
     const remaining = [...deck]
     const bottom: string[] = []
@@ -193,8 +200,10 @@ export function migrateLegacyBossRareRewards(state: RunState): RunState {
         prismaticSources: undefined,
         prismaticDraws: undefined,
         availableSources,
+        ...(legacyDownfallBosses.includes(offer) ? { relic: false, bossRelics: bossChoices } : {}),
       }
     }),
+    ...(bossChoices ? { bossRelicDeck: next.bossRelicDeck.slice(bossChoices.length) } : {}),
   }
 }
 

@@ -1397,8 +1397,8 @@ const colorlessOverlap = await page.evaluate(() => {
   // glyph diverges from a module-sized one. Sold in slot 1 renders the
   // `.room-item-icon` half of the shelf-icon selector, which a fully stocked
   // fixture never produced.
-  run.roomState = { kind: 'merchant', relics: ['anchor', '', 'akabeko'],
-    potions: ['fire_potion', '', 'blood_potion'],
+  run.roomState = { kind: 'merchant', relics: ['shot_glass', '', 'potion_belt'],
+    potions: ['energy_drink', '', 'transforming_brew'],
     // One CARD slot empty as well: a Sold plate only renders for an empty card
     // slot, so a shelf-only sold fixture never produced one and never measured it.
     colorless: ['dramatic_entrance', '', 'finesse'],
@@ -1456,6 +1456,9 @@ const colorlessOverlap = await page.evaluate(() => {
     // price beneath it, which `Price` prints for a null value.
     const soldWordsPerSlot = [...board.querySelectorAll('.merchant-cards .merchant-card')]
       .map((slot) => (slot.textContent ?? '').match(/Sold/g)?.length ?? 0)
+    const downfallPrices = Object.fromEntries([...board.querySelectorAll('[data-merchant-target]')]
+      .filter((item) => /^(relic|potion)-/.test(item.getAttribute('data-merchant-target') ?? ''))
+      .map((item) => [item.getAttribute('data-merchant-target'), item.querySelector('.room-price')?.textContent?.trim()]))
     // Restore the shop the checks below expect — an explicit fixture, not the
     // captured snapshot, which could be mid-transition and left them without the
     // Anchor relic they hover.
@@ -1466,7 +1469,7 @@ const colorlessOverlap = await page.evaluate(() => {
         cards: Object.fromEntries(before.players.map((player) => [player.id,
           { choices: ['twin_strike', 'second_wind', 'limit_break'], cardsDrawn: [], raresDrawn: [] }])),
         removalUsed: [], purchasedCards: {} } })
-    done({ colorlessCards, colorlessSlots, soldWordsPerSlot, pairs: pairs.slice(0, 4), count: pairs.length,
+    done({ colorlessCards, colorlessSlots, soldWordsPerSlot, downfallPrices, pairs: pairs.slice(0, 4), count: pairs.length,
       clipped, sideways, buried, soldGlyphs })
   })))
 })
@@ -1661,6 +1664,12 @@ check('the shop lays out a full Colorless pile without overlapping or clipping',
   assertEqual(colorlessOverlap.soldGlyphs, 2, 'the Sold-slot glyphs did not render, so nothing measured them')
   assert(colorlessOverlap.soldWordsPerSlot.every((count) => count <= 1),
     `a sold card slot printed "Sold" ${Math.max(...colorlessOverlap.soldWordsPerSlot)} times`)
+})
+check('Downfall Merchant stock uses the physical expansion prices', () => {
+  assertDeepEqual(colorlessOverlap.downfallPrices, {
+    'relic-0': '%8 Gold, on sale', 'relic-1': 'Sold', 'relic-2': '6 Gold',
+    'potion-0': '2 Gold', 'potion-1': 'Sold', 'potion-2': '4 Gold',
+  })
 })
 check('a campfire tile with an open room interaction mounts exactly one screen', () => {
   assertEqual(stackedRoomScreens.merchant, 1, 'the open Merchant did not render')
