@@ -93,6 +93,16 @@ function dieRelicNeedsOwnerChoice(effects: readonly Effect[]): boolean {
   return effects.some((effect) => effect.kind === 'discard' || effect.kind === 'exhaustFromHand')
 }
 
+export function dieRelicEffectsForParty(
+  relicDefId: string,
+  effects: readonly Effect[],
+  playerCount: number,
+): readonly Effect[] {
+  return relicDefId === 'tungsten_rod' && playerCount === 1
+    ? effects.map((effect) => effect.kind === 'block' ? { ...effect, amount: 3 } : effect)
+    : effects
+}
+
 /** Applies a chosen die face now, or queues its private hand choice for the relic owner. */
 export function triggerChosenDieRelic(
   state: CombatState,
@@ -130,7 +140,7 @@ export function triggerChosenDieRelic(
     invalidExhaustChoice: false,
     pendingTriggers: context.pendingTriggers ?? [],
   }
-  for (const effect of ability.effects) {
+  for (const effect of dieRelicEffectsForParty(relicDefId, ability.effects, state.players.length)) {
     applyEffect(state, owner, effect, ability.target ?? 'enemy', ability.supportTarget ?? 'self', nestedContext,
       sourceLabel)
     if (invalidPlayChoice(nestedContext) || combatIsOver(state)) break
@@ -3348,9 +3358,7 @@ export function resolveTriggerSource(
     slimeEnemyChoiceIndex: 0,
     pendingSlimeCommandUids: [],
   }
-  const effects = source.name.endsWith("'s Tungsten Rod") && state.players.length === 1
-    ? [{ kind: 'block' as const, amount: 3 }]
-    : source.effects
+  const effects = dieRelicEffectsForParty(source.presentationSourceId, source.effects, state.players.length)
   for (const effect of effects) {
     applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
     if (!allowCombatOver && combatIsOver(state)) return true
