@@ -43,7 +43,7 @@ import {
   playerCanGainDebuffs,
   triggerAngry,
 } from './pieces.ts'
-import { addPresentationEvent } from './presentation.ts'
+import { addPresentationEvent, presentationTargets } from './presentation.ts'
 import { commandSlime, gainSlimeVigor, growSlime, previewSlimeCommand, slimeDef } from '../downfall/slime-boss.ts'
 import type { SlimeBossEffect } from '../downfall/slime-boss.ts'
 import { hermitCurseLoadReaction } from '../downfall/hermit.ts'
@@ -217,6 +217,13 @@ export function resolveSlimeCommand(
     return false
   }
   const command = commandSlime(slime)!
+  const targets = presentationTargets(
+    state,
+    actor.id,
+    command.effects.some((effect) => reachesEnemy(effect, actor)) ? command.scope : 'self',
+    'self',
+    { enemyUid: enemyUid ?? null },
+  )
   for (const effect of command.effects) {
     applyEffect(state, actor, effect, command.scope, 'self', {
       ...context,
@@ -227,6 +234,18 @@ export function resolveSlimeCommand(
     }, source)
     if (combatIsOver(state)) break
   }
+  const animationCounts = (context.slimeAnimationCounts ??= {})
+  const animationIndex = animationCounts[slime.card.uid] ?? 0
+  animationCounts[slime.card.uid] = animationIndex + 1
+  addPresentationEvent(state, {
+    kind: 'slime',
+    actorId: actor.id,
+    sourceId: slime.card.defId,
+    slimeUid: slime.card.uid,
+    upgraded: slime.card.upgraded,
+    animationIndex,
+    ...targets,
+  })
   return true
 }
 

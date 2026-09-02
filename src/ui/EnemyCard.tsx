@@ -309,6 +309,7 @@ export function EnemyCard({
   useEffect(() => {
     const changed = visualSignature !== priorActual.current.signature
     const newEvent = visualEventSeq > priorActual.current.eventSeq
+    if (!resetVisuals && changed && newEvent && visualContactMs < 0) return
     priorActual.current = {
       signature: visualSignature, eventSeq: visualEventSeq, resetKey: visualResetKey,
     }

@@ -31,6 +31,7 @@ import {
   pendingTriggerSlimeEnemyChoiceCount,
   resolveOrbAtEndOfTurn,
   resolveQueuedTriggerSource,
+  resolveSlimeCommand,
   resolveTriggerSource,
   settle,
   triggerEnemyDeath,
@@ -59,7 +60,7 @@ import { gainBlock, gainWeak } from '../damage.ts'
 import { enemyAbilities, enemyDef } from '../enemies.ts'
 import { discardHand } from '../piles.ts'
 import type { CardInstance, Player } from '../types.ts'
-import { commandSlime, removeTemporarySlimeVigor, slimeDef } from '../downfall/slime-boss.ts'
+import { removeTemporarySlimeVigor, slimeDef } from '../downfall/slime-boss.ts'
 
 function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTurnAbility, 'playerId'>[] {
   const abilities: Omit<EndTurnAbility, 'playerId'>[] = triggerSources(player, { kind: 'endOfTurn' })
@@ -402,13 +403,9 @@ function continueEndPlayerTurn(
         if (slime) removeTemporarySlimeVigor(slime)
       } else if (localId.startsWith('slime:')) {
         const slime = player.slimes.find((candidate) => candidate.card.uid === localId.slice(6))
-        const command = slime && commandSlime(slime)
-        if (command && slime) for (const effect of command.effects) {
-          applyEffect(next, player, effect, command.scope, 'self', {
-            enemyUid: endTurnChoiceTarget(choice) ?? null, playerId: null,
-            slimeUids: [slime.card.uid], slimeChoiceIndex: 0, slimeCommand: true,
-          }, slimeDef(slime).name)
-        }
+        if (slime) resolveSlimeCommand(next, player, slime, {
+          enemyUid: endTurnChoiceTarget(choice) ?? null, playerId: null,
+        })
       } else if (localId.startsWith('orb:')) {
         if (!resolveOrbAtEndOfTurn(next, player, Number(localId.slice(4)), endTurnChoiceTarget(choice))) {
           continue
