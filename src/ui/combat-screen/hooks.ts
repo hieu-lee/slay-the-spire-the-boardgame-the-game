@@ -7,7 +7,8 @@
 // What they watch arrives as arguments or from the browser; none of them reaches
 // into the component that calls it.
 import { characterAttackContactMs, ORB_END_TURN_STAGGER_MS,
-  SLIME_COMMAND_ANIMATION_MS } from './vfx.tsx'
+  SLIME_COMMAND_ANIMATION_MS, SLIME_COMMAND_CONTACT_MS,
+  SLIME_SPAWN_ANIMATION_MS, SLIME_SPAWN_CONTACT_MS } from './vfx.tsx'
 import { cardDef } from '../../game/cards.ts'
 import type { CombatPresentationEvent, CombatState } from '../../game/combat.ts'
 import { drawnCardUids } from '../board-signals.ts'
@@ -44,7 +45,7 @@ function slimeAnimationDelays(
     if (!key) continue
     const start = Math.max(now, queueEnd.get(key) ?? now)
     delays.set(event.seq, start - now)
-    queueEnd.set(key, start + SLIME_COMMAND_ANIMATION_MS)
+    queueEnd.set(key, start + SLIME_SPAWN_ANIMATION_MS)
   }
   return delays
 }
@@ -63,10 +64,10 @@ function updateTargetContactDeadlines(
   for (const event of events) {
     for (const target of new Set([...event.enemyIds, ...event.playerIds])) {
       const existing = deadlines.get(target)
-      const slimeAnimation = event.kind === 'slime' ||
-        event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
-      const contact = slimeAnimation
-        ? 800 + (delays.get(event.seq) ?? 0)
+      const slimeCommand = event.kind === 'slime'
+      const slimeSpawn = event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
+      const contact = slimeCommand || slimeSpawn
+        ? (slimeCommand ? SLIME_COMMAND_CONTACT_MS : SLIME_SPAWN_CONTACT_MS) + (delays.get(event.seq) ?? 0)
         : characterAttackContactMs(state, target, event)
       deadlines.set(target, {
         at: contact > 0 ? Math.max(existing?.at ?? now, now + contact) : existing?.at ?? 0,
@@ -433,10 +434,13 @@ export function usePresentationEvents(
       const slimeAnimation = event.kind === 'slime' ||
         event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
       const delay = delays.get(event.seq) ?? 0
-      const localAttackContact = event.kind === 'slime' ? 800 : Math.max(0, attackContact - delay)
+      const localAttackContact = event.kind === 'slime' ? SLIME_COMMAND_CONTACT_MS : Math.max(0, attackContact - delay)
+      const slimeBossAttack = event.kind !== 'slime' && state.players.some((player) =>
+        player.id === event.actorId && player.character === 'slime_boss') && attackContact > 0
       const lifetime = (localAttackContact > 0
-        ? Math.max(1_800, localAttackContact + 1_200)
-        : slimeAnimation ? 1_650 : 900) +
+        ? slimeBossAttack || event.kind === 'slime' ? SLIME_COMMAND_ANIMATION_MS + 100
+          : Math.max(1_800, localAttackContact + 1_200)
+        : slimeAnimation ? SLIME_SPAWN_ANIMATION_MS + 100 : 900) +
         staggerIndex * ORB_END_TURN_STAGGER_MS
       const remove = () => timers.current.set(event.seq, setTimeout(() => {
         timers.current.delete(event.seq)

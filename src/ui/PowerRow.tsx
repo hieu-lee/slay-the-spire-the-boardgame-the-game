@@ -49,12 +49,23 @@ function zoomIsPinnedElsewhere(close: () => void): boolean {
   return pinnedBy !== null && pinnedBy !== close
 }
 
-function claimTheOnlyZoom(close: () => void, pinned: boolean) {
-  for (const other of closers) if (other !== close) other()
-  pinnedBy = pinned ? close : null
+/** Joins the one-card-zoom owner shared by Powers and Slime minions. */
+export function registerCardZoomCloser(close: () => void): () => void {
+  closers.add(close)
+  return () => {
+    closers.delete(close)
+    if (pinnedBy === close) pinnedBy = null
+  }
 }
 
-function releaseZoom(close: () => void) {
+export function tryClaimCardZoom(close: () => void, pinned = false): boolean {
+  if (!pinned && zoomIsPinnedElsewhere(close)) return false
+  for (const other of closers) if (other !== close) other()
+  pinnedBy = pinned ? close : null
+  return true
+}
+
+export function releaseCardZoom(close: () => void) {
   if (pinnedBy === close) pinnedBy = null
 }
 
@@ -66,17 +77,13 @@ export function PowerRow({ powers }: PowerRowProps) {
 
   useEffect(() => {
     const mine = close.current
-    closers.add(mine)
-    return () => {
-      closers.delete(mine)
-      releaseZoom(mine)
-    }
+    return registerCardZoomCloser(mine)
   }, [])
 
   // A pinned card must not outlive the Power that opened it.
   useEffect(() => {
     if (zoom && !powers.some((card) => card.uid === zoom.uid)) {
-      releaseZoom(close.current)
+      releaseCardZoom(close.current)
       setZoom(null)
     }
   }, [powers, zoom])
@@ -101,7 +108,7 @@ export function PowerRow({ powers }: PowerRowProps) {
       }
     }
     const drop = () => {
-      releaseZoom(close.current)
+      releaseCardZoom(close.current)
       setZoom(null)
     }
     // Clicking anywhere else puts the card down, the way it would at a table.
@@ -148,8 +155,7 @@ export function PowerRow({ powers }: PowerRowProps) {
         : Math.max(MARGIN, Math.min(below, window.innerHeight - ZOOM_HEIGHT - MARGIN))
     // Whoever opens one closes everybody else's — unless somebody else has
     // deliberately pinned theirs, which a passing hover must not destroy.
-    if (!pinned && zoomIsPinnedElsewhere(close.current)) return
-    claimTheOnlyZoom(close.current, pinned)
+    if (!tryClaimCardZoom(close.current, pinned)) return
     setZoom({
       uid: card.uid,
       src: cardThumbPath(cardDef(card.defId), card.upgraded),
@@ -205,7 +211,7 @@ export function PowerRow({ powers }: PowerRowProps) {
                 onBlur={() => setZoom((current) => (current?.pinned ? current : null))}
                 onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
                   if (showing && zoom?.pinned) {
-                    releaseZoom(close.current)
+                    releaseCardZoom(close.current)
                     setZoom(null)
                   } else {
                     place(event.currentTarget, card, described, true)

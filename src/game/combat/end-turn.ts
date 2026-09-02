@@ -92,7 +92,10 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
     if (def.slimeEndOfTurn) {
       const scope = commandSlimePreviewScope(slime)
       abilities.push({ id: `slime:${slime.card.uid}`, label: `${def.name} — Command`,
-        targets: scope === 'enemy' ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) })) : undefined })
+        targets: scope === 'enemy' || scope === 'allEnemies'
+          ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
+          : undefined,
+        visual: { kind: 'slime', cardId: def.id } })
     }
     if (slime.vigorLossAtEndOfTurn > 0) abilities.push({ id: `slime-vigor:${slime.card.uid}`, label: `${def.name} — Lose temporary Vigor` })
   }
@@ -399,7 +402,8 @@ function continueEndPlayerTurn(
         }
         player.strengthLossAtEndOfTurn = 0
       } else if (localId.startsWith('slime-vigor:')) {
-        const slime = player.slimes.find((candidate) => candidate.card.uid === localId.slice(13))
+        const slime = player.slimes.find((candidate) =>
+          candidate.card.uid === localId.slice('slime-vigor:'.length))
         if (slime) removeTemporarySlimeVigor(slime)
       } else if (localId.startsWith('slime:')) {
         const slime = player.slimes.find((candidate) => candidate.card.uid === localId.slice(6))

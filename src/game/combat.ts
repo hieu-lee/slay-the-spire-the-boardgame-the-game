@@ -60,10 +60,12 @@ export {
   activePowerWindow,
   nextEvokeChoice,
   mandatoryChoicePending,
+  maximumXEnergy,
   overflowShivCount,
   playCost,
   reachesEnemy,
   reachedTimeWarpLimit,
+  slimeChoiceIsAvailable,
   slimeCommandEnemyChoiceLabels,
   slimeCommandEnemyChoiceCount,
 } from './combat/queries.ts'

@@ -132,7 +132,7 @@
       "sourceKind": "pc-downfall-extraction",
       "source": "docs/downfall-enemy-sources/pc/dark-core-sheet.webp",
       "upstreamCode": "src/main/resources/downfallResources/images/ui/heartRug.png",
-      "pipeline": "PC capture sheet -> transparent cutout -> idle and left-attacking key frames",
+      "pipeline": "PC capture sheet -> direct OpenAI Image API gpt-image-2 high-quality transparent-background cleanup reference -> pixel-preserving alpha repair (the generated redraw changed the character) -> idle and left-attacking key frames",
       "runtime": [
         "public/assets/combat/enemies/downfall_dark_core.webp",
         "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp",
@@ -141,9 +141,9 @@
       "sourceSha256": "39ba3c394e31e5b2480a8bc3a631acb55cd6141ab7aad1b3e76bca0086da0978",
       "upstreamCodeSha256": "49db1924d262d293c875e147fc745961dfe0faee8505e0e8ca3703beae98119a",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_dark_core.webp": "d74a2aec15838237a5b71458a2a581b8e5282f96bc37dc42ba1594c87b9799d5",
-        "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp": "67ad5bb2df44a2deb624ecf316976f4c55b8ca97da32c7e5cbd0ededcff3617c",
-        "public/assets/combat/enemies/animations/downfall_dark_core-attack.webp": "cd569dc2fffedf87ae8681744c11ce17a073f6a42eddeb3932a411a1d19b0dad"
+        "public/assets/combat/enemies/downfall_dark_core.webp": "aff8048e9de105653d4a8fce75f4c0406d5fe203837ea0cd6bb8cca6395da475",
+        "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp": "e5e00bf5a454d9732eed28b20b0c248d8e5cc1ce1ad98b6b48e6f23944b87b1b",
+        "public/assets/combat/enemies/animations/downfall_dark_core-attack.webp": "f9355809a35ff0fecf96f1349b0cbb54ab819d24ec96820edd89d31ff9b597bf"
       }
     },
     {

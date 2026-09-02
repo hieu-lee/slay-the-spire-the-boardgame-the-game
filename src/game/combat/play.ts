@@ -64,12 +64,14 @@ import {
   invalidPlayChoice,
   latestPlayableAllyAttack,
   mandatoryChoicePending,
+  maximumXEnergy,
   needsChosenEnemy,
   omniscienceEligibleCards,
   overflowShivCount,
   playCost,
   reachedTimeWarpLimit,
   resolutionContext,
+  slimeChoiceIsAvailable,
   slimeCommandEnemyChoiceCount,
 } from './queries.ts'
 import { finishCardCopy, finishForcedCardPlay, preparePlayerTurnThroughDraw, startPlayerTurnWithChoices } from './start-turn.ts'
@@ -373,10 +375,13 @@ function slimeCommandTargetsAreValid(
   energySpent: number,
   energyCharged = energySpent,
   playedCard?: CardInstance,
+  requireAvailableSlimes = true,
 ): boolean {
   const active = { ...def, modes: undefined, effects: [...effects] }
   const targets = context.slimeEnemyUids ?? []
-  return targets.length === slimeCommandEnemyChoiceCount(
+  return (!requireAvailableSlimes || (context.slimeUids ?? [])
+    .every((uid) => slimeChoiceIsAvailable(active, state, player, uid, energySpent))) &&
+    targets.length === slimeCommandEnemyChoiceCount(
     active, state, player, context.slimeUids ?? [], energySpent, energyCharged,
     playedCard,
   ) && targets.every((uid) => livingEnemies(state).some((enemy) => enemy.uid === uid))
@@ -576,7 +581,7 @@ export function playCard(
   if (def.cost === 'X' && printedCost !== 'X' && printedCost < (def.minimumX ?? 0)) return state
   const xCost = printedCost === 'X'
   if (xCost && (!Number.isInteger(context.energySpent) || context.energySpent! < (def.minimumX ?? 0) ||
-    context.energySpent! > player.energy)) return state
+    context.energySpent! > maximumXEnergy(def, player))) return state
   if (!xCost && context.energySpent !== undefined && context.energySpent !== 0) return state
   const cost = xCost ? context.energySpent! : printedCost
   const vigorSpent = context.spendVigor ?? 0
@@ -596,7 +601,7 @@ export function playCard(
   // Choices are checked together at the trust boundary. The same validator is
   // reused when the physical card resolves after its separately targeted copy.
   if (!slimeCommandTargetsAreValid(
-    state, player, def, resolvesOnPlay ? effects : [], context, effectEnergy, cost, held,
+    state, player, def, resolvesOnPlay ? effects : [], context, effectEnergy, cost, held, !forcedPlay,
   ) || resolvesOnPlay && !cardResolutionChoicesAreValid(
     state, player, def, effects, context, effectEnergy, held.uid, attachedGemId, cost, held.hermitDeadOn === true,
   )) return state
@@ -1062,7 +1067,7 @@ export function playCardCopy(
     if (!cardModeIsAvailable(def, state, player, context.mode!)) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
-  if (!slimeCommandTargetsAreValid(state, player, def, effects, context, pending.energySpent, 0, pending.card) ||
+  if (!slimeCommandTargetsAreValid(state, player, def, effects, context, pending.energySpent, 0, pending.card, false) ||
     !cardResolutionChoicesAreValid(state, player, def, effects, context,
     pending.energySpent, pending.card.uid, attachedGemId, pending.energySpent, pending.card.hermitDeadOn === true)) return state
 

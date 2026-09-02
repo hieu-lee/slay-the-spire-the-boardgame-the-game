@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   SLIME_BOSS_CARDS,
   SLIME_BOSS_CARD_COUNT,
@@ -13,12 +14,20 @@ import {
   growSlime,
   removeTemporarySlimeVigor,
 } from '../src/game/downfall/slime-boss.ts'
-import { activatePower, beginEndPlayerTurn, cardHasRetain, cardNeedsEnemy, createCombat, endTurnAbilities, pendingTriggerAbility, pendingTriggerSlimeEnemyChoiceCount, pendingTriggerSlimeEnemyChoiceLabels, playCard, playCardCopy, playCost, previewCardCopyChoice, resolvePendingTrigger, slimeCommandEnemyChoiceCount, slimeCommandEnemyChoiceLabels } from '../src/game/combat.ts'
+import { activatePower, beginEndPlayerTurn, cardHasRetain, cardNeedsEnemy, createCombat, endTurnAbilities, maximumXEnergy, pendingTriggerAbility, pendingTriggerSlimeEnemyChoiceCount, pendingTriggerSlimeEnemyChoiceLabels, playCard, playCardCopy, playCost, previewCardCopyChoice, resolvePendingTrigger, slimeChoiceIsAvailable, slimeCommandEnemyChoiceCount, slimeCommandEnemyChoiceLabels } from '../src/game/combat.ts'
 import { fireTriggers, resolveSlimeCommand } from '../src/game/combat/effects.ts'
 import { createRng } from '../src/game/rng.ts'
 import { CARDS, STARTER_DECKS } from '../src/game/cards.ts'
 import { characterRewardDeck } from '../src/game/acquisition.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
+
+const vfxSource = readFileSync(new URL('../src/ui/combat-screen/vfx.tsx', import.meta.url), 'utf8')
+assert.match(vfxSource, /combatOutcomeAnimationActive[\s\S]*slime-party__actor--commanding/,
+  'combat outcome lifecycle must observe the live Slime Command queue')
+for (const file of ['App.tsx', 'OnlineGame.tsx']) {
+  const source = readFileSync(new URL(`../src/ui/${file}`, import.meta.url), 'utf8')
+  assert.match(source, /combatOutcomeAnimationActive/, `${file} must wait for the live Slime animation lifecycle`)
+}
 
 const expected = [
   ['Slime Slap', 0], ['Lick', 0], ['Defend', 0], ['Strike', 0], ['Bruiser Slime', 2],
@@ -94,7 +103,7 @@ assert.equal(byName.get('Spike Slime').slimeEndOfTurn, true)
 const player = {
   id: 'slime-player', name: 'Slime Boss', character: 'ironclad', row: 0,
   hp: 9, maxHp: 9, block: 0, energy: 3, gold: 0,
-  deck: [], draw: [], hand: [], discard: [], exhaust: [], powers: [],
+  deck: [], draw: [], hand: [], discard: [], exhaust: [], chamber: [], powers: [],
   relics: [], potions: [], cardRewards: [], rareRewards: [],
   strength: 0, strengthLossAtEndOfTurn: 0, vulnerable: 0, weak: 0,
   drawLocked: false, lostHpThisCombat: false, shivs: 0, miracles: 0,
@@ -107,7 +116,20 @@ const enemy = {
   actionIndex: 0, abilityUsed: false, dead: false,
 }
 const combat = createCombat(createRng(47), [player], [enemy])
-assert.ok(endTurnAbilities(combat).some((ability) => ability.id === 'slime-player/slime:end-turn-bruiser'), 'Bruiser is a mandatory ordered end-turn Command')
+const bruiserEndTurn = endTurnAbilities(combat)
+  .find((ability) => ability.id === 'slime-player/slime:end-turn-bruiser')
+assert.ok(bruiserEndTurn, 'Bruiser is a mandatory ordered end-turn Command')
+assert.deepEqual(bruiserEndTurn.visual, { kind: 'slime', cardId: byName.get('Bruiser Slime').id },
+  'a Slime Command exposes its public minion art instead of falling back to an Orb')
+const spike = {
+  card: { uid: 'end-turn-spike', defId: byName.get('Spike Slime').id, upgraded: false },
+  level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
+}
+const spikeCombat = createCombat(createRng(471), [{ ...player, slimes: [spike] }], [enemy])
+const spikeEndTurn = endTurnAbilities(spikeCombat)
+  .find((ability) => ability.id === 'slime-player/slime:end-turn-spike')
+assert.deepEqual(spikeEndTurn?.targets, [{ uid: enemy.uid, label: 'Cultist' }],
+  'all-enemy end-turn Commands still expose enemy drop targets for dragging')
 const afterEndTurn = beginEndPlayerTurn(combat)
 assert.equal(afterEndTurn.enemies[0].hp, 5, 'Bruiser end-turn Command resolves through the combat engine')
 assert.deepEqual(afterEndTurn.presentationEvents.at(-1), {
@@ -331,12 +353,81 @@ assert.deepEqual(singleMinion.enemies.map((held) => held.hp), [10, 9],
   'a single automatic Slime Commands the chosen enemy')
 
 const divide = { uid: 'split-divide', defId: byName.get('Divide & Conquer').id, upgraded: false }
+const oneSlimeDivide = createCombat(createRng(4789), [{ ...player, character: 'slime_boss',
+  hand: [divide], energy: 3, slimes: [bruiserSlime('single-divide-bruiser')] }], [enemy])
+assert.equal(maximumXEnergy(CARDS[divide.defId], oneSlimeDivide.players[0]), 1,
+  'Divide & Conquer caps X at the number of Slimes that can be Commanded')
+assert.equal(playCard(oneSlimeDivide, player.id, divide.uid, { energySpent: 2, enemyUid: null,
+  playerId: player.id, slimeUids: ['single-divide-bruiser'], slimeEnemyUids: [enemy.uid] }), oneSlimeDivide,
+  'Divide & Conquer rejects X above the number of commandable Slimes')
+assert.notEqual(playCard(oneSlimeDivide, player.id, divide.uid, { energySpent: 1, enemyUid: null,
+  playerId: player.id, slimeUids: ['single-divide-bruiser'], slimeEnemyUids: [enemy.uid] }), oneSlimeDivide,
+  'Divide & Conquer permits Spend 1 with one commandable Slime')
+const spentArmored = { ...armored, card: { ...armored.card, uid: 'spent-divide-armored' }, commandsThisTurn: 1 }
+const mixedDivide = createCombat(createRng(47891), [{ ...player, character: 'slime_boss',
+  hand: [divide], energy: 3, slimes: [spentArmored, bruiserSlime('ready-divide-bruiser')] }], [enemy])
+mixedDivide.players[0].slimes[0].commandsThisTurn = 1
+assert.equal(slimeChoiceIsAvailable(CARDS[divide.defId], mixedDivide, mixedDivide.players[0],
+  spentArmored.card.uid, 1), false, 'spent Slimes are disabled for mandatory Command choices')
+assert.equal(slimeChoiceIsAvailable(CARDS[divide.defId], mixedDivide, mixedDivide.players[0],
+  'ready-divide-bruiser', 1), true, 'ready Slimes remain available for mandatory Command choices')
+assert.equal(playCard(mixedDivide, player.id, divide.uid, { energySpent: 1, enemyUid: null,
+  playerId: player.id, slimeUids: [spentArmored.card.uid], slimeEnemyUids: [] }), mixedDivide,
+  'Divide & Conquer rejects a spent selected Slime before consuming the card or Energy')
+const copiedLickCard = { uid: 'copied-spent-lick', defId: byName.get('Lick').id, upgraded: false }
+let copiedSpentLick = createCombat(createRng(47892), [{ ...player, character: 'slime_boss',
+  hand: [copiedLickCard], energy: 3, block: 0, doubledSkillsThisTurn: 1,
+  slimes: [{ ...spentArmored, card: { ...spentArmored.card, uid: 'copied-spent-armored' }, commandsThisTurn: 0 }],
+}], [enemy])
+copiedSpentLick.players[0].doubledSkillsThisTurn = 1
+copiedSpentLick = playCard(copiedSpentLick, player.id, copiedLickCard.uid, { enemyUid: null,
+  playerId: player.id, slimeUids: ['copied-spent-armored'], slimeEnemyUids: [] })
+assert.equal(copiedSpentLick.players[0].block, 3, 'the virtual Lick copy did not Command Armored Slime')
+assert.equal(copiedSpentLick.phase, 'copy', 'the physical Lick original was not queued after its virtual copy')
+const resolvedSpentCopy = playCardCopy(copiedSpentLick, player.id, { enemyUid: null,
+  playerId: player.id, slimeUids: ['copied-spent-armored'], slimeEnemyUids: [] })
+assert.notEqual(resolvedSpentCopy, copiedSpentLick,
+  'a committed Lick original could not finish after its virtual copy spent Armored Slime')
+assert.equal(resolvedSpentCopy.phase, 'player', 'the unavailable copied Command left combat stuck in copy')
+assert.equal(resolvedSpentCopy.players[0].block, 3, 'the spent Armored Slime Command resolved twice')
+const oozeBath = { uid: 'zero-command-ooze', defId: byName.get('Ooze Bath').id, upgraded: false }
+const zeroCommandOoze = createCombat(createRng(47893), [{ ...player, character: 'slime_boss',
+  hand: [oozeBath], energy: 3,
+  slimes: [{ ...spentArmored, card: { ...spentArmored.card, uid: 'zero-command-armored' } }],
+}], [enemy])
+zeroCommandOoze.players[0].slimes[0].commandsThisTurn = 1
+assert.equal(slimeChoiceIsAvailable(CARDS[oozeBath.defId], zeroCommandOoze, zeroCommandOoze.players[0],
+  'zero-command-armored'), true, 'zero-repeat Commands do not require remaining Armored Command allowance')
+const resolvedZeroCommand = playCard(zeroCommandOoze, player.id, oozeBath.uid, { enemyUid: null,
+  playerId: player.id, slimeUids: ['zero-command-armored'], slimeEnemyUids: [] })
+assert.notEqual(resolvedZeroCommand, zeroCommandOoze, 'Ooze Bath X=0 rejected a spent Armored Slime')
+assert.equal(resolvedZeroCommand.players[0].slimes[0].commandsThisTurn, 1,
+  'Ooze Bath X=0 issued an extra Command')
+const forcedLickCard = { uid: 'forced-spent-lick', defId: byName.get('Lick').id, upgraded: false }
+const forcedSpentLick = createCombat(createRng(47894), [{ ...player, character: 'slime_boss',
+  hand: [forcedLickCard], energy: 3,
+  slimes: [{ ...spentArmored, card: { ...spentArmored.card, uid: 'forced-spent-armored' } }],
+}], [enemy])
+forcedSpentLick.players[0].slimes[0].commandsThisTurn = 1
+forcedSpentLick.startTurnProgress = { choices: [], forcedCard: {
+  playerId: player.id, cardUid: forcedLickCard.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+} }
+const resolvedForcedLick = playCard(forcedSpentLick, player.id, forcedLickCard.uid, { enemyUid: null,
+  playerId: player.id, slimeUids: ['forced-spent-armored'], slimeEnemyUids: [] })
+assert.notEqual(resolvedForcedLick, forcedSpentLick, 'a committed forced Lick could not finish with spent Armored')
+assert.equal(resolvedForcedLick.startTurnProgress?.forcedCard, undefined,
+  'the unavailable forced Command left combat stuck on its forced card')
+assert.equal(resolvedForcedLick.players[0].slimes[0].commandsThisTurn, 1,
+  'the spent Armored Slime resolved the forced Command')
 const divideZero = createCombat(createRng(479), [{ ...player, character: 'slime_boss',
   hand: [divide], energy: 0, slimes: [] }], [enemy])
 assert.notEqual(playCard(divideZero, player.id, divide.uid, { energySpent: 0, enemyUid: null,
   playerId: player.id, slimeUids: [], slimeEnemyUids: [] }), divideZero,
 'base Divide & Conquer permits X=0')
 const dividePlus = { ...divide, uid: 'split-divide-plus', upgraded: true }
+assert.equal(maximumXEnergy({ ...CARDS[dividePlus.defId], ...CARDS[dividePlus.defId].upgrade },
+  oneSlimeDivide.players[0]), 0,
+  'upgraded Divide & Conquer needs one additional commandable Slime beyond X')
 const dividePlusZero = createCombat(createRng(4791), [{ ...player, character: 'slime_boss',
   hand: [dividePlus], energy: 0, slimes: [] }], [enemy])
 assert.equal(playCard(dividePlusZero, player.id, dividePlus.uid, { energySpent: 0, enemyUid: null,
@@ -424,6 +515,26 @@ brawlCombat = playCard(brawlCombat, player.id, brawlCard.uid, { enemyUid: null, 
   slimeUids: [muscle.card.uid], slimeEnemyUids: ['muscle-brawl-target', 'muscle-brawl-target'] })
 assert.equal(brawlCombat.enemies[0].hp, 4,
   'Slime Brawl resolves both its printed Command and Muscle Slime Strength trigger')
+assert.equal(brawlCombat.players[0].slimes[0].vigorLossAtEndOfTurn, 1,
+  'Slime Brawl schedules the Strength it actually gained for removal')
+const brawlEnded = beginEndPlayerTurn(brawlCombat)
+assert.equal(brawlEnded.players[0].slimes[0].vigor, 0,
+  'Slime Brawl removes its temporary Strength at end of turn')
+assert.equal(brawlEnded.players[0].slimes[0].vigorLossAtEndOfTurn, 0,
+  'Slime Brawl clears its temporary Strength bookkeeping at end of turn')
+const brawlLeech = {
+  card: { uid: 'leech-brawl-slime', defId: byName.get('Leeching Slime').id, upgraded: false },
+  level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+}
+const upgradedBrawl = { uid: 'leech-brawl', defId: brawl.id, upgraded: true }
+let leechBrawl = createCombat(createRng(49021), [{ ...player, character: 'slime_boss', energy: 3,
+  hand: [upgradedBrawl], slimes: [brawlLeech] }], [{ ...enemy, uid: 'leech-brawl-target', hp: 10, maxHp: 10 }])
+leechBrawl = playCard(leechBrawl, player.id, upgradedBrawl.uid, { enemyUid: null, playerId: player.id,
+  slimeUids: [brawlLeech.card.uid], slimeEnemyUids: ['leech-brawl-target'] })
+assert.equal(leechBrawl.enemies[0].hp, 7,
+  'upgraded Slime Brawl gives Leeching Slime 2 Strength and then Commands it')
+assert.equal(leechBrawl.players[0].slimes[0].commandsThisTurn, 1,
+  'Slime Brawl records Leeching Slime Command immediately')
 const cappedMuscle = { ...muscle, card: { ...muscle.card, uid: 'capped-muscle' }, vigor: 8 }
 const cappedState = createCombat(createRng(4903), [{ ...player, character: 'slime_boss', energy: 3,
   slimes: [cappedMuscle] }], [enemy])

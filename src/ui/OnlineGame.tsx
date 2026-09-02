@@ -36,7 +36,11 @@ import { CompendiumScreen } from './CompendiumScreen.tsx'
 import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { shouldAnimateOnlineOpeningHand } from './board-signals.ts'
 import { usePrefersReducedMotion } from './combat-screen/hooks.ts'
-import { COMBAT_OUTCOME_DELAY_MS, COMBAT_OUTCOME_SOUND_DELAY_MS } from './combat-screen/vfx.tsx'
+import {
+  COMBAT_OUTCOME_DELAY_MS,
+  COMBAT_OUTCOME_SOUND_DELAY_MS,
+  combatOutcomeAnimationActive,
+} from './combat-screen/vfx.tsx'
 import { useCombatMusic, useRunOutcomeSound } from './sfx.ts'
 import { eventCanStartCombat } from '../game/events.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
@@ -251,13 +255,21 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     const phase = snapshot?.run?.combat?.phase
     if (compendiumOpen || pauseOpen || settingsOpen || giveUpStartPending || soloGiveUpOpen || giveUpVote || room.connection !== 'connected' ||
       (phase !== 'won' && phase !== 'lost')) return undefined
-    const timer = setTimeout(() => room.act({ kind: 'resolveCombat' }),
-      phase === 'won'
-        ? settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_DELAY_MS
-        : 900)
+    let timer: number
+    const resolveWhenAnimationsFinish = () => {
+      if (combatOutcomeAnimationActive()) {
+        timer = window.setTimeout(resolveWhenAnimationsFinish, 100)
+        return
+      }
+      room.act({ kind: 'resolveCombat' })
+    }
+    timer = window.setTimeout(resolveWhenAnimationsFinish, phase === 'won'
+      ? settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_DELAY_MS
+      : 900)
     return () => clearTimeout(timer)
   }, [compendiumOpen, giveUpStartPending, giveUpVote, pauseOpen, room.act, room.connection,
-    prefersReducedMotion, settings.reducedMotion, settingsOpen, snapshot?.run?.combat?.phase, soloGiveUpOpen])
+    prefersReducedMotion, settings.reducedMotion, settingsOpen,
+    snapshot?.run?.combat?.phase, soloGiveUpOpen])
 
   useEffect(() => {
     const dialog = pauseDialog.current

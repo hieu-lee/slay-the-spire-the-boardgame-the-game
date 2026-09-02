@@ -224,6 +224,9 @@ export function resolveSlimeCommand(
     'self',
     { enemyUid: enemyUid ?? null },
   )
+  const enemyIds = enemyUid && targets.enemyIds.includes(enemyUid)
+    ? [enemyUid, ...targets.enemyIds.filter((uid) => uid !== enemyUid)]
+    : targets.enemyIds
   for (const effect of command.effects) {
     applyEffect(state, actor, effect, command.scope, 'self', {
       ...context,
@@ -245,6 +248,7 @@ export function resolveSlimeCommand(
     upgraded: slime.card.upgraded,
     animationIndex,
     ...targets,
+    enemyIds,
   })
   return true
 }

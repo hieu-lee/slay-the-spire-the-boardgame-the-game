@@ -14,7 +14,7 @@ import type { Amount, CardDef, Condition, CountOf, Effect } from '../cards.ts'
 import { actionsFor, enemyAbilities, enemyDef } from '../enemies.ts'
 import { CAPS } from '../types.ts'
 import type { CardInstance, Enemy, GuardianMode, OrbType, Player } from '../types.ts'
-import { slimeDef } from '../downfall/slime-boss.ts'
+import { previewSlimeCommand, slimeDef } from '../downfall/slime-boss.ts'
 import type { SlimeBossEffect } from '../downfall/slime-boss.ts'
 
 const GUARDIAN_ROW_CARDS = new Set(['guardian_prismatic_spray', 'guardian_sentry_beam'])
@@ -131,6 +131,38 @@ export function playCost(
   if (def.id === 'hermit_strike' && player.powers.some((power) => power.defId === 'hermit_maintenance')) return 0
   return Math.max(0, cost - (card?.costReductionThisTurn ?? 0) - retainDiscount - tackleDiscount - hermitDiscount - (nextDiscount ?? 0) -
     (def.exhaustCostReduction ?? 0) * (player.exhaust?.length ?? 0) - (def.heatCostReduction ?? 0) * (player.heat ?? 0))
+}
+
+/** The largest legal X on this board, including card-specific physical limits. */
+export function maximumXEnergy(def: CardDef, actor: Player): number {
+  if (def.id !== 'slime_boss_divide_conquer') return actor.energy
+  const command = def.effects.find((effect) =>
+    (effect as unknown as SlimeBossEffect).kind === 'commandSlime') as unknown as
+    | Extract<SlimeBossEffect, { kind: 'commandSlime' }>
+    | undefined
+  const bonus = command && typeof command.amount !== 'number' ? command.amount.base : 0
+  return Math.min(actor.energy, Math.max(0,
+    actor.slimes.filter((slime) => previewSlimeCommand(slime) !== null).length - bonus))
+}
+
+/** Whether this card can resolve its selected-Slime clauses for this Slime. */
+export function slimeChoiceIsAvailable(
+  def: CardDef,
+  state: CombatState,
+  actor: Player,
+  slimeUid: string,
+  energySpent = 0,
+): boolean {
+  const slime = actor.slimes.find((candidate) => candidate.card.uid === slimeUid)
+  if (!slime) return false
+  const mustCommand = def.effects.some((raw) => {
+    if (!effectIsActive(raw, state, actor)) return false
+    const effect = raw as unknown as SlimeBossEffect
+    return effect.kind === 'commandSlime' && !effect.all &&
+      amountOf(effect.amount, state, actor, undefined, { enemyUid: null, playerId: actor.id, energySpent }) > 0 ||
+      (effect.kind === 'growSlime' || effect.kind === 'gainSlimeVigor') && effect.commandAfter === true
+  })
+  return !mustCommand || previewSlimeCommand(slime) !== null
 }
 
 export function invalidPlayChoice(context: PlayContext): boolean {

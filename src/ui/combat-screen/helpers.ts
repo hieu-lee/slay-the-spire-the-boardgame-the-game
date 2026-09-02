@@ -18,10 +18,12 @@ import {
   effectiveCombatCardDef,
   guardianCardNeedsAlly,
   guardianGemForCard,
+  maximumXEnergy,
   overflowShivCount,
   playCost,
   reachedTimeWarpLimit,
   remainingRoundHpLoss,
+  slimeChoiceIsAvailable,
 } from '../../game/combat.ts'
 import type { CombatState } from '../../game/combat.ts'
 import { potionDef } from '../../game/relics.ts'
@@ -40,7 +42,7 @@ export const PHASE_LABEL: Record<CombatState['phase'], string> = {
   lost: 'Defeat',
 }
 
-function requirementsOf(
+export function requirementsOf(
   def: CardDef,
   allies: number,
   viewer: Player,
@@ -413,7 +415,15 @@ export function canAfford(
   const cost = playCost(def, player, card)
   if (spendMiracle && (cost === 'X' || cost === 0)) return false
   if (def.cost === 'X' && cost !== 'X' && cost < (def.minimumX ?? 0)) return false
+  const effectEnergy = def.cost === 'X' ? cost === 'X' ? def.minimumX ?? 0 : cost : 0
+  const slimeChoice = requirementsOf(
+    def, state.players.filter((candidate) => !candidate.dead).length, player, state, effectEnergy,
+    sourceInHand, card.hermitDeadOn === true, undefined, guardianGemForCard(player, card), card.uid,
+    typeof cost === 'number' ? cost : effectEnergy,
+  ).slimeChoice
+  if (slimeChoice?.minimum && player.slimes.filter((slime) =>
+    slimeChoiceIsAvailable(def, state, player, slime.card.uid, effectEnergy)).length < slimeChoice.minimum) return false
   return cost === 'X'
-    ? player.energy >= (def.minimumX ?? 0)
+    ? maximumXEnergy(def, player) >= (def.minimumX ?? 0)
     : cost <= player.energy + (spendMiracle ? 1 : 0)
 }

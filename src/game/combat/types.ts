@@ -225,6 +225,7 @@ export type EndTurnAbility = {
   visual?:
     | { kind: 'orb'; orb: Extract<OrbType, 'lightning' | 'frost'>; slot: number }
     | { kind: 'card'; cardUid: string }
+    | { kind: 'slime'; cardId: string }
   /** Loop selects an Orb before its copied end-turn effects are queued. */
   orbChoice?: boolean
   /** A boss was selected for a row effect while multiple rows remain; choose its row anchor next. */

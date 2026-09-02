@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { assetPath } from '../game/assets.ts'
 import { enemyDef } from '../game/enemies.ts'
 import type { CombatSfxRecipe } from './combat-sfx.ts'
+import { combatOutcomeAnimationActive } from './combat-screen/vfx.tsx'
 import { currentSfxVolume, SFX_STORAGE_KEY } from './game-settings.ts'
 
 export { SFX_STORAGE_KEY }
@@ -102,12 +103,18 @@ export function useRunOutcomeSound(
     const restored = restoration !== undefined && restoration !== previousRestoration.current ||
       !connected || !previousConnected.current
     const delayedWin = outcome === 'win' && run?.combat?.phase === 'won' && combatWinDelayMs > 0
-    const timer = !restored && outcome && outcome !== previous.current && delayedWin
-      ? window.setTimeout(() => {
-          playSoundEffect(outcome)
-          previous.current = outcome
-        }, combatWinDelayMs)
-      : undefined
+    let timer: number | undefined
+    const playWhenAnimationsFinish = () => {
+      if (combatOutcomeAnimationActive()) {
+        timer = window.setTimeout(playWhenAnimationsFinish, 100)
+        return
+      }
+      playSoundEffect('win')
+      previous.current = 'win'
+    }
+    if (!restored && outcome && outcome !== previous.current && delayedWin) {
+      timer = window.setTimeout(playWhenAnimationsFinish, combatWinDelayMs)
+    }
     if (!restored && outcome && outcome !== previous.current && !delayedWin) {
       playSoundEffect(outcome)
       previous.current = outcome

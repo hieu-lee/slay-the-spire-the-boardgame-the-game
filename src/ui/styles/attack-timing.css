@@ -84,9 +84,13 @@
   animation-name: attack-defect;
   animation-delay: 0s;
 }
-.seat--attack-slime_boss .seat__portrait > img,
 .seat--attack-guardian .seat__portrait > img,
 .seat--attack-hermit .seat__portrait > img { animation-name: attack-downfall; }
+.seat.seat--attack-slime_boss .seat__portrait > img {
+  animation-name: attack-slime-boss-idle;
+  animation-duration: 1700ms;
+  animation-timing-function: linear;
+}
 
 .seat--attack-ironclad .character-attack--ironclad {
   animation-duration: 1800ms;
@@ -141,6 +145,11 @@
   90% { transform: translateY(-1%) scale(1.01, 0.99); }
 }
 
+@keyframes attack-slime-boss-idle {
+  0%, 99.99% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
 @keyframes attack-downfall-hexaghost {
   0%, 99.99% { opacity: 0; }
   100% { opacity: 1; }
@@ -156,6 +165,19 @@
 }
 
 .character-attack--ironclad { will-change: transform; }
+
+.character-attack--slime_boss {
+  will-change: transform;
+  animation: slime-boss-surf 1700ms linear both;
+}
+
+@keyframes slime-boss-surf {
+  0%, 100% { transform: translate(0) scale(1); }
+  8% { transform: translate(0) scale(1.08, 0.92); }
+  35.294%, 64.706% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
+  50% { transform: translate(var(--attack-x), var(--attack-y)) scale(1.1, 0.92); }
+  92% { transform: translate(0) scale(1.07, 0.93); }
+}
 
 .character-attack--ironclad::before {
   position: absolute;
@@ -225,6 +247,12 @@
 .character-attack__pose--watcher-cast { animation: watcher-cast-pose 1650ms both; }
 .character-attack__pose--downfall-ready { animation: downfall-ready-pose 1650ms both; }
 .character-attack__pose--downfall-impact { animation: downfall-impact-pose 1650ms both; }
+.character-attack--slime_boss .character-attack__pose--downfall-ready {
+  animation: slime-boss-ready-pose 1700ms linear both;
+}
+.character-attack--slime_boss .character-attack__pose--downfall-impact {
+  animation: slime-boss-impact-pose 1700ms linear both;
+}
 .character-attack__pose--hexaghost-state { opacity: 0; }
 .seat--attack-hexaghost .character-attack__pose--hexaghost-state.is-loaded {
   animation: hexaghost-state-visibility 2000ms linear both;
@@ -260,6 +288,17 @@
   33.33% { transform: translate(1%, 0) rotate(1deg) scale(1.02); }
   50% { transform: translate(3%, 1%) rotate(2deg) scale(1.04); }
   66.66% { transform: translate(0) rotate(0) scale(1); }
+}
+
+@keyframes slime-boss-ready-pose {
+  0%, 35.293%, 64.707%, 99.99% { opacity: 1; }
+  35.294%, 64.706%, 100% { opacity: 0; }
+}
+
+@keyframes slime-boss-impact-pose {
+  0%, 35.293%, 64.707%, 100% { opacity: 0; }
+  35.294%, 64.706% { opacity: 1; }
+  50% { opacity: 1; transform: translateX(4%) scale(1.08, 0.94); }
 }
 
 @keyframes ironclad-ready-pose {
