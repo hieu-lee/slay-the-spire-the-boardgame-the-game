@@ -3099,6 +3099,107 @@ await chamberQuickdraw.click()
 await page.locator('.enemy:not(.enemy--dead)').first().click()
 await page.locator('.choice-modal[open]').waitFor()
 const quickdrawPreviewAfterTarget = await page.locator('.choice-modal[open] .card').count()
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(player, {
+    energy: 1,
+    hand: [{ uid: 'ui-chamber-quickdraw-drag-load', defId: 'hermit_defend', upgraded: false }],
+    draw: [{ uid: 'ui-chamber-quickdraw-drag-draw', defId: 'hermit_strike', upgraded: false }],
+    chamber: [{ uid: 'ui-chamber-quickdraw-drag', defId: 'hermit_quickdraw', upgraded: false }],
+  })
+  next.combat.players = [player]
+  next.combat.enemies = next.combat.enemies.slice(0, 2).map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, dead: false,
+  }))
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
+if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
+  await page.locator('.hermit-chamber-trigger').click()
+}
+await page.waitForTimeout(400)
+const chamberQuickdrawDrag = page.locator('.hand .card--chamber-drawn[title="Quickdraw"]')
+const chamberQuickdrawDragBox = await chamberQuickdrawDrag.boundingBox()
+const chamberQuickdrawTargetBox = await page.locator('.enemy:not(.enemy--dead)').first().boundingBox()
+assert(chamberQuickdrawDragBox && chamberQuickdrawTargetBox, 'Chamber Quickdraw drag fixture is not visible')
+await page.mouse.move(chamberQuickdrawDragBox.x + chamberQuickdrawDragBox.width / 2,
+  chamberQuickdrawDragBox.y + chamberQuickdrawDragBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(chamberQuickdrawTargetBox.x + chamberQuickdrawTargetBox.width / 2,
+  chamberQuickdrawTargetBox.y + chamberQuickdrawTargetBox.height / 2, { steps: 6 })
+await page.mouse.up()
+const chamberQuickdrawDragDialog = page.getByRole('dialog', { name: /Choose 1 to Load/ })
+await chamberQuickdrawDragDialog.waitFor()
+const chamberQuickdrawDragPreviewCards = await chamberQuickdrawDragDialog.locator('.card').count()
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(player, {
+    energy: 1,
+    hand: [
+      { uid: 'ui-hand-quickdraw', defId: 'hermit_quickdraw', upgraded: false },
+      { uid: 'ui-hand-quickdraw-load', defId: 'hermit_defend', upgraded: false },
+    ],
+    draw: [{ uid: 'ui-hand-quickdraw-draw', defId: 'hermit_strike', upgraded: false }],
+    chamber: [],
+  })
+  next.combat.players = [player]
+  next.combat.enemies = next.combat.enemies.slice(0, 2).map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, dead: false,
+  }))
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
+const handQuickdraw = page.locator('.hand .card[title="Quickdraw"]')
+await handQuickdraw.waitFor()
+await handQuickdraw.click()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+const handQuickdrawDialog = page.getByRole('dialog', { name: /Choose 1 to Load/ })
+await handQuickdrawDialog.waitFor()
+const handQuickdrawPreviewCards = await handQuickdrawDialog.locator('.card').count()
+await handQuickdrawDialog.getByRole('button', { name: /^Strike,/ }).click()
+await handQuickdrawDialog.getByRole('button', { name: 'Load 1 card' }).click()
+await page.waitForFunction(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return player.chamber.some((card) => card.uid === 'ui-hand-quickdraw-draw') &&
+    !player.hand.some((card) => card.uid === 'ui-hand-quickdraw')
+})
+const handQuickdrawLoadedDrawnCard = (await readRun()).combat.players[0].chamber.some((card) =>
+  card.uid === 'ui-hand-quickdraw-draw')
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(player, {
+    energy: 1,
+    hand: [
+      { uid: 'ui-hand-quickdraw-drag', defId: 'hermit_quickdraw', upgraded: false },
+      { uid: 'ui-hand-quickdraw-drag-load', defId: 'hermit_defend', upgraded: false },
+    ],
+    draw: [{ uid: 'ui-hand-quickdraw-drag-draw', defId: 'hermit_strike', upgraded: false }],
+    chamber: [],
+  })
+  next.combat.players = [player]
+  next.combat.enemies = next.combat.enemies.slice(0, 2).map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, dead: false,
+  }))
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
+await page.waitForTimeout(400)
+const handQuickdrawDrag = page.locator('.hand .card[title="Quickdraw"]')
+const handQuickdrawDragBox = await handQuickdrawDrag.boundingBox()
+const handQuickdrawTargetBox = await page.locator('.enemy:not(.enemy--dead)').first().boundingBox()
+assert(handQuickdrawDragBox && handQuickdrawTargetBox, 'hand Quickdraw drag fixture is not visible')
+await page.mouse.move(handQuickdrawDragBox.x + handQuickdrawDragBox.width / 2,
+  handQuickdrawDragBox.y + handQuickdrawDragBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(handQuickdrawTargetBox.x + handQuickdrawTargetBox.width / 2,
+  handQuickdrawTargetBox.y + handQuickdrawTargetBox.height / 2, { steps: 6 })
+await page.mouse.up()
+const handQuickdrawDragDialog = page.getByRole('dialog', { name: /Choose 1 to Load/ })
+await handQuickdrawDragDialog.waitFor()
+const handQuickdrawDragPreviewCards = await handQuickdrawDragDialog.locator('.card').count()
 hermitChamberInteractions = {
   dragSurvivedRefresh: chamberDragSurvivedRefresh,
   dragSpentCard: dragResult.combat.players[0].chamber.length === 0,
@@ -3113,6 +3214,10 @@ hermitChamberInteractions = {
   quickdrawHiddenBeforeTarget: quickdrawPreviewBeforeTarget === 0,
   quickdrawTargetCanceled,
   quickdrawRevealedAfterTarget: quickdrawPreviewAfterTarget > 0,
+  quickdrawDragRevealedPostDraw: chamberQuickdrawDragPreviewCards === 2,
+  handQuickdrawRevealedPostDraw: handQuickdrawPreviewCards === 2,
+  handQuickdrawLoadedDrawnCard,
+  handQuickdrawDragRevealedPostDraw: handQuickdrawDragPreviewCards === 2,
 }
 if (args.includes('--downfall-hermit-chamber-only')) {
   check('the focused Hermit Chamber browser run reported no errors', () => {
