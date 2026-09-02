@@ -4873,7 +4873,8 @@ function CombatScreenView({
               </button>)}
             </details>]
             if (heldId === 'ninja_scroll') {
-              const overflow = held.defId === 'downfall_ninja_scroll' ? 3 : overflowShivCount(state, 2)
+              const amount = def.effects.find((effect) => effect.kind === 'gainShiv')?.amount ?? 2
+              const overflow = overflowShivCount(state, amount)
               if (overflow === 0) return [simpleAction]
               return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
                 <p>Choose {overflow} immediate Shiv target{overflow === 1 ? '' : 's'}.</p>

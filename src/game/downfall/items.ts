@@ -2808,7 +2808,10 @@ const ability = (
 })
 
 const CUSTOM_RULES: Readonly<Record<string, DownfallExecutableRule>> = {
-  ninja_scroll: { kind: 'activation', timing: 'combat', once: true, effects: [] },
+  ninja_scroll: {
+    kind: 'activation', timing: 'combat', once: true,
+    effects: [{ kind: 'gainShiv', amount: 3 }],
+  },
   vajra: ability({ kind: 'dieRelic', faces: [1] }, [{ kind: 'gainTemporaryStrength', amount: 1 }]),
   nilrys_codex: ability({ kind: 'dieRelic', faces: [1] }, [{ kind: 'draw', amount: 1 }]),
   duality: {

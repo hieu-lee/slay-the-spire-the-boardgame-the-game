@@ -143,7 +143,8 @@ export function activateRelic(
   if (heldId === 'gambling_chip' && context.die !== undefined) return state
   if (heldId === 'charons_ashes' && (!state.die || state.die > 2 || cards.length !== 1)) return state
   if (heldId === 'ninja_scroll') {
-    const targets = held.defId === 'downfall_ninja_scroll' ? 3 : overflowShivCount(state, 2)
+    const amount = def.effects.find((effect) => effect.kind === 'gainShiv')?.amount ?? 2
+    const targets = overflowShivCount(state, amount)
     if ((context.shivEnemyUids?.length ?? 0) !== targets ||
       context.shivEnemyUids?.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))) return state
   }
@@ -185,21 +186,16 @@ export function activateRelic(
   else if (heldId === 'the_abacus') next.die = next.die === 6 ? 1 : next.die + 1
   else if (heldId === 'toolbox') next.die = next.die === 1 ? 6 : next.die - 1
   else if (heldId === 'mummified_hand') actor.energy = Math.min(CAPS.energy, actor.energy + 2)
-  else if (held.defId === 'downfall_ninja_scroll') {
-    const wristBlade = actor.relics.some((relic) => downfallRelicBaseId(relic.defId) === 'wrist_blade') ? 1 : 0
-    for (const enemyUid of context.shivEnemyUids!) {
-      applyEffect(next, actor, { kind: 'hit', amount: 1 + wristBlade }, 'enemy', 'self',
-        { enemyUid, playerId: actor.id }, source)
-      recordAttackPlayed(next, actor)
-      if (combatIsOver(next)) break
+  else if (heldId === 'ninja_scroll') {
+    const shivContext: PlayContext = {
+      enemyUid: null, playerId: actor.id, shivEnemyUids: context.shivEnemyUids,
+      shivTargetIndex: 0, invalidShivTarget: false,
     }
-  } else if (heldId === 'ninja_scroll') applyEffect(next, actor, { kind: 'gainShiv', amount: 2 }, 'self', 'self', {
-    enemyUid: null,
-    playerId: actor.id,
-    shivEnemyUids: context.shivEnemyUids,
-    shivTargetIndex: 0,
-    invalidShivTarget: false,
-  }, source)
+    applyEffect(next, actor, {
+      kind: 'gainShiv', amount: def.effects.find((effect) => effect.kind === 'gainShiv')?.amount ?? 2,
+    }, 'self', 'self', shivContext, source)
+    if (shivContext.invalidShivTarget) return state
+  }
   else if (heldId === 'red_skull') actor.strength = gainStrength(actor.strength, 1)
   else if (heldId === 'runic_pyramid') actor.retainCardsThisTurn = cards.length
   else if (heldId === 'self_forming_clay' && playerCanGainBlock(actor)) actor.block = gainBlock(actor.block, 3)

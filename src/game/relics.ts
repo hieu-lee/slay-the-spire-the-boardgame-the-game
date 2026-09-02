@@ -402,8 +402,11 @@ function registerDownfallRelics(): void {
     if (resolved.kind !== 'downfall') throw new Error(`invalid Downfall relic definition: ${item.name}`)
     const rule = resolved.rule
     const base = Object.values(RELICS).find((candidate) => candidate.name === item.name)
+    const text = id === 'downfall_ninja_scroll'
+      ? 'Once per combat: gain 3 Shivs.'
+      : formatDownfallText(item.text)
     const def: RelicDef = {
-      id, name: item.name, pool, effects: [], text: formatDownfallText(item.text), rule: formatDownfallText(item.text),
+      id, name: item.name, pool, effects: [], text, rule: text,
       ...(base?.cost === undefined ? {} : { cost: base.cost }),
     }
     if (rule.kind === 'abilities') {
