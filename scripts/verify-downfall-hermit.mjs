@@ -13,6 +13,7 @@ import {
   chooseEndTurnTarget,
   canActivatePotion,
   canActivateRelic,
+  cardNeedsEnemy,
   mandatoryChoicePending,
   pendingTriggerAbility,
   playCard,
@@ -640,6 +641,34 @@ check('live Chamber play activates Dead On and Snapshot uses printed damage for 
   assert.equal(next.enemies[0].hp, 17)
   assert.equal(next.players[0].block, 3)
   assert.equal(next.players[0].chamber.length, 0)
+})
+
+check('a Dead On-only Chamber attack chooses its enemy before resolving', () => {
+  const headshot = instance('headshot', 'hermit_headshot')
+  const combat = createCombat(createRng(481), [player({ chamber: [headshot], energy: 2 })], [enemy()])
+  combat.pendingHermitSetupLoads = []
+  assert.equal(cardNeedsEnemy(HERMIT_CARD_DEFS.hermit_headshot, combat.players[0], true, 0,
+    false, undefined, headshot.uid), true)
+  const stagedPlayer = { ...combat.players[0], chamber: [], hand: [{ ...headshot, hermitDeadOn: true }] }
+  assert.equal(cardNeedsEnemy(HERMIT_CARD_DEFS.hermit_headshot, stagedPlayer, true, 0,
+    false, undefined, headshot.uid), true)
+  assert.equal(cardNeedsEnemy(HERMIT_CARD_DEFS.hermit_headshot, { ...stagedPlayer, hand: [headshot] }, true, 0,
+    false, undefined, headshot.uid), false)
+  assert.equal(playLiveHermitChamberCard(combat, 'p1', headshot.uid, { enemyUid: null, playerId: null }), combat)
+  const next = playLiveHermitChamberCard(combat, 'p1', headshot.uid, { enemyUid: 'e1', playerId: null })
+  assert.equal(next.enemies[0].hp, 15)
+  assert.equal(next.players[0].chamber.length, 0)
+  assert.deepEqual(next.presentationEvents.at(-1)?.enemyIds, ['e1'])
+
+  let copied = createCombat(createRng(482), [player({ chamber: [headshot], energy: 2 })], [enemy()])
+  copied.pendingHermitSetupLoads = []
+  copied.players[0].doubledAttacksThisTurn = 1
+  copied = playLiveHermitChamberCard(copied, 'p1', headshot.uid, { enemyUid: 'e1', playerId: null })
+  assert.equal(copied.enemies[0].hp, 15)
+  assert.equal(playCardCopy(copied, 'p1', { enemyUid: null, playerId: null }), copied)
+  copied = playCardCopy(copied, 'p1', { enemyUid: 'e1', playerId: null })
+  assert.equal(copied.enemies[0].hp, 10)
+  assert.deepEqual(copied.presentationEvents.at(-1)?.enemyIds, ['e1'])
 })
 
 check('High-Caliber plus one external copy resolves four independently targeted plays', () => {

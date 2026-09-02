@@ -727,6 +727,7 @@ export function cardNeedsEnemy(
   attachedGemId?: string,
   sourceCardUid?: string,
   _energyCharged = energySpent,
+  sourceDeadOn = false,
 ): boolean {
   if (def.type === 'power' && (def.trigger || (def.activeAbility && !forActivation))) return false
   if ((def.target ?? 'enemy') === 'allEnemies') return false
@@ -744,10 +745,16 @@ export function cardNeedsEnemy(
       'guardian_scale_slash', 'guardian_bauble_burst', 'guardian_body_crash', 'guardian_destroy',
     ]).has(def.id)
   }
-  const effects = def.modes?.flatMap((mode) => mode.effects) ?? def.effects
-  return effects.some((effect) =>
+  const sourceIsDeadOn = sourceDeadOn || sourceCardUid !== undefined && (
+    actor?.hand?.some((card) => card.uid === sourceCardUid && card.hermitDeadOn === true) === true ||
+    actor?.chamber.some((card) => card.uid === sourceCardUid && cardDef(card.defId).hermit?.deadOn === true) === true
+  )
+  const targetsEnemy = (effect: Effect) =>
     (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb')) &&
-      reachesEnemy(effect, actor, energySpent))
+    reachesEnemy(effect, actor, energySpent)
+  const effects = def.modes?.flatMap((mode) => mode.effects) ?? def.effects
+  return effects.some((effect) => targetsEnemy(effect) || sourceIsDeadOn && effect.kind === 'deadOnEffects' &&
+    effect.effects.some(targetsEnemy))
 }
 
 /** Independent printed targets collected before an atomic card play. */
@@ -925,10 +932,11 @@ function cardRequiresChosenEnemy(
   attachedGemId?: string,
   sourceCardUid?: string,
   energyCharged = energySpent,
+  sourceDeadOn = false,
 ): boolean {
   const effects = def.modes ? def.modes[mode ?? -1]?.effects : undefined
   return cardNeedsEnemy(effects ? { ...def, modes: undefined, effects } : def,
-    actor, includeEvokes, energySpent, false, attachedGemId, sourceCardUid, energyCharged)
+    actor, includeEvokes, energySpent, false, attachedGemId, sourceCardUid, energyCharged, sourceDeadOn)
 }
 
 export function needsChosenEnemy(
@@ -942,9 +950,10 @@ export function needsChosenEnemy(
   attachedGemId?: string,
   sourceCardUid?: string,
   energyCharged = energySpent,
+  sourceDeadOn = false,
 ): boolean {
   if (!cardRequiresChosenEnemy(def, actor, includeEvokes, energySpent, mode, attachedGemId, sourceCardUid,
-    energyCharged)) return false
+    energyCharged, sourceDeadOn)) return false
   return resolveEnemyTargets(state, def.target ?? 'enemy', chosenUid).length === 0
 }
 

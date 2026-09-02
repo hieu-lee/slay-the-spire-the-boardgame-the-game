@@ -1249,7 +1249,8 @@ function CombatScreenView({
     if (state.phase !== 'copy' || !copy || copy.playerId !== viewerId || !viewer || cardPreview || usingCard) return
     const def = faceOf(cardDef(copy.card.defId), copy.card.upgraded)
     if (cardNeedsChoicePreview(def, state, viewer)) {
-      if (cardNeedsEnemy(def, viewer, false, copy.energySpent, false, copy.card.attachedGemId, copy.card.uid)) {
+      if (cardNeedsEnemy(def, viewer, false, copy.energySpent, false, copy.card.attachedGemId, copy.card.uid,
+        copy.energySpent, copy.card.hermitDeadOn === true)) {
         setPending({ ...pendingFor(copy.card, null, state, viewer, false, copy.energySpent), choice: null })
       } else requestCopyChoicePreview()
       return
@@ -1414,7 +1415,7 @@ function CombatScreenView({
         : current.shivEnemyUids.filter((uid) => alive.has(uid))
       const needsEnemy = cardNeedsEnemy(def, viewer, false, current.effectEnergy ?? undefined,
         false, current.card.attachedGemId, current.card.uid,
-        current.energyCharged ?? undefined) || spentShivs > 0 ||
+        current.energyCharged ?? undefined, current.card.hermitDeadOn === true) || spentShivs > 0 ||
         overflowShivs > 0 || enemyChoices > 0
       const needsSwitch = def.effects.some((effect) => effect.kind === 'switchRows') && livingPlayers.size > 1
       const switchTargetAlive = current.switchPlayerId === null || livingPlayers.has(current.switchPlayerId)
@@ -2464,7 +2465,7 @@ function CombatScreenView({
     ? cardNeedsEnemy(pendingDef.modes && pending?.mode != null
       ? { ...pendingDef, modes: undefined, effects: pendingDef.modes[pending.mode]?.effects ?? [] }
       : pendingDef, viewer, false, pending?.effectEnergy ?? undefined,
-      false, pending?.card.attachedGemId, pending?.card.uid)
+      false, pending?.card.attachedGemId, pending?.card.uid, undefined, pending?.card.hermitDeadOn === true)
     : false
   const pendingEvokeChoice = pendingDef && pending
     ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined, pending.effectEnergy ?? 0)
@@ -2686,7 +2687,7 @@ function CombatScreenView({
           const effectEnergy = physicalCard && def.cost === 'X' && cost !== 'X' ? cost : energySpent
           const needsEnemy = cardNeedsEnemy(def, pendingPlayer, false, effectEnergy ?? undefined,
             false, next.card.attachedGemId, next.card.uid,
-            physicalCard && typeof cost === 'number' ? cost : undefined) || spentShivs > 0 ||
+            physicalCard && typeof cost === 'number' ? cost : undefined, next.card.hermitDeadOn === true) || spentShivs > 0 ||
             overflowShivs > 0 || enemyChoices > 0
           const needsAlly = (def.supportTarget === 'anyPlayer' ||
             guardianCardNeedsAlly(def, pendingPlayer, next.card.attachedGemId)) &&
@@ -2756,7 +2757,7 @@ function CombatScreenView({
         spentShivs,
         needsEnemy: cardNeedsEnemy(def, viewer!, false, next.effectEnergy ?? undefined, false,
           next.card.attachedGemId, next.card.uid,
-          next.energyCharged ?? undefined) || spentShivs > 0 ||
+          next.energyCharged ?? undefined, next.card.hermitDeadOn === true) || spentShivs > 0 ||
           overflowShivs > 0 || next.enemyChoices > 0,
         shivEnemyUids: [],
       }
@@ -2782,7 +2783,7 @@ function CombatScreenView({
       (!cardNeedsEnemy(def.modes ? { ...def, modes: undefined, effects: def.modes[next.mode!]!.effects } : def,
         viewer!, false, next.effectEnergy ?? undefined, false,
         next.card.attachedGemId, next.card.uid,
-        next.energyCharged ?? undefined) || next.enemyUid !== null) &&
+        next.energyCharged ?? undefined, next.card.hermitDeadOn === true) || next.enemyUid !== null) &&
       next.enemyUids.length >= next.enemyChoices &&
       next.shivEnemyUids.length >= next.spentShivs + next.overflowShivs &&
       next.playerIds.length >= next.playerChoices &&
@@ -2963,7 +2964,7 @@ function CombatScreenView({
     let next = pendingFor(card, null, state, viewer!)
     const directEnemy = cardNeedsEnemy(
       effectiveCombatCardDef(def, viewer!.guardianMode), viewer!, false, next.effectEnergy ?? undefined,
-      false, next.card.attachedGemId, card.uid, chargedCardEnergy(def, viewer!, card),
+      false, next.card.attachedGemId, card.uid, chargedCardEnergy(def, viewer!, card), card.hermitDeadOn === true,
     )
     if (cardNeedsChoicePreview(def, state, viewer!)) {
       if (directEnemy || next.slimeChoice || slimeEnemyChoicesRequired(next) > 0) {
@@ -3696,7 +3697,7 @@ function CombatScreenView({
       ...pending, mode, enemyChoices, playerChoices, enemyUids: pending.enemyUids.slice(0, enemyChoices),
       needsEnemy: cardNeedsEnemy(selectedDef, viewer!, false, pending.effectEnergy ?? undefined,
         false, pending.card.attachedGemId, pending.card.uid,
-        pending.energyCharged ?? undefined) || enemyChoices > 0,
+        pending.energyCharged ?? undefined, pending.card.hermitDeadOn === true) || enemyChoices > 0,
       playerIds: state.players.filter((player) => !player.dead).length === 1
         ? Array(playerChoices).fill(viewer!.id)
         : [],
@@ -3715,7 +3716,7 @@ function CombatScreenView({
       needsAlly,
       needsEnemy: cardNeedsEnemy(def, actor, false, pending.effectEnergy ?? undefined,
         false, pending.card.attachedGemId, pending.card.uid,
-        pending.energyCharged ?? undefined) || pending.enemyChoices > 0 ||
+        pending.energyCharged ?? undefined, pending.card.hermitDeadOn === true) || pending.enemyChoices > 0 ||
         pending.spentShivs + pending.overflowShivs > 0,
       playerId: needsAlly ? pending.playerId : null,
     })
@@ -5938,7 +5939,8 @@ function CombatScreenView({
                     return
                   }
                   submitHermitChamber(card, cardNeedsEnemy(def, cardViewer, true, undefined, false,
-                    undefined, displayedCard.uid, chargedCardEnergy(def, cardViewer, displayedCard)) &&
+                    undefined, displayedCard.uid, chargedCardEnergy(def, cardViewer, displayedCard),
+                    displayedCard.hermitDeadOn === true) &&
                     livingEnemies(state).length === 1 ? livingEnemies(state)[0]?.uid ?? null : null)
                 }
                 : hermitSetupPending

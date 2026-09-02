@@ -106,11 +106,13 @@ function presentationEnemyScope(
   includeEvokes: boolean,
   energySpent: number,
   attachedGemId?: string,
+  sourceCardUid?: string,
   energyCharged = energySpent,
+  sourceDeadOn = false,
 ): TargetScope {
   const active = def.modes ? { ...def, modes: undefined, effects: [...effects] } : def
   if (!cardNeedsEnemy(active, actor, includeEvokes, energySpent, false,
-    attachedGemId, undefined, energyCharged)) return 'self'
+    attachedGemId, sourceCardUid, energyCharged, sourceDeadOn)) return 'self'
   if (def.id === 'guardian_prismatic_barrier') return 'row'
   return def.target ?? 'enemy'
 }
@@ -257,6 +259,7 @@ function cardResolutionChoicesAreValid(
   sourceCardUid?: string,
   sourceAttachedGemId?: string,
   energyCharged = energySpent,
+  sourceDeadOn = false,
 ): boolean {
   const powerBeamCards = guardianPowerBeamCards(player, sourceCardUid)
   const powerBeamDefense = player.guardianMode === 'defense' ||
@@ -356,7 +359,7 @@ function cardResolutionChoicesAreValid(
   if (guardianCardNeedsAlly(def, player, sourceAttachedGemId) && context.playerId !== null &&
     !state.players.some((candidate) => candidate.id === context.playerId && !candidate.dead)) return false
   return !needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids,
-    energySpent, context.mode, sourceAttachedGemId, sourceCardUid, energyCharged) &&
+    energySpent, context.mode, sourceAttachedGemId, sourceCardUid, energyCharged, sourceDeadOn) &&
     !hasInvalidChosenPlayer(state, def, context.playerId) &&
     !hasInvalidRowSwitch(state, effects, context.switchWithPlayerId, player)
 }
@@ -595,7 +598,7 @@ export function playCard(
   if (!slimeCommandTargetsAreValid(
     state, player, def, resolvesOnPlay ? effects : [], context, effectEnergy, cost, held,
   ) || resolvesOnPlay && !cardResolutionChoicesAreValid(
-    state, player, def, effects, context, effectEnergy, held.uid, attachedGemId, cost,
+    state, player, def, effects, context, effectEnergy, held.uid, attachedGemId, cost, held.hermitDeadOn === true,
   )) return state
   const next = clone(state)
   const actor = findPlayer(next, playerId)
@@ -632,7 +635,8 @@ export function playCard(
     resolvedType: def.type,
     ...(context.mode === undefined ? {} : { mode: context.mode }),
     ...presentationTargets(next, actor.id,
-      presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids, effectEnergy, attachedGemId, cost),
+      presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids, effectEnergy,
+        attachedGemId, held.uid, cost, held.hermitDeadOn === true),
       guardianCardNeedsAlly(def, actor, attachedGemId) ? 'anyPlayer' : def.supportTarget ?? 'self',
       presentationCardContext(def, effects, context)),
   })
@@ -1060,7 +1064,7 @@ export function playCardCopy(
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
   if (!slimeCommandTargetsAreValid(state, player, def, effects, context, pending.energySpent, 0, pending.card) ||
     !cardResolutionChoicesAreValid(state, player, def, effects, context,
-    pending.energySpent, pending.card.uid, attachedGemId)) return state
+    pending.energySpent, pending.card.uid, attachedGemId, pending.energySpent, pending.card.hermitDeadOn === true)) return state
 
   const next = clone(state)
   const copy = next.pendingCardCopy!
@@ -1095,7 +1099,7 @@ export function playCardCopy(
     ...(context.mode === undefined ? {} : { mode: context.mode }),
     ...presentationTargets(next, actor.id,
       presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids,
-        pending.energySpent, attachedGemId),
+        pending.energySpent, attachedGemId, copy.card.uid, pending.energySpent, copy.card.hermitDeadOn === true),
       guardianCardNeedsAlly(def, actor, attachedGemId) ? 'anyPlayer' : def.supportTarget ?? 'self',
       presentationCardContext(def, effects, context)),
   })
