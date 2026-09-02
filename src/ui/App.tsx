@@ -79,7 +79,11 @@ import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
 import { RunSummary, summarySeat } from './RunSummary.tsx'
 import { useCardMorphs } from './useCardMorphs.ts'
 import { usePrefersReducedMotion } from './combat-screen/hooks.ts'
-import { COMBAT_OUTCOME_DELAY_MS, COMBAT_OUTCOME_SOUND_DELAY_MS } from './combat-screen/vfx.tsx'
+import {
+  COMBAT_OUTCOME_DELAY_MS,
+  COMBAT_OUTCOME_SOUND_DELAY_MS,
+  combatOutcomeAnimationActive,
+} from './combat-screen/vfx.tsx'
 import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
@@ -517,10 +521,17 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   // have to click through a screen that only says "you won".
   useEffect(() => {
     if (open && !compendium && !pauseOpen && !settingsOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
-      const timer = setTimeout(() => setRun((current) => resolveCombat(current)),
-        run.combat.phase === 'won'
-          ? settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_DELAY_MS
-          : 900)
+      let timer: number
+      const resolveWhenAnimationsFinish = () => {
+        if (combatOutcomeAnimationActive()) {
+          timer = window.setTimeout(resolveWhenAnimationsFinish, 100)
+          return
+        }
+        setRun((current) => resolveCombat(current))
+      }
+      timer = window.setTimeout(resolveWhenAnimationsFinish, run.combat.phase === 'won'
+        ? settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_DELAY_MS
+        : 900)
       return () => clearTimeout(timer)
     }
     return undefined

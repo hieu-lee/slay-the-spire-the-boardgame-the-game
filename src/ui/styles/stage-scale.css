@@ -59,7 +59,7 @@
    measured width. */
 .row__seat {
   position: absolute;
-  bottom: calc(1.1rem * var(--stage-scale));
+  bottom: calc(1.1rem * var(--stage-scale) + 1.5rem);
   left: calc(clamp(1.5rem, 4vw, 5rem) + var(--stage-row) * var(--stage-gap));
   width: var(--stage-actor-width);
   height: calc(18.5rem * var(--stage-scale));
@@ -111,11 +111,17 @@
   height: calc(18.5rem * var(--stage-scale));
 }
 
-.row__seat .seat__portrait,
-.board .enemy__portrait {
+.row__seat .seat__portrait {
   position: absolute;
   right: 0;
   bottom: calc(3rem * var(--stage-scale));
+  left: 0;
+}
+
+.board .enemy__portrait {
+  position: absolute;
+  right: 0;
+  bottom: calc(1.7rem * var(--stage-scale));
   left: 0;
 }
 
@@ -166,23 +172,16 @@
   left: -25%;
 }
 
-/* `bottom` scales with `--stage-scale` for the same reason every other
-   seat-floor anchor does (`.row__seat .seat__portrait`, `.seat__name`,
-   `.seat .bar`, all a few rules up) — a flat, unscaled value stays put while
-   everything it's meant to hover near shrinks with the stage, so at a low
-   enough scale (many players/enemies sharing one board) it drifts down
-   past the portrait's own (correctly scaled) top edge and overlaps the
-   Orbs/`.seat__meta` band floating there, the exact failure this pass
-   exists to close off for `.seat__meta` specifically — this row shares the
-   same risk and the same fix. */
+/* Match enemy status placement: persistent player tokens and Powers live
+   below HP instead of competing with the portrait, Orbs, or Slime minions. */
 .seat__status-strip {
   position: absolute;
   z-index: 8;
   right: -0.25rem;
-  bottom: calc(3rem * var(--stage-scale));
+  bottom: -2.55rem;
   left: -0.25rem;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: safe center;
   gap: 0;
   min-width: 0;
@@ -206,14 +205,14 @@
 }
 
 .seat__status-strip > .powers > li {
-  height: 44px;
+  height: 2.75rem;
 }
 
 .seat__status-strip .power {
   display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: start center;
   border: 0;
   border-radius: 25%;
   overflow: visible;
@@ -223,13 +222,23 @@
   pointer-events: auto;
 }
 
+.seat__status-strip .power > .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.seat__status-strip .power__counter {
+  right: 0.65rem;
+  bottom: 0.65rem;
+}
+
 .seat__status-strip .power::after {
   display: none;
 }
 
 .seat__status-strip .power:focus {
   outline: 0;
-  box-shadow: inset 0 0 0 2px #e8c877;
+  box-shadow: inset 0 0 0 0.125rem #e8c877;
 }
 
 /* Pending-effect chips and held-Potion icons used to sit at a flat
@@ -339,24 +348,29 @@
     top: calc(-2.15rem * var(--stage-scale));
     max-height: calc(1.5rem * var(--stage-scale));
   }
-
-  /* The full hand overlaps the floor on a short stage. Lift every player's
-     persistent controls above it so later co-op seats remain inspectable. */
-  .seat__status-strip {
-    bottom: calc(var(--card-width) * var(--card-ratio) + 3rem);
-  }
 }
 
 @media (orientation: landscape) and (max-height: 26.25rem) {
-  .row__seat .seat__portrait,
-  .board .enemy__portrait { bottom: calc(3rem * var(--stage-scale) + 4.75rem); }
+  .row__seat { bottom: calc(1.1rem * var(--stage-scale)); }
+
+  .row__seat .seat__portrait { bottom: calc(3rem * var(--stage-scale) + 4.75rem); }
+  .board .enemy__portrait { bottom: calc(1.7rem * var(--stage-scale) + 4.75rem); }
 
   .row__seat .seat__name { bottom: calc(1.55rem * var(--stage-scale) + 4.75rem); }
 
   .row__seat .seat .bar,
   .board .enemy .bar { bottom: calc(0.35rem * var(--stage-scale) + 4.75rem); }
 
+  .slime-party,
+  .slime-party--crowded { bottom: calc(3.15rem * var(--stage-scale) + 4.75rem); }
+
   .board .enemy .tokens { bottom: 3.7rem; }
+  .seat__status-strip {
+    bottom: 2.2rem;
+    justify-content: flex-start;
+  }
+
+  .seat__status-strip > .powers { order: -1; }
 }
 
 @media (max-width: 48.125rem) {

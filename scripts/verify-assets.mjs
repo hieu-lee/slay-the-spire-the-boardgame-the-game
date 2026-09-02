@@ -601,7 +601,9 @@ for name in sys.argv[3:]:
     im = Image.open(name)
     is_evil = any(f"downfall_pc_{hero}" in name for hero in ("ironclad", "silent", "defect", "watcher"))
     is_evil_static = is_evil and "/animations/" not in name.replace("\\\\", "/")
-    if getattr(im, "n_frames", 1) < 2 and not is_evil_static:
+    is_dark_core = "downfall_dark_core" in name
+    is_dark_core_static = is_dark_core and "/animations/" not in name.replace("\\\\", "/")
+    if getattr(im, "n_frames", 1) < 2 and not (is_evil_static or is_dark_core_static):
         faults.append(f"{name}: not animated")
         continue
     boxes = []
@@ -625,6 +627,12 @@ for name in sys.argv[3:]:
         if max(corners) > 16:
             faults.append(f"{name} frame {frame}: opaque corners {corners}")
             break
+        if is_dark_core:
+            near_white = sum(a > 240 and min(r, g, b) > 235 and max(r, g, b) - min(r, g, b) < 12
+                             for r, g, b, a in rgba.getdata())
+            if near_white > 256:
+                faults.append(f"{name} frame {frame}: opaque light background island remains {near_white}px")
+                break
         if name.endswith("-attack.webp") and os.path.basename(name).removesuffix("-attack.webp") in metadata and visible_box and min(
             visible_box[0], visible_box[1], w - visible_box[2], h - visible_box[3]
         ) < 20:
@@ -704,6 +712,7 @@ print(json.dumps(faults))
   const paths = [
     ...expected.map((file) => join(bossAnimationRoot, file)),
     ...['ironclad', 'silent', 'defect', 'watcher'].map((hero) => join(combatEnemyRoot, `downfall_pc_${hero}.webp`)),
+    join(combatEnemyRoot, 'downfall_dark_core.webp'),
   ]
   const timedBossArtIds = [
     'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'corrupt_heart',
@@ -777,14 +786,26 @@ check('Slime Boss minions ship one transparent cutout and one complete Command a
     const animation = join(combatSlimeRoot, `${slug}-command.webp`)
     const mux = spawnSync('webpmux', ['-info', animation], { encoding: 'utf8' })
     assert(mux.status === 0, mux.stderr || `could not inspect ${slug} Command animation`)
-    assert(/Canvas size: 256 x 256/.test(mux.stdout) && /Number of frames: 16/.test(mux.stdout) &&
+    assert(/Canvas size: 256 x 256/.test(mux.stdout) && /Number of frames: 12/.test(mux.stdout) &&
       /Loop Count : 1/.test(mux.stdout) && /Features present:.*transparency/.test(mux.stdout),
-    `${slug} Command is not a transparent one-shot 16-frame 256px animation`)
+    `${slug} Command is not a transparent one-shot 1.7-second 256px animation`)
     const durations = mux.stdout.split('\n').filter((line) => /^\s*\d+:/.test(line))
       .map((line) => Number(line.trim().split(/\s+/)[6]))
-    assert(durations.length === 16 && durations.every((duration) => duration === 90),
-      `${slug} Command does not use sixteen 90ms key frames`)
+    assertDeepEqual(durations, [600, ...Array(10).fill(50), 600],
+      `${slug} Command does not use 0.6s dash, 0.5s personal attack, and 0.6s return timing`)
   }
+  const commandEdgeProbe = spawnSync('python3', ['-c', `
+import sys
+from PIL import Image
+for path in sys.argv[1:]:
+    image = Image.open(path)
+    for index in range(image.n_frames):
+        image.seek(index)
+        bounds = image.convert('RGBA').getchannel('A').getbbox()
+        assert bounds and min(bounds[0], bounds[1], image.width - bounds[2], image.height - bounds[3]) >= 4, (path, index, bounds)
+`, ...SLIME_ASSET_SLUGS.map((slug) => join(combatSlimeRoot, `${slug}-command.webp`))], { encoding: 'utf8' })
+  assert(commandEdgeProbe.status === 0,
+    commandEdgeProbe.stderr || 'a Slime Command frame touches its canvas edge')
   assert(SLIME_ASSET_SLUGS.flatMap((slug) => [
     join(combatSlimeRoot, `${slug}.webp`), join(combatSlimeRoot, `${slug}-command.webp`),
   ]).reduce((bytes, file) => bytes + statSync(file).size, 0) < 12 * 1024 * 1024,

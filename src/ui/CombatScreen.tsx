@@ -15,6 +15,7 @@ import {
   fanOf,
   gainedShivs,
   pendingFor,
+  requirementsOf,
   revealViewerRow,
   rowsOf,
 } from './combat-screen/helpers.ts'
@@ -90,6 +91,7 @@ import {
   lightningTargetsRows,
   livingEnemies,
   mandatoryChoicePending,
+  maximumXEnergy,
   nextEvokeChoice,
   orderStartTurnScries,
   overflowShivCount,
@@ -107,6 +109,7 @@ import {
   previewPowerChoice,
   reachesEnemy,
   reachedTimeWarpLimit,
+  slimeChoiceIsAvailable,
   slimeCommandEnemyChoiceLabels,
   remainingRoundHpLoss,
   resolvePendingTrigger,
@@ -141,12 +144,18 @@ import { chosenDieRelicAbilities, potionDef, relicDef } from '../game/relics.ts'
 import { CAPS, DOWNFALL_CHARACTER_IDS } from '../game/types.ts'
 import type { CardInstance, DownfallCharacterId, Enemy, Player } from '../game/types.ts'
 import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
-import { Card, CardKeywordHelp, slimeCommandText } from './Card.tsx'
+import { Card, slimeCommandText } from './Card.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
 import { PotionIcon, PotionTooltipAnchor } from './PotionIcon.tsx'
-import { PowerGlyph, PowerRow } from './PowerRow.tsx'
+import {
+  PowerGlyph,
+  PowerRow,
+  registerCardZoomCloser,
+  releaseCardZoom,
+  tryClaimCardZoom,
+} from './PowerRow.tsx'
 import { OrbRow, TokenRow } from './TokenRow.tsx'
 import {
   STAGE_GAP_REM,
@@ -162,6 +171,7 @@ import {
 import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe } from './combat-vfx.ts'
 import { playSoundEffect } from './sfx.ts'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 function targetPresentationTiming(
   state: CombatState,
@@ -214,6 +224,8 @@ type ChamberReturnFlight = {
   y: number
   index: number
 }
+
+type SlimeCardZoom = { card: CardInstance; x: number; y: number }
 
 const dieRelicChoiceLabel = (owner: string, relic: string, faces: readonly number[]): string =>
   `${owner}: ${relic} · die ${faces.join('/')}`
@@ -384,6 +396,8 @@ function CombatScreenView({
   const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
   const [endTurnEffectDrag, setEndTurnEffectDrag] = useState<EndTurnEffectDrag | null>(null)
   const [armedEndTurnAbilityId, setArmedEndTurnAbilityId] = useState<string | null>(null)
+  const [slimeCardZoom, setSlimeCardZoom] = useState<SlimeCardZoom | null>(null)
+  const closeSlimeCardZoom = useRef(() => setSlimeCardZoom(null))
   const [startTurnOrder, setStartTurnOrder] = useState<string[]>([])
   const [startTurnScryOrder, setStartTurnScryOrder] = useState<string[]>([])
   const [startTurnEnemyTargets, setStartTurnEnemyTargets] = useState<Record<string, string | undefined>>({})
@@ -404,6 +418,8 @@ function CombatScreenView({
   const [triggerSlimeEnemyUids, setTriggerSlimeEnemyUids] = useState<string[]>([])
   const [stageScale, setStageScale] = useState(1)
   const reducedMotion = useReducedEffects()
+
+  useEffect(() => registerCardZoomCloser(closeSlimeCardZoom.current), [])
   const prefersReducedMotion = reducedMotion
   const boardRef = useRef<HTMLDivElement | null>(null)
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
@@ -902,10 +918,26 @@ function CombatScreenView({
     !['slash', 'blunt', 'projectile', 'poison', 'shiv', 'lightning', 'dark', 'debuff']
       .includes(recipe.family))
   const enemyVfxFor = (enemy: Enemy) => activeVfx.filter(({ event }) => event.enemyIds.includes(enemy.uid))
+  useEffect(() => {
+    const uid = slimeCardZoom?.card.uid
+    if (!uid) return
+    const commanding = livePresentationEvents.some((event) => event.kind === 'slime' && event.slimeUid === uid)
+    const stillPresent = state.players.some((player) => player.slimes.some((slime) => slime.card.uid === uid))
+    if (commanding || !stillPresent) {
+      releaseCardZoom(closeSlimeCardZoom.current)
+      setSlimeCardZoom(null)
+    }
+  }, [livePresentationEvents, slimeCardZoom?.card.uid, state.players])
   // The enemy phase stays open until the prior player attacks clear, so bosses
   // start after that shared presentation window while player attacks remain concurrent.
-  const characterAttacksActive = !prefersReducedMotion && activeVfx.some(isCharacterAttack)
+  const characterAttacksActive = !prefersReducedMotion && (
+    activeVfx.some(isCharacterAttack) || livePresentationEvents.some((event) => event.kind === 'slime'))
   const [characterAttacks, setCharacterAttacks] = useState<Record<string, CharacterAttackMotion[]>>({})
+  const [slimeCommandMotions, setSlimeCommandMotions] = useState<Record<string, {
+    seq: number
+    x: number
+    y: number
+  }>>({})
   useLayoutEffect(() => {
     const board = boardRef.current
     if (!board) return
@@ -988,6 +1020,32 @@ function CombatScreenView({
     }
     setCharacterAttacks(next)
   }, [activeVfx, prefersReducedMotion, stageScale, state.enemies, state.players])
+  useLayoutEffect(() => {
+    const board = boardRef.current
+    const commands = livePresentationEvents.filter((event) => event.kind === 'slime')
+    if (!board || prefersReducedMotion || commands.length === 0) {
+      setSlimeCommandMotions((current) => Object.keys(current).length === 0 ? current : {})
+      return
+    }
+    const next: typeof slimeCommandMotions = {}
+    for (const event of commands) {
+      const row = board.querySelector<HTMLElement>(`.seat[data-player-id="${CSS.escape(event.actorId)}"]`)?.closest('.row')
+      const actor = row?.querySelector<HTMLElement>(`.slime-party__actor[data-slime-uid="${CSS.escape(event.slimeUid)}"]`)
+      const target = event.enemyIds.flatMap((id) => {
+        const portrait = board.querySelector<HTMLElement>(`.enemy[data-enemy-id="${CSS.escape(id)}"] .enemy__portrait`)
+        return portrait ? [portrait] : []
+      })[0] ?? board.querySelector<HTMLElement>('.enemy:not(.enemy--dead) .enemy__portrait')
+      if (!actor) continue
+      const actorRect = actor.getBoundingClientRect()
+      const targetRect = target?.getBoundingClientRect()
+      next[`${event.actorId}:${event.slimeUid}`] = {
+        seq: event.seq,
+        x: targetRect ? Math.max(0, targetRect.left - actorRect.right + actorRect.width * 0.22) : 0,
+        y: targetRect ? targetRect.bottom - actorRect.bottom : 0,
+      }
+    }
+    setSlimeCommandMotions(next)
+  }, [livePresentationEvents, prefersReducedMotion, stageScale])
   useCombatSoundEffects(state, viewerId, animateOpeningHand, authoritativeRestoration, authoritativeConnected)
 
   // Animate only changes witnessed while this combat is live. A reconnect or
@@ -1743,11 +1801,36 @@ function CombatScreenView({
     ? state.players.find((player) => player.id === endTurnEffect.playerId)
       ?.powers.find((power) => power.uid === endTurnEffectVisual.cardUid)
     : undefined
+  const endTurnEffectSlimeAsset = endTurnEffectVisual?.kind === 'slime'
+    ? assetPath(`combat/slimes/${slimeAssetSlug(endTurnEffectVisual.cardId)}.webp`)
+    : undefined
   const endTurnEffectDragVisual = endTurnEffectDrag?.ability.visual
   const endTurnEffectDragCard = !endTurnEffectDrag?.sourceOrb && endTurnEffectDragVisual?.kind === 'card' && endTurnEffectDrag
     ? state.players.find((player) => player.id === endTurnEffectDrag.ability.playerId)
       ?.powers.find((power) => power.uid === endTurnEffectDragVisual.cardUid)
     : undefined
+  const endTurnEffectDragSlimeAsset = !endTurnEffectDrag?.sourceOrb && endTurnEffectDragVisual?.kind === 'slime'
+    ? assetPath(`combat/slimes/${slimeAssetSlug(endTurnEffectDragVisual.cardId)}.webp`)
+    : undefined
+
+  function showSlimeCard(card: CardInstance, target: HTMLElement) {
+    if (!tryClaimCardZoom(closeSlimeCardZoom.current)) return
+    const tile = target.getBoundingClientRect()
+    const width = 190
+    const height = width * 4 / 3
+    const margin = 8
+    const above = tile.top - height - margin
+    setSlimeCardZoom({
+      card,
+      x: Math.min(Math.max(margin, tile.left), window.innerWidth - width - margin),
+      y: above >= margin ? above : Math.min(tile.bottom + margin, window.innerHeight - height - margin),
+    })
+  }
+
+  function hideSlimeCard() {
+    releaseCardZoom(closeSlimeCardZoom.current)
+    setSlimeCardZoom(null)
+  }
   const startIds = useMemo(() => startTurnOrder.length === baseStartAbilities.length
     ? startTurnOrder
     : baseStartAbilities.map((ability) => ability.id), [baseStartAbilities, startTurnOrder])
@@ -3897,7 +3980,8 @@ function CombatScreenView({
     ? 'Choose an enemy for Soulburn'
     : pending?.choice?.kind === 'load' || pending?.choice?.kind === 'loadAny'
       ? `${pendingDef?.name ?? 'Card'} — choose ${pending.choice.kind === 'loadAny' ? 'up to ' : ''}${pending.choice.amount} card${pending.choice.amount === 1 ? '' : 's'} to Load`
-    : pending?.slimeChoice && !pending.slimeChoiceConfirmed
+    : pending?.slimeChoice && !pending.slimeChoiceConfirmed &&
+      (pendingDef?.cost !== 'X' || pending.energySpent !== null)
       ? `Choose ${pending.slimeChoice.minimum === pending.slimeChoice.amount ? '' : 'up to '}${pending.slimeChoice.amount} Slime${pending.slimeChoice.amount === 1 ? '' : 's'}`
     : pending && pending.slimeEnemyUids.length < slimeEnemyChoicesRequired(pending)
       ? `Choose ${slimeEnemyChoiceLabels(pending)[pending.slimeEnemyUids.length] ?? 'Slime'} Command target ${pending.slimeEnemyUids.length + 1}/${slimeEnemyChoicesRequired(pending)}`
@@ -4486,12 +4570,26 @@ function CombatScreenView({
             </button>
           ) : null}
           {pendingDef?.cost === 'X' && pending?.energySpent === null
-            ? Array.from({ length: viewer.energy - (pendingDef.minimumX ?? 0) + 1 }, (_, at) => {
+            ? Array.from({ length: Math.max(0,
+              maximumXEnergy(pendingDef, viewer) - (pendingDef.minimumX ?? 0) + 1) }, (_, at) => {
               const energy = at + (pendingDef.minimumX ?? 0)
               return (
                 <button type="button" className="prompt__mode" key={energy}
-                  onClick={() => stageOrCommit({ ...pending, energySpent: energy, effectEnergy: energy,
-                    energyCharged: pending.cardInHand || pending.chamberPlay ? energy : 0 })}>
+                  onClick={() => stageOrCommit({
+                    ...pending,
+                    ...requirementsOf(
+                      pendingEffectiveDef!, state.players.filter((player) => !player.dead).length, viewer, state,
+                      energy, pending.cardInHand || pending.chamberPlay, pending.card.hermitDeadOn === true,
+                      pending.choiceCards?.length, guardianGemForCard(viewer, pending.card), pending.card.uid,
+                      pending.cardInHand || pending.chamberPlay ? energy : 0,
+                    ),
+                    energySpent: energy,
+                    effectEnergy: energy,
+                    energyCharged: pending.cardInHand || pending.chamberPlay ? energy : 0,
+                    slimeUids: [],
+                    slimeChoiceConfirmed: false,
+                    slimeEnemyUids: [],
+                  })}>
                   Spend {energy}
                 </button>
               )
@@ -4585,12 +4683,21 @@ function CombatScreenView({
               ) : null}
             </>
           ) : null}
-          {pending?.slimeChoice && !pending.slimeChoiceConfirmed ? (
+          {pending?.slimeChoice && !pending.slimeChoiceConfirmed &&
+          (pendingDef?.cost !== 'X' || pending.energySpent !== null) ? (
             <>
               {(viewer.slimes ?? []).map((slime) => {
                 const selected = pending.slimeUids.includes(slime.card.uid)
+                const available = !pending.cardInHand && !pending.chamberPlay ||
+                  forcedCardUid === pending.card.uid || Boolean(
+                  pendingDef && slimeChoiceIsAvailable(
+                    pendingDef, state, viewer, slime.card.uid, pending.effectEnergy ?? 0,
+                  ),
+                )
                 return <button type="button" className="prompt__mode" key={slime.card.uid} aria-pressed={selected}
+                  disabled={!available}
                   onClick={() => {
+                    if (!available) return
                     const slimeUids = selected ? pending.slimeUids.filter((uid) => uid !== slime.card.uid)
                       : pending.slimeUids.length < pending.slimeChoice!.amount
                         ? [...pending.slimeUids, slime.card.uid] : pending.slimeUids
@@ -5145,7 +5252,7 @@ function CombatScreenView({
           ) : (
             <button
               type="button"
-              className="end-turn-effect end-turn-effect--orb"
+              className={`end-turn-effect end-turn-effect--${endTurnEffectSlimeAsset ? 'slime' : 'orb'}`}
               disabled={!canResolveEndTurn}
               aria-label={`Resolve ${endTurnEffect.label}`}
               aria-pressed={armedEndTurnAbilityId === endTurnEffect.id}
@@ -5156,9 +5263,11 @@ function CombatScreenView({
               onPointerCancel={cancelEndTurnEffectDrag}
               onLostPointerCapture={cancelEndTurnEffectDrag}
             >
-              <span className={`token--orb token--orb-${endTurnEffect.visual?.kind === 'orb'
-                ? endTurnEffect.visual.orb
-                : 'lightning'}`} aria-hidden="true" />
+              {endTurnEffectSlimeAsset
+                ? <img className="end-turn-effect__slime" src={endTurnEffectSlimeAsset} alt="" />
+                : <span className={`token--orb token--orb-${endTurnEffect.visual?.kind === 'orb'
+                  ? endTurnEffect.visual.orb
+                  : 'lightning'}`} aria-hidden="true" />}
             </button>
           )}
           {endTurnChoiceTargets.length > 0 ? (
@@ -5594,21 +5703,37 @@ function CombatScreenView({
                             slime.commandsThisTurn < def.slimeCommandLimit
                           const commandText = slimeCommandText(def, slime.level)
                           const slug = slimeAssetSlug(def.id)
-                          const commandEvent = !prefersReducedMotion && slimeCommandEvents.get(slime.card.uid)
-                          return <CardKeywordHelp key={slime.card.uid} def={def}
-                            extraTips={[{ name: 'Current Command', text: commandText }]}>{(keywordHelpProps) => (
-                            <span {...keywordHelpProps}
+                          const commandEvent = prefersReducedMotion
+                            ? undefined
+                            : slimeCommandEvents.get(slime.card.uid)
+                          const commandMotion = occupant
+                            ? slimeCommandMotions[`${occupant.id}:${slime.card.uid}`]
+                            : undefined
+                          const activeCommandMotion = commandEvent && commandMotion?.seq === commandEvent.seq
+                            ? commandMotion
+                            : undefined
+                          const activeCommandEvent = activeCommandMotion ? commandEvent : undefined
+                          return <span
+                              key={`${slime.card.uid}:${activeCommandEvent?.seq ?? 'idle'}`}
                               className={[
                                 'slime-party__actor combat__slime-chip',
                                 commandReady ? '' : 'slime-party__actor--spent',
-                                commandEvent ? 'slime-party__actor--commanding' : '',
+                                activeCommandEvent ? 'slime-party__actor--commanding' : '',
                               ].filter(Boolean).join(' ')}
                               role="listitem"
                               tabIndex={0}
+                              onMouseEnter={(event) => showSlimeCard(slime.card, event.currentTarget)}
+                              onMouseLeave={hideSlimeCard}
+                              onFocus={(event) => showSlimeCard(slime.card, event.currentTarget)}
+                              onBlur={hideSlimeCard}
                               data-slime-uid={slime.card.uid}
                               data-slime-def={def.id}
                               data-slime-level={slime.level}
                               data-slime-vigor={slime.vigor > 0 ? `+${slime.vigor}` : ''}
+                              style={activeCommandMotion ? {
+                                '--slime-command-x': `${activeCommandMotion.x}px`,
+                                '--slime-command-y': `${activeCommandMotion.y}px`,
+                              } as React.CSSProperties : undefined}
                               aria-label={`${def.name}, level ${slime.level}, Strength ${slime.vigor}, ` +
                                 `${slime.commandsThisTurn} Commands this turn, ` +
                                 `${commandReady ? 'ready to Command' : 'Command limit reached'}, ` + commandText}>
@@ -5625,25 +5750,25 @@ function CombatScreenView({
                                   event.currentTarget.src = assetPath(slimeFallbackAsset(def.id))
                                 }}
                               />
-                              {commandEvent ? (
+                              {activeCommandEvent ? (
                                 <img
                                   className="slime-party__command"
-                                  key={commandEvent.seq}
-                                  data-command-seq={commandEvent.seq}
+                                  key={activeCommandEvent.seq}
+                                  data-command-seq={activeCommandEvent.seq}
                                   src={assetPath(`combat/slimes/${slug}-command.webp`)}
                                   alt=""
                                   onError={(event) => {
                                     event.currentTarget.style.display = 'none'
-                                    const idle = event.currentTarget.previousElementSibling
-                                    if (idle instanceof HTMLElement) idle.style.opacity = '1'
+                                    const idle = event.currentTarget.parentElement?.querySelector<HTMLElement>('.slime-party__art')
+                                    if (idle) idle.style.opacity = '1'
                                   }}
                                 />
                               ) : null}
+                              <span className="slime-party__level" aria-hidden="true">{slime.level}</span>
                               <span className="slime-party__summary" aria-hidden="true">
                                 {name} · L{slime.level} · Strength {slime.vigor} · Cmd {slime.commandsThisTurn}
                               </span>
                             </span>
-                          )}</CardKeywordHelp>
                         })}
                       </span>
                     ) : null}
@@ -5957,6 +6082,13 @@ function CombatScreenView({
           })}
         </div></div>
       </footer>
+      {slimeCardZoom ? createPortal(
+        <span className="power__zoom slime-party__zoom" role="tooltip"
+          style={{ left: slimeCardZoom.x, top: slimeCardZoom.y }}>
+          <Card card={slimeCardZoom.card} playable={false} />
+        </span>,
+        document.body,
+      ) : null}
       {chamberReturnFlights.map((flight) => (
         <div key={flight.card.uid} className="chamber-return-flight" style={{
           left: flight.left,
@@ -6012,7 +6144,10 @@ function CombatScreenView({
             className={endTurnEffectDragCard ? 'end-turn-effect-drag end-turn-effect-drag--card' : 'end-turn-effect-drag'}
             style={{ left: endTurnEffectDrag.startX, top: endTurnEffectDrag.startY } as React.CSSProperties}
             aria-hidden="true" inert>
-            {endTurnEffectDragCard ? <Card card={endTurnEffectDragCard} playable={false} /> : (
+            {endTurnEffectDragCard ? <Card card={endTurnEffectDragCard} playable={false} />
+              : endTurnEffectDragSlimeAsset ? (
+                <img className="end-turn-effect__slime" src={endTurnEffectDragSlimeAsset} alt="" />
+              ) : (
               <span className={`token--orb token--orb-${endTurnEffectDrag.sourceOrb ?? (endTurnEffectDrag.ability.visual?.kind === 'orb'
                 ? endTurnEffectDrag.ability.visual.orb
                 : 'lightning')}`} />

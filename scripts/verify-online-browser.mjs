@@ -637,6 +637,73 @@ try {
   await a.waitForFunction(() => !document.querySelector('.hand .card--drawn'))
 
   const onlineSettingsFreezeRestore = structuredClone(liveRoom.run.combat)
+  const onlineSlimeVictoryRestore = structuredClone(liveRoom.run)
+  const slimeActor = liveRoom.run.combat.players[0]
+  const slimeTarget = liveRoom.run.combat.enemies[0]
+  slimeActor.character = 'slime_boss'
+  slimeActor.slimes = [{
+    card: { uid: 'online-lethal-bruiser', defId: 'slime_boss_bruiser_slime', upgraded: false },
+    level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
+  }]
+  Object.assign(slimeTarget, { hp: slimeTarget.maxHp, dead: false })
+  liveRoom.run.combat.phase = 'player'
+  liveRoom.run.combat.presentationEvents = [{
+    seq: 77_001,
+    kind: 'slime',
+    actorId: slimeActor.id,
+    sourceId: 'slime_boss_bruiser_slime',
+    slimeUid: 'online-lethal-bruiser',
+    upgraded: false,
+    animationIndex: 0,
+    enemyIds: [slimeTarget.uid],
+    playerIds: [],
+  }]
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.locator('[data-command-seq="77001"]').waitFor()
+  for (const enemy of liveRoom.run.combat.enemies) Object.assign(enemy, { hp: 0, dead: true })
+  liveRoom.run.combat.phase = 'won'
+  liveRoom.run.combat.presentationEvents.push({
+    seq: 77_002,
+    kind: 'slime',
+    actorId: slimeActor.id,
+    sourceId: 'slime_boss_bruiser_slime',
+    slimeUid: 'online-lethal-bruiser',
+    upgraded: false,
+    animationIndex: 0,
+    enemyIds: [slimeTarget.uid],
+    playerIds: [],
+  })
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.locator('[data-command-seq="77002"]').waitFor()
+  await a.waitForTimeout(1_400)
+  const onlineSlimeVictoryHeld = {
+    runPhase: (await snapshot(a)).run.phase,
+    commandMounted: await a.locator('.slime-party__actor--commanding').count() === 1,
+  }
+  await a.waitForFunction(() => !document.querySelector('.app-shell--online .combat'), undefined, { timeout: 1_000 })
+  const onlineSlimeVictoryReleased = (await snapshot(a)).run.phase !== 'combat'
+  const restoredVictoryRoom = rooms.store.rooms.get(code)
+  restoredVictoryRoom.run = onlineSlimeVictoryRestore
+  restoredVictoryRoom.version += 1
+  rooms.publishRoom(code)
+  await a.locator(`.combat[data-phase="${onlineSettingsFreezeRestore.phase}"]`).waitFor()
+  check('online cross-snapshot index-0 Slime Commands finish returning before combat resolves', () => {
+    assertDeepEqual(onlineSlimeVictoryHeld, { runPhase: 'combat', commandMounted: true })
+    assert(onlineSlimeVictoryReleased)
+  })
+  if (process.argv.includes('--slime-command-lifecycle-only')) {
+    check('the focused online Slime lifecycle run has no browser errors', () => {
+      assertEqual(failures.length, 0, failures.join('\n'))
+    })
+    await browser.close()
+    await vite.close()
+    await rooms.close()
+    report('online Slime Command lifecycle')
+    process.exit(process.exitCode ?? 0)
+  }
+
   liveRoom.run.combat.phase = 'won'
   liveRoom.version += 1
   rooms.publishRoom(code)

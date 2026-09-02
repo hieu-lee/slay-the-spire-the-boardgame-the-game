@@ -24,9 +24,16 @@ const OFFENSIVE_VFX_FAMILIES = new Set([
  * beats — zap, pause, zap — rather than one.
  */
 export const ORB_END_TURN_STAGGER_MS = 380
+export const SLIME_COMMAND_ANIMATION_MS = 1_700
+export const SLIME_COMMAND_CONTACT_MS = 850
+export const SLIME_SPAWN_ANIMATION_MS = 1_550
+export const SLIME_SPAWN_CONTACT_MS = 800
 export const COMBAT_OUTCOME_DELAY_MS = 2_500
 export const COMBAT_OUTCOME_SOUND_DELAY_MS = 2_400
-export const SLIME_COMMAND_ANIMATION_MS = 1_550
+
+export const combatOutcomeAnimationActive = (): boolean => Boolean(document.querySelector(
+  '.slime-party__actor--commanding, .character-attack--slime_boss',
+))
 
 export const isCharacterAttack = ({ event, recipe }: ActiveCombatVfx): boolean =>
   event.kind !== 'potion' && event.kind !== 'orb' && event.kind !== 'slime' && event.enemyIds.length > 0 &&
@@ -41,7 +48,7 @@ export function characterAttackContactMs(
   event?: CombatPresentationEvent,
 ): number {
   if (!event || event.kind === 'potion' || event.kind === 'orb' || !event.enemyIds.includes(targetId)) return 0
-  if (event.kind === 'slime') return 800 + event.animationIndex * SLIME_COMMAND_ANIMATION_MS
+  if (event.kind === 'slime') return SLIME_COMMAND_CONTACT_MS + event.animationIndex * SLIME_COMMAND_ANIMATION_MS
   const actor = state.players.find((player) => player.id === event.actorId)
   if (!actor) return 0
   const active = {
@@ -56,6 +63,7 @@ export function characterAttackContactMs(
   if (actor.character === 'defect') return 1_110 + targetIndex * 70
   if (actor.character === 'watcher') return 1_050 + targetIndex * 70
   if (actor.character === 'hexaghost') return 1_450 + targetIndex * 70
+  if (actor.character === 'slime_boss') return SLIME_COMMAND_CONTACT_MS + targetIndex * 70
   return 630
 }
 

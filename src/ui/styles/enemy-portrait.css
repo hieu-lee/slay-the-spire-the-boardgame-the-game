@@ -350,7 +350,8 @@ button.pile:hover { filter: brightness(1.15); }
   animation: end-turn-effect-arrive 280ms var(--ease-out, ease-out) both;
 }
 
-button.end-turn-effect--orb {
+button.end-turn-effect--orb,
+button.end-turn-effect--slime {
   display: grid;
   place-items: center;
   width: 4.5rem;
@@ -362,8 +363,14 @@ button.end-turn-effect--orb {
   box-shadow: 0 0.35rem 1.1rem rgb(0 0 0 / 0.62), inset 0 0 1.2rem rgb(225 250 255 / 0.2);
 }
 
+button.end-turn-effect--slime {
+  background: radial-gradient(circle, rgb(160 239 69 / 0.36), rgb(28 63 26 / 0.78) 66%, rgb(8 18 9 / 0.9));
+}
+
 button.end-turn-effect--orb:hover:not(:disabled),
-button.end-turn-effect--orb[aria-pressed='true'] {
+button.end-turn-effect--orb[aria-pressed='true'],
+button.end-turn-effect--slime:hover:not(:disabled),
+button.end-turn-effect--slime[aria-pressed='true'] {
   border-color: #fff7ad;
   filter: brightness(1.22);
 }
@@ -372,6 +379,13 @@ button.end-turn-effect--orb[aria-pressed='true'] {
 .end-turn-effect-drag > .token--orb {
   width: 3.6rem;
   height: 3.6rem;
+  pointer-events: none;
+}
+
+.end-turn-effect__slime {
+  width: 4rem;
+  height: 4rem;
+  object-fit: contain;
   pointer-events: none;
 }
 
