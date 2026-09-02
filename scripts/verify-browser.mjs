@@ -1031,6 +1031,51 @@ check('the first room is an encounter and starts a combat', () => {
   assertEqual(openingDealMotion, 'card-draw', 'the opening hand should deal into place')
 })
 
+const ninjaScrollSourceRun = await readRun()
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, {
+    phase: 'player', ruleset: 'downfall', startTurnProgress: undefined,
+    pendingTriggers: [], pendingDistilled: undefined,
+  })
+  Object.assign(player, {
+    character: 'silent', hand: [{ uid: 'ui-ninja-strike', defId: 'strike_silent', upgraded: false }],
+    energy: 3, shivs: 0, miracles: 0, potions: [], powers: [],
+    relics: [{ defId: 'downfall_ninja_scroll', spent: false }],
+  })
+  next.combat.players = [player]
+  next.combat.enemies = [{
+    ...next.combat.enemies[0], defId: 'cultist', isBoss: false, row: player.row,
+    hp: 10, maxHp: 10, dead: false,
+  }]
+  window.__STS_DEBUG__.setRun(next)
+}, ninjaScrollSourceRun)
+const ninjaScroll = page.getByRole('button', { name: /^Use Ninja Scroll:/ })
+await ninjaScroll.waitFor()
+const ninjaTargetPrompt = await page.getByText(/Choose \d+ immediate Shiv target/).count()
+await ninjaScroll.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].relics[0]?.spent === true)
+const ninjaState = await shot('downfall-ninja-scroll-shivs')
+check('Downfall Ninja Scroll gains 3 held Shivs instead of forcing immediate attacks', () => {
+  assertEqual(ninjaTargetPrompt, 0)
+  assertEqual(ninjaState.players[0].shivs, 3)
+  assertEqual(ninjaState.players[0].attacksPlayedThisTurn, 0)
+  assertEqual(ninjaState.enemies[0].hp, 10)
+})
+if (args.includes('--downfall-ninja-scroll-only')) {
+  check('the focused Ninja Scroll browser run reported no errors', () => {
+    assert(consoleErrors.length === 0, `console errors:\n    ${consoleErrors.join('\n    ')}`)
+    assert(pageErrors.length === 0, `page errors:\n    ${pageErrors.join('\n    ')}`)
+    assert(requestFailures.length === 0, `failed requests:\n    ${requestFailures.join('\n    ')}`)
+  })
+  await browser.close()
+  await server.close()
+  report('Downfall Ninja Scroll UI')
+  process.exit(process.exitCode ?? 0)
+}
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), ninjaScrollSourceRun)
+
 await page.locator('.relic-chip').first().hover()
 await page.waitForFunction(() => getComputedStyle(document.querySelector('.relic-tip')).visibility === 'visible')
 const combatChrome = await page.evaluate(() => {

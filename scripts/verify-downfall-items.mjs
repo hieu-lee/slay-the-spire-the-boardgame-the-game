@@ -249,7 +249,10 @@ for (const [name, id] of Object.entries(variantIds)) {
   assert.equal(downfallRelicBaseId(id), itemId(name))
   assert.equal(resolveNamed(name === 'Enchiridion' || name === 'Snecko Eye' || name === 'Wrist Blade'
     ? DOWNFALL_BOSS_RELICS : DOWNFALL_RELICS, name, true).kind, 'downfall')
-  assert.equal(RELICS[id].text, formatDownfallText([...DOWNFALL_RELICS, ...DOWNFALL_BOSS_RELICS].find((item) => item.name === name).text))
+  const expectedText = name === 'Ninja Scroll'
+    ? 'Once per combat: gain 3 Shivs.'
+    : formatDownfallText([...DOWNFALL_RELICS, ...DOWNFALL_BOSS_RELICS].find((item) => item.name === name).text)
+  assert.equal(RELICS[id].text, expectedText)
   assert.equal(RELICS[id].cost, RELICS[itemId(name)].cost, `${name} keeps its physical merchant price`)
 }
 assert.ok(Object.values(variantIds).slice(0, 7).every((id) => DOWNFALL_RELIC_DECK.includes(id)))
@@ -457,11 +460,31 @@ const combat = (owner, enemies = [enemy()]) => createCombat(createRng(147), [own
     relics: [{ defId: 'downfall_ninja_scroll', spent: false }], powers: [power],
     draw: [card('hermit_defend'), card('hermit_defend')],
   }))
-  state = activateRelic(state, 'p1', 0, { shivEnemyUids: ['item-e1', 'item-e1', 'item-e1'] })
-  assert.equal(state.enemies[0].hp, 47)
-  assert.equal(state.players[0].attacksPlayedThisTurn, 3)
+  state = activateRelic(state, 'p1', 0)
+  assert.equal(state.players[0].shivs, 3)
+  assert.equal(state.enemies[0].hp, 50)
+  assert.equal(state.players[0].attacksPlayedThisTurn, 0)
   assert.equal(state.players[0].relics[0].spent, true)
-  assert.equal(state.players[0].hand.length, 2, 'Ninja Scroll triggered Overwhelming Power on its second Attack')
+  assert.equal(state.players[0].hand.length, 0, 'gaining Shivs incorrectly counted as playing Attacks')
+
+  const sharedSupply = createCombat(createRng(148), [
+    player({ relics: [{ defId: 'downfall_ninja_scroll', spent: false }] }),
+    player({ id: 'p2', name: 'Ally', shivs: 4 }),
+  ], [enemy()])
+  sharedSupply.players[0].shivDamageBonus = 1
+  assert.equal(activateRelic(sharedSupply, 'p1', 0), sharedSupply, 'overflow needs its immediate targets')
+  const overflow = activateRelic(sharedSupply, 'p1', 0, { shivEnemyUids: ['item-e1', 'item-e1'] })
+  assert.equal(overflow.players[0].shivs, 1)
+  assert.equal(overflow.players[1].shivs, 4)
+  assert.equal(overflow.enemies[0].hp, 46, 'overflow uses the shared boosted Shiv attack')
+  assert.equal(overflow.players[0].attacksPlayedThisTurn, 2)
+
+  const lethalOverflow = createCombat(createRng(149), [
+    player({ relics: [{ defId: 'downfall_ninja_scroll', spent: false }] }),
+    player({ id: 'p2', name: 'Ally', shivs: 4 }),
+  ], [enemy({ hp: 1, maxHp: 1 }), enemy({ uid: 'item-e2', hp: 5, maxHp: 5 })])
+  assert.equal(activateRelic(lethalOverflow, 'p1', 0, { shivEnemyUids: ['item-e1', 'item-e1'] }),
+    lethalOverflow, 'a later overflow Shiv target dying mid-activation must roll the relic back atomically')
 
   let lethal = combat(player({
     powers: [power], shivs: 1, attacksPlayedThisTurn: 1,
