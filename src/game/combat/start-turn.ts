@@ -832,7 +832,7 @@ export function continueStartTurn(
     const ability = entry ? startTurnAbilitiesFor(next, [entry])[0] : undefined
     if (!entry || !player || !ability ||
       (ability.targets
-        ? !ability.targets.some((target) => target.uid === choice.enemyUid)
+        ? ability.targets.length > 0 && !ability.targets.some((target) => target.uid === choice.enemyUid)
         : choice.enemyUid !== undefined) ||
       (ability.players
         ? !ability.players.some((candidate) => candidate.id === choice.targetPlayerId)

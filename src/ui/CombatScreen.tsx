@@ -576,8 +576,13 @@ function CombatScreenView({
       chamberPlay: true,
       enemyUid,
     }
-    if (cardNeedsChoicePreview(def, state, staged.player) && next.needsEnemy && enemyUid === null) {
-      setPending({ ...next, choice: null, choicePreviewPending: true })
+    if (cardNeedsChoicePreview(def, state, staged.player) && next.needsEnemy) {
+      const pending = { ...next, choice: null, choiceCards: null }
+      if (enemyUid === null) {
+        setPending({ ...pending, choicePreviewPending: true })
+        return
+      }
+      stageOrCommit(pending)
       return
     }
     stageOrCommit(targetPlayerId
@@ -1309,7 +1314,7 @@ function CombatScreenView({
     if (cardNeedsChoicePreview(def, state, viewer)) {
       if (cardNeedsEnemy(def, viewer, false, copy.energySpent, false, copy.card.attachedGemId, copy.card.uid,
         copy.energySpent, copy.card.hermitDeadOn === true)) {
-        setPending({ ...pendingFor(copy.card, null, state, viewer, false, copy.energySpent), choice: null })
+        setPending({ ...pendingFor(copy.card, null, state, viewer, false, copy.energySpent), choice: null, choiceCards: null })
       } else requestCopyChoicePreview()
       return
     }
@@ -3055,7 +3060,7 @@ function CombatScreenView({
           if (directEnemy) next = { ...next, enemyUid: draggedEnemyUid }
           else next = { ...next, slimeEnemyUids: [draggedEnemyUid] }
         }
-        setPending({ ...next, choice: null })
+        stageOrCommit({ ...next, choice: null, choiceCards: null })
         return
       }
       requestChoicePreview(card)

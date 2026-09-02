@@ -8550,6 +8550,45 @@ check('Fire Breathing pauses the automatic opening draw before Start-of-Turn abi
   assert(won.log.includes('Turn 1 begins') && !won.log.some((line) => line.includes('(die ')))
 })
 
+check('Fire Breathing can kill a splitting Slime Boss before a targetless Boot die effect', () => {
+  const state = createCombat(createRng(2), [
+    makePlayer({
+      draw: [instance('daze'), ...Array.from({ length: 4 }, () => instance('strike_ironclad'))],
+      powers: [instance('fire_breathing')], relics: [{ defId: 'the_boot', spent: false }],
+    }),
+    makePlayer({
+      id: 'p2', name: 'Silent', character: 'silent', row: 1,
+      draw: Array.from({ length: 5 }, () => instance('strike_silent')),
+    }),
+  ], [makeEnemy({ defId: 'slime_boss', isBoss: true, hp: 2, maxHp: 2 })])
+  const prepared = preparePlayerTurn(state)
+  assertEqual(prepared.pendingTriggers.length, 1)
+  const split = resolvePendingTrigger(prepared, 'p1', prepared.pendingTriggers[0].id, 0)
+  assertEqual(split.enemies[0].dead, true)
+  assertEqual(split.pendingSummons.length, 2, 'Slime Boss must still Split next turn')
+  assertEqual(split.die, 5)
+
+  const resolved = resolveStartPlayerTurn(split, defaultStartTurnChoices(split))
+  assertEqual(resolved.phase, 'player')
+  assertEqual(resolved.startTurnProgress, undefined)
+})
+
+check('a die relic can make a later chosen die-relic target stale before Slime Boss Split', () => {
+  const state = createCombat(createRng(2), [makePlayer({
+    relics: [{ defId: 'stone_calendar', spent: false }, { defId: 'the_boot', spent: false }],
+  })], [makeEnemy({ defId: 'slime_boss', isBoss: true, hp: 4, maxHp: 4 })])
+  const prepared = preparePlayerTurn(state)
+  prepared.die = 4
+  const choices = defaultStartTurnChoices(prepared)
+  assertDeepEqual(choices.map((choice) => choice.enemyUid), ['e1', 'e1'])
+
+  const resolved = resolveStartPlayerTurn(prepared, choices)
+  assertEqual(resolved.enemies[0].dead, true)
+  assertEqual(resolved.pendingSummons.length, 1, 'Slime Boss must still Split next turn')
+  assertEqual(resolved.phase, 'player')
+  assertEqual(resolved.startTurnProgress, undefined)
+})
+
 check('Burst plays the next Skill twice, waits behind another copy effect, and cannot copy itself', () => {
   const burst = instance('burst', true)
   const firstDefend = instance('defend_silent')
