@@ -157,6 +157,8 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
   const card = activeProgress.card ?? (activeProgress.cardId ? neowCard(activeProgress.cardId) : undefined)
   const currentOffer = activeProgress.redReward ?? activeProgress.reward
   const heartsBoon = card?.source === 'heart'
+  const blessingName = heartsBoon ? 'The Heart’s Boon' : 'Neow’s Blessing'
+  const blessingWord = heartsBoon ? 'Boon' : 'Blessing'
   const prismaticSources = activeProgress.availableSources ?? []
   const unrevealedStage = !activeProgress.redGoldPending && activeProgress.redRewardPending && !activeProgress.redReward && !activeProgress.pendingEffect ? 'red'
     : activeProgress.rewardKind && !activeProgress.reward ? 'reward' : null
@@ -169,15 +171,17 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
     : effect?.kind === 'gold' ? `${effect.amount} Gold`
       : effect ? `${effect.kind} ${effect.count} card${effect.count === 1 ? '' : 's'}` : ''
 
-  return <section className="neow-screen" aria-labelledby="neow-title">
-    <img className="neow-screen__neow" src={assetPath('neow/neow.webp')} alt="Neow" />
+  return <section className={`neow-screen${heartsBoon ? ' neow-screen--heart' : ''}`} aria-labelledby="neow-title">
+    <img className={`neow-screen__neow${heartsBoon ? ' neow-screen__neow--heart' : ''}`}
+      src={assetPath(heartsBoon ? 'combat/enemies/corrupt_heart.webp' : 'neow/neow.webp')}
+      alt={heartsBoon ? 'The Heart' : 'Neow'} />
     <img className="neow-screen__hero" src={assetPath(characterHeroArt(viewer.character))} alt={viewer.name} />
     <header className="neow-screen__header">
-      <h2 id="neow-title">{heartsBoon ? "The Heart’s Boon" : 'Neow’s Blessing'}</h2>
+      <h2 id="neow-title">{blessingName}</h2>
       <span className="neow-screen__progress" role="status">{Object.values(progress).filter((seat) => seat?.done).length}/{participants.length} ready</span>
     </header>
 
-    <div className="neow-faces" aria-label="Dealt Neow cards">
+    <div className="neow-faces" aria-label={`Dealt ${blessingName} cards`}>
       {participants.map((player) => {
         const state = progress[player.id]
         const face = state?.card ?? (state?.cardId ? neowCard(state.cardId) : undefined)
@@ -197,10 +201,10 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
 
     {!viewerParticipates ? <section className="neow-action" aria-labelledby="neow-action-title">
       <h3 id="neow-action-title">Catch Up in progress</h3>
-      <p className="neow-action__waiting" role="status">Waiting for the Catch Up players to finish Neow’s Blessing.</p>
+      <p className="neow-action__waiting" role="status">Waiting for the Catch Up players to finish {blessingName}.</p>
     </section> : <section className={`neow-action${currentOffer ? ' neow-action--offer' : ''}`} aria-labelledby="neow-action-title">
       <div className="neow-action__owner">
-        <span>{viewer.name}</span><h3 id="neow-action-title">{viewerProgress.done ? 'Blessing complete' : activeProgress.redGoldPending ? 'Take or skip 3 Gold' : currentOffer ? offerTitle(currentOffer) : effect ? `Resolve ${effectLabel}` : unrevealedStage ? `${unrevealedKind} is face down` : blueReady ? 'Choose a blessing' : 'Resolving blessing'}</h3>
+        <span>{viewer.name}</span><h3 id="neow-action-title">{viewerProgress.done ? `${blessingWord} complete` : activeProgress.redGoldPending ? 'Take or skip 3 Gold' : currentOffer ? offerTitle(currentOffer) : effect ? `Resolve ${effectLabel}` : unrevealedStage ? `${unrevealedKind} is face down` : blueReady ? `Choose a ${blessingWord.toLowerCase()}` : `Resolving ${blessingWord.toLowerCase()}`}</h3>
       </div>
       {viewerProgress.done ? <p className="neow-action__waiting" role="status">Waiting for the rest of the party.</p> : null}
       {activeProgress.redGoldPending ? <div className="neow-unrevealed"><p><strong>3 Gold</strong><span>Gain or independently skip this reward.</span></p><div className="neow-offer__actions"><button type="button" disabled={!enabled} onClick={() => onGold(viewer.id, true)}>Gain 3 Gold</button><button type="button" disabled={!enabled} onClick={() => onGold(viewer.id, false)}>Skip 3 Gold</button></div></div> : null}
@@ -245,7 +249,7 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
         <button type="button" disabled={!enabled} onClick={() => onEffect(viewer.id, false, {})}>Skip reward</button>
       </fieldset> : null}
       {!enabled && !viewerProgress.done ? <p className="neow-action__waiting" role="status">
-        {disabledMessage ?? 'Reconnecting… your Blessing is preserved.'}
+        {disabledMessage ?? `Reconnecting… your ${blessingWord} is preserved.`}
       </p> : null}
     </section>}
   </section>
