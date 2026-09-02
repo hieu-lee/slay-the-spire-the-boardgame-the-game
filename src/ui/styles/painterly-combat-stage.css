@@ -64,37 +64,6 @@
   background: rgb(15 19 21 / 0.72);
 }
 
-.combat__slime-status {
-  display: flex;
-  gap: 0.25rem;
-  min-width: 0;
-  max-width: min(42vw, 36rem);
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.combat__slime-chip {
-  flex: 0 0 auto;
-  padding: 0.2rem 0.4rem;
-  border: 1px solid rgb(151 221 111 / 0.52);
-  border-radius: 999px;
-  background: rgb(12 31 19 / 0.82);
-  color: #d9f3bf;
-  font-size: 0.7rem;
-}
-
-@media (max-width: 480px) {
-  .combat:has(.combat__slime-status) { --combat-bar-height: 6rem; }
-
-  .combat__bar:has(.combat__slime-status) { flex-wrap: wrap; }
-
-  .combat__slime-status {
-    order: 4;
-    width: 100%;
-    max-width: none;
-  }
-}
-
 .combat__actions button {
   border-color: rgb(215 177 91 / 0.46);
   background: linear-gradient(#354956, #1d2c35);
@@ -256,6 +225,201 @@
 
 .seat__portrait > img[src$='/watcher.webp'] {
   padding-bottom: calc(0.65rem * var(--stage-scale));
+}
+
+/* PC Downfall keeps commanded Slimes on the battlefield at their owner's
+   feet. This compact party belongs to the seat instead of stealing a full HUD
+   row, so multiplayer seats scale and wrap independently. */
+.slime-party {
+  position: absolute;
+  z-index: 7;
+  right: -22%;
+  bottom: calc(3.15rem * var(--stage-scale));
+  left: 42%;
+  display: flex;
+  flex-wrap: wrap-reverse;
+  align-content: flex-start;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: calc(0.08rem * var(--stage-scale));
+  pointer-events: none;
+}
+
+.slime-party__actor {
+  position: relative;
+  flex: 0 0 min(calc(2.8rem * var(--stage-scale)), calc(100% / var(--slime-columns) - 0.08rem));
+  width: min(calc(2.8rem * var(--stage-scale)), calc(100% / var(--slime-columns) - 0.08rem));
+  aspect-ratio: 1 / 0.95;
+  border-radius: 50%;
+  outline: none;
+  pointer-events: auto;
+  cursor: help;
+  filter: drop-shadow(0 0.3rem 0.2rem rgb(0 0 0 / 0.64));
+  transform-origin: center bottom;
+  transition: filter 120ms ease, transform 120ms ease;
+}
+
+.slime-party--crowded {
+  right: auto;
+  left: 100%;
+  width: calc(15rem * var(--stage-scale));
+  justify-content: center;
+}
+
+.slime-party__actor:is(:hover, :focus-visible) {
+  z-index: 3;
+  filter: drop-shadow(0 0 0.28rem #8de871) drop-shadow(0 0.35rem 0.22rem #000);
+  transform: scale(1.16);
+}
+
+.slime-party__actor--spent {
+  filter: saturate(0.55) brightness(0.72) drop-shadow(0 0.3rem 0.2rem rgb(0 0 0 / 0.64));
+}
+
+.slime-party__art,
+.slime-party__command {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  pointer-events: none;
+}
+
+.slime-party__command {
+  z-index: 2;
+  width: 155%;
+  max-width: none;
+  height: 155%;
+  transform: translate(-12%, -24%);
+}
+
+.slime-party__actor--commanding {
+  z-index: 4;
+  animation: slime-party-command 1.55s cubic-bezier(0.32, 0.72, 0.28, 1) both;
+}
+
+.slime-party__actor--commanding .slime-party__art {
+  opacity: 0;
+}
+
+.slime-party__actor::after,
+.slime-party__actor[data-slime-vigor]:not([data-slime-vigor=''])::before {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  min-width: calc(1.05rem * var(--stage-scale));
+  height: calc(1.05rem * var(--stage-scale));
+  padding: 0 0.16rem;
+  place-items: center;
+  border: 1px solid rgb(255 244 186 / 0.68);
+  border-radius: 999px;
+  color: #fff4bd;
+  font: 700 min(0.62rem, calc(0.72rem * var(--stage-scale))) / 1 Georgia, serif;
+  text-shadow: 0 1px 2px #000;
+  background: rgb(25 56 28 / 0.94);
+  box-shadow: 0 1px 3px #000;
+}
+
+.slime-party__actor::after {
+  content: attr(data-slime-level);
+  right: 0;
+  bottom: 0;
+}
+
+.slime-party__actor[data-slime-vigor]:not([data-slime-vigor=''])::before {
+  content: attr(data-slime-vigor);
+  top: 0;
+  left: 0;
+  border-color: rgb(255 177 111 / 0.72);
+  color: #ffd1a0;
+  background: rgb(85 31 16 / 0.94);
+}
+
+.slime-party--crowded .slime-party__actor::after,
+.slime-party--crowded .slime-party__actor::before {
+  min-width: calc(0.55rem * var(--stage-scale));
+  height: calc(0.55rem * var(--stage-scale));
+  padding: 0 0.08rem;
+  font-size: min(0.36rem, calc(0.42rem * var(--stage-scale)));
+}
+
+.slime-party__summary {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes slime-party-command {
+  0%, 100% { transform: translateX(0) scale(1); }
+  18% { transform: translateX(-12%) scale(0.88, 1.08); }
+  52% { transform: translateX(52%) scale(1.12, 0.94); }
+  72% { transform: translateX(46%) scale(1.04); }
+}
+
+.board[data-rows='3'] .slime-party,
+.board[data-rows='4'] .slime-party {
+  right: 0;
+  left: 20%;
+  justify-content: center;
+}
+
+.board[data-rows='3'] .slime-party--crowded,
+.board[data-rows='4'] .slime-party--crowded {
+  right: 0;
+  bottom: calc(10.5rem * var(--stage-scale));
+  left: 0;
+  width: auto;
+}
+
+.board[data-rows='3'] .slime-party--crowded .slime-party__actor::after,
+.board[data-rows='3'] .slime-party--crowded .slime-party__actor::before,
+.board[data-rows='4'] .slime-party--crowded .slime-party__actor::after,
+.board[data-rows='4'] .slime-party--crowded .slime-party__actor::before {
+  display: none;
+}
+
+.board[data-rows='3'] .slime-party__actor,
+.board[data-rows='4'] .slime-party__actor {
+  flex-basis: min(calc(2.25rem * var(--stage-scale)), calc(100% / var(--slime-columns) - 0.08rem));
+  width: min(calc(2.25rem * var(--stage-scale)), calc(100% / var(--slime-columns) - 0.08rem));
+}
+
+.board[data-rows='3'] .slime-party__actor::after,
+.board[data-rows='3'] .slime-party__actor::before,
+.board[data-rows='4'] .slime-party__actor::after,
+.board[data-rows='4'] .slime-party__actor::before {
+  min-width: calc(0.72rem * var(--stage-scale));
+  height: calc(0.72rem * var(--stage-scale));
+  font-size: min(0.46rem, calc(0.52rem * var(--stage-scale)));
+}
+
+@media (max-width: 600px) {
+  .slime-party,
+  .slime-party--crowded {
+    right: 0;
+    bottom: calc(7.6rem * var(--stage-scale));
+    left: 0;
+    width: auto;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slime-party__actor {
+    transition: none;
+  }
+
+  .slime-party__actor--commanding {
+    animation: none;
+  }
 }
 
 .seat__portrait::before,

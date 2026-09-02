@@ -6,7 +6,9 @@
 // derived state the screen renders from or plays the sound the change calls for.
 // What they watch arrives as arguments or from the browser; none of them reaches
 // into the component that calls it.
-import { characterAttackContactMs, latestTargetPresentationEvent, ORB_END_TURN_STAGGER_MS } from './vfx.tsx'
+import { characterAttackContactMs, ORB_END_TURN_STAGGER_MS,
+  SLIME_COMMAND_ANIMATION_MS } from './vfx.tsx'
+import { cardDef } from '../../game/cards.ts'
 import type { CombatPresentationEvent, CombatState } from '../../game/combat.ts'
 import { drawnCardUids } from '../board-signals.ts'
 import { cardSfxRecipe, potionSfxRecipe, shivSfxRecipe } from '../combat-sfx.ts'
@@ -14,6 +16,71 @@ import { playCombatSound, playSoundEffect } from '../sfx.ts'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 export const ACTOR_DEFEAT_MS = 1_800
+
+export type TargetContactDeadline = { at: number; throughSeq: number }
+
+function slimeAnimationDelays(
+  events: readonly CombatPresentationEvent[],
+  queueEnd: Map<string, number>,
+): Map<number, number> {
+  const now = performance.now()
+  const delays = new Map<number, number>()
+  const batchStart = new Map<string, number>()
+  for (const event of events) {
+    if (event.kind === 'slime') {
+      const key = `command:${event.actorId}:${event.slimeUid}`
+      if (event.animationIndex === 0 || !batchStart.has(key)) {
+        batchStart.set(key, Math.max(now, queueEnd.get(key) ?? now))
+      }
+      const start = batchStart.get(key)!
+      delays.set(event.seq, start - now + event.animationIndex * SLIME_COMMAND_ANIMATION_MS)
+      queueEnd.set(key, Math.max(queueEnd.get(key) ?? now,
+        start + (event.animationIndex + 1) * SLIME_COMMAND_ANIMATION_MS))
+      continue
+    }
+    const key = event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
+      ? `spawn:${event.actorId}`
+      : undefined
+    if (!key) continue
+    const start = Math.max(now, queueEnd.get(key) ?? now)
+    delays.set(event.seq, start - now)
+    queueEnd.set(key, start + SLIME_COMMAND_ANIMATION_MS)
+  }
+  return delays
+}
+
+function updateTargetContactDeadlines(
+  state: CombatState,
+  events: readonly CombatPresentationEvent[],
+  queueEnd: Map<string, number>,
+  deadlines: Map<string, TargetContactDeadline>,
+): Map<number, number> {
+  const delays = slimeAnimationDelays(events, queueEnd)
+  const now = performance.now()
+  for (const [target, deadline] of deadlines) {
+    if (deadline.at <= now) deadlines.set(target, { ...deadline, at: 0 })
+  }
+  for (const event of events) {
+    for (const target of new Set([...event.enemyIds, ...event.playerIds])) {
+      const existing = deadlines.get(target)
+      const slimeAnimation = event.kind === 'slime' ||
+        event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
+      const contact = slimeAnimation
+        ? 800 + (delays.get(event.seq) ?? 0)
+        : characterAttackContactMs(state, target, event)
+      deadlines.set(target, {
+        at: contact > 0 ? Math.max(existing?.at ?? now, now + contact) : existing?.at ?? 0,
+        throughSeq: Math.max(existing?.throughSeq ?? -1, event.seq),
+      })
+    }
+  }
+  return delays
+}
+
+const remainingTargetContactMs = (
+  deadlines: ReadonlyMap<string, TargetContactDeadline>,
+  targetId: string,
+): number => Math.max(0, (deadlines.get(targetId)?.at ?? 0) - performance.now())
 
 function shouldReduceMotion(): boolean {
   const root = document.documentElement.dataset
@@ -59,6 +126,9 @@ export function useStruck(
   const previousConnected = useRef(authoritativeConnected)
   const previousCombat = useRef(state.combatId)
   const previousPresentationSeq = useRef(state.presentationEvents?.at(-1)?.seq ?? -1)
+  const previousReducedEffects = useRef(reducedEffects)
+  const slimeQueueEnd = useRef(new Map<string, number>())
+  const contactDeadlines = useRef(new Map<string, TargetContactDeadline>())
   const nextBeats = useRef(new Map<string, number>())
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   const [hits, setHits] = useState<Map<string, { beat: number; damage: number; delayMs: number }[]>>(new Map())
@@ -73,6 +143,8 @@ export function useStruck(
       ? latestPresentation
       : undefined
     const combatChanged = state.combatId !== previousCombat.current
+    const motionCollapsed = reducedEffects && !previousReducedEffects.current
+    previousReducedEffects.current = reducedEffects
     previousCombat.current = state.combatId
     previousPresentationSeq.current = combatChanged
       ? (latestPresentation?.seq ?? -1)
@@ -81,6 +153,12 @@ export function useStruck(
       authoritativeConnected === false || previousConnected.current === false || combatChanged
     previousRestoration.current = authoritativeRestoration
     previousConnected.current = authoritativeConnected
+    if (refreshed || reducedEffects) {
+      slimeQueueEnd.current.clear()
+      contactDeadlines.current.clear()
+    } else {
+      updateTargetContactDeadlines(state, newPresentations, slimeQueueEnd.current, contactDeadlines.current)
+    }
     for (const entity of [...state.players, ...state.enemies]) {
       const id = 'uid' in entity ? entity.uid : entity.id
       now.set(id, entity.hp)
@@ -90,6 +168,12 @@ export function useStruck(
       }
     }
     previous.current = now
+    if (motionCollapsed) {
+      for (const timer of timers.current.values()) clearTimeout(timer)
+      timers.current.clear()
+      nextBeats.current.clear()
+      setHits((current) => current.size === 0 ? current : new Map())
+    }
     if (refreshed) {
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
@@ -107,10 +191,9 @@ export function useStruck(
       const beat = (nextBeats.current.get(id) ?? 0) + 1
       const token = `${id}:${beat}`
       nextBeats.current.set(id, beat)
-      const targetPresentation = latestTargetPresentationEvent(newPresentations, id)
       const delay = reducedEffects
         ? 0
-        : characterAttackContactMs(state, id, targetPresentation ?? newPresentation)
+        : remainingTargetContactMs(contactDeadlines.current, id) || characterAttackContactMs(state, id, newPresentation)
       setHits((current) => {
         const next = new Map(current)
         next.set(id, [...(next.get(id) ?? []), { beat, damage: amount, delayMs: delay }])
@@ -187,12 +270,15 @@ export function useFalling(
   state: CombatState,
   authoritativeRestoration?: number,
   authoritativeConnected?: boolean,
+  reducedEffects = false,
 ): Set<string> {
   const previous = useRef(new Map<string, boolean>())
   const previousRestoration = useRef(authoritativeRestoration)
   const previousConnected = useRef(authoritativeConnected)
   const previousCombat = useRef(state.combatId)
   const previousPresentationSeq = useRef(state.presentationEvents?.at(-1)?.seq ?? -1)
+  const slimeQueueEnd = useRef(new Map<string, number>())
+  const contactDeadlines = useRef(new Map<string, TargetContactDeadline>())
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   const [falling, setFalling] = useState<Set<string>>(new Set())
 
@@ -211,7 +297,7 @@ export function useFalling(
   const refreshed = (authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current) ||
     authoritativeConnected === false || previousConnected.current === false || state.combatId !== previousCombat.current
   const visibleFalling = new Set(falling)
-  if (!refreshed) for (const entity of [...state.players, ...state.enemies]) {
+  if (!refreshed && !reducedEffects) for (const entity of [...state.players, ...state.enemies]) {
     const id = 'uid' in entity ? entity.uid : entity.id
     if (previous.current.get(id) === false && entity.dead) visibleFalling.add(id)
   }
@@ -228,12 +314,18 @@ export function useFalling(
       : Math.max(previousPresentationSeq.current, latestPresentation?.seq ?? -1)
     previousRestoration.current = authoritativeRestoration
     previousConnected.current = authoritativeConnected
+    if (refreshed || reducedEffects) {
+      slimeQueueEnd.current.clear()
+      contactDeadlines.current.clear()
+    } else {
+      updateTargetContactDeadlines(state, newPresentations, slimeQueueEnd.current, contactDeadlines.current)
+    }
     for (const entity of [...state.players, ...state.enemies]) {
       const id = 'uid' in entity ? entity.uid : entity.id
       now.set(id, entity.dead)
-      if (refreshed) continue
+      if (refreshed || reducedEffects) continue
       if (previous.current.get(id) !== false || !entity.dead) continue
-      const delay = characterAttackContactMs(state, id, latestTargetPresentationEvent(newPresentations, id))
+      const delay = remainingTargetContactMs(contactDeadlines.current, id)
       setFalling((current) => new Set(current).add(id))
       const prior = timers.current.get(id)
       if (prior) clearTimeout(prior)
@@ -247,11 +339,11 @@ export function useFalling(
       }, ACTOR_DEFEAT_MS + delay))
     }
     previous.current = now
-    if (!refreshed) return
+    if (!refreshed && !reducedEffects) return
     for (const timer of timers.current.values()) clearTimeout(timer)
     timers.current.clear()
     setFalling((current) => current.size === 0 ? current : new Set())
-  }, [authoritativeConnected, authoritativeRestoration, state])
+  }, [authoritativeConnected, authoritativeRestoration, reducedEffects, state])
 
   useEffect(() => () => {
     for (const timer of timers.current.values()) clearTimeout(timer)
@@ -266,13 +358,19 @@ export function usePresentationEvents(
   animateOpeningHand: boolean,
   authoritativeRestoration?: number,
   authoritativeConnected?: boolean,
-): CombatPresentationEvent[] {
+  reducedEffects = false,
+): { events: CombatPresentationEvent[]; contactDeadlines: ReadonlyMap<string, TargetContactDeadline> } {
   const baseline = useRef<number | null>(animateOpeningHand ? -1 : null)
   const previousCombat = useRef(state.combatId)
   const previousRestoration = useRef(authoritativeRestoration)
   const previousConnected = useRef(authoritativeConnected)
+  const previousReducedEffects = useRef(reducedEffects)
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const slimeQueueEnd = useRef(new Map<string, number>())
   const [active, setActive] = useState<CombatPresentationEvent[]>([])
+  const contactDeadlines = useRef(new Map<string, TargetContactDeadline>())
+  const [targetContactDeadlines, setTargetContactDeadlines] =
+    useState<ReadonlyMap<string, TargetContactDeadline>>(new Map())
 
   useLayoutEffect(() => {
     const events = state.presentationEvents ?? []
@@ -281,24 +379,32 @@ export function usePresentationEvents(
     const restored = (authoritativeRestoration !== undefined &&
       authoritativeRestoration !== previousRestoration.current) ||
       authoritativeConnected === false || previousConnected.current === false
+    const motionChanged = reducedEffects !== previousReducedEffects.current
     previousCombat.current = state.combatId
     previousRestoration.current = authoritativeRestoration
     previousConnected.current = authoritativeConnected
+    previousReducedEffects.current = reducedEffects
 
-    if (baseline.current === null || combatChanged || restored) {
+    if (baseline.current === null || combatChanged || restored || reducedEffects || motionChanged) {
       baseline.current = combatChanged ? latest : Math.max(baseline.current ?? -1, latest)
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
+      slimeQueueEnd.current.clear()
+      contactDeadlines.current.clear()
       setActive((current) => current.length === 0 ? current : [])
+      setTargetContactDeadlines((current) => current.size === 0 ? current : new Map())
       return
     }
 
     const unseen = events.filter((event) => event.seq > baseline.current!)
     baseline.current = Math.max(baseline.current, latest)
     if (unseen.length === 0) return
+    const delays = updateTargetContactDeadlines(state, unseen, slimeQueueEnd.current, contactDeadlines.current)
+    setTargetContactDeadlines(new Map(contactDeadlines.current))
+    const immediate = unseen.filter((event) => (delays.get(event.seq) ?? 0) === 0)
     setActive((current) => [
       ...current.filter((event) => !unseen.some((next) => next.seq === event.seq)),
-      ...unseen,
+      ...immediate,
     ])
     // Multiple end-of-turn orbs can arrive in this same batch (the engine
     // resolves the whole ordered list before the client sees any of it), and
@@ -324,20 +430,34 @@ export function usePresentationEvents(
         // unmount the last pose before it paints.
         ? characterAttackContactMs(state, lastTarget, event)
         : 0
-      const lifetime = (attackContact > 0 ? Math.max(1_800, attackContact + 1_200) : 900) +
+      const slimeAnimation = event.kind === 'slime' ||
+        event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
+      const delay = delays.get(event.seq) ?? 0
+      const localAttackContact = event.kind === 'slime' ? 800 : Math.max(0, attackContact - delay)
+      const lifetime = (localAttackContact > 0
+        ? Math.max(1_800, localAttackContact + 1_200)
+        : slimeAnimation ? 1_650 : 900) +
         staggerIndex * ORB_END_TURN_STAGGER_MS
-      timers.current.set(event.seq, setTimeout(() => {
+      const remove = () => timers.current.set(event.seq, setTimeout(() => {
         timers.current.delete(event.seq)
         setActive((current) => current.filter((candidate) => candidate.seq !== event.seq))
       }, lifetime))
+      if (delay === 0) remove()
+      else timers.current.set(event.seq, setTimeout(() => {
+        setActive((current) => [
+          ...current.filter((candidate) => candidate.seq !== event.seq),
+          event,
+        ])
+        remove()
+      }, delay))
     }
-  }, [authoritativeConnected, authoritativeRestoration, state.combatId, state.presentationEvents])
+  }, [authoritativeConnected, authoritativeRestoration, reducedEffects, state.combatId, state.presentationEvents])
 
   useEffect(() => () => {
     for (const timer of timers.current.values()) clearTimeout(timer)
   }, [])
 
-  return active
+  return { events: active, contactDeadlines: targetContactDeadlines }
 }
 
 export function usePersonalCombatSoundEffects(
@@ -379,7 +499,8 @@ export function usePersonalCombatSoundEffects(
       impactDue.current.delete(seq)
     }
     if (motionCollapsed) for (const event of events) {
-      if (!played.current.has(event.seq) || event.kind === 'potion' || event.kind === 'orb') continue
+      if (!played.current.has(event.seq) || event.kind === 'potion' || event.kind === 'orb' ||
+        event.kind === 'slime') continue
       if ((impactDue.current.get(event.seq) ?? 0) <= performance.now()) continue
       const target = event.enemyIds[0]
       if (!target || characterAttackContactMs(state, target, event) <= 0) continue
@@ -408,6 +529,10 @@ export function usePersonalCombatSoundEffects(
         continue
       }
       if (event.kind === 'orb') {
+        played.current.add(event.seq)
+        continue
+      }
+      if (event.kind === 'slime') {
         played.current.add(event.seq)
         continue
       }

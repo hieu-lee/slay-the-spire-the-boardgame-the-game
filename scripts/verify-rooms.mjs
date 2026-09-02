@@ -9473,6 +9473,33 @@ check('Orb channel presentation events stay public and actor-only across room sn
   }])
 })
 
+check('Slime Command presentation identities stay public without forwarding private fields', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.presentationEvents = [{
+    seq: 1,
+    kind: 'slime',
+    actorId: a.playerId,
+    sourceId: 'slime_boss_spike_slime',
+    slimeUid: 'deployed-spike',
+    upgraded: true,
+    animationIndex: 0,
+    enemyIds: ['target-a', 'target-b'],
+    playerIds: [],
+    privateChoiceUid: 'must-not-cross-the-room-boundary',
+  }]
+  assertDeepEqual(snapshotFor(room, b.token).run.combat.presentationEvents, [{
+    seq: 1,
+    kind: 'slime',
+    actorId: a.playerId,
+    sourceId: 'slime_boss_spike_slime',
+    enemyIds: ['target-a', 'target-b'],
+    playerIds: [],
+    slimeUid: 'deployed-spike',
+    upgraded: true,
+    animationIndex: 0,
+  }])
+})
+
 check('resolved Guardian card types stay public across room snapshots', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.combat.presentationEvents = [{

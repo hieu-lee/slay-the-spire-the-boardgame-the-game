@@ -176,6 +176,7 @@ export type PresentationTargets = {
 
 export type CombatPresentationEvent = PresentationTargets & (
   | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number; resolvedType?: CardType }
+  | { kind: 'slime'; slimeUid: string; upgraded: boolean; animationIndex: number }
   | { kind: 'potion' }
   | { kind: 'shiv' }
   | { kind: 'orb'; orb: OrbType }
@@ -183,6 +184,7 @@ export type CombatPresentationEvent = PresentationTargets & (
 
 export type NewPresentationEvent = Omit<PresentationTargets, 'seq'> & (
   | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number; resolvedType?: CardType }
+  | { kind: 'slime'; slimeUid: string; upgraded: boolean; animationIndex: number }
   | { kind: 'potion' }
   | { kind: 'shiv' }
   | { kind: 'orb'; orb: OrbType }
@@ -329,6 +331,8 @@ export type PlayContext = {
   /** One independently chosen enemy for each Command that can target an enemy. */
   slimeEnemyUids?: string[]
   slimeEnemyChoiceIndex?: number
+  /** Repeat animation order within this one atomic card or trigger resolution. */
+  slimeAnimationCounts?: Record<string, number>
   /** Leeching Slime Commands waiting for the current card/trigger text to finish. */
   pendingSlimeCommandUids?: string[]
   invalidSlimeChoice?: boolean

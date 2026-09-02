@@ -13,7 +13,9 @@ import type {
 } from './types.ts'
 import type { TargetScope } from '../cards.ts'
 
-const PRESENTATION_EVENT_LIMIT = 12
+// A Slime Boss can deploy all 15 physical Slime cards, then Command all of
+// them with Rally the Troops before a client observes the resulting state.
+const PRESENTATION_EVENT_LIMIT = 24
 
 export function presentationTargets(
   state: CombatState,

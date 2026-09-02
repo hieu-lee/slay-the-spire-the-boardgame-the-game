@@ -1241,6 +1241,31 @@ let slimeHudAccess = null
 let slimeHudKeywordTips = null
 let slimeHudCommandTips = null
 let slimeHudOverlapsEndTurn = true
+let slimeBattlefieldLayout = null
+let slimeCommandVisual = null
+let slimeCommandContact = null
+let slimeCommandHitDelay = null
+let slimeCrossSnapshotHitDelay = null
+let slimeCommandHpTimeline = null
+let slimeCommandExpiryMs = null
+let slimeCommandRestarted = false
+let slimeCrossSnapshotOrdered = false
+let slimeLethalHeld = false
+let slimeLethalReleased = false
+let slimeReducedMotionQueueCleared = false
+let mixedSlimeOrdinaryHpTimeline = null
+let mixedOrdinarySlimeHpTimeline = null
+let ordinaryRapidHpTimeline = null
+let slimeSpawnVisual = null
+let slimeSpawnRestarted = false
+let slimeSpawnHpTimeline = null
+let slimeSingleMaxLayout = null
+let slimeMultiplayerLayout = null
+let slimeConcurrentMultiplayer = false
+const slimeLayoutCards = [
+  'armored', 'bruiser', 'evolution', 'leeching', 'massive', 'muscle', 'psychic',
+  'royal', 'scrappy', 'spike', 'spreading', 'sticky', 'taunting',
+]
 let hexaghostVisualState = null
 let hermitChamberInteractions = null
 let corruptedShardChamberLayout = null
@@ -1268,6 +1293,9 @@ for (const fixture of [
     Object.assign(next.combat.players[0], { character: fixture.character, name: fixture.name, chamber: [], chamberSlots: 0,
       guardianMode: null, heat: 0, soulburn: 0, slimes: [], ...fixture.fields })
     next.combat.players = [next.combat.players[0]]
+    if (fixture.character === 'slime_boss') for (const enemy of next.combat.enemies) {
+      enemy.row = next.combat.players[0].row
+    }
     window.__STS_DEBUG__.setRun(next)
   }, { run: combatAppearanceRun, fixture })
   const mechanicChips = page.locator(fixture.character === 'slime_boss'
@@ -1374,6 +1402,420 @@ for (const fixture of [
       return !status || !endTurn || status.left < endTurn.right && status.right > endTurn.left &&
         status.top < endTurn.bottom && status.bottom > endTurn.top
     })
+    await page.waitForFunction(() => [...document.querySelectorAll('.slime-party__art')]
+      .every((image) => image.complete && image.naturalWidth === 384))
+    slimeBattlefieldLayout = await page.locator('.slime-party').evaluate((party) => {
+      const seat = party.closest('.row__seat')?.querySelector('.seat')
+      const hp = seat?.querySelector(':scope > .bar')?.getBoundingClientRect()
+      const name = seat?.querySelector(':scope > .seat__name')?.getBoundingClientRect()
+      const handCards = [...document.querySelectorAll('.hand .card')].map((card) => card.getBoundingClientRect())
+      const endTurn = document.querySelector('.combat__end-turn')?.getBoundingClientRect()
+      const enemies = [...document.querySelectorAll('.enemy')].map((enemy) => enemy.getBoundingClientRect())
+      const actors = [...party.querySelectorAll('.slime-party__actor')].map((actor) => {
+        const box = actor.getBoundingClientRect()
+        return {
+          inViewport: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
+          clearOfHand: handCards.every((card) => box.right <= card.left || box.left >= card.right ||
+            box.bottom <= card.top || box.top >= card.bottom),
+          clearOfEndTurn: !endTurn || box.right <= endTurn.left || box.left >= endTurn.right ||
+            box.bottom <= endTurn.top || box.top >= endTurn.bottom,
+          clearOfEnemies: enemies.every((enemy) => box.right <= enemy.left || box.left >= enemy.right ||
+            box.bottom <= enemy.top || box.top >= enemy.bottom),
+          clearOfStatus: [hp, name].every((status) => !status || box.right <= status.left ||
+            box.left >= status.right || box.bottom <= status.top || box.top >= status.bottom),
+        }
+      })
+      return { actors, loaded: [...party.querySelectorAll('.slime-party__art')]
+        .every((image) => image.complete && image.naturalWidth === 384) }
+    })
+    const commandTarget = await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const actor = next.combat.players[0]
+      const target = next.combat.enemies[0]
+      const beforeHp = target.hp
+      const event = {
+        seq: 9_001,
+        kind: 'slime',
+        actorId: actor.id,
+        sourceId: actor.slimes[0].card.defId,
+        slimeUid: actor.slimes[0].card.uid,
+        upgraded: actor.slimes[0].card.upgraded,
+        animationIndex: 0,
+        enemyIds: [target.uid],
+        playerIds: [],
+      }
+      const spreading = actor.slimes[1]
+      next.combat.presentationEvents = [
+        event,
+        { ...event, seq: 9_002, animationIndex: 1 },
+        {
+          ...event,
+          seq: 9_003,
+          sourceId: spreading.card.defId,
+          slimeUid: spreading.card.uid,
+          upgraded: spreading.card.upgraded,
+          animationIndex: 0,
+        },
+      ]
+      target.hp = Math.max(1, target.hp - 1)
+      window.__STS_DEBUG__.setRun(next)
+      return { uid: target.uid, beforeHp, afterHp: target.hp, maxHp: target.maxHp }
+    })
+    const command = page.locator('.slime-party__actor[data-slime-uid="ui-hud-bruiser"] .slime-party__command')
+    await command.waitFor()
+    await page.waitForFunction(() => document.querySelector('.slime-party__command')?.naturalWidth === 256)
+    slimeCommandVisual = await command.evaluate((image, targetUid) => {
+      const target = document.querySelector(`[data-enemy-id="${targetUid}"]`)
+      const box = target?.getBoundingClientRect()
+      const commandBox = image.getBoundingClientRect()
+      return {
+        source: image.getAttribute('src'),
+        idleHidden: getComputedStyle(image.previousElementSibling).opacity === '0',
+        bossIdle: document.querySelector('.seat__portrait > img')?.getAttribute('src')?.endsWith('/slime_boss.webp'),
+        actorUid: image.closest('.slime-party__actor')?.dataset.slimeUid,
+        pointerEvents: getComputedStyle(image).pointerEvents,
+        overlapsTarget: Boolean(box && commandBox.left < box.right && commandBox.right > box.left &&
+          commandBox.top < box.bottom && commandBox.bottom > box.top),
+      }
+    }, commandTarget.uid)
+    slimeCommandContact = await page.evaluate(async () => {
+      const { characterAttackContactMs } = await import('/src/ui/combat-screen/vfx.tsx')
+      const state = window.__STS_DEBUG__.getRun().combat
+      return Math.max(...state.presentationEvents.map((event) =>
+        characterAttackContactMs(state, event.enemyIds[0], event)))
+    })
+    slimeCommandHitDelay = await page.locator('.enemy .hit-vfx').evaluate((hit) =>
+      Math.round(Number.parseFloat(getComputedStyle(hit).getPropertyValue('--hit-delay'))))
+    const targetBar = page.locator(`[data-enemy-id="${commandTarget.uid}"] .bar`)
+    slimeCommandHpTimeline = { initial: await targetBar.innerText() }
+    await page.screenshot({ path: join(outDir, 'downfall-slime-command.png') })
+    await command.evaluate((image) => { image.dataset.commandInstance = 'first' })
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const event = next.combat.presentationEvents.find((candidate) => candidate.seq === 9_001)
+      next.combat.presentationEvents.push({ ...event, seq: 9_004, animationIndex: 0 })
+      next.combat.enemies[0].hp = Math.max(1, next.combat.enemies[0].hp - 1)
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.waitForFunction(() => {
+      const image = document.querySelector('[data-slime-uid="ui-hud-bruiser"] .slime-party__command')
+      return image?.dataset.commandSeq === '9002'
+    })
+    slimeCommandRestarted = true
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const command = next.combat.presentationEvents.find((candidate) => candidate.seq === 9_004)
+      next.combat.presentationEvents.push({
+        seq: 9_005,
+        kind: 'orb',
+        orb: 'lightning',
+        actorId: command.actorId,
+        sourceId: 'zap',
+        enemyIds: command.enemyIds,
+        playerIds: [],
+      })
+      next.combat.enemies[0].hp = 0
+      next.combat.enemies[0].dead = true
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.waitForFunction((uid) => document.querySelectorAll(
+      `[data-enemy-id="${uid}"] .hit-vfx`).length >= 3, commandTarget.uid)
+    slimeCrossSnapshotHitDelay = await page.locator(
+      `[data-enemy-id="${commandTarget.uid}"] .hit-vfx`).last().evaluate((hit) =>
+      Math.round(Number.parseFloat(getComputedStyle(hit).getPropertyValue('--hit-delay'))))
+    slimeCommandHpTimeline.mid = await targetBar.innerText()
+    await page.waitForTimeout(950)
+    slimeCommandHpTimeline.afterOldContact = await targetBar.innerText()
+    commandTarget.afterHp = await page.evaluate((uid) => window.__STS_DEBUG__.getRun().combat.enemies
+      .find((enemy) => enemy.uid === uid).hp, commandTarget.uid)
+    await page.waitForFunction(() => document.querySelector(
+      '[data-slime-uid="ui-hud-bruiser"] .slime-party__command')?.dataset.commandSeq === '9004')
+    slimeCrossSnapshotOrdered = true
+    const commandExpiryStartedAt = Date.now()
+    await page.waitForFunction(({ uid, afterHp, maxHp }) =>
+      document.querySelector(`[data-enemy-id="${uid}"] .bar`)?.textContent?.trim() === `${afterHp}/${maxHp}`,
+    commandTarget)
+    slimeCommandHpTimeline.final = await targetBar.innerText()
+    slimeCommandHpTimeline.expected = {
+      initial: `${commandTarget.beforeHp}/${commandTarget.maxHp}`,
+      afterOldContact: `${commandTarget.beforeHp - 1}/${commandTarget.maxHp}`,
+      final: `${commandTarget.afterHp}/${commandTarget.maxHp}`,
+    }
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.presentationEvents = []
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.waitForFunction(() => !document.querySelector('.slime-party__command'))
+    slimeCommandExpiryMs = Date.now() - commandExpiryStartedAt
+    slimeLethalHeld = await page.locator(`[data-enemy-id="${commandTarget.uid}"].enemy--dead.enemy--falling`).count() === 1
+    await page.locator(`[data-enemy-id="${commandTarget.uid}"]`).waitFor({ state: 'detached' })
+    slimeLethalReleased = true
+    const spawnTarget = await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const target = next.combat.enemies.find((enemy) => enemy.uid === uid)
+      Object.assign(target, { hp: target.maxHp, dead: false })
+      next.combat.presentationEvents = []
+      window.__STS_DEBUG__.setRun(next)
+      return { uid, beforeHp: target.hp, maxHp: target.maxHp }
+    }, commandTarget.uid)
+    const spawnTargetBar = page.locator(`[data-enemy-id="${spawnTarget.uid}"] .bar`)
+    await spawnTargetBar.waitFor()
+    await page.waitForFunction(({ uid, beforeHp, maxHp }) => document.querySelector(
+      `[data-enemy-id="${uid}"] .bar`)?.textContent?.trim() === `${beforeHp}/${maxHp}`, spawnTarget)
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const actor = next.combat.players[0]
+      actor.slimes.push({
+        card: { uid: 'ui-spawn-massive', defId: 'slime_boss_massive_slime', upgraded: false },
+        level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
+      })
+      const event = {
+        seq: 9_010,
+        kind: 'card',
+        actorId: actor.id,
+        sourceId: 'slime_boss_massive_slime',
+        upgraded: false,
+        copied: false,
+        energy: 1,
+        enemyIds: [uid],
+        playerIds: [],
+      }
+      next.combat.presentationEvents = [event, { ...event, seq: 9_011 }]
+      next.combat.enemies.find((enemy) => enemy.uid === uid).hp -= 1
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    slimeSpawnHpTimeline = { initial: await spawnTargetBar.innerText() }
+    const spawningBoss = page.locator('.seat__portrait > img[src$="/slime_boss-spawn.webp"]')
+    await spawningBoss.waitFor()
+    await page.waitForFunction(() => document.querySelector('.seat__portrait > img')?.naturalWidth === 256)
+    slimeSpawnVisual = await spawningBoss.evaluate((image) => ({
+      source: image.getAttribute('src'),
+      loaded: image.complete && image.naturalWidth === 256,
+      minionCommandHidden: !document.querySelector('.slime-party__command'),
+      genericVfxHidden: !document.querySelector('.combat-vfx'),
+    }))
+    await spawningBoss.evaluate((image) => { image.dataset.spawnInstance = 'first' })
+    await page.waitForFunction(() => {
+      const image = document.querySelector('.seat__portrait > img[src$="/slime_boss-spawn.webp"]')
+      return image && image.dataset.spawnInstance !== 'first'
+    })
+    slimeSpawnRestarted = true
+    await page.waitForTimeout(600)
+    slimeSpawnHpTimeline.mid = await spawnTargetBar.innerText()
+    await page.screenshot({ path: join(outDir, 'downfall-slime-spawn.png') })
+    await page.waitForFunction(({ uid, beforeHp, maxHp }) => document.querySelector(
+      `[data-enemy-id="${uid}"] .bar`)?.textContent?.trim() === `${beforeHp - 1}/${maxHp}`, spawnTarget)
+    slimeSpawnHpTimeline.final = await spawnTargetBar.innerText()
+    slimeSpawnHpTimeline.expected = {
+      initial: `${spawnTarget.beforeHp}/${spawnTarget.maxHp}`,
+      final: `${spawnTarget.beforeHp - 1}/${spawnTarget.maxHp}`,
+    }
+    await page.evaluate(() => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.presentationEvents = []
+      window.__STS_DEBUG__.setRun(next)
+    })
+    await page.waitForFunction(() => document.querySelector('.seat__portrait > img')
+      ?.getAttribute('src')?.endsWith('/slime_boss.webp'))
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const actor = next.combat.players[0]
+      const slime = actor.slimes[0]
+      const event = {
+        seq: 9_020,
+        kind: 'slime',
+        actorId: actor.id,
+        sourceId: slime.card.defId,
+        slimeUid: slime.card.uid,
+        upgraded: slime.card.upgraded,
+        animationIndex: 0,
+        enemyIds: [uid],
+        playerIds: [],
+      }
+      next.combat.presentationEvents = [event, { ...event, seq: 9_021, animationIndex: 1 }]
+      const target = next.combat.enemies.find((enemy) => enemy.uid === uid)
+      Object.assign(target, { hp: 0, dead: true })
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.locator(`[data-enemy-id="${spawnTarget.uid}"] .hit-vfx`).waitFor()
+    await page.locator('.slime-party__command').waitFor()
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.locator(`[data-enemy-id="${spawnTarget.uid}"]`).waitFor({ state: 'detached' })
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.waitForTimeout(100)
+    slimeReducedMotionQueueCleared = await page.evaluate((uid) =>
+      !document.querySelector('.slime-party__command') && !document.querySelector('.hit-vfx') &&
+        !document.querySelector(`[data-enemy-id="${uid}"]`),
+    spawnTarget.uid)
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const target = next.combat.enemies.find((enemy) => enemy.uid === uid)
+      Object.assign(target, { hp: target.maxHp, dead: false })
+      next.combat.presentationEvents = []
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.locator(`[data-enemy-id="${spawnTarget.uid}"]`).waitFor()
+    mixedSlimeOrdinaryHpTimeline = { initial: await spawnTargetBar.innerText() }
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const actor = next.combat.players[0]
+      const slime = actor.slimes[0]
+      next.combat.presentationEvents = [{
+        seq: 9_025,
+        kind: 'slime',
+        actorId: actor.id,
+        sourceId: slime.card.defId,
+        slimeUid: slime.card.uid,
+        upgraded: slime.card.upgraded,
+        animationIndex: 0,
+        enemyIds: [uid],
+        playerIds: [],
+      }]
+      next.combat.enemies.find((enemy) => enemy.uid === uid).hp -= 1
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.waitForTimeout(100)
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const actor = next.combat.players[0]
+      actor.character = 'defect'
+      next.combat.presentationEvents.push({
+        seq: 9_026,
+        kind: 'card',
+        actorId: actor.id,
+        sourceId: 'strike_defect',
+        upgraded: false,
+        copied: false,
+        energy: 1,
+        enemyIds: [uid],
+        playerIds: [],
+      })
+      next.combat.enemies.find((enemy) => enemy.uid === uid).hp -= 1
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.waitForTimeout(800)
+    mixedSlimeOrdinaryHpTimeline.mid = await spawnTargetBar.innerText()
+    await page.waitForTimeout(400)
+    mixedSlimeOrdinaryHpTimeline.final = await spawnTargetBar.innerText()
+    mixedSlimeOrdinaryHpTimeline.expected = {
+      initial: `${spawnTarget.maxHp}/${spawnTarget.maxHp}`,
+      mid: `${spawnTarget.maxHp - 1}/${spawnTarget.maxHp}`,
+      final: `${spawnTarget.maxHp - 2}/${spawnTarget.maxHp}`,
+    }
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.players[0].character = 'slime_boss'
+      const target = next.combat.enemies.find((enemy) => enemy.uid === uid)
+      Object.assign(target, { hp: target.maxHp, dead: false })
+      next.combat.presentationEvents = []
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.waitForFunction(() => document.querySelector('.seat__portrait > img')
+      ?.getAttribute('src')?.endsWith('/slime_boss.webp'))
+    mixedOrdinarySlimeHpTimeline = { initial: await spawnTargetBar.innerText() }
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const actor = next.combat.players[0]
+      actor.character = 'ironclad'
+      next.combat.presentationEvents = [{
+        seq: 9_027,
+        kind: 'card',
+        actorId: actor.id,
+        sourceId: 'strike_ironclad',
+        upgraded: false,
+        copied: false,
+        energy: 1,
+        enemyIds: [uid],
+        playerIds: [],
+      }]
+      next.combat.enemies.find((enemy) => enemy.uid === uid).hp -= 1
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.waitForTimeout(100)
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const actor = next.combat.players[0]
+      actor.character = 'slime_boss'
+      const slime = actor.slimes[0]
+      next.combat.presentationEvents.push({
+        seq: 9_028,
+        kind: 'slime',
+        actorId: actor.id,
+        sourceId: slime.card.defId,
+        slimeUid: slime.card.uid,
+        upgraded: slime.card.upgraded,
+        animationIndex: 0,
+        enemyIds: [uid],
+        playerIds: [],
+      })
+      next.combat.enemies.find((enemy) => enemy.uid === uid).hp -= 1
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.waitForTimeout(600)
+    mixedOrdinarySlimeHpTimeline.mid = await spawnTargetBar.innerText()
+    await page.waitForFunction(({ uid, maxHp }) => document.querySelector(
+      `[data-enemy-id="${uid}"] .bar`)?.textContent?.trim() === `${maxHp - 2}/${maxHp}`, spawnTarget)
+    mixedOrdinarySlimeHpTimeline.final = await spawnTargetBar.innerText()
+    mixedOrdinarySlimeHpTimeline.expected = {
+      initial: `${spawnTarget.maxHp}/${spawnTarget.maxHp}`,
+      mid: `${spawnTarget.maxHp - 1}/${spawnTarget.maxHp}`,
+      final: `${spawnTarget.maxHp - 2}/${spawnTarget.maxHp}`,
+    }
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const target = next.combat.enemies.find((enemy) => enemy.uid === uid)
+      Object.assign(target, { hp: target.maxHp, dead: false })
+      next.combat.presentationEvents = []
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.waitForFunction(({ uid, maxHp }) => document.querySelector(
+      `[data-enemy-id="${uid}"] .bar`)?.textContent?.trim() === `${maxHp}/${maxHp}`, spawnTarget)
+    ordinaryRapidHpTimeline = { initial: await spawnTargetBar.innerText() }
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      const actor = next.combat.players[0]
+      actor.character = 'defect'
+      next.combat.presentationEvents = [{
+        seq: 9_030,
+        kind: 'card',
+        actorId: actor.id,
+        sourceId: 'strike_defect',
+        upgraded: false,
+        copied: false,
+        energy: 1,
+        enemyIds: [uid],
+        playerIds: [],
+      }]
+      next.combat.enemies.find((enemy) => enemy.uid === uid).hp -= 1
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.waitForTimeout(300)
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.presentationEvents.push({ ...next.combat.presentationEvents[0], seq: 9_031 })
+      next.combat.enemies.find((enemy) => enemy.uid === uid).hp -= 1
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.waitForTimeout(900)
+    ordinaryRapidHpTimeline.mid = await spawnTargetBar.innerText()
+    await page.waitForTimeout(350)
+    ordinaryRapidHpTimeline.final = await spawnTargetBar.innerText()
+    ordinaryRapidHpTimeline.expected = {
+      initial: `${spawnTarget.maxHp}/${spawnTarget.maxHp}`,
+      mid: `${spawnTarget.maxHp - 1}/${spawnTarget.maxHp}`,
+      final: `${spawnTarget.maxHp - 2}/${spawnTarget.maxHp}`,
+    }
+    await page.evaluate((uid) => {
+      const next = structuredClone(window.__STS_DEBUG__.getRun())
+      next.combat.players[0].character = 'slime_boss'
+      const target = next.combat.enemies.find((enemy) => enemy.uid === uid)
+      Object.assign(target, { hp: target.maxHp, dead: false })
+      next.combat.presentationEvents = []
+      window.__STS_DEBUG__.setRun(next)
+    }, spawnTarget.uid)
+    await page.waitForFunction(() => document.querySelector('.seat__portrait > img')
+      ?.getAttribute('src')?.endsWith('/slime_boss.webp'))
   }
   await page.screenshot({ path: join(outDir, `downfall-${fixture.character}-compact-hud.png`) })
   if (fixture.character === 'guardian') {
@@ -1449,6 +1891,209 @@ for (const fixture of [
         '/assets/icons/hermit-chamber-loaded.png')
     await page.waitForTimeout(250)
   }
+}
+
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.screenshot({ path: join(outDir, 'downfall-slime-single-player.png') })
+await page.evaluate((slimeCards) => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  const actor = next.combat.players[0]
+  actor.slimes = slimeCards.map((slug, index) => ({
+    card: { uid: `slime-single-${slug}`, defId: `slime_boss_${slug}_slime`, upgraded: false },
+    level: index % 3 + 1, vigor: index % 4, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
+  }))
+  next.combat.presentationEvents = []
+  window.__STS_DEBUG__.setRun(next)
+}, slimeLayoutCards)
+await page.waitForFunction((count) => document.querySelectorAll('.slime-party__actor').length === count &&
+  [...document.querySelectorAll('.slime-party__art')].every((image) => image.complete && image.naturalWidth === 384),
+slimeLayoutCards.length)
+slimeSingleMaxLayout = await page.locator('.row__seat').first().evaluate((row) => {
+  const stageBox = row.closest('.row')?.getBoundingClientRect()
+  const seat = row.querySelector('.seat')
+  const hp = seat?.querySelector(':scope > .bar')?.getBoundingClientRect()
+  const name = seat?.querySelector(':scope > .seat__name')?.getBoundingClientRect()
+  const portrait = seat?.querySelector('.seat__portrait')?.getBoundingClientRect()
+  const party = row.querySelector('.slime-party')
+  const actors = [...(party?.querySelectorAll('.slime-party__actor') ?? [])].map((actor) => {
+    const box = actor.getBoundingClientRect()
+    return {
+      inViewport: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
+      inStage: !!stageBox && box.left >= stageBox.left && box.right <= stageBox.right &&
+        box.top >= stageBox.top && box.bottom <= stageBox.bottom,
+      clearOfHp: !hp || box.right <= hp.left || box.left >= hp.right || box.bottom <= hp.top || box.top >= hp.bottom,
+      clearOfName: !name || box.right <= name.left || box.left >= name.right ||
+        box.bottom <= name.top || box.top >= name.bottom,
+      clearOfPortrait: !portrait || box.right <= portrait.left || box.left >= portrait.right ||
+        box.bottom <= portrait.top || box.top >= portrait.bottom,
+    }
+  })
+  return { actors }
+})
+await page.screenshot({ path: join(outDir, 'downfall-slime-single-max.png') })
+await page.evaluate(({ run, slimeCards }) => {
+  const next = structuredClone(run)
+  const template = next.combat.players[0]
+  next.combat.phase = 'player'
+  next.combat.ruleset = 'downfall'
+  next.combat.presentationEvents = []
+  next.combat.players = Array.from({ length: 4 }, (_, index) => ({
+    ...structuredClone(template),
+    id: index === 0 ? template.id : `slime-layout-${index + 1}`,
+    name: `Slime Boss ${index + 1}`,
+    row: index,
+    character: 'slime_boss',
+    slimes: slimeCards.map((slug, slimeIndex) => ({
+      card: { uid: `shared-${slug}`, defId: `slime_boss_${slug}_slime`, upgraded: false },
+      level: slimeIndex + 1, vigor: slimeIndex, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
+    })),
+  }))
+  window.__STS_DEBUG__.setRun(next)
+}, { run: combatAppearanceRun, slimeCards: slimeLayoutCards })
+await page.waitForFunction(() => document.querySelectorAll('.slime-party').length === 4 &&
+  [...document.querySelectorAll('.slime-party__art')].every((image) => image.complete && image.naturalWidth === 384))
+slimeMultiplayerLayout = await page.locator('.row__seat').evaluateAll((rows) => rows.map((row) => {
+  const seat = row.querySelector('.seat')
+  const seatBox = row.getBoundingClientRect()
+  const hp = seat?.querySelector(':scope > .bar')?.getBoundingClientRect()
+  const name = seat?.querySelector(':scope > .seat__name')?.getBoundingClientRect()
+  const portrait = seat?.querySelector('.seat__portrait')?.getBoundingClientRect()
+  const party = row.querySelector('.slime-party')
+  const actors = [...(party?.querySelectorAll('.slime-party__actor') ?? [])].map((actor) => {
+    const box = actor.getBoundingClientRect()
+    return {
+      inBoard: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
+      clearOfHp: !hp || box.right <= hp.left || box.left >= hp.right || box.bottom <= hp.top || box.top >= hp.bottom,
+      clearOfName: !name || box.right <= name.left || box.left >= name.right ||
+        box.bottom <= name.top || box.top >= name.bottom,
+      clearOfPortrait: !portrait || box.right <= portrait.left || box.left >= portrait.right ||
+        box.bottom <= portrait.top || box.top >= portrait.bottom,
+      inSeatRow: box.top >= seatBox.top && box.bottom <= seatBox.bottom,
+    }
+  })
+  return { actors, loaded: [...(party?.querySelectorAll('.slime-party__art') ?? [])]
+    .every((image) => image.complete && image.naturalWidth === 384) }
+}))
+await page.screenshot({ path: join(outDir, 'downfall-slime-four-player.png') })
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.presentationEvents = next.combat.players.slice(0, 2).map((actor, index) => ({
+    seq: 9_100 + index,
+    kind: 'slime',
+    actorId: actor.id,
+    sourceId: actor.slimes[0].card.defId,
+    slimeUid: actor.slimes[0].card.uid,
+    upgraded: false,
+    animationIndex: 0,
+    enemyIds: [next.combat.enemies[0].uid],
+    playerIds: [],
+  }))
+  window.__STS_DEBUG__.setRun(next)
+})
+await page.waitForFunction(() => document.querySelectorAll('.slime-party__actor--commanding').length === 2,
+  undefined, { timeout: 500 })
+slimeConcurrentMultiplayer = true
+check('Slime Boss minions use battlefield actors and their own one-shot animations', () => {
+  assertDeepEqual(downfallMechanicLabels.slime_boss, [
+    'Bruiser · L2 · Strength 3 · Cmd 1',
+    'Armored · L3 · Strength 4 · Cmd 1',
+  ])
+  assert(slimeHudAccess?.every((chip) => chip.focusable && chip.focused && chip.visible),
+    `Slime actors are not keyboard-reachable in the narrow HUD: ${JSON.stringify(slimeHudAccess)}`)
+  assert(!slimeHudOverlapsEndTurn, 'Slime actors overlap End turn in the narrow HUD')
+  assert(slimeHudAccess?.[0]?.label?.includes('ready to Command'), 'Bruiser command availability is missing')
+  assert(slimeHudAccess?.[1]?.label?.includes('Command limit reached'), 'Armored command limit is missing')
+  assert(slimeHudAccess?.every((chip) => chip.label?.includes('Strength') && !chip.label.includes('Vigor')),
+    `Slime status uses Guardian terminology: ${JSON.stringify(slimeHudAccess)}`)
+  assert(slimeHudAccess?.[0]?.label?.includes('level 2 Command: deal 2 damage') &&
+    slimeHudAccess?.[1]?.label?.includes('level 3 Command: gain 6 Block, then apply 1 Vulnerable'),
+  `Slime status omits current Command rules: ${JSON.stringify(slimeHudAccess)}`)
+  assert(slimeBattlefieldLayout?.loaded && slimeBattlefieldLayout.actors.length === 2 &&
+    slimeBattlefieldLayout.actors.every((actor) => actor.inViewport && actor.clearOfHand &&
+      actor.clearOfEndTurn && actor.clearOfEnemies && actor.clearOfStatus),
+  `Slime actors are not grounded beside their boss: ${JSON.stringify(slimeBattlefieldLayout)}`)
+  assertDeepEqual(slimeCommandVisual, {
+    source: '/assets/combat/slimes/bruiser-command.webp',
+    idleHidden: true,
+    bossIdle: true,
+    actorUid: 'ui-hud-bruiser',
+    pointerEvents: 'none',
+    overlapsTarget: false,
+  }, 'a Command must animate its Slime without moving the Slime Boss portrait')
+  assertEqual(slimeCommandContact, 2_350,
+    'back-to-back Commands must land with the final generated animation contact pose')
+  assertEqual(slimeCommandHitDelay, 2_350,
+    'back-to-back Command damage must wait for the second generated animation contact pose')
+  assert(slimeCrossSnapshotHitDelay >= 2_200,
+    `later cross-snapshot damage bypassed the queued Command contact: ${slimeCrossSnapshotHitDelay}ms`)
+  assertDeepEqual({ initial: slimeCommandHpTimeline?.initial, mid: slimeCommandHpTimeline?.mid,
+    afterOldContact: slimeCommandHpTimeline?.afterOldContact,
+    final: slimeCommandHpTimeline?.final }, {
+    initial: slimeCommandHpTimeline?.expected.initial,
+    mid: slimeCommandHpTimeline?.expected.initial,
+    afterOldContact: slimeCommandHpTimeline?.expected.afterOldContact,
+    final: slimeCommandHpTimeline?.expected.final,
+  },
+    'enemy HP must stay staged until the final queued Command contact')
+  assert(slimeCommandRestarted, 'consecutive Commands by the same Slime must replay instead of collapsing')
+  assert(slimeCrossSnapshotOrdered,
+    'a later same-Slime action must wait behind commands already queued from the prior snapshot')
+  assert(slimeLethalHeld && slimeLethalReleased,
+    'a lethal cross-snapshot update must remain visible through contact and then finish its fall')
+  assert(slimeReducedMotionQueueCleared,
+    'reduced motion must baseline queued Commands and must not replay them when animation resumes')
+  assertDeepEqual({ initial: ordinaryRapidHpTimeline?.initial, mid: ordinaryRapidHpTimeline?.mid,
+    final: ordinaryRapidHpTimeline?.final }, ordinaryRapidHpTimeline?.expected,
+  'ordinary rapid attacks must keep their separate intermediate HP contacts')
+  assertDeepEqual({ initial: mixedSlimeOrdinaryHpTimeline?.initial, mid: mixedSlimeOrdinaryHpTimeline?.mid,
+    final: mixedSlimeOrdinaryHpTimeline?.final }, mixedSlimeOrdinaryHpTimeline?.expected,
+  'an ordinary attack after a Command must keep the Command intermediate HP contact')
+  assertDeepEqual({ initial: mixedOrdinarySlimeHpTimeline?.initial, mid: mixedOrdinarySlimeHpTimeline?.mid,
+    final: mixedOrdinarySlimeHpTimeline?.final }, mixedOrdinarySlimeHpTimeline?.expected,
+  'a Command after an ordinary attack must keep the ordinary intermediate HP contact')
+  assert(slimeCommandExpiryMs >= 1_500 && slimeCommandExpiryMs < 3_000,
+    `a queued Command remained mounted after its one-shot animation: ${slimeCommandExpiryMs}ms`)
+  assertDeepEqual(slimeSpawnVisual, {
+    source: '/assets/combat/characters/slime_boss-spawn.webp',
+    loaded: true,
+    minionCommandHidden: true,
+    genericVfxHidden: true,
+  }, 'playing a Slime card must animate the Slime Boss spawn without commanding a minion')
+  assert(slimeSpawnRestarted, 'consecutive Slime cards must restart the spawn animation')
+  assertDeepEqual({ initial: slimeSpawnHpTimeline?.initial, mid: slimeSpawnHpTimeline?.mid,
+    final: slimeSpawnHpTimeline?.final }, {
+    initial: slimeSpawnHpTimeline?.expected.initial,
+    mid: slimeSpawnHpTimeline?.expected.initial,
+    final: slimeSpawnHpTimeline?.expected.final,
+  }, 'targeted Slime-card damage must wait for the final queued spawn contact')
+  assert(slimeSingleMaxLayout?.actors.length === slimeLayoutCards.length &&
+    slimeSingleMaxLayout.actors.every((actor) => actor.inViewport && actor.inStage &&
+      actor.clearOfHp && actor.clearOfName && actor.clearOfPortrait),
+  `a full single-player Slime party overflows its combat row: ${JSON.stringify(slimeSingleMaxLayout)}`)
+  assert(slimeMultiplayerLayout?.length === 4 && slimeMultiplayerLayout.every((seat) =>
+    seat.loaded && seat.actors.length === slimeLayoutCards.length && seat.actors.every((actor) =>
+      actor.inBoard && actor.clearOfHp && actor.clearOfName && actor.clearOfPortrait && actor.inSeatRow)),
+  `four-player Slime parties overlap their combat rows: ${JSON.stringify(slimeMultiplayerLayout)}`)
+  assert(slimeConcurrentMultiplayer,
+    'different players with the same physical Slime uid must animate concurrently')
+  assert(slimeHudKeywordTips?.[0]?.includes('Slime Hit'),
+    `active Bruiser Slime help is missing level hit rules: ${JSON.stringify(slimeHudKeywordTips)}`)
+  assert(slimeHudKeywordTips?.[1]?.includes('Vulnerable') && slimeHudKeywordTips[1].includes('Block'),
+    `active Armored Slime help is missing level rules: ${JSON.stringify(slimeHudKeywordTips)}`)
+  assertDeepEqual(slimeHudCommandTips,
+    ['level 2 Command: deal 2 damage', 'level 3 Command: gain 6 Block, then apply 1 Vulnerable'],
+    'active Slime help omits the exact current Command rule')
+})
+if (args.includes('--downfall-slime-ui-only')) {
+  check('the focused Slime Boss browser run reported no errors', () => {
+    assert(consoleErrors.length === 0, `console errors:\n    ${consoleErrors.join('\n    ')}`)
+    assert(pageErrors.length === 0, `page errors:\n    ${pageErrors.join('\n    ')}`)
+    assert(requestFailures.length === 0, `failed requests:\n    ${requestFailures.join('\n    ')}`)
+  })
+  await browser.close()
+  await server.close()
+  report('Downfall Slime Boss UI')
+  process.exit(process.exitCode ?? 0)
 }
 
 await page.setViewportSize({ width: 1518, height: 720 })
@@ -1922,23 +2567,6 @@ check('Downfall mechanics use compact combat HUDs without clipping the hand', ()
     iconLoaded: true,
     count: '1',
   })
-  assert(slimeHudAccess?.every((chip) => chip.focusable && chip.focused && chip.visible),
-    `Slime status chips are not keyboard-reachable in the narrow HUD: ${JSON.stringify(slimeHudAccess)}`)
-  assert(!slimeHudOverlapsEndTurn, 'Slime status overlaps End turn in the narrow HUD')
-  assert(slimeHudAccess?.[0]?.label?.includes('ready to Command'), 'Bruiser command availability is missing')
-  assert(slimeHudAccess?.[1]?.label?.includes('Command limit reached'), 'Armored command limit is missing')
-  assert(slimeHudAccess?.every((chip) => chip.label?.includes('Strength') && !chip.label.includes('Vigor')),
-    `Slime status uses Guardian terminology: ${JSON.stringify(slimeHudAccess)}`)
-  assert(slimeHudAccess?.[0]?.label?.includes('level 2 Command: deal 2 damage') &&
-    slimeHudAccess?.[1]?.label?.includes('level 3 Command: gain 6 Block, then apply 1 Vulnerable'),
-  `Slime status omits current Command rules: ${JSON.stringify(slimeHudAccess)}`)
-  assert(slimeHudKeywordTips?.[0]?.includes('Slime Hit'),
-    `active Bruiser Slime help is missing level hit rules: ${JSON.stringify(slimeHudKeywordTips)}`)
-  assert(slimeHudKeywordTips?.[1]?.includes('Vulnerable') && slimeHudKeywordTips[1].includes('Block'),
-    `active Armored Slime help is missing level rules: ${JSON.stringify(slimeHudKeywordTips)}`)
-  assertDeepEqual(slimeHudCommandTips,
-    ['level 2 Command: deal 2 damage', 'level 3 Command: gain 6 Block, then apply 1 Vulnerable'],
-    'active Slime help omits the exact current Command rule')
   assert(hermitHudLayout.setupPanelRemoved, 'Hermit Load still renders a panel over the combat stage')
   assert(targetedLoadLayout.handCardDisabled, 'targeted Hermit Curse is exposed as a dead direct-Load button')
   assertEqual(targetedLoadLayout.targetChoices, 3, 'targeted Hermit Curse does not offer every living enemy')
@@ -12493,6 +13121,7 @@ const mixedContactSeq = await publishDamagingPresentationEvent({
   kind: 'card', actorId: firstPlayerId, sourceId: 'strike_defect', enemyIds: [firstEnemyId],
   playerIds: [], upgraded: false, copied: false, energy: 1,
 }, firstEnemyId)
+const mixedContactInitialHp = await firstEnemyCard.locator('.bar__label').textContent()
 await page.waitForTimeout(10)
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -12505,12 +13134,15 @@ const mixedContactSeq2 = await publishDamagingPresentationEvent({
   playerIds: [], upgraded: false, copied: false, energy: 1,
 }, firstEnemyId)
 await page.waitForTimeout(650)
-const mixedContactHp = await firstEnemyCard.locator('.bar__label').textContent()
+const mixedContactMidHp = await firstEnemyCard.locator('.bar__label').textContent()
 const mixedContactActualHp = await page.evaluate((enemyId) => window.__STS_DEBUG__.getRun().combat.enemies
   .find((enemy) => enemy.uid === enemyId)?.hp, firstEnemyId)
-check('a faster later hit cannot be overwritten by an older contact timer', () => {
+await page.waitForTimeout(500)
+const mixedContactFinalHp = await firstEnemyCard.locator('.bar__label').textContent()
+check('a faster later hit cannot reveal or overwrite an older queued contact', () => {
   assertEqual(mixedContactSeq2, mixedContactSeq + 1)
-  assert(mixedContactHp?.startsWith(`${mixedContactActualHp}/`), mixedContactHp ?? '')
+  assertEqual(mixedContactMidHp, mixedContactInitialHp)
+  assert(mixedContactFinalHp?.startsWith(`${mixedContactActualHp}/`), mixedContactFinalHp ?? '')
 })
 await page.locator(`.combat-vfx[data-vfx-seq="${mixedContactSeq2}"]`).waitFor({ state: 'detached' })
 

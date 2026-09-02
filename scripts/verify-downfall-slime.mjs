@@ -14,7 +14,7 @@ import {
   removeTemporarySlimeVigor,
 } from '../src/game/downfall/slime-boss.ts'
 import { activatePower, beginEndPlayerTurn, cardHasRetain, cardNeedsEnemy, createCombat, endTurnAbilities, pendingTriggerAbility, pendingTriggerSlimeEnemyChoiceCount, pendingTriggerSlimeEnemyChoiceLabels, playCard, playCardCopy, playCost, previewCardCopyChoice, resolvePendingTrigger, slimeCommandEnemyChoiceCount, slimeCommandEnemyChoiceLabels } from '../src/game/combat.ts'
-import { fireTriggers } from '../src/game/combat/effects.ts'
+import { fireTriggers, resolveSlimeCommand } from '../src/game/combat/effects.ts'
 import { createRng } from '../src/game/rng.ts'
 import { CARDS, STARTER_DECKS } from '../src/game/cards.ts'
 import { characterRewardDeck } from '../src/game/acquisition.ts'
@@ -110,6 +110,58 @@ const combat = createCombat(createRng(47), [player], [enemy])
 assert.ok(endTurnAbilities(combat).some((ability) => ability.id === 'slime-player/slime:end-turn-bruiser'), 'Bruiser is a mandatory ordered end-turn Command')
 const afterEndTurn = beginEndPlayerTurn(combat)
 assert.equal(afterEndTurn.enemies[0].hp, 5, 'Bruiser end-turn Command resolves through the combat engine')
+assert.deepEqual(afterEndTurn.presentationEvents.at(-1), {
+  seq: 1,
+  kind: 'slime',
+  actorId: player.id,
+  sourceId: byName.get('Bruiser Slime').id,
+  slimeUid: 'end-turn-bruiser',
+  upgraded: false,
+  animationIndex: 0,
+  enemyIds: [enemy.uid],
+  playerIds: [],
+}, 'a resolved Slime Command records its exact minion and target for live presentation')
+
+const taunting = {
+  card: { uid: 'support-taunting', defId: byName.get('Taunting Slime').id, upgraded: false },
+  level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
+}
+const supportCombat = createCombat(createRng(4701), [{
+  ...player, character: 'slime_boss', block: 0, slimes: [taunting],
+}], [{ ...enemy, uid: 'surplus-support-target' }])
+assert(resolveSlimeCommand(supportCombat, supportCombat.players[0], supportCombat.players[0].slimes[0], {
+  enemyUid: 'surplus-support-target', playerId: player.id,
+}))
+assert.equal(supportCombat.players[0].block, 1)
+assert.deepEqual(supportCombat.presentationEvents.at(-1).enemyIds, [],
+  'a self-support Command does not publish an unused enemy choice as an affected target')
+
+const repeatSlime = bruiserSlime('repeat-command-slime')
+const repeatCombat = createCombat(createRng(47015), [{
+  ...player, character: 'slime_boss', slimes: [repeatSlime],
+}], [{ ...enemy, uid: 'repeat-command-target', hp: 20, maxHp: 20 }])
+const repeatContext = { enemyUid: 'repeat-command-target', playerId: player.id }
+for (let index = 0; index < 2; index++) assert(resolveSlimeCommand(
+  repeatCombat, repeatCombat.players[0], repeatCombat.players[0].slimes[0], repeatContext,
+))
+assert.deepEqual(repeatCombat.presentationEvents.map((event) => event.animationIndex), [0, 1],
+  'repeat Commands publish their shared sprite, hit, HP, and death timeline')
+assert(resolveSlimeCommand(repeatCombat, repeatCombat.players[0], repeatCombat.players[0].slimes[0], {
+  enemyUid: 'repeat-command-target', playerId: player.id,
+}))
+assert.equal(repeatCombat.presentationEvents.at(-1).animationIndex, 0,
+  'a later action starts a fresh Command animation timeline')
+
+const rallySlimes = Array.from({ length: 15 }, (_, index) => bruiserSlime(`rally-slime-${index}`))
+const rallyCombat = createCombat(createRng(4702), [{
+  ...player, character: 'slime_boss', slimes: rallySlimes,
+}], [{ ...enemy, uid: 'rally-target', hp: 100, maxHp: 100 }])
+for (const slime of rallyCombat.players[0].slimes) assert(resolveSlimeCommand(
+  rallyCombat, rallyCombat.players[0], slime, { enemyUid: 'rally-target', playerId: player.id },
+))
+assert.deepEqual(rallyCombat.presentationEvents.filter((event) => event.kind === 'slime')
+  .map((event) => event.slimeUid), rallySlimes.map((slime) => slime.card.uid),
+'a full 15-Slime Rally reaches clients as one complete presentation batch')
 
 const leechEnergy = { uid: 'retain-leech-energy', defId: byName.get('Leech Energy').id, upgraded: false }
 const retainBlock = playCard(createCombat(createRng(471), [{
@@ -152,6 +204,19 @@ assert.equal(spread.enemies[0].hp, 4, 'Spreading Slime Commands the chosen targe
 assert.equal(spread.enemies[0].vulnerable, 1, 'a Slime Command spent the enemy Vulnerable token')
 assert.equal(spread.enemies[0].poison, 0, 'a Slime Command inherited the hero\'s on-hit Poison')
 assert.equal(spread.players[0].weak, 1, 'a Slime Command spent the hero\'s Weak token')
+assert.deepEqual(spread.presentationEvents.filter((event) => event.kind === 'slime').map((event) => ({
+  slimeUid: event.slimeUid,
+  sourceId: event.sourceId,
+  enemyIds: event.enemyIds,
+})), [{
+  slimeUid: spreading.card.uid,
+  sourceId: spreading.card.defId,
+  enemyIds: [enemy.uid],
+}], 'a triggered Command identifies the minion without masquerading as a hero card play')
+if (process.argv.includes('--presentation-only')) {
+  console.log('Downfall Slime Command presentation events verified.')
+  process.exit(0)
+}
 
 const nestedSpreading = {
   ...spreading,

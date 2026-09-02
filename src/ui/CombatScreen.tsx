@@ -26,6 +26,7 @@ import {
   useReducedEffects,
   useStruck,
 } from './combat-screen/hooks.ts'
+import type { TargetContactDeadline } from './combat-screen/hooks.ts'
 import type {
   ActiveCombatVfx,
   CardDrag,
@@ -128,6 +129,8 @@ import {
   startTurnScryPreview,
 } from '../game/combat.ts'
 import type {
+  CombatPresentationEvent,
+  CombatState,
   DiscardOrders,
   PotionContext,
   PowerContext,
@@ -160,11 +163,46 @@ import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe } from './c
 import { playSoundEffect } from './sfx.ts'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
+function targetPresentationTiming(
+  state: CombatState,
+  targetId: string,
+  contacts: ReadonlyMap<string, TargetContactDeadline>,
+): { event?: CombatPresentationEvent; contact: number } {
+  const event = latestTargetPresentationEvent(state.presentationEvents, targetId)
+  if (!event) return { contact: 0 }
+  const scheduled = contacts.get(targetId)
+  if (!scheduled || scheduled.throughSeq < event.seq) return { event, contact: -1 }
+  const outstanding = Math.max(0, scheduled.at - performance.now())
+  if (outstanding > 0) return { event, contact: outstanding }
+  const slimeAnimation = event.kind === 'slime' ||
+    event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
+  return {
+    event,
+    contact: slimeAnimation ? -1 : characterAttackContactMs(state, targetId, event),
+  }
+}
+
 // Weighted alpha PCA of watcher-meteor.webp: tail-to-nose y/x.
 const WATCHER_METEOR_FALL_SLOPE = 0.7113856 / 0.7028019
 const CHAMBER_RETURN_MS = 460
 const CHAMBER_RETURN_STAGGER_MS = 35
 const CHAMBER_REFLOW_MS = 420
+
+const slimeAssetSlug = (defId: string): string => defId
+  .replace(/^slime_boss_/, '')
+  .replace(/_slime$/, '')
+  .replace(/_/g, '-')
+
+const slimeFallbackAsset = (defId: string): string => {
+  if (defId.includes('spike')) return 'combat/enemies/spike_slime.webp'
+  if (defId.includes('massive') || defId.includes('armored') || defId.includes('royal')) {
+    return 'combat/enemies/large_slime.webp'
+  }
+  if (defId.includes('leeching') || defId.includes('sticky') || defId.includes('spreading')) {
+    return 'combat/enemies/acid_slime.webp'
+  }
+  return 'combat/enemies/small_slime.webp'
+}
 
 type ChamberReturnFlight = {
   card: CardInstance
@@ -789,13 +827,20 @@ function CombatScreenView({
     state,
     authoritativeRestoration,
     authoritativeConnected,
+    prefersReducedMotion,
   )
-  const livePresentationEvents = usePresentationEvents(
+  const livePresentation = usePresentationEvents(
     state,
     animateOpeningHand,
     authoritativeRestoration,
     authoritativeConnected,
+    prefersReducedMotion,
   )
+  const livePresentationEvents = livePresentation.events
+  const targetPresentationTimings = new Map(state.enemies.map((enemy) => [
+    enemy.uid,
+    targetPresentationTiming(state, enemy.uid, livePresentation.contactDeadlines),
+  ]))
   useEffect(() => {
     if (!reducedMotion) return
     for (const [key, timer] of motionTimers.current) {
@@ -806,7 +851,7 @@ function CombatScreenView({
     setDrawnCards((current) => current.size === 0 ? current : new Set())
     setMotionActive((current) => current.size === 0 ? current : new Set())
   }, [reducedMotion])
-  const visualResetKey = `${state.combatId}:${authoritativeRestoration ?? ''}:${authoritativeConnected ?? ''}`
+  const visualResetKey = `${state.combatId}:${authoritativeRestoration ?? ''}:${authoritativeConnected ?? ''}:${prefersReducedMotion}`
   usePersonalCombatSoundEffects(
     state,
     livePresentationEvents,
@@ -817,6 +862,8 @@ function CombatScreenView({
   const activeVfx = useMemo<ActiveCombatVfx[]>(() => {
     const resolved: ActiveCombatVfx[] = []
     for (const event of livePresentationEvents) {
+      if (event.kind === 'slime' ||
+        event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime') continue
       if (event.kind === 'potion') {
         resolved.push({ event, recipe: potionVfxRecipe(event.sourceId) })
         continue
@@ -873,7 +920,8 @@ function CombatScreenView({
     for (const player of state.players) {
       const actorEvents = activeVfx.filter(({ event }) => event.actorId === player.id)
       const latestNonAttackSeq = (state.presentationEvents ?? []).reduce((latest, event) => {
-        if (event.actorId !== player.id || event.kind === 'orb' || event.sourceId === 'fairy_in_a_bottle') return latest
+        if (event.actorId !== player.id || event.kind === 'orb' || event.kind === 'slime' ||
+          event.sourceId === 'fairy_in_a_bottle') return latest
         const recipe = event.kind === 'potion'
           ? potionVfxRecipe(event.sourceId)
           : event.kind === 'shiv'
@@ -882,7 +930,8 @@ function CombatScreenView({
         return isCharacterAttack({ event, recipe }) ? latest : Math.max(latest, event.seq)
       }, -1)
       const latestAttackSeq = (state.presentationEvents ?? []).reduce((latest, event) => {
-        if (event.actorId !== player.id || event.kind === 'potion' || event.kind === 'orb') return latest
+        if (event.actorId !== player.id || event.kind === 'potion' || event.kind === 'orb' ||
+          event.kind === 'slime') return latest
         const recipe = event.kind === 'shiv'
           ? shivVfxRecipe()
           : cardVfxRecipe(player.character, event.sourceId, event.mode, event.upgraded, event.resolvedType)
@@ -3949,27 +3998,6 @@ function CombatScreenView({
         <span key={`${state.turn}-${state.phase}`} className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
           ? `Resolve ${copyResolutionLabel ?? 'card'}`
           : PHASE_LABEL[state.phase]}</span>
-        {viewer.character === 'slime_boss' && viewer.slimes.length > 0 ? (
-          <span className="combat__slime-status" aria-label="Slime status">
-            {viewer.slimes.map((slime) => {
-              const def = faceOf(cardDef(slime.card.defId), slime.card.upgraded)
-              const name = def.name.replace(/ Slime\+?$/, '')
-              const commandReady = def.slimeCommandLimit === undefined ||
-                slime.commandsThisTurn < def.slimeCommandLimit
-              const commandText = slimeCommandText(def, slime.level)
-              return <CardKeywordHelp key={slime.card.uid} def={def}
-                extraTips={[{ name: 'Current Command', text: commandText }]}>{(keywordHelpProps) => (
-                <span {...keywordHelpProps} className="combat__slime-chip" tabIndex={0}
-                  aria-label={`${def.name}, level ${slime.level}, Strength ${slime.vigor}, ` +
-                    `${slime.commandsThisTurn} Commands this turn, ` +
-                    `${commandReady ? 'ready to Command' : 'Command limit reached'}, ` +
-                    commandText}>
-                  {name} · L{slime.level} · Strength {slime.vigor} · Cmd {slime.commandsThisTurn}
-                </span>
-              )}</CardKeywordHelp>
-            })}
-          </span>
-        ) : null}
         <span className="combat__actions">
           {!viewer.dead && !relicScry && !voluntaryActionsBlocked && (state.phase === 'player' || state.phase === 'discard' ||
             state.phase === 'start' && viewer.potions.includes('gamblers_brew')) ? (
@@ -5165,9 +5193,8 @@ function CombatScreenView({
                 animateBoss={!prefersReducedMotion}
                 deferBossAttack={characterAttacksActive}
                 falling={falling.has(enemy.uid)}
-                visualContactMs={prefersReducedMotion ? 0 : characterAttackContactMs(state, enemy.uid,
-                  latestTargetPresentationEvent(state.presentationEvents, enemy.uid))}
-                visualEventSeq={latestTargetPresentationEvent(state.presentationEvents, enemy.uid)?.seq}
+                visualContactMs={prefersReducedMotion ? 0 : targetPresentationTimings.get(enemy.uid)?.contact}
+                visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
                 visualResetKey={visualResetKey}
                 stageVisualDamage={!prefersReducedMotion}
                 hitBeats={hits.get(enemy.uid)}
@@ -5218,6 +5245,14 @@ function CombatScreenView({
           const characterAttackMotions = occupant ? characterAttacks[occupant.id] ?? [] : []
           const characterAttack = characterAttackMotions.at(-1)
           const latestCharacterAttackSeq = characterAttack?.active.event.seq
+          const slimeSpawnEvent = !prefersReducedMotion && occupant?.character === 'slime_boss'
+            ? livePresentationEvents.filter((event) => event.kind === 'card' &&
+                event.actorId === occupant.id && occupant.slimes.some((slime) => slime.card.defId === event.sourceId)).at(-1)
+            : undefined
+          const slimeCommandEvents = new Map(livePresentationEvents.flatMap((event) =>
+            event.kind === 'slime' && event.actorId === occupant?.id
+              ? [[event.slimeUid, event] as const]
+              : []))
           const occupantHeat = occupant?.character === 'hexaghost'
             ? Math.max(0, Math.min(6, occupant.heat))
             : 0
@@ -5289,13 +5324,21 @@ function CombatScreenView({
                           />
                         ) : (
                           <img
-                            key={`${occupant.character}-${occupantHeat}-${characterAttack?.active.event.seq ?? latestActorVfx?.event.seq ?? 'idle'}`}
+                            key={`${occupant.character}-${occupantHeat}-${slimeSpawnEvent?.seq ?? characterAttack?.active.event.seq ?? latestActorVfx?.event.seq ?? 'idle'}`}
                             src={assetPath(occupant.character === 'hexaghost'
                               ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
+                              : occupant.character === 'slime_boss' && slimeSpawnEvent
+                                ? 'combat/characters/slime_boss-spawn.webp'
                               : `combat/characters/${occupant.character}.webp`)}
                             data-vfx-seq={latestActorVfx?.event.seq}
                             alt=""
-                            onError={(event) => { event.currentTarget.style.display = 'none' }}
+                            onError={(event) => {
+                              if (occupant.character === 'slime_boss' && slimeSpawnEvent &&
+                                event.currentTarget.dataset.fallback !== 'true') {
+                                event.currentTarget.dataset.fallback = 'true'
+                                event.currentTarget.src = assetPath('combat/characters/slime_boss.webp')
+                              } else event.currentTarget.style.display = 'none'
+                            }}
                           />
                         )}
                         {characterAttackMotions.map((characterAttack) => (
@@ -5532,6 +5575,76 @@ function CombatScreenView({
                       ) : null}
                       </span>
                     </button>
+                    {occupant.character === 'slime_boss' && occupant.slimes.length > 0 ? (
+                      <span className={`slime-party combat__slime-status${
+                        occupant.slimes.length > 7 ? ' slime-party--crowded' : ''
+                      }`} role="list"
+                        aria-label={`${occupant.name}'s Slimes`}
+                        data-slime-count={occupant.slimes.length}
+                        style={{ '--slime-columns': Math.min(
+                          occupant.slimes.length > 7 ? 5 : 7,
+                          occupant.slimes.length,
+                        ) } as React.CSSProperties}>
+                        {occupant.slimes.map((slime) => {
+                          const def = faceOf(cardDef(slime.card.defId), slime.card.upgraded)
+                          const name = def.name.replace(/ Slime\+?$/, '')
+                          const commandReady = def.slimeCommandLimit === undefined ||
+                            slime.commandsThisTurn < def.slimeCommandLimit
+                          const commandText = slimeCommandText(def, slime.level)
+                          const slug = slimeAssetSlug(def.id)
+                          const commandEvent = !prefersReducedMotion && slimeCommandEvents.get(slime.card.uid)
+                          return <CardKeywordHelp key={slime.card.uid} def={def}
+                            extraTips={[{ name: 'Current Command', text: commandText }]}>{(keywordHelpProps) => (
+                            <span {...keywordHelpProps}
+                              className={[
+                                'slime-party__actor combat__slime-chip',
+                                commandReady ? '' : 'slime-party__actor--spent',
+                                commandEvent ? 'slime-party__actor--commanding' : '',
+                              ].filter(Boolean).join(' ')}
+                              role="listitem"
+                              tabIndex={0}
+                              data-slime-uid={slime.card.uid}
+                              data-slime-def={def.id}
+                              data-slime-level={slime.level}
+                              data-slime-vigor={slime.vigor > 0 ? `+${slime.vigor}` : ''}
+                              aria-label={`${def.name}, level ${slime.level}, Strength ${slime.vigor}, ` +
+                                `${slime.commandsThisTurn} Commands this turn, ` +
+                                `${commandReady ? 'ready to Command' : 'Command limit reached'}, ` + commandText}>
+                              <img
+                                className="slime-party__art"
+                                src={assetPath(`combat/slimes/${slug}.webp`)}
+                                alt=""
+                                onError={(event) => {
+                                  if (event.currentTarget.dataset.fallback === 'true') {
+                                    event.currentTarget.style.display = 'none'
+                                    return
+                                  }
+                                  event.currentTarget.dataset.fallback = 'true'
+                                  event.currentTarget.src = assetPath(slimeFallbackAsset(def.id))
+                                }}
+                              />
+                              {commandEvent ? (
+                                <img
+                                  className="slime-party__command"
+                                  key={commandEvent.seq}
+                                  data-command-seq={commandEvent.seq}
+                                  src={assetPath(`combat/slimes/${slug}-command.webp`)}
+                                  alt=""
+                                  onError={(event) => {
+                                    event.currentTarget.style.display = 'none'
+                                    const idle = event.currentTarget.previousElementSibling
+                                    if (idle instanceof HTMLElement) idle.style.opacity = '1'
+                                  }}
+                                />
+                              ) : null}
+                              <span className="slime-party__summary" aria-hidden="true">
+                                {name} · L{slime.level} · Strength {slime.vigor} · Cmd {slime.commandsThisTurn}
+                              </span>
+                            </span>
+                          )}</CardKeywordHelp>
+                        })}
+                      </span>
+                    ) : null}
                     <OrbRow
                       player={occupant}
                       targetableSlots={endTurnEffect?.orbChoice && canResolveEndTurn && occupant.id === endTurnEffect.playerId
@@ -5580,9 +5693,8 @@ function CombatScreenView({
                       label={enemyLabel(state.enemies, enemy)}
                       die={state.die}
                       falling={falling.has(enemy.uid)}
-                      visualContactMs={prefersReducedMotion ? 0 : characterAttackContactMs(state, enemy.uid,
-                        latestTargetPresentationEvent(state.presentationEvents, enemy.uid))}
-                      visualEventSeq={latestTargetPresentationEvent(state.presentationEvents, enemy.uid)?.seq}
+                      visualContactMs={prefersReducedMotion ? 0 : targetPresentationTimings.get(enemy.uid)?.contact}
+                      visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
                       visualResetKey={visualResetKey}
                       stageVisualDamage={!prefersReducedMotion}
                       hitBeats={hits.get(enemy.uid)}

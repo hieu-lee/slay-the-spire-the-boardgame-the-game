@@ -48,6 +48,7 @@ const enemyRoot = join(publicRoot, 'assets/enemies')
 const combatEnemyRoot = join(publicRoot, 'assets/combat/enemies')
 const bossAnimationRoot = join(combatEnemyRoot, 'animations')
 const combatCharacterRoot = join(publicRoot, 'assets/combat/characters')
+const combatSlimeRoot = join(publicRoot, 'assets/combat/slimes')
 const merchantCharacterRoot = join(publicRoot, 'assets/noncombat/merchant/characters')
 const combatVfxRoot = join(publicRoot, 'assets/combat/vfx')
 const combatActionVfxRoot = join(combatVfxRoot, 'actions')
@@ -74,6 +75,7 @@ const enemyFiles = listing(enemyRoot, '.webp')
 const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
 const bossAnimationFiles = listing(bossAnimationRoot, '.webp')
 const combatCharacterFiles = listing(combatCharacterRoot, '.webp')
+const combatSlimeFiles = listing(combatSlimeRoot, '.webp')
 const merchantCharacterFiles = listing(merchantCharacterRoot, '-standing.webp')
 const combatVfxFiles = listing(combatVfxRoot, '.webp')
 const combatActionVfxFiles = listing(combatActionVfxRoot, '.webp')
@@ -89,6 +91,11 @@ const requiredRelicIconFiles = relicIconFiles.filter((file) => !optionalRelicIco
 const potionIconFiles = listing(potionIconRoot, '.png')
 const compendiumIconFiles = listing(compendiumIconRoot, '.webp')
 const campfireSceneFiles = [...listing(campfireRoot, '_firecamp.png'), ...listing(campfireRoot, '_firecamp.webp')]
+
+const SLIME_ASSET_SLUGS = [
+  'armored', 'bruiser', 'evolution', 'leeching', 'massive', 'muscle', 'psychic',
+  'royal', 'scrappy', 'spike', 'spreading', 'sticky', 'taunting',
+]
 
 const cardIndex = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json'), 'utf8'))
 
@@ -753,6 +760,48 @@ print(json.dumps(faults))
   assert(faults.length === 0, `evil boss art is not distinct:\n    ${faults.join('\n    ')}`)
 })
 
+check('Slime Boss minions ship one transparent cutout and one complete Command animation', () => {
+  const expected = SLIME_ASSET_SLUGS.flatMap((slug) => [`${slug}.webp`, `${slug}-command.webp`]).sort()
+  assertDeepEqual(combatSlimeFiles.sort(), expected, 'Slime minion asset inventory')
+
+  const cutouts = SLIME_ASSET_SLUGS.map((slug) => join(combatSlimeRoot, `${slug}.webp`))
+  const result = spawnSync('webpinfo', ['-summary', ...cutouts], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not inspect Slime minion cutouts')
+  for (const block of result.stdout.split(/^File: /m).slice(1)) {
+    const file = block.slice(0, block.indexOf('\n')).split('/').pop()
+    assert(/Canvas size 384 x 384/.test(block) && /Alpha:\s+1/.test(block),
+      `${file} is not a transparent 384x384 cutout`)
+  }
+
+  for (const slug of SLIME_ASSET_SLUGS) {
+    const animation = join(combatSlimeRoot, `${slug}-command.webp`)
+    const mux = spawnSync('webpmux', ['-info', animation], { encoding: 'utf8' })
+    assert(mux.status === 0, mux.stderr || `could not inspect ${slug} Command animation`)
+    assert(/Canvas size: 256 x 256/.test(mux.stdout) && /Number of frames: 16/.test(mux.stdout) &&
+      /Loop Count : 1/.test(mux.stdout) && /Features present:.*transparency/.test(mux.stdout),
+    `${slug} Command is not a transparent one-shot 16-frame 256px animation`)
+    const durations = mux.stdout.split('\n').filter((line) => /^\s*\d+:/.test(line))
+      .map((line) => Number(line.trim().split(/\s+/)[6]))
+    assert(durations.length === 16 && durations.every((duration) => duration === 90),
+      `${slug} Command does not use sixteen 90ms key frames`)
+  }
+  assert(SLIME_ASSET_SLUGS.flatMap((slug) => [
+    join(combatSlimeRoot, `${slug}.webp`), join(combatSlimeRoot, `${slug}-command.webp`),
+  ]).reduce((bytes, file) => bytes + statSync(file).size, 0) < 12 * 1024 * 1024,
+  'Slime minion assets exceed 12 MiB')
+
+  const spawn = spawnSync('webpmux', ['-info', join(combatCharacterRoot, 'slime_boss-spawn.webp')],
+    { encoding: 'utf8' })
+  assert(spawn.status === 0 && /Canvas size: 256 x 256/.test(spawn.stdout) &&
+    /Number of frames: 16/.test(spawn.stdout) && /Loop Count : 1/.test(spawn.stdout) &&
+    /Features present:.*transparency/.test(spawn.stdout),
+  spawn.stderr || 'Slime Boss spawn is not a transparent one-shot 16-frame 256px animation')
+  const spawnDurations = spawn.stdout.split('\n').filter((line) => /^\s*\d+:/.test(line))
+    .map((line) => Number(line.trim().split(/\s+/)[6]))
+  assert(spawnDurations.length === 16 && spawnDurations.every((duration) => duration === 90),
+    'Slime Boss spawn does not use sixteen 90ms key frames')
+})
+
 check('bundled combat cutouts are sized for their render box, with transparency', () => {
   const expectedCharacters = [
     'defect-charge.webp', 'defect-hero.webp', 'defect-release.webp', 'defect.webp',
@@ -765,14 +814,16 @@ check('bundled combat cutouts are sized for their render box, with transparency'
     'hexaghost-hero.webp', 'hexaghost-impact.webp', 'hexaghost-ready.webp', 'hexaghost.webp',
     'ironclad-hero.webp', 'ironclad-impact.webp', 'ironclad-ready.webp', 'ironclad.webp',
     'silent-hero.webp', 'silent-throw.webp', 'silent.webp',
-    'slime_boss-hero.webp', 'slime_boss-impact.webp', 'slime_boss-ready.webp', 'slime_boss.webp',
+    'slime_boss-hero.webp', 'slime_boss-impact.webp', 'slime_boss-ready.webp', 'slime_boss-spawn.webp',
+    'slime_boss.webp',
     'watcher-hero.webp', 'watcher-ready.webp', 'watcher-thrust.webp', 'watcher.webp',
   ]
   assertDeepEqual(combatCharacterFiles.sort(), expectedCharacters, 'combat character cutout inventory')
   const enemyPaths = combatEnemyFiles.map((file) => join(combatEnemyRoot, file))
   const files = [
     ...enemyPaths,
-    ...combatCharacterFiles.map((file) => join(combatCharacterRoot, file)),
+    ...combatCharacterFiles.filter((file) => file !== 'slime_boss-spawn.webp')
+      .map((file) => join(combatCharacterRoot, file)),
   ]
   const enemyPathSet = new Set(enemyPaths)
   const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })

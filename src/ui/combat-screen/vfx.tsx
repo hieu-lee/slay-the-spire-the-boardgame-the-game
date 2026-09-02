@@ -26,12 +26,14 @@ const OFFENSIVE_VFX_FAMILIES = new Set([
 export const ORB_END_TURN_STAGGER_MS = 380
 export const COMBAT_OUTCOME_DELAY_MS = 2_500
 export const COMBAT_OUTCOME_SOUND_DELAY_MS = 2_400
+export const SLIME_COMMAND_ANIMATION_MS = 1_550
 
 export const isCharacterAttack = ({ event, recipe }: ActiveCombatVfx): boolean =>
-  event.kind !== 'potion' && event.kind !== 'orb' && event.enemyIds.length > 0 &&
+  event.kind !== 'potion' && event.kind !== 'orb' && event.kind !== 'slime' && event.enemyIds.length > 0 &&
   (event.kind === 'shiv' ||
-    event.kind === 'card' && (event.resolvedType ?? cardDef(event.sourceId).type) === 'attack' ||
-    OFFENSIVE_VFX_FAMILIES.has(recipe.family))
+    event.kind === 'card' && cardDef(event.sourceId).cardKind !== 'slime' &&
+      ((event.resolvedType ?? cardDef(event.sourceId).type) === 'attack' ||
+        OFFENSIVE_VFX_FAMILIES.has(recipe.family)))
 
 export function characterAttackContactMs(
   state: CombatState,
@@ -39,6 +41,7 @@ export function characterAttackContactMs(
   event?: CombatPresentationEvent,
 ): number {
   if (!event || event.kind === 'potion' || event.kind === 'orb' || !event.enemyIds.includes(targetId)) return 0
+  if (event.kind === 'slime') return 800 + event.animationIndex * SLIME_COMMAND_ANIMATION_MS
   const actor = state.players.find((player) => player.id === event.actorId)
   if (!actor) return 0
   const active = {
