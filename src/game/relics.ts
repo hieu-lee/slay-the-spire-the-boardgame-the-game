@@ -10,7 +10,9 @@ import type { Trigger } from './triggers.ts'
 import {
   DOWNFALL_BOSS_RELICS,
   DOWNFALL_BOSS_RELIC_DECK,
+  DOWNFALL_POTION_COSTS,
   DOWNFALL_POTIONS,
+  DOWNFALL_RELIC_COSTS,
   DOWNFALL_RELICS,
   DOWNFALL_RELIC_DECK,
   downfallRelicId,
@@ -402,12 +404,13 @@ function registerDownfallRelics(): void {
     if (resolved.kind !== 'downfall') throw new Error(`invalid Downfall relic definition: ${item.name}`)
     const rule = resolved.rule
     const base = Object.values(RELICS).find((candidate) => candidate.name === item.name)
+    const cost = DOWNFALL_RELIC_COSTS[id] ?? base?.cost
     const text = id === 'downfall_ninja_scroll'
       ? 'Once per combat: gain 3 Shivs.'
       : formatDownfallText(item.text)
     const def: RelicDef = {
       id, name: item.name, pool, effects: [], text, rule: text,
-      ...(base?.cost === undefined ? {} : { cost: base.cost }),
+      ...(cost === undefined ? {} : { cost }),
     }
     if (rule.kind === 'abilities') {
       const [first, ...rest] = rule.abilities
@@ -733,6 +736,7 @@ for (const item of DOWNFALL_POTIONS) {
     id,
     name: item.name,
     quantity: item.multiplicity,
+    cost: DOWNFALL_POTION_COSTS[id],
     effects: rule.kind === 'effects' ? [...rule.effects] : [],
     target: id === 'greed_potion' ? 'enemy' : undefined,
     supportTarget: id === 'whale_ale' ? 'allPlayers' : undefined,

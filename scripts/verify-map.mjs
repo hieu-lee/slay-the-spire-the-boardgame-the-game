@@ -1371,8 +1371,11 @@ check('Act I and II bosses pay every player their printed gold, Rare, and Boss R
   }
 })
 
-check('Downfall Act I and II bosses grant their own normal Card and ordinary Relic rewards', () => {
-  for (const [act, boss] of [[1, 'downfall_witch'], [2, 'downfall_orb_master']]) {
+check('Downfall Act I and II bosses grant printed Rare Card and Boss Relic rewards', () => {
+  for (const [act, boss] of [
+    [1, 'downfall_witch'], [1, 'downfall_dark_core'], [1, 'downfall_wrathful'],
+    [2, 'downfall_orb_master'], [2, 'downfall_inferno'], [2, 'downfall_trickster'],
+  ]) {
     const run = postNeowRun(960 + act, [{ id: 'p1', name: 'Guardian', character: 'guardian' }])
     const bossId = run.map.rows.at(-1)[0]
     const entered = enterRoom({
@@ -1382,16 +1385,17 @@ check('Downfall Act I and II bosses grant their own normal Card and ordinary Rel
       map: { ...run.map, position: run.map.rows.at(-2)[0] },
     }, bossId)
     const gold = entered.players[0].gold
-    const cards = entered.players[0].cardRewards.slice(0, 3)
+    const cards = entered.players[0].rareRewards.slice(0, 3)
+    const bossRelics = entered.bossRelicDeck.slice(0, 3)
     entered.combat.phase = 'won'
     entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
     const resolved = resolveCombat(entered)
     assertEqual(resolved.players[0].gold, gold + 3)
     assertEqual(resolved.rewards.length, 1)
     assertEqual(resolved.rewards[0].cardReward, true)
-    assertEqual(resolved.rewards[0].cardSource, 'ordinary')
-    assertEqual(resolved.rewards[0].relic, null)
-    assertEqual(resolved.rewards[0].bossRelics, false)
+    assertEqual(resolved.rewards[0].cardSource, 'rare')
+    assertEqual(resolved.rewards[0].relic, false)
+    assertDeepEqual(resolved.rewards[0].bossRelics, bossRelics)
     assertDeepEqual(revealCardReward(resolved, 'p1').rewards[0].choices, cards)
   }
 })

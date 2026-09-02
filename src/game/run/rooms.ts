@@ -285,8 +285,7 @@ export function resolveCombat(state: RunState): RunState {
   const wasBoss = room?.kind === 'boss' && !state.eventCombat
   const wasBonusBoss = state.eventCombat?.mindBloom === true
   const wasElite = room?.kind === 'elite' || state.eventCombat?.kind === 'elite' || state.eventCombat?.mindBloom === true
-  const baseBoss = wasBoss && state.meta.ruleset !== 'downfall'
-  const printedBossRewards = baseBoss && state.act <= 2
+  const printedBossRewards = wasBoss && state.act <= 2
   const lastStandActEnd = state.lastStand && combat.players.some((player) => player.dead) &&
     (wasBoss || state.eventCombat?.kind === 'boss')
   const sharedReward = wasElite || wasBoss || state.eventCombat?.kind === 'boss'
@@ -367,7 +366,7 @@ export function resolveCombat(state: RunState): RunState {
   const rewards = players.flatMap<CardRewardOffer>((player) => {
     if (player.dead) return []
     const whitePotion: false | null = hasRelic(player, 'white_beast_statue') ? null : false
-    if (betweenBosses || finalBoss || baseBoss && !printedBossRewards) return whitePotion === false ? [] : [{
+    if (betweenBosses || finalBoss || wasBoss && !printedBossRewards) return whitePotion === false ? [] : [{
       playerId: player.id,
       cardReward: false,
       choices: null,
@@ -388,7 +387,7 @@ export function resolveCombat(state: RunState): RunState {
     const potionCount = Number(source?.potionReward === true) + Number(hasRelic(player, 'white_beast_statue'))
     const potion: false | null = potionCount > 0 ? null : false
     // Elite relics are resolved by the shared physical room reward below.
-    const relic: false | null = (source?.relicReward === true && !wasElite || vintageReward || state.eventCombat?.relicReward) ? null : false
+    const relic: false | null = (source?.relicReward === true && !wasElite && !printedBossRewards || vintageReward || state.eventCombat?.relicReward) ? null : false
     if (!cardReward && !transformedReward && potion === false && relic === false && !printedBossRewards) return []
     return [{
       playerId: player.id,
