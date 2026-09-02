@@ -184,6 +184,7 @@
   align-items: flex-start;
   justify-content: safe center;
   gap: 0;
+  min-height: 2.75rem;
   min-width: 0;
   overflow: auto hidden;
   overscroll-behavior-inline: contain;
