@@ -308,7 +308,7 @@ ordinary({ id: 'toxic_egg', name: 'Toxic Egg', cost: 8, effects: [], uses: 3,
   rule: 'Upgrade the next 3 Skills added to your deck, then discard this relic.',
   text: 'When you add a Skill to your deck, upgrade it. Use 3 times, then discard.' })
 ordinary({ id: 'tungsten_rod', name: 'Tungsten Rod', cost: 8,
-  trigger: { kind: 'dieRelic', faces: [5] }, effects: [{ kind: 'block', amount: 1 }], supportTarget: 'allPlayers',
+  trigger: { kind: 'dieRelic', faces: [5] }, effects: [{ kind: 'block', amount: 1, toChosen: true }], supportTarget: 'allPlayers',
   rule: 'On a 5, give all players 1 Block, or 3 Block in solo.',
   text: 'On a 5: 1 Block to all players, 3 Block instead if solo.' })
 ordinary({ id: 'vajra', name: 'Vajra', cost: 7,

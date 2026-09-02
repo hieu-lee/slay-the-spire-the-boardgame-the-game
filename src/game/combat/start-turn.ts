@@ -16,6 +16,7 @@ import {
 } from './board.ts'
 import {
   applyEffect,
+  dieRelicEffectsForParty,
   discardByCardEffect,
   drawInto,
   flushPendingTriggers,
@@ -989,7 +990,7 @@ export function resolvePendingDieRelicChoice(
         invalidExhaustChoice: false,
         pendingTriggers: [],
       }
-      for (const effect of ability.effects) {
+      for (const effect of dieRelicEffectsForParty(queued.relicDefId, ability.effects, next.players.length)) {
         applyEffect(next, owner, effect, ability.target ?? 'enemy', ability.supportTarget ?? 'self', nestedContext,
           queued.sourceLabel)
         if (invalidPlayChoice(nestedContext)) return state

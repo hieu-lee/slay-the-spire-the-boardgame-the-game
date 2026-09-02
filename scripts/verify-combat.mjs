@@ -32,6 +32,7 @@ import {
   previewCardCopyChoice,
   resolveEnemyTargets,
   resolveEndTurnAbility,
+  resolvePendingDieRelicChoice,
   resolvePendingTrigger,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
@@ -9363,6 +9364,38 @@ check('Loaded Die requires and applies Stone Calendar\'s implicit enemy target',
   const used = activateRelic(state, 'p1', 0, { ...choice, enemyUid: 'e2' })
   assertDeepEqual(used.enemies.map((enemy) => enemy.hp), [6, 2])
   assertEqual(used.players[0].relics[0].spent, true)
+})
+
+check('copied Tungsten Rod keeps its solo 3 Block effect', () => {
+  const state = { ...combat([makePlayer({ relics: [
+    { defId: 'loaded_die', spent: false }, { defId: 'tungsten_rod', spent: false },
+  ] })], [makeEnemy()]), phase: 'start', die: 6 }
+  const used = activateRelic(state, 'p1', 0, {
+    targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0,
+  })
+  assertEqual(used.players[0].block, 3)
+
+  const fuel = instance('strike_ironclad')
+  const queued = { ...combat([makePlayer({ hand: [fuel] })], [makeEnemy()]), pendingDieRelicChoices: [
+    { playerId: 'p1', relicDefId: 'fuel_canister', abilityIndex: 0, sourceLabel: 'Cheat',
+      enemyUid: null, targetPlayerId: 'p1' },
+    { playerId: 'p1', relicDefId: 'tungsten_rod', abilityIndex: 0, sourceLabel: 'Cheat',
+      enemyUid: null, targetPlayerId: 'p1' },
+  ] }
+  const resolved = resolvePendingDieRelicChoice(queued, 'p1', { exhaustUids: [fuel.uid] })
+  assertEqual(resolved.players[0].block, 3)
+
+  const party = { ...combat([
+    makePlayer({ relics: [
+      { defId: 'loaded_die', spent: false }, { defId: 'tungsten_rod', spent: false },
+    ] }),
+    makePlayer({ id: 'p2', name: 'Silent', row: 1 }),
+    makePlayer({ id: 'p3', name: 'Defect', row: 2, dead: true }),
+  ], [makeEnemy()]), phase: 'start', die: 6 }
+  const shared = activateRelic(party, 'p1', 0, {
+    targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0,
+  })
+  assertDeepEqual(shared.players.map((player) => player.block), [1, 1, 0])
 })
 
 check("Nilry's Codex cannot reroute its own die ability", () => {
