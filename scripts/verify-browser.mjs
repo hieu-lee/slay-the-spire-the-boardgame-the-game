@@ -2334,6 +2334,61 @@ const clickResult = await readRun()
 
 await page.evaluate((run) => {
   const next = structuredClone(run)
+  const player = next.combat.players[0]
+  player.energy = 2
+  player.chamber = [{ uid: 'ui-chamber-headshot', defId: 'hermit_headshot', upgraded: false }]
+  next.combat.players = [player]
+  next.combat.enemies = next.combat.enemies.slice(0, 1)
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
+  await page.locator('.hermit-chamber-trigger').click()
+}
+const chamberHeadshot = page.locator('.hand .card--chamber-drawn[title="Headshot"]')
+await chamberHeadshot.waitFor()
+const headshotHpBeforeClick = (await readRun()).combat.enemies[0].hp
+await chamberHeadshot.click()
+await page.waitForFunction((hp) => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return combat.players[0].chamber.length === 0 && combat.enemies[0].hp === hp - 5
+}, headshotHpBeforeClick)
+const headshotClickResult = await readRun()
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  player.energy = 2
+  player.chamber = [{ uid: 'ui-chamber-headshot-multi', defId: 'hermit_headshot', upgraded: false }]
+  next.combat.players = [player]
+  next.combat.enemies = next.combat.enemies.slice(0, 2).map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, dead: false,
+  }))
+  window.__STS_DEBUG__.setRun(next)
+}, oneLoadedHermitRun)
+if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
+  await page.locator('.hermit-chamber-trigger').click()
+}
+const multiChamberHeadshot = page.locator('.hand .card--chamber-drawn[title="Headshot"]')
+await multiChamberHeadshot.waitFor()
+const multiHeadshotHpBeforeClick = (await readRun()).combat.enemies[1].hp
+await multiChamberHeadshot.click()
+await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[title="Headshot"]')
+  ?.getAttribute('aria-pressed') === 'true')
+await page.locator('.enemy[data-enemy-id="e1"]:not(.enemy--dead)').click()
+await page.waitForFunction((hp) => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return combat.players[0].chamber.length === 0 && combat.enemies[1].hp === hp - 5
+}, multiHeadshotHpBeforeClick, { timeout: 2_000 }).catch(() => undefined)
+const multiHeadshotClickResult = await readRun()
+assert(multiHeadshotClickResult.combat.players[0].chamber.length === 0 &&
+  multiHeadshotClickResult.combat.enemies[1].hp === multiHeadshotHpBeforeClick - 5,
+`multi-enemy Headshot did not resolve on the selected target: ${JSON.stringify({
+  chamber: multiHeadshotClickResult.combat.players[0].chamber,
+  enemies: multiHeadshotClickResult.combat.enemies.map(({ uid, hp, block }) => ({ uid, hp, block })),
+})}`)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
   const owner = next.combat.players[0]
   owner.energy = 3
   owner.row = 0
@@ -2400,10 +2455,25 @@ hermitChamberInteractions = {
   playedCardAnimated: chamberPlayAnimated,
   clickSpentCard: clickResult.combat.players[0].chamber.length === 0,
   clickPlayedUntargeted: clickResult.combat.players[0].block > blockBeforeChamberClick,
+  clickHeadshotDeadOn: headshotClickResult.combat.enemies[0].hp === headshotHpBeforeClick - 5,
+  clickMultiEnemyHeadshotDeadOn: multiHeadshotClickResult.combat.enemies[1].hp === multiHeadshotHpBeforeClick - 5,
   allyTargeted: allyDragResult.combat.players[1].block === 2,
   quickdrawHiddenBeforeTarget: quickdrawPreviewBeforeTarget === 0,
   quickdrawTargetCanceled,
   quickdrawRevealedAfterTarget: quickdrawPreviewAfterTarget > 0,
+}
+if (args.includes('--downfall-hermit-chamber-only')) {
+  check('the focused Hermit Chamber browser run reported no errors', () => {
+    assert(Object.values(hermitChamberInteractions).every(Boolean),
+      `Hermit Chamber cards do not behave like hand cards: ${JSON.stringify(hermitChamberInteractions)}`)
+    assert(consoleErrors.length === 0, `console errors:\n    ${consoleErrors.join('\n    ')}`)
+    assert(pageErrors.length === 0, `page errors:\n    ${pageErrors.join('\n    ')}`)
+    assert(requestFailures.length === 0, `failed requests:\n    ${requestFailures.join('\n    ')}`)
+  })
+  await browser.close()
+  await server.close()
+  report('Downfall Hermit Chamber UI')
+  process.exit(process.exitCode ?? 0)
 }
 
 await page.evaluate((run) => {

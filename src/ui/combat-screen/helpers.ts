@@ -63,7 +63,7 @@ function requirementsOf(
   // in because a counted attack with nothing to count reaches nobody, and
   // asking where to point it is asking a question with no consequence.
   const cardTarget = cardNeedsEnemy(def, viewer, false, energySpent, false, attachedGemId, sourceCardUid,
-    energyCharged)
+    energyCharged, sourceDeadOn)
   const shivsGained = cardShivsOnPlay(def)
   const overflowShivs = overflowShivCount(state, shivsGained)
   const spentShivs = cardShivChoiceCount(def, viewer)
