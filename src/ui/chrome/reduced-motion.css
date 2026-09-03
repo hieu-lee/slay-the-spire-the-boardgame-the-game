@@ -16,7 +16,6 @@
       .sts-scope .neow-offer__skip,
       .sts-scope .campfire__leave,
       .sts-scope .prompt__cancel,
-      .sts-scope .online-entry__back,
       .sts-scope .online-lobby__copy,
       .sts-scope .online-lobby__start
     ):hover:not(:disabled),
@@ -29,7 +28,6 @@
       .sts-scope .neow-offer__skip,
       .sts-scope .campfire__leave,
       .sts-scope .prompt__cancel,
-      .sts-scope .online-entry__back,
       .sts-scope .online-lobby__copy,
       .sts-scope .online-lobby__start
     ):active:not(:disabled)

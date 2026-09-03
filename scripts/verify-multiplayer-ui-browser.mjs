@@ -61,6 +61,44 @@ try {
     assert.notEqual(entryChrome.ribbonClip, 'none', `${viewport.name}: back ribbon lost its silhouette`)
     assert(entryChrome.ribbonRed, `${viewport.name}: back ribbon lost its red treatment`)
     assert(entryChrome.ribbonVisible, `${viewport.name}: entry back ribbon leaves the viewport`)
+    const entryBack = entry.getByRole('button', { name: 'Back to solo table', exact: true })
+    await entryBack.hover()
+    await page.waitForTimeout(250)
+    await page.screenshot({ path: join(out, `${viewport.name}-entry-back-hover.png`) })
+    const entryBackHover = await entryBack.evaluate((button) => ({
+      filter: getComputedStyle(button).filter,
+      outline: getComputedStyle(button).outlineStyle,
+    }))
+    assert(entryBackHover.filter.includes('brightness(1.2)') && entryBackHover.filter.includes('drop-shadow'), `${viewport.name}: back hover lost its clean glow: ${JSON.stringify(entryBackHover)}`)
+    assert.equal(entryBackHover.outline, 'none', `${viewport.name}: back hover retains the clipped outline`)
+    for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+Tab')
+    await page.waitForTimeout(250)
+    const entryBackFocus = await entryBack.evaluate((button) => ({
+      focusVisible: button.matches(':focus-visible'),
+      outline: getComputedStyle(button).outlineStyle,
+    }))
+    assert(entryBackFocus.focusVisible, `${viewport.name}: keyboard navigation did not focus Back`)
+    assert.equal(entryBackFocus.outline, 'none', `${viewport.name}: back focus restores the clipped outline`)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.mouse.move(1, 1)
+    await page.keyboard.press('Tab')
+    const entryBackReducedRest = await entryBack.evaluate((button) => getComputedStyle(button).boxShadow)
+    await page.keyboard.press('Shift+Tab')
+    const entryBackReducedFocus = await entryBack.evaluate((button) => ({
+      boxShadow: getComputedStyle(button).boxShadow,
+      focusVisible: button.matches(':focus-visible'),
+    }))
+    assert(entryBackReducedFocus.focusVisible && entryBackReducedFocus.boxShadow !== entryBackReducedRest,
+      `${viewport.name}: reduced-motion Back loses its keyboard-focus cue`)
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.emulateMedia({ forcedColors: 'active' })
+    const entryBackForcedFocus = await entryBack.evaluate((button) => ({
+      focusVisible: button.matches(':focus-visible'),
+      outline: getComputedStyle(button).outlineStyle,
+    }))
+    assert(entryBackForcedFocus.focusVisible && entryBackForcedFocus.outline !== 'none',
+      `${viewport.name}: forced-colors Back loses its keyboard-focus cue`)
+    await page.emulateMedia({ forcedColors: 'none' })
     assert.equal(entryChrome.selected, 'Silent', `${viewport.name}: hero strip did not select Silent`)
     assert.notEqual(entryChrome.unselectedBorder, entryChrome.selectedBorder, `${viewport.name}: all entry heroes look selected`)
     assert(!entryChrome.overflow, `${viewport.name}: entry overflows horizontally`)

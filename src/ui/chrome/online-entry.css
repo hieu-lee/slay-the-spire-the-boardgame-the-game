@@ -60,20 +60,3 @@
 .sts-scope .neow-offer--potion .reward-item {
   background: rgb(22 31 33 / 0.72);
 }
-
-/* The compendium's back arrow, which renders outside `.sts-scope` and so is not
-   in the focus list in chrome/keys.css — and could not simply join it, because its clip needs a
-   different offset.
-
-   Its polygon insets the top and bottom edges by 8% of its height: ~5.5px at
-   the 4.3rem min-height. A ring at `-4px` sits 1-4px from each edge, i.e.
-   OUTSIDE that inset, so both horizontal bars were clipped and the indicator
-   collapsed to a single left bar (measured: 177 of 201 changed pixels on the
-   left quarter). `-10px` clears the inset with room to spare. It needs the
-   `main` in the selector to reach (0,3,1) and beat the shared list — a bare
-   `.compendium__back:focus-visible` is (0,2,0) and silently lost, which is how
-   the first attempt at this shipped with no effect. */
-main.compendium .compendium__back:focus-visible {
-  outline: 3px solid var(--sts-gold);
-  outline-offset: -10px;
-}
