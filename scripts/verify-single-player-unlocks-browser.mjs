@@ -34,7 +34,7 @@ try {
   assert.deepEqual(sharedContent, { colorless: 3, actIV: 5, unspentMarks: 0, colorlessCards: 22 })
 
   await page.getByRole('button', { name: 'Single Player' }).click()
-  await page.getByRole('button', { name: 'Run settings' }).click()
+  await page.getByRole('button', { name: 'Custom' }).click()
   assert.equal(await page.getByLabel('Starting Act').locator('option[value="4"]').isDisabled(), false)
   console.log('single-player Colorless and Act IV unlocks verified')
 } finally {
