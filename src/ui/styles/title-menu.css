@@ -55,14 +55,6 @@
   pointer-events: none;
 }
 
-.start-menu__eyebrow {
-  margin: 0 0 0.25rem;
-  color: #a9d8df;
-  font-size: clamp(0.55rem, 0.9vw, 0.75rem);
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-}
-
 .start-menu__title h1 {
   display: flex;
   align-items: center;
@@ -283,7 +275,6 @@
 
 @media (max-width: 620px) and (max-height: 620px) {
   .start-menu__title { top: 1rem; right: 0.55rem; left: auto; width: 48vw; }
-  .start-menu__eyebrow { font-size: 0.46rem; letter-spacing: 0.16em; white-space: nowrap; }
   .start-menu__title h1 { gap: 0.25rem; margin-bottom: 0.55rem; font-size: 3.15rem; }
   .start-menu__edition { font-size: 0.62rem; letter-spacing: 0.35em; }
   .start-menu__nav { bottom: 1.9rem; left: 0.75rem; }

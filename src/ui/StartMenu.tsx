@@ -93,7 +93,6 @@ export function StartMenu({
       </div>
 
       {!choosingCharacter ? <section className="start-menu__title" aria-labelledby="game-title">
-        <p className="start-menu__eyebrow">Contention Games · fan implementation</p>
         <h1 id="game-title"><span>Slay</span><small>the</small><span aria-label="Spire">Sp<span className="start-menu__flame-i" aria-hidden="true">ı</span>re</span></h1>
         <p className="start-menu__edition">THE BOARD GAME</p>
       </section> : null}
