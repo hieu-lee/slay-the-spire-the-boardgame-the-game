@@ -4,6 +4,7 @@
 from argparse import ArgumentParser
 from collections import deque
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
 
 from PIL import Image
@@ -75,6 +76,24 @@ def remove_windup_leaks(frame: Image.Image) -> None:
         if component is actor or min(x for x, _y in component) < width * 0.72:
             continue
         clear_component(frame, component)
+
+
+def save_animation(path: Path, frames: list[Image.Image], durations: list[int], loop: int) -> None:
+    temporary = path.with_suffix('.tmp.webp')
+    with TemporaryDirectory() as directory:
+        inputs = []
+        for index, (frame, duration) in enumerate(zip(frames, durations)):
+            source = Path(directory) / f'{index}.png'
+            frame.save(source)
+            inputs.extend(['-d', str(duration), '-lossy', '-q', '90', '-m', '3', '-exact', str(source)])
+        subprocess.run(
+            ['img2webp', '-loop', str(loop), '-min_size', '-mixed', *inputs, '-o', str(temporary)],
+            check=True,
+            capture_output=True,
+        )
+    temporary.replace(path)
+
+
 def pad_animation(path: Path, margin: int = 24) -> None:
     animation = Image.open(path)
     frames = []
@@ -110,18 +129,7 @@ def pad_animation(path: Path, margin: int = 24) -> None:
             canvas.alpha_composite(frame, (left, top))
             padded.append(canvas)
         frames = padded
-    temporary = path.with_suffix(".tmp.webp")
-    frames[0].save(
-        temporary,
-        format="WEBP",
-        save_all=True,
-        append_images=frames[1:],
-        duration=durations,
-        loop=animation.info.get("loop", 1),
-        lossless=True,
-        method=6,
-    )
-    temporary.replace(path)
+    save_animation(path, frames, durations, animation.info.get('loop', 1))
 
 
 def self_test() -> None:

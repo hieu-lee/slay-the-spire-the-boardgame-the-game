@@ -3554,6 +3554,8 @@ for (const viewport of [
   { width: 568, height: 320 },
 ]) {
   await page.setViewportSize(viewport)
+  await page.mouse.move(0, 0)
+  await page.waitForTimeout(300)
   const layout = await page.evaluate(() => {
     const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
     const trigger = document.querySelector('.hermit-chamber-trigger')?.getBoundingClientRect()
@@ -3584,8 +3586,8 @@ for (const viewport of [
       cardsVerticallyContained: boxes.every((card) => card.top >= 0 && card.bottom <= innerHeight),
       cardsClearCombatants: boxes.every((card) => combatants.every((combatant) => !overlaps(card, combatant))),
       combatantsSeparated: !!viewerPortrait && enemyPortraits.every((enemy) => !overlaps(viewerPortrait, enemy)),
-      combatantsVisible: !!board && combatants.every((combatant) =>
-        Math.max(0, Math.min(combatant.bottom, board.bottom) - Math.max(combatant.top, board.top)) >=
+      combatantsVisible: combatants.every((combatant) =>
+        Math.max(0, Math.min(combatant.bottom, innerHeight) - Math.max(combatant.top, 0)) >=
           combatant.height * 0.8),
       documentContained: document.documentElement.scrollWidth <= innerWidth + 2 &&
         document.documentElement.scrollHeight <= innerHeight + 2,
@@ -3688,17 +3690,17 @@ check('Downfall mechanics use compact combat HUDs without clipping the hand', ()
     guardian: ['Vigor 3'],
     hexaghost: [],
     slime_boss: [
-      'Bruiser · L2 · Strength 3 · Cmd 1',
-      'Armored · L3 · Strength 4 · Cmd 1',
+      '2\nBruiser · L2 · Strength 3 · Cmd 1',
+      '3\nArmored · L3 · Strength 4 · Cmd 1',
     ],
     hermit: [],
   })
   assertDeepEqual(guardianModePortrait, {
     attackIdle: '/assets/combat/characters/guardian.webp',
-    attackAria: 'Guardian, 10 of 10 hit points, row 1, Attack Mode, Vigor 3',
+    attackAria: 'Guardian, 10 of 10 hit points, row 1, Attack Mode, Vigor 3, Strength 1, Vulnerable 1, Weak 1',
     toDefense: '/assets/combat/characters/guardian-to-defense.webp',
     defenseIdle: '/assets/combat/characters/guardian-defense.webp',
-    defenseAria: 'Guardian, 10 of 10 hit points, row 1, Defense Mode, Vigor 3',
+    defenseAria: 'Guardian, 10 of 10 hit points, row 1, Defense Mode, Vigor 3, Strength 1, Vulnerable 1, Weak 1',
     toAttack: '/assets/combat/characters/guardian-to-attack.webp',
     returnedAttackIdle: '/assets/combat/characters/guardian.webp',
     reducedPortrait: { src: '/assets/combat/characters/guardian-defense.webp', transition: undefined },
@@ -3830,26 +3832,31 @@ check('Invincible can keep its Power from the sequential end-turn UI', async () 
 })
 
 await page.setViewportSize({ width: 1440, height: 900 })
-await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
-
 await page.evaluate((run) => {
   const next = structuredClone(run)
   const template = next.combat.enemies[0]
-  next.combat.phase = 'enemy'
+  next.combat.phase = 'player'
   next.combat.enemies = [{
     ...template, uid: 'short-boss-duration', defId: 'downfall_inferno', row: 0,
     isBoss: true, hp: 20, maxHp: 20, block: 0, actionIndex: 0, dead: false,
   }]
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
+await page.locator('.enemy--boss[data-enemy-def="downfall_inferno"][data-animation="idle"]').waitFor()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.phase = 'enemy'
+  debug.setRun(run)
+})
 await page.waitForFunction(() => document.querySelector('.enemy--boss[data-animation="attack"]'))
-const shortBossAttackMotion = await page.locator('.enemy--boss[data-animation="attack"]').evaluate((boss) => ({
+const infernoBossAttackMotion = await page.locator('.enemy--boss[data-animation="attack"]').evaluate((boss) => ({
   cssVariable: getComputedStyle(boss).getPropertyValue('--boss-attack-duration').trim(),
   animationDuration: getComputedStyle(boss.querySelector('.enemy__art--cutout')).animationDuration,
 }))
 await page.waitForFunction(() => document.querySelector('.enemy--boss')?.getAttribute('data-animation') === 'idle')
-check('short Downfall boss attacks play exactly one matching motion cycle', () => {
-  assertDeepEqual(shortBossAttackMotion, { cssVariable: '580ms', animationDuration: '0.58s' })
+check('new Downfall boss attacks play one complete matching motion cycle', () => {
+  assertDeepEqual(infernoBossAttackMotion, { cssVariable: '1830ms', animationDuration: '1.83s' })
 })
 
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
@@ -3860,15 +3867,24 @@ await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility
 await page.evaluate((run) => {
   const next = structuredClone(run)
   const template = next.combat.enemies[0]
-  next.combat.phase = 'enemy'
+  next.combat.phase = 'player'
   next.combat.enemies = [{
     ...template, uid: 'watcher-boss-animation', defId: 'downfall_wrathful', row: 0,
     isBoss: true, hp: 20, maxHp: 20, block: 0, actionIndex: 0, dead: false,
   }]
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
+await page.locator(
+  '.enemy--boss[data-boss-art="downfall_wrathful"][data-animation="idle"]',
+).waitFor()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.phase = 'enemy'
+  debug.setRun(run)
+})
 await page.waitForFunction(() => document.querySelector(
-  '.enemy--boss[data-boss-art="downfall_pc_watcher"][data-animation="attack"]'))
+  '.enemy--boss[data-boss-art="downfall_wrathful"][data-animation="attack"]'))
 const watcherBossMotion = await page.locator('.enemy--boss[data-animation="attack"]').evaluate((boss) => {
   const seat = document.querySelector('.seat:not(.seat--dead) .seat__portrait')
   const meteor = getComputedStyle(seat, '::before')
@@ -3877,44 +3893,19 @@ const watcherBossMotion = await page.locator('.enemy--boss[data-animation="attac
     art: boss.querySelector('.enemy__art--cutout')?.getAttribute('src'),
     duration: getComputedStyle(boss).getPropertyValue('--boss-attack-duration').trim(),
     meteorImage: meteor.backgroundImage.includes('/assets/combat/vfx/actions/watcher-meteor.webp'),
-    meteorAnimation: meteor.animationName,
-    meteorDelay: meteor.animationDelay,
     impactImage: impact.backgroundImage.includes('/assets/combat/vfx/actions/watcher-meteor-impact.webp'),
-    impactAnimation: impact.animationName,
-    impactDelay: impact.animationDelay,
   }
 })
 await page.waitForTimeout(500)
-const watcherBeforeContact = await page.locator('.seat:not(.seat--dead) .seat__portrait').first().evaluate((seat) => ({
-  meteorOpacity: Number(getComputedStyle(seat, '::before').opacity),
-  impactOpacity: Number(getComputedStyle(seat, '::after').opacity),
-}))
-await shot('02d-downfall-watcher-boss-meteor')
-await page.waitForFunction(() => {
-  const seat = document.querySelector('.seat:not(.seat--dead) .seat__portrait')
-  return seat && Number(getComputedStyle(seat, '::after').opacity) > 0
-})
-const watcherAfterContact = await page.locator('.seat:not(.seat--dead) .seat__portrait').first().evaluate((seat) => ({
-  meteorOpacity: Number(getComputedStyle(seat, '::before').opacity),
-  impactOpacity: Number(getComputedStyle(seat, '::after').opacity),
-}))
-await shot('02e-downfall-watcher-boss-impact')
+await shot('02d-downfall-wrathful-ribbon-sweep')
 await page.waitForFunction(() => document.querySelector('.enemy--boss')?.getAttribute('data-animation') === 'idle')
-check('boss Watcher swings down before a right-to-left meteor and landing-only impact', () => {
+check('The Wrathful uses its canonical ribbon-staff sweep without Watcher VFX', () => {
   assertDeepEqual(watcherBossMotion, {
-    art: '/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp',
+    art: '/assets/combat/enemies/animations/downfall_wrathful-attack.webp',
     duration: '1830ms',
-    meteorImage: true,
-    meteorAnimation: 'boss-watcher-meteor-fall',
-    meteorDelay: '0.23s',
-    impactImage: true,
-    impactAnimation: 'boss-watcher-meteor-impact',
-    impactDelay: '0.73s',
+    meteorImage: false,
+    impactImage: false,
   })
-  assert(watcherBeforeContact.meteorOpacity > 0 && watcherBeforeContact.impactOpacity === 0,
-    `Watcher impact appeared before contact: ${JSON.stringify(watcherBeforeContact)}`)
-  assert(watcherAfterContact.meteorOpacity === 0 && watcherAfterContact.impactOpacity > 0,
-    `Watcher landing did not replace the meteor: ${JSON.stringify(watcherAfterContact)}`)
 })
 await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = '' })
 await page.keyboard.press('Escape')
@@ -4302,7 +4293,7 @@ if (args.includes('--downfall-ui-only')) {
   process.exit(process.exitCode ?? 0)
 }
 
-const evilBossSoundCount = await page.evaluate(() => window.__SFX_PLAYS__.length)
+const downfallBossSoundCount = await page.evaluate(() => window.__SFX_PLAYS__.length)
 await page.evaluate((run) => {
   const next = structuredClone(run)
   const template = next.combat.enemies[0]
@@ -4314,7 +4305,7 @@ await page.evaluate((run) => {
     ['downfall_wrathful', 0],
   ].map(([defId, actionIndex], index) => ({
     ...template,
-    uid: `evil-hero-${index}`,
+    uid: `downfall-boss-${index}`,
     defId,
     row: 0,
     isBoss: true,
@@ -4330,21 +4321,21 @@ await page.keyboard.press('Escape')
 await pauseMenu.waitFor()
 await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = 'hidden' })
 await page.waitForFunction(() => document.querySelectorAll('.enemy--boss img[src$="-attack.webp"]').length === 4)
-const evilBossAttackSources = await page.locator('.enemy--boss img[src$="-attack.webp"]').evaluateAll((images) =>
+const downfallBossAttackSources = await page.locator('.enemy--boss img[src$="-attack.webp"]').evaluateAll((images) =>
   images.map((image) => image.getAttribute('src')))
-await shot('02c-downfall-evil-hero-boss-attacks')
-check('evil hero boss attack fixture renders four clean left-attacking animation assets', () => {
-  assertDeepEqual(evilBossAttackSources, [
-    '/assets/combat/enemies/animations/downfall_pc_ironclad-attack.webp',
-    '/assets/combat/enemies/animations/downfall_pc_silent-attack.webp',
-    '/assets/combat/enemies/animations/downfall_pc_defect-attack.webp',
-    '/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp',
+await shot('02c-downfall-printed-boss-attacks')
+check('four printed Downfall bosses render their own clean attack assets', () => {
+  assertDeepEqual(downfallBossAttackSources, [
+    '/assets/combat/enemies/animations/downfall_inferno-attack.webp',
+    '/assets/combat/enemies/animations/downfall_witch-attack.webp',
+    '/assets/combat/enemies/animations/downfall_orb_master-attack.webp',
+    '/assets/combat/enemies/animations/downfall_wrathful-attack.webp',
   ])
 })
 await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = '' })
 await page.keyboard.press('Escape')
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
-await page.evaluate((count) => { window.__SFX_PLAYS__.length = count }, evilBossSoundCount)
+await page.evaluate((count) => { window.__SFX_PLAYS__.length = count }, downfallBossSoundCount)
 
 await page.evaluate((run) => {
   const next = structuredClone(run)

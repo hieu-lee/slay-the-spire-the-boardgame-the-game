@@ -444,8 +444,9 @@
 
   .hand {
     justify-content: flex-start;
+    width: 100%;
     height: calc(var(--card-width) * var(--card-ratio) + 2rem);
-    padding-inline: 5.4rem 18rem;
+    padding: 1rem 18rem 0.25rem 5.4rem;
   }
 
   .hand-area[data-has-chamber='true'] .hand {
@@ -488,7 +489,7 @@
 }
 
 @media (max-height: 23.75rem) {
-  .board { min-height: 16rem; }
+  .board { min-height: 15rem; }
 }
 
 @media (orientation: landscape) and (max-height: 26.25rem) {

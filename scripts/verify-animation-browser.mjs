@@ -35,6 +35,7 @@ await page.addInitScript(() => {
 })
 let releaseTimeEater
 let phoneContext
+let bossCount = 0
 const timeEaterAssetGate = new Promise((resolve) => { releaseTimeEater = resolve })
 await page.route('**/time_eater-attack.webp', async (route) => {
   await timeEaterAssetGate
@@ -455,11 +456,21 @@ try {
   const bossIds = [
     'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'corrupt_heart',
     'deca', 'donu', 'guardian_attack', 'guardian_defensive', 'hexaghost', 'slime_boss',
-    'the_champ', 'the_collector', 'time_eater', 'downfall_wrathful',
+    'the_champ', 'the_collector', 'time_eater',
+    'downfall_witch', 'downfall_dark_core', 'downfall_wrathful',
+    'downfall_orb_master', 'downfall_inferno', 'downfall_trickster',
+    'downfall_demon', 'downfall_wraith', 'downfall_blasphemer', 'downfall_neow',
+    'downfall_doppelganger', 'downfall_corrupted',
   ]
+  bossCount = bossIds.length
   const meleeBossIds = new Set([
     'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'donu',
     'guardian_attack', 'guardian_defensive', 'slime_boss', 'the_champ', 'time_eater',
+    'downfall_wrathful', 'downfall_trickster', 'downfall_demon', 'downfall_doppelganger',
+  ])
+  const projectileBossIds = new Set([
+    'downfall_blasphemer', 'downfall_corrupted', 'downfall_dark_core', 'downfall_inferno',
+    'downfall_neow', 'downfall_orb_master', 'downfall_witch', 'downfall_wraith',
   ])
 
   for (const defId of bossIds) {
@@ -468,20 +479,41 @@ try {
     while (actionIndex < 8 && !actionsForEnemy({ ...fixture, actionIndex }, template.combat.die)
       .some((action) => action.kind === 'attack' || action.kind === 'attackSequence')) actionIndex++
     check(actionIndex < 8, `${defId}: no attack action found`)
-    await page.evaluate(({ base, enemy, actionIndex }) => {
+    await page.evaluate(({ base, enemy, actionIndex, projectile }) => {
       const debug = window.__STS_DEBUG__
       const run = structuredClone(debug.getRun())
       run.combat = structuredClone(base)
       run.combat.enemies = [{ ...enemy, actionIndex }]
       run.combat.phase = 'player'
       for (const player of run.combat.players) Object.assign(player, { hp: 999, maxHp: 999, dead: false })
+      if (projectile) {
+        run.combat.players.push({
+          ...structuredClone(run.combat.players[0]), id: 'projectile-target-2', row: 1,
+          name: 'Silent', character: 'silent', hp: 999, maxHp: 999, dead: false,
+        })
+      }
       debug.setRun(run)
-    }, { base: template.combat, enemy: fixture, actionIndex })
+    }, {
+      base: template.combat, enemy: fixture, actionIndex,
+      projectile: projectileBossIds.has(defId),
+    })
     const card = page.locator(`.enemy--boss[data-enemy-def="${defId}"]`)
     await card.waitFor()
     await page.waitForFunction((id) =>
       document.querySelector(`.enemy--boss[data-enemy-def="${id}"]`)?.getAttribute('data-animation') === 'idle', defId)
     await screenshot(`boss-${defId}-idle`)
+    if (defId === 'downfall_demon') {
+      await page.locator('.board').evaluate((board) => {
+        const fixture = document.createElement('span')
+        fixture.className = 'seat seat--dead dead-target-fixture'
+        Object.assign(fixture.style, { position: 'absolute', right: '0', top: '40%', opacity: '0' })
+        const portrait = document.createElement('span')
+        portrait.className = 'seat__portrait'
+        portrait.append(board.querySelector('.seat__portrait > img').cloneNode())
+        fixture.append(portrait)
+        board.append(fixture)
+      })
+    }
     await setPhase('enemy')
     await page.waitForFunction((id) =>
       document.querySelector(`.enemy--boss[data-enemy-def="${id}"]`)?.getAttribute('data-animation') === 'attack', defId)
@@ -523,6 +555,35 @@ try {
       windupRect.top >= -1 && windupRect.bottom <= windupRect.height + 1,
     `${defId}: wind-up art leaves viewport ${JSON.stringify(windupRect)}`)
     await screenshot(`boss-${defId}-windup`)
+    if (defId === 'downfall_demon') {
+      const takeoffSplat = await card.locator('.boss-demon-ground-splat').evaluateAll((splats) => splats.map((splat) => ({
+        className: splat.className,
+        opacity: Number(getComputedStyle(splat).opacity),
+        image: getComputedStyle(splat).backgroundImage,
+      })))
+      check(takeoffSplat.length === 2 && takeoffSplat[0].opacity > 0.2 && takeoffSplat[1].opacity < 0.05 &&
+        takeoffSplat.every(({ image }) => image.includes('downfall-demon-ground-splat.webp')),
+      `downfall_demon: takeoff did not separate the ground splat from the airborne body ${JSON.stringify(takeoffSplat)}`)
+      await waitUntilAttackTime(430)
+      const launch = await card.evaluate((enemy) => {
+        const art = enemy.querySelector('.enemy__art--cutout')
+        const rect = art.getBoundingClientRect()
+        const style = getComputedStyle(enemy)
+        const x = style.getPropertyValue('--boss-launch-x').trim()
+        const y = style.getPropertyValue('--boss-launch-y').trim()
+        return {
+          animation: getComputedStyle(art).animationName,
+          offscreen: rect.bottom < enemy.closest('.board').getBoundingClientRect().top,
+          remValues: x.endsWith('rem') && y.endsWith('rem'),
+          slope: Math.abs(Number.parseFloat(x) / Number.parseFloat(y)),
+        }
+      })
+      check(launch.animation === 'boss-demon-aerial-slam, boss-demon-airborne-visibility' &&
+        launch.offscreen && launch.remValues &&
+        Math.abs(launch.slope - 0.291) < 0.002,
+      `downfall_demon: launch did not follow its measured 16.2deg offscreen angle ${JSON.stringify(launch)}`)
+      await screenshot('boss-downfall_demon-offscreen')
+    }
     await waitUntilAttackTime(1005)
     await screenshot(`boss-${defId}-impact`)
     await page.evaluate(() => {
@@ -534,17 +595,35 @@ try {
         }
       }
     })
+    if (defId === 'downfall_demon') {
+      const impact = await card.evaluate((enemy) => {
+        const airborne = enemy.querySelector('.enemy__art--cutout')
+        const grounded = enemy.querySelector('.boss-demon-grounded')
+        return {
+          airborneOpacity: Number(getComputedStyle(airborne).opacity),
+          groundedOpacity: Number(getComputedStyle(grounded).opacity),
+          groundedLoaded: grounded.complete && grounded.naturalWidth > 0,
+          targetSplatOpacity: Number(getComputedStyle(
+            enemy.querySelector('.boss-demon-ground-splat--target'),
+          ).opacity),
+        }
+      })
+      check(impact.targetSplatOpacity > 0.2 && impact.airborneOpacity < 0.05 &&
+        impact.groundedOpacity > 0.5 && impact.groundedLoaded,
+      `downfall_demon: target landing did not use its body-only slam and separate splat ${JSON.stringify(impact)}`)
+    }
     const audit = await card.evaluate((enemy) => {
       const art = enemy.querySelector('.enemy__art--cutout')
       const artStyle = getComputedStyle(art)
       const rect = art.getBoundingClientRect()
       const contactLeft = Number.parseFloat(getComputedStyle(enemy).getPropertyValue('--boss-contact-left'))
-      const heroes = [...enemy.closest('.board').querySelectorAll('.seat__portrait > img')]
+      const heroes = [...enemy.closest('.board').querySelectorAll('.seat:not(.seat--dead) .seat__portrait > img')]
       const saved = heroes.map((hero) => hero.style.animation)
       heroes.forEach((hero) => { hero.style.animation = 'none' })
       const heroRight = Math.max(...heroes.map((hero) => hero.getBoundingClientRect().right))
       heroes.forEach((hero, index) => { hero.style.animation = saved[index] ?? '' })
       const effect = getComputedStyle(enemy, '::after')
+      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
       const canvas = document.createElement('canvas')
       canvas.width = art.naturalWidth
       canvas.height = art.naturalHeight
@@ -587,21 +666,67 @@ try {
             const style = getComputedStyle(target, '::before')
             return { animation: style.animationName, duration: style.animationDuration, image: style.backgroundImage }
           }),
+        projectiles: [...enemy.querySelectorAll('.boss-projectile')].map((projectile) => {
+          const style = getComputedStyle(projectile)
+          const playerId = projectile.dataset.targetPlayer
+          const target = enemy.closest('.board')
+            .querySelector(`.seat[data-player-id="${CSS.escape(playerId)}"] .seat__portrait`)
+          const targetRect = target?.getBoundingClientRect()
+          const startXValue = style.getPropertyValue('--boss-projectile-start-x').trim()
+          const startYValue = style.getPropertyValue('--boss-projectile-start-y').trim()
+          const deltaXValue = style.getPropertyValue('--boss-projectile-x').trim()
+          const deltaYValue = style.getPropertyValue('--boss-projectile-y').trim()
+          const startX = enemy.getBoundingClientRect().left + Number.parseFloat(startXValue) * rem
+          const startY = enemy.getBoundingClientRect().top + Number.parseFloat(startYValue) * rem
+          const image = projectile.querySelector('img')
+          return {
+            playerId,
+            animation: style.animationName,
+            duration: style.animationDuration,
+            delay: style.animationDelay,
+            remValues: [startXValue, startYValue, deltaXValue, deltaYValue].every((value) => value.endsWith('rem')),
+            reachesTarget: Boolean(targetRect &&
+              Math.abs(startX + Number.parseFloat(deltaXValue) * rem - (targetRect.left + targetRect.width / 2)) <= 1 &&
+              Math.abs(startY + Number.parseFloat(deltaYValue) * rem - (targetRect.top + targetRect.height / 2)) <= 1),
+            image: image?.getAttribute('src') ?? '',
+            loaded: Boolean(image?.complete && image.naturalWidth > 0),
+          }
+        }),
       }
     })
-    check(audit.loaded && audit.image.endsWith('-attack.webp'), `${defId}: attack art did not load`)
-    check(audit.duration === '1.83s', `${defId}: body duration is ${audit.duration}`)
+    const expectedAttackArt = defId === 'downfall_demon'
+      ? '/animations/downfall_demon-airborne.webp'
+      : '-attack.webp'
+    check(audit.loaded && audit.image.endsWith(expectedAttackArt), `${defId}: attack art did not load`)
+    check(audit.duration === (defId === 'downfall_demon' ? '1.83s, 1.83s' : '1.83s'),
+      `${defId}: body duration is ${audit.duration}`)
     check(audit.motion === (meleeBossIds.has(defId) ? 'melee' : 'ranged'),
       `${defId}: expected ${meleeBossIds.has(defId) ? 'melee' : 'ranged'} motion, got ${audit.motion}`)
     check(audit.rect.left >= -1 && audit.rect.right <= audit.viewport.width + 1 &&
       audit.rect.top >= -1 && audit.rect.bottom <= audit.viewport.height + 1,
     `${defId}: attack art leaves viewport ${JSON.stringify(audit.rect)}`)
     if (audit.motion === 'melee') {
-      check(audit.animation === 'boss-melee-dash', `${defId}: missing melee dash`)
+      check(defId === 'downfall_demon'
+        ? audit.animation === 'boss-demon-aerial-slam, boss-demon-airborne-visibility'
+        : audit.animation === 'boss-melee-dash',
+        `${defId}: missing melee motion`)
       check(Math.abs(audit.rect.visibleLeft - audit.heroRight) <= 2,
         `${defId}: visible edge ${audit.rect.visibleLeft} missed hero edge ${audit.heroRight}`)
     } else {
       check(audit.animation === 'boss-ranged-cast', `${defId}: missing ranged cast`)
+    }
+    if (projectileBossIds.has(defId)) {
+      check(audit.projectiles.length === 2 && new Set(audit.projectiles.map(({ playerId }) => playerId)).size === 2 &&
+        audit.projectiles.every((projectile) => projectile.loaded && projectile.remValues && projectile.reachesTarget &&
+          projectile.animation === 'boss-projectile-flight' && projectile.duration === '0.55s' &&
+          projectile.delay === '0.18s' && projectile.image.endsWith(`/projectiles/${defId}.webp`)),
+      `${defId}: projectiles did not fly independently to both players ${JSON.stringify(audit.projectiles)}`)
+    } else {
+      check(audit.projectiles.length === 0, `${defId}: unexpected projectile ${JSON.stringify(audit.projectiles)}`)
+    }
+    if (defId === 'downfall_demon') {
+      check(await page.locator('.dead-target-fixture').count() === 1,
+        `${defId}: dead-seat melee targeting fixture is missing`)
     }
     if (defId === 'awakened_one_phase_1') {
       check(audit.targets.length > 0 && audit.targets.every((effect) =>
@@ -613,13 +738,34 @@ try {
         audit.effect.image.includes('awakened-blue-fire.webp') && Number(audit.effect.opacity) > 0.5,
       `Awakened One phase 2 breath is missing: ${JSON.stringify(audit.effect)}`)
     }
-    await waitUntilAttackTime(1500)
-    await page.evaluate(() => {
+    if (defId === 'downfall_demon') {
+      await waitUntilAttackTime(1450)
+      await page.evaluate(() => {
+        for (const animation of document.getAnimations()) {
+          if (animation.animationName?.startsWith('boss-demon-')) animation.currentTime = 1450
+        }
+      })
+      const returnPose = await card.evaluate((enemy) => {
+        const airborne = enemy.querySelector('.enemy__art--cutout')
+        const grounded = enemy.querySelector('.boss-demon-grounded')
+        return {
+          airborneOpacity: Number(getComputedStyle(airborne).opacity),
+          groundedOpacity: Number(getComputedStyle(grounded).opacity),
+          offscreen: airborne.getBoundingClientRect().bottom < enemy.closest('.board').getBoundingClientRect().top,
+        }
+      })
+      check(returnPose.airborneOpacity > 0.5 && returnPose.groundedOpacity < 0.05 && returnPose.offscreen,
+        `downfall_demon: return ascent did not switch back to its airborne body ${JSON.stringify(returnPose)}`)
+      await screenshot('boss-downfall_demon-return-ascent')
+    }
+    const recoverySample = defId === 'downfall_demon' ? 1780 : 1500
+    await waitUntilAttackTime(recoverySample)
+    await page.evaluate((time) => {
       for (const animation of document.getAnimations()) {
         const name = animation.animationName ?? ''
-        if (name.startsWith('boss-') || name.startsWith('awakened-')) animation.currentTime = 1500
+        if (name.startsWith('boss-') || name.startsWith('awakened-')) animation.currentTime = time
       }
-    })
+    }, recoverySample)
     check(await card.getAttribute('data-animation') === 'attack', `${defId}: attack art unlatched during recovery`)
     const recoveryLowerBodyRight = await card.locator('.enemy__art--cutout').evaluate((art) => {
       const canvas = document.createElement('canvas')
@@ -636,12 +782,25 @@ try {
       }
       return right
     })
+    if (defId === 'downfall_demon') {
+      const returnLanding = await card.evaluate((enemy) => ({
+        airborneOpacity: Number(getComputedStyle(enemy.querySelector('.enemy__art--cutout')).opacity),
+        groundedOpacity: Number(getComputedStyle(enemy.querySelector('.boss-demon-grounded')).opacity),
+        originSplatOpacity: Number(getComputedStyle(
+          enemy.querySelector('.boss-demon-ground-splat--origin'),
+        ).opacity),
+      }))
+      check(returnLanding.originSplatOpacity > 0.2 && returnLanding.airborneOpacity < 0.05 &&
+        returnLanding.groundedOpacity > 0.5,
+      `downfall_demon: return landing did not use its body-only slam and separate splat ${JSON.stringify(returnLanding)}`)
+    }
     if (defId === 'deca') {
       const landmarks = [windupRect.lowerBodyRight, audit.lowerBodyRight, recoveryLowerBodyRight]
       check(Math.max(...landmarks) - Math.min(...landmarks) <= 4,
         `deca: ranged actor landmark moves between phases ${landmarks.join(', ')}`)
     }
     await screenshot(`boss-${defId}-recovery`)
+    if (defId === 'downfall_demon') await page.locator('.dead-target-fixture').evaluate((fixture) => fixture.remove())
     if (defId === bossIds[0]) {
       const moteHints = async () => card.locator('.enemy__portrait').evaluate((portrait) => {
         const style = getComputedStyle(portrait, '::before')
@@ -788,7 +947,7 @@ try {
   'boss damage did not resolve at the 730ms contact')
   check(await page.locator('.seat .hit-vfx').count() > 0 && await page.evaluate(() =>
     window.__ANIMATION_SFX__.some((sound) => sound.path === '/assets/sfx/player-hit.ogg')),
-  'Watcher damage, hit reaction, and hurt SFX did not coincide with the 730ms meteor contact')
+  'Wrathful damage, hit reaction, and hurt SFX did not coincide with the 730ms ribbon-sweep contact')
 
   const guardian = { ...template.enemy, uid: 'guardian-transform', defId: 'guardian_defensive', isBoss: true,
     actionIndex: 1, hp: 999, maxHp: 999, dead: false }
@@ -821,7 +980,7 @@ try {
     { character: 'silent', sourceId: 'predator', duration: '2.04s', contact: 1025, samples: [170, 1025, 2039] },
     { character: 'guardian', sourceId: 'guardian_strike', duration: '1.65s', contact: 630, samples: [270, 825, 1375] },
     { character: 'hermit', sourceId: 'hermit_strike', duration: '1.65s', contact: 630, samples: [270, 825, 1375] },
-    { character: 'slime_boss', sourceId: 'slime_boss_strike', duration: '1.65s', contact: 630, samples: [270, 825, 1375] },
+    { character: 'slime_boss', sourceId: 'slime_boss_strike', duration: '1.7s', contact: 850, samples: [270, 850, 1375] },
     { character: 'hexaghost', sourceId: 'strike_hexaghost', duration: '2s', contact: 1450,
       samples: [270, 1000, 1725, 2100] },
   ]
@@ -1412,8 +1571,8 @@ try {
       bodyAnimation: 'attack-downfall', poses: ['downfall-ready', 'downfall-impact'] },
     { character: 'hermit', sourceId: 'hermit_strike', contact: 630,
       bodyAnimation: 'attack-downfall', poses: ['downfall-ready', 'downfall-impact'] },
-    { character: 'slime_boss', sourceId: 'slime_boss_strike', contact: 630,
-      bodyAnimation: 'attack-downfall', poses: ['downfall-ready', 'downfall-impact'] },
+    { character: 'slime_boss', sourceId: 'slime_boss_strike', contact: 850,
+      bodyAnimation: 'attack-slime-boss-idle', poses: ['downfall-ready', 'downfall-impact'] },
     { character: 'hexaghost', sourceId: 'strike_hexaghost', contact: 1450,
       bodyAnimation: 'attack-downfall-hexaghost', poses: ['hexaghost-state'] },
   ]
@@ -1672,6 +1831,139 @@ try {
     `iPhone 13 skipped the boss attack ${JSON.stringify(iphoneBossAnimation)}`)
   }
 
+  const phoneDemon = { ...timingBoss, uid: 'iphone-demon', defId: 'downfall_demon' }
+  let phoneDemonActionIndex = 0
+  while (phoneDemonActionIndex < 8 && !actionsForEnemy(
+    { ...phoneDemon, actionIndex: phoneDemonActionIndex }, phoneFixture.die,
+  ).some((action) => action.kind === 'attack' || action.kind === 'attackSequence')) phoneDemonActionIndex++
+  await phone.evaluate(({ base, enemy, actionIndex }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(base)
+    run.combat.combatId = `${run.combat.combatId}-iphone-demon`
+    run.combat.players = [run.combat.players[0]]
+    Object.assign(run.combat.players[0], { hp: 999, maxHp: 999, dead: false })
+    run.combat.enemies = [{ ...enemy, actionIndex, hp: 999, maxHp: 999, dead: false }]
+    run.combat.phase = 'player'
+    debug.setRun(run)
+  }, { base: phoneFixture, enemy: phoneDemon, actionIndex: phoneDemonActionIndex })
+  const phoneDemonCard = phone.locator('.enemy--boss[data-enemy-def="downfall_demon"]')
+  await phoneDemonCard.locator('.enemy__art--cutout').waitFor()
+  await phone.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.phase = 'enemy'
+    debug.setRun(run)
+  })
+  await phone.waitForFunction(() =>
+    document.querySelector('.enemy--boss[data-enemy-def="downfall_demon"]')?.getAttribute('data-animation') === 'attack')
+  await phoneDemonCard.locator('.boss-demon-grounded').waitFor()
+  const samplePhoneDemon = async (time) => {
+    await phone.evaluate((sampleTime) => {
+      for (const animation of document.getAnimations()) {
+        if (animation.animationName?.startsWith('boss-demon-')) {
+          animation.currentTime = sampleTime
+          animation.pause()
+        }
+      }
+    }, time)
+    return phoneDemonCard.evaluate((enemy) => {
+      const airborne = enemy.querySelector('.enemy__art--cutout')
+      const grounded = enemy.querySelector('.boss-demon-grounded')
+      const board = enemy.closest('.board').getBoundingClientRect()
+      const airborneRect = airborne.getBoundingClientRect()
+      const groundedRect = grounded.getBoundingClientRect()
+      return {
+        airborneOpacity: Number(getComputedStyle(airborne).opacity),
+        groundedOpacity: Number(getComputedStyle(grounded).opacity),
+        airborneScale: getComputedStyle(airborne).getPropertyValue('--boss-scale').trim(),
+        groundedScale: getComputedStyle(grounded).getPropertyValue('--boss-scale').trim(),
+        airborneOffscreen: airborneRect.bottom < board.top,
+        groundedInside: groundedRect.left >= board.left - 1 && groundedRect.right <= board.right + 1 &&
+          groundedRect.top >= board.top - 1 && groundedRect.bottom <= board.bottom + 1,
+      }
+    })
+  }
+  const iphoneDemonImpact = await samplePhoneDemon(1005)
+  check(iphoneDemonImpact.airborneScale === '1.5' && iphoneDemonImpact.groundedScale === '1.5' &&
+    iphoneDemonImpact.airborneOpacity < 0.05 && iphoneDemonImpact.groundedOpacity > 0.5 &&
+    iphoneDemonImpact.groundedInside,
+  `iPhone 13 Demon impact changed scale or clipped ${JSON.stringify(iphoneDemonImpact)}`)
+  await phone.locator('.board').screenshot({ path: join(output, 'phone-downfall_demon-impact.png') })
+  const iphoneDemonReturn = await samplePhoneDemon(1450)
+  check(iphoneDemonReturn.airborneOpacity > 0.5 && iphoneDemonReturn.groundedOpacity < 0.05 &&
+    iphoneDemonReturn.airborneOffscreen,
+  `iPhone 13 Demon return ascent stayed on screen ${JSON.stringify(iphoneDemonReturn)}`)
+  const iphoneDemonLanding = await samplePhoneDemon(1780)
+  check(iphoneDemonLanding.airborneOpacity < 0.05 && iphoneDemonLanding.groundedOpacity > 0.5 &&
+    iphoneDemonLanding.groundedInside,
+  `iPhone 13 Demon return landing changed scale or clipped ${JSON.stringify(iphoneDemonLanding)}`)
+  await phone.locator('.board').screenshot({ path: join(output, 'phone-downfall_demon-return-landing.png') })
+
+  const phoneProjectileBoss = { ...timingBoss, uid: 'iphone-projectile-boss', defId: 'downfall_witch' }
+  let phoneProjectileActionIndex = 0
+  while (phoneProjectileActionIndex < 8 && !actionsForEnemy(
+    { ...phoneProjectileBoss, actionIndex: phoneProjectileActionIndex }, phoneFixture.die,
+  ).some((action) => action.kind === 'attack' || action.kind === 'attackSequence')) phoneProjectileActionIndex++
+  await phone.evaluate(({ base, enemy, actionIndex }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(base)
+    run.combat.combatId = `${run.combat.combatId}-iphone-projectile-boss`
+    run.combat.players = [run.combat.players[0]]
+    Object.assign(run.combat.players[0], { hp: 999, maxHp: 999, dead: false })
+    run.combat.enemies = [{ ...enemy, actionIndex, hp: 999, maxHp: 999, dead: false }]
+    run.combat.phase = 'player'
+    debug.setRun(run)
+  }, { base: phoneFixture, enemy: phoneProjectileBoss, actionIndex: phoneProjectileActionIndex })
+  await phone.locator('.enemy--boss[data-enemy-def="downfall_witch"][data-animation="idle"]').waitFor()
+  await phone.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.phase = 'enemy'
+    debug.setRun(run)
+  })
+  const phoneProjectile = phone.locator('.enemy--boss[data-enemy-def="downfall_witch"] .boss-projectile')
+  await phoneProjectile.waitFor()
+  await phone.waitForFunction(() => {
+    const image = document.querySelector('.enemy--boss[data-enemy-def="downfall_witch"] .boss-projectile img')
+    return image?.complete && image.naturalWidth > 0
+  })
+  await phoneProjectile.evaluate((projectile) => {
+    const animation = projectile.getAnimations()[0]
+    if (animation) {
+      animation.currentTime = 500
+      animation.pause()
+    }
+  })
+  const iphoneProjectile = await phoneProjectile.evaluate((projectile) => {
+    const style = getComputedStyle(projectile)
+    const rect = projectile.getBoundingClientRect()
+    const target = document.querySelector(`.seat[data-player-id="${CSS.escape(projectile.dataset.targetPlayer)}"] .seat__portrait`)
+    const targetRect = target?.getBoundingClientRect()
+    const bossRect = projectile.closest('.enemy').getBoundingClientRect()
+    const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+    const values = ['--boss-projectile-start-x', '--boss-projectile-start-y', '--boss-projectile-x', '--boss-projectile-y']
+      .map((name) => style.getPropertyValue(name).trim())
+    const endX = bossRect.left + (Number.parseFloat(values[0]) + Number.parseFloat(values[2])) * rem
+    const endY = bossRect.top + (Number.parseFloat(values[1]) + Number.parseFloat(values[3])) * rem
+    const image = projectile.querySelector('img')
+    return {
+      animation: style.animationName,
+      values,
+      loaded: Boolean(image?.complete && image.naturalWidth > 0),
+      image: image?.getAttribute('src') ?? '',
+      visible: rect.left >= -1 && rect.right <= innerWidth + 1 && rect.top >= -1 && rect.bottom <= innerHeight + 1,
+      reachesTarget: Boolean(targetRect && Math.abs(endX - (targetRect.left + targetRect.width / 2)) <= 1 &&
+        Math.abs(endY - (targetRect.top + targetRect.height / 2)) <= 1),
+    }
+  })
+  check(iphoneProjectile.animation === 'boss-projectile-flight' && iphoneProjectile.loaded &&
+    iphoneProjectile.image.endsWith('/projectiles/downfall_witch.webp') && iphoneProjectile.visible &&
+    iphoneProjectile.reachesTarget && iphoneProjectile.values.every((value) => value.endsWith('rem')),
+  `iPhone 13 clipped or misplaced the Downfall boss projectile ${JSON.stringify(iphoneProjectile)}`)
+  await phone.locator('.board').screenshot({ path: join(output, `iphone-13-${browserName}-downfall-projectile.png`) })
+
   check(pageErrors.length === 0, `page errors: ${pageErrors.join('; ')}`)
 } finally {
   await phoneContext?.close()
@@ -1685,4 +1977,4 @@ if (failures.length) {
 }
 console.log(mapOnly
   ? `Map browser QA passed: desktop and horizontal-phone screenshots: ${output}`
-  : `Animation browser QA passed: 14 bosses × 4 states, 8 heroes × 3 phases; screenshots: ${output}`)
+  : `Animation browser QA passed: ${bossCount} bosses × 4 states, 8 heroes × 3 phases; screenshots: ${output}`)

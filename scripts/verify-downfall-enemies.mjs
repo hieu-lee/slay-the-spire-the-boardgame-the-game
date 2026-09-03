@@ -170,6 +170,14 @@ const makeCombat = (defIds, ascension = 0, players = [makePlayer()]) => {
 
 // Registry, selection, encounter setup, physical summon replacement, and optional own-boss reroll.
 assert.equal(enemyDef('downfall_witch').id, 'downfall_witch')
+for (const defId of Object.values(DOWNFALL_BOSSES).flat()) {
+  assert.equal(enemyDef(defId).artId, defId, `${defId} must use its own printed boss art`)
+}
+assert.equal(enemyDef('downfall_wrathful_wrath').artId, 'downfall_wrathful')
+assert.equal(enemyDef('downfall_blasphemer_divinity').artId, 'downfall_blasphemer')
+for (const defId of ['downfall_flame_barrier', 'downfall_doppelganger', 'downfall_corrupted']) {
+  assert.equal(enemyDef(defId).artId, defId, `${defId} must use its own printed boss art`)
+}
 for (const act of [1, 2, 3, 4]) assert(DOWNFALL_BOSSES[act].includes(rollActBoss(createRng(100 + act), act, 'downfall')))
 assert(createSummonSupply(createRng(2), 'downfall', 1).acid_slime.every((id) => id.startsWith('downfall_')))
 assert(createSummonSupply(createRng(2), 'downfall', 2).blue_slaver.every((id) => id.startsWith('downfall_')))
