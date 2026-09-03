@@ -19,6 +19,7 @@
     "verify:browser": "node scripts/verify-browser.mjs",
     "verify:end-turn-drag": "node scripts/verify-end-turn-drag-browser.mjs",
     "verify:online": "node scripts/verify-online-browser.mjs",
+    "verify:multiplayer-ui": "node scripts/verify-multiplayer-ui-browser.mjs",
     "verify:single-player-build": "node scripts/check-single-player-build.mjs && pnpm exec playwright install chromium && node scripts/verify-single-player-unlocks-browser.mjs",
     "sync:assets": "node scripts/sync-card-assets.mjs && node scripts/sync-icons.mjs && node scripts/sync-enemy-art.mjs",
     "sync:cards": "node scripts/sync-card-assets.mjs",

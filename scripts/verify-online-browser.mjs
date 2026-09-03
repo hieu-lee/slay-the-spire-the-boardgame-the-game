@@ -98,7 +98,8 @@ async function enterOnline(page, name, character, code, localSeed, doubleSubmit 
   await page.getByRole('button', { name: 'Play online' }).click()
   const entry = page.locator('main.online-entry')
   await entry.getByLabel('Your name').fill(name)
-  await entry.locator('select').selectOption(character)
+  const characterLabel = character.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ')
+  await entry.locator('.online-character-roster').getByRole('button', { name: characterLabel }).click()
   if (code) {
     await page.getByLabel('Room code').fill(code)
     await page.getByRole('button', { name: 'Join', exact: true }).click()
@@ -169,7 +170,7 @@ try {
     await route.continue()
   }, { times: 1 })
   await guardedEntry.getByRole('button', { name: 'Create room' }).click()
-  const backDisabledDuringEntry = await guardedEntry.getByRole('button', { name: '← Solo table' }).isDisabled()
+  const backDisabledDuringEntry = await guardedEntry.getByRole('button', { name: 'Back to solo table' }).isDisabled()
   await guardedEntry.locator('.online-lobby').waitFor()
   const guardedCredentials = await credentials(guardedEntry)
   const preserveContext = await browser.newContext({ viewport: { width: 1024, height: 768 } })
@@ -182,7 +183,7 @@ try {
   await preservePage.routeWebSocket('**/ws', () => {})
   await preservePage.goto(origin, { waitUntil: 'networkidle' })
   await preservePage.getByRole('heading', { name: 'Reconnecting' }).waitFor()
-  await preservePage.getByRole('button', { name: '← Solo table' }).click()
+  await preservePage.getByRole('button', { name: 'Back to solo table' }).click()
   await preservePage.getByRole('button', { name: 'Single Player' }).waitFor()
   const preservedRecovery = await preservePage.evaluate((code) => ({
     active: sessionStorage.getItem('sts-room-session'),
@@ -211,7 +212,7 @@ try {
     await leaveReleased
     await route.fulfill({ response })
   }, { times: 1 })
-  await guardedEntry.getByRole('button', { name: '← Leave room' }).click()
+  await guardedEntry.getByRole('button', { name: 'Leave room' }).click()
   await leaveStarted
   await guardedEntry.getByRole('button', { name: `Resume ${spare.snapshot.code}` }).click()
   await guardedEntry.locator('.online-lobby').waitFor()
@@ -245,7 +246,7 @@ try {
   }, { times: 1 })
   await guardedEntry.getByRole('button', { name: 'Join voice' }).click()
   await iceStarted
-  await guardedEntry.getByRole('button', { name: '← Leave room' }).click()
+  await guardedEntry.getByRole('button', { name: 'Leave room' }).click()
   await guardedEntry.getByRole('button', { name: 'Play online' }).waitFor()
   releaseIce()
   await guardedEntry.waitForTimeout(200)
@@ -304,7 +305,7 @@ try {
     await voiceLeaveReleased
     await route.continue()
   }, { times: 1 })
-  await c.getByRole('button', { name: '← Leave room' }).click()
+  await c.getByRole('button', { name: 'Leave room' }).click()
   await voiceLeaveStarted
   const stoppedBeforeLeave = await c.evaluate(() => window.__LOCAL_VOICE_STREAMS__.at(-1)
     ?.getAudioTracks().every((track) => track.readyState === 'ended'))

@@ -877,8 +877,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'room' && roomKind !== 'campfire' && !run.roomState ? (
         <section className="room-screen">
           <h2>{roomKind ?? 'room'}</h2>
-          <button type="button" onClick={() => setRun((current) => leaveRoom(current))}>
-            Back to the map
+          <button type="button" className="ribbon-back" aria-label="Back to the map" onClick={() => setRun((current) => leaveRoom(current))}>
+            <span aria-hidden="true"></span>
           </button>
         </section>
       ) : null}

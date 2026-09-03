@@ -1420,7 +1420,7 @@ function EventScreen({
         </div> : null}
         {resolverOpen && room.card.id !== "knowing_skull" ? (
           <div className="event-resolve-actions">
-            {!pendingDecision ? <button type="button" onClick={clearChoiceDraft}>Back to choices</button> : null}
+            {!pendingDecision ? <button type="button" className="ribbon-back" aria-label="Back to choices" onClick={clearChoiceDraft}><span aria-hidden="true"></span></button> : null}
             <button type="button" className="room-proceed" disabled={!selectionReady} onClick={() => {
               if (selectedChoiceEffects.some((effect) =>
                 (effect.tag === "card-reward" || effect.tag === "rare-reward") && effect.random === true)) onArmCardGain?.();

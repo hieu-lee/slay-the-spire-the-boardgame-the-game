@@ -455,7 +455,8 @@ await page.getByRole('button', { name: 'Standard', exact: true }).click()
 const characterPickerControls = await page.locator('.start-menu__character-select').evaluate((screen) => ({
   textActions: [...screen.querySelectorAll('button')].filter((button) =>
     ['Back', 'Run settings', 'Embark'].includes(button.textContent?.trim() ?? '')).length,
-  backIcon: screen.querySelector('.start-menu__character-back')?.textContent?.trim(),
+  backRibbon: screen.querySelector('.start-menu__character-back')?.classList.contains('ribbon-back'),
+  backText: screen.querySelector('.start-menu__character-back')?.textContent?.trim(),
   embarkIcon: screen.querySelector('.start-menu__character-embark')?.textContent?.trim(),
   decreaseDisabled: screen.querySelector('[aria-label="Decrease Ascension"]')?.disabled,
   increaseDisabled: screen.querySelector('[aria-label="Increase Ascension"]')?.disabled,
@@ -546,7 +547,8 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assertEqual(legacyRunSettings, 0, 'the removed run-settings dialog remains in the title menu')
   assertDeepEqual(characterPickerControls, {
     textActions: 0,
-    backIcon: '↩',
+    backRibbon: true,
+    backText: '',
     embarkIcon: '✓',
     decreaseDisabled: true,
     increaseDisabled: true,

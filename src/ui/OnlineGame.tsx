@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
+import { assetPath } from '../game/assets.ts'
 import type { CombatState } from '../game/combat.ts'
 import { ASCENSION_RULES, canGiveUpRun, hasPendingRelicAcquisition, victoryIsTerminal } from '../game/run.ts'
 import { relicDef } from '../game/relics.ts'
@@ -168,6 +169,26 @@ function Seat({ seat, you }: { seat?: PublicSeat; you?: boolean }) {
   )
 }
 
+/** The same close-cropped hero strip used by the polished solo screen. */
+function CharacterRoster({ character, onChoose, taken, disabled = false }: {
+  character: (typeof CHARACTERS)[number][0]
+  onChoose: (character: (typeof CHARACTERS)[number][0]) => void
+  taken?: ReadonlySet<string>
+  disabled?: boolean
+}) {
+  return (
+    <div className="online-character-roster" role="group" aria-label="Choose your character">
+      {CHARACTERS.map(([id, label]) => {
+        const unavailable = Boolean(taken?.has(id) && id !== character)
+        return <button type="button" className="online-character-roster__portrait" key={id} aria-label={label} aria-pressed={id === character}
+          disabled={disabled || unavailable} onClick={() => onChoose(id)}>
+          <img src={assetPath(`menu/character-select/portrait-${id}.png`)} alt="" />
+        </button>
+      })}
+    </div>
+  )
+}
+
 function RemoteAudio({ stream, volume }: { stream: MediaStream; volume: number }) {
   const audio = useRef<HTMLAudioElement>(null)
   useEffect(() => {
@@ -230,6 +251,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const [expiredGiveUpDeadline, setExpiredGiveUpDeadline] = useState<number | null>(null)
   const pauseDialog = useRef<HTMLDialogElement>(null)
   const runShell = useRef<HTMLElement>(null)
+  const previousOnlineScreen = useRef<string | null>(null)
   const snapshot = room.snapshot
   const giveUpVote = snapshot?.giveUpVote?.deadlineAt === expiredGiveUpDeadline ? undefined : snapshot?.giveUpVote
   useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected',
@@ -311,6 +333,15 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     if (giveUpVote) setCompendiumOpen(false)
   }, [giveUpVote?.deadlineAt])
 
+  // A horizontal-phone player may have scrolled down to the room form before
+  // creating a lobby. Preserve their room state, but not that stale scroll
+  // position when the screen itself changes.
+  useEffect(() => {
+    const nextScreen = snapshot ? `${snapshot.run ? 'run' : 'lobby'}:${snapshot.code}` : 'entry'
+    if (previousOnlineScreen.current !== nextScreen) window.scrollTo(0, 0)
+    previousOnlineScreen.current = nextScreen
+  }, [snapshot?.code, Boolean(snapshot?.run)])
+
   // MUST stay above the early returns below — this component bails out for the
   // reconnecting and entry screens, and a hook called after those would run on
   // some renders and not others.
@@ -351,7 +382,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   if (!snapshot && room.activeCode) {
     return (
       <main className="online-entry online-reconnecting sts-scope">
-        <button type="button" className="online-entry__back" onClick={() => { room.forget(); onLocal() }}>← Solo table</button>
+        <button type="button" className="online-entry__back ribbon-back" aria-label="Back to solo table"
+          onClick={() => { room.forget(); onLocal() }}><span aria-hidden="true"></span></button>
         <section className="online-entry__panel">
           <span className="online-entry__eyebrow">Party room {room.activeCode}</span>
           <h1>Reconnecting</h1>
@@ -369,7 +401,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   if (!snapshot) {
     return (
       <main className="online-entry sts-scope">
-        <button type="button" className="online-entry__back" disabled={room.entering} onClick={() => { room.forget(); onLocal() }}>← Solo table</button>
+        <button type="button" className="online-entry__back ribbon-back" aria-label="Back to solo table" disabled={room.entering}
+          onClick={() => { room.forget(); onLocal() }}><span aria-hidden="true"></span></button>
         <section className="online-entry__panel">
           <span className="online-entry__eyebrow">Co-op expedition</span>
           <h1>Climb together</h1>
@@ -378,12 +411,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             Your name
             <input maxLength={24} autoComplete="nickname" value={name} onChange={(event) => setName(event.target.value)} />
           </label>
-          <label>
-            Character
-            <select value={character} onChange={(event) => setCharacter(event.target.value as typeof character)}>
-              {CHARACTERS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
-          </label>
+          <div className="online-entry__character">
+            <span>Choose your character</span>
+            <CharacterRoster character={character} disabled={room.entering} onChoose={setCharacter} />
+          </div>
           <div className="online-entry__actions">
             <button type="button" disabled={!name.trim() || room.entering} onClick={() => room.enter({ name: name.trim(), character })}>
               Create room
@@ -418,7 +449,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     return (
       <main className="online-lobby sts-scope">
         <header>
-          <button type="button" onClick={async () => { voice.stop(); if (await room.leave()) onLocal() }}>← Leave room</button>
+          <button type="button" className="online-lobby__leave ribbon-back" aria-label="Leave room"
+            onClick={async () => { voice.stop(); if (await room.leave()) onLocal() }}><span aria-hidden="true"></span></button>
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>
         </header>
         <section className="online-lobby__table">
@@ -439,12 +471,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             ))}
           </div>
 
-          <label className="online-lobby__character">
-            Your character
-            <select disabled={!connected} value={snapshot.you.character} onChange={(event) => room.chooseCharacter(event.target.value as typeof character)}>
-              {CHARACTERS.map(([id, label]) => <option key={id} value={id} disabled={taken.has(id)}>{label}</option>)}
-            </select>
-          </label>
+          <div className="online-lobby__character">
+            <span>Your character</span>
+            <CharacterRoster character={snapshot.you.character} taken={taken} disabled={!connected} onChoose={room.chooseCharacter} />
+          </div>
           <details className="online-lobby__settings">
             <summary>Run settings</summary>
             <label>
@@ -836,7 +866,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       {run.phase === 'room' && roomKind !== 'campfire' && !pendingAcquisition && !run.roomState ? (
         <section className="room-screen">
           <h2>{roomKind ?? 'room'}</h2>
-          <button type="button" onClick={() => room.act({ kind: 'leaveRoom' })}>Back to the map</button>
+          <button type="button" className="ribbon-back" aria-label="Back to the map"
+            onClick={() => room.act({ kind: 'leaveRoom' })}><span aria-hidden="true"></span></button>
         </section>
       ) : null}
       {run.phase === 'victory' && !run.campaign.finalized ? (
