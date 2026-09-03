@@ -6,7 +6,7 @@
 // folds it back into the run — rewards, campaign progress, the next act, or the
 // end of the run.
 import { buildEncounter, createEnemyDecks, readyForCombat, rollActBoss } from './encounters.ts'
-import { availableRewardSources } from './rewards.ts'
+import { availableRewardSources, revealRewardItems } from './rewards.ts'
 import {
   applyDeadlyEvent,
   hasModifier,
@@ -295,10 +295,6 @@ export function resolveCombat(state: RunState): RunState {
   let players = state.players.map((player) => {
     const after = combat.players.find((candidate) => candidate.id === player.id)
     if (!after) return player
-    const source = sharedReward ?? combat.enemies.find((enemy) => enemy.row === after.row)
-    const rewardGold = printedBossRewards ? state.ascension >= 10 ? 2 : 3 : source?.goldReward ?? 0
-    const canGainGold = !hasRelic(after, 'ectoplasm')
-    const goldenIdol = hasRelic(after, 'golden_idol') ? 1 : 0
     const meatHp = hasRelic(after, 'meat_on_the_bone') && after.hp < 4 ? 4 : after.hp
     const hp = Math.min(healingCapFor(after, state.meta.ruleset), meatHp)
     const transformed = new Map(after.deck.map((card) => [card.uid, card]))
@@ -315,7 +311,8 @@ export function resolveCombat(state: RunState): RunState {
       }).filter((card) => CARDS[card.defId]?.owner !== 'status'),
       hp,
       maxHp: after.maxHp,
-      gold: after.gold + (canGainGold ? rewardGold + goldenIdol : 0),
+      // Fight Gold is claimed from the loot panel, alongside the other rewards.
+      gold: after.gold,
       cardRewards: after.cardRewards,
       rareRewards: after.rareRewards,
       row: after.row,
@@ -368,6 +365,7 @@ export function resolveCombat(state: RunState): RunState {
     const whitePotion: false | null = hasRelic(player, 'white_beast_statue') ? null : false
     if (betweenBosses || finalBoss || wasBoss && !printedBossRewards) return whitePotion === false ? [] : [{
       playerId: player.id,
+      gold: false,
       cardReward: false,
       choices: null,
       upgraded: false,
@@ -388,9 +386,12 @@ export function resolveCombat(state: RunState): RunState {
     const potion: false | null = potionCount > 0 ? null : false
     // Elite relics are resolved by the shared physical room reward below.
     const relic: false | null = (source?.relicReward === true && !wasElite && !printedBossRewards || vintageReward || state.eventCombat?.relicReward) ? null : false
-    if (!cardReward && !transformedReward && potion === false && relic === false && !printedBossRewards) return []
+    const gold = !hasRelic(player, 'ectoplasm') ? (printedBossRewards ? state.ascension >= 10 ? 2 : 3 : source?.goldReward ?? 0) +
+      Number(hasRelic(player, 'golden_idol')) : false
+    if (!cardReward && !transformedReward && !gold && potion === false && relic === false && !printedBossRewards) return []
     return [{
       playerId: player.id,
+      gold,
       cardReward,
       cardSource: rareReward ? 'rare' : 'ordinary',
       prismatic: cardReward && prismatic,
@@ -413,7 +414,7 @@ export function resolveCombat(state: RunState): RunState {
       ? { ...state.campaign.keys, emerald: true }
       : state.campaign.keys,
   }
-  const next = mirrorItemSupplies({
+  const next = revealRewardItems(mirrorItemSupplies({
     ...state,
     rng,
     phase: rewards.length > 0 ? 'reward' : roomState ? 'room' : destination,
@@ -432,7 +433,7 @@ export function resolveCombat(state: RunState): RunState {
       : wasBoss && state.act >= 4
       ? 'The Spire is conquered.'
       : wasBoss ? 'The Act is won.' : 'The enemies fall.'],
-  }, itemDecks)
+  }, itemDecks))
   return state.eventCombat ? applyDeadlyEvent(state, next) : next
 }
 

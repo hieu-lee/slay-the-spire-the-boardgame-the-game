@@ -3,7 +3,7 @@
 // The table works through one unit at a time — a card reward, a rare card, a
 // potion, a relic — so the sequence is resumable between units.
 import { createEnemyDecks, rollActBoss } from './encounters.ts'
-import { availableRewardSources } from './rewards.ts'
+import { availableRewardSources, revealRewardItems } from './rewards.ts'
 import { canUpgradeCard, hasModifier, hasPendingRelicAcquisition, nextRunUid } from './rules.ts'
 import { merchantItemDecks } from './supplies.ts'
 import type { CardRewardOffer, RewardSource, RunState } from './types.ts'
@@ -93,6 +93,7 @@ function setupOffer(playerId: string, kind: 'cardReward' | 'rareReward' | 'potio
     cardSource: kind === 'rareReward' ? 'rare' : 'ordinary',
     prismatic: Boolean(availableSources),
     availableSources,
+    gold: false,
     potion: kind === 'potion' ? null : false,
     relic: kind === 'relic' ? null : false,
     bossRelics: false,
@@ -118,7 +119,7 @@ export function advanceQuickSetup(state: RunState, cardUids: readonly string[] =
   if (step.kind === 'cardReward' || step.kind === 'rareReward' || step.kind === 'potion' || step.kind === 'relic') {
     if (cardUids.length > 0 || !playerId) return state
     const next = withAdvancedSetup(state)
-    return {
+    return revealRewardItems({
       ...next,
       phase: 'reward',
       rewardDestination: 'setup',
@@ -126,7 +127,7 @@ export function advanceQuickSetup(state: RunState, cardUids: readonly string[] =
         player?.relics.some((relic) => relic.defId === 'prismatic_shard') && !hasModifier(state, 'transformed') &&
           (step.kind === 'cardReward' || step.kind === 'rareReward')
           ? availableRewardSources(state, step.kind === 'rareReward') : undefined)],
-    }
+    })
   }
 
   if (step.kind === 'bossRelic') {

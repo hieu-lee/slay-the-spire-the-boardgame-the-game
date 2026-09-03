@@ -27,12 +27,11 @@ import {
   neowPreview,
   resolveNeowReward,
   revealCardReward,
-  revealPotionReward,
-  revealRelicReward,
   rerollDownfallSelfBoss,
   unavailableEventOptionIds,
   resolveRelicReward,
   resolveBossRelicReward,
+  resolveGoldReward,
   resolvePotionReward,
   resolveTransformReward,
   pendingRelicPreview,
@@ -793,10 +792,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           players={run.players}
           rewards={run.rewards}
           onReveal={(playerId, sources) => setRun((current) => revealCardReward(current, playerId, sources))}
-          onRevealPotion={(playerId) => setRun((current) => revealPotionReward(current, playerId))}
+          onGold={(playerId) => setRun((current) => resolveGoldReward(current, playerId))}
           onPotion={(playerId, decision) => setRun((current) => resolvePotionReward(current, playerId, decision))}
-          onRelic={(playerId, choice) => setRun((current) => choice === 'reveal'
-            ? revealRelicReward(current, playerId) : resolveRelicReward(current, playerId, choice === 'gain'))}
+          onRelic={(playerId, choice) => setRun((current) => resolveRelicReward(current, playerId, choice === 'gain'))}
           onBossRelic={(playerId, relicId) => setRun((current) => resolveBossRelicReward(current, playerId, relicId))}
           onTransform={(playerId, cardUid) => setRun((current) => resolveTransformReward(current, playerId, cardUid))}
           onResolve={(decisions) => setRun((current) => resolveCardRewards(current, decisions))}

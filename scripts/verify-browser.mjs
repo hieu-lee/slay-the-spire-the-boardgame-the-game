@@ -7059,107 +7059,85 @@ check('a combat can actually be won', () => {
 })
 await shot('05d-victory')
 
-// The combat screen clears itself into the printed three-card reward (p.8).
+// A win becomes an immediate, click-to-claim Loot panel. Cards wait until the
+// other printed loot has settled, then show one player's three choices at once.
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'reward', { timeout: 5000 })
-const hiddenRewardRun = await readRun()
-const revealButtons = await page.getByRole('button', { name: /^Reveal 3 for/ }).count()
-const potionSkips = page.getByRole('button', { name: 'Skip Potion unseen' })
-check('card rewards stay face down until each player reveals or skips', () => {
-  assertEqual(hiddenRewardRun.rewards.length, 2)
-  assert(hiddenRewardRun.rewards.every((offer) => offer.choices === null), 'an offer leaked before reveal')
-  assertEqual(revealButtons, 2)
+const lootRun = await readRun()
+const lootRows = await page.locator('.reward-screen--loot .loot-choice').count()
+const hiddenCardChoices = await page.locator('.reward-screen--card-choice .card').count()
+const lootTitleVisible = await page.getByRole('heading', { name: 'Loot!' }).isVisible()
+const lootSkipPlacement = await page.locator('.reward-screen--loot > .reward-screen__skip').evaluate((skip) => {
+  const panel = document.querySelector('.reward-screen--loot .reward-screen__players')?.getBoundingClientRect()
+  const box = skip.getBoundingClientRect()
+  return Boolean(panel && box.left > panel.right && box.right <= innerWidth && box.top > innerHeight * 0.5)
 })
-await page.waitForTimeout(200)
-await shot('05e-card-rewards-hidden')
-while (await potionSkips.count()) await potionSkips.first().click()
-for (const player of hiddenRewardRun.players) {
-  await page.getByRole('button', { name: `Reveal 3 for ${player.name}` }).click()
+check('victory presents immediate loot before any card choice', () => {
+  assertEqual(lootRun.rewards.length, 2)
+  assert(lootTitleVisible)
+  assert(lootRows >= 2, 'the Loot panel omitted its click-to-claim rows')
+  assertEqual(hiddenCardChoices, 0)
+  assert(lootSkipPlacement, 'the Loot Skip is not anchored at the lower-right outside the panel')
+})
+await shot('05e-loot')
+
+for (;;) {
+  const current = await readRun()
+  const offer = current.rewards.find((candidate) => candidate.gold || typeof candidate.potion === 'string' || typeof candidate.relic === 'string')
+  if (!offer) break
+  const label = offer.gold ? `${offer.gold} Gold`
+    : typeof offer.potion === 'string' ? potionDef(offer.potion).name
+      : relicDef(offer.relic).name
+  await page.getByRole('button', { name: label }).first().click()
 }
-await page.waitForFunction(() => document.querySelectorAll('.reward-screen__cards .card').length === 6)
-const rewardDealMotion = await page.locator('.reward-screen__choice').first().evaluate((choice) =>
-  getComputedStyle(choice).animationName)
-await page.evaluate(() => {
-  for (const animation of document.getAnimations()) {
-    if (animation.animationName === 'reward-card-deal') {
-      animation.currentTime = 190
-      animation.pause()
-    }
-  }
-})
-await page.screenshot({ path: join(animationReferenceDir, 'reward-deal.png'), timeout: 15_000 })
-await page.evaluate(() => {
-  for (const animation of document.getAnimations()) {
-    if (animation.animationName === 'reward-card-deal' && animation.playState === 'paused') animation.play()
-  }
-})
-// An upgraded reward still reveals base faces; only the card collected is
-// upgraded. Force that printed reward type so the UI contract stays covered.
+await page.waitForFunction(() => [...document.querySelectorAll('.loot-choice')].every((row) => !/Gold|Potion|Relic/.test(row.textContent ?? '')))
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   run.rewards[0].upgraded = true
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.querySelector('.reward-screen__upgrade') !== null)
-if (artSynced) {
-  await page.waitForFunction(() =>
-    [...document.querySelectorAll('.reward-screen__cards .card__art')]
-      .every((image) => image.complete && image.naturalWidth > 0),
-  )
-}
 const rewardRun = await readRun()
+const deckSizesBeforeReward = rewardRun.players.map((player) => player.deck.length)
+await page.locator('.reward-screen__player').nth(0).getByRole('button', { name: 'Add a card to your deck.' }).click()
+await page.getByRole('heading', { name: 'Choose a Card' }).waitFor()
+if (artSynced) {
+  await page.waitForFunction(() => [...document.querySelectorAll('.reward-screen__cards .card__art')]
+    .every((image) => image.complete && image.naturalWidth > 0))
+}
 const rewardCards = await page.locator('.reward-screen__cards .card').count()
 const rewardArt = await page.locator('.reward-screen__cards .card__art').evaluateAll((images) =>
-  images.map((image) => ({ src: image.getAttribute('src'), ok: image.complete && image.naturalWidth > 0 })),
+  images.map((image) => image.complete && image.naturalWidth > 0),
 )
-const collectLocked = await page.getByRole('button', { name: 'Everyone must choose' }).isDisabled()
-check('victory reveals three card rewards to every living player', () => {
-  assertEqual(rewardRun.rewards.length, 2, 'both players receive their own reward')
-  assertEqual(rewardCards, 6, 'three choices are shown per player')
-  assert(collectLocked, 'the party cannot leave before everyone chooses')
-  assertEqual(rewardDealMotion, 'reward-card-deal', 'reward cards should deal into place')
-  if (artSynced) {
-    const broken = rewardArt.filter((entry) => !entry.ok)
-    assertEqual(broken.length, 0, `broken reward art: ${broken.map((entry) => entry.src).join(', ')}`)
-  }
+const firstReward = page.locator('.reward-screen__cards .card').first()
+const restingCard = await firstReward.boundingBox()
+await firstReward.hover()
+await page.waitForTimeout(180)
+const hoveredCard = await firstReward.boundingBox()
+check('a card loot row opens three full-size choices with the requested hover lift', () => {
+  assertEqual(rewardCards, 3)
+  assert(restingCard && hoveredCard && hoveredCard.width > restingCard.width * 1.05,
+    'hovering a reward card did not enlarge it')
+  if (artSynced) assert(rewardArt.every(Boolean), 'a card-reward image did not load')
 })
 await shot('05ea-card-rewards')
-const firstReward = page.locator('.reward-screen__choice').first()
-const upgradedRewardLabel = await firstReward.locator('.card').getAttribute('aria-label')
-const upgradedRewardArt = await firstReward.locator('.card__art').getAttribute('src')
-const previewPressed = await firstReward.getByRole('button', { name: /^Show .* base$/ }).getAttribute('aria-pressed')
-await shot('05eaa-card-reward-upgrade')
-await firstReward.getByRole('button', { name: /^Show .* base$/ }).click()
-const baseRewardLabel = await firstReward.locator('.card').getAttribute('aria-label')
-const baseRewardArt = await firstReward.locator('.card__art').getAttribute('src')
-const previewSelected = await firstReward.locator('.card').getAttribute('aria-pressed')
-check('Full Knowledge previews both faces even when the collected reward will be upgraded', () => {
-  assert((upgradedRewardLabel ?? '').includes('+,'), `the upgraded face is not announced: ${upgradedRewardLabel}`)
-  assert(!(baseRewardLabel ?? '').includes('+,'), `the base face cannot be previewed: ${baseRewardLabel}`)
-  assert(baseRewardArt !== upgradedRewardArt && upgradedRewardArt?.endsWith('+.webp'), 'the art did not flip')
-  assertEqual(previewPressed, 'true', 'the upgrade preview control is not announced as pressed')
-  assertEqual(previewSelected, 'false', 'previewing an upgrade must not choose the reward')
+await page.setViewportSize({ width: 844, height: 390 })
+await page.waitForTimeout(100)
+const horizontalCardPicker = await page.locator('.reward-screen--card-choice').evaluate((screen) => {
+  const cards = [...screen.querySelectorAll('.card')].map((card) => card.getBoundingClientRect())
+  const skip = screen.querySelector('button.reward-screen__skip')?.getBoundingClientRect()
+  return cards.length === 3 && cards.every((card) => card.width >= 64 && card.top >= 0 && card.bottom <= innerHeight) &&
+    Boolean(skip && skip.bottom <= innerHeight)
 })
-const deckSizesBeforeReward = rewardRun.players.map((player) => player.deck.length)
-await page.locator('.reward-screen__player').nth(0).locator('.card').first().click()
-const selectedCardPressed = await page.locator('.reward-screen__player').nth(0).locator('.card').first().getAttribute('aria-pressed')
-await page.getByRole('button', { name: /Skip Silent's card/ }).click()
-const skipSelection = await page.getByRole('button', { name: /Skip Silent's card/ }).evaluate((button) => ({
-  pressed: button.getAttribute('aria-pressed'),
-  text: button.textContent,
-  background: getComputedStyle(button).backgroundColor,
-}))
-const unselectedSkipBackground = await page.getByRole('button', { name: /Skip Ironclad's card/ }).evaluate(
-  (button) => getComputedStyle(button).backgroundColor,
-)
-check('a chosen skip is visibly and accessibly selected', () => {
-  assertEqual(selectedCardPressed, 'true', 'the selected card is not exposed as pressed')
-  assertEqual(skipSelection.pressed, 'true')
-  assert(skipSelection.text.includes('✓'), 'the chosen skip has no visible checkmark')
-  assert(skipSelection.background !== unselectedSkipBackground, 'the chosen skip looks like the default button')
+check('the card picker remains usable on a horizontal phone screen', () => {
+  assert(horizontalCardPicker)
 })
-await shot('05ed-card-rewards-chosen')
-await page.getByRole('button', { name: 'Collect rewards' }).click()
+await page.screenshot({ path: join(outDir, '05eb-horizontal-phone-card-reward.png'), timeout: 15_000 })
+await page.setViewportSize({ width: 1440, height: 900 })
+await firstReward.click()
+await page.getByRole('heading', { name: 'Loot!' }).waitFor()
+await page.locator('.reward-screen__player').nth(1).getByRole('button', { name: 'Add a card to your deck.' }).click()
+await page.getByRole('heading', { name: 'Choose a Card' }).waitFor()
+await page.getByRole('button', { name: 'Skip' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 const backOnMap = await readRun()
 check('winning hands the party back to the map with somewhere to go', () => {
@@ -7212,6 +7190,44 @@ check('the current map position and reachable route stay visibly alive', () => {
   assert(mapMotion.positionInView, 'the current room is outside the map scrollport')
 })
 await shot('05f-back-on-map')
+
+// Prismatic Shard still needs its printed three-deck choice before exposing
+// cards; the compact Loot row must not turn that into an impossible reveal.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'reward'
+  run.rewardDestination = 'map'
+  run.rewards = [{
+    playerId: run.players[0].id,
+    gold: false,
+    cardReward: true,
+    choices: null,
+    upgraded: false,
+    cardSource: 'ordinary',
+    prismatic: true,
+    availableSources: ['ironclad', 'silent', 'defect'],
+    potion: false,
+    relic: false,
+    bossRelics: false,
+  }]
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Add a card to your deck.' }).click()
+await page.getByRole('heading', { name: 'Choose a Card' }).waitFor()
+const prismaticSources = page.locator('.reward-screen__sources input[type="checkbox"]')
+const prismaticReveal = page.getByRole('button', { name: 'Reveal cards' })
+const prismaticRevealDisabled = await prismaticReveal.isDisabled()
+const prismaticSourceCount = await prismaticSources.count()
+for (let index = 0; index < 3; index += 1) await prismaticSources.nth(index).check()
+await prismaticReveal.click()
+await page.waitForFunction(() => document.querySelectorAll('.reward-screen--card-choice .card').length === 3)
+check('a Prismatic Loot row keeps the required three-deck reveal choice', () => {
+  assertEqual(prismaticSourceCount, 3)
+  assert(prismaticRevealDisabled, 'Prismatic reveal did not require three reward decks')
+})
+await page.getByRole('button', { name: 'Skip' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 
 // Hit feedback has to survive the rest of the combat without moving the board.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'hit-feedback'))

@@ -67,6 +67,7 @@ import {
   merchantRemovalCost,
   mandatoryChoicePending,
   migrateLegacyBossRareRewards,
+  revealRewardItems,
   neowPreview,
   removeAtCurrentMerchant,
   overflowShivCount,
@@ -85,8 +86,7 @@ import {
   previewPowerChoice,
   potionDef,
   revealCardReward,
-  revealPotionReward,
-  revealRelicReward,
+  resolveGoldReward,
   resolveRelicReward,
   resolveNeowEffect,
   resolveNeowGold,
@@ -255,9 +255,9 @@ export function createStore({ file } = {}) {
               publishEndTurnEffect(room)
             }
           }
-          const migratedBossRewards = migrateLegacyBossRareRewards(room.run)
-          if (migratedBossRewards !== room.run) {
-            room.run = migratedBossRewards
+          const migratedRewards = revealRewardItems(migrateLegacyBossRareRewards(room.run))
+          if (migratedRewards !== room.run) {
+            room.run = migratedRewards
             room.rewardChoices = undefined
             room.rewardConfirmed = undefined
           }
@@ -527,7 +527,9 @@ function settleDisconnectedRewards(room) {
         ? run.rewards.find((candidate) => candidate.playerId === seat.playerId)
         : undefined
       if (!run || !offer) break
-      const next = offer.transformReward
+      const next = offer.gold
+        ? resolveGoldReward(run, seat.playerId)
+        : offer.transformReward
         ? resolveTransformReward(run, seat.playerId, null)
         : offer.potion !== false
         ? resolvePotionReward(run, seat.playerId, { kind: 'skip' })
@@ -1804,14 +1806,14 @@ function courierResolve(room, seat, action, seatToken) {
 
 function relicReward(room, seat, action, seatToken) {
   if (room.run?.phase === 'reward' && action.choice !== undefined) {
-    if (!['reveal', 'gain', 'skip'].includes(action.choice)) fail('Choose reveal, gain, or skip for the Relic reward')
-    const next = action.choice === 'reveal'
-      ? revealRelicReward(room.run, seat.playerId)
-      : resolveRelicReward(room.run, seat.playerId, action.choice === 'gain')
+    if (!['gain', 'skip'].includes(action.choice)) fail('Choose gain or skip for the Relic reward')
+    const next = resolveRelicReward(room.run, seat.playerId, action.choice === 'gain')
     if (next === room.run) fail('That Relic reward choice is not legal')
     room.run = next
+    settleDisconnectedRewards(room)
+    const waiting = settleReward(room)
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
   }
   if (action.playerId !== undefined && action.playerId !== seat.playerId) fail('Choose only your own relic')
   const next = chooseRelicReward(room.run, seat.playerId, action.decision)
@@ -2579,7 +2581,7 @@ function cardReward(room, seat, action, seatToken) {
     return { changed: true, snapshot: snapshotFor(room, seatToken) }
   }
   if (choice === 'confirm' || choice === 'unconfirm') {
-    if (run.rewards.some((candidate) => candidate.transformReward || candidate.potion !== false || (candidate.relic ?? false) !== false || (candidate.bossRelics ?? false) !== false)) {
+    if (run.rewards.some((candidate) => candidate.gold || candidate.transformReward || candidate.potion !== false || (candidate.relic ?? false) !== false || (candidate.bossRelics ?? false) !== false)) {
       fail('Settle every item reward first')
     }
     // Only YOUR own pick gates YOUR own confirmation. Waiting for the whole
@@ -2628,8 +2630,10 @@ function transformReward(room, seat, action, seatToken) {
   if (next === run) fail('That card cannot be Transformed')
   room.run = next
   settlePendingRelics(room)
+  settleDisconnectedRewards(room)
+  const waiting = settleReward(room)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
 }
 
 function quickSetupStep(room, seat, action, seatToken) {
@@ -2663,9 +2667,9 @@ function settleReward(room) {
     room.rewardChoices[offer.playerId],
   ]))
   const next = resolveCardRewards(run, decisions)
-  room.rewardChoices = undefined
-  room.rewardConfirmed = undefined
   if (next !== run) {
+    room.rewardChoices = undefined
+    room.rewardConfirmed = undefined
     room.run = next
     room.version += 1
   }
@@ -3254,12 +3258,14 @@ function dispatch(run, seat, action) {
       return run
     case 'cardReward':
       return run
+    case 'goldReward':
+      return resolveGoldReward(run, seat.playerId)
     case 'potionReward': {
       if (run.phase !== 'reward') fail('The party is not choosing rewards')
       const offer = run.rewards.find((candidate) => candidate.playerId === seat.playerId)
       if (!offer || offer.potion === false) fail('This seat has no Potion reward')
-      if (action.choice === 'reveal') return revealPotionReward(run, seat.playerId)
       const decision = action.choice === 'skip' ? { kind: 'skip' }
+        : action.choice === 'skipAll' ? { kind: 'skipAll' }
         : action.choice === 'gain' ? { kind: 'gain' }
           : action.choice === 'pass' ? { kind: 'pass', playerId: action.playerId }
             : action.choice === 'replace' ? { kind: 'replace', potionId: action.potionId }
@@ -3270,14 +3276,7 @@ function dispatch(run, seat, action) {
       return next
     }
     case 'relicReward': {
-      if (!['reveal', 'gain', 'skip'].includes(action.choice)) {
-        fail('Choose reveal, gain, or skip for the Relic reward')
-      }
-      if (action.choice === 'reveal') {
-        const next = revealRelicReward(run, seat.playerId)
-        if (next === run) fail('That Relic reward cannot be revealed')
-        return next
-      }
+      if (!['gain', 'skip'].includes(action.choice)) fail('Choose gain or skip for the Relic reward')
       const next = resolveRelicReward(run, seat.playerId, action.choice === 'gain')
       if (next === run) fail('That Relic reward choice is not legal')
       return next
@@ -3607,12 +3606,17 @@ function redactRun(run, viewerId, room) {
     log: run.log,
     players: run.players.map((player) => redactPlayer(player, viewerId)),
     combat: run.combat ? redactCombat(run.combat, viewerId) : null,
-    // Full Knowledge (p.8): once any reward is revealed, every player may see
-    // it before final decisions. Unrevealed offers still carry choices: null.
-    rewards: run.rewards.map((offer) => ({
-      ...offer,
-      potionQueue: offer.potionQueue?.map(() => null),
-    })),
+    // Card rewards belong to their owner: teammates know a reward exists but
+    // never receive the offered cards or the server-side draw bookkeeping.
+    rewards: run.rewards.map((offer) => {
+      if (offer.playerId === viewerId) return { ...offer, potionQueue: offer.potionQueue?.map(() => null) }
+      const {
+        choices, cardSource, prismatic, upgraded, rareChoiceIndices, cardsDrawn, raresDrawn,
+        drawsReserved, prismaticSources, prismaticDraws, availableSources, guardianGems, potionQueue,
+        ...publicOffer
+      } = offer
+      return { ...publicOffer, choices: null, potionQueue: potionQueue?.map(() => null) }
+    }),
     roomState,
     courier: structuredClone(run.courier),
     campaign: {

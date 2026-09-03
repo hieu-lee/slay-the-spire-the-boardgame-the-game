@@ -114,6 +114,14 @@ function twoSeatRoom() {
   return { store, room, a, b }
 }
 
+function claimRewardGold(room, ...seats) {
+  for (const seat of seats) {
+    if (room.run.rewards.find((offer) => offer.playerId === seat.playerId)?.gold) {
+      apply(room, seat.token, { kind: 'goldReward' })
+    }
+  }
+}
+
 check('a persisted legacy end-turn order resets safely into the drag flow', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) player.hand = []
@@ -888,6 +896,7 @@ check('online seats choose only their own revealed card reward', () => {
     ...enemy, hp: 0, dead: true, cardReward: 'normal', potionReward: false,
   }))
   apply(room, a.token, { kind: 'resolveCombat' })
+  claimRewardGold(room, a, b)
   assertEqual(room.run.phase, 'reward')
   const beforeA = room.run.players.find((player) => player.id === a.playerId).deck.length
   const revealed = apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
@@ -915,6 +924,25 @@ check('online seats choose only their own revealed card reward', () => {
   )
 })
 
+check('unclaimed Gold blocks online card confirmation without discarding choices', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.phase = 'won'
+  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 0, dead: true, cardReward: 'normal', potionReward: false,
+  }))
+  apply(room, a.token, { kind: 'resolveCombat' })
+  room.run.rewards = room.run.rewards.map((offer) => ({ ...offer, gold: 8 }))
+  apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, b.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, a.token, { kind: 'cardReward', choice: 0 })
+  apply(room, b.token, { kind: 'cardReward', choice: 0 })
+  assertThrows(() => apply(room, a.token, { kind: 'cardReward', choice: 'confirm' }),
+    'unclaimed Gold must block confirmation')
+  assertDeepEqual(room.rewardChoices, { [a.playerId]: 0, [b.playerId]: 0 },
+    'a rejected confirmation must preserve each private card choice')
+  assertEqual(room.rewardConfirmed, undefined)
+})
+
 check('a reward confirmation is per seat, and toggles', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.combat.phase = 'won'
@@ -922,6 +950,7 @@ check('a reward confirmation is per seat, and toggles', () => {
     ...enemy, hp: 0, dead: true, cardReward: 'normal', potionReward: false,
   }))
   apply(room, a.token, { kind: 'resolveCombat' })
+  claimRewardGold(room, a, b)
   apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
   apply(room, b.token, { kind: 'cardReward', choice: 'reveal' })
 
@@ -960,6 +989,7 @@ check('one seat changing its card leaves every other confirmation standing', () 
     ...enemy, hp: 0, dead: true, cardReward: 'normal', potionReward: false,
   }))
   apply(room, a.token, { kind: 'resolveCombat' })
+  claimRewardGold(room, a, b)
   apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
   apply(room, b.token, { kind: 'cardReward', choice: 'reveal' })
   apply(room, a.token, { kind: 'cardReward', choice: 0 })
@@ -982,17 +1012,11 @@ check('Potion rewards are server-authored, reconnect-safe, and seat-owned', () =
   }))
   apply(room, a.token, { kind: 'resolveCombat' })
   const hidden = snapshotFor(room, a.token)
-  assertEqual(hidden.run.rewards.find((offer) => offer.playerId === a.playerId).potion, null)
-  const revealed = apply(room, a.token, { kind: 'potionReward', choice: 'reveal' })
-    .snapshot.run.rewards.find((offer) => offer.playerId === a.playerId).potion
-  assert(typeof revealed === 'string', 'the server did not reveal the physical top Potion')
-  let forged = null
-  try {
-    apply(room, b.token, { kind: 'potionReward', choice: 'gain' })
-  } catch (error) {
-    forged = error
-  }
-  assert(forged, 'another seat settled the owner\'s Potion offer')
+  const revealed = hidden.run.rewards.find((offer) => offer.playerId === a.playerId).potion
+  assert(typeof revealed === 'string', 'the server did not publish the physical top Potion')
+  apply(room, b.token, { kind: 'potionReward', choice: 'gain' })
+  assertEqual(snapshotFor(room, a.token).run.rewards.find((offer) => offer.playerId === a.playerId).potion, revealed,
+    'another seat settled the owner\'s Potion offer')
   markDisconnected(room, a.token)
   joinRoom(room, { token: a.token })
   assertEqual(snapshotFor(room, a.token).run.rewards.find((offer) => offer.playerId === a.playerId).potion, false,
@@ -1058,12 +1082,13 @@ check('a seat disconnected before victory cannot block later reward confirmation
     ...enemy, hp: 0, dead: true, cardReward: 'normal', potionReward: false,
   }))
   apply(room, a.token, { kind: 'resolveCombat' })
+  claimRewardGold(room, a)
   apply(room, a.token, { kind: 'cardReward', choice: null })
   apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
   assertEqual(room.run.phase, 'map', 'the connected seat remained blocked on the disconnected reward')
 })
 
-check('Full Knowledge shares every revealed reward before final choices', () => {
+check('revealed card rewards stay private to their owner', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.combat.phase = 'won'
   room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({
@@ -1081,8 +1106,71 @@ check('Full Knowledge shares every revealed reward before final choices', () => 
   const theirs = snapshotFor(room, b.token).run.rewards
     .find((offer) => offer.playerId === a.playerId)
   assertEqual(mine.choices.length, 3, 'the owner can see the cards they revealed')
-  assertDeepEqual(theirs.choices, mine.choices, 'Full Knowledge shares the revealed reward with every seat')
+  assertEqual(theirs.choices, null, 'a teammate must not receive another seat\'s card choices')
+  assertEqual(theirs.cardSource, undefined, 'the reward source leaked to a teammate')
+  assertEqual(theirs.prismatic, undefined, 'the reward source-selection state leaked to a teammate')
+  assertEqual(theirs.upgraded, undefined, 'the reward upgrade state leaked to a teammate')
+  assertEqual(theirs.cardsDrawn, undefined, 'the physical draw cannot leak through the snapshot')
+  assertEqual(theirs.raresDrawn, undefined, 'the rare draw cannot leak through the snapshot')
+  assert(mine.choices.every((cardId) => !allStrings(theirs).includes(cardId)),
+    'a revealed reward card leaked through another field')
   assertEqual(room.run.rewards.find((offer) => offer.playerId === a.playerId).choices.length, 3)
+})
+
+check('a final ordinary Relic settles a disconnected teammate card skip', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'reward'
+  room.run.combat = null
+  room.run.rewardDestination = 'map'
+  room.run.rewards = [
+    { playerId: a.playerId, cardReward: false, choices: null, upgraded: false,
+      gold: false, potion: false, relic: 'anchor', bossRelics: false },
+    { playerId: b.playerId, cardReward: true, choices: null, upgraded: false,
+      gold: false, potion: false, relic: false, bossRelics: false },
+  ]
+  markDisconnected(room, b.token)
+  assertDeepEqual(room.rewardChoices, { [b.playerId]: null }, 'the disconnected card skip was not retained while the Relic remained')
+  apply(room, a.token, { kind: 'relicReward', choice: 'gain' })
+  assertEqual(room.run.phase, 'map')
+  assertEqual(room.run.rewards.length, 0)
+})
+
+check('a final Transform settles a disconnected teammate card skip', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'reward'
+  room.run.combat = null
+  room.run.rewardDestination = 'map'
+  room.run.rewards = [
+    { playerId: a.playerId, cardReward: false, transformReward: true, choices: null, upgraded: false,
+      gold: false, potion: false, relic: false, bossRelics: false },
+    { playerId: b.playerId, cardReward: true, choices: null, upgraded: false,
+      gold: false, potion: false, relic: false, bossRelics: false },
+  ]
+  markDisconnected(room, b.token)
+  apply(room, a.token, { kind: 'transformReward', cardUid: null })
+  assertEqual(room.run.phase, 'map')
+  assertEqual(room.run.rewards.length, 0)
+})
+
+check('online loot Skip settles every queued Potion', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.phase = 'reward'
+  room.run.combat = null
+  room.run.rewardDestination = 'map'
+  room.run.rewards = [{
+    playerId: a.playerId,
+    cardReward: false,
+    choices: null,
+    upgraded: false,
+    gold: false,
+    potion: 'fire_potion',
+    potionQueue: ['weak_potion'],
+    relic: false,
+    bossRelics: false,
+  }]
+  apply(room, a.token, { kind: 'potionReward', choice: 'skipAll' })
+  assertEqual(room.run.phase, 'map')
+  assertEqual(room.run.rewards.length, 0)
 })
 
 check('Golden Ticket reveals are server-authored, reconnect-safe, and do not leak future stacks', () => {
@@ -1100,9 +1188,12 @@ check('Golden Ticket reveals are server-authored, reconnect-safe, and do not lea
   assert(!allStrings(hidden).includes('feed'), 'a future rare leaked before the Ticket reveal')
 
   apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
-  const revealed = snapshotFor(room, b.token).run.rewards.find((offer) => offer.playerId === a.playerId)
+  const revealed = snapshotFor(room, a.token).run.rewards.find((offer) => offer.playerId === a.playerId)
+  const teammate = snapshotFor(room, b.token).run.rewards.find((offer) => offer.playerId === a.playerId)
   assertDeepEqual(revealed.choices, ['shrug_it_off', 'pommel_strike', 'feed'])
   assertDeepEqual(revealed.rareChoiceIndices, [2])
+  assertEqual(teammate.choices, null, 'another seat received the Ticket choices')
+  assert(!allStrings(teammate).includes('feed'), 'a revealed Ticket card leaked to a teammate')
   markDisconnected(room, a.token)
   joinRoom(room, { token: a.token })
   const rejoined = snapshotFor(room, a.token)
@@ -1154,6 +1245,7 @@ check('revising a reward choice invalidates every earlier confirmation', () => {
   room.run.combat.phase = 'won'
   room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal', potionReward: false }))
   apply(room, a.token, { kind: 'resolveCombat' })
+  claimRewardGold(room, a, b)
   apply(room, a.token, { kind: 'cardReward', choice: null })
   apply(room, b.token, { kind: 'cardReward', choice: null })
   apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
@@ -1184,6 +1276,7 @@ check('disconnected permanent rewards settle deterministically when a seat retur
   room.run.combat.phase = 'won'
   room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal', potionReward: false }))
   apply(room, a.token, { kind: 'resolveCombat' })
+  claimRewardGold(room, a, b)
   apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
   apply(room, a.token, { kind: 'cardReward', choice: 0 })
   assertEqual(snapshotFor(room, a.token).rewardChoice, 0, 'the deciding seat can inspect its pick')
@@ -6770,6 +6863,8 @@ check('beating a boss resolves the shared boss-Relic offer before the next Act',
 
   apply(room, a.token, { kind: 'resolveCombat' })
   assertEqual(room.run.phase, 'reward')
+  assertDeepEqual(room.run.rewards.map((reward) => reward.gold), [3, 3])
+  claimRewardGold(room, a, b)
   assertDeepEqual(room.run.players.map((player, index) => player.gold - goldBefore[index]), [3, 3])
   assert(room.run.rewards.every((reward) => reward.cardReward && reward.cardSource === 'rare'),
     'the boss omitted its Rare Reward')
@@ -9045,10 +9140,11 @@ check('a disconnected Courier Relic owner settles after combat without blocking 
     ? room.run.rewards.find((reward) => reward.playerId === b.playerId)
     : undefined
   const followup = !offer ? null
-    : offer.cardReward ? { kind: 'cardReward', choice: 'reveal' }
-      : offer.potion !== false ? { kind: 'potionReward', choice: 'reveal' }
-        : offer.relic !== false ? { kind: 'relicReward', choice: 'reveal' }
-          : null
+    : offer.gold ? { kind: 'goldReward' }
+      : offer.cardReward ? { kind: 'cardReward', choice: 'reveal' }
+        : typeof offer.potion === 'string' ? { kind: 'potionReward', choice: 'gain' }
+          : typeof offer.relic === 'string' ? { kind: 'relicReward', choice: 'gain' }
+            : null
   if (followup) assertEqual(apply(room, b.token, followup).changed, true)
   else assert(room.run.phase !== 'combat', 'the connected seat remained blocked in combat')
 

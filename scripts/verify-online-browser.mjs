@@ -4168,16 +4168,16 @@ try {
   Object.assign(liveRoom.run, {
     phase: 'reward', rewardDestination: 'map',
     rewards: [{ playerId: annRun.id, cardReward: false, choices: null, upgraded: false,
-      potion: null, relic: false, bossRelics: false }],
+      gold: false, potion: 'fire_potion', relic: false, bossRelics: false }],
   })
-  await roomAction(a, { kind: 'potionReward', choice: 'reveal' })
-  await a.locator('.reward-screen__potion > .item-icon-image').waitFor()
-  await b.locator('.reward-screen__potion > .item-icon-image').waitFor()
+  liveRoom.run.players.find((player) => player.id === annRun.id).potions = []
+  rooms.publishRoom(code)
+  await a.getByRole('button', { name: 'Fire Potion' }).waitFor()
   await a.locator('.reward-screen').evaluate(async (screen) => {
     await Promise.all(screen.getAnimations({ subtree: true }).map((animation) => animation.finished))
   })
-  const foreignPotionGain = await b.locator('.reward-screen__potion').getByRole('button', { name: 'Gain' }).count()
-  const onlinePotionCardLoaded = await a.locator('.reward-screen__potion > .item-icon-image')
+  const foreignPotionGain = await b.getByRole('button', { name: 'Fire Potion' }).count()
+  const onlinePotionCardLoaded = await a.locator('.loot-choice .item-icon-image')
     .evaluateAll((images) => images.length > 0 && images.every((image) => image.naturalWidth > 0))
   const compactPotionLayout = await a.locator('.outside-potions').evaluate((bar) => ({
     width: bar.clientWidth, scrollWidth: bar.scrollWidth, height: bar.getBoundingClientRect().height,
@@ -4185,7 +4185,7 @@ try {
     inHeader: Boolean(bar.closest('.app-shell__header')),
     directShellChild: bar.parentElement?.classList.contains('app-shell'),
   }))
-  check('revealed Potion rewards are shared without foreign controls', () => {
+  check('Potion loot is face up immediately without foreign controls', () => {
     assertEqual(foreignPotionGain, 0)
     assert(onlinePotionCardLoaded, 'the revealed Potion omitted its icon artwork')
     assert(compactPotionLayout.scrollWidth <= compactPotionLayout.width,
@@ -4196,41 +4196,100 @@ try {
     assert(compactPotionLayout.headerHeight <= 64,
       `the compact top HUD wrapped to ${compactPotionLayout.headerHeight}px`)
   })
-  await a.screenshot({ path: join(outDir, '08b-compact-desktop-potion-replacement.png'), fullPage: true })
-  let skippedPotionStatus = 0
+  await a.screenshot({ path: join(outDir, '08b-compact-desktop-potion-loot.png'), fullPage: true })
+  let claimedPotionStatus = 0
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
     const response = await route.fetch()
-    skippedPotionStatus = response.status()
+    claimedPotionStatus = response.status()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.locator('.reward-screen__potion').getByRole('button', { name: 'Skip' }).click()
-  for (let attempt = 0; attempt < 50 && skippedPotionStatus === 0; attempt += 1) {
+  await a.getByRole('button', { name: 'Fire Potion' }).click()
+  for (let attempt = 0; attempt < 50 && claimedPotionStatus === 0; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
-  assertEqual(skippedPotionStatus, 200, 'the revealed Potion skip was refused')
-  await a.locator('.reward-screen__potion > .item-icon-image').waitFor({ state: 'hidden' })
+  assertEqual(claimedPotionStatus, 200, 'the immediate Potion claim was refused')
+  await a.locator('.reward-screen--loot .loot-choice', { hasText: 'Fire Potion' }).waitFor({ state: 'hidden' })
+
+  const boRun = liveRoom.run.players.find((player) => player.name === 'Bo')
+  Object.assign(liveRoom.run, {
+    phase: 'reward', rewardDestination: 'map',
+    rewards: [annRun, boRun].map((player) => ({ playerId: player.id, gold: false, cardReward: false, choices: null,
+      upgraded: false, potion: false, relic: false, bossRelics: ['black_blood', 'orrery'] })),
+  })
+  rooms.publishRoom(code)
+  await Promise.all([a, b].map((page) => page.getByRole('button', { name: 'Black Blood' }).waitFor()))
+  await a.getByRole('button', { name: 'Black Blood' }).click()
+  await b.getByRole('button', { name: 'Black Blood' }).waitFor({ state: 'hidden' })
+  const remainingBossLoot = await b.getByRole('button', { name: 'Orrery' }).count()
+  check('a claimed boss Relic disappears from every teammate loot panel', () => {
+    assertEqual(remainingBossLoot, 1)
+  })
+  await b.getByRole('button', { name: 'Orrery' }).click()
+  await b.getByRole('heading', { name: 'Loot!' }).waitFor()
+  const orreryRows = await b.getByRole('button', { name: 'Add a card to your deck.' }).count()
+  check('Orrery adds four separate card-reward loot rows for its owner', () => {
+    assertEqual(orreryRows, 4)
+  })
+  await b.getByRole('button', { name: 'Skip' }).click()
+  await b.getByRole('heading', { name: 'Loot!' }).waitFor({ state: 'hidden' })
+
+  Object.assign(liveRoom.run, {
+    phase: 'reward', rewardDestination: 'map',
+    rewards: [{ playerId: annRun.id, cardReward: false, transformReward: true, choices: null, upgraded: false,
+      gold: false, potion: false, relic: false, bossRelics: false }],
+  })
+  rooms.publishRoom(code)
+  await a.getByText('Transform a card', { exact: true }).waitFor()
+  const foreignTransformControls = await b.getByRole('button', { name: 'Skip Transform' }).count()
+  await a.getByRole('button', { name: 'Skip Transform' }).click()
+  await a.getByRole('heading', { name: 'Loot!' }).waitFor({ state: 'hidden' })
+  check('only the owner can resolve or skip an online Transform loot reward', () => {
+    assertEqual(foreignTransformControls, 0)
+    assertEqual(liveRoom.run.phase, 'map')
+  })
 
   const annCards = liveRoom.run.players.find((player) => player.id === annRun.id)
   annCards.cardRewards = ['golden_ticket', 'anger', 'shrug_it_off']
   annCards.rareRewards = ['bludgeon']
   Object.assign(liveRoom.run, {
     phase: 'reward', rewardDestination: 'map',
+    rewards: [
+      { playerId: annRun.id, cardReward: true, choices: null, upgraded: false,
+        gold: false, potion: false, relic: false, bossRelics: false },
+      { playerId: boRun.id, cardReward: false, choices: null, upgraded: false,
+        gold: 8, potion: false, relic: false, bossRelics: false },
+    ],
+  })
+  liveRoom.rewardChoices = undefined
+  liveRoom.rewardConfirmed = undefined
+  rooms.publishRoom(code)
+  await a.getByRole('heading', { name: 'Loot!' }).waitFor()
+  await a.getByRole('button', { name: 'Skip' }).click()
+  for (let attempt = 0; attempt < 50 && liveRoom.rewardChoices?.[annRun.id] !== null; attempt += 1) {
+    await a.waitForTimeout(100)
+  }
+  assertEqual(liveRoom.rewardChoices?.[annRun.id], null, 'the card Skip did not reach the server before item settlement')
+  await b.getByRole('button', { name: '8 Gold' }).click()
+  await a.waitForFunction(() => !document.querySelector('.reward-screen--loot'))
+  check('online card Skip confirms after a teammate finishes item loot', () => {
+    assertEqual(liveRoom.run.phase, 'map')
+  })
+
+  Object.assign(liveRoom.run, {
+    phase: 'reward', rewardDestination: 'map',
     rewards: [{ playerId: annRun.id, cardReward: true, choices: null, upgraded: false,
-      potion: false, relic: false, bossRelics: false }],
+      gold: false, potion: false, relic: false, bossRelics: false }],
   })
-  await roomAction(a, { kind: 'cardReward', choice: 'reveal' })
-  const ticketBadge = a.getByText('Golden Ticket · Rare')
-  await ticketBadge.waitFor()
-  await b.getByText('Golden Ticket · Rare').waitFor()
-  await ticketBadge.scrollIntoViewIfNeeded()
-  const ticketBadgeVisible = await ticketBadge.evaluate((badge) => {
-    const box = badge.getBoundingClientRect()
-    return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight
+  rooms.publishRoom(code)
+  await a.getByRole('button', { name: 'Add a card to your deck.' }).click()
+  await a.getByRole('heading', { name: 'Choose a Card' }).waitFor()
+  const ownerCardChoices = await a.locator('.reward-screen--card-choice .card').count()
+  const foreignCardChoices = await b.locator('.reward-screen--card-choice .card').count()
+  check('card-reward choices remain in their owner\'s loot screen', () => {
+    assertEqual(ownerCardChoices, 3)
+    assertEqual(foreignCardChoices, 0)
   })
-  check('Golden Ticket presentation is public after reveal', () => {
-    assert(ticketBadgeVisible, 'the compact desktop screenshot hides the Golden Ticket source badge')
-  })
-  await a.screenshot({ path: join(outDir, '08c-compact-desktop-golden-ticket.png'), fullPage: true })
+  await a.screenshot({ path: join(outDir, '08c-compact-desktop-card-loot.png'), fullPage: true })
 
   liveRoom.run = { ...itemBaseline, phase: 'betweenCombat', combat: null, act: 3, ascension: 13,
     pendingBossDefId: 'time_eater' }
@@ -4570,70 +4629,42 @@ try {
   fourRoom.run = {
     ...fourRoom.run, phase: 'reward', combat: null, rewardDestination: 'map',
     rewards: [{ playerId: rewardIris.id, cardReward: true, choices: null, upgraded: false,
-      potion: null, relic: null, bossRelics: false }],
+      gold: false, potion: 'fire_potion', relic: 'astrolabe', bossRelics: false }],
   }
   fourRoom.rewardChoices = undefined
   fourRoom.rewardConfirmed = undefined
   fourRoom.version += 1
   rooms.publishRoom(fourCode)
-  await fourPages[0].getByRole('button', { name: 'Reveal Relic' }).waitFor()
-  await fourPages[0].getByRole('button', { name: 'Reveal Potion' }).waitFor()
-  // The relic and potion offers are rows now, not paragraphs: their keys live in
-  // the row's own actions column.
-  const unrevealedRewardStyles = await fourPages[0].locator('.reward-item__actions > button:not(:disabled)')
+  await fourPages[0].getByRole('button', { name: 'Astrolabe' }).waitFor()
+  await fourPages[0].getByRole('button', { name: 'Fire Potion' }).waitFor()
+  const immediateLootStyles = await fourPages[0].locator('.loot-choice:not(:disabled)')
     .evaluateAll((buttons) => buttons.map((button) => ({
       label: button.textContent?.trim(),
       height: button.getBoundingClientRect().height,
       color: getComputedStyle(button).color,
       background: getComputedStyle(button).backgroundColor,
     })))
-  check('unrevealed Relic and Potion actions retain readable minimum desktop game styling', () => {
-    assert(unrevealedRewardStyles.length >= 4)
-    assert(unrevealedRewardStyles.every((style) => style.height >= 44),
-      `unrevealed reward action is too small: ${JSON.stringify(unrevealedRewardStyles)}`)
-    assert(unrevealedRewardStyles.every((style) => contrastRatio(style) >= 4.5),
-      `unrevealed reward action contrast failed: ${JSON.stringify(unrevealedRewardStyles)}`)
+  check('immediate Relic and Potion loot rows retain readable desktop game styling', () => {
+    assert(immediateLootStyles.length >= 1)
+    assert(immediateLootStyles.every((style) => style.height >= 44),
+      `loot row is too small: ${JSON.stringify(immediateLootStyles)}`)
+    assert(immediateLootStyles.every((style) => contrastRatio(style) >= 4.5),
+      `loot row contrast failed: ${JSON.stringify(immediateLootStyles)}`)
   })
-  fourRoom.run.rewards[0].relic = 'astrolabe'
-  await roomAction(fourPages[0], { kind: 'potionReward', choice: 'reveal' })
-  await roomAction(fourPages[0], { kind: 'cardReward', choice: 'reveal' })
-  await fourPages[1].getByText('Golden Ticket · Rare').waitFor()
   await fourPages[0].getByRole('button', { name: 'Settings' }).click()
   await fourPages[0].getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'general' }).click()
   const fourSeatCount = await fourPages[0].locator('.settings-party span').count()
   await fourPages[0].getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
-  const teammatePotionControls = await fourPages[1].locator('.reward-screen__potion button').count()
-  const revealedItemImages = await fourPages[0].locator([
-    '.reward-screen__relic > .item-icon-image',
-    '.reward-screen__potion > .item-icon-image',
-  ].join(', '))
+  const teammatePotionControls = await fourPages[1].getByRole('button', { name: 'Fire Potion' }).count()
+  const revealedItemImages = await fourPages[0].locator('.loot-choice .item-icon-image')
     .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
-  // Icons, not card faces: a 1.4rem card face rendered as a 22px thumbnail whose
-  // own printed name clipped to two letters, so these keys draw bare art.
-  const heldPotionCards = await fourPages[0].locator('.reward-screen__potion button .item-icon-image')
-    .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
-  const freshRewardChoice = (await snapshot(fourPages[0])).rewardChoice
-  check('the four-player Golden Ticket fixture starts genuinely undecided', () => {
-    assertEqual(freshRewardChoice, undefined)
-    assertDeepEqual(revealedItemImages, [true, true])
-    assertDeepEqual(heldPotionCards, [true])
+  const blockedCardLoot = await fourPages[0].getByRole('button', { name: 'Add a card to your deck.' }).isDisabled()
+  check('the four-player loot fixture is immediate, private, and waits for item claims before cards', () => {
+    assert(revealedItemImages.every(Boolean))
+    assert(blockedCardLoot, 'card reward was enabled before its item loot settled')
   })
-  const rewardActionStyles = await fourPages[0].locator('.reward-screen__relic button:not(:disabled), .reward-screen__potion button:not(:disabled)')
-    .evaluateAll((buttons) => buttons.map((button) => ({
-      label: button.textContent?.trim(),
-      height: button.getBoundingClientRect().height,
-      color: getComputedStyle(button).color,
-      background: getComputedStyle(button).backgroundColor,
-    })))
-  check('four-player Relic and Potion reward actions retain readable game styling', () => {
-    assert(rewardActionStyles.length > 0)
-    assert(rewardActionStyles.every((style) => style.height >= 44),
-      `reward action is too small: ${JSON.stringify(rewardActionStyles)}`)
-    assert(rewardActionStyles.every((style) => contrastRatio(style) >= 4.5),
-      `reward action contrast failed: ${JSON.stringify(rewardActionStyles)}`)
-  })
-  await fourPages[0].locator('.reward-screen__relic').scrollIntoViewIfNeeded()
-  await fourPages[0].screenshot({ path: join(outDir, '09-four-player-compact-desktop-revealed-items.png'), fullPage: true })
+  await fourPages[0].getByRole('button', { name: 'Astrolabe' }).scrollIntoViewIfNeeded()
+  await fourPages[0].screenshot({ path: join(outDir, '09-four-player-compact-desktop-loot.png'), fullPage: true })
   await fourPages[0].locator('.reward-screen').screenshot({ path: join(outDir, '09-four-player-compact-desktop-items.png') })
   await roomAction(fourPages[0], { kind: 'relicReward', choice: 'gain' })
   await fourPages[0].getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
