@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { assetPath, characterHeroArt } from '../game/assets.ts'
-import { cardDef, cardIsCurse } from '../game/cards.ts'
+import { cardDef } from '../game/cards.ts'
 import type { NeowCard, NeowDecision, NeowImmediateReward, NeowPlayerState, NeowRewardOffer } from '../game/neow.ts'
 import { neowCard } from '../game/neow.ts'
-import { canUpgradeCard } from '../game/run.ts'
+import { neowEffectSelection } from '../game/run/neow.ts'
 import type { PotionRewardDecision, RewardSource } from '../game/run.ts'
 import { rewardSourceLabel } from './reward-source.ts'
 import { potionDef, relicDef } from '../game/relics.ts'
 import type { CardInstance, Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
+import { CardPicker } from './CardPicker.tsx'
 import { IconValue } from './Icon.tsx'
 import { ItemImage } from './ItemImage.tsx'
 import { RewardItem } from './RewardScreen.tsx'
@@ -55,13 +57,10 @@ function offerTitle(offer: NeowRewardOffer): string {
   return 'Choose a Card'
 }
 
-function selectableCards(player: NeowUiPlayer, effect: NeowImmediateReward | null) {
-  if (!effect || !player.deck || !['upgrade', 'remove', 'transform'].includes(effect.kind) ||
-    effect.kind === 'upgrade' && effect.random) return { cards: [] as CardInstance[], count: 0 }
-  const cards = effect.kind === 'upgrade' ? player.deck.filter(canUpgradeCard)
-    : effect.kind === 'remove' ? player.deck.filter((card) => card.defId !== 'ascenders_bane')
-      : player.deck.filter((card) => !cardIsCurse(card.defId))
-  return { cards, count: Math.min('count' in effect ? effect.count : 0, cards.length) }
+function selectableCards(player: NeowUiPlayer, effect: NeowImmediateReward | null, excludedUids: readonly string[] = []) {
+  if (!effect || !player.deck || effect.kind === 'upgrade' && effect.random) return { cards: [] as CardInstance[], count: 0 }
+  const { eligible: cards, required: count } = neowEffectSelection(player.deck, effect, excludedUids)
+  return { cards, count }
 }
 
 function OfferChoice({ offer, player, players, ascension, enabled, onResolve }: {
@@ -145,11 +144,12 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
   const [selectedCards, setSelectedCards] = useState<string[]>([])
   const [selectedSources, setSelectedSources] = useState<RewardSource[]>([])
   const pendingEffectKey = viewerProgress?.pendingEffect ? JSON.stringify(viewerProgress.pendingEffect) : ''
+  const deckKey = viewer?.deck?.map((card) => card.uid).join(',') ?? ''
   const availableSourcesKey = viewerProgress?.availableSources?.join(',') ?? ''
-  useEffect(() => setSelectedCards([]), [viewerId, viewerProgress?.blueOption, pendingEffectKey, viewerProgress?.done])
+  useEffect(() => setSelectedCards([]), [viewerId, viewerProgress?.blueOption, pendingEffectKey, deckKey, viewerProgress?.done])
   useEffect(() => setSelectedSources([]), [viewerId, viewerProgress?.redRewardPending, viewerProgress?.rewardKind, viewerProgress?.redReward, viewerProgress?.reward, availableSourcesKey])
   const selection = useMemo(() => viewer && viewerProgress
-    ? selectableCards(viewer, viewerProgress.pendingEffect)
+    ? selectableCards(viewer, viewerProgress.pendingEffect, viewerProgress.transformExcludedUids)
     : { cards: [] as CardInstance[], count: 0 }, [viewer, viewerProgress])
   if (!viewer || !viewerProgress) return null
   const activeViewer = viewer
@@ -167,7 +167,8 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
       : activeProgress.rewardKind === 'potion' ? 'Potion' : activeProgress.rewardKind === 'relic' ? 'Relic' : 'Reward'
   const blueReady = !activeProgress.redGoldPending && !activeProgress.redRewardPending && !activeProgress.redReward && activeProgress.blueOption === null && !activeProgress.done
   const effect = activeProgress.pendingEffect
-  const effectLabel = effect?.kind === 'randomRare' ? 'random Rare card'
+  const effectLabel = effect?.kind === 'transform' ? 'transform a card'
+    : effect?.kind === 'randomRare' ? 'random Rare card'
     : effect?.kind === 'gold' ? `${effect.amount} Gold`
       : effect ? `${effect.kind} ${effect.count} card${effect.count === 1 ? '' : 's'}` : ''
 
@@ -235,12 +236,7 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
           <span>{index + 1}</span><strong>{option.label}</strong>
         </button>)}
       </div> : null}
-      {effect ? <fieldset className="neow-card-choice"><legend>{selection.cards.length > 0 ? `Select ${selection.count} card${selection.count === 1 ? '' : 's'} to ${effect.kind}` : `Gain ${effectLabel}`}</legend>
-        {selection.cards.length > 0 ? <div>{selection.cards.map((candidate) => <Card key={candidate.uid} card={candidate}
-          selected={selectedCards.includes(candidate.uid)} playable={enabled}
-          onClick={() => enabled && setSelectedCards((current) => current.includes(candidate.uid)
-            ? current.filter((uid) => uid !== candidate.uid)
-            : current.length < selection.count ? [...current, candidate.uid] : current)} />)}</div> : null}
+      {effect && selection.cards.length === 0 ? <fieldset className="neow-card-choice"><legend>Gain {effectLabel}</legend>
         <button type="button" disabled={!enabled || selectedCards.length !== selection.count}
           onClick={() => {
             if (effect.kind === 'randomRare') onArmCardGain?.()
@@ -248,6 +244,23 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
           }}>Gain reward</button>
         <button type="button" disabled={!enabled} onClick={() => onEffect(viewer.id, false, {})}>Skip reward</button>
       </fieldset> : null}
+      {effect && selection.cards.length > 0 ? createPortal(<CardPicker
+        cards={selection.cards}
+        verb={effect.kind === 'upgrade' ? 'Upgrade' : effect.kind === 'transform' ? 'Transform' : 'Remove'}
+        selectedCardUids={selectedCards}
+        maxSelections={selection.count}
+        onSelect={(uid) => enabled && setSelectedCards((current) => current.includes(uid)
+          ? current.filter((cardUid) => cardUid !== uid)
+          : current.length < selection.count ? [...current, uid] : current)}
+        onClear={() => enabled && setSelectedCards([])}
+        onBack={() => enabled && onEffect(viewer.id, false, {})}
+        onConfirm={() => enabled && selectedCards.length === selection.count && onEffect(viewer.id, true, { cardUids: selectedCards })}
+        confirmLabel="Confirm reward"
+        backLabel="Skip reward"
+        confirmDisabled={!enabled || selectedCards.length !== selection.count}
+        backDisabled={!enabled}
+        disabled={!enabled}
+      />, document.body) : null}
       {!enabled && !viewerProgress.done ? <p className="neow-action__waiting" role="status">
         {disabledMessage ?? `Reconnecting… your ${blessingWord} is preserved.`}
       </p> : null}

@@ -3590,7 +3590,7 @@ function redactRun(run, viewerId, room) {
     neow: run.neow ? {
       players: Object.fromEntries(Object.keys(run.neow.players).map((playerId) => [
         playerId,
-        neowPreview(run, playerId),
+        neowPreview(run, playerId, viewerId),
       ])),
     } : null,
     pendingBossDefId: null,

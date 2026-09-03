@@ -44,6 +44,11 @@ function neowCardOffer(player: Player, kind: 'card' | 'rare', look: 3 | 5 = 3, u
   return { kind, choices: [...cardsDrawn], cardsDrawn, raresDrawn: [], look, upgraded }
 }
 
+function availableTransformRewards(player: Pick<Player, 'cardRewards' | 'rareRewards'>): number {
+  return player.cardRewards.filter((id) => id !== GOLDEN_TICKET).length +
+    Math.min(player.cardRewards.filter((id) => id === GOLDEN_TICKET).length, player.rareRewards.length)
+}
+
 export function nextNeowReward(state: RunState, playerId: string): RunState {
   let next = state
   while (true) {
@@ -74,12 +79,24 @@ export function nextNeowReward(state: RunState, playerId: string): RunState {
         } },
       },
     }
-    if (['upgrade', 'remove', 'transform', 'gold', 'randomRare', 'randomCards'].includes(kind.kind)) return {
-      ...next,
-      neow: {
-        ...next.neow,
-        players: { ...next.neow.players, [playerId]: { ...progress, pendingEffect: kind as NeowImmediateReward, rewardQueue } },
-      },
+    if (['upgrade', 'remove', 'transform', 'gold', 'randomRare', 'randomCards'].includes(kind.kind)) {
+      const pending: RunState = {
+        ...next,
+        neow: {
+          ...next.neow,
+          players: { ...next.neow.players, [playerId]: {
+            ...progress,
+            pendingEffect: kind as NeowImmediateReward,
+            transformExcludedUids: undefined,
+            transformRemaining: undefined,
+            rewardQueue,
+          } },
+        },
+      }
+      const owner = next.players.find((candidate) => candidate.id === playerId)
+      return kind.kind === 'transform' && owner && availableTransformRewards(owner) === 0
+        ? resolveNeowEffect(pending, playerId, true)
+        : pending
     }
     const owner = next.players.find((candidate) => candidate.id === playerId)
     const curse = kind.kind === 'curse' && owner && !owner.relics.some((relic) => relic.defId === 'omamori')
@@ -135,19 +152,15 @@ export function finishNeowStep(state: RunState, playerId: string): RunState {
     ? state : completeNeowPlayer(state, playerId)
 }
 
-function availableTransformRewards(player: Pick<Player, 'cardRewards' | 'rareRewards'>): number {
-  return player.cardRewards.filter((id) => id !== GOLDEN_TICKET).length +
-    Math.min(player.cardRewards.filter((id) => id === GOLDEN_TICKET).length, player.rareRewards.length)
-}
-
 /** Public, authoritative Neow state. The remaining face-down deck is intentionally omitted. */
-export function neowPreview(state: RunState, playerId: string): {
+export function neowPreview(state: RunState, playerId: string, viewerId = playerId): {
   card: ReturnType<typeof neowCard>
   redGoldPending: boolean
   redRewardPending: boolean
   redReward: NeowRewardOffer | null
   blueOption: number | null
   pendingEffect: NeowImmediateReward | null
+  transformExcludedUids?: string[]
   rewardKind: NeowRewardKind | null
   reward: NeowRewardOffer | null
   availableSources: RewardSource[]
@@ -165,6 +178,8 @@ export function neowPreview(state: RunState, playerId: string): {
     redReward: structuredClone(progress.redReward),
     blueOption: progress.blueOption,
     pendingEffect: structuredClone(progress.pendingEffect),
+    ...(playerId === viewerId && progress.transformExcludedUids?.length
+      ? { transformExcludedUids: [...progress.transformExcludedUids] } : {}),
     rewardKind: progress.rewardKind,
     reward: structuredClone(progress.reward),
     availableSources: neowRewardSources(state, playerId),
@@ -196,11 +211,18 @@ export function revealNeowReward(state: RunState, playerId: string, sources: rea
     progress.redGoldPending || hasPendingRelicAcquisition(state) || progress.redReward || progress.reward) return state
   const kind = progress.redRewardPending ? 'card' : progress.rewardKind
   if (!kind) return state
-  if (kind === 'card' && hasModifier(state, 'transformed')) return {
-    ...state,
-    neow: { ...neow, players: { ...neow.players, [playerId]: {
-      ...progress, pendingEffect: { kind: 'transform', count: 1 }, rewardKind: progress.redRewardPending ? progress.rewardKind : null,
-    } } },
+  if (kind === 'card' && hasModifier(state, 'transformed')) {
+    const pending: RunState = {
+      ...state,
+      neow: { ...neow, players: { ...neow.players, [playerId]: {
+        ...progress,
+        pendingEffect: { kind: 'transform', count: 1 },
+        transformExcludedUids: undefined,
+        transformRemaining: undefined,
+        rewardKind: progress.redRewardPending ? progress.rewardKind : null,
+      } } },
+    }
+    return availableTransformRewards(player) === 0 ? resolveNeowEffect(pending, playerId, true) : pending
   }
   let itemDecks = state.itemDecks
   let potionDeck = state.potionDeck
@@ -367,16 +389,23 @@ export function resolveNeowReward(
   return finishNeowStep(next, playerId)
 }
 
-function neowEffectCards(player: Player, effect: NeowImmediateReward): { eligible: CardInstance[]; required: number } {
+export function neowEffectSelection(deck: readonly CardInstance[], effect: NeowImmediateReward, excludedUids: readonly string[] = []): { eligible: CardInstance[]; required: number } {
   if (!['upgrade', 'remove', 'transform'].includes(effect.kind)) return { eligible: [], required: 0 }
   const starter = 'starter' in effect && effect.starter
   const matchesStarter = (card: CardInstance) => !starter ||
     CARDS[card.defId]?.rarity === 'starter' && CARDS[card.defId]?.name.toLowerCase() === starter
-  const eligible = effect.kind === 'upgrade' ? player.deck.filter((card) => canUpgradeCard(card) && matchesStarter(card))
-    : effect.kind === 'remove' ? player.deck.filter((card) => card.defId !== 'ascenders_bane' && matchesStarter(card))
-      : player.deck.filter((card) => !cardIsCurse(card.defId))
-  const supply = effect.kind === 'transform' ? availableTransformRewards(player) : Number.POSITIVE_INFINITY
-  return { eligible, required: Math.min('count' in effect ? effect.count : 0, eligible.length, supply) }
+  const eligible = effect.kind === 'upgrade' ? deck.filter((card) => canUpgradeCard(card) && matchesStarter(card))
+    : effect.kind === 'remove' ? deck.filter((card) => card.defId !== 'ascenders_bane' && matchesStarter(card))
+      : deck.filter((card) => !cardIsCurse(card.defId) && !excludedUids.includes(card.uid))
+  const count = effect.kind === 'transform' ? 1 : 'count' in effect ? effect.count : 0
+  return { eligible, required: Math.min(count, eligible.length) }
+}
+
+export function neowEffectCards(player: Pick<Player, 'deck' | 'cardRewards' | 'rareRewards'>, effect: NeowImmediateReward, excludedUids: readonly string[] = []) {
+  const selection = neowEffectSelection(player.deck, effect, excludedUids)
+  return effect.kind === 'transform'
+    ? { ...selection, required: Math.min(selection.required, availableTransformRewards(player)) }
+    : selection
 }
 
 /** Resolve or independently skip the current immediate positive Neow reward. */
@@ -391,7 +420,7 @@ export function resolveNeowEffect(
   const effect = progress?.pendingEffect
   if (state.phase !== 'neow' || !state.neow || !progress || !player || !effect || progress.done || hasPendingRelicAcquisition(state)) return state
   const cardUids = decision.cardUids ?? []
-  const selection = neowEffectCards(player, effect)
+  const selection = neowEffectCards(player, effect, progress.transformExcludedUids)
   if (!gain) {
     if (cardUids.length > 0) return state
   } else if (effect.kind === 'upgrade' && effect.random) {
@@ -402,6 +431,9 @@ export function resolveNeowEffect(
   const rng = { ...state.rng }
   let owner = player
   let uid = nextRunUid(state.players)
+  let pendingEffect: NeowImmediateReward | null = null
+  let transformExcludedUids: string[] | undefined
+  let transformRemaining: number | undefined
   if (gain) {
     if (effect.kind === 'upgrade') {
       const chosen = effect.random ? pickMany(rng, selection.eligible, selection.required).map((card) => card.uid) : cardUids
@@ -409,10 +441,24 @@ export function resolveNeowEffect(
     } else if (effect.kind === 'remove') {
       for (const cardUid of cardUids) owner = removeCard(owner, cardUid)
     } else if (effect.kind === 'transform') {
+      const replacementUids: string[] = []
       for (const cardUid of cardUids) {
         const replacementUid = `c${uid++}`
+        const before = owner
         owner = transformCard(rng, owner, cardUid, replacementUid)
-        if (effect.upgrade) owner = upgradeCard(owner, replacementUid)
+        if (owner !== before) {
+          replacementUids.push(replacementUid)
+          if (effect.upgrade) owner = upgradeCard(owner, replacementUid)
+        }
+      }
+      const remaining = (progress.transformRemaining ?? effect.count) - replacementUids.length
+      if (remaining > 0) {
+        const excluded = [...(progress.transformExcludedUids ?? []), ...replacementUids]
+        if (neowEffectCards(owner, effect, excluded).required > 0) {
+          pendingEffect = effect
+          transformExcludedUids = excluded
+          transformRemaining = remaining
+        }
       }
     } else if (effect.kind === 'gold') owner = gainGold(owner, effect.amount)
     else if (effect.kind === 'randomRare') {
@@ -450,7 +496,9 @@ export function resolveNeowEffect(
     players: state.players.map((candidate) => candidate.id === playerId ? owner : candidate),
     neow: { ...currentNeow, players: { ...currentNeow.players, [playerId]: {
       ...progress,
-      pendingEffect: null,
+      pendingEffect,
+      transformExcludedUids,
+      transformRemaining,
       redRewardPending: transformedRed ? redRemaining > 1 : progress.redRewardPending,
       redRewardsRemaining: transformedRed ? Math.max(0, redRemaining - 1) : progress.redRewardsRemaining,
     } } },

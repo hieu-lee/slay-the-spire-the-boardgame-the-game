@@ -5,6 +5,7 @@ import { canUpgradeCard } from '../game/run.ts'
 import type { CampfireDecision } from '../game/run.ts'
 import type { Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
+import { CardPicker } from './CardPicker.tsx'
 import { Icon } from './Icon.tsx'
 
 type CampfireScreenProps = {
@@ -23,6 +24,7 @@ type Decision = CampfireDecision
  */
 export function CampfireScreen({ players, onResolve, rubyAvailable = false, restAllowed = true }: CampfireScreenProps) {
   const [decisions, setDecisions] = useState<Record<string, Decision>>({})
+  const [picker, setPicker] = useState<'remove' | 'transform' | 'upgrade' | null>(null)
   const living = players.filter((player) => !player.dead)
   const livingCharacters = living.map((seat) => seat.character)
   const [focusedId, setFocusedId] = useState(living[0]?.id ?? '')
@@ -37,6 +39,11 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
   const upgradable = player?.deck.filter(canUpgradeCard) ?? []
   const restBlocked = coffee || !restAllowed
   const blocked = restBlocked && (hammer || upgradable.length === 0)
+  const clearDecision = () => player && setDecisions((current) => {
+    const next = { ...current }
+    delete next[player.id]
+    return next
+  })
   const settled = living.every((player) => {
     const decision = decisions[player.id]
     if (!decision) return false
@@ -68,9 +75,10 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                   type="button"
                   className={decision?.choice === 'rest' ? 'is-chosen' : ''}
                   disabled={restBlocked}
-                  onClick={() =>
+                  onClick={() => {
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'rest' } }))
-                  }
+                    setPicker(peacePipe ? 'remove' : straightRazor ? 'transform' : null)
+                  }}
                 >
                   <img src={assetPath('noncombat/campfire/rest.webp')} alt="" />
                   <strong>Rest</strong>
@@ -85,9 +93,10 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                   type="button"
                   className={decision?.choice === 'smith' ? 'is-chosen' : ''}
                   disabled={hammer || upgradable.length === 0}
-                  onClick={() =>
+                  onClick={() => {
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'smith' } }))
-                  }
+                    setPicker('upgrade')
+                  }}
                 >
                   <img src={assetPath('noncombat/campfire/smith.webp')} alt="" />
                   <strong>Smith</strong>
@@ -95,7 +104,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                 </button>
           </div>
 
-          {decision?.choice === 'rest' && peacePipe ? <div className="campfire__deck campfire__deck--remove">
+          {decision?.choice === 'rest' && peacePipe && picker !== 'remove' ? <div className="campfire__deck campfire__deck--remove">
                 {player.deck.filter((card) => card.defId !== 'ascenders_bane').map((card) => <Card key={card.uid} card={card}
                   selected={decision.removeCardUid === card.uid}
                   onClick={() => setDecisions((current) => ({ ...current, [player.id]: {
@@ -106,7 +115,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                   } }))} />)}
               </div> : null}
 
-          {decision?.choice === 'rest' && straightRazor ? <div className="campfire__deck campfire__deck--transform">
+          {decision?.choice === 'rest' && straightRazor && picker !== 'transform' ? <div className="campfire__deck campfire__deck--transform">
                 {player.deck.filter((card) => card.defId !== 'ascenders_bane' && card.uid !== decision.removeCardUid).map((card) =>
                   <Card key={card.uid} card={card} selected={decision.transformCardUid === card.uid}
                     onClick={() => setDecisions((current) => ({ ...current, [player.id]: {
@@ -114,7 +123,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                     } }))} />)}
               </div> : null}
 
-          {decision?.choice === 'smith' ? <div className="campfire__deck campfire__deck--smith">
+          {decision?.choice === 'smith' && picker !== 'upgrade' ? <div className="campfire__deck campfire__deck--smith">
             {upgradable.map((card) => (
               <Card
                 key={card.uid}
@@ -131,6 +140,24 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
           </div> : null}
         </div> : null}
       </div>
+
+      {player && decision && picker ? <CardPicker
+        cards={picker === 'upgrade' ? upgradable : player.deck.filter((card) => picker === 'remove'
+          ? card.defId !== 'ascenders_bane' : card.defId !== 'ascenders_bane' && card.uid !== decision.removeCardUid)}
+        verb={picker === 'upgrade' ? 'Upgrade' : picker === 'remove' ? 'Remove' : 'Transform'}
+        selectedCardUids={[picker === 'upgrade' ? decision.cardUid : picker === 'remove' ? decision.removeCardUid : decision.transformCardUid]
+          .filter((uid): uid is string => Boolean(uid))}
+        onSelect={(uid) => setDecisions((current) => ({ ...current, [player.id]: picker === 'upgrade'
+          ? { choice: 'smith', cardUid: decision.cardUid === uid ? undefined : uid }
+          : { ...decision, [picker === 'remove' ? 'removeCardUid' : 'transformCardUid']:
+            (picker === 'remove' ? decision.removeCardUid : decision.transformCardUid) === uid ? undefined : uid,
+            ...(picker === 'remove' && decision.transformCardUid === uid ? { transformCardUid: undefined } : {}) } }))}
+        onClear={() => setDecisions((current) => ({ ...current, [player.id]: picker === 'upgrade'
+          ? { choice: 'smith' } : { ...decision, [picker === 'remove' ? 'removeCardUid' : 'transformCardUid']: undefined } }))}
+        onBack={() => { setPicker(null); clearDecision() }}
+        onConfirm={() => setPicker(picker === 'remove' && straightRazor ? 'transform' : null)}
+        selectionRequired={picker === 'upgrade'}
+      /> : null}
 
       <button type="button" className="campfire__leave" disabled={!settled} onClick={() => onResolve(decisions)}>
         {settled ? 'Leave the campfire' : 'Everyone must choose'}

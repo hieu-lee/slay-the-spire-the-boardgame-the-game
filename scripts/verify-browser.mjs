@@ -6745,6 +6745,17 @@ const currentDeckCardCount = await currentDeckDialog.locator('.card').count()
 check('the current-deck control opens the read-only card viewer', () => {
   assert(currentDeckCardCount > 0, 'the current deck rendered no cards')
 })
+const deckSortControls = await currentDeckDialog.locator('.card-collection__sort button').allTextContents()
+await currentDeckDialog.getByRole('button', { name: /A - Z/ }).click()
+const alphabeticalDeckNames = await currentDeckDialog.locator('.choice-modal__cards > .card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')?.split(',')[0] ?? ''))
+await currentDeckDialog.getByLabel('Current deck upgrade preview').check()
+const deckUpgradePreview = await currentDeckDialog.locator('.choice-modal__cards > .card').first().getAttribute('aria-label')
+check('the deck viewer sorts cards and previews their upgrades', () => {
+  assertDeepEqual(deckSortControls.map((text) => text.replace(/\s*[↑↓↕]\s*$/, '').trim()), ['Obtained', 'Card Type', 'Cost', 'A - Z'])
+  assertDeepEqual(alphabeticalDeckNames, [...alphabeticalDeckNames].sort((left, right) => left.localeCompare(right)))
+  assert((deckUpgradePreview ?? '').includes('+, '), `the deck upgrade preview is not shown: ${deckUpgradePreview}`)
+})
 await currentDeckDialog.getByRole('button', { name: 'Close' }).click()
 await page.getByRole('button', { name: 'Map' }).click()
 await page.locator('.map-peek[open] .room').first().waitFor()
@@ -16537,84 +16548,64 @@ const campfirePrompt = page.locator('.campfire__prompt')
 await campfirePrompt.getByRole('button', { name: /Rest/ }).click()
 await campfirePrompt.getByRole('button', { name: 'Next campfire player' }).click()
 await campfirePrompt.getByRole('button', { name: /Smith/ }).click()
-await page.waitForSelector('.campfire__deck .card')
+await page.waitForSelector('.card-picker')
 await page.setViewportSize({ width: 1244, height: 409 })
 await page.waitForTimeout(60)
 const compactSmithPicker = await page.evaluate(() => {
-  const prompt = document.querySelector('.campfire__prompt')
-  const deck = document.querySelector('.campfire__deck')
-  const promptBox = prompt?.getBoundingClientRect()
-  const cardBoxes = [...(deck?.querySelectorAll('.card') ?? [])].map((card) => card.getBoundingClientRect())
+  const picker = document.querySelector('.card-picker')
+  const grid = document.querySelector('.card-picker__grid')
+  const pickerBox = picker?.getBoundingClientRect()
+  const cardBoxes = [...(grid?.querySelectorAll(':scope > .card') ?? [])].map((card) => card.getBoundingClientRect())
   const firstTop = cardBoxes[0]?.top
   const firstRow = cardBoxes.filter((box) => firstTop !== undefined && Math.abs(box.top - firstTop) <= 1)
-  const playerName = document.querySelector('.campfire__name')
-  const playerNameBox = playerName?.getBoundingClientRect()
-  const leave = document.querySelector('.campfire__leave')
-  const leaveBox = leave?.getBoundingClientRect()
-  const leaveVisible = Boolean(leave && getComputedStyle(leave).display !== 'none')
   return {
     documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
-    promptScrolls: Boolean(prompt && prompt.scrollHeight > prompt.clientHeight + 1),
-    deckScrollsHorizontally: Boolean(deck && deck.scrollWidth > deck.clientWidth + 1),
+    gridScrollsHorizontally: Boolean(grid && grid.scrollWidth > grid.clientWidth + 1),
     firstRowCards: firstRow.length,
-    playerContextVisible: Boolean(playerNameBox && playerNameBox.width > 1 && playerNameBox.height > 1),
-    clippedFirstRowCards: promptBox
-      ? firstRow.filter((box) => box.top < promptBox.top - 1 || box.bottom > promptBox.bottom + 1).length
+    clippedFirstRowCards: pickerBox
+      ? firstRow.filter((box) => box.top < pickerBox.top - 1 || box.bottom > pickerBox.bottom + 1).length
       : firstRow.length,
-    leaveOverlapsFirstRow: Boolean(leaveVisible && leaveBox && firstRow.some((box) =>
-      leaveBox.left < box.right && leaveBox.right > box.left && leaveBox.top < box.bottom && leaveBox.bottom > box.top)),
+    backVisible: Boolean(picker?.querySelector('.card-picker__back')),
+    confirmVisible: Boolean(picker?.querySelector('.card-picker__confirm')),
   }
 })
-check('the compact Smith picker shows full card rows with only one scroll surface', () => {
+check('the compact Smith picker shows full card rows plus Back and Confirm controls', () => {
   assert(!compactSmithPicker.documentScrolls, `the page itself scrolls: ${JSON.stringify(compactSmithPicker)}`)
-  assert(compactSmithPicker.promptScrolls, 'the compact picker should own the one necessary scrollbar')
-  assert(!compactSmithPicker.deckScrollsHorizontally, `the card grid scrolls sideways: ${JSON.stringify(compactSmithPicker)}`)
-  assert(compactSmithPicker.playerContextVisible, `the active player's context is hidden: ${JSON.stringify(compactSmithPicker)}`)
+  assert(!compactSmithPicker.gridScrollsHorizontally, `the card grid scrolls sideways: ${JSON.stringify(compactSmithPicker)}`)
   assert(compactSmithPicker.firstRowCards > 0 && compactSmithPicker.clippedFirstRowCards === 0,
     `the first row is clipped: ${JSON.stringify(compactSmithPicker)}`)
-  assert(!compactSmithPicker.leaveOverlapsFirstRow,
-    `the leave control covers a card: ${JSON.stringify(compactSmithPicker)}`)
+  assert(compactSmithPicker.backVisible && compactSmithPicker.confirmVisible, JSON.stringify(compactSmithPicker))
 })
 await shot('12a-compact-campfire-smith')
-await page.locator('.campfire__deck .card').first().click()
-await page.waitForSelector('.campfire__deck--smith .card--selected')
+await page.locator('.card-picker__grid > .card').first().click()
+await page.waitForSelector('.card-picker__preview')
 const compactSmithPicked = []
 for (const viewport of [{ width: 1244, height: 409 }, { width: 1244, height: 521 }]) {
   await page.setViewportSize(viewport)
   await page.waitForTimeout(60)
   compactSmithPicked.push({ ...viewport, ...await page.evaluate(() => {
-    const prompt = document.querySelector('.campfire__prompt')
-    const deck = document.querySelector('.campfire__deck')
-    const card = deck?.querySelector('.card')
-    const switcher = document.querySelector('button[aria-label^="Next campfire player: "]')
-    const promptBox = prompt?.getBoundingClientRect()
-    const cardBox = card?.getBoundingClientRect()
-    const switcherBox = switcher?.getBoundingClientRect()
-    const hit = switcherBox && document.elementFromPoint(switcherBox.left + switcherBox.width / 2, switcherBox.top + switcherBox.height / 2)
+    const picker = document.querySelector('.card-picker')
+    const preview = document.querySelector('.card-picker__preview')
+    const previewCards = [...(preview?.querySelectorAll('.card') ?? [])].map((card) => card.getBoundingClientRect())
+    const pickerBox = picker?.getBoundingClientRect()
     return {
       documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
-      deckScrollsHorizontally: Boolean(deck && deck.scrollWidth > deck.clientWidth + 1),
-      promptHeight: promptBox?.height ?? 0,
-      cardHeight: cardBox?.height ?? 0,
-      visibleCardHeight: promptBox && cardBox
-        ? Math.max(0, Math.min(promptBox.bottom, cardBox.bottom) - Math.max(promptBox.top, cardBox.top)) : 0,
-      previewCount: document.querySelectorAll('.campfire__preview').length,
-      saysBecomes: /\bBecomes\b/.test(prompt?.textContent ?? ''),
-      switcherReachable: Boolean(switcher && switcherBox && switcherBox.width > 0 && switcherBox.height > 0 && hit && (hit === switcher || switcher.contains(hit))),
+      previewCount: previewCards.length,
+      previewFits: Boolean(pickerBox && previewCards.length === 2 && previewCards.every((box) =>
+        box.left >= pickerBox.left - 1 && box.right <= pickerBox.right + 1 && box.top >= pickerBox.top - 1 && box.bottom <= pickerBox.bottom + 1)),
+      confirmEnabled: (picker?.querySelector('.card-picker__confirm') instanceof HTMLButtonElement) &&
+        !picker.querySelector('.card-picker__confirm').disabled,
     }
   }) })
 }
-check('selecting a Smith card on a compact screen keeps the picker and next player reachable', () => {
+check('selecting a Smith card previews its upgraded face and keeps confirmation reachable', () => {
   for (const shape of compactSmithPicked) {
     assert(!shape.documentScrolls, `the selected picker made the page scroll: ${JSON.stringify(shape)}`)
-    assert(!shape.deckScrollsHorizontally, `the selected grid scrolls sideways: ${JSON.stringify(shape)}`)
-    assert(shape.visibleCardHeight >= shape.cardHeight - 1,
-      `the selected picker clips the first card: ${JSON.stringify(shape)}`)
-    assertEqual(shape.previewCount, 0, `the removed upgrade preview returned: ${JSON.stringify(shape)}`)
-    assert(!shape.saysBecomes, `the removed "Becomes" copy returned: ${JSON.stringify(shape)}`)
-    assert(shape.switcherReachable, `the next player control is unreachable: ${JSON.stringify(shape)}`)
+    assertEqual(shape.previewCount, 2, `the base and upgraded cards are not both visible: ${JSON.stringify(shape)}`)
+    assert(shape.previewFits && shape.confirmEnabled, JSON.stringify(shape))
   }
 })
+await page.locator('.card-picker').getByRole('button', { name: 'Confirm' }).click()
 for (let remaining = 2; remaining > 0; remaining -= 1) {
   await campfirePrompt.getByRole('button', { name: 'Next campfire player' }).click()
   await campfirePrompt.getByRole('button', { name: /Rest/ }).click()
@@ -16705,20 +16696,20 @@ await page.evaluate(() => {
 })
 await page.waitForSelector('.campfire')
 await page.locator('.campfire__prompt').getByRole('button', { name: /Rest/ }).click()
-const peacePipeSkipControl = await page.getByRole('button', { name: 'Next campfire player' }).evaluate((button) => {
-  const box = button.getBoundingClientRect()
-  const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-  return box.width > 0 && box.height > 0 && Boolean(hit && (hit === button || button.contains(hit)))
-})
-await page.locator('.campfire__deck--remove .card').first().click()
+await page.waitForSelector('.card-picker')
+await page.locator('.card-picker__grid > .card').first().click()
+await page.waitForSelector('.card-picker__preview')
+await page.locator('.card-picker').getByRole('button', { name: 'Back' }).click()
+await page.waitForSelector('.card-picker__preview', { state: 'detached' })
+await page.locator('.card-picker__grid > .card').first().click()
+await page.locator('.card-picker').getByRole('button', { name: 'Confirm' }).click()
 const peacePipeNextControl = await page.getByRole('button', { name: 'Next campfire player' }).evaluate((button) => {
   const box = button.getBoundingClientRect()
   const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
   return box.width > 0 && box.height > 0 && Boolean(hit && (hit === button || button.contains(hit)))
 })
-check('Peace Pipe keeps local player navigation available with or without a removal', () => {
-  assert(peacePipeSkipControl, 'the next-player control is hidden or covered before the optional removal is chosen')
-  assert(peacePipeNextControl, 'the next-player control stayed hidden or covered after a Peace Pipe choice')
+check('Peace Pipe lets a player back out of a selected card before confirming removal', () => {
+  assert(peacePipeNextControl, 'the next-player control did not return after confirming a Peace Pipe choice')
 })
 
 await page.evaluate(() => {
@@ -16728,13 +16719,14 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.locator('.campfire__prompt').getByRole('button', { name: /Rest/ }).click()
-const sharedCampfireCard = page.locator('.campfire__deck--transform .card').first()
-await sharedCampfireCard.click()
-await page.locator('.campfire__deck--remove .card').first().click()
-const staleCampfireTransforms = await page.locator('.campfire__deck--transform .card.is-selected').count()
-check('Peace Pipe clears Straight Razor when both selected the same card', () => {
-  assertEqual(staleCampfireTransforms, 0,
-    'removing the transform target left a stale hidden selection')
+await page.waitForSelector('.card-picker')
+const removedCardName = await page.locator('.card-picker__grid > .card').last().getAttribute('aria-label')
+await page.locator('.card-picker__grid > .card').last().click()
+await page.locator('.card-picker').getByRole('button', { name: 'Confirm' }).click()
+await page.waitForFunction((name) => ![...document.querySelectorAll('.card-picker__grid > .card')]
+  .some((card) => card.getAttribute('aria-label') === name), removedCardName)
+check('Peace Pipe excludes its removed card from Straight Razor’s transform picker', () => {
+  assert(removedCardName, 'the removal picker did not expose a card to remove')
 })
 
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'campfire-solo'))
@@ -16749,31 +16741,25 @@ await page.evaluate(() => {
 await page.waitForSelector('.campfire')
 const soloCampfireSummaryCount = await page.locator('.campfire__players, .campfire__seat, .campfire__turn-nav').count()
 await page.locator('.campfire__prompt').getByRole('button', { name: /Smith/ }).click()
-await page.locator('.campfire__deck--smith .card').first().click()
+await page.locator('.card-picker__grid > .card').first().click()
 await page.setViewportSize({ width: 568, height: 320 })
 await page.waitForTimeout(60)
 const compactSoloSmith = await page.evaluate(() => {
-  const prompt = document.querySelector('.campfire__prompt')
-  const deck = document.querySelector('.campfire__deck--smith')
-  const card = deck?.querySelector('.card')
-  const cardBox = card?.getBoundingClientRect()
-  const promptBox = prompt?.getBoundingClientRect()
+  const picker = document.querySelector('.card-picker')
+  const previewCards = [...document.querySelectorAll('.card-picker__preview .card')].map((card) => card.getBoundingClientRect())
+  const pickerBox = picker?.getBoundingClientRect()
   return {
     redundantPlayerUi: document.querySelectorAll('.campfire__players, .campfire__seat, .campfire__turn-nav').length,
     documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
-    deckScrollsHorizontally: Boolean(deck && deck.scrollWidth > deck.clientWidth + 1),
-    cardHeight: cardBox?.height ?? 0,
-    visibleCardHeight: promptBox && cardBox
-      ? Math.max(0, Math.min(promptBox.bottom, cardBox.bottom) - Math.max(promptBox.top, cardBox.top)) : 0,
+    previewFits: Boolean(pickerBox && previewCards.length === 2 && previewCards.every((box) =>
+      box.left >= pickerBox.left - 1 && box.right <= pickerBox.right + 1 && box.top >= pickerBox.top - 1 && box.bottom <= pickerBox.bottom + 1)),
   }
 })
-check('a compact solo Smith picker uses the full scene instead of reserving a player switcher', () => {
+check('a compact solo Smith picker uses the full scene for its upgrade preview', () => {
   assertEqual(soloCampfireSummaryCount, 0, 'the solo Campfire shows redundant player UI before choosing')
   assertEqual(compactSoloSmith.redundantPlayerUi, 0, `the solo player UI still consumes picker height: ${JSON.stringify(compactSoloSmith)}`)
   assert(!compactSoloSmith.documentScrolls, `the solo picker makes the page scroll: ${JSON.stringify(compactSoloSmith)}`)
-  assert(!compactSoloSmith.deckScrollsHorizontally, `the solo picker scrolls sideways: ${JSON.stringify(compactSoloSmith)}`)
-  assert(compactSoloSmith.visibleCardHeight >= compactSoloSmith.cardHeight - 1,
-    `the solo picker clips its first card: ${JSON.stringify(compactSoloSmith)}`)
+  assert(compactSoloSmith.previewFits, `the solo picker clips its upgrade preview: ${JSON.stringify(compactSoloSmith)}`)
 })
 
 // A card whose width is unbounded turns aspect-ratio into runaway height. This

@@ -56,6 +56,10 @@ export type NeowPlayerState = {
   redReward: NeowRewardOffer | null
   blueOption: number | null
   pendingEffect: NeowImmediateReward | null
+  /** Replacement cards from a multi-card transform cannot be transformed again. */
+  transformExcludedUids?: string[]
+  /** Private progress for a multi-card transform; the printed effect stays public. */
+  transformRemaining?: number
   rewardKind: NeowRewardKind | null
   rewardRequest?: { look?: 3 | 5; upgraded?: boolean; relicChoices?: 1 | 3 }
   reward: NeowRewardOffer | null

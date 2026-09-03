@@ -5,6 +5,7 @@ import {
   chooseNeow,
   createRun,
   GOLDEN_TICKET,
+  neowEffectSelection,
   neowPreview,
   pendingRelicEligibleCards,
   pendingRelicPreview,
@@ -172,6 +173,42 @@ check('Transformed replaces red and blue normal Neow Card Rewards', () => {
   assertDeepEqual(run.neow.players.p1.pendingEffect, { kind: 'transform', count: 1 })
   const secondUid = run.players[0].deck.find((card) => CARDS[card.defId]?.owner !== 'curse').uid
   run = resolveNeowEffect(run, 'p1', true, { cardUids: [secondUid] })
+  assertEqual(run.phase, 'map')
+})
+
+check('Neow transforms never consume a selected card without a replacement', () => {
+  let run = beginBlue(4052, 1)
+  run.neow.players.p1 = { ...run.neow.players.p1, pendingEffect: { kind: 'transform', count: 2 } }
+  run.players[0].cardRewards = [GOLDEN_TICKET]
+  run.players[0].rareRewards = []
+  const before = structuredClone(run.players[0].deck)
+  const target = before.find((card) => CARDS[card.defId]?.owner !== 'curse').uid
+  assertEqual(resolveNeowEffect(run, 'p1', true, { cardUids: [target] }), run)
+  run = resolveNeowEffect(run, 'p1', true)
+  assertEqual(run.phase, 'map')
+  assertDeepEqual(run.players[0].deck, before)
+
+  run = beginBlue(40525, 1)
+  run.neow.players.p1 = { ...run.neow.players.p1, pendingEffect: { kind: 'transform', count: 1 } }
+  run.players[0].cardRewards = [GOLDEN_TICKET, 'strike']
+  run.players[0].rareRewards = []
+  const goldenTicketTarget = run.players[0].deck.find((card) => CARDS[card.defId]?.owner !== 'curse')
+  run = resolveNeowEffect(run, 'p1', true, { cardUids: [goldenTicketTarget.uid] })
+  assert(!run.players[0].deck.some((card) => card.uid === goldenTicketTarget.uid))
+
+  run = beginBlue(4053, 1)
+  run.neow.players.p1 = { ...run.neow.players.p1, pendingEffect: { kind: 'transform', count: 2 } }
+  run.players[0].cardRewards = ['strike', 'defend']
+  const [first, second] = run.players[0].deck.filter((card) => CARDS[card.defId]?.owner !== 'curse')
+  run = resolveNeowEffect(run, 'p1', true, { cardUids: [first.uid] })
+  assertDeepEqual(run.neow.players.p1.pendingEffect, { kind: 'transform', count: 2 })
+  const replacement = run.players[0].deck.find((card) => card.uid !== second.uid && !before.some((old) => old.uid === card.uid))
+  assert(replacement)
+  assert(!neowEffectSelection(run.players[0].deck, run.neow.players.p1.pendingEffect, run.neow.players.p1.transformExcludedUids).eligible.some((card) => card.uid === replacement.uid))
+  const otherSeatPreview = neowPreview(run, 'p1', 'p2')
+  assertDeepEqual(otherSeatPreview.pendingEffect, { kind: 'transform', count: 2 })
+  assertEqual('transformExcludedUids' in otherSeatPreview, false)
+  run = resolveNeowEffect(run, 'p1', true, { cardUids: [second.uid] })
   assertEqual(run.phase, 'map')
 })
 

@@ -27,6 +27,8 @@ type CardProps = {
   gemPowerDamage?: boolean
   /** Position in the fan, -1 (leftmost) to 1 (rightmost), 0 in the middle. */
   fan?: number
+  /** Removes an otherwise-real card button from sequential keyboard navigation. */
+  tabIndex?: number
   onClick?: (card: CardInstance) => void
   onPointerDown?: React.PointerEventHandler<HTMLButtonElement>
   onPointerMove?: React.PointerEventHandler<HTMLButtonElement>
@@ -650,6 +652,7 @@ export function Card({
   picked = false,
   gemPowerDamage,
   fan = 0,
+  tabIndex,
   onClick,
   onPointerDown,
   onPointerMove,
@@ -680,6 +683,7 @@ export function Card({
       type="button"
       className={className}
       data-sfx="card"
+      tabIndex={tabIndex}
       style={{
         ...style,
         // Tilt with distance from the middle, and drop the outer cards a

@@ -766,7 +766,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         progress={run.neow.players}
         viewerId={snapshot.you.playerId}
         ascension={run.ascension}
-        enabled={room.connection === 'connected' && !pendingAcquisition}
+        enabled={room.connection === 'connected' && !pendingAcquisition && !snapshot.pendingRelicStatus}
         disabledMessage={room.connection !== 'connected'
           ? `Reconnecting… your ${heartBoon ? 'Boon' : 'Blessing'} is preserved.`
           : snapshot.pendingRelicStatus
