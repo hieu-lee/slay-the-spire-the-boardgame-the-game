@@ -1,0 +1,124 @@
+/* Multiplayer uses the same painted menu ground and close-cropped character
+   strip as solo. The room protocol stays entirely in OnlineGame; this is only
+   the route into it and the party staging table. */
+.sts-scope.online-entry {
+  align-content: center;
+  padding: 4.5rem 1rem 2.5rem;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgb(12 35 42 / 0.22), transparent 42%),
+    radial-gradient(ellipse at 50% 85%, rgb(167 61 26 / 0.16), transparent 50%),
+    linear-gradient(rgb(3 6 9 / 0.45), rgb(3 5 8 / 0.84)),
+    url('/assets/menu/title-spire.webp') center / cover no-repeat fixed;
+}
+
+.sts-scope .online-entry__panel {
+  position: relative;
+  width: min(46rem, 100%);
+  padding: clamp(1.25rem, 3vw, 2.1rem);
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgb(188 152 75 / 0.12), transparent 18%),
+    linear-gradient(145deg, rgb(31 27 22 / 0.96), rgb(13 15 16 / 0.98));
+  box-shadow: inset 0 0 0 2px var(--trim-dim), inset 0 0 0 3px rgb(0 0 0 / 0.72), var(--hard-shadow-lg);
+  clip-path: polygon(1rem 0, calc(100% - 1rem) 0, 100% 1rem, 100% calc(100% - 1rem), calc(100% - 1rem) 100%, 1rem 100%, 0 calc(100% - 1rem), 0 1rem);
+}
+
+.sts-scope .online-entry h1 { color: var(--light-yellow); letter-spacing: 0.04em; text-transform: none; }
+.sts-scope .online-entry__panel > p { max-width: 34rem; margin: 0.35rem auto 1rem; color: var(--cream); }
+
+.sts-scope .online-entry__character,
+.sts-scope .online-lobby__character {
+  display: grid;
+  gap: 0.45rem;
+  width: min(34rem, 100%);
+  margin: 1rem auto;
+  color: var(--trim-lit);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.sts-scope .online-character-roster {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: clamp(0.2rem, 0.6vw, 0.45rem);
+  width: 100%;
+}
+
+.sts-scope .online-character-roster__portrait {
+  position: relative;
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid rgb(27 23 19 / 0.9);
+  border-radius: 0;
+  background: #101417;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06), 0 0.2rem 0.45rem rgb(0 0 0 / 0.64);
+  aspect-ratio: 2 / 3;
+  cursor: pointer;
+}
+
+.sts-scope .online-character-roster__portrait img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: brightness(0.66) saturate(0.72);
+  transition: filter var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
+}
+
+.sts-scope .online-character-roster__portrait[aria-pressed='true'] {
+  z-index: 1;
+  border-color: var(--light-yellow);
+  box-shadow: 0 0 0 2px rgb(245 207 98 / 0.52), 0 0 0.8rem rgb(245 207 98 / 0.42);
+}
+
+.sts-scope .online-entry .online-character-roster__portrait:not(:disabled) { border-color: rgb(27 23 19 / 0.9); color: inherit; }
+.sts-scope .online-character-roster__portrait[aria-pressed='true'] img { filter: brightness(1.16) saturate(1.2); }
+.sts-scope .online-character-roster__portrait:hover:not(:disabled) img,
+.sts-scope .online-character-roster__portrait:focus-visible:not(:disabled) img { filter: brightness(1.04) saturate(1.05); transform: scale(1.045); }
+.sts-scope .online-character-roster__portrait:disabled { cursor: not-allowed; opacity: 0.4; }
+.sts-scope .online-character-roster__portrait:focus-visible { outline: 2px solid #fff1a4; outline-offset: 2px; }
+
+.sts-scope .online-lobby__character { margin: 1rem auto 1.35rem; }
+.sts-scope .online-lobby__seats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sts-scope .online-seat__open { min-height: 7.5rem; }
+
+/* The lobby's two controls that open auxiliary screens stay below the party;
+   entering the run is still the sole primary action. */
+.sts-scope .online-lobby__aside { margin: 1rem 0 1.1rem; }
+
+@media (max-height: 620px) {
+  .sts-scope.online-entry { place-items: start center; padding: 2.9rem 0.55rem 0.5rem; }
+  .sts-scope .online-entry__panel { width: min(37rem, 100%); padding: 0.65rem 0.85rem; }
+  .sts-scope .online-entry h1 { margin: 0.1rem 0 0.2rem; font-size: clamp(1.55rem, 4vw, 2.25rem); }
+  .sts-scope .online-entry__panel > p { margin: 0.15rem auto 0.4rem; font-size: 0.78rem; }
+  .sts-scope .online-entry label,
+  .sts-scope .online-entry__character { margin: 0.4rem auto; }
+  .sts-scope .online-entry__actions { margin-top: 0.5rem; }
+
+  .sts-scope.online-lobby { place-items: start center; align-content: start; padding: 4rem 0.5rem 0.5rem; }
+  .sts-scope .online-lobby__table { width: min(43rem, 100%); padding: 0.65rem; }
+  .sts-scope .online-lobby__code { padding-bottom: 0.45rem; }
+  .sts-scope.online-lobby h1 { font-size: clamp(1.35rem, 4vw, 2rem); }
+  .sts-scope .online-lobby__seats { gap: 0.35rem; margin: 0.55rem 0; }
+  .sts-scope .online-seat { padding: 0.35rem; }
+  .sts-scope .online-seat__portrait { height: 2.8rem; }
+  .sts-scope .online-seat__name { font-size: 0.68rem; }
+  .sts-scope .online-seat__class { display: none; }
+  .sts-scope .online-seat__open { min-height: 4rem; font-size: 0.64rem; }
+  .sts-scope .online-lobby__character { margin: 0.55rem auto; }
+  .sts-scope .online-lobby__aside { margin: 0.45rem 0; }
+  .sts-scope .online-lobby__start { min-width: 11rem; margin-top: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sts-scope .online-character-roster__portrait img { transition: none; }
+  .sts-scope .online-character-roster__portrait:hover:not(:disabled) img,
+  .sts-scope .online-character-roster__portrait:focus-visible:not(:disabled) img { transform: none; }
+}

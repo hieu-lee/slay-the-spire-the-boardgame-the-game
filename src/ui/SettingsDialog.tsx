@@ -72,7 +72,7 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
       onClose={() => { if (suppressedCloses.current > 0) suppressedCloses.current -= 1; else onClose() }}>
       <section className="settings-dialog__panel">
         <header>
-          <button type="button" className="settings-dialog__back" onClick={onClose}>← Back</button>
+          <button type="button" className="settings-dialog__back ribbon-back" aria-label="Back" onClick={onClose}><span aria-hidden="true"></span></button>
           <h2 id={`${id}-title`}>Settings</h2>
         </header>
         <nav aria-label="Settings sections">

@@ -104,7 +104,7 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
   return (
     <main className="compendium">
       <aside className="compendium__filters">
-        <button type="button" className="compendium__back" onClick={onBack} aria-label={backLabel}>←</button>
+        <button type="button" className="compendium__back ribbon-back" onClick={onBack} aria-label={backLabel}><span aria-hidden="true"></span></button>
         <h1>Compendium</h1>
         <label className="compendium__search">
           <span className="visually-hidden">Search cards</span>

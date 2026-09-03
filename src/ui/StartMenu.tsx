@@ -134,7 +134,7 @@ export function StartMenu({
             <span>{choice.copy}</span>
           </button>)}
         </div>
-        <button type="button" className="start-menu__screen-back" onClick={() => setScreen('main')}>Back</button>
+        <button type="button" className="start-menu__screen-back ribbon-back" aria-label="Back" onClick={() => setScreen('main')}><span aria-hidden="true"></span></button>
       </section> : null}
 
       {screen === 'custom' || screen === 'daily' ? <section className="start-menu__run-options" aria-labelledby="run-options-title">
@@ -153,7 +153,7 @@ export function StartMenu({
           showMode={false}
         />
         <footer>
-          <button type="button" onClick={() => setScreen('mode')}>Back</button>
+          <button type="button" className="ribbon-back" aria-label="Back" onClick={() => setScreen('mode')}><span aria-hidden="true"></span></button>
           <button type="button" onClick={() => setScreen('character')}>Continue</button>
         </footer>
       </section> : null}
@@ -184,8 +184,8 @@ export function StartMenu({
             <img src={assetPath(`menu/character-select/portrait-${candidate.id}.png`)} alt="" />
           </button>)}
         </div>
-        <button type="button" className="start-menu__character-back" aria-label="Back" title="Back"
-          onClick={() => { setScreen('main'); onCharacterBack() }}><span aria-hidden="true">↩</span></button>
+        <button type="button" className="start-menu__character-back ribbon-back" aria-label="Back" title="Back"
+          onClick={() => { setScreen('main'); onCharacterBack() }}><span aria-hidden="true"></span></button>
         <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" onClick={onStart}><span aria-hidden="true">✓</span></button>
       </section> : null}
 

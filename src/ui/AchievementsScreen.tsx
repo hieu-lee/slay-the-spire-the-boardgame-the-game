@@ -8,7 +8,7 @@ export function AchievementsScreen({ onBack }: Props) {
   return (
     <main className="compendium">
       <aside className="compendium__filters">
-        <button type="button" className="compendium__back" onClick={onBack} aria-label="Back to main menu">←</button>
+        <button type="button" className="compendium__back ribbon-back" onClick={onBack} aria-label="Back to main menu"><span aria-hidden="true"></span></button>
         <h1>Achievements</h1>
         <section className="compendium__filter-block">
           <h2>Official challenges <span aria-hidden="true">✦</span></h2>

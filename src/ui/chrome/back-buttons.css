@@ -1,0 +1,89 @@
+/* Shared return ribbon from the game menus. It is intentionally icon-only:
+   the landmark and accessible label describe where it returns, while the red
+   ribbon remains a consistent visual affordance everywhere. */
+button.ribbon-back {
+  display: grid;
+  width: clamp(3.75rem, 7vw, 5.5rem);
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 1.2;
+  margin: 0;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #5e100a;
+  border-radius: 0;
+  color: #fff4d5;
+  background: linear-gradient(180deg, #eb2513 0 45%, #b91409 55% 100%);
+  box-shadow: inset 0 1px rgb(255 128 83 / 0.42), inset 0 -3px rgb(79 8 4 / 0.48);
+  clip-path: polygon(0 16%, 100% 16%, 82% 50%, 100% 84%, 0 84%, 14% 50%);
+  cursor: pointer;
+  filter: drop-shadow(0 0.28rem 0.28rem rgb(0 0 0 / 0.6));
+}
+
+button.ribbon-back > span {
+  display: block;
+  width: 2.7rem;
+  height: 1.45rem;
+  max-width: 65%;
+  max-height: 55%;
+  background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 70'%3E%3Cpath fill='%23fff4d5' d='M4 39 32 9v16h26c20 0 34 13 34 30v8H75v-8c0-8-6-13-17-13H32v15z'/%3E%3C/svg%3E");
+  filter: drop-shadow(0 0.14rem 0.1rem rgb(31 4 2 / 0.78));
+}
+
+button.ribbon-back:hover:not(:disabled),
+button.ribbon-back:focus-visible:not(:disabled) { filter: brightness(1.16) drop-shadow(0 0 0.5rem rgb(255 211 94 / 0.52)); outline: 2px solid #fff1a4; outline-offset: -0.5rem; }
+button.ribbon-back:active:not(:disabled) { filter: brightness(0.9) drop-shadow(0 0.14rem 0.16rem rgb(0 0 0 / 0.62)); }
+button.ribbon-back:disabled { cursor: not-allowed; filter: grayscale(0.5) brightness(0.65); }
+
+.start-menu__screen-back.ribbon-back { position: absolute; bottom: 0; left: 0; }
+.start-menu__run-options footer .ribbon-back {
+  width: 4.25rem;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border-color: #5e100a;
+  color: #fff4d5;
+  background: linear-gradient(180deg, #eb2513 0 45%, #b91409 55% 100%);
+  box-shadow: inset 0 1px rgb(255 128 83 / 0.42), inset 0 -3px rgb(79 8 4 / 0.48);
+  clip-path: polygon(0 16%, 100% 16%, 82% 50%, 100% 84%, 0 84%, 14% 50%);
+}
+
+.sts-scope .online-entry__back.ribbon-back {
+  position: fixed;
+  z-index: 3;
+  top: 1rem;
+  left: 1rem;
+  display: grid;
+  width: clamp(3.75rem, 7vw, 5.5rem);
+  min-height: 0;
+  padding: 0;
+  border: 1px solid #5e100a;
+  border-radius: 0;
+  background: linear-gradient(180deg, #eb2513 0 45%, #b91409 55% 100%);
+  box-shadow: inset 0 1px rgb(255 128 83 / 0.42), inset 0 -3px rgb(79 8 4 / 0.48);
+  clip-path: polygon(0 16%, 100% 16%, 82% 50%, 100% 84%, 0 84%, 14% 50%);
+  filter: drop-shadow(0 0.28rem 0.28rem rgb(0 0 0 / 0.6));
+}
+.sts-scope.online-lobby > header .online-lobby__leave.ribbon-back { position: static; }
+.sts-scope.online-lobby > header { z-index: 3; }
+
+.compendium__back.ribbon-back {
+  width: 5.25rem;
+  min-height: 0;
+  margin: -0.75rem 0 0.35rem -0.75rem;
+}
+
+.settings-dialog .settings-dialog__back.ribbon-back { flex: 0 0 auto; min-width: 0; }
+
+@media (max-height: 620px) {
+  button.ribbon-back { width: 3.15rem; }
+  button.ribbon-back > span { width: 2rem; height: 1.08rem; }
+  .sts-scope .online-entry__back.ribbon-back { width: 3.15rem; top: 0.3rem; left: 0.3rem; }
+  .compendium__back.ribbon-back { width: 3.9rem; margin: -0.4rem 0 0.2rem -0.4rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.ribbon-back:hover:not(:disabled),
+  button.ribbon-back:focus-visible:not(:disabled),
+  button.ribbon-back:active:not(:disabled) { filter: none; }
+}
