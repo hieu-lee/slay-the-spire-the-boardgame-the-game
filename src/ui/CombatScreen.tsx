@@ -5692,15 +5692,8 @@ function CombatScreenView({
                       </span>
                     </button>
                     {occupant.character === 'slime_boss' && occupant.slimes.length > 0 ? (
-                      <span className={`slime-party combat__slime-status${
-                        occupant.slimes.length > 7 ? ' slime-party--crowded' : ''
-                      }`} role="list"
-                        aria-label={`${occupant.name}'s Slimes`}
-                        data-slime-count={occupant.slimes.length}
-                        style={{ '--slime-columns': Math.min(
-                          occupant.slimes.length > 7 ? 5 : 7,
-                          occupant.slimes.length,
-                        ) } as React.CSSProperties}>
+                      <span className="slime-party combat__slime-status" role="list"
+                        aria-label={`${occupant.name}'s Slimes`}>
                         {occupant.slimes.map((slime) => {
                           const def = faceOf(cardDef(slime.card.defId), slime.card.upgraded)
                           const name = def.name.replace(/ Slime\+?$/, '')

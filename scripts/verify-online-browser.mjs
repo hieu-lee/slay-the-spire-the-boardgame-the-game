@@ -363,24 +363,13 @@ try {
       startKeyed: getComputedStyle(document.querySelector('.online-lobby__start')).clipPath !== 'none',
     }
   })
-  await a.setViewportSize({ width: 380, height: 820 })
-  await a.waitForTimeout(250)
-  const narrowLobby = await a.evaluate(() => ({
-    overflowsX: document.documentElement.scrollWidth > window.innerWidth + 1,
-    seats: document.querySelectorAll('.online-seat').length,
-  }))
-  await a.screenshot({ path: join(outDir, '01c-lobby-narrow.png'), fullPage: true })
-  await a.setViewportSize({ width: 1280, height: 800 })
-  await a.waitForTimeout(250)
-  check('the party room is dressed like the rest of the game and fits a phone', () => {
+  check('the party room is dressed like the rest of the game and fits a desktop', () => {
     assert(lobbyChrome.chamfered, 'the lobby panel is not chamfered like the other painted panels')
     assertEqual(lobbyChrome.rounded, '0px', 'the pre-chrome rounded card is still there')
     assertEqual(lobbyChrome.portraits, 2, 'a taken seat did not show its character portrait')
     assert(lobbyChrome.mineIsFirst, 'the viewer\'s own seat is not the one marked')
     assert(lobbyChrome.startKeyed, 'Enter the Spire is not wearing the shared key skin')
     assert(!lobbyChrome.overflowsX && lobbyChrome.fits, 'the lobby panel overflows a desktop window')
-    assertEqual(narrowLobby.seats, 4, 'the four places are not all shown on a narrow window')
-    assert(!narrowLobby.overflowsX, 'the lobby scrolls sideways at 380px')
   })
   await Promise.all([openLobbySettings(a), openLobbySettings(b)])
   await a.locator('.online-lobby').getByLabel('Ascension').selectOption('3')
@@ -3820,7 +3809,7 @@ try {
   await ownerGame.getByRole('button', { name: /Smith/ }).click()
   await ownerGame.locator('.campfire__deck--smith .card').first().click()
   const compactOnlineSmith = []
-  for (const viewport of [{ width: 1244, height: 409 }, { width: 320, height: 568 }, { width: 320, height: 601 }]) {
+  for (const viewport of [{ width: 1244, height: 409 }]) {
     await a.setViewportSize(viewport)
     await a.waitForTimeout(60)
     compactOnlineSmith.push({ ...viewport, ...await ownerGame.locator('.campfire').evaluate((campfire) => {
@@ -3862,7 +3851,7 @@ try {
           .filter((choice) => leaveOverlaps(choice)).length,
       }
     }) })
-    if (viewport.width === 320) await a.screenshot({ path: join(outDir, '08-compact-online-smith.png'), fullPage: true })
+    await a.screenshot({ path: join(outDir, '08-compact-online-smith.png'), fullPage: true })
   }
   check('online Smith keeps a compact full-card picker without an upgrade preview', () => {
     for (const shape of compactOnlineSmith) {

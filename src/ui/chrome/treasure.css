@@ -14,7 +14,7 @@
   text-shadow: 0 0 1.6rem rgb(239 200 81 / 0.75);
 }
 
-.sts-scope .treasure-relic strong { color: var(--cream); text-shadow: 3px 3px 0 rgb(0 0 0 / 0.55); }
+.sts-scope .treasure-relic > strong { color: var(--cream); text-shadow: 3px 3px 0 rgb(0 0 0 / 0.55); }
 .sts-scope .treasure-relic p { color: var(--tip-body); }
 
 .sts-scope .treasure-shared button {

@@ -362,8 +362,7 @@
   .row__seat .seat .bar,
   .board .enemy .bar { bottom: calc(0.35rem * var(--stage-scale) + 4.75rem); }
 
-  .slime-party,
-  .slime-party--crowded { bottom: calc(3.15rem * var(--stage-scale) + 4.75rem); }
+  .slime-party { bottom: calc(3.15rem * var(--stage-scale) + 4.75rem); }
 
   .board .enemy .tokens { bottom: 3.7rem; }
   .seat__status-strip {
@@ -372,6 +371,10 @@
   }
 
   .seat__status-strip > .powers { order: -1; }
+}
+
+@media (orientation: landscape) and (max-width: 40rem) and (max-height: 26.25rem) {
+  .slime-party { bottom: calc(2.65rem * var(--stage-scale) + 4.75rem); }
 }
 
 @media (max-width: 48.125rem) {

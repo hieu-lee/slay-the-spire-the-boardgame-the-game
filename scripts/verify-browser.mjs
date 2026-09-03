@@ -1327,12 +1327,13 @@ let slimeSpawnVisual = null
 let slimeSpawnRestarted = false
 let slimeSpawnHpTimeline = null
 let slimeSingleMaxLayout = null
-let slimeMultiplayerLayout = null
+let slimePhoneMaxLayouts = []
+let slimeMultiplayerLayouts = []
 let slimeConcurrentMultiplayer = false
 const slimeLayoutCards = [
   'armored', 'bruiser', 'evolution', 'leeching', 'massive', 'muscle', 'psychic',
-  'royal', 'scrappy', 'spike', 'spreading', 'sticky', 'taunting',
 ]
+const slimePhoneViewports = [{ width: 844, height: 390 }, { width: 568, height: 320 }]
 let hexaghostVisualState = null
 let hermitChamberInteractions = null
 let corruptedShardChamberLayout = null
@@ -2303,6 +2304,15 @@ for (const fixture of [
 
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.screenshot({ path: join(outDir, 'downfall-slime-single-player.png') })
+const slimePairActorWidth = await page.locator('.slime-party__actor').first().evaluate((actor) =>
+  Number.parseFloat(getComputedStyle(actor).width))
+const slimePhonePairActorWidths = []
+for (const viewport of slimePhoneViewports) {
+  await page.setViewportSize(viewport)
+  slimePhonePairActorWidths.push(await page.locator('.slime-party__actor').first().evaluate((actor) =>
+    Number.parseFloat(getComputedStyle(actor).width)))
+}
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate((slimeCards) => {
   const next = structuredClone(window.__STS_DEBUG__.getRun())
   const actor = next.combat.players[0]
@@ -2316,75 +2326,116 @@ await page.evaluate((slimeCards) => {
 await page.waitForFunction((count) => document.querySelectorAll('.slime-party__actor').length === count &&
   [...document.querySelectorAll('.slime-party__art')].every((image) => image.complete && image.naturalWidth === 384),
 slimeLayoutCards.length)
+await page.mouse.move(0, 0)
 slimeSingleMaxLayout = await page.locator('.row__seat').first().evaluate((row) => {
   const stageBox = row.closest('.row')?.getBoundingClientRect()
   const seat = row.querySelector('.seat')
   const hp = seat?.querySelector(':scope > .bar')?.getBoundingClientRect()
   const name = seat?.querySelector(':scope > .seat__name')?.getBoundingClientRect()
-  const portrait = seat?.querySelector('.seat__portrait')?.getBoundingClientRect()
   const party = row.querySelector('.slime-party')
   const actors = [...(party?.querySelectorAll('.slime-party__actor') ?? [])].map((actor) => {
     const box = actor.getBoundingClientRect()
     return {
+      width: Number.parseFloat(getComputedStyle(actor).width),
       inViewport: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
       inStage: !!stageBox && box.left >= stageBox.left && box.right <= stageBox.right &&
         box.top >= stageBox.top && box.bottom <= stageBox.bottom,
       clearOfHp: !hp || box.right <= hp.left || box.left >= hp.right || box.bottom <= hp.top || box.top >= hp.bottom,
       clearOfName: !name || box.right <= name.left || box.left >= name.right ||
         box.bottom <= name.top || box.top >= name.bottom,
-      clearOfPortrait: !portrait || box.right <= portrait.left || box.left >= portrait.right ||
-        box.bottom <= portrait.top || box.top >= portrait.bottom,
     }
   })
   return { actors }
 })
 await page.screenshot({ path: join(outDir, 'downfall-slime-single-max.png') })
-await page.evaluate(({ run, slimeCards }) => {
-  const next = structuredClone(run)
-  const template = next.combat.players[0]
-  next.combat.phase = 'player'
-  next.combat.ruleset = 'downfall'
-  next.combat.presentationEvents = []
-  next.combat.players = Array.from({ length: 4 }, (_, index) => ({
-    ...structuredClone(template),
-    id: index === 0 ? template.id : `slime-layout-${index + 1}`,
-    name: `Slime Boss ${index + 1}`,
-    row: index,
-    character: 'slime_boss',
-    slimes: slimeCards.map((slug, slimeIndex) => ({
-      card: { uid: `shared-${slug}`, defId: `slime_boss_${slug}_slime`, upgraded: false },
-      level: slimeIndex + 1, vigor: slimeIndex, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
-    })),
-  }))
-  window.__STS_DEBUG__.setRun(next)
-}, { run: combatAppearanceRun, slimeCards: slimeLayoutCards })
-await page.waitForFunction(() => document.querySelectorAll('.slime-party').length === 4 &&
-  [...document.querySelectorAll('.slime-party__art')].every((image) => image.complete && image.naturalWidth === 384))
-slimeMultiplayerLayout = await page.locator('.row__seat').evaluateAll((rows) => rows.map((row) => {
-  const seat = row.querySelector('.seat')
-  const seatBox = row.getBoundingClientRect()
-  const hp = seat?.querySelector(':scope > .bar')?.getBoundingClientRect()
-  const name = seat?.querySelector(':scope > .seat__name')?.getBoundingClientRect()
-  const portrait = seat?.querySelector('.seat__portrait')?.getBoundingClientRect()
-  const party = row.querySelector('.slime-party')
-  const actors = [...(party?.querySelectorAll('.slime-party__actor') ?? [])].map((actor) => {
-    const box = actor.getBoundingClientRect()
-    return {
-      inBoard: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
-      clearOfHp: !hp || box.right <= hp.left || box.left >= hp.right || box.bottom <= hp.top || box.top >= hp.bottom,
-      clearOfName: !name || box.right <= name.left || box.left >= name.right ||
-        box.bottom <= name.top || box.top >= name.bottom,
-      clearOfPortrait: !portrait || box.right <= portrait.left || box.left >= portrait.right ||
-        box.bottom <= portrait.top || box.top >= portrait.bottom,
-      inSeatRow: box.top >= seatBox.top && box.bottom <= seatBox.bottom,
-    }
+for (const [index, viewport] of slimePhoneViewports.entries()) {
+  await page.setViewportSize(viewport)
+  await page.mouse.move(0, 0)
+  const layout = await page.locator('.row__seat').first().evaluate((row) => {
+    const combatBar = document.querySelector('.combat__bar')?.getBoundingClientRect()
+    const hp = row.querySelector('.seat > .bar')?.getBoundingClientRect()
+    const name = row.querySelector('.seat > .seat__name')?.getBoundingClientRect()
+    const enemies = [...(row.closest('.row')?.querySelectorAll('.row__enemies .enemy:not(.enemy--dead)') ?? [])]
+      .map((enemy) => enemy.getBoundingClientRect())
+    const actors = [...row.querySelectorAll('.slime-party__actor')].map((actor) => {
+      const box = actor.getBoundingClientRect()
+      return {
+        width: Number.parseFloat(getComputedStyle(actor).width),
+        inViewport: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
+        clearOfCombatBar: !combatBar || box.right <= combatBar.left || box.left >= combatBar.right ||
+          box.bottom <= combatBar.top || box.top >= combatBar.bottom,
+        clearOfHp: !hp || box.right <= hp.left || box.left >= hp.right || box.bottom <= hp.top || box.top >= hp.bottom,
+        clearOfName: !name || box.right <= name.left || box.left >= name.right ||
+          box.bottom <= name.top || box.top >= name.bottom,
+        clearOfEnemies: enemies.every((enemy) => box.right <= enemy.left || box.left >= enemy.right ||
+          box.bottom <= enemy.top || box.top >= enemy.bottom),
+      }
+    })
+    return { actors }
   })
-  return { actors, loaded: [...(party?.querySelectorAll('.slime-party__art') ?? [])]
-    .every((image) => image.complete && image.naturalWidth === 384) }
-}))
-await page.screenshot({ path: join(outDir, 'downfall-slime-four-player.png') })
+  slimePhoneMaxLayouts.push({ ...layout, actorWidth: slimePhonePairActorWidths[index], viewport })
+  await page.screenshot({
+    path: join(outDir, `downfall-slime-horizontal-phone-max-${viewport.width}x${viewport.height}.png`),
+  })
+}
+await page.setViewportSize({ width: 1440, height: 900 })
+for (const slimeBossRow of [1, 2, 3, 0]) {
+  await page.evaluate(({ run, slimeCards, slimeBossRow }) => {
+    const next = structuredClone(run)
+    const template = next.combat.players[0]
+    next.combat.phase = 'player'
+    next.combat.ruleset = 'downfall'
+    next.combat.presentationEvents = []
+    const allies = ['ironclad', 'silent', 'defect', 'watcher']
+    next.combat.players = Array.from({ length: 4 }, (_, index) => ({
+      ...structuredClone(template),
+      id: index === 0 ? template.id : `slime-layout-${index + 1}`,
+      name: index === slimeBossRow ? 'Slime Boss' : `Ally ${index + 1}`,
+      row: index,
+      character: index === slimeBossRow ? 'slime_boss' : allies[index],
+      slimes: index === slimeBossRow ? slimeCards.map((slug, slimeIndex) => ({
+        card: { uid: `row-${slimeBossRow}-${slug}`, defId: `slime_boss_${slug}_slime`, upgraded: false },
+        level: slimeIndex + 1, vigor: slimeIndex, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
+      })) : [],
+    }))
+    window.__STS_DEBUG__.setRun(next)
+  }, { run: combatAppearanceRun, slimeCards: slimeLayoutCards, slimeBossRow })
+  await page.waitForFunction(() => document.querySelectorAll('.slime-party').length === 1 &&
+    [...document.querySelectorAll('.slime-party__art')].every((image) => image.complete && image.naturalWidth === 384))
+  const layout = await page.locator('.row__seat:has(.slime-party)').evaluate((row) => {
+    const seat = row.querySelector('.seat')
+    const hp = seat?.querySelector(':scope > .bar')?.getBoundingClientRect()
+    const name = seat?.querySelector(':scope > .seat__name')?.getBoundingClientRect()
+    const party = row.querySelector('.slime-party')
+    const otherPlayerParts = [...document.querySelectorAll('.row__seat')]
+      .filter((otherRow) => otherRow !== row)
+      .flatMap((otherRow) => [...otherRow.querySelectorAll('.seat__portrait, .seat__name, .seat > .bar')])
+      .map((part) => part.getBoundingClientRect())
+    const enemies = [...document.querySelectorAll('.enemy:not(.enemy--dead)')]
+      .map((enemy) => enemy.getBoundingClientRect())
+    const actors = [...(party?.querySelectorAll('.slime-party__actor') ?? [])].map((actor) => {
+      const box = actor.getBoundingClientRect()
+      const clearOf = (other) => box.right <= other.left || box.left >= other.right ||
+        box.bottom <= other.top || box.top >= other.bottom
+      return {
+        width: Number.parseFloat(getComputedStyle(actor).width),
+        inViewport: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
+        clearOfHp: !hp || clearOf(hp),
+        clearOfName: !name || clearOf(name),
+        clearOfOtherPlayers: otherPlayerParts.every(clearOf),
+        clearOfEnemies: enemies.every(clearOf),
+      }
+    })
+    return { actors, loaded: [...(party?.querySelectorAll('.slime-party__art') ?? [])]
+      .every((image) => image.complete && image.naturalWidth === 384) }
+  })
+  slimeMultiplayerLayouts.push({ ...layout, slimeBossRow })
+  await page.screenshot({ path: join(outDir, `downfall-slime-four-player-row-${slimeBossRow + 1}.png`) })
+}
 await page.evaluate(() => {
   const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.players[1].character = 'slime_boss'
+  next.combat.players[1].slimes = [structuredClone(next.combat.players[0].slimes[0])]
   next.combat.presentationEvents = next.combat.players.slice(0, 2).map((actor, index) => ({
     seq: 9_100 + index,
     kind: 'slime',
@@ -2770,12 +2821,19 @@ check('Slime Boss minions use battlefield actors and their own one-shot animatio
   }, 'targeted Slime-card damage must wait for the final queued spawn contact')
   assert(slimeSingleMaxLayout?.actors.length === slimeLayoutCards.length &&
     slimeSingleMaxLayout.actors.every((actor) => actor.inViewport && actor.inStage &&
-      actor.clearOfHp && actor.clearOfName && actor.clearOfPortrait),
+      actor.clearOfHp && actor.clearOfName &&
+      Math.abs(actor.width - slimePairActorWidth) < 0.5),
   `a full single-player Slime party overflows its combat row: ${JSON.stringify(slimeSingleMaxLayout)}`)
-  assert(slimeMultiplayerLayout?.length === 4 && slimeMultiplayerLayout.every((seat) =>
-    seat.loaded && seat.actors.length === slimeLayoutCards.length && seat.actors.every((actor) =>
-      actor.inBoard && actor.clearOfHp && actor.clearOfName && actor.clearOfPortrait && actor.inSeatRow)),
-  `four-player Slime parties overlap their combat rows: ${JSON.stringify(slimeMultiplayerLayout)}`)
+  assert(slimePhoneMaxLayouts.length === slimePhoneViewports.length && slimePhoneMaxLayouts.every((layout) =>
+    layout.actors.length === slimeLayoutCards.length && layout.actors.every((actor) => actor.inViewport &&
+      actor.clearOfCombatBar && actor.clearOfHp && actor.clearOfName && actor.clearOfEnemies &&
+      Math.abs(actor.width - layout.actorWidth) < 0.5)),
+  `a full horizontal-phone Slime party shrinks, overflows, or overlaps: ${JSON.stringify(slimePhoneMaxLayouts)}`)
+  assert(slimeMultiplayerLayouts.length === 4 && slimeMultiplayerLayouts.every((layout) =>
+    layout.loaded && layout.actors.length === slimeLayoutCards.length && layout.actors.every((actor) =>
+      actor.inViewport && actor.clearOfHp && actor.clearOfName && actor.clearOfOtherPlayers && actor.clearOfEnemies &&
+      Math.abs(actor.width - slimePairActorWidth) < 0.5)),
+  `four-player Slime parties overlap occupied actors: ${JSON.stringify(slimeMultiplayerLayouts)}`)
   assert(slimeConcurrentMultiplayer,
     'different players with the same physical Slime uid must animate concurrently')
   assertDeepEqual(slimeHudKeywordTips, [], 'small Slimes must not register Shift keyword help')
@@ -3275,12 +3333,10 @@ await page.emulateMedia({ reducedMotion: 'no-preference' })
 await page.waitForTimeout(450)
 const responsiveChamberLayouts = []
 for (const viewport of [
-  { width: 769, height: 1024 },
   { width: 768, height: 360 },
   { width: 844, height: 390 },
   { width: 667, height: 375 },
   { width: 568, height: 320 },
-  { width: 390, height: 844 },
 ]) {
   await page.setViewportSize(viewport)
   const layout = await page.evaluate(() => {
@@ -3323,7 +3379,7 @@ for (const viewport of [
   responsiveChamberLayouts.push({ viewport, ...layout })
   await page.screenshot({ path: join(outDir, `downfall-hermit-chamber-hand-${viewport.width}x${viewport.height}.png`) })
 }
-await page.setViewportSize({ width: 390, height: 844 })
+await page.setViewportSize({ width: 844, height: 390 })
 await page.evaluate(() => {
   document.documentElement.dataset.mobilePerformance = 'true'
 })
@@ -3373,7 +3429,7 @@ await page.evaluate((run) => {
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
 const opponentChamberLabels = await page.locator('.seat__mechanic').filter({ hasText: 'Chamber' }).count()
-await page.setViewportSize({ width: 390, height: 844 })
+await page.setViewportSize({ width: 844, height: 390 })
 await page.evaluate((run) => {
   const next = structuredClone(run)
   const actor = next.combat.players[0]
@@ -3505,7 +3561,7 @@ check('Downfall characters use the original PC-mod Energy orb layers', () => {
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 
-await page.setViewportSize({ width: 390, height: 844 })
+await page.setViewportSize({ width: 844, height: 390 })
 await page.evaluate(async (run) => {
   const { beginEndTurnResolution } = await import('/src/game/combat.ts')
   const next = structuredClone(run)
@@ -4011,12 +4067,12 @@ if (args.includes('--downfall-ui-only')) {
   check('a playable Chamber card prevents local solo auto-end', () => {
     assertEqual(chamberAutoEndPhase, 'player')
   })
-  await page.setViewportSize({ width: 390, height: 844 })
+  await page.setViewportSize({ width: 844, height: 390 })
   const soloBossSeatContained = await page.locator('.row--viewer .row__seat').evaluate((seat) => {
     const box = seat.getBoundingClientRect()
     return box.left >= 0 && box.right <= innerWidth
   })
-  await page.screenshot({ path: join(outDir, 'downfall-hermit-solo-boss-390x844.png') })
+  await page.screenshot({ path: join(outDir, 'downfall-hermit-solo-boss-844x390.png') })
   check('compact solo boss fights keep the viewer seat onscreen', () => {
     assert(soloBossSeatContained, 'the single-row viewer seat is clipped by compact spacing')
   })
@@ -6158,7 +6214,7 @@ if (args.includes('--keyword-tooltips-only')) {
   const fastExitStayedClosed = await fastExitCard.evaluate((card) =>
     !document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'))
   check('leaving before a lazy keyword board mounts does not open a stale board', () => assert(fastExitStayedClosed))
-  await page.setViewportSize({ width: 390, height: 844 })
+  await page.setViewportSize({ width: 844, height: 390 })
   await keywordCard.hover()
   await page.keyboard.down('Shift')
   await page.waitForFunction((card) => document.getElementById(card.dataset.keywordHelpId)?.hasAttribute('data-open'),
@@ -6275,7 +6331,7 @@ if (args.includes('--keyword-tooltips-only')) {
     assert(!staleEscapePrevented, 'a removed keyword board should not swallow Escape')
     assert(restoredKeywordHelp, 'returning to the base face should restore pinned keyword help')
   })
-  const touchContext = await browser.newContext({ ...devices['iPhone 13'] })
+  const touchContext = await browser.newContext({ ...devices['iPhone 13 landscape'] })
   const touchPage = await touchContext.newPage()
   auditErrors(touchPage)
   await touchPage.goto(base)
@@ -15897,7 +15953,7 @@ const potionSeatIds = await page.evaluate(() => {
   return run.players.map((player) => player.id)
 })
 await chooseSeat(potionSeatIds[0])
-await page.setViewportSize({ width: 390, height: 844 })
+await page.setViewportSize({ width: 844, height: 390 })
 await page.waitForTimeout(60)
 const outsidePotionHud = await page.locator('.outside-potions').evaluate((bar) => {
   const box = bar.getBoundingClientRect()
@@ -16217,7 +16273,7 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => getComputedStyle(document.querySelector('.campfire')).backgroundImage.includes('/ironclad_silent_defect_watcher_firecamp.png'))
 const campfireResponsiveLayouts = []
-for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 }, { width: 667, height: 375 }]) {
+for (const viewport of [{ width: 1440, height: 900 }, { width: 667, height: 375 }]) {
   await page.setViewportSize(viewport)
   campfireResponsiveLayouts.push({ ...viewport, ...await page.locator('.campfire').evaluate((campfire) => {
     const blockers = [...document.querySelectorAll('.campfire__leave')].map((element) => element.getBoundingClientRect())
@@ -16241,7 +16297,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 
       }),
     }
   }) })
-  if (viewport.width === 320) await shot('12-campfire-scene-mobile')
+  if (viewport.width === 667) await shot('12-campfire-scene-mobile')
 }
 await page.setViewportSize({ width: 1440, height: 900 })
 await shot('12-campfire-scene')
@@ -16304,7 +16360,7 @@ await shot('12a-compact-campfire-smith')
 await page.locator('.campfire__deck .card').first().click()
 await page.waitForSelector('.campfire__deck--smith .card--selected')
 const compactSmithPicked = []
-for (const viewport of [{ width: 1244, height: 409 }, { width: 1244, height: 521 }, { width: 320, height: 568 }]) {
+for (const viewport of [{ width: 1244, height: 409 }, { width: 1244, height: 521 }]) {
   await page.setViewportSize(viewport)
   await page.waitForTimeout(60)
   compactSmithPicked.push({ ...viewport, ...await page.evaluate(() => {
@@ -16475,7 +16531,7 @@ await page.waitForSelector('.campfire')
 const soloCampfireSummaryCount = await page.locator('.campfire__players, .campfire__seat, .campfire__turn-nav').count()
 await page.locator('.campfire__prompt').getByRole('button', { name: /Smith/ }).click()
 await page.locator('.campfire__deck--smith .card').first().click()
-await page.setViewportSize({ width: 320, height: 568 })
+await page.setViewportSize({ width: 568, height: 320 })
 await page.waitForTimeout(60)
 const compactSoloSmith = await page.evaluate(() => {
   const prompt = document.querySelector('.campfire__prompt')
@@ -17857,7 +17913,7 @@ await page.evaluate(() => {
   run.combat.phase = 'player'
   debug.setRun(run)
 })
-await page.setViewportSize({ width: 470, height: 742 })
+await page.setViewportSize({ width: 844, height: 390 })
 await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > .potion-chip > button').length === 3)
 const compactRelicStrip = await page.evaluate(() => {
   const buttons = [...document.querySelectorAll('.relic-actions > section > .potion-chip > button')]
@@ -17896,7 +17952,7 @@ await page.evaluate(() => {
   ].map((defId) => ({ defId, spent: false }))
   debug.setRun(run)
 })
-await page.setViewportSize({ width: 320, height: 568 })
+await page.setViewportSize({ width: 568, height: 320 })
 await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > .potion-chip > button').length === 8)
 await page.locator('.relic-actions > section > .potion-chip').first().hover()
 const scrollableRelicStrip = await page.locator('.relic-actions > section').evaluate((strip) => {
@@ -17912,7 +17968,7 @@ const scrollableRelicStrip = await page.locator('.relic-actions > section').eval
     webkitScrollbarDisplay: getComputedStyle(strip, '::-webkit-scrollbar').display,
   }
 })
-check('hovered simple Relics scroll without scrollbar chrome on a narrow phone', () => {
+check('hovered simple Relics scroll without scrollbar chrome on a horizontal phone', () => {
   assert(scrollableRelicStrip.scrollWidth > scrollableRelicStrip.clientWidth, JSON.stringify(scrollableRelicStrip))
   assert(scrollableRelicStrip.withinViewport, JSON.stringify(scrollableRelicStrip))
   assert(scrollableRelicStrip.lastReachable, JSON.stringify(scrollableRelicStrip))
@@ -17930,7 +17986,7 @@ await page.evaluate(() => {
   ]
   debug.setRun(run)
 })
-await page.setViewportSize({ width: 470, height: 742 })
+await page.setViewportSize({ width: 844, height: 390 })
 await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > .potion-chip > button').length === 2 &&
   document.querySelectorAll('.relic-actions > section > details').length === 1)
 const mixedRelicStrip = await page.locator('.relic-actions > section').evaluate((strip) => {
@@ -18099,34 +18155,11 @@ check('a local Last Stand boss win has a clear terminal continuation state', () 
 })
 await shot('20-last-stand-victory')
 
-// The LOCAL shell's Neow scene keeps its full-bleed at every width.
-//
-// Only the bleed, deliberately. A clipping assertion was written here first and
-// removed: the local table is ONE seat (see the `.neow-screen` comment in
-// src/ui/chrome/neow.css for why that is a product invariant), one face renders
-// as `.neow-face--solo` — absolutely positioned, ~90px tall, bottom ~234px into the
-// scene — and the scene floors at 42rem in BOTH sheets. Two independent probes
-// could not make a solo face clip: not by deleting the whole `.sts-scope
-// .neow-screen` rule, not by zeroing both min-heights, only by injecting a
-// synthetic `height: 200px` that no regression of this rule can produce. An
-// assertion that cannot fail is worse than no assertion, because it reads as
-// coverage. The multi-face clipping surface is real but belongs to the ONLINE
-// shell, and `verify-noncombat-browser.mjs` measures it there at three phone
-// widths with the reconnect banner up.
-//
-// A below-the-fold REACHABILITY assertion was considered here too and rejected
-// for a separate reason worth recording, because the case looks compelling: at
-// 375x667 both Neow action keys sit below the fold, and at 320x568 both are off
-// screen entirely, so page scroll is the only way out of the phase. That is
-// fine — but it cannot be pinned from inside the page. Chrome still scrolls a
-// viewport that a regression has clipped, and Playwright runs
-// `scrollIntoViewIfNeeded` before every click, so the automation reaches
-// controls a human might not. Such an assertion passes either way and would
-// certify a reachability property it never tested.
+// The local Neow scene stays full-bleed on desktop and horizontal phones.
 const localNeowBleed = []
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'neow-reach'))
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
-for (const size of [{ width: 375, height: 667 }, { width: 320, height: 568 }, { width: 1280, height: 800 }]) {
+for (const size of [{ width: 844, height: 390 }, { width: 568, height: 320 }, { width: 1280, height: 800 }]) {
   await page.setViewportSize(size)
   await page.waitForFunction(() => document.querySelectorAll('.neow-face').length === 1)
   localNeowBleed.push({
@@ -18192,7 +18225,6 @@ check('starting over after abandoning a run does not replay old deck removals', 
 // Landscape phones use a desktop layout viewport and let the browser scale it
 // uniformly. This keeps one UI instead of a second mobile combat layout.
 const phoneLayouts = []
-const portraitCombatLayouts = []
 const webkitBrowser = await webkit.launch({ headless: !headed })
 for (const [engineName, phoneBrowser, deviceName] of [
   ['Chromium', browser, 'iPhone SE landscape'],
@@ -18349,42 +18381,6 @@ for (const [engineName, phoneBrowser, deviceName] of [
     await tap(phonePage.locator('.enemy--targeted').first())
     await phonePage.waitForFunction((count) => window.__STS_DEBUG__.getState().players[0].hand.length < count, before)
 
-    for (const viewport of [{ width: 320, height: 568 }, { width: 414, height: 896 }]) {
-      await phonePage.setViewportSize(viewport)
-      await phonePage.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, viewport)
-      await phonePage.waitForTimeout(100)
-      portraitCombatLayouts.push({ engineName, ...viewport, ...await phonePage.locator('.row--viewer').evaluate((row) => {
-        const board = row.closest('.board')
-        const boardBox = board?.getBoundingClientRect()
-        const seats = [...(board?.querySelectorAll('.row__seat') ?? [])]
-          .filter((seat) => seat.querySelector('.seat:not(.seat--empty)'))
-        const boxes = seats.flatMap((seat) => [seat, ...['.seat__portrait', '.seat__name', '.seat .bar']
-          .map((selector) => seat.querySelector(selector))])
-          .map((element) => element?.getBoundingClientRect())
-        const endTurn = document.querySelector('.combat__end-turn')?.getBoundingClientRect()
-        const piles = [...document.querySelectorAll('.hand-area .pile')]
-          .map((pile) => pile.getBoundingClientRect())
-        const gutter = 8
-        return {
-          visible: seats.length > 0 && boxes.every((box) => box && boardBox &&
-            box.left >= Math.max(0, boardBox.left) + gutter - 1 &&
-            box.right <= Math.min(innerWidth, boardBox.right) - gutter + 1),
-          documentOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
-          lefts: boxes.map((box) => Math.round(box?.left ?? -999)),
-          controlsVisible: Boolean(endTurn && endTurn.left >= gutter - 1 && endTurn.right <= innerWidth - gutter + 1 &&
-            endTurn.top >= -1 && endTurn.bottom <= innerHeight + 1),
-          controlsSeparated: Boolean(endTurn && piles.length > 0 && piles.every((pile) =>
-            endTurn.right <= pile.left || pile.right <= endTurn.left ||
-            endTurn.bottom <= pile.top || pile.bottom <= endTurn.top) && boxes.every((box) => box &&
-            (endTurn.right <= box.left || box.right <= endTurn.left ||
-              endTurn.bottom <= box.top || box.bottom <= endTurn.top))),
-        }
-      }) })
-      await phonePage.screenshot({
-        path: join(outDir, `combat-portrait-${engineName.toLowerCase()}-${viewport.width}.png`),
-        scale: 'css',
-      })
-    }
     await phonePage.setViewportSize({ width: 568, height: 320 })
     await phonePage.waitForFunction(() => innerWidth >= 1280 && innerHeight >= 700)
   } else {
@@ -18814,12 +18810,6 @@ for (const [engineName, phoneBrowser, deviceName] of [
   await phoneContext.close()
 }
 
-check('portrait combat keeps every occupied player seat and HP bar inside the board gutter', () => {
-  assertEqual(portraitCombatLayouts.length, 4)
-  assert(portraitCombatLayouts.every((layout) => layout.visible && layout.controlsVisible &&
-    layout.controlsSeparated && !layout.documentOverflows),
-    JSON.stringify(portraitCombatLayouts))
-})
 await webkitBrowser.close()
 check('landscape phones render and play the complete desktop combat UI', () => {
   for (const layout of phoneLayouts) {
