@@ -335,33 +335,32 @@
   bottom: clamp(9.5rem, 18vh, 12rem);
   left: 50%;
   display: grid;
-  grid-template-columns: 3.1rem minmax(16rem, 31rem) 3.1rem;
+  grid-template-columns: 2.4rem minmax(16rem, 31rem) 2.4rem;
+  column-gap: 0.35rem;
   align-items: center;
   transform: translateX(-50%);
 }
 
 .start-menu__ascension > button {
-  z-index: 1;
-  width: 3.1rem;
+  width: 2.4rem;
   aspect-ratio: 1;
-  border: 0;
-  color: #fff0a2;
-  background: linear-gradient(135deg, #ffdf4a, #bd7d13);
-  clip-path: polygon(100% 0, 0 50%, 100% 100%);
-  font: 900 3.25rem/0.8 Georgia, serif;
-  text-shadow: 0 2px 2px #382605;
+  border: 1px solid rgb(210 237 227 / 0.6);
+  border-radius: 0.45rem;
+  color: #fff4c7;
+  background: rgb(1 18 14 / 0.86);
+  font: 900 2.2rem/0.8 'Kreon', Georgia, serif;
+  text-shadow: 0 2px 2px #101d18;
 }
 
-.start-menu__ascension > button:last-child { transform: scaleX(-1); }
 .start-menu__ascension > button:disabled { visibility: hidden; }
 .start-menu__ascension > button:hover:not(:disabled),
-.start-menu__ascension > button:focus-visible:not(:disabled) { filter: brightness(1.18) drop-shadow(0 0 0.4rem rgb(255 215 69 / 0.85)); outline: 0; }
+.start-menu__ascension > button:focus-visible:not(:disabled) { background: rgb(19 59 51 / 0.95); box-shadow: 0 0 0.4rem rgb(155 231 211 / 0.7); outline: 0; }
 
 .start-menu__ascension > div {
   display: flex;
   align-items: center;
   min-height: 4.75rem;
-  margin: 0 -0.45rem;
+  margin: 0;
   padding: 0.45rem 1.4rem;
   border: 1px solid rgb(11 33 28 / 0.9);
   border-radius: 0.5rem;
@@ -505,8 +504,8 @@
   .start-menu__character-copy .start-menu__character-special { font-size: clamp(0.66rem, 1.8vw, 0.82rem); }
   .start-menu__character-copy > p:first-child,
   .start-menu__character-copy small { font-size: 0.6rem; }
-  .start-menu__ascension { right: auto; bottom: 5.75rem; left: 50%; grid-template-columns: 2.15rem minmax(0, 45vw) 2.15rem; transform: translateX(-50%); }
-  .start-menu__ascension > button { width: 2.15rem; font-size: 2.3rem; }
+  .start-menu__ascension { right: auto; bottom: 5.75rem; left: 50%; grid-template-columns: 1.85rem minmax(0, 45vw) 1.85rem; column-gap: 0.25rem; transform: translateX(-50%); }
+  .start-menu__ascension > button { width: 1.85rem; font-size: 1.75rem; }
   .start-menu__ascension > div { min-height: 3.15rem; padding: 0.25rem 0.65rem; }
   .start-menu__ascension-level { width: 2.45rem; margin-right: 0.4rem; }
   .start-menu__ascension-level span { font-size: 0.95rem; }
