@@ -3863,63 +3863,33 @@ try {
     assert(ownerCampfireControls >= 2, 'the living player lost their Campfire controls')
   })
   await ownerGame.getByRole('button', { name: /Smith/ }).click()
-  await ownerGame.locator('.campfire__deck--smith .card').first().click()
+  const onlineSmithPicker = ownerGame.locator('.card-picker')
+  await onlineSmithPicker.waitFor()
+  await onlineSmithPicker.locator('.card-picker__grid > .card').first().click()
   const compactOnlineSmith = []
   for (const viewport of [{ width: 1244, height: 409 }]) {
     await a.setViewportSize(viewport)
     await a.waitForTimeout(60)
     compactOnlineSmith.push({ ...viewport, ...await ownerGame.locator('.campfire').evaluate((campfire) => {
-      const prompt = campfire.querySelector('.campfire__prompt')
-      const card = campfire.querySelector('.campfire__deck--smith .card')
-      const leave = campfire.querySelector('.campfire__leave')
-      const promptBox = prompt?.getBoundingClientRect()
-      const cardBox = card?.getBoundingClientRect()
-      const leaveBox = leave?.getBoundingClientRect()
-      const header = document.querySelector('.app-shell__header')
-      const runStatus = header?.querySelector('.run-status')
-      const potionHud = header?.querySelector('.outside-potions')
-      const leaveOverlaps = (element, clip) => {
-        const box = element.getBoundingClientRect()
-        const visible = clip ? {
-          left: Math.max(box.left, clip.left), right: Math.min(box.right, clip.right),
-          top: Math.max(box.top, clip.top), bottom: Math.min(box.bottom, clip.bottom),
-        } : box
-        return Boolean(leaveBox && visible.left < visible.right && visible.top < visible.bottom &&
-          leaveBox.left < visible.right && leaveBox.right > visible.left && leaveBox.top < visible.bottom && leaveBox.bottom > visible.top)
-      }
+      const picker = campfire.querySelector('.card-picker')
+      const pickerBox = picker?.getBoundingClientRect()
+      const previewCards = [...(picker?.querySelectorAll('.card-picker__preview .card') ?? [])].map((card) => card.getBoundingClientRect())
       return {
-        panels: prompt?.querySelectorAll('.campfire__preview').length ?? 0,
-        saysBecomes: /\bBecomes\b/.test(prompt?.textContent ?? ''),
         statusCards: campfire.querySelectorAll('.campfire__players, .campfire__seat').length,
         documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
-        documentHeight: document.documentElement.scrollHeight,
-        viewportHeight: document.documentElement.clientHeight,
-        headerHeight: header?.getBoundingClientRect().height ?? 0,
-        runStatusHeight: runStatus?.getBoundingClientRect().height ?? 0,
-        potionHudWidth: potionHud?.getBoundingClientRect().width ?? 0,
-        deckScrollsHorizontally: Boolean(card?.parentElement && card.parentElement.scrollWidth > card.parentElement.clientWidth + 1),
-        cardHeight: cardBox?.height ?? 0,
-        visibleCardHeight: promptBox && cardBox
-          ? Math.max(0, Math.min(promptBox.bottom, cardBox.bottom) - Math.max(promptBox.top, cardBox.top)) : 0,
-        leaveOverlapsCards: [...campfire.querySelectorAll('.campfire__deck .card')]
-          .filter((candidate) => leaveOverlaps(candidate, promptBox)).length,
-        leaveOverlapsChoices: [...campfire.querySelectorAll('.campfire__choices button')]
-          .filter((choice) => leaveOverlaps(choice)).length,
+        previewFits: Boolean(pickerBox && previewCards.length === 2 && previewCards.every((card) =>
+          card.left >= pickerBox.left - 1 && card.right <= pickerBox.right + 1 && card.top >= pickerBox.top - 1 && card.bottom <= pickerBox.bottom + 1)),
+        confirmEnabled: picker?.querySelector('.card-picker__confirm') instanceof HTMLButtonElement &&
+          !picker.querySelector('.card-picker__confirm').disabled,
       }
     }) })
     await a.screenshot({ path: join(outDir, '08-compact-online-smith.png'), fullPage: true })
   }
-  check('online Smith keeps a compact full-card picker without an upgrade preview', () => {
+  check('online Smith keeps a compact full-card upgrade preview', () => {
     for (const shape of compactOnlineSmith) {
-      assertEqual(shape.panels, 0)
-      assert(!shape.saysBecomes)
       assertEqual(shape.statusCards, 0, `online player status cards returned: ${JSON.stringify(shape)}`)
       assert(!shape.documentScrolls, `the online page scrolls: ${JSON.stringify(shape)}`)
-      assert(!shape.deckScrollsHorizontally, `the online deck scrolls sideways: ${JSON.stringify(shape)}`)
-      assert(shape.visibleCardHeight >= shape.cardHeight - 1,
-        `the online picker clips the first card: ${JSON.stringify(shape)}`)
-      assertEqual(shape.leaveOverlapsCards, 0, `the online leave action covers a card: ${JSON.stringify(shape)}`)
-      assertEqual(shape.leaveOverlapsChoices, 0, `the online leave action covers a choice: ${JSON.stringify(shape)}`)
+      assert(shape.previewFits && shape.confirmEnabled, JSON.stringify(shape))
     }
   })
   await a.setViewportSize({ width: 1440, height: 900 })

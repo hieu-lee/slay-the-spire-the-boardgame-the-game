@@ -198,7 +198,11 @@ export function upgradeCard(player: Player, uid: string): Player {
 export function transformCard(_rng: RngState, player: Player, uid: string, newUid: string): Player {
   const old = player.deck.find((card) => card.uid === uid)
   if (!old || cardIsCurse(old.defId) || player.cardRewards.length === 0) return player
-  const [drawn, ...rest] = player.cardRewards
+  let rewards = [...player.cardRewards]
+  while (rewards[0] === 'golden_ticket' && player.rareRewards.length === 0 && rewards.some((id) => id !== 'golden_ticket')) {
+    rewards = [...rewards.slice(1), 'golden_ticket']
+  }
+  const [drawn, ...rest] = rewards
   if (!drawn) return player
   const [rare, ...rareRest] = player.rareRewards
   const replacement = drawn === 'golden_ticket' ? rare : drawn

@@ -449,10 +449,10 @@ await neowConfirmReward.click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().neow.players.p1.redRewardPending === false)
 const firstBlessing = page.locator('.neow-options button').first()
 await firstBlessing.click()
-const cardChoice = page.locator('.neow-card-choice')
+const cardChoice = page.locator('.card-picker')
 if (await cardChoice.count()) {
-  const cards = cardChoice.locator('.card')
-  const confirm = cardChoice.getByRole('button', { name: 'Gain reward' })
+  const cards = cardChoice.locator('.card-picker__grid > .card')
+  const confirm = cardChoice.getByRole('button', { name: 'Confirm reward' })
   for (let index = 0; index < await cards.count() && await confirm.isDisabled(); index += 1) await cards.nth(index).click()
   await confirm.click()
 }
@@ -3346,9 +3346,9 @@ const onlineFaceDown = await neowPage.getByRole('button', { name: 'Reveal Card R
 await neowPage.getByRole('button', { name: 'Skip unseen' }).click()
 await neowPage.locator('.neow-options').waitFor()
 await neowPage.getByRole('button', { name: /Transform 1 card/ }).click()
-const onlineNeowCardChoice = neowPage.locator('.neow-card-choice')
-await onlineNeowCardChoice.locator('.card').first().click()
-const onlineNeowConfirm = onlineNeowCardChoice.getByRole('button', { name: 'Gain reward' })
+const onlineNeowCardChoice = neowPage.locator('.card-picker')
+await onlineNeowCardChoice.locator('.card-picker__grid > .card').first().click()
+const onlineNeowConfirm = onlineNeowCardChoice.getByRole('button', { name: 'Confirm reward' })
 assert(await onlineNeowConfirm.isEnabled(), 'Neow card selection did not enable confirmation')
 for (const action of [
   { kind: 'neow', stage: 'redGold', gain: false },
@@ -3362,20 +3362,20 @@ for (const action of [
   assertEqual(response.status, 200, 'other seat Neow action was rejected')
 }
 await neowPage.locator('.neow-face').nth(1).locator('.neow-face__reveal').waitFor()
-const onlineNeowSelectionSurvived = await onlineNeowCardChoice.locator('.card--selected').count() === 1 && await onlineNeowConfirm.isEnabled()
+const onlineNeowSelectionSurvived = await onlineNeowCardChoice.locator('.card-picker__grid > .card--selected').count() === 1 && await onlineNeowConfirm.isEnabled()
 liveRoom.run.players[1].relics.push({ defId: 'astrolabe', spent: false, pending: true })
 liveRoom.version += 1
 rooms.publishRoom(create.snapshot.code)
-const onlinePendingRelicLock = await neowPage.waitForFunction(() => {
-  const screen = document.querySelector('.neow-screen')
-  const actions = [...(screen?.querySelectorAll('.neow-action button') ?? [])]
+  const onlinePendingRelicLock = await neowPage.waitForFunction(() => {
+    const screen = document.querySelector('.neow-screen')
+    const actions = [...(screen?.querySelectorAll('.neow-action button') ?? []), ...document.querySelectorAll('.card-picker button')]
   return actions.length > 0 && actions.every((button) => button.disabled || button.getAttribute('aria-disabled') === 'true') &&
     Boolean(screen?.querySelector('.neow-action__waiting')?.textContent?.includes('Waiting for Bo to resolve Astrolabe'))
 }).then((handle) => handle.jsonValue())
 liveRoom.run.players[1].relics = liveRoom.run.players[1].relics.filter((relic) => !relic.pending)
 liveRoom.version += 1
 rooms.publishRoom(create.snapshot.code)
-await neowPage.waitForFunction(() => [...document.querySelectorAll('.neow-action button')].some((button) => !button.disabled))
+  await neowPage.waitForFunction(() => [...document.querySelectorAll('.neow-action button, .card-picker button')].some((button) => !button.disabled))
 liveRoom.run.neow.players[onlineSeats[0].playerId].cardId = 'heart_boon_00'
 liveRoom.version += 1
 rooms.publishRoom(create.snapshot.code)

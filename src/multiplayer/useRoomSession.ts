@@ -121,6 +121,7 @@ export type VisibleRun = {
       redReward: NeowRewardOffer | null
       blueOption: number | null
       pendingEffect: import('../game/neow.ts').NeowImmediateReward | null
+      transformExcludedUids?: string[]
       rewardKind: NeowRewardOffer['kind'] | null
       reward: NeowRewardOffer | null
       availableSources: import('../game/run.ts').RewardSource[]

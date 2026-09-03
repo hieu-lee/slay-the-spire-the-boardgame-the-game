@@ -1,0 +1,90 @@
+.card-picker {
+  position: fixed;
+  z-index: 80;
+  top: 4.8rem;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  color: #f5eddf;
+  background: rgb(0 0 0 / .94);
+}
+
+.card-picker__body { position: relative; min-height: 0; }
+.card-picker__grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 15rem));
+  justify-content: center;
+  align-content: start;
+  justify-items: center;
+  gap: clamp(.75rem, 1.8vw, 2rem);
+  overflow: auto;
+  height: 100%;
+  padding: clamp(1rem, 3vw, 3rem);
+}
+
+.card-picker__grid > .card { width: 100%; max-width: min(15rem, calc((100dvh - 11rem) / var(--card-ratio))); }
+.card-picker__empty { grid-column: 1 / -1; }
+.card-picker__preview {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(.75rem, 3vw, 3rem);
+  padding: 1rem;
+  background: rgb(0 0 0 / .32);
+}
+
+.card-picker--previewing .card-picker__grid > .card { pointer-events: none; filter: brightness(.3); }
+.card-picker__preview > .card { width: min(18rem, 28vw, calc((100dvh - 11rem) / var(--card-ratio))); pointer-events: auto; }
+.card-picker__preview .card--unplayable { filter: none; }
+.card-picker__upgrade-arrow { color: #f6d45c; font-size: clamp(3rem, 7vw, 7rem); text-shadow: 0 0 .75rem #f0a72f; }
+.card-picker__footer {
+  display: grid;
+  grid-template-columns: 1fr minmax(14rem, auto) 1fr;
+  align-items: center;
+  gap: 1rem;
+  min-height: 5rem;
+  padding: .75rem 1.25rem;
+  background: linear-gradient(180deg, rgb(4 4 4 / .25), #050505 60%);
+}
+
+.card-picker__footer p { margin: 0; text-align: center; font-size: clamp(1rem, 2vw, 1.35rem); }
+.card-picker__footer strong { color: #f2d15d; }
+.card-picker__footer button { min-height: 3.5rem; padding: .4rem 1.1rem; border: 1px solid #765121; font: inherit; font-weight: 800; }
+.card-picker__back { justify-self: start; color: #ffe9bf; background: linear-gradient(#b94327, #672015); }
+.card-picker__confirm { justify-self: end; color: #172125; background: linear-gradient(#9ee3eb, #367a93); }
+.card-picker__confirm:disabled { color: #78909a; background: #24323a; }
+
+.card-collection { width: min(96rem, calc(100% - 2rem)); }
+.card-collection .choice-modal__panel { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; height: min(52rem, calc(100dvh - 2rem)); max-height: none; padding: clamp(.75rem, 2vw, 1.25rem); background: rgb(0 0 0 / .96); border-color: #2a7caa; }
+.card-collection__header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.card-collection__header h2 { margin: 0; }
+.card-collection__header span { color: #c5d4d7; }
+.card-collection__sort { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; margin: .75rem 0; padding: .45rem; background: #287da8; }
+.card-collection__sort button { min-height: 2.4rem; padding: .25rem .5rem; color: #f8d867; background: #195a7c; border: 0; font: inherit; font-weight: 800; text-shadow: 1px 1px #000; }
+.card-collection__sort button[aria-pressed='true'] { color: #fff4bf; background: #143d58; }
+.card-collection .choice-modal__cards { --card-width: min(15rem, calc((100% - 8rem) / 5)); display: grid; grid-template-columns: repeat(5, var(--card-width)); align-content: start; justify-content: center; gap: clamp(.75rem, 1.8vw, 2rem); overflow: auto; padding: .5rem; }
+.card-collection .choice-modal__cards > .card { width: var(--card-width); }
+.card-collection .choice-modal__cards .card--unplayable { filter: none; }
+.card-collection__footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: .75rem; }
+.card-collection__footer label { color: #f3d268; font-weight: 700; }
+.card-collection__footer input { width: 1.2rem; height: 1.2rem; vertical-align: -.2rem; }
+
+@media (max-width: 700px) {
+  .card-picker__grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr)); gap: .65rem; padding: .75rem; }
+  .card-picker__grid > .card { max-width: min(10rem, calc((100dvh - 10.5rem) / var(--card-ratio))); }
+  .card-picker__preview > .card { width: min(11rem, 34vw, calc((100dvh - 10.5rem) / var(--card-ratio))); }
+  .card-picker__footer { min-height: 3.75rem; padding: .45rem .65rem; }
+  .card-picker__footer button { min-height: 2.7rem; padding-inline: .65rem; }
+  .card-picker__footer p { font-size: .92rem; }
+  .card-collection { width: calc(100% - 1rem); }
+  .card-collection .choice-modal__panel { height: calc(100dvh - 1rem); padding: .5rem; }
+  .card-collection__sort { gap: .2rem; margin: .4rem 0; padding: .25rem; }
+  .card-collection__sort button { min-height: 2rem; padding: .2rem; font-size: .72rem; }
+  .card-collection .choice-modal__cards { --card-width: clamp(6.5rem, 21vw, 8rem); grid-template-columns: repeat(auto-fit, var(--card-width)); gap: .45rem; }
+}
