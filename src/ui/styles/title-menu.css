@@ -441,7 +441,6 @@
 
 .start-menu__character-embark {
   right: 0;
-  border: 0.18rem solid #f7e555;
   color: #fff8d8;
   background: linear-gradient(135deg, #547c83, #1f4550);
   clip-path: polygon(10% 0, 100% 0, 100% 100%, 10% 100%, 0 50%);
