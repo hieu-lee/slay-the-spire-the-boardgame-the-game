@@ -502,7 +502,11 @@ export function MapScreen({
                   aria-current={isHere ? 'location' : undefined}
                   style={{ '--jitter-x': `${wobble.x}px`, '--jitter-y': `${wobble.y}px` } as React.CSSProperties}
                 >
-                  {room.visited || isHere || selecting ? <span className="map__ink" aria-hidden="true" /> : null}
+                  {room.visited || isHere || selecting ? <span className="map__ink" aria-hidden="true">
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
+                      <path pathLength="1" d="M50 4C76 2 97 23 96 49C95 76 75 97 49 96C23 94 3 75 4 48C5 22 24 5 50 4" />
+                    </svg>
+                  </span> : null}
                   {/* Icon only. The name is in the accessible label and in the
                       tooltip; printing it under every node turned the Spire
                       into a list of captioned boxes. */}
