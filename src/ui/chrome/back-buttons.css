@@ -31,7 +31,7 @@ button.ribbon-back > span {
 }
 
 button.ribbon-back:hover:not(:disabled),
-button.ribbon-back:focus-visible:not(:disabled) { filter: brightness(1.16) drop-shadow(0 0 0.5rem rgb(255 211 94 / 0.52)); outline: 2px solid #fff1a4; outline-offset: -0.5rem; }
+button.ribbon-back:focus-visible:not(:disabled) { filter: brightness(1.2) drop-shadow(0 0 0.65rem rgb(255 233 95 / 0.7)); outline: 0; }
 button.ribbon-back:active:not(:disabled) { filter: brightness(0.9) drop-shadow(0 0.14rem 0.16rem rgb(0 0 0 / 0.62)); }
 button.ribbon-back:disabled { cursor: not-allowed; filter: grayscale(0.5) brightness(0.65); }
 
@@ -40,11 +40,6 @@ button.ribbon-back:disabled { cursor: not-allowed; filter: grayscale(0.5) bright
   width: clamp(4rem, 8vw, 7.5rem);
   aspect-ratio: 1.7;
   clip-path: polygon(0 0, 100% 0, 82% 50%, 100% 100%, 0 100%, 15% 50%);
-}
-.start-menu__character-back.ribbon-back:hover:not(:disabled),
-.start-menu__character-back.ribbon-back:focus-visible:not(:disabled) {
-  filter: brightness(1.2) drop-shadow(0 0 0.65rem rgb(255 233 95 / 0.7));
-  outline: 0;
 }
 .start-menu__run-options footer .ribbon-back {
   width: 4.25rem;
@@ -95,11 +90,22 @@ button.ribbon-back:disabled { cursor: not-allowed; filter: grayscale(0.5) bright
 
 @media (prefers-reduced-motion: reduce) {
   button.ribbon-back:hover:not(:disabled),
-  button.ribbon-back:focus-visible:not(:disabled),
   button.ribbon-back:active:not(:disabled) { filter: none; }
+  button.ribbon-back:focus-visible:not(:disabled) {
+    filter: none;
+    box-shadow: inset 0 0 0 0.15rem #fff8d8, inset 0 1px rgb(255 128 83 / 0.42), inset 0 -3px rgb(79 8 4 / 0.48);
+  }
   :is(.start-menu__character-back.ribbon-back, .start-menu__character-embark):is(:hover, :active):not(:disabled) { filter: drop-shadow(0 0.3rem 0.32rem rgb(0 0 0 / 0.48)); }
   :is(.start-menu__character-back.ribbon-back, .start-menu__character-embark):focus-visible:not(:disabled) {
     filter: drop-shadow(0 0.3rem 0.32rem rgb(0 0 0 / 0.48));
     box-shadow: inset 0 0 0 0.15rem #fff8d8;
+  }
+}
+
+@media (forced-colors: active) {
+  button.ribbon-back:focus-visible:not(:disabled),
+  .card-picker__footer button:focus-visible:not(:disabled) {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
   }
 }

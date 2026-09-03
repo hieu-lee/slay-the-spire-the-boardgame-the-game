@@ -33,6 +33,24 @@ try {
   await neowPicker.waitFor()
   assert.equal(await neowPicker.getAttribute('aria-label'), 'Choose 2 cards to upgrade')
   assert((await neowPicker.locator('.card-picker__grid > .card').allTextContents()).every((text) => text.includes('Strike')))
+  const neowBack = neowPicker.locator('.card-picker__back')
+  await neowBack.hover()
+  await page.waitForTimeout(250)
+  const neowDesktopBackHover = await neowBack.evaluate((button) => ({
+    filter: getComputedStyle(button).filter,
+    outline: getComputedStyle(button).outlineStyle,
+  }))
+  assert(neowDesktopBackHover.filter.includes('brightness(1.2)') && neowDesktopBackHover.filter.includes('drop-shadow'), JSON.stringify(neowDesktopBackHover))
+  assert.equal(neowDesktopBackHover.outline, 'none')
+  await page.keyboard.press('Shift')
+  await neowBack.focus()
+  await page.emulateMedia({ forcedColors: 'active' })
+  const neowForcedFocus = await neowBack.evaluate((button) => ({
+    focusVisible: button.matches(':focus-visible'),
+    outline: getComputedStyle(button).outlineStyle,
+  }))
+  assert(neowForcedFocus.focusVisible && neowForcedFocus.outline !== 'none', 'desktop: forced-colors card picker Back loses its keyboard-focus cue')
+  await page.emulateMedia({ forcedColors: 'none' })
   const neowConfirm = neowPicker.getByRole('button', { name: 'Confirm reward' })
   assert(await neowConfirm.isDisabled())
   await neowPicker.locator('.card-picker__grid > .card').nth(0).click()
@@ -46,6 +64,7 @@ try {
     run.players[0].relics.push({ defId: 'astrolabe', spent: false, pending: true })
     debug.setRun(run)
   })
+  await neowPicker.locator('.card-picker__confirm:disabled').waitFor()
   assert(await neowConfirm.isDisabled())
   assert(await neowPicker.getByRole('button', { name: 'Skip reward' }).isDisabled())
   assert(await neowPicker.locator('.card-picker__grid > .card').first().getAttribute('aria-disabled') === 'true')
@@ -72,7 +91,11 @@ try {
       controlsFit: controls.every((box) => box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight),
     }
   })
+  await neowBack.hover()
+  await page.waitForTimeout(250)
+  const neowPhoneBackHover = await neowBack.evaluate((button) => getComputedStyle(button).outlineStyle)
   assert(neowPhone.pickerFit && neowPhone.previewPinned && neowPhone.cardsFit && neowPhone.controlsFit, JSON.stringify(neowPhone))
+  assert.equal(neowPhoneBackHover, 'none')
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())

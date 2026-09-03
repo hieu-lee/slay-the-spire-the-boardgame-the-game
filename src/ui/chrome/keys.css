@@ -18,7 +18,6 @@
   .sts-scope .neow-offer__skip,
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
   .sts-scope .reward-boss__pick,
@@ -70,7 +69,6 @@
   .sts-scope .neow-offer__skip,
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
   .sts-scope .reward-boss__pick,
@@ -93,7 +91,6 @@
   .sts-scope .neow-offer__skip,
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
   .sts-scope .reward-boss__pick,
@@ -116,7 +113,6 @@
   .sts-scope .neow-offer__skip,
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
   .sts-scope .reward-boss__pick,
@@ -209,7 +205,6 @@
   .sts-scope button[class=''],
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
   .sts-scope .reward-boss__pick,
@@ -237,20 +232,18 @@
   .sts-scope .neow-offer__skip,
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
-  /* These three carry their own `clip-path` in styles.css and were missed when
+  /* These two carry their own `clip-path` in styles.css and were missed when
      this list was written, so the global 2px ring was clipped away entirely and
      keyboard focus was invisible on the two biggest keys in the game — "Leave
-     merchant" and "End turn" — and on the compendium's back arrow. Broken at
-     HEAD too; fixed here because it is the exact bug this block exists for.
+     merchant" and "End turn". Broken at HEAD too; fixed here because it is the
+     exact bug this block exists for.
 
      `.room-proceed` is an ARROW, not a chamfer — its concave left notch and
      right point mean the inset ring reads as a top and bottom bar rather than a
      closed rectangle. Visible, which is the requirement, but not the same shape
-     the chamfered keys get. The compendium's own back arrow needs a different
-     offset again and has its own rule in chrome/online-entry.css. */
+     the chamfered keys get. */
   .sts-scope .room-proceed,
   .sts-scope .combat__end-turn,
   /* Added to the key plate above, so they carry the chamfer too — and the

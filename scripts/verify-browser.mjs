@@ -979,26 +979,24 @@ const compactCompendium = await page.locator('.compendium').evaluate((root) => {
     })(),
   }
 })
-// Its clip-path is an arrow whose top and bottom edges are inset 8% of its
-// height, so the shared -4px inset ring fell outside the polygon and painted
-// nothing. Pinned because the corrected rule ALSO shipped once with no effect —
-// it was written at a specificity that lost to the list it replaced.
-// The rule is `:focus-visible`-only, and that pseudo-class needs KEYBOARD
-// modality — a bare programmatic `.focus()` reports `outline-offset: 0px`.
+// The shared rule is `:focus-visible`-only, and that pseudo-class needs
+// keyboard modality before programmatic focus can inspect it.
 await page.keyboard.press('Shift')
 await page.locator('.compendium__back').focus()
+await page.waitForTimeout(250)
 const compendiumBackRing = await page.evaluate(() => {
   const back = document.querySelector('.compendium__back')
   if (!back) return null
   const style = getComputedStyle(back)
-  return { offset: style.outlineOffset, width: style.outlineWidth, matched: back.matches(':focus-visible') }
+  return { filter: style.filter, outline: style.outlineStyle, matched: back.matches(':focus-visible') }
 })
 await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
-check('the compendium back arrow keeps a focus ring inside its clip', () => {
+check('the compendium back arrow uses the shared unclipped keyboard glow', () => {
   assert(compendiumBackRing !== null, 'no .compendium__back to measure')
   assert(compendiumBackRing.matched, 'the back arrow did not match :focus-visible when focused')
-  assertEqual(compendiumBackRing.offset, '-10px', 'the -4px shared inset falls outside this arrow')
-  assertEqual(compendiumBackRing.width, '3px')
+  assertEqual(compendiumBackRing.outline, 'none', 'the back arrow restored the clipped outline')
+  assert(compendiumBackRing.filter.includes('brightness(1.2)') && compendiumBackRing.filter.includes('drop-shadow'),
+    `the back arrow lost its shared focus glow: ${JSON.stringify(compendiumBackRing)}`)
 })
 
 const compactTitleOverflow = await page.locator('.compendium-card .card-face__title').first().evaluate(async (title) => {
