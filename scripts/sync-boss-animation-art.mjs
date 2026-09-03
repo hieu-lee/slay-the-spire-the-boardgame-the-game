@@ -41,8 +41,29 @@ function run(command, args) {
   if (result.status !== 0) throw new Error(result.stderr || `${command} failed`)
 }
 
+function assertSheetMargins(path) {
+  const probe = `
+import sys
+from PIL import Image
+image = Image.open(sys.argv[1]).convert("RGBA")
+if image.size != (1024, 1024):
+    raise SystemExit(f"expected 1024x1024 sheet, got {image.size}")
+for label, box in (("idle 1", (0, 0, 512, 512)), ("idle 2", (512, 0, 1024, 512)),
+                   ("wind-up", (0, 512, 512, 1024)), ("impact", (512, 512, 1024, 1024))):
+    alpha = image.crop(box).getchannel("A").point(lambda value: 255 if value > 32 else 0)
+    bounds = alpha.getbbox()
+    if bounds is None:
+        raise SystemExit(f"{label} is empty")
+    margin = min(bounds[0], bounds[1], 512 - bounds[2], 512 - bounds[3])
+    if margin < 24:
+        raise SystemExit(f"{label} has only {margin}px transparent safety margin: {bounds}")
+`
+  run('python3', ['-c', probe, path])
+}
+
 mkdirSync(outDir, { recursive: true })
 for (const { id, path } of sheets) {
+  assertSheetMargins(path)
   const { width, height } = pngSize(path)
   const halfW = Math.floor(width / 2)
   const halfH = Math.floor(height / 2)
@@ -78,6 +99,7 @@ for (const { id, path } of sheets) {
       '-d', '500', join(temp, 'impact.webp'),
       '-o', join(outDir, `${id}-attack.webp`),
     ])
+    run('python3', [padScript, join(outDir, `${id}-idle.webp`)])
     const attack = join(outDir, `${id}-attack.webp`)
     run('python3', [padScript, attack])
     run('python3', [reworkScript, attack])

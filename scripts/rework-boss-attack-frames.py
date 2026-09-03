@@ -13,7 +13,8 @@ from PIL import Image
 
 MELEE = {
     "bronze_automaton", "deca", "donu", "guardian_attack", "guardian_defensive",
-    "slime_boss", "the_champ", "time_eater",
+    "slime_boss", "the_champ", "time_eater", "downfall_demon",
+    "downfall_doppelganger", "downfall_trickster", "downfall_wrathful",
 }
 PHASE_MS = (184, 183, 183)
 
@@ -55,6 +56,7 @@ def remove_light_checkerboard(image: Image.Image) -> Image.Image:
 
 def fit_replacement(path: Path, canvas_size: tuple[int, int]) -> Image.Image:
     source = remove_light_checkerboard(Image.open(path))
+    source.putalpha(source.getchannel("A").point(lambda alpha: alpha if alpha > 16 else 0))
     box = visible_bbox(source)
     if box is None:
         raise ValueError(f"{path}: replacement is empty")
@@ -137,15 +139,19 @@ def optimize(path: Path) -> None:
     audit(path)
 
 
-def rework(path: Path, replacement: Path | None = None) -> None:
+def rework(
+    path: Path,
+    replacement: Path | None = None,
+    windup_replacement: Path | None = None,
+) -> None:
     animation = Image.open(path)
-    if animation.n_frames == 10 and replacement is None:
+    if animation.n_frames == 10 and replacement is None and windup_replacement is None:
         audit(path)
         return
     if animation.n_frames not in (2, 3, 10):
         raise ValueError(f"{path}: expected 2, 3, or 10 frames, got {animation.n_frames}")
     animation.seek(0)
-    windup = animation.convert("RGBA")
+    windup = fit_replacement(windup_replacement, animation.size) if windup_replacement else animation.convert("RGBA")
     animation.seek(1)
     impact = fit_replacement(replacement, windup.size) if replacement else animation.convert("RGBA")
 
@@ -220,6 +226,7 @@ def main() -> None:
     parser = ArgumentParser()
     parser.add_argument("files", nargs="*", type=Path)
     parser.add_argument("--replace-time-eater-impact", type=Path)
+    parser.add_argument("--replace-windup", type=Path)
     parser.add_argument("--replace-impact", type=Path)
     parser.add_argument("--audit", action="store_true")
     parser.add_argument("--optimize", action="store_true")
@@ -250,7 +257,7 @@ def main() -> None:
         replacement = args.replace_impact or (
             args.replace_time_eater_impact if path.name == "time_eater-attack.webp" else None
         )
-        rework(path, replacement)
+        rework(path, replacement, args.replace_windup)
 
 
 if __name__ == "__main__":

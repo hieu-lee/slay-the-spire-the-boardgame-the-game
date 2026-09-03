@@ -5,6 +5,7 @@
   max-width: none;
   padding: 0;
   gap: 0;
+  overflow: hidden;
 }
 
 .app-shell--combat > .app-shell__header {
@@ -603,7 +604,7 @@
 }
 
 .enemy__portrait > .enemy__art--cutout,
-.enemy--boss .enemy__portrait > .enemy__art--cutout {
+.enemy--boss .enemy__portrait > :is(.enemy__art--cutout, .boss-demon-grounded) {
   z-index: 1;
   object-fit: contain;
   object-position: center bottom;
@@ -612,7 +613,7 @@
   transform-origin: center bottom;
 }
 
-.enemy--boss .enemy__portrait > .enemy__art--cutout {
+.enemy--boss .enemy__portrait > :is(.enemy__art--cutout, .boss-demon-grounded) {
   transform: scale(var(--boss-scale));
   filter:
     saturate(1.08)
@@ -621,8 +622,8 @@
     drop-shadow(0 0 0.55rem var(--boss-aura));
 }
 
-.enemy--boss[data-enemy-def='donu'] .enemy__portrait > .enemy__art--cutout,
-.enemy--boss[data-enemy-def='deca'] .enemy__portrait > .enemy__art--cutout {
+.enemy--boss[data-enemy-def='donu'],
+.enemy--boss[data-enemy-def='deca'] {
   --boss-scale: 1.55;
 }
 
@@ -638,7 +639,7 @@
   filter: none;
 }
 
-.enemy--boss[data-animation='attack'] .enemy__portrait > .enemy__art--cutout {
+.enemy--boss[data-animation='attack'] .enemy__portrait > :is(.enemy__art--cutout, .boss-demon-grounded) {
   inset: auto 4rem 0 auto;
   width: auto;
   max-width: none;
@@ -650,8 +651,65 @@
   animation: boss-melee-dash var(--boss-attack-duration, 1830ms) cubic-bezier(0.3, 0, 0.2, 1) both;
 }
 
+.enemy--boss.enemy--acting[data-boss-art='downfall_demon'] .enemy__portrait > .enemy__art--cutout {
+  z-index: 3;
+  animation:
+    boss-demon-aerial-slam var(--boss-attack-duration, 1830ms) linear both,
+    boss-demon-airborne-visibility var(--boss-attack-duration, 1830ms) step-end both;
+}
+
+.enemy--boss.enemy--acting[data-boss-art='downfall_demon'] .enemy__portrait > .boss-demon-grounded {
+  z-index: 3;
+  animation:
+    boss-demon-aerial-slam var(--boss-attack-duration, 1830ms) linear both,
+    boss-demon-grounded-visibility var(--boss-attack-duration, 1830ms) step-end both;
+}
+
+.boss-demon-ground-splat {
+  position: absolute;
+  z-index: 2;
+  bottom: -0.5rem;
+  left: 50%;
+  width: 145%;
+  aspect-ratio: 1;
+  background: center / contain no-repeat url('/assets/combat/vfx/actions/downfall-demon-ground-splat.webp');
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boss-demon-ground-splat--origin {
+  translate: -50% 0;
+  animation: boss-demon-origin-splat var(--boss-attack-duration, 1830ms) linear both;
+}
+
+.boss-demon-ground-splat--target {
+  translate: calc(-50% + var(--boss-dash-x, 0rem)) 0;
+  animation: boss-demon-target-splat var(--boss-attack-duration, 1830ms) linear both;
+}
+
 .enemy--boss.enemy--acting[data-attack-motion='ranged'] .enemy__portrait > .enemy__art--cutout {
   animation: boss-ranged-cast var(--boss-attack-duration, 1830ms) ease-in-out both;
+}
+
+.boss-projectile {
+  position: absolute;
+  z-index: 20;
+  top: var(--boss-projectile-start-y, 50%);
+  left: var(--boss-projectile-start-x, 25%);
+  width: clamp(3rem, 6vw, 5.5rem);
+  aspect-ratio: 1;
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity, transform;
+  animation: boss-projectile-flight 550ms 180ms cubic-bezier(0.2, 0.7, 0.22, 1) both;
+}
+
+.boss-projectile > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 0.45rem var(--boss-aura));
 }
 
 .enemy--boss.enemy--acting[data-enemy-def='awakened_one_phase_2']::after {
@@ -671,46 +729,6 @@
   background-image: url('/assets/combat/vfx/actions/awakened-claw-scratch.webp');
   opacity: 0;
   animation: awakened-claw-scratch 550ms 730ms ease-out both;
-}
-
-.board:has(.enemy--boss.enemy--acting[data-boss-art='downfall_pc_watcher'])
-  .seat:not(.seat--dead) .seat__portrait::before {
-  z-index: 5;
-  inset: auto;
-  top: -210%;
-  left: 110%;
-  width: 125%;
-  aspect-ratio: 1;
-  background: center / contain no-repeat url('/assets/combat/vfx/actions/watcher-meteor.webp');
-  filter: drop-shadow(0 0 0.38rem #ff442d);
-  opacity: 0;
-  animation: boss-watcher-meteor-fall 500ms 230ms cubic-bezier(0.32, 0, 0.8, 0.24) both;
-}
-
-.board:has(.enemy--boss.enemy--acting[data-boss-art='downfall_pc_watcher'])
-  .seat:not(.seat--dead) .seat__portrait::after {
-  z-index: 5;
-  inset: auto auto -16% 50%;
-  width: 140%;
-  height: auto;
-  aspect-ratio: 1;
-  border-radius: 0;
-  background: center / contain no-repeat url('/assets/combat/vfx/actions/watcher-meteor-impact.webp');
-  filter: none;
-  opacity: 0;
-  animation: boss-watcher-meteor-impact 550ms 730ms ease-out forwards;
-}
-
-@keyframes boss-watcher-meteor-fall {
-  0% { opacity: 0; transform: translate(0) scaleX(-1); }
-  8%, 99% { opacity: 1; }
-  100% { opacity: 0; transform: translate(-140%, 210%) scaleX(-1); }
-}
-
-@keyframes boss-watcher-meteor-impact {
-  0% { opacity: 1; transform: translateX(-50%) scale(0.7); }
-  78% { opacity: 1; transform: translateX(-50%) scale(1); }
-  100% { opacity: 0; transform: translateX(-50%) scale(1.08); }
 }
 
 .enemy--boss.enemy--acting[data-enemy-def='awakened_one_phase_2']::after {
@@ -737,9 +755,53 @@
   40%, 70% { translate: var(--boss-dash-x, 0) -3%; }
 }
 
+@keyframes boss-demon-aerial-slam {
+  0%, 6% { translate: 0 0; }
+  22% { translate: var(--boss-launch-x, 0) var(--boss-launch-y, -100vh); }
+  28% { translate: var(--boss-dash-x, 0) var(--boss-launch-y, -100vh); }
+  40%, 68% { translate: var(--boss-dash-x, 0) -3%; }
+  78% { translate: var(--boss-dash-x, 0) var(--boss-launch-y, -100vh); }
+  84% { translate: 0 var(--boss-launch-y, -100vh); }
+  100% { translate: 0 0; }
+}
+
+@keyframes boss-demon-airborne-visibility {
+  0%, 38%, 68%, 90% { opacity: 1; }
+  39%, 67%, 91%, 100% { opacity: 0; }
+}
+
+@keyframes boss-demon-grounded-visibility {
+  0%, 38%, 68%, 90% { opacity: 0; }
+  39%, 67%, 91%, 100% { opacity: 1; }
+}
+
+@keyframes boss-demon-origin-splat {
+  0%, 5% { opacity: 0; scale: 0.55; }
+  9%, 15% { opacity: 1; scale: 0.9; }
+  24%, 83% { opacity: 0; scale: 1.08; }
+  87% { opacity: 0; scale: 0.62; }
+  92%, 96% { opacity: 1; scale: 0.92; }
+  100% { opacity: 0; scale: 1.08; }
+}
+
+@keyframes boss-demon-target-splat {
+  0%, 34% { opacity: 0; scale: 0.58; }
+  40%, 48% { opacity: 1; scale: 0.94; }
+  62%, 100% { opacity: 0; scale: 1.1; }
+}
+
 @keyframes boss-ranged-cast {
   0%, 30%, 100% { translate: 0 0; }
   40%, 70% { translate: -1rem -2%; }
+}
+
+@keyframes boss-projectile-flight {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.42); }
+  10%, 84% { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--boss-projectile-x, 0rem) - 50%), calc(var(--boss-projectile-y, 0rem) - 50%)) scale(1.08);
+  }
 }
 
 @keyframes awakened-claw-scratch {

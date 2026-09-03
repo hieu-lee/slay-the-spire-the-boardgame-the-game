@@ -420,8 +420,8 @@ export const DOWNFALL_ENEMIES: Record<string, DownfallEnemyDef> = {
   ), { ability: { kind: 'plunder', burns: 2, chests: 1 } }),
 }
 
-// Reuse the shipped main-game cutouts where the prototype summons an existing
-// enemy. Character bosses deliberately use their separate PC Downfall sprites.
+// Reuse shipped main-game cutouts for existing enemies. The four Slayers use
+// their separate PC Downfall sprites; named bosses use official board-game art.
 const DOWNFALL_ART_BY_NAME: Record<string, string> = {
   'Acid Slime': 'acid_slime',
   'Blue Slaver': 'blue_slaver',
@@ -453,21 +453,21 @@ const DOWNFALL_ART_BY_NAME: Record<string, string> = {
 }
 
 const DOWNFALL_ART_BY_ID: Record<string, string> = {
-  downfall_witch: 'downfall_pc_silent',
-  downfall_wrathful: 'downfall_pc_watcher',
-  downfall_wrathful_wrath: 'downfall_pc_watcher',
+  downfall_witch: 'downfall_witch',
+  downfall_wrathful: 'downfall_wrathful',
+  downfall_wrathful_wrath: 'downfall_wrathful',
   downfall_dark_core: 'downfall_dark_core',
-  downfall_orb_master: 'downfall_pc_defect',
-  downfall_inferno: 'downfall_pc_ironclad',
-  downfall_trickster: 'downfall_pc_silent',
-  downfall_flame_barrier: 'spire_shield',
-  downfall_doppelganger: 'downfall_pc_silent',
+  downfall_orb_master: 'downfall_orb_master',
+  downfall_inferno: 'downfall_inferno',
+  downfall_trickster: 'downfall_trickster',
+  downfall_flame_barrier: 'downfall_flame_barrier',
+  downfall_doppelganger: 'downfall_doppelganger',
   downfall_demon: 'downfall_demon',
-  downfall_wraith: 'downfall_pc_silent',
-  downfall_blasphemer: 'downfall_pc_watcher',
-  downfall_blasphemer_divinity: 'downfall_pc_watcher',
+  downfall_wraith: 'downfall_wraith',
+  downfall_blasphemer: 'downfall_blasphemer',
+  downfall_blasphemer_divinity: 'downfall_blasphemer',
   downfall_corrupted: 'downfall_corrupted',
-  downfall_neow: 'downfall_pc_neow',
+  downfall_neow: 'downfall_neow',
   downfall_dark_orb: 'downfall_dark_orb',
   downfall_dark_orb_act2: 'downfall_dark_orb',
   downfall_lightning_orb: 'downfall_lightning_orb',

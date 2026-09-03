@@ -360,7 +360,11 @@ export function usePresentationEvents(
   authoritativeRestoration?: number,
   authoritativeConnected?: boolean,
   reducedEffects = false,
-): { events: CombatPresentationEvent[]; contactDeadlines: ReadonlyMap<string, TargetContactDeadline> } {
+): {
+  events: CombatPresentationEvent[]
+  soundEvents: CombatPresentationEvent[]
+  contactDeadlines: ReadonlyMap<string, TargetContactDeadline>
+} {
   const baseline = useRef<number | null>(animateOpeningHand ? -1 : null)
   const previousCombat = useRef(state.combatId)
   const previousRestoration = useRef(authoritativeRestoration)
@@ -369,6 +373,7 @@ export function usePresentationEvents(
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
   const slimeQueueEnd = useRef(new Map<string, number>())
   const [active, setActive] = useState<CombatPresentationEvent[]>([])
+  const [reducedSoundEvents, setReducedSoundEvents] = useState<CombatPresentationEvent[]>([])
   const contactDeadlines = useRef(new Map<string, TargetContactDeadline>())
   const [targetContactDeadlines, setTargetContactDeadlines] =
     useState<ReadonlyMap<string, TargetContactDeadline>>(new Map())
@@ -386,19 +391,25 @@ export function usePresentationEvents(
     previousConnected.current = authoritativeConnected
     previousReducedEffects.current = reducedEffects
 
-    if (baseline.current === null || combatChanged || restored || reducedEffects || motionChanged) {
+    if (baseline.current === null || combatChanged || restored || motionChanged) {
       baseline.current = combatChanged ? latest : Math.max(baseline.current ?? -1, latest)
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
       slimeQueueEnd.current.clear()
       contactDeadlines.current.clear()
       setActive((current) => current.length === 0 ? current : [])
+      setReducedSoundEvents(reducedEffects && motionChanged ? active : [])
       setTargetContactDeadlines((current) => current.size === 0 ? current : new Map())
       return
     }
 
     const unseen = events.filter((event) => event.seq > baseline.current!)
     baseline.current = Math.max(baseline.current, latest)
+    if (reducedEffects) {
+      setReducedSoundEvents(unseen)
+      return
+    }
+    setReducedSoundEvents((current) => current.length === 0 ? current : [])
     if (unseen.length === 0) return
     const delays = updateTargetContactDeadlines(state, unseen, slimeQueueEnd.current, contactDeadlines.current)
     setTargetContactDeadlines(new Map(contactDeadlines.current))
@@ -461,7 +472,11 @@ export function usePresentationEvents(
     for (const timer of timers.current.values()) clearTimeout(timer)
   }, [])
 
-  return { events: active, contactDeadlines: targetContactDeadlines }
+  return {
+    events: active,
+    soundEvents: reducedEffects && reducedSoundEvents.length > 0 ? reducedSoundEvents : active,
+    contactDeadlines: targetContactDeadlines,
+  }
 }
 
 export function usePersonalCombatSoundEffects(

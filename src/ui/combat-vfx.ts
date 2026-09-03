@@ -20,10 +20,25 @@ const MELEE_BOSS_ART = new Set([
   'awakened_one_phase_2',
   'time_eater',
   'donu',
+  'downfall_demon',
+  'downfall_doppelganger',
+  'downfall_trickster',
+  'downfall_wrathful',
 ])
 
 export function bossAttackMotionFor(artId: string): 'melee' | 'ranged' {
   return MELEE_BOSS_ART.has(artId) ? 'melee' : 'ranged'
+}
+
+const BOSS_PROJECTILE_ART = new Set([
+  'downfall_blasphemer', 'downfall_corrupted', 'downfall_dark_core', 'downfall_inferno',
+  'downfall_neow', 'downfall_orb_master', 'downfall_witch', 'downfall_wraith',
+])
+
+export function bossProjectileImagePath(artId: string): string | undefined {
+  return BOSS_PROJECTILE_ART.has(artId)
+    ? assetPath(`combat/enemies/projectiles/${artId}.webp`)
+    : undefined
 }
 
 // Per-asset presentation metadata. Scale is measured against the idle cutout's
@@ -35,6 +50,10 @@ const BOSS_ATTACK_ART = new Map<string, readonly [scale: number, contactLeft: nu
   ['corrupt_heart', [0.782, 24]],
   ['deca', [0.947, 25]],
   ['donu', [0.764, 24]],
+  ['downfall_demon', [1, 38]],
+  ['downfall_doppelganger', [1, 42]],
+  ['downfall_trickster', [1, 40]],
+  ['downfall_wrathful', [1, 37]],
   ['guardian_attack', [1.12, 24]],
   ['guardian_defensive', [1.091, 24]],
   ['hexaghost', [1.031, 24]],
@@ -44,14 +63,8 @@ const BOSS_ATTACK_ART = new Map<string, readonly [scale: number, contactLeft: nu
   ['time_eater', [0.836, 42]],
 ])
 
-const SHORT_BOSS_ATTACK_ART = new Set([
-  'downfall_corrupted', 'downfall_dark_core', 'downfall_demon', 'downfall_pc_defect',
-  'downfall_pc_ironclad', 'downfall_pc_neow', 'downfall_pc_silent',
-  'spire_shield',
-])
-
-export function bossAttackDurationFor(artId: string): number {
-  return SHORT_BOSS_ATTACK_ART.has(artId) ? 580 : 1830
+export function bossAttackDurationFor(_artId: string): number {
+  return 1830
 }
 
 export function bossAttackScaleFor(artId: string): number {

@@ -875,7 +875,7 @@ function CombatScreenView({
   const visualResetKey = `${state.combatId}:${authoritativeRestoration ?? ''}:${authoritativeConnected ?? ''}:${prefersReducedMotion}`
   usePersonalCombatSoundEffects(
     state,
-    livePresentationEvents,
+    livePresentation.soundEvents,
     authoritativeRestoration,
     authoritativeConnected,
     prefersReducedMotion,
@@ -5325,6 +5325,7 @@ function CombatScreenView({
                     revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
                   />
                 ))}
+                rangedTargetPlayerIds={livingPlayers.map((player) => player.id)}
                 stageIndex={stageEnemies.length + index}
                 // A boss stands in every row, so the only reading that means
                 // anything to the person looking at the screen is their own.
