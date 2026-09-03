@@ -341,14 +341,15 @@ import {
   GOLDEN_TICKET,
   drawTransformReward,
   revealCardReward,
-  revealRelicReward,
   pendingRelicPreview,
   resolveRelicReward,
   resolveBossRelicReward,
   resolvePendingRelic,
   resolvePotionReward,
+  resolveTransformReward,
   resolveCampfire,
   resolveCardRewards,
+  resolveGoldReward,
   roomChoices,
   resolveCombat,
   startPendingBoss,
@@ -365,6 +366,12 @@ import { createCampaignProgress } from '../src/game/campaign.ts'
 import { postNeowRun } from './lib/post-neow-run.mjs'
 
 suite('run')
+
+const claimGoldRewards = (run) => run.rewards.reduce((next, offer) => offer.gold ? resolveGoldReward(next, offer.playerId) : next, run)
+
+const skipRewards = (run) => run.phase === 'reward'
+  ? resolveCardRewards(claimGoldRewards(run), Object.fromEntries(run.rewards.map((offer) => [offer.playerId, null])))
+  : run
 
 check('physical Relic decks are complete, seeded, face down, and shared by every room system', () => {
   const first = postNeowRun(901, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
@@ -501,11 +508,9 @@ check('independent Potion rewards queue without overwriting each other', () => {
     },
   }
   run = resolveCombat(won)
-  assertEqual(run.rewards[0].potion, null)
-  assertDeepEqual(run.rewards[0].potionQueue, [null])
-  run = resolvePotionReward(run, 'p1', { kind: 'skip' })
-  assertEqual(run.rewards[0].potion, null)
-  run = resolvePotionReward(run, 'p1', { kind: 'skip' })
+  assert(typeof run.rewards[0].potion === 'string', 'Potion loot is visible immediately')
+  assert(run.rewards[0].potionQueue?.every((potion) => typeof potion === 'string'), 'queued Potion loot is visible immediately')
+  run = resolvePotionReward(run, 'p1', { kind: 'skipAll' })
   assertEqual(run.rewards[0].potion, false)
 
   run = postNeowRun(918, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
@@ -546,6 +551,19 @@ check('persisted Eggs upgrade normal card rewards with their printed uses', () =
   run = resolveCardRewards(revealCardReward(run, 'p1'), { p1: 0 })
   assert(run.players[0].deck.some((card) => card.defId === 'anger' && card.upgraded))
   assertEqual(run.players[0].relics.find((relic) => relic.defId === 'molten_egg').uses, 2)
+})
+
+check('a shared Boss Relic cannot clear an ordinary Relic still in Loot', () => {
+  let run = postNeowRun(919, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.phase = 'reward'
+  run.rewardDestination = 'map'
+  run.rewards = [{
+    playerId: 'p1', cardReward: false, choices: null, upgraded: false,
+    gold: false, potion: false, relic: run.relicDeck[0], bossRelics: run.bossRelicDeck.slice(0, 2),
+  }]
+  run = resolveBossRelicReward(run, 'p1', null)
+  assertEqual(run.phase, 'reward')
+  assert(typeof run.rewards[0].relic === 'string', 'the ordinary Relic disappeared with the boss pool')
 })
 
 check('one-shot Relic card rewards may be skipped and settle exhausted decks', () => {
@@ -676,6 +694,25 @@ check('an Elite grants exactly one ordinary Relic from the shared physical deck 
   assert(run.rewards.every((offer) => offer.relic === false), 'the removed legacy Elite Relic reward returned')
   assertDeepEqual(Object.values(run.roomState.offers), expected)
   assertDeepEqual(run.relicDeck, run.itemDecks.relics)
+  const goldOnly = claimGoldRewards({
+    ...run,
+    rewards: run.rewards.map((offer) => ({ ...offer, cardReward: false })),
+  })
+  assertEqual(goldOnly.phase, 'room', 'last Elite Gold returns to the pending Relic room')
+  assertEqual(goldOnly.roomState.kind, 'elite')
+  const transformedOnly = resolveTransformReward({
+    ...run,
+    rewards: [{ playerId: 'p1', cardReward: false, transformReward: true, choices: null, upgraded: false,
+      gold: false, potion: false, relic: false, bossRelics: false }],
+  }, 'p1', null)
+  assertEqual(transformedOnly.phase, 'room', 'last Elite Transform returns to the pending Relic room')
+  const relicOnly = resolveRelicReward({
+    ...run,
+    rewards: [{ playerId: 'p1', cardReward: false, choices: null, upgraded: false,
+      gold: false, potion: false, relic: 'anchor', bossRelics: false }],
+  }, 'p1', false)
+  assertEqual(relicOnly.phase, 'room', 'last Elite Relic returns to the pending Relic room')
+  run = claimGoldRewards(run)
   run = resolveCardRewards(run, { p1: null, p2: null })
   assertEqual(run.phase, 'room')
   run = chooseRelicReward(run, 'p1', 'take')
@@ -684,10 +721,6 @@ check('an Elite grants exactly one ordinary Relic from the shared physical deck 
   assertDeepEqual(run.players.map((player) => player.relics.at(-1).defId), expected)
   assertDeepEqual(run.relicDeck, run.itemDecks.relics)
 })
-
-const skipRewards = (run) => run.phase === 'reward'
-  ? resolveCardRewards(run, Object.fromEntries(run.rewards.map((offer) => [offer.playerId, null])))
-  : run
 
 check('every enemy the run can spawn actually exists', () => {
   // Reach into the module's pools by walking a lot of runs and spawning rooms.
@@ -908,7 +941,9 @@ check('winning a combat carries HP forward into the run', () => {
   assertEqual(after.players[0].hp, 4, 'damage taken in combat must persist into the run')
   const foe = entered.combat.enemies.find((enemy) => enemy.row === entered.players[0].row)
   const printedGold = foe.goldReward
-  assertEqual(after.players[0].gold, run.players[0].gold + printedGold, 'the printed gold reward is paid')
+  assertEqual(after.players[0].gold, run.players[0].gold, 'gold waits in the loot panel')
+  assertEqual(after.rewards[0].gold, printedGold, 'the printed gold reward is offered')
+  assertEqual(resolveGoldReward(after, 'p1').players[0].gold, run.players[0].gold + printedGold, 'claiming loot pays the printed gold')
 })
 
 check('a potion consumed in combat returns to the bottom of its deck', () => {
@@ -954,7 +989,7 @@ check('a combat card reward reveals three and persists exactly one chosen card',
   assertEqual(revealed.rewards[0].choices.length, 3, 'the top three are revealed (p.8)')
   const before = revealed.players[0]
   const chosen = revealed.rewards[0].choices[1]
-  const after = resolveCardRewards(revealed, { p1: 1 })
+  const after = resolveCardRewards(claimGoldRewards(revealed), { p1: 1 })
   assertEqual(after.phase, 'map')
   assertEqual(after.players[0].deck.length, before.deck.length + 1)
   assertEqual(after.players[0].deck.at(-1).defId, chosen, 'the selected copy enters the deck')
@@ -1090,7 +1125,7 @@ check('skipping after reveal returns all three cards to the bottom', () => {
   })
   const revealed = revealCardReward(won, 'p1')
   const shown = revealed.rewards[0].choices
-  const after = resolveCardRewards(revealed, { p1: null })
+  const after = resolveCardRewards(claimGoldRewards(revealed), { p1: null })
   assertDeepEqual(after.players[0].cardRewards.slice(-3), shown, 'revealed cards return to the bottom in order')
 })
 
@@ -1350,10 +1385,11 @@ check('Act I and II bosses pay every player their printed gold, Rare, and Boss R
     const goldBefore = entered.players.map((player) => player.gold)
     entered.combat.phase = 'won'
     entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
-    const resolved = resolveCombat(entered)
+    let resolved = resolveCombat(entered)
     const gold = ascension >= 10 ? 2 : 3
-    assertDeepEqual(resolved.players.map((player, index) => player.gold - goldBefore[index]),
-      Array(count).fill(gold), `Act ${act} ${count}P A${ascension} boss gold`)
+    assertDeepEqual(resolved.rewards.map((reward) => reward.gold), Array(count).fill(gold), `Act ${act} ${count}P A${ascension} boss loot`)
+    resolved = claimGoldRewards(resolved)
+    assertDeepEqual(resolved.players.map((player, index) => player.gold - goldBefore[index]), Array(count).fill(gold), `Act ${act} ${count}P A${ascension} boss gold`)
     assertEqual(resolved.rewards.length, count, `${count}P A${ascension} reward owners`)
     for (const reward of resolved.rewards) {
       assertEqual(reward.cardReward, true, 'the Rare Reward is present')
@@ -1389,7 +1425,10 @@ check('Downfall Act I and II bosses grant printed Rare Card and Boss Relic rewar
     const bossRelics = entered.bossRelicDeck.slice(0, 3)
     entered.combat.phase = 'won'
     entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
-    const resolved = resolveCombat(entered)
+    let resolved = resolveCombat(entered)
+    assertEqual(resolved.players[0].gold, gold)
+    assertEqual(resolved.rewards[0].gold, 3)
+    resolved = claimGoldRewards(resolved)
     assertEqual(resolved.players[0].gold, gold + 3)
     assertEqual(resolved.rewards.length, 1)
     assertEqual(resolved.rewards[0].cardReward, true)
@@ -1419,7 +1458,7 @@ check('boss Rare and Prismatic reveals reserve shared physical cards in either r
   const offered = resolveCombat(entered)
   const originalRares = offered.players.map((player) => [...player.rareRewards].sort())
   for (const order of [['p1', 'p2'], ['p2', 'p1']]) {
-    let revealed = structuredClone(offered)
+    let revealed = claimGoldRewards(structuredClone(offered))
     for (const playerId of order) revealed = playerId === 'p2'
       ? revealCardReward(revealed, playerId, ['ironclad', 'silent', 'defect'])
       : revealCardReward(revealed, playerId)
@@ -1470,7 +1509,10 @@ check('persisted pre-fix boss combats receive their printed rewards on resolutio
   entered.combat.enemies = entered.combat.enemies.map((enemy) => ({
     ...enemy, hp: 0, dead: true, goldReward: 0, cardReward: null,
   }))
-  const resolved = resolveCombat(entered)
+  let resolved = resolveCombat(entered)
+  assertEqual(resolved.players[0].gold, gold)
+  assertEqual(resolved.rewards[0].gold, 3)
+  resolved = claimGoldRewards(resolved)
   assertEqual(resolved.players[0].gold, gold + 3)
   assertEqual(resolved.rewards[0].cardReward, true)
   assertEqual(resolved.rewards[0].cardSource, 'rare')
@@ -1492,14 +1534,14 @@ check('boss Rare Rewards and Orrery settle in either order without corrupting re
   const offered = resolveCombat(entered)
   const deckSize = offered.players[0].deck.length
 
-  let cardFirst = revealCardReward(structuredClone(offered), 'p1')
+  let cardFirst = revealCardReward(claimGoldRewards(structuredClone(offered)), 'p1')
   cardFirst = resolveCardRewards(cardFirst, { p1: 0 })
   assertEqual(cardFirst.rewards[0].cardReward, false, 'Boss Relics blocked the printed Card Reward')
   cardFirst = resolveBossRelicReward(cardFirst, 'p1', 'orrery')
   const cardFirstChoices = pendingRelicPreview(cardFirst, 'p1').rewardChoices
   cardFirst = resolvePendingRelic(cardFirst, 'p1', [], [0, 0, 0, 0])
 
-  let relicFirst = revealCardReward(structuredClone(offered), 'p1')
+  let relicFirst = revealCardReward(claimGoldRewards(structuredClone(offered)), 'p1')
   relicFirst = resolveBossRelicReward(relicFirst, 'p1', 'orrery')
   relicFirst = structuredClone(relicFirst)
   const relicFirstChoices = pendingRelicPreview(relicFirst, 'p1').rewardChoices
@@ -1591,7 +1633,7 @@ check('White Beast Statue offers its Potion after the first A13 boss before regr
   const offered = resolveCombat(won)
   assertEqual(offered.phase, 'reward')
   assertEqual(offered.rewardDestination, 'betweenCombat')
-  assertEqual(offered.rewards[0].potion, null)
+  assert(typeof offered.rewards[0].potion === 'string', 'the Potion is visible in loot immediately')
   const skipped = resolvePotionReward(offered, 'p1', { kind: 'skip' })
   assertEqual(skipped.phase, 'betweenCombat')
   assertEqual(skipped.pendingBossDefId, 'time_eater')
@@ -1739,7 +1781,7 @@ check('an elite room places one elite, not one per player', () => {
     const offered = resolveCombat({ ...later, combat: { ...later.combat, phase: 'won' } })
     assert(offered.rewards.every((offer) => offer.upgraded), `Act ${act} offer is upgraded`)
     const revealed = revealCardReward(offered, 'p1')
-    const collected = resolveCardRewards(revealed, { p1: 0, p2: null })
+    const collected = resolveCardRewards(claimGoldRewards(revealed), { p1: 0, p2: null })
     assert(collected.players[0].deck.at(-1).upgraded, `Act ${act} elite adds the upgraded face`)
   }
   for (const enemyDecks of [fixture.enemyDecks, { act: 3, first: [], encounter: [], elite: [] }]) {

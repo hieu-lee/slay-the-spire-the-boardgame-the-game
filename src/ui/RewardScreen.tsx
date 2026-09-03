@@ -1,201 +1,146 @@
 import { useState, type ReactNode } from 'react'
-import { cardDef, cardIsCurse } from '../game/cards.ts'
-import type { CardRewardOffer, RewardSource } from '../game/run.ts'
-import { rewardSourceLabel } from './reward-source.ts'
-import type { PotionRewardDecision } from '../game/run.ts'
-import { potionDef, relicDef } from '../game/relics.ts'
+import { assetPath } from '../game/assets.ts'
+import { cardIsCurse } from '../game/cards.ts'
+import type { CardRewardOffer, PotionRewardDecision, RewardSource } from '../game/run.ts'
 import { potionLimit } from '../game/acquisition.ts'
+import { potionDef, relicDef } from '../game/relics.ts'
 import type { Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { ItemImage } from './ItemImage.tsx'
+import { rewardSourceLabel } from './reward-source.ts'
 
-/**
- * One reward on its own row: item art, then what it is, then what you can do
- * about it. Both reward screens draw every relic and potion offer through this
- * so the rows line up as a list instead of each growing its own panel.
- */
+export function LootChoice({ children, icon, onClick, disabled = false }: {
+  children: ReactNode
+  icon: ReactNode
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return <button className="loot-choice" type="button" onClick={onClick} disabled={disabled}>
+    <span className="loot-choice__icon">{icon}</span><strong>{children}</strong>
+  </button>
+}
+
+/** Shared compact item row for Neow and room offers. */
 export function RewardItem({ kind, id, title, note, children }: {
   kind: 'relic' | 'potion'
-  /** Omitted while the reward is still face down. */
   id?: string
   title: string
   note?: string
   children?: ReactNode
 }) {
-  return (
-    <div className={`reward-item reward-screen__${kind}`} role="group" aria-label={title}>
-      {/* Art only, no `card`: a generated card face prints the item's own name and
-          rules, and this row prints both again beside it at a readable size — so
-          the face was a second, unreadable copy (its rules text landed near 7px)
-          and it forced the row to a card's aspect, which is what pushed a
-          two-reward screen past the fold. */}
-      {id
-        ? <ItemImage kind={kind} id={id} />
-        : <span className="reward-item__facedown" aria-hidden="true">{kind === 'relic' ? '◆' : '●'}</span>}
-      <div className="reward-item__body">
-        <strong>{title}</strong>
-        <span className="room-item-text">
-          {id ? (kind === 'relic' ? relicDef(id).text : potionDef(id).text) : note}
-        </span>
-      </div>
-      <div className="reward-item__actions">{children}</div>
-    </div>
-  )
+  const detail = id ? kind === 'relic' ? relicDef(id).text : potionDef(id).text : note
+  return <div className={`reward-item reward-screen__${kind}`} role="group" aria-label={title}>
+    {id ? <ItemImage kind={kind} id={id} /> : <span className="reward-item__facedown" aria-hidden="true">{kind === 'relic' ? '◆' : '●'}</span>}
+    <div className="reward-item__body"><strong>{title}</strong>{detail ? <span className="room-item-text">{detail}</span> : null}</div>
+    <div className="reward-item__actions">{children}</div>
+  </div>
 }
 
 type RewardScreenProps = {
   players: Player[]
   rewards: CardRewardOffer[]
   onReveal: (playerId: string, sources?: readonly RewardSource[]) => void
-  onRevealPotion: (playerId: string) => void
+  onGold: (playerId: string) => void
   onPotion: (playerId: string, decision: PotionRewardDecision) => void
-  onRelic: (playerId: string, choice: 'reveal' | 'gain' | 'skip') => void
+  onRelic: (playerId: string, choice: 'gain' | 'skip') => void
   onBossRelic: (playerId: string, relicId: string | null) => void
   onTransform: (playerId: string, cardUid: string | null) => void
   onResolve: (decisions: Record<string, number | null>) => void
   ascension: number
 }
 
-/** Every living player takes one revealed card or skips (rulebook p.8). */
-export function RewardScreen({ players, rewards, onReveal, onRevealPotion, onPotion, onRelic, onBossRelic, onTransform, onResolve, ascension }: RewardScreenProps) {
+/** A compact, click-to-claim loot table. Card choices take over the sheet. */
+export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onRelic, onBossRelic, onTransform, onResolve, ascension }: RewardScreenProps) {
+  const [activeCardPlayerId, setActiveCardPlayerId] = useState<string | null>(null)
   const [decisions, setDecisions] = useState<Record<string, number | null>>({})
-  const [upgradePreviews, setUpgradePreviews] = useState<Record<string, boolean>>({})
-  const [sources, setSources] = useState<Record<string, RewardSource[]>>({})
-  const settled = rewards.every((offer) => (!offer.cardReward || offer.playerId in decisions) && !offer.transformReward &&
-    offer.potion === false && (offer.relic ?? false) === false && (offer.bossRelics ?? false) === false)
+  const [sources, setSources] = useState<RewardSource[]>([])
+  const activeOffer = activeCardPlayerId === null ? undefined : rewards.find((offer) => offer.playerId === activeCardPlayerId && offer.cardReward)
+  const activePlayer = activeOffer && players.find((player) => player.id === activeOffer.playerId)
+  const itemsPending = rewards.some((offer) => offer.gold || offer.potion !== false || (offer.relic ?? false) !== false ||
+    (offer.bossRelics ?? false) !== false || offer.transformReward)
+  const chooseCard = (playerId: string, choice: number | null) => {
+    const next = { ...decisions, [playerId]: choice }
+    setDecisions(next)
+    setActiveCardPlayerId(null)
+    if (rewards.filter((offer) => offer.cardReward).every((offer) => offer.playerId in next) &&
+      rewards.every((offer) => !offer.gold && offer.potion === false && (offer.relic ?? false) === false && (offer.bossRelics ?? false) === false && !offer.transformReward)) onResolve(next)
+  }
+  const skipLoot = () => {
+    rewards.forEach((offer) => {
+      if (offer.gold) onGold(offer.playerId)
+      if (offer.potion) onPotion(offer.playerId, { kind: 'skipAll' })
+      if (offer.relic) onRelic(offer.playerId, 'skip')
+      if (offer.bossRelics) onBossRelic(offer.playerId, null)
+      if (offer.transformReward) onTransform(offer.playerId, null)
+    })
+    const skipped = Object.fromEntries(rewards.filter((offer) => offer.cardReward).map((offer) => [offer.playerId, null]))
+    if (Object.keys(skipped).length > 0) onResolve(skipped)
+  }
 
-  return (
-    <section className="reward-screen">
-      <h2 className="reward-screen__title">Rewards!</h2>
-      {/* Only when there IS a card to choose: a relic-only, potion-only or boss
-          Relic screen printed card-reward instructions with no cards on it. */}
-      {rewards.some((offer) => offer.cardReward)
-        ? <p className="muted">Choose one revealed card for each player, or skip it.</p>
-        : null}
-      <div className="reward-screen__players">
-        {rewards.map((offer) => {
-          const player = players.find((candidate) => candidate.id === offer.playerId)
-          if (!player) return null
-          const selectedSources = (sources[player.id] ?? []).filter((source) => offer.availableSources?.includes(source))
-          return (
-            <div className="reward-screen__player" key={player.id}>
-              <h3>{player.name}</h3>
-              {offer.relic === null ? (
-                <RewardItem kind="relic" title="Relic reward" note="Still face down.">
-                  <button type="button" onClick={() => onRelic(player.id, 'reveal')}>Reveal Relic</button>
-                  <button className="reward-screen__skip" type="button" onClick={() => onRelic(player.id, 'skip')}>Skip Relic unseen</button>
-                </RewardItem>
-              ) : typeof offer.relic === 'string' ? (
-                <RewardItem kind="relic" id={offer.relic} title={relicDef(offer.relic).name}>
-                  <button type="button" onClick={() => onRelic(player.id, 'gain')}>Gain Relic</button>
-                  <button className="reward-screen__skip" type="button" onClick={() => onRelic(player.id, 'skip')}>Skip</button>
-                </RewardItem>
-              ) : null}
-              {Array.isArray(offer.bossRelics) ? <div className="reward-boss">
-                <strong>Choose a boss Relic</strong>
-                <div className="reward-boss__row">
-                  {offer.bossRelics.map((id) => <button className="reward-boss__pick" type="button" key={id} onClick={() => onBossRelic(player.id, id)}>
-                    <ItemImage kind="relic" id={id} /><strong>{relicDef(id).name}</strong>
-                    <span className="room-item-text">{relicDef(id).text}</span></button>)}
-                </div>
-                <button className="reward-screen__skip" type="button" onClick={() => onBossRelic(player.id, null)}>Skip</button></div> : null}
-              {offer.potion === null ? (
-                <RewardItem kind="potion" title="Potion reward" note="Still face down.">
-                  <button type="button" onClick={() => onRevealPotion(player.id)}>Reveal Potion</button>
-                  <button className="reward-screen__skip" type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip Potion unseen</button>
-                </RewardItem>
-              ) : typeof offer.potion === 'string' ? (
-                <RewardItem kind="potion" id={offer.potion} title={potionDef(offer.potion).name}>
-                  <button type="button" disabled={player.potions.length >= potionLimit(ascension, player) || player.relics.some((relic) => relic.defId === 'sozu')}
-                    onClick={() => onPotion(player.id, { kind: 'gain' })}>Gain</button>
-                  <button className="reward-screen__skip" type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip</button>
-                  {player.potions.map((held, index) => <button type="button" key={`${held}-${index}`}
-                    disabled={player.relics.some((relic) => relic.defId === 'sozu')}
-                    onClick={() => onPotion(player.id, { kind: 'replace', potionId: held })}><ItemImage kind="potion" id={held} />Replace {potionDef(held).name}</button>)}
-                  {players.filter((target) => target.id !== player.id && !target.dead && target.potions.length < potionLimit(ascension, target) &&
-                    !target.relics.some((relic) => relic.defId === 'sozu')).map((target) =>
-                    <button type="button" key={target.id} onClick={() => onPotion(player.id, { kind: 'pass', playerId: target.id })}>Pass to {target.name}</button>)}
-                </RewardItem>
-              ) : null}
-              {offer.transformReward ? <div className="reward-screen__transform">
-                <strong>Transform a card</strong>
-                <div className="reward-screen__cards">{player.deck.filter((card) => !cardIsCurse(card.defId)).map((card) =>
-                  <Card key={card.uid} card={card} playable onClick={() => onTransform(player.id, card.uid)} />)}</div>
-                <button className="reward-screen__skip" type="button" onClick={() => onTransform(player.id, null)}>Skip Transform</button>
-              </div> : null}
-              {!offer.cardReward ? null : <>
-              {offer.upgraded && <p className="reward-screen__upgrade">Upgraded card reward</p>}
-              {offer.choices === null ? (
-                <div className="reward-screen__unrevealed">
-                  {offer.prismatic ? <fieldset className="reward-screen__sources"><legend>Choose 3 different reward decks</legend>
-                    {(offer.availableSources ?? []).map((source) => <label key={source}>
-                      <input type="checkbox" checked={selectedSources.includes(source)}
-                        onChange={(event) => setSources((current) => {
-                          const selected = selectedSources
-                          return { ...current, [player.id]: event.target.checked
-                            ? selected.length < 3 ? [...selected, source] : selected
-                            : selected.filter((candidate) => candidate !== source) }
-                        })} /> {rewardSourceLabel(source)}
-                    </label>)}
-                    <button type="button" disabled={selectedSources.length !== 3}
-                      onClick={() => onReveal(player.id, selectedSources)}>Reveal chosen decks</button>
-                  </fieldset> : <button type="button" onClick={() => onReveal(player.id)}>Reveal 3 for {player.name}</button>}
-                  <span className="muted">or skip without looking</span>
-                </div>
-              ) : (
-                <>
-                  <div className="reward-screen__cards">
-                    {offer.choices.map((defId, index) => {
-                      const key = `${player.id}-${index}`
-                      const previewing = upgradePreviews[key] ?? offer.upgraded
-                      const name = cardDef(defId).name
-                      return (
-                        <div className="reward-screen__choice" key={`${index}-${defId}`}>
-                          {offer.rareChoiceIndices?.includes(index) && (
-                            <span className="reward-screen__rare">Golden Ticket · Rare</span>
-                          )}
-                          <Card
-                            card={{
-                              uid: `reward-${player.id}-${index}`,
-                              defId,
-                              upgraded: previewing,
-                            }}
-                            selected={decisions[player.id] === index}
-                            onClick={() => setDecisions((current) => ({ ...current, [player.id]: index }))}
-                          />
-                          <button
-                            type="button"
-                            aria-pressed={previewing}
-                            onClick={() => setUpgradePreviews((current) => ({ ...current, [key]: !previewing }))}
-                          >
-                            Show {name} {previewing ? 'base' : 'upgrade'}
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <span className="reward-screen__scroll-hint muted">
-                    {offer.choices.length} choices · scroll to see all
-                  </span>
-                </>
-              )}
-              <button
-                type="button"
-                className={`reward-screen__skip ${decisions[player.id] === null ? 'is-chosen' : ''}`}
-                aria-pressed={decisions[player.id] === null}
-                onClick={() => setDecisions((current) => ({ ...current, [player.id]: null }))}
-              >
-                {decisions[player.id] === null ? '✓ ' : ''}
-                {offer.choices === null ? `Skip ${player.name}'s reward unseen` : `Skip ${player.name}'s card`}
-              </button>
-              </>}
-            </div>
-          )
-        })}
-      </div>
-      <button className="reward-screen__collect" type="button" disabled={!settled} onClick={() => onResolve(decisions)}>
-        {settled ? 'Collect rewards' : 'Everyone must choose'}
-      </button>
-    </section>
-  )
+  if (activeOffer && activePlayer && activeOffer.choices === null && activeOffer.prismatic) return <section className="reward-screen reward-screen--card-choice">
+    <h2 className="reward-screen__title">Choose a Card</h2>
+    <fieldset className="reward-screen__sources"><legend>Choose 3 reward decks</legend>
+      {(activeOffer.availableSources ?? []).map((source) => <label key={source}><input type="checkbox" checked={sources.includes(source)}
+        onChange={(event) => setSources((current) => event.target.checked
+          ? current.length < 3 ? [...current, source] : current
+          : current.filter((candidate) => candidate !== source))} /> {rewardSourceLabel(source)}</label>)}
+      <button type="button" disabled={sources.length !== 3} onClick={() => onReveal(activePlayer.id, sources)}>Reveal cards</button>
+    </fieldset>
+    <button className="reward-screen__skip" type="button" onClick={() => chooseCard(activePlayer.id, null)}>Skip</button>
+  </section>
+
+  if (activeOffer && activePlayer && activeOffer.choices !== null) return <section className="reward-screen reward-screen--card-choice">
+    <h2 className="reward-screen__title">Choose a Card</h2>
+    <div className="reward-screen__cards">
+      {activeOffer.choices.map((defId, index) => <Card key={`${defId}-${index}`}
+        card={{ uid: `reward-${activePlayer.id}-${index}`, defId, upgraded: activeOffer.upgraded }}
+        onClick={() => chooseCard(activePlayer.id, index)} />)}
+    </div>
+    <button className="reward-screen__skip" type="button" onClick={() => chooseCard(activePlayer.id, null)}>Skip</button>
+  </section>
+
+  return <section className="reward-screen reward-screen--loot">
+    <h2 className="reward-screen__title">Loot!</h2>
+    <div className="reward-screen__players">
+      {rewards.map((offer) => {
+        const player = players.find((candidate) => candidate.id === offer.playerId)
+        if (!player) return null
+        const sozu = player.relics.some((relic) => relic.defId === 'sozu')
+        const potionBlocked = player.potions.length >= potionLimit(ascension, player) || sozu
+        return <div className="reward-screen__player" key={player.id}>
+          {players.length > 1 ? <h3>{player.name}</h3> : null}
+          {offer.gold ? <LootChoice onClick={() => onGold(player.id)} icon={<img src={assetPath('icons/gold.png')} alt="" />}>{offer.gold} Gold</LootChoice> : null}
+          {typeof offer.potion === 'string' ? <><LootChoice disabled={potionBlocked} onClick={() => onPotion(player.id, { kind: 'gain' })}
+            icon={<ItemImage kind="potion" id={offer.potion} />}>{potionDef(offer.potion).name}</LootChoice>
+            <div className="loot-choice__actions">
+              <button type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip {potionDef(offer.potion).name}</button>
+              {potionBlocked && !sozu ? player.potions.map((held, index) => <button type="button" key={`${held}-${index}`}
+                onClick={() => onPotion(player.id, { kind: 'replace', potionId: held })}>Replace {potionDef(held).name}</button>) : null}
+              {potionBlocked && players.filter((target) => target.id !== player.id && !target.dead && target.potions.length < potionLimit(ascension, target) &&
+                !target.relics.some((relic) => relic.defId === 'sozu')).map((target) => <button type="button" key={target.id}
+                  onClick={() => onPotion(player.id, { kind: 'pass', playerId: target.id })}>Pass to {target.name}</button>)}
+            </div></> : null}
+          {typeof offer.relic === 'string' ? <><LootChoice onClick={() => onRelic(player.id, 'gain')}
+            icon={<ItemImage kind="relic" id={offer.relic} />}>{relicDef(offer.relic).name}</LootChoice>
+            <div className="loot-choice__actions"><button type="button" onClick={() => onRelic(player.id, 'skip')}>Skip {relicDef(offer.relic).name}</button></div></> : null}
+          {Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <LootChoice key={relicId} onClick={() => onBossRelic(player.id, relicId)}
+            icon={<ItemImage kind="relic" id={relicId} />}>{relicDef(relicId).name}</LootChoice>)
+          : null}
+          {Array.isArray(offer.bossRelics) ? <div className="loot-choice__actions"><button type="button" onClick={() => onBossRelic(player.id, null)}>Skip boss Relics</button></div> : null}
+          {offer.cardReward ? <LootChoice disabled={itemsPending} onClick={() => {
+            setActiveCardPlayerId(player.id)
+            setSources([])
+            if (!offer.prismatic) onReveal(player.id)
+          }}
+            icon={<img src={assetPath('menu/current-deck.webp')} alt="" />}>Add a card to your deck.</LootChoice> : null}
+          {offer.transformReward ? <div className="reward-screen__transform"><strong>Transform a card</strong>
+            <div className="reward-screen__cards">{player.deck.filter((card) => !cardIsCurse(card.defId)).map((card) =>
+              <Card key={card.uid} card={card} playable onClick={() => onTransform(player.id, card.uid)} />)}</div>
+            <button type="button" onClick={() => onTransform(player.id, null)}>Skip Transform</button>
+          </div> : null}
+        </div>
+      })}
+    </div>
+    <button className="reward-screen__skip" type="button" onClick={skipLoot}>Skip</button>
+  </section>
 }

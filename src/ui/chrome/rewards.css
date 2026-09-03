@@ -164,3 +164,195 @@
 }
 
 .merchant-removal-dialog .campfire__deck > .card { width: 100%; }
+
+/* Post-combat rewards follow the game's compact loot sheet: one central panel,
+   full-width clickable rows, then a clean card picker. */
+.sts-scope .reward-screen--loot {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.85rem;
+  padding: clamp(1rem, 5vh, 3rem) 1rem;
+  background: radial-gradient(ellipse at center, rgb(22 38 42 / 0.64), rgb(0 0 0 / 0.93) 64%);
+}
+
+.sts-scope .reward-screen--loot .reward-screen__title,
+.sts-scope .reward-screen--card-choice .reward-screen__title {
+  width: min(35rem, 94vw);
+  margin: 0;
+  padding: 0.65rem 2.8rem 0.9rem;
+  border: 0;
+  background: linear-gradient(105deg, #a78150, #e2c187 48%, #a57c49);
+  clip-path: polygon(0 28%, 8% 21%, 13% 4%, 87% 4%, 92% 21%, 100% 28%, 94% 68%, 88% 78%, 13% 78%, 6% 68%);
+  color: #fff9df;
+  font-family: Georgia, serif;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.05;
+  text-align: center;
+  text-shadow: 0 0.14rem 0 #68502f, 0 0 0.28rem #43321d;
+}
+
+.sts-scope .reward-screen--loot .reward-screen__players {
+  width: min(31rem, 94vw);
+  margin: -0.6rem 0 0;
+  padding: 1.5rem clamp(0.75rem, 2vw, 1.35rem) 1.2rem;
+  background: linear-gradient(90deg, #254956, #18353f 4%, #07101a 15% 85%, #18353f 96%, #254956);
+  box-shadow: inset 0 0 0 0.18rem #183d4c, inset 0 0 0 0.38rem #07151e, 0 1rem 1.6rem rgb(0 0 0 / 0.72);
+  clip-path: polygon(3% 0, 97% 0, 100% 2%, 98% 98%, 91% 100%, 82% 98.5%, 71% 100%, 61% 98.4%, 49% 100%, 37% 98.4%, 25% 100%, 13% 98.5%, 3% 100%, 0 97%, 0 2%);
+}
+
+.sts-scope .reward-screen--loot .reward-screen__player {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.sts-scope .reward-screen--loot .reward-screen__player h3 { margin: 0 0 0.1rem; text-align: center; }
+
+.sts-scope .reward-screen--loot .loot-choice {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 5.2rem;
+  width: 100%;
+  padding: 0.7rem 1.1rem;
+  border: 0.12rem solid #206c74;
+  border-radius: 0.9rem;
+  background: linear-gradient(90deg, #206d78, #3197a0 49%, #257982);
+  color: #fff9df;
+  font-family: Georgia, serif;
+  font-size: clamp(1.2rem, 3vw, 1.6rem);
+  text-align: left;
+  text-shadow: 0 0.12rem 0.08rem #243946;
+  transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.sts-scope .reward-screen--loot .loot-choice:not(:disabled):hover,
+.sts-scope .reward-screen--loot .loot-choice:focus-visible {
+  z-index: 1;
+  border-color: #fff09a;
+  outline: 0.2rem solid #ffd956;
+  outline-offset: 0.16rem;
+  background: linear-gradient(90deg, #2b8b95, #46b9bd 49%, #2f9299);
+  box-shadow: 0 0 1rem rgb(61 221 221 / 0.5);
+  transform: scale(1.025);
+}
+
+.sts-scope .reward-screen--loot .loot-choice:disabled { opacity: 0.5; }
+.sts-scope .loot-choice__icon { display: grid; width: 3.1rem; height: 3.1rem; place-items: center; flex: 0 0 3.1rem; }
+.sts-scope .loot-choice__icon > img,
+.sts-scope .loot-choice__icon .item-icon-image { width: 100%; height: 100%; margin: 0; object-fit: contain; }
+.sts-scope .loot-choice__icon > img[src*='current-deck'] { filter: drop-shadow(0 0.12rem 0 #111); }
+
+.sts-scope .reward-screen--loot > .reward-screen__skip {
+  position: fixed;
+  right: clamp(1rem, 6vw, 7rem);
+  bottom: clamp(1rem, 18vh, 12rem);
+  z-index: 3;
+  min-width: 11rem;
+  margin: 0;
+  padding: 0.68rem 2.1rem;
+  border: 0.14rem solid #62120c;
+  border-radius: 0;
+  background: linear-gradient(90deg, #9e2018, #dd4430 50%, #a32018);
+  clip-path: polygon(0 18%, 82% 18%, 82% 0, 100% 50%, 82% 100%, 82% 82%, 0 82%, 7% 50%);
+  color: #fff8df;
+  font-family: Georgia, serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-shadow: 0 0.14rem 0 #4d1510;
+}
+
+.sts-scope .reward-screen--card-choice > .reward-screen__skip {
+  min-width: 11rem;
+  margin: 0;
+  padding: 0.68rem 2.1rem;
+  border: 0.14rem solid #126a7a;
+  background: linear-gradient(90deg, #1c7787, #38a6b5 50%, #1d7886);
+  clip-path: polygon(9% 0, 91% 0, 100% 50%, 91% 100%, 9% 100%, 0 50%);
+  color: #fff8df;
+  font-family: Georgia, serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-shadow: 0 0.14rem 0 #173a42;
+}
+
+.sts-scope .reward-screen--loot .loot-choice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.sts-scope .reward-screen--loot .loot-choice__actions > button {
+  min-height: 2.35rem;
+  padding: 0.35rem 0.65rem;
+  border-color: #1f7a84;
+  background: #123b45;
+  color: #fff8df;
+}
+
+@media (hover: hover) {
+  .sts-scope .reward-screen--loot .loot-choice__actions {
+    max-height: 0;
+    margin: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: max-height 120ms ease, opacity 120ms ease;
+  }
+  .sts-scope .reward-screen--loot .loot-choice:hover + .loot-choice__actions,
+  .sts-scope .reward-screen--loot .loot-choice:focus-visible + .loot-choice__actions,
+  .sts-scope .reward-screen--loot .loot-choice__actions:hover,
+  .sts-scope .reward-screen--loot .loot-choice__actions:focus-within {
+    max-height: 4rem;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.sts-scope .reward-screen--card-choice {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1.8rem;
+  padding: clamp(1rem, 5vh, 3.5rem) 1rem;
+  background: radial-gradient(ellipse at center, rgb(28 37 35 / 0.45), rgb(0 0 0 / 0.95) 64%);
+}
+
+.sts-scope .reward-screen--card-choice .reward-screen__cards {
+  display: flex;
+  justify-content: center;
+  gap: clamp(1rem, 4vw, 4rem);
+  width: min(60rem, 95vw);
+  margin: 0;
+  padding: 0.8rem;
+  overflow: visible;
+}
+
+.sts-scope .reward-screen--card-choice .reward-screen__cards > .card {
+  width: clamp(8.7rem, 18vw, 13.4rem);
+  transform-origin: center bottom;
+  transition: transform 150ms ease, filter 150ms ease;
+}
+
+.sts-scope .reward-screen--card-choice .reward-screen__cards > .card:hover,
+.sts-scope .reward-screen--card-choice .reward-screen__cards > .card:focus-visible {
+  z-index: 2;
+  filter: drop-shadow(0 0.55rem 0.6rem rgb(0 0 0 / 0.7));
+  transform: translateY(-1rem) scale(1.11);
+}
+
+@media (max-height: 700px) {
+  .sts-scope .reward-screen--loot { align-content: start; padding-top: 0.35rem; }
+  .sts-scope .reward-screen--loot > .reward-screen__skip { right: 1rem; bottom: 0.6rem; min-width: 8.5rem; font-size: 1.2rem; }
+  .sts-scope .reward-screen--loot .reward-screen__title,
+  .sts-scope .reward-screen--card-choice .reward-screen__title { font-size: 1.8rem; }
+  .sts-scope .reward-screen--loot .loot-choice { min-height: 3.75rem; }
+  .sts-scope .loot-choice__icon { width: 2.3rem; height: 2.3rem; flex-basis: 2.3rem; }
+  .sts-scope .reward-screen--card-choice { gap: 0.8rem; padding-block: 0.35rem; }
+  .sts-scope .reward-screen--card-choice .reward-screen__cards > .card { width: min(21vh, 10rem); }
+}

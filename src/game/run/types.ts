@@ -87,6 +87,8 @@ export type RunState = {
 
 export type CardRewardOffer = {
   playerId: string
+  /** Gold waits in the loot panel until its owner takes it. */
+  gold?: false | number
   /** False when this encounter printed no card reward or it has been settled. */
   cardReward: boolean
   choices: string[] | null
@@ -106,11 +108,11 @@ export type CardRewardOffer = {
   prismaticDraws?: Array<{ source: CharacterId | 'colorless'; cardId: string; rareId?: string }>
   /** Daily/Custom Transformed replaces this normal Card Reward. */
   transformReward?: boolean
-  /** False = none/settled, null = unrevealed, string = reserved face-up card. */
+  /** `null` is retained only while an older saved reward is migrated. */
   potion: false | null | string
   /** Additional independent Potion rewards, resolved in physical source order. */
   potionQueue?: Array<null | string>
-  /** Ordinary relic reward: face down, face up, or settled. */
+  /** `null` is retained only while an older saved reward is migrated. */
   relic?: false | null | string
   /** Shared boss choices remain public until this player picks or skips. */
   bossRelics?: false | string[]
@@ -128,6 +130,7 @@ export type PendingGuardianSocket = {
 export type PotionRewardDecision =
   | { kind: 'gain' }
   | { kind: 'skip' }
+  | { kind: 'skipAll' }
   | { kind: 'pass'; playerId: string }
   | { kind: 'replace'; potionId: string }
 
