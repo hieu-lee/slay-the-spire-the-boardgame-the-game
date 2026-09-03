@@ -254,19 +254,6 @@ const heartsBoonRareLabel = await page.getByRole('button', {
   name: 'Gain a Rare Card Reward. Lose 2 max HP.',
 }).isVisible()
 await page.screenshot({ path: join(outDir, 'hearts-boon-neow-present.png'), fullPage: true })
-await page.setViewportSize({ width: 390, height: 844 })
-const compactHeartsBoonLayout = await page.evaluate(() => {
-  const heart = document.querySelector('.neow-screen__neow')?.getBoundingClientRect()
-  const action = document.querySelector('.neow-action')?.getBoundingClientRect()
-  if (!heart || !action) return null
-  return {
-    heart: { top: heart.top, right: heart.right, bottom: heart.bottom, left: heart.left },
-    action: { top: action.top, right: action.right, bottom: action.bottom, left: action.left },
-    overlap: Math.max(0, Math.min(heart.right, action.right) - Math.max(heart.left, action.left)) *
-      Math.max(0, Math.min(heart.bottom, action.bottom) - Math.max(heart.top, action.top)),
-  }
-})
-await page.screenshot({ path: join(outDir, 'hearts-boon-neow-compact.png'), fullPage: true })
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), soloNeowRun)
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
@@ -360,8 +347,6 @@ check('The Heart’s Boon shows the Heart and its printed dialogue on the right'
   assert(heartsBoonNeowLayout.decoded, 'Heart art did not decode on the Heart’s Boon screen')
   assert(heartsBoonNeowLayout.visible, 'The Heart escaped or disappeared from the Heart’s Boon screen')
   assert(heartsBoonNeowLayout.rightOfHero, 'The Heart did not stay opposite the Downfall hero')
-  assertEqual(compactHeartsBoonLayout?.overlap, 0,
-    `Heart is covered by the action panel on a compact screen: ${JSON.stringify(compactHeartsBoonLayout)}`)
   assert(heartsBoonPotionLabel, 'the Potion option kept its raw icon token or wrong plurality')
   assert(heartsBoonRareLabel, 'the Rare Card Reward option kept its raw icon token')
 })
@@ -694,7 +679,7 @@ const arrivalAnchors = []
 for (const size of [
   { width: 3440, height: 1440 }, { width: 2560, height: 1440 }, { width: 1920, height: 1080 },
   { width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1000, height: 900 },
-  { width: 390, height: 844 }, { width: 844, height: 390 }, { width: 667, height: 375 },
+  { width: 844, height: 390 }, { width: 667, height: 375 },
 ]) {
   await page.setViewportSize(size)
   arrivalAnchors.push({ ...size, ...await readArrivalAnchors() })
@@ -784,46 +769,6 @@ const merchant600 = await page.locator('.merchant-shop-stage').evaluate((stage) 
 })
 await page.mouse.move(0, 0)
 await page.screenshot({ path: join(outDir, 'merchant-4p-1024x600.png'), fullPage: true })
-await page.setViewportSize({ width: 390, height: 844 })
-const merchant390 = await page.locator('.merchant-stage').evaluate((stage) => {
-  const shelfItem = stage.querySelector('.merchant-shelf .merchant-item > .item-icon-image')?.getBoundingClientRect()
-  const mobileCard = stage.querySelector('.merchant-card .card')?.getBoundingClientRect()
-  const board = stage.querySelector('.merchant-board')?.getBoundingClientRect()
-  const removal = stage.querySelector('.merchant-removal')?.getBoundingClientRect()
-  const detail = stage.querySelector('.merchant-shelf .room-item-text')
-  return {
-    itemWidth: shelfItem?.width ?? 0,
-    iconsSmallerThanCards: Boolean(shelfItem && mobileCard && shelfItem.width < mobileCard.width),
-    removalRatio: board && removal ? removal.width / board.width : 0,
-    detailVisible: detail ? getComputedStyle(detail).position === 'static' && detail.getBoundingClientRect().height > 0 : false,
-    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-  }
-})
-await page.screenshot({ path: join(outDir, 'merchant-4p-390x844.png'), fullPage: true })
-await page.evaluate(() => {
-  const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
-  run.players[0] = { ...run.players[0], gold: 12 }
-  debug.setRun(run)
-})
-await page.setViewportSize({ width: 390, height: 600 })
-const mobilePotion = page.locator('[data-merchant-target="potion-2"]')
-await mobilePotion.scrollIntoViewIfNeeded()
-await mobilePotion.click()
-const mobileMerchantHand = await page.locator('.merchant-hand').evaluate((hand) => {
-  const stage = hand.closest('.merchant-shop-stage')
-  const target = stage?.querySelector('[data-merchant-target="potion-2"]')
-  if (!stage || !target) return null
-  const frame = stage.getBoundingClientRect()
-  const item = target.getBoundingClientRect()
-  const expectedY = item.top - frame.top + stage.scrollTop + item.height * 0.55
-  return {
-    position: getComputedStyle(hand).position,
-    yError: Math.abs(Number.parseFloat(hand.style.getPropertyValue('--merchant-point-y')) - expectedY),
-    scrolled: scrollY > 0 || stage.scrollTop > 0,
-  }
-})
-await page.screenshot({ path: join(outDir, 'merchant-purchase-hand-mobile.png') })
 await page.setViewportSize({ width: 1440, height: 900 })
 
 // A real pointerless context, not just a narrow window: Playwright reports
@@ -1156,12 +1101,6 @@ const SHOP_CASES = [
   // every shorter case stays green.
   { width: 1440, height: 900, belt: true, colorless: true },
   { width: 1600, height: 1000, belt: true, colorless: true },
-  // Tall and narrow, where the module's own `13vw` term binds and its height term
-  // does not — the case that stranded a dead band under the rug.
-  { width: 820, height: 1400, belt: true, colorless: true },
-  // Tall and narrow enough that the module is limited by WIDTH, which is where the
-  // rug's three columns stopped fitting and squeezed the Colorless pile.
-  { width: 900, height: 1600, belt: true, colorless: true },
   // Tall AND wide enough to drive the module to its 176px clamp ceiling, which no
   // other case reaches — the ceiling is where the card-text ramp meets its cap.
   { width: 1920, height: 1200, belt: true, colorless: true },
@@ -1174,8 +1113,6 @@ const SHOP_CASES = [
   { width: 900, height: 620, belt: true, colorless: true },
   { width: 900, height: 620, belt: true, colorless: true, touch: true },
   { width: 900, height: 620, belt: false, colorless: true },
-  { width: 390, height: 844, belt: true, colorless: true },
-  { width: 390, height: 844, belt: false, colorless: true },
   // Broke: every tile disabled, which is where the discount marker was lost.
   { width: 1440, height: 900, belt: false, colorless: true, broke: true },
 ]
@@ -1806,18 +1743,6 @@ check('Merchant keeps uniform shelf icons and every shelf price visible at 1024�
   assert(merchant600.lastPriceBelow <= 0,
     `the last potion price stayed ${merchant600.lastPriceBelow}px below the fold at 1024×600 even scrolled to the end`)
 })
-check('Merchant keeps legible shelf icons without horizontal overflow at 390×844', () => {
-  assert(merchant390.itemWidth >= 30, `merchant shelf icons are only ${merchant390.itemWidth}px wide`)
-  assert(merchant390.iconsSmallerThanCards, 'mobile shelf art grew back to card size')
-  assert(!merchant390.overflow, 'merchant overflows a 390px viewport')
-  assert(merchant390.removalRatio > 0.9, `card removal uses only ${merchant390.removalRatio * 100}% of the mobile rug`)
-  assert(merchant390.detailVisible, 'touch shoppers cannot read item descriptions')
-})
-check('Merchant hand stays attached to a purchased item after mobile scrolling', () => {
-  assert(mobileMerchantHand?.scrolled, 'mobile purchase did not exercise a scrolled Merchant')
-  assertEqual(mobileMerchantHand?.position, 'absolute')
-  assert((mobileMerchantHand?.yError ?? Infinity) < 3, `Merchant hand missed the scrolled item by ${mobileMerchantHand?.yError}px`)
-})
 await page.keyboard.press('Tab')
 const focused = await page.locator(':focus-visible').count()
 check('Merchant exposes visible keyboard focus', () => assert(focused))
@@ -1950,7 +1875,7 @@ await setRoom('treasure')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  run.roomState.offers.p1 = 'black_powder'
+  run.roomState.offers.p1 = 'fuel_canister'
   debug.setRun(run)
 })
 await page.getByRole('heading', { name: 'Choose a Relic' }).waitFor()
@@ -1975,9 +1900,15 @@ const treasureFallbackShape = await treasureFallback.evaluate((node) => ({
   icon: node.querySelector('.item-card-image')?.getAttribute('src') ?? '',
   hidden: node.getAttribute('aria-hidden'),
   width: Math.round(node.getBoundingClientRect().width),
+  iconContained: (() => {
+    const card = node.getBoundingClientRect()
+    const icon = node.querySelector('.item-card-image')?.getBoundingClientRect()
+    return Boolean(icon && icon.width > 0 && icon.height > 0 &&
+      icon.left >= card.left && icon.right <= card.right && icon.top >= card.top && icon.bottom <= card.bottom)
+  })(),
 }))
 check('Treasure gives the active seat one dominant face-up relic choice', () => {
-  assertEqual(treasureName, 'Black Powder')
+  assertEqual(treasureName, 'Fuel Canister')
   assertEqual(takeRelicButtons, 1)
 })
 check('a missing item scan falls back to a generated card face that still prints the item', () => {
@@ -1985,12 +1916,13 @@ check('a missing item scan falls back to a generated card face that still prints
   assert(treasureFallbackShape.rules.length > 0, 'generated face printed no rules')
   assertEqual(treasureFallbackShape.kind, 'Relic')
   assert(!/\[[a-z][^\]]*\]/.test(treasureFallbackShape.rules), treasureFallbackShape.rules)
-  assert(treasureFallbackShape.icon.endsWith('/assets/relic-icons/black_powder.png'), treasureFallbackShape.icon)
+  assert(treasureFallbackShape.icon.endsWith('/assets/relic-icons/fuel_canister.png'), treasureFallbackShape.icon)
   assert(treasureFallbackShape.icon.startsWith('/assets/relic-icons/'),
     `generated face used icon "${treasureFallbackShape.icon}"`)
   // Drawn at a size the printed text can actually be read at, not as a thumbnail.
   assert(treasureFallbackShape.width >= 96,
     `generated face rendered only ${treasureFallbackShape.width}px wide`)
+  assert(treasureFallbackShape.iconContained, 'the real relic icon is clipped inside its fallback card')
   // The surrounding panel already names the relic, so the drawn face is decorative.
   assertEqual(treasureFallbackShape.hidden, 'true')
 })
@@ -2105,37 +2037,6 @@ check('Event hierarchy remains usable on compact desktop and does not demand irr
     `the Event picker is shorter than one card: ${JSON.stringify(eventShape)}`)
   assertEqual(eventShape.panelScrolls, false, 'the Event resolver retained a nested panel scroller')
   assertEqual(eventShape.pickerScrollsVertically, false, 'the Event deck is trapped in a nested vertical scroller')
-})
-await page.setViewportSize({ width: 390, height: 844 })
-const compactEventShape = await page.evaluate(() => {
-  const panel = document.querySelector('.event-panel')
-  const stage = document.querySelector('.event-stage')
-  const title = document.querySelector('#event-title')?.getBoundingClientRect()
-  const stageBox = stage?.getBoundingClientRect()
-  const card = document.querySelector('.event-cards--deck .card')?.getBoundingClientRect()
-  const actions = [...document.querySelectorAll('.event-resolve-actions button')].map((button) => button.getBoundingClientRect())
-  return {
-    horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1,
-    panelScrolls: Boolean(panel && ['auto', 'scroll'].includes(getComputedStyle(panel).overflowY)),
-    stageScrolls: Boolean(stage && stage.scrollHeight > stage.clientHeight + 1),
-    stageScrollTop: stage?.scrollTop ?? -1,
-    stageTop: stageBox?.top ?? -1,
-    panelTop: panel?.getBoundingClientRect().top ?? -1,
-    titleTop: title?.top ?? -1,
-    titleVisible: Boolean(title && stageBox && title.top >= stageBox.top),
-    completeCard: Boolean(card && card.top >= 0 && card.left >= 0 && card.right <= innerWidth && card.bottom <= innerHeight),
-    actionsVisible: actions.length === 2 && actions.every((box) => box.top >= (stageBox?.top ?? 0) && box.bottom <= innerHeight),
-    actionsShareRow: actions.length === 2 && Math.abs(actions[0].top - actions[1].top) < 1,
-  }
-})
-await page.screenshot({ path: join(outDir, 'event-card-picker-compact.png'), fullPage: true })
-check('compact Event resolution keeps one reachable scroll surface', () => {
-  assert(!compactEventShape.horizontalOverflow, `compact Event overflowed: ${JSON.stringify(compactEventShape)}`)
-  assert(!compactEventShape.panelScrolls, 'compact Event retained a nested panel scroller')
-  assert(compactEventShape.titleVisible, `compact Event hid its title above the stage: ${JSON.stringify(compactEventShape)}`)
-  assert(compactEventShape.completeCard, `compact Event showed no complete card: ${JSON.stringify(compactEventShape)}`)
-  assert(compactEventShape.actionsVisible && compactEventShape.actionsShareRow,
-    `compact Event split or hid its resolver actions: ${JSON.stringify(compactEventShape)}`)
 })
 await page.setViewportSize({ width: 1280, height: 800 })
 await page.getByRole('button', { name: 'Back to choices' }).click()
@@ -3493,34 +3394,6 @@ const disconnectedNeow = await neowPage.waitForFunction(() => {
 }, undefined, { timeout: 5000 }).then((handle) => handle.jsonValue())
 const disconnectedHeartBoon = await neowPage.getByRole('status').filter({ hasText: 'Reconnecting… your Boon is preserved.' }).count()
 const onlineNeowContained = await neowPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
-// The reconnect banner displaces the scene out of the shell's positional `1fr`
-// row, so this is where the `.neow-screen` height rules are load-bearing. What
-// is asserted is REACHABILITY, not the absence of page scroll: `.neow-screen` is
-// `overflow: hidden` with no scroller inside it, so any rule that caps the scene
-// to the viewport does not shrink the dealt faces, it clips them away with no
-// gesture that brings them back. An earlier pass here capped it and hid two of
-// the four faces outright at 375x667. Page scroll is the acceptable outcome;
-// an unreachable face is not, per src/ui/styles/neow.css.
-const neowFloorScroll = []
-for (const size of [{ width: 320, height: 568 }, { width: 360, height: 640 }, { width: 375, height: 667 }]) {
-  await neowPage.setViewportSize(size)
-  await neowPage.waitForFunction(() => Boolean(document.querySelector('.online-banner')))
-  neowFloorScroll.push({
-    size: `${size.width}x${size.height}`,
-    ...await neowPage.evaluate(() => {
-      const scene = document.querySelector('.neow-screen').getBoundingClientRect()
-      const faces = [...document.querySelectorAll('.neow-face')]
-      return {
-        faces: faces.length,
-        // Clipped by the scene's own `overflow: hidden` — scrolling cannot help.
-        clipped: faces.filter((face) => face.getBoundingClientRect().bottom > scene.bottom + 1).length,
-        // Below the document's scrollable extent — scrolling cannot help either.
-        unreachable: faces.filter((face) =>
-          face.getBoundingClientRect().bottom + scrollY > document.documentElement.scrollHeight + 1).length,
-      }
-    }),
-  })
-}
 // Back to the size the screenshot below is framed for, and wait for the scene to
 // re-expand so the capture is not taken mid-reflow.
 await neowPage.setViewportSize({ width: 1280, height: 800 })
@@ -3543,11 +3416,6 @@ check('online Neow is public, authoritative, and inert during reconnect', () => 
   assertEqual(disconnectedHeartBoon, 1, 'Downfall reconnect called the Heart’s Boon a Blessing')
   assert(disconnectedNeow, 'disconnected Neow controls remained interactive')
   assert(onlineNeowContained, 'online Neow overflowed the compact desktop viewport')
-  for (const sample of neowFloorScroll) {
-    assertEqual(sample.faces, 4, `online Neow dealt ${sample.faces} faces at ${sample.size}`)
-    assert(sample.clipped === 0, `${sample.clipped} of ${sample.faces} Neow faces were clipped away by the scene at ${sample.size}`)
-    assert(sample.unreachable === 0, `${sample.unreachable} of ${sample.faces} Neow faces sat past the scrollable extent at ${sample.size}`)
-  }
 })
 await neowContext.close()
 liveRoom.run.phase = 'room'

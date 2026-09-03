@@ -114,7 +114,7 @@
 .treasure-stage { text-align: center; }
 .treasure-relic { max-width: 430px; margin: 3rem auto; padding: 2rem; background: radial-gradient(circle, #177c7a, #073131 68%, transparent 70%); }
 .treasure-relic > span { display: block; color: #fd80e7; font-size: 4rem; text-shadow: 0 0 24px currentColor; }
-.treasure-relic strong { font: 700 1.7rem Georgia, serif; }
+.treasure-relic > strong { font: 700 1.7rem Georgia, serif; }
 .treasure-shared { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin: 2rem auto; }
 .treasure-shared button { width: min(230px, 42vw); min-height: 190px; color: #f5ead2; background: radial-gradient(circle, #177c7a, #073131 68%); border: 2px solid #5ea6a2; border-radius: 44% 44% 18% 18%; }
 .treasure-shared button > span, .treasure-shared button > strong { display: block; }

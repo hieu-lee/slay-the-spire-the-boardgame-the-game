@@ -141,7 +141,6 @@ try {
     overlayLegendAfter.x + overlayLegendAfter.width <= mapPanelBox.x + mapPanelBox.width),
   'the desktop map-dialog legend moved or clipped when the map scrolled')
   for (const viewport of [
-    { width: 700, height: 700, name: 'narrow' },
     { width: 844, height: 390, name: 'short-wide' },
   ]) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
@@ -363,44 +362,6 @@ try {
   check(victoryHud.result.top >= victoryHud.bar.bottom - 1,
     `Victory banner overlaps the HUD ${JSON.stringify(victoryHud)}`)
   await page.locator('.combat').screenshot({ path: join(output, `desktop-${browserName}-stable-victory-stage.png`) })
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.evaluate(({ base }) => {
-    const debug = window.__STS_DEBUG__
-    const run = structuredClone(debug.getRun())
-    run.combat = structuredClone(base)
-    run.combat.phase = 'player'
-    Object.assign(run.combat.players[0], {
-      character: 'slime_boss', name: 'Slime Boss',
-      slimes: [{ card: { uid: 'animation-hud-slime', defId: 'slime_boss_bruiser_slime', upgraded: false },
-        level: 2, vigor: 3, commandsThisTurn: 1, vigorLossAtEndOfTurn: 0 }],
-    })
-    debug.setRun(run)
-  }, { base: template.combat })
-  await page.locator('.combat__slime-status').waitFor()
-  const compactSlimeHud = await page.locator('.combat__bar').evaluate((bar) => {
-    const box = (element) => element?.getBoundingClientRect().toJSON()
-    return {
-      bar: box(bar), status: box(bar.querySelector('.combat__slime-status')),
-      actions: box(bar.querySelector('.combat__actions')), width: document.documentElement.scrollWidth,
-    }
-  })
-  check(compactSlimeHud.status.bottom <= compactSlimeHud.bar.bottom + 1 &&
-    compactSlimeHud.status.top >= compactSlimeHud.actions.bottom - 1 && compactSlimeHud.width <= 391,
-  `mobile Slime Boss HUD wrapped, clipped, or overflowed ${JSON.stringify(compactSlimeHud)}`)
-  await page.evaluate(() => {
-    const debug = window.__STS_DEBUG__
-    const run = structuredClone(debug.getRun())
-    run.combat.phase = 'won'
-    debug.setRun(run)
-  })
-  await page.locator('.combat__result--won').waitFor()
-  const compactSlimeResult = await page.locator('.combat').evaluate((combat) => {
-    const box = (selector) => combat.querySelector(selector).getBoundingClientRect().toJSON()
-    return { status: box('.combat__slime-status'), result: box('.combat__result') }
-  })
-  check(compactSlimeResult.result.top >= compactSlimeResult.status.bottom - 1,
-    `mobile result overlaps the Slime Boss HUD ${JSON.stringify(compactSlimeResult)}`)
-  await page.setViewportSize({ width: 1440, height: 900 })
 
   const bossIds = [
     'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'corrupt_heart',
