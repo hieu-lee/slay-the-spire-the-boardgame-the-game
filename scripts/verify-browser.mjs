@@ -481,13 +481,49 @@ const titleMenu = await page.locator('.start-menu').evaluate((menu) => {
     editionTop: menu.querySelector('.start-menu__edition')?.getBoundingClientRect().top,
   }
 })
+const titleFlame = await page.locator('.start-menu__flame-i').evaluate((flame) => ({
+  background: getComputedStyle(flame, '::after').backgroundImage,
+  content: getComputedStyle(flame, '::after').content,
+  top: Number.parseFloat(getComputedStyle(flame, '::after').top),
+}))
 const menuSelection = await page.locator('.start-menu__nav').evaluate((nav) => ({
   selected: [...nav.querySelectorAll('button')].filter((button) => button.dataset.selected === 'true')
     .map((button) => button.textContent?.trim()),
   marker: getComputedStyle(nav.querySelector('button[data-selected="true"]'), '::before').content,
 }))
+const titleMenuAt = async (width, height) => {
+  await page.setViewportSize({ width, height })
+  return page.locator('.start-menu').evaluate((menu) => {
+    const box = (selector) => {
+      const rect = menu.querySelector(selector).getBoundingClientRect()
+      return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+    }
+    return { title: box('.start-menu__title'), nav: box('.start-menu__nav'), version: box('.start-menu__version') }
+  })
+}
+const compactTitleMenu = await titleMenuAt(844, 390)
+const narrowTitleMenu = await titleMenuAt(568, 320)
+const narrowMenuMarkers = await page.getByRole('button', { name: 'Single Player', exact: true }).evaluate((button) => {
+  const box = button.getBoundingClientRect()
+  const range = document.createRange()
+  range.selectNodeContents(button)
+  const text = range.getBoundingClientRect()
+  const before = getComputedStyle(button, '::before')
+  const after = getComputedStyle(button, '::after')
+  return {
+    beforeRight: box.left + Number.parseFloat(before.left) + Number.parseFloat(before.width),
+    afterLeft: box.right - Number.parseFloat(after.right) - Number.parseFloat(after.width),
+    text: { left: text.left, right: text.right },
+  }
+})
+await shot('00-title-menu-phone-landscape')
+await page.setViewportSize({ width: 1440, height: 900 })
 check('the title menu fills the viewport without clipping its controls', () => {
+  const separate = (first, second) => first.right < second.left || second.right < first.left ||
+    first.bottom < second.top || second.bottom < first.top
   assert(titleMenu.background.includes('title-spire.webp'), 'the generated title backdrop is missing')
+  assert(titleFlame.content === '""' && titleFlame.top < 0 && titleFlame.background.includes('radial-gradient'),
+    'the blue flame dot is missing from the Spire title')
   assert(titleMenu.font.includes('Kreon'), `the game-style typeface is missing: ${titleMenu.font}`)
   assert(titleMenu.titleBottom !== undefined && titleMenu.editionTop !== undefined &&
     titleMenu.editionTop >= titleMenu.titleBottom + 8,
@@ -499,6 +535,15 @@ check('the title menu fills the viewport without clipping its controls', () => {
   }
   assertDeepEqual(menuSelection.selected, ['Single Player'])
   assert(!menuSelection.marker.includes('☞'), `the menu still uses the cheap finger marker: ${menuSelection.marker}`)
+  for (const [name, layout] of Object.entries({ compact: compactTitleMenu, narrow: narrowTitleMenu })) {
+    assert(separate(layout.title, layout.nav),
+    `${name} landscape title/menu overlap: ${JSON.stringify(layout)}`)
+  }
+  assert(narrowTitleMenu.version.top >= narrowTitleMenu.nav.bottom + 6,
+    `narrow landscape menu/version overlap: ${JSON.stringify(narrowTitleMenu)}`)
+  assert(narrowMenuMarkers.beforeRight + 4 <= narrowMenuMarkers.text.left &&
+    narrowMenuMarkers.text.right + 4 <= narrowMenuMarkers.afterLeft,
+  `narrow landscape menu markers crowd the label: ${JSON.stringify(narrowMenuMarkers)}`)
   assertEqual(singlePlayerLabel?.trim(), 'Single Player')
   assert(setupHidden, 'run settings should not occupy the title screen')
   assertDeepEqual(localAscensions, ['0'], 'a fresh campaign offered locked Ascension levels')

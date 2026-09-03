@@ -85,6 +85,26 @@
   letter-spacing: 0;
 }
 
+.start-menu__flame-i {
+  position: relative;
+  display: inline-block;
+  width: 0.26em;
+}
+
+.start-menu__flame-i::after {
+  position: absolute;
+  top: -0.08em;
+  left: 50%;
+  width: 0.23em;
+  height: 0.34em;
+  border-radius: 65% 45% 60% 45%;
+  background: radial-gradient(circle at 52% 68%, #f5ffff 0 10%, #8ffaff 13% 27%, #38d9ef 30% 58%, #078cae 62%);
+  box-shadow: 0 0 0.08em #d4ffff, 0 0 0.2em #30cfea;
+  clip-path: polygon(50% 0, 77% 35%, 68% 58%, 86% 74%, 51% 100%, 15% 76%, 34% 48%, 27% 30%);
+  content: '';
+  transform: translateX(-50%);
+}
+
 .start-menu__edition {
   margin: 0;
   color: #69e6ef;
@@ -245,6 +265,8 @@
 .start-menu__character-actions .is-chosen { border-color: #d9b45b; color: #241807; background: linear-gradient(#ffe79a, #c99331); }
 
 @media (max-width: 760px), (max-height: 620px) {
+  .start-menu__title { left: 37vw; }
+
   .start-menu__character-select {
     inset: 4.5rem 1rem 1rem;
     grid-template: auto minmax(8rem, 1fr) auto auto / 1fr;
@@ -257,6 +279,15 @@
   .start-menu__character-hero { max-height: 30vh; }
   .start-menu__character-roster { grid-column: 1; grid-template-columns: repeat(2, minmax(7rem, 1fr)); }
   .start-menu__character-actions { justify-content: center; }
+}
+
+@media (max-width: 620px) and (max-height: 620px) {
+  .start-menu__title { top: 1rem; right: 0.55rem; left: auto; width: 48vw; }
+  .start-menu__eyebrow { font-size: 0.46rem; letter-spacing: 0.16em; white-space: nowrap; }
+  .start-menu__title h1 { gap: 0.25rem; margin-bottom: 0.55rem; font-size: 3.15rem; }
+  .start-menu__edition { font-size: 0.62rem; letter-spacing: 0.35em; }
+  .start-menu__nav { bottom: 1.9rem; left: 0.75rem; }
+  .start-menu__nav button { min-width: 12rem; padding: 0.1rem 2.5rem; font-size: 1.2rem; }
 }
 
 .start-menu__setup {
