@@ -573,7 +573,19 @@ try {
   await a.locator('.connection--connected').waitFor()
   await a.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/the-guardian-emerges.mp3'), reconnectBgmPlayBefore)
   check('online boss music pauses during reconnect and resumes from the authoritative boss state', () => assert(true))
-  openingRoom.run = { ...openingRoom.run, phase: 'map', combat: null }
+  const victoryMusicBefore = await a.evaluate(() => window.__SFX_PLAYS__.length)
+  const onlineBossAct = openingRoom.run.act
+  openingRoom.run = { ...openingRoom.run, act: 4, phase: 'victory', combat: null }
+  openingRoom.version += 1
+  rooms.publishRoom(code)
+  await a.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/the-spire-slain.mp3'), victoryMusicBefore)
+  const victoryMusicPauseBefore = await a.evaluate(() => window.__BGM_PAUSES__.length)
+  openingRoom.run = { ...openingRoom.run, campaign: { ...openingRoom.run.campaign, finalized: true } }
+  openingRoom.version += 1
+  rooms.publishRoom(code)
+  await a.waitForFunction((before) => window.__BGM_PAUSES__.slice(before).includes('/assets/bgm/the-spire-slain.mp3'), victoryMusicPauseBefore)
+  check('online terminal victory plays The Spire Slain only until the campaign journal', () => assert(true))
+  openingRoom.run = { ...openingRoom.run, act: onlineBossAct, phase: 'map', combat: null, campaign: { ...openingRoom.run.campaign, finalized: false } }
   openingRoom.version += 1
   rooms.publishRoom(code)
   await a.locator('.app-shell--online .map').waitFor()

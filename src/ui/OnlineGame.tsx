@@ -41,7 +41,7 @@ import {
   COMBAT_OUTCOME_SOUND_DELAY_MS,
   combatOutcomeAnimationActive,
 } from './combat-screen/vfx.tsx'
-import { useCombatMusic, useRunOutcomeSound } from './sfx.ts'
+import { useCombatMusic, useRunOutcomeSound, useVictoryMusic } from './sfx.ts'
 import { eventCanStartCombat } from '../game/events.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import type { GameSettings } from './game-settings.ts'
@@ -234,6 +234,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected',
     settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_SOUND_DELAY_MS)
   useCombatMusic(snapshot?.run, settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume)
+  useVictoryMusic(Boolean(snapshot?.run && !snapshot.run.campaign.finalized && victoryIsTerminal(snapshot.run, snapshot.campaignProgress)),
+    settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume)
   const runPhase = snapshot?.run?.phase
   const previousRunPhase = useRef(runPhase)
   const animateOpeningHand = shouldAnimateOnlineOpeningHand(

@@ -39,6 +39,7 @@ const HALLWAY_TRACKS: Record<number, readonly string[]> = {
 }
 
 const ELITE_TRACK = assetPath('bgm/facing-the-elite.mp3')
+const VICTORY_TRACK = assetPath('bgm/the-spire-slain.mp3')
 
 type MusicCombat = { combatId: string; phase: string; enemies: readonly { defId: string; ascension?: number; actionIndex?: number; isBoss: boolean }[] }
 type MusicRun = { act: number; combat?: MusicCombat | null }
@@ -80,6 +81,27 @@ export function useCombatMusic(run?: MusicRun | null, enabled = true, volume = 2
       if (audio.current === next) audio.current = null
     }
   }, [track])
+
+  useEffect(() => {
+    if (audio.current) audio.current.volume = volume / 100
+  }, [volume])
+}
+
+/** Play the original victory cue on the terminal run screen. */
+export function useVictoryMusic(active = false, enabled = true, volume = 20) {
+  const audio = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    if (!active || !enabled) return
+    const next = new Audio(VICTORY_TRACK)
+    audio.current = next
+    next.volume = volume / 100
+    void next.play().catch(() => {})
+    return () => {
+      next.pause()
+      if (audio.current === next) audio.current = null
+    }
+  }, [active, enabled])
 
   useEffect(() => {
     if (audio.current) audio.current.volume = volume / 100
