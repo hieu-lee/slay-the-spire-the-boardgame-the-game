@@ -429,6 +429,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [pauseOpen, setPauseOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsReturnToPause, setSettingsReturnToPause] = useState(false)
+  const [mapSelectionPending, setMapSelectionPending] = useState(false)
   const pauseDialog = useRef<HTMLDialogElement>(null)
   const runShell = useRef<HTMLElement>(null)
   const [achievements, setAchievements] = useState(false)
@@ -764,8 +765,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
             bossDefId={run.actBossDefId}
             canRerollBoss={!pendingAcquisition && canRerollDownfallSelfBoss(run)}
             onRerollBoss={() => setRun(rerollDownfallSelfBoss)}
+            onSelectionChange={setMapSelectionPending}
             onEnter={(roomId) => setRun((current) => enterRoom(current, roomId))} />
-          {!pendingAcquisition && wingChoices.length > 0 ? <section className="room-screen map-prompt">
+          {!pendingAcquisition && !mapSelectionPending && wingChoices.length > 0 ? <section className="room-screen map-prompt">
             <strong>Wing Boots</strong>
             {wingChoices.map((room) => <button type="button" key={room.id}
               onClick={() => setRun((current) => enterRoom(current, room.id, viewerId))}>
@@ -775,7 +777,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         </>
       ) : null}
 
-      {!pendingAcquisition && canSwitchRowsHere &&
+      {!pendingAcquisition && !mapSelectionPending && canSwitchRowsHere &&
       run.players.filter((player) => !player.dead).length > 1 ? <section className="map-row-switch">
         <strong>Switch rows before the next combat</strong>
         {run.players.filter((player) => !player.dead).map((player) => <label key={player.id}>{player.name}
