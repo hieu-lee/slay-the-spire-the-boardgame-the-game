@@ -228,14 +228,3 @@ html[data-mobile-performance='true'] .map .room--here::after,
 html[data-mobile-performance='true'] .map .room--reachable::before {
   animation: none;
 }
-
-/* Keep the game's cursor after surface-specific hover rules. Several of those
-   rules set `cursor: pointer`, so declaring this near the top was not enough. */
-body:has(.sts-scope),
-.sts-scope {
-  cursor: url('/assets/ui/cursor.png') 8 4, auto;
-}
-
-.sts-scope :is(button:not(:disabled), a, summary, label, [role='button']) {
-  cursor: url('/assets/ui/cursor.png') 8 4, pointer;
-}
