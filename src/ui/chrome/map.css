@@ -79,16 +79,24 @@
   position: absolute;
   z-index: 0;
   inset: -0.6rem;
-  box-sizing: border-box;
-  border: 0.28rem solid #422c1e;
-  border-radius: 52% 48% 49% 51% / 47% 53% 47% 53%;
   opacity: 0.88;
   pointer-events: none;
 }
 
+.map__ink svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.map__ink path {
+  fill: none;
+  stroke: #422c1e;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
 .room--ink-0 > .map__ink { inset: -0.52rem -0.68rem -0.64rem -0.56rem; rotate: -13deg; }
-.room--ink-1 > .map__ink { inset: -0.7rem -0.48rem -0.52rem -0.66rem; border-radius: 45% 55% 52% 48% / 54% 46% 55% 45%; rotate: 9deg; }
-.room--ink-2 > .map__ink { inset: -0.48rem -0.72rem -0.74rem -0.46rem; border-radius: 55% 45% 47% 53% / 44% 56% 46% 54%; rotate: -4deg; }
+.room--ink-1 > .map__ink { inset: -0.7rem -0.48rem -0.52rem -0.66rem; rotate: 9deg; }
+.room--ink-2 > .map__ink { inset: -0.48rem -0.72rem -0.74rem -0.46rem; rotate: -4deg; }
 .room--ink-1 > .map__ink::after,
 .room--ink-2 > .map__ink::after {
   content: '';
@@ -104,15 +112,12 @@
 
 .map .room--selected .map__ink {
   opacity: 1;
-  animation: map-ink-draw 680ms cubic-bezier(0.28, 0.8, 0.32, 1) forwards;
 }
+.map .room--selected .map__ink path { animation: map-ink-draw 620ms linear both; }
 
 @keyframes map-ink-draw {
-  0% { clip-path: polygon(50% 50%, 50% 50%, 50% 50%, 50% 50%, 50% 50%, 50% 50%, 50% 50%, 50% 50%); }
-  25% { clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 50%, 100% 50%, 100% 50%, 100% 50%, 100% 50%); }
-  50% { clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 100%, 50% 100%, 50% 100%, 50% 100%, 50% 100%); }
-  75% { clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 100%, 0 100%, 0 50%, 0 50%, 0 50%); }
-  100% { clip-path: inset(0); }
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
 }
 
 .map .room--selected > .room-tip { opacity: 0 !important; visibility: hidden !important; }
