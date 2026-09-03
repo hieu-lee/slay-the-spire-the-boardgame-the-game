@@ -648,8 +648,10 @@ const characterTransition = await selectedCharacterScreen.locator('.start-menu__
 await page.getByRole('button', { name: 'Ironclad', exact: true }).click()
 await page.waitForTimeout(220)
 const characterSelection = await page.locator('.start-menu__character-select').evaluate((screen) => {
+  const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
   const box = screen.getBoundingClientRect()
   const wallpaper = screen.querySelector('.start-menu__character-wallpaper')?.getBoundingClientRect()
+  const ascensionPanel = screen.querySelector('.start-menu__ascension > div')?.getBoundingClientRect()
   return {
     contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
     wallpaperContained: Boolean(wallpaper && wallpaper.left <= box.left + 1 && wallpaper.right >= box.right - 1 && wallpaper.top <= box.top + 1 && wallpaper.bottom >= box.bottom - 1),
@@ -657,6 +659,8 @@ const characterSelection = await page.locator('.start-menu__character-select').e
     selectedFilter: getComputedStyle(screen.querySelector('.start-menu__character-roster button[aria-pressed="true"] img')).filter,
     inactiveFilter: getComputedStyle(screen.querySelector('.start-menu__character-roster button:not([aria-pressed="true"]) img')).filter,
     flame: getComputedStyle(screen.querySelector('.start-menu__ascension-level')).backgroundImage,
+    ascensionButtonsClear: Boolean(ascensionPanel && [...screen.querySelectorAll('.start-menu__ascension > button')]
+      .every((button) => !overlap(button.getBoundingClientRect(), ascensionPanel))),
   }
 })
 await shot('00-title-character-select')
@@ -694,11 +698,14 @@ const phoneCharacterSelection = await page.locator('.start-menu__character-selec
   })
   const copy = screen.querySelector('.start-menu__character-copy')?.getBoundingClientRect()
   const ascension = screen.querySelector('.start-menu__ascension')?.getBoundingClientRect()
+  const ascensionPanel = screen.querySelector('.start-menu__ascension > div')?.getBoundingClientRect()
   return {
     contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
     rosterContained: roster.every((box) => box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight),
     actionsClear: controls.every((control) => roster.every((choice) => !overlap(control, choice))),
     copyClear: Boolean(copy && ascension && !overlap(copy, ascension)),
+    ascensionButtonsClear: Boolean(ascensionPanel && [...screen.querySelectorAll('.start-menu__ascension > button')]
+      .every((button) => !overlap(button.getBoundingClientRect(), ascensionPanel))),
     ascensionCentered: Math.abs((screen.querySelector('.start-menu__ascension').getBoundingClientRect().left + screen.querySelector('.start-menu__ascension').getBoundingClientRect().right) / 2 - innerWidth / 2) <= 1,
   }
 })
@@ -725,11 +732,12 @@ check('Single Player opens a contained visual character picker before starting',
   assert(characterSelection.selectedFilter.includes('brightness(1.16)') && characterSelection.inactiveFilter.includes('brightness(0.72)'),
     'the selected character portrait is not brighter than the inactive portraits')
   assert(characterSelection.flame.includes('ascension-flame.png'), 'Ascension uses the fallback glyph instead of the flame emblem')
+  assert(characterSelection.ascensionButtonsClear, 'Ascension buttons overlap the description on desktop')
   assert(/^character-wallpaper-in-[ab]$/.test(characterTransition), 'character selection does not transition between wallpapers')
   assertEqual(ascensionRaised, 'Ascension 1', 'the Ascension increase control does not change the selected level')
   assert(phoneRunModeSelection.contained && phoneRunModeSelection.choicesContained && phoneRunModeSelection.backClear,
     'horizontal-phone run mode choices overflow the screen')
-  assert(phoneCharacterSelection.contained && phoneCharacterSelection.rosterContained && phoneCharacterSelection.actionsClear && phoneCharacterSelection.copyClear && phoneCharacterSelection.ascensionCentered,
+  assert(phoneCharacterSelection.contained && phoneCharacterSelection.rosterContained && phoneCharacterSelection.actionsClear && phoneCharacterSelection.copyClear && phoneCharacterSelection.ascensionButtonsClear && phoneCharacterSelection.ascensionCentered,
     'horizontal-phone character choices overlap or overflow')
   for (const [name, special] of Object.entries({
     Ironclad: 'Burning Blood · End of combat: heal 1 HP.',
