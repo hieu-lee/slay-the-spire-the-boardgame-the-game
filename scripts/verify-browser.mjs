@@ -452,16 +452,49 @@ await settingsDialog.waitFor({ state: 'hidden' })
 const settingsDismissedWithEscape = await settingsDialog.isHidden()
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('button', { name: 'Standard', exact: true }).click()
-const characterPickerControls = await page.locator('.start-menu__character-select').evaluate((screen) => ({
+const {
+  backSize: characterBackSize,
+  embarkSize: characterEmbarkSize,
+  backClip: characterBackClip,
+  ...characterPickerControls
+} = await page.locator('.start-menu__character-select').evaluate((screen) => ({
   textActions: [...screen.querySelectorAll('button')].filter((button) =>
     ['Back', 'Run settings', 'Embark'].includes(button.textContent?.trim() ?? '')).length,
   backRibbon: screen.querySelector('.start-menu__character-back')?.classList.contains('ribbon-back'),
   backText: screen.querySelector('.start-menu__character-back')?.textContent?.trim(),
   embarkIcon: screen.querySelector('.start-menu__character-embark')?.textContent?.trim(),
+  embarkBorder: getComputedStyle(screen.querySelector('.start-menu__character-embark')).borderWidth,
   decreaseDisabled: screen.querySelector('[aria-label="Decrease Ascension"]')?.disabled,
   increaseDisabled: screen.querySelector('[aria-label="Increase Ascension"]')?.disabled,
   ascension: screen.querySelector('.start-menu__ascension > div p strong')?.textContent,
+  backSize: (() => {
+    const box = screen.querySelector('.start-menu__character-back')?.getBoundingClientRect()
+    return box && { width: box.width, height: box.height }
+  })(),
+  embarkSize: (() => {
+    const box = screen.querySelector('.start-menu__character-embark')?.getBoundingClientRect()
+    return box && { width: box.width, height: box.height }
+  })(),
+  backClip: getComputedStyle(screen.querySelector('.start-menu__character-back')).clipPath,
 }))
+await page.locator('.start-menu__character-back').hover()
+const characterBackHover = await page.locator('.start-menu__character-back').evaluate((button) => getComputedStyle(button).filter)
+await page.locator('.start-menu__character-embark').hover()
+const characterEmbarkHover = await page.locator('.start-menu__character-embark').evaluate((button) => getComputedStyle(button).filter)
+await page.emulateMedia({ reducedMotion: 'reduce' })
+await page.mouse.move(1, 1)
+const characterReducedMotionStatic = {
+  back: await page.locator('.start-menu__character-back').evaluate((button) => getComputedStyle(button).filter),
+  embark: await page.locator('.start-menu__character-embark').evaluate((button) => getComputedStyle(button).filter),
+}
+const characterBackReducedStaticShadow = await page.locator('.start-menu__character-back').evaluate((button) => getComputedStyle(button).boxShadow)
+await page.locator('.start-menu__character-back').hover()
+const characterBackReducedHover = await page.locator('.start-menu__character-back').evaluate((button) => getComputedStyle(button).filter)
+await page.locator('.start-menu__character-embark').hover()
+const characterEmbarkReducedHover = await page.locator('.start-menu__character-embark').evaluate((button) => getComputedStyle(button).filter)
+await page.locator('.start-menu__character-back').focus()
+const characterBackReducedFocus = await page.locator('.start-menu__character-back').evaluate((button) => getComputedStyle(button).boxShadow)
+await page.emulateMedia({ reducedMotion: 'no-preference' })
 await page.getByRole('button', { name: 'Back', exact: true }).click()
 await page.getByRole('button', { name: 'Single Player' }).hover()
 const titleMenu = await page.locator('.start-menu').evaluate((menu) => {
@@ -550,10 +583,16 @@ check('the title menu fills the viewport without clipping its controls', () => {
     backRibbon: true,
     backText: '',
     embarkIcon: '✓',
+    embarkBorder: '0px',
     decreaseDisabled: true,
     increaseDisabled: true,
     ascension: 'Ascension 0',
   })
+  assertDeepEqual(characterBackSize, characterEmbarkSize, 'character Back size does not match Embark')
+  assert(!characterBackClip.includes('16%'), 'character Back has the short generic ribbon cutout')
+  assertEqual(characterBackHover, characterEmbarkHover, 'character Back hover does not match Embark')
+  assertDeepEqual({ back: characterBackReducedHover, embark: characterEmbarkReducedHover }, characterReducedMotionStatic, 'character controls change on hover with reduced motion')
+  assert(characterBackReducedFocus !== characterBackReducedStaticShadow, 'character Back loses its keyboard-focus cue with reduced motion')
   assert(settingsIsModal, 'settings did not open in the browser top layer')
   assert(settingsKeepsFocus, 'settings allowed focus to escape to the title menu')
   assertEqual(screenShakeControls, 0, 'the removed screen-shake preference is still visible')
@@ -691,6 +730,10 @@ await page.getByRole('button', { name: 'Standard', exact: true }).click()
 await page.setViewportSize({ width: 560, height: 315 })
 await page.getByRole('heading', { name: 'Ironclad', exact: true }).waitFor()
 await page.waitForTimeout(220)
+await page.locator('.start-menu__character-back').hover()
+const phoneCharacterBackHover = await page.locator('.start-menu__character-back').evaluate((button) => getComputedStyle(button).filter)
+await page.locator('.start-menu__character-embark').hover()
+const phoneCharacterEmbarkHover = await page.locator('.start-menu__character-embark').evaluate((button) => getComputedStyle(button).filter)
 const phoneCharacterSelection = await page.locator('.start-menu__character-select').evaluate((screen) => {
   const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
   const roster = [...screen.querySelectorAll('.start-menu__character-roster button')].map((button) => {
@@ -704,6 +747,10 @@ const phoneCharacterSelection = await page.locator('.start-menu__character-selec
   const copy = screen.querySelector('.start-menu__character-copy')?.getBoundingClientRect()
   const ascension = screen.querySelector('.start-menu__ascension')?.getBoundingClientRect()
   const ascensionPanel = screen.querySelector('.start-menu__ascension > div')?.getBoundingClientRect()
+  const back = screen.querySelector('.start-menu__character-back')
+  const embark = screen.querySelector('.start-menu__character-embark')
+  const backBox = back?.getBoundingClientRect()
+  const embarkBox = embark?.getBoundingClientRect()
   return {
     contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
     rosterContained: roster.every((box) => box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight),
@@ -712,6 +759,10 @@ const phoneCharacterSelection = await page.locator('.start-menu__character-selec
     ascensionButtonsClear: Boolean(ascensionPanel && [...screen.querySelectorAll('.start-menu__ascension > button')]
       .every((button) => !overlap(button.getBoundingClientRect(), ascensionPanel))),
     ascensionCentered: Math.abs((screen.querySelector('.start-menu__ascension').getBoundingClientRect().left + screen.querySelector('.start-menu__ascension').getBoundingClientRect().right) / 2 - innerWidth / 2) <= 1,
+    backSize: backBox && { width: backBox.width, height: backBox.height },
+    embarkSize: embarkBox && { width: embarkBox.width, height: embarkBox.height },
+    backClip: getComputedStyle(back).clipPath,
+    embarkBorder: getComputedStyle(embark).borderWidth,
   }
 })
 await shot('00-title-character-select-phone')
@@ -744,6 +795,10 @@ check('Single Player opens a contained visual character picker before starting',
     'horizontal-phone run mode choices overflow the screen')
   assert(phoneCharacterSelection.contained && phoneCharacterSelection.rosterContained && phoneCharacterSelection.actionsClear && phoneCharacterSelection.copyClear && phoneCharacterSelection.ascensionButtonsClear && phoneCharacterSelection.ascensionCentered,
     'horizontal-phone character choices overlap or overflow')
+  assertDeepEqual(phoneCharacterSelection.backSize, phoneCharacterSelection.embarkSize, 'phone character Back size does not match Embark')
+  assert(!phoneCharacterSelection.backClip.includes('16%'), 'phone character Back has the short generic ribbon cutout')
+  assertEqual(phoneCharacterBackHover, phoneCharacterEmbarkHover, 'phone character Back hover does not match Embark')
+  assertEqual(phoneCharacterSelection.embarkBorder, '0px', 'phone character Embark keeps a yellow border')
   for (const [name, special] of Object.entries({
     Ironclad: 'Burning Blood · End of combat: heal 1 HP.',
     Silent: 'Ring of the Snake · Start of combat: draw 2 cards.',
