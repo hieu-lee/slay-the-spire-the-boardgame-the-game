@@ -73,6 +73,20 @@ try {
     }
   })
   assert(neowPhone.pickerFit && neowPhone.previewPinned && neowPhone.cardsFit && neowPhone.controlsFit, JSON.stringify(neowPhone))
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.players[0].relics.push({ defId: 'astrolabe', spent: false, pending: true })
+    debug.setRun(run)
+  })
+  await page.waitForFunction(() => document.activeElement?.classList.contains('card-picker'))
+  assert.equal(await neowPicker.locator('.card-picker__preview .card').first().getAttribute('aria-disabled'), 'true')
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.players[0].relics = run.players[0].relics.filter((relic) => !relic.pending)
+    debug.setRun(run)
+  })
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__
@@ -84,12 +98,28 @@ try {
   })
   await page.locator('.campfire').waitFor()
 
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const deck = run.players[0].deck
+    run.players[0].deck.push(...Array.from({ length: 15 }, (_, index) => ({
+      ...deck[index % deck.length], uid: `picker-scroll-${index}`,
+    })))
+    debug.setRun(run)
+  })
+
   await page.getByRole('button', { name: /Smith/ }).click()
   const picker = page.locator('.card-picker')
   await picker.waitFor()
   assert(await picker.locator('.card-picker__grid > .card').count() > 0)
   assert(await picker.getByRole('button', { name: 'Confirm' }).isDisabled())
-  await picker.locator('.card-picker__grid > .card').first().click()
+  const upgradeGrid = picker.locator('.card-picker__grid')
+  const upgradeScrollTop = await upgradeGrid.evaluate((grid) => {
+    grid.scrollTop = grid.scrollHeight
+    return grid.scrollTop
+  })
+  assert(upgradeScrollTop > 0)
+  await upgradeGrid.locator('> .card').last().click()
   await picker.locator('.card-picker__preview').waitFor()
   assert.equal(await picker.locator('.card-picker__preview .card').count(), 2)
   assert(!await picker.getByRole('button', { name: 'Confirm' }).isDisabled())
@@ -102,6 +132,8 @@ try {
   assert(await page.evaluate(() => Boolean(document.activeElement?.closest('.card-picker'))))
   await picker.getByRole('button', { name: 'Back' }).click()
   await picker.locator('.card-picker__preview').waitFor({ state: 'detached' })
+  assert.equal(await upgradeGrid.evaluate((grid) => grid.scrollTop), upgradeScrollTop)
+  assert(await page.evaluate(() => document.activeElement?.classList.contains('card-picker__back')))
   await picker.locator('.card-picker__grid > .card').first().click()
   await picker.getByRole('button', { name: 'Confirm' }).click()
   await picker.waitFor({ state: 'detached' })
@@ -142,6 +174,7 @@ try {
     return rows
   }, {})).sort((left, right) => right - left))
   assert.equal(pickerRows[0], 5)
+  assert((await picker.locator('.card-picker__grid > .card').first().evaluate((card) => card.getBoundingClientRect().width)) <= 216)
   assert(!await picker.getByRole('button', { name: 'Confirm' }).isDisabled())
   await picker.getByRole('button', { name: 'Confirm' }).click()
   assert.equal(await picker.getAttribute('aria-label'), 'Choose a card to transform')
