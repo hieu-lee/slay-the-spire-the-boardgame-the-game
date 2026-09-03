@@ -44,6 +44,9 @@
   html:not([data-mobile-performance='true']) .map .room--here::after,
   html:not([data-mobile-performance='true']) .map .room--reachable::before { animation: none; }
 
+  html:not([data-mobile-performance='true']) .map .room--selected .map__ink,
+  html:not([data-mobile-performance='true']) .app-shell { animation: none; }
+
   html:not([data-mobile-performance='true'])
     .sts-scope .merchant-arrival__merchant:is(:hover, :focus-visible) img {
     transform: none;

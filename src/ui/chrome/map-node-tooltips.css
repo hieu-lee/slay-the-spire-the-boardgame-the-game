@@ -72,20 +72,6 @@
   pointer-events: none;
 }
 
-/* Reachable nodes pulse their opacity forever, and the panel is a CHILD of the
-   node — so an open panel inherits the pulse and its text breathes in and out
-   while being read. Phones already stop that pulse through
-   `data-mobile-performance` (chrome/map-prompts.css), but a tablet clears the
-   600px short edge that flag needs while still having no hover at all. */
-.map .room--reading.room--reachable,
-/* The halo is a separate animation on a pseudo-element; frozen node plus
-   pulsing ring reads as a glitch rather than as a settle. Both the
-   reduced-motion block and the mobile tier stop the two together. */
-.map .room--reading.room--reachable::before {
-  animation: none;
-  opacity: 1;
-}
-
 /* Opened upward when the panel does not fit below it inside the map's own
    scrollport. The rows run bottom-up, so a run's opening choices are the LOWEST
    on screen and their panels opened past the fold — the first tap of a run
@@ -154,10 +140,4 @@
 .room-tip__status {
   color: var(--light-yellow);
   font-style: italic;
-}
-
-/* The node scales on hover and its tooltip is a child, so the panel was being
-   magnified with it. Undo exactly that factor. */
-.map .room--reachable:hover > .room-tip {
-  transform: translate(-50%, 0) scale(0.926);
 }

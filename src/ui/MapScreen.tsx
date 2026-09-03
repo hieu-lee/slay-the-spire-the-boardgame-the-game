@@ -5,6 +5,10 @@ import { enemyDef } from '../game/enemies.ts'
 import { Icon } from './Icon.tsx'
 import type { IconName } from './icons.ts'
 import { POINTER_CLICK_WINDOW_MS, useHoverUnavailable } from './touch-input.ts'
+import { usePrefersReducedMotion } from './combat-screen/hooks.ts'
+
+const MAP_SELECTION_MS = 800
+const MAP_TRANSITION_MS = 1_120
 
 type MapScreenProps = {
   map: SpireMap
@@ -23,7 +27,8 @@ type MapScreenProps = {
    * which is the entire point of opening it.
    */
   readOnly?: boolean
-  onEnter: (roomId: string) => void
+  onEnter: (roomId: string) => void | Promise<unknown>
+  onSelectionChange?: (selecting: boolean) => void
 }
 
 const ROOM_ICON: Record<Room['kind'], IconName> = {
@@ -119,6 +124,7 @@ function jitter(id: string): { x: number; y: number } {
  */
 export function MapScreen({
   map, choices, blocked = false, bossDefId, canRerollBoss = false, onRerollBoss, readOnly = false, onEnter,
+  onSelectionChange,
 }: MapScreenProps) {
   const frameRef = useRef<HTMLDivElement | null>(null)
   const wasBlocked = useRef(blocked)
@@ -135,7 +141,12 @@ export function MapScreen({
   // that same room enters it. The panel doubles as the confirmation step, which
   // is also why a mis-tap on the Spire no longer costs a run.
   const tapToRead = useHoverUnavailable()
+  const reducedMotion = usePrefersReducedMotion()
   const [reading, setReading] = useState<string | null>(null)
+  const [entering, setEntering] = useState<string | null>(null)
+  const enterTimer = useRef<number | null>(null)
+  const visualSelectionDone = useRef(false)
+  const enterRequestPending = useRef(false)
   // The panel always hangs below its node, and the rows render bottom-up — so
   // the row a run STARTS on is the lowest on screen, and its panel opened into
   // the space under the map where there is no viewport left. Measured on a
@@ -223,6 +234,45 @@ export function MapScreen({
   // own while acquiring a card — so either one clears it.
   useEffect(() => setReading(null), [map.position, reachableKey])
 
+  const finishSelection = useCallback(() => {
+    setEntering(null)
+    onSelectionChange?.(false)
+  }, [onSelectionChange])
+
+  const requestEnter = useCallback((roomId: string, waitForVisual: boolean) => {
+    const request = onEnter(roomId)
+    if (!request || typeof request.then !== 'function') {
+      if (!waitForVisual) finishSelection()
+      return
+    }
+    enterRequestPending.current = true
+    const settle = () => {
+      enterRequestPending.current = false
+      if (!waitForVisual || visualSelectionDone.current) finishSelection()
+    }
+    void request.then(settle, settle)
+  }, [finishSelection, onEnter])
+
+  // Keep an online map locked until its queued request settles. Local moves
+  // unmount the map synchronously, while a refused remote move stays mounted
+  // and becomes usable after both the pencil beat and that request complete.
+  useEffect(() => {
+    if (!entering) return undefined
+    const restore = window.setTimeout(() => {
+      visualSelectionDone.current = true
+      if (!enterRequestPending.current) finishSelection()
+    }, MAP_TRANSITION_MS)
+    return () => clearTimeout(restore)
+  }, [entering, finishSelection])
+
+  useEffect(() => () => {
+    if (enterTimer.current !== null) {
+      clearTimeout(enterTimer.current)
+      delete document.documentElement.dataset.mapTransition
+    }
+    onSelectionChange?.(false)
+  }, [onSelectionChange])
+
   // Measured rather than guessed at from the row index: the map scrolls, the
   // panel's height depends on how much prose the room has, and how much room is
   // left below depends on whether a potion belt is on screen.
@@ -293,7 +343,7 @@ export function MapScreen({
   }, [reading])
 
   return (
-    <div className="map" hidden={blocked || undefined} inert={blocked || undefined} aria-disabled={blocked || undefined}>
+    <div className={`map${entering ? ' map--entering' : ''}`} hidden={blocked || undefined} inert={blocked || undefined} aria-disabled={blocked || undefined}>
       <p className="map__hint muted">
         {readOnly
           ? tapToRead ? 'Tap a room to read it.' : 'Hover a room to read it.'
@@ -306,7 +356,7 @@ export function MapScreen({
                 : 'Choose the next room.'}
       </p>
       {canRerollBoss && onRerollBoss ? (
-        <button type="button" onClick={onRerollBoss}>
+        <button type="button" disabled={Boolean(entering)} onClick={onRerollBoss}>
           Reroll {bossDefId ? enemyDef(bossDefId, 0).name : 'boss'}
         </button>
       ) : null}
@@ -356,6 +406,8 @@ export function MapScreen({
                 ? 'The party is here.'
                 : room.visited ? 'Already cleared.' : canGo ? 'Reachable.' : 'Out of reach.'
               const wobble = jitter(id)
+              const ink = Math.abs(wobble.x + wobble.y) % 3
+              const selecting = entering === id
               return (
                 <button
                   type="button"
@@ -369,6 +421,8 @@ export function MapScreen({
                     isHere ? 'room--here' : '',
                     canGo ? 'room--reachable' : '',
                     reading === id ? 'room--reading' : '',
+                    `room--ink-${ink}`,
+                    selecting ? 'room--selected' : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
@@ -376,7 +430,7 @@ export function MapScreen({
                   // `aria-disabled` rather than `disabled`: a disabled button
                   // is not focusable, and with the captions gone the only way
                   // to learn what a room is would have been a mouse hover.
-                  aria-disabled={!canGo}
+                  aria-disabled={!canGo || Boolean(entering)}
                   // Hover devices keep the one-click walk they have always had;
                   // the panel is already open under the pointer by the time the
                   // click lands, so a confirmation step there would be a tax on
@@ -394,6 +448,7 @@ export function MapScreen({
                   // next.
                   onPointerDown={() => { pointerActivatedAt.current = Date.now() }}
                   onClick={(event) => {
+                    if (entering) return
                     // Guessing wrong towards "pointer" costs one extra Enter;
                     // guessing wrong towards "keyboard" walks the party into a
                     // room they never got to read.
@@ -408,7 +463,28 @@ export function MapScreen({
                       setReading(null)
                       return
                     }
-                    if (canGo) onEnter(id)
+                    if (canGo) {
+                      if (reducedMotion) {
+                        setReading(null)
+                        visualSelectionDone.current = true
+                        enterRequestPending.current = false
+                        setEntering(id)
+                        onSelectionChange?.(true)
+                        requestEnter(id, false)
+                        return
+                      }
+                      setReading(null)
+                      visualSelectionDone.current = false
+                      enterRequestPending.current = false
+                      setEntering(id)
+                      onSelectionChange?.(true)
+                      document.documentElement.dataset.mapTransition = 'true'
+                      enterTimer.current = window.setTimeout(() => {
+                        enterTimer.current = null
+                        requestEnter(id, true)
+                      }, MAP_SELECTION_MS)
+                      window.setTimeout(() => { delete document.documentElement.dataset.mapTransition }, MAP_TRANSITION_MS)
+                    }
                   }}
                   aria-label={[
                     named ? `${ROOM_LABEL.boss}: ${named}` : label,
@@ -426,10 +502,11 @@ export function MapScreen({
                   aria-current={isHere ? 'location' : undefined}
                   style={{ '--jitter-x': `${wobble.x}px`, '--jitter-y': `${wobble.y}px` } as React.CSSProperties}
                 >
+                  {room.visited || isHere || selecting ? <span className="map__ink" aria-hidden="true" /> : null}
                   {/* Icon only. The name is in the accessible label and in the
                       tooltip; printing it under every node turned the Spire
                       into a list of captioned boxes. */}
-                  <Icon name={room.hidden ? 'daze' : ROOM_ICON[room.kind]} size={!room.hidden && room.kind === 'boss' ? 34 : 24} />
+                  <Icon name={room.hidden ? 'daze' : ROOM_ICON[room.kind]} size={!room.hidden && room.kind === 'boss' ? 42 : 34} />
                   {/* Hidden from the screen reader on purpose: it repeats the
                       button's own `aria-label`, exactly as the relic tooltip
                       does. The native `title` it replaces could not be styled,
@@ -457,8 +534,9 @@ export function MapScreen({
         ))}
       </div>
       <aside className="map__legend" aria-label="Map legend">
+        <strong>Legend</strong>
         <ul>
-          {LEGEND_KINDS.map((kind) => <li key={kind}><Icon name={ROOM_ICON[kind]} size={19} /> {ROOM_LABEL[kind]}</li>)}
+          {LEGEND_KINDS.map((kind) => <li className={`map__legend-item--${kind}`} key={kind}><Icon name={ROOM_ICON[kind]} size={19} /> {ROOM_LABEL[kind]}</li>)}
         </ul>
       </aside>
     </div>

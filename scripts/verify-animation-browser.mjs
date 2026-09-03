@@ -9,6 +9,7 @@ import { actionsForEnemy } from '../src/game/enemies.ts'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const output = resolve(root, (process.argv.find((arg) => arg.startsWith('--out=')) ?? '--out=artifacts/animation-browser').slice(6))
 const browserName = (process.argv.find((arg) => arg.startsWith('--browser=')) ?? '--browser=chromium').slice(10)
+const mapOnly = process.argv.includes('--map-only')
 const browserType = browserName === 'webkit' ? webkit : chromium
 mkdirSync(output, { recursive: true })
 
@@ -95,10 +96,21 @@ try {
     })
   })
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map' && !document.querySelector('.neow-screen'))
+  const mapRun = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
   const map = page.locator('.map:not([inert])')
   const legend = map.locator('.map__legend')
-  check(await legend.locator(':scope > strong').count() === 0,
-    'the map legend still prints its redundant title')
+  check(await legend.locator(':scope > strong').textContent() === 'Legend',
+    'the parchment map legend is missing its title')
+  check(await page.locator('.map .room').first().evaluate((room) => {
+    const style = getComputedStyle(room)
+    return style.borderStyle === 'none' && style.borderRadius === '0px'
+  }), 'map locations are still rendered as circular orb buttons')
+  check(await page.locator('.map .room--merchant > .icon').first().evaluate((icon) =>
+    getComputedStyle(icon).clipPath.startsWith('circle')),
+  'the merchant coin still shows its scanned paper square')
+  await page.locator('.map .room--merchant').first().screenshot({
+    path: join(output, `desktop-${browserName}-merchant-map-node.png`),
+  })
   const legendBeforeScroll = await legend.boundingBox()
   const mapScroll = await map.evaluate(async (element) => {
     element.scrollTop = element.scrollHeight
@@ -115,7 +127,60 @@ try {
     legendAfterScroll.y + legendAfterScroll.height <= 901),
   'the map legend moved or clipped when the map scrolled')
   await page.screenshot({ path: join(output, `desktop-${browserName}-scrolled-map-legend.png`) })
-  await page.locator('.room--reachable').first().click()
+  const wingBootRace = await page.evaluate((initialRun) => {
+    const run = structuredClone(initialRun)
+    const current = Object.values(run.map.rooms).find((room) =>
+      room.exits.length > 0 && (run.map.rows[room.row + 1] ?? []).some((id) => !room.exits.includes(id)))
+    if (!current) throw new Error('map fixture has no Wing Boots detour')
+    const wingTarget = run.map.rows[current.row + 1].find((id) => !current.exits.includes(id))
+    if (!wingTarget) throw new Error('map fixture has no Wing Boots target')
+    const rooms = { ...run.map.rooms, [current.id]: { ...current, visited: true } }
+    run.phase = 'map'
+    run.map = { ...run.map, position: current.id, rooms }
+    run.players = [...run.players.map((player) => ({
+      ...player,
+      relics: [...player.relics.filter((relic) => relic.defId !== 'wing_boots'), { defId: 'wing_boots', uses: 3 }],
+    })), { ...run.players[0], id: 'map-race-p2', name: 'Map race player', row: 1 }]
+    window.__STS_DEBUG__.setRun(run)
+    return { normalTarget: current.exits[0], wingTarget }
+  }, mapRun)
+  await page.waitForFunction(() => document.querySelector('.map-prompt') !== null)
+  check(await page.locator('.map-row-switch select').count() > 0,
+    'the map-race fixture did not expose the row-switch action')
+  await page.locator(`[data-room="${wingBootRace.normalTarget}"]`).click()
+  await page.waitForFunction(() => document.querySelector('.map-prompt, .map-row-switch') === null)
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+  check(await page.evaluate((target) => window.__STS_DEBUG__.getRun().map.position === target, wingBootRace.normalTarget),
+    'Wing Boots could replace a room already selected for the pencil-circle transition')
+  await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), mapRun)
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+  await page.setViewportSize({ width: 844, height: 390 })
+  const horizontalSelectedRoom = page.locator('.room--reachable').first()
+  await horizontalSelectedRoom.click()
+  await page.waitForTimeout(180)
+  check(await horizontalSelectedRoom.evaluate((room) => room.classList.contains('room--selected') &&
+    getComputedStyle(room.querySelector('.map__ink')).animationName === 'map-ink-draw'),
+  'the horizontal-phone map chooser did not draw the selected room before leaving')
+  await page.screenshot({ path: join(output, `short-wide-${browserName}-selecting-map-room.png`) })
+  check(await page.evaluate(() => document.documentElement.dataset.mapTransition === 'true'),
+    'the horizontal-phone map chooser did not fade into the selected room')
+  await page.locator('.combat').waitFor()
+  await page.waitForFunction(() => document.documentElement.dataset.mapTransition === undefined)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), mapRun)
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+  const selectedRoom = page.locator('.room--reachable').first()
+  await selectedRoom.click()
+  check(await selectedRoom.evaluate((room) => room.classList.contains('room--selected') &&
+    Boolean(room.querySelector('.map__ink'))), 'choosing a room did not draw its pencil-circle transition')
+  await page.waitForTimeout(180)
+  check(await selectedRoom.locator('.map__ink').evaluate((ink) => {
+    const style = getComputedStyle(ink)
+    return style.animationName === 'map-ink-draw' && style.clipPath !== 'none'
+  }), 'the pencil-circle transition did not visibly draw before the screen fade')
+  await page.screenshot({ path: join(output, `desktop-${browserName}-selecting-map-room.png`) })
+  check(await page.evaluate(() => document.documentElement.dataset.mapTransition === 'true'),
+    'choosing a room did not start the map-to-room fade')
   await page.locator('.combat').waitFor()
   if (await page.getByRole('button', { name: 'Resolve start of turn' }).count()) {
     await page.getByRole('button', { name: 'Resolve start of turn' }).click()
@@ -126,11 +191,17 @@ try {
   const overlayMap = mapDialog.locator('.map')
   const overlayLegend = overlayMap.locator('.map__legend')
   await overlayLegend.waitFor()
+  check(await overlayMap.locator('.room--visited .map__ink').count() > 0,
+    'cleared map locations are missing their pencil-circle marks')
+  await overlayMap.locator('.room--visited').first().screenshot({
+    path: join(output, `desktop-${browserName}-visited-map-room.png`),
+  })
   const overlayLegendBefore = await overlayLegend.boundingBox()
   await overlayMap.evaluate(async (element) => {
     element.scrollTop = element.scrollHeight
     await new Promise((resolve) => requestAnimationFrame(resolve))
   })
+  await page.screenshot({ path: join(output, `desktop-${browserName}-visited-map-dialog.png`) })
   const [overlayLegendAfter, mapPanelBox] = await Promise.all([
     overlayLegend.boundingBox(), mapPanel.boundingBox(),
   ])
@@ -162,6 +233,23 @@ try {
   await mapDialog.getByRole('button', { name: 'Close' }).click()
   await page.setViewportSize({ width: 1440, height: 900 })
 
+  await page.waitForFunction(() => document.documentElement.dataset.mapTransition === undefined)
+  await page.evaluate((run) => {
+    document.documentElement.dataset.reducedMotion = 'true'
+    window.__MAP_REDUCED_SELECTION_STARTED_AT__ = performance.now()
+    window.__STS_DEBUG__.setRun(run)
+  }, mapRun)
+  await page.locator('.room--reachable').first().click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+  const reducedSelection = await page.evaluate(() => ({
+    elapsed: performance.now() - window.__MAP_REDUCED_SELECTION_STARTED_AT__,
+    transition: document.documentElement.dataset.mapTransition,
+  }))
+  check(reducedSelection.elapsed < 220 && reducedSelection.transition === undefined,
+    `reduced-motion map selection delayed or faded ${JSON.stringify(reducedSelection)}`)
+  await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'false' })
+
+  if (!mapOnly) {
   const template = await page.evaluate(() => {
     const combat = window.__STS_DEBUG__.getRun().combat
     return { combat: structuredClone(combat), enemy: structuredClone(combat.enemies[0]) }
@@ -1580,6 +1668,7 @@ try {
     iphoneBossAnimation.claw.length > 0 && iphoneBossAnimation.claw.every((claw) =>
       claw.display !== 'none' && claw.animation === 'awakened-claw-scratch'),
     `iPhone 13 skipped the boss attack ${JSON.stringify(iphoneBossAnimation)}`)
+  }
 
   check(pageErrors.length === 0, `page errors: ${pageErrors.join('; ')}`)
 } finally {
@@ -1592,4 +1681,6 @@ if (failures.length) {
   console.error(failures.map((failure) => `- ${failure}`).join('\n'))
   process.exit(1)
 }
-console.log(`Animation browser QA passed: 14 bosses × 4 states, 8 heroes × 3 phases; screenshots: ${output}`)
+console.log(mapOnly
+  ? `Map browser QA passed: desktop and horizontal-phone screenshots: ${output}`
+  : `Animation browser QA passed: 14 bosses × 4 states, 8 heroes × 3 phases; screenshots: ${output}`)

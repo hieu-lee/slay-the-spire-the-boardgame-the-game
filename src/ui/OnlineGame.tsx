@@ -225,6 +225,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const [pauseOpen, setPauseOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsReturnToPause, setSettingsReturnToPause] = useState(false)
+  const [mapSelectionPending, setMapSelectionPending] = useState(false)
   const [giveUpStartPending, setGiveUpStartPending] = useState(false)
   const [expiredGiveUpDeadline, setExpiredGiveUpDeadline] = useState<number | null>(null)
   const pauseDialog = useRef<HTMLDialogElement>(null)
@@ -700,14 +701,15 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         blocked={pendingAcquisition} bossDefId={run.actBossDefId}
         canRerollBoss={!pendingAcquisition && run.canRerollDownfallSelfBoss}
         onRerollBoss={() => room.act({ kind: 'rerollDownfallSelfBoss' })}
+        onSelectionChange={setMapSelectionPending}
         onEnter={(roomId) => room.act({ kind: 'enterRoom', roomId })} />
-        {!pendingAcquisition && wingTargets.length > 0 ? <section className="room-screen map-prompt"><strong>Wing Boots</strong>
+        {!pendingAcquisition && !mapSelectionPending && wingTargets.length > 0 ? <section className="room-screen map-prompt"><strong>Wing Boots</strong>
           {wingTargets.map((target) => <button type="button" key={target.id}
             onClick={() => room.act({ kind: 'enterRoom', roomId: target.id, useWingBoots: true })}>
             {wingBootLabel(target, wingTargets, run.map)}
           </button>)}
         </section> : null}</> : null}
-      {!pendingAcquisition && viewer && canSwitchRowsHere &&
+      {!pendingAcquisition && !mapSelectionPending && viewer && canSwitchRowsHere &&
       run.players.filter((player) => !player.dead).length > 1 ? <section className="map-row-switch">
         <label>Switch your row before the next combat
           <select value={viewer.row} onChange={(event) => room.act({ kind: 'switchBetweenCombatRow', row: Number(event.target.value) })}>

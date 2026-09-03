@@ -558,6 +558,49 @@ try {
   check('the online opening map node tooltip has room below it', () => {
     assert(onlineOpeningMapTip, 'the online opening Encounter tooltip was clipped below the map')
   })
+  const openingMapBeforeHeldEnter = structuredClone(openingRoom.run)
+  const positionBeforeHeldEnter = (await snapshot(a)).run.map.position
+  const roomActionRoute = `**/api/rooms/${code}/action`
+  let releaseHeldEnter = null
+  await a.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true' })
+  await a.waitForTimeout(50)
+  await a.route(roomActionRoute, async (route) => {
+    const action = JSON.parse(route.request().postData() ?? '{}').action
+    if (action?.kind === 'enterRoom' && releaseHeldEnter === null) {
+      await new Promise((resolve) => { releaseHeldEnter = resolve })
+    }
+    await route.continue()
+  })
+  await a.locator('.app-shell--online .room--reachable').first().click()
+  for (let attempt = 0; attempt < 25 && releaseHeldEnter === null; attempt += 1) await a.waitForTimeout(50)
+  await a.waitForTimeout(450)
+  const heldEnterControls = await a.locator('.app-shell--online .map').evaluate((map) => ({
+    selecting: map.classList.contains('map--entering'),
+    rowSwitch: document.querySelector('.map-row-switch') !== null,
+    transition: document.documentElement.dataset.mapTransition,
+  }))
+  check('a reduced-motion online room selection stays locked until its queued action settles', () => {
+    assert(releaseHeldEnter !== null, 'the held online enter-room request was never sent')
+    assertEqual(heldEnterControls, { selecting: true, rowSwitch: false, transition: undefined })
+  })
+  releaseHeldEnter?.()
+  for (let attempt = 0; attempt < 20 && (await snapshot(a)).run.map.position === positionBeforeHeldEnter; attempt += 1) {
+    await a.waitForTimeout(100)
+  }
+  await a.unroute(roomActionRoute)
+  await a.locator('.app-shell--online .map').waitFor({ state: 'detached' })
+  const positionAfterHeldEnter = (await snapshot(a)).run.map.position
+  check('the held online room request resolves to its authoritative destination', () => {
+    assert(positionAfterHeldEnter !== positionBeforeHeldEnter)
+  })
+  openingRoom.run = openingMapBeforeHeldEnter
+  openingRoom.version += 1
+  rooms.publishRoom(code)
+  await a.evaluate(() => { document.documentElement.dataset.reducedMotion = 'false' })
+  await Promise.all([
+    a.locator('.app-shell--online .map').waitFor(),
+    b.locator('.app-shell--online .map').waitFor(),
+  ])
   const onlineBoss = createCombat(createRng(406), openingRoom.run.players, [{
     uid: 'online-boss', defId: 'hexaghost', row: 0, hp: 36, maxHp: 36, block: 0, strength: 0,
     vulnerable: 0, weak: 0, poison: 0, actionIndex: 0, abilityUsed: false, dead: false, isBoss: true,
