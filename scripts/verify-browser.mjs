@@ -330,6 +330,25 @@ const reloadedMenuCampaign = await page.evaluate(() => ({
 await shot('00-title-menu')
 const singlePlayerLabel = await page.getByRole('button', { name: 'Single Player' }).textContent()
 const setupHidden = await page.locator('.start-menu__setup').isHidden()
+const titleCursorButton = page.getByRole('button', { name: 'Single Player', exact: true })
+await titleCursorButton.hover()
+const titleCursor = await titleCursorButton.evaluate((button) => getComputedStyle(button).cursor)
+await titleCursorButton.evaluate((button) => button.addEventListener('click', (event) => {
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, { capture: true, once: true }))
+const titleCursorBox = await titleCursorButton.boundingBox()
+assert(titleCursorBox, 'title cursor target is visible')
+await page.mouse.move(titleCursorBox.x + titleCursorBox.width / 2, titleCursorBox.y + titleCursorBox.height / 2)
+await page.mouse.down()
+const pressedTitleCursor = await titleCursorButton.evaluate((button) => getComputedStyle(button).cursor)
+await page.mouse.up()
+const releasedTitleCursor = await titleCursorButton.evaluate((button) => getComputedStyle(button).cursor)
+check('the game cursor covers the title menu and uses the pressed reference while clicking', () => {
+  assert(titleCursor.includes('/assets/ui/cursor.png'), titleCursor)
+  assert(pressedTitleCursor.includes('/assets/ui/cursor-click.png'), pressedTitleCursor)
+  assert(releasedTitleCursor.includes('/assets/ui/cursor.png'), releasedTitleCursor)
+})
 await page.getByRole('button', { name: 'Settings' }).click()
 const settingsDialog = page.getByRole('dialog', { name: 'Settings' })
 const settingsIsModal = await settingsDialog.evaluate((dialog) => dialog.matches(':modal'))
@@ -2727,8 +2746,9 @@ check('Slime Boss minions use battlefield actors and their own one-shot animatio
   assert(slimeHudAccess?.[0]?.label?.includes('level 2 Command: deal 2 damage') &&
     slimeHudAccess?.[1]?.label?.includes('level 3 Command: gain 6 Block, then apply 1 Vulnerable'),
   `Slime status omits current Command rules: ${JSON.stringify(slimeHudAccess)}`)
-  assertDeepEqual(slimeHoverHelp, { cursor: 'pointer', tooltipOpen: false, card: 'Bruiser Slime' },
-    'ordinary Slime hover must show its real card without opening Shift-only keyword help')
+  assert(slimeHoverHelp?.cursor.includes('/assets/ui/cursor.png') && !slimeHoverHelp.tooltipOpen &&
+    slimeHoverHelp.card === 'Bruiser Slime',
+  'ordinary Slime hover must show its real card without opening Shift-only keyword help')
   assertDeepEqual(slimePinnedPowerZoom, { total: 1, slime: 0, powerExpanded: 'true' },
     'a pinned Power must remain the only enlarged card while a Slime is hovered')
   assert(slimeBattlefieldLayout?.loaded && slimeBattlefieldLayout.actors.length === 2 &&

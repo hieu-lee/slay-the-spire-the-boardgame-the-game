@@ -86,6 +86,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* One cursor applies to every screen, including the title and Compendium which
+   are not inside the gameplay shell. The pressed asset supplies click feedback. */
+html,
+html * {
+  cursor: url('/assets/ui/cursor.png') 14 12, auto !important;
+}
+
+:active,
+:active * {
+  cursor: url('/assets/ui/cursor-click.png') 10 14, auto !important;
+}
+
 button {
   font: inherit;
   color: inherit;
