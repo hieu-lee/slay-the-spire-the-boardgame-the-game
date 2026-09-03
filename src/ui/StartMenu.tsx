@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
-import { assetPath, characterHeroArt } from '../game/assets.ts'
+import { useState } from 'react'
+import { assetPath } from '../game/assets.ts'
 import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
 import { relicDef, STARTING_RELIC } from '../game/relics.ts'
+import { ASCENSION_RULES } from '../game/run.ts'
 import type { CharacterId } from '../game/types.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
@@ -44,6 +45,12 @@ const HEROES: { id: CharacterId; name: string }[] = [
   { id: 'hermit', name: 'Hermit' },
 ]
 
+const RUN_MODES: { id: RunMode; name: string; copy: string }[] = [
+  { id: 'standard', name: 'Standard', copy: 'Embark on a quest to Slay the Spire!' },
+  { id: 'daily', name: 'Daily', copy: 'A new challenge is available once a day. Compete for the highest score!' },
+  { id: 'custom', name: 'Custom', copy: 'Customize your own run with unique modifiers.' },
+]
+
 const HERO_COPY: Record<CharacterId, string> = {
   ironclad: 'The sole survivor of the Ironclads sold his soul for demonic power. He starts with the most HP, builds Strength to empower every hit, and turns Exhaust into fuel for devastating attacks.',
   silent: 'A deadly huntress from the foglands who eradicates foes with daggers and poison. She can stack lasting Poison or gather Shivs for explosive turns, rewarding patience and careful preparation.',
@@ -79,28 +86,32 @@ export function StartMenu({
   initiallyChoosingCharacter = false,
 }: StartMenuProps) {
   const [selection, setSelection] = useState('Single Player')
-  const [choosingCharacter, setChoosingCharacter] = useState(initiallyChoosingCharacter)
-  const runSettingsDialog = useRef<HTMLDialogElement>(null)
+  const [screen, setScreen] = useState<'main' | 'mode' | 'daily' | 'custom' | 'character'>(initiallyChoosingCharacter ? 'character' : 'main')
+  const [characterTransition, setCharacterTransition] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
   const startingRelic = STARTING_RELIC[hero.id]
   const special = startingRelic ? relicDef(startingRelic) : null
+  const selectCharacter = (character: CharacterId) => {
+    if (character !== hero.id) setCharacterTransition((current) => !current)
+    onCharacter(0, character)
+  }
   return (
-    <main className="start-menu">
-      <div className="start-menu__profile" aria-label="Current profile">
+    <main className="start-menu" data-reduced-motion={settings.reducedMotion || undefined}>
+      {screen === 'main' ? <div className="start-menu__profile" aria-label="Current profile">
         <span className="start-menu__profile-mark" aria-hidden="true">◆</span>
         <span><strong>THE PARTY</strong><small>Board Game Chronicle</small></span>
-      </div>
+      </div> : null}
 
-      {!choosingCharacter ? <section className="start-menu__title" aria-labelledby="game-title">
+      {screen === 'main' ? <section className="start-menu__title" aria-labelledby="game-title">
         <h1 id="game-title"><span>Slay</span><small>the</small><span aria-label="Spire">Sp<span className="start-menu__flame-i" aria-hidden="true">ı</span>re</span></h1>
         <p className="start-menu__edition">THE BOARD GAME</p>
       </section> : null}
 
-      {!choosingCharacter ? <nav className="start-menu__nav" aria-label="Main menu">
+      {screen === 'main' ? <nav className="start-menu__nav" aria-label="Main menu">
         <button type="button" aria-label="Single Player" data-selected={selection === 'Single Player'}
           onFocus={() => setSelection('Single Player')} onMouseEnter={() => setSelection('Single Player')}
-          onClick={() => setChoosingCharacter(true)}>Single Player</button>
+          onClick={() => setScreen('mode')}>Single Player</button>
         {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" data-selected={selection === 'Multiplayer'}
           onFocus={() => setSelection('Multiplayer')} onMouseEnter={() => setSelection('Multiplayer')} onClick={onOnline}>Multiplayer</button>
           : null}
@@ -111,39 +122,24 @@ export function StartMenu({
         <button type="button" aria-label="Settings" data-selected={selection === 'Settings'}
           onFocus={() => setSelection('Settings')} onMouseEnter={() => setSelection('Settings')}
           onClick={() => setSettingsOpen(true)}>Settings</button>
-      </nav> : <section className="start-menu__character-select" aria-labelledby="character-select-title">
-        <div className="start-menu__character-copy">
-          <p>Choose your character</p>
-          <h1 id="character-select-title">{hero.name}</h1>
-          <p>{HERO_COPY[hero.id]}</p>
-          {special ? <p className="start-menu__character-special"><strong>{special.name}</strong> · {special.text}</p> : null}
-          <small>Ascension {ascension}</small>
-        </div>
-        <img className="start-menu__character-hero" src={assetPath(characterHeroArt(hero.id))} alt={hero.name} />
-        <div className="start-menu__character-roster" aria-label="Characters">
-          {HEROES.map((candidate) => <button type="button" key={candidate.id}
-            aria-label={candidate.name} aria-pressed={candidate.id === hero.id}
-            onClick={() => onCharacter(0, candidate.id)}>
-            <img src={assetPath(`combat/characters/${candidate.id}.webp`)} alt="" />
-            <span>{candidate.name}</span>
+      </nav> : null}
+
+      {screen === 'mode' ? <section className="start-menu__mode-select" aria-labelledby="run-mode-title">
+        <h1 id="run-mode-title">Choose your run</h1>
+        <div className="start-menu__mode-choices">
+          {RUN_MODES.map((choice) => <button type="button" key={choice.id} aria-label={choice.name} className="start-menu__mode-choice" data-mode={choice.id}
+            onClick={() => { onMode(choice.id); setScreen(choice.id === 'standard' ? 'character' : choice.id) }}>
+            <h2>{choice.name}</h2>
+            <img src={assetPath(`menu/run-modes/mode-${choice.id}.webp`)} alt="" />
+            <span>{choice.copy}</span>
           </button>)}
         </div>
-        <div className="start-menu__character-actions">
-          <button type="button" onClick={() => { setChoosingCharacter(false); onCharacterBack() }}>Back</button>
-          <button type="button" onClick={() => runSettingsDialog.current?.showModal()}>Run settings</button>
-          <button type="button" className="is-chosen" onClick={onStart}>Embark</button>
-        </div>
-      </section>}
+        <button type="button" className="start-menu__screen-back" onClick={() => setScreen('main')}>Back</button>
+      </section> : null}
 
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onChange={onSettings} />
-      <dialog ref={runSettingsDialog} className="start-menu__setup" aria-labelledby="start-menu-settings-title">
-        <header><h2 id="start-menu-settings-title">Run setup</h2><button type="button" onClick={() => runSettingsDialog.current?.close()}>Close</button></header>
-        <label>
-          Ascension
-          <select aria-label="Ascension" value={ascension} onChange={(event) => onAscension(Number(event.target.value))}>
-            {Array.from({ length: maxAscension + 1 }, (_, level) => <option key={level}>{level}</option>)}
-          </select>
-        </label>
+      {screen === 'custom' || screen === 'daily' ? <section className="start-menu__run-options" aria-labelledby="run-options-title">
+        <h1 id="run-options-title">{screen === 'daily' ? 'Daily Climb' : 'Customize your run'}</h1>
+        <p>{screen === 'daily' ? "Today's modifiers are fixed for this challenge." : 'Choose modifiers and where your run begins.'}</p>
         <MetaRunOptions
           mode={mode}
           dailyModifiers={dailyModifiers}
@@ -153,23 +149,48 @@ export function StartMenu({
           onModeChange={onMode}
           onCustomModifierChange={onCustomModifier}
           onQuickStartActChange={onQuickStartAct}
+          expanded
+          showMode={false}
         />
-        <fieldset className="start-menu__party">
-          <legend>Characters</legend>
-          {characters.slice(0, 1).map((character, seat) => {
-            const hero = HEROES.find((candidate) => candidate.id === character) ?? HEROES[0]!
-            return <label key={seat} title={`Player ${seat + 1}: ${hero.name}`}>
-              <img src={assetPath(`combat/characters/${hero.id}.webp`)} alt="" />
-              <span>P{seat + 1}</span>
-              <select aria-label={`Player ${seat + 1} character`} value={character}
-                onChange={(event) => onCharacter(seat, event.target.value as CharacterId)}>
-                {HEROES.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
-              </select>
-            </label>
-          })}
-        </fieldset>
-      </dialog>
-      <p className="start-menu__version">v0.1 · unofficial fan project</p>
+        <footer>
+          <button type="button" onClick={() => setScreen('mode')}>Back</button>
+          <button type="button" onClick={() => setScreen('character')}>Continue</button>
+        </footer>
+      </section> : null}
+
+      {screen === 'character' ? <section className="start-menu__character-select" aria-labelledby="character-select-title">
+        <img className={`start-menu__character-wallpaper start-menu__character-wallpaper--${characterTransition ? 'a' : 'b'}`}
+          src={assetPath(`menu/character-select/character-${hero.id}-wallpaper.webp`)} alt="" aria-hidden="true" />
+        <div className={`start-menu__character-copy start-menu__character-copy--${characterTransition ? 'a' : 'b'}`}>
+          <p>Choose your character</p>
+          <h1 id="character-select-title">{hero.name}</h1>
+          <p>{HERO_COPY[hero.id]}</p>
+          {special ? <p className="start-menu__character-special"><strong>{special.name}</strong> · {special.text}</p> : null}
+        </div>
+        <section className="start-menu__ascension" aria-label="Ascension">
+          <button type="button" aria-label="Decrease Ascension" disabled={ascension === 0}
+            onClick={() => onAscension(ascension - 1)}>‹</button>
+          <div>
+            <span className="start-menu__ascension-level" aria-hidden="true"><span>{ascension}</span></span>
+            <p><strong>Ascension {ascension}</strong><span>{ASCENSION_RULES[ascension]}</span></p>
+          </div>
+          <button type="button" aria-label="Increase Ascension" disabled={ascension === maxAscension}
+            onClick={() => onAscension(ascension + 1)}>›</button>
+        </section>
+        <div className="start-menu__character-roster" aria-label="Characters">
+          {HEROES.map((candidate) => <button type="button" key={candidate.id}
+            aria-label={candidate.name} aria-pressed={candidate.id === hero.id}
+            onClick={() => selectCharacter(candidate.id)}>
+            <img src={assetPath(`menu/character-select/portrait-${candidate.id}.png`)} alt="" />
+          </button>)}
+        </div>
+        <button type="button" className="start-menu__character-back" aria-label="Back" title="Back"
+          onClick={() => { setScreen('main'); onCharacterBack() }}><span aria-hidden="true">↩</span></button>
+        <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" onClick={onStart}><span aria-hidden="true">✓</span></button>
+      </section> : null}
+
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onChange={onSettings} />
+      {screen === 'main' ? <p className="start-menu__version">v0.1 · unofficial fan project</p> : null}
     </main>
   )
 }

@@ -329,7 +329,6 @@ const reloadedMenuCampaign = await page.evaluate(() => ({
 }))
 await shot('00-title-menu')
 const singlePlayerLabel = await page.getByRole('button', { name: 'Single Player' }).textContent()
-const setupHidden = await page.locator('.start-menu__setup').isHidden()
 const titleCursorButton = page.getByRole('button', { name: 'Single Player', exact: true })
 await titleCursorButton.hover()
 const titleCursor = await titleCursorButton.evaluate((button) => getComputedStyle(button).cursor)
@@ -349,6 +348,7 @@ check('the game cursor covers the title menu and uses the pressed reference whil
   assert(pressedTitleCursor.includes('/assets/ui/cursor-click.png'), pressedTitleCursor)
   assert(releasedTitleCursor.includes('/assets/ui/cursor.png'), releasedTitleCursor)
 })
+const legacyRunSettings = await page.locator('.start-menu__setup').count()
 await page.getByRole('button', { name: 'Settings' }).click()
 const settingsDialog = page.getByRole('dialog', { name: 'Settings' })
 const settingsIsModal = await settingsDialog.evaluate((dialog) => dialog.matches(':modal'))
@@ -451,18 +451,16 @@ await page.keyboard.press('Escape')
 await settingsDialog.waitFor({ state: 'hidden' })
 const settingsDismissedWithEscape = await settingsDialog.isHidden()
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
-await page.getByRole('button', { name: 'Run settings' }).click()
-const formSoundBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
-await page.getByLabel('Player 1 character').selectOption('silent')
-await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/ui.ogg'), formSoundBefore)
-const formSoundPlays = await page.evaluate((before) =>
-  window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/ui.ogg'), formSoundBefore)
-await page.getByLabel('Player 1 character').selectOption('ironclad')
-const localAscensions = await page.getByLabel('Ascension').locator('option').evaluateAll((options) =>
-  options.map((option) => option.value))
-const localCharacterSeats = await page.getByLabel(/^Player \d character$/).count()
-const setupHasDevControls = await page.locator('.start-menu__setup').getByText(/Party|Seed|Choose Your Relic|Last Stand/).count()
-await page.getByRole('button', { name: 'Close' }).click()
+await page.getByRole('button', { name: 'Standard', exact: true }).click()
+const characterPickerControls = await page.locator('.start-menu__character-select').evaluate((screen) => ({
+  textActions: [...screen.querySelectorAll('button')].filter((button) =>
+    ['Back', 'Run settings', 'Embark'].includes(button.textContent?.trim() ?? '')).length,
+  backIcon: screen.querySelector('.start-menu__character-back')?.textContent?.trim(),
+  embarkIcon: screen.querySelector('.start-menu__character-embark')?.textContent?.trim(),
+  decreaseDisabled: screen.querySelector('[aria-label="Decrease Ascension"]')?.disabled,
+  increaseDisabled: screen.querySelector('[aria-label="Increase Ascension"]')?.disabled,
+  ascension: screen.querySelector('.start-menu__ascension > div p strong')?.textContent,
+}))
 await page.getByRole('button', { name: 'Back', exact: true }).click()
 await page.getByRole('button', { name: 'Single Player' }).hover()
 const titleMenu = await page.locator('.start-menu').evaluate((menu) => {
@@ -545,10 +543,15 @@ check('the title menu fills the viewport without clipping its controls', () => {
     narrowMenuMarkers.text.right + 4 <= narrowMenuMarkers.afterLeft,
   `narrow landscape menu markers crowd the label: ${JSON.stringify(narrowMenuMarkers)}`)
   assertEqual(singlePlayerLabel?.trim(), 'Single Player')
-  assert(setupHidden, 'run settings should not occupy the title screen')
-  assertDeepEqual(localAscensions, ['0'], 'a fresh campaign offered locked Ascension levels')
-  assertEqual(localCharacterSeats, 1, 'single-player settings exposed extra seats')
-  assertEqual(setupHasDevControls, 0, 'developer setup controls leaked into settings')
+  assertEqual(legacyRunSettings, 0, 'the removed run-settings dialog remains in the title menu')
+  assertDeepEqual(characterPickerControls, {
+    textActions: 0,
+    backIcon: '↩',
+    embarkIcon: '✓',
+    decreaseDisabled: true,
+    increaseDisabled: true,
+    ascension: 'Ascension 0',
+  })
   assert(settingsIsModal, 'settings did not open in the browser top layer')
   assert(settingsKeepsFocus, 'settings allowed focus to escape to the title menu')
   assertEqual(screenShakeControls, 0, 'the removed screen-shake preference is still visible')
@@ -569,7 +572,6 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assertEqual(settingsAudioLayout.repeatedHeadings, 0, 'a selected settings tab repeated its own label')
   assert(settingsAudioLayout.cardsContained, 'an audio control card left the settings dialog')
   assert(settingsAudioLayout.slidersContained, 'an audio slider left its control card')
-  assert(formSoundPlays, 'form changes did not play the UI sound')
   assertEqual(freshMenuCampaign.saved.nextRunNumber, 0, 'opening the menu persisted a draft campaign run')
   assertEqual(reloadedMenuCampaign.saved.nextRunNumber, 0, 'reloading the menu consumed a campaign run number')
   assertEqual(freshMenuCampaign.draftRunId, 'campaign-1')
@@ -577,28 +579,158 @@ check('the title menu fills the viewport without clipping its controls', () => {
 })
 
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+await page.getByRole('heading', { name: 'Choose your run', exact: true }).waitFor()
+const runModeSelection = await page.locator('.start-menu__mode-select').evaluate((screen) => ({
+  contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
+  choices: [...screen.querySelectorAll('.start-menu__mode-choice')].map((choice) => ({
+    mode: choice.getAttribute('data-mode'),
+    art: choice.querySelector('img')?.getAttribute('src'),
+  })),
+}))
+const customContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+const customPage = await customContext.newPage()
+await customPage.goto(base)
+await customPage.waitForFunction(() => window.__STS_DEBUG__ !== undefined)
+await customPage.getByRole('button', { name: 'Single Player', exact: true }).click()
+await customPage.getByRole('button', { name: 'Daily', exact: true }).click()
+await customPage.getByRole('heading', { name: 'Daily Climb', exact: true }).waitFor()
+const dailyPreview = await customPage.getByLabel('Daily Climb modifiers').evaluate((panel) =>
+  [...panel.querySelectorAll('li')].map((entry) => entry.textContent?.trim()))
+await customPage.getByRole('button', { name: 'Back', exact: true }).click()
+await customPage.getByRole('button', { name: 'Custom', exact: true }).click()
+await customPage.getByRole('heading', { name: 'Customize your run', exact: true }).waitFor()
+await customPage.getByRole('checkbox', { name: /All Star/ }).check()
+await customPage.getByLabel('Starting Act').selectOption('2')
+const customSetup = await customPage.locator('.start-menu__run-options').evaluate((screen) => ({
+  allStar: screen.querySelector('input[type="checkbox"]')?.checked,
+  startingAct: screen.querySelector('select[aria-label="Starting Act"]')?.value,
+}))
+const customDesktopLayout = await customPage.locator('.start-menu__run-options').evaluate((screen) => {
+  const panel = screen.querySelector('.start-menu__meta-panel')?.getBoundingClientRect()
+  return { contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
+    panelContained: Boolean(panel && panel.top >= 0 && panel.bottom <= innerHeight) }
+})
+await customPage.setViewportSize({ width: 560, height: 315 })
+const customPhoneLayout = await customPage.locator('.start-menu__run-options').evaluate((screen) => {
+  const panel = screen.querySelector('.start-menu__meta-panel')
+  const footer = screen.querySelector('footer')?.getBoundingClientRect()
+  return { contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
+    panelScrollable: Boolean(panel && panel.scrollHeight > panel.clientHeight),
+    footerVisible: Boolean(footer && footer.bottom <= innerHeight) }
+})
+await customPage.setViewportSize({ width: 1440, height: 900 })
+await customPage.getByLabel('Starting Act').selectOption('1')
+await customPage.getByRole('button', { name: 'Continue', exact: true }).click()
+await customPage.getByRole('button', { name: 'Embark', exact: true }).click()
+await customPage.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
+const customRunMeta = await customPage.evaluate(() => window.__STS_DEBUG__.getRun().meta)
+await customContext.close()
+await page.getByRole('button', { name: 'Standard', exact: true }).click()
 await page.getByRole('heading', { name: 'Ironclad', exact: true }).waitFor()
+await page.evaluate(() => {
+  const run = window.__STS_DEBUG__.getRun()
+  window.__STS_DEBUG__.setRun({ ...run, campaignProgress: { ...run.campaignProgress, highestAscension: 1 } })
+})
+await page.waitForFunction(() => !document.querySelector('[aria-label="Increase Ascension"]')?.disabled)
+await page.getByRole('button', { name: 'Increase Ascension' }).click()
+const ascensionRaised = await page.locator('.start-menu__ascension > div p strong').textContent()
+await page.getByRole('button', { name: 'Decrease Ascension' }).click()
 const characterCopy = {}
 for (const name of ['Ironclad', 'Silent', 'Defect', 'Watcher']) {
   await page.getByRole('button', { name, exact: true }).click()
   characterCopy[name] = await page.locator('.start-menu__character-copy').innerText()
 }
+await page.getByRole('button', { name: 'Silent', exact: true }).click()
+const selectedCharacterScreen = page.locator('.start-menu__character-select').last()
+await selectedCharacterScreen.locator('.start-menu__character-wallpaper[src$="character-silent-wallpaper.webp"]').waitFor()
+const characterTransition = await selectedCharacterScreen.locator('.start-menu__character-wallpaper').evaluate((wallpaper) =>
+  getComputedStyle(wallpaper).animationName)
 await page.getByRole('button', { name: 'Ironclad', exact: true }).click()
+await page.waitForTimeout(220)
 const characterSelection = await page.locator('.start-menu__character-select').evaluate((screen) => {
   const box = screen.getBoundingClientRect()
-  const hero = screen.querySelector('.start-menu__character-hero')?.getBoundingClientRect()
+  const wallpaper = screen.querySelector('.start-menu__character-wallpaper')?.getBoundingClientRect()
   return {
     contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
-    heroContained: Boolean(hero && hero.left >= box.left && hero.right <= box.right && hero.top >= box.top && hero.bottom <= box.bottom),
-    choices: screen.querySelectorAll('.start-menu__character-roster button').length,
+    wallpaperContained: Boolean(wallpaper && wallpaper.left <= box.left + 1 && wallpaper.right >= box.right - 1 && wallpaper.top <= box.top + 1 && wallpaper.bottom >= box.bottom - 1),
+    portraits: [...screen.querySelectorAll('.start-menu__character-roster img')].map((image) => image.getAttribute('src')),
+    selectedFilter: getComputedStyle(screen.querySelector('.start-menu__character-roster button[aria-pressed="true"] img')).filter,
+    inactiveFilter: getComputedStyle(screen.querySelector('.start-menu__character-roster button:not([aria-pressed="true"]) img')).filter,
+    flame: getComputedStyle(screen.querySelector('.start-menu__ascension-level')).backgroundImage,
   }
 })
 await shot('00-title-character-select')
 await page.getByRole('button', { name: 'Back', exact: true }).click()
+await page.setViewportSize({ width: 560, height: 315 })
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+const phoneRunModeSelection = await page.locator('.start-menu__mode-select').evaluate((screen) => ({
+  contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
+  choicesContained: [...screen.querySelectorAll('.start-menu__mode-choice')].every((choice) => {
+    const box = choice.getBoundingClientRect()
+    return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight
+  }),
+  backClear: (() => {
+    const back = screen.querySelector('.start-menu__screen-back')?.getBoundingClientRect()
+    return Boolean(back && [...screen.querySelectorAll('.start-menu__mode-choice')].every((choice) => {
+      const box = choice.getBoundingClientRect()
+      return box.bottom <= back.top || back.bottom <= box.top || box.right <= back.left || back.right <= box.left
+    }))
+  })(),
+}))
+await shot('00-title-run-modes-phone')
+await page.getByRole('button', { name: 'Standard', exact: true }).click()
+await page.setViewportSize({ width: 560, height: 315 })
+await page.getByRole('heading', { name: 'Ironclad', exact: true }).waitFor()
+await page.waitForTimeout(220)
+const phoneCharacterSelection = await page.locator('.start-menu__character-select').evaluate((screen) => {
+  const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  const roster = [...screen.querySelectorAll('.start-menu__character-roster button')].map((button) => {
+    const box = button.getBoundingClientRect()
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
+  })
+  const controls = [...screen.querySelectorAll('.start-menu__ascension, .start-menu__character-back, .start-menu__character-embark')].map((control) => {
+    const box = control.getBoundingClientRect()
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
+  })
+  const copy = screen.querySelector('.start-menu__character-copy')?.getBoundingClientRect()
+  const ascension = screen.querySelector('.start-menu__ascension')?.getBoundingClientRect()
+  return {
+    contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
+    rosterContained: roster.every((box) => box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight),
+    actionsClear: controls.every((control) => roster.every((choice) => !overlap(control, choice))),
+    copyClear: Boolean(copy && ascension && !overlap(copy, ascension)),
+    ascensionCentered: Math.abs((screen.querySelector('.start-menu__ascension').getBoundingClientRect().left + screen.querySelector('.start-menu__ascension').getBoundingClientRect().right) / 2 - innerWidth / 2) <= 1,
+  }
+})
+await shot('00-title-character-select-phone')
+await page.getByRole('button', { name: 'Back', exact: true }).click()
+await page.setViewportSize({ width: 1440, height: 900 })
 check('Single Player opens a contained visual character picker before starting', () => {
-  assertEqual(characterSelection.choices, 8)
+  assert(runModeSelection.contained, 'run mode selection needs a nested scrollbar')
+  assertDeepEqual(runModeSelection.choices.map(({ mode }) => mode), ['standard', 'daily', 'custom'])
+  assert(runModeSelection.choices.every(({ art }) => art?.includes('/assets/menu/run-modes/mode-')),
+    `run mode illustrations are missing: ${JSON.stringify(runModeSelection.choices)}`)
+  assertEqual(dailyPreview.length, 2, `Daily Climb did not show its two modifiers: ${dailyPreview.join(' / ')}`)
+  assertDeepEqual(customSetup, { allStar: true, startingAct: '2' })
+  assert(customDesktopLayout.contained && customDesktopLayout.panelContained &&
+    customPhoneLayout.contained && customPhoneLayout.panelScrollable && customPhoneLayout.footerVisible,
+  `Custom setup does not fit its supported screens: ${JSON.stringify({ customDesktopLayout, customPhoneLayout })}`)
+  assertEqual(customRunMeta.mode, 'custom')
+  assert(customRunMeta.modifiers?.includes('all_star') && customRunMeta.quickStartAct === 1,
+    `Custom run settings were not used: ${JSON.stringify(customRunMeta)}`)
   assert(characterSelection.contained, 'character selection needs a nested scrollbar')
-  assert(characterSelection.heroContained, 'selected character art leaves the selection frame')
+  assert(characterSelection.wallpaperContained, 'selected character wallpaper leaves the selection frame')
+  assertEqual(characterSelection.portraits.length, 8)
+  assertEqual(new Set(characterSelection.portraits).size, 8, 'character roster reuses a portrait slot')
+  assert(characterSelection.selectedFilter.includes('brightness(1.16)') && characterSelection.inactiveFilter.includes('brightness(0.72)'),
+    'the selected character portrait is not brighter than the inactive portraits')
+  assert(characterSelection.flame.includes('ascension-flame.png'), 'Ascension uses the fallback glyph instead of the flame emblem')
+  assert(/^character-wallpaper-in-[ab]$/.test(characterTransition), 'character selection does not transition between wallpapers')
+  assertEqual(ascensionRaised, 'Ascension 1', 'the Ascension increase control does not change the selected level')
+  assert(phoneRunModeSelection.contained && phoneRunModeSelection.choicesContained && phoneRunModeSelection.backClear,
+    'horizontal-phone run mode choices overflow the screen')
+  assert(phoneCharacterSelection.contained && phoneCharacterSelection.rosterContained && phoneCharacterSelection.actionsClear && phoneCharacterSelection.copyClear && phoneCharacterSelection.ascensionCentered,
+    'horizontal-phone character choices overlap or overflow')
   for (const [name, special] of Object.entries({
     Ironclad: 'Burning Blood · End of combat: heal 1 HP.',
     Silent: 'Ring of the Snake · Start of combat: draw 2 cards.',
@@ -846,6 +978,7 @@ check('the compendium remains usable on a minimum desktop viewport', () => {
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.getByRole('button', { name: 'Back to main menu' }).click()
 await page.getByRole('button', { name: 'Single Player' }).click()
+await page.getByRole('button', { name: 'Standard', exact: true }).click()
 await page.getByRole('button', { name: 'Watcher' }).click()
 await page.getByRole('button', { name: 'Embark' }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
@@ -2537,6 +2670,7 @@ await slimeCardPage.reload()
 await slimeCardPage.setViewportSize({ width: 1440, height: 900 })
 await slimeCardPage.waitForFunction(() => Boolean(window.__STS_DEBUG__))
 await slimeCardPage.getByRole('button', { name: 'Single Player' }).click()
+await slimeCardPage.getByRole('button', { name: 'Standard', exact: true }).click()
 await slimeCardPage.getByRole('button', { name: 'Embark' }).click()
 await slimeCardPage.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 await slimeCardPage.evaluate((run) => {
@@ -16695,6 +16829,7 @@ await page.getByRole('button', { name: 'Back to main menu', exact: true }).click
 await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
 const nextRunPickerAfterRemount = await page.getByRole('heading', { name: 'Ironclad', exact: true }).count()
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+await page.getByRole('button', { name: 'Standard', exact: true }).click()
 await page.getByRole('button', { name: 'Embark' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
 const ascensionRetry = await readRun()
@@ -18295,6 +18430,7 @@ check('returning to the menu does not resume a paused completed-combat transitio
   assertEqual(abandonedFinishedCombat.combat.phase, 'won')
 })
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+await page.getByRole('button', { name: 'Standard', exact: true }).click()
 await page.getByRole('button', { name: 'Embark' }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 await page.waitForTimeout(100)
@@ -18337,6 +18473,7 @@ for (const [engineName, phoneBrowser, deviceName] of [
   }
   await phonePage.goto(base, { waitUntil: 'networkidle' })
   await tap(phonePage.getByRole('button', { name: 'Single Player' }))
+  await tap(phonePage.getByRole('button', { name: 'Standard' }))
   await tap(phonePage.getByRole('button', { name: 'Ironclad' }))
   await tap(phonePage.getByRole('button', { name: 'Embark' }))
   await phonePage.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'neow')

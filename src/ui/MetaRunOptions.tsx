@@ -13,6 +13,8 @@ export type MetaRunOptionsProps = {
   onModeChange: (mode: MetaRunMode) => void
   onCustomModifierChange: (id: DailyModifierId, enabled: boolean) => void
   onQuickStartActChange: (act: MetaRunAct) => void
+  expanded?: boolean
+  showMode?: boolean
 }
 
 export function MetaRunOptions({
@@ -24,11 +26,13 @@ export function MetaRunOptions({
   onModeChange,
   onCustomModifierChange,
   onQuickStartActChange,
+  expanded = false,
+  showMode = true,
 }: MetaRunOptionsProps) {
-  return <details className="start-menu__meta">
+  return <details className="start-menu__meta" open={expanded}>
     <summary>Run mode · {mode === 'daily' ? 'Daily Climb' : mode === 'custom' ? 'Custom' : 'Standard'}</summary>
     <div className="start-menu__meta-panel">
-    <label>
+    {showMode ? <label>
       Mode
       <select aria-label="Run mode" value={mode}
         onChange={(event) => onModeChange(event.target.value as MetaRunMode)}>
@@ -36,7 +40,7 @@ export function MetaRunOptions({
         <option value="daily">Daily Climb</option>
         <option value="custom">Custom Run</option>
       </select>
-    </label>
+    </label> : null}
 
     {mode === 'daily' ? <section className="start-menu__daily" aria-label="Daily Climb modifiers">
       <p>{dailyModifiers.length ? 'One modifier from each section affects the whole party.' : 'The server rolls one modifier from each section when the run starts.'}</p>

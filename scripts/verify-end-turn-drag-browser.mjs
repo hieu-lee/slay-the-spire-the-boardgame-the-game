@@ -67,6 +67,7 @@ try {
   suite('end-turn drag browser')
   await page.goto(`http://localhost:${address.port}`, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+  await page.getByRole('button', { name: 'Standard', exact: true }).click()
   await page.getByRole('button', { name: 'Embark' }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
   await page.evaluate(() => {

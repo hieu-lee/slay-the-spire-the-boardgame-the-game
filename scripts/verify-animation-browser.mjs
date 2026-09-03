@@ -75,6 +75,7 @@ try {
     'the removed screen-shake runtime flag is still installed')
   await settings.getByRole('button', { name: /Back/ }).click()
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+  await page.getByRole('button', { name: 'Standard', exact: true }).click()
   await page.getByRole('button', { name: 'Embark' }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
   await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'boss-gallery'))
@@ -1305,8 +1306,9 @@ try {
     document.documentElement.dataset.mobilePerformance === 'true'),
   'iPhone regression fixture did not reproduce OS Reduce Motion in mobile performance mode')
   check(await phone.locator('link[rel="preload"][as="image"][href*="/combat/characters/"]').count() === 7,
-    'iPhone 13 did not preload all attack pose assets')
+  'iPhone 13 did not preload all attack pose assets')
   await phone.getByRole('button', { name: 'Single Player', exact: true }).click()
+  await phone.getByRole('button', { name: 'Standard', exact: true }).click()
   await phone.getByRole('button', { name: 'Embark' }).click()
   await phone.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
   await phone.evaluate(() => window.__STS_DEBUG__.reset(1, 'boss-gallery'))
