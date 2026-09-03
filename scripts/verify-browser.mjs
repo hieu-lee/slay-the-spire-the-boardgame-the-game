@@ -1294,6 +1294,22 @@ await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includ
 check('combat music follows each act and Lagavulin changes themes when it wakes', () => {
   assert(true)
 })
+const victoryMusicBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  Object.assign(next, { act: 4, phase: 'victory', combat: null })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/the-spire-slain.mp3'), victoryMusicBefore)
+const victoryMusicPauseBefore = await page.evaluate(() => window.__BGM_PAUSES__.length)
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.campaign.finalized = true
+  window.__STS_DEBUG__.setRun(next)
+})
+await page.waitForFunction((before) => window.__BGM_PAUSES__.slice(before).includes('/assets/bgm/the-spire-slain.mp3'), victoryMusicPauseBefore)
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+check('terminal victory plays The Spire Slain only until the campaign journal', () => assert(true))
 
 const downfallMechanicLabels = {}
 const downfallEnergyOrbs = {}
