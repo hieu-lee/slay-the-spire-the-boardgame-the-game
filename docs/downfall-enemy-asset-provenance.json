@@ -6,163 +6,328 @@
   },
   "assets": [
     {
+      "artId": "downfall_witch",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_witch-card.webp",
+      "cardDeckId": 4700,
+      "cardIndex": 0,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout, attack poses, and standalone projectile -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_witch.webp",
+        "public/assets/combat/enemies/animations/downfall_witch-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_witch-attack.webp",
+        "public/assets/combat/enemies/projectiles/downfall_witch.webp"
+      ],
+      "sourceSha256": "82f69c986a0ebd79a39749566dea7366222642ba4729fedb34f9093f493858ac",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_witch.webp": "f2c37bc9aa796adaa054682c7e37b16a49871ae72e7e4b611bd8ab4ab292812b",
+        "public/assets/combat/enemies/animations/downfall_witch-idle.webp": "cfcd949cbb8cc2d3b20f8fc09e0f7742baab9021bb67495d34fbb1110b0a5218",
+        "public/assets/combat/enemies/animations/downfall_witch-attack.webp": "1c4bbdb6a4066cd170db995fcc7d84f0c34ee80f1496873ea1bab7f296208f0f",
+        "public/assets/combat/enemies/projectiles/downfall_witch.webp": "3808a9d1003b29fdd114890b8bc1ede3f48bb6c75dab210c2f1faf1a9ef44160"
+      }
+    },
+    {
+      "artId": "downfall_dark_core",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_dark_core-card.webp",
+      "cardDeckId": 4700,
+      "cardIndex": 1,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout, attack poses, and standalone projectile -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_dark_core.webp",
+        "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_dark_core-attack.webp",
+        "public/assets/combat/enemies/projectiles/downfall_dark_core.webp"
+      ],
+      "sourceSha256": "b42a3787a176067847bc701e48a16d33614185018939fd0ea86cf7f92a4b899a",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_dark_core.webp": "d1b7704dfe8e298942d30dc73dd4fd08e9af95e786c4ae429d345f8bb855bb9d",
+        "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp": "ebafe1984088d421ebad4a62a0837cf693d0a6dfee48686c33ab2e13bdf8f20d",
+        "public/assets/combat/enemies/animations/downfall_dark_core-attack.webp": "75da3b17784fa85f5c52dae9500e6035164ad5958bd59b1b5de19f066d6a30ed",
+        "public/assets/combat/enemies/projectiles/downfall_dark_core.webp": "046c37d75fd37cc0531091b3d5d4f247f2c23f0a7f4a88bc46ae27adf273dc07"
+      }
+    },
+    {
+      "artId": "downfall_wrathful",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_wrathful-card.webp",
+      "cardDeckId": 4700,
+      "cardIndex": 2,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout and unclipped ribbon-staff attack poses -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_wrathful.webp",
+        "public/assets/combat/enemies/animations/downfall_wrathful-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_wrathful-attack.webp"
+      ],
+      "sourceSha256": "a82122b307ee6232160bcf5d58f9add4b57942b753c1cd1aca029d7af1984ce3",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_wrathful.webp": "018b6a145cbd9eae1ef3ca736e06899c26c4b99a40c944debba92b7b63c527eb",
+        "public/assets/combat/enemies/animations/downfall_wrathful-idle.webp": "d697b91503d394b87e0b05ba6640bb432cfbd085d37558f008f0b41389625e1f",
+        "public/assets/combat/enemies/animations/downfall_wrathful-attack.webp": "cee4053d29462daf2e88bf1d3e6c5b5de95e0d2b6e74b1b95673f3cab3efbb31"
+      }
+    },
+    {
+      "artId": "downfall_orb_master",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_orb_master-card.webp",
+      "cardDeckId": 4699,
+      "cardIndex": 0,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout, attack poses, and standalone projectile -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_orb_master.webp",
+        "public/assets/combat/enemies/animations/downfall_orb_master-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_orb_master-attack.webp",
+        "public/assets/combat/enemies/projectiles/downfall_orb_master.webp"
+      ],
+      "sourceSha256": "d15a2f7438163c1ef976cea89f0ae0f96126cee9a332e69b061537560d46d6f0",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_orb_master.webp": "d626b72a3b586797e74aa059728ee729d12df4f75c0134bf14c49cb23c446160",
+        "public/assets/combat/enemies/animations/downfall_orb_master-idle.webp": "13c7e082b5f8fd2356ac0f564c1a4fa80d9ace4b6a24f5112a2ad93362019eb2",
+        "public/assets/combat/enemies/animations/downfall_orb_master-attack.webp": "f69a6b3d6d8912d567d9bca24b50c0ffd4564eb32e047521e4fbbe68ff49e609",
+        "public/assets/combat/enemies/projectiles/downfall_orb_master.webp": "8b14b392502af55790527d8499f334a01b4bb3a73e00e62456005c1c0013145c"
+      }
+    },
+    {
+      "artId": "downfall_inferno",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_inferno-card.webp",
+      "cardDeckId": 4699,
+      "cardIndex": 1,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout, attack poses, and standalone projectile -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_inferno.webp",
+        "public/assets/combat/enemies/animations/downfall_inferno-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_inferno-attack.webp",
+        "public/assets/combat/enemies/projectiles/downfall_inferno.webp"
+      ],
+      "sourceSha256": "ea7a595197110d1d76046951b842762229527a59b161cc0382ea7d88ab9486ec",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_inferno.webp": "40a4f6db395bc2d7fbba7f61e83fee11db4aeeae7b812101d4d5b743e420d89d",
+        "public/assets/combat/enemies/animations/downfall_inferno-idle.webp": "11ade156f778f6aced15ffc14a9cb238df3891c7c4f38e19964e180bd4204aea",
+        "public/assets/combat/enemies/animations/downfall_inferno-attack.webp": "c5f43952a4022a56bbdf66c49091fd29a69d7385a3349b955f4bafab38837e1e",
+        "public/assets/combat/enemies/projectiles/downfall_inferno.webp": "b95d9c8d00480931b8884320cc730a767494f37997d172f8f593107ffd863961"
+      }
+    },
+    {
+      "artId": "downfall_trickster",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_trickster-card.webp",
+      "cardDeckId": 4699,
+      "cardIndex": 2,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout and 2x2 signature attack sheet -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_trickster.webp",
+        "public/assets/combat/enemies/animations/downfall_trickster-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_trickster-attack.webp"
+      ],
+      "sourceSha256": "ede31ae8d0ae42b2dc2b682ef3ac76868dae4b9fc4c5ebea4f161ff4620a4381",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_trickster.webp": "60e52c397953e1b1f832f4cfd16e21cfba1762c0f87db6cd43129555ce826ac9",
+        "public/assets/combat/enemies/animations/downfall_trickster-idle.webp": "27f31266dbba320a1209da99233d4a2b2a751fe271bb6c3b8cb943303d3289e4",
+        "public/assets/combat/enemies/animations/downfall_trickster-attack.webp": "b3316d70e5dd9e1825c5d64ada4c08ea3bf322f382527573f46b6ac74729903a"
+      }
+    },
+    {
+      "artId": "downfall_demon",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_demon-card.webp",
+      "cardDeckId": 4698,
+      "cardIndex": 0,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout, identity-locked body-only airborne and ground-slam poses, and standalone ground-splat VFX -> optimized canonical, idle, and deterministic pose WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_demon.webp",
+        "public/assets/combat/enemies/animations/downfall_demon-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_demon-airborne.webp",
+        "public/assets/combat/enemies/animations/downfall_demon-ground-slam.webp",
+        "public/assets/combat/vfx/actions/downfall-demon-ground-splat.webp"
+      ],
+      "sourceSha256": "7b3822ce4b229497621d3ba866776584f202cdb5f1bb71434ae19ab5137a2da3",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_demon.webp": "8b4c50cf4ee2cd1fad8e1ea8d593657332e605843bd28e1ac8eb7bc3b558b13b",
+        "public/assets/combat/enemies/animations/downfall_demon-idle.webp": "8549101dd24713181012065dc4c3cf23d10be33f86cbcbea90f094d3475fbab3",
+        "public/assets/combat/enemies/animations/downfall_demon-airborne.webp": "c544d2c3838366ca60bb180912aea531b41551c29a8e6fec5b631dd683c52b3e",
+        "public/assets/combat/enemies/animations/downfall_demon-ground-slam.webp": "25d28370e7b52ec8dff5c9aaba1b50116871e937fa82b9668b2abead250ad62f",
+        "public/assets/combat/vfx/actions/downfall-demon-ground-splat.webp": "af8421590388554fe9af3c7588663bba2bed2e924e95c0bf65bf269101a6cff9"
+      }
+    },
+    {
+      "artId": "downfall_wraith",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_wraith-card.webp",
+      "cardDeckId": 4698,
+      "cardIndex": 1,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout, attack poses, and standalone projectile -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_wraith.webp",
+        "public/assets/combat/enemies/animations/downfall_wraith-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_wraith-attack.webp",
+        "public/assets/combat/enemies/projectiles/downfall_wraith.webp"
+      ],
+      "sourceSha256": "6a570b2d338398aedc936081eef720cdce8396670a8b5a0a789cb625073ccded",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_wraith.webp": "4f9f5cdb9d7417e4a8bd65412b7ca51559bdd2e7b9437252a399078eb57ae28e",
+        "public/assets/combat/enemies/animations/downfall_wraith-idle.webp": "c4c49052e073b24198438a2b9f7a4055da712f8ac43d5d9dcbfbe4f70b9b20b7",
+        "public/assets/combat/enemies/animations/downfall_wraith-attack.webp": "2c1561e03b33891b277fbfde2c523f12ca2da9301699effe096498972e3be484",
+        "public/assets/combat/enemies/projectiles/downfall_wraith.webp": "f217ab28cc5cf6d202bc1d84d88f0241aa9c41acd2fbc7469de337a9b9e68e41"
+      }
+    },
+    {
+      "artId": "downfall_blasphemer",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_blasphemer-card.webp",
+      "cardDeckId": 4698,
+      "cardIndex": 2,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout, attack poses, and standalone projectile -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_blasphemer.webp",
+        "public/assets/combat/enemies/animations/downfall_blasphemer-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_blasphemer-attack.webp",
+        "public/assets/combat/enemies/projectiles/downfall_blasphemer.webp"
+      ],
+      "sourceSha256": "e038ff20a8ac255c1786833f8a0affffccd7f407add4867f5f6207d6f9197b2a",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_blasphemer.webp": "02ce7f516933637e9c5d3fcd3c8af786e1a11d56f328f148f373bb9348f13745",
+        "public/assets/combat/enemies/animations/downfall_blasphemer-idle.webp": "bbb1f082ac1e13c6cc4c226c461f16ea28732423bcc1c8039c439060c72331b8",
+        "public/assets/combat/enemies/animations/downfall_blasphemer-attack.webp": "545ea3d6502d2e466d23a7ce3bea073601cb801b670d47e057aacb08b12f9274",
+        "public/assets/combat/enemies/projectiles/downfall_blasphemer.webp": "4eb837727d9d9d4bd74bd9e8f8c698d8102e8ab69f7add5f11cb0480c10778e0"
+      }
+    },
+    {
+      "artId": "downfall_neow",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_neow-card.webp",
+      "cardDeckId": 4685,
+      "cardIndex": 0,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout, attack poses, and standalone projectile -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_neow.webp",
+        "public/assets/combat/enemies/animations/downfall_neow-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_neow-attack.webp",
+        "public/assets/combat/enemies/projectiles/downfall_neow.webp"
+      ],
+      "sourceSha256": "7151cd8af8e8b0690b15cc1de96b109791387b54bf8053c950beb4f5eb9bf91c",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_neow.webp": "bb592b6ac7d3ca3db689027362672e940f32659cbb948aedfd1c8fcb3c6aa36c",
+        "public/assets/combat/enemies/animations/downfall_neow-idle.webp": "96d4c8cf23223b87da0ad65c9b8c349283f6edcb36e3e08dca4b69b6bb291161",
+        "public/assets/combat/enemies/animations/downfall_neow-attack.webp": "d8bca7804657a1c99f66f8908b19e15b51450fc360b73eaf9be529be2d8390f2",
+        "public/assets/combat/enemies/projectiles/downfall_neow.webp": "e0fedccd4f9f5cae50d665390ab5bb6d1742434df83de89369fffbeeea59bb34"
+      }
+    },
+    {
+      "artId": "downfall_flame_barrier",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_flame_barrier-card.webp",
+      "cardDeckId": 4707,
+      "cardIndex": 0,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout -> optimized canonical and idle WebPs; this boss has no attack action",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_flame_barrier.webp",
+        "public/assets/combat/enemies/animations/downfall_flame_barrier-idle.webp"
+      ],
+      "sourceSha256": "0a586f121b19072da7de710aaf4973fbb4f9810e5b08999c1eeec7d7bc1b87a7",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_flame_barrier.webp": "d5281de0fc455f8b02b6f340a3bbe465459a33e0b7449e0721c6b4c96af3d4bd",
+        "public/assets/combat/enemies/animations/downfall_flame_barrier-idle.webp": "c6c6c70f398609eca714df376ec33f01e3c521edac94f3397de9abacd7d963ab"
+      }
+    },
+    {
+      "artId": "downfall_doppelganger",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_doppelganger-card.webp",
+      "cardDeckId": 4707,
+      "cardIndex": 1,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout and 2x2 signature attack sheet -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_doppelganger.webp",
+        "public/assets/combat/enemies/animations/downfall_doppelganger-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_doppelganger-attack.webp"
+      ],
+      "sourceSha256": "3c6100a5f9f0389f01dd697905328c993a5dabc77cfa06c574207715136cf705",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_doppelganger.webp": "55c2044f29e3ee91248257c0c630481a7b1271d932d3f310edf57f4ea84bb029",
+        "public/assets/combat/enemies/animations/downfall_doppelganger-idle.webp": "b67fbd5ec7366ce565fa19cedac523079bb7855c3d14d9e0328dac88530bf0d0",
+        "public/assets/combat/enemies/animations/downfall_doppelganger-attack.webp": "9b11357ff1b881e4d007b88c3b89375dfb45fd973623540e0498b078b6c271c5"
+      }
+    },
+    {
+      "artId": "downfall_corrupted",
+      "sourceKind": "board-game-boss-card-imagegen",
+      "source": "docs/downfall-enemy-sources/boardgame/downfall_corrupted-card.webp",
+      "cardDeckId": 4704,
+      "cardIndex": 0,
+      "pipeline": "official board-game boss card -> gpt-image-2 native-transparent cutout, attack poses, and standalone projectile -> optimized static and ten-frame animated WebPs",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_corrupted.webp",
+        "public/assets/combat/enemies/animations/downfall_corrupted-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_corrupted-attack.webp",
+        "public/assets/combat/enemies/projectiles/downfall_corrupted.webp"
+      ],
+      "sourceSha256": "82285ae54c63f61c87da02da0e70823ff5e648effa54cc17e8599dde61b5e443",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_corrupted.webp": "82375a25c8837b3b89d48b3ce7a57b60487b2a2e74222ec6bd4b2338707cca30",
+        "public/assets/combat/enemies/animations/downfall_corrupted-idle.webp": "4c468f8ca90d9f1006177d79e4da4f8c15832747e9e59654038feb5b4b7231ac",
+        "public/assets/combat/enemies/animations/downfall_corrupted-attack.webp": "effe048ae2ff0ac312095eefbcfcf4b5b9348e0b3bd9b709e7eed518e9480bfe",
+        "public/assets/combat/enemies/projectiles/downfall_corrupted.webp": "623c4a28feda3607651d4fef2e37202984bb082d76a8d589e6daa39eb584c973"
+      }
+    },
+    {
       "artId": "downfall_pc_ironclad",
       "sourceKind": "pc-downfall-extraction",
       "source": "docs/downfall-enemy-sources/pc/ironclad.webp",
       "upstreamCode": "src/main/java/charbosses/bosses/Ironclad/CharBossIronclad.java",
-      "pipeline": "PC Downfall extraction -> ImageGen clean left-attacking key frame -> transparent animated WebP",
+      "pipeline": "PC Downfall extraction -> transparent Slayer cutout",
       "runtime": [
-        "public/assets/combat/enemies/downfall_pc_ironclad.webp",
-        "public/assets/combat/enemies/animations/downfall_pc_ironclad-idle.webp",
-        "public/assets/combat/enemies/animations/downfall_pc_ironclad-attack.webp"
+        "public/assets/combat/enemies/downfall_pc_ironclad.webp"
       ],
       "sourceSha256": "284dd6549edd2fe6a2f6efadede1018a97d125f66682ec156b3ed9fa1e8546ee",
       "upstreamCodeSha256": "ca5f9de8b450f232252eb1709a694e88dae1e271c0ebc61e1b813f9057954903",
       "runtimeSha256": {
-      "public/assets/combat/enemies/downfall_pc_ironclad.webp": "97401ad04a081430b155a4ced6d679a8485972eae326d935fa00775dd3e862d9",
-      "public/assets/combat/enemies/animations/downfall_pc_ironclad-idle.webp": "09af3d86ff3cd58fee0cd4cd57eecb2d1027967049fe2c8190ef398d171db113",
-      "public/assets/combat/enemies/animations/downfall_pc_ironclad-attack.webp": "62896735edc4896539e3c548e4a9567585af10e85e37b0db3e61eef4a258edaf"
-      },
-      "pipelineArtifact": "docs/downfall-enemy-sources/pc/evil-hero-attack-imagegen-sheet.webp",
-    "pipelineArtifactSha256": "7a3f926010f1c2d12a35ef2edf32138eaa4cb6529bbfb6a5b837ecf5fd212005"
+        "public/assets/combat/enemies/downfall_pc_ironclad.webp": "97401ad04a081430b155a4ced6d679a8485972eae326d935fa00775dd3e862d9"
+      }
     },
     {
       "artId": "downfall_pc_silent",
       "sourceKind": "pc-downfall-extraction",
       "source": "docs/downfall-enemy-sources/pc/silent.webp",
       "upstreamCode": "src/main/java/charbosses/bosses/Silent/CharBossSilent.java",
-      "pipeline": "PC Downfall extraction -> ImageGen clean left-attacking key frame -> transparent animated WebP",
+      "pipeline": "PC Downfall extraction -> transparent Slayer cutout",
       "runtime": [
-        "public/assets/combat/enemies/downfall_pc_silent.webp",
-        "public/assets/combat/enemies/animations/downfall_pc_silent-idle.webp",
-        "public/assets/combat/enemies/animations/downfall_pc_silent-attack.webp"
+        "public/assets/combat/enemies/downfall_pc_silent.webp"
       ],
       "sourceSha256": "45364aac4a8284c5899298fdbf0ccff381205b51c2dc72b307bd074033e3e5f1",
       "upstreamCodeSha256": "88711007afeb78bca78433c58bd20b7241cd83de09772955a92eeeb3af2182e3",
       "runtimeSha256": {
-      "public/assets/combat/enemies/downfall_pc_silent.webp": "c360503b99156300e6f5aac01c32317225d0155590ee488ecd871c4e3df80499",
-      "public/assets/combat/enemies/animations/downfall_pc_silent-idle.webp": "bc053707d9b5d4ad7c40cf3a3c461745b9f5058d3f41e3e1fb34a6dd836ad0fc",
-      "public/assets/combat/enemies/animations/downfall_pc_silent-attack.webp": "e9a367a937f603d16c66fccc9771ba31803faa2ce1cbe4794865018adaafbd1c"
-      },
-      "pipelineArtifact": "docs/downfall-enemy-sources/pc/evil-hero-attack-imagegen-sheet.webp",
-    "pipelineArtifactSha256": "7a3f926010f1c2d12a35ef2edf32138eaa4cb6529bbfb6a5b837ecf5fd212005"
+        "public/assets/combat/enemies/downfall_pc_silent.webp": "c360503b99156300e6f5aac01c32317225d0155590ee488ecd871c4e3df80499"
+      }
     },
     {
       "artId": "downfall_pc_defect",
       "sourceKind": "pc-downfall-extraction",
       "source": "docs/downfall-enemy-sources/pc/defect.webp",
       "upstreamCode": "src/main/java/charbosses/bosses/Defect/CharBossDefect.java",
-      "pipeline": "PC Downfall extraction -> ImageGen clean left-attacking key frame -> transparent animated WebP",
+      "pipeline": "PC Downfall extraction -> transparent Slayer cutout",
       "runtime": [
-        "public/assets/combat/enemies/downfall_pc_defect.webp",
-        "public/assets/combat/enemies/animations/downfall_pc_defect-idle.webp",
-        "public/assets/combat/enemies/animations/downfall_pc_defect-attack.webp"
+        "public/assets/combat/enemies/downfall_pc_defect.webp"
       ],
       "sourceSha256": "6326b5cf923167f63c0fa70c0368af48b615c2a0222486d3f503604f603df7df",
       "upstreamCodeSha256": "b8130f76a61f7f650388aa021335ada9ae7ba3e47dab1debaee983a9b2a8de89",
       "runtimeSha256": {
-      "public/assets/combat/enemies/downfall_pc_defect.webp": "3a69e8eefedd52ded106b7efaa31ce45a1994be6606680693de180a7c377b828",
-      "public/assets/combat/enemies/animations/downfall_pc_defect-idle.webp": "5667edb935c768e0a6eb46f7802ee18ad014e90f6cd224d01562dd1ebe4c8349",
-      "public/assets/combat/enemies/animations/downfall_pc_defect-attack.webp": "778464c02de80fd0f65b5bbc5388ba96f665c20c75d76b261c8a9b59d31dc18d"
-      },
-      "pipelineArtifact": "docs/downfall-enemy-sources/pc/evil-hero-attack-imagegen-sheet.webp",
-    "pipelineArtifactSha256": "7a3f926010f1c2d12a35ef2edf32138eaa4cb6529bbfb6a5b837ecf5fd212005"
+        "public/assets/combat/enemies/downfall_pc_defect.webp": "3a69e8eefedd52ded106b7efaa31ce45a1994be6606680693de180a7c377b828"
+      }
     },
     {
       "artId": "downfall_pc_watcher",
       "sourceKind": "pc-downfall-extraction",
       "source": "docs/downfall-enemy-sources/pc/watcher.webp",
       "upstreamCode": "src/main/java/charbosses/bosses/Watcher/CharBossWatcher.java",
-      "pipeline": "PC Downfall extraction -> direct OpenAI Image API gpt-image-2 native-transparent idle/raise/windup/swing/impact keyframes -> same-camera ten-frame downward staff swing; mirrored hero meteor and landing impact are layered at runtime",
+      "pipeline": "PC Downfall extraction -> transparent Slayer cutout",
       "runtime": [
-        "public/assets/combat/enemies/downfall_pc_watcher.webp",
-        "public/assets/combat/enemies/animations/downfall_pc_watcher-idle.webp",
-        "public/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp"
+        "public/assets/combat/enemies/downfall_pc_watcher.webp"
       ],
       "sourceSha256": "e84c385aac820e94f6244e3ddc7408f76bdf54a8af475c9154992c6202492f96",
       "upstreamCodeSha256": "48e3552e6e2a7a6de8ba3713e39947d360052f6564ecb6b2004f1a7b2fe67340",
       "runtimeSha256": {
-      "public/assets/combat/enemies/downfall_pc_watcher.webp": "57bd58a0138b02b108f88f3d130df2d09d597f52e512d2d0b7d9f7d02457b8ee",
-      "public/assets/combat/enemies/animations/downfall_pc_watcher-idle.webp": "fed8774036ed908716f1086f779f372c476e654b11eda99996deed243c88a24c",
-      "public/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp": "30fea4c6c68bd8f8466e263037a9c6013870c64eacc057a84481a45e484a69f5"
-      },
-      "pipelineArtifact": "docs/downfall-enemy-sources/pc/watcher-impact-keyframe.webp",
-    "pipelineArtifactSha256": "c1e7604e854c3ca1fe9e4b59a6c373688f68ff135670c677d5b98f0b30adc0de"
-    },
-    {
-      "artId": "downfall_pc_neow",
-      "sourceKind": "pc-downfall-extraction",
-      "source": "docs/downfall-enemy-sources/pc/neow.webp",
-      "upstreamCode": "src/main/java/downfall/monsters/NeowBoss.java",
-      "pipeline": "PC capture -> transparent cutout -> idle and left-attacking key frames",
-      "runtime": [
-        "public/assets/combat/enemies/downfall_pc_neow.webp",
-        "public/assets/combat/enemies/animations/downfall_pc_neow-idle.webp",
-        "public/assets/combat/enemies/animations/downfall_pc_neow-attack.webp"
-      ],
-      "sourceSha256": "d3460cfbea54e66e9e8caf0cf179263098ba21afc718ee67e499d7f1abd7815b",
-      "upstreamCodeSha256": "89c23ed9c5b7d04fef7ff3467506c57efbb004f70f3fdb828be444d3dd62c2bb",
-      "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_pc_neow.webp": "aeee69178535498313ad64f5ba6c5d3452359ff21a2bb3c39d692d9a816d4725",
-        "public/assets/combat/enemies/animations/downfall_pc_neow-idle.webp": "30cd7249408586ef19370c07a243f145db9566315f51ab371448ab10ea35ebc6",
-        "public/assets/combat/enemies/animations/downfall_pc_neow-attack.webp": "bc847817d25184f1c74018319762358c86b36b423460c6b117f2be4eeeb71932"
-      }
-    },
-    {
-      "artId": "downfall_corrupted",
-      "sourceKind": "pc-downfall-extraction",
-      "source": "docs/downfall-enemy-sources/pc/corrupted-sheet.webp",
-      "upstreamCode": "src/main/resources/expansioncontentResources/images/1024/bg_boss_heart.png",
-      "pipeline": "PC capture sheet -> transparent cutout -> idle and left-attacking key frames",
-      "runtime": [
-        "public/assets/combat/enemies/downfall_corrupted.webp",
-        "public/assets/combat/enemies/animations/downfall_corrupted-idle.webp",
-        "public/assets/combat/enemies/animations/downfall_corrupted-attack.webp"
-      ],
-      "sourceSha256": "5a1479311f75cc9e8a573e76f65fe5dd38dd29ed8bc7eea2db3417c5d52e08fb",
-      "upstreamCodeSha256": "1d1e36d70c314b1e66885d04a51adbd7056861816df3eddd15c4a06f3438bba4",
-      "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_corrupted.webp": "66a18ca161068f922f53e0b2ad91eb83ff7ec392f48ad78ca68d3fffd174f599",
-        "public/assets/combat/enemies/animations/downfall_corrupted-idle.webp": "42c8067712555cd67516a3961d2e23de3a9e2f334929850b2929973244355a3e",
-        "public/assets/combat/enemies/animations/downfall_corrupted-attack.webp": "9fe1e148fe09f9b5f19e914f7f16e80d1dc5f6e8063332d88322797be2c62e30"
-      }
-    },
-    {
-      "artId": "downfall_dark_core",
-      "sourceKind": "pc-downfall-extraction",
-      "source": "docs/downfall-enemy-sources/pc/dark-core-sheet.webp",
-      "upstreamCode": "src/main/resources/downfallResources/images/ui/heartRug.png",
-      "pipeline": "PC capture sheet -> direct OpenAI Image API gpt-image-2 high-quality transparent-background cleanup reference -> pixel-preserving alpha repair (the generated redraw changed the character) -> idle and left-attacking key frames",
-      "runtime": [
-        "public/assets/combat/enemies/downfall_dark_core.webp",
-        "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp",
-        "public/assets/combat/enemies/animations/downfall_dark_core-attack.webp"
-      ],
-      "sourceSha256": "39ba3c394e31e5b2480a8bc3a631acb55cd6141ab7aad1b3e76bca0086da0978",
-      "upstreamCodeSha256": "49db1924d262d293c875e147fc745961dfe0faee8505e0e8ca3703beae98119a",
-      "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_dark_core.webp": "aff8048e9de105653d4a8fce75f4c0406d5fe203837ea0cd6bb8cca6395da475",
-        "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp": "e5e00bf5a454d9732eed28b20b0c248d8e5cc1ce1ad98b6b48e6f23944b87b1b",
-        "public/assets/combat/enemies/animations/downfall_dark_core-attack.webp": "f9355809a35ff0fecf96f1349b0cbb54ab819d24ec96820edd89d31ff9b597bf"
-      }
-    },
-    {
-      "artId": "downfall_demon",
-      "sourceKind": "pc-downfall-extraction",
-      "source": "docs/downfall-enemy-sources/pc/demon-sheet.webp",
-      "upstreamCode": "src/main/java/awakenedOne/powers/DemonGlyphPower.java",
-      "pipeline": "PC capture sheet -> transparent cutout -> idle and left-attacking key frames",
-      "runtime": [
-        "public/assets/combat/enemies/downfall_demon.webp",
-        "public/assets/combat/enemies/animations/downfall_demon-idle.webp",
-        "public/assets/combat/enemies/animations/downfall_demon-attack.webp"
-      ],
-      "sourceSha256": "38c9e817bca5497dadf6ae529556e5a70e354e09d93c3ce3b15105c3b0945a76",
-      "upstreamCodeSha256": "79c1d144b7713050c41d696670e721da7c82534d8b0f2125584a5980f724789c",
-      "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_demon.webp": "c5507a6a8f8240e9f446bec61652b2f800398d21bea00c0f61c7890036f85569",
-        "public/assets/combat/enemies/animations/downfall_demon-idle.webp": "73359768c3ca59e100b5da4caa853bdda0423466f68504296c2fdf23a3533a25",
-        "public/assets/combat/enemies/animations/downfall_demon-attack.webp": "79b125c73174ab345ef45117b1edb201e6b97ab515ce7bf98a8939b20ecab50f"
+        "public/assets/combat/enemies/downfall_pc_watcher.webp": "57bd58a0138b02b108f88f3d130df2d09d597f52e512d2d0b7d9f7d02457b8ee"
       }
     },
     {
@@ -170,18 +335,14 @@
       "sourceKind": "base-game-extraction-via-pc-downfall",
       "source": "docs/downfall-enemy-sources/base/spire-shield-capture.webp",
       "upstreamCode": "src/main/java/charbosses/monsters/Fortification.java",
-      "pipeline": "PC Downfall/base-game render -> transparent cutout -> idle and left-attacking key frames",
+      "pipeline": "PC Downfall/base-game render -> transparent static combat cutout",
       "runtime": [
-        "public/assets/combat/enemies/spire_shield.webp",
-        "public/assets/combat/enemies/animations/spire_shield-idle.webp",
-        "public/assets/combat/enemies/animations/spire_shield-attack.webp"
+        "public/assets/combat/enemies/spire_shield.webp"
       ],
       "sourceSha256": "0f1d1e76128ed4938c786976b385f3bb17a6ec5f6e645287f22c8dd85721a3fc",
       "upstreamCodeSha256": "eb36651d76b723cf059762b4f21978369cc7eb9f97e73a676367297e963a2255",
       "runtimeSha256": {
-        "public/assets/combat/enemies/spire_shield.webp": "1b9ce13db433d2505951e3cb04ca54bb657a7f33bf0fbbd079ba7954a9b0594a",
-        "public/assets/combat/enemies/animations/spire_shield-idle.webp": "892ac44143095ef05d959f02ab98bc7b0b9f586140ce42ba32a5a9b01cfa54fa",
-        "public/assets/combat/enemies/animations/spire_shield-attack.webp": "8a984632d126a2b80d8fc0c934b7ea6e53c45a036e1de2566b170832d2fa3301"
+        "public/assets/combat/enemies/spire_shield.webp": "1b9ce13db433d2505951e3cb04ca54bb657a7f33bf0fbbd079ba7954a9b0594a"
       }
     },
     {
@@ -259,5 +420,10 @@
         "public/assets/combat/enemies/downfall_loot_chest.webp": "735b3e0ac6e417175deb097e4d287ef8a6141a9c4a4939dec227de35e92161f1"
       }
     }
-  ]
+  ],
+  "boardGame": {
+    "workshopId": "3687082014",
+    "source": "https://steamcommunity.com/sharedfiles/filedetails/?id=3687082014",
+    "publicSaveUpdated": 1784843101
+  }
 }

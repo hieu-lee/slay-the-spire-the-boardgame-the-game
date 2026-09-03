@@ -332,12 +332,11 @@
 }
 
 @media (max-height: 700px) {
-  .board .board__bosses .enemy--boss .enemy__portrait > .enemy__art--cutout {
+  .board .board__bosses .enemy--boss {
     --boss-scale: 1.5;
   }
 
-  .board .board__bosses .enemy--boss:is([data-enemy-def='donu'], [data-enemy-def='deca'])
-    .enemy__portrait > .enemy__art--cutout {
+  .board .board__bosses .enemy--boss:is([data-enemy-def='donu'], [data-enemy-def='deca']) {
     --boss-scale: 1.4;
   }
 
@@ -349,6 +348,15 @@
     top: calc(-2.15rem * var(--stage-scale));
     max-height: calc(1.5rem * var(--stage-scale));
   }
+}
+
+html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
+  --boss-scale: 1.5;
+}
+
+html[data-mobile-performance='true']
+  .board .board__bosses .enemy--boss:is([data-enemy-def='donu'], [data-enemy-def='deca']) {
+  --boss-scale: 1.4;
 }
 
 @media (orientation: landscape) and (max-height: 26.25rem) {

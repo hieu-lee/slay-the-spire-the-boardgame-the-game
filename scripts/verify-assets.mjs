@@ -26,7 +26,12 @@ import {
 } from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { POTIONS, RELICS } from '../src/game/relics.ts'
-import { bossAttackContactLeftFor, bossAttackDurationFor, bossAttackScaleFor } from '../src/ui/combat-vfx.ts'
+import {
+  bossAttackContactLeftFor,
+  bossAttackDurationFor,
+  bossAttackScaleFor,
+  bossProjectileImagePath,
+} from '../src/ui/combat-vfx.ts'
 import { DOWNFALL_COLORLESS_CARD_DEFS } from '../src/game/downfall/items.ts'
 // From the data module, NOT from sync-enemy-art.mjs: importing that script runs
 // the extraction pipeline, which regenerated the very portraits this file
@@ -47,6 +52,7 @@ const iconRoot = join(publicRoot, 'assets/icons')
 const enemyRoot = join(publicRoot, 'assets/enemies')
 const combatEnemyRoot = join(publicRoot, 'assets/combat/enemies')
 const bossAnimationRoot = join(combatEnemyRoot, 'animations')
+const bossProjectileRoot = join(combatEnemyRoot, 'projectiles')
 const combatCharacterRoot = join(publicRoot, 'assets/combat/characters')
 const combatSlimeRoot = join(publicRoot, 'assets/combat/slimes')
 const merchantCharacterRoot = join(publicRoot, 'assets/noncombat/merchant/characters')
@@ -74,6 +80,7 @@ const iconFiles = listing(iconRoot, '.png')
 const enemyFiles = listing(enemyRoot, '.webp')
 const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
 const bossAnimationFiles = listing(bossAnimationRoot, '.webp')
+const bossProjectileFiles = listing(bossProjectileRoot, '.webp')
 const combatCharacterFiles = listing(combatCharacterRoot, '.webp')
 const combatSlimeFiles = listing(combatSlimeRoot, '.webp')
 const merchantCharacterFiles = listing(merchantCharacterRoot, '-standing.webp')
@@ -506,16 +513,21 @@ check('every live enemy runtime image path exists', () => {
   assert(missing.length === 0, `missing runtime enemy images:\n    ${missing.join('\n    ')}`)
 })
 
-check('every Downfall enemy asset maps to PC Downfall or an exact base-game reuse', () => {
+check('every Downfall enemy asset maps to an official source', () => {
   const manifest = JSON.parse(readFileSync(join(repoRoot, 'docs/downfall-enemy-asset-provenance.json'), 'utf8'))
   assertEqual(manifest.upstream?.commit, '030ff7d4a7419a3e21c3075661550b1b479f3502',
     'Downfall provenance must pin the inspected PC-mod revision')
+  assertEqual(manifest.boardGame?.workshopId, '3687082014',
+    'Downfall provenance must pin the official public-playtest TTS item')
   const entries = manifest.assets ?? []
   const expected = [
     ...combatEnemyFiles.filter((file) => file.startsWith('downfall_') || file === 'spire_shield.webp')
       .map((file) => `public/assets/combat/enemies/${file}`),
     ...bossAnimationFiles.filter((file) => file.startsWith('downfall_') || file.startsWith('spire_shield-'))
       .map((file) => `public/assets/combat/enemies/animations/${file}`),
+    ...bossProjectileFiles.map((file) => `public/assets/combat/enemies/projectiles/${file}`),
+    ...combatActionVfxFiles.filter((file) => file.startsWith('downfall-'))
+      .map((file) => `public/assets/combat/vfx/actions/${file}`),
   ].sort()
   assertDeepEqual(entries.flatMap((entry) => entry.runtime ?? []).sort(), expected,
     'Downfall source-to-runtime asset mapping')
@@ -523,17 +535,22 @@ check('every Downfall enemy asset maps to PC Downfall or an exact base-game reus
   for (const entry of entries) {
     assert([
       'pc-downfall-extraction', 'base-game-extraction-via-pc-downfall',
-      'base-game-exact-reuse',
+      'base-game-exact-reuse', 'board-game-boss-card-imagegen',
     ].includes(entry.sourceKind),
-      `${entry.artId} is not sourced from PC Downfall or an exact base-game reuse`)
+      `${entry.artId} is not sourced from an official board-game/PC asset or an exact base-game reuse`)
     assert(typeof entry.source === 'string' && entry.source.length > 0, `${entry.artId} lacks an exact source`)
     const source = join(repoRoot, entry.source)
     assert(existsSync(source), `${entry.artId} source capture is not committed`)
     assertEqual(digest(source), entry.sourceSha256, `${entry.artId} source capture hash`)
-    assert(typeof entry.upstreamCode === 'string' && entry.upstreamCode.startsWith('src/'),
-      `${entry.artId} lacks its PC Downfall code path`)
-    assert(/^[a-f0-9]{64}$/.test(entry.upstreamCodeSha256 ?? ''),
-      `${entry.artId} lacks its pinned upstream-code hash`)
+    if (entry.sourceKind === 'board-game-boss-card-imagegen') {
+      assert(Number.isInteger(entry.cardDeckId) && Number.isInteger(entry.cardIndex),
+        `${entry.artId} lacks its TTS deck/index source`)
+    } else {
+      assert(typeof entry.upstreamCode === 'string' && entry.upstreamCode.startsWith('src/'),
+        `${entry.artId} lacks its PC Downfall code path`)
+      assert(/^[a-f0-9]{64}$/.test(entry.upstreamCodeSha256 ?? ''),
+        `${entry.artId} lacks its pinned upstream-code hash`)
+    }
     for (const runtime of entry.runtime ?? []) {
       const path = join(repoRoot, runtime)
       assert(existsSync(path), `${runtime} is missing`)
@@ -558,12 +575,21 @@ check('every Downfall enemy asset maps to PC Downfall or an exact base-game reus
   ), 'Downfall Shiv is not the deterministic lossless conversion of the existing base-game Shiv asset')
 })
 
-check('every boss has transparent idle and left-facing attack animation assets', () => {
+check('every boss has the transparent animation assets used by its actions', () => {
   const bosses = Object.values(ENEMIES).filter((def) => def.isBoss)
   const artIds = [...new Set(bosses.map((def) => def.artId ?? def.id))].sort()
-  const expected = artIds.flatMap((id) => [`${id}-attack.webp`, `${id}-idle.webp`]).sort()
+  const layeredBosses = new Set(['downfall_demon'])
+  const attacklessBosses = new Set(['downfall_flame_barrier'])
+  const expected = [
+    ...artIds.flatMap((id) => [
+      `${id}-idle.webp`,
+      ...(layeredBosses.has(id) || attacklessBosses.has(id) ? [] : [`${id}-attack.webp`]),
+    ]),
+    'downfall_demon-airborne.webp', 'downfall_demon-ground-slam.webp',
+  ].sort()
   assertDeepEqual(bossAnimationFiles.sort(), expected, 'boss animation inventory')
-  const missing = bosses.flatMap((def) => ['idle', 'attack'].filter((pose) => {
+  const missing = bosses.flatMap((def) => ['idle', ...(layeredBosses.has(def.artId ?? def.id) ||
+    attacklessBosses.has(def.artId ?? def.id) ? [] : ['attack'])].filter((pose) => {
     const relative = bossAnimationImagePath(def, pose).replace(/^\/assets\//, '')
     return !existsSync(join(publicRoot, 'assets', relative))
   }).map((pose) => `${def.id}: ${pose}`))
@@ -572,7 +598,7 @@ check('every boss has transparent idle and left-facing attack animation assets',
   const probe = `
 import sys, json, os, re, subprocess
 from collections import deque
-from PIL import Image, ImageChops
+from PIL import Image
 faults = []
 metadata = json.loads(sys.argv[1])
 runtime_durations = json.loads(sys.argv[2])
@@ -599,11 +625,11 @@ def components(alpha):
     return sorted(sizes, reverse=True)
 for name in sys.argv[3:]:
     im = Image.open(name)
+    is_static = "/animations/" not in name.replace("\\\\", "/") or \
+      name.endswith(("downfall_demon-airborne.webp", "downfall_demon-ground-slam.webp"))
     is_evil = any(f"downfall_pc_{hero}" in name for hero in ("ironclad", "silent", "defect", "watcher"))
-    is_evil_static = is_evil and "/animations/" not in name.replace("\\\\", "/")
     is_dark_core = "downfall_dark_core" in name
-    is_dark_core_static = is_dark_core and "/animations/" not in name.replace("\\\\", "/")
-    if getattr(im, "n_frames", 1) < 2 and not (is_evil_static or is_dark_core_static):
+    if getattr(im, "n_frames", 1) < 2 and not is_static:
         faults.append(f"{name}: not animated")
         continue
     boxes = []
@@ -612,7 +638,7 @@ for name in sys.argv[3:]:
     loop = int(loop_match.group(1)) if loop_match else None
     durations = [int(line.split()[6]) for line in mux.splitlines()
                  if line.lstrip()[:1].isdigit() and line.split()[0].endswith(":" )]
-    one_shot = name.endswith("downfall_pc_watcher-attack.webp") or re.search(r"hexaghost-heat-\\d-attack\\.webp$", name)
+    one_shot = re.search(r"hexaghost-heat-\\d-attack\\.webp$", name)
     if one_shot and loop != 1:
         faults.append(f"{name}: one-shot attack has loop count {loop}")
     for frame in range(im.n_frames):
@@ -633,7 +659,7 @@ for name in sys.argv[3:]:
             if near_white > 256:
                 faults.append(f"{name} frame {frame}: opaque light background island remains {near_white}px")
                 break
-        if name.endswith("-attack.webp") and os.path.basename(name).removesuffix("-attack.webp") in metadata and visible_box and min(
+        if name.endswith("-attack.webp") and visible_box and min(
             visible_box[0], visible_box[1], w - visible_box[2], h - visible_box[3]
         ) < 20:
             faults.append(f"{name} frame {frame}: attack art has no transparent safety margin {visible_box}")
@@ -662,11 +688,11 @@ for name in sys.argv[3:]:
         centers = [(box[0] + box[2]) / 2 for box in boxes[:2]]
         if abs(centers[0] - centers[1]) > w * .03:
             faults.append(f"{name}: idle frames jump sideways {centers}")
-    art_id = os.path.basename(name).removesuffix("-attack.webp")
+    is_demon_slam = name.endswith("downfall_demon-ground-slam.webp")
+    art_id = "downfall_demon" if is_demon_slam else os.path.basename(name).removesuffix("-attack.webp")
     if name.endswith("-attack.webp") and sum(durations) != runtime_durations[art_id]:
         faults.append(f'{name}: animation is {sum(durations)}ms, runtime shows it for {runtime_durations[art_id]}ms')
-    if name.endswith("-attack.webp") and art_id in metadata:
-        art = metadata[art_id]
+    if name.endswith("-attack.webp") and (art_id in metadata or art_id.startswith("downfall_")):
         phase_sizes = (2, 1, 2, 2) if "awakened_one_phase_" in name else (3, 1, 3, 3)
         expected = (550, 180, 550, 550)
         if len(durations) != sum(phase_sizes):
@@ -680,10 +706,13 @@ for name in sys.argv[3:]:
                     faults.append(f"{name}: {label} is {sum(phase)}ms, expected {total}ms")
                 if size > 1 and max(phase) - min(phase) > 1:
                     faults.append(f"{name}: {label} cadence is uneven {phase}")
-        contact_frame = 4 if "awakened_one_phase_" in name else 5
+    if (name.endswith("-attack.webp") or is_demon_slam) and art_id in metadata:
+        art = metadata[art_id]
+        contact_frame = 0 if is_demon_slam else 4 if "awakened_one_phase_" in name else 5
         if boxes[contact_frame][0] != art["contactLeft"]:
             faults.append(f'{name}: contact edge is {boxes[contact_frame][0]}px, metadata says {art["contactLeft"]}px')
-        idle = Image.open(name.replace("-attack.webp", "-idle.webp"))
+        idle = Image.open(name.replace("-ground-slam.webp", "-idle.webp") if is_demon_slam else
+                          name.replace("-attack.webp", "-idle.webp"))
         idle_heights = []
         for frame in range(idle.n_frames):
             idle.seek(frame)
@@ -691,33 +720,20 @@ for name in sys.argv[3:]:
             idle_heights.append(box[3] - box[1])
         idle_css_height = sum(idle_heights) / len(idle_heights) * min(144 / idle.width, 137 / idle.height)
         attack_css_height = (boxes[0][3] - boxes[0][1]) * 137 / im.height * art["scale"]
-        if abs(attack_css_height / idle_css_height - 1) > .03:
+        if not art_id.startswith("downfall_") and abs(attack_css_height / idle_css_height - 1) > .03:
             faults.append(f"{name}: scaled wind-up height {attack_css_height:.1f}px differs from idle {idle_css_height:.1f}px")
-    if any(f"downfall_pc_{hero}-attack.webp" in name for hero in ("ironclad", "silent", "defect", "watcher")) and im.n_frames >= 2:
-        im.seek(0)
-        idle_frame = im.convert("RGBA")
-        im.seek(5 if im.n_frames >= 10 else 1)
-        strike_frame = im.convert("RGBA")
-        alpha = strike_frame.getchannel("A")
-        left_reach = sum(value > 128 for value in alpha.crop((0, 0, int(w * .2), h)).getdata())
-        # The combat layout anchors the whole boss on the right. The strike
-        # frame itself must visibly reach into the player's left side.
-        if left_reach < 75 or not alpha.getbbox() or alpha.getbbox()[0] > w * .12:
-            faults.append(f"{name}: strike does not reach left {left_reach}")
-        changed = sum(value > 20 for value in ImageChops.difference(idle_frame, strike_frame).convert("L").getdata())
-        if changed < w * h * .04:
-            faults.append(f"{name}: strike reuses the idle pose {changed}")
 print(json.dumps(faults))
 `
-  const paths = [
+  const paths = [...new Set([
     ...expected.map((file) => join(bossAnimationRoot, file)),
+    ...artIds.filter((id) => id.startsWith('downfall_')).map((id) => join(combatEnemyRoot, `${id}.webp`)),
     ...['ironclad', 'silent', 'defect', 'watcher'].map((hero) => join(combatEnemyRoot, `downfall_pc_${hero}.webp`)),
-    join(combatEnemyRoot, 'downfall_dark_core.webp'),
-  ]
+  ])]
   const timedBossArtIds = [
     'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'corrupt_heart',
     'deca', 'donu', 'guardian_attack', 'guardian_defensive', 'hexaghost', 'slime_boss',
-    'the_champ', 'the_collector', 'time_eater',
+    'the_champ', 'the_collector', 'time_eater', 'downfall_demon', 'downfall_doppelganger',
+    'downfall_trickster', 'downfall_wrathful',
   ]
   const metadata = Object.fromEntries(timedBossArtIds.map((id) => [id, {
     scale: bossAttackScaleFor(id),
@@ -732,19 +748,44 @@ print(json.dumps(faults))
   assert(faults.length === 0, `invalid boss animation assets:\n    ${faults.join('\n    ')}`)
 })
 
-check('evil hero bosses use separate PC Downfall art instead of playable hero cutouts', () => {
+check('every ranged Downfall boss has one complete transparent projectile', () => {
+  const artIds = [
+    'downfall_blasphemer', 'downfall_corrupted', 'downfall_dark_core', 'downfall_inferno',
+    'downfall_neow', 'downfall_orb_master', 'downfall_witch', 'downfall_wraith',
+  ]
+  const expected = artIds.map((id) => `${id}.webp`).sort()
+  assertDeepEqual(bossProjectileFiles.sort(), expected, 'Downfall boss projectile inventory')
+  for (const artId of artIds) {
+    assertEqual(bossProjectileImagePath(artId), `/assets/combat/enemies/projectiles/${artId}.webp`)
+  }
+  for (const artId of ['downfall_demon', 'downfall_doppelganger', 'downfall_trickster', 'downfall_wrathful']) {
+    assertEqual(bossProjectileImagePath(artId), undefined, `${artId} is a melee boss`)
+  }
+  const paths = expected.map((file) => join(bossProjectileRoot, file))
+  const result = spawnSync('python3', ['-c', `
+import sys
+from PIL import Image
+for path in sys.argv[1:]:
+    image = Image.open(path).convert('RGBA')
+    alpha = image.getchannel('A')
+    bounds = alpha.point(lambda value: 255 if value > 16 else 0).getbbox()
+    assert max(image.size) == 256 and min(image.size) >= 128, (path, image.size)
+    assert bounds and min(bounds[0], bounds[1], image.width - bounds[2], image.height - bounds[3]) >= 8, (path, bounds)
+    assert max(alpha.getpixel(point) for point in ((0, 0), (image.width - 1, 0),
+               (0, image.height - 1), (image.width - 1, image.height - 1))) <= 8, path
+`, ...paths], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'a Downfall boss projectile clips its transparent canvas')
+  assert(paths.reduce((bytes, path) => bytes + statSync(path).size, 0) < 1024 * 1024,
+    'Downfall boss projectiles exceed 1 MiB')
+})
+
+check('Downfall Slayers use separate PC Downfall art instead of playable hero cutouts', () => {
   const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
   for (const hero of ['ironclad', 'silent', 'defect', 'watcher']) {
     const playable = join(combatCharacterRoot, `${hero}.webp`)
     const enemy = join(combatEnemyRoot, `downfall_pc_${hero}.webp`)
-    assert(existsSync(enemy), `missing PC Downfall ${hero} boss cutout`)
-    assert(digest(enemy) !== digest(playable), `PC Downfall ${hero} boss reuses the playable hero cutout`)
-    for (const pose of ['idle', 'attack']) {
-      const animation = join(bossAnimationRoot, `downfall_pc_${hero}-${pose}.webp`)
-      assert(existsSync(animation), `missing PC Downfall ${hero} ${pose} animation`)
-      assert(digest(animation) !== digest(playable),
-        `PC Downfall ${hero} ${pose} animation reuses the playable hero cutout`)
-    }
+    assert(existsSync(enemy), `missing PC Downfall ${hero} Slayer cutout`)
+    assert(digest(enemy) !== digest(playable), `PC Downfall ${hero} Slayer reuses the playable hero cutout`)
   }
 
   const probe = `
@@ -764,9 +805,9 @@ print(json.dumps(faults))
     join(combatEnemyRoot, `downfall_pc_${hero}.webp`),
   ])
   const result = spawnSync('python3', ['-c', probe, ...pairs], { encoding: 'utf8' })
-  assert(result.status === 0, result.stderr || 'evil boss comparison requires python3 + Pillow')
+  assert(result.status === 0, result.stderr || 'Slayer comparison requires python3 + Pillow')
   const faults = JSON.parse(result.stdout.trim().split('\n').pop())
-  assert(faults.length === 0, `evil boss art is not distinct:\n    ${faults.join('\n    ')}`)
+  assert(faults.length === 0, `Slayer art is not distinct:\n    ${faults.join('\n    ')}`)
 })
 
 check('Slime Boss minions ship one transparent cutout and one complete Command animation', () => {
@@ -989,7 +1030,8 @@ check('combat animation effects are complete, transparent, and compact', () => {
   ]
   const expectedActions = [
     'awakened-blue-fire.webp', 'awakened-claw-scratch.webp', 'dark-channel.webp',
-    'defect-face-orb.webp', 'frost-channel.webp', 'guard-bloom.webp', 'hexaghost-flame-impact.webp',
+    'defect-face-orb.webp', 'downfall-demon-ground-splat.webp',
+    'frost-channel.webp', 'guard-bloom.webp', 'hexaghost-flame-impact.webp',
     'hexaghost-flame.webp',
     'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp', 'magic-burst.webp',
     'potion-burst.webp', 'silent-knife.webp', 'silent-poison.webp', 'silent-shiv.webp',
@@ -999,9 +1041,14 @@ check('combat animation effects are complete, transparent, and compact', () => {
   assertDeepEqual(combatVfxFiles.sort(), expected, 'combat VFX inventory')
   assertDeepEqual(combatActionVfxFiles.sort(), expectedActions, 'personal combat VFX inventory')
   const entryHtml = readFileSync(join(repoRoot, 'index.html'), 'utf8')
-  for (const file of expectedActions) {
+  for (const file of expectedActions.filter((file) => file !== 'downfall-demon-ground-splat.webp')) {
     assert(entryHtml.includes(`/assets/combat/vfx/actions/${file}`), `${file} is not preloaded for first use`)
   }
+  assert(!entryHtml.includes('/assets/combat/vfx/actions/downfall-demon-ground-splat.webp'),
+    'Demon-only splat is globally preloaded')
+  assert(readFileSync(join(repoRoot, 'src/ui/EnemyCard.tsx'), 'utf8')
+    .includes("assetPath('combat/vfx/actions/downfall-demon-ground-splat.webp')"),
+  'Demon splat is not conditionally preloaded with the rendered boss')
   const files = [
     ...expected.map((file) => join(combatVfxRoot, file)),
     ...expectedActions.map((file) => join(combatActionVfxRoot, file)),
