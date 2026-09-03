@@ -161,7 +161,8 @@ try {
   await horizontalSelectedRoom.click()
   await page.waitForTimeout(180)
   check(await horizontalSelectedRoom.evaluate((room) => room.classList.contains('room--selected') &&
-    getComputedStyle(room.querySelector('.map__ink')).animationName === 'map-ink-draw'),
+    getComputedStyle(room.querySelector('.map__ink path')).animationName === 'map-ink-draw' &&
+    Number.parseFloat(getComputedStyle(room.querySelector('.map__ink path')).strokeDashoffset) > 0),
   'the horizontal-phone map chooser did not draw the selected room before leaving')
   await page.screenshot({ path: join(output, `short-wide-${browserName}-selecting-map-room.png`) })
   check(await page.evaluate(() => document.documentElement.dataset.mapTransition === 'true'),
@@ -176,10 +177,14 @@ try {
   check(await selectedRoom.evaluate((room) => room.classList.contains('room--selected') &&
     Boolean(room.querySelector('.map__ink'))), 'choosing a room did not draw its pencil-circle transition')
   await page.waitForTimeout(180)
-  check(await selectedRoom.locator('.map__ink').evaluate((ink) => {
-    const style = getComputedStyle(ink)
-    return style.animationName === 'map-ink-draw' && style.clipPath !== 'none'
-  }), 'the pencil-circle transition did not visibly draw before the screen fade')
+  const firstDrawOffset = await selectedRoom.locator('.map__ink path').evaluate((path) =>
+    Number.parseFloat(getComputedStyle(path).strokeDashoffset))
+  await page.waitForTimeout(100)
+  check(await selectedRoom.locator('.map__ink path').evaluate((path, firstOffset) => {
+    const style = getComputedStyle(path)
+    const nextOffset = Number.parseFloat(style.strokeDashoffset)
+    return style.animationName === 'map-ink-draw' && nextOffset > 0 && nextOffset < firstOffset
+  }, firstDrawOffset), 'the pencil-circle transition did not draw continuously before the screen fade')
   await page.screenshot({ path: join(output, `desktop-${browserName}-selecting-map-room.png`) })
   check(await page.evaluate(() => document.documentElement.dataset.mapTransition === 'true'),
     'choosing a room did not start the map-to-room fade')
