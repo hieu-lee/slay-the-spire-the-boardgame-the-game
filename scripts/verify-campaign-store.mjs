@@ -2,10 +2,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { apply, chooseLastStandRule, createRoom, createStore, joinRoom, saveStore, startRun } from './lib/rooms.mjs'
-import { resolveCardRewards } from '../src/game/state.ts'
+import { pendingRelicPreview, resolveCardRewards } from '../src/game/state.ts'
 import { reservePrismaticDraws } from '../src/game/run/rewards.ts'
+import { createCombat } from '../src/game/combat.ts'
+import { createRng } from '../src/game/rng.ts'
 import { createRoomServer } from './room-server.mjs'
-import { suite, check, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
+import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 suite('campaign persistence')
 
@@ -58,6 +60,76 @@ try {
     const owner = pendingRestored.run.players.find((player) => player.id === pendingOwner.playerId)
     assertEqual(owner.deck.find((card) => card.uid === skillUid).upgraded, true)
     assertEqual(owner.relics.some((relic) => relic.pending), false)
+  })
+
+  const oldOrrery = createRoom(store, { code: 'OLDRRY' })
+  const oldOrreryOwner = joinRoom(oldOrrery, { name: 'Orrery', character: 'ironclad' })
+  const oldOrreryPeer = joinRoom(oldOrrery, { name: 'Prismatic', character: 'silent' })
+  startRun(oldOrrery, oldOrreryOwner.token, { seed: 44 })
+  oldOrrery.run = {
+    ...oldOrrery.run,
+    phase: 'reward',
+    combat: null,
+    players: oldOrrery.run.players.map((player) => player.id === oldOrreryOwner.playerId
+      ? { ...player, relics: [...player.relics, { defId: 'orrery', spent: false, pending: true }] }
+      : { ...player, relics: [...player.relics, { defId: 'prismatic_shard', spent: false }] }),
+    rewards: [{
+      playerId: oldOrreryPeer.playerId, cardReward: true, choices: null, upgraded: false, prismatic: true,
+      gold: false, potion: false, relic: false, bossRelics: false,
+    }],
+  }
+  const oldOrreryChoices = pendingRelicPreview(oldOrrery.run, oldOrreryOwner.playerId).rewardChoices
+  saveStore(store)
+  const migratedOrrery = createStore({ file }).rooms.get('OLDRRY')
+  joinRoom(migratedOrrery, { token: oldOrreryOwner.token })
+  joinRoom(migratedOrrery, { token: oldOrreryPeer.token })
+  apply(migratedOrrery, oldOrreryPeer.token, {
+    kind: 'cardReward', choice: 'reveal', sources: ['ironclad', 'silent', 'defect'],
+  })
+  check('restart reserves legacy pending Orrery cards before a Prismatic reveal', () => {
+    assertDeepEqual(pendingRelicPreview(migratedOrrery.run, oldOrreryOwner.playerId).rewardChoices,
+      oldOrreryChoices)
+  })
+
+  const oldPreview = createRoom(store, { code: 'OLDPRV' })
+  const oldPreviewOwner = joinRoom(oldPreview, { name: 'Preview', character: 'silent' })
+  const oldPreviewPeer = joinRoom(oldPreview, { name: 'Peer', character: 'ironclad' })
+  startRun(oldPreview, oldPreviewOwner.token, { seed: 45 })
+  oldPreview.run = {
+    ...oldPreview.run,
+    phase: 'combat',
+    neow: null,
+    combat: createCombat(createRng(45), oldPreview.run.players, [{
+      uid: 'old-preview-enemy', defId: 'cultist', row: 0, isBoss: false,
+      hp: 30, maxHp: 30, block: 0, strength: 0, vulnerable: 0, weak: 0,
+      poison: 0, actionIndex: 0, abilityUsed: false, dead: false,
+    }]),
+  }
+  const previewOwner = oldPreview.run.combat.players.find((player) => player.id === oldPreviewOwner.playerId)
+  const previewPeer = oldPreview.run.combat.players.find((player) => player.id === oldPreviewPeer.playerId)
+  previewOwner.hand = [{ uid: 'old-acrobatics', defId: 'acrobatics', upgraded: false }]
+  previewOwner.draw = []
+  previewOwner.discard = Array.from({ length: 6 }, (_, index) =>
+    ({ uid: `old-preview-${index}`, defId: 'strike_silent', upgraded: false }))
+  previewPeer.hand = [{ uid: 'peer-backflip', defId: 'backflip', upgraded: false }]
+  previewPeer.draw = []
+  previewPeer.discard = Array.from({ length: 6 }, (_, index) =>
+    ({ uid: `peer-draw-${index}`, defId: 'strike_ironclad', upgraded: false }))
+  apply(oldPreview, oldPreviewOwner.token, { kind: 'previewCard', cardUid: 'old-acrobatics' })
+  const shownBeforeRestart = oldPreview.cardPreviews[oldPreviewOwner.playerId].cards.map((card) => card.uid)
+  const legacyRng = oldPreview.cardPreviews[oldPreviewOwner.playerId].rngBefore
+  delete oldPreview.cardPreviews[oldPreviewOwner.playerId].rngBefore
+  delete oldPreview.cardPreviews[oldPreviewOwner.playerId].rngAfter
+  oldPreview.run.combat.rng = legacyRng
+  saveStore(store)
+  const migratedPreview = createStore({ file }).rooms.get('OLDPRV')
+  joinRoom(migratedPreview, { token: oldPreviewOwner.token })
+  joinRoom(migratedPreview, { token: oldPreviewPeer.token })
+  apply(migratedPreview, oldPreviewPeer.token, { kind: 'playCard', cardUid: 'peer-backflip' })
+  check('restart reserves RNG for a legacy visible card choice before a teammate acts', () => {
+    const locked = migratedPreview.cardPreviews[oldPreviewOwner.playerId]
+    assert(locked.rngBefore && locked.rngAfter, 'legacy preview RNG was not migrated')
+    assertDeepEqual(locked.cards.map((card) => card.uid), shownBeforeRestart)
   })
 
   const legacy = createRoom(store, { code: 'LEGACY' })
@@ -256,7 +328,6 @@ try {
   const settledPrismaticOffer = structuredClone(legacySettledPrismatic.run.rewards[0])
   apply(legacySettledPrismatic, settledPrismaticSeat.token, { kind: 'bossRelicReward', choice: 'skip' })
   apply(legacySettledPrismatic, settledPrismaticSeat.token, { kind: 'cardReward', choice: 0 })
-  apply(legacySettledPrismatic, settledPrismaticSeat.token, { kind: 'cardReward', choice: 'confirm' })
   const expectedSettledPrismaticPlayers = structuredClone(legacySettledPrismatic.run.players)
   const expectedSettledPrismaticItems = structuredClone(legacySettledPrismatic.run.itemDecks)
   legacySettledPrismatic.run.phase = 'reward'

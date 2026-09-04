@@ -163,6 +163,12 @@ function hermitRapidFireCount(def: CardDef, actor: Player, sourceInHand = true):
 
 type CardCopySourceName = NonNullable<CombatState['pendingCardCopy']>['sourceNames'][number]
 
+const choicePreview = (
+  state: CombatState,
+  kind: CardChoicePreview['kind'],
+  cards: CardInstance[],
+): CardChoicePreview => ({ kind, cards, reservedRng: { ...state.rng } })
+
 function queuedRapidFire(
   card: CardInstance,
   actor: Player,
@@ -215,30 +221,30 @@ export function previewCardChoice(
   for (const effect of def.effects) {
     if (!effectIsActive(effect, preview, actor)) continue
     if (effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice') {
-      return { kind: 'search', cards: effect.kind === 'searchDraw'
+      return choicePreview(preview, 'search', effect.kind === 'searchDraw'
         ? actor.draw
-        : omniscienceEligibleCards(preview, actor) }
+        : omniscienceEligibleCards(preview, actor))
     } else if ((effect as { kind: string }).kind === 'replicateSlime') {
-      return { kind: 'search', cards: actor.draw.filter((card) => cardDef(card.defId).cardKind === 'slime') }
+      return choicePreview(preview, 'search', actor.draw.filter((card) => cardDef(card.defId).cardKind === 'slime'))
     } else if (effect.kind === 'draw') {
       drawInto(preview, actor, amountOf(effect.amount, preview, actor), [])
       drew = true
     } else if (drew && (effect as { kind: string }).kind === 'overexert') {
-      return { kind: 'search', cards: actor.hand.filter((card) => {
+      return choicePreview(preview, 'search', actor.hand.filter((card) => {
         const candidate = faceOf(cardDef(card.defId), card.upgraded)
         return cardIsPlayable(candidate, preview, actor) && (candidate.minimumX ?? 0) === 0
-      }) }
+      }))
     } else if (effect.kind === 'scry') {
-      return { kind: 'scry', cards: actor.draw.slice(0, effect.amount) }
+      return choicePreview(preview, 'scry', actor.draw.slice(0, effect.amount))
     } else if (effect.kind === 'scryToHand') {
-      return { kind: 'scryToHand', cards: actor.draw.slice(0, effect.amount) }
+      return choicePreview(preview, 'scryToHand', actor.draw.slice(0, effect.amount))
     } else if (drew && effect.kind === 'discard') {
-      return { kind: 'discard', cards: actor.hand }
+      return choicePreview(preview, 'discard', actor.hand)
     } else if (drew && effect.kind === 'topdeck') {
-      return { kind: 'topdeck', cards: actor.hand }
+      return choicePreview(preview, 'topdeck', actor.hand)
     } else if (drew && effect.kind === 'load') {
       const source = effect.source ?? 'hand'
-      return { kind: effect.upTo ? 'loadAny' : 'load', cards: actor[source] }
+      return choicePreview(preview, effect.upTo ? 'loadAny' : 'load', actor[source])
     }
   }
   return null
@@ -798,6 +804,7 @@ export function playCard(
       ? [ctx.queuedCopySource ?? 'Doppelganger', ctx.queuedCopySource ?? 'Doppelganger']
       : [ctx.queuedCopySource ?? 'Doppelganger'])
     next.pendingCardCopy = {
+      id: next.nextTriggerId++,
       playerId: actor.id,
       card: ctx.doppelgangerCopy,
       energySpent: effectEnergy,
@@ -884,6 +891,7 @@ export function playCard(
 
   if (doubled) {
     next.pendingCardCopy = {
+      id: next.nextTriggerId++,
       playerId: actor.id,
       card: { ...held },
       energySpent: effectEnergy,
@@ -902,6 +910,7 @@ export function playCard(
 
   if (rapidFire > 0) {
     next.pendingCardCopy = {
+      id: next.nextTriggerId++,
       playerId: actor.id,
       card: { ...held },
       energySpent: effectEnergy,
@@ -1234,6 +1243,7 @@ export function playCardCopy(
       ? [ctx.queuedCopySource ?? 'Doppelganger', ctx.queuedCopySource ?? 'Doppelganger']
       : [ctx.queuedCopySource ?? 'Doppelganger'])
     next.pendingCardCopy = {
+      id: next.nextTriggerId++,
       playerId: actor.id,
       card: ctx.doppelgangerCopy,
       energySpent: copy.energySpent,
@@ -1315,6 +1325,7 @@ export function playCardCopy(
   }
   if (!finalCopy) {
     copy.sourceNames = copy.sourceNames.slice(1)
+    copy.id = next.nextTriggerId++
     next.log = [...next.log, `${actor.name}'s ${copy.sourceNames[0]} copy finished; ${def.name} remains to resolve`]
     releasePendingTriggers(next, ctx)
     return settleForbiddenPendingCopy(next, actor)
@@ -1328,6 +1339,7 @@ export function playCardCopy(
       ? [...queuedCopySources, queuedCopySources.at(-1)!]
       : ['Weave' as const]
     next.pendingCardCopy = {
+      id: next.nextTriggerId++,
       playerId: actor.id,
       card: { ...woven, scryDamageBonus: weave.scryPlayBonus },
       energySpent: 0,
@@ -1406,32 +1418,32 @@ export function previewCardCopyChoice(state: CombatState, playerId: string): Car
   for (const effect of def.effects) {
     if (!effectIsActive(effect, preview, actor)) continue
     if (effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice') {
-      return { kind: 'search', cards: effect.kind === 'searchDraw'
+      return choicePreview(preview, 'search', effect.kind === 'searchDraw'
         ? actor.draw
-        : omniscienceEligibleCards(preview, actor) }
+        : omniscienceEligibleCards(preview, actor))
     } else if ((effect as { kind: string }).kind === 'replicateSlime') {
-      return { kind: 'search', cards: actor.draw.filter((card) => cardDef(card.defId).cardKind === 'slime') }
+      return choicePreview(preview, 'search', actor.draw.filter((card) => cardDef(card.defId).cardKind === 'slime'))
     } else if (effect.kind === 'draw') {
       drawInto(preview, actor, amountOf(effect.amount, preview, actor, undefined, {
         enemyUid: null, playerId, energySpent: pending.energySpent,
       }), [])
       drew = true
     } else if (drew && (effect as { kind: string }).kind === 'overexert') {
-      return { kind: 'search', cards: actor.hand.filter((card) => {
+      return choicePreview(preview, 'search', actor.hand.filter((card) => {
         const candidate = faceOf(cardDef(card.defId), card.upgraded)
         return cardIsPlayable(candidate, preview, actor) && (candidate.minimumX ?? 0) === 0
-      }) }
+      }))
     } else if (effect.kind === 'scry') {
-      return { kind: 'scry', cards: actor.draw.slice(0, effect.amount) }
+      return choicePreview(preview, 'scry', actor.draw.slice(0, effect.amount))
     } else if (effect.kind === 'scryToHand') {
-      return { kind: 'scryToHand', cards: actor.draw.slice(0, effect.amount) }
+      return choicePreview(preview, 'scryToHand', actor.draw.slice(0, effect.amount))
     } else if (drew && effect.kind === 'discard') {
-      return { kind: 'discard', cards: actor.hand }
+      return choicePreview(preview, 'discard', actor.hand)
     } else if (drew && effect.kind === 'topdeck') {
-      return { kind: 'topdeck', cards: actor.hand }
+      return choicePreview(preview, 'topdeck', actor.hand)
     } else if (drew && effect.kind === 'load') {
       const source = effect.source ?? 'hand'
-      return { kind: effect.upTo ? 'loadAny' : 'load', cards: actor[source] }
+      return choicePreview(preview, effect.upTo ? 'loadAny' : 'load', actor[source])
     }
   }
   return null

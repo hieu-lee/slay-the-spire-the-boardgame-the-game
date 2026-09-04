@@ -282,6 +282,40 @@ try {
     .find((player) => player.id === ownerId).deck.some((card) => card.defId === chosen), restoredEnchiridion),
   'restored Enchiridion choice was not applied')
 
+  const socketCards = await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const player = run.players[0]
+    const first = { uid: 'browser-socket-first', defId: 'guardian_crystal_edge', upgraded: false }
+    const second = { uid: 'browser-socket-second', defId: 'guardian_fierce_bash', upgraded: false }
+    player.deck.push(first, second)
+    run.phase = 'map'
+    run.pendingGuardianSockets = [first, second].map((card) => ({
+      playerId: player.id, cardUid: card.uid, gemIds: ['guardian_ruby'], source: 'gain',
+    }))
+    debug.setRun(run)
+    return { firstUid: first.uid, secondUid: second.uid }
+  })
+  await page.getByRole('heading', { name: /Socket a Gem into/ }).waitFor()
+  await page.locator('.relic-resolve .card').evaluate((card) => {
+    card.click()
+    card.click()
+  })
+  await page.waitForFunction((firstUid) => window.__STS_DEBUG__.getRun().players[0].deck
+    .find((card) => card.uid === firstUid)?.attachedGemId === 'guardian_ruby', socketCards.firstUid)
+  assert.deepEqual(await page.evaluate(({ firstUid, secondUid }) => {
+    const run = window.__STS_DEBUG__.getRun()
+    const deck = run.players[0].deck
+    return {
+      first: deck.find((card) => card.uid === firstUid).attachedGemId,
+      second: deck.find((card) => card.uid === secondUid).attachedGemId,
+      pending: run.pendingGuardianSockets.map((choice) => choice.cardUid),
+    }
+  }, socketCards), { first: 'guardian_ruby', second: undefined, pending: [socketCards.secondUid] },
+  'a stale double-click socketed the next queued card')
+  await page.locator('.relic-resolve .card').click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().pendingGuardianSockets.length === 0)
+
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())
@@ -312,7 +346,6 @@ try {
       import('/src/ui/RelicResolvePanel.tsx'), import('/src/ui/OnlineCampfireScreen.tsx'), import('/src/ui/NeowScreen.tsx'),
     ])
     const createElement = React.createElement ?? React.default.createElement
-    const StrictMode = React.StrictMode ?? React.default.StrictMode
     const createRoot = ReactDomClient.createRoot ?? ReactDomClient.default.createRoot
     const root = createRoot(document.querySelector('#online-reward-test'))
     const run = {
@@ -327,20 +360,21 @@ try {
       return new Promise((resolve) => { window.__RESOLVE_ONLINE_REWARD__ = resolve })
     }
     window.__ACK_ONLINE_REWARD__ = () => root.render(createElement(OnlineRewardScreen, {
-      run, viewerId: 'p1', decided: ['p1'], confirmed: [],
+      run: { ...run, rewards: [{ ...run.rewards[0], cardReward: false }] }, viewerId: 'p1',
       onAction,
     }))
     window.__SHOW_UNREVEALED_REWARD__ = () => {
       window.__ONLINE_REWARD_ACTIONS__ = []
       root.render(createElement(OnlineRewardScreen, {
         key: 'unrevealed', run: { ...run, rewards: [{ ...run.rewards[0], choices: null }] },
-        viewerId: 'p1', decided: [], confirmed: [], onAction,
+        viewerId: 'p1', onAction,
       }))
     }
     window.__SHOW_RELIC_REWARD__ = () => {
       window.__ONLINE_REWARD_ACTIONS__ = []
       root.render(createElement(RelicResolvePanel, {
         key: 'relic-reward', pending: { relicId: 'orrery', rewardChoices: [['anger', 'cleave', 'bash']] }, deck: [],
+        player: run.players[0], potion: false, ascension: 0, onPotion: () => {},
         onRewardChoice: (reward, choice) => {
           window.__ONLINE_REWARD_ACTIONS__.push({ kind: 'relicReward', reward, choice })
           return new Promise((resolve) => { window.__RESOLVE_RELIC_REWARD__ = resolve })
@@ -351,6 +385,7 @@ try {
       window.__ONLINE_REWARD_ACTIONS__ = []
       root.render(createElement(RelicResolvePanel, {
         key: 'relic-skip', pending: { relicId: 'orrery', rewardChoices: [['anger', 'cleave', 'bash']], rewardIndices: { 0: -1 } }, deck: [],
+        player: run.players[0], potion: false, ascension: 0, onPotion: () => {},
         onRewardChoice: () => {}, onResolve: (cardUids, rewardIndices) => onAction({ kind: 'resolveRelic', cardUids, rewardIndices }),
       }))
     }
@@ -362,17 +397,8 @@ try {
             ? ['liquid_memories', 'fairy_in_a_bottle', 'distilled_chaos']
             : ['liquid_memories', 'fairy_in_a_bottle'] }],
           rewards: [{ ...run.rewards[0], cardReward: false, choices: null, gold: 8, potion: potion ? 'distilled_chaos' : false }] },
-        viewerId: 'p1', decided: [], confirmed: [], onAction,
+        viewerId: 'p1', onAction,
       }))
-    }
-    window.__SHOW_CONFIRM_REWARD__ = () => {
-      window.__ONLINE_REWARD_ACTIONS__ = []
-      root.render(createElement(StrictMode, null, createElement(OnlineRewardScreen, {
-        key: 'confirm-reward', run: { ...run,
-          players: [...run.players, { id: 'p2', name: 'Silent', relics: [], potions: [], deck: [] }],
-          rewards: [...run.rewards, { ...run.rewards[0], playerId: 'p2' }] },
-        viewerId: 'p1', decided: ['p1'], confirmed: [], onAction,
-      })))
     }
     window.__SHOW_ONLINE_CAMPFIRE__ = () => {
       window.__ONLINE_REWARD_ACTIONS__ = []
@@ -394,7 +420,7 @@ try {
       }))
     }
     root.render(createElement(OnlineRewardScreen, {
-      run, viewerId: 'p1', decided: [], confirmed: [],
+      run, viewerId: 'p1',
       onAction,
     }))
   })
@@ -414,7 +440,7 @@ try {
   await page.getByRole('status').filter({ hasText: 'Claiming card…' }).waitFor()
   await page.evaluate(() => {
     window.__ACK_ONLINE_REWARD__()
-    window.__RESOLVE_ONLINE_REWARD__({ status: 'accepted', snapshot: { rewardDecided: ['p1'], run: null } })
+    window.__RESOLVE_ONLINE_REWARD__({ status: 'accepted', snapshot: { run: null } })
   })
   await page.getByRole('status').filter({ hasText: 'Waiting for teammates…' }).waitFor()
   await page.evaluate(() => window.__SHOW_UNREVEALED_REWARD__())
@@ -485,14 +511,6 @@ try {
   })
   assert.equal((await page.evaluate(() => window.__ONLINE_REWARD_ACTIONS__)).length, 2,
     'double-clicking global Skip dispatched the two loot actions more than once')
-
-  await page.evaluate(() => window.__SHOW_CONFIRM_REWARD__())
-  await page.waitForFunction(() => window.__ONLINE_REWARD_ACTIONS__.length > 0)
-  assert.deepEqual(await page.evaluate(() => window.__ONLINE_REWARD_ACTIONS__), [{ kind: 'cardReward', choice: 'confirm' }],
-    'Strict Mode dispatched the automatic card confirmation more than once')
-  await page.getByRole('status').filter({ hasText: 'Waiting for teammates…' }).waitFor()
-  assert.equal(await page.getByRole('button', { name: 'Skip', exact: true }).count(), 0,
-    'a player with no remaining loot received an inert Skip button')
 
   await page.evaluate(() => window.__SHOW_ONLINE_CAMPFIRE__())
   const rest = page.getByRole('button', { name: /Rest/ })

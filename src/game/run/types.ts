@@ -40,6 +40,8 @@ export type RunState = {
   map: SpireMap
   enemyDecks: EnemyDecks
   players: Player[]
+  /** Monotonic identity for pending one-shot relic acquisitions. */
+  nextPendingRelicId?: number
   combat: CombatState | null
   /** Face-down shared physical deck. Its order is server-only. */
   potionDeck: string[]
@@ -135,6 +137,7 @@ export type PotionRewardDecision =
   | { kind: 'replace'; potionId: string }
 
 export type PendingRelicPreview = {
+  id: number
   relicId: string
   rewardChoices?: string[][]
   rewardUpgraded?: boolean[]

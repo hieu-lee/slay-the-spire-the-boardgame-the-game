@@ -9,7 +9,22 @@ import {
   resolveCourierOffer,
 } from '../src/game/noncombat.ts'
 import { bottomCardChoices, createItemDecks, gainRelic, merchantRemovalCost, potionLimit, transformCard } from '../src/game/acquisition.ts'
-import { createPlayer, createRun, decideCourier, enterRoom, revealCourier, resolveCombat, roomChoices } from '../src/game/run.ts'
+import {
+  acquireRelic,
+  createPlayer,
+  createRun,
+  decideCourier,
+  enterRoom,
+  pendingRelicPreview,
+  revealCardReward,
+  revealCourier,
+  resolveCardRewards,
+  resolveCombat,
+  resolvePendingRelic,
+  roomChoices,
+  tradePotion,
+  usePotionOutsideCombat,
+} from '../src/game/run.ts'
 import { activatePotion } from '../src/game/combat.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
 import { createRng } from '../src/game/rng.ts'
@@ -244,6 +259,110 @@ check('taking one duplicate reward bottoms the other physical copy', () => {
   const draw = { choices: ['ball_lightning', 'ball_lightning', 'cold_snap'], cardsDrawn: ['ball_lightning', 'ball_lightning', 'cold_snap'], raresDrawn: [] }
   const bottomed = bottomCardChoices(player, draw, 0)
   assertDeepEqual(bottomed.cardRewards.slice(-2), ['ball_lightning', 'cold_snap'])
+})
+
+check('a mixed reward batch cannot resolve a player with a pending Relic', () => {
+  let run = postNeowRun(43, [
+    { id: 'p1', name: 'Ann', character: 'ironclad' },
+    { id: 'p2', name: 'Bo', character: 'silent' },
+  ])
+  run = {
+    ...run,
+    phase: 'reward',
+    combat: null,
+    rewardDestination: 'map',
+    players: run.players.map((player) => player.id === 'p1'
+      ? { ...player, relics: [...player.relics, { defId: 'orrery', pending: true }] }
+      : player),
+    rewards: run.players.map((player) => ({
+      playerId: player.id,
+      cardReward: true,
+      choices: ['anger'],
+      cardsDrawn: ['anger'],
+      raresDrawn: [],
+      drawsReserved: true,
+      upgraded: false,
+      gold: false,
+      potion: false,
+      relic: false,
+      bossRelics: false,
+    })),
+  }
+  const next = resolveCardRewards(run, { p1: null, p2: null })
+  assert(next.rewards.find((offer) => offer.playerId === 'p1')?.cardReward,
+    'the pending Relic owner lost their card reward')
+  assertEqual(next.rewards.find((offer) => offer.playerId === 'p2')?.cardReward, false)
+})
+
+check('another player can use and trade Potions while a teammate resolves a Relic', () => {
+  let run = postNeowRun(430, [
+    { id: 'p1', name: 'Ann', character: 'ironclad' },
+    { id: 'p2', name: 'Bo', character: 'silent' },
+  ])
+  run = {
+    ...run,
+    phase: 'reward',
+    combat: null,
+    players: run.players.map((player) => player.id === 'p1'
+      ? { ...player, relics: [...player.relics, { defId: 'orrery', pending: true }] }
+      : { ...player, hp: player.maxHp - 2, potions: ['blood_potion', 'energy_potion'] }),
+  }
+  const used = usePotionOutsideCombat(run, 'p2', 'blood_potion')
+  assertEqual(used.players.find((player) => player.id === 'p2').hp,
+    run.players.find((player) => player.id === 'p2').maxHp)
+  const traded = tradePotion(used, 'p2', 'p1', 'energy_potion')
+  assert(traded.players.find((player) => player.id === 'p1').potions.includes('energy_potion'))
+})
+
+check('a Prismatic reveal cannot rewrite another player\'s pending Orrery choices', () => {
+  let run = postNeowRun(44, [
+    { id: 'p1', name: 'Ann', character: 'ironclad' },
+    { id: 'p2', name: 'Bo', character: 'silent' },
+  ])
+  run = {
+    ...run,
+    phase: 'reward',
+    combat: null,
+    players: run.players.map((player) => player.id === 'p2'
+      ? { ...player, relics: [...player.relics, { defId: 'prismatic_shard', spent: false }] }
+      : player),
+    rewards: [{
+      playerId: 'p2', cardReward: true, choices: null, upgraded: false, prismatic: true,
+      gold: false, potion: false, relic: false, bossRelics: false,
+    }],
+  }
+  run = acquireRelic(run, 'p1', 'orrery')
+  const offer = pendingRelicPreview(run, 'p1')
+  assertEqual(offer?.rewardChoices?.length, 4)
+  const revealed = revealCardReward(run, 'p2', ['ironclad', 'silent', 'defect'])
+  assertDeepEqual(pendingRelicPreview(revealed, 'p1')?.rewardChoices, offer?.rewardChoices)
+  const choices = offer.rewardChoices.map(() => 0)
+  const resolved = resolvePendingRelic(revealed, 'p1', [], choices)
+  const gained = resolved.players.find((player) => player.id === 'p1').deck.slice(-4).map((card) => card.defId)
+  assertDeepEqual(gained, offer.rewardChoices.map((row) => row[0]))
+})
+
+check('Orrery never duplicates a short physical reward deck', () => {
+  let run = postNeowRun(440, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const physical = ['claw', 'ball_lightning', 'cold_snap']
+  run = {
+    ...run,
+    phase: 'reward',
+    combat: null,
+    rewardDestination: 'map',
+    rewards: [],
+    players: run.players.map((player) => ({ ...player, cardRewards: [...physical], rareRewards: [] })),
+  }
+  run = acquireRelic(run, 'p1', 'orrery')
+  assertDeepEqual(pendingRelicPreview(run, 'p1').rewardChoices.map((choices) => choices.length), [3, 0, 0, 0])
+  run = resolvePendingRelic(run, 'p1', [], [0, -1, -1, -1])
+  const owner = run.players[0]
+  const copies = physical.flatMap((defId) => [
+    ...owner.cardRewards.filter((card) => card === defId),
+    ...owner.deck.filter((card) => card.defId === defId),
+  ])
+  assertEqual(copies.length, physical.length)
+  assertDeepEqual(owner.cardRewards, physical.slice(1))
 })
 
 check('transform sets the old card aside and refuses every Curse', () => {

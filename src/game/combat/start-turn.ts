@@ -959,10 +959,11 @@ function resumeAfterDieRelicChoice(state: CombatState): CombatState {
 export function resolvePendingDieRelicChoice(
   state: CombatState,
   playerId: string,
-  context: Pick<PlayContext, 'discardUids' | 'exhaustUids'>,
+  context: Pick<PlayContext, 'discardUids' | 'exhaustUids' | 'enemyUid'> & { choiceId?: number },
 ): CombatState {
   const pending = state.pendingDieRelicChoices?.[0]
-  if (!pending || pending.playerId !== playerId) return state
+  if (!pending || pending.playerId !== playerId ||
+    context.choiceId !== undefined && context.choiceId !== pending.id) return state
   const next = clone(state)
   let first = true
   while (next.pendingDieRelicChoices?.length) {
@@ -978,10 +979,18 @@ export function resolvePendingDieRelicChoice(
     if (privateEffect && (new Set(selected).size !== selected.length ||
       selected.some((uid) => !owner.hand.some((card) => card.uid === uid)) ||
       (ability.optional ? selected.length !== 0 && selected.length !== required : selected.length !== required))) return state
+    const skipped = ability.optional && selected.length === 0
+    const needsEnemy = !skipped && ability.effects.some((effect) => reachesEnemy(effect, owner))
+    const enemyUid = needsEnemy && livingEnemies(next).some((enemy) => enemy.uid === queued.enemyUid)
+      ? queued.enemyUid : first ? context.enemyUid : queued.enemyUid
+    if (needsEnemy && !livingEnemies(next).some((enemy) => enemy.uid === enemyUid)) {
+      if (!first) break
+      return state
+    }
     next.pendingDieRelicChoices = next.pendingDieRelicChoices.slice(1)
-    if (!(ability.optional && selected.length === 0)) {
+    if (!skipped) {
       const nestedContext: PlayContext = {
-        enemyUid: queued.enemyUid,
+        enemyUid,
         playerId: queued.targetPlayerId,
         ...(privateEffect?.kind === 'discard' ? { discardUids: selected } : {}),
         ...(privateEffect?.kind === 'exhaustFromHand' ? { exhaustUids: selected } : {}),
@@ -1012,8 +1021,11 @@ export function defaultPendingDieRelicChoice(state: CombatState, playerId: strin
   if (!pending || pending.playerId !== playerId || !owner || !ability) return state
   const effect = ability.effects.find((candidate) => candidate.kind === 'discard' || candidate.kind === 'exhaustFromHand')
   const chosen = ability.optional || !effect ? [] : owner.hand.slice(0, effect.amount).map((card) => card.uid)
-  return resolvePendingDieRelicChoice(state, playerId, effect?.kind === 'discard'
-    ? { discardUids: chosen } : { exhaustUids: chosen })
+  return resolvePendingDieRelicChoice(state, playerId, {
+    choiceId: pending.id,
+    ...(effect?.kind === 'discard' ? { discardUids: chosen } : { exhaustUids: chosen }),
+    enemyUid: livingEnemies(state)[0]?.uid ?? null,
+  })
 }
 
 export function finishCardCopy(

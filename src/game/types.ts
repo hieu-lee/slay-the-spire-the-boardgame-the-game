@@ -97,8 +97,12 @@ export type RelicInstance = {
   cubes?: number
   /** Immediate out-of-combat text still waiting for its owner's card choices. */
   pending?: boolean
+  /** Stable identity for exactly one pending acquisition. */
+  pendingId?: number
   /** Gems reserved beside each face-up reward group from this one-shot Relic. */
   guardianGemGroups?: string[][]
+  /** Physical reward cards held face up until this Relic's owner finishes choosing. */
+  pendingRewardDraws?: { cards: string[]; rares: string[] }
   /** Owner-only card reward decisions already made while this Relic is pending. */
   pendingRewardIndices?: Record<number, number>
 }

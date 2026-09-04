@@ -387,10 +387,12 @@ function CombatScreenView({
   const [potionCardUids, setPotionCardUids] = useState<string[]>([])
   const [relicCardUids, setRelicCardUids] = useState<string[]>([])
   const [dieRelicCardUids, setDieRelicCardUids] = useState<string[]>([])
+  const [dieRelicEnemyUid, setDieRelicEnemyUid] = useState<string | null>(null)
   const [relicShivEnemyUids, setRelicShivEnemyUids] = useState<string[]>([])
   const [usingPotion, setUsingPotion] = useState(false)
   const [usingPower, setUsingPower] = useState(false)
   const [usingTrigger, setUsingTrigger] = useState(false)
+  const [usingDieRelic, setUsingDieRelic] = useState(false)
   const [usingCard, setUsingCard] = useState(false)
   const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
   const [retainedCards, setRetainedCards] = useState<Record<string, string[]>>({})
@@ -445,6 +447,7 @@ function CombatScreenView({
   const potionActionPending = useRef(false)
   const powerActionPending = useRef(false)
   const cardActionPending = useRef(false)
+  const relicActionPending = useRef(false)
   const unknownPotionAction = useRef<UnknownPotionAction | null>(null)
   const unknownPowerAction = useRef<UnknownPowerAction | null>(null)
   const unknownCardAction = useRef<UnknownCardAction | null>(null)
@@ -546,6 +549,13 @@ function CombatScreenView({
   const hermitSetupPending = state.pendingHermitSetupLoads?.[0]?.playerId === viewerId
   const hermitStrengthPending = state.pendingHermitStrengthRewards?.[0]?.playerId === viewerId
   const dieRelicPending = state.pendingDieRelicChoices?.[0]
+  const dieRelicAbility = dieRelicPending
+    ? chosenDieRelicAbilities(relicDef(dieRelicPending.relicDefId))[dieRelicPending.abilityIndex]
+    : undefined
+  const dieRelicNeedsEnemy = Boolean(viewer && dieRelicAbility?.effects.some((effect) => reachesEnemy(effect, viewer)))
+  const dieRelicTargetUid = livingEnemies(state).some((enemy) => enemy.uid === dieRelicPending?.enemyUid)
+    ? dieRelicPending?.enemyUid ?? null
+    : livingEnemies(state).some((enemy) => enemy.uid === dieRelicEnemyUid) ? dieRelicEnemyUid : null
   const hermitTargetedCurses = new Set(['hermit_grudge', 'hermit_malice', 'hermit_horror'])
 
   function submitHermitSetup(card: CardInstance, enemyUid: string | null = null) {
@@ -559,13 +569,33 @@ function CombatScreenView({
   }
 
   function submitDieRelicChoice(discard: boolean) {
-    if (dieRelicPending?.playerId !== viewerId) return
-    if (onAction) void onAction({
+    if (usingDieRelic || dieRelicPending?.playerId !== viewerId) return
+    const cardUids = dieRelicCardUids
+    if (!onAction) {
+      const result = resolvePendingDieRelicChoice(state, viewerId, {
+        choiceId: dieRelicPending.id,
+        enemyUid: dieRelicTargetUid,
+        ...(discard ? { discardUids: cardUids } : { exhaustUids: cardUids }),
+      })
+      if (result === state) return
+      setDieRelicCardUids([])
+      setDieRelicEnemyUid(null)
+      onChange?.(result)
+      return
+    }
+    const choiceId = dieRelicPending.id
+    setUsingDieRelic(true)
+    void Promise.resolve(onAction({
       kind: 'resolveDieRelicChoice',
-      ...(discard ? { discardUids: dieRelicCardUids } : { exhaustUids: dieRelicCardUids }),
-    })
-    else onChange?.(resolvePendingDieRelicChoice(state, viewerId,
-      discard ? { discardUids: dieRelicCardUids } : { exhaustUids: dieRelicCardUids }))
+      choiceId,
+      enemyUid: dieRelicTargetUid,
+      ...(discard ? { discardUids: cardUids } : { exhaustUids: cardUids }),
+    })).then((outcome) => {
+      const pending = outcome?.snapshot?.run?.combat?.pendingDieRelicChoices
+      if (!pending || pending.some((choice) => choice.id === choiceId)) return
+      setDieRelicCardUids([])
+      setDieRelicEnemyUid(null)
+    }).finally(() => setUsingDieRelic(false))
   }
 
   function submitPlunderRow(row: number | null) {
@@ -800,7 +830,10 @@ function CombatScreenView({
     setTriggerSlimeUids([])
     setTriggerSlimeEnemyUids([])
   }, [pendingTrigger?.id])
-  useEffect(() => setDieRelicCardUids([]), [dieRelicPending?.sourceLabel, dieRelicPending?.playerId])
+  useEffect(() => {
+    setDieRelicCardUids([])
+    setDieRelicEnemyUid(null)
+  }, [dieRelicPending?.id])
   const forcedCard = state.startTurnProgress?.forcedCard
   const distilled = state.pendingDistilled
   const relicScry = state.pendingRelicScry
@@ -1192,13 +1225,27 @@ function CombatScreenView({
         powerActionPending.current = false
         setUsingPower(false)
         if (!used && activePowerWindow(state) && !state.startTurnProgress?.forcedCard &&
-          current.powers.some((held) => held.uid === power.powerUid)) setPendingPowerUid(power.powerUid)
+          current.powers.some((held) => held.uid === power.powerUid)) {
+          setPendingPowerUid(power.powerUid)
+          setPowerChamberUids((power.context.chamberUids ?? []).filter((uid) =>
+            current.chamber.some((card) => card.uid === uid)))
+          setPowerLoadUids((power.context.loadUids ?? []).filter((uid) =>
+            current.hand.some((card) => card.uid === uid)))
+          if (powerPreview?.powerUid === power.powerUid && powerPreview.id === power.powerPreviewId) {
+            const revealed = new Set(powerPreview.cards.map((card) => card.uid))
+            setPowerChoiceCards(powerPreview.cards)
+            setPowerScryDiscardUids((power.context.scryDiscardUids ?? []).filter((uid) => revealed.has(uid)))
+            setPowerExhaustUids(power.context.exhaustUids ?? [])
+            setPowerGemContext(power.context)
+            setPowerScryConfirmed(true)
+          }
+        }
       }
     }
     const card = unknownCardAction.current
     const cardCommitted = card?.source === 'copy'
       ? state.pendingCardCopy?.card.uid !== card.cardUid ||
-        (card.copiesBefore !== undefined && state.pendingCardCopy.sourceNames.length < card.copiesBefore)
+        state.pendingCardCopy.id !== card.copyId
       : current && !(card?.source === 'chamber' ? current.chamber : current.hand)
         .some((held) => held.uid === card?.cardUid)
     if (card && ((authoritativeRefresh !== undefined && authoritativeRefresh > card.refreshAttempt) || cardCommitted)) {
@@ -1206,8 +1253,9 @@ function CombatScreenView({
       unknownCardAction.current = null
       cardActionPending.current = false
       setUsingCard(false)
+      if (!cardCommitted && current) restoreUnknownCard(card.pending, current, card.usingMiracle)
     }
-  }, [authoritativeRefresh, state, viewerId])
+  }, [authoritativeRefresh, powerPreview, state, viewerId])
 
   useEffect(() => {
     if (pendingPowerUid && (state.startTurnProgress?.forcedCard ||
@@ -1299,25 +1347,34 @@ function CombatScreenView({
       slimeUids: cardPreview.slimeUids ?? [], slimeEnemyUids: cardPreview.slimeEnemyUids ?? [] }
     setPending((current) => current?.card.uid === card.uid &&
       current.choice?.kind === cardPreview.kind &&
-      current.enemyUid === cardPreview.enemyUid &&
       current.slimeUids.join('\0') === (cardPreview.slimeUids ?? []).join('\0') &&
-      current.slimeEnemyUids.join('\0') === (cardPreview.slimeEnemyUids ?? []).join('\0') &&
       current.choiceCards?.length === cardPreview.cards.length &&
       current.choiceCards?.every((held, index) => held.uid === cardPreview.cards[index]?.uid)
-      ? current : restored)
+      ? { ...current, enemyUid: cardPreview.enemyUid,
+        slimeEnemyUids: cardPreview.slimeEnemyUids ?? [] }
+      : restored)
   }, [cardPreviewKey, viewerId, usingCard, onAction])
 
   useEffect(() => {
     if (powerPreview) {
       setPendingPowerUid(powerPreview.powerUid)
       setPowerChoiceCards(powerPreview.cards)
+      setPowerScryDiscardUids([])
+      setPowerGemContext(null)
+      setPowerScryConfirmed(false)
     } else if (onAction) {
       setPowerChoiceCards(null)
       setPowerScryDiscardUids([])
       setPowerGemContext(null)
       setPowerScryConfirmed(false)
     }
-  }, [powerPreview?.powerUid, powerPreview?.cards.map((card) => card.uid).join('\0'), onAction])
+  }, [powerPreview?.id, powerPreview?.powerUid, powerPreview?.cards.map((card) => card.uid).join('\0'), onAction])
+
+  useEffect(() => { setRelicCardUids([]) }, [relicScry?.id])
+  useEffect(() => {
+    const revealed = new Set(relicScry?.cards.map((card) => card.uid) ?? [])
+    setRelicCardUids((current) => current.filter((uid) => revealed.has(uid)))
+  }, [relicScry?.cards.map((card) => card.uid).join('\0')])
 
   useEffect(() => {
     const copy = state.pendingCardCopy
@@ -1333,7 +1390,7 @@ function CombatScreenView({
     const next = pendingFor(copy.card, null, state, viewer, false, copy.energySpent)
     setPending(next)
     stageOrCommit(next)
-  }, [state.phase, state.pendingCardCopy?.card.uid, state.pendingCardCopy?.sourceNames.length,
+  }, [state.phase, state.pendingCardCopy?.id,
     viewerId, cardPreviewKey, usingCard])
 
   // Native modal semantics make every control behind a card choice inert and
@@ -1435,6 +1492,7 @@ function CombatScreenView({
     const livingPlayers = new Set(state.players.filter((player) => !player.dead).map((player) => player.id))
     setPending((current) => {
       if (!current) return current
+      if (usingCard) return current
       if (current.chamberPlay
         ? !viewer.chamber.some((card) => card.uid === current.card.uid)
         : current.cardInHand
@@ -1555,7 +1613,7 @@ function CombatScreenView({
         evokeEnemyUids,
       }
     })
-  }, [state, viewer, drawCount])
+  }, [state, viewer, drawCount, usingCard])
 
   useEffect(() => {
     if (onAction) return
@@ -2229,8 +2287,8 @@ function CombatScreenView({
 
   function reconciliation(outcome: ActionOutcome | void) {
     const snapshot = outcome?.snapshot
-    if (!snapshot?.run?.combat || snapshot.version < versionRef.current) return null
-    const combat = snapshot.version === versionRef.current ? stateRef.current : snapshot.run.combat
+    if (!snapshot?.run?.combat) return null
+    const combat = snapshot.version <= versionRef.current ? stateRef.current : snapshot.run.combat
     const player = combat.players.find((candidate) => candidate.id === viewerId)
     return (activePowerWindow(combat) || combat.phase === 'copy') && player ? { combat, player } : null
   }
@@ -2323,10 +2381,31 @@ function CombatScreenView({
   function useRelic(relicIndex: number, context: RelicContext = {}) {
     const result = activateRelic(state, viewer!.id, relicIndex, context)
     if (result === state) return
+    if (onAction) {
+      if (relicActionPending.current) return
+      relicActionPending.current = true
+      const relicScryId = state.pendingRelicScry?.id
+      Promise.resolve(onAction({
+        kind: 'activateRelic', relicIndex, relicScryId, ...context,
+      })).then((outcome) => {
+        relicActionPending.current = false
+        if (outcome?.status === 'accepted') {
+          setRelicCardUids([])
+          setRelicShivEnemyUids([])
+          return
+        }
+        if (relicScryId !== undefined && stateRef.current.pendingRelicScry?.id !== relicScryId) return
+        const alive = new Set(stateRef.current.enemies.filter((enemy) => !enemy.dead).map((enemy) => enemy.uid))
+        setRelicCardUids((context.cardUids ?? context.scryDiscardUids ?? []).filter((uid) =>
+          stateRef.current.players.find((player) => player.id === viewerId)?.hand.some((card) => card.uid === uid) ||
+          stateRef.current.pendingRelicScry?.cards.some((card) => card.uid === uid)))
+        setRelicShivEnemyUids((context.shivEnemyUids ?? []).filter((uid) => alive.has(uid)))
+      }, () => { relicActionPending.current = false })
+      return
+    }
     setRelicCardUids([])
     setRelicShivEnemyUids([])
-    if (onAction) void onAction({ kind: 'activateRelic', relicIndex, ...context })
-    else onChange?.(result)
+    onChange?.(result)
   }
 
   function usePower(powerUid: string, context: PowerContext) {
@@ -2347,6 +2426,7 @@ function CombatScreenView({
       onChange?.(result!)
       return
     }
+    const powerPreviewId = powerPreview?.id
     const unlock = () => {
       unknownPowerAction.current = null
       powerActionPending.current = false
@@ -2357,13 +2437,15 @@ function CombatScreenView({
       if (current.powerTriggersUsedThisTurn.includes(powerAbilityKey(viewer!.id, powerUid))) {
         unlock()
       } else if (refreshAttempt !== undefined) {
-        unknownPowerAction.current = { refreshAttempt, powerUid }
+        unknownPowerAction.current = { refreshAttempt, powerUid, powerPreviewId, context }
       } else {
         unlock()
         setPendingPowerUid(powerUid)
       }
     }
-    Promise.resolve(onAction({ kind: 'activatePower', powerUid, ...context, preflight: true })).then((outcome) => {
+    Promise.resolve(onAction({
+      kind: 'activatePower', powerUid, powerPreviewId, ...context, preflight: true,
+    })).then((outcome) => {
       if (outcome?.status === 'unknown') {
         waitForRefresh(outcome.refreshAttempt)
         return
@@ -2374,10 +2456,49 @@ function CombatScreenView({
         if (held && !authoritative!.combat.startTurnProgress?.forcedCard &&
           !authoritative!.combat.powerTriggersUsedThisTurn.includes(powerAbilityKey(viewer!.id, powerUid))) {
           setPendingPowerUid(powerUid)
+          setPowerChamberUids((context.chamberUids ?? []).filter((uid) =>
+            authoritative!.player.chamber?.some((card) => card.uid === uid)))
+          setPowerLoadUids((context.loadUids ?? []).filter((uid) =>
+            authoritative!.player.hand?.some((card) => card.uid === uid)))
+          const preview = outcome?.snapshot?.powerPreview
+          if (preview?.powerUid === powerUid && preview.id === powerPreviewId) {
+            const revealed = new Set(preview.cards.map((card) => card.uid))
+            setPowerChoiceCards(preview.cards)
+            setPowerScryDiscardUids((context.scryDiscardUids ?? []).filter((uid) => revealed.has(uid)))
+            setPowerExhaustUids(context.exhaustUids ?? [])
+            setPowerScryConfirmed(pendingPowerNeedsGemChoice)
+          }
         }
       }
       unlock()
     }, () => waitForRefresh())
+  }
+
+  function restoreUnknownCard(submitted: Pending, current: Player, usingMiracle: boolean) {
+    const alive = new Set(stateRef.current.enemies.filter((enemy) => !enemy.dead).map((enemy) => enemy.uid))
+    const enemyUid = submitted.enemyUid && alive.has(submitted.enemyUid) ? submitted.enemyUid : null
+    const enemyUids = submitted.enemyUids.filter((uid) => alive.has(uid))
+    const slimeEnemyUids = submitted.slimeEnemyUids.filter((uid) => alive.has(uid))
+    const hermitEnemyUids = submitted.hermitEnemyUids.filter((uid) => alive.has(uid))
+    const soulburnEnemyUids = submitted.soulburnEnemyUids.filter((uid) => alive.has(uid))
+    const shivEnemyUids = submitted.shivEnemyUids.filter((uid) => alive.has(uid))
+    const choicePool = submitted.choiceCards ?? current.hand
+    const picked = submitted.picked.filter((uid) => choicePool.some((card) => card.uid === uid))
+    const targetChanged = enemyUid !== submitted.enemyUid || enemyUids.length !== submitted.enemyUids.length ||
+      slimeEnemyUids.length !== submitted.slimeEnemyUids.length || hermitEnemyUids.length !== submitted.hermitEnemyUids.length ||
+      soulburnEnemyUids.length !== submitted.soulburnEnemyUids.length || shivEnemyUids.length !== submitted.shivEnemyUids.length
+    setMiracleOnCard(usingMiracle)
+    setPending({
+      ...submitted,
+      enemyUid,
+      enemyUids,
+      slimeEnemyUids,
+      hermitEnemyUids,
+      soulburnEnemyUids,
+      shivEnemyUids,
+      picked,
+      choiceConfirmed: submitted.choiceConfirmed && picked.length === submitted.picked.length && targetChanged,
+    })
   }
 
   function choosePowerContext(context: PowerContext) {
@@ -2672,6 +2793,7 @@ function CombatScreenView({
     const action = {
       kind: next.chamberPlay ? 'playHermitChamberCard' : next.cardInHand ? 'playCard' : 'playCardCopy',
       cardUid: next.card.uid,
+      copyId: !next.cardInHand && !next.chamberPlay ? state.pendingCardCopy?.id : undefined,
       ...context,
       preflight: true,
       expectedShivOverflow: next.overflowShivs > 0 ? next.overflowShivs : undefined,
@@ -2682,7 +2804,7 @@ function CombatScreenView({
       cardActionPending.current = true
       setUsingCard(true)
       setMiracleOnCard(false)
-      setPending(null)
+      setPending(next.choiceCards ? next : null)
       const unlock = () => {
         unknownCardAction.current = null
         cardActionPending.current = false
@@ -2693,11 +2815,11 @@ function CombatScreenView({
           const current = stateRef.current.players.find((player) => player.id === viewerId)
           const currentCopy = stateRef.current.pendingCardCopy
           const source = next.chamberPlay ? 'chamber' : next.cardInHand ? 'hand' : 'copy'
-          const copiesBefore = source === 'copy' ? state.pendingCardCopy?.sourceNames.length : undefined
+          const copyId = source === 'copy' ? state.pendingCardCopy?.id : undefined
           const refreshAttempt = outcome.refreshAttempt ?? refreshRef.current
           const committed = source === 'copy'
             ? currentCopy?.card.uid !== next.card.uid ||
-              (copiesBefore !== undefined && currentCopy.sourceNames.length < copiesBefore)
+              currentCopy.id !== copyId
             : current && !(source === 'chamber' ? current.chamber : current.hand)
               .some((card) => card.uid === next.card.uid)
           const refreshed = refreshAttempt !== undefined && refreshRef.current !== undefined &&
@@ -2706,6 +2828,7 @@ function CombatScreenView({
             if (refreshed && shouldDisarmCardFlight(next.cardInHand || next.chamberPlay, committed === true)) {
               armedCardFlight.current = null
             }
+            if (!committed && current) restoreUnknownCard(next, current, usingMiracle)
             unlock()
           }
           else if (refreshAttempt !== undefined) {
@@ -2713,7 +2836,9 @@ function CombatScreenView({
               refreshAttempt,
               cardUid: next.card.uid,
               source,
-              copiesBefore,
+              copyId,
+              pending: next,
+              usingMiracle,
             }
           } else {
             if ((next.chamberPlay ? current?.chamber : current?.hand)
@@ -2723,6 +2848,10 @@ function CombatScreenView({
           return
         }
         unlock()
+        if (outcome?.status !== 'refused' && outcome?.status !== 'reconciled') {
+          setPending(null)
+          return
+        }
         if (outcome?.status === 'refused' || outcome?.status === 'reconciled') {
           const authoritative = reconciliation(outcome)
           if (!authoritative) {
@@ -2733,7 +2862,8 @@ function CombatScreenView({
             ? !authoritative.player.chamber?.some((card) => card.uid === next.card.uid)
             : next.cardInHand
               ? !authoritative.player.hand?.some((card) => card.uid === next.card.uid)
-              : authoritative.combat.pendingCardCopy?.card.uid !== next.card.uid) return
+              : authoritative.combat.pendingCardCopy?.card.uid !== next.card.uid ||
+                authoritative.combat.pendingCardCopy.id !== action.copyId) return
           if (next.cardInHand || next.chamberPlay) armedCardFlight.current = null
           const authoritativePlayer: Player = {
             ...viewer!,
@@ -2768,9 +2898,30 @@ function CombatScreenView({
           }
           if (next.choiceCards) {
             setMiracleOnCard(usingMiracle)
+            const preview = outcome?.snapshot?.cardPreview
+            const matchingReveal = preview?.cardUid === next.card.uid && preview.kind === next.choice?.kind &&
+              (preview.copy === true) === (!next.cardInHand && !next.chamberPlay) &&
+              (preview.chamber === true) === next.chamberPlay
+            if (matchingReveal) {
+              const sameCards = preview.cards.length === next.choiceCards.length &&
+                preview.cards.every((card, index) => card.uid === next.choiceCards?.[index]?.uid)
+              const needsRetarget = preview.enemyUid !== next.enemyUid ||
+                (preview.slimeEnemyUids ?? []).join('\0') !== next.slimeEnemyUids.join('\0')
+              setPending({
+                ...next,
+                choiceCards: preview.cards,
+                picked: sameCards ? next.picked : [],
+                choiceConfirmed: sameCards && needsRetarget && next.choiceConfirmed,
+                scryToHandUid: sameCards ? next.scryToHandUid : undefined,
+                enemyUid: preview.enemyUid,
+                slimeUids: preview.slimeUids ?? [],
+                slimeEnemyUids: preview.slimeEnemyUids ?? [],
+              })
+              return
+            }
             if (next.chamberPlay) requestChamberChoicePreview(next.card, next.enemyUid, next)
             else if (next.cardInHand) requestChoicePreview(next.card, next.enemyUid, next)
-            else requestCopyChoicePreview(next.enemyUid)
+            else requestCopyChoicePreview(next.enemyUid, next)
             return
           }
           const chamberCard = next.chamberPlay
@@ -2904,15 +3055,27 @@ function CombatScreenView({
     else setPending(next)
   }
 
+  function preserveRevealedSelection(next: Pending, previous?: Pending) {
+    const unchanged = previous?.choiceCards && next.choice?.kind === previous.choice?.kind &&
+      next.choiceCards?.length === previous.choiceCards.length &&
+      next.choiceCards.every((card, index) => card.uid === previous.choiceCards?.[index]?.uid)
+    return unchanged ? {
+      ...next,
+      picked: previous.picked,
+      choiceConfirmed: previous.choiceConfirmed,
+      scryToHandUid: previous.scryToHandUid,
+    } : next
+  }
+
   function requestChoicePreview(card: CardInstance, enemyUid: string | null = null,
-    selections?: Pick<Pending, 'slimeUids' | 'slimeEnemyUids'>) {
+    selections?: Pending) {
     if (cardActionPending.current) return
     if (!onAction) {
       const preview = previewCardChoice(state, viewer!.id, card.uid)
       if (!preview) return
-      const next = { ...pendingFor(card, preview.cards, state, viewer!), enemyUid,
-        slimeUids: selections?.slimeUids ?? [], slimeEnemyUids: selections?.slimeEnemyUids ?? [] }
-      if (next.choice?.kind === preview.kind) setPending(next)
+      const next = preserveRevealedSelection({ ...pendingFor(card, preview.cards, state, viewer!), enemyUid,
+        slimeUids: selections?.slimeUids ?? [], slimeEnemyUids: selections?.slimeEnemyUids ?? [] }, selections)
+      if (next.choice?.kind === preview.kind) stageOrCommit(next)
       return
     }
 
@@ -2929,9 +3092,9 @@ function CombatScreenView({
       const player = current.players.find((candidate) => candidate.id === viewerId)
       const held = player?.hand.find((candidate) => candidate.uid === card.uid)
       if (outcome?.status !== 'accepted' || !preview || preview.cardUid !== card.uid || !player || !held) return
-      const next = { ...pendingFor(held, preview.cards, current, player), enemyUid: preview.enemyUid,
-        slimeUids: preview.slimeUids ?? [], slimeEnemyUids: preview.slimeEnemyUids ?? [] }
-      if (next.choice?.kind === preview.kind) setPending(next)
+      const next = preserveRevealedSelection({ ...pendingFor(held, preview.cards, current, player), enemyUid: preview.enemyUid,
+        slimeUids: preview.slimeUids ?? [], slimeEnemyUids: preview.slimeEnemyUids ?? [] }, selections)
+      if (next.choice?.kind === preview.kind) stageOrCommit(next)
     }, () => {
       cardActionPending.current = false
       setUsingCard(false)
@@ -2939,21 +3102,23 @@ function CombatScreenView({
   }
 
   function requestCopyChoicePreview(enemyUid: string | null = null,
-    selections?: Pick<Pending, 'energySpent' | 'slimeUids' | 'slimeEnemyUids'>) {
+    selections?: Pending) {
     if (cardActionPending.current || !viewer) return
     const copy = state.pendingCardCopy
     if (!copy || copy.playerId !== viewer.id) return
     if (!onAction) {
       const preview = previewCardCopyChoice(state, viewer.id)
       if (!preview) return
-      const next = { ...pendingFor(copy.card, preview.cards, state, viewer, false, copy.energySpent), enemyUid,
-        slimeUids: selections?.slimeUids ?? [], slimeEnemyUids: selections?.slimeEnemyUids ?? [] }
-      if (next.choice?.kind === preview.kind) setPending(next)
+      const next = preserveRevealedSelection({
+        ...pendingFor(copy.card, preview.cards, state, viewer, false, copy.energySpent), enemyUid,
+        slimeUids: selections?.slimeUids ?? [], slimeEnemyUids: selections?.slimeEnemyUids ?? [] }, selections)
+      if (next.choice?.kind === preview.kind) stageOrCommit(next)
       return
     }
     cardActionPending.current = true
     setUsingCard(true)
-    Promise.resolve(onAction({ kind: 'previewCardCopy', cardUid: copy.card.uid, enemyUid,
+    Promise.resolve(onAction({ kind: 'previewCardCopy', cardUid: copy.card.uid,
+      copyId: copy.id, enemyUid,
       slimeUids: selections?.slimeUids, slimeEnemyUids: selections?.slimeEnemyUids })).then((outcome) => {
       cardActionPending.current = false
       setUsingCard(false)
@@ -2962,10 +3127,10 @@ function CombatScreenView({
       const player = current.players.find((candidate) => candidate.id === viewerId)
       const preview = outcome?.snapshot?.cardPreview
       if (outcome?.status !== 'accepted' || !preview?.copy || !currentCopy || !player) return
-      const next = { ...pendingFor(currentCopy.card, preview.cards, current, player, false,
+      const next = preserveRevealedSelection({ ...pendingFor(currentCopy.card, preview.cards, current, player, false,
         currentCopy.energySpent), enemyUid: preview.enemyUid,
-        slimeUids: preview.slimeUids ?? [], slimeEnemyUids: preview.slimeEnemyUids ?? [] }
-      if (next.choice?.kind === preview.kind) setPending(next)
+        slimeUids: preview.slimeUids ?? [], slimeEnemyUids: preview.slimeEnemyUids ?? [] }, selections)
+      if (next.choice?.kind === preview.kind) stageOrCommit(next)
     }, () => {
       cardActionPending.current = false
       setUsingCard(false)
@@ -2973,7 +3138,7 @@ function CombatScreenView({
   }
 
   function requestChamberChoicePreview(card: CardInstance, enemyUid: string | null = null,
-    selections?: Pick<Pending, 'energySpent' | 'slimeUids' | 'slimeEnemyUids'>) {
+    selections?: Pending) {
     if (cardActionPending.current || !viewer) return
     if (!onAction) {
       const preview = previewHermitChamberCardChoice(state, viewer.id, card.uid)
@@ -2981,14 +3146,15 @@ function CombatScreenView({
       const required = state.pendingHermitChamberPlays?.[0]
       const staged = stageHermitChamberViewer(viewer, card,
         required?.playerId === viewer.id && required.cardUids[0] === card.uid && required.free)
-      const next = { ...pendingFor(staged.card, preview.cards, state, staged.player, false, undefined, true),
+      const next = preserveRevealedSelection({
+        ...pendingFor(staged.card, preview.cards, state, staged.player, false, undefined, true),
         chamberPlay: true, enemyUid,
         ...(selections?.energySpent === null || selections?.energySpent === undefined ? {} : {
           energySpent: selections.energySpent, effectEnergy: selections.energySpent,
           energyCharged: selections.energySpent,
         }),
-        slimeUids: selections?.slimeUids ?? [], slimeEnemyUids: selections?.slimeEnemyUids ?? [] }
-      if (next.choice?.kind === preview.kind) setPending(next)
+        slimeUids: selections?.slimeUids ?? [], slimeEnemyUids: selections?.slimeEnemyUids ?? [] }, selections)
+      if (next.choice?.kind === preview.kind) stageOrCommit(next)
       return
     }
     cardActionPending.current = true
@@ -3006,12 +3172,13 @@ function CombatScreenView({
       const required = current.pendingHermitChamberPlays?.[0]
       const staged = stageHermitChamberViewer(player, held,
         required?.playerId === player.id && required.cardUids[0] === held.uid && required.free)
-      const next = { ...pendingFor(staged.card, preview.cards, current, staged.player, false, undefined, true), chamberPlay: true,
+      const next = preserveRevealedSelection({
+        ...pendingFor(staged.card, preview.cards, current, staged.player, false, undefined, true), chamberPlay: true,
         enemyUid: preview.enemyUid,
         ...(preview.energySpent === undefined ? {} : { energySpent: preview.energySpent,
           effectEnergy: preview.energySpent, energyCharged: preview.energySpent }),
-        slimeUids: preview.slimeUids ?? [], slimeEnemyUids: preview.slimeEnemyUids ?? [] }
-      if (next.choice?.kind === preview.kind) setPending(next)
+        slimeUids: preview.slimeUids ?? [], slimeEnemyUids: preview.slimeEnemyUids ?? [] }, selections)
+      if (next.choice?.kind === preview.kind) stageOrCommit(next)
     }, () => {
       cardActionPending.current = false
       setUsingCard(false)
@@ -3574,8 +3741,13 @@ function CombatScreenView({
     }
     if (spendingShiv) {
       if (onAction) {
+        const shivsBefore = viewer!.shivs
         setSpendingShiv(false)
-        onAction({ kind: 'spendShiv', enemyUid: enemy.uid })
+        Promise.resolve(onAction({ kind: 'spendShiv', enemyUid: enemy.uid })).then((outcome) => {
+          const current = stateRef.current.players.find((player) => player.id === viewerId)
+          if ((outcome?.status === 'refused' || outcome?.status === 'reconciled') &&
+            current && current.shivs >= shivsBefore) setSpendingShiv(true)
+        })
         return
       }
       const result = spendShiv(state, viewer!.id, enemy.uid)
@@ -3588,9 +3760,17 @@ function CombatScreenView({
     if (spendingSoulburn) {
       const extraCrispyPowerUid = extraCrispySoulburn ? extraCrispyPower?.uid : undefined
       if (onAction) {
+        const soulburnBefore = viewer!.soulburn
         setSpendingSoulburn(false)
         setExtraCrispySoulburn(false)
-        onAction({ kind: 'spendSoulburn', enemyUid: enemy.uid, extraCrispyPowerUid })
+        Promise.resolve(onAction({ kind: 'spendSoulburn', enemyUid: enemy.uid, extraCrispyPowerUid })).then((outcome) => {
+          const current = stateRef.current.players.find((player) => player.id === viewerId)
+          if ((outcome?.status === 'refused' || outcome?.status === 'reconciled') &&
+            current && current.soulburn >= soulburnBefore) {
+            setSpendingSoulburn(true)
+            setExtraCrispySoulburn(Boolean(extraCrispyPowerUid))
+          }
+        })
         return
       }
       const result = spendSoulburn(state, viewer!.id, enemy.uid, extraCrispyPowerUid)
@@ -3641,7 +3821,7 @@ function CombatScreenView({
       if (pendingDef && cardNeedsChoicePreview(pendingDef, state, viewer!)) {
         if (pending.chamberPlay) requestChamberChoicePreview(pending.card, enemy.uid, pending)
         else if (pending.cardInHand) requestChoicePreview(pending.card, enemy.uid, pending)
-        else requestCopyChoicePreview(enemy.uid)
+        else requestCopyChoicePreview(enemy.uid, pending)
         return
       }
       const next = { ...pending, enemyUid: enemy.uid }
@@ -5897,24 +6077,33 @@ function CombatScreenView({
       </div>
 
       {viewer && dieRelicPending?.playerId === viewer.id ? (() => {
-        const ability = chosenDieRelicAbilities(relicDef(dieRelicPending.relicDefId))[dieRelicPending.abilityIndex]
-        const effect = ability?.effects.find((candidate) =>
+        const effect = dieRelicAbility?.effects.find((candidate) =>
           candidate.kind === 'discard' || candidate.kind === 'exhaustFromHand')
-        if (!effect || effect.kind !== 'discard' && effect.kind !== 'exhaustFromHand') return null
-        const required = Math.min(effect.amount, viewer.hand.length)
-        const discard = effect.kind === 'discard'
-        const optional = ability?.optional === true
+        const required = effect ? Math.min(effect.amount, viewer.hand.length) : 0
+        const discard = effect?.kind === 'discard'
+        const optional = dieRelicAbility?.optional === true
+        const accepting = !optional || dieRelicCardUids.length > 0
+        const needsRetarget = accepting && dieRelicNeedsEnemy &&
+          !livingEnemies(state).some((enemy) => enemy.uid === dieRelicPending.enemyUid)
+        if (!effect && !needsRetarget) return null
         return <section className="hermit-prompt hermit-prompt--cards" aria-label="Die Relic card choice">
-          <strong>{relicDef(dieRelicPending.relicDefId).name}: {optional ? 'you may ' : ''}
-            {discard ? 'discard' : 'Exhaust'} {required}</strong>
-          {viewer.hand.map((card) => {
+          <strong>{relicDef(dieRelicPending.relicDefId).name}{effect ? <>: {optional ? 'you may ' : ''}
+            {discard ? 'discard' : 'Exhaust'} {required}</> : null}</strong>
+          {effect ? viewer.hand.map((card) => {
             const selected = dieRelicCardUids.includes(card.uid)
             return <Card key={card.uid} card={card} selected={selected} onClick={() => setDieRelicCardUids((current) =>
               selected ? current.filter((uid) => uid !== card.uid) : current.length < required
                 ? [...current, card.uid] : current)} />
-          })}
-          <button type="button" disabled={!optional && dieRelicCardUids.length !== required ||
-            optional && dieRelicCardUids.length !== 0 && dieRelicCardUids.length !== required}
+          }) : null}
+          {needsRetarget ? <div>
+            <strong>Choose a new enemy target</strong>
+            {livingEnemies(state).map((enemy) => <button key={enemy.uid} type="button"
+              className={dieRelicEnemyUid === enemy.uid ? 'selected' : undefined}
+              onClick={() => setDieRelicEnemyUid(enemy.uid)}>{enemyLabel(state.enemies, enemy)}</button>)}
+          </div> : null}
+          <button type="button" disabled={usingDieRelic || Boolean(effect) && (!optional && dieRelicCardUids.length !== required ||
+            optional && dieRelicCardUids.length !== 0 && dieRelicCardUids.length !== required) ||
+            accepting && dieRelicNeedsEnemy && !dieRelicTargetUid}
             onClick={() => submitDieRelicChoice(discard)}>
             {optional && dieRelicCardUids.length === 0 ? 'Skip' : `Resolve ${relicDef(dieRelicPending.relicDefId).name}`}
           </button>

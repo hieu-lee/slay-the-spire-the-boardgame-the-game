@@ -2,7 +2,7 @@
 // stream so a game can be replayed exactly from (seed, action log) — which is
 // what makes server-authoritative multiplayer and reproducible playtests work.
 
-export type RngState = { seed: number; calls: number }
+export type RngState = { seed: number; calls: number; replayValues?: number[] }
 
 export function createRng(seed: number): RngState {
   return { seed: seed >>> 0, calls: 0 }
@@ -27,6 +27,8 @@ function mulberry32(a: number): number {
 
 /** Advances `state` and returns a float in [0, 1). */
 export function nextFloat(state: RngState): number {
+  const replay = state.replayValues?.shift()
+  if (replay !== undefined) return replay
   state.seed = (state.seed + 0x6d2b79f5) >>> 0
   state.calls++
   return mulberry32(state.seed - 0x6d2b79f5)

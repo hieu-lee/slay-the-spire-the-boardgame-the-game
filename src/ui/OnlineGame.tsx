@@ -357,27 +357,61 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     snapshot?.you.playerId,
   )
   const visibleCombat = snapshot?.run?.combat
-  const combat = useMemo(() => visibleCombat ? {
-    ...visibleCombat,
-    rng: { seed: 0, calls: 0 },
-    discardedThisTurn: [],
-    stanceChangedThisTurn: [],
-    playedCardsThisTurn: visibleCombat.playedCardsThisTurn ?? [],
-    potionDeck: [],
-    potionLimit: visibleCombat.potionLimit,
-    lastStand: visibleCombat.lastStand,
-    summonSupply: {},
-    pendingSummons: visibleCombat.pendingSummons ?? [],
-    pendingDistilled: visibleCombat.pendingDistilled ? {
-      ...visibleCombat.pendingDistilled,
-      cards: visibleCombat.pendingDistilled.cards ?? [],
-    } : undefined,
-    pendingRelicScry: visibleCombat.pendingRelicScry ? {
-      ...visibleCombat.pendingRelicScry,
-      cards: visibleCombat.pendingRelicScry.cards ?? [],
-    } : undefined,
-    players: visibleCombat.players.map(playerForUi),
-  } satisfies CombatState : null, [visibleCombat])
+  const asyncPlayerTurn = visibleCombat?.phase === 'player' ||
+    visibleCombat?.phase === 'copy' && visibleCombat.pendingCardCopy?.resumePhase === 'player'
+  const combat = useMemo(() => {
+    if (!visibleCombat) return null
+    const viewerId = snapshot?.you.playerId
+    const visibleProgress = visibleCombat.startTurnProgress
+    return {
+      ...visibleCombat,
+      startTurnProgress: visibleProgress ? {
+        ...visibleProgress,
+        forcedCard: asyncPlayerTurn && visibleProgress.forcedCard?.playerId !== viewerId
+          ? undefined : visibleProgress.forcedCard,
+      } : undefined,
+      pendingCardCopy: asyncPlayerTurn && visibleCombat.pendingCardCopy?.playerId !== viewerId
+        ? undefined : visibleCombat.pendingCardCopy,
+      pendingTriggers: asyncPlayerTurn
+        ? visibleCombat.pendingTriggers.filter((trigger) => trigger.playerId === viewerId)
+        : visibleCombat.pendingTriggers,
+      pendingPlunderSwitches: asyncPlayerTurn
+        ? visibleCombat.pendingPlunderSwitches?.filter((choice) => choice.playerId === viewerId)
+        : visibleCombat.pendingPlunderSwitches,
+      pendingDieRelicChoices: asyncPlayerTurn
+        ? visibleCombat.pendingDieRelicChoices?.filter((choice) => choice.playerId === viewerId)
+        : visibleCombat.pendingDieRelicChoices,
+      pendingHermitSetupLoads: asyncPlayerTurn
+        ? visibleCombat.pendingHermitSetupLoads?.filter((choice) => choice.playerId === viewerId)
+        : visibleCombat.pendingHermitSetupLoads,
+      pendingHermitChamberPlays: asyncPlayerTurn
+        ? visibleCombat.pendingHermitChamberPlays?.filter((choice) => choice.playerId === viewerId)
+        : visibleCombat.pendingHermitChamberPlays,
+      pendingHermitStrengthRewards: asyncPlayerTurn
+        ? visibleCombat.pendingHermitStrengthRewards?.filter((choice) => choice.playerId === viewerId)
+        : visibleCombat.pendingHermitStrengthRewards,
+      rng: { seed: 0, calls: 0 },
+      discardedThisTurn: [],
+      stanceChangedThisTurn: [],
+      playedCardsThisTurn: visibleCombat.playedCardsThisTurn ?? [],
+      potionDeck: [],
+      potionLimit: visibleCombat.potionLimit,
+      lastStand: visibleCombat.lastStand,
+      summonSupply: {},
+      pendingSummons: visibleCombat.pendingSummons ?? [],
+      pendingDistilled: visibleCombat.pendingDistilled &&
+      (!asyncPlayerTurn || visibleCombat.pendingDistilled.playerId === viewerId) ? {
+        ...visibleCombat.pendingDistilled,
+        cards: visibleCombat.pendingDistilled.cards ?? [],
+      } : undefined,
+      pendingRelicScry: visibleCombat.pendingRelicScry &&
+      (!asyncPlayerTurn || visibleCombat.pendingRelicScry.playerId === viewerId) ? {
+        ...visibleCombat.pendingRelicScry,
+        cards: visibleCombat.pendingRelicScry.cards ?? [],
+      } : undefined,
+      players: visibleCombat.players.map(playerForUi),
+    } satisfies CombatState
+  }, [asyncPlayerTurn, visibleCombat, snapshot?.you.playerId])
 
   if (!snapshot && room.activeCode) {
     return (
@@ -534,9 +568,15 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const run = snapshot.run
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
   const canGiveUp = Boolean(viewer) && canGiveUpRun(run, snapshot.campaignProgress)
-  const pendingSocket = run.pendingGuardianSockets?.[0]
+  const pendingSocket = run.pendingGuardianSockets?.find((pending) =>
+    run.phase !== 'reward' || pending.playerId === snapshot.you.playerId)
   const pendingSocketOwner = run.players.find((player) => player.id === pendingSocket?.playerId)
-  const pendingAcquisition = hasPendingRelicAcquisition(run) || Boolean(pendingSocket)
+  const pendingAcquisition = hasPendingRelicAcquisition(
+    run, run.phase === 'reward' ? snapshot.you.playerId : undefined,
+  )
+  const viewerRewardPending = run.phase === 'reward' && run.rewards.some((offer) =>
+    offer.playerId === snapshot.you.playerId && (offer.cardReward || offer.transformReward || offer.gold ||
+      offer.potion !== false || (offer.relic ?? false) !== false || (offer.bossRelics ?? false) !== false))
   const activeNeowProgress = run.neow?.players[snapshot.you.playerId]
     ?? Object.values(run.neow?.players ?? {}).find((progress) => progress !== null)
   const heartBoon = activeNeowProgress?.card?.source === 'heart'
@@ -549,11 +589,14 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const cardChoiceSeat = snapshot.seats.find((seat) => seat.playerId === snapshot.cardChoicePlayerId)
   const foreignCardChoice = cardChoiceSeat !== undefined && cardChoiceSeat.playerId !== snapshot.you.playerId
   const foreignCardCopy = foreignCardChoice && run.combat?.pendingCardCopy?.playerId === cardChoiceSeat?.playerId
+  const blockingForeignCardChoice = foreignCardChoice && !asyncPlayerTurn
   const triggerOwner = snapshot.seats.find((seat) =>
     seat.playerId === run.combat?.pendingTriggers[0]?.playerId)
-  const foreignTrigger = triggerOwner !== undefined && triggerOwner.playerId !== snapshot.you.playerId
+  const foreignTrigger = !asyncPlayerTurn && triggerOwner !== undefined &&
+    triggerOwner.playerId !== snapshot.you.playerId
   const discardOwner = snapshot.seats.find((seat) => seat.playerId === snapshot.startTurnDiscard?.playerId)
   const foreignStartTurnDiscard = discardOwner !== undefined && discardOwner.playerId !== snapshot.you.playerId
+  const foreignInteractionLock = blockingForeignCardChoice || foreignTrigger || foreignStartTurnDiscard
   const combatViewer = run.combat?.players.find((player) => player.id === snapshot.you.playerId)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const waitingForCatchUpMerchant = run.phase === 'room' && run.roomState?.kind === 'merchant' &&
@@ -577,7 +620,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             <OutsidePotionBar players={run.players.map(playerForUi)} viewerId={snapshot.you.playerId}
               ascension={run.ascension}
               ruleset={run.meta.ruleset ?? 'base'}
-              disabled={giveUpStartPending || room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard}
+              disabled={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock}
               onTrade={(potionId, playerId) => room.act({ kind: 'tradePotion', potionId, playerId })}
               onUse={(potionId, replacePotionId) => room.act({ kind: 'usePotionOutsideCombat', potionId, replacePotionId })} />
           ) : null}
@@ -670,7 +713,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       /> : null}
 
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
-      {foreignCardChoice && cardChoiceSeat?.connected
+      {blockingForeignCardChoice && cardChoiceSeat?.connected
         ? <p className="online-banner" role="status">{cardChoiceSeat.name} is resolving {
           foreignCardCopy
             ? pendingCardCopyLabel(run.combat!.pendingCardCopy!)
@@ -679,20 +722,22 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         : null}
       {foreignCardChoice && cardChoiceSeat && !cardChoiceSeat.connected ? (
         <p className="online-banner" role="status">
-          {cardChoiceSeat.name} disconnected during a revealed card.{' '}
+          {cardChoiceSeat.name} disconnected while resolving {
+            foreignCardCopy ? pendingCardCopyLabel(run.combat!.pendingCardCopy!) : 'a revealed card'
+          }.{' '}
           <button type="button" onClick={() => room.act({ kind: 'endTurn' })}>Resolve card and end turn</button>
         </p>
       ) : null}
-      {foreignTrigger ? <p className="online-banner" role="status">
-        Waiting for {triggerOwner.name} to resolve a triggered ability…
-      </p> : null}
       {foreignStartTurnDiscard ? <p className="online-banner" role="status">
         Waiting for {discardOwner.name} to discard for Tools of the Trade…
       </p> : null}
+      {foreignTrigger ? <p className="online-banner" role="status">
+        Waiting for {triggerOwner.name} to resolve a triggered ability…
+      </p> : null}
       {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
 
-      <div className="online-mutations" inert={giveUpStartPending || room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard || undefined}
-        aria-disabled={giveUpStartPending || room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard || undefined}>
+      <div className="online-mutations" inert={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock || undefined}
+        aria-disabled={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock || undefined}>
       {run.phase === 'combat' && combat ? (
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           state={combat}
@@ -721,7 +766,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           authoritativeConnected={room.connection === 'connected'}
           animateOpeningHand={animateOpeningHand}
           mutationsEnabled={!giveUpStartPending && !run.courier.offer && room.connection === 'connected' &&
-            !foreignCardChoice && !foreignTrigger && !foreignStartTurnDiscard}
+            !foreignInteractionLock}
           autoAdvance={!compendiumOpen && !pauseOpen && !settingsOpen && !giveUpStartPending && !soloGiveUpOpen && !giveUpVote && !run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
             !combat.players.find((player) => player.id === seat.playerId)?.dead)?.playerId === snapshot.you.playerId}
           onAction={room.act}
@@ -747,21 +792,26 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           </select>
         </label>
       </section> : null}
-      {snapshot.pendingRelic && viewer?.deck ? <RelicResolvePanel key={`${snapshot.pendingRelic.relicId}:${JSON.stringify(snapshot.pendingRelic.rewardIndices ?? {})}`}
+      {snapshot.pendingRelic && viewer?.deck ? <RelicResolvePanel key={`${snapshot.pendingRelic.id}:${JSON.stringify(snapshot.pendingRelic.rewardIndices ?? {})}`}
         pending={snapshot.pendingRelic} player={playerForUi(viewer)}
         potion={run.rewards.find((offer) => offer.playerId === snapshot.you.playerId)?.potion}
         ascension={run.ascension}
         onPotion={(decision) => room.act({ ...decision, kind: 'potionReward', choice: decision.kind })}
-        onRewardChoice={(reward, choice) => room.act({ kind: 'choosePendingRelicReward', reward, choice })}
-        onResolve={(cardUids, rewardIndices) => room.act({ kind: 'resolvePendingRelic', cardUids, rewardIndices })} /> : null}
+        onRewardChoice={(reward, choice) => room.act({
+          kind: 'choosePendingRelicReward', pendingRelicId: snapshot.pendingRelic!.id, reward, choice,
+        })}
+        onResolve={(cardUids, rewardIndices) => room.act({
+          kind: 'resolvePendingRelic', pendingRelicId: snapshot.pendingRelic!.id, cardUids, rewardIndices,
+        })} /> : null}
       {pendingSocket && pendingSocket.playerId === snapshot.you.playerId && viewer?.deck ? (
         <GuardianSocketPanel key={`${pendingSocket.playerId}-${pendingSocket.cardUid}`}
           pending={pendingSocket} deck={viewer.deck}
-          onResolve={(gemId) => room.act({ kind: 'resolveGuardianSocket', gemId })} />
+          onResolve={(gemId) => room.act({ kind: 'resolveGuardianSocket', cardUid: pendingSocket.cardUid, gemId })} />
       ) : pendingSocket && pendingSocketOwner ? <section className="room-screen" role="status">
         Waiting for {pendingSocketOwner.name} to socket a Guardian Gem.
       </section> : null}
-      {run.phase !== 'neow' && !snapshot.pendingRelic && snapshot.pendingRelicStatus ? <section className="room-screen" role="status">
+      {run.phase !== 'neow' && !viewerRewardPending &&
+      !snapshot.pendingRelic && snapshot.pendingRelicStatus ? <section className="room-screen" role="status">
         Waiting for {snapshot.pendingRelicStatus.playerName} to resolve{' '}
         {relicDef(snapshot.pendingRelicStatus.relicId).name}.
       </section> : null}
@@ -811,8 +861,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         <OnlineRewardScreen
           run={run}
           viewerId={snapshot.you.playerId}
-          decided={snapshot.rewardDecided}
-          confirmed={snapshot.rewardConfirmed}
           onAction={room.act}
         />
       ) : null}
@@ -893,8 +941,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       {run.campaign.finalized ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{snapshot.campaignProgress.unspentMarks} shared mark{snapshot.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. {snapshot.seats[0]?.playerId === snapshot.you.playerId ? 'Assign them before the next run.' : `Waiting for ${snapshot.seats[0]?.name ?? 'the journal keeper'}.`}</p>{snapshot.seats[0]?.playerId === snapshot.you.playerId ? <div>{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.colorless < 3 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 1, actIV: 0, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Colorless · {snapshot.campaignProgress.colorless}/3</button> : null}{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.actIV < 5 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 0, actIV: 1, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Act IV · {snapshot.campaignProgress.actIV}/5</button> : null}{snapshot.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => room.act({ kind: 'returnToLobby' })}>Prepare next run →</button> : null}</div> : null}</section> : null}
 
       </div>
-      {/* OUTSIDE `.online-mutations`, which carries `inert` whenever another seat
-          holds a card choice, a pending trigger or a discard. `inert` takes its
+      {/* OUTSIDE `.online-mutations`, which carries `inert` while reconnecting or
+          another seat owns a sequential choice. `inert` takes its
           subtree out of the accessibility tree, so an `aria-live` region nested
           in it never announces — and the whole reason this text lives apart from
           `CardMorph` is that the visual is deliberately `aria-hidden` + `inert`

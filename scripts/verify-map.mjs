@@ -1330,7 +1330,7 @@ check('the inter-Act victory pause permits outside-combat Potion actions', () =>
   assertEqual(tradePotion(terminal, 'p1', 'p2', 'fire_potion'), terminal)
 })
 
-check('pending immediate Relics block progression and between-boss item actions', () => {
+check('pending immediate Relics block progression but not another player\'s item actions', () => {
   const run = postNeowRun(919, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
@@ -1345,10 +1345,13 @@ check('pending immediate Relics block progression and between-boss item actions'
 
   const between = { ...won, phase: 'betweenCombat', pendingBossDefId: 'time_eater',
     players: won.players.map((player, index) => ({ ...player,
-      potions: index === 0 ? ['blood_potion'] : [] })) }
+      hp: index === 1 ? player.maxHp - 2 : player.hp,
+      potions: ['blood_potion'] })) }
   assertEqual(startPendingBoss(between), between)
-  assertEqual(tradePotion(between, 'p1', 'p2', 'blood_potion'), between)
+  assert(tradePotion(between, 'p2', 'p1', 'blood_potion') !== between)
   assertEqual(usePotionOutsideCombat(between, 'p1', 'blood_potion'), between)
+  assertEqual(usePotionOutsideCombat(between, 'p2', 'blood_potion').players[1].hp,
+    between.players[1].maxHp)
 
   const resolved = resolvePendingRelic(between, 'p1', [], [-1, -1, -1, -1])
   assert(tradePotion(resolved, 'p1', 'p2', 'blood_potion') !== resolved,

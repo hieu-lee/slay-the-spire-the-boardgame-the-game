@@ -58,6 +58,7 @@ export type CombatState = {
   /** Each Hermit must Load the private card drawn by their start-of-combat board ability. */
   pendingHermitSetupLoads?: { playerId: string }[]
   pendingDieRelicChoices?: {
+    id: number
     playerId: string
     relicDefId: string
     abilityIndex: number
@@ -118,6 +119,8 @@ export type CombatState = {
   }
   /** Physical cards waiting to resolve after their virtual copy. */
   pendingCardCopy?: {
+    /** Stable transaction token for exactly one pending copy resolution. */
+    id: number
     playerId: string
     card: CardInstance
     energySpent: number
@@ -148,7 +151,7 @@ export type CombatState = {
   /** Distilled Chaos cards are private until their owner plays each for free. */
   pendingDistilled?: { playerId: string; cards: CardInstance[] }
   /** Golden Eye's private top-three reveal, persisted across reconnects. */
-  pendingRelicScry?: { playerId: string; relicIndex: number; cards: CardInstance[] }
+  pendingRelicScry?: { id: number; playerId: string; relicIndex: number; cards: CardInstance[] }
   /** Ordered public Attack/Skill plays used by Doppelganger this turn. */
   playedCardsThisTurn: PlayedCard[]
   partyAttackDiscount?: boolean
@@ -543,6 +546,8 @@ export type PlayContext = {
 export type CardChoicePreview = {
   kind: 'discard' | 'scry' | 'scryToHand' | 'topdeck' | 'search' | 'load' | 'loadAny'
   cards: CardInstance[]
+  /** Final RNG state of the private simulation; the room server reserves it without exposing it. */
+  reservedRng?: RngState
 }
 
 export type PotionContext = {

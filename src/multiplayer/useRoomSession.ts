@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CombatPhase, CombatPresentationEvent, EndTurnAbility, PendingTriggerAbility, PlayedCard, StartTurnAbility, StartTurnChoice, StartTurnScryAbility } from '../game/combat.ts'
+import type { CombatPhase, CombatPresentationEvent, CombatState, EndTurnAbility, PendingTriggerAbility, PlayedCard, StartTurnAbility, StartTurnChoice, StartTurnScryAbility } from '../game/combat.ts'
 import type { SpireMap } from '../game/map.ts'
 import type { CampfireChoice, CardRewardOffer, PendingGuardianSocket, PendingRelicPreview, RunPhase } from '../game/run.ts'
 import type { DailyModifierId, QuickSetupState, RunMetaOptions, RunMetaState } from '../game/meta.ts'
@@ -69,6 +69,7 @@ export type VisibleCombat = {
     }
   }
   pendingCardCopy?: {
+    id: number
     playerId: string
     card: CardInstance
     energySpent: number
@@ -88,7 +89,12 @@ export type VisibleCombat = {
     queuedWeaves?: CardInstance[]
   }
   pendingDistilled?: { playerId: string; cards: CardInstance[] | null }
-  pendingRelicScry?: { playerId: string; relicIndex: number; cards: CardInstance[] | null }
+  pendingRelicScry?: { id: number; playerId: string; relicIndex: number; cards: CardInstance[] | null }
+  pendingPlunderSwitches?: CombatState['pendingPlunderSwitches']
+  pendingDieRelicChoices?: CombatState['pendingDieRelicChoices']
+  pendingHermitSetupLoads?: CombatState['pendingHermitSetupLoads']
+  pendingHermitChamberPlays?: CombatState['pendingHermitChamberPlays']
+  pendingHermitStrengthRewards?: CombatState['pendingHermitStrengthRewards']
   playedCardsThisTurn: PlayedCard[]
   presentationEvents: CombatPresentationEvent[]
   pendingSummons: {
@@ -158,9 +164,6 @@ export type RoomSnapshot = {
   pendingRelicStatus?: { playerId: string; playerName: string; relicId: string } | null
   campfireChoice?: { choice: CampfireChoice; cardUid?: string }
   campfireDecided: string[]
-  rewardChoice?: number | null
-  rewardDecided: string[]
-  rewardConfirmed: string[]
   endTurnDecided: string[]
   endTurnAbilities?: EndTurnAbility[]
   startTurnAbilities?: StartTurnAbility[]
@@ -197,7 +200,7 @@ export type RoomSnapshot = {
     slimeUids?: string[]
     slimeEnemyUids?: string[]
   }
-  powerPreview?: { powerUid: string; kind: 'scry'; cards: CardInstance[] }
+  powerPreview?: { id: number; powerUid: string; kind: 'scry'; cards: CardInstance[] }
   cardChoicePlayerId?: string
   merchantPledges?: Record<string, { buyerId: string; section?: string; slot?: number; kind?: 'removal'; cardUid?: string; potionRecipientId?: string; discardPotionId?: string; payments: Record<string, number> }>
   merchantReady?: string[]

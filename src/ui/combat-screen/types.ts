@@ -5,6 +5,7 @@ import type {
   CombatState,
   EndTurnAbility,
   PendingTriggerAbility,
+  PowerContext,
   StartTurnAbility,
   StartTurnChoice,
   StartTurnScryAbility,
@@ -42,7 +43,7 @@ export type CombatScreenProps = {
     slimeUids?: string[]
     slimeEnemyUids?: string[]
   }
-  powerPreview?: { powerUid: string; kind: 'scry'; cards: CardInstance[] }
+  powerPreview?: { id: number; powerUid: string; kind: 'scry'; cards: CardInstance[] }
   /** Owner-private authoritative trigger choices supplied by an online room. */
   authoritativePendingTrigger?: PendingTriggerAbility | null
   partyEndTurnAbilities?: EndTurnAbility[]
@@ -70,13 +71,20 @@ export type CombatScreenProps = {
 
 export type UnknownPotionAction = { refreshAttempt: number; potionId: string; countBefore: number }
 
-export type UnknownPowerAction = { refreshAttempt: number; powerUid: string }
+export type UnknownPowerAction = {
+  refreshAttempt: number
+  powerUid: string
+  powerPreviewId?: number
+  context: PowerContext
+}
 
 export type UnknownCardAction = {
   refreshAttempt: number
   cardUid: string
   source: 'hand' | 'chamber' | 'copy'
-  copiesBefore?: number
+  copyId?: number
+  pending: Pending
+  usingMiracle: boolean
 }
 
 export type MotionKey = 'energy' | 'draw' | 'discard' | 'exhaust'

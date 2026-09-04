@@ -90,8 +90,10 @@ export function queueNewGuardianSockets(
 }
 
 /** Attach one revealed transparent Gem and bottom every unpicked reveal. */
-export function resolveGuardianSocket(state: RunState, playerId: string, gemId: string): RunState {
-  const pending = state.pendingGuardianSockets?.[0]
+export function resolveGuardianSocket(state: RunState, playerId: string, cardUid: string, gemId: string): RunState {
+  const pendingIndex = state.pendingGuardianSockets?.findIndex((choice) =>
+    choice.playerId === playerId && choice.cardUid === cardUid) ?? -1
+  const pending = state.pendingGuardianSockets?.[pendingIndex]
   const player = state.players.find((candidate) => candidate.id === playerId)
   const card = player?.deck.find((candidate) => candidate.uid === pending?.cardUid)
   const definition = card && GUARDIAN_CARDS_BY_ID[card.defId]
@@ -114,15 +116,15 @@ export function resolveGuardianSocket(state: RunState, playerId: string, gemId: 
     }),
     guardianGemDeck,
     roomState,
-    pendingGuardianSockets: state.pendingGuardianSockets.slice(1),
+    pendingGuardianSockets: state.pendingGuardianSockets.filter((_choice, index) => index !== pendingIndex),
     log: [...state.log, `${player.name} sockets ${gemId.replace(/^guardian_/, '')}.`],
   }
 }
 
 /** Disconnect fallback: the top revealed Gem is a deterministic legal choice. */
 export function abandonGuardianSocket(state: RunState, playerId: string): RunState {
-  const pending = state.pendingGuardianSockets?.[0]
-  return pending?.playerId === playerId && pending.gemIds[0]
-    ? resolveGuardianSocket(state, playerId, pending.gemIds[0])
+  const pending = state.pendingGuardianSockets?.find((choice) => choice.playerId === playerId)
+  return pending?.gemIds[0]
+    ? resolveGuardianSocket(state, playerId, pending.cardUid, pending.gemIds[0])
     : state
 }

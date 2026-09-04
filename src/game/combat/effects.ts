@@ -124,6 +124,7 @@ export function triggerChosenDieRelic(
   if (dieRelicNeedsOwnerChoice(ability.effects) || (state.pendingDieRelicChoices?.length ?? 0) > 0) {
     state.pendingDieRelicChoices ??= []
     state.pendingDieRelicChoices.push({
+      id: state.nextTriggerId++,
       playerId: owner.id,
       relicDefId,
       abilityIndex,
@@ -2235,6 +2236,7 @@ export function applyEffect(
           context.consumeQueuedFreeAttack = (actor.freeAttacksThisTurn ?? 0) > 0
         } else {
           state.pendingCardCopy = {
+            id: state.nextTriggerId++,
             playerId: actor.id,
             card: queued,
             energySpent: 0,
@@ -2880,6 +2882,7 @@ export function finishDeferredHavocs(
       if (def.type === 'skill') resolveEnraged(state, actor)
       if (combatIsOver(state)) return pendingTriggers
       state.pendingCardCopy = {
+        id: state.nextTriggerId++,
         playerId: actor.id,
         card: { ...card },
         energySpent: 0,

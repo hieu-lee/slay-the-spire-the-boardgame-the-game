@@ -279,7 +279,7 @@ check('the run owns all 24 Gems and parks a drafted Socket until its revealed ch
   run = resolveCardRewards(run, { [owner.id]: 0 })
   assert.equal(run.pendingGuardianSockets.length, 1)
   const pending = run.pendingGuardianSockets[0]
-  run = resolveGuardianSocket(run, owner.id, pending.gemIds[1])
+  run = resolveGuardianSocket(run, owner.id, pending.cardUid, pending.gemIds[1])
   assert.equal(run.pendingGuardianSockets.length, 0)
   assert.equal(run.guardianGemDeck.length, 23)
   assert.equal(run.players[0].deck.find((card) => card.uid === pending.cardUid).attachedGemId, pending.gemIds[1])
@@ -319,10 +319,12 @@ check('Merchant Socket buys replenish revealed Gems and stop after two cards', (
   run = { ...run, phase: 'room', neow: null, roomState, guardianGemDeck }
   assert.equal(roomState.guardianGems.p1.length, 2)
   run = purchaseAtMerchant(run, { buyerId: 'p1', section: 'card', slot: 0, payments: { p1: 2 } })
-  run = resolveGuardianSocket(run, 'p1', run.pendingGuardianSockets[0].gemIds[0])
+  run = resolveGuardianSocket(run, 'p1', run.pendingGuardianSockets[0].cardUid,
+    run.pendingGuardianSockets[0].gemIds[0])
   assert.equal(run.roomState.guardianGems.p1.length, 2)
   run = purchaseAtMerchant(run, { buyerId: 'p1', section: 'card', slot: 1, payments: { p1: 2 } })
-  run = resolveGuardianSocket(run, 'p1', run.pendingGuardianSockets[0].gemIds[0])
+  run = resolveGuardianSocket(run, 'p1', run.pendingGuardianSockets[0].cardUid,
+    run.pendingGuardianSockets[0].gemIds[0])
   assert.equal(run.roomState.socketCardsBought.p1, 2)
   const refused = purchaseAtMerchant(run, { buyerId: 'p1', section: 'card', slot: 2, payments: { p1: 2 } })
   assert.equal(refused, run)

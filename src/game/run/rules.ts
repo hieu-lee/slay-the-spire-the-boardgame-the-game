@@ -13,11 +13,11 @@ import type { DailyModifierId } from '../meta.ts'
 import type { CardInstance, CharacterId, Player } from '../types.ts'
 
 export const hasPendingRelicAcquisition = (state: {
-  players: readonly { relics: readonly { pending?: boolean }[] }[]
-  pendingGuardianSockets?: readonly unknown[]
-}): boolean =>
-  state.players.some((player) => player.relics.some((relic) => relic.pending)) ||
-  (state.pendingGuardianSockets?.length ?? 0) > 0
+  players: readonly { id: string; relics: readonly { pending?: boolean }[] }[]
+  pendingGuardianSockets?: readonly { playerId: string }[]
+}, playerId?: string): boolean =>
+  state.players.some((player) => (!playerId || player.id === playerId) && player.relics.some((relic) => relic.pending)) ||
+  state.pendingGuardianSockets?.some((pending) => !playerId || pending.playerId === playerId) === true
 
 export const hasModifier = (state: Pick<RunState, 'meta'>, id: DailyModifierId): boolean =>
   state.meta?.modifierIds?.includes(id) === true

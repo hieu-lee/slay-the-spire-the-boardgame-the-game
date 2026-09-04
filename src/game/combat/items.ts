@@ -120,7 +120,7 @@ export function activateRelic(
       if (context.scryDiscardUids !== undefined) return state
       const next = clone(state)
       const actor = findPlayer(next, playerId)!
-      next.pendingRelicScry = { playerId, relicIndex, cards: actor.draw.slice(0, 3) }
+      next.pendingRelicScry = { id: next.nextTriggerId++, playerId, relicIndex, cards: actor.draw.slice(0, 3) }
       return next
     }
     const chosen = context.scryDiscardUids

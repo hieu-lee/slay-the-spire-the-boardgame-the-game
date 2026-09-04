@@ -409,7 +409,10 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
           ? addCard(candidate, settled.selectedId!, `c${nextRunUid(settled.state.players)}`) : candidate),
       } : settled.state
       state = queueNewGuardianSockets(beforePrismatic, state, 1, eventGuardianGemGroups)
-      for (const gemId of eventGuardianGemIds) state = resolveGuardianSocket(state, playerId, gemId)
+      for (const gemId of eventGuardianGemIds) {
+        const socket = state.pendingGuardianSockets.find((pending) => pending.playerId === playerId)
+        if (socket) state = resolveGuardianSocket(state, playerId, socket.cardUid, gemId)
+      }
       eventGuardianGemGroups = []
       eventGuardianGemIds = []
       decision = { ...decision, rewardIndexes: [] }
@@ -630,7 +633,10 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
   if (result.players.some((candidate) => candidate.dead)) return { ...state, rng, itemDecks, players: result.players, phase: 'defeat', roomState: null, log: [...state.log, `${result.event.card.name} defeats the party.`] }
   let next: RunState = { ...state, rng, itemDecks, players: result.players, roomState: result.event }
   next = queueNewGuardianSockets(state, next, 1, eventGuardianGemGroups)
-  for (const gemId of eventGuardianGemIds) next = resolveGuardianSocket(next, playerId, gemId)
+  for (const gemId of eventGuardianGemIds) {
+    const socket = next.pendingGuardianSockets.find((pending) => pending.playerId === playerId)
+    if (socket) next = resolveGuardianSocket(next, playerId, socket.cardUid, gemId)
+  }
   if (result.merchant) {
     const guardianGemDeck = [...(next.guardianGemDeck ?? [])]
     return { ...next, guardianGemDeck,

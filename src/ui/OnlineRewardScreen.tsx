@@ -13,12 +13,10 @@ import { LootChoice, PotionLootChoices } from './RewardScreen.tsx'
 type Props = {
   run: VisibleRun
   viewerId: string
-  decided: string[]
-  confirmed: string[]
   onAction: (action: object) => Promise<ActionOutcome>
 }
 
-export function OnlineRewardScreen({ run, viewerId, decided, confirmed, onAction }: Props) {
+export function OnlineRewardScreen({ run, viewerId, onAction }: Props) {
   const [activeCard, setActiveCard] = useState(false)
   const [cardChoicePending, setCardChoicePending] = useState(false)
   const cardChoicePendingRef = useRef(false)
@@ -26,7 +24,6 @@ export function OnlineRewardScreen({ run, viewerId, decided, confirmed, onAction
   const revealPendingRef = useRef(false)
   const [lootPending, setLootPending] = useState(false)
   const lootPendingRef = useRef(false)
-  const confirmPending = useRef(false)
   const [sources, setSources] = useState<RewardSource[]>([])
   const backdrop = { '--reward-backdrop': `url("${assetPath(`backgrounds/boss-act-${run.act}.webp`)}")` } as CSSProperties
   const offer = run.rewards.find((candidate) => candidate.playerId === viewerId)
@@ -35,20 +32,7 @@ export function OnlineRewardScreen({ run, viewerId, decided, confirmed, onAction
   const availableSourcesKey = availableSources.join(',')
   useEffect(() => setSources((current) => current.filter((source) => availableSources.includes(source))), [availableSourcesKey])
   useEffect(() => {
-    if (offer?.cardReward && decided.includes(viewerId) && !confirmed.includes(viewerId)) {
-      if (confirmPending.current) return
-      confirmPending.current = true
-      void onAction({ kind: 'cardReward', choice: 'confirm' }).then((outcome) => {
-        const acknowledged = outcome.snapshot !== undefined && (outcome.snapshot.rewardConfirmed.includes(viewerId) ||
-          !outcome.snapshot.run?.rewards.some((candidate) => candidate.playerId === viewerId && candidate.cardReward))
-        if (!acknowledged && outcome.status !== 'accepted') confirmPending.current = false
-      }, () => { confirmPending.current = false })
-    } else if (!offer?.cardReward || confirmed.includes(viewerId)) {
-      confirmPending.current = false
-    }
-  }, [confirmed, decided, offer?.cardReward, onAction, viewerId])
-  useEffect(() => {
-    if (!offer?.cardReward || decided.includes(viewerId)) {
+    if (!offer?.cardReward) {
       cardChoicePendingRef.current = false
       setCardChoicePending(false)
       setActiveCard(false)
@@ -57,18 +41,18 @@ export function OnlineRewardScreen({ run, viewerId, decided, confirmed, onAction
       revealPendingRef.current = false
       setRevealPending(false)
     }
-  }, [decided, offer?.cardReward, offer?.choices, viewerId])
+  }, [offer?.cardReward, offer?.choices, viewerId])
   if (!offer || !player) return null
   const hasLootChoice = Boolean(offer.gold || offer.potion || offer.relic ||
     Array.isArray(offer.bossRelics) && offer.bossRelics.length > 0 || offer.transformReward ||
-    offer.cardReward && !decided.includes(viewerId))
+    offer.cardReward)
   const pickCard = (nextChoice: number | null) => {
     if (cardChoicePendingRef.current) return
     cardChoicePendingRef.current = true
     setCardChoicePending(true)
     void onAction({ kind: 'cardReward', choice: nextChoice }).then((outcome) => {
-      const acknowledged = outcome.snapshot !== undefined && (outcome.snapshot.rewardDecided.includes(viewerId) ||
-        !outcome.snapshot.run?.rewards.some((candidate) => candidate.playerId === viewerId && candidate.cardReward))
+      const acknowledged = outcome.snapshot !== undefined &&
+        !outcome.snapshot.run?.rewards.some((candidate) => candidate.playerId === viewerId && candidate.cardReward)
       if (!acknowledged && outcome.status !== 'accepted') {
         cardChoicePendingRef.current = false
         setCardChoicePending(false)
@@ -115,7 +99,7 @@ export function OnlineRewardScreen({ run, viewerId, decided, confirmed, onAction
     if (offer.relic) actions.push({ kind: 'relicReward', choice: 'skip' })
     if (offer.bossRelics) actions.push({ kind: 'bossRelicReward', choice: 'skip' })
     if (offer.transformReward) actions.push({ kind: 'transformReward', cardUid: null })
-    if (offer.cardReward && !decided.includes(viewerId) && !cardChoicePending) actions.push({ kind: 'cardReward', choice: null })
+    if (offer.cardReward && !cardChoicePending) actions.push({ kind: 'cardReward', choice: null })
     dispatchLoot(actions)
   }
 
@@ -151,7 +135,7 @@ export function OnlineRewardScreen({ run, viewerId, decided, confirmed, onAction
       {Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <LootChoice key={relicId} disabled={lootPending} onClick={() => dispatchLoot([{ kind: 'bossRelicReward', choice: 'gain', relicId }])}
         icon={<ItemImage kind="relic" id={relicId} />}>{relicDef(relicId).name}</LootChoice>)
       : null}
-      {offer.cardReward && !decided.includes(viewerId) && !cardChoicePending ? <LootChoice disabled={lootPending} onClick={() => {
+      {offer.cardReward && !cardChoicePending ? <LootChoice disabled={lootPending} onClick={() => {
         setActiveCard(true)
         if (offer.choices === null && !offer.prismatic) revealCards()
       }} icon={<CardRewardIcon rare={offer.cardSource === 'rare'} />}>Add a card to your deck.</LootChoice> : null}

@@ -17,6 +17,7 @@ import {
   hasPendingRelicAcquisition,
   leaveRoom,
   finishMerchant,
+  finishRewardsIfComplete,
   finishRun,
   giveUpRun,
   purchaseAtMerchant,
@@ -545,9 +546,10 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     () => Object.values(run.map.rooms).filter((room) => room.visited).length,
     [run.map.rooms],
   )
-  const pendingSocket = run.pendingGuardianSockets?.[0]
+  const pendingSocket = run.pendingGuardianSockets?.find((pending) =>
+    run.phase !== 'reward' || pending.playerId === viewerId)
   const pendingSocketOwner = run.players.find((player) => player.id === pendingSocket?.playerId)
-  const pendingAcquisition = hasPendingRelicAcquisition(run) || Boolean(pendingSocket)
+  const pendingAcquisition = hasPendingRelicAcquisition(run, run.phase === 'reward' ? viewerId : undefined)
   // Derived once per render: `visibleMap` rebuilds the room table (and clones
   // every room under Uncertain Future), and the map phase asked for it four
   // times — twice in one `MapScreen` line, then again per Wing Boots option.
@@ -713,7 +715,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           onChange={updateCombat}
         /></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} onReveal={(kind) => setRun((current) => revealCourier(current, viewerId, kind))} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
       ) : null}
-      {pendingPreview ? <RelicResolvePanel key={`${pendingPreview.relicId}:${JSON.stringify(pendingPreview.rewardIndices ?? {})}`}
+      {pendingPreview ? <RelicResolvePanel key={`${pendingPreview.id}:${JSON.stringify(pendingPreview.rewardIndices ?? {})}`}
         pending={pendingPreview}
         player={viewer!} potion={run.rewards.find((offer) => offer.playerId === viewerId)?.potion}
         ascension={run.ascension}
@@ -725,11 +727,10 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         key={`${pendingSocket.playerId}-${pendingSocket.cardUid}`}
         pending={pendingSocket}
         deck={pendingSocketOwner.deck}
-        onResolve={(gemId) => setRun((current) => {
-          const choice = current.pendingGuardianSockets?.[0]
-          return choice ? resolveGuardianSocket(current, choice.playerId, gemId) : current
-        })} /> : null}
-      {run.phase !== 'neow' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
+        onResolve={(gemId) => setRun((current) => finishRewardsIfComplete(resolveGuardianSocket(
+          current, pendingSocket.playerId, pendingSocket.cardUid, gemId,
+        )))} /> : null}
+      {run.phase !== 'neow' && run.phase !== 'reward' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
         Waiting for {pendingOwner.name} to resolve {relicDef(pendingRelic.defId).name}.
         <button type="button" onClick={() => setViewerId(pendingOwner.id)}>Switch to {pendingOwner.name}</button>
       </section> : null}

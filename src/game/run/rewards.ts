@@ -35,8 +35,11 @@ import { decideRelicReward, resolveRelicReward as resolveRoomRelicReward } from 
 import type { TreasureDecision } from '../noncombat.ts'
 import { bottomGuardianGems, cardHasGuardianSocket, drawGuardianGemChoices, queueGuardianSocket, queueNewGuardianSockets, revealGuardianDraftGems } from './guardian-gems.ts'
 import { bossRelicOfferSize, createRelicInstance, relicDef } from '../relics.ts'
-import type { CardInstance, Player } from '../types.ts'
+import type { CardInstance, Player, RelicInstance } from '../types.ts'
 import { CHARACTER_IDS } from '../types.ts'
+
+const playerHasPendingRelicChoice = (state: Pick<RunState, 'players'>, playerId: string): boolean =>
+  state.players.find((player) => player.id === playerId)?.relics.some((relic) => relic.pending) === true
 
 export function grantHeirlooms(state: RunState, playerIds: readonly string[]): RunState {
   let next = state
@@ -87,6 +90,26 @@ export function expandCommonReward(raw: readonly string[], rare: readonly string
   return { choices, rawIndices, rareIndices, rareCount }
 }
 
+/** Split simultaneous drafts without offering the same physical card twice. */
+export function pendingCommonRewardGroups(
+  player: Player,
+  count: number,
+  size: number,
+  replaceDuplicates: boolean,
+) {
+  let holder = { ...player, cardRewards: [...player.cardRewards], rareRewards: [...player.rareRewards] }
+  const groups = Array.from({ length: count }, () => {
+    const draw = drawCardChoices(holder, size, replaceDuplicates)
+    holder = {
+      ...holder,
+      cardRewards: holder.cardRewards.slice(draw.cardsDrawn.length),
+      rareRewards: holder.rareRewards.slice(draw.raresDrawn.length),
+    }
+    return { draw, ...expandCommonReward(draw.cardsDrawn, draw.raresDrawn, replaceDuplicates) }
+  })
+  return { player: holder, groups }
+}
+
 export function pendingRewardChoices(player: Player, relicId: string, replaceDuplicates = false): string[][] {
   if (relicId === 'enchiridion') return [player.rareRewards.slice(0, 5)]
   if (relicId === 'downfall_enchiridion') {
@@ -101,11 +124,71 @@ export function pendingRewardChoices(player: Player, relicId: string, replaceDup
     return [choices, holder.rareRewards.slice(0, 5)]
   }
   const count = relicId === 'orrery' ? 4 : relicId === 'tiny_house' ? 1 : 0
-  return Array.from({ length: count }, () => {
-    const draw = drawCardChoices(holder, 3, replaceDuplicates)
+  return pendingCommonRewardGroups(holder, count, 3, replaceDuplicates).groups.map((group) => group.choices)
+}
+
+function reservePendingRelicRewardDraws(
+  player: Player,
+  relicId: string,
+  replaceDuplicates: boolean,
+): { player: Player; draws: NonNullable<RelicInstance['pendingRewardDraws']>; choices: string[][] } {
+  const holder = { ...player, cardRewards: [...player.cardRewards], rareRewards: [...player.rareRewards] }
+  const cards: string[] = []
+  const rares: string[] = []
+  let choices = pendingRewardChoices(player, relicId, replaceDuplicates)
+  const takeCommon = (count: number, deduplicate = replaceDuplicates) => {
+    const draw = drawCardChoices(holder, count, deduplicate)
+    cards.push(...draw.cardsDrawn)
+    rares.push(...draw.raresDrawn)
     Object.assign(holder, bottomCardChoices(holder, draw, null))
-    return expandCommonReward(draw.cardsDrawn, draw.raresDrawn, replaceDuplicates).choices
-  })
+  }
+  if (relicId === 'enchiridion') rares.push(...holder.rareRewards.slice(0, 5))
+  else if (relicId === 'downfall_enchiridion') takeCommon(5, true)
+  else if (relicId === 'forbidden_fruit') {
+    takeCommon(3, true)
+    rares.push(...holder.rareRewards.slice(0, 5))
+  } else if (relicId === 'orrery' || relicId === 'tiny_house') {
+    const pending = pendingCommonRewardGroups(player, relicId === 'orrery' ? 4 : 1, 3, replaceDuplicates)
+    cards.push(...pending.groups.flatMap((group) => group.draw.cardsDrawn))
+    rares.push(...pending.groups.flatMap((group) => group.draw.raresDrawn))
+    choices = pending.groups.map((group) => group.choices)
+  }
+  const removeDrawn = (deck: readonly string[], drawn: readonly string[]) => {
+    const remaining = [...deck]
+    for (const id of drawn) {
+      const index = remaining.indexOf(id)
+      if (index >= 0) remaining.splice(index, 1)
+    }
+    return remaining
+  }
+  return {
+    player: { ...player, cardRewards: removeDrawn(player.cardRewards, cards), rareRewards: removeDrawn(player.rareRewards, rares) },
+    draws: { cards, rares },
+    choices,
+  }
+}
+
+/** Reserve cards already shown by pending one-shot Relics in older saved runs. */
+export function migratePendingRelicRewardDraws(state: RunState): RunState {
+  let next = state
+  for (const offer of next.rewards.filter((candidate) => candidate.cardReward && candidate.choices !== null)) {
+    next = reserveRevealedRewardDraws(next, offer.playerId)
+  }
+  for (const player of next.players) {
+    let owner = next.players.find((candidate) => candidate.id === player.id)!
+    let relics = [...owner.relics]
+    let changed = false
+    for (const [index, relic] of relics.entries()) {
+      if (!relic.pending || relic.pendingRewardDraws ||
+        !['enchiridion', 'downfall_enchiridion', 'orrery', 'tiny_house', 'forbidden_fruit'].includes(relic.defId)) continue
+      const reserved = reservePendingRelicRewardDraws(owner, relic.defId, next.meta.ruleset === 'downfall')
+      relics[index] = { ...relic, pendingRewardDraws: reserved.draws }
+      owner = { ...reserved.player, relics }
+      changed = true
+    }
+    if (changed) next = { ...next, players: next.players.map((candidate) => candidate.id === owner.id ? owner : candidate) }
+  }
+  return next
 }
 
 function rewardSourceDeck(state: RunState, source: RewardSource, rare: boolean): string[] {
@@ -290,7 +373,7 @@ function refreshPrismaticRewardSources(state: RunState): RunState {
 
 /** Reveal one player's top three; rewards may instead be skipped unseen (p.8). */
 export function revealCardReward(state: RunState, playerId: string, sources: readonly RewardSource[] = []): RunState {
-  if (state.phase !== 'reward' || hasPendingRelicAcquisition(state)) return state
+  if (state.phase !== 'reward' || playerHasPendingRelicChoice(state, playerId)) return state
   const offer = state.rewards.find((candidate) => candidate.playerId === playerId)
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!offer || !offer.cardReward || offer.choices !== null || !player) return state
@@ -394,9 +477,15 @@ export function revealRewardItems(state: RunState): RunState {
   return changed ? mirrorLegacySupplies({ ...state, potionDeck, relicDeck, rewards }) : state
 }
 
-function finishRewards(state: RunState, next: RunState): RunState {
+const rewardComplete = (offer: CardRewardOffer): boolean =>
+  !offer.cardReward && !offer.transformReward && !offer.gold && offer.potion === false &&
+  (offer.relic ?? false) === false && (offer.bossRelics ?? false) === false
+
+export function finishRewardsIfComplete(state: RunState): RunState {
+  if (state.phase !== 'reward' || hasPendingRelicAcquisition(state) ||
+    state.rewards.some((offer) => !rewardComplete(offer))) return state
   return {
-    ...next,
+    ...state,
     phase: state.roomState ? 'room' : state.rewardDestination ?? 'map',
     rewards: [],
     rewardDestination: state.roomState ? state.rewardDestination : null,
@@ -405,7 +494,7 @@ function finishRewards(state: RunState, next: RunState): RunState {
 
 /** Gold is a visible loot choice, not an invisible combat-side mutation. */
 export function resolveGoldReward(state: RunState, playerId: string, gain = true): RunState {
-  if (state.phase !== 'reward' || hasPendingRelicAcquisition(state)) return state
+  if (state.phase !== 'reward' || playerHasPendingRelicChoice(state, playerId)) return state
   const offer = state.rewards.find((candidate) => candidate.playerId === playerId)
   const owner = state.players.find((player) => player.id === playerId)
   const gold = offer?.gold
@@ -417,10 +506,7 @@ export function resolveGoldReward(state: RunState, playerId: string, gain = true
     rewards,
     log: gain ? [...state.log, `${owner.name} takes ${gold} Gold.`] : state.log,
   }
-  return rewards.every((candidate) => !candidate.cardReward && !candidate.transformReward && !candidate.gold &&
-    candidate.potion === false && (candidate.relic ?? false) === false && candidate.bossRelics === false)
-    ? finishRewards(state, next)
-    : next
+  return finishRewardsIfComplete(next)
 }
 
 function settlePotionOffer(offer: CardRewardOffer): CardRewardOffer {
@@ -454,7 +540,8 @@ export function resolvePotionReward(
     return next
   }
   const pendingRelic = state.players.find((player) => player.id === playerId)?.relics.find((relic) => relic.pending)
-  if (state.phase !== 'reward' || (hasPendingRelicAcquisition(state) && pendingRelic?.defId !== 'tiny_house')) return state
+  if (state.phase !== 'reward' ||
+    playerHasPendingRelicChoice(state, playerId) && pendingRelic?.defId !== 'tiny_house') return state
   const offer = state.rewards.find((candidate) => candidate.playerId === playerId)
   const owner = state.players.find((player) => player.id === playerId)
   if (!offer || offer.potion === false || !owner) return state
@@ -468,9 +555,7 @@ export function resolvePotionReward(
       rewards: state.rewards.map((candidate) => candidate === offer ? settlePotionOffer(candidate) : candidate),
       log: [...state.log, `${owner.name} skips a Potion reward${bottom.length ? '' : ' unseen'}.`],
     })
-    return next.rewards.every((candidate) => !candidate.cardReward && !candidate.transformReward && candidate.potion === false)
-      ? resolveCardRewards(next, {})
-      : next
+    return finishRewardsIfComplete(next)
   }
   if (typeof offer.potion !== 'string') return state
   const limit = potionLimitFor(state.ascension, owner)
@@ -503,9 +588,7 @@ export function resolvePotionReward(
     rewards: state.rewards.map((candidate) => candidate === offer ? settlePotionOffer(candidate) : candidate),
     log: [...state.log, `${recipient.name} gains ${offer.potion}.`],
   })
-  return next.rewards.every((candidate) => !candidate.cardReward && !candidate.transformReward && !candidate.gold && candidate.potion === false)
-    ? resolveCardRewards(next, {})
-    : next
+  return finishRewardsIfComplete(next)
 }
 
 /** Only face-up potions may be traded, and only outside combat (rulebook p.8). */
@@ -516,7 +599,7 @@ export function tradePotion(
   potionId: string,
 ): RunState {
   if (state.phase === 'combat' || state.phase === 'defeat' || victoryIsTerminal(state, state.campaignProgress) ||
-    hasPendingRelicAcquisition(state) || fromPlayerId === toPlayerId) return state
+    fromPlayerId === toPlayerId) return state
   const from = state.players.find((player) => player.id === fromPlayerId)
   const to = state.players.find((player) => player.id === toPlayerId)
   if (!from || !to || from.dead || to.dead || !from.potions.includes(potionId) ||
@@ -546,7 +629,7 @@ export function usePotionOutsideCombat(
   replacePotionId?: string,
 ): RunState {
   if (state.phase === 'combat' || state.phase === 'defeat' || victoryIsTerminal(state, state.campaignProgress) ||
-    hasPendingRelicAcquisition(state)) return state
+    hasPendingRelicAcquisition(state, playerId)) return state
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!player || player.dead || !player.potions.includes(potionId)) return state
   if (potionId === 'blood_potion' && player.hp >= healingCapFor(player, state.meta.ruleset)) return state
@@ -595,17 +678,39 @@ export function acquireRelic(state: RunState, playerId: string, relicId: string)
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!player || !relicDef(relicId)) return state
   let guardianGemDeck = [...(state.guardianGemDeck ?? [])]
-  const guardianGemGroups = ['enchiridion', 'downfall_enchiridion', 'orrery', 'tiny_house', 'forbidden_fruit']
-    .includes(relicId)
-    ? pendingRewardChoices(player, relicId, state.meta.ruleset === 'downfall').map((choices) => {
+  const draftsCards = ['enchiridion', 'downfall_enchiridion', 'orrery', 'tiny_house', 'forbidden_fruit'].includes(relicId)
+  const reserved = draftsCards
+    ? reservePendingRelicRewardDraws(player, relicId, state.meta.ruleset === 'downfall')
+    : undefined
+  const guardianGemGroups = reserved
+    ? reserved.choices.map((choices) => {
       if (!choices.some(cardHasGuardianSocket)) return []
       return drawGuardianGemChoices(guardianGemDeck, 2)
     })
     : undefined
+  let nextPendingRelicId = state.nextPendingRelicId ?? 0
+  let pendingRelicAssigned = false
   const itemDecks = { ...state.itemDecks, curses: [...state.itemDecks.curses] }
   let relicDeck = [...state.relicDeck]
   let uid = nextRunUid(state.players)
+  const acquiredRelic = createRelicInstance(relicId)
   const potionDeckAfterBelt = [...state.potionDeck]
+  const gainAcquiredRelic = (owner: Player, id: string): Player => {
+    const gained = gainRelic(owner, id, potionDeckAfterBelt, state.ascension)
+    const relic = gained.relics.at(-1)
+    if (gained.relics.length === owner.relics.length || !relic?.pending) return gained
+    const nested = ['enchiridion', 'downfall_enchiridion', 'orrery', 'tiny_house', 'forbidden_fruit'].includes(id)
+      ? reservePendingRelicRewardDraws(gained, id, state.meta.ruleset === 'downfall')
+      : undefined
+    const guardianGemGroups = nested?.choices.map((choices) =>
+      choices.some(cardHasGuardianSocket) ? drawGuardianGemChoices(guardianGemDeck, 2) : [])
+    pendingRelicAssigned = true
+    const reservedOwner = nested?.player ?? gained
+    return { ...reservedOwner, relics: [
+      ...reservedOwner.relics.slice(0, -1),
+      { ...relic, pendingId: nextPendingRelicId++, guardianGemGroups, pendingRewardDraws: nested?.draws },
+    ] }
+  }
   const bottomOldCoin = () => {
     relicDeck = [...relicDeck.filter((id) => id !== 'old_coin'), 'old_coin']
   }
@@ -626,15 +731,19 @@ export function acquireRelic(state: RunState, playerId: string, relicId: string)
       const revealed = relicDeck.splice(0, 3)
       for (const id of revealed) {
         if (id === 'old_coin') bottomOldCoin()
-        owner = gainRelic(owner, id, potionDeckAfterBelt, state.ascension)
+        owner = gainAcquiredRelic(owner, id)
       }
       return addCurse(owner)
     }
-    const relic = createRelicInstance(relicId)
+    const relic = { ...acquiredRelic }
     if (relic.pending && guardianGemGroups) {
+      relic.pendingId = nextPendingRelicId++
+      pendingRelicAssigned = true
       relic.guardianGemGroups = guardianGemGroups
+      relic.pendingRewardDraws = reserved?.draws
+      owner = reserved?.player ?? owner
       owner = { ...owner, relics: [...owner.relics, relic] }
-    } else owner = gainRelic(owner, relicId, potionDeckAfterBelt, state.ascension)
+    } else owner = gainAcquiredRelic(owner, relicId)
     if (relicId === 'mark_of_pain' && state.meta.ruleset === 'downfall') {
       const maxHp = Math.max(1, owner.maxHp - 2)
       owner = { ...owner, maxHp, hp: Math.min(owner.hp, maxHp) }
@@ -656,6 +765,7 @@ export function acquireRelic(state: RunState, playerId: string, relicId: string)
     : players
   return mirrorLegacySupplies({
     ...state,
+    nextPendingRelicId: pendingRelicAssigned ? nextPendingRelicId : state.nextPendingRelicId,
     guardianGemDeck,
     itemDecks,
     relicDeck,
@@ -670,7 +780,7 @@ export function acquireRelic(state: RunState, playerId: string, relicId: string)
 }
 
 export function resolveRelicReward(state: RunState, playerId: string, gain: boolean): RunState {
-  if (state.phase !== 'reward' || hasPendingRelicAcquisition(state)) return state
+  if (state.phase !== 'reward' || playerHasPendingRelicChoice(state, playerId)) return state
   const offer = state.rewards.find((candidate) => candidate.playerId === playerId)
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!offer || offer.relic === false || !player) return state
@@ -684,14 +794,11 @@ export function resolveRelicReward(state: RunState, playerId: string, gain: bool
     rewards,
   })
   if (relic && gain) next = acquireRelic(next, playerId, relic)
-  return rewards.every((candidate) => !candidate.cardReward && !candidate.transformReward && !candidate.gold && candidate.relic === false &&
-    candidate.potion === false && candidate.bossRelics === false)
-    ? finishRewards(state, next)
-    : next
+  return finishRewardsIfComplete(next)
 }
 
 export function resolveBossRelicReward(state: RunState, playerId: string, relicId: string | null): RunState {
-  if (state.phase !== 'reward' || hasPendingRelicAcquisition(state)) return state
+  if (state.phase !== 'reward' || playerHasPendingRelicChoice(state, playerId)) return state
   const offer = state.rewards.find((candidate) => candidate.playerId === playerId)
   if (!offer || offer.bossRelics === false || !offer.bossRelics) return state
   if (relicId !== null && !offer.bossRelics.includes(relicId)) return state
@@ -708,10 +815,7 @@ export function resolveBossRelicReward(state: RunState, playerId: string, relicI
     rewards,
   }
   if (relicId !== null) next = acquireRelic(next, playerId, relicId)
-  return settled && next.rewards.every((candidate) => !candidate.cardReward && !candidate.transformReward && !candidate.gold &&
-    candidate.potion === false && (candidate.relic ?? false) === false)
-    ? finishRewards(state, next)
-    : next
+  return finishRewardsIfComplete(next)
 }
 
 /** Resolve any submitted card rewards; each player may claim theirs independently. */
@@ -719,11 +823,10 @@ export function resolveCardRewards(
   state: RunState,
   decisions: Readonly<Record<string, number | null>>,
 ): RunState {
-  if (state.phase !== 'reward' || !state.rewardDestination || hasPendingRelicAcquisition(state)) return state
-  const resolvingOffers = state.rewards.filter((offer) => offer.cardReward && offer.playerId in decisions)
-  if (resolvingOffers.length === 0) return state.rewards.every((offer) => !offer.cardReward && !offer.transformReward && !offer.gold &&
-    offer.potion === false && (offer.relic ?? false) === false && (offer.bossRelics ?? false) === false)
-    ? finishRewards(state, state) : state
+  if (state.phase !== 'reward' || !state.rewardDestination) return state
+  const resolvingOffers = state.rewards.filter((offer) => offer.cardReward && offer.playerId in decisions &&
+    !playerHasPendingRelicChoice(state, offer.playerId))
+  if (resolvingOffers.length === 0) return finishRewardsIfComplete(state)
   for (const offer of resolvingOffers) {
     const player = state.players.find((candidate) => candidate.id === offer.playerId)
     if (!player) return state
@@ -749,6 +852,7 @@ export function resolveCardRewards(
       offer.choices === null || !Number.isInteger(choice) || choice < 0 || choice >= offer.choices.length
     )) return state
   }
+  const resolvingPlayerIds = new Set(resolvingOffers.map((offer) => offer.playerId))
 
   // Derive the next uid from THIS run. Another room may have called createRun
   // since this one started, so the setup counter is not authoritative here.
@@ -771,10 +875,12 @@ export function resolveCardRewards(
       }
     }
   }
-  state = { ...state, rewards: state.rewards.map((offer) => offer.prismatic && offer.playerId in decisions ? { ...offer, cardReward: false } : offer) }
+  state = { ...state, rewards: state.rewards.map((offer) => offer.prismatic && resolvingPlayerIds.has(offer.playerId)
+    ? { ...offer, cardReward: false }
+    : offer) }
   const players = state.players.map((player) => {
     const offer = state.rewards.find((candidate) => candidate.playerId === player.id)
-    if (!offer?.cardReward || !(player.id in decisions)) return player
+    if (!offer?.cardReward || !resolvingPlayerIds.has(player.id)) return player
     const choice = decisions[player.id] ?? null
     if (offer.choices === null) return player
     const shown = offer.choices
@@ -810,7 +916,9 @@ export function resolveCardRewards(
     return addCard(bottomed, selected, cardUid, offer.upgraded)
   })
 
-  const rewards = state.rewards.map((offer) => offer.cardReward && offer.playerId in decisions ? { ...offer, cardReward: false } : offer)
+  const rewards = state.rewards.map((offer) => offer.cardReward && resolvingPlayerIds.has(offer.playerId)
+    ? { ...offer, cardReward: false }
+    : offer)
   let next: RunState = {
     ...state,
     players,
@@ -826,15 +934,12 @@ export function resolveCardRewards(
   for (const gain of gainedSockets) {
     next = queueGuardianSocket(next, gain.playerId, gain.cardUid, 'draft', gain.gemIds.length ? gain.gemIds : undefined)
   }
-  return rewards.some((offer) => offer.cardReward || offer.transformReward || offer.gold || offer.potion !== false ||
-    (offer.relic ?? false) !== false || (offer.bossRelics ?? false) !== false)
-    ? next
-    : finishRewards(state, next)
+  return finishRewardsIfComplete(next)
 }
 
 /** Resolve or skip one Transformed normal reward without exposing the next deck card. */
 export function resolveTransformReward(state: RunState, playerId: string, cardUid: string | null): RunState {
-  if (state.phase !== 'reward' || hasPendingRelicAcquisition(state)) return state
+  if (state.phase !== 'reward' || playerHasPendingRelicChoice(state, playerId)) return state
   const offer = state.rewards.find((candidate) => candidate.playerId === playerId && candidate.transformReward)
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!offer || !player) return state
@@ -844,10 +949,7 @@ export function resolveTransformReward(state: RunState, playerId: string, cardUi
   const rewards = state.rewards.map((candidate) => candidate === offer ? { ...candidate, transformReward: false } : candidate)
   const next = queueNewGuardianSockets(state,
     { ...state, players: state.players.map((candidate) => candidate.id === playerId ? owner : candidate), rewards })
-  return rewards.every((candidate) => !candidate.cardReward && !candidate.transformReward && !candidate.gold && candidate.potion === false &&
-    (candidate.relic ?? false) === false && (candidate.bossRelics ?? false) === false)
-    ? finishRewards(state, next)
-    : next
+  return finishRewardsIfComplete(next)
 }
 
 /** Transform draws blindly; a Ticket returns to the bottom and grants the top rare. */
