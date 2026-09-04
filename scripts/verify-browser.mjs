@@ -1041,6 +1041,20 @@ check('the compendium remains usable on a minimum desktop viewport', () => {
     compactCompendium.sort.bottom <= compactCompendium.upgrade.top + 1,
   `compact desktop compendium controls overlap: ${JSON.stringify(compactCompendium)}`)
 })
+await page.setViewportSize({ width: 844, height: 390 })
+const landscapeCompendiumBack = await page.locator('.compendium__back').evaluate((button) => {
+  const back = button.getBoundingClientRect()
+  const filters = button.parentElement?.getBoundingClientRect()
+  return { back: { left: back.left, top: back.top, right: back.right, bottom: back.bottom, height: back.height }, filters }
+})
+await shot('00d-compendium-landscape-phone')
+check('the Compendium Back ribbon remains visible on a landscape phone', () => {
+  assert(landscapeCompendiumBack.filters && landscapeCompendiumBack.back.height >= 40,
+    `landscape Back ribbon collapsed: ${JSON.stringify(landscapeCompendiumBack)}`)
+  assert(landscapeCompendiumBack.back.top >= landscapeCompendiumBack.filters.top - 1 &&
+    landscapeCompendiumBack.back.bottom <= landscapeCompendiumBack.filters.bottom + 1,
+  `landscape Back ribbon is clipped: ${JSON.stringify(landscapeCompendiumBack)}`)
+})
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.getByRole('button', { name: 'Back to main menu' }).click()
 await page.getByRole('button', { name: 'Single Player' }).click()
