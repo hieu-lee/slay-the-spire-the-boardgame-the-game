@@ -1941,7 +1941,7 @@ await page.locator('.room-stage').evaluate((element) => { element.scrollTop = 0 
 await page.mouse.move(0, 0)
 await page.locator('.card-morph').waitFor({ state: 'detached' })
 const initialEventOptionCount = await page.locator('.event-options button').count()
-const initialEventPickerCount = await page.locator('.event-cards--deck').count()
+const initialEventPickerCount = await page.locator('.event-panel .card').count()
 await page.screenshot({ path: join(outDir, 'event-choice-bars-compact.png'), fullPage: true })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -1953,10 +1953,10 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: /Confirm choice/ }).waitFor()
-const reconnectedEventCardLocked = await page.locator('.event-cards--deck .card[aria-pressed="true"][aria-disabled="true"]').count()
+const reconnectedLegacyCards = await page.locator('.event-panel .card').count()
 const reconnectedEventConfirmEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
-check('Event resolver restores authoritative selections after reconnect', () => {
-  assertEqual(reconnectedEventCardLocked, 1)
+check('Event resolver restores authoritative selections without the legacy card grid', () => {
+  assertEqual(reconnectedLegacyCards, 0)
   assert(reconnectedEventConfirmEnabled)
 })
 await page.evaluate(() => {
@@ -2074,9 +2074,18 @@ check('multi-card Event upgrades focus the next card after confirmation', () => 
 await remainingWritingPicker.locator('.card-picker__grid > .card').filter({ hasText: 'Strike' }).first().click()
 await remainingWritingPicker.getByRole('button', { name: 'Confirm Event card' }).click()
 await writingPicker.waitFor({ state: 'detached' })
-const reverseSimplicityEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
-check('Ancient Writing accepts its Strike and Defend in either click order', () => assert(reverseSimplicityEnabled))
-await page.getByRole('button', { name: 'Back to choices' }).click()
+await page.waitForFunction(() => Object.values(window.__STS_DEBUG__.getRun().roomState?.decisions ?? {})
+  .some((decision) => decision.optionIds.includes('simplicity')))
+const reverseSimplicityResolved = await page.evaluate(() => Object.values(window.__STS_DEBUG__.getRun().roomState?.decisions ?? {})
+  .some((decision) => decision.optionIds.includes('simplicity') && decision.cardUids?.length === 2))
+check('Ancient Writing accepts either card first and resolves from the shared picker', () => assert(reverseSimplicityResolved))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.roomState = { ...run.roomState, card: { ...run.roomState.card, instanceId: 'browser-writing-seat-reset' }, decisions: {}, pendingDecisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+await page.getByRole('heading', { name: 'Ancient Writing' }).waitFor()
 await page.getByRole('button', { name: /\[Elegance\]/ }).click()
 const hotSeatPicker = page.getByRole('dialog', { name: 'Choose 1 card to remove' })
 await hotSeatPicker.waitFor()
@@ -2084,7 +2093,7 @@ await hotSeatPicker.locator('.card-picker__grid > .card').first().click()
 await hotSeatPicker.locator('.card-picker__preview').waitFor()
 await chooseLocalSeat({ label: 'Silent' })
 await page.waitForFunction(() => [...document.querySelectorAll('.event-options button')]
-  .some((button) => button.textContent?.includes('[Elegance]')) && !document.querySelector('.event-cards--deck'), undefined, { timeout: 5_000 })
+  .some((button) => button.textContent?.includes('[Elegance]')) && !document.querySelector('.card-picker'), undefined, { timeout: 5_000 })
 const retainedCards = await page.locator('.card-picker').count()
 const eleganceEnabled = await page.getByRole('button', { name: /\[Elegance\]/ }).isEnabled()
 check('hot-seat Event form state resets between players', () => {
@@ -2330,6 +2339,7 @@ const fullService = page.getByRole('button', { name: /\[Full Service\]/ })
 await fullService.click()
 const fullServiceRemovePicker = page.getByRole('dialog', { name: 'Choose 1 card to remove' })
 await fullServiceRemovePicker.waitFor()
+const unsafeFullServiceRemoval = await fullServiceRemovePicker.getByRole('button', { name: 'Strike' }).count()
 await fullServiceRemovePicker.getByRole('button', { name: 'Injury' }).click()
 await fullServiceRemovePicker.getByRole('button', { name: 'Confirm Event card' }).click()
 const fullServiceUpgradePicker = page.getByRole('dialog', { name: 'Choose 1 card to upgrade' })
@@ -2337,10 +2347,74 @@ await fullServiceUpgradePicker.waitFor()
 await fullServiceUpgradePicker.getByRole('button', { name: 'Strike' }).click()
 await fullServiceUpgradePicker.getByRole('button', { name: 'Confirm Event card' }).click()
 await fullServiceUpgradePicker.waitFor({ state: 'detached' })
-const fullServiceEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
-await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
-check('heterogeneous Event card effects validate each selected card in effect order', () => assertEqual(fullServiceEnabled, true))
+const fullServiceResult = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().players[0]
+  return { gold: player.gold, removed: !player.deck.some((card) => card.uid === 'designer-curse'),
+    upgraded: player.deck.some((card) => card.uid === 'designer-upgrade' && card.upgraded) }
+})
+check('heterogeneous Event card effects resolve directly from the shared pickers', () => {
+  assertEqual(unsafeFullServiceRemoval, 0, 'Full Service offered a removal that left no card to upgrade')
+  assertEqual(fullServiceResult.gold, 0)
+  assert(fullServiceResult.removed && fullServiceResult.upgraded)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'room'
+  run.players[0] = { ...run.players[0], gold: 5, deck: [
+    { uid: 'designer-overlap', defId: 'strike_ironclad', upgraded: false },
+  ] }
+  run.roomState = { kind: 'event', card: { id: 'designer', instanceId: 'browser-designer-overlap', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Designer In-Spire', scope: 'player', options: [
+    { id: 'full_service', label: 'Full Service', description: 'Pay 5 Gold. Remove a card and upgrade a card.', effects: [{ tag: 'pay-gold', amount: 5 }, { tag: 'remove-card' }, { tag: 'upgrade-card' }] },
+  ] }, decisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /\[Full Service\]/ }).click()
+const overlappingFullServicePicker = page.getByRole('dialog', { name: 'Choose 1 card to remove' })
+await overlappingFullServicePicker.getByRole('button', { name: 'Strike' }).click()
+await overlappingFullServicePicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await overlappingFullServicePicker.waitFor({ state: 'detached' })
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+const overlappingFullServiceResult = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().players[0]
+  return { gold: player.gold, deckSize: player.deck.length }
+})
+check('overlapping heterogeneous Event slots cannot fall through to a missing selector', () => {
+  assertEqual(overlappingFullServiceResult.gold, 0)
+  assertEqual(overlappingFullServiceResult.deckSize, 0)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'room'
+  run.players[0] = { ...run.players[0], hp: 10, deck: [
+    { uid: 'wing-remove', defId: 'strike_ironclad', upgraded: false },
+    { uid: 'wing-keep', defId: 'defend_ironclad', upgraded: false },
+  ] }
+  run.roomState = { kind: 'event', card: { id: 'wing_statue', instanceId: 'browser-wing-statue-direct', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Wing Statue', scope: 'player', options: [
+    { id: 'pray', label: 'Pray', description: 'Remove a card. Lose 2 HP.', effects: [{ tag: 'remove-card' }, { tag: 'lose-hp', amount: 2 }] },
+  ] }, decisions: {}, dieRolls: {} }
+  window.__wingDeckSize = run.players[0].deck.length
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /\[Pray\]/ }).click()
+const wingPicker = page.getByRole('dialog', { name: 'Choose 1 card to remove' })
+await wingPicker.waitFor()
+await wingPicker.locator('.card-picker__grid > .card').first().click()
+await wingPicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+const wingResult = await page.evaluate(() => ({
+  hp: window.__STS_DEBUG__.getRun().players[0].hp,
+  deck: window.__STS_DEBUG__.getRun().players[0].deck.length,
+  before: window.__wingDeckSize,
+}))
+check('Wing Statue resolves directly from the shared Remove picker', () => {
+  assertEqual(wingResult.hp, 8)
+  assertEqual(wingResult.deck, wingResult.before - 1)
+})
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -2638,9 +2712,13 @@ await page.evaluate(() => {
   window.__noteActor = actor.id
 })
 await page.getByRole('button', { name: /\[Exchange\]/ }).click()
+const noteTradePicker = page.getByRole('dialog', { name: 'Choose 1 card to trade' })
+await noteTradePicker.waitFor()
+await noteTradePicker.locator('.card-picker__grid > .card').first().click()
+await noteTradePicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await noteTradePicker.waitFor({ state: 'detached' })
 const noteTargetValues = await page.getByLabel('Target player').locator('option').evaluateAll((options) => options.map((option) => option.value))
 const noteActorId = await page.evaluate(() => window.__noteActor)
-await page.locator('.event-cards button').first().click()
 const inactiveTradeDisabled = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 await page.getByLabel('Target player').selectOption(noteTargetValues.find((value) => value && value !== noteActorId))
 
@@ -2777,13 +2855,11 @@ await page.getByRole('button', { name: /\[Donut\]/ }).click()
 const liveUpgradePicker = page.getByRole('dialog', { name: 'Choose 1 card to upgrade' })
 await liveUpgradePicker.waitFor()
 await liveUpgradePicker.locator('.card-picker__grid > .card').first().click()
-await liveUpgradePicker.getByRole('button', { name: 'Confirm Event card' }).click()
-await liveUpgradePicker.waitFor({ state: 'detached' })
-const liveEventConfirmBeforeClaim = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
-const liveEventConfirmIsTick = await page.locator('.event-card-confirm svg').count()
-const liveEventConfirmTooltip = await page.getByRole('button', { name: /Confirm choice/ }).getAttribute('title')
-await page.waitForFunction(() => document.activeElement?.closest('.event-panel--resolver') !== null)
-const focusedSelectionBeforeClaim = await page.evaluate(() => document.activeElement?.closest('.event-panel--resolver') !== null)
+const liveEventConfirm = liveUpgradePicker.getByRole('button', { name: 'Confirm Event card' })
+const liveEventConfirmBeforeClaim = await liveEventConfirm.isEnabled()
+const liveEventConfirmIsTick = await liveUpgradePicker.locator('.card-picker__confirm svg').count()
+const liveEventConfirmTooltip = await liveEventConfirm.getAttribute('title')
+const focusedSelectionBeforeClaim = await page.evaluate(() => document.activeElement?.closest('.card-picker') !== null)
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -2791,17 +2867,46 @@ await page.evaluate(() => {
   run.roomState.decisions[teammate.id] = { optionIds: ['donut'] }
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.querySelector('.event-resolve-actions .event-card-confirm')?.disabled === true)
-const liveEventConfirmAfterClaim = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
-await page.waitForFunction(() => document.activeElement?.closest('.event-panel--resolver') !== null)
-const focusedSelectionAfterClaim = await page.evaluate(() => document.activeElement?.closest('.event-panel--resolver') !== null)
-check('Event focus and an open resolver react when a teammate claims a unique option', () => {
+await page.waitForFunction(() => document.querySelector('.card-picker__confirm')?.disabled === true)
+const liveEventConfirmAfterClaim = await liveEventConfirm.isDisabled()
+const focusedSelectionAfterClaim = await page.evaluate(() => document.activeElement?.closest('.card-picker') !== null)
+check('Event focus and an open picker react when a teammate claims a unique option', () => {
   assert(liveEventFocus.includes('[Donut]'))
   assert(liveEventConfirmBeforeClaim)
   assertEqual(liveEventConfirmIsTick, 1)
   assertEqual(liveEventConfirmTooltip, null)
   assert(liveEventConfirmAfterClaim)
   assert(focusedSelectionBeforeClaim && focusedSelectionAfterClaim, 'a teammate update stole focus from the active Event resolver')
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.roomState = { kind: 'event', card: { id: 'big_fish', instanceId: 'browser-live-remove-exit', act: 1, minAscension: 0, requiresColorlessUnlock: false, name: 'Big Fish', scope: 'player', rule: 'Each player chooses a different option.', options: [
+    { id: 'restraint', label: 'Restraint', description: 'Remove a starter Strike.', effects: [{ tag: 'remove-card', filter: 'starter Strike' }] },
+    { id: 'punch', label: 'Punch!', description: 'Lose 1 HP.', effects: [{ tag: 'lose-hp', amount: 1 }] },
+  ] }, decisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /\[Restraint\]/ }).click()
+const invalidatedRemovePicker = page.getByRole('dialog', { name: 'Choose 1 card to remove' })
+await invalidatedRemovePicker.waitFor()
+const removeInitialBack = await invalidatedRemovePicker.getByRole('button', { name: 'Back' }).count()
+await invalidatedRemovePicker.locator('.card-picker__grid > .card').first().click()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.roomState.decisions[run.players[1].id] = { optionIds: ['restraint'] }
+  debug.setRun(run)
+})
+await invalidatedRemovePicker.getByRole('button', { name: 'Confirm Event card' }).waitFor()
+await page.waitForFunction(() => document.querySelector('.card-picker[role="dialog"] .card-picker__confirm')?.disabled === true)
+await invalidatedRemovePicker.getByRole('button', { name: 'Back' }).click()
+const invalidatedRemoveExit = invalidatedRemovePicker.getByRole('button', { name: 'Back to choices' })
+await invalidatedRemoveExit.click()
+await invalidatedRemovePicker.waitFor({ state: 'detached' })
+check('an invalidated Remove picker exposes an exit without changing its normal initial controls', () => {
+  assertEqual(removeInitialBack, 0, 'Remove showed Back before a card was selected')
 })
 
 await page.evaluate(() => {
@@ -2843,7 +2948,6 @@ await wheelPicker.waitFor()
 await wheelPicker.locator('.card-picker__grid > .card').first().click()
 await wheelPicker.getByRole('button', { name: 'Confirm Event card' }).click()
 await wheelPicker.waitFor({ state: 'detached' })
-await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction(() => {
   const run = window.__STS_DEBUG__.getRun()
   const actor = run.players.find((player) => player.id === window.__wheelActor)
@@ -3907,7 +4011,6 @@ await onlineTransformPicker.locator('.card-picker__preview').waitFor()
 const transformPreviewBack = await onlineTransformPicker.getByRole('button', { name: 'Back' }).count()
 await onlineTransformPicker.getByRole('button', { name: 'Confirm Event card' }).click()
 await onlineTransformPicker.waitFor({ state: 'detached' })
-await ann.getByRole('button', { name: /Confirm choice/ }).click()
 await ann.getByRole('status').filter({ hasText: 'Your choice is locked' }).waitFor()
 const lockedEventActions = await ann.locator('.event-resolve-actions button').count()
 check('online Transform uses the owner’s public reward count without exposing its deck', () => {
@@ -3928,22 +4031,48 @@ liveRoom.run.roomState = {
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
 await ann.getByRole('button', { name: /\[Exchange\]/ }).click()
-await ann.locator('.event-cards button').first().click()
+const onlineTradePicker = ann.getByRole('dialog', { name: 'Choose 1 card to trade' })
+await onlineTradePicker.waitFor()
+await onlineTradePicker.locator('.card-picker__grid > .card').first().click()
+await onlineTradePicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await onlineTradePicker.waitFor({ state: 'detached' })
 const targetlessTradeDisabled = await ann.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 const onlineTradeTargets = await ann.getByLabel('Target player').locator('option').evaluateAll((options) => options.map((option) => option.value))
 await ann.getByLabel('Target player').selectOption(onlineSeats[1].playerId)
 await ann.getByRole('button', { name: /Confirm choice/ }).click()
 await ann.getByRole('status').filter({ hasText: 'Exchange pending' }).waitFor()
-await bo.waitForFunction(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
-const tradeResolverFocused = await bo.evaluate(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
-check('the receiving player’s Event trade resolver receives keyboard focus', () => assert(tradeResolverFocused))
-await ann.screenshot({ path: join(outDir, 'event-online-trade-initiation.png'), fullPage: true })
+const stagedTrade = structuredClone(liveRoom.run.roomState.pendingTrade)
+const returnedTradeCard = liveRoom.run.players[1].deck.find((card) => card.defId !== 'ascenders_bane')
+const receivingTradePicker = bo.getByRole('dialog', { name: 'Choose 1 card to trade' })
+await receivingTradePicker.waitFor()
+await bo.waitForFunction(() => document.querySelector('.card-picker')?.contains(document.activeElement))
+const tradeResolverFocused = await bo.evaluate(() => document.querySelector('.card-picker')?.contains(document.activeElement))
+await bo.screenshot({ path: join(outDir, 'event-online-trade-initiation.png'), fullPage: true })
 check('online Note trade uses teammate public deck count and stages server authority', () => {
   assert(targetlessTradeDisabled, 'Note exchange enabled before its target was chosen')
   assert(!onlineTradeTargets.includes(onlineSeats[2].playerId), 'Note exchange offered a teammate whose only card was Ascender’s Bane')
-  assertEqual(liveRoom.run.roomState.pendingTrade.actorId, onlineSeats[0].playerId)
-  assertEqual(liveRoom.run.roomState.pendingTrade.targetId, onlineSeats[1].playerId)
-  assertEqual(liveRoom.run.roomState.pendingTrade.offeredId, tradeCard.defId)
+  assertEqual(stagedTrade.actorId, onlineSeats[0].playerId)
+  assertEqual(stagedTrade.targetId, onlineSeats[1].playerId)
+  assertEqual(stagedTrade.offeredId, tradeCard.defId)
+})
+await receivingTradePicker.locator('.card-picker__grid > .card').first().click()
+await receivingTradePicker.getByRole('button', { name: 'Complete exchange' }).click()
+await receivingTradePicker.waitFor({ state: 'detached' })
+check('the receiving player completes Event card trades in the shared picker', () => {
+  assert(tradeResolverFocused, 'the receiving trade picker did not receive keyboard focus')
+  assert(returnedTradeCard, 'the receiving player had no eligible trade card')
+  assert(!liveRoom.run.roomState.pendingTrade, 'the accepted trade stayed pending')
+  assert(liveRoom.run.players[0].deck.some((card) => card.uid === returnedTradeCard.uid), 'the actor did not receive the chosen card')
+  assert(liveRoom.run.players[1].deck.some((card) => card.uid === tradeCard.uid), 'the target did not receive the offered card')
+})
+await bo.getByRole('button', { name: /\[Exchange\]/ }).click()
+const postTradePicker = bo.getByRole('dialog', { name: 'Choose 1 card to trade' })
+await postTradePicker.waitFor()
+await postTradePicker.locator('.card-picker__grid > .card').first().click()
+await postTradePicker.locator('.card-picker__preview').waitFor()
+const postTradePreviewCount = await postTradePicker.locator('.card-picker__preview > .card').count()
+check('a completed incoming trade cannot poison the recipient’s next Event card picker', () => {
+  assertEqual(postTradePreviewCount, 1)
 })
 
 const offeredTradeCard = liveRoom.run.players[0].deck[0]
@@ -4042,17 +4171,17 @@ await onlinePrayerPicker.waitFor()
 await onlinePrayerPicker.locator('.card-picker__grid > .card').first().click()
 await onlinePrayerPicker.locator('.card-picker__preview').waitFor()
 const onlinePrayerPreviewCards = await onlinePrayerPicker.locator('.card-picker__preview > .card').count()
-await onlinePrayerPicker.getByRole('button', { name: 'Confirm Event card' }).click()
-await onlinePrayerPicker.waitFor({ state: 'detached' })
-const onlinePrayerInitiallyReady = await ann.getByRole('button', { name: /Confirm choice/ }).isEnabled()
+const onlinePrayerConfirm = onlinePrayerPicker.getByRole('button', { name: 'Confirm Event card' })
+const onlinePrayerInitiallyReady = await onlinePrayerConfirm.isEnabled()
 liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, gold: 0 }))
 liveRoom.version += 1
 rooms.publishRoom(liveRoom.code)
-await ann.getByRole('button', { name: /Confirm choice/ }).waitFor({ state: 'visible' })
-await ann.waitForFunction(() => document.querySelector('.event-resolve-actions .event-card-confirm')?.disabled === true)
-const onlinePrayerInvalidated = await ann.getByRole('button', { name: /Confirm choice/ }).isDisabled()
-check('an open online Event resolver disables when authoritative availability changes', () => {
-  assert(onlinePrayerInitiallyReady && onlinePrayerInvalidated && onlinePrayerPreviewCards === 2)
+await ann.waitForFunction(() => document.querySelector('.card-picker[role="dialog"] .card-picker__confirm')?.disabled === true)
+const onlinePrayerInvalidated = await onlinePrayerConfirm.isDisabled()
+check('an open online Event picker disables when authoritative availability changes', () => {
+  assert(onlinePrayerInitiallyReady, 'the valid Event upgrade did not start ready')
+  assert(onlinePrayerInvalidated, 'the Event upgrade stayed enabled after its payment became unaffordable')
+  assertEqual(onlinePrayerPreviewCards, 2, 'the Event upgrade did not retain its before/after preview')
 })
 
 liveRoom.run.itemDecks.potions = ['swift_potion']
@@ -4098,7 +4227,6 @@ await onlineRemovePicker.waitFor()
 await onlineRemovePicker.locator('.card-picker__grid > .card').first().click()
 await onlineRemovePicker.getByRole('button', { name: 'Confirm Event card' }).click()
 await onlineRemovePicker.waitFor({ state: 'detached' })
-await ann.getByRole('button', { name: /Confirm choice/ }).click()
 await ann.getByRole('button', { name: 'Cancel payment' }).waitFor()
 const di = onlinePages[3]
 await di.getByRole('heading', { name: 'Old Beggar' }).waitFor()
@@ -4150,12 +4278,11 @@ stagedRoom.version += 1
 const stagedPage = bo
 await stagedPage.reload({ waitUntil: 'networkidle' })
 await stagedPage.getByRole('heading', { name: 'We Meet Again!' }).waitFor()
-const lockedCard = stagedPage.getByRole('button', { name: 'Inflame' })
 const lockedRelic = stagedPage.locator('fieldset').filter({ hasText: 'Your relic' })
   .locator('button[aria-pressed="true"]')
 const lockedTarget = stagedPage.getByLabel('Reward recipient')
 const lockedSelectors = {
-  cardPressed: await lockedCard.getAttribute('aria-pressed'), cardDisabled: await lockedCard.isDisabled(),
+  cards: await stagedPage.locator('.event-panel .card').count(),
   relic: await lockedRelic.locator('img').getAttribute('src'), relicDisabled: await lockedRelic.isDisabled(),
   target: await lockedTarget.inputValue(), targetDisabled: await lockedTarget.isDisabled(),
 }
@@ -4163,8 +4290,8 @@ await stagedPage.locator('.event-stage .reward-item').filter({ hasText: 'Anchor'
 await stagedPage.getByRole('button', { name: /Resolve rewards/ }).click()
 await stagedPage.waitForFunction(() => Boolean(document.querySelector('.event-stage [role="status"]')))
 check('Event reconnect restores and resolves the authoritative locked selectors', () => {
-  assertEqual(lockedSelectors.cardPressed, 'true')
-  assert(lockedSelectors.cardDisabled && lockedSelectors.relicDisabled && lockedSelectors.targetDisabled)
+  assertEqual(lockedSelectors.cards, 0)
+  assert(lockedSelectors.relicDisabled && lockedSelectors.targetDisabled)
   assertEqual(lockedSelectors.relic, `/assets/relic-icons/${lockedRelicId}.png`)
   assertEqual(lockedSelectors.target, stagedPlayerId)
   const resolvedPlayer = stagedRoom.run.players.find((player) => player.id === stagedPlayerId)

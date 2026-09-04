@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { CardInstance } from '../game/types.ts'
 import { Card } from './Card.tsx'
 
-type PickerVerb = 'Remove' | 'Transform' | 'Upgrade'
+type PickerVerb = 'Remove' | 'Transform' | 'Upgrade' | 'Trade'
 
 type CardPickerProps = {
   cards: readonly CardInstance[]

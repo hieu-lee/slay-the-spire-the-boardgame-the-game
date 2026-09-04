@@ -141,23 +141,6 @@
 .event-encounter-preview figcaption, .event-encounter-preview figcaption span { display: grid; }
 .event-encounter-preview figcaption span { color: #d6c8b1; font-size: .78rem; }
 
-/* The original game leaves the Event art behind and spreads the whole deck in
-   a broad, readable grid. Keep one scrolling surface (the Event stage) rather
-   than trapping full cards inside a strip shorter than one card. */
-.event-stage:has(.event-cards--deck) { grid-template-columns: minmax(0, 1fr); align-items: start; }
-.event-stage:has(.event-cards--deck) > .event-art { display: none; }
-.event-stage:has(.event-cards--deck) > .event-panel { width: min(100%, 1100px); margin: auto; }
-.event-cards--deck {
-  --card-width: clamp(7rem, 10vw, 9.5rem);
-  display: grid;
-  grid-template-columns: repeat(auto-fit, var(--card-width));
-  justify-content: center;
-  max-height: none;
-  min-height: calc(var(--card-width) * var(--card-ratio, 1.395) + 2rem);
-  overflow: visible;
-  padding: .75rem;
-  background: #0a0c0c85;
-}
 .event-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin: 0 0 1rem; }
 .event-selectors label { display: grid; gap: .25rem; color: #d6c8b1; font-size: .78rem; }
 .event-selectors select, .event-selectors input { min-width: 0; }

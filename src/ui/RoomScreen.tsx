@@ -110,6 +110,11 @@ function eventCardSlots(effects: readonly EventEffect[], die: number | undefined
   return slots.slice(0, eligible.size);
 }
 
+function canFillCardSlots(cards: readonly Player["deck"][number][], slots: readonly EventCardSlot[]): boolean {
+  const [slot, ...rest] = slots;
+  return !slot || cards.some((card, index) => slot(card) && canFillCardSlots(cards.filter((_, at) => at !== index), rest));
+}
+
 function Price({ value, sale = false }: { value: number | null; sale?: boolean }) {
   return (
     <span className={`room-price${sale ? " room-price--sale" : ""}`}>
@@ -710,6 +715,7 @@ function EventScreen({
     players.find((candidate) => candidate.id === viewerId) ?? players[0]!;
   const [cards, setCards] = useState<string[]>([]);
   const [pickerCardUids, setPickerCardUids] = useState<string[]>([]);
+  const [tradeCardDraft, setTradeCardDraft] = useState({ stage: "", uid: "" });
   const [relicId, setRelicId] = useState("");
   const [potionIndexes, setPotionIndexes] = useState<number[]>([]);
   const [potionRecipientIds, setPotionRecipientIds] = useState<string[]>([]);
@@ -735,6 +741,10 @@ function EventScreen({
   const eventArt = { "--event-art": `url('${assetPath(`noncombat/events/${room.card.id}.webp`)}')` } as CSSProperties;
   const itemOffers = room.itemOffers?.[player.id];
   const pendingTrade = room.pendingTrade;
+  const pendingTradeStage = pendingTrade
+    ? `${room.card.instanceId}/${pendingTrade.actorId}/${pendingTrade.targetId}/${pendingTrade.kind}/${pendingTrade.offeredId}`
+    : "";
+  const tradeCardUid = tradeCardDraft.stage === pendingTradeStage ? tradeCardDraft.uid : "";
   const pendingDecision = room.pendingDecisions?.[player.id];
   const decided = room.decisions[player.id];
   const draftOptionIds = decided ? [] : pendingDecision?.optionIds ?? selectedOptions;
@@ -892,21 +902,16 @@ function EventScreen({
   const effectiveRoomId = pendingDecision?.roomId ?? roomId;
   const effectiveRewardSources = pendingDecision?.rewardSources?.length ? pendingDecision.rewardSources : rewardSources;
   const effectiveRareRewardSources = pendingDecision?.rewardSources?.length ? pendingDecision.rewardSources : rareRewardSources;
-  const selectableCards = player.deck.filter(
-    (card) =>
-      card.defId !== "ascenders_bane" &&
-      draftCardSlots.some((matches) => matches(card)) &&
-      (!room.revealedCards?.[player.id] ||
-        room.revealedCards?.[player.id]?.includes(card.uid)),
-  );
   const cardPickerSteps = effects.flatMap((effect) =>
-    effect.tag === "remove-card" || effect.tag === "transform-card" || effect.tag === "upgrade-card"
+    effect.tag === "remove-card" || effect.tag === "transform-card" || effect.tag === "upgrade-card" || effect.tag === "trade-card"
       ? eventCardSlots([effect], pendingDie, player, players).map((matches) => ({
         matches,
-        verb: effect.tag === "remove-card" ? "Remove" as const : effect.tag === "transform-card" ? "Transform" as const : "Upgrade" as const,
+        verb: effect.tag === "remove-card" ? "Remove" as const
+          : effect.tag === "transform-card" ? "Transform" as const
+            : effect.tag === "upgrade-card" ? "Upgrade" as const : "Trade" as const,
       }))
       : [],
-  );
+  ).slice(0, maximumCards);
   const ancientWritingSimplicity = room.card.id === "ancient_writing" && draftOptionIds.includes("simplicity");
   const firstPickerCard = player.deck.find((card) => card.uid === cards[0]);
   const cardPickerStep = ancientWritingSimplicity && cards.length < maximumCards
@@ -919,16 +924,10 @@ function EventScreen({
   const pickerSelectionCount = nextPickerVerb < 0 ? remainingPickerSteps.length : nextPickerVerb;
   const pickerSelectionLabel = `${pickerSelectionCount} card${pickerSelectionCount === 1 ? "" : "s"}`;
   const usesCardPicker = selectionOpen && !pendingDecision?.cardUids?.length && maximumCards > 0 && cardPickerSteps.length === maximumCards && Boolean(cardPickerStep);
+  const futurePickerSlots = ancientWritingSimplicity ? [] : cardPickerSteps.slice(cards.length + 1).map((step) => step.matches);
   const pickerCards = player.deck.filter((card) => card.defId !== "ascenders_bane" && cardPickerStep?.matches(card) &&
-    (!room.revealedCards?.[player.id] || room.revealedCards[player.id]?.includes(card.uid)) && !cards.includes(card.uid));
-  const toggle = (uid: string) =>
-    setCards((current) =>
-      current.includes(uid)
-        ? current.filter((id) => id !== uid)
-        : current.length < maximumCards
-          ? [...current, uid]
-          : current,
-    );
+    (!room.revealedCards?.[player.id] || room.revealedCards[player.id]?.includes(card.uid)) && !cards.includes(card.uid) &&
+    canFillCardSlots(player.deck.filter((candidate) => candidate.uid !== card.uid && !cards.includes(candidate.uid)), futurePickerSlots));
   const clearChoiceDraft = () => {
     setCards([]);
     setRelicId("");
@@ -972,9 +971,10 @@ function EventScreen({
       .some(([playerId, decision]) => playerId !== player.id && decision.optionIds.includes(id)));
   const selectedOptionUnavailable = draftOptionIds.some((id) =>
     unavailableEventOptionIds.includes(id) || Boolean(room.partyOptionIds && !room.partyOptionIds.includes(id)));
-  const selectionReady = effectiveCardUids.length === maximumCards && !selectedCardsInvalid && !selectedMissingTarget &&
-    !selectedMissingRelic && !selectedMissingPotion && !selectedPrismaticSourcesMissing && !selectedUnaffordable &&
-    !selectedOptionInvalidated && !selectedOptionUnavailable && (room.card.id !== "secret_portal" || Boolean(effectiveRoomId));
+  const nonCardSelectionReady = !selectedMissingTarget && !selectedMissingRelic && !selectedMissingPotion &&
+    !selectedPrismaticSourcesMissing && !selectedUnaffordable && !selectedOptionInvalidated && !selectedOptionUnavailable &&
+    (room.card.id !== "secret_portal" || Boolean(effectiveRoomId));
+  const selectionReady = effectiveCardUids.length === maximumCards && !selectedCardsInvalid && nonCardSelectionReady;
   const paymentFor = (optionIds: string[]) => {
     if (paymentLocked && optionIds.every((id) => pendingDecision?.optionIds.includes(id))) return undefined;
     const effects = optionIds.flatMap((id) => room.card.options.find((candidate) => candidate.id === id)?.effects ?? []);
@@ -989,10 +989,11 @@ function EventScreen({
     }).filter(([, paid]) => paid > 0));
   };
   const submit = (optionIds: string[], selectedRewardSources = rewardSources,
-    selectedRewardIndexes = rewardIndexes, selectedGuardianGemIds = guardianGemIds) =>
+    selectedRewardIndexes = rewardIndexes, selectedGuardianGemIds = guardianGemIds,
+    selectedCardUids = effectiveCardUids) =>
     onEvent(player.id, {
       optionIds,
-      cardUids: pendingDecision?.cardUids?.length ? pendingDecision.cardUids : cards,
+      cardUids: selectedCardUids,
       relicIds: pendingDecision?.relicIds?.length ? pendingDecision.relicIds : relicId ? [relicId] : [],
       potionIds: pendingDecision?.potionIds?.length ? pendingDecision.potionIds : potionIndexes.map((index) => player.potions[index]!).filter(Boolean),
       potionRecipientIds,
@@ -1013,28 +1014,42 @@ function EventScreen({
   }
   if (pendingTrade) {
     const isTarget = pendingTrade.targetId === player.id;
-    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div ref={eventResolver} className="event-panel event-panel--resolver">
+    const tradeCards = player.deck.filter((card) => card.defId !== "ascenders_bane");
+    return <><section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div ref={eventResolver} className="event-panel event-panel--resolver">
       <div className="room-banner"><span>Event exchange</span><h2 id="event-title">{room.card.name}</h2>
         <p>{isTarget ? `${players.find((candidate) => candidate.id === pendingTrade.actorId)?.name ?? "A teammate"} offers ${pendingTrade.kind === "card" ? CARDS[pendingTrade.offeredId]?.name : relicDef(pendingTrade.offeredId).name}. Choose what to give back.` : "Waiting for your teammate to choose what they give back."}</p>
       </div>
       {isTarget ? <>
-        {pendingTrade.kind === "card" ? (
-          <div className="campfire__deck" role="group" aria-label="Your card">
-            {player.deck.filter((card) => card.defId !== "ascenders_bane").map((card) => (
-              <Card key={card.uid} card={card} selected={cards[0] === card.uid} onClick={() => setCards([card.uid])} />
-            ))}
-          </div>
-        ) : (
+        {pendingTrade.kind === "relic" ? (
           <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) =>
             <button type="button" key={`${relic.defId}-${index}`} aria-pressed={relicId === relic.defId}
               title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}>
               <ItemImage kind="relic" id={relic.defId} />{relicDef(relic.defId).name}
               <RelicOptionText id={relic.defId} />
             </button>)}</fieldset>
-        )}
-        <div className="event-options"><button type="button" disabled={pendingTrade.kind === "card" ? !cards[0] : !relicId} onClick={() => submit(["accept_trade"])}>Complete exchange</button><button type="button" onClick={() => submit(["reject_trade"])}>Decline</button></div>
+        ) : <p role="status">Choose your card in the full-deck picker.</p>}
+        {pendingTrade.kind === "relic" ? <div className="event-options"><button type="button" disabled={!relicId} onClick={() => submit(["accept_trade"])}>Complete exchange</button><button type="button" onClick={() => submit(["reject_trade"])}>Decline</button></div> : null}
       </> : <p role="status">Exchange pending…</p>}
-    </div></section>;
+    </div></section>{isTarget && pendingTrade.kind === "card" ? createPortal(<CardPicker
+      cards={tradeCards}
+      verb="Trade"
+      selectionLabel="1 card"
+      selectedCardUids={tradeCardUid ? [tradeCardUid] : []}
+      onSelect={(uid) => setTradeCardDraft({ stage: pendingTradeStage, uid: tradeCardUid === uid ? "" : uid })}
+      onClear={() => setTradeCardDraft({ stage: pendingTradeStage, uid: "" })}
+      onBack={() => {
+        setTradeCardDraft({ stage: "", uid: "" });
+        submit(["reject_trade"]);
+      }}
+      onConfirm={() => {
+        if (!tradeCardUid) return;
+        setTradeCardDraft({ stage: "", uid: "" });
+        submit(["accept_trade"], rewardSources, rewardIndexes, guardianGemIds, [tradeCardUid]);
+      }}
+      confirmLabel="Complete exchange"
+      backLabel="Decline trade"
+      confirmDisabled={!tradeCardUid}
+    />, document.body) : null}</>;
   }
   if (itemOffers) {
     const pending = pendingDecision;
@@ -1070,7 +1085,7 @@ function EventScreen({
     const effectiveRelic = pending?.relicIds?.[0] ?? relicId;
     const effectiveTarget = pending?.targetPlayerId ?? targetPlayerId;
     let potionIndex = -1;
-    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div ref={eventResolver} className="event-panel event-panel--resolver"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards event-cards--deck"><legend>Locked Event cards</legend>{selectableCards.map((card) => <Card key={card.uid} card={card} playable={!pending?.cardUids} selected={effectiveCards.includes(card.uid)} onClick={() => toggle(card.uid)} />)}</fieldset> : null}{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} />{relicDef(relic.defId).name}<RelicOptionText id={relic.defId} /></button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-items item-offer-list">{itemOffers.map((offer, index) => {
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div ref={eventResolver} className="event-panel event-panel--resolver"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} />{relicDef(relic.defId).name}<RelicOptionText id={relic.defId} /></button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-items item-offer-list">{itemOffers.map((offer, index) => {
       if (offer.kind === 'potion') potionIndex += 1;
       const at = potionIndex;
       const recipient = offer.kind === 'potion' ? players.find((candidate) => candidate.id === (potionRecipientIds[at] || player.id) && !candidate.dead) : player;
@@ -1299,20 +1314,6 @@ function EventScreen({
             .map((choice) => `[${choice!.label}] ${choice!.description}`)
             .join(" · ")}
         </p> : null}
-        {maximumCards > 0 && !usesCardPicker ? (
-          <fieldset className="event-cards event-cards--deck">
-            <legend>Choose cards as required by your option</legend>
-            {selectableCards.map((card) => (
-              <Card
-                key={card.uid}
-                card={card}
-                playable={!pendingDecision?.cardUids?.length}
-                selected={effectiveCardUids.includes(card.uid)}
-                onClick={() => toggle(card.uid)}
-              />
-            ))}
-          </fieldset>
-        ) : null}
         <div className="event-selectors">
           {hasPrismaticShard && hasPrismaticCardReward ? <fieldset className="event-cards"><legend>Prismatic Shard · Card Reward · choose 3 reward decks</legend>
             {availableCardSources.map((source) => <label key={source}>
@@ -1509,12 +1510,19 @@ function EventScreen({
           const chosen = [...cards, uid];
           setCards(chosen);
           setPickerCardUids([]);
-          if (chosen.length === maximumCards) requestAnimationFrame(() => {
-            eventResolver.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
-          });
+          if (chosen.length === maximumCards && nonCardSelectionReady) {
+            if (selectedChoiceEffects.some((effect) =>
+              (effect.tag === "card-reward" || effect.tag === "rare-reward") && effect.random === true)) onArmCardGain?.();
+            submit(draftOptionIds, selectedPrismaticRare ? effectiveRareRewardSources : effectiveRewardSources,
+              rewardIndexes, guardianGemIds, chosen);
+          } else if (chosen.length === maximumCards) requestAnimationFrame(() => {
+              eventResolver.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
+            });
         }}
         confirmLabel="Confirm Event card"
-        confirmDisabled={pickerCardUids.length !== 1 || Boolean(pendingDecision?.cardUids?.length)}
+        backLabel={selectedOptionInvalidated || selectedOptionUnavailable || selectedUnaffordable ? "Back to choices" : "Back"}
+        confirmDisabled={pickerCardUids.length !== 1 || Boolean(pendingDecision?.cardUids?.length) ||
+          selectedOptionInvalidated || selectedOptionUnavailable || selectedUnaffordable}
         disabled={Boolean(pendingDecision?.cardUids?.length)}
       />, document.body) : null}
       {eventCanSkip ? <button type="button" className="room-proceed" onClick={() => onSkipEvent?.(player.id)}>No legal choice · Leave event →</button> : null}

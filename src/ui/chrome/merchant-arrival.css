@@ -227,7 +227,6 @@
 @media (max-height: 820px) and (min-width: 761px) {
   .sts-scope .event-panel { max-height: calc(100vh - 12rem); padding-block: 0.65rem; }
   .sts-scope .event-panel .room-banner { margin-bottom: 0.65rem; }
-  .sts-scope .event-panel .event-cards--deck { margin-bottom: 0.45rem; }
   .sts-scope .event-options { gap: 0.4rem; }
   .sts-scope .event-options button { min-height: 3rem; padding-block: 0.4rem; }
 }
