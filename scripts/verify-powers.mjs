@@ -439,6 +439,8 @@ check('a card-type trigger narrows to that type, or matches any', () => {
   assert(triggerMatches(anyCard, { kind: 'onPlayCard', cardType: 'attack' }), 'any card')
   assert(triggerMatches(skillsOnly, { kind: 'onPlayCard', cardType: 'skill' }), 'a skill')
   assert(!triggerMatches(skillsOnly, { kind: 'onPlayCard', cardType: 'attack' }), 'not an attack')
+  assert(!triggerMatches({ kind: 'onPlayCard', cardType: 'power' },
+    { kind: 'onPlayCard', cardType: 'slime' }), 'a Slime is not a Power')
 })
 
 check('a draw trigger can narrow to the drawn card type', () => {
@@ -459,7 +461,7 @@ check('a stance trigger narrows to that stance, or matches any', () => {
 
 check('every Power declares a resolution model', () => {
   for (const def of Object.values(CARDS)) {
-    if (def.type !== 'power' || def.cardKind === 'slime') continue
+    if (def.type !== 'power') continue
     const persistent = def.persistent === true || def.corruptSkills === true || def.retainBlock === true
     assert(
       [def.trigger !== undefined, def.resolvesOnPlay === true, def.activeAbility === true, persistent]
@@ -469,9 +471,9 @@ check('every Power declares a resolution model', () => {
   }
 })
 
-check('no non-Power card carries a trigger', () => {
+check('only Power and Slime cards carry in-play resolution metadata', () => {
   for (const def of Object.values(CARDS)) {
-    if (def.type === 'power') continue
+    if (def.type === 'power' || def.type === 'slime') continue
     assert(
       def.trigger === undefined && def.resolvesOnPlay !== true &&
         def.activeAbility !== true &&

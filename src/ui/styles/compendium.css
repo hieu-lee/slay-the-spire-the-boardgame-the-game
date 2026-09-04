@@ -42,7 +42,7 @@
 .compendium__sort { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 2rem; margin: 0; padding: 0.3rem 0.55rem; border: 1px solid rgb(105 158 158 / 0.28); border-radius: 0.2rem; color: #f4d765; background: linear-gradient(#356c70, #285257); box-shadow: inset 0 1px rgb(255 255 255 / 0.1), 0 2px 3px rgb(0 0 0 / 0.45); font-family: 'Kreon', Georgia, serif; font-size: 0.95rem; font-weight: 700; text-align: left; text-shadow: 0 2px 2px #112; }
 .compendium__filter-block h2 span,
 .compendium__sort span { color: #dfcc73; font-size: 0.75rem; }
-.compendium__types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; padding: 0.55rem; }
+.compendium__types { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.35rem; padding: 0.55rem; }
 .compendium__types button { display: grid; aspect-ratio: 1; place-items: center; padding: 0; border: 1px solid #314347; color: #bdc6c3; background: linear-gradient(#89979a, #566467); filter: grayscale(0.8); }
 .compendium__types button[aria-pressed='true'] { border-color: #f0d15d; filter: none; box-shadow: 0 0 0.55rem rgb(103 221 232 / 0.35); }
 .compendium__types .icon { width: 1.5rem; height: 1.5rem; }

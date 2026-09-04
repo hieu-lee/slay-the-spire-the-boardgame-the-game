@@ -40,6 +40,7 @@ export type StatusIconName =
   | 'orb'
   | 'poison'
   | 'power'
+  | 'slime'
   | 'shiv'
   | 'strength'
   | 'vulnerable'

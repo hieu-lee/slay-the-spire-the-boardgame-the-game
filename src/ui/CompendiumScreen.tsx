@@ -127,6 +127,7 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
             <button type="button" aria-label="Attack cards" aria-pressed={type === 'attack'} onClick={() => setType('attack')}><StatusIcon name="attack" /></button>
             <button type="button" aria-label="Skill cards" aria-pressed={type === 'skill'} onClick={() => setType('skill')}><StatusIcon name="block" /></button>
             <button type="button" aria-label="Power cards" aria-pressed={type === 'power'} onClick={() => setType('power')}><StatusIcon name="power" /></button>
+            <button type="button" aria-label="Slime cards" aria-pressed={type === 'slime'} onClick={() => setType('slime')}><StatusIcon name="slime" /></button>
           </div>
         </section>
         <section className="compendium__filter-block">

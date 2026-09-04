@@ -1098,7 +1098,7 @@ print(json.dumps(faults))
 check('bundled stage and generated icon inventories are complete and decodable', () => {
   const expectedStatus = [
     'aoe', 'attack', 'block', 'burn', 'draw', 'energy', 'miracle', 'orb', 'poison',
-    'power', 'shiv', 'strength', 'vulnerable', 'weak',
+    'power', 'shiv', 'slime', 'strength', 'vulnerable', 'weak',
   ].map((name) => `${name}.png`)
   const expectedPowers = [
     'accuracy', 'after_image', 'apotheosis', 'barricade', 'capacitor', 'combust', 'consume',

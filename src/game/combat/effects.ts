@@ -65,7 +65,7 @@ import {
   slimeCommandEnemyChoiceLabels,
 } from './queries.ts'
 import type { CombatState, DeferredHavoc, PendingTrigger, PendingTriggerAbility, PlayContext, TriggerSource } from './types.ts'
-import { cardCost, cardDef, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
+import { cardCost, cardDef, cardStaysInPlay, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
 import type { CardDef, Effect, TargetScope } from '../cards.ts'
 import {
   applyDamage,
@@ -2400,7 +2400,7 @@ export function applyEffect(
       const drawnDef = faceOf(cardDef(drawn.defId), drawn.upgraded)
       if (!cardIsPlayable(drawnDef, state, actor) || (drawnDef.minimumX ?? 0) > 0 ||
         !cardCanBeForced(drawnDef, state, actor, drawn.attachedGemId, drawn.uid)) {
-        if (effect.exhaustNonPower && drawnDef.type !== 'power') {
+        if (effect.exhaustNonPower && !cardStaysInPlay(drawnDef)) {
           actor.hand = actor.hand.filter((card) => card.uid !== drawn.uid)
           exhaustCards(state, actor, [drawn], context)
         } else {

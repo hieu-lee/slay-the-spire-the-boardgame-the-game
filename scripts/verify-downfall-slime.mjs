@@ -14,7 +14,7 @@ import {
   growSlime,
   removeTemporarySlimeVigor,
 } from '../src/game/downfall/slime-boss.ts'
-import { activatePower, beginEndPlayerTurn, cardHasRetain, cardNeedsEnemy, createCombat, endTurnAbilities, maximumXEnergy, pendingTriggerAbility, pendingTriggerSlimeEnemyChoiceCount, pendingTriggerSlimeEnemyChoiceLabels, playCard, playCardCopy, playCost, previewCardCopyChoice, resolvePendingTrigger, slimeChoiceIsAvailable, slimeCommandEnemyChoiceCount, slimeCommandEnemyChoiceLabels } from '../src/game/combat.ts'
+import { activatePower, beginEndPlayerTurn, cardHasRetain, cardNeedsEnemy, createCombat, endTurnAbilities, guardianPowerBeamCards, maximumXEnergy, pendingTriggerAbility, pendingTriggerSlimeEnemyChoiceCount, pendingTriggerSlimeEnemyChoiceLabels, playCard, playCardCopy, playCost, previewCardCopyChoice, resolvePendingTrigger, slimeChoiceIsAvailable, slimeCommandEnemyChoiceCount, slimeCommandEnemyChoiceLabels } from '../src/game/combat.ts'
 import { fireTriggers, resolveSlimeCommand } from '../src/game/combat/effects.ts'
 import { createRng } from '../src/game/rng.ts'
 import { CARDS, STARTER_DECKS } from '../src/game/cards.ts'
@@ -77,7 +77,8 @@ for (const [name, levelCount] of expected) {
 }
 assert.ok(Object.values(SLIME_BOSS_CARDS)
   .filter((card) => card.cardKind === 'slime')
-  .every((card) => card.resolvesOnPlay), 'every Slime resolves its printed “When played” effects')
+  .every((card) => card.type === 'slime' && card.resolvesOnPlay),
+  'every Slime has its own card type and resolves its printed “When played” effects')
 
 const bruiser = bruiserSlime('audit-bruiser')
 assert.equal(growSlime(bruiser, 99), 1, 'Grow caps at Bruiser level 2')
@@ -116,6 +117,50 @@ const enemy = {
   actionIndex: 0, abilityUsed: false, dead: false,
 }
 const combat = createCombat(createRng(47), [player], [enemy])
+
+const powerSeparationSlime = { uid: 'power-separation-slime', defId: byName.get('Massive Slime').id, upgraded: false }
+const powerSeparationPlayer = {
+  ...player,
+  character: 'slime_boss',
+  hand: [powerSeparationSlime],
+  draw: [{ uid: 'power-draw-1', defId: 'strike_ironclad', upgraded: false },
+    { uid: 'power-draw-2', defId: 'defend_ironclad', upgraded: false }],
+  discard: [{ uid: 'beam-power', defId: 'fusion', upgraded: false }],
+  powers: [{ uid: 'heatsinks', defId: 'heatsinks', upgraded: false }],
+  relics: [{ defId: 'bird_faced_urn', spent: false }, { defId: 'mummified_hand', spent: false }],
+  slimes: [bruiserSlime('power-separation-bruiser')],
+}
+const powerSeparationCombat = createCombat(createRng(47001), [powerSeparationPlayer], [enemy])
+powerSeparationCombat.players[0].freePowersThisTurn = 1
+powerSeparationCombat.players[0].powerPlayedThisTurn = false
+assert.equal(playCost(byName.get('Massive Slime'), powerSeparationCombat.players[0], powerSeparationSlime), 3,
+  'Power-only discounts do not make Slimes free')
+assert.deepEqual(guardianPowerBeamCards(powerSeparationCombat.players[0]).map((card) => card.uid), ['beam-power'],
+  'Power Beam does not offer a Slime card')
+const afterSlimePlay = playCard(powerSeparationCombat,
+  player.id, powerSeparationSlime.uid, { enemyUid: enemy.uid, playerId: player.id })
+assert.equal(afterSlimePlay.players[0].block, 2, 'Bird-Faced Urn and other Power triggers ignore Slimes')
+assert.equal(afterSlimePlay.players[0].draw.length, 2, 'Heatsinks does not draw from a Slime play')
+assert.equal(afterSlimePlay.players[0].freePowersThisTurn, 1, 'a Slime does not consume a free Power')
+assert.equal(afterSlimePlay.players[0].powerPlayedThisTurn, false, 'a Slime does not enable Mummified Hand')
+assert.equal(afterSlimePlay.players[0].powers.length, 1)
+assert.equal(afterSlimePlay.players[0].slimes.length, 2)
+
+const havocSlime = { uid: 'havoc-slime', defId: byName.get('Massive Slime').id, upgraded: false }
+const havocSlimeCombat = createCombat(createRng(47002), [{
+  ...player, character: 'slime_boss', hand: [havocSlime], energy: 0,
+}], [{ ...enemy, uid: 'havoc-target' }])
+havocSlimeCombat.phase = 'start'
+havocSlimeCombat.startTurnProgress = { choices: [], forcedCard: {
+  playerId: player.id, cardUid: havocSlime.uid, sourceCardId: 'havoc', exhaustNonPower: true,
+} }
+const afterHavocSlime = playCard(havocSlimeCombat, player.id, havocSlime.uid,
+  { enemyUid: 'havoc-target', playerId: player.id })
+assert.equal(afterHavocSlime.players[0].slimes.some((slime) => slime.card.uid === havocSlime.uid), true,
+  'Havoc leaves its forced Slime in play')
+assert.equal(afterHavocSlime.players[0].exhaust.some((card) => card.uid === havocSlime.uid), false,
+  'Havoc does not Exhaust a Slime after playing it')
+
 const bruiserEndTurn = endTurnAbilities(combat)
   .find((ability) => ability.id === 'slime-player/slime:end-turn-bruiser')
 assert.ok(bruiserEndTurn, 'Bruiser is a mandatory ordered end-turn Command')

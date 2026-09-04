@@ -826,6 +826,16 @@ await page.getByRole('button', { name: '0 energy', exact: true }).click()
 const allZeroCostLabels = await page.locator('.compendium-card').evaluateAll((cards) =>
   cards.map((card) => card.getAttribute('aria-label')))
 await page.getByRole('button', { name: 'Any energy cost' }).click()
+const slimeTypeButton = page.getByRole('button', { name: 'Slime cards' })
+const slimeTypeIcon = await slimeTypeButton.locator('img').evaluate((image) => ({
+  source: image.getAttribute('src'),
+  loaded: image.complete && image.naturalWidth > 0,
+  width: image.naturalWidth,
+  height: image.naturalHeight,
+}))
+await slimeTypeButton.click()
+const slimeCardTypes = await page.locator('.compendium-card .card-face__type').allTextContents()
+await page.getByRole('button', { name: 'All card types' }).click()
 await page.getByRole('button', { name: 'Ironclad' }).click()
 const ironcladCardCount = await page.locator('.compendium-card').count()
 await page.getByRole('button', { name: 'Power cards' }).click()
@@ -911,6 +921,11 @@ check('the compendium filters the real card catalog and opens card detail', () =
   assertEqual(poolIconView.length, 12, 'one painted icon per card pool')
   assert(poolIconView.every((entry) => entry.loaded && entry.source?.includes('/assets/menu/compendium-icons/')),
     `compendium pool icons did not load: ${JSON.stringify(poolIconView)}`)
+  assertDeepEqual(slimeTypeIcon, {
+    source: '/assets/status-icons/slime.png', loaded: true, width: 256, height: 256,
+  })
+  assert(slimeCardTypes.length > 0 && slimeCardTypes.every((type) => type === 'Slime'),
+    `Slime type filter leaked other card types: ${JSON.stringify(slimeCardTypes)}`)
   assert(poolIconView.every((entry) => entry.border.every((width) => width === '0px')),
     `the old circular pool frames remain: ${JSON.stringify(poolIconView)}`)
   assert(allCardCount > ironcladCardCount && ironcladCardCount > 0,

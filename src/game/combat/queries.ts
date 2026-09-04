@@ -116,7 +116,7 @@ export function playCost(
     ? (player.hand ?? []).filter((held) => cardHasRetain(player, held)).length : 0
   const tackleDiscount = def.tackleCostReduction
     ? Math.max(0, (player.hand ?? []).filter((held) => cardDef(held.defId).name.includes('Tackle')).length - 1) : 0
-  const nextDiscount = def.type === 'power' || def.cardKind === 'slime' ? player.nextPowerOrSlimeDiscount : undefined
+  const nextDiscount = def.type === 'power' || def.type === 'slime' ? player.nextPowerOrSlimeDiscount : undefined
   if (nextDiscount === 'free') return 0
   if (def.hermit?.costZeroWhenDeadOn && card?.hermitDeadOn) return 0
   const hermitDiscount = def.hermit?.costReductionBy === 'attacksInChamber'

@@ -55,7 +55,7 @@ function card(
   name: string,
   deck: SlimeBossCard['deck'],
   sheetIndex: number,
-  type: CardDef['type'] | 'slime',
+  type: CardDef['type'],
   rarity: Rarity,
   multiplicity: number,
   cost: number | 'X',
@@ -66,7 +66,7 @@ function card(
   return {
     id: id(name), name, owner: 'slime_boss', deck, sheetIndex,
     upgradedSheetIndex: type === 'slime' && deck === 'starter' ? undefined : sheetIndex,
-    type: type === 'slime' ? 'power' : type,
+    type,
     ...(type === 'slime' ? { cardKind: 'slime' as const, resolvesOnPlay: true } : {}),
     rarity, multiplicity, cost, printedText, effects, ...extra,
   }

@@ -457,7 +457,7 @@ export type CardDef = {
   activeAbility?: boolean
   /** This Power is consulted directly by a shared gameplay boundary while in play. */
   persistent?: boolean
-  /** A Power whose printed effects happen once when played, as Inflame does. */
+  /** A Power or Slime whose printed effects happen once when played. */
   resolvesOnPlay?: boolean
   /** While this Power is in play, its owner's Skills cost 0 and Exhaust when played. */
   corruptSkills?: boolean
@@ -476,6 +476,11 @@ export type CardDef = {
   costAfterSpentTwoEnergy?: number
   /** What changes when upgraded. Merged over the base definition. */
   upgrade?: Partial<Omit<CardDef, 'id' | 'upgrade'>>
+}
+
+/** Powers and Slimes remain in play when a forced play would Exhaust another card type. */
+export function cardStaysInPlay(def: Pick<CardDef, 'type'>): boolean {
+  return def.type === 'power' || def.type === 'slime'
 }
 
 /** The upgraded face of a card, or the card itself when it is not upgraded. */

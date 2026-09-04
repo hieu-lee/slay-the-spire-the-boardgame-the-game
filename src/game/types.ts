@@ -10,7 +10,7 @@ export type DownfallCharacterId = (typeof DOWNFALL_CHARACTER_IDS)[number]
 export type CharacterId = (typeof CHARACTER_IDS)[number]
 export type GuardianMode = 'attack' | 'defense'
 export type SlimeType = 'bruiser' | 'leeching' | 'greed' | 'poison' | 'shield' | 'slime_spikes' | 'scrap_ooze' | 'evolution'
-export type CardType = 'attack' | 'skill' | 'power' | 'curse' | 'status'
+export type CardType = 'attack' | 'skill' | 'power' | 'slime' | 'curse' | 'status'
 export type Rarity = 'starter' | 'common' | 'uncommon' | 'rare' | 'curse' | 'special'
 export type OrbType = 'lightning' | 'frost' | 'dark'
 export type Stance = 'neutral' | 'calm' | 'wrath'
@@ -228,7 +228,7 @@ export type Player = {
   vigorSpentThisTurn: number
   /** Giga Beam's black cube prevents Mode Shift for the rest of this combat. */
   guardianModeLocked?: boolean
-  /** Downfall: Slime Powers active outside the ordinary Power row. */
+  /** Downfall: Slime cards active outside the Power row. */
   slimes: SlimeInstance[]
 
   relics: RelicInstance[]

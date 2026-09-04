@@ -86,7 +86,7 @@ import type {
   PowerContext,
   PresentationContext,
 } from './types.ts'
-import { cardDef, faceOf } from '../cards.ts'
+import { cardDef, cardStaysInPlay, faceOf } from '../cards.ts'
 import type { CardDef, Effect, TargetScope } from '../cards.ts'
 import { gainBlock, gainStrength } from '../damage.ts'
 import { enemyAbilities, enemyDef } from '../enemies.ts'
@@ -659,7 +659,7 @@ export function playCard(
   actor.vigorSpentThisTurn += vigorSpent
   actor.nextCardCost = null
   actor.enemyNextCardCost = null
-  if (def.type === 'power' || def.cardKind === 'slime') actor.nextPowerOrSlimeDiscount = undefined
+  if (def.type === 'power' || def.type === 'slime') actor.nextPowerOrSlimeDiscount = undefined
   if ((actor.freeCardsThisTurn ?? 0) > 0) actor.freeCardsThisTurn = actor.freeCardsThisTurn! - 1
   if (def.type === 'attack' && next.partyAttackDiscount) {
     for (const member of next.players) member.freeAttacksThisTurn = Math.max(0, (member.freeAttacksThisTurn ?? 0) - 1)
@@ -740,7 +740,7 @@ export function playCard(
     next.startTurnProgress.forcedCard.deferredHavocs = [
       ...(forced?.deferredHavocs ?? []),
       { card: forgetRetain(held), exhaust: def.exhaust === true ||
-        (forcedPlay && forced.exhaustNonPower && def.type !== 'power') || corrupt,
+        (forcedPlay && forced.exhaustNonPower && !cardStaysInPlay(def)) || corrupt,
       ...(doubled ? {
         copySourceNames: copySources,
         copyResumePhase: state.phase === 'start' ? 'start' as const : 'player' as const,
@@ -796,7 +796,7 @@ export function playCard(
         {
           card: forgetRetain(held),
           exhaust: def.exhaust === true ||
-            (forcedPlay && forced.exhaustNonPower && def.type !== 'power') || corrupt,
+            (forcedPlay && forced.exhaustNonPower && !cardStaysInPlay(def)) || corrupt,
           remainingEffects,
           ...(deferredCopySources.length > 0 ? {
             copySourceNames: deferredCopySources,
@@ -824,7 +824,7 @@ export function playCard(
   }
 
   if (!doubled) cleanupPlayedCard(next, actor, held, def, ctx,
-    forcedPlay && forced.exhaustNonPower && def.type !== 'power')
+    forcedPlay && forced.exhaustNonPower && !cardStaysInPlay(def))
   if (invalidPlayChoice(ctx)) return state
   if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
   resolveSpreadingSlimes(next, actor, cost, ctx)
@@ -878,7 +878,7 @@ export function playCard(
       card: { ...held },
       energySpent: effectEnergy,
       resumePhase: state.phase === 'start' ? 'start' : state.phase === 'discard' ? 'discard' : 'player',
-      forcedExhaust: forcedPlay && forced.exhaustNonPower && def.type !== 'power',
+      forcedExhaust: forcedPlay && forced.exhaustNonPower && !cardStaysInPlay(def),
       forcedChoices,
       deferredHavocs: [...(forced?.deferredHavocs ?? [])],
       sourceNames: [...copySources, ...Array(rapidFire * (copySources.length + 1)).fill('Rapid Fire' as const)],
@@ -1506,7 +1506,7 @@ export function abandonForcedCard(state: CombatState, playerId: string): CombatS
   const choices = state.phase === 'start' && !forced.resumeOpenStart
     ? [...(next.startTurnProgress?.choices ?? [])] : null
   next.startTurnProgress = undefined
-  if (forced.exhaustNonPower && faceOf(cardDef(card.defId), card.upgraded).type !== 'power') {
+  if (forced.exhaustNonPower && !cardStaysInPlay(faceOf(cardDef(card.defId), card.upgraded))) {
     actor.hand = actor.hand.filter((held) => held.uid !== card.uid)
     exhaustCards(next, actor, [card])
   } else {
