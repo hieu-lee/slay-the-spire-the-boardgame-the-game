@@ -53,19 +53,26 @@ function publicHandCount(player: Player): number {
 /** Whether a held Relic has a legal manual activation before choosing its targets. */
 export function canActivateRelic(state: CombatState, player: Player, relicIndex: number): boolean {
   const held = player.relics[relicIndex]
-  if (!held || player.dead || state.pendingDistilled || state.startTurnProgress?.forcedCard ||
+  if (!held) return false
+  const heldId = downfallRelicBaseId(held.defId)
+  // A pending Golden Eye scry blocks every player's manual Relic activation
+  // (see the `pendingRelicScry` checks below and in `activateRelic`), so its
+  // own dead owner must still be able to resolve it -- refusing them here
+  // would freeze Relic activation for the whole table forever, even while
+  // every other player stays alive.
+  const ownScry = heldId === 'golden_eye' && state.pendingRelicScry?.playerId === player.id &&
+    state.pendingRelicScry.relicIndex === relicIndex
+  if ((player.dead && !ownScry) || state.pendingDistilled || state.startTurnProgress?.forcedCard ||
     mandatoryChoicePending(state) ||
     (state.pendingTriggers?.length ?? 0) > 0 || !activePowerWindow(state)) return false
   const def = relicDef(held.defId)
-  const heldId = downfallRelicBaseId(held.defId)
   const reroute = ['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(heldId)
   const oncePerRoll = reroute || heldId === 'charons_ashes'
   const manual = Boolean(def.activation) || oncePerRoll || heldId === 'holy_water'
   const postRoll = oncePerRoll || ['gambling_chip', 'the_abacus', 'toolbox', 'fuel_canister'].includes(heldId)
   if (!manual || held.spent || heldId === 'the_courier' ||
     postRoll && (state.phase !== 'start' || state.startTurnProgress)) return false
-  if (state.pendingRelicScry) return heldId === 'golden_eye' &&
-    state.pendingRelicScry.playerId === player.id && state.pendingRelicScry.relicIndex === relicIndex
+  if (state.pendingRelicScry) return ownScry
   if (heldId === 'centennial_puzzle' && !player.lostHpThisCombat ||
     heldId === 'mummified_hand' && !player.powerPlayedThisTurn ||
     heldId === 'red_skull' && !player.shuffledThisCombat ||
@@ -548,7 +555,14 @@ export function resolvePlunderRowSwitch(
 ): CombatState {
   const pending = state.pendingPlunderSwitches?.[0]
   const player = findPlayer(state, playerId)
-  if (!pending || pending.playerId !== playerId || !player || player.dead ||
+  // A dead owner must still be able to resolve their own pending switch: it
+  // is a mandatory, table-wide choice (`mandatoryChoicePending`), so refusing
+  // a dead owner's own submission would permanently freeze every other
+  // player too, with nobody able to act on their behalf (mirrors Hermit's
+  // Dead or Alive reward, whose own decider is likewise never required to
+  // still be alive). The row itself can still matter after death: a dead
+  // player's row is a legal AOE/row-attack target under the Last Stand rule.
+  if (!pending || pending.playerId !== playerId || !player ||
     (row !== null && (!Number.isInteger(row) || row < 0 || row >= state.players.length))) return state
   const next = clone(state)
   const actor = findPlayer(next, playerId)!

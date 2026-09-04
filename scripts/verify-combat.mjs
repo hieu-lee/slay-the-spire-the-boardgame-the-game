@@ -2,6 +2,7 @@ import {
   activatePower,
   activatePotion,
   activateRelic,
+  canActivateRelic,
   beginEndPlayerTurn,
   beginEndTurnResolution,
   chooseEndTurnTarget,
@@ -32,8 +33,10 @@ import {
   previewCardCopyChoice,
   resolveEnemyTargets,
   resolveEndTurnAbility,
+  mandatoryChoicePending,
   resolvePendingDieRelicChoice,
   resolvePendingTrigger,
+  resolvePlunderRowSwitch,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
   resolveStartTurnScry,
@@ -48,7 +51,7 @@ import {
   startTurnNeedsChoice,
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
-import { damagePlayer } from '../src/game/combat/effects.ts'
+import { damagePlayer, finishDeferredHavocs, flushPendingTriggers } from '../src/game/combat/effects.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { createRng } from '../src/game/rng.ts'
 import { CAPS } from '../src/game/types.ts'
@@ -7821,6 +7824,29 @@ check('a Shiv waits while an item card choice is pending', () => {
     'a Shiv bypassed Time Warp after card play reached its limit')
 })
 
+check('a Plunder row switch stays resolvable for its owner even after they die under Last Stand', () => {
+  const state = createCombat(createRng(42), [
+    makePlayer({ hp: 1, maxHp: 20, row: 0 }),
+    makePlayer({ id: 'p2', hp: 20, maxHp: 20, row: 1 }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })], undefined, [], 3, {}, true)
+  state.pendingPlunderSwitches = [{ playerId: 'p1', sourceUid: 'e1' }]
+  damagePlayer(state, state.players[0], 1)
+  assert(state.players[0].dead, 'the switch owner must actually be dead for this scenario')
+  assertEqual(state.phase, 'player', 'Last Stand must keep combat going while a teammate survives')
+
+  // `pendingPlunderSwitches` is a mandatory, table-wide choice
+  // (`mandatoryChoicePending`): if a dead owner could no longer resolve it,
+  // nobody else could either, freezing the whole party -- including the
+  // living P2 -- forever.
+  assertEqual(mandatoryChoicePending(state), true,
+    'the unresolved Plunder switch must still block every other action')
+  const resolved = resolvePlunderRowSwitch(state, 'p1', null)
+  assertEqual(resolved.pendingPlunderSwitches.length, 0,
+    'a dead switch owner must still be able to resolve their own pending choice')
+  assertEqual(mandatoryChoicePending(resolved), false)
+  assertEqual(resolved.log.at(-1), `${resolved.players[0].name} stays in their row after Plunder`)
+})
+
 // Weak and Vulnerable are spent by a hit LANDING (p.24). A counted attack that
 // comes to nothing lands none, and Barrage at zero orbs is that attack — a
 // legal play the Defect can make on turn 1 of every combat, since they start
@@ -8298,6 +8324,60 @@ check('Combust can choose an empty player row, but pauses for a forced card', ()
   }
   assertEqual(activatePower(forced, 'p1', power.uid, { enemyRow: 0 }), forced,
     'Combust bypassed the unresolved forced card')
+})
+
+check('a pending trigger stays resolvable for its owner even after they die under Last Stand', () => {
+  const fireBreathing = instance('fire_breathing')
+  const state = createCombat(createRng(42), [
+    makePlayer({ hp: 1, maxHp: 20, powers: [fireBreathing] }),
+    makePlayer({ id: 'p2', hp: 20, maxHp: 20 }),
+  ], [
+    makeEnemy({ uid: 'left', row: 0, hp: 10, maxHp: 10 }),
+    makeEnemy({ uid: 'right', row: 1, hp: 10, maxHp: 10 }),
+  ], undefined, [], 3, {}, true)
+  // `queuedTriggers` only ever queues a trigger for a player who is alive at
+  // that moment, but nothing stops them from dying to a later, separate
+  // source before they get around to resolving it.
+  state.pendingTriggers = [{ id: 0, playerId: 'p1', sourceId: `power:${fireBreathing.uid}` }]
+  state.nextTriggerId = 1
+  damagePlayer(state, state.players[0], 1)
+  assert(state.players[0].dead, 'the trigger owner must actually be dead for this scenario')
+  assertEqual(state.phase, 'player', 'Last Stand must keep combat going while a teammate survives')
+
+  // `pendingTriggers` blocks nearly every other action table-wide (playing a
+  // card, activating a Relic/Power, ending the turn, ...), so if a dead owner
+  // could never resolve their own queued trigger, the whole party -- even the
+  // living P2 -- would be frozen forever.
+  const resolved = resolvePendingTrigger(state, 'p1', 0, 0)
+  assertEqual(resolved.pendingTriggers.length, 0,
+    'a dead trigger owner must still be able to resolve their own pending trigger')
+  assert(resolved.enemies.some((enemy) => enemy.hp < enemy.maxHp), 'the trigger should still resolve its effect')
+})
+
+check('flushPendingTriggers does not silently drop a dead owner\'s own needs-choice trigger', () => {
+  const fireBreathing = instance('fire_breathing')
+  const state = createCombat(createRng(42), [
+    makePlayer({ hp: 1, maxHp: 20, powers: [fireBreathing] }),
+    makePlayer({ id: 'p2', hp: 20, maxHp: 20 }),
+  ], [
+    makeEnemy({ uid: 'left', row: 0, hp: 10, maxHp: 10, isBoss: true }),
+    makeEnemy({ uid: 'right', row: 1, hp: 10, maxHp: 10 }),
+  ], undefined, [], 3, {}, true)
+  state.pendingTriggers = [{ id: 0, playerId: 'p1', sourceId: `power:${fireBreathing.uid}` }]
+  state.nextTriggerId = 1
+  damagePlayer(state, state.players[0], 1)
+  assert(state.players[0].dead, 'the trigger owner must actually be dead for this scenario')
+  assertEqual(state.phase, 'player', 'Last Stand must keep combat going while a teammate survives')
+
+  // `flushPendingTriggers` auto-drains every no-choice trigger and runs
+  // automatically whenever another trigger is queued or resolved. It must
+  // not silently discard a dead owner's own needs-choice trigger before they
+  // get the chance `resolvePendingTrigger` now grants them -- that would
+  // defeat the fix above by evaporating the trigger before it is ever
+  // offered to anyone.
+  flushPendingTriggers(state)
+  assertEqual(state.pendingTriggers.length, 1,
+    "a dead owner's needs-choice trigger must not be silently dropped")
 })
 
 check('Fire Breathing waits for card text, then damages a chosen row once per bad draw', () => {
@@ -9226,6 +9306,30 @@ check('a copied Attack gets a fresh private post-draw choice without advancing t
   assertEqual(state.phase, 'player')
 })
 
+check('Double Tap settles its own copy instead of deadlocking when its retaliation kills the actor under Last Stand', () => {
+  const doubleTap = instance('double_tap')
+  const strike = instance('strike_ironclad')
+  const state = createCombat(createRng(42), [
+    makePlayer({ hp: 1, maxHp: 20, hand: [doubleTap, strike], energy: 3 }),
+    makePlayer({ id: 'p2', hp: 20, maxHp: 20 }),
+  ], [makeEnemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 1, isBoss: true })], undefined, [], 3, {}, true)
+
+  // Spiker's Thorns reflects damage back at whoever attacked it: Strike's own
+  // (virtual, first) resolution kills the 1-HP attacker before the physical
+  // copy is even queued. Under Last Stand, a living teammate keeps combat
+  // going, so the queued copy would otherwise lock `phase: 'copy'' forever --
+  // nobody else can ever call `playCardCopy` on someone else's behalf.
+  let resolved = playCard(state, 'p1', doubleTap.uid, { enemyUid: null, playerId: null })
+  resolved = playCard(resolved, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assert(resolved.players[0].dead, "Spiker's Thorns should have killed the attacker")
+  assertEqual(resolved.phase, 'copy', 'the physical copy is still queued for its now-dead owner')
+  resolved = playCardCopy(resolved, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(resolved.phase, 'player', 'Double Tap must not strand the party in phase "copy" forever')
+  assertEqual(resolved.pendingCardCopy, undefined)
+  assert(resolved.players[0].discard.some((card) => card.uid === strike.uid),
+    "the actor's own death should settle their copy, not leave it stuck")
+})
+
 check('the physical Attack stays outside every pile until both Double Tap resolutions finish', () => {
   const doubleTap = instance('double_tap', true)
   const headbutt = instance('headbutt')
@@ -9248,6 +9352,90 @@ check('the physical Attack stays outside every pile until both Double Tap resolu
   assertEqual(state.enemies[0].hp, 6)
 })
 
+check('Double Tap discards its copy instead of deadlocking when it loses its only living target', () => {
+  const doubleTap = instance('double_tap')
+  const strike = instance('strike_ironclad')
+  let state = combat([makePlayer({ hand: [doubleTap, strike], energy: 3 })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50, isBoss: true }),
+  ])
+  state = playCard(state, 'p1', doubleTap.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].doubledAttacksThisTurn, 1)
+
+  // Strike's first (virtual) resolution kills phase 1, leaving no living
+  // enemy while phase 2 is pending -- without a check, queuing the second
+  // (physical) resolution as `pendingCardCopy` would lock `phase: 'copy'`
+  // forever, since no living enemy exists for it to target either.
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'phase 1 should die from the virtual resolution')
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+  assertEqual(state.phase, 'player', 'Double Tap must not strand the player in phase "copy" with no legal target')
+  assertEqual(state.pendingCardCopy, undefined)
+  assert(state.players[0].discard.some((card) => card.uid === strike.uid),
+    'the untargetable copy should be discarded, not left stuck')
+})
+
+check('a deferred Rapid Fire copy is discarded instead of deadlocking when it loses its only living target', () => {
+  const highNoon = instance('hermit_high_noon')
+  const strike = instance('hermit_strike')
+  let state = combat([makePlayer({
+    character: 'hermit', hand: [strike], powers: [highNoon], energy: 3,
+  })], [makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50, isBoss: true })])
+
+  // High Noon gives every base Strike Rapid Fire 1: the physical Strike kills
+  // phase 1, and the deferred Rapid Fire copy would otherwise lock
+  // `phase: 'copy'` forever with no living enemy left to target.
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'phase 1 should die from the first resolution')
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+  assertEqual(state.phase, 'player', 'Rapid Fire must not strand the player in phase "copy" with no legal target')
+  assertEqual(state.pendingCardCopy, undefined)
+  assert(state.players[0].discard.some((card) => card.uid === strike.uid),
+    'the untargetable Rapid Fire copy should be discarded, not left stuck')
+})
+
+check('a Scry-triggered Weave is discarded instead of deadlocking when it loses its only living target', () => {
+  const thirdEye = instance('third_eye')
+  const strike = instance('strike_ironclad')
+  const weave = instance('weave')
+  let state = combat([makePlayer({ hand: [thirdEye, strike], draw: [weave], energy: 3 })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50, isBoss: true }),
+  ])
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'phase 1 should die from the Strike')
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+
+  // Third Eye's Scry reveals Weave, which is normally played instead of
+  // discarded -- but with no living enemy to target, it must be discarded
+  // like any other unplayable scried card, not lock phase: 'copy' forever.
+  state = playCard(state, 'p1', thirdEye.uid, { enemyUid: null, playerId: null, scryDiscardUids: [weave.uid] })
+  assertEqual(state.phase, 'player', 'a Scry-triggered Weave must not strand the player in phase "copy"')
+  assertEqual(state.pendingCardCopy, undefined)
+  assert(state.players[0].discard.some((card) => card.uid === weave.uid),
+    'the untargetable Weave should be discarded, not left stuck')
+})
+
+check('a deferred Havoc copy chain discards its card instead of deadlocking when it loses its only living target', () => {
+  const strike = instance('strike_ironclad')
+  let state = combat([makePlayer({ hand: [] })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 0, maxHp: 50, isBoss: true, dead: true }),
+  ])
+  state.pendingSummons = [{ sourceUid: 'awakened', row: 0, defIds: ['awakened_one_phase_2'], turn: state.turn + 1 }]
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+
+  // A deferred Havoc chain (e.g. Havoc drawing another Havoc while the outer
+  // one was itself copied) queues its own `pendingCardCopy` once the parent
+  // finishes -- this must not happen for a card with no legal target left.
+  const resumedTriggers = finishDeferredHavocs(state, state.players[0], [
+    { card: strike, exhaust: false, copySourceNames: ['Rapid Fire'], copyResumePhase: 'player' },
+  ])
+  assertDeepEqual(resumedTriggers, [])
+  assertEqual(state.pendingCardCopy, undefined,
+    'a deferred copy with no legal target must not be queued as a forced card copy')
+  assertEqual(state.phase, 'player', 'must not strand the player in phase "copy"')
+  assert(state.players[0].discard.some((card) => card.uid === strike.uid),
+    'the untargetable deferred copy should be discarded, not left stuck')
+})
+
 check('Distilled Chaos privately queues three cards and plays them in the chosen order for free', () => {
   const first = instance('strike_ironclad')
   const second = instance('defend_ironclad')
@@ -9265,6 +9453,36 @@ check('Distilled Chaos privately queues three cards and plays them in the chosen
   state = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: null })
   assertEqual(state.enemies[0].hp, 8)
   assertEqual(state.pendingDistilled, undefined)
+})
+
+check('Distilled Chaos settles its own forced card instead of deadlocking when an earlier one kills the actor under Last Stand', () => {
+  const first = instance('strike_ironclad')
+  const second = instance('strike_ironclad')
+  const state = createCombat(createRng(212), [
+    makePlayer({ hp: 1, maxHp: 20, draw: [first, second], potions: ['distilled_chaos'], energy: 0 }),
+    makePlayer({ id: 'p2', hp: 20, maxHp: 20 }),
+  ], [makeEnemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 1, isBoss: true })], undefined, [], 3, {}, true)
+
+  // Spiker's Thorns kills the 1-HP actor while the FIRST queued Distilled
+  // Chaos card resolves. `chooseDistilledCard` has no dead-owner check, so it
+  // happily arms the SECOND card as `startTurnProgress.forcedCard` for the
+  // now-dead player; under Last Stand a living teammate keeps combat going,
+  // so that forced card must still be settleable, not stuck forever (it
+  // blocks ending the turn, relic/shiv/soulburn activation, and the enemy
+  // turn table-wide, exactly like the other forced-card mechanisms above).
+  let resolved = activatePotion(state, 'p1', 'distilled_chaos')
+  resolved = chooseDistilledCard(resolved, 'p1', first.uid)
+  resolved = playCard(resolved, 'p1', first.uid, { enemyUid: 'e1', playerId: null })
+  assert(resolved.players[0].dead, "Spiker's Thorns should have killed the attacker")
+  assertEqual(resolved.phase, 'player', 'Last Stand must keep combat going while a teammate survives')
+
+  resolved = chooseDistilledCard(resolved, 'p1', second.uid)
+  assert(resolved.startTurnProgress?.forcedCard, 'the second card should still be armed for the now-dead player')
+
+  resolved = playCard(resolved, 'p1', second.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(resolved.startTurnProgress, undefined,
+    'Distilled Chaos must not strand the party in a forced-card lock forever')
+  assertEqual(resolved.pendingDistilled, undefined)
 })
 
 check('Distilled Chaos discards a queued card that loses its only living target, instead of deadlocking', () => {
@@ -10053,6 +10271,31 @@ check('Golden Eye persists a private Scry choice and validates the revealed card
   assertDeepEqual(resolved.players[0].discard.map((card) => card.uid), [cards[1].uid])
   assertEqual(resolved.players[0].relics[0].spent, true)
   assertEqual(resolved.pendingRelicScry, undefined)
+})
+
+check('a Golden Eye Scry stays resolvable for its owner even after they die under Last Stand', () => {
+  const cards = [instance('strike_ironclad'), instance('defend_ironclad'), instance('bash')]
+  const state = createCombat(createRng(42), [
+    makePlayer({ hp: 1, maxHp: 20, draw: cards, relics: [{ defId: 'golden_eye', spent: false }] }),
+    makePlayer({ id: 'p2', hp: 20, maxHp: 20, energy: 3, relics: [{ defId: 'thimble_helm', spent: false }] }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })], undefined, [], 3, {}, true)
+  const staged = activateRelic(state, 'p1', 0)
+  assertDeepEqual(staged.pendingRelicScry.cards.map((card) => card.uid), cards.map((card) => card.uid))
+  damagePlayer(staged, staged.players[0], 1)
+  assert(staged.players[0].dead, 'the Golden Eye owner must actually be dead for this scenario')
+  assertEqual(staged.phase, 'player', 'Last Stand must keep combat going while a teammate survives')
+
+  // A pending Golden Eye Scry blocks every player's manual Relic activation
+  // (see `canActivateRelic`/`activateRelic`), so its own dead owner must
+  // still be able to resolve it, or nobody -- including the living P2 --
+  // could ever activate a Relic again for the rest of combat.
+  assertEqual(canActivateRelic(staged, staged.players[1], 0), false,
+    'a teammate must not be able to activate an unrelated Relic while the Scry is unresolved')
+  assertEqual(canActivateRelic(staged, staged.players[0], 0), true,
+    'a dead Scry owner must still be able to resolve their own pending choice')
+  const resolved = activateRelic(staged, 'p1', 0, { scryDiscardUids: [cards[1].uid] })
+  assertEqual(resolved.pendingRelicScry, undefined)
+  assertEqual(resolved.players[0].relics[0].spent, true)
 })
 
 check('Blasphemy exhausts the draw pile and plays the next Attack exactly three times', () => {

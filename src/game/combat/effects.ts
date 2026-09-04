@@ -57,6 +57,7 @@ import {
   effectiveCombatCardDef,
   effectIsActive,
   evokePlan,
+  guardianGemForCard,
   invalidPlayChoice,
   latestPlayableAllyAttack,
   omniscienceEligibleCards,
@@ -2209,7 +2210,14 @@ export function applyEffect(
       const wovenCards = tossed.filter((card) => faceOf(cardDef(card.defId), card.upgraded).scryPlayBonus !== undefined)
       const woven = wovenCards[0]
       discardByCardEffect(state, actor, tossed.filter((card) => !wovenCards.some((weave) => weave.uid === card.uid)), context)
-      if (woven) {
+      if (woven && !cardCanBeForced(faceOf(cardDef(woven.defId), woven.upgraded), state, actor, woven.attachedGemId, woven.uid)) {
+        const weave = faceOf(cardDef(woven.defId), woven.upgraded)
+        // Neither this Weave nor any it would have chained into can be forced
+        // once it has no legal target: discard the whole scried batch rather
+        // than leave a later one stranded with nowhere to queue it.
+        discardByCardEffect(state, actor, wovenCards, context)
+        note(`${actor.name} cannot play ${weave.name} scried this way; it is discarded`)
+      } else if (woven) {
         const weave = faceOf(cardDef(woven.defId), woven.upgraded)
         const queued = { ...forgetRetain(woven), scryDamageBonus: weave.scryPlayBonus }
         const copySources = copySourcesFor(weave, actor)
@@ -2857,6 +2865,14 @@ export function finishDeferredHavocs(
       }
       pendingTriggers.push(...(context.pendingTriggers ?? []))
     }
+    if (copySourceNames?.length && !cardCanBeForced(def, state, actor, guardianGemForCard(actor, card), card.uid)) {
+      if (!virtualOnly) {
+        if (exhaust) exhaustCards(state, actor, [card])
+        else actor.discard = [...actor.discard, card]
+      }
+      state.log = [...state.log, `${actor.name}'s ${copySourceNames[0]} copy of ${def.name} could not be played`]
+      continue
+    }
     if (copySourceNames?.length) {
       if (def.type === 'attack') recordAttackPlayed(state, actor)
       fireTriggers(state, { kind: 'onPlayCard', cardType: def.type }, actor, card.uid)
@@ -3422,7 +3438,12 @@ export function flushPendingTriggers(state: CombatState): void {
     const pending = state.pendingTriggers[0]!
     const player = findPlayer(state, pending.playerId)
     const source = player && triggerSourceById(player, pending.sourceId)
-    if (!player || player.dead || !source) {
+    // A dead owner's OWN trigger must not be silently discarded here: unlike
+    // `!player`/`!source` (nothing left to resolve), the owner dying under
+    // Last Stand does not make the trigger's effect moot, and a needs-choice
+    // trigger has to fall through to the `return` below so its owner can
+    // still resolve it via `resolvePendingTrigger`, exactly as intended.
+    if (!player || !source) {
       state.pendingTriggers.shift()
       continue
     }

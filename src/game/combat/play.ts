@@ -246,10 +246,16 @@ export function previewCardChoice(
 
 function settleForbiddenPendingCopy(state: CombatState, actor: Player): CombatState {
   const settled = settle(state)
-  if (!settled.pendingCardCopy) return settled
-  return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
-    ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
-    : settled
+  const pending = settled.pendingCardCopy
+  if (!pending) return settled
+  if (actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)) {
+    return skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
+  }
+  const copyDef = faceOf(cardDef(pending.card.defId), pending.card.upgraded)
+  if (!cardCanBeForced(copyDef, settled, actor, guardianGemForCard(actor, pending.card), pending.card.uid)) {
+    return skipCardCopy(settled, actor.id, 'could not be played')
+  }
+  return settled
 }
 
 function cardResolutionChoicesAreValid(
@@ -554,7 +560,14 @@ export function playCard(
   if (forced && !forcedPlay) return state
   if (state.phase !== 'player' && !forcedPlay) return state
   const player = findPlayer(state, playerId)
-  if (!player || player.dead) return state
+  if (!player) return state
+  // A forced card's own retaliation (e.g. Thorns/Sharp Hide) can kill its
+  // owner before a later card in the same forced chain (Distilled Chaos,
+  // Mayhem, Havoc) is chosen; under Last Stand a living teammate keeps that
+  // still-armed `startTurnProgress.forcedCard` blocking the whole table
+  // forever, so a dead owner must still be able to settle it, exactly like
+  // Conclude/Time Warp already do below.
+  if (player.dead) return forcedPlay ? abandonForcedCard(state, playerId) : state
 
   const held = player.hand.find((card) => card.uid === cardUid)
   if (!held) return state
@@ -817,10 +830,7 @@ export function playCard(
       consumeFreeAttack: ctx.consumeQueuedFreeAttack,
     }
     next.phase = 'copy'
-    const settled = settle(next)
-    return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
-      ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
-      : settled
+    return settleForbiddenPendingCopy(next, actor)
   }
 
   if (!doubled) cleanupPlayedCard(next, actor, held, def, ctx,
@@ -887,10 +897,7 @@ export function playCard(
     next.phase = 'copy'
     next.log = [...next.log, `${actor.name}'s ${copySources[0]} copy finished; ${def.name} remains to resolve`]
     releasePendingTriggers(next, ctx)
-    const settled = settle(next)
-    return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
-      ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
-      : settled
+    return settleForbiddenPendingCopy(next, actor)
   }
 
   if (rapidFire > 0) {
@@ -908,7 +915,7 @@ export function playCard(
       hermitRapidFireCard: true,
     }
     next.phase = 'copy'
-    return settle(next)
+    return settleForbiddenPendingCopy(next, actor)
   }
 
   const resumedTriggers = finishDeferredHavocs(next, actor, forced?.deferredHavocs ?? [])
@@ -948,6 +955,16 @@ export function previewHermitChamberCardChoice(
   return staged ? previewCardChoice(staged, playerId, cardUid) : null
 }
 
+function skipPendingHermitChamberPlay(state: CombatState, pending: NonNullable<CombatState['pendingHermitChamberPlays']>[number], message: string): CombatState {
+  const next = clone(state)
+  const rest = pending.cardUids.slice(1)
+  next.pendingHermitChamberPlays = rest.length
+    ? [{ ...pending, cardUids: rest }, ...(next.pendingHermitChamberPlays?.slice(1) ?? [])]
+    : next.pendingHermitChamberPlays?.slice(1)
+  next.log = [...next.log, message]
+  return settle(next)
+}
+
 /** Plays a private Chamber card through the ordinary authoritative card pipeline. */
 export function playHermitChamberCard(
   state: CombatState,
@@ -955,20 +972,26 @@ export function playHermitChamberCard(
   cardUid: string,
   context: PlayContext = { enemyUid: null, playerId: null },
 ): CombatState {
+  const pending = state.pendingHermitChamberPlays?.[0]
+  const owner = findPlayer(state, playerId)
+  // A Hermit who dies mid-resolution (e.g. a Thorns/Sharp Hide retaliation)
+  // can never legally play their queued Chamber card: `stageHermitChamberCard`
+  // rejects any dead player outright, so without this the mandatory play
+  // (and the table-wide `phase !== 'player'`-equivalent block it imposes via
+  // `mandatoryChoicePending`) would be stuck forever under Last Stand.
+  if (pending && pending.playerId === playerId && owner?.dead) {
+    return skipPendingHermitChamberPlay(state, pending,
+      `${owner.name}'s mandatory Chamber play was skipped because they did not survive to play it`)
+  }
   const staged = stageHermitChamberCard(state, playerId, cardUid)
   if (!staged) return state
   const actor = findPlayer(staged, playerId)!
   const card = actor.hand.find((held) => held.uid === cardUid)!
   const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), actor.guardianMode)
-  const pending = state.pendingHermitChamberPlays?.[0]
-  if (pending && (reachedTimeWarpLimit(staged, actor) || !cardIsPlayable(def, staged, actor))) {
-    const next = clone(state)
-    const rest = pending.cardUids.slice(1)
-    next.pendingHermitChamberPlays = rest.length
-      ? [{ ...pending, cardUids: rest }, ...(next.pendingHermitChamberPlays?.slice(1) ?? [])]
-      : next.pendingHermitChamberPlays?.slice(1)
-    next.log = [...next.log, `${actor.name}'s mandatory Chamber play of ${def.name} was skipped because it cannot be played`]
-    return settle(next)
+  if (pending && (reachedTimeWarpLimit(staged, actor) || !cardIsPlayable(def, staged, actor) ||
+    !cardCanBeForced(def, staged, actor, guardianGemForCard(actor, card), card.uid))) {
+    return skipPendingHermitChamberPlay(state, pending,
+      `${actor.name}'s mandatory Chamber play of ${def.name} was skipped because it cannot be played`)
   }
   const resolved = playCard(staged, playerId, cardUid, { ...context, hermitChamberPlay: true })
   return resolved === staged ? state : resolved
@@ -1045,7 +1068,14 @@ export function playCardCopy(
   const pending = state.pendingCardCopy
   if (state.phase !== 'copy' || !pending || pending.playerId !== playerId) return state
   const player = findPlayer(state, playerId)
-  if (!player || player.dead) return state
+  if (!player) return state
+  // A card that killed its own actor (e.g. a Skill's Thorns/Sharp Hide
+  // reflection) can still queue a physical copy behind it under Last Stand,
+  // where a living teammate keeps combat going: `phase: 'copy'` blocks
+  // nearly every other action table-wide, so a dead owner must still be able
+  // to settle their own pending copy, exactly like Conclude/Time Warp already
+  // do, rather than leave it stuck forever.
+  if (player.dead) return skipCardCopy(state, playerId, "was skipped because its owner didn't survive to finish it")
   if (player.cardPlayLocked) return skipCardCopy(state, playerId, 'was skipped by Conclude')
   if (reachedTimeWarpLimit(state, player)) return skipCardCopy(state, playerId, 'was skipped by Time Warp')
   const printedDef = faceOf(cardDef(pending.card.defId), pending.card.upgraded)
@@ -1063,6 +1093,9 @@ export function playCardCopy(
     (sourceName === 'Echo Form' && def.type !== 'attack' && def.type !== 'skill') ||
     (sourceName === 'Burst' && def.type !== 'skill') ||
     (sourceName === 'Doppelganger' && def.type !== 'attack' && def.type !== 'skill')) return state
+  if (!cardCanBeForced(def, state, player, attachedGemId, pending.card.uid)) {
+    return skipCardCopy(state, playerId, 'could not be played')
+  }
   if (def.modes) {
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
     if (!cardModeIsAvailable(def, state, player, context.mode!)) return state
@@ -1227,10 +1260,7 @@ export function playCardCopy(
       consumeFreeAttack: ctx.consumeQueuedFreeAttack,
     }
     next.phase = 'copy'
-    const settled = settle(next)
-    return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
-      ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
-      : settled
+    return settleForbiddenPendingCopy(next, actor)
   }
   if (finalCopy && !copy.virtualOnly) cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
   if (invalidPlayChoice(ctx)) return state
@@ -1287,10 +1317,7 @@ export function playCardCopy(
     copy.sourceNames = copy.sourceNames.slice(1)
     next.log = [...next.log, `${actor.name}'s ${copy.sourceNames[0]} copy finished; ${def.name} remains to resolve`]
     releasePendingTriggers(next, ctx)
-    const settled = settle(next)
-    return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
-      ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
-      : settled
+    return settleForbiddenPendingCopy(next, actor)
   }
   if (copy.queuedWeaves?.length) {
     const woven = copy.queuedWeaves[0]!
@@ -1316,10 +1343,7 @@ export function playCardCopy(
       consumeFreeAttack: (actor.freeAttacksThisTurn ?? 0) > 0,
     }
     next.phase = 'copy'
-    const settled = settle(next)
-    return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
-      ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
-      : settled
+    return settleForbiddenPendingCopy(next, actor)
   }
   delete next.pendingCardCopy
   next.phase = copy.resumePhase
