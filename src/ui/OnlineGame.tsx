@@ -747,8 +747,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           </select>
         </label>
       </section> : null}
-      {snapshot.pendingRelic && viewer?.deck ? <RelicResolvePanel key={snapshot.pendingRelic.relicId}
+      {snapshot.pendingRelic && viewer?.deck ? <RelicResolvePanel key={`${snapshot.pendingRelic.relicId}:${JSON.stringify(snapshot.pendingRelic.rewardIndices ?? {})}`}
         pending={snapshot.pendingRelic} deck={viewer.deck}
+        onRewardChoice={(reward, choice) => room.act({ kind: 'choosePendingRelicReward', reward, choice })}
         onResolve={(cardUids, rewardIndices) => room.act({ kind: 'resolvePendingRelic', cardUids, rewardIndices })} /> : null}
       {pendingSocket && pendingSocket.playerId === snapshot.you.playerId && viewer?.deck ? (
         <GuardianSocketPanel key={`${pendingSocket.playerId}-${pendingSocket.cardUid}`}
@@ -807,7 +808,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         <OnlineRewardScreen
           run={run}
           viewerId={snapshot.you.playerId}
-          choice={snapshot.rewardChoice}
           decided={snapshot.rewardDecided}
           confirmed={snapshot.rewardConfirmed}
           onAction={room.act}

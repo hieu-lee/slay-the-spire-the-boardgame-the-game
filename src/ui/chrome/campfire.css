@@ -167,8 +167,6 @@
   min-height: calc(100dvh - 5rem);
 }
 
-.sts-scope .campfire:has(.campfire__deck) .campfire__leave:disabled { display: none; }
-
 .sts-scope .campfire__prompt:has(.campfire__deck) .campfire__choices button {
   flex-direction: row;
   min-width: 7rem;
@@ -188,7 +186,6 @@
     white-space: nowrap;
   }
 
-  .sts-scope .campfire:has(.campfire__deck) .campfire__leave:not(:disabled) { top: 0.5rem; bottom: auto; }
 }
 
 @media (max-height: 600px) and (min-width: 701px) {
@@ -207,20 +204,6 @@
     max-height: calc(100% - 8rem);
   }
 
-  .sts-scope .campfire:has(.campfire__deck) .campfire__leave:not(:disabled) {
-    top: auto;
-    right: 0.5rem;
-    bottom: 0.5rem;
-    max-width: 40%;
-  }
-
-}
-
-.sts-scope .campfire__leave {
-  position: absolute;
-  z-index: 7;
-  right: 1rem;
-  bottom: 1rem;
 }
 
 @media (max-width: 700px) {

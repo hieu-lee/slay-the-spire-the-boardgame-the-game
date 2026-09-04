@@ -7,6 +7,7 @@ import {
   canGiveUpRun,
   canRerollDownfallSelfBoss,
   canSkipEvent,
+  choosePendingRelicReward,
   chooseNeow,
   decideCourier,
   chooseEvent,
@@ -716,9 +717,10 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           onChange={updateCombat}
         /></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} onReveal={(kind) => setRun((current) => revealCourier(current, viewerId, kind))} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
       ) : null}
-      {pendingPreview ? <RelicResolvePanel key={pendingPreview.relicId}
+      {pendingPreview ? <RelicResolvePanel key={`${pendingPreview.relicId}:${JSON.stringify(pendingPreview.rewardIndices ?? {})}`}
         pending={pendingPreview}
-        deck={viewer?.deck ?? []} onResolve={(cardUids, rewardIndices) => setRun((current) =>
+        deck={viewer?.deck ?? []} onRewardChoice={(reward, choice) => setRun((current) =>
+          choosePendingRelicReward(current, viewerId, reward, choice))} onResolve={(cardUids, rewardIndices) => setRun((current) =>
           resolvePendingRelic(current, viewerId, cardUids, rewardIndices))} /> : null}
       {pendingSocket && pendingSocketOwner ? <GuardianSocketPanel
         key={`${pendingSocket.playerId}-${pendingSocket.cardUid}`}
@@ -792,13 +794,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           players={run.players}
           rewards={run.rewards}
           onReveal={(playerId, sources) => setRun((current) => revealCardReward(current, playerId, sources))}
-          onGold={(playerId) => setRun((current) => resolveGoldReward(current, playerId))}
+          onGold={(playerId, gain) => setRun((current) => resolveGoldReward(current, playerId, gain))}
           onPotion={(playerId, decision) => setRun((current) => resolvePotionReward(current, playerId, decision))}
           onRelic={(playerId, choice) => setRun((current) => resolveRelicReward(current, playerId, choice === 'gain'))}
           onBossRelic={(playerId, relicId) => setRun((current) => resolveBossRelicReward(current, playerId, relicId))}
           onTransform={(playerId, cardUid) => setRun((current) => resolveTransformReward(current, playerId, cardUid))}
           onResolve={(decisions) => setRun((current) => resolveCardRewards(current, decisions))}
           ascension={run.ascension}
+          act={run.act}
         />
       ) : null}
 

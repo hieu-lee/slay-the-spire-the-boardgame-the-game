@@ -71,7 +71,6 @@
 
   .sts-scope .reward-item__actions { grid-column: 1 / -1; justify-content: stretch; }
   .sts-scope .reward-item__actions button { flex: 1 1 8rem; }
-  .sts-scope .reward-boss__row { grid-template-columns: 1fr; }
 }
 
 /* The rug stacks one section per row below 830px, not 760px like the rest of the

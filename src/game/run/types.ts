@@ -139,6 +139,7 @@ export type PendingRelicPreview = {
   rewardChoices?: string[][]
   rewardUpgraded?: boolean[]
   guardianGemGroups?: string[][]
+  rewardIndices?: Record<number, number>
 }
 
 export type EncounterCard = {

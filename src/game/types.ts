@@ -99,6 +99,8 @@ export type RelicInstance = {
   pending?: boolean
   /** Gems reserved beside each face-up reward group from this one-shot Relic. */
   guardianGemGroups?: string[][]
+  /** Owner-only card reward decisions already made while this Relic is pending. */
+  pendingRewardIndices?: Record<number, number>
 }
 
 export type Player = {

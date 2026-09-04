@@ -3892,6 +3892,11 @@ try {
       assert(shape.previewFits && shape.confirmEnabled, JSON.stringify(shape))
     }
   })
+  await onlineSmithPicker.getByRole('button', { name: 'Confirm' }).click()
+  await ownerGame.locator('.campfire').waitFor({ state: 'hidden' })
+  check('the final online Campfire confirmation advances immediately', () => {
+    assertEqual(liveRoom.run.phase, 'map')
+  })
   await a.setViewportSize({ width: 1440, height: 900 })
   // The online Wing Boots prompt, which had no coverage at all: dropping the
   // `map-prompt` class or swapping `wingBootLabel` for the room's raw `kind` both
@@ -4658,10 +4663,12 @@ try {
   const teammatePotionControls = await fourPages[1].getByRole('button', { name: 'Fire Potion' }).count()
   const revealedItemImages = await fourPages[0].locator('.loot-choice .item-icon-image')
     .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
-  const blockedCardLoot = await fourPages[0].getByRole('button', { name: 'Add a card to your deck.' }).isDisabled()
-  check('the four-player loot fixture is immediate, private, and waits for item claims before cards', () => {
+  const enabledCardLoot = await fourPages[0].getByRole('button', { name: 'Add a card to your deck.' }).isEnabled()
+  const individualPotionSkips = await fourPages[0].getByRole('button', { name: /^Skip .*Potion$/ }).count()
+  check('the four-player loot fixture is immediate, private, and keeps each reward independent', () => {
     assert(revealedItemImages.every(Boolean))
-    assert(blockedCardLoot, 'card reward was enabled before its item loot settled')
+    assert(enabledCardLoot, 'card reward was disabled by unrelated item loot')
+    assertEqual(individualPotionSkips, 0, 'the loot table still has an individual Potion skip button')
   })
   await fourPages[0].getByRole('button', { name: 'Astrolabe' }).scrollIntoViewIfNeeded()
   await fourPages[0].screenshot({ path: join(outDir, '09-four-player-compact-desktop-loot.png'), fullPage: true })

@@ -40,8 +40,14 @@ try {
     filter: getComputedStyle(button).filter,
     outline: getComputedStyle(button).outlineStyle,
   }))
-  assert(neowDesktopBackHover.filter.includes('brightness(1.2)') && neowDesktopBackHover.filter.includes('drop-shadow'), JSON.stringify(neowDesktopBackHover))
+  assert(neowDesktopBackHover.filter.includes('brightness(1.1)') && neowDesktopBackHover.filter.includes('drop-shadow'), JSON.stringify(neowDesktopBackHover))
   assert.equal(neowDesktopBackHover.outline, 'none')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  assert.deepEqual(await neowBack.evaluate((button) => ({
+    transform: getComputedStyle(button).transform,
+    duration: getComputedStyle(button).transitionDuration,
+  })), { transform: 'none', duration: '0s' }, 'Back hover ignores reduced motion')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.keyboard.press('Shift')
   await neowBack.focus()
   await page.emulateMedia({ forcedColors: 'active' })
@@ -68,6 +74,7 @@ try {
   assert(await neowConfirm.isDisabled())
   assert(await neowPicker.getByRole('button', { name: 'Skip reward' }).isDisabled())
   assert(await neowPicker.locator('.card-picker__grid > .card').first().getAttribute('aria-disabled') === 'true')
+  assert.equal(await neowPicker.locator('.card-picker__grid > .card').first().getAttribute('tabindex'), '-1')
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())
@@ -134,6 +141,14 @@ try {
   await page.getByRole('button', { name: /Smith/ }).click()
   const picker = page.locator('.card-picker')
   await picker.waitFor()
+  const backControl = picker.getByRole('button', { name: 'Back' })
+  const confirmControl = picker.getByRole('button', { name: 'Confirm' })
+  assert.equal(await backControl.getAttribute('title'), null)
+  assert.equal(await confirmControl.getAttribute('title'), null)
+  const restingBack = await backControl.evaluate((button) => getComputedStyle(button).transform)
+  await backControl.hover()
+  await page.waitForTimeout(180)
+  assert.notEqual(await backControl.evaluate((button) => getComputedStyle(button).transform), restingBack)
   assert(await picker.locator('.card-picker__grid > .card').count() > 0)
   assert(await picker.getByRole('button', { name: 'Confirm' }).isDisabled())
   const upgradeGrid = picker.locator('.card-picker__grid')
@@ -185,10 +200,15 @@ try {
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())
+    run.phase = 'room'
+    run.roomState = null
+    run.map.position = Object.entries(run.map.rooms).find(([, room]) => room.kind === 'campfire')?.[0]
     run.players[0].relics.push({ defId: 'peace_pipe', spent: false }, { defId: 'straight_razor', spent: false })
     debug.setRun(run)
   })
-  await page.getByRole('button', { name: /Rest/ }).click()
+  const campfire = page.locator('.campfire')
+  await campfire.waitFor()
+  await campfire.getByRole('button', { name: /Rest/ }).click()
   await picker.waitFor()
   assert.equal(await picker.getAttribute('aria-label'), 'Choose a card to remove')
   const pickerRows = await picker.locator('.card-picker__grid > .card').evaluateAll((cards) => Object.values(cards.reduce((rows, card) => {
@@ -203,7 +223,7 @@ try {
   assert.equal(await picker.getAttribute('aria-label'), 'Choose a card to transform')
   await picker.getByRole('button', { name: 'Back' }).click()
   await picker.waitFor({ state: 'detached' })
-  await page.getByRole('button', { name: /Rest/ }).click()
+  await campfire.getByRole('button', { name: /Rest/ }).click()
   await picker.waitFor()
   await picker.locator('.card-picker__grid > .card').first().click()
   assert.equal(await picker.locator('.card-picker__preview .card').count(), 1)
@@ -218,7 +238,7 @@ try {
   await picker.waitFor({ state: 'detached' })
 
   await page.setViewportSize({ width: 568, height: 320 })
-  await page.getByRole('button', { name: /Smith/ }).click()
+  await campfire.getByRole('button', { name: /Smith/ }).click()
   await picker.waitFor()
   await picker.locator('.card-picker__grid > .card').first().click()
   await picker.locator('.card-picker__preview').waitFor()
@@ -234,6 +254,31 @@ try {
   })
   assert.equal(phone.overflow, false, JSON.stringify(phone))
   assert(phone.cardsFit && phone.controlsFit, JSON.stringify(phone))
+  await picker.getByRole('button', { name: 'Confirm' }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+
+  await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'campfire-ready-flow'))
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 2)
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.phase = 'room'
+    run.neow = null
+    run.roomState = null
+    run.map.position = Object.entries(run.map.rooms).find(([, room]) => room.kind === 'campfire')?.[0]
+    debug.setRun(run)
+  })
+  await page.setViewportSize({ width: 844, height: 390 })
+  await campfire.waitFor()
+  await campfire.getByRole('button', { name: /Rest/ }).click()
+  assert((await campfire.getByRole('status').textContent()).includes('chose to Rest'))
+  assert.equal(await campfire.locator('.campfire__choices button').count(), 0)
+  await campfire.getByRole('button', { name: 'Next campfire player' }).click()
+  await campfire.getByRole('button', { name: /Smith/ }).click()
+  await picker.locator('.card-picker__grid > .card').first().click()
+  await picker.getByRole('button', { name: 'Confirm' }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+  assert.equal(await page.locator('.campfire__leave').count(), 0)
   console.log('Card picker browser checks passed')
 } finally {
   await browser.close()

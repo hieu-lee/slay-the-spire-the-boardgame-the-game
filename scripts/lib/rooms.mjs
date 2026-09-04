@@ -71,6 +71,7 @@ import {
   neowPreview,
   removeAtCurrentMerchant,
   overflowShivCount,
+  choosePendingRelicReward,
   pendingRelicPreview,
   pendingRelicEligibleCards,
   orderStartTurnScries,
@@ -518,7 +519,7 @@ export function markDisconnected(room, seatToken) {
   return snapshotFor(room, seatToken)
 }
 
-/** Skip every disconnected seat's public reward stages deterministically. */
+/** Skip every disconnected seat's reward stages deterministically. */
 function settleDisconnectedRewards(room) {
   for (const seat of room.seats.filter((candidate) => candidate.connected === false)) {
     for (;;) {
@@ -528,7 +529,7 @@ function settleDisconnectedRewards(room) {
         : undefined
       if (!run || !offer) break
       const next = offer.gold
-        ? resolveGoldReward(run, seat.playerId)
+        ? resolveGoldReward(run, seat.playerId, false)
         : offer.transformReward
         ? resolveTransformReward(run, seat.playerId, null)
         : offer.potion !== false
@@ -546,7 +547,9 @@ function settleDisconnectedRewards(room) {
       ? room.run.rewards.find((candidate) => candidate.playerId === seat.playerId)
       : undefined
     if (offer?.cardReward) {
-      room.rewardChoices = { ...room.rewardChoices, [seat.playerId]: null }
+      if (!(seat.playerId in (room.rewardChoices ?? {}))) {
+        room.rewardChoices = { ...room.rewardChoices, [seat.playerId]: null }
+      }
       room.rewardConfirmed = { ...room.rewardConfirmed, [seat.playerId]: true }
     }
   }
@@ -575,7 +578,7 @@ function settlePendingRelics(room) {
         room.run,
         seat.playerId,
         eligible.slice(0, resolvedCount).map((card) => card.uid),
-        (pending.rewardChoices ?? []).map((choices) => choices.length > 0 ? 0 : -1),
+        (pending.rewardChoices ?? []).map((choices, index) => pending.rewardIndices?.[index] ?? (choices.length > 0 ? 0 : -1)),
       )
       if (next === room.run) break
       room.run = next
@@ -1088,7 +1091,7 @@ export function apply(room, seatToken, action, consumedPreviewPlayerId = null) {
   }
   if (room.run.phase === 'neow') {
     if (action?.kind === 'neow') return neowAction(room, seat, action, seatToken)
-    if (action?.kind !== 'resolvePendingRelic' && action?.kind !== 'resolveGuardianSocket') {
+    if (action?.kind !== 'resolvePendingRelic' && action?.kind !== 'choosePendingRelicReward' && action?.kind !== 'resolveGuardianSocket') {
       fail('Finish Neow before entering the Spire')
     }
   }
@@ -1096,7 +1099,7 @@ export function apply(room, seatToken, action, consumedPreviewPlayerId = null) {
   // their text forbids resolving them in combat. Combat must continue until
   // the acquisition becomes legal outside combat.
   if (room.run.phase !== 'combat' && hasPendingRelicAcquisition(room.run) &&
-    action?.kind !== 'resolvePendingRelic' && action?.kind !== 'resolveGuardianSocket') {
+    action?.kind !== 'resolvePendingRelic' && action?.kind !== 'choosePendingRelicReward' && action?.kind !== 'resolveGuardianSocket') {
     fail('Finish the pending Relic acquisition first')
   }
   const pendingGuardianSocket = room.run.pendingGuardianSockets?.[0]
@@ -2478,6 +2481,7 @@ function campfire(room, seat, action, seatToken) {
   // accumulating choices there published a campfire prompt for a room that has
   // none, then threw the choices away.
   if (currentRoom(run.map)?.kind !== 'campfire') fail('This room has no campfire')
+  if (seat.playerId in (room.campfireChoices ?? {})) fail('This campfire choice is already locked')
 
   // Validated, not merely present. `resolveCampfire` treats anything that is
   // not exactly 'rest' as a Smith, and a Smith naming no card silently does
@@ -2581,9 +2585,6 @@ function cardReward(room, seat, action, seatToken) {
     return { changed: true, snapshot: snapshotFor(room, seatToken) }
   }
   if (choice === 'confirm' || choice === 'unconfirm') {
-    if (run.rewards.some((candidate) => candidate.gold || candidate.transformReward || candidate.potion !== false || (candidate.relic ?? false) !== false || (candidate.bossRelics ?? false) !== false)) {
-      fail('Settle every item reward first')
-    }
     // Only YOUR own pick gates YOUR own confirmation. Waiting for the whole
     // table first made the counter useless: nobody could tick over until the
     // last player had chosen, so the confirm read as a second, pointless round.
@@ -2599,20 +2600,13 @@ function cardReward(room, seat, action, seatToken) {
     const waiting = settleReward(room)
     return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
   }
+  if (seat.playerId in (room.rewardChoices ?? {})) fail('This card reward choice is already locked')
   if (choice !== null && (
     offer.choices === null || !Number.isInteger(choice) || choice < 0 || choice >= offer.choices.length
   )) {
     fail('Choose one of your revealed cards or skip')
   }
   room.rewardChoices = { ...room.rewardChoices, [seat.playerId]: choice }
-  // Changing your mind reopens YOUR confirmation and nobody else's. Wiping the
-  // table's was the whole reason one player reconsidering made everyone re-click:
-  // a teammate's card is not information any other player's choice rests on.
-  // (Revealing more cards IS such information, and still clears every seat.)
-  if (room.rewardConfirmed?.[seat.playerId]) {
-    room.rewardConfirmed = { ...room.rewardConfirmed }
-    delete room.rewardConfirmed[seat.playerId]
-  }
   settleDisconnectedRewards(room)
   room.version += 1
   const waiting = settleReward(room)
@@ -3146,6 +3140,11 @@ function dispatch(run, seat, action) {
       if (next === run) fail('That Relic choice is not legal')
       return next
     }
+    case 'choosePendingRelicReward': {
+      const next = choosePendingRelicReward(run, seat.playerId, action.reward, action.choice)
+      if (next === run) fail('That Relic reward choice is not legal')
+      return next
+    }
 
     // The turn is shared, so any seat may advance it — at the table this is
     // one player asking "everyone done?" and nobody objecting.
@@ -3259,7 +3258,8 @@ function dispatch(run, seat, action) {
     case 'cardReward':
       return run
     case 'goldReward':
-      return resolveGoldReward(run, seat.playerId)
+      if (action.gain !== undefined && typeof action.gain !== 'boolean') fail('Choose whether to take the Gold reward')
+      return resolveGoldReward(run, seat.playerId, action.gain !== false)
     case 'potionReward': {
       if (run.phase !== 'reward') fail('The party is not choosing rewards')
       const offer = run.rewards.find((candidate) => candidate.playerId === seat.playerId)
@@ -3506,8 +3506,14 @@ function redactRun(run, viewerId, room) {
           playerId === viewerId ? structuredClone(decision) : { optionIds: [...decision.optionIds] },
         ])),
         dieRolls: structuredClone(run.roomState.dieRolls),
-        rewardOffers: structuredClone(run.roomState.rewardOffers ?? {}),
-        guardianGemOffers: structuredClone(run.roomState.guardianGemOffers ?? {}),
+        rewardOffers: Object.fromEntries(Object.entries(run.roomState.rewardOffers ?? {}).map(([playerId, offers]) => [
+          playerId,
+          playerId === viewerId ? structuredClone(offers) : offers.map(() => []),
+        ])),
+        guardianGemOffers: Object.fromEntries(Object.entries(run.roomState.guardianGemOffers ?? {}).map(([playerId, offers]) => [
+          playerId,
+          playerId === viewerId ? structuredClone(offers) : offers.map(() => []),
+        ])),
         itemOffers: structuredClone(run.roomState.itemOffers ?? {}),
         pendingDecisions: viewerId && run.roomState.pendingDecisions?.[viewerId]
           ? { [viewerId]: structuredClone(run.roomState.pendingDecisions[viewerId]) }
@@ -3584,8 +3590,8 @@ function redactRun(run, viewerId, room) {
     setup: run.setup ? structuredClone(run.setup) : null,
     act: run.act,
     phase: run.phase,
-    // The dealt faces and face-up rewards are public. The remaining shuffled
-    // Blessing deck and queued future rewards stay on the authoritative table.
+    // Dealt Blessing faces are public; card offers and the remaining shuffled
+    // deck stay private to the owner and authoritative table respectively.
     neow: run.neow ? {
       players: Object.fromEntries(Object.keys(run.neow.players).map((playerId) => [
         playerId,
@@ -3820,7 +3826,7 @@ function redactPlayer(player, viewerId) {
     discard: player.discard,
     exhaust: player.exhaust,
     powers: player.powers,
-    relics: mine ? player.relics : player.relics.map(({ guardianGemGroups: _private, ...relic }) => relic),
+    relics: mine ? player.relics : player.relics.map(({ guardianGemGroups: _gems, pendingRewardIndices: _rewards, ...relic }) => relic),
     potions: player.potions,
     chamberSlots: player.chamberSlots ?? 0,
     chamberCount: player.chamber?.length ?? 0,

@@ -1,7 +1,5 @@
-/* Skip is red and Collect is cyan in styles.css, and those two buttons do
-   opposite things on a screen where a misclick costs a card. Pulling them into
-   the generic key list gave them the key's geometry — which they want — but
-   also its grey slate plate, which made them identical. `:is()` scores by its
+/* Pulling Skip into the generic key list gave it the key's geometry — which it
+   wants — but also its grey slate plate. `:is()` scores by its
    most specific argument, so the key block at (0,2,1) beat the original
    `.reward-screen .reward-screen__skip` at (0,2,0) on every declaration.
    The colour coding comes back here, on top of the key shape. */
@@ -21,18 +19,4 @@
   border-color: var(--skip-edge);
   background-color: var(--skip-plate);
   background-image: linear-gradient(180deg, var(--skip-plate-lit), var(--skip-plate));
-}
-
-.sts-scope .reward-screen .reward-screen__collect {
-  border-color: var(--collect-edge);
-  color: var(--collect-ink);
-  background-color: var(--collect-plate);
-  background-image: linear-gradient(180deg, var(--collect-plate-lit), var(--collect-plate));
-}
-
-.sts-scope .reward-screen .reward-screen__collect:not(.is-chosen):hover:not(:disabled),
-.sts-scope .reward-screen .reward-screen__collect:not(.is-chosen):focus-visible {
-  border-color: var(--collect-edge);
-  background-color: var(--collect-plate);
-  background-image: linear-gradient(180deg, var(--collect-plate-lit), var(--collect-plate));
 }

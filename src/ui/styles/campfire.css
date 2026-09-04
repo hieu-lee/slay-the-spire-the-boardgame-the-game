@@ -50,8 +50,19 @@
   gap: 0.4rem;
 }
 
-.campfire__choices button,
-.campfire__leave {
+.campfire__choice-status {
+  display: grid;
+  min-height: 6.5rem;
+  margin: 0;
+  padding: 1rem 2rem;
+  place-items: center;
+  color: var(--gold);
+  font-size: 1.15rem;
+  text-align: center;
+  text-shadow: 2px 2px #000;
+}
+
+.campfire__choices button {
   background: var(--bg-raised);
   color: var(--ink);
   border: 1px solid var(--edge);
@@ -71,17 +82,6 @@
   flex-wrap: wrap;
   justify-content: center;
   max-width: 460px;
-}
-
-.campfire__leave {
-  border-color: var(--gold);
-  color: var(--gold);
-  padding: 0.45rem 1rem;
-}
-
-.campfire__leave:disabled {
-  border-color: var(--edge);
-  color: var(--ink-dim);
 }
 
 .room-screen__defeat {

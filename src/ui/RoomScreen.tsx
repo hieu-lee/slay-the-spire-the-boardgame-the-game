@@ -24,6 +24,8 @@ import type { RewardSource } from "../game/run.ts";
 import { rewardSourceLabel } from "./reward-source.ts";
 import { ItemImage } from "./ItemImage.tsx";
 import { RewardItem } from "./RewardScreen.tsx";
+import { CardRewardPicker } from "./CardRewardPicker.tsx";
+import { PickerConfirmButton } from "./CardPicker.tsx";
 
 type Props = {
   room: MerchantState | RelicRewardState | EventRoomState;
@@ -111,7 +113,7 @@ function Price({ value, sale = false }: { value: number | null; sale?: boolean }
   return (
     <span className={`room-price${sale ? " room-price--sale" : ""}`}>
       {value === null ? "Sold" : <>{sale ? <span className="room-price__sale-mark" aria-hidden="true">%</span> : null}
-        <img src={assetPath("relic-icons/old_coin.png")} alt="" />{value}
+        <img src={assetPath("icons/gold.png")} alt="" />{value}
         <span className="visually-hidden"> Gold{sale ? ", on sale" : ""}</span></>}
     </span>
   );
@@ -961,7 +963,8 @@ function EventScreen({
       return [candidate.id, paid];
     }).filter(([, paid]) => paid > 0));
   };
-  const submit = (optionIds: string[], selectedRewardSources = rewardSources) =>
+  const submit = (optionIds: string[], selectedRewardSources = rewardSources,
+    selectedRewardIndexes = rewardIndexes, selectedGuardianGemIds = guardianGemIds) =>
     onEvent(player.id, {
       optionIds,
       cardUids: pendingDecision?.cardUids?.length ? pendingDecision.cardUids : cards,
@@ -972,8 +975,8 @@ function EventScreen({
       rewardItemChoices: rewardItemChoices.length ? rewardItemChoices as ('take' | 'skip')[] : undefined,
       targetPlayerId: pendingDecision?.targetPlayerId ?? (targetPlayerId || undefined),
       roomId: roomId || undefined,
-      rewardIndexes,
-      guardianGemIds,
+      rewardIndexes: selectedRewardIndexes,
+      guardianGemIds: selectedGuardianGemIds,
       rewardSources: selectedRewardSources,
       payments: paymentFor(optionIds),
     });
@@ -1060,13 +1063,30 @@ function EventScreen({
   }
   const stagedBy = [...Object.keys(room.itemOffers ?? {}), ...Object.keys(room.rewardOffers ?? {})].find((id) => id !== player.id);
   if (stagedBy) {
-    const names = [
-      ...(room.rewardOffers?.[stagedBy]?.flat().map((id) => CARDS[id]?.name) ?? []),
-      ...(room.itemOffers?.[stagedBy]?.map((offer) => offer.kind === "relic" ? relicDef(offer.id).name : potionDef(offer.id).name) ?? []),
-    ];
-    return <section className="room-stage event-stage" style={eventArt}><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2>{room.card.name}</h2><p><strong>{players.find((candidate) => candidate.id === stagedBy)?.name ?? "A teammate"} revealed:</strong> {names.join(", ")}</p><p role="status">Waiting for that face-up reward to resolve…</p></div></div></section>;
+    const owner = players.find((candidate) => candidate.id === stagedBy)?.name ?? "A teammate";
+    const itemNames = room.itemOffers?.[stagedBy]?.map((offer) => offer.kind === "relic" ? relicDef(offer.id).name : potionDef(offer.id).name) ?? [];
+    return <section className="room-stage event-stage" style={eventArt}><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2>{room.card.name}</h2>{itemNames.length ? <p><strong>{owner} revealed:</strong> {itemNames.join(", ")}</p> : null}<p role="status">{room.rewardOffers?.[stagedBy] ? `${owner} is resolving a private Card Reward…` : `Waiting for ${owner} to resolve that reward…`}</p></div></div></section>;
   }
   if (room.card.id === "lab" && room.labChoices?.[player.id] && !room.pendingRolls?.[player.id]) return <section className="room-stage event-stage" style={eventArt}><div className="event-panel"><div className="room-banner"><span>Lab</span><h2>Potions collected</h2><p role="status">Waiting for every player to resolve their Potion.</p></div></div></section>;
+  const unresolvedReward = rewardOffers?.findIndex((_offer, index) => (rewardIndexes[index] ?? -2) < -1) ?? -1;
+  const needsRewardGem = (indexes: number[]) => rewardOffers?.some((offer, index) => {
+    const choice = indexes[index] ?? -1;
+    return choice >= 0 && Boolean(CARDS[offer[choice]!]?.guardian?.socket && guardianGemOffers[index]?.length);
+  }) ?? false;
+  if (rewardOffers && unresolvedReward >= 0) return <CardRewardPicker choices={rewardOffers[unresolvedReward]!}
+    uidPrefix={`event-reward-${unresolvedReward}`} onChoose={(choice) => {
+      const next = rewardIndexes.map((value, index) => index === unresolvedReward ? choice : value);
+      setGuardianGemIds([]);
+      setRewardIndexes(next);
+      if (next.every((index) => index >= -1) && !needsRewardGem(next))
+        submit(room.pendingDecisions?.[player.id]?.optionIds ?? [], rewardSources, next, []);
+    }} onSkip={() => {
+      const next = rewardIndexes.map((value, index) => index === unresolvedReward ? -1 : value);
+      setGuardianGemIds([]);
+      setRewardIndexes(next);
+      if (next.every((index) => index >= -1) && !needsRewardGem(next))
+        submit(room.pendingDecisions?.[player.id]?.optionIds ?? [], rewardSources, next, []);
+    }} />;
   if (rewardOffers)
     return (
       <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
@@ -1075,10 +1095,9 @@ function EventScreen({
             <span>Event reward</span>
             <h2 id="event-title">Choose your reward</h2>
             <p>
-              Revealed rewards are face-up for the party. Take one or skip.
+              Choose a Gem for the card you selected.
             </p>
           </div>
-          {Object.entries(room.rewardOffers ?? {}).filter(([id]) => id !== player.id).map(([id, offers]) => <p key={id} className="event-party-reveal"><strong>{players.find((candidate) => candidate.id === id)?.name ?? 'Teammate'}:</strong> {offers.flat().map((cardId) => CARDS[cardId]?.name).join(', ')}</p>)}
           {rewardOffers.map((offer, offerIndex) => (
             <fieldset className="event-cards" key={offerIndex}>
               <legend>Reward {offerIndex + 1}</legend>
@@ -1421,11 +1440,15 @@ function EventScreen({
         {resolverOpen && room.card.id !== "knowing_skull" ? (
           <div className="event-resolve-actions">
             {!pendingDecision ? <button type="button" className="ribbon-back" aria-label="Back to choices" onClick={clearChoiceDraft}><span aria-hidden="true"></span></button> : null}
-            <button type="button" className="room-proceed" disabled={!selectionReady} onClick={() => {
+            {maximumCards > 0 ? <PickerConfirmButton className="event-card-confirm" label="Confirm choice" disabled={!selectionReady} onClick={() => {
               if (selectedChoiceEffects.some((effect) =>
                 (effect.tag === "card-reward" || effect.tag === "rare-reward") && effect.random === true)) onArmCardGain?.();
               submit(draftOptionIds, selectedPrismaticRare ? effectiveRareRewardSources : effectiveRewardSources);
-            }}>Confirm choice →</button>
+            }} /> : <button type="button" className="room-proceed" disabled={!selectionReady} onClick={() => {
+              if (selectedChoiceEffects.some((effect) =>
+                (effect.tag === "card-reward" || effect.tag === "rare-reward") && effect.random === true)) onArmCardGain?.();
+              submit(draftOptionIds, selectedPrismaticRare ? effectiveRareRewardSources : effectiveRewardSources);
+            }}>Confirm choice →</button>}
           </div>
         ) : null}
         {room.card.id === "knowing_skull" ? (

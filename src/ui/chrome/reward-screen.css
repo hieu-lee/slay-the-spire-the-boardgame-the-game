@@ -10,10 +10,6 @@
   align-content: safe center;
   justify-items: center;
   gap: 0.7rem;
-  /* No bottom padding. The room the sticky collect control needs lives on the
-     CONTENT instead: a sticky inset resolves against the scroller's padding box,
-     so a padding here lifts the control off the bottom edge and leaves it
-     floating over the rows rather than under them. */
   padding: clamp(1rem, 3vh, 2rem) 1rem 0;
   background:
     radial-gradient(ellipse at 50% 38%, rgb(34 49 52 / 0.9), rgb(7 9 10 / 0.88) 42%, rgb(3 4 5 / 0.98) 78%),
@@ -91,14 +87,3 @@
 
 .sts-scope .reward-screen__choice { flex-basis: var(--card-width); }
 .sts-scope .reward-screen__cards > .card { width: var(--card-width); }
-/* STICKY to the bottom of the scroller. This is the only control that finishes
-   the screen, and on a reward with two items and a card choice it sat below the
-   panel's own fold at every window size — a scroller with no affordance, so the
-   run looked stuck. The plate behind it keeps the rows from showing through. */
-.sts-scope .reward-screen__collect {
-  position: sticky;
-  bottom: 0;
-  z-index: 4;
-  margin-top: 0.2rem;
-  box-shadow: 0 -0.6rem 1rem 0.6rem rgb(6 10 12 / 0.82);
-}
