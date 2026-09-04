@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { CARDS, cardIsCurse } from "../game/cards.ts";
 import { assetPath, enemyImagePath } from "../game/assets.ts";
 import { enemyDef } from "../game/enemies.ts";
@@ -17,6 +18,7 @@ import { merchantCardCost, merchantRelicCost, potionLimit } from "../game/acquis
 import { relicOptionLabel, RelicOptionText } from "./RelicChip.tsx";
 import { useHoverUnavailable } from "./touch-input.ts";
 import { Card } from "./Card.tsx";
+import { CardPicker, PickerConfirmButton } from "./CardPicker.tsx";
 import { CHARACTER_IDS } from "../game/types.ts";
 import type { Player } from "../game/types.ts";
 import type { EventEffect } from "../game/events.ts";
@@ -25,7 +27,6 @@ import { rewardSourceLabel } from "./reward-source.ts";
 import { ItemImage } from "./ItemImage.tsx";
 import { RewardItem } from "./RewardScreen.tsx";
 import { CardRewardPicker } from "./CardRewardPicker.tsx";
-import { PickerConfirmButton } from "./CardPicker.tsx";
 
 type Props = {
   room: MerchantState | RelicRewardState | EventRoomState;
@@ -708,6 +709,7 @@ function EventScreen({
   const player =
     players.find((candidate) => candidate.id === viewerId) ?? players[0]!;
   const [cards, setCards] = useState<string[]>([]);
+  const [pickerCardUids, setPickerCardUids] = useState<string[]>([]);
   const [relicId, setRelicId] = useState("");
   const [potionIndexes, setPotionIndexes] = useState<number[]>([]);
   const [potionRecipientIds, setPotionRecipientIds] = useState<string[]>([]);
@@ -750,6 +752,7 @@ function EventScreen({
     focusedEventOption.current = null;
     focusedEventOptionId.current = "";
     setCards([]);
+    setPickerCardUids([]);
     setRelicId("");
     setPotionIndexes([]);
     setPotionRecipientIds([]);
@@ -896,6 +899,28 @@ function EventScreen({
       (!room.revealedCards?.[player.id] ||
         room.revealedCards?.[player.id]?.includes(card.uid)),
   );
+  const cardPickerSteps = effects.flatMap((effect) =>
+    effect.tag === "remove-card" || effect.tag === "transform-card" || effect.tag === "upgrade-card"
+      ? eventCardSlots([effect], pendingDie, player, players).map((matches) => ({
+        matches,
+        verb: effect.tag === "remove-card" ? "Remove" as const : effect.tag === "transform-card" ? "Transform" as const : "Upgrade" as const,
+      }))
+      : [],
+  );
+  const ancientWritingSimplicity = room.card.id === "ancient_writing" && draftOptionIds.includes("simplicity");
+  const firstPickerCard = player.deck.find((card) => card.uid === cards[0]);
+  const cardPickerStep = ancientWritingSimplicity && cards.length < maximumCards
+    ? cards.length === 0
+      ? { matches: (card: Player["deck"][number]) => cardPickerSteps.some((step) => step.matches(card)), verb: "Upgrade" as const }
+      : cardPickerSteps.find((step) => !firstPickerCard || !step.matches(firstPickerCard))
+    : cardPickerSteps[cards.length];
+  const remainingPickerSteps = cardPickerSteps.slice(cards.length);
+  const nextPickerVerb = remainingPickerSteps.findIndex((step) => step.verb !== cardPickerStep?.verb);
+  const pickerSelectionCount = nextPickerVerb < 0 ? remainingPickerSteps.length : nextPickerVerb;
+  const pickerSelectionLabel = `${pickerSelectionCount} card${pickerSelectionCount === 1 ? "" : "s"}`;
+  const usesCardPicker = selectionOpen && !pendingDecision?.cardUids?.length && maximumCards > 0 && cardPickerSteps.length === maximumCards && Boolean(cardPickerStep);
+  const pickerCards = player.deck.filter((card) => card.defId !== "ascenders_bane" && cardPickerStep?.matches(card) &&
+    (!room.revealedCards?.[player.id] || room.revealedCards[player.id]?.includes(card.uid)) && !cards.includes(card.uid));
   const toggle = (uid: string) =>
     setCards((current) =>
       current.includes(uid)
@@ -1274,7 +1299,7 @@ function EventScreen({
             .map((choice) => `[${choice!.label}] ${choice!.description}`)
             .join(" · ")}
         </p> : null}
-        {maximumCards > 0 ? (
+        {maximumCards > 0 && !usesCardPicker ? (
           <fieldset className="event-cards event-cards--deck">
             <legend>Choose cards as required by your option</legend>
             {selectableCards.map((card) => (
@@ -1470,6 +1495,28 @@ function EventScreen({
           <p role="status">Your choice is locked. Waiting for the party…</p>
         ) : null}
       </div>
+      {usesCardPicker && cardPickerStep ? createPortal(<CardPicker
+        cards={pickerCards}
+        verb={cardPickerStep.verb}
+        selectionLabel={pickerSelectionLabel}
+        selectedCardUids={pickerCardUids}
+        onSelect={(uid) => setPickerCardUids((current) => current.includes(uid) ? [] : [uid])}
+        onClear={() => setPickerCardUids([])}
+        onBack={clearChoiceDraft}
+        onConfirm={() => {
+          const uid = pickerCardUids[0];
+          if (!uid) return;
+          const chosen = [...cards, uid];
+          setCards(chosen);
+          setPickerCardUids([]);
+          if (chosen.length === maximumCards) requestAnimationFrame(() => {
+            eventResolver.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
+          });
+        }}
+        confirmLabel="Confirm Event card"
+        confirmDisabled={pickerCardUids.length !== 1 || Boolean(pendingDecision?.cardUids?.length)}
+        disabled={Boolean(pendingDecision?.cardUids?.length)}
+      />, document.body) : null}
       {eventCanSkip ? <button type="button" className="room-proceed" onClick={() => onSkipEvent?.(player.id)}>No legal choice · Leave event →</button> : null}
     </section>
   );

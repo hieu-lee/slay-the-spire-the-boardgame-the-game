@@ -15,6 +15,7 @@ type CardPickerProps = {
   confirmLabel?: string
   backLabel?: string
   maxSelections?: number
+  selectionLabel?: string
   confirmDisabled?: boolean
   selectionRequired?: boolean
   backDisabled?: boolean
@@ -34,17 +35,18 @@ export function PickerConfirmButton({ label = 'Confirm', disabled = false, onCli
 /** The shared full-deck picker used whenever a run changes one of its cards. */
 export function CardPicker({
   cards, verb, selectedCardUids, onSelect, onClear, onBack, onConfirm, confirmLabel = 'Confirm', backLabel = 'Back',
-  maxSelections = 1, confirmDisabled, selectionRequired = true, backDisabled = false, disabled = false,
+  maxSelections = 1, selectionLabel: selectionLabelOverride, confirmDisabled, selectionRequired = true, backDisabled = false, disabled = false,
 }: CardPickerProps) {
   const pickerRef = useRef<HTMLElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
   const gridScrollTopRef = useRef(0)
+  const lastSelectedUidRef = useRef<string | null>(null)
   const wasPreview = useRef(false)
   const selected = cards.filter((card) => selectedCardUids.includes(card.uid))
   const preview = maxSelections === 1 && selected.length === 1
   const chosen = selected[0]
-  const selectionLabel = maxSelections === 1 ? 'a card' : `${maxSelections} cards`
+  const selectionLabel = selectionLabelOverride ?? (maxSelections === 1 ? 'a card' : `${maxSelections} cards`)
 
   useEffect(() => {
     const picker = pickerRef.current
@@ -85,18 +87,34 @@ export function CardPicker({
       picker?.focus({ preventScroll: true })
     } else if (preview) {
       wasPreview.current = true
+      lastSelectedUidRef.current = chosen?.uid ?? null
       picker?.querySelector<HTMLButtonElement>('.card-picker__preview button:not([disabled]):not([aria-disabled="true"])')?.focus({ preventScroll: true })
     } else if (wasPreview.current) {
       if (grid) grid.scrollTop = gridScrollTopRef.current
       const back = picker?.querySelector<HTMLButtonElement>('.card-picker__back:not([disabled])')
-      if (back) back.focus({ preventScroll: true })
-      else picker?.focus({ preventScroll: true })
+      const index = cards.findIndex((card) => card.uid === lastSelectedUidRef.current)
+      const card = index >= 0 ? grid?.querySelectorAll<HTMLButtonElement>('.card')[index] : null
+      if (card) {
+        if (back) back.focus({ preventScroll: true })
+        else card.focus({ preventScroll: true })
+      } else {
+        const firstCard = grid?.querySelector<HTMLButtonElement>('.card:not([disabled])')
+        if (firstCard) firstCard.focus({ preventScroll: true })
+        else if (back) back.focus({ preventScroll: true })
+        else picker?.focus({ preventScroll: true })
+      }
       wasPreview.current = false
     }
   }, [preview, disabled])
 
+  const selectCard = (uid: string) => {
+    gridScrollTopRef.current = gridRef.current?.scrollTop ?? 0
+    lastSelectedUidRef.current = uid
+    onSelect(uid)
+  }
   const rememberGridScroll = () => { gridScrollTopRef.current = gridRef.current?.scrollTop ?? 0 }
   const backText = preview ? 'Back' : backLabel
+  const showBack = verb === 'Upgrade' || preview || backLabel !== 'Back'
 
   return <section ref={pickerRef} className={`card-picker${preview ? ' card-picker--previewing' : ''}`} role="dialog" aria-modal="true" tabIndex={-1}
     aria-label={`Choose ${selectionLabel} to ${verb.toLowerCase()}`}>
@@ -106,20 +124,20 @@ export function CardPicker({
         {cards.map((card) => <Card key={card.uid} card={card} selected={selectedCardUids.includes(card.uid)}
           playable={!preview && !disabled && (selectedCardUids.includes(card.uid) || selectedCardUids.length < maxSelections)}
           tabIndex={preview || disabled || !selectedCardUids.includes(card.uid) && selectedCardUids.length >= maxSelections ? -1 : undefined}
-          onClick={() => { rememberGridScroll(); onSelect(card.uid) }} />)}
+          onClick={() => selectCard(card.uid)} />)}
         {cards.length === 0 ? <p className="card-picker__empty" role="status">No eligible cards.</p> : null}
       </div>
       {preview && chosen ? <div className="card-picker__preview" aria-live="polite">
         {verb === 'Upgrade' ? <>
-          <Card card={chosen} selected playable={!disabled} tabIndex={disabled ? -1 : undefined} onClick={() => { rememberGridScroll(); onSelect(chosen.uid) }} />
+          <Card card={chosen} selected playable={!disabled} tabIndex={disabled ? -1 : undefined} onClick={() => selectCard(chosen.uid)} />
           <span className="card-picker__upgrade-arrow" aria-hidden="true">›</span>
           <Card card={{ ...chosen, upgraded: true }} playable={false} tabIndex={-1} />
-        </> : <Card card={chosen} selected playable={!disabled} tabIndex={disabled ? -1 : undefined} onClick={() => { rememberGridScroll(); onSelect(chosen.uid) }} />}
+        </> : <Card card={chosen} selected playable={!disabled} tabIndex={disabled ? -1 : undefined} onClick={() => selectCard(chosen.uid)} />}
       </div> : null}
     </div>
     <footer className="card-picker__footer">
-      <button type="button" className="card-picker__back" aria-label={backText} disabled={disabled || backDisabled}
-        onClick={() => { rememberGridScroll(); preview ? onClear() : onBack() }}><svg viewBox="0 0 100 70" aria-hidden="true"><path d="M4 39 32 9v16h26c20 0 34 13 34 30v8H75v-8c0-8-6-13-17-13H32v15z" /></svg></button>
+      {showBack ? <button type="button" className="card-picker__back" aria-label={backText} disabled={disabled || backDisabled}
+        onClick={() => { rememberGridScroll(); preview ? onClear() : onBack() }}><svg viewBox="0 0 100 70" aria-hidden="true"><path d="M4 39 32 9v16h26c20 0 34 13 34 30v8H75v-8c0-8-6-13-17-13H32v15z" /></svg></button> : null}
       <p>Choose {selectionLabel} to <strong>{verb}</strong>.</p>
       <PickerConfirmButton label={confirmLabel}
         disabled={disabled || confirmDisabled === true || selectionRequired && selected.length < maxSelections} onClick={onConfirm} />

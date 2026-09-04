@@ -1968,10 +1968,12 @@ await page.evaluate(() => {
 })
 await page.getByRole('button', { name: /\[Donut\]/ }).waitFor()
 await page.getByRole('button', { name: /\[Donut\]/ }).click()
-await page.waitForFunction(() => document.activeElement?.matches('.event-cards--deck .card'))
-const eventResolverFocus = await page.evaluate(() => document.activeElement?.matches('.event-cards--deck .card'))
-const draftedEventCard = page.locator('.event-cards--deck .card').first()
+const eventUpgradePicker = page.getByRole('dialog', { name: 'Choose 1 card to upgrade' })
+await eventUpgradePicker.waitFor()
+const eventResolverFocus = await page.evaluate(() => Boolean(document.activeElement?.closest('.card-picker')))
+const draftedEventCard = eventUpgradePicker.locator('.card-picker__grid > .card').first()
 await draftedEventCard.click()
+await eventUpgradePicker.locator('.card-picker__preview').waitFor()
 const draftedEventCardBeforeCompendium = await draftedEventCard.getAttribute('aria-pressed')
 const eventRunBeforeCompendium = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
 await page.keyboard.press('Escape')
@@ -1983,31 +1985,27 @@ await page.locator('.compendium').waitFor()
 const draftedEventCardDuringCompendium = await draftedEventCard.getAttribute('aria-pressed')
 await page.getByRole('button', { name: 'Back to run' }).click()
 await page.getByRole('heading', { name: 'Big Fish' }).waitFor()
-await page.waitForFunction(() => document.activeElement?.matches('.app-shell'))
+await page.waitForFunction(() => Boolean(document.activeElement?.closest('.card-picker')))
 const eventRunAfterCompendium = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
 const draftedEventCardPreserved = await draftedEventCard.getAttribute('aria-pressed')
 await page.screenshot({ path: join(outDir, 'event-4p-compact-desktop.png'), fullPage: true })
 const eventShape = await page.evaluate(() => {
-  const panel = document.querySelector('.event-panel')
-  const panelBox = panel?.getBoundingClientRect()
+  const picker = document.querySelector('.card-picker')
+  const pickerBox = picker?.getBoundingClientRect()
   const stage = document.querySelector('.event-stage')
   const stageBox = stage?.getBoundingClientRect()
   const stageStyle = stage ? getComputedStyle(stage) : null
-  const panelStyle = panel ? getComputedStyle(panel) : null
-  const confirm = document.querySelector('.event-resolve-actions .event-card-confirm')?.getBoundingClientRect()
-  const picker = document.querySelector('.event-cards--deck')
-  const card = picker?.querySelector('.card')
+  const preview = picker?.querySelector('.card-picker__preview')?.getBoundingClientRect()
+  const confirm = picker?.querySelector('.card-picker__confirm')?.getBoundingClientRect()
   return {
     overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
     options: document.querySelectorAll('.event-options button').length,
-    contained: Boolean(panelBox && confirm && panelBox.bottom >= confirm.bottom - 1),
+    contained: Boolean(pickerBox && confirm && pickerBox.bottom >= confirm.bottom - 1 && confirm.right <= pickerBox.right),
     borderless: Boolean(stageStyle && parseFloat(stageStyle.borderTopWidth) === 0 && parseFloat(stageStyle.borderRightWidth) === 0 &&
       parseFloat(stageStyle.borderBottomWidth) === 0 && parseFloat(stageStyle.borderLeftWidth) === 0),
     fullBleed: Boolean(stageBox && stageBox.left <= 1 && stageBox.right >= innerWidth - 1 && stageBox.bottom >= innerHeight - 1),
-    panelScrolls: Boolean(panelStyle && ['auto', 'scroll'].includes(panelStyle.overflowY)),
-    cardHeight: card?.getBoundingClientRect().height ?? 0,
-    pickerHeight: picker?.getBoundingClientRect().height ?? 0,
-    pickerScrollsVertically: Boolean(picker && picker.scrollHeight > picker.clientHeight + 1),
+    previewHeight: preview?.height ?? 0,
+    pickerHeight: pickerBox?.height ?? 0,
   }
 })
 check('Event hierarchy remains usable on compact desktop and does not demand irrelevant cards', () => {
@@ -2020,16 +2018,17 @@ check('Event hierarchy remains usable on compact desktop and does not demand irr
   assertEqual(initialEventOptionCount, 4)
   assertEqual(initialEventPickerCount, 0, 'the Event demanded a card before an option was chosen')
   assertEqual(eventShape.options, 0, 'the picker remained stacked above unrelated Event choices')
-  assert(eventShape.contained, 'the final Event choice escaped the compact desktop room frame')
+  assert(eventShape.contained, 'the shared Event picker footer escaped the compact desktop frame')
   assert(eventShape.borderless, 'the Event background still has an outer frame')
   assert(eventShape.fullBleed, `the Event background leaves a viewport gap: ${JSON.stringify(eventShape)}`)
-  assert(eventShape.cardHeight > 0 && eventShape.pickerHeight >= eventShape.cardHeight,
-    `the Event picker is shorter than one card: ${JSON.stringify(eventShape)}`)
-  assertEqual(eventShape.panelScrolls, false, 'the Event resolver retained a nested panel scroller')
-  assertEqual(eventShape.pickerScrollsVertically, false, 'the Event deck is trapped in a nested vertical scroller')
+  assert(eventShape.previewHeight > 0 && eventShape.pickerHeight >= eventShape.previewHeight,
+    `the Event picker preview does not fit: ${JSON.stringify(eventShape)}`)
 })
 await page.setViewportSize({ width: 1280, height: 800 })
-await page.getByRole('button', { name: 'Back to choices' }).click()
+await eventUpgradePicker.getByRole('button', { name: 'Back' }).click()
+await eventUpgradePicker.locator('.card-picker__preview').waitFor({ state: 'detached' })
+await eventUpgradePicker.getByRole('button', { name: 'Back' }).click()
+await eventUpgradePicker.waitFor({ state: 'detached' })
 await page.waitForFunction(() => document.activeElement?.getAttribute('data-event-option') === 'donut')
 const restoredEventOptionFocus = await page.evaluate(() => document.activeElement?.getAttribute('data-event-option'))
 check('Event resolvers move focus into the picker and restore the originating choice', () => {
@@ -2056,34 +2055,42 @@ await page.evaluate(() => {
   run.phase = 'room'
   run.roomState = { kind: 'event', card: { id: 'ancient_writing', instanceId: 'browser-writing', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Ancient Writing', scope: 'player', options: [
     { id: 'elegance', label: 'Elegance', description: 'Remove a card.', effects: [{ tag: 'remove-card' }] },
-    { id: 'simplicity', label: 'Simplicity', description: 'Upgrade a starter Strike and Defend.', effects: [{ tag: 'upgrade-card', count: 2 }] },
+    { id: 'simplicity', label: 'Simplicity', description: 'Upgrade a starter Strike and Defend.', effects: [{ tag: 'upgrade-card', count: 2, filter: 'one starter Strike and one starter Defend' }] },
   ] }, decisions: {}, dieRolls: {} }
   debug.setRun(run)
 })
 await page.getByRole('heading', { name: 'Ancient Writing' }).waitFor()
 await page.getByRole('button', { name: /\[Simplicity\]/ }).click()
-const writingDefend = page.locator('.event-cards button').filter({ hasText: 'Defend' }).first()
-const writingStrike = page.locator('.event-cards button').filter({ hasText: 'Strike' }).first()
+const writingPicker = page.getByRole('dialog', { name: 'Choose 2 cards to upgrade' })
+await writingPicker.waitFor()
+const writingDefend = writingPicker.locator('.card-picker__grid > .card').filter({ hasText: 'Defend' }).first()
 await writingDefend.click()
-await writingStrike.click()
+await writingPicker.getByRole('button', { name: 'Confirm Event card' }).click()
+const remainingWritingPicker = page.getByRole('dialog', { name: 'Choose 1 card to upgrade' })
+await remainingWritingPicker.waitFor()
+await page.waitForFunction(() => document.activeElement?.matches('.card-picker__grid > .card'))
+const writingNextCardFocused = await page.evaluate(() => document.activeElement?.matches('.card-picker__grid > .card'))
+check('multi-card Event upgrades focus the next card after confirmation', () => assert(writingNextCardFocused))
+await remainingWritingPicker.locator('.card-picker__grid > .card').filter({ hasText: 'Strike' }).first().click()
+await remainingWritingPicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await writingPicker.waitFor({ state: 'detached' })
 const reverseSimplicityEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
-await writingDefend.click()
-await writingStrike.click()
 check('Ancient Writing accepts its Strike and Defend in either click order', () => assert(reverseSimplicityEnabled))
-await page.locator('.event-cards button').first().click()
+await page.getByRole('button', { name: 'Back to choices' }).click()
+await page.getByRole('button', { name: /\[Elegance\]/ }).click()
+const hotSeatPicker = page.getByRole('dialog', { name: 'Choose 1 card to remove' })
+await hotSeatPicker.waitFor()
+await hotSeatPicker.locator('.card-picker__grid > .card').first().click()
+await hotSeatPicker.locator('.card-picker__preview').waitFor()
 await chooseLocalSeat({ label: 'Silent' })
 await page.waitForFunction(() => [...document.querySelectorAll('.event-options button')]
   .some((button) => button.textContent?.includes('[Elegance]')) && !document.querySelector('.event-cards--deck'), undefined, { timeout: 5_000 })
-const retainedCards = await page.locator('.event-cards button[aria-pressed="true"]').count()
+const retainedCards = await page.locator('.card-picker').count()
 const eleganceEnabled = await page.getByRole('button', { name: /\[Elegance\]/ }).isEnabled()
 check('hot-seat Event form state resets between players', () => {
   assertEqual(retainedCards, 0)
   assertEqual(eleganceEnabled, true)
 })
-await page.getByRole('button', { name: /\[Elegance\]/ }).click()
-await page.locator('.event-cards button').first().click()
-await page.getByRole('button', { name: /Confirm choice/ }).click()
-
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -2167,13 +2174,10 @@ await page.evaluate(() => {
 })
 await page.getByRole('heading', { name: 'Falling' }).waitFor()
 await page.getByRole('button', { name: /\[Land\]/ }).click()
-await page.waitForFunction(() => {
-  const run = window.__STS_DEBUG__.getRun()
-  const viewerId = run.players.find((player) => player.character === 'ironclad')?.id
-  const expected = run.roomState.revealedCards[viewerId]?.length
-  return expected > 0 && document.querySelectorAll('.event-cards button').length === expected
-}, undefined, { timeout: 5_000 })
-const fallingCards = await page.locator('.event-cards button').count()
+const fallingPicker = page.getByRole('dialog', { name: 'Choose 1 card to remove' })
+await fallingPicker.waitFor()
+const fallingCards = await fallingPicker.locator('.card-picker__grid > .card').count()
+const fallingInitialBack = await fallingPicker.getByRole('button', { name: 'Back' }).count()
 const partyReveals = await page.locator('.event-party-reveal').count()
 const fallingExpected = await page.evaluate(() => {
   const run = window.__STS_DEBUG__.getRun()
@@ -2181,6 +2185,7 @@ const fallingExpected = await page.evaluate(() => {
 })
 check('Falling renders the owner selection and party face-up reveals', () => {
   assertEqual(fallingCards, fallingExpected.own)
+  assertEqual(fallingInitialBack, 0)
   assertEqual(partyReveals, fallingExpected.party)
 })
 await page.evaluate(() => {
@@ -2323,8 +2328,15 @@ await page.evaluate(() => {
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().roomState?.card?.id === 'designer')
 const fullService = page.getByRole('button', { name: /\[Full Service\]/ })
 await fullService.click()
-await page.getByRole('button', { name: 'Injury' }).click()
-await page.getByRole('button', { name: 'Strike' }).click()
+const fullServiceRemovePicker = page.getByRole('dialog', { name: 'Choose 1 card to remove' })
+await fullServiceRemovePicker.waitFor()
+await fullServiceRemovePicker.getByRole('button', { name: 'Injury' }).click()
+await fullServiceRemovePicker.getByRole('button', { name: 'Confirm Event card' }).click()
+const fullServiceUpgradePicker = page.getByRole('dialog', { name: 'Choose 1 card to upgrade' })
+await fullServiceUpgradePicker.waitFor()
+await fullServiceUpgradePicker.getByRole('button', { name: 'Strike' }).click()
+await fullServiceUpgradePicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await fullServiceUpgradePicker.waitFor({ state: 'detached' })
 const fullServiceEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
@@ -2762,11 +2774,16 @@ await page.evaluate(() => {
 await page.waitForFunction(() => document.activeElement?.textContent?.includes('[Donut]'))
 const liveEventFocus = await page.evaluate(() => document.activeElement?.textContent ?? '')
 await page.getByRole('button', { name: /\[Donut\]/ }).click()
-await page.locator('.event-cards--deck .card').first().click()
+const liveUpgradePicker = page.getByRole('dialog', { name: 'Choose 1 card to upgrade' })
+await liveUpgradePicker.waitFor()
+await liveUpgradePicker.locator('.card-picker__grid > .card').first().click()
+await liveUpgradePicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await liveUpgradePicker.waitFor({ state: 'detached' })
 const liveEventConfirmBeforeClaim = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 const liveEventConfirmIsTick = await page.locator('.event-card-confirm svg').count()
 const liveEventConfirmTooltip = await page.getByRole('button', { name: /Confirm choice/ }).getAttribute('title')
-const focusedSelectionBeforeClaim = await page.evaluate(() => document.activeElement?.matches('.event-cards--deck .card[aria-pressed="true"]'))
+await page.waitForFunction(() => document.activeElement?.closest('.event-panel--resolver') !== null)
+const focusedSelectionBeforeClaim = await page.evaluate(() => document.activeElement?.closest('.event-panel--resolver') !== null)
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -2776,14 +2793,15 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => document.querySelector('.event-resolve-actions .event-card-confirm')?.disabled === true)
 const liveEventConfirmAfterClaim = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
-const focusedSelectionAfterClaim = await page.evaluate(() => document.activeElement?.matches('.event-cards--deck .card[aria-pressed="true"]'))
+await page.waitForFunction(() => document.activeElement?.closest('.event-panel--resolver') !== null)
+const focusedSelectionAfterClaim = await page.evaluate(() => document.activeElement?.closest('.event-panel--resolver') !== null)
 check('Event focus and an open resolver react when a teammate claims a unique option', () => {
   assert(liveEventFocus.includes('[Donut]'))
   assert(liveEventConfirmBeforeClaim)
   assertEqual(liveEventConfirmIsTick, 1)
   assertEqual(liveEventConfirmTooltip, null)
   assert(liveEventConfirmAfterClaim)
-  assert(focusedSelectionBeforeClaim && focusedSelectionAfterClaim, 'a teammate update stole focus from the active Event selection')
+  assert(focusedSelectionBeforeClaim && focusedSelectionAfterClaim, 'a teammate update stole focus from the active Event resolver')
 })
 
 await page.evaluate(() => {
@@ -2820,7 +2838,11 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: /Confirm choice/ }).waitFor()
-await page.locator('.event-cards button').first().click()
+const wheelPicker = page.getByRole('dialog', { name: 'Choose 1 card to remove' })
+await wheelPicker.waitFor()
+await wheelPicker.locator('.card-picker__grid > .card').first().click()
+await wheelPicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await wheelPicker.waitFor({ state: 'detached' })
 await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction(() => {
   const run = window.__STS_DEBUG__.getRun()
@@ -3877,12 +3899,21 @@ liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
 const transformedUid = liveRoom.run.players[0].deck[0].uid
 await ann.getByRole('button', { name: /\[Pray\]/ }).click()
-await ann.locator('.event-cards button').first().click()
+const onlineTransformPicker = ann.getByRole('dialog', { name: 'Choose 1 card to transform' })
+await onlineTransformPicker.waitFor()
+const transformInitialBack = await onlineTransformPicker.getByRole('button', { name: 'Back' }).count()
+await onlineTransformPicker.locator('.card-picker__grid > .card').first().click()
+await onlineTransformPicker.locator('.card-picker__preview').waitFor()
+const transformPreviewBack = await onlineTransformPicker.getByRole('button', { name: 'Back' }).count()
+await onlineTransformPicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await onlineTransformPicker.waitFor({ state: 'detached' })
 await ann.getByRole('button', { name: /Confirm choice/ }).click()
 await ann.getByRole('status').filter({ hasText: 'Your choice is locked' }).waitFor()
 const lockedEventActions = await ann.locator('.event-resolve-actions button').count()
 check('online Transform uses the owner’s public reward count without exposing its deck', () => {
   assert(!liveRoom.run.players[0].deck.some((card) => card.uid === transformedUid))
+  assertEqual(transformInitialBack, 0, 'Transform showed Back before a card was selected')
+  assertEqual(transformPreviewBack, 1, 'Transform did not show Back in the card preview')
   assertEqual(lockedEventActions, 0, 'a locked Event decision kept mutable resolver actions')
 })
 
@@ -4006,7 +4037,13 @@ liveRoom.run.roomState = {
 liveRoom.version += 1
 rooms.publishRoom(liveRoom.code)
 await ann.getByRole('button', { name: /\[Prayer\]/ }).click()
-await ann.locator('.event-cards--deck .card').first().click()
+const onlinePrayerPicker = ann.getByRole('dialog', { name: 'Choose 1 card to upgrade' })
+await onlinePrayerPicker.waitFor()
+await onlinePrayerPicker.locator('.card-picker__grid > .card').first().click()
+await onlinePrayerPicker.locator('.card-picker__preview').waitFor()
+const onlinePrayerPreviewCards = await onlinePrayerPicker.locator('.card-picker__preview > .card').count()
+await onlinePrayerPicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await onlinePrayerPicker.waitFor({ state: 'detached' })
 const onlinePrayerInitiallyReady = await ann.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, gold: 0 }))
 liveRoom.version += 1
@@ -4015,7 +4052,7 @@ await ann.getByRole('button', { name: /Confirm choice/ }).waitFor({ state: 'visi
 await ann.waitForFunction(() => document.querySelector('.event-resolve-actions .event-card-confirm')?.disabled === true)
 const onlinePrayerInvalidated = await ann.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 check('an open online Event resolver disables when authoritative availability changes', () => {
-  assert(onlinePrayerInitiallyReady && onlinePrayerInvalidated)
+  assert(onlinePrayerInitiallyReady && onlinePrayerInvalidated && onlinePrayerPreviewCards === 2)
 })
 
 liveRoom.run.itemDecks.potions = ['swift_potion']
@@ -4056,7 +4093,11 @@ await ann.getByRole('heading', { name: 'Old Beggar' }).waitFor()
 const removedUid = liveRoom.run.players[0].deck[0].uid
 const deckSize = liveRoom.run.players[0].deck.length
 await ann.getByRole('button', { name: /\[Give\]/ }).click()
-await ann.locator('.event-cards button').first().click()
+const onlineRemovePicker = ann.getByRole('dialog', { name: 'Choose 1 card to remove' })
+await onlineRemovePicker.waitFor()
+await onlineRemovePicker.locator('.card-picker__grid > .card').first().click()
+await onlineRemovePicker.getByRole('button', { name: 'Confirm Event card' }).click()
+await onlineRemovePicker.waitFor({ state: 'detached' })
 await ann.getByRole('button', { name: /Confirm choice/ }).click()
 await ann.getByRole('button', { name: 'Cancel payment' }).waitFor()
 const di = onlinePages[3]
@@ -4338,7 +4379,7 @@ const compactPendingRelic = await page.evaluate(() => {
   const panel = document.querySelector('.relic-resolve')?.getBoundingClientRect()
   const heading = document.querySelector('.relic-resolve h2')?.getBoundingClientRect()
   const rules = document.querySelector('.relic-resolve .room-item-text')?.getBoundingClientRect()
-  const action = document.querySelector('.relic-resolve > button:last-child')?.getBoundingClientRect()
+  const action = document.querySelector('.relic-resolve__footer .card-picker__confirm')?.getBoundingClientRect()
   const cards = [...document.querySelectorAll('.relic-resolve .card')]
   const map = document.querySelector('.map')
   const visible = (box) => Boolean(box && panel && box.top >= panel.top - 1 && box.bottom <= panel.bottom + 1)
@@ -4351,7 +4392,8 @@ const compactPendingRelic = await page.evaluate(() => {
     headingVisible: visible(heading),
     rulesVisible: visible(rules),
     actionVisible: visible(action),
-    actionHittable: Boolean(hit?.closest('.relic-resolve > button:last-child')),
+    actionHittable: Boolean(hit?.closest('.relic-resolve__footer .card-picker__confirm')),
+    actionTick: Boolean(document.querySelector('.relic-resolve__footer .card-picker__confirm svg')),
   }
 })
 await page.screenshot({ path: join(outDir, 'relic-resolve-whetstone-compact.png'), fullPage: true })
@@ -4364,7 +4406,56 @@ check('a pending map Relic owns the compact screen instead of stacking over the 
   assert(compactPendingRelic.rulesVisible, 'the Relic rules were hidden behind the map')
   assert(compactPendingRelic.actionVisible && compactPendingRelic.actionHittable,
     `the Relic action was not visible and clickable: ${JSON.stringify(compactPendingRelic)}`)
+  assert(compactPendingRelic.actionTick, 'the Relic confirmation lost its tick control')
 })
+
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'victory'
+  run.act = 1
+  run.neow = null
+  run.roomState = null
+  run.campaign.finalized = false
+  run.players[0].relics = [
+    ...run.players[0].relics.filter((relic) => !relic.pending),
+    { defId: 'pandoras_box', spent: false, pending: true },
+  ]
+  debug.setRun(run)
+})
+const pandoraPicker = page.getByRole('dialog', { name: 'Choose 3 cards to transform' })
+await pandoraPicker.waitFor()
+const pandoraResolution = await page.evaluate(() => {
+  const panel = document.querySelector('.card-picker')?.getBoundingClientRect()
+  const footer = document.querySelector('.card-picker__footer')?.getBoundingClientRect()
+  const confirm = document.querySelector('.card-picker__confirm')?.getBoundingClientRect()
+  const hit = confirm ? document.elementFromPoint(confirm.left + confirm.width / 2, confirm.top + confirm.height / 2) : null
+  return {
+    climbButtons: [...document.querySelectorAll('button')].filter((button) => /^Climb to Act /.test(button.textContent ?? '')).length,
+    footerSpansPanel: Boolean(panel && footer && footer.left <= panel.left + 1 && footer.right >= panel.right - 1),
+    confirmOnRight: Boolean(footer && confirm && confirm.left >= footer.left + footer.width / 2),
+    confirmHittable: Boolean(hit?.closest('.card-picker__confirm')),
+    tick: Boolean(document.querySelector('.card-picker__confirm svg')),
+  }
+})
+await page.screenshot({ path: join(outDir, 'relic-resolve-pandora-desktop.png'), fullPage: true })
+const pandoraInitialBack = await pandoraPicker.getByRole('button', { name: 'Back' }).count()
+check("Pandora's Box uses the remove-style one-card transform picker", () => {
+  assertEqual(pandoraResolution.climbButtons, 0, 'Climb to the next Act overlapped Pandora\'s Box resolution')
+  assert(pandoraResolution.footerSpansPanel && pandoraResolution.confirmOnRight && pandoraResolution.confirmHittable && pandoraResolution.tick,
+    `Pandora confirmation is not a reachable right footer tick: ${JSON.stringify(pandoraResolution)}`)
+  assertEqual(pandoraInitialBack, 0, 'Pandora showed Back before a card was selected')
+})
+await pandoraPicker.locator('.card-picker__grid > .card').first().click()
+await pandoraPicker.locator('.card-picker__preview').waitFor()
+assertEqual(await pandoraPicker.getByRole('button', { name: 'Back' }).count(), 1,
+  'Pandora did not show Back after a card was selected')
+await pandoraPicker.getByRole('button', { name: "Confirm Pandora's Box" }).click()
+await pandoraPicker.locator('.card-picker__preview').waitFor({ state: 'detached' })
+await page.waitForFunction(() => document.querySelector('.card-picker')?.getAttribute('aria-label') === 'Choose 2 cards to transform')
+const pandoraNextCardFocused = await page.evaluate(() => document.activeElement?.matches('.card-picker__grid > .card'))
+check("Pandora's Box focuses the next card after each confirmation", () => assert(pandoraNextCardFocused))
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__

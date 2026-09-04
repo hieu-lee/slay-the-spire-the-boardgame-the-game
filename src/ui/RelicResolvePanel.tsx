@@ -8,6 +8,7 @@ import type { CardInstance } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { LootChoice } from './RewardScreen.tsx'
 import { CardRewardIcon, CardRewardPicker } from './CardRewardPicker.tsx'
+import { CardPicker, PickerConfirmButton } from './CardPicker.tsx'
 
 type Props = {
   pending: PendingRelicPreview
@@ -22,6 +23,7 @@ const CARD_COUNTS: Record<string, number> = {
 
 export function RelicResolvePanel({ pending, deck, onRewardChoice, onResolve }: Props) {
   const [cards, setCards] = useState<string[]>([])
+  const [selectedCardUids, setSelectedCardUids] = useState<string[]>([])
   const [rewards, setRewards] = useState<number[]>(() => Object.assign([], pending.rewardIndices))
   const [rewardChoicePending, setRewardChoicePending] = useState(false)
   const actionPendingRef = useRef(false)
@@ -31,6 +33,9 @@ export function RelicResolvePanel({ pending, deck, onRewardChoice, onResolve }: 
   const eligible = pendingRelicEligibleCards({ deck }, pending.relicId)
   const count = Math.min(CARD_COUNTS[pending.relicId] ?? 0, eligible.length)
   const rewardReady = (pending.rewardChoices ?? []).every((_choice, index) => rewards[index] !== undefined)
+  const verb = pending.relicId === 'pandoras_box' ? 'Transform'
+    : pending.relicId === 'empty_cage' ? 'Remove' : 'Upgrade'
+  const selectionLabel = count === 1 ? 'a card' : `${count} cards`
   const clearPending = () => {
     actionPendingRef.current = false
     setRewardChoicePending(false)
@@ -72,6 +77,29 @@ export function RelicResolvePanel({ pending, deck, onRewardChoice, onResolve }: 
     else queueMicrotask(clearPending)
   }
   const rewardIsRare = (reward: number) => pending.relicId === 'enchiridion' || pending.relicId === 'forbidden_fruit' && reward === 1
+  const isPandora = pending.relicId === 'pandoras_box'
+  const remaining = count - cards.length
+  if (isPandora && count > 0) return <CardPicker
+    cards={eligible.filter((card) => !cards.includes(card.uid))}
+    verb="Transform"
+    selectionLabel={`${remaining} card${remaining === 1 ? '' : 's'}`}
+    selectedCardUids={selectedCardUids}
+    onSelect={(uid) => setSelectedCardUids((current) => current.includes(uid) ? [] : [uid])}
+    onClear={() => setSelectedCardUids([])}
+    onBack={() => undefined}
+    onConfirm={() => {
+      const uid = selectedCardUids[0]
+      if (!uid) return
+      const chosen = [...cards, uid]
+      if (chosen.length === count) resolveRelic(chosen, rewards)
+      else {
+        setCards(chosen)
+        setSelectedCardUids([])
+      }
+    }}
+    confirmLabel={`Confirm ${relicDef(pending.relicId).name}`}
+    confirmDisabled={selectedCardUids.length !== 1 || resolving}
+  />
   if (rewardChoicePending) return <section className="reward-screen reward-screen--card-choice" aria-busy="true">
     <h2 className="reward-screen__title">Choose a Card</h2>
     <p className="muted" role="status">Claiming card…</p>
@@ -101,8 +129,12 @@ export function RelicResolvePanel({ pending, deck, onRewardChoice, onResolve }: 
         : current.length < count ? [...current, card.uid] : current)} />)}</div> : null}
     {(pending.rewardChoices ?? []).map((_choices, reward) => rewards[reward] === undefined ? <LootChoice key={reward}
       icon={<CardRewardIcon rare={rewardIsRare(reward)} />} onClick={() => setActiveReward(reward)}>Add a card to your deck.</LootChoice> : null)}
-    <button type="button" disabled={resolving || cards.length !== count || !rewardReady}
-      onClick={() => resolveRelic(cards, rewards)}>{resolving ? 'Resolving…' : 'Resolve Relic'}</button>
+    <footer className="card-picker__footer relic-resolve__footer">
+      <p>{count > 0 ? <>Choose {selectionLabel} to <strong>{verb}</strong>.</> : <>Confirm this <strong>Relic</strong>.</>}</p>
+      <PickerConfirmButton label={`Confirm ${relicDef(pending.relicId).name}`}
+        disabled={resolving || cards.length !== count || !rewardReady}
+        onClick={() => resolveRelic(cards, rewards)} />
+    </footer>
   </section>
 }
 
