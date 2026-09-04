@@ -367,21 +367,6 @@
   text-shadow: 0 0.14rem 0 #173a42;
 }
 
-.sts-scope .reward-screen--loot .loot-choice__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.35rem;
-}
-
-.sts-scope .reward-screen--loot .loot-choice__actions > button {
-  min-height: 2.35rem;
-  padding: 0.35rem 0.65rem;
-  border-color: #1f7a84;
-  background: #123b45;
-  color: #fff8df;
-}
-
 .sts-scope .reward-screen--card-choice {
   position: fixed;
   inset: 0;

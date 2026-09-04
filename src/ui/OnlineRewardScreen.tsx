@@ -2,14 +2,13 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { assetPath } from '../game/assets.ts'
 import { cardIsCurse } from '../game/cards.ts'
 import type { ActionOutcome, VisibleRun } from '../multiplayer/useRoomSession.ts'
-import { potionDef, relicDef } from '../game/relics.ts'
-import { potionLimit } from '../game/acquisition.ts'
+import { relicDef } from '../game/relics.ts'
 import type { RewardSource } from '../game/run.ts'
 import { rewardSourceLabel } from './reward-source.ts'
 import { Card } from './Card.tsx'
 import { CardRewardIcon, CardRewardPicker } from './CardRewardPicker.tsx'
 import { ItemImage } from './ItemImage.tsx'
-import { LootChoice } from './RewardScreen.tsx'
+import { LootChoice, PotionLootChoices } from './RewardScreen.tsx'
 
 type Props = {
   run: VisibleRun
@@ -60,8 +59,6 @@ export function OnlineRewardScreen({ run, viewerId, decided, confirmed, onAction
     }
   }, [decided, offer?.cardReward, offer?.choices, viewerId])
   if (!offer || !player) return null
-  const sozu = player.relics.some((relic) => relic.defId === 'sozu')
-  const potionBlocked = player.potions.length >= potionLimit(run.ascension, player) || sozu
   const hasLootChoice = Boolean(offer.gold || offer.potion || offer.relic ||
     Array.isArray(offer.bossRelics) && offer.bossRelics.length > 0 || offer.transformReward ||
     offer.cardReward && !decided.includes(viewerId))
@@ -147,15 +144,8 @@ export function OnlineRewardScreen({ run, viewerId, decided, confirmed, onAction
     <h2 className="reward-screen__title">Loot!</h2>
     <div className="reward-screen__players"><div className="reward-screen__player">
       {offer.gold ? <LootChoice disabled={lootPending} onClick={() => dispatchLoot([{ kind: 'goldReward' }])} icon={<img src={assetPath('icons/gold.png')} alt="" />}>{offer.gold} Gold</LootChoice> : null}
-      {typeof offer.potion === 'string' ? <><LootChoice disabled={potionBlocked || lootPending} onClick={() => dispatchLoot([{ kind: 'potionReward', choice: 'gain' }])}
-        icon={<ItemImage kind="potion" id={offer.potion} />}>{potionDef(offer.potion).name}</LootChoice>
-        {potionBlocked ? <div className="loot-choice__actions">
-          {potionBlocked && !sozu ? player.potions.map((held, index) => <button type="button" key={`${held}-${index}`}
-            disabled={lootPending} onClick={() => dispatchLoot([{ kind: 'potionReward', choice: 'replace', potionId: held }])}>Replace {potionDef(held).name}</button>) : null}
-          {potionBlocked && run.players.filter((target) => target.id !== player.id && !target.dead && target.potions.length < potionLimit(run.ascension, target) &&
-            !target.relics.some((relic) => relic.defId === 'sozu')).map((target) => <button type="button" key={target.id}
-              disabled={lootPending} onClick={() => dispatchLoot([{ kind: 'potionReward', choice: 'pass', playerId: target.id }])}>Pass to {target.name}</button>)}
-        </div> : null}</> : null}
+      {typeof offer.potion === 'string' ? <PotionLootChoices potionId={offer.potion} player={player} ascension={run.ascension} disabled={lootPending}
+        onChoose={(decision) => dispatchLoot([{ ...decision, kind: 'potionReward', choice: decision.kind }])} /> : null}
       {typeof offer.relic === 'string' ? <LootChoice disabled={lootPending} onClick={() => dispatchLoot([{ kind: 'relicReward', choice: 'gain' }])}
         icon={<ItemImage kind="relic" id={offer.relic} />}>{relicDef(offer.relic).name}</LootChoice> : null}
       {Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <LootChoice key={relicId} disabled={lootPending} onClick={() => dispatchLoot([{ kind: 'bossRelicReward', choice: 'gain', relicId }])}
