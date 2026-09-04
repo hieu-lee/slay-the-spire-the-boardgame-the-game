@@ -691,7 +691,8 @@ export function slimeCommandEnemyChoiceLabels(
           .map((candidate) => candidate.card.uid))
       }
     } else if (effect.kind === 'gainSlimeVigor') {
-      const slime = slimes.find((candidate) => candidate.card.uid === selectedUids[cursor++])
+      const uid = selectedUids[cursor++]
+      const slime = slimes.find((candidate) => candidate.card.uid === uid)
       if (!slime) continue
       const gained = Math.max(0, Math.min(effect.amount, 8 - slime.vigor))
       slime.vigor += gained
@@ -701,7 +702,8 @@ export function slimeCommandEnemyChoiceLabels(
       if (effect.commandAfter) command(slime)
       if (triggered) command(slime)
     } else if (effect.kind === 'rainOfGoop') {
-      const slime = slimes.find((candidate) => candidate.card.uid === selectedUids[cursor++])
+      const uid = selectedUids[cursor++]
+      const slime = slimes.find((candidate) => candidate.card.uid === uid)
       if (!slime) continue
       const gained = Math.min(1, 8 - slime.vigor)
       slime.vigor += gained

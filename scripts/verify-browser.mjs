@@ -2830,32 +2830,39 @@ await slimeCardPage.evaluate(() => {
   Object.assign(next.combat, { phase: 'player', startTurnProgress: undefined })
   Object.assign(actor, {
     energy: 3,
-    hand: [{ uid: 'ui-leech-brawl', defId: 'slime_boss_slime_brawl', upgraded: true }],
+    hand: [{ uid: 'ui-leech-brawl', defId: 'slime_boss_slime_brawl', upgraded: false }],
     slimes: [{
+      card: { uid: 'ui-brawl-bruiser', defId: 'slime_boss_bruiser_slime', upgraded: false },
+      level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
+    }, {
       card: { uid: 'ui-brawl-leech', defId: 'slime_boss_leeching_slime', upgraded: false },
       level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
     }],
   })
-  const target = next.combat.enemies.find((enemy) => !enemy.dead)
-  if (target) Object.assign(target, { hp: 10, maxHp: 10, block: 0 })
+  next.combat.enemies.forEach((enemy, index) => Object.assign(enemy,
+    index < 3 ? { hp: 10, maxHp: 10, block: 0, dead: false } : { hp: 0, block: 0, dead: true }))
   window.__STS_DEBUG__.setRun(next)
 })
-await slimeCardPage.locator('.hand .card[title="Slime Brawl+"]').click()
+await slimeCardPage.locator('.hand .card[title="Slime Brawl"]').click()
 await slimeCardPage.getByRole('button', { name: 'Leeching Slime · level 1', exact: true }).click()
-await slimeCardPage.locator('.enemy:not(.enemy--dead)').click()
+await slimeCardPage.getByText('Choose Leeching Slime · level 1 · 1 Strength Command target 1/1').waitFor()
+const slimeBrawlEnemyUid = await slimeCardPage.evaluate(() =>
+  window.__STS_DEBUG__.getRun().combat.enemies.find((enemy) => !enemy.dead).uid)
+await slimeCardPage.locator(`[data-enemy-id="${slimeBrawlEnemyUid}"]`).click()
 await slimeCardPage.locator('[data-slime-uid="ui-brawl-leech"].slime-party__actor--commanding').waitFor()
-slimeBrawlCommand = await slimeCardPage.evaluate(() => {
+slimeBrawlCommand = await slimeCardPage.evaluate((enemyUid) => {
   const combat = window.__STS_DEBUG__.getRun().combat
-  const slime = combat.players[0].slimes[0]
+  const enemy = combat.enemies.find((candidate) => candidate.uid === enemyUid)
+  const slime = combat.players[0].slimes[1]
   return {
-    hp: combat.enemies[0].hp,
+    hp: enemy.hp,
     strength: slime.vigor,
     commands: slime.commandsThisTurn,
     presented: combat.presentationEvents.some((event) => event.kind === 'slime' &&
-      event.slimeUid === 'ui-brawl-leech' && event.enemyIds[0] === combat.enemies[0].uid),
+      event.slimeUid === 'ui-brawl-leech' && event.enemyIds[0] === enemy.uid),
     animating: true,
   }
-})
+}, slimeBrawlEnemyUid)
 await slimeCardPage.evaluate(() => {
   const next = structuredClone(window.__STS_DEBUG__.getRun())
   const actor = next.combat.players[0]
@@ -3003,7 +3010,7 @@ check('Downfall player status icons stay below HP with accessible Power targets'
     `a committed forced Command could not finish with spent Armored: ${JSON.stringify(forcedSpentSlimeResolved)}`)
   assertDeepEqual(spentLickAvailability, { base: 'true', optional: 'false' },
     `mandatory and optional spent-Slime cards have wrong affordability: ${JSON.stringify(spentLickAvailability)}`)
-  assertDeepEqual(slimeBrawlCommand, { hp: 7, strength: 2, commands: 1, presented: true, animating: true },
+  assertDeepEqual(slimeBrawlCommand, { hp: 8, strength: 1, commands: 1, presented: true, animating: true },
     `Slime Brawl did not Strengthen and Command Leeching Slime: ${JSON.stringify(slimeBrawlCommand)}`)
 })
 check('Slime Boss minions use battlefield actors and their own one-shot animations', () => {

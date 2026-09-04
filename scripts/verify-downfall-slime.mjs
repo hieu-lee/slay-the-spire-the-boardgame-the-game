@@ -508,6 +508,14 @@ const chargeState = createCombat(createRng(4901), [{ ...player, character: 'slim
 assert.deepEqual(slimeCommandEnemyChoiceLabels(brawl, chargeState, chargeState.players[0], [muscle.card.uid]),
   ['Muscle Slime · level 1 · 1 Strength', 'Muscle Slime · level 1 · 1 Strength'],
   'Slime Brawl labels its printed Command and Muscle Slime trigger separately')
+assert.deepEqual(slimeCommandEnemyChoiceLabels(brawl, chargeState, chargeState.players[0], [chargeSpreading.card.uid]),
+  ['Spreading Slime · level 1 · 1 Strength'],
+  'Slime Brawl finds a selected Slime after an unselected Slime')
+const reorderedChargeState = createCombat(createRng(49011), [{ ...player, character: 'slime_boss', energy: 3,
+  slimes: [chargeSpreading, muscle] }], [enemy])
+assert.deepEqual(slimeCommandEnemyChoiceLabels(byName.get('Rain of Goop'), reorderedChargeState,
+  reorderedChargeState.players[0], [muscle.card.uid]), ['Muscle Slime · level 1 · 1 Strength'],
+  'Rain of Goop finds a selected Slime after an unselected Slime')
 const brawlCard = { uid: 'muscle-brawl', defId: brawl.id, upgraded: false }
 let brawlCombat = createCombat(createRng(4902), [{ ...player, character: 'slime_boss', energy: 3,
   hand: [brawlCard], slimes: [muscle] }], [{ ...enemy, uid: 'muscle-brawl-target', hp: 10, maxHp: 10 }])
