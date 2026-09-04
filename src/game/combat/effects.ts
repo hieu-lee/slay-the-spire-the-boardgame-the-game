@@ -49,6 +49,7 @@ import type { SlimeBossEffect } from '../downfall/slime-boss.ts'
 import { hermitCurseLoadReaction } from '../downfall/hermit.ts'
 import {
   amountOf,
+  cardCanBeForced,
   cardHasRetain,
   cardIsPlayable,
   conditionIsActive,
@@ -717,7 +718,9 @@ function resolveGuardianCard(
       if (defense && context.guardianPowerCardUid) {
         const power = [...actor.hand, ...actor.discard]
           .find((card) => card.uid === context.guardianPowerCardUid)
-        if (power) {
+        const powerDef = power && faceOf(cardDef(power.defId), power.upgraded)
+        if (power && powerDef && (powerDef.minimumX ?? 0) === 0 &&
+          cardCanBeForced(powerDef, state, actor, power.attachedGemId, power.uid)) {
           actor.discard = actor.discard.filter((card) => card.uid !== power.uid)
           if (!actor.hand.some((card) => card.uid === power.uid)) actor.hand.push(forgetRetain(power))
           state.startTurnProgress = {
@@ -2395,7 +2398,8 @@ export function applyEffect(
       const [drawn] = drawInto(state, actor, 1, context.pendingTriggers)
       if (!drawn) return
       const drawnDef = faceOf(cardDef(drawn.defId), drawn.upgraded)
-      if (!cardIsPlayable(drawnDef, state, actor) || (drawnDef.minimumX ?? 0) > 0) {
+      if (!cardIsPlayable(drawnDef, state, actor) || (drawnDef.minimumX ?? 0) > 0 ||
+        !cardCanBeForced(drawnDef, state, actor, drawn.attachedGemId, drawn.uid)) {
         if (effect.exhaustNonPower && drawnDef.type !== 'power') {
           actor.hand = actor.hand.filter((card) => card.uid !== drawn.uid)
           exhaustCards(state, actor, [drawn], context)

@@ -7,7 +7,7 @@
 // Every function here is a question, not an action: none of them changes the
 // state, so a UI can call them to grey out a card or count a prompt without
 // risking a half-resolved play.
-import { findPlayer, resolveEnemyTargets } from './board.ts'
+import { findPlayer, livingEnemies, resolveEnemyTargets } from './board.ts'
 import type { CombatState, CopySource, CountablePlayer, EvokeChoice, PlayContext } from './types.ts'
 import { cardCost, cardDef, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
 import type { Amount, CardDef, Condition, CountOf, Effect } from '../cards.ts'
@@ -574,7 +574,7 @@ export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?
  */
 const ENEMY_EFFECTS = [
   'hit', 'rowHit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'multiplyPoison',
-  'evoke', 'recurseOrb', 'clearTargetBlock', 'hitPerExhaust', 'execute',
+  'evoke', 'recurseOrb', 'fission', 'clearTargetBlock', 'hitPerExhaust', 'execute',
 ]
 
 /**
@@ -604,6 +604,10 @@ export function reachesEnemy(
     return times > 0 && actor.orbs.some((orb) => orb === 'lightning' || orb === 'dark')
   }
   if (effect.kind === 'recurseOrb') {
+    return !actor || actor.orbs.some((orb) => orb === 'lightning' || orb === 'dark')
+  }
+  if (effect.kind === 'fission') {
+    if (!effect.evoke) return false
     return !actor || actor.orbs.some((orb) => orb === 'lightning' || orb === 'dark')
   }
   if (effect.kind !== 'hit' || effect.times === undefined || !actor) return true
@@ -782,11 +786,140 @@ export function cardNeedsEnemy(
     actor?.chamber.some((card) => card.uid === sourceCardUid && cardDef(card.defId).hermit?.deadOn === true) === true
   )
   const targetsEnemy = (effect: Effect) =>
-    (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb')) &&
+    (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb' && effect.kind !== 'fission')) &&
     reachesEnemy(effect, actor, energySpent)
   const effects = def.modes?.flatMap((mode) => mode.effects) ?? def.effects
   return effects.some((effect) => targetsEnemy(effect) || sourceIsDeadOn && effect.kind === 'deadOnEffects' &&
     effect.effects.some(targetsEnemy))
+}
+
+/** Soulburn a `useAllSoulburn` effect would spend, before any board choice is made. */
+function soulburnChoiceCount(effects: readonly Effect[], state: CombatState, actor: Player): number {
+  const spendIndex = effects.findIndex((effect) => effect.kind === 'useAllSoulburn')
+  if (spendIndex < 0) return 0
+  const gained = effects.slice(0, spendIndex).reduce((sum, effect) =>
+    sum + (effect.kind === 'gainSoulburn' && effectIsActive(effect, state, actor)
+      ? amountOf(effect.amount, state, actor, undefined, { enemyUid: null, playerId: actor.id, energySpent: 0 })
+      : 0), 0)
+  return Math.min(6, actor.soulburn + gained)
+}
+
+/** Every printed effects list a card could resolve with, one per Mode if modal. */
+function everyModeEffects(def: CardDef): readonly Effect[][] {
+  return def.modes ? def.modes.map((mode) => mode.effects) : [def.effects]
+}
+
+/** Hermit curses whose Chamber-load reaction needs a living enemy to aim at. */
+const HERMIT_TARGETED_CURSES = new Set(['hermit_grudge', 'hermit_malice', 'hermit_horror'])
+
+/**
+ * Whether a mandatory `load` would have no choice left but a targeted curse.
+ *
+ * Loading is a free pick among whatever sits in the named zone (p.12 Hermit
+ * rules), so it only strands the player when EVERY legal combination forces
+ * at least one needs-a-target curse in: if the zone holds enough non-curse
+ * cards to fill the mandatory amount, the player simply loads those instead.
+ * `sourceCardUid` excludes the card currently resolving from a hand-sourced
+ * load's own zone: by the time it actually loads, it has already left hand.
+ */
+function loadNeedsEnemy(effects: readonly Effect[], actor: Player, sourceCardUid?: string): boolean {
+  return effects.some((effect) => {
+    if (effect.kind !== 'load' || effect.upTo) return false
+    const zone = (effect.source === 'discard' ? actor.discard : actor.hand)
+      .filter((card) => card.uid !== sourceCardUid)
+    const mandatory = Math.min(effect.amount, zone.length)
+    const safe = zone.filter((card) => !HERMIT_TARGETED_CURSES.has(card.defId)).length
+    return safe < mandatory
+  })
+}
+
+/**
+ * Whether a card about to be locked in as a forced 0-Energy play (Distilled
+ * Chaos, Havoc, Revenge Protocol, ...) can still find every choice its printed
+ * effects demand.
+ *
+ * Normal play defers this to `playCard`'s own target validation (see
+ * `cardResolutionChoicesAreValid` and `slimeCommandTargetsAreValid`), which
+ * can safely refuse an illegal choice and let the player try again. A forced
+ * card has no "try again": once it becomes `startTurnProgress.forcedCard`,
+ * that is the only card `playCard` will accept, so a target that can never
+ * exist would deadlock combat rather than get rejected. Callers that create a
+ * forced card must check this first and discard/skip the card instead when it
+ * fails.
+ *
+ * Every mandatory choice checked here bottoms out at needing a living enemy to
+ * point at, so a single `livingEnemies` read (once no living enemy exists)
+ * covers a chosen enemy target (including a socketed Ruby/Emerald/Garnet or a
+ * conditional Peridot, threaded in as `attachedGemId` since those need an
+ * enemy independent of the card's id or type; also covers Fission+ Evoking a
+ * charged Lightning/Dark Orb, via `cardNeedsEnemy`'s own `evoke`/`recurseOrb`/
+ * `fission` handling in `reachesEnemy`), the independently-targeted "Choices"
+ * effects (Ragnarok's Hit Choices and the like), a mandatory full-Shiv throw,
+ * a mandatory full-Soulburn spend (Hexaghost), a Slime Command that reaches
+ * an enemy for every Slime on the board (a mandatory Command, unlike most,
+ * which let the player pick zero Slimes and so can never be stranded), and a
+ * mandatory Hermit `load` that would have no non-curse card left to pick
+ * (Rummage's `source: 'discard'` is the one that can actually run dry; a
+ * hand-sourced load always still has whatever else is queued alongside it).
+ * A modal card is checked mode by mode for every one of those per-mode
+ * families: like `cardNeedsEnemy`'s own flattening of every Mode, a single
+ * Mode needing an enemy is treated as the whole card needing one, since the
+ * printed effects that decide a Mode's own target requirement only see one
+ * Mode's effects at a time and cannot otherwise be read before a Mode is
+ * chosen.
+ *
+ * The `livingEnemies(state).length > 0` short-circuit assumes ANY living
+ * enemy satisfies every family above, which holds for everything printed
+ * today but is not universally true: a `hitChoices` with `distinct: true`
+ * needs that many DISTINCT living enemies, not just one. No non-Modal card
+ * prints that combination (Watcher's Carve Reality is the only `distinct`
+ * user, and its other Mode only ever needs one), so this cannot currently
+ * strand anyone -- but a future card that did would need an explicit count
+ * check here, not just an existence check.
+ *
+ * `def` is run through `effectiveCombatCardDef` first: a raw Guardian `CardDef`
+ * never carries `target: 'row'` for Prismatic Spray, Sentry Beam, or an
+ * Attack-Mode row card (Guardian Whirl, Giga Beam, Refracted Beam) -- that
+ * scope only exists once the transform applies, and a row scope still needs
+ * SOME living enemy to anchor on. Skipping the transform would silently treat
+ * those cards as needing nobody, the same false "no enemy needed" this
+ * predicate exists to catch.
+ *
+ * Callers must pass the specific card instance's own effective Gem (see
+ * `guardianGemForCard`, which also accounts for Crystallize's virtual grant
+ * onto starter Strikes) rather than omitting it: a socketed Gem is instance
+ * data invisible to `def` alone, so a missing `attachedGemId` here silently
+ * reproduces this exact deadlock for a Gem card that would otherwise pass as
+ * needing no enemy. Callers should also pass the card instance's own
+ * `sourceCardUid` so a self-socketed Peridot does not count itself as
+ * "another Gem card in hand" and over-discard itself needlessly.
+ */
+export function cardCanBeForced(
+  def: CardDef,
+  state: CombatState,
+  actor: Player,
+  attachedGemId?: string,
+  sourceCardUid?: string,
+): boolean {
+  const effective = effectiveCombatCardDef(def, actor.guardianMode)
+  if (livingEnemies(state).length > 0) return true
+  if (cardNeedsEnemy(effective, actor, true, undefined, false, attachedGemId, sourceCardUid)) return false
+  // A triggered or actively-activated Power's printed effects do nothing when
+  // it is played (see `resolvesOnPlay` in play.ts) -- `cardNeedsEnemy` above
+  // already skips them for exactly that reason, so every check below, which
+  // reads the same `effects` directly, must skip them too. Hermit's Take Aim
+  // and Black Wind both mandatorily Load on a later trigger, not on play:
+  // without this, they would be discarded by a Distilled Chaos/Havoc force
+  // even though playing them now is completely safe.
+  if (effective.type === 'power' && (effective.trigger || effective.activeAbility)) return true
+  return !everyModeEffects(effective).some((effects) => {
+    const modeOnly: CardDef = { ...effective, modes: undefined, effects }
+    return cardEnemyChoiceCount(modeOnly, undefined, state, actor) > 0 ||
+      cardShivChoiceCount(modeOnly, actor) > 0 ||
+      soulburnChoiceCount(effects, state, actor) > 0 ||
+      slimeCommandEnemyChoiceCount(modeOnly, state, actor, [], 0, 0) > 0 ||
+      loadNeedsEnemy(effects, actor, sourceCardUid)
+  })
 }
 
 /** Independent printed targets collected before an atomic card play. */

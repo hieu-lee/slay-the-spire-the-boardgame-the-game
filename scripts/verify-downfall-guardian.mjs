@@ -35,11 +35,14 @@ import { addCard, characterRewardDeck } from '../src/game/acquisition.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
 import { acquireRelic, chooseEvent, createRun, pendingRelicEligibleCards, pendingRelicPreview, purchaseAtMerchant, resolveCardRewards, resolveGuardianSocket, resolvePendingRelic, revealCardReward } from '../src/game/run.ts'
 import { pendingRewardChoices } from '../src/game/run/rewards.ts'
+import { applyEffect } from '../src/game/combat/effects.ts'
+import { cardCanBeForced } from '../src/game/combat/queries.ts'
 import {
   activatePotion,
   activatePower,
   amountOf,
   beginEndPlayerTurn,
+  chooseDistilledCard,
   chooseEndTurnTarget,
   createCombat,
   defaultEndTurnOrder,
@@ -47,6 +50,7 @@ import {
   endTurnAbilities,
   enemyTurn,
   effectiveCombatCardDef,
+  livingEnemies,
   playCard,
   playCardCopy,
   playCost,
@@ -484,6 +488,51 @@ check('Guardian Powers execute their printed live combat rules', () => {
   combat = playCard(combat, 'p1', 'strike', { enemyUid: 'e1', playerId: 'p1' })
   assert.equal(combat.players[0].energy, 3)
 
+  // Revenge Protocol must not force an Attack with no living enemy to target
+  // (e.g. a boss phase transition leaves the board momentarily empty): that
+  // would lock the Attack in as the only legal play while `playCard` can never
+  // accept it, stranding the player with no way to end their turn.
+  player = fresh()
+  player.energy = 3
+  player.hand = [{ uid: 'strike', defId: 'guardian_strike', upgraded: false }]
+  player.powers = [{ uid: 'revenge', defId: 'guardian_revenge_protocol', upgraded: false }]
+  combat = createCombat({ seed: 999, calls: 0 }, [player], [enemy()], 'revenge-no-target')
+  combat.enemies[0].dead = true
+  combat.pendingSummons = [{ sourceUid: 'e1', row: 0, defIds: ['jaw_worm'], turn: combat.turn + 1 }]
+  const refused = activatePower(combat, 'p1', 'revenge', { cardUid: 'strike' })
+  assert.equal(refused, combat, 'Revenge Protocol must refuse to force an Attack with no legal target')
+  assert.equal(refused.startTurnProgress, undefined)
+  assert(refused.players[0].hand.some((card) => card.uid === 'strike'),
+    'the selected Attack should stay in hand, ready to try again once a target exists')
+
+  // Guardian Whirl's row scope is only added by `effectiveCombatCardDef` in
+  // Attack Mode -- the raw printed def never carries `target: 'row'` at all,
+  // so a check reading the raw def would wrongly treat it as needing nobody.
+  // A row scope still needs SOME living enemy to anchor on.
+  player = fresh()
+  player.energy = 3
+  player.hand = [{ uid: 'whirl', defId: 'guardian_guardian_whirl', upgraded: false }]
+  player.powers = [{ uid: 'revenge', defId: 'guardian_revenge_protocol', upgraded: false }]
+  combat = createCombat({ seed: 998, calls: 0 }, [player], [enemy()], 'revenge-row-no-target')
+  combat.enemies[0].dead = true
+  combat.pendingSummons = [{ sourceUid: 'e1', row: 0, defIds: ['jaw_worm'], turn: combat.turn + 1 }]
+  const refusedRow = activatePower(combat, 'p1', 'revenge', { cardUid: 'whirl' })
+  assert.equal(refusedRow, combat, 'Revenge Protocol must refuse to force a row-target Attack with no legal target')
+  assert.equal(refusedRow.startTurnProgress, undefined)
+
+  // Multi Beam prints "X can't be 0", so a forced play (always 0 Energy, so
+  // always X = 0) can never legally resolve it, with or without a living
+  // enemy: Revenge Protocol must check `minimumX` exactly like Distilled
+  // Chaos and Havoc/Mayhem already do.
+  player = fresh()
+  player.energy = 3
+  player.hand = [{ uid: 'beam', defId: 'guardian_multi_beam', upgraded: false }]
+  player.powers = [{ uid: 'revenge', defId: 'guardian_revenge_protocol', upgraded: false }]
+  combat = createCombat({ seed: 997, calls: 0 }, [player], [enemy()], 'revenge-minimum-x')
+  const refusedMinimumX = activatePower(combat, 'p1', 'revenge', { cardUid: 'beam' })
+  assert.equal(refusedMinimumX, combat, 'Revenge Protocol must refuse to force a card whose X cannot legally be 0')
+  assert.equal(refusedMinimumX.startTurnProgress, undefined)
+
   player = fresh()
   player.hand = []
   player.draw = [
@@ -683,6 +732,171 @@ check('reviewed Guardian Power timing, selection, and Retain rules resolve exact
   combat = playCard(combat, 'p1', 'future')
   assert.equal(combat.players[0].energy, 3, 'Power Beam charged Energy for the chosen Power')
   assert(combat.players[0].powers.some((card) => card.uid === 'future'))
+
+  // A Ruby/Emerald/Garnet-socketed Crystallize needs a chosen enemy just like
+  // an Attack (see the Ruby-damage scenario above): Power Beam must not force
+  // one when its own hit is what leaves the board with no living enemy (e.g.
+  // a boss phase transition), or the readied Power could never legally play.
+  player = fresh(4351)
+  player.energy = 5
+  player.hand = [{ uid: 'beam-lethal', defId: 'guardian_power_beam', upgraded: false }]
+  player.discard = [{ uid: 'crystallize-lethal', defId: 'guardian_crystallize', upgraded: false,
+    attachedGemId: 'guardian_ruby' }]
+  combat = createCombat({ seed: 4351, calls: 0 }, [player], [
+    { uid: 'awakened', defId: 'awakened_one_phase_1', row: 0, isBoss: true, hp: 3, maxHp: 50,
+      block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0,
+      cardReward: null, actionIndex: 0, abilityUsed: false, dead: false },
+  ], 'guardian-power-beam-no-target')
+  combat.players[0].guardianMode = 'defense'
+  const refusedBeam = playCard(combat, 'p1', 'beam-lethal', {
+    enemyUid: 'awakened', playerId: 'p1', guardianPowerCardUid: 'crystallize-lethal',
+  })
+  assert(refusedBeam.enemies[0].dead, 'Power Beam should still land its own hit and kill phase 1')
+  assert.equal(refusedBeam.startTurnProgress, undefined,
+    'Power Beam must not force a Power with no living enemy to target')
+  assert(!refusedBeam.players[0].hand.some((card) => card.uid === 'crystallize-lethal') &&
+    refusedBeam.players[0].discard.some((card) => card.uid === 'crystallize-lethal'),
+    'the un-readied Power should stay exactly where it was')
+
+  // The same Ruby-socketed Crystallize gap exists for a card queued straight
+  // off the draw pile by Distilled Chaos: `chooseDistilledCard` must thread
+  // the queued card's own `attachedGemId` into `cardCanBeForced` too, or it
+  // would force the Power to play with no living enemy to target.
+  player = fresh(4352)
+  player.energy = 5
+  player.potions = ['distilled_chaos']
+  player.draw = [
+    { uid: 'strike-distilled', defId: 'guardian_strike', upgraded: false },
+    { uid: 'crystallize-distilled', defId: 'guardian_crystallize', upgraded: false,
+      attachedGemId: 'guardian_ruby' },
+  ]
+  combat = createCombat({ seed: 4352, calls: 0 }, [player], [
+    { uid: 'awakened', defId: 'awakened_one_phase_1', row: 0, isBoss: true, hp: 1, maxHp: 50,
+      block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0,
+      cardReward: null, actionIndex: 0, abilityUsed: false, dead: false },
+  ], 'guardian-distilled-chaos-no-target')
+  combat.players[0].guardianMode = 'attack'
+  combat = activatePotion(combat, 'p1', 'distilled_chaos')
+  assert.deepEqual(combat.pendingDistilled.cards.map((card) => card.uid),
+    ['strike-distilled', 'crystallize-distilled'])
+  combat = chooseDistilledCard(combat, 'p1', 'strike-distilled')
+  combat = playCard(combat, 'p1', 'strike-distilled', { enemyUid: 'awakened', playerId: null })
+  assert(combat.enemies[0].dead, 'phase 1 should die from the queued Strike')
+  assert.equal(livingEnemies(combat).length, 0, 'no living enemy exists while phase 2 is pending')
+  combat = chooseDistilledCard(combat, 'p1', 'crystallize-distilled')
+  assert.equal(combat.startTurnProgress, undefined,
+    'Distilled Chaos must not force a Ruby-socketed Crystallize with no living enemy to target')
+  assert.equal(combat.pendingDistilled, undefined)
+  assert(combat.players[0].discard.some((card) => card.uid === 'crystallize-distilled'),
+    'the untargetable Crystallize should be discarded, not left stuck in hand')
+
+  // Mayhem (a base-game colorless Power also in the Downfall colorless pool)
+  // draws straight off the deck for 0 Energy through the same `drawAndPlayFree`
+  // effect: the same Ruby-socketed Crystallize gap applies there too.
+  player = fresh(4353)
+  player.draw = [{ uid: 'crystallize-mayhem', defId: 'guardian_crystallize', upgraded: false,
+    attachedGemId: 'guardian_ruby' }]
+  combat = createCombat({ seed: 4353, calls: 0 }, [player], [
+    { uid: 'awakened', defId: 'awakened_one_phase_1', row: 0, isBoss: true, hp: 0, maxHp: 50, dead: true,
+      block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0,
+      cardReward: null, actionIndex: 0, abilityUsed: false },
+  ], 'guardian-mayhem-no-target')
+  combat.players[0].guardianMode = 'attack'
+  applyEffect(combat, combat.players[0], { kind: 'drawAndPlayFree' }, 'self', 'self',
+    { enemyUid: null, playerId: 'p1' }, 'Mayhem')
+  assert.equal(combat.startTurnProgress, undefined,
+    'Mayhem must not force a Ruby-socketed Crystallize with no living enemy to target')
+  assert(combat.players[0].discard.some((card) => card.uid === 'crystallize-mayhem'),
+    'the untargetable Crystallize should be discarded, not left stuck in hand')
+
+  // Revenge Protocol threads `guardianGemForCard` into its `cardCanBeForced`
+  // call the same as the other three forced-card sites. No current Attack's
+  // outcome actually depends on that Gem today (Prismatic Spray is already
+  // row-scoped regardless of any Gem, and every genuine Gem Attack -- Crystal
+  // Edge, Fierce Bash, Walker Claw, Multi Beam, Bauble Burst -- is already in
+  // the hardcoded needs-enemy id Set on its own), so this is a live-game
+  // sanity check that a Ruby-socketed aoe Attack still gets refused, not a
+  // regression test for the Gem parameter specifically -- see the direct
+  // `cardCanBeForced` unit check just below for that.
+  player = fresh(4354)
+  player.energy = 5
+  player.guardianMode = 'attack'
+  player.powers = [{ uid: 'revenge', defId: 'guardian_revenge_protocol', upgraded: false }]
+  player.hand = [
+    { uid: 'strike-revenge', defId: 'guardian_strike', upgraded: false },
+    { uid: 'spray-ruby', defId: 'guardian_prismatic_spray', upgraded: false, attachedGemId: 'guardian_ruby' },
+  ]
+  combat = createCombat({ seed: 4354, calls: 0 }, [player], [
+    { uid: 'awakened', defId: 'awakened_one_phase_1', row: 0, isBoss: true, hp: 1, maxHp: 50,
+      block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0,
+      cardReward: null, actionIndex: 0, abilityUsed: false, dead: false },
+  ], 'guardian-revenge-protocol-no-target')
+  combat = playCard(combat, 'p1', 'strike-revenge', { enemyUid: 'awakened', playerId: null })
+  assert(combat.enemies[0].dead, 'phase 1 should die from the Strike')
+  assert.equal(livingEnemies(combat).length, 0, 'no living enemy exists while phase 2 is pending')
+  const refusedRevenge = activatePower(combat, 'p1', 'revenge', { cardUid: 'spray-ruby' })
+  assert.equal(refusedRevenge.startTurnProgress, undefined,
+    'Revenge Protocol must not force a Ruby-socketed aoe Attack with no living enemy to target')
+
+  // Direct unit check that the threaded Gem is actually what drives the
+  // difference, independent of any real card's other reasons to need an
+  // enemy: a synthetic Attack outside the hardcoded id Set and outside
+  // `GUARDIAN_ROW_CARDS` needs an enemy with a Ruby Gem attached, and needs
+  // none without one, at zero living enemies either way.
+  const syntheticAttack = { id: 'guardian_test_synthetic_attack', name: 'Synthetic Attack', type: 'attack',
+    cost: 1, effects: [] }
+  const revengeActor = combat.players[0]
+  assert.equal(cardCanBeForced(syntheticAttack, combat, revengeActor, 'guardian_ruby', 'synthetic-uid'), false,
+    'a Ruby-socketed Attack must need an enemy once its Gem is threaded through cardCanBeForced')
+  assert.equal(cardCanBeForced(syntheticAttack, combat, revengeActor, undefined, 'synthetic-uid'), true,
+    'the identical Attack with no Gem attached needs no enemy, isolating the Gem as the deciding factor')
+
+  // No printed Attack today actually changes outcome based on the Gem
+  // threaded through Revenge Protocol specifically (every genuine Gem Attack
+  // is already in the hardcoded needs-enemy id Set on its own, and Prismatic
+  // Spray is already row-scoped), so the unit check above is the only way to
+  // exercise `cardCanBeForced`'s own Gem handling here -- but that leaves the
+  // one-line wire at Revenge Protocol's own call site with no behavioral
+  // regression test. Assert the source directly: a future refactor that drops
+  // `guardianGemForCard` there would otherwise pass every other test in this
+  // file undetected.
+  const playSource = readFileSync(new URL('../src/game/combat/play.ts', import.meta.url), 'utf8')
+  assert.match(playSource, /guardian_revenge_protocol'[\s\S]{0,600}cardCanBeForced\([^)]*guardianGemForCard\(/,
+    "Revenge Protocol's forced-card guard must thread the selected card's own Gem through cardCanBeForced")
+
+  // A solo Peridot-socketed Crystallize never fires Peridot's own hit (it
+  // needs ANOTHER Gem card in hand), so it needs no enemy at all -- but
+  // `cardNeedsEnemy`'s Peridot check only knows that once it is told which
+  // card's own uid to exclude from "another Gem in hand". Without that
+  // `sourceCardUid`, the queued card would count itself and be needlessly
+  // discarded with no living enemy, even though it would have resolved fine.
+  player = fresh(4355)
+  player.energy = 5
+  player.potions = ['distilled_chaos']
+  player.draw = [
+    { uid: 'strike-peridot-solo', defId: 'guardian_strike', upgraded: false },
+    { uid: 'crystallize-peridot-solo', defId: 'guardian_crystallize', upgraded: false,
+      attachedGemId: 'guardian_peridot' },
+  ]
+  combat = createCombat({ seed: 4355, calls: 0 }, [player], [
+    { uid: 'awakened', defId: 'awakened_one_phase_1', row: 0, isBoss: true, hp: 1, maxHp: 50,
+      block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0,
+      cardReward: null, actionIndex: 0, abilityUsed: false, dead: false },
+  ], 'guardian-peridot-solo-no-target')
+  combat.players[0].guardianMode = 'attack'
+  combat = activatePotion(combat, 'p1', 'distilled_chaos')
+  combat = chooseDistilledCard(combat, 'p1', 'strike-peridot-solo')
+  combat = playCard(combat, 'p1', 'strike-peridot-solo', { enemyUid: 'awakened', playerId: null })
+  assert(combat.enemies[0].dead, 'phase 1 should die from the queued Strike')
+  assert.equal(livingEnemies(combat).length, 0, 'no living enemy exists while phase 2 is pending')
+  assert.deepEqual(combat.players[0].hand.map((card) => card.uid), ['crystallize-peridot-solo'],
+    'the solo Peridot Crystallize is the only card left, so Peridot itself cannot be "another Gem"')
+  combat = chooseDistilledCard(combat, 'p1', 'crystallize-peridot-solo')
+  assert.equal(combat.startTurnProgress?.forcedCard?.cardUid, 'crystallize-peridot-solo',
+    'a solo Peridot Crystallize needs no enemy and must not be discarded needlessly')
+  combat = playCard(combat, 'p1', 'crystallize-peridot-solo', { enemyUid: null, playerId: 'p1' })
+  assert.equal(combat.startTurnProgress, undefined)
+  assert(combat.players[0].powers.some((card) => card.uid === 'crystallize-peridot-solo'))
 
   player = fresh(436)
   player.energy = 5

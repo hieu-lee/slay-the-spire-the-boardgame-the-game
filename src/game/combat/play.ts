@@ -43,6 +43,7 @@ import { addPresentationEvent, presentationTargets } from './presentation.ts'
 import {
   amountOf,
   activePowerWindow,
+  cardCanBeForced,
   cardHasRetain,
   cardEnemyChoiceCount,
   cardIsPlayable,
@@ -1431,7 +1432,8 @@ export function activatePower(
     const selectedDef = selected && faceOf(cardDef(selected.defId), selected.upgraded)
     const selectedType = selectedDef && effectiveCombatCardDef(selectedDef, player.guardianMode).type
     if (player.guardianMode !== 'attack' || !selected || !selectedDef || selectedType !== 'attack' ||
-      !cardIsPlayable(selectedDef, state, player)) return state
+      !cardIsPlayable(selectedDef, state, player) || (selectedDef.minimumX ?? 0) > 0 ||
+      !cardCanBeForced(selectedDef, state, player, guardianGemForCard(player, selected), selected.uid)) return state
     const next = clone(state)
     next.powerTriggersUsedThisTurn.push(powerAbilityKey(playerId, powerUid))
     next.startTurnProgress = { choices: [], forcedCard: {

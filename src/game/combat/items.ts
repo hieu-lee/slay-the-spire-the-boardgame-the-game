@@ -6,7 +6,7 @@
 import { clone, combatIsOver, findPlayer, livingEnemies, powerAbilityKey, powerAbilityUsed, resolveEnemyTargets, rowExists } from './board.ts'
 import { applyEffect, damageEnemyLogged, discardByCardEffect, drawInto, exhaustCards, fireTriggers, recordAttackPlayed, settle, triggerChosenDieRelic } from './effects.ts'
 import { addPresentationEvent, presentationTargets } from './presentation.ts'
-import { activePowerWindow, cardIsPlayable, mandatoryChoicePending, overflowShivCount, reachedTimeWarpLimit, reachesEnemy } from './queries.ts'
+import { activePowerWindow, cardCanBeForced, cardIsPlayable, mandatoryChoicePending, overflowShivCount, reachedTimeWarpLimit, reachesEnemy } from './queries.ts'
 import type { CombatState, PlayContext, PotionContext, RelicContext } from './types.ts'
 import { cardDef, cardIsCurse, faceOf } from '../cards.ts'
 import { healingCapFor, transformCard } from '../acquisition.ts'
@@ -520,7 +520,8 @@ export function chooseDistilledCard(state: CombatState, playerId: string, cardUi
   const remaining = next.pendingDistilled!.cards.filter((card) => card.uid !== cardUid)
   const def = faceOf(cardDef(queued.defId), queued.upgraded)
   next.pendingDistilled = remaining.length ? { playerId, cards: remaining } : undefined
-  if (reachedTimeWarpLimit(next, actor) || !cardIsPlayable(def, next, actor) || (def.minimumX ?? 0) > 0) {
+  if (reachedTimeWarpLimit(next, actor) || !cardIsPlayable(def, next, actor) || (def.minimumX ?? 0) > 0 ||
+    !cardCanBeForced(def, next, actor, queued.attachedGemId, queued.uid)) {
     discardByCardEffect(next, actor, [actor.hand.find((card) => card.uid === cardUid)!])
     next.log = [...next.log, `${actor.name} cannot play ${def.name}; it is discarded`]
     return settle(next)
