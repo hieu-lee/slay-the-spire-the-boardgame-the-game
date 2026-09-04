@@ -404,7 +404,7 @@ function finishRewards(state: RunState, next: RunState): RunState {
 }
 
 /** Gold is a visible loot choice, not an invisible combat-side mutation. */
-export function resolveGoldReward(state: RunState, playerId: string): RunState {
+export function resolveGoldReward(state: RunState, playerId: string, gain = true): RunState {
   if (state.phase !== 'reward' || hasPendingRelicAcquisition(state)) return state
   const offer = state.rewards.find((candidate) => candidate.playerId === playerId)
   const owner = state.players.find((player) => player.id === playerId)
@@ -413,9 +413,9 @@ export function resolveGoldReward(state: RunState, playerId: string): RunState {
   const rewards = state.rewards.map((candidate) => candidate === offer ? { ...candidate, gold: false as const } : candidate)
   const next = {
     ...state,
-    players: state.players.map((player) => player.id === playerId ? gainGold(player, gold) : player),
+    players: gain ? state.players.map((player) => player.id === playerId ? gainGold(player, gold) : player) : state.players,
     rewards,
-    log: [...state.log, `${owner.name} takes ${gold} Gold.`],
+    log: gain ? [...state.log, `${owner.name} takes ${gold} Gold.`] : state.log,
   }
   return rewards.every((candidate) => !candidate.cardReward && !candidate.transformReward && !candidate.gold &&
     candidate.potion === false && (candidate.relic ?? false) === false && candidate.bossRelics === false)
@@ -713,19 +713,21 @@ export function resolveBossRelicReward(state: RunState, playerId: string, relicI
     : next
 }
 
-/** Resolve every living player's revealed choice or unseen skip together (p.8). */
+/** Resolve any submitted card rewards; each player may claim theirs independently. */
 export function resolveCardRewards(
   state: RunState,
   decisions: Readonly<Record<string, number | null>>,
 ): RunState {
   if (state.phase !== 'reward' || !state.rewardDestination || hasPendingRelicAcquisition(state)) return state
-  if (state.rewards.some((offer) => offer.transformReward || offer.gold || offer.potion !== false || (offer.relic ?? false) !== false)) return state
-  for (const offer of state.rewards.filter((candidate) => candidate.cardReward)) {
+  const resolvingOffers = state.rewards.filter((offer) => offer.cardReward && offer.playerId in decisions)
+  if (resolvingOffers.length === 0) return state.rewards.every((offer) => !offer.cardReward && !offer.transformReward && !offer.gold &&
+    offer.potion === false && (offer.relic ?? false) === false && (offer.bossRelics ?? false) === false)
+    ? finishRewards(state, state) : state
+  for (const offer of resolvingOffers) {
     const player = state.players.find((candidate) => candidate.id === offer.playerId)
     if (!player) return state
     if (offer.prismatic) {
       if (offer.choices !== null && (!offer.prismaticDraws || offer.prismaticDraws.length !== 3)) return state
-      if (!(offer.playerId in decisions)) return state
       const choice = decisions[offer.playerId]
       if (choice === undefined || choice !== null && (offer.choices === null || !Number.isInteger(choice) || choice < 0 || choice >= offer.choices.length)) return state
       continue
@@ -740,7 +742,6 @@ export function resolveCardRewards(
       offer.choices.length !== expected.length ||
       offer.choices.some((defId, index) => defId !== expected[index])
     )) return state
-    if (!(offer.playerId in decisions)) return state
     const choice = decisions[offer.playerId]
     if (choice === undefined) return state
     if (choice !== null && (
@@ -754,7 +755,7 @@ export function resolveCardRewards(
     player.deck.map((card) => Number(/^c(\d+)$/.exec(card.uid)?.[1] ?? 0)),
   ))
   const gainedSockets: Array<{ playerId: string; cardUid: string; gemIds: string[] }> = []
-  for (const offer of state.rewards.filter((candidate) => candidate.cardReward && candidate.prismatic)) {
+  for (const offer of resolvingOffers.filter((candidate) => candidate.prismatic)) {
     const choice = decisions[offer.playerId] ?? null
     const settled = settlePrismaticDraws(state, offer.cardSource === 'rare', offer.prismaticDraws ?? [], offer.choices ?? [], choice)
     state = settled.state
@@ -769,10 +770,10 @@ export function resolveCardRewards(
       }
     }
   }
-  state = { ...state, rewards: state.rewards.map((offer) => offer.prismatic ? { ...offer, cardReward: false } : offer) }
+  state = { ...state, rewards: state.rewards.map((offer) => offer.prismatic && offer.playerId in decisions ? { ...offer, cardReward: false } : offer) }
   const players = state.players.map((player) => {
     const offer = state.rewards.find((candidate) => candidate.playerId === player.id)
-    if (!offer?.cardReward) return player
+    if (!offer?.cardReward || !(player.id in decisions)) return player
     const choice = decisions[player.id] ?? null
     if (offer.choices === null) return player
     const shown = offer.choices
@@ -808,7 +809,7 @@ export function resolveCardRewards(
     return addCard(bottomed, selected, cardUid, offer.upgraded)
   })
 
-  const rewards = state.rewards.map((offer) => offer.cardReward ? { ...offer, cardReward: false } : offer)
+  const rewards = state.rewards.map((offer) => offer.cardReward && offer.playerId in decisions ? { ...offer, cardReward: false } : offer)
   let next: RunState = {
     ...state,
     players,
@@ -816,7 +817,7 @@ export function resolveCardRewards(
     log: [...state.log, 'The party collects its rewards.'],
   }
   const queued = new Set(gainedSockets.map((gain) => gain.playerId))
-  for (const offer of state.rewards) {
+  for (const offer of resolvingOffers) {
     if ((offer.guardianGems?.length ?? 0) > 0 && !queued.has(offer.playerId)) {
       next = bottomGuardianGems(next, offer.guardianGems!)
     }
@@ -824,7 +825,7 @@ export function resolveCardRewards(
   for (const gain of gainedSockets) {
     next = queueGuardianSocket(next, gain.playerId, gain.cardUid, 'draft', gain.gemIds.length ? gain.gemIds : undefined)
   }
-  return rewards.some((offer) => offer.transformReward || offer.gold || offer.potion !== false ||
+  return rewards.some((offer) => offer.cardReward || offer.transformReward || offer.gold || offer.potion !== false ||
     (offer.relic ?? false) !== false || (offer.bossRelics ?? false) !== false)
     ? next
     : finishRewards(state, next)

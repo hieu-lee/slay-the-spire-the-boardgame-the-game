@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { assetPath, characterHeroArt } from '../game/assets.ts'
-import { cardDef } from '../game/cards.ts'
 import type { NeowCard, NeowDecision, NeowImmediateReward, NeowPlayerState, NeowRewardOffer } from '../game/neow.ts'
 import { neowCard } from '../game/neow.ts'
 import { neowEffectSelection } from '../game/run/neow.ts'
@@ -9,7 +8,7 @@ import type { PotionRewardDecision, RewardSource } from '../game/run.ts'
 import { rewardSourceLabel } from './reward-source.ts'
 import { potionDef, relicDef } from '../game/relics.ts'
 import type { CardInstance, Player } from '../game/types.ts'
-import { Card } from './Card.tsx'
+import { CardRewardPicker } from './CardRewardPicker.tsx'
 import { CardPicker } from './CardPicker.tsx'
 import { IconValue } from './Icon.tsx'
 import { ItemImage } from './ItemImage.tsx'
@@ -35,20 +34,13 @@ type Props = {
   disabledMessage?: string
   ascension: number
   onViewer?: (playerId: string) => void
-  onGold: (playerId: string, gain: boolean) => void
-  onReveal: (playerId: string, stage: 'red' | 'reward', sources: RewardSource[]) => void
-  onReward: (playerId: string, choice: number | null | PotionRewardDecision, stage: 'red' | 'reward') => void
-  onEffect: (playerId: string, gain: boolean, decision: NeowDecision) => void
-  onChoose: (playerId: string, optionIndex: number, decision: NeowDecision) => void
+  onGold: (playerId: string, gain: boolean) => void | Promise<unknown>
+  onReveal: (playerId: string, stage: 'red' | 'reward', sources: RewardSource[]) => void | Promise<unknown>
+  onReward: (playerId: string, choice: number | null | PotionRewardDecision, stage: 'red' | 'reward') => void | Promise<unknown>
+  onEffect: (playerId: string, gain: boolean, decision: NeowDecision) => void | Promise<unknown>
+  onChoose: (playerId: string, optionIndex: number, decision: NeowDecision) => void | Promise<unknown>
   /** Arms the next deck change to play as a reveal, for a card gained without ever being shown (a random Rare). */
   onArmCardGain?: () => void
-}
-
-function offerNames(offer: NeowRewardOffer | null): string[] {
-  if (!offer) return []
-  if (offer.kind === 'potion') return offer.choices.map((id) => potionDef(id).name)
-  if (offer.kind === 'relic') return offer.choices.map((id) => relicDef(id).name)
-  return offer.choices.map((id) => cardDef(id).name)
 }
 
 function offerTitle(offer: NeowRewardOffer): string {
@@ -71,10 +63,6 @@ function OfferChoice({ offer, player, players, ascension, enabled, onResolve }: 
   enabled: boolean
   onResolve: (choice: number | null | PotionRewardDecision) => void
 }) {
-  const key = `${offer.kind}:${offer.cardsDrawn.join(',')}`
-  const [choice, setChoice] = useState<number | null | undefined>()
-  useEffect(() => setChoice(undefined), [key])
-
   if (offer.kind === 'potion') {
     const potionId = offer.choices[0]
     const blocked = player.relics.some((relic) => relic.defId === 'sozu')
@@ -112,28 +100,8 @@ function OfferChoice({ offer, player, players, ascension, enabled, onResolve }: 
     </div>
   }
 
-  return <div className="neow-offer">
-    <p className="muted">These cards are face-up to the whole party. Choose one or skip.</p>
-    <div className="neow-offer__cards">
-      {offer.choices.map((defId, index) => <Card key={`${defId}-${index}`}
-        card={{ uid: `neow-offer-${index}`, defId, upgraded: offer.upgraded === true }}
-        selected={choice === index} playable={enabled}
-        onClick={() => enabled && setChoice(index)} />)}
-    </div>
-    {offer.guardianGems?.length ? <>
-      <p><strong>Socket Gems:</strong> These were revealed with the card offer.</p>
-      <div className="neow-offer__cards" aria-label="Revealed Socket Gems">
-        {offer.guardianGems.map((defId, index) => <Card key={`${defId}-${index}`}
-          card={{ uid: `neow-gem-${index}`, defId, upgraded: false }} playable={false} />)}
-      </div>
-    </> : null}
-    <div className="neow-offer__actions">
-      <button type="button" aria-pressed={choice === null} disabled={!enabled}
-        onClick={() => setChoice(null)}>Skip reward</button>
-      <button type="button" disabled={!enabled || choice === undefined}
-        onClick={() => choice !== undefined && onResolve(choice)}>Confirm reward</button>
-    </div>
-  </div>
+  return <CardRewardPicker choices={offer.choices} upgraded={offer.upgraded === true} disabled={!enabled}
+    uidPrefix="neow-offer" onChoose={onResolve} onSkip={() => onResolve(null)} />
 }
 
 export function NeowScreen({ players, progress, viewerId, ascension, enabled = true, disabledMessage, onViewer, onGold, onReveal, onReward, onEffect, onChoose, onArmCardGain }: Props) {
@@ -143,6 +111,8 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
   const viewerProgress = viewer ? progress[viewer.id] : undefined
   const [selectedCards, setSelectedCards] = useState<string[]>([])
   const [selectedSources, setSelectedSources] = useState<RewardSource[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
   const pendingEffectKey = viewerProgress?.pendingEffect ? JSON.stringify(viewerProgress.pendingEffect) : ''
   const deckKey = viewer?.deck?.map((card) => card.uid).join(',') ?? ''
   const availableSourcesKey = viewerProgress?.availableSources?.join(',') ?? ''
@@ -171,6 +141,16 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
     : effect?.kind === 'randomRare' ? 'random Rare card'
     : effect?.kind === 'gold' ? `${effect.amount} Gold`
       : effect ? `${effect.kind} ${effect.count} card${effect.count === 1 ? '' : 's'}` : ''
+  const canAct = enabled && !submitting
+  const submit = (action: () => void | Promise<unknown>) => {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setSubmitting(true)
+    void Promise.resolve().then(action).finally(() => {
+      submittingRef.current = false
+      setSubmitting(false)
+    })
+  }
 
   return <section className={`neow-screen${heartsBoon ? ' neow-screen--heart' : ''}`} aria-labelledby="neow-title">
     <img className={`neow-screen__neow${heartsBoon ? ' neow-screen__neow--heart' : ''}`}
@@ -186,7 +166,6 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
       {participants.map((player) => {
         const state = progress[player.id]
         const face = state?.card ?? (state?.cardId ? neowCard(state.cardId) : undefined)
-        const revealed = offerNames(state?.redReward ?? state?.reward ?? null)
         return <article key={player.id} className={`neow-face${participants.length === 1 ? ' neow-face--solo' : ''}${player.id === viewerId ? ' neow-face--active' : ''}${state?.done ? ' neow-face--done' : ''}`}>
           <div className="neow-face__owner"><strong>{player.name}</strong><span>{state?.done ? 'Ready' : state?.redGoldPending || state?.redRewardPending || state?.redReward ? 'Red reward' : state?.blueOption !== null ? 'Resolving' : 'Choosing'}</span></div>
           <blockquote>“{face?.text ?? '…'}”</blockquote>
@@ -194,7 +173,6 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
             ? '3 Card Rewards'
             : <><IconValue name="gold" value={3} size={18} /> + Card Reward</>}</div>
           <ol>{face?.options.map((option, index) => <li key={option.label} data-picked={state?.blueOption === index || undefined}>{option.label}</li>)}</ol>
-          {revealed.length ? <p className="neow-face__reveal"><span>Face-up:</span> {revealed.join(', ') || 'empty supply'}</p> : null}
           {onViewer && player.id !== viewerId && !state?.done ? <button type="button" onClick={() => onViewer(player.id)}>Resolve {player.name}</button> : null}
         </article>
       })}
@@ -208,59 +186,60 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
         <span>{viewer.name}</span><h3 id="neow-action-title">{viewerProgress.done ? `${blessingWord} complete` : activeProgress.redGoldPending ? 'Take or skip 3 Gold' : currentOffer ? offerTitle(currentOffer) : effect ? `Resolve ${effectLabel}` : unrevealedStage ? `${unrevealedKind} is face down` : blueReady ? `Choose a ${blessingWord.toLowerCase()}` : `Resolving ${blessingWord.toLowerCase()}`}</h3>
       </div>
       {viewerProgress.done ? <p className="neow-action__waiting" role="status">Waiting for the rest of the party.</p> : null}
-      {activeProgress.redGoldPending ? <div className="neow-unrevealed"><p><strong>3 Gold</strong><span>Gain or independently skip this reward.</span></p><div className="neow-offer__actions"><button type="button" disabled={!enabled} onClick={() => onGold(viewer.id, true)}>Gain 3 Gold</button><button type="button" disabled={!enabled} onClick={() => onGold(viewer.id, false)}>Skip 3 Gold</button></div></div> : null}
+      {activeProgress.redGoldPending ? <div className="neow-unrevealed"><p><strong>3 Gold</strong><span>Gain or independently skip this reward.</span></p><div className="neow-offer__actions"><button type="button" disabled={!canAct} onClick={() => submit(() => onGold(viewer.id, true))}>Gain 3 Gold</button><button type="button" disabled={!canAct} onClick={() => submit(() => onGold(viewer.id, false))}>Skip 3 Gold</button></div></div> : null}
       {unrevealedStage ? <div className="neow-unrevealed">
-        <p><strong>{unrevealedKind}</strong><span>Reveal it to the party, or skip it without drawing.</span></p>
+        <p><strong>{unrevealedKind}</strong><span>Reveal your options, or skip without drawing.</span></p>
         {activeProgress.prismatic && prismaticSources.length ? <fieldset className="neow-source-choice">
           <legend>Choose 3 different reward decks</legend>
           {prismaticSources.map((source) => <label key={source}>
             <input type="checkbox" checked={selectedSources.includes(source)}
-              disabled={!enabled || !selectedSources.includes(source) && selectedSources.length >= 3}
+              disabled={!canAct || !selectedSources.includes(source) && selectedSources.length >= 3}
               onChange={(event) => setSelectedSources((current) => event.target.checked ? [...current, source] : current.filter((id) => id !== source))} />
             {rewardSourceLabel(source)}
           </label>)}
         </fieldset> : null}
         {activeProgress.prismatic && prismaticSources.length < 3 ? <p role="status">Fewer than 3 reward decks remain. Skip this reward unseen.</p> : null}
         <div className="neow-offer__actions">
-          <button type="button" disabled={!enabled || activeProgress.prismatic && selectedSources.length !== 3}
-            onClick={() => onReveal(viewer.id, unrevealedStage, selectedSources)}>Reveal {unrevealedKind}</button>
-          <button type="button" disabled={!enabled} onClick={() => onReward(viewer.id, null, unrevealedStage)}>Skip unseen</button>
+          <button type="button" disabled={!canAct || activeProgress.prismatic && selectedSources.length !== 3}
+            onClick={() => submit(() => onReveal(viewer.id, unrevealedStage, selectedSources))}>Reveal {unrevealedKind}</button>
+          <button type="button" disabled={!canAct} onClick={() => submit(() => onReward(viewer.id, null, unrevealedStage))}>Skip unseen</button>
         </div>
       </div> : null}
       {currentOffer ? <OfferChoice key={`${viewer.id}:${currentOffer.kind}:${currentOffer.cardsDrawn.join(',')}`}
-        offer={currentOffer} player={viewer} players={players} ascension={ascension} enabled={enabled}
-        onResolve={(choice) => onReward(viewer.id, choice, viewerProgress.redReward ? 'red' : 'reward')} /> : null}
+        offer={currentOffer} player={viewer} players={players} ascension={ascension} enabled={canAct}
+        onResolve={(choice) => submit(() => onReward(viewer.id, choice, viewerProgress.redReward ? 'red' : 'reward'))} /> : null}
       {blueReady && card ? <div className="neow-options">
-        {card.options.map((option, index) => <button type="button" key={option.label} disabled={!enabled}
-          onClick={() => onChoose(activeViewer.id, index, {})}>
+        {card.options.map((option, index) => <button type="button" key={option.label} disabled={!canAct}
+          onClick={() => submit(() => onChoose(activeViewer.id, index, {}))}>
           <span>{index + 1}</span><strong>{option.label}</strong>
         </button>)}
       </div> : null}
       {effect && selection.cards.length === 0 ? <fieldset className="neow-card-choice"><legend>Gain {effectLabel}</legend>
-        <button type="button" disabled={!enabled || selectedCards.length !== selection.count}
-          onClick={() => {
+        <button type="button" disabled={!canAct || selectedCards.length !== selection.count}
+          onClick={() => submit(() => {
             if (effect.kind === 'randomRare') onArmCardGain?.()
-            onEffect(viewer.id, true, { cardUids: selectedCards })
-          }}>Gain reward</button>
-        <button type="button" disabled={!enabled} onClick={() => onEffect(viewer.id, false, {})}>Skip reward</button>
+            return onEffect(viewer.id, true, { cardUids: selectedCards })
+          })}>Gain reward</button>
+        <button type="button" disabled={!canAct} onClick={() => submit(() => onEffect(viewer.id, false, {}))}>Skip reward</button>
       </fieldset> : null}
       {effect && selection.cards.length > 0 ? createPortal(<CardPicker
         cards={selection.cards}
         verb={effect.kind === 'upgrade' ? 'Upgrade' : effect.kind === 'transform' ? 'Transform' : 'Remove'}
         selectedCardUids={selectedCards}
         maxSelections={selection.count}
-        onSelect={(uid) => enabled && setSelectedCards((current) => current.includes(uid)
+        onSelect={(uid) => canAct && setSelectedCards((current) => current.includes(uid)
           ? current.filter((cardUid) => cardUid !== uid)
           : current.length < selection.count ? [...current, uid] : current)}
-        onClear={() => enabled && setSelectedCards([])}
-        onBack={() => enabled && onEffect(viewer.id, false, {})}
-        onConfirm={() => enabled && selectedCards.length === selection.count && onEffect(viewer.id, true, { cardUids: selectedCards })}
+        onClear={() => canAct && setSelectedCards([])}
+        onBack={() => canAct && submit(() => onEffect(viewer.id, false, {}))}
+        onConfirm={() => canAct && selectedCards.length === selection.count && submit(() => onEffect(viewer.id, true, { cardUids: selectedCards }))}
         confirmLabel="Confirm reward"
         backLabel="Skip reward"
-        confirmDisabled={!enabled || selectedCards.length !== selection.count}
-        backDisabled={!enabled}
-        disabled={!enabled}
+        confirmDisabled={!canAct || selectedCards.length !== selection.count}
+        backDisabled={!canAct}
+        disabled={!canAct}
       />, document.body) : null}
+      {submitting ? <p className="neow-action__waiting" role="status">Resolving choice…</p> : null}
       {!enabled && !viewerProgress.done ? <p className="neow-action__waiting" role="status">
         {disabledMessage ?? `Reconnecting… your ${blessingWord} is preserved.`}
       </p> : null}

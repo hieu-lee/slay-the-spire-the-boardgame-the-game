@@ -1066,7 +1066,7 @@ check('a new local run presents Neow and deals one public face per seat', () => 
 })
 await page.getByRole('button', { name: 'Skip 3 Gold' }).click()
 await page.getByRole('button', { name: 'Reveal Card Reward' }).click()
-await page.getByRole('heading', { name: 'Choose a Card' }).waitFor()
+await page.locator('.reward-screen--card-choice').getByRole('heading', { name: 'Choose a Card' }).waitFor()
 await page.locator('.neow-action--offer .card').first().waitFor()
 const neowRewardChoiceCount = await page.evaluate(() =>
   Object.values(window.__STS_DEBUG__.getRun().neow.players)[0].redReward.choices.length)
@@ -1084,7 +1084,7 @@ await page.waitForFunction(() => document.querySelector('.neow-action--offer .ca
 const upgradedNeowRewardTitle = await page.locator('.neow-action--offer .card').first().getAttribute('title')
 const staleNeowRewardLabel = await page.getByText('Resolve face-up reward', { exact: true }).count()
 await shot('00b-neow-card-reward')
-check('Neow shows complete face-up reward cards on the desktop stage', () => {
+check('Neow shows complete private reward cards on the desktop stage', () => {
   assert(neowRewardChoiceCount > 0, 'Neow revealed no selectable card')
   assertEqual(neowRewardCards.length, neowRewardChoiceCount)
   assert(neowRewardCards.some((card) => card.visible), `no complete reward card is visible: ${JSON.stringify(neowRewardCards)}`)
@@ -7112,13 +7112,15 @@ check('a combat can actually be won', () => {
 })
 await shot('05d-victory')
 
-// A win becomes an immediate, click-to-claim Loot panel. Cards wait until the
-// other printed loot has settled, then show one player's three choices at once.
+// A win becomes an immediate, click-to-claim Loot panel. Every row is an
+// independent choice; cards do not wait on Gold, Potions, or Relics.
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'reward', { timeout: 5000 })
 const lootRun = await readRun()
 const lootRows = await page.locator('.reward-screen--loot .loot-choice').count()
 const hiddenCardChoices = await page.locator('.reward-screen--card-choice .card').count()
 const lootTitleVisible = await page.getByRole('heading', { name: 'Loot!' }).isVisible()
+const cardLootEnabled = await page.getByRole('button', { name: 'Add a card to your deck.' }).first().isEnabled()
+const individualPotionSkips = await page.getByRole('button', { name: /^Skip .*Potion$/ }).count()
 const lootSkipPlacement = await page.locator('.reward-screen--loot > .reward-screen__skip').evaluate((skip) => {
   const panel = document.querySelector('.reward-screen--loot .reward-screen__players')?.getBoundingClientRect()
   const box = skip.getBoundingClientRect()
@@ -7129,6 +7131,8 @@ check('victory presents immediate loot before any card choice', () => {
   assert(lootTitleVisible)
   assert(lootRows >= 2, 'the Loot panel omitted its click-to-claim rows')
   assertEqual(hiddenCardChoices, 0)
+  assert(cardLootEnabled, 'the card reward was coupled to unclaimed item loot')
+  assertEqual(individualPotionSkips, 0, 'the loot table still has an individual Potion skip button')
   assert(lootSkipPlacement, 'the Loot Skip is not anchored at the lower-right outside the panel')
 })
 await shot('05e-loot')
@@ -16608,13 +16612,19 @@ check('campfire party art covers every living party size without overflow', () =
     layout.switchers.every((button) => button.visible && !button.covered)), JSON.stringify(campfireResponsiveLayouts))
 })
 
-const leaveLockedBefore = await page.locator('.campfire__leave').isDisabled()
-check('a campfire will not let the party leave until everyone has chosen', () => {
-  assert(leaveLockedBefore, 'the leave button must be disabled while a choice is outstanding')
+const campfireLeaveControls = await page.locator('.campfire__leave').count()
+check('campfire choices have no separate Leave phase', () => {
+  assertEqual(campfireLeaveControls, 0, 'the obsolete Leave the campfire control is still mounted')
 })
 
 const campfirePrompt = page.locator('.campfire__prompt')
 await campfirePrompt.getByRole('button', { name: /Rest/ }).click()
+const restReadyStatus = await campfirePrompt.getByRole('status').textContent()
+const restReadyButtons = await campfirePrompt.locator('.campfire__choices button').count()
+check('a completed Rest replaces the action choices with player status', () => {
+  assert(restReadyStatus.includes('chose to Rest'), restReadyStatus)
+  assertEqual(restReadyButtons, 0)
+})
 await campfirePrompt.getByRole('button', { name: 'Next campfire player' }).click()
 await campfirePrompt.getByRole('button', { name: /Smith/ }).click()
 await page.waitForSelector('.card-picker')
@@ -16675,71 +16685,26 @@ check('selecting a Smith card previews its upgraded face and keeps confirmation 
   }
 })
 await page.locator('.card-picker').getByRole('button', { name: 'Confirm' }).click()
+const smithReady = await page.evaluate(() => ({
+  status: document.querySelector('.campfire__choice-status')?.textContent ?? '',
+  legacyCards: document.querySelectorAll('.campfire__deck--smith').length,
+  choices: document.querySelectorAll('.campfire__choices button').length,
+}))
+await shot('12b-campfire-smith-ready')
+check('confirming Smith returns to campfire status without the old deck and Leave phase', () => {
+  assert(smithReady.status.includes('chose to Smith'), JSON.stringify(smithReady))
+  assertEqual(smithReady.legacyCards, 0)
+  assertEqual(smithReady.choices, 0)
+})
 for (let remaining = 2; remaining > 0; remaining -= 1) {
   await campfirePrompt.getByRole('button', { name: 'Next campfire player' }).click()
   await campfirePrompt.getByRole('button', { name: /Rest/ }).click()
 }
-await campfirePrompt.getByRole('button', { name: 'Previous campfire player' }).click()
-await campfirePrompt.getByRole('button', { name: 'Previous campfire player' }).click()
-await page.waitForSelector('.campfire__deck--smith .card--selected')
-const compactReadySmith = await page.evaluate(() => {
-  const leave = document.querySelector('.campfire__leave')
-  const prompt = document.querySelector('.campfire__prompt')
-  const headerControls = [...document.querySelectorAll('.app-shell__header button, .app-shell__header .pip, .app-shell__header h1')]
-  const leaveBox = leave?.getBoundingClientRect()
-  const promptBox = prompt?.getBoundingClientRect()
-  const overlaps = (element, clip) => {
-    const box = element.getBoundingClientRect()
-    const visible = clip ? {
-      left: Math.max(box.left, clip.left), right: Math.min(box.right, clip.right),
-      top: Math.max(box.top, clip.top), bottom: Math.min(box.bottom, clip.bottom),
-    } : box
-    return Boolean(leaveBox && visible.left < visible.right && visible.top < visible.bottom &&
-      leaveBox.left < visible.right && leaveBox.right > visible.left && leaveBox.top < visible.bottom && leaveBox.bottom > visible.top)
-  }
-  return {
-    leaveEnabled: leave instanceof HTMLButtonElement && !leave.disabled,
-    cardOverlaps: [...document.querySelectorAll('.campfire__deck .card')].filter((card) => overlaps(card, promptBox)).length,
-    choiceOverlaps: [...document.querySelectorAll('.campfire__choices button')].filter((choice) => overlaps(choice)).length,
-    switcherOverlaps: [...document.querySelectorAll('.campfire__turn-nav button')].filter((button) => overlaps(button)).length,
-    reachableSwitchers: [...document.querySelectorAll('.campfire__turn-nav button')].filter((button) => {
-      const box = button.getBoundingClientRect()
-      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-      return box.width > 0 && box.height > 0 && Boolean(hit && (hit === button || button.contains(hit)))
-    }).length,
-    switcherCount: document.querySelectorAll('.campfire__turn-nav button').length,
-    headerChoiceOverlaps: [...document.querySelectorAll('.campfire__choices button')].filter((choice) => {
-      const box = choice.getBoundingClientRect()
-      const visible = promptBox ? {
-        left: Math.max(box.left, promptBox.left), right: Math.min(box.right, promptBox.right),
-        top: Math.max(box.top, promptBox.top), bottom: Math.min(box.bottom, promptBox.bottom),
-      } : box
-      return headerControls.some((control) => {
-        const controlBox = control.getBoundingClientRect()
-        return visible.left < visible.right && visible.top < visible.bottom && controlBox.width > 0 && controlBox.height > 0 &&
-          controlBox.left < visible.right && controlBox.right > visible.left && controlBox.top < visible.bottom && controlBox.bottom > visible.top
-      })
-    }).length,
-  }
-})
-await shot('12b-compact-ready-campfire')
-check('the enabled compact Campfire leave control stays clear of cards, choices, and player navigation', () => {
-  assert(compactReadySmith.leaveEnabled, `the ready party cannot leave: ${JSON.stringify(compactReadySmith)}`)
-  assertEqual(compactReadySmith.cardOverlaps, 0, JSON.stringify(compactReadySmith))
-  assertEqual(compactReadySmith.choiceOverlaps, 0, JSON.stringify(compactReadySmith))
-  assertEqual(compactReadySmith.switcherOverlaps, 0, JSON.stringify(compactReadySmith))
-  assertEqual(compactReadySmith.reachableSwitchers, compactReadySmith.switcherCount, JSON.stringify(compactReadySmith))
-  assertEqual(compactReadySmith.headerChoiceOverlaps, 0, `the run header covers a Campfire choice: ${JSON.stringify(compactReadySmith)}`)
-})
 await page.setViewportSize({ width: 1440, height: 900 })
-await shot('12-campfire')
-const leaveLockedAfter = await page.locator('.campfire__leave').isDisabled()
-await page.locator('.campfire__leave').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 const afterCampfire = await readRun()
 
-check('Rest heals and Smith upgrades, and the party returns to the map', () => {
-  assert(!leaveLockedAfter, 'once every player has chosen, leaving is allowed')
+check('the final Campfire choice immediately resolves Rest and Smith and returns to the map', () => {
   assertEqual(afterCampfire.phase, 'map', 'the party returns to the map')
   assertEqual(afterCampfire.players[0].hp, 7, 'the resting player heals 3 (p.9)')
   assertEqual(afterCampfire.players[1].hp, 4, 'the smithing player does not heal')
@@ -16781,12 +16746,17 @@ check('Peace Pipe lets a player back out of a selected card before confirming re
   assert(peacePipeNextControl, 'the next-player control did not return after confirming a Peace Pipe choice')
 })
 
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'campfire-peace-pipe-razor'))
+await bypassNeow()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  run.players[0].relics.push({ defId: 'straight_razor', spent: false })
+  run.phase = 'room'
+  run.map.position = run.map.rows[run.map.rows.length - 2][0]
+  run.players[0].relics.push({ defId: 'peace_pipe', spent: false }, { defId: 'straight_razor', spent: false })
   debug.setRun(run)
 })
+await page.waitForSelector('.campfire')
 await page.locator('.campfire__prompt').getByRole('button', { name: /Rest/ }).click()
 await page.waitForSelector('.card-picker')
 const removedCardName = await page.locator('.card-picker__grid > .card').last().getAttribute('aria-label')

@@ -58,10 +58,31 @@
 .card-picker__footer button { display: grid; min-height: 0; padding: 0; place-items: center; border: 0; font: inherit; }
 .card-picker__footer svg { width: 46%; height: 62%; fill: #fff4d5; filter: drop-shadow(0 .15rem .1rem rgb(31 4 2 / .78)); }
 .card-picker__back { justify-self: start; width: clamp(7.25rem, 11vw, 12.5rem); height: clamp(3.25rem, 4.6vw, 5.25rem); background: linear-gradient(165deg, #f16a3c 0 8%, #b82d1b 38%, #7b1711 100%); box-shadow: inset 0 .16rem rgb(255 186 125 / .4), inset 0 -.3rem rgb(69 8 4 / .5); clip-path: polygon(0 5%, 62% 0, 96% 4%, 90% 20%, 100% 50%, 90% 80%, 96% 96%, 62% 100%, 0 95%, 4% 76%, 0 50%, 4% 24%); filter: drop-shadow(0 .28rem .28rem rgb(0 0 0 / .6)); }
-.card-picker__confirm { justify-self: end; width: clamp(7rem, 10vw, 11.5rem); height: clamp(3.25rem, 4.6vw, 5.25rem); background: linear-gradient(165deg, #6c9eae 0 6%, #355f70 42%, #1d3f4e 100%); box-shadow: inset 0 .16rem rgb(174 235 245 / .42), inset 0 -.3rem rgb(10 31 40 / .55); clip-path: polygon(8% 0, 93% 5%, 100% 24%, 96% 50%, 100% 76%, 91% 100%, 8% 95%, 0 73%, 4% 50%, 0 27%); filter: drop-shadow(0 .28rem .28rem rgb(0 0 0 / .6)); }
-.card-picker__footer button:hover:not(:disabled), .card-picker__footer button:focus-visible:not(:disabled) { filter: brightness(1.2) drop-shadow(0 0 .65rem rgb(255 233 95 / .7)); outline: 0; }
-.card-picker__footer button:active:not(:disabled) { filter: brightness(.9) drop-shadow(0 .14rem .16rem rgb(0 0 0 / .62)); }
+.card-picker__confirm { display: grid; justify-self: end; width: clamp(7rem, 10vw, 11.5rem); height: clamp(3.25rem, 4.6vw, 5.25rem); padding: 0; place-items: center; border: 0; background: linear-gradient(165deg, #6c9eae 0 6%, #355f70 42%, #1d3f4e 100%); box-shadow: inset 0 .16rem rgb(174 235 245 / .42), inset 0 -.3rem rgb(10 31 40 / .55); clip-path: polygon(8% 0, 93% 5%, 100% 24%, 96% 50%, 100% 76%, 91% 100%, 8% 95%, 0 73%, 4% 50%, 0 27%); filter: drop-shadow(0 .28rem .28rem rgb(0 0 0 / .6)); }
+.card-picker__footer button { transition: transform 120ms ease-out, filter 120ms ease-out; }
+.card-picker__footer button:hover:not(:disabled), .card-picker__footer button:focus-visible:not(:disabled) {
+  transform: translateY(-.14rem) scale(1.025);
+  filter: brightness(1.1) drop-shadow(0 .42rem .32rem rgb(0 0 0 / .72));
+  outline: 0;
+}
+.card-picker__footer button:focus-visible:not(:disabled) svg { filter: drop-shadow(0 0 .22rem #fff2ad) drop-shadow(0 .15rem .1rem rgb(31 4 2 / .78)); }
+.card-picker__footer button:active:not(:disabled) { transform: translateY(.06rem) scale(.985); filter: brightness(.92) drop-shadow(0 .14rem .16rem rgb(0 0 0 / .62)); }
 .card-picker__confirm:disabled { filter: grayscale(.5) brightness(.58); }
+.event-card-confirm { transition: transform 150ms ease, filter 150ms ease; }
+.event-card-confirm svg { width: 46%; height: 62%; fill: #fff4d5; filter: drop-shadow(0 .15rem .1rem rgb(31 4 2 / .78)); }
+.event-card-confirm:hover:not(:disabled), .event-card-confirm:focus-visible:not(:disabled) { transform: translateY(-.14rem) scale(1.025); filter: brightness(1.1) drop-shadow(0 .42rem .32rem rgb(0 0 0 / .72)); outline: 0; }
+.event-card-confirm:focus-visible:not(:disabled) svg { filter: drop-shadow(0 0 .22rem #fff2ad) drop-shadow(0 .15rem .1rem rgb(31 4 2 / .78)); }
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-mobile-performance='true']) :is(.card-picker__footer button, .event-card-confirm) { transition: none; }
+  html:not([data-mobile-performance='true']) :is(
+    .card-picker__footer button:hover:not(:disabled),
+    .card-picker__footer button:focus-visible:not(:disabled),
+    .card-picker__footer button:active:not(:disabled),
+    .event-card-confirm:hover:not(:disabled),
+    .event-card-confirm:focus-visible:not(:disabled)
+  ) { transform: none; }
+}
 
 .card-collection { width: min(96rem, calc(100% - 2rem)); }
 .card-collection .choice-modal__panel { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; height: min(52rem, calc(100dvh - 2rem)); max-height: none; padding: clamp(.75rem, 2vw, 1.25rem); background: rgb(0 0 0 / .96); border-color: #2a7caa; }

@@ -21,6 +21,16 @@ type CardPickerProps = {
   disabled?: boolean
 }
 
+export function PickerConfirmButton({ label = 'Confirm', disabled = false, onClick, className = '' }: {
+  label?: string
+  disabled?: boolean
+  onClick: () => void
+  className?: string
+}) {
+  return <button type="button" className={`card-picker__confirm ${className}`.trim()} aria-label={label}
+    disabled={disabled} onClick={onClick}><svg viewBox="0 0 100 70" aria-hidden="true"><path d="m12 38 21 21L88 12l-9-9-46 39-12-12z" /></svg></button>
+}
+
 /** The shared full-deck picker used whenever a run changes one of its cards. */
 export function CardPicker({
   cards, verb, selectedCardUids, onSelect, onClear, onBack, onConfirm, confirmLabel = 'Confirm', backLabel = 'Back',
@@ -108,11 +118,11 @@ export function CardPicker({
       </div> : null}
     </div>
     <footer className="card-picker__footer">
-      <button type="button" className="card-picker__back" aria-label={backText} title={backText} disabled={disabled || backDisabled}
+      <button type="button" className="card-picker__back" aria-label={backText} disabled={disabled || backDisabled}
         onClick={() => { rememberGridScroll(); preview ? onClear() : onBack() }}><svg viewBox="0 0 100 70" aria-hidden="true"><path d="M4 39 32 9v16h26c20 0 34 13 34 30v8H75v-8c0-8-6-13-17-13H32v15z" /></svg></button>
       <p>Choose {selectionLabel} to <strong>{verb}</strong>.</p>
-      <button type="button" className="card-picker__confirm" aria-label={confirmLabel} title={confirmLabel}
-        disabled={disabled || confirmDisabled === true || selectionRequired && selected.length < maxSelections} onClick={onConfirm}><svg viewBox="0 0 100 70" aria-hidden="true"><path d="m12 38 21 21L88 12l-9-9-46 39-12-12z" /></svg></button>
+      <PickerConfirmButton label={confirmLabel}
+        disabled={disabled || confirmDisabled === true || selectionRequired && selected.length < maxSelections} onClick={onConfirm} />
     </footer>
   </section>
 }

@@ -41,9 +41,31 @@ export function pendingRelicPreview(state: RunState, playerId: string): PendingR
     return { relicId: pending.defId,
       rewardChoices: pendingRewardChoices(player, pending.defId, state.meta.ruleset === 'downfall'),
       rewardUpgraded: pending.defId === 'forbidden_fruit' ? [true, false] : undefined,
-      guardianGemGroups: pending.guardianGemGroups?.map((group) => [...group]) }
+      guardianGemGroups: pending.guardianGemGroups?.map((group) => [...group]),
+      rewardIndices: pending.pendingRewardIndices ? { ...pending.pendingRewardIndices } : undefined }
   }
   return { relicId: pending.defId }
+}
+
+/** Persist one owner-only Relic card reward without waiting for its siblings. */
+export function choosePendingRelicReward(state: RunState, playerId: string, reward: number, choice: number): RunState {
+  if (state.phase === 'combat') return state
+  const before = state
+  const originalPlayer = state.players.find((candidate) => candidate.id === playerId)
+  const originalPending = originalPlayer?.relics.find((relic) => relic.pending)
+  if (!originalPending || !Number.isInteger(reward) || !Number.isInteger(choice) ||
+    reward in (originalPending.pendingRewardIndices ?? {})) return state
+  state = reserveRevealedRewardDraws(state, playerId)
+  const player = state.players.find((candidate) => candidate.id === playerId)!
+  const pending = player.relics.find((relic) => relic.pending)!
+  const choices = pendingRewardChoices(player, pending.defId, state.meta.ruleset === 'downfall')
+  if (reward < 0 || reward >= choices.length || choice < -1 || choice >= choices[reward]!.length) return before
+  return { ...state, players: state.players.map((candidate) => candidate.id !== playerId ? candidate : {
+    ...candidate,
+    relics: candidate.relics.map((relic) => relic !== pending ? relic : {
+      ...relic, pendingRewardIndices: { ...relic.pendingRewardIndices, [reward]: choice },
+    }),
+  }) }
 }
 
 function settleRelicRewardGems(
@@ -89,7 +111,7 @@ export function resolvePendingRelic(
   const player = state.players.find((candidate) => candidate.id === playerId)
   const pending = player?.relics.find((relic) => relic.pending)
   if (!player || !pending || new Set(cardUids).size !== cardUids.length ||
-    cardUids.some((uid) => !player.deck.some((card) => card.uid === uid))) return state
+    cardUids.some((uid) => !player.deck.some((card) => card.uid === uid))) return before
   const id = pending.defId
   const printedCards = id === 'empty_cage' ? 2 : ['astrolabe', 'pandoras_box'].includes(id) ? 3
     : ['war_paint', 'whetstone', 'tiny_house'].includes(id) ? 1 : 0
@@ -99,18 +121,19 @@ export function resolvePendingRelic(
   const rewardChoices = pendingRewardChoices(player, id, state.meta.ruleset === 'downfall')
   if (cardUids.length !== expectedCards || rewardIndices.length !== expectedRewards ||
     rewardIndices.some((choice, index) => !Number.isInteger(choice) || choice < -1 ||
-      choice >= (rewardChoices[index]?.length ?? 0))) return state
+      choice >= (rewardChoices[index]?.length ?? 0)) ||
+    Object.entries(pending.pendingRewardIndices ?? {}).some(([index, choice]) => rewardIndices[Number(index)] !== choice)) return before
   const chosen = cardUids.map((uid) => player.deck.find((card) => card.uid === uid)!)
-  if (id === 'war_paint' && expectedCards > 0 && acquisitionCardType(chosen[0]!.defId) !== 'skill') return state
-  if (id === 'whetstone' && expectedCards > 0 && acquisitionCardType(chosen[0]!.defId) !== 'attack') return state
+  if (id === 'war_paint' && expectedCards > 0 && acquisitionCardType(chosen[0]!.defId) !== 'skill') return before
+  if (id === 'whetstone' && expectedCards > 0 && acquisitionCardType(chosen[0]!.defId) !== 'attack') return before
   if (['war_paint', 'whetstone', 'astrolabe', 'tiny_house'].includes(id) &&
-    chosen.some((card) => !canUpgradeCard(card))) return state
-  if (id === 'empty_cage' && chosen.some((card) => card.defId === 'ascenders_bane')) return state
-  if (id === 'pandoras_box' && chosen.some((card) => CARDS[card.defId]?.type === 'curse')) return state
+    chosen.some((card) => !canUpgradeCard(card))) return before
+  if (id === 'empty_cage' && chosen.some((card) => card.defId === 'ascenders_bane')) return before
+  if (id === 'pandoras_box' && chosen.some((card) => CARDS[card.defId]?.type === 'curse')) return before
   const requiredStarter = id === 'war_paint'
     ? player.deck.find((card) => isStarterStrikeOrDefend(card.defId, 'Defend') && !card.upgraded)
     : id === 'whetstone' ? player.deck.find((card) => isStarterStrikeOrDefend(card.defId, 'Strike') && !card.upgraded) : undefined
-  if (requiredStarter && chosen.some((card) => card.uid === requiredStarter.uid)) return state
+  if (requiredStarter && chosen.some((card) => card.uid === requiredStarter.uid)) return before
 
   let owner: Player = { ...player, relics: player.relics.filter((relic) => relic !== pending) }
   if (['war_paint', 'whetstone', 'astrolabe', 'tiny_house'].includes(id)) {

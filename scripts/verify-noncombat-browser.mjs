@@ -404,6 +404,7 @@ await page.getByRole('button', { name: 'Skip 3 Gold' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().neow.players.p1.redGoldPending === false)
 assertEqual(await page.getByRole('button', { name: 'Reveal Card Reward' }).count(), 1, 'red Card Reward Reveal did not appear after Gold resolved')
 assertEqual(await page.getByRole('button', { name: 'Skip unseen' }).count(), 1, 'red Card Reward skip did not appear after Gold resolved')
+assertEqual(await page.getByText(/Reveal it to the party/).count(), 0, 'private Neow reward copy still promises to reveal cards to teammates')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -434,18 +435,16 @@ await page.getByRole('button', { name: 'Reveal Card Reward' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().neow.players.p1.redReward !== null)
 assertEqual(await page.getByRole('button', { name: 'Reveal Card Reward' }).count(), 0, 'revealed reward still offered Reveal')
 assertEqual(await page.getByRole('button', { name: 'Skip unseen' }).count(), 0, 'revealed reward still offered unseen skip')
-const neowCardRewardSubheadings = await page.locator('.neow-offer > h3').count()
-const publicRedNames = await page.locator('.neow-face--active .neow-face__reveal').textContent()
-await page.getByRole('button', { name: 'Skip reward' }).click()
-const neowConfirmReward = page.getByRole('button', { name: 'Confirm reward' })
-await neowConfirmReward.hover()
-const hoveredNeowReward = await page.locator('.neow-action--offer').evaluate((offer) => ({
-  overflowX: getComputedStyle(offer).overflowX,
-  scrollWidth: offer.scrollWidth,
-  clientWidth: offer.clientWidth,
-  actionWidth: offer.querySelector('.neow-offer__actions')?.getBoundingClientRect().width,
-}))
-await neowConfirmReward.click()
+const neowRewardPicker = page.locator('.reward-screen--card-choice')
+await neowRewardPicker.waitFor()
+const neowCardChoices = await neowRewardPicker.locator('.reward-screen__cards > .card').count()
+const publicRedNames = await page.locator('.neow-face--active .neow-face__reveal').count()
+const neowRewardCard = neowRewardPicker.locator('.reward-screen__cards > .card').first()
+const neowCardResting = await neowRewardCard.boundingBox()
+await neowRewardCard.hover()
+await page.waitForTimeout(180)
+const neowCardHovered = await neowRewardCard.boundingBox()
+await neowRewardPicker.getByRole('button', { name: 'Skip' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().neow.players.p1.redRewardPending === false)
 const firstBlessing = page.locator('.neow-options button').first()
 await firstBlessing.click()
@@ -510,22 +509,19 @@ const localNeowMinimumDesktopFacesVisible = await page.evaluate(() => {
 })
 await page.screenshot({ path: join(outDir, 'neow-4p-minimum-desktop.png'), fullPage: true })
 await page.setViewportSize({ width: 1280, height: 800 })
-check('local Neow exposes every public face and keeps hot-seat ownership explicit', () => {
+check('local Neow exposes every dealt face while Card Rewards use the private shared picker', () => {
   assertEqual(localNeowFaces, 4)
   assertEqual(localNeowOptions, 12)
   assertEqual(hiddenRedOrder.pending, true)
   assertEqual(hiddenRedOrder.offer, null)
   assertEqual(hiddenRedOrder.publicOffers, 0, 'face-down Neow rewards leaked before Reveal')
   assertEqual(neowFaceActionOverlap, false, 'Neow actions cover a dealt public card')
-  assertEqual(neowCardRewardSubheadings, 0, 'Neow repeats a Card Reward heading under Choose a Card')
+  assertEqual(neowCardChoices, 3, 'Neow did not use the shared three-card reward picker')
   assert(exhaustedPrismaticRevealDisabled && exhaustedPrismaticSkipEnabled,
     'exhausted Prismatic Neow supply did not disable Reveal while preserving skip')
-  assert(publicRedNames?.includes('Face-up:'), 'revealed reward was not public')
-  assertEqual(hoveredNeowReward.overflowX, 'hidden')
-  assert(hoveredNeowReward.scrollWidth <= hoveredNeowReward.clientWidth,
-    `hovering Confirm reward overflowed ${hoveredNeowReward.scrollWidth}px into ${hoveredNeowReward.clientWidth}px`)
-  assert((hoveredNeowReward.actionWidth ?? Infinity) <= 512,
-    `Neow reward actions stretched to ${hoveredNeowReward.actionWidth}px`)
+  assertEqual(publicRedNames, 0, 'the selected player\'s Card Reward leaked onto their public Neow face')
+  assert(neowCardResting && neowCardHovered && neowCardHovered.width > neowCardResting.width,
+    'hovering a Neow Card Reward did not enlarge it')
   assertEqual(hotSeatOwner, 'Silent')
   assert(localPendingRelicLock, 'another seat\'s pending War Paint left local Neow choices enabled')
   assert(!localNeowCompact.overflow, 'Neow overflowed the compact desktop viewport')
@@ -1273,9 +1269,8 @@ const stackedRoomScreens = await page.evaluate(() => {
     return counts
   })()
 })
-// The boss-relic picker is its own markup (`.reward-boss`) and moved out of
-// `.reward-screen__relic`, which is what the other reward checks select — so
-// until now no browser suite touched it at all.
+// Boss Relics are ordinary claimable Loot rows, matching the other post-combat
+// rewards while remaining shared across the party.
 const bossRelicShape = await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const before = structuredClone(debug.getRun())
@@ -1288,9 +1283,9 @@ const bossRelicShape = await page.evaluate(() => {
     potion: false, bossRelics: ['snecko_eye', 'pandoras_box', 'tiny_house'] }]
   debug.setRun(run)
   return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => {
-    const picks = [...document.querySelectorAll('.reward-boss__pick')]
+    const picks = [...document.querySelectorAll('.reward-screen--loot .loot-choice')]
     const widths = picks.map((pick) => Math.round(pick.getBoundingClientRect().width))
-    const screen = document.querySelector('.reward-screen')?.getBoundingClientRect()
+    const screen = document.querySelector('.reward-screen__players')?.getBoundingClientRect()
     const result = {
       picks: picks.length,
       // A boss-relic screen offers no card, so the card-reward instruction must
@@ -1298,9 +1293,7 @@ const bossRelicShape = await page.evaluate(() => {
       cardInstructions: [...document.querySelectorAll('.reward-screen > p.muted')]
         .filter((line) => /revealed card/i.test(line.textContent ?? '')).length,
       spread: widths.length ? Math.max(...widths) - Math.min(...widths) : -1,
-      // Each pick must name the relic AND its rules, since the art carries neither.
-      named: picks.every((pick) => /\w/.test(pick.querySelector(':scope > strong')?.textContent ?? '')
-        && (pick.querySelector(':scope > .room-item-text')?.textContent ?? '').length > 8),
+      named: picks.every((pick) => /\w/.test(pick.querySelector(':scope > strong')?.textContent ?? '')),
       inside: screen ? picks.every((pick) => {
         const box = pick.getBoundingClientRect()
         return box.left >= screen.left - 1 && box.right <= screen.right + 1
@@ -1320,13 +1313,13 @@ const bossRelicShape = await page.evaluate(() => {
     done(result)
   })))
 })
-check('the boss relic picker offers three readable, hittable choices', () => {
-  assertEqual(bossRelicShape.picks, 3, 'the boss relic picker did not render three choices')
+check('boss Relics render as three readable, hittable Loot choices', () => {
+  assertEqual(bossRelicShape.picks, 3, 'boss Relics did not render three Loot choices')
   assert(bossRelicShape.spread <= 2, `boss relic picks differ in width by ${bossRelicShape.spread}px`)
-  assert(bossRelicShape.named, 'a boss relic pick omitted its name or its rules')
+  assert(bossRelicShape.named, 'a boss Relic Loot choice omitted its name')
   assert(bossRelicShape.inside, 'a boss relic pick escaped the reward screen')
   assert(bossRelicShape.hittable, 'a boss relic pick was not clickable at its own centre')
-  assert(bossRelicShape.art >= 56, `boss relic art is only ${bossRelicShape.art}px wide`)
+  assert(bossRelicShape.art >= 32, `boss relic art is only ${bossRelicShape.art}px wide`)
   assertEqual(bossRelicShape.cardInstructions, 0,
     'a boss-relic screen printed card-reward instructions with no cards on it')
 })
@@ -2001,7 +1994,7 @@ const eventShape = await page.evaluate(() => {
   const stageBox = stage?.getBoundingClientRect()
   const stageStyle = stage ? getComputedStyle(stage) : null
   const panelStyle = panel ? getComputedStyle(panel) : null
-  const confirm = document.querySelector('.event-resolve-actions .room-proceed')?.getBoundingClientRect()
+  const confirm = document.querySelector('.event-resolve-actions .event-card-confirm')?.getBoundingClientRect()
   const picker = document.querySelector('.event-cards--deck')
   const card = picker?.querySelector('.card')
   return {
@@ -2133,7 +2126,7 @@ check('revealed A4 Potion rewards expose take, skip, pass, and replacement contr
   assert(overCapacityResolveDisabled, 'two taken Potions enabled with only one free A4 slot')
 })
 await chooseLocalSeat({ label: 'Ironclad' })
-await page.getByText('Waiting for that face-up reward to resolve…').waitFor()
+await page.getByRole('status').filter({ hasText: /Waiting for .* to resolve that reward/ }).waitFor()
 const teammateReveal = await page.locator('.event-panel').textContent()
 check('teammates see staged physical rewards but cannot race their resolution', () => {
   for (const name of revealedPotions) assert(teammateReveal.includes(name))
@@ -2212,22 +2205,63 @@ await page.evaluate(() => {
   run.roomState = { kind: 'event', card: { id: 'sensory_stone', instanceId: 'browser-sequential-reward', act: 3, minAscension: 0, requiresColorlessUnlock: true, name: 'Sensory Stone', scope: 'player', options: [{ id: 'recall_two', label: 'Recall 2', description: 'Gain two Colorless rewards. Lose 2 HP.', effects: [{ tag: 'card-reward', source: 'colorless', count: 2 }, { tag: 'lose-hp', amount: 2 }] }] }, decisions: {}, dieRolls: {}, rewardOffers: { [playerId]: [['blind', 'trip', 'panacea']] }, pendingDecisions: { [playerId]: { optionIds: ['recall_two'] } } }
   debug.setRun(run)
 })
-await page.getByRole('heading', { name: 'Choose your reward' }).waitFor()
-await page.getByRole('button', { name: 'Blind' }).click()
+await page.getByRole('heading', { name: 'Choose a Card' }).waitFor()
+await page.getByRole('button', { name: 'Blind' }).waitFor()
+await page.getByRole('button', { name: 'Blind' }).focus()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   const playerId = run.players.find((player) => player.character === 'ironclad').id
   run.roomState.rewardOffers[playerId] = [['dark_shackles', 'finesse', 'purity']]
-  run.roomState.pendingDecisions[playerId].rewardIndexes = [0]
   debug.setRun(run)
 })
 await page.getByRole('button', { name: 'Dark Shackles' }).waitFor()
-const retainedSequentialReward = await page.locator('.event-cards button[aria-pressed="true"]').count()
-const sequentialRewardDisabled = await page.getByRole('button', { name: /Take rewards/ }).isDisabled()
+const staleSequentialReward = await page.getByRole('button', { name: 'Blind' }).count()
+const replacementSequentialCards = await page.locator('.reward-screen--card-choice .reward-screen__cards > .card').count()
+const sequentialConfirm = await page.getByRole('button', { name: /Confirm|Take rewards/ }).count()
+const sequentialFocusRestored = await page.locator('.reward-screen--card-choice').evaluate((picker) => document.activeElement === picker)
+const sequentialBackdrop = await page.locator('.reward-screen--card-choice').evaluate((picker) => getComputedStyle(picker).backgroundImage)
 check('equal-length sequential Event rewards require a fresh choice', () => {
-  assertEqual(retainedSequentialReward, 0)
-  assert(sequentialRewardDisabled)
+  assertEqual(staleSequentialReward, 0)
+  assertEqual(replacementSequentialCards, 3)
+  assertEqual(sequentialConfirm, 0)
+  assert(sequentialFocusRestored, 'replacement Event reward lost keyboard focus')
+  assert(sequentialBackdrop.includes('linear-gradient'), 'non-combat Card Reward lost its dimmed backdrop')
+})
+
+const stageSocketRewards = async (instanceId) => {
+  await page.evaluate((id) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const playerId = run.players.find((candidate) => candidate.character === 'ironclad').id
+    run.phase = 'room'
+    run.roomState = {
+      kind: 'event',
+      card: { id: 'sensory_stone', instanceId: id, act: 3, minAscension: 0, requiresColorlessUnlock: true,
+        name: 'Sensory Stone', scope: 'player', options: [{ id: 'recall_two', label: 'Recall 2', description: 'Gain two Card Rewards.', effects: [] }] },
+      decisions: {}, dieRolls: {},
+      rewardOffers: { [playerId]: [['guardian_prismatic_barrier', 'guardian_disrupt'], ['trip', 'panacea']] },
+      guardianGemOffers: { [playerId]: [['guardian_amethyst', 'guardian_emerald'], []] },
+      pendingDecisions: { [playerId]: { optionIds: ['recall_two'] } },
+    }
+    debug.setRun(run)
+  }, instanceId)
+  await page.getByRole('button', { name: /Prismatic Barrier/ }).click()
+  await page.getByRole('button', { name: 'Trip' }).waitFor()
+}
+
+await stageSocketRewards('browser-socket-before-normal')
+await page.getByRole('button', { name: 'Trip' }).click()
+await page.getByRole('heading', { name: 'Choose your reward' }).waitFor()
+const gemAfterLaterCard = await page.locator('[aria-label="Choose a Gem"] .card').count()
+
+await stageSocketRewards('browser-socket-before-skip')
+await page.getByRole('button', { name: 'Skip' }).click()
+await page.getByRole('heading', { name: 'Choose your reward' }).waitFor()
+const gemAfterLaterSkip = await page.locator('[aria-label="Choose a Gem"] .card').count()
+check('an earlier socket Card Reward waits for its Gem after a later choice or skip', () => {
+  assertEqual(gemAfterLaterCard, 2)
+  assertEqual(gemAfterLaterSkip, 2)
 })
 
 await page.evaluate(() => {
@@ -2484,9 +2518,9 @@ await page.evaluate(() => {
 })
 await page.getByRole('button', { name: /random Relic/ }).click()
 await page.waitForFunction(() => !document.querySelector('.event-options'))
-await page.waitForFunction(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
+await page.waitForFunction(() => document.querySelector('.reward-screen--card-choice')?.contains(document.activeElement))
 const randomRelicPickerCount = await page.getByRole('group', { name: 'Your relic' }).count()
-const rewardResolverFocused = await page.evaluate(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
+const rewardResolverFocused = await page.evaluate(() => document.querySelector('.reward-screen--card-choice')?.contains(document.activeElement))
 check('random Relic losses skip the meaningless picker and focus the real reward resolver', () => {
   assertEqual(randomRelicPickerCount, 0)
   assert(rewardResolverFocused)
@@ -2730,6 +2764,8 @@ const liveEventFocus = await page.evaluate(() => document.activeElement?.textCon
 await page.getByRole('button', { name: /\[Donut\]/ }).click()
 await page.locator('.event-cards--deck .card').first().click()
 const liveEventConfirmBeforeClaim = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
+const liveEventConfirmIsTick = await page.locator('.event-card-confirm svg').count()
+const liveEventConfirmTooltip = await page.getByRole('button', { name: /Confirm choice/ }).getAttribute('title')
 const focusedSelectionBeforeClaim = await page.evaluate(() => document.activeElement?.matches('.event-cards--deck .card[aria-pressed="true"]'))
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -2738,12 +2774,14 @@ await page.evaluate(() => {
   run.roomState.decisions[teammate.id] = { optionIds: ['donut'] }
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.querySelector('.event-resolve-actions .room-proceed')?.disabled === true)
+await page.waitForFunction(() => document.querySelector('.event-resolve-actions .event-card-confirm')?.disabled === true)
 const liveEventConfirmAfterClaim = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 const focusedSelectionAfterClaim = await page.evaluate(() => document.activeElement?.matches('.event-cards--deck .card[aria-pressed="true"]'))
 check('Event focus and an open resolver react when a teammate claims a unique option', () => {
   assert(liveEventFocus.includes('[Donut]'))
   assert(liveEventConfirmBeforeClaim)
+  assertEqual(liveEventConfirmIsTick, 1)
+  assertEqual(liveEventConfirmTooltip, null)
   assert(liveEventConfirmAfterClaim)
   assert(focusedSelectionBeforeClaim && focusedSelectionAfterClaim, 'a teammate update stole focus from the active Event selection')
 })
@@ -2837,7 +2875,8 @@ await page.evaluate(() => {
   run.rewards[0].potion = 'fire_potion'
   debug.setRun(run)
 })
-const localRewardSources = page.locator('.reward-screen__player').first().getByRole('group', { name: 'Choose 3 different reward decks' })
+await page.getByRole('button', { name: 'Add a card to your deck.' }).first().click()
+const localRewardSources = page.locator('.reward-screen--card-choice').getByRole('group', { name: 'Choose 3 reward decks' })
 await localRewardSources.waitFor()
 for (const checkbox of (await localRewardSources.getByRole('checkbox').all()).slice(0, 3)) await checkbox.check()
 await page.evaluate(() => {
@@ -2846,22 +2885,16 @@ await page.evaluate(() => {
   run.rewards[0].availableSources = ['silent', 'defect', 'watcher']
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.querySelector('.reward-screen__player .reward-screen__sources')?.querySelectorAll('input:checked').length === 2)
+await page.waitForFunction(() => document.querySelector('.reward-screen--card-choice .reward-screen__sources')?.querySelectorAll('input:checked').length === 2)
 const localRewardSelectionReconciled = await localRewardSources.evaluate((group) => ({
   checked: group.querySelectorAll('input:checked').length,
   disabled: group.querySelector('button')?.disabled,
 }))
-// Icons, not card faces: a 1.4rem card face was a 22px thumbnail whose own
-// printed name clipped to two letters, so these keys draw bare art like the row.
-const localRewardReplacementCards = await page.locator('.reward-screen__players > :first-child .reward-screen__potion button .item-icon-image')
-  .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
 // The potion belt is a STRIP, and this is the surface that proves it: the reward
 // panel sizes to its content, so the shell's tall row used to land on the belt
 // and stretch a 62px band to fill the window, pushing the panel down with it.
 // The shop cannot show this — its stage has a definite height either way.
-// Reward rows share their columns, so a relic row's keys and a potion row's keys
-// (which carry a Replace key per held potion) line up. Each row used to be its own
-// grid sized against its own text, which put them up to 263px apart.
+// Loot rows use one stable icon and label geometry regardless of reward kind.
 const rewardColumns = await page.evaluate(async () => {
   const debug = window.__STS_DEBUG__
   const before = structuredClone(debug.getRun())
@@ -2873,20 +2906,15 @@ const rewardColumns = await page.evaluate(async () => {
     potion: 'fire_potion', relic: 'akabeko' }]
   debug.setRun(staged)
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  const actions = [...document.querySelectorAll('.reward-item__actions')].map((box) => {
-    const rect = box.getBoundingClientRect()
-    return { left: Math.round(rect.left), width: Math.round(rect.width) }
-  })
-  const first = document.querySelector('.reward-item')
-  const art = first?.querySelector('.item-icon-image, .reward-item__facedown')?.getBoundingClientRect()
-  const body = first?.querySelector('.reward-item__body')?.getBoundingClientRect()
-  const firstActions = first?.querySelector('.reward-item__actions')?.getBoundingClientRect()
+  const rows = [...document.querySelectorAll('.reward-screen--loot .loot-choice')]
+  const widths = rows.map((row) => Math.round(row.getBoundingClientRect().width))
+  const heights = rows.map((row) => Math.round(row.getBoundingClientRect().height))
+  const art = rows[0]?.querySelector('.loot-choice__icon')?.getBoundingClientRect()
   const measured = {
-    rows: actions.length,
+    rows: rows.length,
     artWidth: art ? Math.round(art.width) : 0,
-    actionsRightOfBody: Boolean(body && firstActions && firstActions.left >= body.right - 1),
-    leftSpread: actions.length ? Math.max(...actions.map((a) => a.left)) - Math.min(...actions.map((a) => a.left)) : 0,
-    widthSpread: actions.length ? Math.max(...actions.map((a) => a.width)) - Math.min(...actions.map((a) => a.width)) : 0,
+    widthSpread: widths.length ? Math.max(...widths) - Math.min(...widths) : 0,
+    heightSpread: heights.length ? Math.max(...heights) - Math.min(...heights) : 0,
   }
   debug.setRun(before)
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
@@ -2919,11 +2947,8 @@ const beltGeometry = await page.evaluate(async () => {
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
   return measured
 })
-// The only control that finishes the reward screen. `.reward-screen` is its own
-// scroller, so on a reward carrying two items AND a card choice this sat below
-// the panel's fold with no affordance — the run read as stuck.
-// Measured at a SHORT window: at 1440x900 this reward fits well enough that the
-// sticky bar never parks on a card, so the check could not fail there.
+// The global Skip arrow must remain immediately reachable at a short desktop
+// height even when several independent Loot rows are still unclaimed.
 await page.setViewportSize({ width: 1024, height: 600 })
 const rewardCollect = await page.evaluate(async () => {
   const debug = window.__STS_DEBUG__
@@ -2935,40 +2960,16 @@ const rewardCollect = await page.evaluate(async () => {
     potion: 'fire_potion', relic: 'akabeko' }]
   debug.setRun(staged)
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  const panel = document.querySelector('.reward-screen')
-  const collect = document.querySelector('.reward-screen__collect')
+  const panel = document.querySelector('.reward-screen__players')
+  const collect = document.querySelector('.reward-screen--loot > .reward-screen__skip')
   const measured = collect && panel ? (() => {
-    const panelBox = panel.getBoundingClientRect()
     const box = collect.getBoundingClientRect()
-    const style = getComputedStyle(panel)
     const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
     return {
       rendered: true,
-      borderless: parseFloat(style.borderTopWidth) === 0 && parseFloat(style.borderRightWidth) === 0 &&
-        parseFloat(style.borderBottomWidth) === 0 && parseFloat(style.borderLeftWidth) === 0,
-      // Without scrolling first: it has to be reachable the moment the screen opens.
-      inside: box.bottom <= panelBox.bottom + 1 && box.top >= panelBox.top - 1,
-      // And the FIRST child must not be above the panel's top edge. A panel that
-      // overflows and is centred rather than `safe center`-ed pushes its own title
-      // out of the scrollport, where no scroll position can reach it.
-      firstChildAbove: (() => {
-        const first = panel.firstElementChild?.getBoundingClientRect()
-        return first ? Math.round(panelBox.top - first.top) : 0
-      })(),
+      inside: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
       hittable: Boolean(hit && (hit === collect || collect.contains(hit))),
-      scrolls: panel.scrollHeight - panel.clientHeight,
-      barOffBottom: Math.round(panelBox.bottom - box.bottom),
-      choices: document.querySelectorAll('.reward-screen__cards .card').length,
-      // The reward screen shares the shop's card-text ramp but feeds a different
-      // card width through it, and no check selected it: deleting the reward half
-      // of the override left every check green.
-      cardRulesFont: (() => {
-        const rules = document.querySelector('.reward-screen__cards .card-face__rules')
-        return rules ? parseFloat(getComputedStyle(rules).fontSize) : 0
-      })(),
-      cardWidth: Math.round(document.querySelector('.reward-screen__cards .card')?.getBoundingClientRect().width ?? 0),
-      cardRulesClipped: [...document.querySelectorAll('.reward-screen__cards .card-face__rules')]
-        .filter((panel) => panel.scrollHeight > panel.clientHeight + 1).length,
+      rows: document.querySelectorAll('.reward-screen--loot .loot-choice').length,
     }
   })() : { rendered: false }
   debug.setRun(before)
@@ -2976,39 +2977,19 @@ const rewardCollect = await page.evaluate(async () => {
   return measured
 })
 await page.setViewportSize({ width: 1440, height: 900 })
-check('the reward screen keeps its collect control on screen', () => {
-  assert(rewardCollect.rendered, 'the collect control did not render')
-  assert(rewardCollect.borderless, 'the reward screen still has an outer frame')
-  assert(rewardCollect.scrolls > 0, 'this reward fits without scrolling, so the check proves nothing')
-  assert(rewardCollect.inside, 'the collect control sat outside the reward panel on load')
-  assert(rewardCollect.hittable, 'the collect control was not clickable at its own centre')
-  assert(rewardCollect.choices >= 3, `only ${rewardCollect.choices} card choice(s) rendered to test against`)
-  assertEqual(rewardCollect.cardRulesClipped, 0,
-    `${rewardCollect.cardRulesClipped} reward card face(s) clipped their own rules text`)
-  assert(rewardCollect.cardRulesFont >= Math.min(rewardCollect.cardWidth * 0.068, 11.2),
-    `reward card rules text is ${rewardCollect.cardRulesFont.toFixed(2)}px on a ${rewardCollect.cardWidth}px card`)
-  // The collect bar sits ON the panel's bottom edge, not floating above the rows:
-  // a `padding-bottom` on the scroller lifts a sticky inset by that much.
-  assert(rewardCollect.barOffBottom <= 4,
-    `the collect bar floated ${rewardCollect.barOffBottom}px above the panel's bottom edge`)
-  assert(rewardCollect.firstChildAbove <= 1,
-    `the reward panel's first row sat ${rewardCollect.firstChildAbove}px above its own top edge, out of reach`)
+check('the reward screen keeps global Skip on screen', () => {
+  assert(rewardCollect.rendered, 'global Skip did not render')
+  assert(rewardCollect.inside, 'global Skip sat outside the viewport')
+  assert(rewardCollect.hittable, 'global Skip was not clickable at its own centre')
+  assertEqual(rewardCollect.rows, 3, 'the independent Potion, Relic, and Card rewards were not all visible')
 })
 
-check('reward rows share one set of columns', () => {
-  // Shape first. Deleting `subgrid` collapses each row to a single stacked column,
-  // which lines every action box up at the same left edge and the same width — so
-  // the spreads below read 0 for the worst regression there is.
-  // A LOWER bound too, set between the two: the art fills its column at 39px, and
-  // without `width: 100%` it falls back to the app's global 1.8rem icon at 29px,
-  // which the upper bound alone happily allowed.
+check('Loot rows keep one icon and row geometry', () => {
   assert(rewardColumns.artWidth >= 34 && rewardColumns.artWidth <= 72,
-    `the row's art column is ${rewardColumns.artWidth}px, so the row is not laid out in columns`)
-  assert(rewardColumns.actionsRightOfBody,
-    'a row put its actions below its name instead of beside it')
+    `the row's art column is ${rewardColumns.artWidth}px`)
   assert(rewardColumns.rows >= 2, `only ${rewardColumns.rows} reward row(s) to compare`)
-  assertEqual(rewardColumns.leftSpread, 0, `reward action columns start ${rewardColumns.leftSpread}px apart`)
-  assertEqual(rewardColumns.widthSpread, 0, `reward action columns differ in width by ${rewardColumns.widthSpread}px`)
+  assertEqual(rewardColumns.widthSpread, 0, `Loot rows differ in width by ${rewardColumns.widthSpread}px`)
+  assertEqual(rewardColumns.heightSpread, 0, `Loot rows differ in height by ${rewardColumns.heightSpread}px`)
 })
 check('held Potions stay in the top HUD instead of taking a shell row', () => {
   assert(beltGeometry.belt > 0, 'the Potion HUD did not render for a party holding Potions')
@@ -3021,7 +3002,6 @@ check('held Potions stay in the top HUD instead of taking a shell row', () => {
 check('local Prismatic reward selections reconcile when a teammate exhausts a source', () => {
   assertEqual(localRewardSelectionReconciled.checked, 2)
   assert(localRewardSelectionReconciled.disabled)
-  assertDeepEqual(localRewardReplacementCards, [true, true, true])
 })
 
 
@@ -3361,7 +3341,8 @@ for (const action of [
   })
   assertEqual(response.status, 200, 'other seat Neow action was rejected')
 }
-await neowPage.locator('.neow-face').nth(1).locator('.neow-face__reveal').waitFor()
+await neowPage.waitForTimeout(150)
+const foreignNeowRewardNames = await neowPage.locator('.neow-face').nth(1).locator('.neow-face__reveal').count()
 const onlineNeowSelectionSurvived = await onlineNeowCardChoice.locator('.card-picker__grid > .card--selected').count() === 1 && await onlineNeowConfirm.isEnabled()
 liveRoom.run.players[1].relics.push({ defId: 'astrolabe', spent: false, pending: true })
 liveRoom.version += 1
@@ -3405,6 +3386,7 @@ check('online Neow is public, authoritative, and inert during reconnect', () => 
   assert(reconciledPrismaticSources.enabled >= 3, 'remaining Prismatic sources stayed disabled after reconciliation')
   assertEqual(onlineNeowFaces, 4)
   assertEqual(onlineFaceDown, 1)
+  assertEqual(foreignNeowRewardNames, 0, 'another player\'s revealed Card Reward leaked onto their Neow face')
   assertEqual(liveRoom.run.neow.players[onlineSeats[0].playerId].redRewardPending, false)
   assertEqual(liveRoom.run.neow.players[onlineSeats[0].playerId].redReward, null)
   assert(onlineNeowSelectionSurvived, 'another seat snapshot cleared an in-progress Neow card selection')
@@ -3754,13 +3736,14 @@ liveRoom.run.rewards = liveRoom.run.players.map((player) => ({
 }))
 liveRoom.version += 1
 rooms.publishRoom(create.snapshot.code)
-const onlineRewardSources = ann.locator('.reward-screen__player').first().getByRole('group', { name: 'Choose 3 different reward decks' })
+await ann.getByRole('button', { name: 'Add a card to your deck.' }).click()
+const onlineRewardSources = ann.locator('.reward-screen--card-choice').getByRole('group', { name: 'Choose 3 reward decks' })
 await onlineRewardSources.waitFor()
 for (const checkbox of (await onlineRewardSources.getByRole('checkbox').all()).slice(0, 3)) await checkbox.check()
 liveRoom.run.rewards[0].availableSources = ['silent', 'defect', 'watcher']
 liveRoom.version += 1
 rooms.publishRoom(create.snapshot.code)
-await ann.waitForFunction(() => document.querySelector('.reward-screen__player .reward-screen__sources')?.querySelectorAll('input:checked').length === 2)
+await ann.waitForFunction(() => document.querySelector('.reward-screen--card-choice .reward-screen__sources')?.querySelectorAll('input:checked').length === 2)
 const onlineRewardSelectionReconciled = await onlineRewardSources.evaluate((group) => ({
   checked: group.querySelectorAll('input:checked').length,
   disabled: group.querySelector('button')?.disabled,
@@ -4029,7 +4012,7 @@ liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, gold: 
 liveRoom.version += 1
 rooms.publishRoom(liveRoom.code)
 await ann.getByRole('button', { name: /Confirm choice/ }).waitFor({ state: 'visible' })
-await ann.waitForFunction(() => document.querySelector('.event-resolve-actions .room-proceed')?.disabled === true)
+await ann.waitForFunction(() => document.querySelector('.event-resolve-actions .event-card-confirm')?.disabled === true)
 const onlinePrayerInvalidated = await ann.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 check('an open online Event resolver disables when authoritative availability changes', () => {
   assert(onlinePrayerInitiallyReady && onlinePrayerInvalidated)

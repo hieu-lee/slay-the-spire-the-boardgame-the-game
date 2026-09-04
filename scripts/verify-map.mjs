@@ -336,6 +336,7 @@ import { CARDS } from '../src/game/cards.ts'
 import {
   advanceAct,
   acquireRelic,
+  choosePendingRelicReward,
   chooseRelicReward,
   enterRoom,
   GOLDEN_TICKET,
@@ -581,6 +582,30 @@ check('one-shot Relic card rewards may be skipped and settle exhausted decks', (
   run = acquireRelic(run, 'p1', 'orrery')
   run = resolvePendingRelic(run, 'p1', [], [-1, -1, -1, -1])
   assert(!run.players[0].relics.some((relic) => relic.pending), 'exhausted Orrery stayed pending')
+})
+
+check('one-shot Relic card reward progress survives a remount', () => {
+  let run = postNeowRun(921, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run = acquireRelic(run, 'p1', 'orrery')
+  run = choosePendingRelicReward(run, 'p1', 0, 1)
+  assertEqual(pendingRelicPreview(run, 'p1').rewardIndices[0], 1)
+  assertEqual(choosePendingRelicReward(run, 'p1', 0, 2), run, 'a stale choice overwrote the claimed reward')
+  assertEqual(resolvePendingRelic(run, 'p1', [], [2, -1, -1, -1]), run,
+    'final resolution contradicted the claimed reward')
+  const resolved = resolvePendingRelic(run, 'p1', [], [1, -1, -1, -1])
+  assert(!resolved.players[0].relics.some((relic) => relic.pending))
+})
+
+check('invalid pending Relic choices do not reserve another revealed reward', () => {
+  let run = postNeowRun(922, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run = acquireRelic(run, 'p1', 'orrery')
+  const cardsDrawn = run.players[0].cardRewards.slice(0, 3)
+  run = { ...run, phase: 'reward', rewards: [{
+    playerId: 'p1', cardReward: true, choices: cardsDrawn, cardsDrawn, raresDrawn: [],
+    upgraded: false, gold: false, potion: false, relic: false, bossRelics: false,
+  }] }
+  assertEqual(choosePendingRelicReward(run, 'p1', 99, 0), run)
+  assertEqual(resolvePendingRelic(run, 'p1', [], [99, -1, -1, -1]), run)
 })
 
 check("Pandora's Box rejects every Curse, not only Ascender's Bane", () => {
@@ -944,6 +969,9 @@ check('winning a combat carries HP forward into the run', () => {
   assertEqual(after.players[0].gold, run.players[0].gold, 'gold waits in the loot panel')
   assertEqual(after.rewards[0].gold, printedGold, 'the printed gold reward is offered')
   assertEqual(resolveGoldReward(after, 'p1').players[0].gold, run.players[0].gold + printedGold, 'claiming loot pays the printed gold')
+  const skipped = resolveGoldReward(after, 'p1', false)
+  assertEqual(skipped.players[0].gold, run.players[0].gold, 'skipping loot leaves unclaimed Gold behind')
+  assertEqual(skipped.phase, 'map', 'skipped Gold no longer blocks the reward screen')
 })
 
 check('a potion consumed in combat returns to the bottom of its deck', () => {
@@ -989,7 +1017,11 @@ check('a combat card reward reveals three and persists exactly one chosen card',
   assertEqual(revealed.rewards[0].choices.length, 3, 'the top three are revealed (p.8)')
   const before = revealed.players[0]
   const chosen = revealed.rewards[0].choices[1]
-  const after = resolveCardRewards(claimGoldRewards(revealed), { p1: 1 })
+  const cardOnly = resolveCardRewards(revealed, { p1: 1 })
+  assertEqual(cardOnly.phase, 'reward', 'the card settles while independent item loot remains')
+  assertEqual(cardOnly.rewards[0].cardReward, false)
+  assert(cardOnly.rewards[0].gold, 'choosing a card does not collect its Gold reward')
+  const after = claimGoldRewards(cardOnly)
   assertEqual(after.phase, 'map')
   assertEqual(after.players[0].deck.length, before.deck.length + 1)
   assertEqual(after.players[0].deck.at(-1).defId, chosen, 'the selected copy enters the deck')
@@ -1182,7 +1214,7 @@ check('two Golden Tickets reveal two rares and transform resolves a Ticket blind
   assertDeepEqual(transformed.player.rareRewards, ['multi_cast', 'buffer'])
 })
 
-check('every living player must make a valid card reward decision', () => {
+check('card rewards resolve independently while invalid choices are refused', () => {
   const run = postNeowRun(105, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
@@ -1196,7 +1228,10 @@ check('every living player must make a valid card reward decision', () => {
       enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal' })),
     },
   })
-  assert(resolveCardRewards(won, { p1: null }) === won, 'one player cannot decide for the table')
+  const partial = resolveCardRewards(won, { p1: null })
+  assertEqual(partial.rewards.find((offer) => offer.playerId === 'p1').cardReward, false)
+  assertEqual(partial.rewards.find((offer) => offer.playerId === 'p2').cardReward, true)
+  assertEqual(partial.phase, 'reward')
   assert(resolveCardRewards(won, { p1: 99, p2: null }) === won, 'an unrevealed card is refused')
   assert(resolveCardRewards(won, { p1: undefined, p2: null }) === won, 'undefined is not an unseen skip')
 })

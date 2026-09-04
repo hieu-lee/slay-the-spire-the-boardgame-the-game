@@ -14,13 +14,10 @@
   .sts-scope button[class=''],
   .sts-scope .is-chosen,
   .sts-scope .reward-screen__skip,
-  .sts-scope .reward-screen__collect,
   .sts-scope .neow-offer__skip,
-  .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
-  .sts-scope .reward-boss__pick,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ) {
@@ -65,13 +62,10 @@
   .sts-scope button[class=''],
   .sts-scope .is-chosen,
   .sts-scope .reward-screen__skip,
-  .sts-scope .reward-screen__collect,
   .sts-scope .neow-offer__skip,
-  .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
-  .sts-scope .reward-boss__pick,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ):hover:not(:disabled) {
@@ -87,13 +81,10 @@
   .sts-scope button[class=''],
   .sts-scope .is-chosen,
   .sts-scope .reward-screen__skip,
-  .sts-scope .reward-screen__collect,
   .sts-scope .neow-offer__skip,
-  .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
-  .sts-scope .reward-boss__pick,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ):active:not(:disabled) {
@@ -109,13 +100,10 @@
   .sts-scope button[class=''],
   .sts-scope .is-chosen,
   .sts-scope .reward-screen__skip,
-  .sts-scope .reward-screen__collect,
   .sts-scope .neow-offer__skip,
-  .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
-  .sts-scope .reward-boss__pick,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ):disabled {
@@ -203,11 +191,9 @@
 :is(
   .sts-scope button:not([class]),
   .sts-scope button[class=''],
-  .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
-  .sts-scope .reward-boss__pick,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ) .muted { color: #dfd5c2; }
@@ -228,9 +214,7 @@
   .sts-scope button[class=''],
   .sts-scope .is-chosen,
   .sts-scope .reward-screen__skip,
-  .sts-scope .reward-screen__collect,
   .sts-scope .neow-offer__skip,
-  .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
   .sts-scope .online-lobby__copy,
   .sts-scope .online-lobby__start,
@@ -248,7 +232,6 @@
   .sts-scope .combat__end-turn,
   /* Added to the key plate above, so they carry the chamfer too — and the
      chamfer is exactly what throws the global 2px ring away. */
-  .sts-scope .reward-boss__pick,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ):focus-visible,

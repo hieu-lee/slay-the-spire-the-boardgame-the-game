@@ -171,17 +171,26 @@ export function neowPreview(state: RunState, playerId: string, viewerId = player
   if (!progress) return null
   const player = state.players.find((candidate) => candidate.id === playerId)
   const rewardKind = progress.redRewardPending ? 'card' : progress.rewardKind
+  const visibleOffer = (offer: NeowRewardOffer | null) => !offer || playerId === viewerId ||
+    !['card', 'rare', 'colorless'].includes(offer.kind) ? structuredClone(offer) : {
+    ...offer,
+    choices: [],
+    cardsDrawn: [],
+    raresDrawn: [],
+    guardianGems: undefined,
+    prismaticDraws: undefined,
+  }
   return {
     card: neowCard(progress.cardId),
     redGoldPending: progress.redGoldPending,
     redRewardPending: progress.redRewardPending,
-    redReward: structuredClone(progress.redReward),
+    redReward: visibleOffer(progress.redReward),
     blueOption: progress.blueOption,
     pendingEffect: structuredClone(progress.pendingEffect),
     ...(playerId === viewerId && progress.transformExcludedUids?.length
       ? { transformExcludedUids: [...progress.transformExcludedUids] } : {}),
     rewardKind: progress.rewardKind,
-    reward: structuredClone(progress.reward),
+    reward: visibleOffer(progress.reward),
     availableSources: neowRewardSources(state, playerId),
     prismatic: Boolean(player && hasRelic(player, 'prismatic_shard') && !hasModifier(state, 'transformed') &&
       (rewardKind === 'card' || rewardKind === 'rare')),

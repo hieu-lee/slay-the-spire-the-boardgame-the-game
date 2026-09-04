@@ -209,6 +209,7 @@ export {
   revealCardReward,
   revealRewardItems,
   revealNeowReward,
+  choosePendingRelicReward,
   pendingRelicPreview,
   pendingRelicEligibleCards,
   resolvePendingRelic,
