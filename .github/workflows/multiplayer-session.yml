@@ -1,0 +1,66 @@
+name: Start multiplayer session
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  host:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: VITE_SINGLE_PLAYER=false pnpm build
+      - name: Start game server and tunnel
+        run: |
+          nohup pnpm dev:rooms > "$RUNNER_TEMP/rooms.log" 2>&1 &
+          nohup pnpm preview --host 127.0.0.1 --port 5180 --strictPort > "$RUNNER_TEMP/game.log" 2>&1 &
+          curl --fail --location --silent --show-error \
+            https://github.com/cloudflare/cloudflared/releases/download/2026.8.3/cloudflared-linux-amd64 \
+            --output "$RUNNER_TEMP/cloudflared"
+          echo 'f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e  '"$RUNNER_TEMP/cloudflared" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/cloudflared"
+          nohup "$RUNNER_TEMP/cloudflared" tunnel --no-autoupdate --url http://127.0.0.1:5180 \
+            > "$RUNNER_TEMP/tunnel.log" 2>&1 &
+          for attempt in {1..30}; do
+            tunnel_url=$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$RUNNER_TEMP/tunnel.log" | head -1 || true)
+            [ -n "$tunnel_url" ] && break
+            sleep 2
+          done
+          [ -n "$tunnel_url" ]
+          curl --fail --retry 10 --retry-all-errors --retry-delay 2 "$tunnel_url/api/health"
+          echo "TUNNEL_URL=$tunnel_url" >> "$GITHUB_ENV"
+      - name: Point the stable Pages URL at this session
+        run: |
+          mkdir pages
+          printf '%s\n' \
+            '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Slay the Spire Online</title></head>' \
+            "<body><p><a href=\"$TUNNEL_URL\">Join the multiplayer session</a></p><script>location.replace('$TUNNEL_URL'+location.search+location.hash)</script></body></html>" \
+            > pages/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages
+      - id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Keep the session alive
+        run: |
+          curl --fail --silent --show-error "$TUNNEL_URL/api/health"
+          sleep 20700
