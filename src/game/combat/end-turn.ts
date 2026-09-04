@@ -743,7 +743,12 @@ export function resolvePendingTrigger(
   if (!pending || pending.playerId !== playerId || pending.id !== triggerId) return state
   const player = findPlayer(state, playerId)
   const source = player && triggerSourceById(player, pending.sourceId)
-  if (!player || player.dead || !source) return state
+  // A trigger is only ever queued for a player who was alive at that moment
+  // (`queuedTriggers` in effects.ts already excludes the dead), but under
+  // Last Stand they can die before resolving it. `pendingTriggers` blocks
+  // nearly every other action for the whole table, so refusing a dead
+  // owner's own resolution here would freeze everyone else too, forever.
+  if (!player || !source) return state
   const choicePlayer = triggerChoicePlayer(state, player, source)
   const needsRow = triggerNeedsRowChoice(state, player, source)
   const needsEnemy = triggerNeedsEnemyChoice(state, choicePlayer, source, pending.enemyUid)

@@ -40,6 +40,7 @@ export {
   resolveEnemyTargets,
 } from './combat/board.ts'
 export {
+  cardCanBeForced,
   cardEnemyChoiceCount,
   cardHasRetain,
   cardIsPlayable,

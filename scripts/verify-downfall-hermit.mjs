@@ -414,6 +414,64 @@ check('impossible mandatory Chamber plays advance without removing the private c
   }
 })
 
+check('a mandatory Chamber play with no living enemy is skipped, not stuck forever', () => {
+  // Distinct from the scenarios above: `cardIsPlayable` alone says an ordinary
+  // Attack like Strike is fine (right cost, no printed condition), but with no
+  // living enemy to target, `playCard` would reject every attempt forever --
+  // the pre-check has to also account for target availability
+  // (`cardCanBeForced`), or the mandatory queue would never advance.
+  const strike = instance('no-target-chamber-strike', 'hermit_strike')
+  const other = instance('no-target-chamber-other', 'hermit_defend')
+  let combat = createCombat(createRng(107), [player({ chamber: [strike, other] })], [
+    enemy({ hp: 0, dead: true }),
+  ])
+  combat.pendingHermitSetupLoads = []
+  // A pending summon (mirroring an Awakened-One-style phase transition) keeps
+  // combat from ending even though no enemy is currently alive.
+  combat.pendingSummons = [{ sourceUid: 'e1', row: 0, defIds: ['cultist'], turn: combat.turn + 1 }]
+  combat.pendingHermitChamberPlays = [{
+    playerId: 'p1', sourceCardId: 'hermit_fan_the_hammer', cardUids: [strike.uid, other.uid], free: true,
+  }]
+  const resolved = playLiveHermitChamberCard(combat, 'p1', strike.uid, { enemyUid: null, playerId: null })
+  assert.deepEqual(resolved.pendingHermitChamberPlays, [{
+    playerId: 'p1', sourceCardId: 'hermit_fan_the_hammer', cardUids: [other.uid], free: true,
+  }], 'a Chamber play with no living enemy must be skipped, not left stuck forever')
+  assert(resolved.players[0].chamber.some((held) => held.uid === strike.uid),
+    'the skipped Attack stays in the Chamber, unplayed, ready to try again once a target exists')
+})
+
+check('a mandatory Chamber play is skipped, not stuck forever, when its own Hermit dies mid-resolution', () => {
+  // Fan the Hammer's Thorns retaliation (a Skill's printed reaction) waits
+  // until the whole card -- hit(2) AND its playChamber trigger -- has
+  // resolved, so it can queue `pendingHermitChamberPlays` for the Hermit and
+  // THEN kill them, same as it would for Double Tap's copy. Under Last
+  // Stand a living teammate keeps the fight going, and `pendingHermitChamberPlays`
+  // blocks every other player's actions via `mandatoryChoicePending`, so a
+  // dead Hermit must still be able to settle their own queued play.
+  const fanTheHammer = instance('lethal-fan-the-hammer', 'hermit_fan_the_hammer')
+  const chamberCard = instance('lethal-chamber-card', 'hermit_defend')
+  const combat = createCombat(createRng(211), [
+    player({ hp: 1, hand: [fanTheHammer], chamber: [chamberCard] }),
+    player({ id: 'p2', name: 'Ally', hp: 20, maxHp: 20 }),
+  ], [enemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 1, isBoss: true })], undefined, [], 3, {}, true)
+  combat.pendingHermitSetupLoads = []
+
+  const resolved = playCard(combat, 'p1', fanTheHammer.uid,
+    { enemyUid: 'e1', playerId: null, chamberUids: [chamberCard.uid] })
+  assert(resolved.players[0].dead, "Spiker's Thorns should have killed the Hermit")
+  assert.deepEqual(resolved.pendingHermitChamberPlays,
+    [{ playerId: 'p1', sourceCardId: 'hermit_fan_the_hammer', cardUids: [chamberCard.uid], free: true }],
+    'the Chamber play should still be queued for the now-dead Hermit')
+  assert.equal(mandatoryChoicePending(resolved), true, 'a living teammate must still be blocked by it')
+
+  const settled = playLiveHermitChamberCard(resolved, 'p1', chamberCard.uid, { enemyUid: null, playerId: null })
+  assert.deepEqual(settled.pendingHermitChamberPlays, [],
+    'a dead Hermit must be able to settle their own queued Chamber play, not leave it stuck forever')
+  assert.equal(mandatoryChoicePending(settled), false, 'the living teammate must be unblocked once it settles')
+  assert(settled.players[0].chamber.some((held) => held.uid === chamberCard.uid),
+    "the skipped card should stay in the dead Hermit's Chamber, unplayed")
+})
+
 check('abandoned Defense Mode Guardian copies use their effective Skill cleanup', () => {
   const whirl = instance('guardian-copy-whirl', 'guardian_guardian_whirl')
   let combat = createCombat(createRng(106), [player({ character: 'guardian' })], [enemy()])

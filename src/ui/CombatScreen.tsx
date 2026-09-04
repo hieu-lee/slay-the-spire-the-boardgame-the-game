@@ -61,6 +61,7 @@ import {
   beginEndTurnResolution,
   canActivatePotion,
   canActivateRelic,
+  cardCanBeForced,
   cardEnemyChoiceCount,
   cardHasRetain,
   cardModeIsAvailable,
@@ -1775,9 +1776,16 @@ function CombatScreenView({
   const requiredChamberStaged = requiredChamberCard
     ? stageHermitChamberViewer(viewer, requiredChamberCard, requiredHermitChamberCard?.free)
     : undefined
-  const requiredChamberUnplayable = requiredChamberStaged
-    ? !canAfford(state, requiredChamberStaged.player, requiredChamberStaged.card)
-    : false
+  const requiredChamberUnplayable = viewer.dead ||
+    (requiredChamberStaged
+      ? !canAfford(state, requiredChamberStaged.player, requiredChamberStaged.card) ||
+        !cardCanBeForced(
+          effectiveCombatCardDef(faceOf(cardDef(requiredChamberStaged.card.defId), requiredChamberStaged.card.upgraded),
+            requiredChamberStaged.player.guardianMode),
+          state, requiredChamberStaged.player,
+          guardianGemForCard(requiredChamberStaged.player, requiredChamberStaged.card), requiredChamberStaged.card.uid,
+        )
+      : false)
   const discardableHand = viewer.hand.filter((card) =>
     !card.endTurnProtected && !card.retainThisTurn && !cardHasRetain(viewer, card))
   const retainAllowance = viewer.retainCardsThisTurn ?? 0
