@@ -1,19 +1,38 @@
 name: Start multiplayer session
+run-name: ${{ inputs.source_run_id != '' && format('Multiplayer handoff from {0}', inputs.source_run_id) || 'Multiplayer session' }}
 
 on:
   workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Internal room-state handoff source
+        required: false
+      source_sha:
+        description: Internal pinned game version
+        required: false
+      handoff_after_seconds:
+        description: Seconds before prewarming the next runner (60-19200)
+        required: false
+        default: '19200'
+      discard_existing_rooms:
+        description: Start fresh even if another session is active
+        required: false
+        type: boolean
+        default: false
 
 permissions:
+  actions: write
   contents: read
   pages: write
   id-token: write
 
-concurrency:
-  group: github-pages
-  cancel-in-progress: true
-
 jobs:
   host:
+    env:
+      PAGES_URL: https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/
+      SESSION_SHA: ${{ inputs.source_sha || github.sha }}
+      STS_ALLOWED_ORIGIN: https://hieu-lee.github.io
+      STS_PRESERVE_ON_SHUTDOWN: 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -22,17 +41,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: master
+          ref: ${{ inputs.source_sha || github.sha }}
+      - name: Refuse an accidental competing fresh session
+        if: inputs.source_run_id == '' && inputs.discard_existing_rooms != true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          active_run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+            --jq "[.workflow_runs[] | select(.status != \"completed\" and .id != $GITHUB_RUN_ID) | .id] | max // empty")
+          [ -z "$active_run" ]
+      - name: Require the room-state encryption key
+        env:
+          ROOM_STORE_KEY: ${{ secrets.ROOM_STORE_KEY }}
+        run: test -n "$ROOM_STORE_KEY"
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: VITE_SINGLE_PLAYER=false pnpm build
-      - name: Start game server and tunnel
+      - run: VITE_SINGLE_PLAYER=false VITE_HOSTED_SESSION=true pnpm build
+      - name: Prewarm the game frontend and tunnel
         run: |
-          nohup pnpm dev:rooms > "$RUNNER_TEMP/rooms.log" 2>&1 &
           nohup pnpm preview --host 127.0.0.1 --port 5180 --strictPort > "$RUNNER_TEMP/game.log" 2>&1 &
           curl --fail --location --silent --show-error \
             https://github.com/cloudflare/cloudflared/releases/download/2026.8.3/cloudflared-linux-amd64 \
@@ -50,23 +80,138 @@ jobs:
           done
           [ -n "$tunnel_url" ]
           curl --fail --silent http://127.0.0.1:45678/ready
-          curl --fail --retry 10 --retry-all-errors --retry-delay 1 http://127.0.0.1:5180/api/health
           echo "TUNNEL_URL=$tunnel_url" >> "$GITHUB_ENV"
-      - name: Point the stable Pages URL at this session
+      - name: Announce the prewarmed successor
+        if: inputs.source_run_id != ''
+        run: printf 'ready\n' > "$RUNNER_TEMP/handoff-ready"
+      - name: Keep only one successor for this handoff
+        if: inputs.source_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
         run: |
-          mkdir pages
-          printf '%s\n' \
-            '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Slay the Spire Online</title></head>' \
-            "<body><p><a href=\"$TUNNEL_URL\">Join the multiplayer session</a></p><script>location.replace('$TUNNEL_URL'+location.search+location.hash)</script></body></html>" \
-            > pages/index.html
+          winner=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+            --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $SOURCE_RUN_ID\") | .id] | min // empty")
+          [ "$winner" = "$GITHUB_RUN_ID" ]
+      - uses: actions/upload-artifact@v4
+        if: inputs.source_run_id != ''
+        with:
+          name: handoff-ready-${{ inputs.source_run_id }}
+          path: ${{ runner.temp }}/handoff-ready
+          retention-days: 1
+      - name: Wait for the frozen room state
+        if: inputs.source_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          for attempt in {1..60}; do
+            artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts" \
+              --jq ".artifacts[] | select(.name == \"room-store-$SOURCE_RUN_ID\") | .id" 2>/dev/null || true)
+            if [ -n "$artifact" ]; then
+              gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+                --name "room-store-$SOURCE_RUN_ID" --dir "$RUNNER_TEMP/handoff"
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
+      - name: Restore rooms from the previous runner
+        if: inputs.source_run_id != ''
+        env:
+          ROOM_STORE_KEY: ${{ secrets.ROOM_STORE_KEY }}
+        run: |
+          mkdir -p .rooms
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$ROOM_STORE_KEY" \
+            --output .rooms/rooms.json --decrypt "$RUNNER_TEMP/handoff/rooms.json.gpg"
+      - name: Start the room server
+        env:
+          STS_HANDOFF_RESTORE: ${{ inputs.source_run_id != '' }}
+          STS_SHUTDOWN_MARKER: ${{ runner.temp }}/rooms-flushed
+        run: |
+          nohup node scripts/room-server.mjs > "$RUNNER_TEMP/rooms.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/rooms.pid"
+          curl --fail --retry 30 --retry-all-errors --retry-delay 1 http://127.0.0.1:5180/api/health
+      - name: Point the stable Pages URL at this session
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          cp -R dist pages
+          printf '{"origin":"%s","runId":"%s","sourceRunId":"%s","sha":"%s"}\n' \
+            "$TUNNEL_URL" "$GITHUB_RUN_ID" "$SOURCE_RUN_ID" "$SESSION_SHA" > pages/session.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
           path: pages
       - id: deployment
         uses: actions/deploy-pages@v4
-      - name: Keep the session alive
+      - name: Host and prewarm the successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HANDOFF_AFTER_SECONDS: ${{ inputs.handoff_after_seconds || '19200' }}
         run: |
           curl --fail --silent --show-error http://127.0.0.1:45678/ready
           curl --fail --silent --show-error http://127.0.0.1:5180/api/health
-          sleep 20700
+          case "$HANDOFF_AFTER_SECONDS" in *[!0-9]*|'') exit 2;; esac
+          [ "$HANDOFF_AFTER_SECONDS" -ge 60 ] && [ "$HANDOFF_AFTER_SECONDS" -le 19200 ]
+          sleep "$HANDOFF_AFTER_SECONDS"
+          ready=0
+          for attempt in {1..10}; do
+            ready=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=handoff-ready-$GITHUB_RUN_ID" \
+              --jq '.total_count' 2>/dev/null || true)
+            [ "$ready" -gt 0 ] 2>/dev/null && break
+            latest_run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+              --jq '[.workflow_runs[] | select(.status != "completed") | .id] | max' 2>/dev/null || true)
+            if [ "$latest_run" = "$GITHUB_RUN_ID" ]; then
+              gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
+                -f source_run_id="$GITHUB_RUN_ID" -f source_sha="$SESSION_SHA" || true
+            fi
+            sleep 60
+          done
+          [ "$ready" -gt 0 ]
+      - name: Freeze and flush the room state
+        env:
+          STS_SHUTDOWN_MARKER: ${{ runner.temp }}/rooms-flushed
+        run: |
+          kill -TERM "$(cat "$RUNNER_TEMP/rooms.pid")"
+          for attempt in {1..30}; do
+            kill -0 "$(cat "$RUNNER_TEMP/rooms.pid")" 2>/dev/null || break
+            sleep 1
+          done
+          ! kill -0 "$(cat "$RUNNER_TEMP/rooms.pid")" 2>/dev/null
+          test -f "$STS_SHUTDOWN_MARKER"
+      - name: Encrypt the room state
+        env:
+          ROOM_STORE_KEY: ${{ secrets.ROOM_STORE_KEY }}
+        run: |
+          [ -n "$ROOM_STORE_KEY" ]
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$ROOM_STORE_KEY" \
+            --symmetric --cipher-algo AES256 --output "$RUNNER_TEMP/rooms.json.gpg" .rooms/rooms.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: room-store-${{ github.run_id }}
+          path: ${{ runner.temp }}/rooms.json.gpg
+          retention-days: 1
+      - name: Start and verify the successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in {1..12}; do
+            config=$(curl --fail --silent "$PAGES_URL/session.json?handoff=$GITHUB_RUN_ID-$attempt" || true)
+            candidate_run=$(jq -r 'select(.sourceRunId == env.GITHUB_RUN_ID) | .runId // empty' <<< "$config" 2>/dev/null || true)
+            winner=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+              --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $GITHUB_RUN_ID\") | .id] | min // empty" 2>/dev/null || true)
+            successor=$(jq -r 'select(.sourceRunId == env.GITHUB_RUN_ID) | .origin // empty' <<< "$config" 2>/dev/null || true)
+            if [ -n "$successor" ] && [ "$candidate_run" = "$winner" ] && [ "$successor" != "$TUNNEL_URL" ] && \
+              curl --fail --silent "$successor/api/health" >/dev/null; then
+              exit 0
+            fi
+            latest_run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+              --jq '[.workflow_runs[] | select(.status != "completed") | .id] | max' 2>/dev/null || true)
+            if [ "$latest_run" = "$GITHUB_RUN_ID" ]; then
+              gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
+                -f source_run_id="$GITHUB_RUN_ID" -f source_sha="$SESSION_SHA" || true
+            fi
+            sleep 60
+          done
+          exit 1

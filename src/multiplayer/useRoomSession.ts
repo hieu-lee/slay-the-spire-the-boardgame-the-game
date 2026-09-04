@@ -8,6 +8,7 @@ import type { CourierOffer, MerchantState, RelicRewardState } from '../game/nonc
 import type { CampaignProgress, SpireKeys } from '../game/campaign.ts'
 import type { NeowCard, NeowRewardOffer } from '../game/neow.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
+import { resetRoomEndpoint, roomUrl, roomWebSocketUrl } from './room-endpoint.ts'
 
 const ACTIVE_KEY = 'sts-room-session'
 const RECOVERY_KEY = 'sts-room-recoveries'
@@ -355,7 +356,7 @@ export function useRoomSession() {
         if (!mounted.current || generation.current !== actionGeneration) break
         const refreshId = ++refreshSequence.current
         try {
-          const latest = await json(await fetch(`/api/rooms/${activeCredentials.code}`, {
+          const latest = await json(await fetch(await roomUrl(`/api/rooms/${activeCredentials.code}`), {
             headers: { 'x-room-token': activeCredentials.token },
             signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
           })) as RoomSnapshot
@@ -365,6 +366,7 @@ export function useRoomSession() {
           if (refreshId > reconciliation.current.target) reconciliation.current.target = 0
           delay = 1_000
         } catch {
+          resetRoomEndpoint()
           delay = Math.min(delay * 2, 5_000)
         }
       }
@@ -394,15 +396,14 @@ export function useRoomSession() {
       setConnection((current) => current === 'connected' ? 'reconnecting' : 'connecting')
       const refreshId = ++refreshSequence.current
       try {
-        const restored = await json(await fetch(`/api/rooms/${credentials.code}`, {
+        const restored = await json(await fetch(await roomUrl(`/api/rooms/${credentials.code}`), {
           headers: { 'x-room-token': credentials.token },
           signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
         })) as RoomSnapshot
         if (!active || generation.current !== connectedGeneration) return
         if (accept(restored)) setRestorationEpoch((current) => current + 1)
         setRefreshEpoch((current) => Math.max(current, refreshId))
-        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-        const next = new WebSocket(`${protocol}//${location.host}/ws?room=${encodeURIComponent(credentials.code)}`)
+        const next = new WebSocket(await roomWebSocketUrl(credentials.code))
         socket.current = next
         next.addEventListener('open', () => {
           if (!active) return next.close()
@@ -446,6 +447,7 @@ export function useRoomSession() {
           }
           connectionRef.current = 'reconnecting'
           setConnection('reconnecting')
+          resetRoomEndpoint()
           retry = window.setTimeout(connect, 1500)
         })
       } catch (cause) {
@@ -462,6 +464,7 @@ export function useRoomSession() {
         }
         setError(cause instanceof Error ? cause.message : 'Could not connect')
         setConnection('reconnecting')
+        resetRoomEndpoint()
         retry = window.setTimeout(connect, 1500)
       }
     }
@@ -483,16 +486,17 @@ export function useRoomSession() {
     setEntering(true)
     setSnapshot(null)
     setError('')
+    resetRoomEndpoint()
     const path = code ? `/api/rooms/${code.trim().toUpperCase()}/join` : '/api/rooms'
     try {
-      const body = await json(await fetch(path, {
+      const body = await json(await fetch(await roomUrl(path), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name, character }),
       })) as { token: string; snapshot: RoomSnapshot }
       const next = { code: body.snapshot.code, token: body.token }
       if (!mounted.current || generation.current !== enteringGeneration) {
-        await fetch(`/api/rooms/${next.code}/leave`, {
+        await fetch(await roomUrl(`/api/rooms/${next.code}/leave`), {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-room-token': next.token },
           body: '{}',
@@ -504,6 +508,7 @@ export function useRoomSession() {
       accept(body.snapshot)
       setCredentials(next)
     } catch (cause) {
+      resetRoomEndpoint()
       if (mounted.current && generation.current === enteringGeneration) {
         setError(cause instanceof Error ? cause.message : 'Could not enter room')
       }
@@ -530,7 +535,7 @@ export function useRoomSession() {
   ): Promise<ActionOutcome> => {
     if (!credentials || generation.current !== actionGeneration) return { status: 'unknown' } satisfies ActionOutcome
     try {
-      const next = await json(await fetch(`/api/rooms/${credentials.code}/${operation}`, {
+      const next = await json(await fetch(await roomUrl(`/api/rooms/${credentials.code}/${operation}`), {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-room-token': credentials.token },
         body: JSON.stringify(body),
@@ -542,6 +547,7 @@ export function useRoomSession() {
       }
       return { status: 'accepted', snapshot: next } satisfies ActionOutcome
     } catch (cause) {
+      resetRoomEndpoint()
       if (generation.current === actionGeneration) setError(cause instanceof Error ? cause.message : 'Action failed')
       let refreshAttempt: number | undefined
       if (generation.current === actionGeneration) {
@@ -551,7 +557,7 @@ export function useRoomSession() {
           const refreshId = ++refreshSequence.current
           refreshAttempt ??= refreshId
           try {
-            const latest = await json(await fetch(`/api/rooms/${credentials.code}`, {
+            const latest = await json(await fetch(await roomUrl(`/api/rooms/${credentials.code}`), {
               headers: { 'x-room-token': credentials.token },
               signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
             })) as RoomSnapshot
@@ -606,7 +612,7 @@ export function useRoomSession() {
     const leaveGeneration = generation.current
     departed.current = false
     try {
-      await json(await fetch(`/api/rooms/${credentials.code}/leave`, {
+      await json(await fetch(await roomUrl(`/api/rooms/${credentials.code}/leave`), {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-room-token': credentials.token },
         body: '{}',
@@ -616,6 +622,7 @@ export function useRoomSession() {
       forget()
       return true
     } catch (cause) {
+      resetRoomEndpoint()
       if (cause instanceof RequestError && (cause.status === 401 || cause.status === 404)) {
         setRecoveries(retire(credentials))
         if (generation.current !== leaveGeneration) return departed.current
@@ -656,7 +663,7 @@ export function useRoomSession() {
   const loadVoiceIceServers = useCallback(async () => {
     if (!credentials) throw new Error('Room is not connected')
     const voiceGeneration = generation.current
-    const body = await json(await fetch(`/api/rooms/${credentials.code}/voice-ice`, {
+    const body = await json(await fetch(await roomUrl(`/api/rooms/${credentials.code}/voice-ice`), {
       headers: { 'x-room-token': credentials.token },
     })) as { iceServers: RTCIceServer[] }
     if (generation.current !== voiceGeneration) throw new Error('Room session changed')

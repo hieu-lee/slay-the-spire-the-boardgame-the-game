@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createServer as createHttpServer } from 'node:http'
+import { writeFileSync } from 'node:fs'
 import { WebSocketServer } from 'ws'
 import {
   apply,
@@ -82,8 +83,10 @@ export function createRoomServer({
   saveDelayMs = STORE_SAVE_DELAY_MS,
   saveStoreImpl = saveStore,
   onSaveError = (error) => console.error('Room store save failed:', error),
+  allowedOrigin = process.env.STS_ALLOWED_ORIGIN,
+  handoffRestore = process.env.STS_HANDOFF_RESTORE === 'true',
 } = {}) {
-  const store = createStore({ file: storeFile })
+  const store = createStore({ file: storeFile, handoffRestore })
   const sockets = new Map()
   const roomActivity = new Map()
   const roomOwners = new Map()
@@ -95,6 +98,7 @@ export function createRoomServer({
   const pendingAuth = new Map()
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY })
   let saveTimer
+  let preserveRoomsOnClose = false
   let saveError = null
   const minimumRetryMs = Math.max(saveDelayMs, 100)
   let retryDelayMs = minimumRetryMs
@@ -135,6 +139,14 @@ export function createRoomServer({
     roomActivity.set(room.code, room.lastActivityAt)
   }
 
+  const reconnectingHandoff = (room) => store.reconnectQuorums.has(room.code)
+  const finishHandoffReconnect = (room, seat) => {
+    const quorum = store.reconnectQuorums.get(room.code)
+    if (!quorum) return
+    quorum.playerIds.delete(seat.playerId)
+    if (quorum.playerIds.size === 0) store.reconnectQuorums.delete(room.code)
+  }
+
   function consume(map, key, windowMs, maximum, now = Date.now()) {
     const rate = map.get(key)
     if (!rate || now - rate.startedAt >= windowMs) {
@@ -159,6 +171,19 @@ export function createRoomServer({
     for (const [key, rate] of upgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) upgradeRates.delete(key)
     for (const [key, rate] of seatRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) seatRates.delete(key)
     for (const [key, rate] of voiceRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) voiceRates.delete(key)
+    for (const [code, quorum] of store.reconnectQuorums) {
+      if (now < quorum.expiresAt) continue
+      const room = store.rooms.get(code)
+      store.reconnectQuorums.delete(code)
+      if (!room) continue
+      for (const playerId of quorum.playerIds) {
+        const seat = room.seats.find((candidate) => candidate.playerId === playerId)
+        if (seat) markDisconnected(room, seat.token)
+      }
+      touch(room)
+      queueSave()
+      publish(room)
+    }
     for (const [code, touchedAt] of roomActivity) {
       const room = store.rooms.get(code)
       if (room) {
@@ -174,6 +199,7 @@ export function createRoomServer({
       if (now - touchedAt >= ttl) {
         for (const [socket, client] of sockets) if (client.code === code) socket.close(4004, 'Room expired')
         store.rooms.delete(code)
+        store.reconnectQuorums.delete(code)
         roomActivity.delete(code)
         roomOwners.delete(code)
         queueSave()
@@ -239,6 +265,20 @@ export function createRoomServer({
   const server = createHttpServer(async (request, response) => {
     let acted = null
     try {
+      if (allowedOrigin && request.headers.origin === allowedOrigin) {
+        response.setHeader('access-control-allow-origin', allowedOrigin)
+        response.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS')
+        response.setHeader('access-control-allow-headers', 'content-type, x-room-token')
+        response.setHeader('access-control-max-age', '600')
+        response.setHeader('vary', 'Origin')
+      }
+      if (request.method === 'OPTIONS') {
+        response.writeHead(allowedOrigin && request.headers.origin === allowedOrigin ? 204 : 403)
+        return response.end()
+      }
+      if (allowedOrigin && request.headers.origin && request.headers.origin !== allowedOrigin) {
+        return send(response, 403, { error: 'Origin not allowed' })
+      }
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (request.method === 'GET' && url.pathname === '/api/health') {
         return send(response, 200, { ok: true, rooms: store.rooms.size })
@@ -263,6 +303,7 @@ export function createRoomServer({
           return send(response, 201, { token: seat.token, snapshot: snapshotFor(room, seat.token) })
         } catch (error) {
           store.rooms.delete(room.code)
+          store.reconnectQuorums.delete(room.code)
           roomActivity.delete(room.code)
           roomOwners.delete(room.code)
           throw error
@@ -293,12 +334,18 @@ export function createRoomServer({
         const body = await readJson(request)
         if (store.rooms.get(room.code) !== room) return send(response, 404, { error: 'Room not found' })
         const token = body.token ?? tokenOf(request)
+        if (reconnectingHandoff(room) && !findSeat(room, token)) {
+          return send(response, 409, { error: 'Waiting for every player to reconnect' })
+        }
         const live = [...sockets.values()].some((client) => client.code === room.code && client.token === token)
         if (findSeat(room, token) && !mayAct(room, token)) {
           return send(response, 429, { error: 'Rate limit exceeded' })
         }
         const beforeVersion = room.version
-        const seat = joinRoom(room, { name: body.name, character: body.character, token, connected: live })
+        const seat = joinRoom(room, {
+          name: body.name, character: body.character, token, connected: live, settle: !reconnectingHandoff(room),
+        })
+        if (live) finishHandoffReconnect(room, seat)
         touch(room)
         if (room.version !== beforeVersion) {
           queueSave()
@@ -312,6 +359,7 @@ export function createRoomServer({
         return send(response, 401, { error: 'Unknown seat' })
       }
       if (!mayAct(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
+      if (reconnectingHandoff(room)) return send(response, 409, { error: 'Waiting for every player to reconnect' })
       const body = await readJson(request)
       if (store.rooms.get(room.code) !== room) return send(response, 404, { error: 'Room not found' })
       let changed = true
@@ -339,6 +387,7 @@ export function createRoomServer({
         publish(room)
         if (room.seats.length === 0) {
           store.rooms.delete(room.code)
+          store.reconnectQuorums.delete(room.code)
           roomActivity.delete(room.code)
           roomOwners.delete(room.code)
         }
@@ -379,6 +428,7 @@ export function createRoomServer({
     try {
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (url.pathname !== '/ws') throw new Error('Not found')
+      if (allowedOrigin && request.headers.origin && request.headers.origin !== allowedOrigin) throw new Error('Origin not allowed')
       const source = sourceOf(request)
       const tooManyPending = pendingAuth.size >= MAX_PENDING_AUTH
         || [...pendingAuth.values()].filter((pendingSource) => pendingSource === source).length >= MAX_PENDING_AUTH_PER_IP
@@ -430,7 +480,8 @@ export function createRoomServer({
           let seat = findSeat(room, message.token)
           if (!seat) return socket.close(4003, 'Unknown seat')
           if (!mayAct(room, message.token)) return socket.close(4008, 'Rate limit exceeded')
-          if (!seat.connected) seat = joinRoom(room, { token: message.token })
+          if (!seat.connected) seat = joinRoom(room, { token: message.token, settle: !reconnectingHandoff(room) })
+          finishHandoffReconnect(room, seat)
           client = {
             code: room.code,
             token: message.token,
@@ -450,6 +501,7 @@ export function createRoomServer({
           return
         }
         if (message.type === 'action') {
+          if (reconnectingHandoff(room)) throw new Error('Waiting for every player to reconnect')
           // The catch below sends the error frame on this same socket, so it
           // lands after the snapshot and the refusal still reads: no seat is
           // skipped here, and a socket client has no other way to catch up.
@@ -502,11 +554,19 @@ export function createRoomServer({
       pendingAuth.delete(socket)
       const client = sockets.get(socket)
       sockets.delete(socket)
-      if (!client) return
+      if (!client || preserveRoomsOnClose) return
       if ([...sockets.values()].some((other) => other.code === client.code && other.token === client.token)) return
       const room = store.rooms.get(client.code)
       if (room) {
-        markDisconnected(room, client.token)
+        const quorum = store.reconnectQuorums.get(room.code)
+        if (quorum) {
+          const seat = findSeat(room, client.token)
+          if (seat?.connected) {
+            seat.connected = false
+            room.version += 1
+          }
+          if (seat) quorum.playerIds.add(seat.playerId)
+        } else markDisconnected(room, client.token)
         touch(room)
         queueSave()
         publish(room)
@@ -551,8 +611,9 @@ export function createRoomServer({
         })
       })
     },
-    close() {
+    close({ preserveRooms = false, markerFile } = {}) {
       if (closePromise) return closePromise
+      preserveRoomsOnClose = preserveRooms
       clearInterval(heartbeat)
       clearInterval(sweeper)
       const stopped = server.listening
@@ -563,7 +624,10 @@ export function createRoomServer({
         socket.once('close', resolve)
         socket.terminate()
       })))
-      closePromise = Promise.all([stopped, disconnected]).then(() => flushSave())
+      closePromise = Promise.all([stopped, disconnected]).then(() => {
+        flushSave()
+        if (markerFile) writeFileSync(markerFile, 'ok\n', { mode: 0o600 })
+      })
       return closePromise
     },
   }
@@ -574,4 +638,20 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
   const port = Number(process.env.PORT ?? 8787)
   await roomServer.listen(port, process.env.HOST ?? '127.0.0.1')
   console.log(`Room server listening on http://127.0.0.1:${port}`)
+  let stopping = false
+  const stop = async () => {
+    if (stopping) return
+    stopping = true
+    try {
+      await roomServer.close({
+        preserveRooms: process.env.STS_PRESERVE_ON_SHUTDOWN === 'true',
+        markerFile: process.env.STS_SHUTDOWN_MARKER,
+      })
+    } catch (error) {
+      console.error('Room server shutdown failed:', error)
+      process.exitCode = 1
+    }
+  }
+  process.once('SIGINT', () => { void stop() })
+  process.once('SIGTERM', () => { void stop() })
 }

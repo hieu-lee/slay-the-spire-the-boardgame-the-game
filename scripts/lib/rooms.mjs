@@ -182,8 +182,8 @@ function normalizeLegacyPlayer(player) {
   player.lootChests = Number.isSafeInteger(player.lootChests) ? player.lootChests : 0
 }
 
-export function createStore({ file } = {}) {
-  const store = { rooms: new Map(), file }
+export function createStore({ file, handoffRestore = false } = {}) {
+  const store = { rooms: new Map(), file, reconnectQuorums: new Map() }
   if (!file) return store
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8'))
@@ -192,6 +192,10 @@ export function createStore({ file } = {}) {
       if (typeof room?.code === 'string' && Array.isArray(room.seats) && room.campaignProgress) {
         const connectedAtSave = new Set(room.seats
           .filter((seat) => seat.connected !== false).map((seat) => seat.playerId))
+        const handoffSeats = new Set(room.seats.map((seat) => seat.playerId))
+        if (handoffRestore && handoffSeats.size > 0) {
+          store.reconnectQuorums.set(room.code, { playerIds: handoffSeats, expiresAt: Date.now() + 5 * 60_000 })
+        }
         room.seats = room.seats.map((seat) => ({ ...seat, connected: false }))
         room.campaignProgress = parseCampaignProgress(room.campaignProgress)
         room.metaOptions = room.metaOptions && ['standard', 'daily', 'custom'].includes(room.metaOptions.mode)
@@ -360,7 +364,7 @@ const fail = (message) => {
  * come back to the SAME seat, because their deck and HP live there. Without it
  * a flaky connection is a lost run.
  */
-export function joinRoom(room, { name, character, token: existing, random, connected = true } = {}) {
+export function joinRoom(room, { name, character, token: existing, random, connected = true, settle = true } = {}) {
   const returning = findSeat(room, existing)
   if (returning) {
     const nextName = name ? String(name).slice(0, 24) : returning.name
@@ -379,7 +383,7 @@ export function joinRoom(room, { name, character, token: existing, random, conne
     room.version += 1
     // They may be the last answer the table was waiting on, or the first one
     // back to a decision that stalled while nobody was connected.
-    if (connectionChanged && !activeGiveUpVote(room)) {
+    if (settle && connectionChanged && !activeGiveUpVote(room)) {
       settleMerchantReady(room)
       settleCampfire(room)
       if (room.run?.phase !== 'neow') settlePendingRelics(room)

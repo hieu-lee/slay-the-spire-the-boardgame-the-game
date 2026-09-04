@@ -1,4 +1,5 @@
 import WebSocket from 'ws'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
@@ -684,11 +685,13 @@ const failingCloseService = createRoomServer({
 })
 await failingCloseService.listen(0)
 let closeFailure
-try { await failingCloseService.close() } catch (error) { closeFailure = error }
+const failedCloseMarker = join(tmpdir(), `sts-room-close-failure-${process.pid}-${Date.now()}.ok`)
+try { await failingCloseService.close({ markerFile: failedCloseMarker }) } catch (error) { closeFailure = error }
 check('closing reports a failed final flush after still closing the server', () => {
   assertEqual(closeFailure?.message, 'injected close save failure')
   assertEqual(closeErrors[0], 'injected close save failure')
   assertEqual(failingCloseService.server.listening, false)
+  assertEqual(existsSync(failedCloseMarker), false, 'a failed flush published a success marker')
 })
 
 const shutdownSaves = []
@@ -720,5 +723,70 @@ check('shutdown awaits WebSocket disconnect settlement before its final persiste
   assertEqual(finalRoom?.seats[0].connected, false, 'the final save preceded disconnect settlement')
   assertEqual(shutdownService.server.listening, false)
 })
+
+const handoffSaves = []
+const handoffMarker = join(tmpdir(), `sts-room-handoff-${process.pid}-${Date.now()}.ok`)
+const handoffService = createRoomServer({
+  storeFile: join(tmpdir(), `sts-room-handoff-${process.pid}-${Date.now()}.json`),
+  saveDelayMs: 10_000,
+  saveStoreImpl: (store) => handoffSaves.push(structuredClone([...store.rooms.values()])),
+})
+const handoffAddress = await handoffService.listen(0)
+const handoffOrigin = `http://127.0.0.1:${handoffAddress.port}`
+const handoffCreated = await fetch(`${handoffOrigin}/api/rooms`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ name: 'Handoff', character: 'ironclad' }),
+}).then((response) => response.json())
+const handoffSocket = new WebSocket(`ws://127.0.0.1:${handoffAddress.port}/ws?room=${handoffCreated.snapshot.code}`)
+await new Promise((resolve, reject) => {
+  handoffSocket.once('open', resolve)
+  handoffSocket.once('error', reject)
+})
+const handoffAuthenticated = nextMessage(handoffSocket, 'snapshot')
+handoffSocket.send(JSON.stringify({ type: 'authenticate', token: handoffCreated.token }))
+await handoffAuthenticated
+const exactHandoffRoom = JSON.stringify(handoffService.store.rooms.get(handoffCreated.snapshot.code))
+await handoffService.close({ preserveRooms: true, markerFile: handoffMarker })
+check('a coordinated handoff flushes the exact room without disconnect settlement', () => {
+  assertEqual(JSON.stringify(handoffSaves.at(-1)?.[0]), exactHandoffRoom)
+  assert(existsSync(handoffMarker), 'a successful handoff omitted its flush marker')
+})
+
+const pagesOrigin = 'https://hieu-lee.github.io'
+const corsService = createRoomServer({ allowedOrigin: pagesOrigin })
+const corsAddress = await corsService.listen(0)
+const corsOrigin = `http://127.0.0.1:${corsAddress.port}`
+try {
+  const allowed = await fetch(`${corsOrigin}/api/rooms`, {
+    method: 'OPTIONS',
+    headers: { origin: pagesOrigin, 'access-control-request-headers': 'x-room-token' },
+  })
+  const refused = await fetch(`${corsOrigin}/api/rooms`, {
+    method: 'OPTIONS', headers: { origin: 'https://example.com' },
+  })
+  const refusedPost = await fetch(`${corsOrigin}/api/rooms`, {
+    method: 'POST',
+    headers: { origin: 'https://example.com', 'content-type': 'text/plain' },
+    body: JSON.stringify({ name: 'Cross-site', character: 'ironclad' }),
+  })
+  const refusedSocketStatus = await new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${corsAddress.port}/ws?room=ABCDEF`, { origin: 'https://example.com' })
+    socket.once('unexpected-response', (_request, response) => resolve(response.statusCode))
+    socket.once('open', () => reject(new Error('cross-site WebSocket opened')))
+    socket.once('error', () => {})
+  })
+  check('only the stable Pages origin may call the room API cross-origin', () => {
+    assertEqual(allowed.status, 204)
+    assertEqual(allowed.headers.get('access-control-allow-origin'), pagesOrigin)
+    assert(allowed.headers.get('access-control-allow-headers').includes('x-room-token'))
+    assertEqual(refused.status, 403)
+    assertEqual(refused.headers.get('access-control-allow-origin'), null)
+    assertEqual(refusedPost.status, 403)
+    assertEqual(refusedSocketStatus, 401)
+    assertEqual(corsService.store.rooms.size, 0)
+  })
+} finally {
+  await corsService.close()
+}
 
 report('room server')
