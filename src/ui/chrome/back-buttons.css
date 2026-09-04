@@ -73,6 +73,7 @@ button.ribbon-back:disabled { cursor: not-allowed; filter: grayscale(0.5) bright
 .sts-scope.online-lobby > header { z-index: 3; }
 
 .compendium__back.ribbon-back {
+  flex: none;
   width: 5.25rem;
   min-height: 0;
   margin: -0.75rem 0 0.35rem -0.75rem;
