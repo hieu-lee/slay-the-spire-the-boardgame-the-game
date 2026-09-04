@@ -182,7 +182,7 @@ function normalizeLegacyPlayer(player) {
   player.lootChests = Number.isSafeInteger(player.lootChests) ? player.lootChests : 0
 }
 
-export function createStore({ file, handoffRestore = false } = {}) {
+export function createStore({ file, handoffRestore = false, handoffReconnectMs = 5 * 60_000 } = {}) {
   const store = { rooms: new Map(), file, reconnectQuorums: new Map() }
   if (!file) return store
   try {
@@ -192,9 +192,13 @@ export function createStore({ file, handoffRestore = false } = {}) {
       if (typeof room?.code === 'string' && Array.isArray(room.seats) && room.campaignProgress) {
         const connectedAtSave = new Set(room.seats
           .filter((seat) => seat.connected !== false).map((seat) => seat.playerId))
-        const handoffSeats = new Set(room.seats.map((seat) => seat.playerId))
+        const seatIds = new Set(room.seats.map((seat) => seat.playerId))
+        const savedQuorum = saved.reconnectQuorums?.[room.code]
+        const unresolvedAtSave = Array.isArray(savedQuorum?.playerIds) && savedQuorum.expiresAt > Date.now()
+          ? savedQuorum.playerIds.filter((playerId) => seatIds.has(playerId)) : []
+        const handoffSeats = new Set([...connectedAtSave, ...unresolvedAtSave])
         if (handoffRestore && handoffSeats.size > 0) {
-          store.reconnectQuorums.set(room.code, { playerIds: handoffSeats, expiresAt: Date.now() + 5 * 60_000 })
+          store.reconnectQuorums.set(room.code, { playerIds: handoffSeats, expiresAt: Date.now() + handoffReconnectMs })
         }
         room.seats = room.seats.map((seat) => ({ ...seat, connected: false }))
         room.campaignProgress = parseCampaignProgress(room.campaignProgress)
@@ -300,7 +304,10 @@ export function saveStore(store) {
   if (!store.file) return
   mkdirSync(dirname(store.file), { recursive: true })
   const temporary = `${store.file}.tmp`
-  writeFileSync(temporary, JSON.stringify({ version: 1, rooms: [...store.rooms.values()] }), { mode: 0o600 })
+  const reconnectQuorums = Object.fromEntries([...store.reconnectQuorums].map(([code, quorum]) => [code, {
+    playerIds: [...quorum.playerIds], expiresAt: quorum.expiresAt,
+  }]))
+  writeFileSync(temporary, JSON.stringify({ version: 1, rooms: [...store.rooms.values()], reconnectQuorums }), { mode: 0o600 })
   renameSync(temporary, store.file)
 }
 

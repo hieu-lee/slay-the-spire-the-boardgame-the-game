@@ -1,0 +1,141 @@
+name: Deploy multiplayer Pages artifact
+run-name: Deploy Pages from run ${{ inputs.source_run_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Run containing the prepared Pages artifact
+        required: true
+      artifact_name:
+        description: Prepared Pages artifact name
+        required: true
+      discard_existing_rooms:
+        description: Replace the currently published room instead of inheriting it
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: multiplayer-pages-deployment
+  queue: max
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download and validate the prepared site
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_URL: https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+          DISCARD_EXISTING_ROOMS: ${{ inputs.discard_existing_rooms }}
+          EXPECTED_PROTOCOL_VERSION: '1'
+        run: |
+          timeout 60s gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "$ARTIFACT_NAME" --dir pages
+          desired_run=$(jq -r '.runId // empty' pages/session.json)
+          desired_source=$(jq -r '.sourceRunId // empty' pages/session.json)
+          desired_origin=$(jq -r '.origin // empty' pages/session.json)
+          desired_sha=$(jq -r '.sha // empty' pages/session.json)
+          desired_protocol=$(jq -r '.protocolVersion // empty' pages/session.json)
+          [[ "$desired_run" =~ ^[0-9]+$ ]]
+          [[ "$desired_sha" =~ ^[0-9a-f]{40}$ ]]
+          [ "$desired_protocol" = "$EXPECTED_PROTOCOL_VERSION" ]
+          [ -z "$desired_source" ] || [[ "$desired_source" =~ ^[0-9]+$ ]]
+          current_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
+          current_config=$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 \
+            "$PAGES_URL/session.json?deploy=$GITHUB_RUN_ID")
+          current_run=$(jq -r '.runId // empty' <<< "$current_config")
+          current_source=$(jq -r '.sourceRunId // empty' <<< "$current_config")
+          if [ "$SOURCE_RUN_ID" != "$desired_run" ]; then
+            [ "$desired_sha" = "$current_sha" ]
+            if [ "$current_run" != "$desired_run" ]; then
+              [ "$current_source" = "$desired_run" ]
+              jq --arg sha "$current_sha" --argjson protocol "$EXPECTED_PROTOCOL_VERSION" \
+                '.sha = $sha | .protocolVersion = $protocol' <<< "$current_config" > pages/session.json
+              desired_run=$current_run
+              desired_source=$current_source
+              desired_origin=$(jq -r '.origin // empty' pages/session.json)
+            fi
+            [ "$current_run" = "$desired_run" ]
+          elif [ "$DISCARD_EXISTING_ROOMS" = true ]; then
+            [ "$desired_sha" = "$current_sha" ]
+            latest_fresh=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+              --jq '[.workflow_runs[] | select(.event == "workflow_dispatch" and .status != "completed" and .display_title == "Multiplayer session") | .id] | max // empty')
+            [ "$desired_run" = "$latest_fresh" ]
+          elif [ -n "$desired_source" ]; then
+            if [ "$current_run" = "$desired_run" ]; then
+              [ "$desired_sha" = "$current_sha" ]
+            else
+              timeout 60s gh run download "$desired_source" --repo "$GITHUB_REPOSITORY" \
+                --name "handoff-selected-$desired_source" --dir selection
+              selected_run=$(sed -n '1p' selection/handoff-selected)
+              selected_sha=$(sed -n '2p' selection/handoff-selected)
+              [ "$desired_sha" = "$selected_sha" ]
+              [ "$current_run" = "$desired_source" ]
+              if [ "$selected_run" != "$desired_run" ]; then
+                [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_run" --jq .status 2>/dev/null || true)" = completed ]
+                replacement=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+                  --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $desired_source\") | .id] | max // empty")
+                [ "$replacement" = "$desired_run" ]
+              fi
+              echo "HANDOFF_PREDECESSOR_RUN=$current_run" >> "$GITHUB_ENV"
+            fi
+          else
+            [ "$desired_sha" = "$current_sha" ]
+            [ "$current_run" = "$desired_run" ] || \
+              [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$current_run" --jq .status 2>/dev/null || true)" = completed ]
+          fi
+          [[ "$desired_origin" =~ ^https://[-a-z0-9]+\.trycloudflare\.com$ ]]
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages
+      - name: Verify the room endpoint immediately before deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_URL: https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          EXPECTED_PROTOCOL_VERSION: '1'
+        run: |
+          desired_run=$(jq -r '.runId // empty' pages/session.json)
+          desired_source=$(jq -r '.sourceRunId // empty' pages/session.json)
+          desired_sha=$(jq -r '.sha // empty' pages/session.json)
+          desired_origin=$(jq -r '.origin // empty' pages/session.json)
+          current_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
+          current_config=$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 \
+            "$PAGES_URL/session.json?final=$GITHUB_RUN_ID")
+          current_run=$(jq -r '.runId // empty' <<< "$current_config")
+          if [ -n "${HANDOFF_PREDECESSOR_RUN:-}" ]; then
+            [ "$current_run" = "$HANDOFF_PREDECESSOR_RUN" ]
+            selected_run=$(sed -n '1p' selection/handoff-selected)
+            selected_sha=$(sed -n '2p' selection/handoff-selected)
+            [ "$desired_sha" = "$selected_sha" ]
+            [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$desired_run" --jq .status 2>/dev/null || true)" = in_progress ]
+            if [ "$selected_run" != "$desired_run" ]; then
+              [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_run" --jq .status 2>/dev/null || true)" = completed ]
+              replacement=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+                --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $desired_source\") | .id] | max // empty")
+              [ "$replacement" = "$desired_run" ]
+            fi
+          elif [ "$SOURCE_RUN_ID" != "$desired_run" ] || [ -z "$desired_source" ] || [ "$current_run" != "$desired_source" ]; then
+            [ "$desired_sha" = "$current_sha" ]
+          fi
+          curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+            "$desired_origin/api/health" | \
+            jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version' >/dev/null
+      - id: deployment
+        uses: actions/deploy-pages@v4

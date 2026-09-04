@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { chromium } from 'playwright'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
+import { createStore, saveStore } from './lib/rooms.mjs'
 
 process.env.VITE_HOSTED_SESSION = 'true'
 const root = resolve(import.meta.dirname, '..')
@@ -45,7 +46,7 @@ const vite = await createViteServer({
         if (!request.url?.startsWith('/session.json')) return next()
         response.setHeader('content-type', 'application/json')
         response.setHeader('cache-control', 'no-store')
-        response.end(JSON.stringify({ origin: roomOrigin }))
+        response.end(JSON.stringify({ origin: roomOrigin, protocolVersion: 1 }))
       })
     },
   }],
@@ -99,7 +100,7 @@ try {
   const pendingSkill = liveRoom.run.players.find((player) => player.id === ownerId).deck
     .find((card) => card.defId.startsWith('defend_')).uid
   liveRoom.version += 1
-  for (const seat of liveRoom.seats) seat.connected = false
+  for (const seat of liveRoom.seats) seat.connected = seat.playerId === ownerId
   rooms.publishRoom(liveRoom.code)
   await host.route('**/session.json*', (route) => route.abort('failed'))
 
@@ -110,7 +111,13 @@ try {
   ])
   await new Promise((resolveDelay) => setTimeout(resolveDelay, 3_000))
 
-  rooms = createRoomServer({ storeFile, allowedOrigin: pagesOrigin, handoffRestore: true })
+  rooms = createRoomServer({ storeFile, allowedOrigin: pagesOrigin, handoffRestore: true, handoffReconnectMs: 3_600_000 })
+  const reconnectQuorum = rooms.store.reconnectQuorums.get(credentials.code)
+  assert(reconnectQuorum.expiresAt > Date.now() + 3_500_000, 'the hosted handoff reconnect grace was not applied')
+  saveStore(rooms.store)
+  const consecutiveRestore = createStore({ file: storeFile, handoffRestore: true, handoffReconnectMs: 3_600_000 })
+  assert.deepEqual([...consecutiveRestore.reconnectQuorums.get(credentials.code).playerIds], [ownerId],
+    'a consecutive handoff forgot a player who was still reconnecting')
   roomAddress = await rooms.listen(0)
   roomOrigin = await startTunnel(`http://127.0.0.1:${roomAddress.port}`)
   await guest.locator('.connection--connected').waitFor()

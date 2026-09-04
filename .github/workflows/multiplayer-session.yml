@@ -1,7 +1,9 @@
 name: Start multiplayer session
-run-name: ${{ inputs.source_run_id != '' && format('Multiplayer handoff from {0}', inputs.source_run_id) || 'Multiplayer session' }}
+run-name: ${{ inputs.refresh_only == true && 'Refresh multiplayer client' || inputs.source_run_id != '' && format('Multiplayer handoff from {0}', inputs.source_run_id) || 'Multiplayer session' }}
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       source_run_id:
@@ -10,8 +12,12 @@ on:
       source_sha:
         description: Internal pinned game version
         required: false
+      source_wait_seconds:
+        description: Internal maximum wait for the source room-state artifact (60-19200)
+        required: false
+        default: '19200'
       handoff_after_seconds:
-        description: Seconds before prewarming the next runner (60-19200)
+        description: Seconds before prewarming the next runner (600-19200)
         required: false
         default: '19200'
       discard_existing_rooms:
@@ -19,26 +25,211 @@ on:
         required: false
         type: boolean
         default: false
+      refresh_only:
+        description: Internal static-client refresh without starting a room host
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: write
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
+  refresh-on-push:
+    if: github.event_name == 'push' || inputs.refresh_only == true
+    concurrency:
+      group: multiplayer-pages-push
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PAGES_URL: https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/
+      EXPECTED_PROTOCOL_VERSION: '1'
+    steps:
+      - name: Choose the room source for this push
+        run: |
+          current_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
+          echo "NEXT_SHA=$current_sha" >> "$GITHUB_ENV"
+          echo 'PUBLISH_CLIENT=false' >> "$GITHUB_ENV"
+          echo 'START_FRESH=false' >> "$GITHUB_ENV"
+          echo 'START_SOURCE=' >> "$GITHUB_ENV"
+          config=$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 \
+            "$PAGES_URL/session.json?push=$GITHUB_RUN_ID")
+          source_run=$(jq -r '.runId // empty' <<< "$config")
+          source_origin=$(jq -r '.origin // empty' <<< "$config")
+          compatible_origin() {
+            curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+              "$1/api/health" | jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version' >/dev/null
+          }
+          wait_for_live_successor() {
+            wait_for_start=${1:-false}
+            active_successor=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+              --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $source_run\") | .id] | max // empty" 2>/dev/null || true)
+            [ -n "$active_successor" ] || [ "$wait_for_start" = true ] || return 1
+            transition_deadline=$(( $(date +%s) + 900 ))
+            attempt=0
+            while [ "$(date +%s)" -lt "$transition_deadline" ]; do
+              attempt=$(( attempt + 1 ))
+              live_config=$(curl --fail --silent --max-time 30 "$PAGES_URL/session.json?transition=$GITHUB_RUN_ID-$attempt" || true)
+              live_run=$(jq -r '.runId // empty' <<< "$live_config" 2>/dev/null || true)
+              live_source=$(jq -r '.sourceRunId // empty' <<< "$live_config" 2>/dev/null || true)
+              live_origin=$(jq -r '.origin // empty' <<< "$live_config" 2>/dev/null || true)
+              if [[ "$live_run" =~ ^[0-9]+$ ]] && [ "$live_source" = "$source_run" ] && compatible_origin "$live_origin"; then
+                echo "SOURCE_RUN=$live_run" >> "$GITHUB_ENV"
+                echo 'PUBLISH_CLIENT=true' >> "$GITHUB_ENV"
+                return 0
+              fi
+              sleep 5
+            done
+            return 1
+          }
+          wait_for_fresh_session() {
+            transition_deadline=$(( $(date +%s) + 900 ))
+            attempt=0
+            while [ "$(date +%s)" -lt "$transition_deadline" ]; do
+              active_fresh=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+                --jq '[.workflow_runs[] | select(.event == "workflow_dispatch" and .status != "completed" and .display_title == "Multiplayer session") | .id] | max // empty' 2>/dev/null || true)
+              [ -n "$active_fresh" ] || return 1
+              attempt=$(( attempt + 1 ))
+              live_config=$(curl --fail --silent --max-time 30 "$PAGES_URL/session.json?fresh=$GITHUB_RUN_ID-$attempt" || true)
+              live_run=$(jq -r '.runId // empty' <<< "$live_config" 2>/dev/null || true)
+              live_origin=$(jq -r '.origin // empty' <<< "$live_config" 2>/dev/null || true)
+              if [ "$live_run" = "$active_fresh" ] && compatible_origin "$live_origin"; then
+                echo "SOURCE_RUN=$live_run" >> "$GITHUB_ENV"
+                echo 'PUBLISH_CLIENT=true' >> "$GITHUB_ENV"
+                return 0
+              fi
+              sleep 5
+            done
+            return 1
+          }
+          if [[ "$source_run" =~ ^[0-9]+$ ]] && [ -n "$source_origin" ]; then
+            source_status=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_run" --jq .status 2>/dev/null || true)
+            if [ "$source_status" != completed ]; then
+              if compatible_origin "$source_origin"; then
+                echo 'PUBLISH_CLIENT=true' >> "$GITHUB_ENV"
+                echo "SOURCE_RUN=$source_run" >> "$GITHUB_ENV"
+                exit 0
+              fi
+              wait_for_live_successor true && exit 0
+              source_status=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_run" --jq .status 2>/dev/null || true)
+              if [ "$source_status" != completed ]; then
+                if compatible_origin "$source_origin"; then
+                  echo 'PUBLISH_CLIENT=true' >> "$GITHUB_ENV"
+                  echo "SOURCE_RUN=$source_run" >> "$GITHUB_ENV"
+                  exit 0
+                fi
+                exit 1
+              fi
+            fi
+            wait_for_live_successor && exit 0
+            room_store=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_run/artifacts" \
+              --jq "[.artifacts[] | select(.name == \"room-store-$source_run\" and .expired == false)] | length")
+            if [ "$room_store" -gt 0 ]; then
+              rm -rf "$RUNNER_TEMP/recovery-selection"
+              mkdir -p "$RUNNER_TEMP/recovery-selection"
+              timeout 60s gh run download "$source_run" --repo "$GITHUB_REPOSITORY" \
+                --name "handoff-selected-$source_run" --dir "$RUNNER_TEMP/recovery-selection"
+              recovery_sha=$(sed -n '2p' "$RUNNER_TEMP/recovery-selection/handoff-selected")
+              [[ "$recovery_sha" =~ ^[0-9a-f]{40}$ ]]
+              echo "START_SOURCE=$source_run" >> "$GITHUB_ENV"
+              echo "START_SHA=$recovery_sha" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            cleanup_deadline=$(( $(date +%s) + 120 ))
+            while [ "$(date +%s)" -lt "$cleanup_deadline" ]; do
+              stale_handoffs=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+                --jq ".workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $source_run\") | .id" 2>/dev/null || true)
+              [ -n "$stale_handoffs" ] || break
+              for run_id in $stale_handoffs; do
+                timeout 30s gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" --force || true
+              done
+              sleep 10
+            done
+            [ -z "${stale_handoffs:-}" ]
+          fi
+          wait_for_fresh_session && exit 0
+          echo 'SOURCE_RUN=' >> "$GITHUB_ENV"
+          echo 'START_FRESH=true' >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: env.PUBLISH_CLIENT == 'true'
+        with:
+          ref: ${{ env.NEXT_SHA }}
+      - uses: pnpm/action-setup@v4
+        if: env.PUBLISH_CLIENT == 'true'
+      - uses: actions/setup-node@v4
+        if: env.PUBLISH_CLIENT == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - if: env.PUBLISH_CLIENT == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: env.PUBLISH_CLIENT == 'true'
+        run: VITE_SINGLE_PLAYER=false VITE_HOSTED_SESSION=true pnpm build
+      - if: env.PUBLISH_CLIENT == 'true'
+        run: node scripts/check-single-player-build.mjs dist --multiplayer
+      - name: Keep the current room endpoint in the new client
+        if: env.PUBLISH_CLIENT == 'true'
+        run: |
+          cp -R dist pages-refresh
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 \
+            "$PAGES_URL/session.json?refresh=$GITHUB_RUN_ID" --output pages-refresh/session.json
+          live_run=$(jq -r '.runId // empty' pages-refresh/session.json)
+          live_source=$(jq -r '.sourceRunId // empty' pages-refresh/session.json)
+          [ "$live_run" = "$SOURCE_RUN" ] || [ "$live_source" = "$SOURCE_RUN" ]
+          room_origin=$(jq -r '.origin // empty' pages-refresh/session.json)
+          curl --fail --silent --show-error --max-time 30 "$room_origin/api/health" | \
+            jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version' >/dev/null
+          jq --arg sha "$NEXT_SHA" --argjson protocol "$EXPECTED_PROTOCOL_VERSION" \
+            '.sha = $sha | .protocolVersion = $protocol' pages-refresh/session.json > pages-refresh/session.next.json
+          mv pages-refresh/session.next.json pages-refresh/session.json
+      - uses: actions/upload-artifact@v4
+        if: env.PUBLISH_CLIENT == 'true'
+        with:
+          name: pages-refresh-${{ github.run_id }}
+          path: pages-refresh
+          retention-days: 1
+      - name: Queue the serialized client deployment
+        if: env.PUBLISH_CLIENT == 'true'
+        run: |
+          for attempt in {1..5}; do
+            timeout 30s gh workflow run pages-deploy.yml --repo "$GITHUB_REPOSITORY" --ref master \
+              -f source_run_id="$GITHUB_RUN_ID" -f artifact_name="pages-refresh-$GITHUB_RUN_ID" && exit 0
+            sleep 10
+          done
+          exit 1
+      - name: Start recovery when the live source needs it
+        run: |
+          if [ -n "$START_SOURCE" ]; then
+            timeout 30s gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
+              -f source_run_id="$START_SOURCE" -f source_sha="$START_SHA"
+          elif [ "$START_FRESH" = true ]; then
+            timeout 30s gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
+              -f source_sha="$NEXT_SHA"
+          fi
+
   host:
+    if: github.event_name == 'workflow_dispatch' && inputs.refresh_only != true
     env:
       PAGES_URL: https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/
       SESSION_SHA: ${{ inputs.source_sha || github.sha }}
       STS_ALLOWED_ORIGIN: https://hieu-lee.github.io
       STS_PRESERVE_ON_SHUTDOWN: 'true'
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      STS_HANDOFF_RECONNECT_MS: '3600000'
+      EXPECTED_PROTOCOL_VERSION: '1'
     runs-on: ubuntu-latest
     timeout-minutes: 355
     steps:
+      - name: Reserve time for a safe successor handoff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          started_at=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)
+          started_at_epoch=$(date --date="$started_at" +%s)
+          echo "HANDOFF_DEADLINE=$(( started_at_epoch + 19200 ))" >> "$GITHUB_ENV"
+          echo "VERIFY_DEADLINE=$(( started_at_epoch + 21000 ))" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_sha || github.sha }}
@@ -47,9 +238,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          active_run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
-            --jq "[.workflow_runs[] | select(.status != \"completed\" and .id != $GITHUB_RUN_ID) | .id] | max // empty")
-          [ -z "$active_run" ]
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100")
+          active_handoff=$(jq '[.workflow_runs[] | select(.event == "workflow_dispatch" and .status != "completed" and (.display_title | startswith("Multiplayer handoff from ")))] | length' <<< "$runs")
+          winner=$(jq "[.workflow_runs[] | select(.event == \"workflow_dispatch\" and .status != \"completed\" and .display_title == \"Multiplayer session\") | .id] | max // empty" <<< "$runs")
+          [ "$active_handoff" -eq 0 ]
+          [ "$winner" = "$GITHUB_RUN_ID" ]
       - name: Require the room-state encryption key
         env:
           ROOM_STORE_KEY: ${{ secrets.ROOM_STORE_KEY }}
@@ -61,6 +254,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: VITE_SINGLE_PLAYER=false VITE_HOSTED_SESSION=true pnpm build
+      - run: node scripts/check-single-player-build.mjs dist --multiplayer
       - name: Prewarm the game frontend and tunnel
         run: |
           nohup pnpm preview --host 127.0.0.1 --port 5180 --strictPort > "$RUNNER_TEMP/game.log" 2>&1 &
@@ -83,41 +277,64 @@ jobs:
           echo "TUNNEL_URL=$tunnel_url" >> "$GITHUB_ENV"
       - name: Announce the prewarmed successor
         if: inputs.source_run_id != ''
-        run: printf 'ready\n' > "$RUNNER_TEMP/handoff-ready"
-      - name: Keep only one successor for this handoff
-        if: inputs.source_run_id != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-        run: |
-          winner=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
-            --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $SOURCE_RUN_ID\") | .id] | min // empty")
-          [ "$winner" = "$GITHUB_RUN_ID" ]
+        run: printf '%s\n%s\n' "$TUNNEL_URL" "$SESSION_SHA" > "$RUNNER_TEMP/handoff-ready"
       - uses: actions/upload-artifact@v4
         if: inputs.source_run_id != ''
+        timeout-minutes: 5
+        with:
+          name: handoff-candidate-${{ inputs.source_run_id }}
+          path: ${{ runner.temp }}/handoff-ready
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        if: inputs.source_run_id != ''
+        timeout-minutes: 5
         with:
           name: handoff-ready-${{ inputs.source_run_id }}
           path: ${{ runner.temp }}/handoff-ready
           retention-days: 1
       - name: Wait for the frozen room state
         if: inputs.source_run_id != ''
+        timeout-minutes: 325
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_WAIT_SECONDS: ${{ inputs.source_wait_seconds || '19200' }}
         run: |
-          for attempt in {1..60}; do
-            artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts" \
+          case "$SOURCE_WAIT_SECONDS" in *[!0-9]*|'') exit 2;; esac
+          [ "$SOURCE_WAIT_SECONDS" -ge 60 ] && [ "$SOURCE_WAIT_SECONDS" -le 19200 ]
+          room_store_ready=false
+          for ((waited = 0; waited < SOURCE_WAIT_SECONDS; waited += 10)); do
+            if (( waited % 60 == 0 )); then
+              curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+                "$TUNNEL_URL/" >/dev/null
+            fi
+            artifact=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts" \
               --jq ".artifacts[] | select(.name == \"room-store-$SOURCE_RUN_ID\") | .id" 2>/dev/null || true)
             if [ -n "$artifact" ]; then
-              gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-                --name "room-store-$SOURCE_RUN_ID" --dir "$RUNNER_TEMP/handoff"
-              exit 0
+              if timeout 60s gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+                --name "room-store-$SOURCE_RUN_ID" --dir "$RUNNER_TEMP/handoff"; then
+                room_store_ready=true
+                break
+              fi
             fi
             sleep 10
           done
-          exit 1
+          [ "$room_store_ready" = true ]
+          timeout 60s gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "handoff-selected-$SOURCE_RUN_ID" --dir "$RUNNER_TEMP/selection"
+          selected_run=$(sed -n '1p' "$RUNNER_TEMP/selection/handoff-selected")
+          selected_sha=$(sed -n '2p' "$RUNNER_TEMP/selection/handoff-selected")
+          [ "$SESSION_SHA" = "$selected_sha" ]
+          if [ "$selected_run" != "$GITHUB_RUN_ID" ]; then
+            selected_status=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_run" --jq .status 2>/dev/null || true)
+            [ "$selected_status" = completed ]
+            replacement=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+              --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $SOURCE_RUN_ID\") | .id] | max // empty")
+            [ "$replacement" = "$GITHUB_RUN_ID" ]
+          fi
       - name: Restore rooms from the previous runner
         if: inputs.source_run_id != ''
+        timeout-minutes: 2
         env:
           ROOM_STORE_KEY: ${{ secrets.ROOM_STORE_KEY }}
         run: |
@@ -125,6 +342,7 @@ jobs:
           gpg --batch --yes --pinentry-mode loopback --passphrase "$ROOM_STORE_KEY" \
             --output .rooms/rooms.json --decrypt "$RUNNER_TEMP/handoff/rooms.json.gpg"
       - name: Start the room server
+        timeout-minutes: 5
         env:
           STS_HANDOFF_RESTORE: ${{ inputs.source_run_id != '' }}
           STS_SHUTDOWN_MARKER: ${{ runner.temp }}/rooms-flushed
@@ -132,55 +350,331 @@ jobs:
           nohup node scripts/room-server.mjs > "$RUNNER_TEMP/rooms.log" 2>&1 &
           echo "$!" > "$RUNNER_TEMP/rooms.pid"
           curl --fail --retry 30 --retry-all-errors --retry-delay 1 http://127.0.0.1:5180/api/health
+          curl --fail --retry 30 --retry-all-errors --retry-delay 1 "$TUNNEL_URL/api/health"
       - name: Point the stable Pages URL at this session
+        timeout-minutes: 2
         env:
+          HANDOFF_AFTER_SECONDS: ${{ inputs.handoff_after_seconds || '19200' }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
         run: |
+          case "$HANDOFF_AFTER_SECONDS" in *[!0-9]*|'') exit 2;; esac
+          [ "$HANDOFF_AFTER_SECONDS" -ge 600 ] && [ "$HANDOFF_AFTER_SECONDS" -le 19200 ]
+          now=$(date +%s)
+          handoff_at=$(( now + HANDOFF_AFTER_SECONDS ))
+          maximum_handoff_at=$(( HANDOFF_DEADLINE - 300 ))
+          [ "$handoff_at" -le "$maximum_handoff_at" ] || handoff_at=$maximum_handoff_at
+          [ "$handoff_at" -ge "$now" ] || handoff_at=$now
+          prewarm_at=$(( handoff_at - 600 ))
+          [ "$prewarm_at" -ge "$now" ] || prewarm_at=$now
+          echo "HANDOFF_AT=$handoff_at" >> "$GITHUB_ENV"
+          echo "PREWARM_AT=$prewarm_at" >> "$GITHUB_ENV"
           cp -R dist pages
-          printf '{"origin":"%s","runId":"%s","sourceRunId":"%s","sha":"%s"}\n' \
-            "$TUNNEL_URL" "$GITHUB_RUN_ID" "$SOURCE_RUN_ID" "$SESSION_SHA" > pages/session.json
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+          printf '{"origin":"%s","runId":"%s","sourceRunId":"%s","sha":"%s","handoffAt":%s,"protocolVersion":%s}\n' \
+            "$TUNNEL_URL" "$GITHUB_RUN_ID" "$SOURCE_RUN_ID" "$SESSION_SHA" "$handoff_at" \
+            "$EXPECTED_PROTOCOL_VERSION" > pages/session.json
+      - uses: actions/upload-artifact@v4
+        timeout-minutes: 5
         with:
+          name: pages-session-${{ github.run_id }}
           path: pages
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          retention-days: 1
+      - name: Queue the serialized session deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCARD_EXISTING_ROOMS: ${{ inputs.discard_existing_rooms }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          queued_deploys=
+          if [ -n "$SOURCE_RUN_ID" ]; then
+            queued_deploys=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/pages-deploy.yml/runs?per_page=100" \
+              --jq ".workflow_runs[] | select(.status == \"queued\" or .status == \"waiting\" or .status == \"pending\" or .status == \"requested\") | select(.display_title | test(\"^Deploy Pages from run [0-9]+$\")) | select((.display_title | sub(\"Deploy Pages from run \"; \"\") | tonumber) < $GITHUB_RUN_ID) | .id" 2>/dev/null || true)
+          fi
+          for run_id in $queued_deploys; do
+            timeout 30s gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" --force || true
+          done
+          for attempt in {1..5}; do
+            timeout 30s gh workflow run pages-deploy.yml --repo "$GITHUB_REPOSITORY" --ref master \
+              -f source_run_id="$GITHUB_RUN_ID" -f artifact_name="pages-session-$GITHUB_RUN_ID" \
+              -f discard_existing_rooms="$DISCARD_EXISTING_ROOMS" && exit 0
+            sleep 10
+          done
+          exit 1
+      - name: Wait for the stable URL to select this session
+        run: |
+          deployment_deadline=$(( $(date +%s) + 1800 ))
+          [ "$deployment_deadline" -lt "$(( VERIFY_DEADLINE - 300 ))" ] || deployment_deadline=$(( VERIFY_DEADLINE - 300 ))
+          attempt=0
+          while [ "$(date +%s)" -lt "$deployment_deadline" ]; do
+            attempt=$(( attempt + 1 ))
+            config=$(curl --fail --silent --max-time 30 "$PAGES_URL/session.json?session=$GITHUB_RUN_ID-$attempt" || true)
+            if [ "$(jq -r '.runId // empty' <<< "$config" 2>/dev/null || true)" = "$GITHUB_RUN_ID" ] && \
+              curl --fail --silent --max-time 30 "$TUNNEL_URL/api/health" >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
       - name: Host and prewarm the successor
         env:
           GH_TOKEN: ${{ github.token }}
-          HANDOFF_AFTER_SECONDS: ${{ inputs.handoff_after_seconds || '19200' }}
         run: |
-          curl --fail --silent --show-error http://127.0.0.1:45678/ready
-          curl --fail --silent --show-error http://127.0.0.1:5180/api/health
-          case "$HANDOFF_AFTER_SECONDS" in *[!0-9]*|'') exit 2;; esac
-          [ "$HANDOFF_AFTER_SECONDS" -ge 60 ] && [ "$HANDOFF_AFTER_SECONDS" -le 19200 ]
-          sleep "$HANDOFF_AFTER_SECONDS"
-          ready=0
-          for attempt in {1..10}; do
-            ready=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=handoff-ready-$GITHUB_RUN_ID" \
-              --jq '.total_count' 2>/dev/null || true)
-            [ "$ready" -gt 0 ] 2>/dev/null && break
-            latest_run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
-              --jq '[.workflow_runs[] | select(.status != "completed") | .id] | max' 2>/dev/null || true)
-            if [ "$latest_run" = "$GITHUB_RUN_ID" ]; then
-              gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
-                -f source_run_id="$GITHUB_RUN_ID" -f source_sha="$SESSION_SHA" || true
+          while [ "$(date +%s)" -lt "$PREWARM_AT" ]; do
+            if ! curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+              "$TUNNEL_URL/api/health" >/dev/null; then
+              echo '::warning::The current room endpoint is unhealthy; preserving its latest durable state now.'
+              HANDOFF_AT=$(date +%s)
+              break
             fi
-            sleep 60
+            remaining=$(( PREWARM_AT - $(date +%s) ))
+            [ "$remaining" -gt 0 ] || break
+            interval=$(( remaining < 60 ? remaining : 60 ))
+            sleep "$interval"
           done
-          [ "$ready" -gt 0 ]
+          ready=0
+          next_sha=$SESSION_SHA
+          master_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha 2>/dev/null || true)
+          [[ "$master_sha" =~ ^[0-9a-f]{40}$ ]] && next_sha=$master_sha
+          config=$(curl --fail --silent --max-time 30 "$PAGES_URL/session.json?handoff-source=$GITHUB_RUN_ID" || true)
+          live_run=$(jq -r '.runId // empty' <<< "$config" 2>/dev/null || true)
+          live_sha=$(jq -r '.sha // empty' <<< "$config" 2>/dev/null || true)
+          if [ "$live_run" = "$GITHUB_RUN_ID" ] && [[ "$live_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            next_sha=$live_sha
+          fi
+          candidate_winner=
+          observed_winner=
+          winner_seen_at=0
+          cancel_requested_at=0
+          selected_winner=
+          selected_sha=
+          selected_url=
+          winner=
+          winner_sha=
+          replacement_requested_at=0
+          while [ "$(date +%s)" -lt "$HANDOFF_AT" ]; do
+            if ! curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+              "$TUNNEL_URL/api/health" >/dev/null; then
+              echo '::warning::The current room endpoint is unhealthy; preserving its latest durable state now.'
+              HANDOFF_AT=$(date +%s)
+              break
+            fi
+            master_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha 2>/dev/null || true)
+            [[ "$master_sha" =~ ^[0-9a-f]{40}$ ]] && next_sha=$master_sha
+            winner=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+              --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $GITHUB_RUN_ID\") | .id] | max // empty" 2>/dev/null || true)
+            now=$(date +%s)
+            if [ "$winner" != "$observed_winner" ]; then
+              observed_winner=$winner
+              winner_seen_at=$now
+              cancel_requested_at=0
+              winner_sha=
+              replacement_requested_at=0
+            fi
+            candidate_too_old=false
+            if [ -n "$winner" ]; then
+              candidate_started=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$winner" --jq .run_started_at 2>/dev/null || true)
+              candidate_started_epoch=$([ -n "$candidate_started" ] && date --date="$candidate_started" +%s 2>/dev/null || true)
+              if [[ "$candidate_started_epoch" =~ ^[0-9]+$ ]] && \
+                [ "$(( candidate_started_epoch + 18900 ))" -lt "$(( HANDOFF_AT + 18000 ))" ]; then
+                candidate_too_old=true
+              fi
+            fi
+            artifacts=$([ -n "$winner" ] && timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$winner/artifacts" 2>/dev/null || echo '{"artifacts":[]}')
+            ready=$(jq "[.artifacts[] | select(.name == \"handoff-ready-$GITHUB_RUN_ID\")] | length" <<< "$artifacts" 2>/dev/null || echo 0)
+            candidate=$(jq "[.artifacts[] | select(.name == \"handoff-candidate-$GITHUB_RUN_ID\")] | length" <<< "$artifacts" 2>/dev/null || echo 0)
+            if [ "$candidate" -gt 0 ] && [ "$candidate_winner" != "$winner" ]; then
+              rm -rf "$RUNNER_TEMP/successor-candidate"
+              if timeout 60s gh run download "$winner" --repo "$GITHUB_REPOSITORY" \
+                --name "handoff-candidate-$GITHUB_RUN_ID" --dir "$RUNNER_TEMP/successor-candidate"; then
+                candidate_sha=$(sed -n '2p' "$RUNNER_TEMP/successor-candidate/handoff-ready")
+                [[ "$candidate_sha" =~ ^[0-9a-f]{40}$ ]] && winner_sha=$candidate_sha
+                candidate_winner=$winner
+              fi
+            fi
+            if [ "$ready" -gt 0 ] 2>/dev/null && [ "$cancel_requested_at" -eq 0 ]; then
+              rm -rf "$RUNNER_TEMP/successor-ready"
+              successor_sha=
+              if timeout 60s gh run download "$winner" --repo "$GITHUB_REPOSITORY" \
+                --name "handoff-ready-$GITHUB_RUN_ID" --dir "$RUNNER_TEMP/successor-ready"; then
+                successor_url=$(sed -n '1p' "$RUNNER_TEMP/successor-ready/handoff-ready")
+                successor_sha=$(sed -n '2p' "$RUNNER_TEMP/successor-ready/handoff-ready")
+              else
+                successor_url=
+                ready=0
+              fi
+              if ! [[ "$successor_sha" =~ ^[0-9a-f]{40}$ ]] || [ -z "$successor_url" ] || ! curl --fail --silent --show-error \
+                --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+                "$successor_url/" >/dev/null; then
+                ready=0
+                winner_seen_at=$(( now - 120 ))
+                if [ "$selected_winner" = "$winner" ]; then
+                  selected_winner=
+                  selected_sha=
+                  selected_url=
+                fi
+              else
+                selected_winner=$winner
+                selected_sha=$successor_sha
+                selected_url=$successor_url
+              fi
+            fi
+            [ "$cancel_requested_at" -eq 0 ] || ready=0
+            if [ -n "$winner" ] && [ "$ready" -eq 0 ] && [ "$(( now - winner_seen_at ))" -ge 120 ]; then
+              if [ "$cancel_requested_at" -eq 0 ]; then
+                timeout 30s gh run cancel "$winner" --repo "$GITHUB_REPOSITORY" || true
+                cancel_requested_at=$now
+                if [ "$selected_winner" = "$winner" ]; then
+                  selected_winner=
+                  selected_sha=
+                  selected_url=
+                fi
+              elif [ "$(( now - cancel_requested_at ))" -ge 60 ]; then
+                timeout 30s gh run cancel "$winner" --repo "$GITHUB_REPOSITORY" --force || true
+              fi
+            fi
+            remaining=$(( HANDOFF_AT - $(date +%s) ))
+            needs_candidate=false
+            if [ -z "$winner" ] || { [ -n "$winner_sha" ] && [ "$winner_sha" != "$next_sha" ]; } || \
+              [ "$candidate_too_old" = true ] || [ "$cancel_requested_at" -gt 0 ]; then
+              needs_candidate=true
+            fi
+            if [ "$needs_candidate" = true ] && \
+              { [ "$replacement_requested_at" -eq 0 ] || [ "$(( now - replacement_requested_at ))" -ge 120 ]; } && \
+              [ "$remaining" -gt 240 ]; then
+              if timeout 30s gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
+                -f source_run_id="$GITHUB_RUN_ID" -f source_sha="$next_sha"; then
+                replacement_requested_at=$now
+              fi
+            fi
+            remaining=$(( HANDOFF_AT - $(date +%s) ))
+            [ "$remaining" -gt 0 ] || break
+            interval=$(( remaining < 60 ? remaining : 60 ))
+            sleep "$interval"
+          done
+          master_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha 2>/dev/null || true)
+          [[ "$master_sha" =~ ^[0-9a-f]{40}$ ]] && next_sha=$master_sha
+          if ! curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+            "$selected_url/" >/dev/null 2>&1; then
+            selected_winner=
+            selected_sha=
+          fi
+          if [ -n "$selected_winner" ]; then
+            selected_status=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_winner" --jq .status 2>/dev/null || true)
+            selected_started=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_winner" --jq .run_started_at 2>/dev/null || true)
+            selected_started_epoch=$([ -n "$selected_started" ] && date --date="$selected_started" +%s 2>/dev/null || true)
+            if [ "$selected_status" != in_progress ] || ! [[ "$selected_started_epoch" =~ ^[0-9]+$ ]] || \
+              [ "$(( selected_started_epoch + 18900 ))" -lt "$(( $(date +%s) + 18000 ))" ]; then
+              selected_winner=
+              selected_sha=
+              selected_url=
+            fi
+          fi
+          fallback_deadline=$(( VERIFY_DEADLINE - 1800 ))
+          if [ -z "$selected_winner" ]; then
+            while [ "$(date +%s)" -lt "$fallback_deadline" ]; do
+              active_runs=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+                --jq ".workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $GITHUB_RUN_ID\") | .id" 2>/dev/null || true)
+              [ -n "$active_runs" ] || break
+              for run_id in $active_runs; do
+                timeout 30s gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" --force || true
+              done
+              sleep 10
+            done
+            [ -z "$active_runs" ]
+            replacement_run=
+            while [ "$(date +%s)" -lt "$fallback_deadline" ]; do
+              master_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha 2>/dev/null || true)
+              [[ "$master_sha" =~ ^[0-9a-f]{40}$ ]] && next_sha=$master_sha
+              replacement_run=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+                --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $GITHUB_RUN_ID\") | .id] | max // empty" 2>/dev/null || true)
+              if [ -z "$replacement_run" ]; then
+                master_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha 2>/dev/null || true)
+                [[ "$master_sha" =~ ^[0-9a-f]{40}$ ]] && next_sha=$master_sha
+                timeout 30s gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
+                  -f source_run_id="$GITHUB_RUN_ID" -f source_sha="$next_sha" || true
+                sleep 10
+                continue
+              fi
+              artifacts=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$replacement_run/artifacts" 2>/dev/null || echo '{"artifacts":[]}')
+              ready=$(jq "[.artifacts[] | select(.name == \"handoff-ready-$GITHUB_RUN_ID\")] | length" <<< "$artifacts" 2>/dev/null || echo 0)
+              if [ "$ready" -gt 0 ]; then
+                rm -rf "$RUNNER_TEMP/fallback-ready"
+                if timeout 60s gh run download "$replacement_run" --repo "$GITHUB_REPOSITORY" \
+                  --name "handoff-ready-$GITHUB_RUN_ID" --dir "$RUNNER_TEMP/fallback-ready"; then
+                  fallback_url=$(sed -n '1p' "$RUNNER_TEMP/fallback-ready/handoff-ready")
+                  fallback_sha=$(sed -n '2p' "$RUNNER_TEMP/fallback-ready/handoff-ready")
+                  fallback_started=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$replacement_run" --jq .run_started_at 2>/dev/null || true)
+                  fallback_started_epoch=$([ -n "$fallback_started" ] && date --date="$fallback_started" +%s 2>/dev/null || true)
+                  if [[ "$fallback_sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$fallback_started_epoch" =~ ^[0-9]+$ ]] && \
+                    [ "$(( fallback_started_epoch + 18900 ))" -ge "$(( $(date +%s) + 18000 ))" ] && \
+                    curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+                    "$fallback_url/" >/dev/null; then
+                    selected_winner=$replacement_run
+                    selected_sha=$fallback_sha
+                    selected_url=$fallback_url
+                    break
+                  fi
+                  timeout 30s gh run cancel "$replacement_run" --repo "$GITHUB_REPOSITORY" --force || true
+                fi
+              fi
+              sleep 10
+            done
+          fi
+          [ -n "$selected_winner" ]
+          active_runs=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+            --jq ".workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $GITHUB_RUN_ID\") | .id" 2>/dev/null || true)
+          for run_id in $active_runs; do
+            [ "$run_id" = "$selected_winner" ] || timeout 30s gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" --force || true
+          done
+          while [ "$(date +%s)" -lt "$HANDOFF_DEADLINE" ]; do
+            unselected=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+              --jq ".workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $GITHUB_RUN_ID\" and (.id | tostring) != \"$selected_winner\") | .id" 2>/dev/null || true)
+            [ -z "$unselected" ] && break
+            for run_id in $unselected; do
+              timeout 30s gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" --force || true
+            done
+            sleep 10
+          done
+          [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_winner" --jq .status 2>/dev/null || true)" = in_progress ]
+          [[ "$selected_sha" =~ ^[0-9a-f]{40}$ ]]
+          curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+            "$selected_url/" >/dev/null
+          echo "NEXT_SHA=$selected_sha" >> "$GITHUB_ENV"
+          echo "SELECTED_WINNER=$selected_winner" >> "$GITHUB_ENV"
+          printf '%s\n%s\n' "$selected_winner" "$selected_sha" > "$RUNNER_TEMP/handoff-selected"
+      - uses: actions/upload-artifact@v4
+        timeout-minutes: 5
+        with:
+          name: handoff-selected-${{ github.run_id }}
+          path: ${{ runner.temp }}/handoff-selected
+          retention-days: 1
       - name: Freeze and flush the room state
         env:
           STS_SHUTDOWN_MARKER: ${{ runner.temp }}/rooms-flushed
         run: |
-          kill -TERM "$(cat "$RUNNER_TEMP/rooms.pid")"
-          for attempt in {1..30}; do
-            kill -0 "$(cat "$RUNNER_TEMP/rooms.pid")" 2>/dev/null || break
-            sleep 1
-          done
-          ! kill -0 "$(cat "$RUNNER_TEMP/rooms.pid")" 2>/dev/null
-          test -f "$STS_SHUTDOWN_MARKER"
+          room_pid=$(cat "$RUNNER_TEMP/rooms.pid")
+          if kill -0 "$room_pid" 2>/dev/null; then
+            kill -TERM "$room_pid" || true
+            for attempt in {1..30}; do
+              kill -0 "$room_pid" 2>/dev/null || break
+              sleep 1
+            done
+            if kill -0 "$room_pid" 2>/dev/null; then
+              echo '::warning::Room server missed its shutdown grace period; using its latest atomic store.'
+              kill -KILL "$room_pid" || true
+              wait "$room_pid" 2>/dev/null || true
+            fi
+            test -f "$STS_SHUTDOWN_MARKER" || \
+              echo '::warning::Final room flush did not complete; using the latest atomic durable store.'
+          else
+            echo '::warning::Room server already stopped; using its latest durable room store.'
+          fi
+          if [ ! -e .rooms/rooms.json ]; then
+            mkdir -p .rooms
+            printf '{"version":1,"rooms":[]}' > .rooms/rooms.json
+          fi
+          test -s .rooms/rooms.json
       - name: Encrypt the room state
+        timeout-minutes: 2
         env:
           ROOM_STORE_KEY: ${{ secrets.ROOM_STORE_KEY }}
         run: |
@@ -188,30 +682,45 @@ jobs:
           gpg --batch --yes --pinentry-mode loopback --passphrase "$ROOM_STORE_KEY" \
             --symmetric --cipher-algo AES256 --output "$RUNNER_TEMP/rooms.json.gpg" .rooms/rooms.json
       - uses: actions/upload-artifact@v4
+        timeout-minutes: 5
         with:
           name: room-store-${{ github.run_id }}
           path: ${{ runner.temp }}/rooms.json.gpg
           retention-days: 1
       - name: Start and verify the successor
+        timeout-minutes: 30
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for attempt in {1..12}; do
-            config=$(curl --fail --silent "$PAGES_URL/session.json?handoff=$GITHUB_RUN_ID-$attempt" || true)
+          attempt=0
+          while [ "$(date +%s)" -lt "$VERIFY_DEADLINE" ]; do
+            attempt=$(( attempt + 1 ))
+            config=$(curl --fail --silent --max-time 30 "$PAGES_URL/session.json?handoff=$GITHUB_RUN_ID-$attempt" || true)
             candidate_run=$(jq -r 'select(.sourceRunId == env.GITHUB_RUN_ID) | .runId // empty' <<< "$config" 2>/dev/null || true)
-            winner=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
-              --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $GITHUB_RUN_ID\") | .id] | min // empty" 2>/dev/null || true)
+            winner=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
+              --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $GITHUB_RUN_ID\") | .id] | max // empty" 2>/dev/null || true)
             successor=$(jq -r 'select(.sourceRunId == env.GITHUB_RUN_ID) | .origin // empty' <<< "$config" 2>/dev/null || true)
+            published_sha=$(jq -r 'select(.sourceRunId == env.GITHUB_RUN_ID) | .sha // empty' <<< "$config" 2>/dev/null || true)
             if [ -n "$successor" ] && [ "$candidate_run" = "$winner" ] && [ "$successor" != "$TUNNEL_URL" ] && \
-              curl --fail --silent "$successor/api/health" >/dev/null; then
-              exit 0
+              curl --fail --silent --max-time 30 "$successor/api/health" >/dev/null; then
+              master_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha 2>/dev/null || true)
+              if [[ "$master_sha" =~ ^[0-9a-f]{40}$ ]] && [ "$published_sha" != "$master_sha" ]; then
+                for refresh_attempt in {1..5}; do
+                  timeout 30s gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
+                    -f refresh_only=true && exit 0
+                  sleep 10
+                done
+              else
+                exit 0
+              fi
             fi
-            latest_run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
-              --jq '[.workflow_runs[] | select(.status != "completed") | .id] | max' 2>/dev/null || true)
-            if [ "$latest_run" = "$GITHUB_RUN_ID" ]; then
-              gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
-                -f source_run_id="$GITHUB_RUN_ID" -f source_sha="$SESSION_SHA" || true
+            if [ -z "$winner" ]; then
+              timeout 30s gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
+                -f source_run_id="$GITHUB_RUN_ID" -f source_sha="$NEXT_SHA" || true
             fi
-            sleep 60
+            remaining=$(( VERIFY_DEADLINE - $(date +%s) ))
+            [ "$remaining" -gt 0 ] || break
+            interval=$(( remaining < 60 ? remaining : 60 ))
+            sleep "$interval"
           done
           exit 1

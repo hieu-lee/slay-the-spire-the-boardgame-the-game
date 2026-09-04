@@ -155,7 +155,7 @@ function Seat({ seat, you }: { seat?: PublicSeat; you?: boolean }) {
       {seat ? (
         <>
           <span className="online-seat__portrait" aria-hidden="true">
-            <img src={`/assets/combat/characters/${seat.character}.webp`} alt=""
+            <img src={assetPath(`combat/characters/${seat.character}.webp`)} alt=""
               onError={(event) => { event.currentTarget.style.display = 'none' }} />
           </span>
           <span className="online-seat__name" aria-hidden="true">{seat.name}</span>
@@ -586,7 +586,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           volume={settings.voiceVolume} compact />
         {viewer?.deck ? (
           <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open">
-            <img src="/assets/menu/current-deck.webp" alt="" />
+            <img src={assetPath('menu/current-deck.webp')} alt="" />
             <span aria-hidden="true">{viewer.deck.length}</span>
           </CardCollectionOverlay>
         ) : null}
@@ -595,7 +595,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         ) : null}
         <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
           onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
-          <img src="/assets/menu/settings-cog.png" alt="" />
+          <img src={assetPath('menu/settings-cog.png')} alt="" />
         </button>
       </header>
 

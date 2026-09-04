@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { campfireScenePath } from '../game/assets.ts'
+import { assetPath, campfireScenePath } from '../game/assets.ts'
 import { canUpgradeCard } from '../game/run.ts'
 import type { ActionOutcome, PublicSeat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import type { CampfireDecision } from '../game/run.ts'
@@ -90,12 +90,12 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
               setPicker(peacePipe ? 'remove' : 'transform')
             } else confirmDecision(next)
           }}>
-            <img src="/assets/noncombat/campfire/rest.webp" alt="" /><strong>Rest</strong><span className="muted">+{restHeal} HP{!restAllowed ? ' · blocked by Night Terrors' : ''}</span>
+            <img src={assetPath('noncombat/campfire/rest.webp')} alt="" /><strong>Rest</strong><span className="muted">+{restHeal} HP{!restAllowed ? ' · blocked by Night Terrors' : ''}</span>
           </button>
           <button type="button" disabled={hammer || upgradable.length === 0} className={decision?.choice === 'smith' ? 'is-chosen' : ''} onClick={() => {
             setDecision({ choice: 'smith' }); setPicker('upgrade')
           }}>
-            <img src="/assets/noncombat/campfire/smith.webp" alt="" /><strong>Smith</strong><span className="muted">upgrade</span>
+            <img src={assetPath('noncombat/campfire/smith.webp')} alt="" /><strong>Smith</strong><span className="muted">upgrade</span>
           </button>
           {rubyAvailable ? <button type="button" className={decision?.choice === 'ruby' ? 'is-chosen' : ''} onClick={() => confirmDecision({ choice: 'ruby' })}>
             ◆ Ruby Key <span className="muted">skip campfire</span>

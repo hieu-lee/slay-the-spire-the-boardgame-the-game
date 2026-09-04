@@ -25,6 +25,7 @@ const JSON_HEADERS = {
   'cache-control': 'no-store',
 }
 const MAX_BODY = 64 * 1024
+const MULTIPLAYER_PROTOCOL_VERSION = 1
 const MAX_ROOMS = 100
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000
 const RESUMABLE_ROOM_TTL_MS = 30 * 24 * 60 * 60 * 1000
@@ -85,8 +86,9 @@ export function createRoomServer({
   onSaveError = (error) => console.error('Room store save failed:', error),
   allowedOrigin = process.env.STS_ALLOWED_ORIGIN,
   handoffRestore = process.env.STS_HANDOFF_RESTORE === 'true',
+  handoffReconnectMs = Math.max(5 * 60_000, Number(process.env.STS_HANDOFF_RECONNECT_MS) || 0),
 } = {}) {
-  const store = createStore({ file: storeFile, handoffRestore })
+  const store = createStore({ file: storeFile, handoffRestore, handoffReconnectMs })
   const sockets = new Map()
   const roomActivity = new Map()
   const roomOwners = new Map()
@@ -281,7 +283,7 @@ export function createRoomServer({
       }
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (request.method === 'GET' && url.pathname === '/api/health') {
-        return send(response, 200, { ok: true, rooms: store.rooms.size })
+        return send(response, 200, { ok: true, rooms: store.rooms.size, protocolVersion: MULTIPLAYER_PROTOCOL_VERSION })
       }
       if (request.method === 'POST' && url.pathname === '/api/rooms') {
         sweepRooms()

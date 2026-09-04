@@ -1,4 +1,5 @@
 const HOSTED_SESSION = import.meta.env.VITE_HOSTED_SESSION === 'true'
+const MULTIPLAYER_PROTOCOL_VERSION = 1
 
 let roomOrigin: string | null = null
 
@@ -13,7 +14,9 @@ export async function roomUrl(path: string) {
     configUrl.searchParams.set('handoff', Date.now().toString())
     const response = await fetch(configUrl, { cache: 'no-store' })
     if (!response.ok) throw new Error('Could not find the multiplayer server')
-    const configured = new URL((await response.json()).origin)
+    const session = await response.json()
+    if (session.protocolVersion !== MULTIPLAYER_PROTOCOL_VERSION) throw new Error('The multiplayer client needs to be updated')
+    const configured = new URL(session.origin)
     if (!['http:', 'https:'].includes(configured.protocol)) throw new Error('Invalid multiplayer server')
     roomOrigin = configured.origin
   }
