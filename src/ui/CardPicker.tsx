@@ -10,7 +10,7 @@ type CardPickerProps = {
   selectedCardUids: readonly string[]
   onSelect: (uid: string) => void
   onClear: () => void
-  onBack: () => void
+  onBack?: () => void
   onConfirm: () => void
   confirmLabel?: string
   backLabel?: string
@@ -114,7 +114,7 @@ export function CardPicker({
   }
   const rememberGridScroll = () => { gridScrollTopRef.current = gridRef.current?.scrollTop ?? 0 }
   const backText = preview ? 'Back' : backLabel
-  const showBack = verb === 'Upgrade' || preview || backLabel !== 'Back'
+  const showBack = preview || onBack !== undefined && (verb === 'Upgrade' || backLabel !== 'Back')
 
   return <section ref={pickerRef} className={`card-picker${preview ? ' card-picker--previewing' : ''}`} role="dialog" aria-modal="true" tabIndex={-1}
     aria-label={`Choose ${selectionLabel} to ${verb.toLowerCase()}`}>
@@ -137,7 +137,7 @@ export function CardPicker({
     </div>
     <footer className="card-picker__footer">
       {showBack ? <button type="button" className="card-picker__back" aria-label={backText} disabled={disabled || backDisabled}
-        onClick={() => { rememberGridScroll(); preview ? onClear() : onBack() }}><svg viewBox="0 0 100 70" aria-hidden="true"><path d="M4 39 32 9v16h26c20 0 34 13 34 30v8H75v-8c0-8-6-13-17-13H32v15z" /></svg></button> : null}
+        onClick={() => { rememberGridScroll(); preview ? onClear() : onBack?.() }}><svg viewBox="0 0 100 70" aria-hidden="true"><path d="M4 39 32 9v16h26c20 0 34 13 34 30v8H75v-8c0-8-6-13-17-13H32v15z" /></svg></button> : null}
       <p>Choose {selectionLabel} to <strong>{verb}</strong>.</p>
       <PickerConfirmButton label={confirmLabel}
         disabled={disabled || confirmDisabled === true || selectionRequired && selected.length < maxSelections} onClick={onConfirm} />

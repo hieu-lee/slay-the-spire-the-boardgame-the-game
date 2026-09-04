@@ -13,9 +13,12 @@ import { rewardSourceLabel } from './reward-source.ts'
 export function LootChoice({ children, icon, onClick, disabled = false }: {
   children: ReactNode
   icon: ReactNode
-  onClick: () => void
+  onClick?: () => void
   disabled?: boolean
 }) {
+  if (!onClick) return <div className="loot-choice loot-choice--static">
+    <span className="loot-choice__icon">{icon}</span><strong>{children}</strong>
+  </div>
   return <button className="loot-choice" type="button" onClick={onClick} disabled={disabled}>
     <span className="loot-choice__icon">{icon}</span><strong>{children}</strong>
   </button>

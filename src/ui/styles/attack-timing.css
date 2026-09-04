@@ -19,40 +19,6 @@
   to { opacity: 0; transform: rotate(24deg) scale(0.48); }
 }
 
-.seat--vfx-lunge .seat__portrait > img,
-.seat--vfx-recoil .seat__portrait > img,
-.seat--vfx-cast .seat__portrait > img,
-.seat--vfx-drink .seat__portrait > img,
-.seat--vfx-throw .seat__portrait > img {
-  will-change: opacity, transform;
-  animation-duration: 620ms;
-  animation-timing-function: cubic-bezier(0.2, 0.8, 0.25, 1);
-  animation-fill-mode: both;
-  animation-iteration-count: 1;
-}
-
-.seat--vfx-lunge.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-lunge; }
-.seat--vfx-lunge.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-lunge-again; }
-.seat--vfx-recoil.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-recoil; }
-.seat--vfx-recoil.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-recoil-again; }
-.seat--vfx-cast.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-cast; }
-.seat--vfx-cast.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-cast-again; }
-.seat--vfx-drink.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-drink; }
-.seat--vfx-drink.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-drink-again; }
-.seat--vfx-throw.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-throw; }
-.seat--vfx-throw.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-throw-again; }
-
-@keyframes vfx-lunge { 0%, 100% { transform: translateX(0) rotate(0); } 32% { transform: translateX(14%) rotate(3deg) scale(1.04); } }
-@keyframes vfx-lunge-again { 0%, 100% { transform: translateX(0) rotate(0); } 32% { transform: translateX(14%) rotate(3deg) scale(1.04); } }
-@keyframes vfx-recoil { 0%, 100% { transform: translateX(0); } 28% { transform: translateX(-7%) scale(0.96); } 48% { transform: translateX(3%); } }
-@keyframes vfx-recoil-again { 0%, 100% { transform: translateX(0); } 28% { transform: translateX(-7%) scale(0.96); } 48% { transform: translateX(3%); } }
-@keyframes vfx-cast { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); filter: brightness(1.35); } }
-@keyframes vfx-cast-again { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); filter: brightness(1.35); } }
-@keyframes vfx-drink { 0%, 100% { transform: rotate(0); } 34% { transform: translateY(-3%) rotate(-5deg); } }
-@keyframes vfx-drink-again { 0%, 100% { transform: rotate(0); } 34% { transform: translateY(-3%) rotate(-5deg); } }
-@keyframes vfx-throw { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }
-@keyframes vfx-throw-again { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }
-
 /* Character attacks use only authoritative targets already rendered on the
    board. Defect and Watcher spend 550ms each on windup, release and recovery.
    Ironclad adds two 90ms travel beats between three 540ms body phases. Silent

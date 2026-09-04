@@ -284,8 +284,8 @@
   transition: color 100ms ease, filter 100ms ease, transform 100ms ease;
 }
 
-.sts-scope .reward-screen--loot .loot-choice:not(:disabled):hover,
-.sts-scope .reward-screen--loot .loot-choice:focus-visible {
+.sts-scope .reward-screen--loot button.loot-choice:not(:disabled):hover,
+.sts-scope .reward-screen--loot button.loot-choice:focus-visible {
   z-index: 1;
   outline: 0;
   color: #f6d04f;
@@ -311,8 +311,8 @@
   filter: drop-shadow(0 0.08rem 0 #5f4111);
 }
 
-.sts-scope .reward-screen--loot .loot-choice:not(:disabled):hover::after,
-.sts-scope .reward-screen--loot .loot-choice:focus-visible::after { opacity: 1; }
+.sts-scope .reward-screen--loot button.loot-choice:not(:disabled):hover::after,
+.sts-scope .reward-screen--loot button.loot-choice:focus-visible::after { opacity: 1; }
 
 .sts-scope .reward-screen--loot .loot-choice > strong {
   font-weight: 700;

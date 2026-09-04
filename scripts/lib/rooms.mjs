@@ -133,6 +133,7 @@ import {
   allocateSharedMarks,
   normalizeModifierIds,
 } from '../../src/game/state.ts'
+import { previewTinyHouseRewardCard } from '../../src/game/run/relic-acquisition.ts'
 
 /** Characters a seat may pick. Two players may not take the same one (p.4). */
 export const CHARACTERS = [...CHARACTER_IDS]
@@ -521,12 +522,13 @@ export function markDisconnected(room, seatToken) {
   settleCampfire(room)
   // Neow is pre-game setup, not a shared combat/reward wait. Its private
   // Relic choices must survive a disconnect exactly like its card choices.
-  if (room.run?.phase !== 'neow') settlePendingRelics(room)
-  settleDisconnectedRewards(room)
+  settleDisconnectedRunChoices(room)
   settleReward(room)
   settleEndTurn(room)
   settleDiscard(room)
   settleForcedCards(room)
+  settleDisconnectedRunChoices(room)
+  settleReward(room)
   return snapshotFor(room, seatToken)
 }
 
@@ -539,7 +541,11 @@ function settleDisconnectedRewards(room) {
         ? run.rewards.find((candidate) => candidate.playerId === seat.playerId)
         : undefined
       if (!run || !offer) break
-      const next = offer.gold
+      const pendingTinyHouse = run.players.find((player) => player.id === seat.playerId)?.relics
+        .some((relic) => relic.pending && relic.defId === 'tiny_house')
+      const next = pendingTinyHouse && offer.potion !== false
+        ? resolvePotionReward(run, seat.playerId, { kind: 'skip' })
+        : offer.gold
         ? resolveGoldReward(run, seat.playerId, false)
         : offer.transformReward
         ? resolveTransformReward(run, seat.playerId, null)
@@ -566,6 +572,16 @@ function settleDisconnectedRewards(room) {
   }
 }
 
+/** Pending acquisitions and Loot can block each other; settle both to a fixed point. */
+function settleDisconnectedRunChoices(room) {
+  for (;;) {
+    const before = room.run
+    if (room.run?.phase !== 'neow') settlePendingRelics(room)
+    settleDisconnectedRewards(room)
+    if (room.run === before) return
+  }
+}
+
 /** Resolve disconnected owners' private acquisition choices with stable defaults. */
 function settlePendingRelics(room) {
   if (!Array.isArray(room.run?.players)) return
@@ -583,13 +599,21 @@ function settlePendingRelics(room) {
         pandoras_box: 3,
         tiny_house: 1,
       }[pending.relicId] ?? 0
-      const eligible = pendingRelicEligibleCards(player, pending.relicId)
+      const rewardIndices = (pending.rewardChoices ?? []).map((choices, index) =>
+        pending.rewardIndices?.[index] ?? (choices.length > 0 ? 0 : -1))
+      const tinyHouseRewardDefId = pending.relicId === 'tiny_house' && rewardIndices[0] >= 0
+        ? pending.rewardChoices?.[0]?.[rewardIndices[0]]
+        : undefined
+      const tinyHouseRewardCard = tinyHouseRewardDefId ? previewTinyHouseRewardCard(player, tinyHouseRewardDefId) : undefined
+      const eligible = [...pendingRelicEligibleCards(player, pending.relicId),
+        ...(tinyHouseRewardCard && pendingRelicEligibleCards({ deck: [tinyHouseRewardCard] }, 'tiny_house').length > 0
+          ? [tinyHouseRewardCard] : [])]
       const resolvedCount = Math.min(count, eligible.length)
       const next = resolvePendingRelic(
         room.run,
         seat.playerId,
         eligible.slice(0, resolvedCount).map((card) => card.uid),
-        (pending.rewardChoices ?? []).map((choices, index) => pending.rewardIndices?.[index] ?? (choices.length > 0 ? 0 : -1)),
+        rewardIndices,
       )
       if (next === room.run) break
       room.run = next
@@ -1109,7 +1133,11 @@ export function apply(room, seatToken, action, consumedPreviewPlayerId = null) {
   // War Paint and Whetstone bought from The Courier are kept face up because
   // their text forbids resolving them in combat. Combat must continue until
   // the acquisition becomes legal outside combat.
-  if (room.run.phase !== 'combat' && hasPendingRelicAcquisition(room.run) &&
+  const pendingRelicOwner = room.run.players.find((player) => player.relics.some((relic) => relic.pending))
+  const pendingRelic = pendingRelicOwner?.relics.find((relic) => relic.pending)
+  const resolvingTinyHousePotion = action?.kind === 'potionReward' && pendingRelicOwner?.id === seat.playerId &&
+    pendingRelic?.defId === 'tiny_house'
+  if (room.run.phase !== 'combat' && hasPendingRelicAcquisition(room.run) && !resolvingTinyHousePotion &&
     action?.kind !== 'resolvePendingRelic' && action?.kind !== 'choosePendingRelicReward' && action?.kind !== 'resolveGuardianSocket') {
     fail('Finish the pending Relic acquisition first')
   }
@@ -2676,6 +2704,7 @@ function settleReward(room) {
     room.rewardChoices = undefined
     room.rewardConfirmed = undefined
     room.run = next
+    settleForcedCards(room)
     room.version += 1
   }
   return null

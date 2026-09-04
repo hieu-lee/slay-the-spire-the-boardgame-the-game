@@ -360,6 +360,7 @@ import {
   wingBootChoices,
   finishRun,
   MAX_HP,
+  TINY_HOUSE_REWARD_CARD_UID,
 } from '../src/game/run.ts'
 import { BOSS_RELIC_IDS, ORDINARY_RELIC_IDS, RELICS, POTIONS, STARTING_RELIC } from '../src/game/relics.ts'
 import { activatePotion } from '../src/game/combat.ts'
@@ -491,9 +492,16 @@ check('Tiny House reveals its Potion for replacement at the slot cap', () => {
   run = acquireRelic(run, 'p1', 'tiny_house')
   assertEqual(run.rewards[0].potion, 'weak_potion')
   const upgrade = run.players[0].deck.find((card) => !card.upgraded && CARDS[card.defId]?.upgrade)
-  run = resolvePendingRelic(run, 'p1', [upgrade.uid], [-1])
-  const gained = resolvePotionReward(run, 'p1', { kind: 'replace', potionId: 'block_potion' })
-  assertDeepEqual(gained.players[0].potions, ['fire_potion', 'weak_potion'])
+  assertEqual(resolvePendingRelic(run, 'p1', [upgrade.uid], [-1]), run,
+    'Tiny House upgraded a card before its Potion was settled')
+  run = resolvePotionReward(run, 'p1', { kind: 'replace', potionId: 'block_potion' })
+  assertDeepEqual(run.players[0].potions, ['fire_potion', 'weak_potion'])
+  const rewardDefId = pendingRelicPreview(run, 'p1').rewardChoices[0][0]
+  run = choosePendingRelicReward(run, 'p1', 0, 0)
+  run = resolvePendingRelic(run, 'p1', [TINY_HOUSE_REWARD_CARD_UID], [0])
+  assert(run.players[0].deck.some((card) => card.defId === rewardDefId && card.upgraded),
+    'Tiny House could not upgrade the card gained from its own reward')
+  assertEqual(run.phase, 'map', 'Tiny House left an empty Loot screen behind')
 })
 
 check('independent Potion rewards queue without overwriting each other', () => {
@@ -539,6 +547,25 @@ check('Eggs upgrade and spend uses on one-shot Relic card gains', () => {
   run = resolvePendingRelic(run, 'p1', [], [0, 0, 0, 0])
   assert(run.players[0].deck.some((card) => card.defId === 'anger' && card.upgraded), 'Egg did not upgrade Orrery gain')
   assertEqual(run.players[0].relics.find((relic) => relic.defId === 'molten_egg').uses, 2)
+
+  run = postNeowRun(910, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.phase = 'reward'
+  run.rewardDestination = 'map'
+  run.players[0].relics.push({ defId: 'molten_egg', spent: false, uses: 1 })
+  run.players[0].cardRewards = ['anger', 'defend_ironclad', 'shrug_it_off']
+  run.rewards = [{ playerId: 'p1', cardReward: false, choices: null, upgraded: false,
+    gold: false, potion: false, relic: false, bossRelics: false }]
+  run = acquireRelic(run, 'p1', 'tiny_house')
+  run = resolvePotionReward(run, 'p1', { kind: 'skipAll' })
+  run = choosePendingRelicReward(run, 'p1', 0, 0)
+  assertEqual(resolvePendingRelic(run, 'p1', [TINY_HOUSE_REWARD_CARD_UID], [0]), run,
+    'Tiny House offered a reward card that Molten Egg already upgraded')
+  const existing = run.players[0].deck.find((card) => !card.upgraded && CARDS[card.defId]?.upgrade)
+  run = resolvePendingRelic(run, 'p1', [existing.uid], [0])
+  assert(run.players[0].deck.some((card) => card.defId === 'anger' && card.upgraded),
+    'Molten Egg did not upgrade the Tiny House reward')
+  assert(!run.players[0].relics.some((relic) => relic.defId === 'molten_egg'),
+    'Tiny House preserved a spent Molten Egg use')
 })
 
 check('persisted Eggs upgrade normal card rewards with their printed uses', () => {

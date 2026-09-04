@@ -748,7 +748,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         </label>
       </section> : null}
       {snapshot.pendingRelic && viewer?.deck ? <RelicResolvePanel key={`${snapshot.pendingRelic.relicId}:${JSON.stringify(snapshot.pendingRelic.rewardIndices ?? {})}`}
-        pending={snapshot.pendingRelic} deck={viewer.deck}
+        pending={snapshot.pendingRelic} player={playerForUi(viewer)}
+        potion={run.rewards.find((offer) => offer.playerId === snapshot.you.playerId)?.potion}
+        ascension={run.ascension}
+        onPotion={(decision) => room.act({ ...decision, kind: 'potionReward', choice: decision.kind })}
         onRewardChoice={(reward, choice) => room.act({ kind: 'choosePendingRelicReward', reward, choice })}
         onResolve={(cardUids, rewardIndices) => room.act({ kind: 'resolvePendingRelic', cardUids, rewardIndices })} /> : null}
       {pendingSocket && pendingSocket.playerId === snapshot.you.playerId && viewer?.deck ? (

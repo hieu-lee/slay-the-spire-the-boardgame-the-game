@@ -14124,14 +14124,16 @@ const rapidDefendSeq = await publishPresentationEvent({
   kind: 'card', actorId: firstPlayerId, sourceId: 'defend_ironclad', enemyIds: [],
   playerIds: [firstPlayerId], upgraded: false, copied: false, energy: 1,
 })
-await watcherSeat.locator(`.seat__portrait > img[data-vfx-seq="${rapidDefendSeq}"]`).waitFor()
+await watcherSeat.locator(`.combat-vfx[data-vfx-seq="${rapidDefendSeq}"]`).waitFor()
 const rapidDefendMotion = await watcherSeat.evaluate((seat) => ({
   attackLayers: seat.querySelectorAll('.character-attack').length,
   animation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+  transform: getComputedStyle(seat.querySelector('.seat__portrait > img')).transform,
 }))
-check('a newer non-attack motion replaces an older still-active attack', () => {
+check('a newer non-attack effect clears an older attack without moving the hero', () => {
   assertEqual(rapidDefendMotion.attackLayers, 0)
-  assert(rapidDefendMotion.animation.startsWith('vfx-recoil'), rapidDefendMotion.animation)
+  assertEqual(rapidDefendMotion.animation, 'none')
+  assertEqual(rapidDefendMotion.transform, 'none')
 })
 await vfxActor().waitFor({ state: 'detached' })
 

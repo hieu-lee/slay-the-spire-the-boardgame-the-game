@@ -1128,7 +1128,7 @@ check('disconnect settlement preserves an acknowledged card choice', () => {
     'the disconnected player lost the selected card')
 })
 
-check('a disconnected Tiny House owner settles its generated Potion after the Relic choice', () => {
+check('only the Tiny House owner can settle its Potion before the upgrade choice', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.phase = 'reward'
   room.run.combat = null
@@ -1138,6 +1138,7 @@ check('a disconnected Tiny House owner settles its generated Potion after the Re
     cardReward: true,
     choices: null,
     upgraded: false,
+    gold: 2,
     potion: false,
     relic: 'tiny_house',
     bossRelics: false,
@@ -1146,12 +1147,113 @@ check('a disconnected Tiny House owner settles its generated Potion after the Re
   assert(room.run.players.find((player) => player.id === a.playerId).relics
     .some((relic) => relic.defId === 'tiny_house' && relic.pending))
   assert(typeof room.run.rewards[0].potion === 'string', 'Tiny House did not reserve its Potion')
+  let teammateError
+  try { apply(room, b.token, { kind: 'potionReward', choice: 'gain' }) } catch (error) { teammateError = error }
+  assert(teammateError, 'a teammate resolved the Tiny House owner\'s Potion')
+  apply(room, a.token, { kind: 'potionReward', choice: 'gain' })
+  assertEqual(room.run.players.find((player) => player.id === a.playerId).potions.length, 1)
+  assert(room.run.players.find((player) => player.id === a.playerId).relics
+    .some((relic) => relic.defId === 'tiny_house' && relic.pending),
+  'settling the Potion skipped the Tiny House upgrade choice')
 
   markDisconnected(room, a.token)
   assertEqual(room.seats.find((seat) => seat.playerId === b.playerId).connected, true)
   assertEqual(room.run.phase, 'map', 'the connected teammate stayed blocked on Tiny House')
   assertEqual(room.run.rewards.length, 0)
   assert(!room.run.players.find((player) => player.id === a.playerId).relics.some((relic) => relic.pending))
+
+  const abandoned = twoSeatRoom()
+  abandoned.room.run.phase = 'reward'
+  abandoned.room.run.combat = null
+  abandoned.room.run.rewardDestination = 'map'
+  abandoned.room.run.rewards = [{
+    playerId: abandoned.a.playerId,
+    cardReward: true,
+    choices: null,
+    upgraded: false,
+    gold: 2,
+    potion: false,
+    relic: 'tiny_house',
+    bossRelics: false,
+  }]
+  apply(abandoned.room, abandoned.a.token, { kind: 'relicReward', choice: 'gain' })
+  markDisconnected(abandoned.room, abandoned.a.token)
+  assertEqual(abandoned.room.run.phase, 'map',
+    'disconnecting before the Tiny House Potion stranded the connected teammate')
+  assert(!abandoned.room.run.players.find((player) => player.id === abandoned.a.playerId).relics
+    .some((relic) => relic.pending), 'disconnecting left Tiny House pending')
+
+  const guardian = twoSeatRoom()
+  guardian.room.run.phase = 'reward'
+  guardian.room.run.combat = null
+  guardian.room.run.rewardDestination = 'map'
+  guardian.room.run.guardianGemDeck = ['guardian_amethyst', 'guardian_emerald']
+  guardian.room.run.players = guardian.room.run.players.map((player) => player.id !== guardian.a.playerId ? player : {
+    ...player,
+    cardRewards: ['guardian_prismatic_barrier', 'anger', 'shrug_it_off'],
+  })
+  guardian.room.run.rewards = [{
+    playerId: guardian.a.playerId,
+    cardReward: true,
+    choices: null,
+    upgraded: false,
+    gold: 2,
+    potion: false,
+    relic: 'tiny_house',
+    bossRelics: false,
+  }]
+  apply(guardian.room, guardian.a.token, { kind: 'relicReward', choice: 'gain' })
+  markDisconnected(guardian.room, guardian.a.token)
+  assertEqual(guardian.room.run.phase, 'map', 'Tiny House Socket stranded the run after disconnect')
+  assertEqual(guardian.room.run.pendingGuardianSockets.length, 0, 'Tiny House Socket stayed pending after disconnect')
+  assert(guardian.room.run.players.find((player) => player.id === guardian.a.playerId).deck
+    .some((card) => card.defId === 'guardian_prismatic_barrier' && card.attachedGemId),
+  'Tiny House Socket did not receive the disconnect fallback Gem')
+})
+
+check('later reward settlement resolves a disconnected Tiny House owner\'s chained Sockets', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'reward'
+  room.run.combat = null
+  room.run.rewardDestination = 'map'
+  room.run.guardianGemDeck = ['guardian_amethyst', 'guardian_emerald', 'guardian_ruby', 'guardian_onyx']
+  room.run.players = room.run.players.map((player) => player.id === a.playerId ? {
+    ...player,
+    cardRewards: [
+      'guardian_prismatic_spray', 'anger', 'shrug_it_off',
+      'guardian_prismatic_barrier', 'cleave', 'pommel_strike',
+    ],
+  } : { ...player, cardRewards: ['backflip', 'dagger_spray', 'deadly_poison'] })
+  room.run.rewards = [{
+    playerId: a.playerId,
+    cardReward: true,
+    choices: null,
+    upgraded: false,
+    gold: false,
+    potion: false,
+    relic: 'tiny_house',
+    bossRelics: false,
+  }, {
+    playerId: b.playerId,
+    cardReward: true,
+    choices: null,
+    upgraded: false,
+    gold: false,
+    potion: false,
+    relic: false,
+    bossRelics: false,
+  }]
+  apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, a.token, { kind: 'cardReward', choice: 0 })
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  apply(room, a.token, { kind: 'relicReward', choice: 'gain' })
+  markDisconnected(room, a.token)
+  apply(room, b.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, b.token, { kind: 'cardReward', choice: null })
+  apply(room, b.token, { kind: 'cardReward', choice: 'confirm' })
+  assertEqual(room.run.phase, 'map')
+  assertEqual(room.run.pendingGuardianSockets.length, 0,
+    'a disconnected owner\'s ordinary reward Socket stranded the connected teammate')
 })
 
 check('a seat disconnected before victory cannot block later reward confirmation', () => {

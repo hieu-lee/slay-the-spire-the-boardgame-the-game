@@ -453,7 +453,8 @@ export function resolvePotionReward(
     }
     return next
   }
-  if (state.phase !== 'reward' || hasPendingRelicAcquisition(state)) return state
+  const pendingRelic = state.players.find((player) => player.id === playerId)?.relics.find((relic) => relic.pending)
+  if (state.phase !== 'reward' || (hasPendingRelicAcquisition(state) && pendingRelic?.defId !== 'tiny_house')) return state
   const offer = state.rewards.find((candidate) => candidate.playerId === playerId)
   const owner = state.players.find((player) => player.id === playerId)
   if (!offer || offer.potion === false || !owner) return state

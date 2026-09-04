@@ -12,13 +12,23 @@ import {
   pendingRewardChoices,
   reserveRevealedRewardDraws,
   acquireRelic,
+  resolveCardRewards,
 } from './rewards.ts'
 import { canUpgradeCard, hasRelic, nextRunUid } from './rules.ts'
 import type { PendingRelicPreview, RunState } from './types.ts'
 import { acquisitionCardType, addCard, bottomCardChoices, drawCardChoices, removeCard } from '../acquisition.ts'
 import { CARDS, isStarterStrikeOrDefend } from '../cards.ts'
-import type { Player } from '../types.ts'
+import type { CardInstance, Player } from '../types.ts'
 import { bottomGuardianGems, cardHasGuardianSocket, queueGuardianSocket, queueNewGuardianSockets } from './guardian-gems.ts'
+
+/** Stable picker identity for Tiny House's claimed card before acquisition commits. */
+export const TINY_HOUSE_REWARD_CARD_UID = 'tiny-house-reward-card'
+
+/** Preview the gained card through Eggs before offering Tiny House's separate upgrade. */
+export function previewTinyHouseRewardCard(player: Player, defId: string): CardInstance {
+  return addCard(player, defId, TINY_HOUSE_REWARD_CARD_UID).deck.find((card) =>
+    card.uid === TINY_HOUSE_REWARD_CARD_UID)!
+}
 
 function commonReward(player: Player, count: number, choice: number, replaceDuplicates: boolean) {
   const draw = drawCardChoices(player, count, replaceDuplicates)
@@ -110,20 +120,34 @@ export function resolvePendingRelic(
   state = reserveRevealedRewardDraws(state, playerId)
   const player = state.players.find((candidate) => candidate.id === playerId)
   const pending = player?.relics.find((relic) => relic.pending)
-  if (!player || !pending || new Set(cardUids).size !== cardUids.length ||
-    cardUids.some((uid) => !player.deck.some((card) => card.uid === uid))) return before
+  if (!player || !pending || new Set(cardUids).size !== cardUids.length) return before
   const id = pending.defId
+  if (cardUids.some((uid) => !player.deck.some((card) => card.uid === uid) &&
+    !(id === 'tiny_house' && uid === TINY_HOUSE_REWARD_CARD_UID))) return before
+  if (id === 'tiny_house' && state.rewards.some((offer) =>
+    offer.playerId === playerId && typeof offer.potion === 'string')) return before
   const printedCards = id === 'empty_cage' ? 2 : ['astrolabe', 'pandoras_box'].includes(id) ? 3
     : ['war_paint', 'whetstone', 'tiny_house'].includes(id) ? 1 : 0
-  const expectedCards = Math.min(printedCards, pendingRelicEligibleCards(player, id).length)
   const expectedRewards = id === 'orrery' ? 4 : id === 'forbidden_fruit' ? 2
     : ['enchiridion', 'downfall_enchiridion', 'tiny_house'].includes(id) ? 1 : 0
   const rewardChoices = pendingRewardChoices(player, id, state.meta.ruleset === 'downfall')
+  const tinyHouseRewardIndex = id === 'tiny_house'
+    ? pending.pendingRewardIndices?.[0] ?? rewardIndices[0]
+    : undefined
+  const tinyHouseRewardDefId = tinyHouseRewardIndex !== undefined && tinyHouseRewardIndex >= 0
+    ? rewardChoices[0]?.[tinyHouseRewardIndex]
+    : undefined
+  const tinyHouseRewardCard = tinyHouseRewardDefId ? previewTinyHouseRewardCard(player, tinyHouseRewardDefId) : undefined
+  const expectedCards = Math.min(printedCards, pendingRelicEligibleCards(player, id).length +
+    (tinyHouseRewardCard && canUpgradeCard(tinyHouseRewardCard) ? 1 : 0))
   if (cardUids.length !== expectedCards || rewardIndices.length !== expectedRewards ||
     rewardIndices.some((choice, index) => !Number.isInteger(choice) || choice < -1 ||
       choice >= (rewardChoices[index]?.length ?? 0)) ||
-    Object.entries(pending.pendingRewardIndices ?? {}).some(([index, choice]) => rewardIndices[Number(index)] !== choice)) return before
-  const chosen = cardUids.map((uid) => player.deck.find((card) => card.uid === uid)!)
+    Object.entries(pending.pendingRewardIndices ?? {}).some(([index, choice]) => rewardIndices[Number(index)] !== choice) ||
+    (cardUids.includes(TINY_HOUSE_REWARD_CARD_UID) && !tinyHouseRewardCard)) return before
+  const chosen = cardUids.map((uid) => uid === TINY_HOUSE_REWARD_CARD_UID
+    ? tinyHouseRewardCard!
+    : player.deck.find((card) => card.uid === uid)!)
   if (id === 'war_paint' && expectedCards > 0 && acquisitionCardType(chosen[0]!.defId) !== 'skill') return before
   if (id === 'whetstone' && expectedCards > 0 && acquisitionCardType(chosen[0]!.defId) !== 'attack') return before
   if (['war_paint', 'whetstone', 'astrolabe', 'tiny_house'].includes(id) &&
@@ -213,7 +237,12 @@ export function resolvePendingRelic(
     }
     let uid = nextRunUid(state.players)
     for (const defId of gained) {
-      owner = addCard(owner, defId, `c${uid++}`)
+      const gainedUid = `c${uid++}`
+      owner = addCard(owner, defId, gainedUid)
+      if (id === 'tiny_house' && cardUids.includes(TINY_HOUSE_REWARD_CARD_UID) && defId === tinyHouseRewardDefId) {
+        owner = { ...owner, deck: owner.deck.map((card) =>
+          card.uid === gainedUid ? { ...card, upgraded: true } : card) }
+      }
     }
     if (rare) owner = { ...owner, rareRewards: [...rareSource, ...rareBottom] }
   }
@@ -226,5 +255,5 @@ export function resolvePendingRelic(
     next = nextNeowReward(next, playerId)
     return finishNeowStep(next, playerId)
   }
-  return next
+  return state.phase === 'reward' ? resolveCardRewards(next, {}) : next
 }

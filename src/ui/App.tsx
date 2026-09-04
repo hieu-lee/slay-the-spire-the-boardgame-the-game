@@ -715,7 +715,10 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       ) : null}
       {pendingPreview ? <RelicResolvePanel key={`${pendingPreview.relicId}:${JSON.stringify(pendingPreview.rewardIndices ?? {})}`}
         pending={pendingPreview}
-        deck={viewer?.deck ?? []} onRewardChoice={(reward, choice) => setRun((current) =>
+        player={viewer!} potion={run.rewards.find((offer) => offer.playerId === viewerId)?.potion}
+        ascension={run.ascension}
+        onPotion={(decision) => setRun((current) => resolvePotionReward(current, viewerId, decision))}
+        onRewardChoice={(reward, choice) => setRun((current) =>
           choosePendingRelicReward(current, viewerId, reward, choice))} onResolve={(cardUids, rewardIndices) => setRun((current) =>
           resolvePendingRelic(current, viewerId, cardUids, rewardIndices))} /> : null}
       {pendingSocket && pendingSocketOwner ? <GuardianSocketPanel

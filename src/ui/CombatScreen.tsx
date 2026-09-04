@@ -418,6 +418,17 @@ function CombatScreenView({
   const [triggerSlimeUids, setTriggerSlimeUids] = useState<string[]>([])
   const [triggerSlimeEnemyUids, setTriggerSlimeEnemyUids] = useState<string[]>([])
   const [stageScale, setStageScale] = useState(1)
+  const currentStageActors = state.players.length + livingEnemies(state).length
+  const stageActors = useRef({
+    combatId: state.combatId,
+    initial: currentStageActors,
+    maximum: currentStageActors,
+  })
+  if (stageActors.current.combatId !== state.combatId) {
+    stageActors.current = { combatId: state.combatId, initial: currentStageActors, maximum: currentStageActors }
+  } else {
+    stageActors.current.maximum = Math.max(stageActors.current.maximum, currentStageActors)
+  }
   const reducedMotion = useReducedEffects()
 
   useEffect(() => registerCardZoomCloser(closeSlimeCardZoom.current), [])
@@ -1644,9 +1655,9 @@ function CombatScreenView({
   const visibleEnemies = displayedEnemies(state.enemies, prefersReducedMotion ? new Set() : falling)
   const bosses = visibleEnemies.filter((enemy) => enemy.isBoss)
   const stageEnemies = visibleEnemies.filter((enemy) => !enemy.isBoss)
-  const stageCount = state.players.length + visibleEnemies.length
+  const stageCount = stageActors.current.maximum
+  const stageScaleActors = stageActors.current.initial
   const stageGap = STAGE_GAP_REM * stageScale
-  const stageLayoutKey = visibleEnemies.map((enemy) => `${enemy.uid}:${enemy.row}:${enemy.isBoss}`).join('|')
 
   useLayoutEffect(() => {
     const board = boardRef.current
@@ -1654,25 +1665,26 @@ function CombatScreenView({
     const fit = () => {
       if (board.clientWidth === 0) return
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-      setStageScale(stageScaleFor(stageCount, board.clientWidth, rem))
+      setStageScale(stageScaleFor(stageScaleActors, board.clientWidth, rem))
     }
     fit()
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(fit)
     observer.observe(board)
     return () => observer.disconnect()
-  }, [stageCount])
+  }, [stageScaleActors, state.combatId])
 
   // With a full party the board can outgrow the viewport. Rather than shrink
   // everything, keep the row the player actually controls on screen.
   //
   // A layout effect, not a plain one: this must run before paint, or the board
   // is briefly drawn scrolled to the wrong row and then jumps.
-  // Also on a phase change, when the board's rows can change height.
+  // Enemy VFX, deaths, and summons must not recenter the board underneath the
+  // player. Only a new combat or an explicit seat switch chooses a new view.
   useLayoutEffect(() => {
     followViewerRow.current = true
     recenterViewerRow()
-  }, [viewerId, state.turn, state.phase, stageLayoutKey])
+  }, [viewerId, state.combatId])
 
   useEffect(() => {
     const board = boardRef.current
@@ -1681,7 +1693,6 @@ function CombatScreenView({
       if (followViewerRow.current) recenterViewerRow()
     })
     observer.observe(board)
-    for (const row of board.querySelectorAll('.row')) observer.observe(row)
     return () => observer.disconnect()
   }, [viewerId])
 
@@ -5366,7 +5377,6 @@ function CombatScreenView({
           const foes = stageEnemies.filter((enemy) => enemy.row === row)
           const actorEvents = occupant ? actorVfxFor(occupant.id) : []
           const actorVfx = actorEvents.filter(({ event }) => event.enemyIds.length === 0)
-          const latestActorVfx = actorEvents[actorEvents.length - 1]
           const characterAttackMotions = occupant ? characterAttacks[occupant.id] ?? [] : []
           const characterAttack = characterAttackMotions.at(-1)
           const latestCharacterAttackSeq = characterAttack?.active.event.seq
@@ -5407,11 +5417,7 @@ function CombatScreenView({
                         occupant.id === viewerId ? 'seat--viewer' : '',
                         occupant.dead ? 'seat--dead' : '',
                         falling.has(occupant.id) ? 'seat--falling' : '',
-                        characterAttack
-                          ? `seat--attack-${occupant.character}`
-                          : latestActorVfx && latestActorVfx.recipe.actorMotion !== 'none'
-                          ? `seat--vfx-${latestActorVfx.recipe.actorMotion} seat--vfx-beat-${latestActorVfx.event.seq % 2}`
-                          : '',
+                        characterAttack ? `seat--attack-${occupant.character}` : '',
                         (!occupant.dead && ((pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
                           pendingPowerNeedsAlly ||
                           cardDrag?.needsPlayer ||
@@ -5445,17 +5451,17 @@ function CombatScreenView({
                           <GuardianPortrait
                             mode={occupant.guardianMode}
                             animate={!prefersReducedMotion}
-                            restartKey={characterAttack?.active.event.seq ?? latestActorVfx?.event.seq ?? 'idle'}
+                            restartKey={characterAttack?.active.event.seq ?? 'idle'}
                           />
                         ) : (
                           <img
-                            key={`${occupant.character}-${occupantHeat}-${slimeSpawnEvent?.seq ?? characterAttack?.active.event.seq ?? latestActorVfx?.event.seq ?? 'idle'}`}
+                            key={`${occupant.character}-${occupantHeat}-${slimeSpawnEvent?.seq ?? characterAttack?.active.event.seq ?? 'idle'}`}
                             src={assetPath(occupant.character === 'hexaghost'
                               ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
                               : occupant.character === 'slime_boss' && slimeSpawnEvent
                                 ? 'combat/characters/slime_boss-spawn.webp'
                               : `combat/characters/${occupant.character}.webp`)}
-                            data-vfx-seq={latestActorVfx?.event.seq}
+                            data-vfx-seq={characterAttack?.active.event.seq}
                             alt=""
                             onError={(event) => {
                               if (occupant.character === 'slime_boss' && slimeSpawnEvent &&

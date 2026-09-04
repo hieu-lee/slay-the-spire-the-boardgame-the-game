@@ -2,7 +2,7 @@
    memory only while an actor is idle; active attack classes keep their short,
    compositor-promoted layers from attack-timing.css. */
 html[data-mobile-performance='true']
-  .seat:not([class*='seat--attack-']):not([class*='seat--vfx-']) .seat__portrait > img,
+  .seat:not([class*='seat--attack-']) .seat__portrait > img,
 html[data-mobile-performance='true']
   .enemy:not(.enemy--acting):not(.enemy--falling) .enemy__portrait > .enemy__art--cutout {
   will-change: auto;
@@ -68,7 +68,6 @@ html[data-mobile-performance='true'] .choice-modal::backdrop {
   html:not([data-mobile-performance='true']) :is(
     .stance-aura,
     .combat-vfx,
-    .seat[class*='seat--vfx-'][class*='seat--vfx-beat-'] .seat__portrait > img,
     .seat[class*='seat--attack-'] .seat__portrait > img,
     .seat--attack-ironclad .character-attack--ironclad,
     .seat--attack-watcher .character-attack--watcher
