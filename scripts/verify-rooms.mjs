@@ -8003,6 +8003,52 @@ check('Distilled Chaos does not deadlock when Fiend Fire exhausts the queued car
   assertEqual(room.run.combat.startTurnProgress, undefined)
 })
 
+check('Distilled Chaos discards a card stranded without a target by a boss rebirth, and settles without ever forming a private forced-card marker', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const first = { uid: 'room-distilled-awakened-first', defId: 'strike_ironclad', upgraded: false }
+  const second = { uid: 'room-distilled-awakened-second', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(actor, { hand: [], draw: [first, second], discard: [], potions: ['distilled_chaos'] })
+  room.run.combat.enemies = [{
+    ...room.run.combat.enemies[0], uid: 'awakened', defId: 'awakened_one_phase_1', isBoss: true,
+    hp: 1, maxHp: 50, block: 0, dead: false, abilityUsed: false,
+  }]
+
+  apply(room, a.token, { kind: 'usePotion', potionId: 'distilled_chaos', preflight: true })
+  assertDeepEqual(snapshotFor(room, a.token).run.combat.pendingDistilled.cards.map((card) => card.uid),
+    [first.uid, second.uid])
+  for (const card of [first, second]) {
+    assert(!allStrings(snapshotFor(room, b.token)).includes(card.uid), 'a Distilled Chaos card leaked to a teammate')
+  }
+
+  apply(room, a.token, { kind: 'chooseDistilledCard', cardUid: first.uid })
+  apply(room, a.token, { kind: 'playCard', cardUid: first.uid, enemyUid: 'awakened', preflight: true })
+  assert(room.run.combat.enemies[0].dead, 'phase 1 should die from the first queued Strike')
+  assert(room.run.combat.pendingSummons.length > 0, 'phase 2 is pending, so combat is not over yet')
+  assertEqual(room.run.combat.phase, 'player')
+
+  // Choosing the second Strike must not create an unplayable forced card, since
+  // no living enemy exists to target while phase 2 is pending: it should be
+  // discarded server-side and the pending state cleared, instead of getting
+  // stuck as `startTurnProgress.forcedCard` -- which, unlike an ordinary
+  // discard, would also have had to stay private forever (see the assertion
+  // below), since `playCard` could never legally settle it.
+  apply(room, a.token, { kind: 'chooseDistilledCard', cardUid: second.uid })
+  assertEqual(room.run.combat.pendingDistilled, undefined)
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+  assertEqual(room.run.combat.phase, 'player', 'the player must regain normal control instead of getting stuck')
+  const settledActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  assert(settledActor.discard.some((card) => card.uid === second.uid),
+    'the untargetable Strike should be discarded, not lost or left in hand')
+  assert(!settledActor.hand.some((card) => card.uid === second.uid))
+  // The discard pile is public by design once a card lands there, same as any
+  // other discarded card -- `forcedCard.cardUid` redaction for non-owners is
+  // separately covered by the "privately queues" tests above. What this
+  // confirms is the actual regression: no forced-card marker for an
+  // unplayable card is ever created, on the owner's view or the teammate's.
+  assertEqual(snapshotFor(room, b.token).run.combat.startTurnProgress, undefined)
+})
+
 check('Golden Eye Scry is owner-private, reconnect-safe, and rejects forged cards', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

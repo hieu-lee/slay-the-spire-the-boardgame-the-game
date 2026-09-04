@@ -53,6 +53,7 @@ import { ENEMIES } from '../src/game/enemies.ts'
 import { createRng } from '../src/game/rng.ts'
 import { CAPS } from '../src/game/types.ts'
 import { DOWNFALL_COLORLESS_CARD_DEFS } from '../src/game/downfall/items.ts'
+import { bruiserSlime } from '../src/game/downfall/slime-boss.ts'
 import {
   advanceAct,
   createRun,
@@ -5283,6 +5284,29 @@ check('Havoc forces its draw for 0 Energy and Exhausts every non-Power', () => {
   assert(!unplayable.players[0].discard.some((card) => card.uid === daze.uid))
 })
 
+check('Havoc Exhausts its drawn card instead of deadlocking when no living enemy remains', () => {
+  const priorStrike = instance('strike_ironclad')
+  const havoc = instance('havoc')
+  const drawnStrike = instance('strike_ironclad')
+  let state = combat([makePlayer({ hand: [priorStrike, havoc], draw: [drawnStrike], energy: 2 })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50, isBoss: true }),
+  ])
+  state = playCard(state, 'p1', priorStrike.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'phase 1 should die from the first Strike')
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+  assertEqual(state.phase, 'player')
+
+  // Havoc's own drawn card must not become an unplayable forced card either:
+  // with no living enemy to target, it should be Exhausted immediately (per
+  // Havoc's printed effect) rather than getting stuck as `forcedCard`.
+  state = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.startTurnProgress, undefined, 'a forced card with no legal target must not be created')
+  assertEqual(state.phase, 'player', 'the player must regain normal control instead of getting stuck')
+  assert(state.players[0].exhaust.some((card) => card.uid === drawnStrike.uid),
+    'the untargetable drawn Strike should be Exhausted, per Havoc\'s printed effect')
+  assert(!state.players[0].hand.some((card) => card.uid === drawnStrike.uid))
+})
+
 check('Havoc finishes its immediate child before cleanup and post-card reactions', () => {
   const havoc = instance('havoc', true)
   const lethal = instance('strike_ironclad')
@@ -9241,6 +9265,265 @@ check('Distilled Chaos privately queues three cards and plays them in the chosen
   state = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: null })
   assertEqual(state.enemies[0].hp, 8)
   assertEqual(state.pendingDistilled, undefined)
+})
+
+check('Distilled Chaos discards a queued card that loses its only living target, instead of deadlocking', () => {
+  const first = instance('strike_ironclad')
+  const second = instance('strike_ironclad')
+  let state = combat([makePlayer({ draw: [first, second], potions: ['distilled_chaos'], energy: 0 })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50, isBoss: true }),
+  ])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  assertDeepEqual(state.pendingDistilled.cards.map((card) => card.uid), [first.uid, second.uid])
+
+  state = chooseDistilledCard(state, 'p1', first.uid)
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'phase 1 should die from the first queued Strike')
+  assertEqual(state.pendingSummons[0]?.turn, state.turn + 1, 'phase 2 is pending, so combat is not over yet')
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+  assertEqual(state.phase, 'player')
+
+  // Choosing the second Strike must not create an unplayable forced card: with
+  // no living enemy to target, it should be discarded and the queue continue.
+  state = chooseDistilledCard(state, 'p1', second.uid)
+  assertEqual(state.startTurnProgress, undefined, 'a forced card with no legal target must not be created')
+  assertEqual(state.pendingDistilled, undefined, 'the queue is empty once its only remaining card is discarded')
+  assertEqual(state.phase, 'player', 'the player must regain normal control instead of getting stuck')
+  assert(state.players[0].discard.some((card) => card.uid === second.uid),
+    'the untargetable Strike should be discarded, not lost or left in hand')
+  assert(!state.players[0].hand.some((card) => card.uid === second.uid))
+  assert(state.log.some((line) => line.includes('cannot play') && line.includes('discarded')))
+})
+
+check('Distilled Chaos discards a queued multi-target card whose Choices lose their only living target', () => {
+  const first = instance('strike_ironclad')
+  const ragnarok = instance('ragnarok')
+  let state = combat([makePlayer({ draw: [first, ragnarok], potions: ['distilled_chaos'], energy: 0 })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50, isBoss: true }),
+  ])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  assertDeepEqual(state.pendingDistilled.cards.map((card) => card.uid), [first.uid, ragnarok.uid])
+
+  state = chooseDistilledCard(state, 'p1', first.uid)
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'phase 1 should die from the first queued Strike')
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+
+  // Ragnarok's independently-targeted `hitChoices` are validated through a
+  // different path than a plain chosen enemy (`cardEnemyChoiceCount`, not
+  // `cardNeedsEnemy`), so the forced-card guard has to account for both or
+  // this card would still deadlock combat exactly like a plain Strike would.
+  state = chooseDistilledCard(state, 'p1', ragnarok.uid)
+  assertEqual(state.startTurnProgress, undefined, 'a forced card with no legal target must not be created')
+  assertEqual(state.pendingDistilled, undefined)
+  assertEqual(state.phase, 'player', 'the player must regain normal control instead of getting stuck')
+  assert(state.players[0].discard.some((card) => card.uid === ragnarok.uid))
+})
+
+check('Distilled Chaos discards a queued card whose full-Soulburn spend loses its only living target', () => {
+  const first = instance('strike_ironclad')
+  const livingBomb = instance('living_bomb')
+  let state = combat([makePlayer({
+    draw: [first, livingBomb], potions: ['distilled_chaos'], energy: 0, soulburn: 0,
+  })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50, isBoss: true }),
+  ])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  assertDeepEqual(state.pendingDistilled.cards.map((card) => card.uid), [first.uid, livingBomb.uid])
+
+  state = chooseDistilledCard(state, 'p1', first.uid)
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'phase 1 should die from the first queued Strike')
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+
+  // Living Bomb spends every point of Soulburn it holds (`useAllSoulburn`) on
+  // a chosen row, validated through yet another path than a plain chosen
+  // enemy or a Choices effect (`soulburnEnemyUids`, not `cardNeedsEnemy` or
+  // `cardEnemyChoiceCount`), so the forced-card guard has to account for it
+  // too or this card would still deadlock combat.
+  state = chooseDistilledCard(state, 'p1', livingBomb.uid)
+  assertEqual(state.startTurnProgress, undefined, 'a forced card with no legal target must not be created')
+  assertEqual(state.pendingDistilled, undefined)
+  assertEqual(state.phase, 'player', 'the player must regain normal control instead of getting stuck')
+  assert(state.players[0].discard.some((card) => card.uid === livingBomb.uid))
+})
+
+check('Distilled Chaos discards a queued Modal card whose only enemy-facing Mode loses its target', () => {
+  const first = instance('strike_ironclad')
+  const carveReality = instance('carve_reality')
+  let state = combat([makePlayer({ draw: [first, carveReality], potions: ['distilled_chaos'], energy: 0 })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50, isBoss: true }),
+  ])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  assertDeepEqual(state.pendingDistilled.cards.map((card) => card.uid), [first.uid, carveReality.uid])
+
+  state = chooseDistilledCard(state, 'p1', first.uid)
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'phase 1 should die from the first queued Strike')
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+
+  // Carve Reality has no top-level `effects`, only two Modes that are each
+  // pure `hitChoices` -- a naive per-mode lookup with no Mode chosen yet
+  // silently sees zero Modes and reports "no target needed" instead of
+  // conservatively checking every Mode, which would let this card slip
+  // through into a forced card that can never legally resolve.
+  state = chooseDistilledCard(state, 'p1', carveReality.uid)
+  assertEqual(state.startTurnProgress, undefined, 'a forced card with no legal target must not be created')
+  assertEqual(state.pendingDistilled, undefined)
+  assertEqual(state.phase, 'player', 'the player must regain normal control instead of getting stuck')
+  assert(state.players[0].discard.some((card) => card.uid === carveReality.uid))
+})
+
+check('Distilled Chaos discards a queued mandatory Slime Command whose target loses its only living enemy', () => {
+  const first = instance('strike_ironclad')
+  const rally = instance('slime_boss_rally_the_troops')
+  let state = combat([makePlayer({
+    character: 'slime_boss', draw: [first, rally], potions: ['distilled_chaos'], energy: 0,
+    slimes: [bruiserSlime()],
+  })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50, isBoss: true }),
+  ])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  assertDeepEqual(state.pendingDistilled.cards.map((card) => card.uid), [first.uid, rally.uid])
+
+  state = chooseDistilledCard(state, 'p1', first.uid)
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'phase 1 should die from the first queued Strike')
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+
+  // Rally the Troops Commands EVERY Slime on the board with no player
+  // discretion, unlike most Commands (which let the player pick zero
+  // Slimes and so can never be stranded). Its mandatory enemy targets are
+  // validated through yet another path (`slimeCommandEnemyChoiceCount`, not
+  // `cardNeedsEnemy`, `cardEnemyChoiceCount`, or Soulburn), so the
+  // forced-card guard has to account for it too.
+  state = chooseDistilledCard(state, 'p1', rally.uid)
+  assertEqual(state.startTurnProgress, undefined, 'a forced card with no legal target must not be created')
+  assertEqual(state.pendingDistilled, undefined)
+  assertEqual(state.phase, 'player', 'the player must regain normal control instead of getting stuck')
+  assert(state.players[0].discard.some((card) => card.uid === rally.uid))
+})
+
+check('Distilled Chaos discards a queued Fission+ that would Evoke a channelled Lightning Orb with no living enemy', () => {
+  const first = instance('strike_defect')
+  const fissionPlus = instance('fission', true)
+  let state = combat([makePlayer({
+    character: 'defect', draw: [first, fissionPlus], potions: ['distilled_chaos'], energy: 0,
+    orbs: ['lightning', null, null],
+  })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50, isBoss: true }),
+  ])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  assertDeepEqual(state.pendingDistilled.cards.map((card) => card.uid), [first.uid, fissionPlus.uid])
+
+  state = chooseDistilledCard(state, 'p1', first.uid)
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'phase 1 should die from the first queued Strike')
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+
+  // Fission+ Evokes every charged Orb, including the channelled Lightning
+  // Orb, whose Evoke effect needs a living enemy exactly like a plain chosen
+  // target -- but it is validated through yet another path (`evokeEnemyUids`
+  // via `evokePlan`, not `cardNeedsEnemy`'s `evoke`/`recurseOrb` handling, a
+  // `cardEnemyChoiceCount` Choices effect, Soulburn, or Slime Command), so
+  // the forced-card guard has to account for it too.
+  state = chooseDistilledCard(state, 'p1', fissionPlus.uid)
+  assertEqual(state.startTurnProgress, undefined, 'a forced card with no legal target must not be created')
+  assertEqual(state.pendingDistilled, undefined)
+  assertEqual(state.phase, 'player', 'the player must regain normal control instead of getting stuck')
+  assert(state.players[0].discard.some((card) => card.uid === fissionPlus.uid))
+})
+
+check('Distilled Chaos discards a queued Rummage that could only load a targeted curse with no living enemy', () => {
+  const rummage = instance('hermit_rummage')
+  const grudge = instance('hermit_grudge')
+  let state = combat([makePlayer({
+    character: 'hermit', chamber: [], hand: [rummage], discard: [grudge],
+  })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 0, maxHp: 50, isBoss: true, dead: true }),
+  ])
+  // The Hermit board ability's own Start-of-Combat draw/load is unrelated to
+  // this scenario. Phase 1 is already dead with phase 2 pending, matching
+  // the moment right after the Awakened One repro's first queued card lands.
+  state.pendingHermitSetupLoads = []
+  state.pendingDistilled = { playerId: 'p1', cards: [rummage] }
+  state.pendingSummons = [{ sourceUid: 'awakened', row: 0, defIds: ['awakened_one_phase_2'], turn: state.turn + 1 }]
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+
+  // Rummage mandatorily Loads from the discard pile. Grudge is the only card
+  // there, and Grudge's Load reaction needs a chosen enemy -- validated
+  // through yet another path (a mandatory `load` with no non-curse
+  // alternative in its zone, not `cardNeedsEnemy`, a Choices effect, Soulburn,
+  // Slime Command, or Orb Evoke), so the forced-card guard has to account
+  // for it too.
+  state = chooseDistilledCard(state, 'p1', rummage.uid)
+  assertEqual(state.startTurnProgress, undefined, 'a forced card with no legal target must not be created')
+  assertEqual(state.pendingDistilled, undefined)
+  assertEqual(state.phase, 'player', 'the player must regain normal control instead of getting stuck')
+  assert(state.players[0].discard.some((card) => card.uid === rummage.uid))
+  assert(state.players[0].discard.some((card) => card.uid === grudge.uid),
+    'Grudge should stay untouched in discard, never force-loaded')
+  assertEqual(state.players[0].chamber.length, 0)
+})
+
+check('Distilled Chaos still forces a triggered Power whose mandatory Load only fires later, not on play', () => {
+  const takeAim = instance('hermit_take_aim')
+  const grudge = instance('hermit_grudge')
+  let state = combat([makePlayer({
+    character: 'hermit', chamber: [], hand: [takeAim, grudge], discard: [],
+  })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 0, maxHp: 50, isBoss: true, dead: true }),
+  ])
+  state.pendingHermitSetupLoads = []
+  // Take Aim's `load(1)` defaults to `source: 'hand'`: with Grudge as the
+  // only OTHER card in hand, a naive check would see no safe alternative.
+  state.pendingDistilled = { playerId: 'p1', cards: [takeAim] }
+  state.pendingSummons = [{ sourceUid: 'awakened', row: 0, defIds: ['awakened_one_phase_2'], turn: state.turn + 1 }]
+  assertEqual(livingEnemies(state).length, 0, 'no living enemy exists while phase 2 is pending')
+
+  // Take Aim's `load(1)` only fires at End of Turn (its printed trigger), not
+  // when it is played -- playing it just adds the Power. `cardCanBeForced`
+  // must not discard it just because Grudge, the only other hand card, is the
+  // only thing that mandatory Load would eventually see: that Load has not
+  // happened yet, and the board may look different by the time it does.
+  state = chooseDistilledCard(state, 'p1', takeAim.uid)
+  assertEqual(state.startTurnProgress?.forcedCard?.cardUid, takeAim.uid,
+    'a Power whose mandatory choice fires on a later trigger, not on play, must still be forceable')
+  state = playCard(state, 'p1', takeAim.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.startTurnProgress, undefined)
+  assert(state.players[0].powers.some((card) => card.uid === takeAim.uid))
+  assert(state.players[0].hand.some((card) => card.uid === grudge.uid),
+    'Grudge must stay untouched in hand -- Take Aim has not Loaded anything yet')
+})
+
+// This does not exercise the enemy-target guard above -- Grand Finale's
+// printed `drawPileEmpty` condition is caught by the ordinary `cardIsPlayable`
+// check that already existed. It is here to cover the general "a queued card
+// becomes unplayable mid-queue" case the enemy-target fix sits alongside.
+check('Distilled Chaos discards a queued card whose play condition breaks mid-queue', () => {
+  const flashOfSteel = instance('flash_of_steel')
+  const grandFinale = instance('grand_finale')
+  const filler1 = instance('defend_ironclad')
+  const filler2 = instance('defend_ironclad')
+  let state = combat([makePlayer({
+    hand: [], draw: [], discard: [filler1, filler2], energy: 0,
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state.players[0].hand = [flashOfSteel, grandFinale]
+  state.pendingDistilled = { playerId: 'p1', cards: [flashOfSteel, grandFinale] }
+
+  // Grand Finale only requires an empty draw pile, which currently holds:
+  // playing Flash of Steel's own draw will reshuffle the discard back in and
+  // leave a card behind, so Grand Finale becomes unplayable mid-queue.
+  state = chooseDistilledCard(state, 'p1', flashOfSteel.uid)
+  state = playCard(state, 'p1', flashOfSteel.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].draw.length, 1, 'Flash of Steel reshuffled a filler back into the draw pile')
+
+  state = chooseDistilledCard(state, 'p1', grandFinale.uid)
+  assertEqual(state.startTurnProgress, undefined)
+  assertEqual(state.pendingDistilled, undefined, 'the queue continues and empties after the last card is discarded')
+  assertEqual(state.phase, 'player')
+  assert(state.players[0].discard.some((card) => card.uid === grandFinale.uid),
+    'Grand Finale should be discarded once its draw-pile-empty condition no longer holds')
 })
 
 check('Distilled Chaos excludes cards removed by immediate draw reactions', () => {
