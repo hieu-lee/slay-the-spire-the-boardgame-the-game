@@ -884,7 +884,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         </section>
       ) : null}
 
-      {!allocatingCampaignMarks && run.phase === 'victory' && !run.campaign.finalized ? (
+      {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'victory' && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
           <RunSummary act={run.act} roomsCleared={roomsCleared}

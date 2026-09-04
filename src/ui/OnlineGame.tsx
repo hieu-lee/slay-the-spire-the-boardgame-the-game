@@ -870,7 +870,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             onClick={() => room.act({ kind: 'leaveRoom' })}><span aria-hidden="true"></span></button>
         </section>
       ) : null}
-      {run.phase === 'victory' && !run.campaign.finalized ? (
+      {run.phase === 'victory' && !pendingAcquisition && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
           <RunSummary act={run.act} roomsCleared={roomsCleared}
