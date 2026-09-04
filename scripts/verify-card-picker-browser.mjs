@@ -193,6 +193,13 @@ try {
     return rows
   }, {})).sort((left, right) => right - left))
   assert.equal(deckRows[0], 5)
+  const deckCardSize = await deck.locator('.choice-modal__cards > .card').first().evaluate((card) => {
+    const box = card.getBoundingClientRect()
+    const art = card.querySelector('.card__art')?.getBoundingClientRect()
+    return { width: box.width, height: box.height, artWidth: art?.width ?? 0 }
+  })
+  assert(deckCardSize.width >= 160 && deckCardSize.height >= 220 && deckCardSize.artWidth >= deckCardSize.width - 4,
+    `collection cards collapsed to thumbnails: ${JSON.stringify(deckCardSize)}`)
   await deck.getByLabel('Current deck upgrade preview').check()
   assert((await deck.locator('.choice-modal__cards > .card').first().getAttribute('aria-label'))?.includes('+, '))
   await deck.getByRole('button', { name: 'Close' }).click()

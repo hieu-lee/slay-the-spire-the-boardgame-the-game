@@ -93,7 +93,7 @@
 .card-collection__sort button { min-height: 2.4rem; padding: .25rem .5rem; color: #f8d867; background: #195a7c; border: 0; font: inherit; font-weight: 800; text-shadow: 1px 1px #000; }
 .card-collection__sort button[aria-pressed='true'] { color: #fff4bf; background: #143d58; }
 .card-collection .choice-modal__cards { --card-width: min(15rem, calc((100% - 8rem) / 5)); display: grid; grid-template-columns: repeat(5, var(--card-width)); align-content: start; justify-content: center; gap: clamp(.75rem, 1.8vw, 2rem); overflow: auto; padding: .5rem; }
-.card-collection .choice-modal__cards > .card { width: var(--card-width); }
+.card-collection .choice-modal__cards > .card { width: 100%; }
 .card-collection .choice-modal__cards .card--unplayable { filter: none; }
 .card-collection__footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: .75rem; }
 .card-collection__footer label { color: #f3d268; font-weight: 700; }

@@ -26,25 +26,32 @@ try {
   await page.getByRole('button', { name: 'Embark', exact: true }).click()
   await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 
-  const stage = () => page.evaluate(() => {
-    const debug = window.__STS_DEBUG__
-    const run = structuredClone(debug.getRun())
-    run.phase = 'reward'
-    run.combat = null
-    run.rewardDestination = 'map'
-    run.players[0].potions = []
-    run.rewards = [{
-      playerId: run.players[0].id,
-      cardReward: true,
-      choices: null,
-      upgraded: false,
-      gold: 8,
-      potion: 'weak_potion',
-      relic: false,
-      bossRelics: false,
-    }]
-    debug.setRun(run)
-  })
+  const stage = async () => {
+    await page.evaluate(() => {
+      const debug = window.__STS_DEBUG__
+      const run = structuredClone(debug.getRun())
+      run.phase = 'reward'
+      run.combat = null
+      run.rewardDestination = 'map'
+      run.players[0].potions = []
+      run.rewards = [{
+        playerId: run.players[0].id,
+        cardReward: true,
+        choices: null,
+        upgraded: false,
+        gold: 8,
+        potion: 'weak_potion',
+        relic: false,
+        bossRelics: false,
+      }]
+      debug.setRun(run)
+    })
+    await page.waitForFunction(() => {
+      const run = window.__STS_DEBUG__.getRun()
+      return run.phase === 'reward' && run.rewards[0]?.cardReward && run.rewards[0].choices === null &&
+        run.rewards[0].potion === 'weak_potion' && run.players[0].potions.length === 0
+    })
+  }
   const settle = async () => {
     await page.locator('.reward-screen--loot').waitFor()
     await page.evaluate(() => document.fonts.ready)
@@ -112,6 +119,37 @@ try {
   assert.equal(independent.deck, deckBefore + 1, 'the chosen card was not added')
 
   await stage()
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.players[0].potions = ['liquid_memories', 'fairy_in_a_bottle', 'distilled_chaos']
+    run.rewards[0].potion = 'distilled_chaos'
+    debug.setRun(run)
+  })
+  await settle()
+  const fullPotionRows = page.getByRole('button', { name: /^Distilled Chaos — replace / })
+  assert.equal(await fullPotionRows.count(), 3, 'local loot did not render one replacement row per occupied Potion slot')
+  const fullCardReward = page.getByRole('button', { name: 'Add a card to your deck.' })
+  assert.equal(await fullCardReward.count(), 1, `a full Potion inventory hid the independent Card Reward: ${JSON.stringify(
+    await page.evaluate(() => window.__STS_DEBUG__.getRun().rewards[0]))}`)
+  assert(await fullCardReward.isEnabled(), 'a full Potion inventory disabled the independent Card Reward')
+  await page.screenshot({ path: join(out, 'desktop-full-potion-loot.png') })
+  await page.getByRole('button', { name: 'Distilled Chaos — replace Liquid Memories' }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().rewards[0].potion === false)
+  assert.equal(await fullPotionRows.count(), 0, 'choosing a Potion replacement left sibling replacement rows visible')
+
+  await stage()
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.players[0].potions = ['liquid_memories', 'fairy_in_a_bottle']
+    run.rewards[0].potion = 'distilled_chaos'
+    debug.setRun(run)
+  })
+  await page.getByRole('button', { name: 'Distilled Chaos', exact: true }).waitFor()
+  assert.equal(await fullPotionRows.count(), 0, 'freeing a Potion slot left replacement rows visible in local loot')
+
+  await stage()
   await settle()
   const goldBefore = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold)
   await page.getByRole('button', { name: 'Skip', exact: true }).click()
@@ -131,6 +169,29 @@ try {
   assert(phone.skip.left >= 0 && phone.skip.right <= phone.width && phone.skip.bottom <= phone.height,
     'global Skip leaves the horizontal-phone viewport')
   await page.screenshot({ path: join(out, 'horizontal-phone-loot.png') })
+
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.players[0].potions = ['liquid_memories', 'fairy_in_a_bottle', 'distilled_chaos']
+    run.rewards[0].potion = 'distilled_chaos'
+    debug.setRun(run)
+  })
+  const phonePotionRows = page.getByRole('button', { name: /^Distilled Chaos — replace / })
+  await phonePotionRows.first().waitFor()
+  assert.equal(await phonePotionRows.count(), 3, 'horizontal-phone loot lost a Potion replacement row')
+  const phoneCardReward = page.getByRole('button', { name: 'Add a card to your deck.' })
+  assert(await phoneCardReward.isEnabled(), 'horizontal-phone full Potion inventory disabled the independent Card Reward')
+  for (const choice of [...await phonePotionRows.all(), phoneCardReward]) {
+    await choice.scrollIntoViewIfNeeded()
+    const visible = await choice.evaluate((button) => {
+      const row = button.getBoundingClientRect()
+      const panel = button.closest('.reward-screen__players').getBoundingClientRect()
+      return row.top >= panel.top && row.bottom <= panel.bottom
+    })
+    assert(visible, 'horizontal-phone loot choice cannot be reached inside the scrolling panel')
+  }
+  await page.screenshot({ path: join(out, 'horizontal-phone-full-potion-loot.png') })
 
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.evaluate(() => {
@@ -293,12 +354,14 @@ try {
         onRewardChoice: () => {}, onResolve: (cardUids, rewardIndices) => onAction({ kind: 'resolveRelic', cardUids, rewardIndices }),
       }))
     }
-    window.__SHOW_MULTI_LOOT__ = () => {
+    window.__SHOW_MULTI_LOOT__ = ({ full = true, potion = true } = {}) => {
       window.__ONLINE_REWARD_ACTIONS__ = []
       root.render(createElement(OnlineRewardScreen, {
-        key: 'multi-loot', run: { ...run,
-          players: [{ ...run.players[0], potions: ['fire_potion', 'swift_potion', 'blood_potion'] }],
-          rewards: [{ ...run.rewards[0], cardReward: false, choices: null, gold: 8, potion: 'fire_potion' }] },
+        key: `multi-loot-${full}-${potion}`, run: { ...run,
+          players: [{ ...run.players[0], potions: full
+            ? ['liquid_memories', 'fairy_in_a_bottle', 'distilled_chaos']
+            : ['liquid_memories', 'fairy_in_a_bottle'] }],
+          rewards: [{ ...run.rewards[0], cardReward: false, choices: null, gold: 8, potion: potion ? 'distilled_chaos' : false }] },
         viewerId: 'p1', decided: [], confirmed: [], onAction,
       }))
     }
@@ -391,8 +454,28 @@ try {
   ], 'double-clicking Relic resolution dispatched it more than once')
 
   await page.evaluate(() => window.__SHOW_MULTI_LOOT__())
-  assert(await page.getByRole('button', { name: 'Replace Fire Potion' }).isVisible(),
-    'full-inventory Potion replacement controls are not mouse-accessible')
+  const replacementRows = page.getByRole('button', { name: /^Distilled Chaos — replace / })
+  assert.equal(await replacementRows.count(), 3, 'a full Potion inventory did not render one loot row per occupied slot')
+  for (const name of ['Liquid Memories', 'Fairy in a Bottle', 'Distilled Chaos']) {
+    assert(await page.getByRole('button', { name: `Distilled Chaos — replace ${name}` }).isVisible(),
+      `Potion replacement row for ${name} is not mouse-accessible`)
+  }
+  await page.getByRole('button', { name: 'Distilled Chaos — replace Liquid Memories' }).click()
+  assert.deepEqual(await page.evaluate(() => window.__ONLINE_REWARD_ACTIONS__), [
+    { kind: 'potionReward', choice: 'replace', potionId: 'liquid_memories' },
+  ], 'Potion replacement did not resolve the offered Potion against the selected slot')
+  await page.evaluate(() => window.__SHOW_MULTI_LOOT__({ potion: false }))
+  await page.waitForFunction(() => ![...document.querySelectorAll('.loot-choice strong')]
+    .some((label) => label.textContent.includes('replace')))
+  assert.equal(await replacementRows.count(), 0, 'Potion replacement rows remained after the offer resolved')
+
+  await page.evaluate(() => window.__SHOW_MULTI_LOOT__({ full: false }))
+  await page.getByRole('button', { name: 'Distilled Chaos', exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Distilled Chaos', exact: true }).count(), 1,
+    'freeing a Potion slot did not collapse replacement rows into one normal gain row')
+  assert.equal(await replacementRows.count(), 0, 'replacement rows remained after a Potion slot became free')
+
+  await page.evaluate(() => window.__SHOW_MULTI_LOOT__())
   const lootSkip = page.getByRole('button', { name: 'Skip', exact: true })
   await lootSkip.waitFor()
   await page.evaluate(() => {

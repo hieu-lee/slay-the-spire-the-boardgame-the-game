@@ -21,6 +21,23 @@ export function LootChoice({ children, icon, onClick, disabled = false }: {
   </button>
 }
 
+export function PotionLootChoices({ potionId, player, ascension, disabled = false, onChoose }: {
+  potionId: string
+  player: Pick<Player, 'potions' | 'relics'>
+  ascension: number
+  disabled?: boolean
+  onChoose: (decision: PotionRewardDecision) => void
+}) {
+  const name = potionDef(potionId).name
+  const sozu = player.relics.some((relic) => relic.defId === 'sozu')
+  if (player.potions.length < potionLimit(ascension, player) || sozu) return <LootChoice disabled={disabled || sozu}
+    onClick={() => onChoose({ kind: 'gain' })} icon={<ItemImage kind="potion" id={potionId} />}>{name}</LootChoice>
+  return player.potions.map((held, index) => <LootChoice key={`${held}-${index}`} disabled={disabled}
+    onClick={() => onChoose({ kind: 'replace', potionId: held })} icon={<ItemImage kind="potion" id={potionId} />}>
+    {name} — replace {potionDef(held).name}
+  </LootChoice>)
+}
+
 /** Shared compact item row for Neow and room offers. */
 export function RewardItem({ kind, id, title, note, children }: {
   kind: 'relic' | 'potion'
@@ -99,20 +116,11 @@ export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onR
       {rewards.map((offer) => {
         const player = players.find((candidate) => candidate.id === offer.playerId)
         if (!player) return null
-        const sozu = player.relics.some((relic) => relic.defId === 'sozu')
-        const potionBlocked = player.potions.length >= potionLimit(ascension, player) || sozu
         return <div className="reward-screen__player" key={player.id}>
           {players.length > 1 ? <h3>{player.name}</h3> : null}
           {offer.gold ? <LootChoice onClick={() => onGold(player.id)} icon={<img src={assetPath('icons/gold.png')} alt="" />}>{offer.gold} Gold</LootChoice> : null}
-          {typeof offer.potion === 'string' ? <><LootChoice disabled={potionBlocked} onClick={() => onPotion(player.id, { kind: 'gain' })}
-            icon={<ItemImage kind="potion" id={offer.potion} />}>{potionDef(offer.potion).name}</LootChoice>
-            {potionBlocked ? <div className="loot-choice__actions">
-              {potionBlocked && !sozu ? player.potions.map((held, index) => <button type="button" key={`${held}-${index}`}
-                onClick={() => onPotion(player.id, { kind: 'replace', potionId: held })}>Replace {potionDef(held).name}</button>) : null}
-              {potionBlocked && players.filter((target) => target.id !== player.id && !target.dead && target.potions.length < potionLimit(ascension, target) &&
-                !target.relics.some((relic) => relic.defId === 'sozu')).map((target) => <button type="button" key={target.id}
-                  onClick={() => onPotion(player.id, { kind: 'pass', playerId: target.id })}>Pass to {target.name}</button>)}
-            </div> : null}</> : null}
+          {typeof offer.potion === 'string' ? <PotionLootChoices potionId={offer.potion} player={player} ascension={ascension}
+            onChoose={(decision) => onPotion(player.id, decision)} /> : null}
           {typeof offer.relic === 'string' ? <LootChoice onClick={() => onRelic(player.id, 'gain')}
             icon={<ItemImage kind="relic" id={offer.relic} />}>{relicDef(offer.relic).name}</LootChoice> : null}
           {Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <LootChoice key={relicId} onClick={() => onBossRelic(player.id, relicId)}
