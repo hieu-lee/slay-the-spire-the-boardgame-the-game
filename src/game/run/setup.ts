@@ -268,6 +268,7 @@ export function createRun(
     players,
     combat: null,
     combatsFinished: 0,
+    floorsCleared: 0,
     potionDeck: [...itemDecks.potions],
     relicDeck: [...itemDecks.relics],
     bossRelicDeck: relicDecks.bossRelicDeck,

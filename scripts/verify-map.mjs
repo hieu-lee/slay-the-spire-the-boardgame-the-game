@@ -532,10 +532,12 @@ check('independent Potion rewards queue without overwriting each other', () => {
   assertDeepEqual(run.rewards[0].potionQueue, [tinyPotion])
 })
 
-check('finished combats are counted once for leaderboard averages', () => {
+check('finished combats and reached floors are counted once for leaderboard averages', () => {
   const run = postNeowRun(919, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   assertEqual(run.combatsFinished, 0)
+  assertEqual(run.floorsCleared, 0)
   const entered = enterRoom(run, roomChoices(run)[0].id)
+  assertEqual(entered.floorsCleared, 1)
   const resolved = resolveCombat({
     ...entered,
     combat: {
@@ -549,7 +551,9 @@ check('finished combats are counted once for leaderboard averages', () => {
 
   const legacy = postNeowRun(920, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   delete legacy.combatsFinished
+  delete legacy.floorsCleared
   const legacyEntered = enterRoom(legacy, roomChoices(legacy)[0].id)
+  assertEqual(legacyEntered.floorsCleared, undefined, 'a legacy route was assigned a partial floor count')
   const legacyResolved = resolveCombat({
     ...legacyEntered,
     combat: {

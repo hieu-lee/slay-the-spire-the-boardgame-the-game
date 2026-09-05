@@ -29,7 +29,7 @@ page.on('console', (message) => { if (message.type() === 'error') errors.push(me
 const sample = (overrides) => ({
   id: crypto.randomUUID(), character: 'ironclad', ascension: 3, mode: 'standard', startedAtAct: 1,
   highestBossActDefeated: 3, combatsFinished: 10, damageDealt: 100, damageTaken: 30, damageBlocked: 70,
-  damageStatsComplete: true,
+  damageStatsComplete: true, floorsCleared: 20,
   ...overrides,
 })
 const waitForImages = () => page.waitForFunction(() => [...document.images].every((image) => image.complete && image.naturalWidth > 0))
@@ -39,20 +39,37 @@ try {
   for (const run of [
     sample({}),
     sample({ highestBossActDefeated: 2, combatsFinished: 5, damageDealt: 25, damageTaken: 50, damageBlocked: 0 }),
-    sample({ character: 'silent', highestBossActDefeated: 4, combatsFinished: 12, damageDealt: 240, damageTaken: 20, damageBlocked: 80 }),
+    sample({ character: 'silent', highestBossActDefeated: 4, combatsFinished: 12, damageDealt: 240, damageTaken: 20, damageBlocked: 80, floorsCleared: 27 }),
   ]) {
     const response = await fetch(`${roomOrigin}/api/leaderboard`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(run) })
     assert(response.ok, 'could not seed leaderboard')
   }
 
+  let legacySnapshot = true
+  await page.route('**/api/leaderboard', async (route) => {
+    if (route.request().method() !== 'GET' || !legacySnapshot) return route.continue()
+    const response = await route.fetch()
+    const snapshot = await response.json()
+    for (const row of snapshot.rows) delete row.averageFloorsCleared
+    return route.fulfill({ response, body: JSON.stringify(snapshot), contentType: 'application/json' })
+  })
+
   await page.goto(origin, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: 'Leaderboard', exact: true }).click()
   await page.getByRole('heading', { name: 'All heroes' }).waitFor()
   await page.getByRole('row', { name: /Silent Ascension 3/ }).waitFor()
+  const legacyRow = await page.getByRole('row', { name: /Silent Ascension 3/ }).innerText()
+  check('the new client renders an old-server snapshot throughout a rolling handoff', () => {
+    assert(legacyRow.includes('—'), legacyRow)
+  })
+  legacySnapshot = false
+  await page.getByRole('button', { name: 'Back to main menu' }).click()
+  await page.getByRole('button', { name: 'Leaderboard', exact: true }).click()
+  await page.getByRole('row', { name: /Silent Ascension 3/ }).waitFor()
   const firstRow = await page.locator('tbody tr').first().innerText()
   const ironcladRow = await page.getByRole('row', { name: /Ironclad Ascension 3/ }).innerText()
   check('requested metrics are rendered and ranked from the live service', () => {
-    assert(firstRow.includes('Silent') && firstRow.includes('100%') && firstRow.includes('20.0') && firstRow.includes('80%') && firstRow.endsWith('1'))
+    assert(firstRow.includes('Silent') && firstRow.includes('100%') && firstRow.includes('27.0') && firstRow.includes('20.0') && firstRow.includes('80%') && firstRow.endsWith('1'))
     assert(ironcladRow.includes('50%') && ironcladRow.includes('1 / 2') && ironcladRow.includes('8.3') && ironcladRow.includes('47%'))
   })
   await waitForImages()
@@ -81,10 +98,13 @@ try {
     documentWidth: document.documentElement.scrollWidth,
     viewportWidth: innerWidth,
     archiveHeight: document.querySelector('.leaderboard__archive')?.getBoundingClientRect().height,
+    tableWidth: document.querySelector('.leaderboard__table-wrap')?.scrollWidth,
+    tableViewport: document.querySelector('.leaderboard__table-wrap')?.clientWidth,
   }))
   check('the horizontal-phone composition stays inside the viewport', () => {
     assert(phoneFit.documentWidth <= phoneFit.viewportWidth + 2)
     assert(phoneFit.archiveHeight <= 390)
+    assert(phoneFit.tableWidth <= phoneFit.tableViewport + 2)
   })
 
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -99,14 +119,34 @@ try {
   await page.getByRole('button', { name: 'Standard', exact: true }).click()
   await page.getByRole('button', { name: 'Embark' }).click()
   await page.waitForFunction(() => Boolean(window.__STS_DEBUG__?.getRun()))
+  const enrichedOutbox = await page.evaluate(async () => {
+    const run = structuredClone(window.__STS_DEBUG__.getRun())
+    run.phase = 'defeat'
+    run.campaign.finalized = true
+    run.floorsCleared = 4
+    localStorage.setItem('sts-leaderboard-installation', 'browser-1234')
+    localStorage.setItem('sts-leaderboard-outbox', JSON.stringify([{
+      id: `browser-1234:${run.campaign.runId}:${run.seed}`, character: run.players[0].character,
+      ascension: run.ascension, mode: run.meta.mode, damageStatsComplete: true, startedAtAct: 1,
+      highestBossActDefeated: 0, combatsFinished: 0, damageDealt: 777, damageTaken: 0, damageBlocked: 0,
+    }]))
+    const { queueFinishedSoloRun } = await import('/src/leaderboard.ts')
+    queueFinishedSoloRun(run)
+    return JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]')
+  })
+  check('a queued legacy result gains its known floor count without duplicating or replacing prior stats', () => {
+    assertEqual(enrichedOutbox.length, 1)
+    assertEqual(enrichedOutbox[0].floorsCleared, 4)
+    assertEqual(enrichedOutbox[0].damageDealt, 777)
+  })
   await page.evaluate(() => {
-    window.__LEADERBOARD_HOLD__ = true
+    window.__LEADERBOARD_LEGACY__ = true
     window.__LEADERBOARD_FETCH__ = window.fetch
     window.fetch = (input, init) => {
       const submission = init?.body ? JSON.parse(String(init.body)) : null
       if (submission?.ascension === 99) return Promise.resolve(new Response('{"error":"bad row"}', { status: 400 }))
-      if (window.__LEADERBOARD_HOLD__ && init?.method === 'POST' && String(input).includes('/api/leaderboard')) {
-        return Promise.reject(new TypeError('simulated offline handoff'))
+      if (window.__LEADERBOARD_LEGACY__ && submission?.floorsCleared !== undefined && init?.method === 'POST' && String(input).includes('/api/leaderboard')) {
+        return Promise.resolve(new Response('{"ok":true,"added":true}', { status: 201 }))
       }
       return window.__LEADERBOARD_FETCH__(input, init)
     }
@@ -122,15 +162,20 @@ try {
     run.campaign.finalized = true
     run.ascension = 5
     run.combatsFinished = 3
+    run.floorsCleared = 4
     run.players = [run.players[0]]
     run.players[0].damageStats = { attack: 12, poison: 3, special: 0, taken: 4, blocked: 6 }
     window.__STS_DEBUG__.setRun(run)
   })
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]').length === 1)
-  await page.evaluate(() => { window.__LEADERBOARD_HOLD__ = false; window.dispatchEvent(new Event('online')) })
+  const queuedAcrossHandoff = await page.evaluate(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]'))
+  check('an old server acknowledgment keeps floor telemetry queued until the new server takes over', () => {
+    assertEqual(queuedAcrossHandoff[0].floorsCleared, 4)
+  })
+  await page.evaluate(() => { window.__LEADERBOARD_LEGACY__ = false; window.dispatchEvent(new Event('online')) })
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]').length === 0)
   await page.waitForTimeout(50)
-  check('a bad queued row cannot block a later solo result through a handoff outage', () => {
+  check('a bad queued row cannot block a later solo result through a rolling handoff', () => {
     assertEqual(rooms.store.leaderboardRuns.length, 4)
     const logged = rooms.store.leaderboardRuns.at(-1)
     assertEqual(logged.character, 'ironclad')
@@ -138,6 +183,7 @@ try {
     assertEqual(logged.combatsFinished, 3)
     assertEqual(logged.damageDealt, 15)
     assertEqual(logged.damageBlocked, 6)
+    assertEqual(logged.floorsCleared, 4)
   })
   check('the leaderboard surface raised no browser errors', () => assertEqual(errors.length, 0, errors.join('\n')))
 } finally {

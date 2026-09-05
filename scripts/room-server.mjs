@@ -299,7 +299,7 @@ export function createRoomServer({
         }
         const added = addLeaderboardRun(store, await readJson(request))
         if (added) queueSave()
-        return send(response, added ? 201 : 200, { ok: true, added })
+        return send(response, added ? 201 : 200, { ok: true, added, floorsClearedAccepted: true })
       }
       if (request.method === 'POST' && url.pathname === '/api/rooms') {
         sweepRooms()

@@ -16,6 +16,7 @@ export type LeaderboardRow = {
   act3WinRate: number | null
   averageDamagePerFight: number | null
   averageDamageBlocked: number | null
+  averageFloorsCleared?: number | null
   act4Wins: number
 }
 
@@ -33,6 +34,7 @@ type LeaderboardSubmission = {
   damageDealt: number
   damageTaken: number
   damageBlocked: number
+  floorsCleared?: number
 }
 
 let fallbackOutbox: LeaderboardSubmission[] = []
@@ -79,9 +81,17 @@ export function queueFinishedSoloRun(run: RunState) {
     damageDealt: totals.dealt,
     damageTaken: totals.taken,
     damageBlocked: totals.blocked,
+    ...(run.floorsCleared === undefined ? {} : {
+      floorsCleared: Math.max(0, Math.floor(run.floorsCleared)),
+    }),
   }
   const queued = readOutbox()
-  if (!queued.some((entry) => entry.id === submission.id)) writeOutbox([...queued, submission])
+  const existing = queued.findIndex((entry) => entry.id === submission.id)
+  if (existing < 0) return writeOutbox([...queued, submission])
+  if (queued[existing]!.floorsCleared === undefined && submission.floorsCleared !== undefined) {
+    queued[existing] = { ...queued[existing]!, floorsCleared: submission.floorsCleared }
+    writeOutbox(queued)
+  }
 }
 
 async function flush() {
@@ -100,6 +110,12 @@ async function flush() {
           continue
         }
         if (!response.ok) throw new Error('Leaderboard submission failed')
+        const acknowledged = await response.json().catch(() => null) as { floorsClearedAccepted?: boolean } | null
+        if (run.floorsCleared !== undefined && acknowledged?.floorsClearedAccepted !== true) {
+          resetRoomEndpoint()
+          if (attempt === 1) return
+          continue
+        }
         submitted = true
         writeOutbox(readOutbox().filter((entry) => entry.id !== run.id))
       } catch {

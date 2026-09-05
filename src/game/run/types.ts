@@ -45,6 +45,8 @@ export type RunState = {
   combat: CombatState | null
   /** Finished fights in this run, retained for the solo leaderboard. */
   combatsFinished?: number
+  /** Map rooms reached in this run, retained for the solo leaderboard. */
+  floorsCleared?: number
   /** Face-down shared physical deck. Its order is server-only. */
   potionDeck: string[]
   relicDeck: string[]

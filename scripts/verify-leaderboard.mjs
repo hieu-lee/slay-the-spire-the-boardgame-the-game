@@ -21,16 +21,18 @@ const run = (overrides = {}) => ({
   damageDealt: 100,
   damageTaken: 30,
   damageBlocked: 70,
+  floorsCleared: 20,
   ...overrides,
 })
 
 check('legacy runs never mix incomplete damage history into averages', () => {
   const snapshot = leaderboardSnapshot([
     normalizeLeaderboardRun(run(), 1),
-    normalizeLeaderboardRun(run({ id: 'browser-1234:legacy', damageStatsComplete: false, combatsFinished: 1, damageDealt: 999_999 }), 2),
+    normalizeLeaderboardRun(run({ id: 'browser-1234:legacy', damageStatsComplete: false, combatsFinished: 1, damageDealt: 999_999, floorsCleared: null }), 2),
   ])
   assertEqual(snapshot.totalRuns, 2)
   assertEqual(snapshot.rows[0].averageDamagePerFight, 10)
+  assertEqual(snapshot.rows[0].averageFloorsCleared, 20)
 })
 
 check('submissions are validated at the public boundary', () => {
@@ -38,13 +40,14 @@ check('submissions are validated at the public boundary', () => {
   assertThrows(() => normalizeLeaderboardRun(run({ ascension: 14 })))
   assertThrows(() => normalizeLeaderboardRun(run({ damageBlocked: -1 })))
   assertThrows(() => normalizeLeaderboardRun(run({ combatsFinished: 1.5 })))
+  assertThrows(() => normalizeLeaderboardRun(run({ floorsCleared: -1 })))
 })
 
 check('rows aggregate the requested per-character and ascension metrics', () => {
   const snapshot = leaderboardSnapshot([
     normalizeLeaderboardRun(run(), 1),
-    normalizeLeaderboardRun(run({ id: 'browser-1234:campaign-2', highestBossActDefeated: 2, combatsFinished: 5, damageDealt: 25, damageTaken: 50, damageBlocked: 0 }), 2),
-    normalizeLeaderboardRun(run({ id: 'browser-1234:campaign-3', startedAtAct: 4, highestBossActDefeated: 4 }), 3),
+    normalizeLeaderboardRun(run({ id: 'browser-1234:campaign-2', highestBossActDefeated: 2, combatsFinished: 5, damageDealt: 25, damageTaken: 50, damageBlocked: 0, floorsCleared: 10 }), 2),
+    normalizeLeaderboardRun(run({ id: 'browser-1234:campaign-3', startedAtAct: 4, highestBossActDefeated: 4, floorsCleared: 4 }), 3),
   ])
   const row = snapshot.rows[0]
   assertEqual(snapshot.totalRuns, 3)
@@ -54,6 +57,7 @@ check('rows aggregate the requested per-character and ascension metrics', () => 
   assertEqual(row.act3WinRate, .5)
   assertEqual(row.averageDamagePerFight, 225 / 25)
   assertEqual(row.averageDamageBlocked, 140 / 250)
+  assertEqual(row.averageFloorsCleared, 34 / 3)
   assertEqual(row.act4Wins, 1)
 })
 
@@ -61,10 +65,12 @@ const directory = mkdtempSync(join(tmpdir(), 'sts-leaderboard-'))
 const file = join(directory, 'rooms.json')
 try {
   const store = createStore({ file })
-  check('duplicate client retries are idempotent', () => {
-    assertEqual(addLeaderboardRun(store, run(), 10), true)
-    assertEqual(addLeaderboardRun(store, run(), 11), false)
+  check('duplicate retries enrich a legacy floor count without duplicating the run', () => {
+    assertEqual(addLeaderboardRun(store, run({ floorsCleared: null }), 10), true)
+    assertEqual(addLeaderboardRun(store, run({ floorsCleared: 27 }), 11), true)
+    assertEqual(addLeaderboardRun(store, run({ floorsCleared: 27 }), 12), false)
     assertEqual(store.leaderboardRuns.length, 1)
+    assertEqual(store.leaderboardRuns[0].floorsCleared, 27)
   })
   check('a bounded public store cannot threaten room handoff persistence', () => {
     const full = { leaderboardRuns: Array(MAX_LEADERBOARD_RUNS).fill(store.leaderboardRuns[0]) }
@@ -88,10 +94,12 @@ try {
     const invalid = await submit(run({ id: 'browser-1234:campaign-bad', ascension: 99 }))
     const accepted = await submit(run({ id: 'browser-1234:campaign-2', character: 'silent', highestBossActDefeated: 4 }))
     const duplicate = await submit(run({ id: 'browser-1234:campaign-2', character: 'silent', highestBossActDefeated: 4 }))
+    const acceptedBody = await accepted.json()
     const response = await fetch(`${origin}/api/leaderboard`).then((value) => value.json())
     check('the public endpoint rejects bad rows and accepts one copy of retries', () => {
       assertEqual(invalid.status, 400)
       assertEqual(accepted.status, 201)
+      assertEqual(acceptedBody.floorsClearedAccepted, true)
       assertEqual(duplicate.status, 200)
       assertEqual(response.totalRuns, 2)
       assert(response.rows.some((row) => row.character === 'silent' && row.act4Wins === 1))

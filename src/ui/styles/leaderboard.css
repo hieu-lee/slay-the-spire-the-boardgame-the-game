@@ -212,11 +212,11 @@
   .leaderboard__archive h2 { font-size: 1.3rem; }
   .leaderboard__archive header p,
   .leaderboard__archive header > span { font-size: .57rem; }
-  .leaderboard thead th { padding: .4rem .5rem; font-size: .58rem; }
+  .leaderboard thead th { padding: .4rem .3rem; font-size: .54rem; }
   .leaderboard tbody th,
-  .leaderboard tbody td { padding: .38rem .5rem; font-size: .76rem; }
-  .leaderboard tbody th { min-width: 8.5rem; gap: .35rem; }
-  .leaderboard tbody th img { width: 1.9rem; height: 1.9rem; }
+  .leaderboard tbody td { padding: .38rem .3rem; font-size: .72rem; }
+  .leaderboard tbody th { min-width: 7.4rem; gap: .3rem; }
+  .leaderboard tbody th img { width: 1.7rem; height: 1.7rem; }
   .leaderboard tbody th strong,
   .leaderboard tbody td > strong { font-size: .82rem; }
   .leaderboard tbody th small,

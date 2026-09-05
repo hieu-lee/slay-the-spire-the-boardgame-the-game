@@ -25,6 +25,8 @@ export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
     damageDealt: integer(value.damageDealt, 'Damage dealt', 0, 1_000_000_000),
     damageTaken: integer(value.damageTaken, 'Damage taken', 0, 1_000_000_000),
     damageBlocked: integer(value.damageBlocked, 'Damage blocked', 0, 1_000_000_000),
+    floorsCleared: value.floorsCleared == null
+      ? null : integer(value.floorsCleared, 'Floor count', 0, 1000),
     recordedAt: integer(recordedAt, 'Recorded time', 0, Number.MAX_SAFE_INTEGER),
   }
 }
@@ -40,7 +42,14 @@ export function restoreLeaderboardRuns(values) {
 
 export function addLeaderboardRun(store, value, recordedAt = Date.now()) {
   const run = normalizeLeaderboardRun(value, recordedAt)
-  if (store.leaderboardRuns.some((existing) => existing.id === run.id)) return false
+  const existing = store.leaderboardRuns.findIndex((entry) => entry.id === run.id)
+  if (existing >= 0) {
+    if (store.leaderboardRuns[existing].floorsCleared == null && run.floorsCleared != null) {
+      store.leaderboardRuns[existing] = { ...store.leaderboardRuns[existing], floorsCleared: run.floorsCleared }
+      return true
+    }
+    return false
+  }
   if (store.leaderboardRuns.length >= MAX_LEADERBOARD_RUNS) {
     throw Object.assign(new Error('Leaderboard capacity reached'), { status: 503 })
   }
@@ -63,6 +72,8 @@ export function leaderboardSnapshot(runs) {
       damageDealt: 0,
       damageTaken: 0,
       damageBlocked: 0,
+      floorRuns: 0,
+      floorsCleared: 0,
     }
     row.runs += 1
     if (run.startedAtAct <= 3) {
@@ -76,6 +87,10 @@ export function leaderboardSnapshot(runs) {
       row.damageTaken += run.damageTaken
       row.damageBlocked += run.damageBlocked
     }
+    if (run.floorsCleared != null) {
+      row.floorRuns += 1
+      row.floorsCleared += run.floorsCleared
+    }
     groups.set(key, row)
   }
   const rows = [...groups.values()].map((row) => ({
@@ -88,6 +103,7 @@ export function leaderboardSnapshot(runs) {
     averageDamagePerFight: row.combatsFinished ? row.damageDealt / row.combatsFinished : null,
     averageDamageBlocked: row.damageTaken + row.damageBlocked
       ? row.damageBlocked / (row.damageTaken + row.damageBlocked) : null,
+    averageFloorsCleared: row.floorRuns ? row.floorsCleared / row.floorRuns : null,
     act4Wins: row.act4Wins,
   })).sort((left, right) =>
     (right.act3WinRate ?? -1) - (left.act3WinRate ?? -1) ||

@@ -106,6 +106,8 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
     rng,
     enemyDecks,
     players: roomPlayers,
+    floorsCleared: state.floorsCleared === undefined
+      ? undefined : Math.max(0, state.floorsCleared) + 1,
     log: [...state.log, `The party enters ${enteringRoom(room.kind)}.`],
   }
 

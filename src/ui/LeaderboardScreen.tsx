@@ -8,7 +8,7 @@ const HEROES = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardi
 type Filter = CharacterId | 'all'
 
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`
-const decimal = (value: number | null) => value === null ? '—' : value.toFixed(1)
+const decimal = (value: number | null | undefined) => value == null ? '—' : value.toFixed(1)
 
 export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
   const [filter, setFilter] = useState<Filter>('all')
@@ -62,12 +62,13 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
           : !snapshot ? <div className="leaderboard__message" aria-live="polite"><span className="leaderboard__spinner" aria-hidden="true"></span><strong>Opening the archive…</strong></div>
           : rows.length === 0 ? <div className="leaderboard__message"><strong>No names are etched here yet.</strong><span>Finish a solo run to claim the first place.</span></div>
           : <div className="leaderboard__table-wrap"><table>
-            <thead><tr><th scope="col">Rank</th><th scope="col">Hero &amp; ascension</th><th scope="col">Runs</th><th scope="col">Act III win rate</th><th scope="col">Damage / fight</th><th scope="col">Damage blocked</th><th scope="col">Act IV wins</th></tr></thead>
+            <thead><tr><th scope="col">Rank</th><th scope="col">Hero &amp; ascension</th><th scope="col">Runs</th><th scope="col">Act III win rate</th><th scope="col">Avg. floors</th><th scope="col">Damage / fight</th><th scope="col">Blocked</th><th scope="col">Act IV wins</th></tr></thead>
             <tbody>{rows.map((row, index) => <tr key={`${row.character}:${row.ascension}`}>
               <td data-label="Rank"><span className="leaderboard__rank">{index + 1}</span></td>
               <th scope="row"><img src={assetPath(`menu/compendium-icons/${row.character}.webp`)} alt="" /><span><strong>{CHARACTER_LABEL[row.character]}</strong><small>Ascension {row.ascension}</small></span></th>
               <td data-label="Runs">{row.runs}</td>
               <td data-label="Act III win rate"><strong>{percent(row.act3WinRate)}</strong><small>{row.act3Wins} / {row.act3Runs}</small></td>
+              <td data-label="Floors cleared">{decimal(row.averageFloorsCleared)}</td>
               <td data-label="Damage / fight">{decimal(row.averageDamagePerFight)}</td>
               <td data-label="Damage blocked">{percent(row.averageDamageBlocked)}</td>
               <td data-label="Act IV wins"><strong>{row.act4Wins}</strong></td>
