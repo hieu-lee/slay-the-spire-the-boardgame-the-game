@@ -258,6 +258,11 @@ function preparePendingBossCombat(
 export function resolveCombat(state: RunState): RunState {
   const combat = state.combat
   if (!combat || state.courier.offer || (combat.phase !== 'won' && combat.phase !== 'lost')) return state
+  // A pre-counter save already contains cumulative damage from an unknowable
+  // number of fights. Keep its count absent so the leaderboard omits that one
+  // damage average instead of mixing old damage with only the new fights.
+  const combatsFinished = state.combatsFinished === undefined
+    ? undefined : Math.max(0, state.combatsFinished) + 1
 
   const epitaph = combat.log.filter((line) => !/^Turn \d+ begins/.test(line)).slice(-COMBAT_EPITAPH)
   const itemDecks = structuredClone(state.itemDecks)
@@ -271,6 +276,7 @@ export function resolveCombat(state: RunState): RunState {
         deck: player.deck.filter((card) => CARDS[card.defId]?.owner !== 'status'),
       })),
       combat: null,
+      combatsFinished,
       potionDeck: combat.potionDeck,
       pendingBossDefId: null,
       itemDecks,
@@ -344,6 +350,7 @@ export function resolveCombat(state: RunState): RunState {
     phase: 'defeat',
     players,
     combat: null,
+    combatsFinished,
     pendingBossDefId: null,
     eventCombat: null,
     rewards: [],
@@ -351,7 +358,7 @@ export function resolveCombat(state: RunState): RunState {
     pendingGuardianSockets: [],
     log: [...state.log, ...epitaph, 'The party falls to a Daily modifier.'],
   }, itemDecks)
-  state = queueNewGuardianSockets(state, { ...state, players })
+  state = queueNewGuardianSockets(state, { ...state, players, combatsFinished })
   players = state.players
 
   const betweenBosses = wasBoss && Boolean(state.pendingBossDefId) && !lastStandActEnd

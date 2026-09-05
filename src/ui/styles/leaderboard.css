@@ -1,0 +1,230 @@
+.leaderboard {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 17rem minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: #eee3cc;
+  background: #100f11 url('/assets/menu/compendium-archive.webp') center / cover no-repeat;
+  font-family: 'Kreon', Georgia, serif;
+}
+
+.leaderboard__wallpaper {
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  opacity: .34;
+  filter: saturate(.82) contrast(1.08);
+  transition: opacity var(--motion-fast) var(--ease);
+}
+
+.leaderboard::after {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: '';
+  background: linear-gradient(90deg, rgb(5 11 14 / .96) 0 17rem, rgb(11 10 11 / .74) 41%, rgb(12 8 7 / .64));
+}
+
+.leaderboard__rail {
+  z-index: 2;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  padding: 1rem;
+  overflow: auto;
+  border-right: 3px solid #0b1316;
+  background: linear-gradient(90deg, rgb(15 28 33 / .98), rgb(19 33 38 / .94));
+  box-shadow: .65rem 0 1.5rem rgb(0 0 0 / .55);
+}
+
+.leaderboard__back {
+  align-self: start;
+  width: 7rem;
+  min-height: 4.3rem;
+  margin: -1rem 0 .4rem -1rem;
+  border: 2px solid #6c2c1d;
+  clip-path: polygon(0 8%, 80% 8%, 100% 50%, 80% 92%, 0 92%);
+  color: #fff0c8;
+  background: linear-gradient(#bd4026, #762416);
+  box-shadow: inset 0 0 0 2px rgb(248 130 78 / .22), .4rem .45rem .7rem #000;
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.leaderboard__eyebrow,
+.leaderboard__archive header p {
+  margin: 0;
+  color: #7fced4;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.leaderboard__rail h1 {
+  margin: .12rem 0 .25rem;
+  color: #f1c953;
+  font-size: 2rem;
+  text-shadow: 0 2px 2px #000;
+}
+
+.leaderboard__heroes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .35rem;
+}
+
+.leaderboard__heroes button {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  min-width: 0;
+  min-height: 2.7rem;
+  align-items: center;
+  gap: .25rem;
+  padding: .18rem .25rem;
+  border: 1px solid #30484c;
+  color: #afa891;
+  background: linear-gradient(120deg, rgb(25 48 52 / .82), rgb(9 18 21 / .88));
+  font: 700 .69rem 'Kreon', Georgia, serif;
+  text-align: left;
+}
+
+.leaderboard__heroes button:first-child { grid-column: 1 / -1; grid-template-columns: 2.25rem auto; justify-content: center; }
+.leaderboard__heroes button > span { color: #d5be69; font-size: 1.2rem; text-align: center; }
+.leaderboard__heroes img { width: 2.25rem; height: 2.25rem; object-fit: contain; opacity: .62; filter: grayscale(.55); }
+.leaderboard__heroes small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leaderboard__heroes button:hover,
+.leaderboard__heroes button:focus-visible { border-color: #79989b; color: #eee4cc; }
+.leaderboard__heroes button[aria-pressed='true'] { border-color: #efc951; color: #f5d96e; background: linear-gradient(120deg, #315d61, #183137); box-shadow: inset 0 0 .8rem rgb(241 201 81 / .12), 0 0 .55rem rgb(103 221 232 / .22); }
+.leaderboard__heroes button[aria-pressed='true'] img { opacity: 1; filter: drop-shadow(0 0 .35rem rgb(244 205 91 / .6)); }
+
+.leaderboard__ascension { display: grid; gap: .25rem; margin-top: .65rem; color: #d9bf72; font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.leaderboard__ascension select { width: 100%; min-height: 2.2rem; padding: .3rem .5rem; border: 1px solid #476568; color: #eee3cc; background: #15292d; font: 700 .82rem 'Kreon', Georgia, serif; }
+.leaderboard__ascension select:focus-visible { outline: 2px solid #e6c451; outline-offset: 2px; }
+
+.leaderboard__count {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  margin: auto 0 0;
+  padding: .75rem 0 0;
+  border-top: 1px solid #40575a;
+  color: #a9a08d;
+}
+.leaderboard__count strong { color: #f0ca55; font-size: 2rem; line-height: 1; }
+.leaderboard__count span { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; }
+
+.leaderboard__archive {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  margin: clamp(1.1rem, 3vw, 2.5rem);
+  overflow: hidden;
+  border: 1px solid #715d37;
+  border-radius: .18rem;
+  background:
+    linear-gradient(135deg, transparent 1rem, rgb(20 17 15 / .94) 0) top left,
+    linear-gradient(225deg, transparent 1rem, rgb(20 17 15 / .94) 0) top right,
+    linear-gradient(315deg, transparent 1rem, rgb(20 17 15 / .94) 0) bottom right,
+    linear-gradient(45deg, transparent 1rem, rgb(20 17 15 / .94) 0) bottom left;
+  background-size: 51% 51%;
+  background-repeat: no-repeat;
+  box-shadow: 0 1rem 2.2rem rgb(0 0 0 / .68), inset 0 0 2.5rem rgb(187 128 38 / .05);
+}
+
+.leaderboard__archive::before {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  border: 3px double rgb(167 127 57 / .46);
+  content: '';
+  pointer-events: none;
+}
+
+.leaderboard__archive > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: clamp(1rem, 2.5vw, 1.7rem) clamp(1rem, 2.5vw, 2rem) .9rem;
+  border-bottom: 1px solid #6f5730;
+  background: linear-gradient(90deg, rgb(46 34 23 / .86), rgb(15 17 17 / .7));
+}
+.leaderboard__archive h2 { margin: .08rem 0 0; color: #f5df9d; font-size: clamp(1.65rem, 3vw, 2.7rem); text-shadow: 0 2px 2px #000; }
+.leaderboard__archive header > span { color: #b8a980; font-size: .82rem; letter-spacing: .08em; }
+
+.leaderboard__table-wrap { min-height: 0; overflow: auto; }
+.leaderboard table { width: 100%; border-collapse: collapse; }
+.leaderboard thead { position: sticky; z-index: 2; top: 0; }
+.leaderboard thead th { padding: .7rem .8rem; border-bottom: 1px solid #75603d; color: #d9bf72; background: rgb(23 27 27 / .97); font-size: .72rem; letter-spacing: .075em; text-align: center; text-transform: uppercase; white-space: nowrap; }
+.leaderboard thead th:nth-child(2) { text-align: left; }
+.leaderboard tbody tr { background: rgb(28 24 21 / .58); }
+.leaderboard tbody tr:nth-child(even) { background: rgb(42 34 26 / .56); }
+.leaderboard tbody tr:hover { background: rgb(60 49 34 / .72); }
+.leaderboard tbody th,
+.leaderboard tbody td { padding: .72rem .8rem; border-bottom: 1px solid rgb(112 88 48 / .38); text-align: center; }
+.leaderboard tbody th { display: flex; min-width: 11rem; align-items: center; gap: .65rem; text-align: left; }
+.leaderboard tbody th img { width: 2.65rem; height: 2.65rem; object-fit: contain; filter: drop-shadow(0 2px 2px #000); }
+.leaderboard tbody th span { display: grid; }
+.leaderboard tbody th strong,
+.leaderboard tbody td > strong { color: #f0d371; font-size: 1.05rem; }
+.leaderboard tbody th small,
+.leaderboard tbody td > small { color: #9f9684; font-size: .72rem; }
+.leaderboard tbody td > small { display: block; margin-top: .12rem; }
+.leaderboard__rank { display: inline-grid; width: 2rem; height: 2rem; place-items: center; border: 1px solid #95763d; border-radius: 50%; color: #f2d678; background: radial-gradient(circle, #44351f, #191714 70%); box-shadow: 0 2px 4px #000; font-weight: 700; }
+.leaderboard tbody tr:first-child .leaderboard__rank { color: #21180a; background: radial-gradient(circle at 35% 28%, #fff0a7, #d4a93c 58%, #75511e); }
+
+.leaderboard__message { display: grid; align-content: center; justify-items: center; gap: .55rem; min-height: 0; padding: 2rem; color: #aaa08b; text-align: center; }
+.leaderboard__message strong { color: #e8ce85; font-size: 1.35rem; }
+.leaderboard__message button { margin-top: .4rem; padding: .5rem 1.4rem; border: 1px solid #c49d45; color: #f8e5ac; background: linear-gradient(#43666c, #203b41); font: 700 1rem 'Kreon', Georgia, serif; }
+.leaderboard__spinner { width: 2.2rem; height: 2.2rem; border: 2px solid #486468; border-top-color: #edcb5c; border-radius: 50%; animation: leaderboard-turn 1s linear infinite; }
+@keyframes leaderboard-turn { to { transform: rotate(1turn); } }
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .leaderboard { grid-template-columns: 12rem minmax(0, 1fr); }
+  .leaderboard::after { background: linear-gradient(90deg, rgb(5 11 14 / .97) 0 12rem, rgb(11 10 11 / .8) 48%, rgb(12 8 7 / .72)); }
+  .leaderboard__rail { padding: .55rem; }
+  .leaderboard__back { width: 4.8rem; min-height: 2.7rem; margin: -.55rem 0 .15rem -.55rem; font-size: 2rem; }
+  .leaderboard__eyebrow { display: none; }
+  .leaderboard__rail h1 { margin: 0; font-size: 1.3rem; }
+  .leaderboard__heroes { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .18rem; }
+  .leaderboard__heroes button,
+  .leaderboard__heroes button:first-child { display: grid; min-height: 2.2rem; grid-column: auto; grid-template-columns: 1fr; justify-content: initial; padding: .08rem; }
+  .leaderboard__heroes img { width: 2rem; height: 2rem; margin: auto; }
+  .leaderboard__heroes button > span { font-size: .9rem; }
+  .leaderboard__heroes small { display: none; }
+  .leaderboard__ascension { display: flex; align-items: center; justify-content: space-between; gap: .35rem; margin-top: .28rem; font-size: .55rem; }
+  .leaderboard__ascension select { width: 7rem; min-height: 1.7rem; padding: .1rem .25rem; font-size: .65rem; }
+  .leaderboard__count { gap: .35rem; padding-top: .3rem; }
+  .leaderboard__count strong { font-size: 1.3rem; }
+  .leaderboard__count span { font-size: .55rem; }
+  .leaderboard__archive { margin: .55rem; }
+  .leaderboard__archive > header { padding: .5rem .75rem .4rem; }
+  .leaderboard__archive h2 { font-size: 1.3rem; }
+  .leaderboard__archive header p,
+  .leaderboard__archive header > span { font-size: .57rem; }
+  .leaderboard thead th { padding: .4rem .5rem; font-size: .58rem; }
+  .leaderboard tbody th,
+  .leaderboard tbody td { padding: .38rem .5rem; font-size: .76rem; }
+  .leaderboard tbody th { min-width: 8.5rem; gap: .35rem; }
+  .leaderboard tbody th img { width: 1.9rem; height: 1.9rem; }
+  .leaderboard tbody th strong,
+  .leaderboard tbody td > strong { font-size: .82rem; }
+  .leaderboard tbody th small,
+  .leaderboard tbody td > small { font-size: .58rem; }
+  .leaderboard__rank { width: 1.45rem; height: 1.45rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leaderboard__wallpaper { transition: none; }
+  .leaderboard__spinner { animation: none; }
+}

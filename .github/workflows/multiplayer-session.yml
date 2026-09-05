@@ -670,7 +670,7 @@ jobs:
           fi
           if [ ! -e .rooms/rooms.json ]; then
             mkdir -p .rooms
-            printf '{"version":1,"rooms":[]}' > .rooms/rooms.json
+            printf '{"version":1,"rooms":[],"leaderboardRuns":[]}' > .rooms/rooms.json
           fi
           test -s .rooms/rooms.json
       - name: Encrypt the room state

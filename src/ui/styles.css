@@ -23,6 +23,7 @@
 @import './styles/tokens-and-base.css';
 @import './styles/title-menu.css';
 @import './styles/compendium.css';
+@import './styles/leaderboard.css';
 @import './styles/online-room.css';
 @import './styles/shell.css';
 @import './styles/combat.css';

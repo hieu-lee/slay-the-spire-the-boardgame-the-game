@@ -16,6 +16,7 @@
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { restoreLeaderboardRuns } from './leaderboard.mjs'
 import {
   CAPS,
   CHARACTER_IDS,
@@ -200,11 +201,12 @@ function assignPendingRelicIds(run) {
 }
 
 export function createStore({ file, handoffRestore = false, handoffReconnectMs = 5 * 60_000 } = {}) {
-  const store = { rooms: new Map(), file, reconnectQuorums: new Map() }
+  const store = { rooms: new Map(), leaderboardRuns: [], file, reconnectQuorums: new Map() }
   if (!file) return store
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8'))
     if (!Array.isArray(saved?.rooms)) throw new Error('rooms must be an array')
+    store.leaderboardRuns = restoreLeaderboardRuns(saved.leaderboardRuns)
     for (const room of saved.rooms) {
       if (typeof room?.code === 'string' && Array.isArray(room.seats) && room.campaignProgress) {
         const connectedAtSave = new Set(room.seats
@@ -339,7 +341,7 @@ export function saveStore(store) {
   const reconnectQuorums = Object.fromEntries([...store.reconnectQuorums].map(([code, quorum]) => [code, {
     playerIds: [...quorum.playerIds], expiresAt: quorum.expiresAt,
   }]))
-  writeFileSync(temporary, JSON.stringify({ version: 1, rooms: [...store.rooms.values()], reconnectQuorums }), { mode: 0o600 })
+  writeFileSync(temporary, JSON.stringify({ version: 1, rooms: [...store.rooms.values()], leaderboardRuns: store.leaderboardRuns, reconnectQuorums }), { mode: 0o600 })
   renameSync(temporary, store.file)
 }
 

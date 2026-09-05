@@ -2,6 +2,7 @@
 import { createServer as createHttpServer } from 'node:http'
 import { writeFileSync } from 'node:fs'
 import { WebSocketServer } from 'ws'
+import { addLeaderboardRun, leaderboardSnapshot } from './lib/leaderboard.mjs'
 import {
   apply,
   chooseAscension,
@@ -37,6 +38,7 @@ const MAX_VOICE_MESSAGES_PER_WINDOW = 180
 const CREATE_WINDOW_MS = 60_000
 const MAX_CREATES_PER_WINDOW = 10
 const MAX_JOINS_PER_WINDOW = 30
+const MAX_LEADERBOARD_WRITES_PER_WINDOW = 6
 const MAX_UPGRADES_PER_WINDOW = 30
 const MAX_RATE_KEYS = 1024
 const MAX_ROOMS_PER_IP = 10
@@ -94,6 +96,7 @@ export function createRoomServer({
   const roomOwners = new Map()
   const createRates = new Map()
   const joinRates = new Map()
+  const leaderboardRates = new Map()
   const upgradeRates = new Map()
   const seatRates = new Map()
   const voiceRates = new Map()
@@ -170,6 +173,7 @@ export function createRoomServer({
   function sweepRooms(now = Date.now()) {
     for (const [key, rate] of createRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) createRates.delete(key)
     for (const [key, rate] of joinRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) joinRates.delete(key)
+    for (const [key, rate] of leaderboardRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) leaderboardRates.delete(key)
     for (const [key, rate] of upgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) upgradeRates.delete(key)
     for (const [key, rate] of seatRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) seatRates.delete(key)
     for (const [key, rate] of voiceRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) voiceRates.delete(key)
@@ -284,6 +288,18 @@ export function createRoomServer({
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (request.method === 'GET' && url.pathname === '/api/health') {
         return send(response, 200, { ok: true, rooms: store.rooms.size, protocolVersion: MULTIPLAYER_PROTOCOL_VERSION })
+      }
+      if (request.method === 'GET' && url.pathname === '/api/leaderboard') {
+        return send(response, 200, leaderboardSnapshot(store.leaderboardRuns))
+      }
+      if (request.method === 'POST' && url.pathname === '/api/leaderboard') {
+        const source = sourceOf(request)
+        if (!consume(leaderboardRates, source, CREATE_WINDOW_MS, MAX_LEADERBOARD_WRITES_PER_WINDOW)) {
+          return send(response, 429, { error: 'Too many leaderboard submissions' })
+        }
+        const added = addLeaderboardRun(store, await readJson(request))
+        if (added) queueSave()
+        return send(response, added ? 201 : 200, { ok: true, added })
       }
       if (request.method === 'POST' && url.pathname === '/api/rooms') {
         sweepRooms()

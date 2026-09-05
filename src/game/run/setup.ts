@@ -267,6 +267,7 @@ export function createRun(
     enemyDecks: createEnemyDecks(rng, 1, ascension),
     players,
     combat: null,
+    combatsFinished: 0,
     potionDeck: [...itemDecks.potions],
     relicDeck: [...itemDecks.relics],
     bossRelicDeck: relicDecks.bossRelicDeck,

@@ -27,6 +27,7 @@ type StartMenuProps = {
   onStart: () => void
   onResume?: () => void
   onOnline?: () => void
+  onLeaderboard: () => void
   onCompendium: () => void
   onAchievements: () => void
   onCharacterBack: () => void
@@ -80,6 +81,7 @@ export function StartMenu({
   onStart,
   onResume,
   onOnline,
+  onLeaderboard,
   onCompendium,
   onAchievements,
   onCharacterBack,
@@ -120,6 +122,8 @@ export function StartMenu({
         {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" data-selected={selection === 'Multiplayer'}
           onFocus={() => setSelection('Multiplayer')} onMouseEnter={() => setSelection('Multiplayer')} onClick={onOnline}>Multiplayer</button>
           : null}
+        <button type="button" aria-label="Leaderboard" data-selected={selection === 'Leaderboard'}
+          onFocus={() => setSelection('Leaderboard')} onMouseEnter={() => setSelection('Leaderboard')} onClick={onLeaderboard}>Leaderboard</button>
         <button type="button" aria-label="Compendium" data-selected={selection === 'Compendium'}
           onFocus={() => setSelection('Compendium')} onMouseEnter={() => setSelection('Compendium')} onClick={onCompendium}>Compendium</button>
         <button type="button" aria-label="Achievements" data-selected={selection === 'Achievements'}

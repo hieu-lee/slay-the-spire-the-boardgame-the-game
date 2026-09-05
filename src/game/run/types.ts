@@ -43,6 +43,8 @@ export type RunState = {
   /** Monotonic identity for pending one-shot relic acquisitions. */
   nextPendingRelicId?: number
   combat: CombatState | null
+  /** Finished fights in this run, retained for the solo leaderboard. */
+  combatsFinished?: number
   /** Face-down shared physical deck. Its order is server-only. */
   potionDeck: string[]
   relicDeck: string[]

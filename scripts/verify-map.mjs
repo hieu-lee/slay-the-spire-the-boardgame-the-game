@@ -532,6 +532,35 @@ check('independent Potion rewards queue without overwriting each other', () => {
   assertDeepEqual(run.rewards[0].potionQueue, [tinyPotion])
 })
 
+check('finished combats are counted once for leaderboard averages', () => {
+  const run = postNeowRun(919, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  assertEqual(run.combatsFinished, 0)
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const resolved = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, dead: true, hp: 0 })),
+    },
+  })
+  assertEqual(resolved.combatsFinished, 1)
+  assertEqual(resolveCombat(resolved).combatsFinished, 1, 'a folded fight was counted twice')
+
+  const legacy = postNeowRun(920, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  delete legacy.combatsFinished
+  const legacyEntered = enterRoom(legacy, roomChoices(legacy)[0].id)
+  const legacyResolved = resolveCombat({
+    ...legacyEntered,
+    combat: {
+      ...legacyEntered.combat,
+      phase: 'won',
+      enemies: legacyEntered.combat.enemies.map((enemy) => ({ ...enemy, dead: true, hp: 0 })),
+    },
+  })
+  assertEqual(legacyResolved.combatsFinished, undefined, 'a legacy damage total was assigned a partial fight count')
+})
+
 check('Eggs upgrade and spend uses on one-shot Relic card gains', () => {
   let run = postNeowRun(909, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   // Persisted rooms from before finite-use automation may omit `uses`; the

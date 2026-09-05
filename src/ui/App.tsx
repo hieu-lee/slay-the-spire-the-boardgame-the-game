@@ -94,12 +94,14 @@ import { useGameSettings } from './game-settings.ts'
 import { wingBootLabel } from './wing-boots.ts'
 import type { GameSettings } from './game-settings.ts'
 import { useWebMcp } from './useWebMcp.ts'
+import { flushLeaderboardOutbox, queueFinishedSoloRun } from '../leaderboard.ts'
 
 const SINGLE_PLAYER_ONLY = import.meta.env.VITE_SINGLE_PLAYER === 'true'
 const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
 const OnlineGame = SINGLE_PLAYER_ONLY ? null : lazy(() => import('./OnlineGame.tsx').then((module) => ({ default: module.OnlineGame })))
 const CompendiumScreen = lazy(() => import('./CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
 const AchievementsScreen = lazy(() => import('./AchievementsScreen.tsx').then((module) => ({ default: module.AchievementsScreen })))
+const LeaderboardScreen = lazy(() => import('./LeaderboardScreen.tsx').then((module) => ({ default: module.LeaderboardScreen })))
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -488,6 +490,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   useVictoryMusic(!run.campaign.finalized && victoryIsTerminal(run, run.campaignProgress), active && open && settings.bgmVolume > 0, settings.bgmVolume)
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
+  const [leaderboard, setLeaderboard] = useState(false)
   const [giveUpOpen, setGiveUpOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -495,6 +498,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [mapSelectionPending, setMapSelectionPending] = useState(false)
   const pauseDialog = useRef<HTMLDialogElement>(null)
   const runShell = useRef<HTMLElement>(null)
+  const queuedLeaderboardRun = useRef<string | null>(null)
   const [achievements, setAchievements] = useState(false)
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
   const metaOptions: RunMetaOptions = { mode, modifiers: customModifierIds, quickStartAct }
@@ -524,6 +528,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     setChoosingNextCharacter(false)
     onOpen()
   }
+
+  useEffect(() => {
+    void flushLeaderboardOutbox()
+    const retry = window.setInterval(() => void flushLeaderboardOutbox(), 60_000)
+    const online = () => void flushLeaderboardOutbox()
+    window.addEventListener('online', online)
+    return () => { clearInterval(retry); window.removeEventListener('online', online) }
+  }, [])
 
   useEffect(() => {
     const dialog = pauseDialog.current
@@ -606,7 +618,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   useLayoutEffect(() => {
     if (!open) return
-    if (run.campaign.finalized) return discardSoloRun()
+    if (run.campaign.finalized) {
+      if (queuedLeaderboardRun.current !== run.campaign.runId) {
+        queuedLeaderboardRun.current = run.campaign.runId
+        queueFinishedSoloRun(run)
+        void flushLeaderboardOutbox()
+      }
+      return discardSoloRun()
+    }
     const saved: SoloRunSave = { version: 1, run, built }
     try {
       localStorage.setItem(SOLO_RUN_KEY, JSON.stringify(saved))
@@ -671,6 +690,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   if (!open) {
     if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
+    if (leaderboard) return <LeaderboardScreen onBack={() => setLeaderboard(false)} />
     if (achievements) return <AchievementsScreen onBack={() => setAchievements(false)} />
     return <StartMenu
       characters={characters}
@@ -704,6 +724,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       }}
       onResume={resume ? resumeSoloRun : undefined}
       onOnline={onOnline}
+      onLeaderboard={() => setLeaderboard(true)}
       onCompendium={() => setCompendium(true)}
       onAchievements={() => setAchievements(true)}
       onCharacterBack={() => setChoosingNextCharacter(false)}
