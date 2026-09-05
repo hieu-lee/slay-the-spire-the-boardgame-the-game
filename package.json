@@ -17,6 +17,7 @@
     "verify": "node scripts/verify-all.mjs",
     "verify:changed": "node scripts/verify-all.mjs --changed",
     "verify:browser": "node scripts/verify-browser.mjs",
+    "verify:webmcp": "node scripts/verify-webmcp-browser.mjs",
     "verify:card-picker": "node scripts/verify-card-picker-browser.mjs",
     "verify:loot": "node scripts/verify-loot-browser.mjs",
     "verify:end-turn-drag": "node scripts/verify-end-turn-drag-browser.mjs",

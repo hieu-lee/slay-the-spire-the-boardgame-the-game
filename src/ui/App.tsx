@@ -93,6 +93,7 @@ import { SettingsDialog } from './SettingsDialog.tsx'
 import { useGameSettings } from './game-settings.ts'
 import { wingBootLabel } from './wing-boots.ts'
 import type { GameSettings } from './game-settings.ts'
+import { useWebMcp } from './useWebMcp.ts'
 
 const SINGLE_PLAYER_ONLY = import.meta.env.VITE_SINGLE_PLAYER === 'true'
 const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
@@ -152,6 +153,7 @@ function campaignBeforePendingRun(run: RunState): CampaignProgress {
 }
 
 export function App() {
+  useWebMcp()
   const [online, setOnline] = useState(() => !SINGLE_PLAYER_ONLY && hasRoomSession())
   const [localOpen, setLocalOpen] = useState(false)
   const [settings, setSettings] = useGameSettings()
