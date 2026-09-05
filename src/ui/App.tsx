@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { orderStartTurnScries, resolveHermitSetupLoad, resolveStartTurnScry, type CombatState } from '../game/combat.ts'
 import { assetPath } from '../game/assets.ts'
 import {
@@ -114,6 +114,69 @@ const ROSTER: { character: CharacterId; name: string }[] = [
 const DEFAULT_CHARACTERS = ROSTER.map((entry) => entry.character)
 
 const CAMPAIGN_KEY = 'sts-physical-campaign'
+const SOLO_RUN_KEY = 'sts-solo-run'
+
+type BuiltRun = {
+  count: number
+  seed: string
+  ascension: number
+  chooseYourRelic: boolean
+  lastStand: boolean
+  characters: CharacterId[]
+  meta: RunMetaOptions
+}
+
+type SoloRunSave = { version: 1; run: RunState; built: BuiltRun }
+
+const RUN_PHASES = new Set(['neow', 'map', 'combat', 'reward', 'betweenCombat', 'room', 'setup', 'victory', 'defeat'])
+
+function resumablePhase(run: Partial<RunState>): boolean {
+  if (run.phase === 'combat') return run.combat !== null && typeof run.combat === 'object' &&
+    Array.isArray(run.combat.players) && Array.isArray(run.combat.enemies) && Array.isArray(run.combat.pendingSummons)
+  if (run.phase === 'neow') return run.neow !== null && typeof run.neow === 'object' &&
+    Array.isArray(run.neow.deck) && run.neow.players !== null && typeof run.neow.players === 'object'
+  if (run.phase === 'setup') return run.setup !== null && typeof run.setup === 'object' && Array.isArray(run.setup.playerIds)
+  if (run.phase === 'reward') return Boolean(run.rewards?.length || run.pendingGuardianSockets?.length ||
+    run.players?.some((player) => player.relics.some((relic) => relic.pending)))
+  if (run.phase === 'betweenCombat') return typeof run.pendingBossDefId === 'string'
+  if (run.phase === 'room') return (typeof run.map?.position === 'string' && Boolean(run.map.rooms?.[run.map.position])) ||
+    (run.setup !== null && typeof run.setup === 'object' && run.roomState?.kind === 'merchant')
+  return true
+}
+
+function savedSoloRun(): SoloRunSave | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SOLO_RUN_KEY) ?? 'null') as Partial<SoloRunSave> | null
+    const run = saved?.run as Partial<RunState> | undefined
+    const built = saved?.built as Partial<BuiltRun> | undefined
+    return saved?.version === 1 && run?.campaign?.finalized === false && run.players?.length === 1 &&
+      typeof run.phase === 'string' && RUN_PHASES.has(run.phase) && typeof run.seed === 'number' &&
+      typeof run.rng?.seed === 'number' && typeof run.rng.calls === 'number' && run.campaignProgress !== null &&
+      typeof run.campaignProgress === 'object' && run.map?.rooms !== null && typeof run.map?.rooms === 'object' &&
+      Array.isArray(run.map.rows) && run.enemyDecks !== null && typeof run.enemyDecks === 'object' &&
+      Array.isArray(run.potionDeck) && Array.isArray(run.relicDeck) && Array.isArray(run.bossRelicDeck) &&
+      Array.isArray(run.guardianGemDeck) && Array.isArray(run.pendingGuardianSockets) && Array.isArray(run.rewards) &&
+      run.itemDecks !== null && typeof run.itemDecks === 'object' && Array.isArray(run.eventDeck) &&
+      run.courier !== null && typeof run.courier === 'object' && run.meta !== null &&
+      typeof run.meta === 'object' && Array.isArray(run.meta.modifierIds) && Array.isArray(run.log) &&
+      run.players.every((player) => typeof player?.id === 'string' && Array.isArray(player.deck) &&
+        Array.isArray(player.relics) && Array.isArray(player.potions)) &&
+      built?.count === 1 && typeof built.seed === 'string' && typeof built.ascension === 'number' &&
+      typeof built.chooseYourRelic === 'boolean' && typeof built.lastStand === 'boolean' &&
+      Array.isArray(built.characters) && built.characters.every((character) => DEFAULT_CHARACTERS.includes(character)) &&
+      built.meta !== null && typeof built.meta === 'object' && !Array.isArray(built.meta) &&
+      (built.meta.mode === undefined || ['standard', 'daily', 'custom'].includes(built.meta.mode)) &&
+      (built.meta.modifiers === undefined || Array.isArray(built.meta.modifiers) && built.meta.modifiers.every((id) =>
+        DAILY_MODIFIERS.some((modifier) => modifier.id === id))) &&
+      (built.meta.quickStartAct === undefined || [1, 2, 3, 4].includes(built.meta.quickStartAct)) &&
+      (built.meta.ruleset === undefined || built.meta.ruleset === 'base' || built.meta.ruleset === 'downfall') &&
+      resumablePhase(run)
+      ? saved as SoloRunSave
+      : null
+  } catch {
+    return null
+  }
+}
 
 function savedCampaign(): CampaignProgress {
   try { return parseCampaignProgress(JSON.parse(localStorage.getItem(CAMPAIGN_KEY) ?? '{}')) }
@@ -413,6 +476,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [customModifierIds, setCustomModifierIds] = useState<DailyModifierId[]>([])
   const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
   const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
+  const [resume, setResume] = useState<SoloRunSave | null>(savedSoloRun)
   const [choosingNextCharacter, setChoosingNextCharacter] = useState(false)
   const prefersReducedMotion = usePrefersReducedMotion()
   const updateCombat = useCallback((next: CombatState) => {
@@ -437,7 +501,29 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const canGiveUp = canGiveUpRun(run, run.campaignProgress)
 
   /** The settings the run in progress was actually built from. */
-  const [built, setBuilt] = useState({ count: 1, seed: seedText, ascension: 0, chooseYourRelic: false, lastStand: false, characters: [...DEFAULT_CHARACTERS], meta: {} as RunMetaOptions })
+  const [built, setBuilt] = useState<BuiltRun>({ count: 1, seed: seedText, ascension: 0, chooseYourRelic: false, lastStand: false, characters: [...DEFAULT_CHARACTERS], meta: {} })
+
+  const discardSoloRun = () => {
+    try { localStorage.removeItem(SOLO_RUN_KEY) } catch { /* Storage is unavailable. */ }
+    setResume(null)
+  }
+
+  const resumeSoloRun = () => {
+    if (!resume) return
+    setSeedText(resume.built.seed)
+    setAscension(resume.built.ascension)
+    setCharacters(resume.built.characters)
+    setChooseYourRelic(resume.built.chooseYourRelic)
+    setLastStand(resume.built.lastStand)
+    setMode(resume.built.meta.mode ?? 'standard')
+    setCustomModifierIds([...(resume.built.meta.modifiers ?? [])])
+    setQuickStartAct(resume.built.meta.quickStartAct ?? 1)
+    setBuilt(resume.built)
+    setRun(resume.run)
+    setViewerId('p1')
+    setChoosingNextCharacter(false)
+    onOpen()
+  }
 
   useEffect(() => {
     const dialog = pauseDialog.current
@@ -517,6 +603,17 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       // Storage is unavailable; the run continues in memory.
     }
   }, [open, run.campaignProgress, run.campaign.finalized])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    if (run.campaign.finalized) return discardSoloRun()
+    const saved: SoloRunSave = { version: 1, run, built }
+    try {
+      localStorage.setItem(SOLO_RUN_KEY, JSON.stringify(saved))
+    } catch {
+      // Keep the last atomic checkpoint; the run continues in memory.
+    }
+  }, [built, open, run])
 
   // A finished combat folds back into the run on its own; the player should not
   // have to click through a screen that only says "you won".
@@ -600,10 +697,12 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         : current.filter((candidate) => candidate !== id))}
       onQuickStartAct={setQuickStartAct}
       onStart={() => {
+        discardSoloRun()
         setChoosingNextCharacter(false)
         restart(1, seedText, ascension, false, false, characters, metaOptions)
         onOpen()
       }}
+      onResume={resume ? resumeSoloRun : undefined}
       onOnline={onOnline}
       onCompendium={() => setCompendium(true)}
       onAchievements={() => setAchievements(true)}
@@ -700,6 +799,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           <button type="button" onClick={() => {
             if (!window.confirm('Abandon this run and return to the main menu?')) return
             setPauseOpen(false)
+            discardSoloRun()
             onClose()
           }}>Return to main menu</button>
         </section>

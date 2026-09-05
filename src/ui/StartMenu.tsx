@@ -25,6 +25,7 @@ type StartMenuProps = {
   onCustomModifier: (id: DailyModifierId, enabled: boolean) => void
   onQuickStartAct: (act: 1 | 2 | 3 | 4) => void
   onStart: () => void
+  onResume?: () => void
   onOnline?: () => void
   onCompendium: () => void
   onAchievements: () => void
@@ -77,6 +78,7 @@ export function StartMenu({
   onCustomModifier,
   onQuickStartAct,
   onStart,
+  onResume,
   onOnline,
   onCompendium,
   onAchievements,
@@ -85,7 +87,7 @@ export function StartMenu({
   onSettings,
   initiallyChoosingCharacter = false,
 }: StartMenuProps) {
-  const [selection, setSelection] = useState('Single Player')
+  const [selection, setSelection] = useState(onResume ? 'Resume' : 'Single Player')
   const [screen, setScreen] = useState<'main' | 'mode' | 'daily' | 'custom' | 'character'>(initiallyChoosingCharacter ? 'character' : 'main')
   const [characterTransition, setCharacterTransition] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -109,6 +111,9 @@ export function StartMenu({
       </section> : null}
 
       {screen === 'main' ? <nav className="start-menu__nav" aria-label="Main menu">
+        {onResume ? <button type="button" aria-label="Resume" data-selected={selection === 'Resume'}
+          onFocus={() => setSelection('Resume')} onMouseEnter={() => setSelection('Resume')}
+          onClick={onResume}>Resume</button> : null}
         <button type="button" aria-label="Single Player" data-selected={selection === 'Single Player'}
           onFocus={() => setSelection('Single Player')} onMouseEnter={() => setSelection('Single Player')}
           onClick={() => setScreen('mode')}>Single Player</button>

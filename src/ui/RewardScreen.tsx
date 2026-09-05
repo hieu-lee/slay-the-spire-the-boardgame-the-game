@@ -97,7 +97,8 @@ type RewardScreenProps = {
 
 /** A compact, click-to-claim loot table. Card choices take over the sheet. */
 export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onRelic, onBossRelic, onTransform, onResolve, ascension, act }: RewardScreenProps) {
-  const [activeCardPlayerId, setActiveCardPlayerId] = useState<string | null>(null)
+  const [activeCardPlayerId, setActiveCardPlayerId] = useState<string | null>(() =>
+    rewards.find((offer) => offer.cardReward && offer.choices !== null)?.playerId ?? null)
   const [sources, setSources] = useState<RewardSource[]>([])
   const backdrop = { '--reward-backdrop': `url("${assetPath(`backgrounds/boss-act-${act}.webp`)}")` } as CSSProperties
   const activeOffer = activeCardPlayerId === null ? undefined : rewards.find((offer) => offer.playerId === activeCardPlayerId && offer.cardReward)
