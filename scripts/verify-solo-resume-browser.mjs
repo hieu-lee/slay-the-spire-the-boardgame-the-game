@@ -183,6 +183,20 @@ try {
   await waitForSavedRun('room')
   await reloadAndResume('.merchant-arrival')
 
+  const beforeMainMenu = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun()))
+  await page.keyboard.press('Escape')
+  const pause = page.getByRole('dialog', { name: 'Slay the Spire' })
+  await pause.getByRole('button', { name: 'Return to main menu', exact: true }).click()
+  await page.getByRole('button', { name: 'Resume', exact: true }).waitFor()
+  const savedAtMainMenu = await page.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('sts-solo-run')).run))
+  await page.getByRole('button', { name: 'Resume', exact: true }).click()
+  await page.locator('.merchant-arrival').waitFor()
+  const afterMainMenu = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun()))
+  check('returning to the main menu preserves the unfinished run', () => {
+    assertEqual(savedAtMainMenu, beforeMainMenu)
+    assertEqual(afterMainMenu, beforeMainMenu)
+  })
+
   const oldRunId = await page.evaluate(() => window.__STS_DEBUG__.getRun().campaign.runId)
   await page.reload({ waitUntil: 'networkidle' })
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
@@ -203,9 +217,15 @@ try {
     window.__STS_DEBUG__.setRun(run)
   })
   await page.waitForFunction(() => localStorage.getItem('sts-solo-run') === null)
+  await page.keyboard.press('Escape')
+  await pause.getByRole('button', { name: 'Return to main menu', exact: true }).click()
+  const finishedReturnResumeCount = await page.getByRole('button', { name: 'Resume', exact: true }).count()
   await page.reload({ waitUntil: 'networkidle' })
   const finishedResumeCount = await page.getByRole('button', { name: 'Resume', exact: true }).count()
-  check('finished runs are not resumable', () => assertEqual(finishedResumeCount, 0))
+  check('finished runs are not resumable', () => {
+    assertEqual(finishedReturnResumeCount, 0)
+    assertEqual(finishedResumeCount, 0)
+  })
   check('resume flow has no browser errors', () => assertDeepEqual(errors, []))
   report('single-player resume browser')
 } finally {

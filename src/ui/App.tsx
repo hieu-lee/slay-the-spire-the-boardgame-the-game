@@ -797,9 +797,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           <button type="button" onClick={() => { setPauseOpen(false); setCompendium(true) }}>Compendium</button>
           {canGiveUp ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
           <button type="button" onClick={() => {
-            if (!window.confirm('Abandon this run and return to the main menu?')) return
             setPauseOpen(false)
-            discardSoloRun()
+            if (!run.campaign.finalized) setResume({ version: 1, run, built })
             onClose()
           }}>Return to main menu</button>
         </section>
