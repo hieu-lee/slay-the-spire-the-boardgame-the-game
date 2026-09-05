@@ -47,6 +47,45 @@ check('enemies attack the player in their own row', () => {
   assertEqual(next.players[1].hp, 10, 'a player in another row is untouched')
 })
 
+check('the Collector spreads its last Torch Heads across the emptiest player rows', () => {
+  const players = [
+    player({ id: 'p1', row: 0 }),
+    player({ id: 'p2', row: 1 }),
+    player({ id: 'p3', row: 2 }),
+  ]
+  const livingByRow = [0, 1, 2]
+  const previousHeads = players.flatMap(({ row }) => [0, 1].map((index) => {
+    const dead = index >= livingByRow[row]
+    return enemy({
+      uid: `old-${row}-${index}`, defId: 'torch_head', row, hp: dead ? 0 : 9, maxHp: 9, dead,
+    })
+  }))
+  const collector = enemy({
+    uid: 'collector', defId: 'the_collector', row: 0, isBoss: true, hp: 171, maxHp: 171,
+  })
+  const state = {
+    ...inEnemyPhase(players, [...previousHeads, collector]),
+    summonSupply: { torch_head: ['torch_head', 'torch_head'] },
+  }
+
+  const queued = enemyTurn(state)
+  assertEqual(queued.pendingSummons.flatMap(({ defIds }) => defIds).length, 2,
+    'only the two physical Torch Head cards left in the Summons deck are queued')
+  const started = startPlayerTurn(queued)
+  const summoned = started.enemies.filter(({ uid }) => uid.startsWith('collector-summon'))
+  assertDeepEqual(summoned.map(({ row }) => row).sort(), [0, 1],
+    'a shortage must spread new Torch Heads across separate deficient rows')
+
+  const attacked = enemyTurn({
+    ...started,
+    phase: 'enemy',
+    players: started.players.map((candidate) => ({ ...candidate, hp: 10 })),
+    enemies: summoned,
+  })
+  assertDeepEqual(attacked.players.map(({ hp }) => hp), [9, 9, 10],
+    'the remaining Torch Heads attack the separate players whose rows they occupy')
+})
+
 check('player Block absorbs an enemy attack', () => {
   const next = enemyTurn(inEnemyPhase([player({ block: 3 })], [enemy({ defId: 'green_louse' })]))
   assertEqual(next.players[0].hp, 10, 'Block prevents the damage')

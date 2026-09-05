@@ -608,6 +608,59 @@ check('Infinite Blades resolves shared-supply overflow in the chosen Start-of-Tu
   assertEqual(skipped.enemies[0].hp, 20, 'explicit skips deal no damage')
 })
 
+check('a lethal Infinite Blades Shiv skips its fallen owner\'s later Powers under Last Stand', () => {
+  const blades = instance('infinite_blades', true)
+  const fumes = instance('noxious_fumes')
+  const before = combat([
+    player({
+      id: 'p1', name: 'Ann', character: 'silent', hp: 1, shivs: 5,
+      powers: [blades, fumes], draw: deck(),
+    }),
+    player({ id: 'p2', name: 'Bo', row: 1, draw: deck() }),
+  ], [enemy({ defId: 'guardian_defensive', isBoss: true, hp: 20, maxHp: 20 })])
+  before.lastStand = true
+  const prepared = preparePlayerTurn(before)
+  const abilities = startTurnAbilities(prepared)
+  const bladeAbility = abilities.find((ability) => ability.id.includes(blades.uid))
+  const fumesAbility = abilities.find((ability) => ability.id.includes(fumes.uid))
+  const resolved = resolveStartPlayerTurn(prepared, [
+    { id: bladeAbility.id, shivEnemyUids: ['e1'] },
+    { id: fumesAbility.id, enemyUid: 'e1', shivEnemyUids: [] },
+  ])
+
+  assert(resolved !== prepared, 'the lethal Shiv rolled the whole Start-of-Turn sequence back')
+  assert(resolved.players[0].dead, 'Sharp Hide should kill the Shiv attacker')
+  assertEqual(resolved.enemies[0].hp, 19, 'the lethal Shiv should still damage Guardian')
+  assertEqual(resolved.enemies[0].poison, 0, 'the fallen owner\'s later Power should be skipped')
+  assertEqual(resolved.phase, 'player', 'the living teammate should still get a turn under Last Stand')
+
+  const guardianBlades = instance('infinite_blades', true)
+  const guardianBefore = combat([
+    player({
+      id: 'p1', name: 'Ann', character: 'guardian', guardianMode: 'attack',
+      guardianModeLocked: false, hp: 1, shivs: 5, powers: [guardianBlades], draw: deck(),
+    }),
+    player({ id: 'p2', name: 'Bo', row: 1, draw: deck() }),
+  ], [enemy({ defId: 'guardian_defensive', isBoss: true, hp: 20, maxHp: 20 })])
+  guardianBefore.lastStand = true
+  const guardianPrepared = preparePlayerTurn(guardianBefore)
+  const guardianAbilities = startTurnAbilities(guardianPrepared)
+  const guardianChoices = [
+    { id: guardianAbilities.find((ability) => ability.id.includes(guardianBlades.uid)).id, shivEnemyUids: ['e1'] },
+    { id: guardianAbilities.find((ability) => ability.guardianModeShift).id,
+      guardianModeShift: true, shivEnemyUids: [] },
+  ]
+  const guardianPlan = startTurnAbilities(
+    guardianPrepared, guardianChoices.map(({ id }) => id), guardianChoices,
+  )
+  assertEqual(guardianPlan[1].guardianModeShift, undefined, 'a dead owner must not be prompted to Mode Shift')
+  const guardianResolved = resolveStartPlayerTurn(guardianPrepared, guardianChoices)
+  assert(guardianResolved.players[0].dead, 'Sharp Hide should also kill a Guardian holding Infinite Blades')
+  assertEqual(guardianResolved.enemies[0].hp, 19, 'the Guardian owner\'s lethal Shiv should not roll back')
+  assertEqual(guardianResolved.players[0].guardianMode, 'attack', 'the dead owner must not resolve Mode Shift')
+  assertEqual(guardianResolved.phase, 'player', 'a dead owner\'s later Mode Shift should be skipped')
+})
+
 check('Noxious Fumes targets one enemy next turn, while its upgrade poisons that enemy\'s row', () => {
   const fumes = instance('noxious_fumes')
   const beforePlay = combat(

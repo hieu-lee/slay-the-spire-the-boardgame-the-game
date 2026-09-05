@@ -359,17 +359,34 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
       return
     case 'summonUntil': {
       let count = 0
-      for (const row of new Set(state.players.filter((player) => !player.dead).map((player) => player.row))) {
+      const rows = [...new Set(state.players.filter((player) => !player.dead).map((player) => player.row))].map((row) => {
         const present = state.enemies.filter((candidate) => !candidate.dead && candidate.row === row &&
           (candidate.defId === action.defId || candidate.defId.startsWith(`${action.defId}_`))).length
         const queued = state.pendingSummons.filter((summon) => summon.row === row).reduce((total, summon) =>
           total + summon.defIds.filter((id) => id === action.defId).length, 0)
-        const needed = Math.max(0, action.perPlayer - present - queued)
-        if (needed === 0) continue
+        return { row, count: present + queued, defIds: [] as string[] }
+      })
+      const reserved = state.pendingSummons.filter((summon) => !summon.direct).reduce((total, summon) =>
+        total + summon.defIds.filter((id) => id === action.defId).length, 0)
+      let available = Math.max(0, (state.summonSupply[action.defId]?.length ?? 0) - reserved)
+      while (available > 0) {
+        const target = rows.reduce<(typeof rows)[number] | undefined>((best, row) => {
+          if (row.count >= action.perPlayer) return best
+          if (!best || row.count < best.count ||
+            row.count === best.count && row.defIds.length < best.defIds.length) return row
+          return best
+        }, undefined)
+        if (!target) break
+        target.count += 1
+        target.defIds.push(action.defId)
+        count += 1
+        available -= 1
+      }
+      for (const { row, defIds } of rows) {
+        if (defIds.length === 0) continue
         state.pendingSummons.push({
-          sourceUid: enemy.uid, row, defIds: Array(needed).fill(action.defId), turn: state.turn + 1,
+          sourceUid: enemy.uid, row, defIds, turn: state.turn + 1,
         })
-        count += needed
       }
       state.log = [...state.log, `${name} will summon ${count} ${enemyDef(action.defId).name}${count === 1 ? '' : 's'}`]
       return

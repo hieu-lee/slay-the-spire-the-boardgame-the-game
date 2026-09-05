@@ -10,7 +10,6 @@ import {
   cardResolutionIsOver,
   clone,
   combatIsOver,
-  enemyLabel,
   findPlayer,
   livingEnemies,
   powerAbilityKey,
@@ -20,7 +19,6 @@ import {
 } from './board.ts'
 import {
   applyEffect,
-  damagePlayer,
   discardByCardEffect,
   drawInto,
   evokeTargetProgress,
@@ -33,12 +31,12 @@ import {
   resolveDiscardReactions,
   resolveEnraged,
   resolveExhaustReaction,
+  resolvePendingEnemyReactions,
   resolveSlimeCommand,
   resolvePendingSlimeCommands,
   settle,
-  triggerEnemyDeath,
 } from './effects.ts'
-import { addStatus, forgetRetain, grantShiftBlock, playerCanGainBlock, triggerAngry } from './pieces.ts'
+import { forgetRetain, playerCanGainBlock } from './pieces.ts'
 import { addPresentationEvent, presentationTargets } from './presentation.ts'
 import {
   amountOf,
@@ -91,7 +89,6 @@ import type { CardDef, Effect, TargetScope } from '../cards.ts'
 import { gainBlock, gainStrength } from '../damage.ts'
 import { enemyAbilities, enemyDef } from '../enemies.ts'
 import { addToDrawTop } from '../piles.ts'
-import { nextInt } from '../rng.ts'
 import { CAPS } from '../types.ts'
 import type { CardInstance, Player } from '../types.ts'
 import { slimeDef } from '../downfall/slime-boss.ts'
@@ -493,65 +490,6 @@ function resolveSlimeBossPlayReactions(
  * Plays a card from a player's hand. Returns the same state reference when the
  * play is illegal: not that player's card, not enough energy, wrong phase.
  */
-/** Printed enemy reactions wait until the current card has resolved all text. */
-function resolvePendingEnemyReactions(state: CombatState, actor: Player, context: PlayContext): void {
-  for (const uid of new Set(context.pendingEnemyDeathUids ?? [])) {
-    const enemy = state.enemies.find((candidate) => candidate.uid === uid)
-    if (enemy?.dead) triggerEnemyDeath(state, enemy)
-  }
-  const damage = new Map<string, number>()
-  for (const event of context.pendingEnemyDamage ?? []) {
-    damage.set(event.enemyUid, (damage.get(event.enemyUid) ?? 0) + event.amount)
-  }
-  const attacked = new Set(context.pendingAttackTargets ?? [])
-  for (const enemy of state.enemies) {
-    const abilities = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
-    const lost = damage.get(enemy.uid) ?? 0
-    if (lost > 0) {
-      const curl = abilities.find((ability) => ability.kind === 'curlUp')
-      if (!enemy.dead && curl?.kind === 'curlUp' && !enemy.abilityUsed) {
-        enemy.abilityUsed = true
-        enemy.block = gainBlock(enemy.block, curl.block)
-        state.log = [...state.log, `${enemyLabel(state.enemies, enemy)}'s Curl Up gained Block`]
-      }
-      if (abilities.some((ability) => ability.kind === 'shift')) grantShiftBlock(state, enemy, lost)
-      triggerAngry(state, enemy, (context.pendingEnemyDamage ?? [])
-        .filter((event) => event.enemyUid === enemy.uid && event.attack).length)
-      if (attacked.has(enemy.uid) && abilities.some((ability) => ability.kind === 'reactiveReroll')) {
-        state.die = nextInt(state.rng, 6) + 1
-        state.log = [...state.log, `${enemyLabel(state.enemies, enemy)} rerolled enemy intents to ${state.die}`]
-      }
-    }
-    const flameBarrier = abilities.find((ability) => ability.kind === 'burnOnAttackWhileSlot')
-    if (attacked.has(enemy.uid) && flameBarrier?.kind === 'burnOnAttackWhileSlot' &&
-      enemy.actionIndex === flameBarrier.slot) {
-      const gained = addStatus(state, actor, 'burn', flameBarrier.amount, enemy.uid)
-      if (gained > 0) state.log = [...state.log,
-        `${enemyLabel(state.enemies, enemy)} gives ${actor.name} ${gained} Burn`]
-    }
-    const thorns = abilities.find((ability) => ability.kind === 'thorns')
-    const sharpHide = abilities.find((ability) => ability.kind === 'sharpHide')
-    if (!attacked.has(enemy.uid) ||
-      (thorns?.kind !== 'thorns' && (enemy.dead || sharpHide?.kind !== 'sharpHide'))) continue
-    const amount = thorns?.kind === 'thorns'
-      ? (enemy.abilityCubes ?? 0) * thorns.damagePerCube
-      : sharpHide?.kind === 'sharpHide' ? sharpHide.damage : 0
-    if (amount <= 0) continue
-    const block = actor.block
-    const outcome = damagePlayer(state, actor, amount)
-    const lostHp = outcome.hpLost
-    const blocked = block - actor.block
-    state.log = [...state.log, lostHp > 0
-      ? `${enemyLabel(state.enemies, enemy)}'s ${thorns ? 'Thorns' : 'Sharp Hide'} hit ${actor.name} for ${lostHp}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
-      : outcome.fullyBlocked ? `${actor.name} blocked ${enemyLabel(state.enemies, enemy)}'s ${thorns ? 'Thorns' : 'Sharp Hide'}`
-        : `${enemyLabel(state.enemies, enemy)}'s ${thorns ? 'Thorns' : 'Sharp Hide'} did no damage to ${actor.name}`]
-    if (actor.dead) {
-      state.log = [...state.log, `${actor.name} has fallen`]
-      return
-    }
-  }
-}
-
 export function playCard(
   state: CombatState,
   playerId: string,

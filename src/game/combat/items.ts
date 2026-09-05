@@ -4,7 +4,7 @@
 // Each is its own atomic action with its own legality check, so the UI can offer
 // exactly the ones the board currently allows.
 import { clone, combatIsOver, findPlayer, livingEnemies, powerAbilityKey, powerAbilityUsed, resolveEnemyTargets, rowExists } from './board.ts'
-import { applyEffect, damageEnemyLogged, discardByCardEffect, drawInto, exhaustCards, fireTriggers, recordAttackPlayed, settle, triggerChosenDieRelic } from './effects.ts'
+import { applyEffect, damageEnemyLogged, discardByCardEffect, drawInto, exhaustCards, fireTriggers, recordAttackPlayed, resolveShivAttack, settle, triggerChosenDieRelic } from './effects.ts'
 import { addPresentationEvent, presentationTargets } from './presentation.ts'
 import { activePowerWindow, cardCanBeForced, cardIsPlayable, mandatoryChoicePending, overflowShivCount, reachedTimeWarpLimit, reachesEnemy } from './queries.ts'
 import type { CombatState, PlayContext, PotionContext, RelicContext } from './types.ts'
@@ -260,15 +260,7 @@ export function spendShiv(state: CombatState, playerId: string, enemyUid: string
     playerIds: [],
   })
   next.log = [...next.log, `${actor.name} spends a Shiv`]
-  applyEffect(
-    next,
-    actor,
-    { kind: 'hit', amount: 1 + actor.shivDamageBonus },
-    'enemy',
-    'self',
-    { enemyUid, playerId },
-    'Shiv',
-  )
+  resolveShivAttack(next, actor, enemyUid, 1 + actor.shivDamageBonus, { enemyUid, playerId })
   if (combatIsOver(next)) return settle(next)
   recordAttackPlayed(next, actor)
   return settle(next)

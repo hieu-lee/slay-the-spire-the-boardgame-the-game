@@ -7787,6 +7787,40 @@ check('Shivs are separate attacks and overflow may attack immediately', () => {
   assertEqual(overflow.players.reduce((sum, player) => sum + player.shivs, 0), 5, 'the Shiv supply stays capped globally')
   assert(overflow.enemies[0].dead, 'the first overflow Shiv can kill its target')
   assertEqual(overflow.enemies[1].hp, 19, 'the second overflow Shiv independently attacks another enemy')
+
+  const guardian = combat(
+    [makePlayer({ character: 'silent', shivs: 1 })],
+    [makeEnemy({ defId: 'guardian_defensive', hp: 20, maxHp: 20 })],
+  )
+  const punished = spendShiv(guardian, 'p1', 'e1')
+  assertEqual(punished.players[0].hp, 9, "a Shiv triggers the Guardian's Sharp Hide as a separate Attack")
+
+  const secondDance = instance('blade_dance')
+  const fullAgainstGuardian = combat(
+    [makePlayer({ character: 'silent', hand: [secondDance], shivs: 5 })],
+    [makeEnemy({ defId: 'guardian_defensive', hp: 20, maxHp: 20 })],
+  )
+  const twicePunished = playCard(fullAgainstGuardian, 'p1', secondDance.uid, {
+    enemyUid: null,
+    playerId: null,
+    shivEnemyUids: ['e1', 'e1'],
+  })
+  assertEqual(twicePunished.players[0].hp, 8,
+    'each overflow Shiv from a Skill triggers Sharp Hide as its own Attack')
+
+  const lethalDance = instance('blade_dance')
+  const lastStand = createCombat(createRng(42), [
+    makePlayer({ character: 'silent', hand: [lethalDance], shivs: 5, hp: 1 }),
+    makePlayer({ id: 'p2', name: 'Ally', row: 1 }),
+  ], [makeEnemy({ defId: 'guardian_defensive', hp: 20, maxHp: 20, isBoss: true })],
+  undefined, [], 3, {}, true)
+  const stopped = playCard(lastStand, 'p1', lethalDance.uid, {
+    enemyUid: null,
+    playerId: null,
+    shivEnemyUids: ['e1', 'e1'],
+  })
+  assert(stopped.players[0].dead, 'Sharp Hide can kill the Shiv attacker under Last Stand')
+  assertEqual(stopped.enemies[0].hp, 19, 'a dead attacker cannot throw its remaining overflow Shiv')
 })
 
 check('a Shiv waits while an item card choice is pending', () => {

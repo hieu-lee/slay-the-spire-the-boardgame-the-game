@@ -21,6 +21,7 @@ import {
   drawInto,
   flushPendingTriggers,
   resolveTriggerSource,
+  resolveShivAttack,
   settle,
   triggerNeedsPlayerChoice,
   triggerSourceById,
@@ -378,7 +379,7 @@ export function triggerTargets(state: CombatState, player: Player, source: Trigg
     : undefined
 }
 
-function startTurnSources(state: CombatState): StartTurnSource[] {
+function startTurnSources(state: CombatState, includeDeadPlayers = false): StartTurnSource[] {
   if (state.phase !== 'start' || state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending ||
     state.startTurnProgress?.pauseAfterDraw || state.startTurnProgress?.discard) return []
   const events: TriggerEvent[] = [
@@ -386,7 +387,8 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
     { kind: 'startOfTurn' },
     { kind: 'dieRelic', die: state.die },
   ]
-  const playerSources = events.flatMap((event) => state.players.flatMap((player) => player.dead ? [] :
+  const playerSources = events.flatMap((event) => state.players.flatMap((player) =>
+    player.dead && !includeDeadPlayers ? [] :
     triggerSources(player, event).map((source) => ({
       source,
       ability: {
@@ -417,7 +419,8 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
   }
   const enemySources: StartTurnSource[] = []
   const guardianSources: StartTurnSource[] = state.players.filter((player) =>
-    !player.dead && player.character === 'guardian' && player.guardianMode !== null && !player.guardianModeLocked)
+    (includeDeadPlayers || !player.dead) && player.character === 'guardian' &&
+    player.guardianMode !== null && !player.guardianModeLocked)
     .map((player) => ({
       guardianModeShiftPlayerId: player.id,
       ability: {
@@ -536,6 +539,12 @@ function startTurnAbilitiesFor(
     if (planningEnded) return { ...entry.ability, targets: undefined, overflowShivs: 0 }
     const simulationState = clone(plannedState)
     const player = findPlayer(simulationState, entry.ability.playerId)!
+    if (player.dead) return {
+      id: entry.ability.id,
+      playerId: entry.ability.playerId,
+      label: entry.ability.label,
+      overflowShivs: 0,
+    }
     const planningPlayer = player
     const plannedEnemies = simulationState.enemies
     const targetOptions = () => plannedEnemies.filter((enemy) => !enemy.dead)
@@ -590,13 +599,9 @@ function startTurnAbilitiesFor(
           planningBlocked = true
           break
         }
-        applyEffect(
-          simulationState,
-          planningPlayer,
-          { kind: 'hit', amount: 1 + planningPlayer.shivDamageBonus },
-          'enemy', 'self', { enemyUid: uid, playerId: null }, 'Shiv',
-        )
-        if (targetOptions().length === 0) {
+        resolveShivAttack(simulationState, planningPlayer, uid, 1 + planningPlayer.shivDamageBonus,
+          { enemyUid: uid, playerId: null })
+        if (planningPlayer.dead || targetOptions().length === 0) {
           shivEndedCombat = true
           break
         }
@@ -770,16 +775,14 @@ function validStartTurnShivChoice(
   const simulation = clone(state)
   const actor = findPlayer(simulation, player.id)!
   for (const enemyUid of enemyUids) {
-    if (combatIsOver(simulation)) return false
+    if (actor.dead || combatIsOver(simulation)) return false
     if (enemyUid === null) continue
     const target = livingEnemies(simulation).find((enemy) => enemy.uid === enemyUid)
     if (!target) return false
-    applyEffect(
-      simulation, actor, { kind: 'hit', amount: 1 + actor.shivDamageBonus },
-      'enemy', 'self', { enemyUid, playerId: null }, 'Shiv',
-    )
+    resolveShivAttack(simulation, actor, enemyUid, 1 + actor.shivDamageBonus,
+      { enemyUid, playerId: null })
   }
-  return enemyUids.length === overflowShivs || combatIsOver(simulation)
+  return enemyUids.length === overflowShivs || actor.dead || combatIsOver(simulation)
 }
 
 function validStartTurnEvokeChoice(
@@ -828,6 +831,10 @@ export function continueStartTurn(
   for (let index = 0; index < choices.length; index++) {
     const choice = choices[index]!
     const entry = startTurnSources(next).find(({ ability }) => ability.id === choice.id)
+    if (!entry) {
+      const inactive = startTurnSources(next, true).find(({ ability }) => ability.id === choice.id)
+      if (inactive && findPlayer(next, inactive.ability.playerId)?.dead) continue
+    }
     const player = entry && findPlayer(next, entry.ability.playerId)
     const ability = entry ? startTurnAbilitiesFor(next, [entry])[0] : undefined
     if (!entry || !player || !ability ||
