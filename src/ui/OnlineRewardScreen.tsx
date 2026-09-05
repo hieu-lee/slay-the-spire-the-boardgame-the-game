@@ -2,13 +2,11 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { assetPath } from '../game/assets.ts'
 import { cardIsCurse } from '../game/cards.ts'
 import type { ActionOutcome, VisibleRun } from '../multiplayer/useRoomSession.ts'
-import { relicDef } from '../game/relics.ts'
 import type { RewardSource } from '../game/run.ts'
 import { rewardSourceLabel } from './reward-source.ts'
 import { Card } from './Card.tsx'
 import { CardRewardIcon, CardRewardPicker } from './CardRewardPicker.tsx'
-import { ItemImage } from './ItemImage.tsx'
-import { LootChoice, PotionLootChoices } from './RewardScreen.tsx'
+import { ItemLootChoice, LootChoice, PotionLootChoices } from './RewardScreen.tsx'
 
 type Props = {
   run: VisibleRun
@@ -130,10 +128,11 @@ export function OnlineRewardScreen({ run, viewerId, onAction }: Props) {
       {offer.gold ? <LootChoice disabled={lootPending} onClick={() => dispatchLoot([{ kind: 'goldReward' }])} icon={<img src={assetPath('icons/gold.png')} alt="" />}>{offer.gold} Gold</LootChoice> : null}
       {typeof offer.potion === 'string' ? <PotionLootChoices potionId={offer.potion} player={player} ascension={run.ascension} disabled={lootPending}
         onChoose={(decision) => dispatchLoot([{ ...decision, kind: 'potionReward', choice: decision.kind }])} /> : null}
-      {typeof offer.relic === 'string' ? <LootChoice disabled={lootPending} onClick={() => dispatchLoot([{ kind: 'relicReward', choice: 'gain' }])}
-        icon={<ItemImage kind="relic" id={offer.relic} />}>{relicDef(offer.relic).name}</LootChoice> : null}
-      {Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <LootChoice key={relicId} disabled={lootPending} onClick={() => dispatchLoot([{ kind: 'bossRelicReward', choice: 'gain', relicId }])}
-        icon={<ItemImage kind="relic" id={relicId} />}>{relicDef(relicId).name}</LootChoice>)
+      {typeof offer.relic === 'string' ? <ItemLootChoice kind="relic" id={offer.relic} disabled={lootPending}
+        confirmLabel="claim this relic" onClick={() => dispatchLoot([{ kind: 'relicReward', choice: 'gain' }])} /> : null}
+      {Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <ItemLootChoice kind="relic" id={relicId}
+        key={relicId} disabled={lootPending} confirmLabel="claim this relic"
+        onClick={() => dispatchLoot([{ kind: 'bossRelicReward', choice: 'gain', relicId }])} />)
       : null}
       {offer.cardReward && !cardChoicePending ? <LootChoice disabled={lootPending} onClick={() => {
         setActiveCard(true)

@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react'
 import { assetPath } from '../game/assets.ts'
 import { cardIsCurse } from '../game/cards.ts'
 import type { CardRewardOffer, PotionRewardDecision, RewardSource } from '../game/run.ts'
@@ -8,20 +8,43 @@ import type { Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { CardRewardIcon, CardRewardPicker } from './CardRewardPicker.tsx'
 import { ItemImage } from './ItemImage.tsx'
+import { PotionTooltipAnchor } from './PotionIcon.tsx'
 import { rewardSourceLabel } from './reward-source.ts'
 
-export function LootChoice({ children, icon, onClick, disabled = false }: {
+export function LootChoice({ children, icon, onClick, disabled = false, describedBy }: {
   children: ReactNode
   icon: ReactNode
   onClick?: () => void
   disabled?: boolean
+  describedBy?: string
 }) {
   if (!onClick) return <div className="loot-choice loot-choice--static">
     <span className="loot-choice__icon">{icon}</span><strong>{children}</strong>
   </div>
-  return <button className="loot-choice" type="button" onClick={onClick} disabled={disabled}>
+  return <button className="loot-choice" type="button" onClick={onClick} disabled={disabled} aria-describedby={describedBy}>
     <span className="loot-choice__icon">{icon}</span><strong>{children}</strong>
   </button>
+}
+
+export function ItemLootChoice({ kind, id, children, onClick, disabled = false, confirmLabel }: {
+  kind: 'relic' | 'potion'
+  id: string
+  children?: ReactNode
+  onClick: () => void
+  disabled?: boolean
+  confirmLabel: string
+}) {
+  const relic = kind === 'relic' ? relicDef(id) : undefined
+  const item = relic ?? potionDef(id)
+  const kindLabel = relic?.pool === 'boss' ? 'Boss Relic' : relic ? 'Relic' : 'Potion'
+  const descriptionId = useId()
+  return <PotionTooltipAnchor id={id} name={item.name} text={item.text}
+    kindLabel={kindLabel} confirmLabel={disabled ? undefined : confirmLabel} focusable={disabled}>
+    <span id={descriptionId} className="visually-hidden">{item.text}</span>
+    <LootChoice disabled={disabled} describedBy={descriptionId} onClick={onClick} icon={<ItemImage kind={kind} id={id} />}>
+      {children ?? item.name}
+    </LootChoice>
+  </PotionTooltipAnchor>
 }
 
 export function PotionLootChoices({ potionId, player, ascension, disabled = false, onChoose }: {
@@ -33,12 +56,13 @@ export function PotionLootChoices({ potionId, player, ascension, disabled = fals
 }) {
   const name = potionDef(potionId).name
   const sozu = player.relics.some((relic) => relic.defId === 'sozu')
-  if (player.potions.length < potionLimit(ascension, player) || sozu) return <LootChoice disabled={disabled || sozu}
-    onClick={() => onChoose({ kind: 'gain' })} icon={<ItemImage kind="potion" id={potionId} />}>{name}</LootChoice>
-  return player.potions.map((held, index) => <LootChoice key={`${held}-${index}`} disabled={disabled}
-    onClick={() => onChoose({ kind: 'replace', potionId: held })} icon={<ItemImage kind="potion" id={potionId} />}>
+  if (player.potions.length < potionLimit(ascension, player) || sozu) return <ItemLootChoice kind="potion" id={potionId}
+    disabled={disabled || sozu} confirmLabel="claim this potion" onClick={() => onChoose({ kind: 'gain' })}>{name}</ItemLootChoice>
+  return player.potions.map((held, index) => <ItemLootChoice kind="potion" id={potionId} key={`${held}-${index}`}
+    disabled={disabled} confirmLabel={`replace ${potionDef(held).name}`}
+    onClick={() => onChoose({ kind: 'replace', potionId: held })}>
     {name} — replace {potionDef(held).name}
-  </LootChoice>)
+  </ItemLootChoice>)
 }
 
 /** Shared compact item row for Neow and room offers. */
@@ -124,10 +148,10 @@ export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onR
           {offer.gold ? <LootChoice onClick={() => onGold(player.id)} icon={<img src={assetPath('icons/gold.png')} alt="" />}>{offer.gold} Gold</LootChoice> : null}
           {typeof offer.potion === 'string' ? <PotionLootChoices potionId={offer.potion} player={player} ascension={ascension}
             onChoose={(decision) => onPotion(player.id, decision)} /> : null}
-          {typeof offer.relic === 'string' ? <LootChoice onClick={() => onRelic(player.id, 'gain')}
-            icon={<ItemImage kind="relic" id={offer.relic} />}>{relicDef(offer.relic).name}</LootChoice> : null}
-          {Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <LootChoice key={relicId} onClick={() => onBossRelic(player.id, relicId)}
-            icon={<ItemImage kind="relic" id={relicId} />}>{relicDef(relicId).name}</LootChoice>)
+          {typeof offer.relic === 'string' ? <ItemLootChoice kind="relic" id={offer.relic}
+            confirmLabel="claim this relic" onClick={() => onRelic(player.id, 'gain')} /> : null}
+          {Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <ItemLootChoice kind="relic" id={relicId}
+            key={relicId} confirmLabel="claim this relic" onClick={() => onBossRelic(player.id, relicId)} />)
           : null}
           {offer.cardReward ? <LootChoice onClick={() => {
             setActiveCardPlayerId(player.id)

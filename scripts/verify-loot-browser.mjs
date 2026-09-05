@@ -41,7 +41,7 @@ try {
         upgraded: false,
         gold: 8,
         potion: 'weak_potion',
-        relic: false,
+        relic: 'anchor',
         bossRelics: false,
       }]
       debug.setRun(run)
@@ -72,6 +72,24 @@ try {
     `loot did not render the generated single-Coin asset: ${JSON.stringify(goldIcon)}`)
   assert.equal(await page.getByRole('button', { name: /^Skip .*Potion$/ }).count(), 0,
     'an individual Potion skip is still rendered')
+  const potionLoot = page.getByRole('button', { name: 'Weak Potion', exact: true })
+  await potionLoot.hover()
+  const potionTip = page.locator('.potion-tip').filter({ hasText: 'Weak Potion' })
+  await potionTip.waitFor()
+  assert((await potionTip.locator('.relic-tip__text').innerText()).trim().length > 0,
+    'Potion loot hover did not show its effect details')
+  const potionDescriptionId = await potionLoot.getAttribute('aria-describedby')
+  assert(potionDescriptionId && (await page.locator(`[id="${potionDescriptionId}"]`).innerText()).trim().length > 0,
+    'Potion loot effect details are not exposed to assistive technology')
+  const offeredRelic = page.getByRole('button', { name: 'Anchor', exact: true })
+  await offeredRelic.hover()
+  const relicTip = page.locator('.potion-tip').filter({ hasText: 'Anchor' })
+  await relicTip.waitFor()
+  assert((await relicTip.locator('.relic-tip__text').innerText()).trim().length > 0,
+    'Relic loot hover did not show its effect details')
+  const relicDescriptionId = await offeredRelic.getAttribute('aria-describedby')
+  assert(relicDescriptionId && (await page.locator(`[id="${relicDescriptionId}"]`).innerText()).trim().length > 0,
+    'Relic loot effect details are not exposed to assistive technology')
   const row = page.locator('.loot-choice').first()
   await row.hover()
   assert.equal(await row.evaluate((button) => getComputedStyle(button, '::after').opacity), '1',
@@ -396,7 +414,8 @@ try {
           players: [{ ...run.players[0], potions: full
             ? ['liquid_memories', 'fairy_in_a_bottle', 'distilled_chaos']
             : ['liquid_memories', 'fairy_in_a_bottle'] }],
-          rewards: [{ ...run.rewards[0], cardReward: false, choices: null, gold: 8, potion: potion ? 'distilled_chaos' : false }] },
+          rewards: [{ ...run.rewards[0], cardReward: false, choices: null, gold: 8,
+            potion: potion ? 'distilled_chaos' : false, relic: 'anchor' }] },
         viewerId: 'p1', onAction,
       }))
     }
@@ -482,6 +501,9 @@ try {
   await page.evaluate(() => window.__SHOW_MULTI_LOOT__())
   const replacementRows = page.getByRole('button', { name: /^Distilled Chaos — replace / })
   assert.equal(await replacementRows.count(), 3, 'a full Potion inventory did not render one loot row per occupied slot')
+  const onlineRelic = page.getByRole('button', { name: 'Anchor', exact: true })
+  await onlineRelic.hover()
+  await page.locator('.potion-tip').filter({ hasText: 'Anchor' }).waitFor()
   for (const name of ['Liquid Memories', 'Fairy in a Bottle', 'Distilled Chaos']) {
     assert(await page.getByRole('button', { name: `Distilled Chaos — replace ${name}` }).isVisible(),
       `Potion replacement row for ${name} is not mouse-accessible`)
@@ -509,8 +531,8 @@ try {
     skip.click()
     skip.click()
   })
-  assert.equal((await page.evaluate(() => window.__ONLINE_REWARD_ACTIONS__)).length, 2,
-    'double-clicking global Skip dispatched the two loot actions more than once')
+  assert.equal((await page.evaluate(() => window.__ONLINE_REWARD_ACTIONS__)).length, 3,
+    'double-clicking global Skip dispatched the three loot actions more than once')
 
   await page.evaluate(() => window.__SHOW_ONLINE_CAMPFIRE__())
   const rest = page.getByRole('button', { name: /Rest/ })
@@ -534,6 +556,37 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__ONLINE_REWARD_ACTIONS__), [
     { kind: 'neowReward', choice: 0 },
   ], 'double-clicking a Neow card reward dispatched it more than once')
+
+  const touchContext = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true })
+  const touchPage = await touchContext.newPage()
+  await touchPage.goto(`http://127.0.0.1:${address.port}`, { waitUntil: 'domcontentloaded' })
+  await touchPage.getByRole('button', { name: 'Single Player', exact: true }).click()
+  await touchPage.getByRole('button', { name: 'Standard', exact: true }).click()
+  await touchPage.getByRole('button', { name: 'Ironclad', exact: true }).click()
+  await touchPage.getByRole('button', { name: 'Embark', exact: true }).click()
+  await touchPage.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+  await touchPage.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.phase = 'reward'
+    run.combat = null
+    run.rewardDestination = 'map'
+    run.players[0].potions = []
+    run.players[0].relics.push({ defId: 'sozu', spent: false })
+    run.rewards = [{ playerId: run.players[0].id, cardReward: false, choices: null, upgraded: false,
+      gold: false, potion: 'weak_potion', relic: false, bossRelics: false }]
+    debug.setRun(run)
+  })
+  const blockedPotion = touchPage.locator('.reward-screen--loot .potion-chip')
+  await blockedPotion.waitFor()
+  assert(await blockedPotion.getByRole('button', { name: 'Weak Potion' }).isDisabled(),
+    'Sozu-blocked Potion became actionable')
+  assert.equal(await blockedPotion.getAttribute('tabindex'), '0', 'Sozu-blocked Potion details are not keyboard-focusable')
+  await blockedPotion.tap()
+  await touchPage.locator('.potion-tip').filter({ hasText: 'Weak Potion' }).waitFor()
+  assert.equal(await touchPage.evaluate(() => window.__STS_DEBUG__.getRun().rewards[0].potion), 'weak_potion',
+    'reading a Sozu-blocked Potion claimed it')
+  await touchContext.close()
 
   assert.deepEqual(browserErrors, [], `browser errors: ${browserErrors.join('\n')}`)
   console.log('✓ loot browser: flow, desktop, and horizontal phone passed')

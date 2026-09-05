@@ -319,6 +319,7 @@
 }
 
 .sts-scope .reward-screen--loot .loot-choice:disabled { opacity: 0.5; }
+.sts-scope .reward-screen--loot .potion-chip > .loot-choice:disabled { pointer-events: none; }
 .sts-scope .loot-choice__icon { display: grid; width: 2.45rem; height: 2.45rem; place-items: center; flex: 0 0 2.45rem; }
 .sts-scope .loot-choice__icon > img,
 .sts-scope .loot-choice__icon .item-icon-image { width: 100%; height: 100%; margin: 0; object-fit: contain; }
