@@ -1,10 +1,54 @@
 // The campfire: rest, upgrade, or whatever the party's relics turned it into.
 import { canUpgradeCard, hasModifier, hasRelic, nextRunUid } from './rules.ts'
 import type { CampfireDecision, RunState } from './types.ts'
-import { healingCapFor, removeCard, transformCard } from '../acquisition.ts'
+import type { CardInstance, RelicInstance } from '../types.ts'
+import type { RuleSet } from '../meta.ts'
+import { cardIsCurse } from '../cards.ts'
+import { availableTransformRewards, healingCapFor, removeCard, transformCard } from '../acquisition.ts'
 import { isActIVUnlocked } from '../campaign.ts'
 import { currentRoom } from '../map.ts'
 import { queueNewGuardianSockets } from './guardian-gems.ts'
+
+type CampfirePlayer = {
+  dead?: boolean
+  hp: number
+  maxHp: number
+  deck: readonly Pick<CardInstance, 'defId' | 'upgraded'>[] | null
+  relics: RelicInstance[]
+  cardRewards?: readonly string[]
+  rareRewards?: readonly string[]
+  campfireTransformAvailable?: boolean
+}
+
+export function campfireTransformAvailable(player: CampfirePlayer): boolean {
+  if (player.campfireTransformAvailable !== undefined) return player.campfireTransformAvailable
+  const replacement = availableTransformRewards({
+    cardRewards: player.cardRewards ?? [], rareRewards: player.rareRewards ?? [],
+  }) > 0
+  return player.relics.some((relic) => relic.defId === 'straight_razor') && replacement &&
+    (player.deck ?? []).some((card) => !cardIsCurse(card.defId))
+}
+
+export function campfireRestAvailable(player: CampfirePlayer, restAllowed: boolean, ruleset?: RuleSet): boolean {
+  if (!restAllowed || player.relics.some((relic) => relic.defId === 'coffee_dripper')) return false
+  const deck = player.deck ?? []
+  const removable = player.relics.some((relic) => relic.defId === 'peace_pipe') &&
+    deck.some((card) => card.defId !== 'ascenders_bane')
+  return player.hp < healingCapFor(player, ruleset) || removable || campfireTransformAvailable(player)
+}
+
+/** Whether this seat has a real Campfire decision instead of an automatic no-op. */
+export function campfireNeedsDecision(
+  player: CampfirePlayer,
+  rubyAvailable: boolean,
+  restAllowed: boolean,
+  ruleset?: RuleSet,
+): boolean {
+  if (player.dead) return false
+  const smith = !player.relics.some((relic) => relic.defId === 'fusion_hammer') &&
+    player.deck?.some(canUpgradeCard) === true
+  return rubyAvailable || campfireRestAvailable(player, restAllowed, ruleset) || smith
+}
 
 /**
  * A campfire: each player chooses Rest (heal 3) or Smith (upgrade a card),
@@ -21,16 +65,17 @@ export function resolveCampfire(
   if (currentRoom(state.map)?.kind !== 'campfire') return state
 
   const live = state.players.filter((player) => !player.dead)
+  const rubyAvailable = isActIVUnlocked(state.campaignProgress) && !state.campaign.keys.ruby
   if (hasModifier(state, 'night_terrors') && live.some((player) => choices[player.id]?.choice === 'rest')) return state
-  const ruby = isActIVUnlocked(state.campaignProgress) && !state.campaign.keys.ruby && live.length > 0
+  const ruby = rubyAvailable && live.length > 0
     && live.every((player) => choices[player.id]?.choice === 'ruby')
   if (live.some((player) => {
     const decision = choices[player.id]
     if (!decision?.transformCardUid) return false
     const target = player.deck.find((card) => card.uid === decision.transformCardUid)
     return decision.choice !== 'rest' || !hasRelic(player, 'straight_razor') || !target ||
-      target.uid === decision.removeCardUid || target.defId === 'ascenders_bane' ||
-      player.cardRewards.length === 0
+      target.uid === decision.removeCardUid || cardIsCurse(target.defId) ||
+      !campfireTransformAvailable(player)
   })) return state
 
   let uid = nextRunUid(state.players)

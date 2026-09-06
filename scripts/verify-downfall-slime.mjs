@@ -380,6 +380,24 @@ levelTrigger = resolvePendingTrigger(levelTrigger, player.id, 912, undefined, un
 })
 assert.deepEqual(levelTrigger.enemies.map((held) => held.hp), [9, 9],
   'triggered Leeching Commands preserve their independent targets')
+assert.deepEqual(levelTrigger.presentationEvents.filter((event) => event.kind === 'turn' &&
+  event.sourceId === byName.get('Level Up').id && event.effect === 'buff').map((event) =>
+  [event.effect, event.actorTargeted]), [['buff', true]],
+'Level Up publishes one buff impact when its recurring Grow changes a Slime')
+
+const cappedLevelUp = { uid: 'capped-level-up', defId: byName.get('Level Up').id, upgraded: false }
+let cappedLevelTrigger = createCombat(createRng(4831), [{
+  ...player, character: 'slime_boss', powers: [cappedLevelUp],
+  slimes: [{ ...growable('capped-growable'), level: 3 }],
+}], [enemy])
+cappedLevelTrigger.pendingTriggers = [{
+  id: 9121, playerId: player.id, sourceId: `power:${cappedLevelUp.uid}`,
+}]
+cappedLevelTrigger = resolvePendingTrigger(cappedLevelTrigger, player.id, 9121,
+  undefined, undefined, undefined, { slimeUids: ['capped-growable'], slimeEnemyUids: [] })
+assert.equal(cappedLevelTrigger.presentationEvents.some((event) => event.kind === 'turn' &&
+  event.sourceId === byName.get('Level Up').id), false,
+'Level Up does not publish an impact when its recurring Grow is capped')
 
 const minionMaster = { uid: 'single-minion-master', defId: byName.get('Minion Master').id, upgraded: false }
 let singleMinion = createCombat(createRng(484), [{
@@ -538,6 +556,10 @@ const rainChoice = pendingTriggerAbility(rainy)
 assert.equal(rainChoice.slimeChoice.minimum, 0, 'Rain of Goop offers its owner as well as a Slime')
 rainy = resolvePendingTrigger(rainy, player.id, rainChoice.id, undefined, undefined, undefined, { slimeUids: [] })
 assert.equal(rainy.players[0].strength, 1, 'Rain of Goop can move Strength onto its owner')
+assert.deepEqual(rainy.presentationEvents.filter((event) => event.kind === 'turn' &&
+  event.sourceId === byName.get('Rain of Goop').id).map((event) =>
+  [event.effect, event.actorTargeted]), [['strength', true], ['exhaust', true]],
+'Rain of Goop must publish its real no-log Strength transfer and separate Exhaust')
 
 const muscle = {
   card: { uid: 'rain-muscle', defId: byName.get('Muscle Slime').id, upgraded: false },

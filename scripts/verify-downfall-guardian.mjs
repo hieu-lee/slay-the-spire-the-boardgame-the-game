@@ -705,6 +705,16 @@ check('reviewed Guardian Power timing, selection, and Retain rules resolve exact
   assert.equal(combat.players[0].energy, 4,
     'Repulsor did not grant Energy at Start of Turn')
 
+  player = fresh(4342)
+  player.powers = [{ uid: 'charge-up', defId: 'guardian_charge_up', upgraded: false }]
+  combat = createCombat({ seed: 4342, calls: 0 }, [player], [enemy()], 'guardian-charge-up-vfx')
+  combat = startPlayerTurn({ ...combat, phase: 'roundEnd', turn: 1 })
+  assert.deepEqual(combat.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'guardian_charge_up').map((event) =>
+    [event.effect, event.actorId, event.actorTargeted]), [
+    ['buff', 'p1', true], ['discard', 'p1', true],
+  ], 'Guardian start-turn special sequence did not publish each semantic VFX')
+
   player = fresh(4341)
   player.hand = [
     { uid: 'crystallize-onyx', defId: 'guardian_crystallize', upgraded: false,
@@ -986,6 +996,43 @@ check('reviewed Guardian Power timing, selection, and Retain rules resolve exact
   combat = beginEndPlayerTurn(combat)
   assert.deepEqual(combat.players[0].hand.map((card) => card.uid), ['forecast-a', 'forecast-b'])
   assert.deepEqual(combat.players[0].draw.map((card) => card.uid), ['forecast-c'])
+  assert.deepEqual(combat.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'guardian_forecasting').map((event) =>
+    [event.effect, event.actorId, event.actorTargeted]), [['draw', 'p1', true]],
+  'Guardian end-turn special sequence did not publish semantic VFX')
+})
+
+check('opaque Guardian turn Powers publish their actual semantic effect and targets only', () => {
+  const enemy = (uid, row) => ({ uid, defId: 'jaw_worm', row, isBoss: false, hp: 30, maxHp: 30,
+    block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0,
+    cardReward: null, actionIndex: 0, abilityUsed: false, dead: false })
+  const fresh = (seed) => createRun(seed, [{ id: 'p1', name: 'Guardian', character: 'guardian' }]).players[0]
+
+  let player = fresh(4391)
+  player.powers = [{ uid: 'laser', defId: 'guardian_laser_turret', upgraded: false }]
+  let combat = createCombat({ seed: 4391, calls: 0 }, [player], [enemy('left', 0), enemy('right', 1)],
+    'guardian-laser-vfx')
+  combat = beginEndPlayerTurn(combat)
+  assert.deepEqual(combat.presentationEvents.filter((event) => event.kind === 'turn').map((event) =>
+    [event.sourceId, event.effect, event.enemyIds]), [['guardian_laser_turret', 'damage', ['left']]])
+
+  player = fresh(4392)
+  player.powers = [{ uid: 'spiker', defId: 'guardian_spiker_protocol', upgraded: false }]
+  combat = createCombat({ seed: 4392, calls: 0 }, [player], [enemy('attacker', 0), enemy('other-row', 1)],
+    'guardian-spiker-vfx')
+  combat.die = 1
+  combat = beginEndPlayerTurn(combat)
+  assert.deepEqual(combat.presentationEvents.filter((event) => event.kind === 'turn').map((event) =>
+    [event.sourceId, event.effect, event.enemyIds]), [['guardian_spiker_protocol', 'damage', ['attacker']]])
+
+  player = fresh(4393)
+  player.damageDealtZeroThisTurn = true
+  player.powers = [{ uid: 'laser-no-op', defId: 'guardian_laser_turret', upgraded: false }]
+  combat = createCombat({ seed: 4393, calls: 0 }, [player], [enemy('untouched', 0)], 'guardian-laser-no-op-vfx')
+  combat.players[0].damageDealtZeroThisTurn = true
+  combat = beginEndPlayerTurn(combat)
+  assert.equal(combat.presentationEvents.some((event) => event.kind === 'turn'), false,
+    'a zero-damage opaque Power published a generic turn overlay')
 })
 
 check('Guardian board Mode Shift, colorless Vigor, and Exhaust recovery use explicit choices', () => {

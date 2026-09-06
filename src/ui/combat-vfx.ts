@@ -1,6 +1,7 @@
 import { CARDS, faceOf, type CardDef, type Effect } from '../game/cards.ts'
 import { assetPath } from '../game/assets.ts'
 import { POTIONS } from '../game/relics.ts'
+import type { TurnEffectPresentation } from '../game/combat/types.ts'
 import type { CardType, CharacterId, OrbType } from '../game/types.ts'
 
 export type VfxFamily =
@@ -160,8 +161,36 @@ const orbChannels: Readonly<Record<OrbType, VfxRecipe>> = {
   dark: recipe('dark', 'cast', 'dark-channel', 'fortune-purple'),
 }
 
-export function orbVfxRecipe(orb: OrbType): VfxRecipe {
-  return orbChannels[orb]
+const orbTurnImpacts: Readonly<Record<OrbType, VfxRecipe>> = {
+  lightning: recipe('lightning', 'none', 'turn-lightning-passive-impact', 'electric-gold'),
+  frost: recipe('frost', 'none', 'turn-frost-passive-impact', 'focus-blue'),
+  dark: recipe('dark', 'none', 'turn-dark-evoke-impact', 'fortune-purple'),
+}
+
+export function orbVfxRecipe(orb: OrbType, sourceId?: string): VfxRecipe {
+  return sourceId === 'orb-end-turn' || sourceId === 'orb-evoke' ? orbTurnImpacts[orb] : orbChannels[orb]
+}
+
+const turnEffectRecipes: Readonly<Record<TurnEffectPresentation, VfxRecipe>> = {
+  block: recipe('block', 'none', 'turn-block-impact', 'guard-blue'),
+  damage: recipe('projectile', 'none', 'turn-damage-impact', 'blast-orange'),
+  burn: recipe('debuff', 'none', 'turn-burn-impact', 'blast-orange'),
+  poison: recipe('poison', 'none', 'turn-poison-impact', 'venom-green'),
+  weak: recipe('debuff', 'none', 'turn-weak-impact', 'weak-grey'),
+  vulnerable: recipe('debuff', 'none', 'turn-vulnerable-impact', 'vulnerable-red'),
+  draw: recipe('draw', 'none', 'turn-draw-impact', 'memory-blue'),
+  discard: recipe('discard', 'none', 'turn-discard-impact', 'destiny-copper'),
+  exhaust: recipe('exhaust', 'none', 'turn-exhaust-impact', 'liquid-violet'),
+  buff: recipe('buff', 'none', 'turn-buff-impact', 'fairy-gold'),
+  strength: recipe('buff', 'none', 'turn-strength-impact', 'strength-red'),
+  blockLoss: recipe('debuff', 'none', 'turn-block-loss-impact', 'impact-ochre'),
+  strengthLoss: recipe('debuff', 'none', 'turn-strength-loss-impact', 'weak-grey'),
+  heal: recipe('buff', 'none', 'turn-heal-impact', 'steel-green'),
+  countdown: recipe('utility', 'none', 'turn-countdown-impact', 'fortune-purple'),
+}
+
+export function turnEffectVfxRecipe(effect: TurnEffectPresentation): VfxRecipe {
+  return turnEffectRecipes[effect]
 }
 const calmStance = recipe('stance', 'cast', 'magic-burst', 'calm-white')
 const wrathStance = recipe('stance', 'cast', 'magic-burst', 'wrath-red')

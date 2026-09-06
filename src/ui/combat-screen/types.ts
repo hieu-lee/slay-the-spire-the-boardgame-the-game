@@ -29,6 +29,10 @@ export type CombatScreenProps = {
   mutationsEnabled?: boolean
   drawCount?: number
   decidedPlayerIds?: string[]
+  requiredEndTurnPlayerIds?: string[]
+  endTurnTopPlayerIds?: string[]
+  startTurnDecidedPlayerIds?: string[]
+  requiredStartTurnPlayerIds?: string[]
   savedDiscardOrder?: string[]
   /** Private cards revealed by a staged online play, visible only to this seat. */
   cardPreview?: {
@@ -46,6 +50,8 @@ export type CombatScreenProps = {
   powerPreview?: { id: number; powerUid: string; kind: 'scry'; cards: CardInstance[] }
   /** Owner-private authoritative trigger choices supplied by an online room. */
   authoritativePendingTrigger?: PendingTriggerAbility | null
+  /** An already-staged private Start-of-Turn trigger the owner may reopen before quorum. */
+  stagedStartTurnTriggers?: (PendingTriggerAbility & { choiceId: string })[]
   partyEndTurnAbilities?: EndTurnAbility[]
   partyStartTurnAbilities?: StartTurnAbility[]
   partyStartTurnScryAbilities?: StartTurnScryAbility[]
@@ -120,7 +126,7 @@ export type CardDragStart = Omit<CardDrag, 'targetUid' | 'targetPlayerId'> & {
 }
 
 export type EndTurnEffectDrag = {
-  ability: EndTurnAbility
+  ability: EndTurnAbility | StartTurnAbility
   sourceOrb?: OrbType
   sourceTargetUid?: string
   pointerId: number

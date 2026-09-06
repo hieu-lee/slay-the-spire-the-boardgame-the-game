@@ -11,6 +11,8 @@ import {
 import { bottomCardChoices, createItemDecks, gainRelic, merchantRemovalCost, potionLimit, transformCard } from '../src/game/acquisition.ts'
 import {
   acquireRelic,
+  campfireNeedsDecision,
+  campfireRestAvailable,
   createPlayer,
   createRun,
   decideCourier,
@@ -20,6 +22,7 @@ import {
   revealCourier,
   resolveCardRewards,
   resolveCombat,
+  resolveCampfire,
   resolvePendingRelic,
   roomChoices,
   tradePotion,
@@ -380,12 +383,100 @@ check('empty relic rewards can be skipped but cannot create a Sapphire Key', () 
   const decks = createItemDecks(createRng(17), true)
   decks.relics = []
   let reward = createRelicReward('treasure', decks, party)
+  assertDeepEqual(reward.decisions, {})
   assertEqual(decideRelicReward(reward, 'p1', 'sapphire'), null)
   reward = decideRelicReward(reward, 'p1', 'skip')
-  reward = decideRelicReward(reward, 'p2', 'skip')
+  assertDeepEqual(reward.decisions, { p1: 'skip', p2: 'skip' })
   const result = resolveRelicReward(reward, decks, party, false)
   assert(result)
   assertEqual(result.sapphire, false)
+})
+
+check('optionless Campfire seats do not hold actionable seats or the room', () => {
+  let run = postNeowRun(171, [
+    { id: 'p1', name: 'Ann', character: 'ironclad' },
+    { id: 'p2', name: 'Bob', character: 'silent' },
+  ])
+  const campfire = Object.values(run.map.rooms).find((room) => room.kind === 'campfire')
+  run = {
+    ...run,
+    phase: 'room',
+    map: { ...run.map, position: campfire.id },
+    players: run.players.map((player) => player.id === 'p2' ? {
+      ...player,
+      relics: [...player.relics, { defId: 'coffee_dripper', spent: false }, { defId: 'fusion_hammer', spent: false }],
+    } : { ...player, hp: 1 }),
+  }
+  assert(!campfireNeedsDecision(run.players[1], false, true))
+  const skipped = resolveCampfire(run, { p1: { choice: 'leave' } })
+  assertEqual(skipped.phase, 'map')
+  assertEqual(skipped.players[0].hp, 1, 'the core resolver changed a player who chose no Campfire action')
+  const resolved = resolveCampfire(run, { p1: { choice: 'rest' } })
+  assertEqual(resolved.phase, 'map')
+  assertEqual(resolved.players[0].hp, 4)
+})
+
+check('Campfire Rest counts only healing or a usable Peace Pipe or Straight Razor rider', () => {
+  const [base] = players(1)
+  const full = { ...base, hp: base.maxHp, deck: base.deck.map((card) => ({ ...card, upgraded: true })),
+    cardRewards: [], rareRewards: [] }
+  assert(!campfireNeedsDecision(full, false, true))
+  assert(!campfireRestAvailable({ ...full, hp: 6, maxHp: 10,
+    relics: [...full.relics, { defId: 'mark_of_pain', spent: false }] }, true, 'base'))
+  assert(campfireRestAvailable({ ...full,
+    relics: [...full.relics, { defId: 'peace_pipe', spent: false }] }, true))
+  assert(!campfireRestAvailable({ ...full, deck: [{ uid: 'bane', defId: 'ascenders_bane', upgraded: false }],
+    relics: [...full.relics, { defId: 'peace_pipe', spent: false }] }, true))
+  assert(campfireRestAvailable({ ...full, cardRewards: ['strike_r'],
+    relics: [...full.relics, { defId: 'straight_razor', spent: false }] }, true))
+  assert(!campfireRestAvailable({ ...full, cardRewards: [],
+    relics: [...full.relics, { defId: 'straight_razor', spent: false }] }, true))
+  assert(!campfireRestAvailable({ ...full, cardRewards: ['golden_ticket'], rareRewards: [], cardRewardCount: 1,
+    relics: [...full.relics, { defId: 'straight_razor', spent: false }] }, true))
+  assert(campfireRestAvailable({ ...full, cardRewards: ['golden_ticket'], rareRewards: ['barricade'],
+    relics: [...full.relics, { defId: 'straight_razor', spent: false }] }, true))
+  assert(!campfireRestAvailable({ ...full, cardRewards: undefined, cardRewardCount: 1,
+    relics: [...full.relics, { defId: 'straight_razor', spent: false }] }, true),
+  'a redacted reward count cannot prove that Straight Razor has a replacement')
+  assert(campfireRestAvailable({ ...full, cardRewards: undefined, campfireTransformAvailable: true,
+    relics: [...full.relics, { defId: 'straight_razor', spent: false }] }, true))
+  assert(!campfireRestAvailable({ ...full, cardRewards: ['strike_r'],
+    relics: [...full.relics, { defId: 'straight_razor', spent: false }] }, false))
+})
+
+check('an otherwise optionless Campfire seat still decides a real Ruby Key choice', () => {
+  let run = postNeowRun(172, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const campfire = Object.values(run.map.rooms).find((room) => room.kind === 'campfire')
+  run = {
+    ...run,
+    phase: 'room',
+    campaignProgress: { ...run.campaignProgress, actIV: 5 },
+    map: { ...run.map, position: campfire.id },
+    players: run.players.map((player) => ({ ...player,
+      relics: [...player.relics, { defId: 'coffee_dripper', spent: false }, { defId: 'fusion_hammer', spent: false }],
+    })),
+  }
+  assert(campfireNeedsDecision(run.players[0], true, true))
+  const declined = resolveCampfire(run, { p1: { choice: 'leave' } })
+  assertEqual(declined.phase, 'map')
+  assert(!declined.campaign.keys.ruby, 'an optionless solo player was forced to take the Ruby Key')
+  const resolved = resolveCampfire(run, { p1: { choice: 'ruby' } })
+  assert(resolved.campaign.keys.ruby)
+})
+
+check('an exhausted shared relic draft auto-skips only after Sapphire is impossible', () => {
+  const party = players(2)
+  const decks = createItemDecks(createRng(1701), true)
+  decks.relics = ['anchor']
+  let reward = createRelicReward('treasure', decks, party, true)
+  assertDeepEqual(reward.decisions, {})
+  reward = decideRelicReward(reward, 'p1', 0)
+  assertDeepEqual(reward.decisions, { p1: 0, p2: 'skip' })
+
+  decks.relics = ['anchor', 'happy_flower']
+  reward = createRelicReward('treasure', decks, party, true)
+  reward = decideRelicReward(reward, 'p1', 'sapphire')
+  assertEqual(reward.decisions.p2, undefined, 'the remaining Sapphire decision was auto-skipped')
 })
 
 check('The Courier buys or discards one top-deck item at printed cost', () => {

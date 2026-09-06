@@ -63,6 +63,31 @@ async function fixture({ character, powers = [], orbs = [null, null, null], enem
   }, { character, powers, orbs, enemies })
 }
 
+async function startTurnRelicFixture() {
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const player = run.combat.players[0]
+    const ally = structuredClone(player)
+    Object.assign(player, {
+      id: player.id, name: 'Silent', character: 'silent', row: 0, block: 0,
+      hand: [], draw: [], discard: [], exhaust: [], powers: [], potions: [], orbs: [null, null, null],
+      relics: [{ defId: 'oddly_smooth_stone', spent: false }], dead: false,
+    })
+    Object.assign(ally, {
+      id: 'relic-ally', name: 'Defect', character: 'defect', row: 1, block: 0,
+      hand: [], draw: [], discard: [], exhaust: [], powers: [], potions: [], orbs: [null, null, null],
+      relics: [], dead: false,
+    })
+    Object.assign(run.combat, {
+      combatId: `${run.combat.combatId}:start-relic`,
+      phase: 'start', startTurnStage: 'effects', die: 4, players: [player, ally],
+      startTurnProgress: undefined, endTurnProgress: undefined, pendingTriggers: [], presentationEvents: [],
+    })
+    debug.setRun(run)
+  })
+}
+
 try {
   suite('end-turn drag browser')
   await page.goto(`http://localhost:${address.port}`, { waitUntil: 'networkidle' })
@@ -229,6 +254,104 @@ try {
   check('Loop selects Orbs by dragging them up to its card, then copied Electrodynamics Lightning uses the required row tiebreak', () => {
     assert(loopBossHp === 19, `the selected copied Lightning row did not include the boss: ${loopBossHp}`)
   })
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await startTurnRelicFixture()
+  const relic = page.locator('button.end-turn-effect--relic')
+  await relic.waitFor()
+  await relic.evaluate(async (source) => Promise.all(source.getAnimations().map((animation) => animation.finished)))
+  const relicPosition = await relic.evaluate((source) => {
+    const rect = source.getBoundingClientRect()
+    return { top: rect.top, src: source.querySelector('img')?.getAttribute('src') }
+  })
+  await page.screenshot({ path: join(output, 'start-turn-oddly-smooth-stone-target-desktop.png'), fullPage: true })
+  const staleVfxCount = await page.locator('.combat-vfx').count()
+  await drag(relic, page.locator('.seat[data-player-id="relic-ally"]'))
+  await page.getByRole('button', { name: 'Resolve start of turn', exact: true }).click()
+  const desktopImpact = page.locator(
+    '.seat[data-player-id="relic-ally"] .combat-vfx[data-vfx-kind="turn"][data-vfx-source="oddly_smooth_stone"]',
+  )
+  await desktopImpact.waitFor()
+  const desktopImpactAsset = await desktopImpact.getAttribute('data-vfx-asset')
+  await page.screenshot({ path: join(output, 'start-turn-oddly-smooth-stone-impact-desktop.png'), fullPage: true })
+  const desktopBlocks = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players
+    .map((player) => player.block))
+  check('Oddly Smooth Stone drags from its top-center relic asset to a player', () => {
+    assert(staleVfxCount === 0, 'the start-turn prompt leaked a prior scenario VFX')
+    assert(relicPosition.top < 180, `the relic source was not at the top of the battle: ${relicPosition.top}`)
+    assert(String(relicPosition.src).includes('oddly_smooth_stone'), `wrong relic asset: ${relicPosition.src}`)
+    assert(desktopImpactAsset === 'turn-block-impact', `wrong Oddly Smooth Stone impact: ${desktopImpactAsset}`)
+    assert(desktopBlocks[0] === 0 && desktopBlocks[1] === 2,
+      `the dragged relic targeted the wrong player: ${desktopBlocks}`)
+  })
+
+  await page.setViewportSize({ width: 844, height: 390 })
+  await startTurnRelicFixture()
+  const phoneRelic = page.locator('button.end-turn-effect--relic')
+  await phoneRelic.waitFor()
+  await phoneRelic.evaluate(async (source) => Promise.all(source.getAnimations().map((animation) => animation.finished)))
+  await page.screenshot({ path: join(output, 'start-turn-oddly-smooth-stone-target-horizontal-phone.png'), fullPage: true })
+  await phoneRelic.click()
+  await page.locator('.seat[data-player-id="relic-ally"]').press('Enter')
+  await page.getByRole('button', { name: 'Resolve start of turn', exact: true }).click()
+  const phoneImpact = page.locator(
+    '.seat[data-player-id="relic-ally"] .combat-vfx[data-vfx-kind="turn"][data-vfx-asset="turn-block-impact"]',
+  )
+  await phoneImpact.waitFor()
+  const phoneAllyBlock = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[1].block)
+  check('horizontal-phone start-turn relic targeting keeps click and keyboard fallback', () => {
+    assert(phoneAllyBlock === 2, `horizontal-phone relic target did not resolve: ${phoneAllyBlock}`)
+  })
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const player = run.combat.players[0]
+    Object.assign(player, {
+      hand: [
+        { uid: 'retain-a', defId: 'bash', upgraded: false },
+        { uid: 'retain-b', defId: 'defend_ironclad', upgraded: false },
+        { uid: 'retain-c', defId: 'strike_ironclad', upgraded: false },
+      ],
+      draw: [], discard: [], exhaust: [], powers: [], chamber: [], retainCardsThisTurn: 1,
+    })
+    Object.assign(run.combat, { phase: 'discard', players: [player], pendingTriggers: [] })
+    debug.setRun(run)
+  })
+  await page.getByRole('button', { name: /Confirm end-turn effect/ }).waitFor()
+  const retainOnlyTop = await page.getByLabel(/Top discard/).count()
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.players[0].draw = [{ uid: 'future-claw', defId: 'claw', upgraded: false }]
+    debug.setRun(run)
+  })
+  await page.getByLabel('Top discard for Silent').waitFor()
+  check('Retain-only players see discard order only when a top-discard card can read it', () => {
+    assert(retainOnlyTop === 0, `Retain alone exposed an irrelevant Top discard selector: ${retainOnlyTop}`)
+  })
+
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const first = run.combat.players[0]
+    const second = { ...structuredClone(first), id: 'beat-ally', name: 'Beat ally', row: 1 }
+    Object.assign(first, { id: first.id, name: 'Beat actor', row: 0, hp: 10, maxHp: 10, block: 0, dead: false })
+    Object.assign(second, { hp: 10, maxHp: 10, block: 0, dead: false })
+    const heart = { ...run.combat.enemies[0], uid: 'beat-heart', defId: 'corrupt_heart', isBoss: true,
+      hp: 100, maxHp: 100, block: 0, dead: false, abilityCubes: 1 }
+    Object.assign(run.combat, {
+      combatId: `${run.combat.combatId}:beat-vfx`, phase: 'player', players: [first, second], enemies: [heart],
+      startTurnProgress: undefined, endTurnProgress: undefined, pendingTriggers: [], presentationEvents: [],
+    })
+    debug.setRun(run)
+  })
+  await page.getByRole('button', { name: 'End turn', exact: true }).click()
+  await page.waitForFunction(() => document.querySelectorAll(
+    '.seat .combat-vfx[data-vfx-kind="turn"][data-vfx-asset="turn-damage-impact"]',
+  ).length === 2)
+  check('Beat of Death renders its turn-damage impact on every damaged player', () => assert(true))
 
   assert(pageErrors.length === 0, `browser errors: ${pageErrors.join('\n')}`)
 } finally {

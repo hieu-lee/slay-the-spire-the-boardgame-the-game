@@ -5,6 +5,7 @@ import { chromium } from 'playwright'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
 import { createCombat } from '../src/game/combat.ts'
+import { bruiserSlime } from '../src/game/downfall/slime-boss.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
@@ -124,6 +125,21 @@ async function snapshot(page) {
   const body = await response.json()
   assert(response.ok, `snapshot failed ${response.status}: ${body.error}`)
   return body
+}
+
+async function resolveAutomaticStartOwners(...pages) {
+  for (let attempt = 0; attempt < pages.length + 1; attempt += 1) {
+    let clicked = false
+    for (const page of pages) {
+      const button = page.getByRole('button', { name: /^Resolve start turn \d+\/\d+$/ })
+      if (await button.isVisible().catch(() => false) && !await button.isDisabled()) {
+        await button.click()
+        clicked = true
+        await page.waitForTimeout(50)
+      }
+    }
+    if (!clicked) return
+  }
 }
 
 async function openLobbySettings(page) {
@@ -1061,6 +1077,7 @@ try {
 
   // Capture a REST response, then let a newer WebSocket snapshot land before
   // releasing it. The rejected stale GET must not cancel that live hit.
+  await resolveAutomaticStartOwners(a, b)
   await a.locator('.combat[data-phase="player"]').waitFor()
   let releaseStaleGet
   const staleGetRelease = new Promise((resolve) => { releaseStaleGet = resolve })
@@ -3912,6 +3929,109 @@ try {
   })
   await a.getByRole('button', { name: 'Leave voice' }).click()
 
+  const foreignStartTriggerRestore = structuredClone(liveRoom.run.combat)
+  const foreignStartRoomRestore = {
+    startTurnCombatId: liveRoom.startTurnCombatId,
+    startTurnOrder: liveRoom.startTurnOrder,
+    startTurnEnemyTargets: liveRoom.startTurnEnemyTargets,
+    startTurnChoices: liveRoom.startTurnChoices,
+    startTurnRequired: liveRoom.startTurnRequired,
+    startTurnReady: liveRoom.startTurnReady,
+  }
+  const annForeignTrigger = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boOwnTrigger = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(liveRoom.run.combat, {
+    phase: 'start', die: 4, startTurnProgress: undefined, startTurnStage: undefined,
+    powerTriggersUsedThisTurn: [], pendingRelicScry: undefined, pendingCardCopy: undefined,
+    pendingDieRelicChoices: [], pendingDistilled: undefined, pendingPlunderSwitches: [],
+    pendingHermitSetupLoads: [], pendingHermitChamberPlays: [], pendingHermitStrengthRewards: [],
+  })
+  Object.assign(annForeignTrigger, {
+    character: 'slime_boss', dead: false, relics: [], potions: [], slimes: [bruiserSlime('online-ann-rain-slime')],
+    powers: [{ uid: 'online-foreign-rain', defId: 'slime_boss_rain_of_goop', upgraded: false, counter: 1 }],
+  })
+  Object.assign(boOwnTrigger, {
+    character: 'slime_boss', dead: false, relics: [], potions: [], slimes: [bruiserSlime('online-bo-rain-slime')],
+    powers: [{ uid: 'online-own-rain', defId: 'slime_boss_rain_of_goop', upgraded: false, counter: 1 }],
+  })
+  liveRoom.run.combat.pendingTriggers = [
+    { id: 910, playerId: annForeignTrigger.id, sourceId: 'power:online-foreign-rain', startTurn: true },
+    { id: 911, playerId: boOwnTrigger.id, sourceId: 'power:online-own-rain', startTurn: true },
+  ]
+  liveRoom.startTurnCombatId = undefined
+  liveRoom.startTurnOrder = undefined
+  liveRoom.startTurnEnemyTargets = undefined
+  liveRoom.startTurnChoices = undefined
+  liveRoom.startTurnRequired = [annForeignTrigger.id, boOwnTrigger.id]
+  liveRoom.startTurnReady = { [annForeignTrigger.id]: false, [boOwnTrigger.id]: false }
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  const [annTriggerSnapshot, boTriggerSnapshot] = await Promise.all([snapshot(a), snapshot(b)])
+  assertEqual(annTriggerSnapshot.run.combat.pendingTriggerAbility?.label, "Ann's Rain of Goop")
+  assertEqual(boTriggerSnapshot.run.combat.pendingTriggerAbility?.label, "Bo's Rain of Goop")
+  await Promise.all([
+    a.locator('.combat[data-phase="start"]').waitFor(),
+    b.locator('.combat[data-phase="start"]').waitFor(),
+    a.locator('.prompt').waitFor(),
+    b.locator('.prompt').waitFor(),
+  ])
+  assert((await a.locator('.prompt').textContent()).includes("Ann's Rain of Goop — choose Slime or self"))
+  assert((await b.locator('.prompt').textContent()).includes("Bo's Rain of Goop — choose Slime or self"))
+  const [annOwnTriggerEnabled, boOwnTriggerEnabled, boTableInteractive, foreignWaitBanners] = await Promise.all([
+    a.getByRole('button', { name: 'Choose self' }).isEnabled(),
+    b.getByRole('button', { name: 'Choose self' }).isEnabled(),
+    b.locator('.online-mutations').evaluate((table) => !table.inert),
+    b.getByText('Waiting for Ann to resolve a triggered ability…').count(),
+  ])
+  await b.screenshot({ path: join(outDir, '02b-owner-trigger-behind-foreign-desktop.png'), fullPage: true })
+  check('a foreign-first Start-of-Turn trigger never hides or inerts the viewer-owned trigger behind it', () => {
+    assert(annOwnTriggerEnabled, 'the first trigger owner could not resolve their own trigger')
+    assert(boOwnTriggerEnabled, 'the later trigger owner could not resolve their own trigger')
+    assert(boTableInteractive, 'the foreign-first trigger made the later owner table inert')
+    assertEqual(foreignWaitBanners, 0)
+  })
+
+  boOwnTrigger.powers = []
+  boOwnTrigger.relics = [{ defId: 'oddly_smooth_stone', spent: false }]
+  liveRoom.run.combat.pendingTriggers = [liveRoom.run.combat.pendingTriggers[0]]
+  liveRoom.startTurnCombatId = undefined
+  liveRoom.startTurnOrder = undefined
+  liveRoom.startTurnEnemyTargets = undefined
+  liveRoom.startTurnChoices = undefined
+  liveRoom.startTurnRequired = [annForeignTrigger.id, boOwnTrigger.id]
+  liveRoom.startTurnReady = { [annForeignTrigger.id]: false, [boOwnTrigger.id]: false }
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await b.getByRole('button', { name: "Resolve Bo's Oddly Smooth Stone" }).waitFor()
+  await b.setViewportSize({ width: 844, height: 390 })
+  const [regularChoiceEnabled, regularTableInteractive, regularForeignWaitBanners, regularResolverLayout] = await Promise.all([
+    b.getByRole('button', { name: "Resolve Bo's Oddly Smooth Stone" }).isEnabled(),
+    b.locator('.online-mutations').evaluate((table) => !table.inert),
+    b.getByText('Waiting for Ann to resolve a triggered ability…').count(),
+    b.locator('.start-turn-effects').evaluate((resolver) => {
+      const bounds = resolver.getBoundingClientRect()
+      const header = document.querySelector('.app-shell--online > .app-shell__header').getBoundingClientRect()
+      return { belowHeader: bounds.top >= header.bottom, fullyVisible: bounds.bottom <= innerHeight }
+    }),
+  ])
+  await b.screenshot({ path: join(outDir, '02b-regular-start-effect-behind-foreign-phone.png'), fullPage: true })
+  check('a foreign complex Start-of-Turn trigger leaves the viewer regular effect actionable on a horizontal phone', () => {
+    assert(regularChoiceEnabled, 'the viewer relic effect stayed disabled behind a foreign trigger')
+    assert(regularTableInteractive, 'the foreign trigger made the viewer regular Start-of-Turn table inert')
+    assertEqual(regularForeignWaitBanners, 0)
+    assert(regularResolverLayout.belowHeader, 'the relic resolver was hidden under the online header')
+    assert(regularResolverLayout.fullyVisible, 'the relic resolver left the horizontal-phone viewport')
+  })
+  await b.setViewportSize({ width: 1280, height: 800 })
+  liveRoom.run.combat = foreignStartTriggerRestore
+  Object.assign(liveRoom, foreignStartRoomRestore)
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await Promise.all([
+    a.locator('.combat[data-phase="player"]').waitFor(),
+    b.locator('.combat[data-phase="player"]').waitFor(),
+  ])
+
   const charonRestore = structuredClone(liveRoom.run.combat)
   const annBeforeCharon = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeCharon = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
@@ -3947,7 +4067,68 @@ try {
     b.locator('.combat[data-phase="player"]').waitFor(),
   ])
 
+  const beforeDrawRestore = structuredClone(liveRoom.run.combat)
+  const beforeDrawOwner = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const beforeDrawCoordinator = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  const beforeDrawOwnerSecrets = beforeDrawOwner.draw.map((card) => card.uid)
+  Object.assign(liveRoom.run.combat, {
+    phase: 'start', pendingTriggers: [],
+    startTurnProgress: {
+      choices: [],
+      beforeDraw: {
+        drewFrom: liveRoom.run.combat.log.length,
+        sources: [
+          { playerId: beforeDrawOwner.id, sourceId: 'power:online-before-draw-one' },
+          { playerId: beforeDrawCoordinator.id, sourceId: 'power:online-before-draw-two' },
+        ],
+        ordered: false,
+      },
+    },
+  })
+  Object.assign(beforeDrawOwner, {
+    powers: [{ uid: 'online-before-draw-one', defId: 'foresight', upgraded: false }],
+  })
+  beforeDrawCoordinator.powers = [{ uid: 'online-before-draw-two', defId: 'foresight', upgraded: true }]
+  liveRoom.seats.find((seat) => seat.playerId === beforeDrawOwner.id).connected = false
+  liveRoom.startTurnRequired = undefined
+  liveRoom.startTurnReady = undefined
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  const ownerScryOrder = a.getByRole('button', { name: 'Waiting for before-draw order' })
+  const peerScryOrder = b.getByRole('button', { name: 'Confirm before-draw order' })
+  await Promise.all([ownerScryOrder.waitFor(), peerScryOrder.waitFor()])
+  const [ownerScryOrderDisabled, peerScryOrderDisabled] = await Promise.all([
+    ownerScryOrder.isDisabled(), peerScryOrder.isDisabled(),
+  ])
+  check('the authoritative coordinator skips a disconnected first Scry owner', () => {
+    assertEqual(ownerScryOrderDisabled, true)
+    assertEqual(peerScryOrderDisabled, false)
+  })
+  await peerScryOrder.click()
+  await b.getByRole('dialog', { name: /Foresight — Scry/ }).waitFor()
+  const [fallbackOwnerView, fallbackCoordinatorView] = await Promise.all([snapshot(a), snapshot(b)])
+  check('the fallback coordinator sees only their own private Scry', () => {
+    assertEqual(fallbackOwnerView.startTurnScry.cards, null)
+    assert(Array.isArray(fallbackCoordinatorView.startTurnScry.cards))
+    assert(!beforeDrawOwnerSecrets.some((uid) => JSON.stringify(fallbackCoordinatorView).includes(uid)),
+      'the disconnected first owner\'s private Scry leaked to the fallback coordinator')
+  })
+  liveRoom.run.combat = beforeDrawRestore
+  liveRoom.seats.find((seat) => seat.playerId === beforeDrawOwner.id).connected = true
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await Promise.all([
+    a.locator('.combat[data-phase="player"]').waitFor(),
+    b.locator('.combat[data-phase="player"]').waitFor(),
+  ])
+
   const infiniteRestore = structuredClone(liveRoom.run.combat)
+  liveRoom.startTurnCombatId = undefined
+  liveRoom.startTurnOrder = undefined
+  liveRoom.startTurnEnemyTargets = undefined
+  liveRoom.startTurnChoices = undefined
+  liveRoom.startTurnRequired = undefined
+  liveRoom.startTurnReady = undefined
   const annBeforeInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(liveRoom.run.combat, { phase: 'roundEnd', turn: 1, log: [] })
@@ -3981,13 +4162,13 @@ try {
     a.locator('.combat[data-phase="start"]').waitFor(),
     b.locator('.combat[data-phase="start"]').waitFor(),
   ])
-  const teammateStartButton = b.getByRole('button', { name: 'Waiting for start-turn order' })
+  const teammateStartButton = b.getByRole('button', { name: /^Resolve start turn/ })
   const teammateStartButtonDisabled = await teammateStartButton.isDisabled()
   const teammateStartPrompts = await b.locator('.prompt').count()
   const teammateStartTargets = await b.locator('.enemy--targeted').count()
   const barricadeAnnLabel = await b.getByRole('button', { name: /^Ann,/ }).getAttribute('aria-label')
   const barricadeBoLabel = await b.getByRole('button', { name: /^Bo,/ }).getAttribute('aria-label')
-  check('only the connected coordinator can resolve Start-of-Turn choices', () => {
+  check('only the current effect owner can resolve Start-of-Turn choices', () => {
     assert(teammateStartButtonDisabled)
   })
   check('waiting teammates are not offered dead Start-of-Turn target controls', () => {
@@ -4001,23 +4182,15 @@ try {
   await b.screenshot({ path: join(outDir, '02e-online-barricade-resolved.png'), fullPage: true })
   await b.screenshot({ path: join(outDir, '02c-waiting-start-turn.png'), fullPage: true })
   await a.reload({ waitUntil: 'networkidle' })
-  await a.locator('.combat[data-phase="start"]').waitFor()
-  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('overflow Shiv 1/2'))
-  await a.locator('.start-turn-order > summary').click()
-  await a.locator('.start-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
-  await a.locator('.start-turn-order > summary').click()
-  await a.locator('.enemy:not([disabled])').first().click()
-  await a.getByRole('button', { name: 'Skip this Shiv' }).click()
-  await a.getByRole('button', { name: 'Resolve start of turn' }).click()
   await a.locator('.combat[data-phase="player"]').waitFor()
   const resolvedInfinite = await snapshot(a)
-  check('Infinite Blades survives refresh and resolves its ordered online overflow', () => {
+  check('disconnecting an Infinite Blades owner settles its overflow deterministically before reconnect', () => {
     const ann = resolvedInfinite.run.combat.players.find((player) => player.name === 'Ann')
     const bo = resolvedInfinite.run.combat.players.find((player) => player.name === 'Bo')
     assertEqual(ann.shivs, 3)
     assertEqual(ann.strength, 1)
-    assertEqual(ann.attacksPlayedThisTurn, 1)
-    assertDeepEqual(resolvedInfinite.run.combat.enemies.filter((enemy) => enemy.hp < 50).map((enemy) => enemy.hp), [49])
+    assertEqual(ann.attacksPlayedThisTurn, 0)
+    assertEqual(resolvedInfinite.run.combat.enemies.some((enemy) => enemy.hp < 50), false)
     assertEqual(resolvedInfinite.startTurnAbilities, undefined)
     assertDeepEqual([ann.block, bo.block], [0, 7], 'Barricade remains owner-scoped after ordered abilities')
     assertDeepEqual(bo.powers.map((card) => card.uid), ['online-barricade'])
@@ -4135,10 +4308,7 @@ try {
     assertEqual(teammateStormPrompts, 0)
     assertEqual(teammateStormTargets, 0)
   })
-  await a.reload({ waitUntil: 'networkidle' })
-  await a.locator('.combat[data-phase="start"]').waitFor()
-  await a.getByRole('button', { name: 'dark slot 3' }).waitFor()
-  await a.screenshot({ path: join(outDir, '02f-online-storm-reconnected.png'), fullPage: true })
+  const pendingStormRestore = structuredClone(liveRoom.run.combat)
   await a.getByRole('button', { name: 'dark slot 3' }).click()
   await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('target for the Evoked Orb'))
   const orbStormTarget = liveRoom.run.combat.enemies.find((enemy) => enemy.defId === 'cultist')
@@ -4152,10 +4322,10 @@ try {
     const response = await route.fetch()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.getByRole('button', { name: 'Resolve start of turn' }).click()
+  await a.getByRole('button', { name: /^Resolve start (?:of )?turn/ }).click()
   await a.locator('.combat[data-phase="player"]').waitFor()
   const resolvedOrbStorm = await snapshot(a)
-  check('Storm survives reconnect and submits sequential Orb choices authoritatively', () => {
+  check('a connected Storm owner submits sequential Orb choices authoritatively', () => {
     const ann = resolvedOrbStorm.run.combat.players.find((player) => player.name === 'Ann')
     assertDeepEqual(submittedOrbStormChoice.evokeSlots, [2, 0])
     assertDeepEqual(submittedOrbStormChoice.evokeEnemyUids, [orbStormTarget.uid, null])
@@ -4165,7 +4335,37 @@ try {
     assertEqual(resolvedOrbStorm.startTurnAbilities, undefined)
   })
   await a.screenshot({ path: join(outDir, '02g-online-storm-resolved.png'), fullPage: true })
-  liveRoom.run.combat = orbStormRestore
+
+  liveRoom.run.combat = pendingStormRestore
+  liveRoom.startTurnCombatId = undefined
+  liveRoom.startTurnOrder = undefined
+  liveRoom.startTurnEnemyTargets = undefined
+  liveRoom.startTurnChoices = undefined
+  liveRoom.startTurnRequired = undefined
+  liveRoom.startTurnReady = undefined
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.locator('.combat[data-phase="start"]').waitFor()
+  const canonicalStormTarget = liveRoom.run.combat.enemies.find((enemy) => !enemy.dead)
+  assert(canonicalStormTarget, 'online Storm fallback needs a living enemy')
+  await a.reload({ waitUntil: 'networkidle' })
+  await a.locator('.combat[data-phase="player"]').waitFor()
+  const disconnectedStorm = await snapshot(a)
+  const disconnectedStormOwner = disconnectedStorm.run.combat.players.find((player) => player.name === 'Ann')
+  const disconnectedStormPrompts = await a.locator('.prompt').count()
+  check('disconnecting a Storm owner settles canonical Orb choices before reconnect', () => {
+    assertDeepEqual(disconnectedStormOwner.orbs, ['lightning', 'lightning', 'dark'])
+    assertEqual(disconnectedStormOwner.block, 1)
+    assertEqual(disconnectedStorm.run.combat.enemies.find((enemy) => enemy.uid === canonicalStormTarget.uid).hp, 48)
+    assertEqual(disconnectedStorm.run.combat.enemies.filter((enemy) => enemy.uid !== canonicalStormTarget.uid)
+      .some((enemy) => enemy.hp < 50), false)
+    assertEqual(disconnectedStorm.startTurnAbilities, undefined)
+    assertEqual(disconnectedStormPrompts, 0, 'reconnect restored a private Orb prompt after canonical settlement')
+  })
+  await a.screenshot({ path: join(outDir, '02f-online-storm-reconnected.png'), fullPage: true })
+
+  const stormPresentationEvents = liveRoom.run.combat.presentationEvents
+  liveRoom.run.combat = { ...orbStormRestore, presentationEvents: stormPresentationEvents }
   const boAfterOrbStorm = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(boAfterOrbStorm, { miracles: 1, energy: 0 })
   const publishOrbStormRestore = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
@@ -4499,11 +4699,13 @@ try {
       { uid: 'online-discard-strike', defId: 'strike_ironclad', upgraded: false },
       { uid: 'online-discard-defend', defId: 'defend_ironclad', upgraded: false },
     ],
+    draw: [{ uid: 'online-hidden-claw', defId: 'claw', upgraded: false }],
     powers: [], orbs: ['lightning', 'lightning', null], block: 0, retainCardsThisTurn: 1,
   })
   Object.assign(bo, {
     character: 'watcher', hand: [{ uid: 'online-discard-defend', defId: 'defend_watcher', upgraded: false }],
     powers: [{ uid: 'online-omega', defId: 'omega', upgraded: false }], orbs: [null, null, null],
+    retainCardsThisTurn: 1,
   })
   liveRoom.run.combat.enemies.forEach((enemy, index) => Object.assign(enemy, {
     row: index, hp: 20, maxHp: 20, block: 0, poison: 0, dead: false,
@@ -4568,8 +4770,8 @@ try {
   await retainReinforcedBody.click()
   if (await aDiscardTop.count()) await aDiscardTop.selectOption({ index: 0 })
   const selectedDiscardTop = await aDiscardTop.count() ? await aDiscardTop.inputValue() : ''
-  await a.getByRole('button', { name: /^Confirm Ann/ }).click()
-  await a.getByRole('button', { name: /^Update Ann/ }).waitFor()
+  await a.getByRole('button', { name: /^Confirm end-turn effect/ }).click()
+  await a.getByRole('button', { name: /^Update end-turn effect/ }).waitFor()
   const savedDiscard = await snapshot(a)
   await a.reload({ waitUntil: 'networkidle' })
   await a.locator('.app-shell--online .combat[data-phase="discard"]').waitFor()
@@ -4595,7 +4797,7 @@ try {
     return route.continue()
   }
   await a.route(actionUrl, refuseFirstAutomaticEnemy)
-  await b.getByRole('button', { name: /^Confirm Bo/ }).click()
+  await b.getByRole('button', { name: /^Confirm end-turn effect/ }).click()
   await Promise.all([
     a.locator('.combat[data-phase="enemy"]').waitFor(),
     b.locator('.combat[data-phase="enemy"]').waitFor(),
@@ -4763,6 +4965,30 @@ try {
   check('the final online Campfire confirmation advances immediately', () => {
     assertEqual(liveRoom.run.phase, 'map')
   })
+  liveRoom.run = structuredClone(itemBaseline)
+  liveRoom.run.phase = 'room'
+  liveRoom.run.combat = null
+  liveRoom.run.roomState = null
+  liveRoom.run.map.position = campfireRoomId
+  liveRoom.run.map.rooms[campfireRoomId].kind = 'campfire'
+  liveRoom.run.players.find((player) => player.name === 'Bo').dead = true
+  const razorOwner = liveRoom.run.players.find((player) => player.name === 'Ann')
+  razorOwner.hp = razorOwner.maxHp
+  razorOwner.deck = razorOwner.deck.map((card) => ({ ...card, upgraded: true }))
+  razorOwner.relics.push({ defId: 'fusion_hammer', spent: false }, { defId: 'straight_razor', spent: false })
+  razorOwner.cardRewards = ['golden_ticket']
+  razorOwner.rareRewards = []
+  liveRoom.campfireChoices = undefined
+  rooms.publishRoom(code)
+  await ownerGame.getByRole('heading', { name: /Campfire/ }).waitFor()
+  const redactedRazorRestDisabled = await ownerGame.getByRole('button', { name: /Rest/ }).isDisabled()
+  const redactedRazorSnapshot = await snapshot(a)
+  check('online Straight Razor does not infer availability from a redacted Golden Ticket stack', () => {
+    assertEqual(redactedRazorSnapshot.run.players.find((player) => player.name === 'Ann').cardRewardCount, 1)
+    assertEqual(redactedRazorSnapshot.campfireTransformAvailable, false)
+    assert(redactedRazorRestDisabled, 'the unusable Straight Razor enabled Rest')
+  })
+  await ownerGame.locator('.campfire').waitFor({ state: 'hidden' })
   await a.setViewportSize({ width: 1440, height: 900 })
   // The online Wing Boots prompt, which had no coverage at all: dropping the
   // `map-prompt` class or swapping `wingBootLabel` for the room's raw `kind` both
@@ -5407,21 +5633,26 @@ try {
   await fourPages[0].evaluate(() => window.__ROOM_SOCKETS__?.at(-1)?.close(4000, 'Facing reconnect test'))
   await fourPages[0].locator('.connection--connected').waitFor()
   await fourPages[0].getByRole('button', { name: /^Spire Shield,/ }).click()
-  await fourPages[0].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Sable'))
-  await fourPages[0].getByRole('button', { name: /^Spire Spear,/ }).click()
-  await fourPages[0].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Cobalt'))
-  await fourPages[0].getByRole('button', { name: /^Spire Shield,/ }).click()
-  await fourPages[0].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Violet'))
-  const facingCapacity = await fourPages[0].locator('.enemy').evaluateAll((cards) => Object.fromEntries(cards.map((card) => [
+  await fourPages[0].getByRole('button', { name: /^Resolve start (?:of )?turn/ }).click()
+  await fourPages[1].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
+  await fourPages[1].getByRole('button', { name: /^Spire Spear,/ }).click()
+  await fourPages[1].getByRole('button', { name: /^Resolve start (?:of )?turn/ }).click()
+  await fourPages[2].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
+  await fourPages[2].getByRole('button', { name: /^Spire Shield,/ }).click()
+  await fourPages[2].getByRole('button', { name: /^Resolve start (?:of )?turn/ }).click()
+  await fourPages[3].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
+  const stagedFacing = await snapshot(fourPages[3])
+  const facingCapacity = await fourPages[3].locator('.enemy').evaluateAll((cards) => Object.fromEntries(cards.map((card) => [
     card.getAttribute('aria-label')?.split(',')[0], card.matches(':disabled'),
   ])))
-  await fourPages[0].getByRole('button', { name: /^Spire Spear,/ }).click()
-  await fourPages[0].screenshot({ path: join(outDir, '09c-four-player-online-facing.png'), fullPage: true })
-  await fourPages[0].getByRole('button', { name: 'Resolve start of turn' }).click()
+  await fourPages[3].getByRole('button', { name: /^Spire Spear,/ }).click()
+  await fourPages[3].screenshot({ path: join(outDir, '09c-four-player-online-facing.png'), fullPage: true })
+  await fourPages[3].getByRole('button', { name: /^Resolve start (?:of )?turn/ }).click()
   await fourPages[0].waitForFunction(() => document.querySelector('.combat')?.dataset.phase === 'player')
   const afterFacing = await snapshot(fourPages[0])
   check('online Facing stays bounded and resolvable across coordinator reconnect', () => {
     assertEqual(facingSnapshot.run.combat.startTurnStage, 'facing')
+    assertDeepEqual(stagedFacing.startTurnChoices.map((choice) => choice.enemyUid), ['shield', 'spear', 'shield'])
     assertEqual(facingCapacity['Spire Shield'], true)
     assertEqual(facingCapacity['Spire Spear'], false)
     assertDeepEqual(afterFacing.run.combat.players.map((player) => player.facingEnemyUid),

@@ -48,7 +48,7 @@ export type VisibleCombat = {
   players: VisiblePlayer[]
   enemies: Enemy[]
   powerTriggersUsedThisTurn: string[]
-  pendingTriggers: { id: number; playerId: string; sourceId: string; enemyUid?: string }[]
+  pendingTriggers: { id: number; playerId: string; sourceId: string; startTurn?: true; enemyUid?: string }[]
   pendingTriggerAbility: PendingTriggerAbility | null
   nextTriggerId: number
   startTurnProgress?: {
@@ -163,14 +163,21 @@ export type RoomSnapshot = {
   pendingRelic?: PendingRelicPreview | null
   pendingRelicStatus?: { playerId: string; playerName: string; relicId: string } | null
   campfireChoice?: { choice: CampfireChoice; cardUid?: string }
+  campfireTransformAvailable?: boolean
+  quickSetupTransformAvailable?: boolean
   campfireDecided: string[]
   endTurnDecided: string[]
+  endTurnRequired: string[]
+  endTurnTopPlayerIds?: string[]
   endTurnAbilities?: EndTurnAbility[]
   startTurnAbilities?: StartTurnAbility[]
+  startTurnDecided: string[]
+  startTurnRequired: string[]
   startTurnCoordinatorId?: string | null
   startTurnChoiceId?: string
   startTurnEnemyTargets?: Record<string, string>
   startTurnChoices?: StartTurnChoice[]
+  stagedStartTurnTriggers?: (PendingTriggerAbility & { choiceId: string })[]
   startTurnOrderPending?: boolean
   startTurnOrderLocked?: boolean
   startTurnScryAbilities?: StartTurnScryAbility[]

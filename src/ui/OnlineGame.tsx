@@ -372,7 +372,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       } : undefined,
       pendingCardCopy: asyncPlayerTurn && visibleCombat.pendingCardCopy?.playerId !== viewerId
         ? undefined : visibleCombat.pendingCardCopy,
-      pendingTriggers: asyncPlayerTurn
+      pendingTriggers: asyncPlayerTurn || visibleCombat.phase === 'start'
         ? visibleCombat.pendingTriggers.filter((trigger) => trigger.playerId === viewerId)
         : visibleCombat.pendingTriggers,
       pendingPlunderSwitches: asyncPlayerTurn
@@ -590,9 +590,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const foreignCardChoice = cardChoiceSeat !== undefined && cardChoiceSeat.playerId !== snapshot.you.playerId
   const foreignCardCopy = foreignCardChoice && run.combat?.pendingCardCopy?.playerId === cardChoiceSeat?.playerId
   const blockingForeignCardChoice = foreignCardChoice && !asyncPlayerTurn
-  const triggerOwner = snapshot.seats.find((seat) =>
-    seat.playerId === run.combat?.pendingTriggers[0]?.playerId)
-  const foreignTrigger = !asyncPlayerTurn && triggerOwner !== undefined &&
+  const queuedTrigger = run.combat?.pendingTriggers[0]
+  const triggerOwner = snapshot.seats.find((seat) => seat.playerId === queuedTrigger?.playerId)
+  const foreignTrigger = !asyncPlayerTurn && queuedTrigger?.startTurn !== true && triggerOwner !== undefined &&
     triggerOwner.playerId !== snapshot.you.playerId
   const discardOwner = snapshot.seats.find((seat) => seat.playerId === snapshot.startTurnDiscard?.playerId)
   const foreignStartTurnDiscard = discardOwner !== undefined && discardOwner.playerId !== snapshot.you.playerId
@@ -745,6 +745,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           viewerId={snapshot.you.playerId}
           drawCount={combatViewer?.drawCount}
           decidedPlayerIds={snapshot.endTurnDecided}
+          requiredEndTurnPlayerIds={snapshot.endTurnRequired}
+          endTurnTopPlayerIds={snapshot.endTurnTopPlayerIds}
+          startTurnDecidedPlayerIds={snapshot.startTurnDecided}
+          requiredStartTurnPlayerIds={snapshot.startTurnRequired}
           partyEndTurnAbilities={snapshot.endTurnAbilities}
           partyStartTurnAbilities={snapshot.startTurnAbilities}
           partyStartTurnScryAbilities={snapshot.startTurnScryAbilities}
@@ -760,6 +764,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           cardPreview={snapshot.cardPreview}
           powerPreview={snapshot.powerPreview}
           authoritativePendingTrigger={run.combat?.pendingTriggerAbility ?? null}
+          stagedStartTurnTriggers={snapshot.stagedStartTurnTriggers}
           authoritativeVersion={snapshot.version}
           authoritativeRefresh={room.refreshEpoch}
           authoritativeRestoration={room.restorationEpoch}
@@ -851,6 +856,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         setup={run.setup}
         players={run.players.map(playerForUi)}
         currentStep={currentQuickSetupStep(run.setup)}
+        transformAvailable={snapshot.quickSetupTransformAvailable}
         enabled={room.connection === 'connected' && run.setup.playerIds[run.setup.playerIndex] === snapshot.you.playerId}
         disabledMessage={room.connection !== 'connected'
           ? 'Reconnecting… setup progress is preserved.'
@@ -881,7 +887,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         && !pendingAcquisition && !run.roomState ? (
         <OnlineCampfireScreen player={viewer} saved={snapshot.campfireChoice} decided={snapshot.campfireDecided} seats={snapshot.seats.filter((seat) => !run.players.find((candidate) => candidate.id === seat.playerId)?.dead)} onAction={room.act}
           rubyAvailable={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES && !run.campaign.keys.ruby}
-          restAllowed={!run.meta.modifierIds.includes('night_terrors')} />
+          restAllowed={!run.meta.modifierIds.includes('night_terrors')}
+          ruleset={run.meta.ruleset} transformAvailable={snapshot.campfireTransformAvailable} />
       ) : null}
       {waitingForCatchUpMerchant ? <section className="room-screen" role="status">Waiting for the Catch Up players to finish their Merchant visit.</section> : null}
       {run.phase === 'room' && run.roomState && viewer

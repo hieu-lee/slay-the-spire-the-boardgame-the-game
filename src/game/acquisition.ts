@@ -195,6 +195,14 @@ export function upgradeCard(player: Player, uid: string): Player {
   return { ...player, deck: player.deck.map((candidate) => candidate.uid === uid ? { ...candidate, upgraded: true } : candidate) }
 }
 
+export function availableTransformRewards(player: {
+  cardRewards: readonly string[]
+  rareRewards: readonly string[]
+}): number {
+  const tickets = player.cardRewards.filter((id) => id === 'golden_ticket').length
+  return player.cardRewards.length - tickets + Math.min(tickets, player.rareRewards.length)
+}
+
 export function transformCard(_rng: RngState, player: Player, uid: string, newUid: string): Player {
   const old = player.deck.find((card) => card.uid === uid)
   if (!old || cardIsCurse(old.defId) || player.cardRewards.length === 0) return player

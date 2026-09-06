@@ -65,7 +65,15 @@ import {
   resolutionContext,
   slimeCommandEnemyChoiceLabels,
 } from './queries.ts'
-import type { CombatState, DeferredHavoc, PendingTrigger, PendingTriggerAbility, PlayContext, TriggerSource } from './types.ts'
+import type {
+  CombatState,
+  DeferredHavoc,
+  PendingTrigger,
+  PendingTriggerAbility,
+  PlayContext,
+  TriggerSource,
+  TurnEffectPresentation,
+} from './types.ts'
 import { cardCost, cardDef, cardStaysInPlay, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
 import type { CardDef, Effect, TargetScope } from '../cards.ts'
 import {
@@ -93,6 +101,78 @@ import { healingCapFor } from '../acquisition.ts'
 
 function dieRelicNeedsOwnerChoice(effects: readonly Effect[]): boolean {
   return effects.some((effect) => effect.kind === 'discard' || effect.kind === 'exhaustFromHand')
+}
+
+const TURN_PRESENTATION_TRIGGERS = new Set(['startOfCombat', 'beforeDraw', 'startOfTurn', 'dieRelic', 'endOfTurn'])
+
+export function publishTurnEffect(
+  state: CombatState,
+  actorId: string,
+  sourceId: string,
+  effect: TurnEffectPresentation,
+  targets: {
+    actorTargeted?: boolean
+    enemyIds?: string[]
+    playerIds?: string[]
+    enemyRow?: number
+  } = {},
+): void {
+  addPresentationEvent(state, {
+    kind: 'turn', effect,
+    actorTargeted: targets.actorTargeted ?? false,
+    actorId, sourceId,
+    enemyIds: targets.enemyIds ?? [],
+    playerIds: targets.playerIds ?? [],
+    ...(targets.enemyRow === undefined ? {} : { enemyRow: targets.enemyRow }),
+  })
+}
+
+function markTurnEffect(
+  context: PlayContext | undefined,
+  effect: TurnEffectPresentation,
+  target: { actor?: boolean; enemyId?: string; playerId?: string } = {},
+): void {
+  const applications = context?.turnEffectApplications
+  if (!applications) return
+  let applied = applications.find((candidate) => candidate.effect === effect)
+  if (!applied) applications.push(applied = { effect })
+  if (target.actor) applied.actorTargeted = true
+  if (target.enemyId && !(applied.enemyIds ??= []).includes(target.enemyId)) applied.enemyIds.push(target.enemyId)
+  if (target.playerId && !(applied.playerIds ??= []).includes(target.playerId)) applied.playerIds.push(target.playerId)
+}
+
+export function publishTurnEffectApplications(
+  state: CombatState,
+  actorId: string,
+  sourceId: string,
+  applications: NonNullable<PlayContext['turnEffectApplications']>,
+): void {
+  for (const applied of applications) {
+    publishTurnEffect(state, actorId, sourceId, applied.effect, {
+      actorTargeted: applied.actorTargeted,
+      enemyIds: applied.enemyIds,
+      playerIds: applied.playerIds,
+    })
+  }
+}
+
+function activeTurnEffectLeaves(
+  effects: readonly Effect[],
+  state: CombatState,
+  actor: Player,
+): Effect[] {
+  return effects.flatMap((effect): Effect[] => {
+    if (!effectIsActive(effect, state, actor)) return []
+    if (effect.kind === 'sequence') return effect.guardianAction || effect.guardianGemId
+      ? [effect]
+      : activeTurnEffectLeaves(effect.effects, state, actor)
+    if (effect.kind === 'branch') return activeTurnEffectLeaves(
+      conditionIsActive(effect.condition, state, actor) ? effect.effects : effect.otherwise,
+      state,
+      actor,
+    )
+    return [effect]
+  })
 }
 
 export function dieRelicEffectsForParty(
@@ -135,6 +215,7 @@ export function triggerChosenDieRelic(
     state.log = [...state.log, `${sourceLabel}: ${owner.name} must finish ${relicDef(relicDefId).name}`]
     return true
   }
+  const turnEffectApplications: NonNullable<PlayContext['turnEffectApplications']> = []
   const nestedContext: PlayContext = {
     enemyUid: target?.uid ?? null,
     playerId: targetPlayer?.id ?? owner.id,
@@ -142,6 +223,7 @@ export function triggerChosenDieRelic(
     invalidDiscardChoice: false,
     invalidExhaustChoice: false,
     pendingTriggers: context.pendingTriggers ?? [],
+    turnEffectApplications,
   }
   for (const effect of dieRelicEffectsForParty(relicDefId, ability.effects, state.players.length)) {
     applyEffect(state, owner, effect, ability.target ?? 'enemy', ability.supportTarget ?? 'self', nestedContext,
@@ -152,7 +234,9 @@ export function triggerChosenDieRelic(
     state.pendingTriggers = [...nestedContext.pendingTriggers, ...(state.pendingTriggers ?? [])]
     flushPendingTriggers(state)
   }
-  return !invalidPlayChoice(nestedContext)
+  if (invalidPlayChoice(nestedContext)) return false
+  publishTurnEffectApplications(state, owner.id, relicDefId, turnEffectApplications)
+  return true
 }
 
 function poisonApplied(state: CombatState, actor: Player, context: PlayContext): void {
@@ -284,6 +368,7 @@ export function growSlimeWithTriggers(
   context: PlayContext,
 ): number {
   const grown = growSlime(slime, amount)
+  if (grown > 0) markTurnEffect(context, 'buff', { actor: true })
   for (let step = 0; step < grown; step++) for (const leech of actor.slimes) {
     if (slimeDef(leech).slimeTrigger !== 'onGrow') continue
     if (context.pendingSlimeCommandUids) context.pendingSlimeCommandUids.push(leech.card.uid)
@@ -699,7 +784,10 @@ export function releasePendingTriggers(state: CombatState, context: PlayContext)
 function gainGuardianVigorLive(state: CombatState, actor: Player, amount: number, context: PlayContext): void {
   const gained = Math.min(amount, Math.max(0, 4 - actor.vigor - actor.vigorSpentThisTurn))
   actor.vigor += gained
-  if (gained > 0) state.log = [...state.log, `${actor.name} gains ${gained} Vigor`]
+  if (gained > 0) {
+    state.log = [...state.log, `${actor.name} gains ${gained} Vigor`]
+    markTurnEffect(context, 'buff', { actor: true })
+  }
   ;(context as PlayContext & { guardianVigorGained?: number }).guardianVigorGained =
     ((context as PlayContext & { guardianVigorGained?: number }).guardianVigorGained ?? 0) + gained
 }
@@ -777,7 +865,11 @@ function resolveGuardianCard(
       if (context.sourcePowerUid) {
         attack ? vigor() : doEffect({ kind: 'gainEnergy', amount: 1 })
         const held = actor.powers.find((card) => card.uid === context.sourcePowerUid)
-        if (held) { actor.powers = actor.powers.filter((card) => card.uid !== held.uid); exhaustCards(state, actor, [held]) }
+        if (held) {
+          actor.powers = actor.powers.filter((card) => card.uid !== held.uid)
+          exhaustCards(state, actor, [held])
+          markTurnEffect(context, 'exhaust', { actor: true })
+        }
       }
       break
     case 'guardian_speed_boost': hit(upgraded ? 2 : 1); if (context.guardianModeShift) modeShift(); break
@@ -785,7 +877,11 @@ function resolveGuardianCard(
       if (context.sourcePowerUid) {
         vigor(upgraded ? 3 : 2)
         const held = actor.powers.find((card) => card.uid === context.sourcePowerUid)
-        if (held) { actor.powers = actor.powers.filter((card) => card.uid !== held.uid); actor.discard = [...actor.discard, held] }
+        if (held) {
+          actor.powers = actor.powers.filter((card) => card.uid !== held.uid)
+          actor.discard = [...actor.discard, held]
+          markTurnEffect(context, 'discard', { actor: true })
+        }
       }
       break
     case 'guardian_incinerate': hit(1, 2); if (attack) draw(upgraded ? 4 : 2); break
@@ -828,7 +924,15 @@ function resolveGuardianCard(
     case 'guardian_repulsor': if (context.sourcePowerUid) doEffect({ kind: 'gainEnergy', amount: 1 }); else modeShift(); break
     case 'guardian_ancient_construct': if (context.sourcePowerUid && actor.block >= 4) vigor(); break
     case 'guardian_shield_charger': break
-    case 'guardian_time_sifter': actor.vigor = Math.min(4, actor.vigor + actor.vigorSpentThisTurn); actor.vigorSpentThisTurn = 0; break
+    case 'guardian_time_sifter': {
+      const before = [actor.vigor, actor.vigorSpentThisTurn]
+      actor.vigor = Math.min(4, actor.vigor + actor.vigorSpentThisTurn)
+      actor.vigorSpentThisTurn = 0
+      if (actor.vigor !== before[0] || actor.vigorSpentThisTurn !== before[1]) {
+        markTurnEffect(context, 'buff', { actor: true })
+      }
+      break
+    }
     case 'guardian_scale_slash':
       hit(1, upgraded ? 3 : 2)
       if (attack && context.sourceCardUid) {
@@ -1133,6 +1237,9 @@ export function applyEffect(
           for (let i = 0; i < poisonEvents; i++) poisonApplied(state, actor, context)
           enemyTokensApplied(state, actor, target, poisonAppliedTotal, context)
         }
+        if (blocked > 0 || damagingHits > 0) {
+          markTurnEffect(context, 'damage', { enemyId: target.uid })
+        }
         if (wasAlive && target.dead) {
           state.log = [...state.log, `${name} is dead`]
           if (!slimeCommand && context.sourceCardType !== undefined && enemyHasDeathReaction(state, target)) {
@@ -1186,7 +1293,11 @@ export function applyEffect(
     case 'damage': {
       // Not a hit: blockable, but unmodified by Strength/Weak/Vulnerable.
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
+        const before = [target.hp, target.block, target.dead]
         damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : amountOf(effect.amount, state, actor, target, context), who, actor)
+        if (target.hp !== before[0] || target.block !== before[1] || target.dead !== before[2]) {
+          markTurnEffect(context, 'damage', { enemyId: target.uid })
+        }
         if (combatIsOver(state)) return
       }
       return
@@ -1196,8 +1307,10 @@ export function applyEffect(
       const advancing = effect.kind === 'advance'
       const times = amountOf(effect.times ?? 1, state, actor, undefined, context)
       for (let index = 0; index < times; index++) {
+        const before = actor.heat
         actor.heat = Math.max(1, Math.min(6, actor.heat + (advancing ? 1 : -1)))
         note(`${actor.name} ${advancing ? 'Advances' : 'Retracts'} (Heat ${actor.heat})`)
+        if (actor.heat !== before) markTurnEffect(context, 'buff', { actor: true })
         const event = { kind: advancing ? 'onAdvance' as const : 'onRetract' as const }
         if (context.pendingTriggers) context.pendingTriggers.push(...queuedTriggers(state, event, actor))
         else fireTriggers(state, event, actor)
@@ -1207,7 +1320,10 @@ export function applyEffect(
     case 'gainSoulburn': {
       const before = actor.soulburn
       actor.soulburn = Math.min(6, actor.soulburn + amountOf(effect.amount, state, actor, undefined, context))
-      if (actor.soulburn > before) note(`${actor.name} gains ${actor.soulburn - before} Soulburn`)
+      if (actor.soulburn > before) {
+        note(`${actor.name} gains ${actor.soulburn - before} Soulburn`)
+        markTurnEffect(context, 'buff', { actor: true })
+      }
       return
     }
     case 'nextSoulburnDamageBonus':
@@ -1263,7 +1379,13 @@ export function applyEffect(
           }
           return total
         }, 0)
-        if (icons > 0) damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : effect.amount * icons, who, actor)
+        if (icons > 0) {
+          const before = [target.hp, target.block, target.dead]
+          damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : effect.amount * icons, who, actor)
+          if (target.hp !== before[0] || target.block !== before[1] || target.dead !== before[2]) {
+            markTurnEffect(context, 'damage', { enemyId: target.uid })
+          }
+        }
         if (combatIsOver(state)) return
       }
       return
@@ -1310,7 +1432,10 @@ export function applyEffect(
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.block
         grantBlock(state, target, amount, context.sourceCardId ? context.pendingTriggers : undefined)
-        if (target.block > before) note(`${target.name} gains ${target.block - before} Block`)
+        if (target.block > before) {
+          note(`${target.name} gains ${target.block - before} Block`)
+          markTurnEffect(context, 'block', target.id === actor.id ? { actor: true } : { playerId: target.id })
+        }
       }
       return
     }
@@ -1330,7 +1455,10 @@ export function applyEffect(
         target.vulnerable = gainVulnerable(target.vulnerable, effect.amount)
         // Only when the token actually went on: at the cap nothing happened,
         // and saying otherwise tells the player a card did something it did not.
-        if (target.vulnerable > before) note(`${enemyLabel(state.enemies, target)} is vulnerable`)
+        if (target.vulnerable > before) {
+          note(`${enemyLabel(state.enemies, target)} is vulnerable`)
+          markTurnEffect(context, 'vulnerable', { enemyId: target.uid })
+        }
         enemyTokensApplied(state, actor, target, target.vulnerable - before, context)
       }
       return
@@ -1342,7 +1470,10 @@ export function applyEffect(
         if (invincible || abilities.some((ability) => ability.kind === 'immuneToWeak')) continue
         const before = target.weak
         target.weak = gainWeak(target.weak, amountOf(effect.amount, state, actor, target, context))
-        if (target.weak > before) note(`${enemyLabel(state.enemies, target)} is weakened`)
+        if (target.weak > before) {
+          note(`${enemyLabel(state.enemies, target)} is weakened`)
+          markTurnEffect(context, 'weak', { enemyId: target.uid })
+        }
         enemyTokensApplied(state, actor, target, target.weak - before, context)
       }
       return
@@ -1370,6 +1501,7 @@ export function applyEffect(
         target.strength = gainStrength(target.strength, amountOf(effect.amount, state, actor, undefined, context))
         if (target.strength > before) {
           note(`${target.name} gains ${target.strength - before} Strength`)
+          markTurnEffect(context, 'strength', target.id === actor.id ? { actor: true } : { playerId: target.id })
         }
       }
       return
@@ -1377,7 +1509,10 @@ export function applyEffect(
     case 'doubleStrength': {
       const before = actor.strength
       actor.strength = gainStrength(actor.strength, actor.strength)
-      if (actor.strength > before) note(`${actor.name} gains ${actor.strength - before} Strength`)
+      if (actor.strength > before) {
+        note(`${actor.name} gains ${actor.strength - before} Strength`)
+        markTurnEffect(context, 'strength', { actor: true })
+      }
       return
     }
     case 'gainTemporaryStrength': {
@@ -1387,7 +1522,10 @@ export function applyEffect(
       const gained = actor.strength - before
       actor.strengthLossAtEndOfTurn = (actor.strengthLossAtEndOfTurn ?? 0) +
         (effect.loseGainedOnly ? gained : amount)
-      if (gained > 0) note(`${actor.name} gains ${gained} Strength`)
+      if (gained > 0) {
+        note(`${actor.name} gains ${gained} Strength`)
+        markTurnEffect(context, 'strength', { actor: true })
+      }
       return
     }
     case 'poison': {
@@ -1395,6 +1533,7 @@ export function applyEffect(
         const gained = putPoison(state, target, amountOf(effect.amount, state, actor, target, context), actor.id)
         if (gained > 0) {
           note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
+          markTurnEffect(context, 'poison', { enemyId: target.uid })
           poisonApplied(state, actor, context)
           enemyTokensApplied(state, actor, target, gained, context)
         }
@@ -1417,6 +1556,7 @@ export function applyEffect(
         const gained = putPoison(state, target, added, actor.id)
         if (gained > 0) {
           note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
+          markTurnEffect(context, 'poison', { enemyId: target.uid })
           poisonApplied(state, actor, context)
           enemyTokensApplied(state, actor, target, gained, context)
         }
@@ -1514,6 +1654,7 @@ export function applyEffect(
         if (drawn > 0) {
           const line = source ? `${source}: ${target.name} draws ${drawn}` : `${target.name} draws ${drawn}`
           state.log = [...state.log.slice(0, at), line, ...state.log.slice(at)]
+          markTurnEffect(context, 'draw', target.id === actor.id ? { actor: true } : { playerId: target.id })
         }
       }
       return
@@ -1549,8 +1690,10 @@ export function applyEffect(
       return
     }
     case 'preventDraw': {
+      const changed = !actor.drawLocked
       actor.drawLocked = true
       note(`${actor.name} cannot draw more cards this turn`)
+      if (changed) markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'preventCardPlay': {
@@ -1561,58 +1704,73 @@ export function applyEffect(
     case 'discountNextCard': {
       actor.freeCardsThisTurn = (actor.freeCardsThisTurn ?? 0) + 1
       note(`${actor.name}'s next card costs 0 this turn`)
+      markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'setNextCardCost': {
+      const changed = actor.nextCardCost !== effect.amount
       actor.nextCardCost = effect.amount
       note(`${actor.name}'s next card costs ${effect.amount} Energy this turn`)
+      if (changed) markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'discountNextAttack': {
       actor.freeAttacksThisTurn = (actor.freeAttacksThisTurn ?? 0) + 1
       note(`${actor.name}'s next Attack costs 0 this turn`)
+      markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'discountHand': {
+      const changed = actor.hand.some((card) => !card.freeThisTurn)
       actor.hand = actor.hand.map((card) => ({ ...card, freeThisTurn: true }))
       note(`${actor.name}'s cards in hand cost 0 this turn`)
+      if (changed) markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'discountRetainedCards': {
+      const changed = actor.hand.some((card) => card.retainedLastTurn)
       actor.hand = actor.hand.map((card) => card.retainedLastTurn
         ? { ...card, costReductionThisTurn: (card.costReductionThisTurn ?? 0) + effect.amount }
         : card)
       note(`${actor.name}'s Retained cards cost ${effect.amount} less this turn`)
+      if (changed) markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'doubleNextAttack': {
       actor.doubledAttacksThisTurn = (actor.doubledAttacksThisTurn ?? 0) + 1
       note(`${actor.name}'s next Attack will be played twice`)
+      markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'tripleNextAttack': {
       actor.tripledAttacksThisTurn = (actor.tripledAttacksThisTurn ?? 0) + 1
       note(`${actor.name}'s next Attack will be played three times`)
+      markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'doubleNextAttackOrSkill': {
       actor.doubledCardsThisTurn = (actor.doubledCardsThisTurn ?? 0) + 1
       note(`${actor.name}'s next Attack or Skill will be played twice`)
+      markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'doubleNextSkill': {
       actor.doubledSkillsThisTurn = (actor.doubledSkillsThisTurn ?? 0) + 1
       note(`${actor.name}'s next Skill will be played twice`)
+      markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'retainAtEndOfTurn': {
       actor.retainCardsThisTurn = (actor.retainCardsThisTurn ?? 0) + effect.amount
       note(`${actor.name} may Retain ${effect.amount} card${effect.amount === 1 ? '' : 's'} this turn`)
+      if (effect.amount > 0) markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'limitRoundHpLoss': {
+      const before = actor.hpLossLimitThisRound
       actor.hpLossLimitThisRound = Math.min(actor.hpLossLimitThisRound ?? effect.amount, effect.amount)
       note(`${actor.name} cannot lose more than ${effect.amount} HP this round`)
+      if (actor.hpLossLimitThisRound !== before) markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'preventHpLoss':
@@ -1636,12 +1794,16 @@ export function applyEffect(
       if (!held) return
       held.counter = (held.counter ?? 0) + 1
       note(`${actor.name} places cube ${held.counter} of ${effect.cubes}`)
-      if (held.counter < effect.cubes) return
+      if (held.counter < effect.cubes) {
+        markTurnEffect(context, 'countdown', { actor: true })
+        return
+      }
       applyEffect(state, actor, { kind: 'damage', amount: effect.damage }, 'allEnemies', 'self', context, source)
       actor.powers = actor.powers.filter((card) => card.uid !== held.uid)
       held.counter = undefined
       exhaustCards(state, actor, [held])
       note(`${actor.name} exhausts The Bomb`)
+      markTurnEffect(context, 'exhaust', { actor: true })
       return
     }
     case 'countdownExhaust': {
@@ -1649,11 +1811,15 @@ export function applyEffect(
       if (!held) return
       held.counter = (held.counter ?? 0) + 1
       note(`${actor.name} places cube ${held.counter} of ${effect.cubes}`)
-      if (held.counter < effect.cubes) return
+      if (held.counter < effect.cubes) {
+        markTurnEffect(context, 'countdown', { actor: true })
+        return
+      }
       actor.powers = actor.powers.filter((card) => card.uid !== held.uid)
       held.counter = undefined
       exhaustCards(state, actor, [held])
       note(`${actor.name} exhausts ${cardDef(held.defId).name}`)
+      markTurnEffect(context, 'exhaust', { actor: true })
       return
     }
     case 'switchRows': {
@@ -1670,7 +1836,10 @@ export function applyEffect(
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.energy
         target.energy = Math.min(CAPS.energy, target.energy + amountOf(effect.amount, state, actor, undefined, context))
-        if (target.energy > before) note(`${target.name} gains ${target.energy - before} Energy`)
+        if (target.energy > before) {
+          note(`${target.name} gains ${target.energy - before} Energy`)
+          markTurnEffect(context, 'buff', target.id === actor.id ? { actor: true } : { playerId: target.id })
+        }
       }
       return
     }
@@ -1736,7 +1905,12 @@ export function applyEffect(
         for (let index = 0; index < times; index++) {
           if (combatIsOver(state)) break
           const before = slime.commandsThisTurn
-          if (!resolveSlimeCommand(state, actor, slime, context)) break
+          if (!resolveSlimeCommand(state, actor, slime, context)) {
+            // An available Command with an invalidated target must fail the
+            // atomic turn-effect replay so its owner can choose again.
+            if (previewSlimeCommand(slime)) context.invalidSlimeChoice = true
+            break
+          }
           note(`${actor.name} Commands ${slimeDef(slime).name} (level ${slime.level})`)
           if (slime.commandsThisTurn === before) break
         }
@@ -1794,21 +1968,26 @@ export function applyEffect(
       if ((held.counter ?? 0) > 0) {
         const uid = context.slimeUids?.[0]
         const slime = actor.slimes?.find((candidate) => candidate.card.uid === uid)
+        const before = slime?.vigor ?? actor.strength
         if (slime) grantSlimeVigor(state, actor, slime, 1, false, false, context)
         else actor.strength = gainStrength(actor.strength, 1)
         held.counter = (held.counter ?? 0) - 1
+        if ((slime?.vigor ?? actor.strength) > before) markTurnEffect(context, 'strength', { actor: true })
       }
       if ((held.counter ?? 0) === 0) {
         actor.powers = actor.powers.filter((power) => power.uid !== held.uid)
         held.counter = undefined
         exhaustCards(state, actor, [held])
         note(`${actor.name} exhausts Rain of Goop`)
+        markTurnEffect(context, 'exhaust', { actor: true })
       }
       return
     }
     case 'blockIfRetain':
       if (actor.hand.some((held) => cardHasRetain(actor, held))) {
+        const before = actor.block
         grantBlock(state, actor, effect.amount, context.sourceCardId ? context.pendingTriggers : undefined)
+        if (actor.block > before) markTurnEffect(context, 'block', { actor: true })
       }
       return
     case 'vulnerableIfTackle':
@@ -1878,7 +2057,10 @@ export function applyEffect(
         const available = Math.max(0, CAPS.shivs - state.players.reduce((sum, player) => sum + player.shivs, 0))
         const gained = Math.min(available, effect.amount)
         target.shivs += gained
-        if (gained > 0) note(`${target.name} gains ${gained} Shiv`)
+        if (gained > 0) {
+          note(`${target.name} gains ${gained} Shiv`)
+          markTurnEffect(context, 'buff', target.id === actor.id ? { actor: true } : { playerId: target.id })
+        }
         // The five cubes are a shared supply. A Shiv that cannot be taken may
         // be thrown immediately instead, using the card's chosen enemy (p.17).
         for (let i = gained; i < effect.amount; i++) {
@@ -1929,7 +2111,10 @@ export function applyEffect(
         const amount = amountOf(effect.amount, state, actor, undefined, context)
         const before = target.miracles
         target.miracles += Math.min(available, amount)
-        if (target.miracles > before) note(`${target.name} gains ${target.miracles - before} Miracle`)
+        if (target.miracles > before) {
+          note(`${target.name} gains ${target.miracles - before} Miracle`)
+          markTurnEffect(context, 'buff', target.id === actor.id ? { actor: true } : { playerId: target.id })
+        }
       }
       return
     }
@@ -1957,7 +2142,10 @@ export function applyEffect(
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.hp
         target.hp = Math.min(healingCapFor(target, state.ruleset), target.hp + effect.amount)
-        if (target.hp > before) note(`${target.name} heals ${target.hp - before}`)
+        if (target.hp > before) {
+          note(`${target.name} heals ${target.hp - before}`)
+          markTurnEffect(context, 'heal', target.id === actor.id ? { actor: true } : { playerId: target.id })
+        }
       }
       return
     }
@@ -2097,7 +2285,10 @@ export function applyEffect(
     }
     case 'addDaze': {
       const gained = addDaze(state, actor, effect.amount, effect.pile, actor.id)
-      if (gained > 0) note(`${actor.name} gains ${gained} Daze`)
+      if (gained > 0) {
+        note(`${actor.name} gains ${gained} Daze`)
+        markTurnEffect(context, 'buff', { actor: true })
+      }
       return
     }
     case 'recoverDiscardTopCosts': {
@@ -2471,6 +2662,7 @@ export function applyEffect(
     case 'drawAndPlayFree': {
       const [drawn] = drawInto(state, actor, 1, context.pendingTriggers)
       if (!drawn) return
+      markTurnEffect(context, 'draw', { actor: true })
       const drawnDef = faceOf(cardDef(drawn.defId), drawn.upgraded)
       if (!cardIsPlayable(drawnDef, state, actor) || (drawnDef.minimumX ?? 0) > 0 ||
         !cardCanBeForced(drawnDef, state, actor, drawn.attachedGemId, drawn.uid)) {
@@ -2478,7 +2670,7 @@ export function applyEffect(
           actor.hand = actor.hand.filter((card) => card.uid !== drawn.uid)
           exhaustCards(state, actor, [drawn], context)
         } else {
-          discardByCardEffect(state, actor, [drawn])
+          discardByCardEffect(state, actor, [drawn], context)
         }
         note(`${actor.name} cannot play ${drawnDef.name} with ${cardDef(context.sourceCardId ?? 'mayhem').name}`)
         return
@@ -2495,10 +2687,14 @@ export function applyEffect(
       note(`${actor.name} must play ${cardDef(context.sourceCardId ?? 'mayhem').name}'s drawn card for 0 Energy`)
       return
     }
-    case 'load':
+    case 'load': {
+      const before = [actor.hand.length, actor.draw.length, actor.discard.length, actor.chamber.length]
       loadHermitCards(state, actor, effect.amount, effect.upTo === true, effect.source ?? 'hand',
         effect.discount === true, context)
+      if ([actor.hand.length, actor.draw.length, actor.discard.length, actor.chamber.length]
+        .some((value, index) => value !== before[index])) markTurnEffect(context, 'buff', { actor: true })
       return
+    }
     case 'loadSelf':
       if (context.sourcePlayedFromChamber || context.sourceIsCopy || !context.sourceCardUid ||
         (effect.optional && context.chooseLoadSelf !== true)) return
@@ -2550,7 +2746,10 @@ export function applyEffect(
       const cards = actor.chamber.filter((card) => selected.includes(card.uid))
       actor.chamber = actor.chamber.filter((card) => !selected.includes(card.uid))
       actor.discard.push(...cards.map(forgetRetain))
-      if (cards.length) note(`${actor.name} discards ${cards.map((card) => cardDef(card.defId).name).join(', ')} from the Chamber`)
+      if (cards.length) {
+        note(`${actor.name} discards ${cards.map((card) => cardDef(card.defId).name).join(', ')} from the Chamber`)
+        markTurnEffect(context, 'discard', { actor: true })
+      }
       for (const nested of cards.length > 0 ? effect.then ?? [] : []) {
         applyEffect(state, actor, nested, scope, supportScope, context, source)
         if (combatIsOver(state) || context.invalidHermitChoice) return
@@ -2566,7 +2765,9 @@ export function applyEffect(
         return
       }
       context.chamberChoiceIndex = cursor + selected.length
+      const changed = actor.chamber.some((card) => selected.includes(card.uid) && !card.freeThisTurn)
       actor.chamber = actor.chamber.map((card) => selected.includes(card.uid) ? { ...card, freeThisTurn: true } : card)
+      if (changed) markTurnEffect(context, 'buff', { actor: true })
       return
     }
     case 'deadOnEffects':
@@ -2734,6 +2935,7 @@ export function exhaustCards(
 ): void {
   const lasting = cards.map(forgetRetain)
   actor.exhaust = [...actor.exhaust, ...lasting]
+  if (cards.length > 0) markTurnEffect(context, 'exhaust', { actor: true })
   for (const card of cards) {
     if (context?.pendingExhaustTriggers) {
       context.pendingExhaustTriggers.push({ playerId: actor.id, card: forgetRetain(card) })
@@ -2762,11 +2964,16 @@ export function discardByCardEffect(
   context?: PlayContext,
 ): void {
   if (cards.length === 0) return
+  const before = [actor.hand, actor.draw, actor.discard]
+    .map((pile) => pile.map((card) => card.uid).join('\u0000')).join('\u0001')
   const uids = new Set(cards.map((card) => card.uid))
   const discarded = cards.map(forgetRetain)
   actor.hand = actor.hand.filter((card) => !uids.has(card.uid))
   actor.draw = actor.draw.filter((card) => !uids.has(card.uid))
   actor.discard = [...actor.discard.filter((card) => !uids.has(card.uid)), ...discarded]
+  const after = [actor.hand, actor.draw, actor.discard]
+    .map((pile) => pile.map((card) => card.uid).join('\u0000')).join('\u0001')
+  if (after !== before) markTurnEffect(context, 'discard', { actor: true })
   if (!state.discardedThisTurn.includes(actor.id)) state.discardedThisTurn.push(actor.id)
   state.log = [...state.log, `${actor.name} discards ${cards.length}`]
 
@@ -3077,15 +3284,31 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext, times
       (orb === 'lightning' && lightningTargetsRows(actor, context.sourceCardId) && fallbackEnemy
         ? lightningRowTarget(fallbackEnemy.row)
         : fallbackEnemy?.uid)
-    if (!applyOrbEvokeEffect(
+    const presentedTargets = orb === 'lightning'
+      ? lightningDamageTargets(state, actor, chosenTarget, context.sourceCardId) ?? []
+      : orb === 'dark'
+        ? livingEnemies(state).filter((enemy) => enemy.uid === chosenTarget)
+        : []
+    const beforeEnemies = new Map(presentedTargets.map((enemy) =>
+      [enemy.uid, [enemy.hp, enemy.block, enemy.dead] as const]))
+    const blockBefore = actor.block
+    if (applyOrbEvokeEffect(
       state,
       actor,
       orb,
       chosenTarget,
       context.sourceCardId,
       context.sourceCardId ? context.pendingTriggers : undefined,
-    ) &&
-      livingEnemies(state).length > 0) context.invalidEvokeTarget = true
+    )) {
+      const enemyIds = presentedTargets.filter((enemy) => {
+        const before = beforeEnemies.get(enemy.uid)!
+        return enemy.hp !== before[0] || enemy.block !== before[1] || enemy.dead !== before[2]
+      }).map((enemy) => enemy.uid)
+      if (enemyIds.length === 0 && actor.block <= blockBefore) continue
+      addPresentationEvent(state, {
+        kind: 'orb', orb, actorId: actor.id, sourceId: 'orb-evoke', enemyIds, playerIds: [],
+      })
+    } else if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
   }
   return orb
 }
@@ -3106,7 +3329,9 @@ export function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: n
   if (orb === 'lightning') {
     const targets = lightningDamageTargets(state, actor, targetUid)
     if (!targets) return false
+    const changed: string[] = []
     for (const target of targets) {
+      const before = [target.hp, target.block, target.dead]
       damageEnemyLogged(
         state,
         target,
@@ -3115,21 +3340,28 @@ export function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: n
         `${actor.name}'s Lightning orb`,
         actor,
       )
+      if (target.hp !== before[0] || target.block !== before[1] || target.dead !== before[2]) {
+        changed.push(target.uid)
+      }
     }
-    addPresentationEvent(state, {
-      kind: 'orb', orb, actorId: actor.id, sourceId: 'orb-end-turn',
-      enemyIds: targets.map((target) => target.uid), playerIds: [],
-    })
+    if (changed.length > 0) {
+      addPresentationEvent(state, {
+        kind: 'orb', orb, actorId: actor.id, sourceId: 'orb-end-turn',
+        enemyIds: changed, playerIds: [],
+      })
+    }
   } else if (orb === 'frost') {
     const before = actor.block
     grantBlock(state, actor, 1 + (actor.orbEndTurnBonus ?? 0))
     if (actor.block > before) {
       state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
     }
-    addPresentationEvent(state, {
-      kind: 'orb', orb, actorId: actor.id, sourceId: 'orb-end-turn',
-      enemyIds: [], playerIds: [],
-    })
+    if (actor.block > before) {
+      addPresentationEvent(state, {
+        kind: 'orb', orb, actorId: actor.id, sourceId: 'orb-end-turn',
+        enemyIds: [], playerIds: [],
+      })
+    }
   }
   return true
 }
@@ -3396,10 +3628,22 @@ export function resolveTriggerSource(
     if (used.includes(useKey)) return true
     used.push(useKey)
   }
+  const activeTurnEffects = TURN_PRESENTATION_TRIGGERS.has(source.trigger.kind)
+    ? activeTurnEffectLeaves(source.effects, state, player)
+    : []
+  const turnEffectApplications: NonNullable<PlayContext['turnEffectApplications']> | undefined =
+    activeTurnEffects.length > 0 ? [] : undefined
+  const presentTurnEffects = () => publishTurnEffectApplications(
+    state, player.id, source.presentationSourceId, turnEffectApplications ?? [],
+  )
   const loop = source.effects.find((effect) => effect.kind === 'triggerOrbEndTurn')
   if (loop) {
     const slot = evokeSlots?.[0]
-    if (slot === undefined) return loopOrbTargets(player) === undefined
+    if (slot === undefined) {
+      const resolved = loopOrbTargets(player) === undefined
+      if (resolved) presentTurnEffects()
+      return resolved
+    }
     const orb = player.orbs[slot]
     let target = evokeEnemyUids?.[0] ?? undefined
     if (orb === 'lightning' && !target) target = lightningTargetOptions(state, player)[0]?.uid
@@ -3417,6 +3661,7 @@ export function resolveTriggerSource(
       }
       if (combatIsOver(state)) break
     }
+    presentTurnEffects()
     return true
   }
   const target = livingEnemies(state)[0]
@@ -3444,11 +3689,15 @@ export function resolveTriggerSource(
     slimeEnemyUids: hermitContext?.slimeEnemyUids ? [...hermitContext.slimeEnemyUids] : undefined,
     slimeEnemyChoiceIndex: 0,
     pendingSlimeCommandUids: [],
+    turnEffectApplications,
   }
   const effects = dieRelicEffectsForParty(source.presentationSourceId, source.effects, state.players.length)
   for (const effect of effects) {
     applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
-    if (!allowCombatOver && combatIsOver(state)) return true
+    if (!allowCombatOver && combatIsOver(state)) {
+      presentTurnEffects()
+      return true
+    }
   }
   resolvePendingSlimeCommands(state, player, context)
   if (source.powerUid) {
@@ -3462,6 +3711,7 @@ export function resolveTriggerSource(
   const privateDiscard = state.startTurnProgress?.discard
   if (privateDiscard) {
     privateDiscard.pendingTriggers = pendingTriggers
+    presentTurnEffects()
     return !context.invalidShivTarget && !context.invalidEvokeTarget && !context.invalidScryChoice &&
       !context.invalidHermitChoice && !context.invalidSlimeChoice
   }
@@ -3471,8 +3721,10 @@ export function resolveTriggerSource(
   } else {
     releasePendingTriggers(state, context)
   }
-  return !context.invalidShivTarget && !context.invalidEvokeTarget && !context.invalidScryChoice &&
+  const resolved = !context.invalidShivTarget && !context.invalidEvokeTarget && !context.invalidScryChoice &&
     !context.invalidHermitChoice && !context.invalidSlimeChoice
+  if (resolved) presentTurnEffects()
+  return resolved
 }
 
 export function resolveQueuedTriggerSource(

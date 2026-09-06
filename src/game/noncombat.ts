@@ -43,6 +43,22 @@ export type RelicRewardState = {
   decisions: Record<string, TreasureDecision>
 }
 
+function skipUnavailableRelics(reward: RelicRewardState): RelicRewardState {
+  const fullReward = reward.sharedOffers
+    ? reward.sharedOffers.filter(Boolean).length >= reward.playerIds.length
+    : reward.playerIds.every((id) => Boolean(reward.offers[id]))
+  const sapphirePossible = fullReward && Object.values(reward.decisions)
+    .every((decision) => decision === 'sapphire')
+  const availableShared = reward.sharedOffers?.some((id, index) =>
+    Boolean(id) && !Object.values(reward.decisions).includes(index)) ?? false
+  const automatic = reward.playerIds.filter((id) => reward.decisions[id] === undefined &&
+    !(reward.sharedOffers ? availableShared : reward.offers[id]) && !sapphirePossible)
+  return automatic.length === 0 ? reward : {
+    ...reward,
+    decisions: { ...reward.decisions, ...Object.fromEntries(automatic.map((id) => [id, 'skip' as const])) },
+  }
+}
+
 export type MerchantPurchase = {
   buyerId: string
   section: 'relic' | 'potion' | 'colorless' | 'card'
@@ -289,7 +305,7 @@ export function decideRelicReward(
     } else if (decision !== 'skip' && decision !== 'sapphire') return null
   } else if (typeof decision === 'number') return null
   else if (decision !== 'take' && decision !== 'skip' && decision !== 'sapphire') return null
-  return { ...reward, decisions: { ...reward.decisions, [playerId]: decision } }
+  return skipUnavailableRelics({ ...reward, decisions: { ...reward.decisions, [playerId]: decision } })
 }
 
 export function resolveRelicReward(

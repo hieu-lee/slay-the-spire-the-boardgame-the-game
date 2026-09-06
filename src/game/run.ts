@@ -83,8 +83,8 @@ export {
   removeAtCurrentMerchant,
   revealCourier,
 } from './run/merchant.ts'
-export { canSkipEvent, chooseEvent, skipEvent, unavailableEventOptionIds } from './run/events.ts'
-export { resolveCampfire } from './run/campfire.ts'
+export { canSkipEvent, chooseEvent, settleUnavailableEventPlayers, skipEvent, unavailableEventOptionIds } from './run/events.ts'
+export { campfireNeedsDecision, campfireRestAvailable, resolveCampfire } from './run/campfire.ts'
 export { TINY_HOUSE_REWARD_CARD_UID, choosePendingRelicReward, pendingRelicPreview, previewTinyHouseRewardCard, resolvePendingRelic } from './run/relic-acquisition.ts'
 export { abandonGuardianSocket, resolveGuardianSocket } from './run/guardian-gems.ts'
-export { healingCapFor } from './acquisition.ts'
+export { availableTransformRewards, healingCapFor } from './acquisition.ts'

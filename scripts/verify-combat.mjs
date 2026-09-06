@@ -14,6 +14,7 @@ import {
   combatRowLabel,
   createCombat,
   defaultStartTurnChoices,
+  discardTopNeedsChoice,
   endPlayerTurn,
   endTurnAbilities,
   endTurnResolutionAbility,
@@ -751,6 +752,15 @@ check('the discard prompt appears only when the arrangement can matter', () => {
   withRetain.players[0].retainCardsThisTurn = 1
   const retaining = beginEndPlayerTurn(withRetain)
   assertEqual(retaining.phase, 'discard', 'an optional Retain is always a real choice')
+  assertEqual(discardTopNeedsChoice(withRetain.players[0]), false,
+    'Retain alone does not make discard order relevant')
+  assertEqual(discardTopNeedsChoice(clawed.players[0]), true,
+    'a Claw still makes discard order relevant')
+
+  const emptyRetain = combat([makePlayer({ hand: [] })], [makeEnemy()])
+  emptyRetain.players[0].retainCardsThisTurn = 1
+  assertEqual(beginEndPlayerTurn(emptyRetain).phase, 'enemy',
+    'an unused Retain allowance with no eligible card adds no confirmation')
 
   const withCasualty = combat([
     makePlayer({ hand: [instance('bash'), instance('defend_ironclad')], draw: [instance('claw')] }),
@@ -785,6 +795,14 @@ check('poison costs HP at end of turn, ignores Block, and does not decay', () =>
   assertEqual(next.enemies[0].hp, 4, 'poison bypasses the enemy Block entirely')
   assertEqual(next.enemies[0].block, 5, 'and does not consume Block')
   assertEqual(next.enemies[0].poison, 2, 'poison tokens stay until the enemy dies')
+  const events = next.presentationEvents.filter((candidate) => candidate.kind === 'turn' && candidate.sourceId === 'poison')
+  assertEqual(events.length, 1, 'Poison published more than one native end-turn impact')
+  const event = events[0]
+  assertDeepEqual(event && {
+    effect: event.effect, actorId: event.actorId, actorTargeted: event.actorTargeted,
+    enemyIds: event.enemyIds, playerIds: event.playerIds,
+  }, { effect: 'poison', actorId: 'p1', actorTargeted: false, enemyIds: ['e1'], playerIds: [] },
+  'Poison publishes one semantic impact on the enemy that lost HP')
 })
 
 check('poison can finish an enemy off', () => {
@@ -802,6 +820,12 @@ check('ending a turn in Wrath costs 1 damage unless blocked', () => {
   const guarded = endPlayerTurn(combat([makePlayer({ stance: 'wrath', block: 3 })], [makeEnemy()]))
   assertEqual(guarded.players[0].hp, 10, 'Block prevents the Wrath damage')
   assertEqual(guarded.players[0].block, 2, 'and one Block is spent doing so')
+  const events = guarded.presentationEvents.filter((candidate) =>
+    candidate.kind === 'turn' && candidate.sourceId === 'wrath')
+  assertEqual(events.length, 1, 'Wrath published more than one native end-turn impact')
+  assertDeepEqual(events.map((event) => [event.effect, event.actorId, event.actorTargeted]), [
+    ['damage', 'p1', true],
+  ])
 })
 
 // Twin Strike is two separate hits, not one hit of double size. The difference
@@ -3427,6 +3451,8 @@ check('Flex gains temporary Strength and only its base face Exhausts', () => {
     assertEqual(played.players[0].discard.some((card) => card.uid === flex.uid), upgraded)
     const ended = beginEndPlayerTurn(played)
     assertEqual(ended.players[0].strength, 0, 'the gained Strength expires this turn')
+    assertDeepEqual(ended.presentationEvents.filter((event) => event.kind === 'turn' &&
+      event.sourceId === 'temporary-strength').map((event) => event.effect), ['strengthLoss'])
   }
 
   for (const upgraded of [false, true]) {
@@ -3438,6 +3464,34 @@ check('Flex gains temporary Strength and only its base face Exhausts', () => {
     assertEqual(ended.players[0].strength, upgraded ? 8 : 7,
       `Flex${upgraded ? '+' : ''} should follow its printed loss wording at the cap`)
   }
+})
+
+check('end-turn stat losses use loss impacts instead of gain artwork', () => {
+  const shame = instance('shame')
+  const shamed = beginEndPlayerTurn(combat([makePlayer({ hand: [shame], block: 3 })], [makeEnemy()]))
+  assertDeepEqual(shamed.presentationEvents.filter((event) => event.kind === 'turn' &&
+    event.sourceId === 'shame').map((event) => event.effect), ['blockLoss'])
+
+  const slime = bruiserSlime('temporary-vigor-slime')
+  const temporary = combat([makePlayer({ character: 'slime_boss', slimes: [slime] })], [
+    makeEnemy({ hp: 20, maxHp: 20 }),
+  ])
+  temporary.players[0].slimes[0].vigor = 2
+  temporary.players[0].slimes[0].vigorLossAtEndOfTurn = 1
+  const weakened = beginEndPlayerTurn(temporary)
+  assertDeepEqual(weakened.presentationEvents.filter((event) => event.kind === 'turn' &&
+    event.sourceId === slime.card.defId).map((event) => event.effect), ['strengthLoss'])
+})
+
+check('an end-turn Burn publishes each actual damage and Exhaust mutation', () => {
+  const burn = instance('burn')
+  const ended = beginEndPlayerTurn(combat([makePlayer({ hand: [burn], block: 1 })], [
+    makeEnemy({ defId: 'downfall_inferno', hp: 43, maxHp: 43 }),
+  ]))
+  assertEqual(ended.players[0].block, 0)
+  assert(ended.players[0].exhaust.some((card) => card.uid === burn.uid))
+  assertDeepEqual(ended.presentationEvents.filter((event) => event.kind === 'turn' &&
+    event.sourceId === 'burn').map((event) => event.effect), ['damage', 'exhaust'])
 })
 
 check('Iron Wave base gains both effects and its upgrade requires one printed mode', () => {
@@ -4117,11 +4171,17 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
       upgraded ? ['lightning', 'lightning', 'lightning'] : ['frost', 'lightning', 'lightning'])
     assertEqual(resolved.players[0].block, upgraded ? 1 : 0)
     assertEqual(resolved.enemies[1].hp, 6, 'the Dark Orb did not use its chosen target')
-    const channelEvents = resolved.presentationEvents.filter((event) => event.kind === 'orb')
+    const channelEvents = resolved.presentationEvents.filter((event) => event.kind === 'orb' && event.sourceId === 'storm')
     assertEqual(channelEvents.length, upgraded ? 2 : 1)
     assert(channelEvents.every((event) => event.orb === 'lightning' && event.sourceId === 'storm' &&
       event.enemyIds.length === 0 && event.playerIds.length === 0),
     `Storm channels did not publish actor-only Lightning events: ${JSON.stringify(channelEvents)}`)
+    const evokeEvents = resolved.presentationEvents.filter((event) => event.kind === 'orb' && event.sourceId === 'orb-evoke')
+    assertDeepEqual(evokeEvents.map((event) => event.orb), upgraded ? ['dark', 'frost'] : ['dark'],
+      'each forced Evoke publishes its own semantic Orb impact')
+    assertEqual(resolved.presentationEvents.filter((event) =>
+      event.kind === 'turn' && event.sourceId === 'storm').length, 0,
+    'Storm channels publish dedicated Orb impacts without a generic buff overlay')
   }
 
   const state = combat([makePlayer({
@@ -4786,6 +4846,9 @@ check('Tools of the Trade privately draws then discards and resumes ordered star
   const preview = startTurnDiscardPreview(paused)
   assertEqual(preview?.playerId, 'p1')
   assertDeepEqual(preview?.cards.map((card) => card.uid), paused.players[0].hand.map((card) => card.uid))
+  assertDeepEqual(paused.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'tools_of_the_trade').map((event) => event.effect), ['draw'],
+  'Tools of the Trade publishes Draw, but not Discard, before its private choice resolves')
   assertEqual(resolveStartTurnDiscard(paused, 'forged', preview.sourceId, discard.uid), paused)
   assertEqual(resolveStartTurnDiscard(paused, 'p1', preview.sourceId, 'forged'), paused)
   const resolved = resolveStartTurnDiscard(paused, 'p1', preview.sourceId, discard.uid)
@@ -4793,6 +4856,10 @@ check('Tools of the Trade privately draws then discards and resumes ordered star
   assertEqual(resolved.players[0].energy, 5, 'Tactician discard reaction did not resolve')
   assertEqual(resolved.enemies[0].poison, 1, 'later ordered Power did not resume')
   assertEqual(resolved.players[0].exhaust.some((card) => card.uid === discard.uid), true)
+  assertDeepEqual(resolved.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'tools_of_the_trade').map((event) =>
+    [event.effect, event.actorId, event.actorTargeted]), [['draw', 'p1', true], ['discard', 'p1', true]],
+  'Tools of the Trade publishes distinct Draw and Discard impacts as each mutation resolves')
 
   const lethalTools = instance('tools_of_the_trade')
   const fire = instance('fire_breathing')
@@ -4819,6 +4886,125 @@ check('Tools of the Trade privately draws then discards and resumes ordered star
   )
   assertEqual(lethal.phase, 'won')
   assertEqual(lethal.startTurnProgress, undefined, 'lethal deferred draw reaction left stale start progress')
+})
+
+check('complex Hermit and Slime Boss start powers pause for their owner and resume the order', () => {
+  const chambered = instance('defend_hermit')
+  const calledShot = instance('hermit_called_shot')
+  const fumes = instance('noxious_fumes')
+  const hermitPaused = startPlayerTurnWithChoices({
+    ...combat([makePlayer({
+      name: 'Hermit', character: 'hermit', chamber: [chambered], chamberSlots: 2,
+      powers: [calledShot, fumes],
+    })], [makeEnemy({ hp: 10, maxHp: 10 })]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(hermitPaused.pendingTriggers.length, 1)
+  assertEqual(hermitPaused.pendingTriggers[0].playerId, 'p1')
+  assertEqual(hermitPaused.pendingTriggers[0].startTurn, true)
+  assertEqual(hermitPaused.startTurnProgress, undefined,
+    'the private trigger must precede, not consume, the owner readiness click')
+  assertDeepEqual(pendingTriggerAbility(hermitPaused).hermitChoices.chamberCards.map((card) => card.uid),
+    [chambered.uid])
+  assertEqual(resolvePendingTrigger(hermitPaused, 'forged', hermitPaused.pendingTriggers[0].id,
+    undefined, undefined, undefined, { chamberUids: [chambered.uid] }), hermitPaused)
+  const hermitResolved = resolvePendingTrigger(hermitPaused, 'p1', hermitPaused.pendingTriggers[0].id,
+    undefined, undefined, undefined, { chamberUids: [chambered.uid] })
+  assertEqual(hermitResolved.phase, 'start')
+  assertEqual(hermitResolved.players[0].chamber[0].freeThisTurn, true)
+  assertEqual(hermitResolved.enemies[0].poison, 0, 'a later start power resolved before the owner confirmed')
+  const hermitFinished = resolveStartPlayerTurn(hermitResolved, defaultStartTurnChoices(hermitResolved))
+  assertEqual(hermitFinished.phase, 'player')
+  assertEqual(hermitFinished.enemies[0].poison, 1, 'the later start power did not resume after confirmation')
+  assertDeepEqual(hermitFinished.presentationEvents.filter((event) => event.kind === 'turn' &&
+    event.sourceId === 'hermit_called_shot').map((event) =>
+    [event.effect, event.actorTargeted]), [['buff', true]],
+  'Called Shot must publish its real no-log Chamber discount exactly once')
+
+  const alreadyFree = instance('defend_hermit')
+  alreadyFree.freeThisTurn = true
+  const noOpCalledShot = instance('hermit_called_shot')
+  const noOpState = {
+    ...combat([makePlayer({
+      name: 'Hermit', character: 'hermit', chamber: [alreadyFree], chamberSlots: 2,
+      powers: [noOpCalledShot],
+    })], [makeEnemy()]),
+    phase: 'start', startTurnStage: 'effects',
+  }
+  const noOpPaused = resolveStartPlayerTurn(noOpState, defaultStartTurnChoices(noOpState))
+  const noOpResolved = resolvePendingTrigger(noOpPaused, 'p1', noOpPaused.pendingTriggers[0].id,
+    undefined, undefined, undefined, { chamberUids: [alreadyFree.uid] })
+  assertEqual(noOpResolved.phase, 'player', 'legacy deterministic resolution staged the same private trigger twice')
+  assertEqual(noOpResolved.presentationEvents.some((event) => event.kind === 'turn' &&
+    event.sourceId === 'hermit_called_shot'), false,
+  'Called Shot published a generic overlay when its chosen Chamber card was already free')
+
+  const minionMaster = instance('slime_boss_minion_master')
+  const demonForm = instance('demon_form')
+  const bruiser = bruiserSlime(instance('slime_boss_bruiser_slime'))
+  const slimePaused = startPlayerTurnWithChoices({
+    ...combat([makePlayer({
+      name: 'Slime Boss', character: 'slime_boss', slimes: [bruiser],
+      powers: [minionMaster, demonForm],
+    })], [
+      makeEnemy({ uid: 'slime-left', hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'slime-right', row: 1, hp: 10, maxHp: 10 }),
+    ]),
+    phase: 'roundEnd', turn: 1,
+  })
+  const slimePending = pendingTriggerAbility(slimePaused)
+  assertEqual(slimePending.playerId, 'p1')
+  assertEqual(slimePending.slimeChoice, undefined, 'one Slime should be selected automatically')
+  assertEqual(slimePending.slimeEnemyAmount, 1, 'its enemy target must still be chosen')
+  assertEqual(slimePaused.pendingTriggers[0].startTurn, true)
+  const slimeResolved = resolvePendingTrigger(slimePaused, 'p1', slimePending.id,
+    undefined, undefined, undefined, { slimeEnemyUids: ['slime-right'] })
+  assertEqual(slimeResolved.phase, 'start')
+  assertEqual(slimeResolved.enemies.find((enemy) => enemy.uid === 'slime-right').hp, 9)
+  assertEqual(slimeResolved.enemies.find((enemy) => enemy.uid === 'slime-left').hp, 10)
+  assertEqual(slimeResolved.players[0].strength, 0, 'the later start power resolved before confirmation')
+  const slimeFinished = resolveStartPlayerTurn(slimeResolved, defaultStartTurnChoices(slimeResolved))
+  assertEqual(slimeFinished.phase, 'player')
+  assertEqual(slimeFinished.players[0].strength, 1, 'the later start power did not resume after confirmation')
+
+  const orderedStart = () => ({
+    ...combat([makePlayer({
+      name: 'Slime Boss', character: 'slime_boss',
+      powers: [
+        { ...instance('slime_boss_rain_of_goop'), counter: 1 },
+        instance('slime_boss_minion_master'),
+      ],
+      slimes: [{
+        card: instance('slime_boss_muscle_slime'), level: 1, vigor: 0,
+        commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+      }],
+    })], [makeEnemy({ uid: 'ordered-target', hp: 20, maxHp: 20 })]),
+    phase: 'start', turn: 2, startTurnStage: 'effects',
+  })
+  const resolveOrder = (rainFirst) => {
+    const state = orderedStart()
+    const abilities = startTurnAbilities(state)
+    const rainAbility = abilities.find((ability) => ability.label.includes('Rain of Goop'))
+    const minionAbility = abilities.find((ability) => ability.label.includes('Minion Master'))
+    assert(rainAbility && minionAbility)
+    const muscleUid = state.players[0].slimes[0].card.uid
+    const choices = [{
+      id: rainAbility.id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+      trigger: { slimeUids: [muscleUid], slimeEnemyUids: ['ordered-target'] },
+    }, {
+      id: minionAbility.id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+      trigger: { slimeEnemyUids: ['ordered-target'] },
+    }]
+    return resolveStartPlayerTurn(state, rainFirst ? choices : choices.reverse())
+  }
+  const rainFirst = resolveOrder(true)
+  const minionFirst = resolveOrder(false)
+  assertEqual(rainFirst.phase, 'player')
+  assertEqual(minionFirst.phase, 'player')
+  assertEqual(rainFirst.enemies[0].hp, 14,
+    'Rain of Goop did not add Strength before its trigger and Minion Master Commands')
+  assertEqual(minionFirst.enemies[0].hp, 15,
+    'Minion Master did not Command before Rain of Goop added Strength')
 })
 
 check('Carve Reality assigns its two printed hits independently', () => {
@@ -5050,6 +5236,18 @@ check('interactive end-turn preparation clears Stasis and respects prevent-Block
   const staged = beginEndTurnResolution(state)
   assertEqual(staged.players[0].hand[0].stasisRetained, undefined)
   assertEqual(staged.players[0].block, 0, 'Orichalcum bypassed Panic Button during interactive resolution')
+  assertEqual(staged.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'orichalcum').length, 0,
+  'blocked Orichalcum published a no-op impact')
+
+  const gained = beginEndTurnResolution(combat([makePlayer({
+    relics: [{ defId: 'orichalcum', spent: false }],
+  })], [makeEnemy()]))
+  assertEqual(gained.players[0].block, 1)
+  assertDeepEqual(gained.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'orichalcum').map((event) =>
+    [event.effect, event.actorId, event.actorTargeted]), [['block', 'p1', true]],
+  'Orichalcum publishes one Block impact only when it grants Block')
 })
 
 check('Loop repeats only the selected Lightning slot after overkill', () => {
@@ -5069,6 +5267,9 @@ check('Loop repeats only the selected Lightning slot after overkill', () => {
   const resolved = resolveEndTurnAbility(staged, `${ability.id}@second`)
   assertEqual(resolved.enemies[1].hp, 4, 'Loop did not retarget its selected Lightning Orb')
   assertEqual(resolved.players[0].block, 1, 'Loop silently switched from Lightning to the first Frost slot')
+  assertEqual(resolved.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'loop').length, 0,
+  'Loop publishes dedicated passive Orb impacts without a generic buff overlay')
 
   const loopPlus = instance('loop', true)
   const repeated = combat([makePlayer({
@@ -5127,11 +5328,18 @@ check('The Bomb counts three end turns, damages every enemy, then Exhausts itsel
       makeEnemy({ uid: 'left', hp: 30, maxHp: 30 }),
       makeEnemy({ uid: 'right', row: 1, hp: 30, maxHp: 30 }),
     ]), 'p1', bomb.uid, { enemyUid: null, playerId: null })
+    let bombEventCount = 0
     for (let cube = 1; cube <= 3; cube++) {
       const ability = endTurnAbilities(state).find((entry) => entry.label.includes('The Bomb'))
       state = beginEndPlayerTurn(state, [ability.id])
+      const bombEvents = state.presentationEvents.filter((event) => event.kind === 'turn' &&
+        event.sourceId === 'the_bomb')
+      bombEventCount += cube < 3 ? 1 : 2
+      assertEqual(bombEvents.length, bombEventCount, 'The Bomb published the wrong semantic impacts for one cube')
       if (cube < 3) {
         assertEqual(state.players[0].powers[0].counter, cube)
+        assertDeepEqual([bombEvents.at(-1).effect, bombEvents.at(-1).actorTargeted,
+          bombEvents.at(-1).enemyIds], ['countdown', true, []])
         state = { ...state, phase: 'player' }
       }
     }
@@ -5140,6 +5348,12 @@ check('The Bomb counts three end turns, damages every enemy, then Exhausts itsel
     assertEqual(state.players[0].powers.some((card) => card.uid === bomb.uid), false)
     assertEqual(state.players[0].exhaust.some((card) => card.uid === bomb.uid), true)
     assertEqual(state.players[0].exhaust.find((card) => card.uid === bomb.uid).counter, undefined)
+    const terminal = state.presentationEvents.filter((event) => event.kind === 'turn' &&
+      event.sourceId === 'the_bomb').slice(-2)
+    assertDeepEqual(terminal.map((event) => [event.effect, event.actorTargeted, event.enemyIds]), [
+      ['damage', false, ['left', 'right']],
+      ['exhaust', true, []],
+    ], 'The Bomb terminal cube publishes its actual damage targets and its separate Exhaust')
   }
 })
 
@@ -5905,9 +6119,15 @@ check('Electrodynamics channels its printed Orbs and sends every Lightning effec
     evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)],
   })
   assertDeepEqual(evoked.enemies.map((enemy) => enemy.hp), [18, 18, 18, 16])
-  assertDeepEqual([...evoked.presentationEvents.at(-1).enemyIds].sort(),
+  const dualCastEvent = evoked.presentationEvents.find((event) =>
+    event.kind === 'card' && event.sourceId === 'dual_cast')
+  assertDeepEqual([...dualCastEvent.enemyIds].sort(),
     ['back', 'boss', 'front-a', 'front-b'],
     'Electrodynamics left row sentinels in its public target VFX')
+  assertDeepEqual(evoked.presentationEvents.filter((event) =>
+    event.kind === 'orb' && event.sourceId === 'orb-evoke').map((event) => [...event.enemyIds].sort()), [
+    ['boss', 'front-a', 'front-b'], ['back', 'boss'],
+  ], 'each passive Lightning impact keeps the row it actually hit')
   assertEqual(playCard(evokeState, 'p1', dual.uid, {
     enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['front-a', 'back'],
   }), evokeState, 'Electrodynamics accepted single-enemy Lightning targets')
@@ -9878,6 +10098,19 @@ check('the real table turn keeps the post-roll item window open', () => {
   assertEqual(activatePotion(starting, 'p1', 'gamblers_brew', { die: 6 }).die, 6)
 })
 
+check('ordinary player-turn relic activations do not create start-turn work', () => {
+  const starting = startPlayerTurnWithChoices({
+    ...combat([makePlayer({ relics: [
+      { defId: 'ninja_scroll', spent: false },
+      { defId: 'holy_water', spent: false, cubes: 2 },
+    ] })], [makeEnemy()]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(starting.phase, 'player')
+  assertEqual(activateRelic(starting, 'p1', 0).players[0].relics[0].spent, true)
+  assertEqual(activateRelic(starting, 'p1', 1).players[0].relics[1].cubes, 1)
+})
+
 check('a changed die drives the Mystic action that actually resolves', () => {
   const starting = { ...combat(
     [makePlayer({ potions: ['gamblers_brew'] })],
@@ -9920,6 +10153,22 @@ check('per-roll Relics activate once and Loaded Die can reroute another owned Re
     targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0,
   })
   assertEqual(used.players[0].hand[0].uid, drawn.uid)
+  assertDeepEqual(used.presentationEvents.filter((event) => event.kind === 'turn').map((event) => ({
+    sourceId: event.sourceId, effect: event.effect, actorId: event.actorId,
+    actorTargeted: event.actorTargeted, enemyIds: event.enemyIds, playerIds: event.playerIds,
+  })), [{
+    sourceId: 'ink_bottle', effect: 'draw', actorId: 'p1', actorTargeted: true,
+    enemyIds: [], playerIds: [],
+  }], 'a copied die Relic publishes its own semantic impact')
+  const empty = activateRelic({
+    ...combat([makePlayer({ relics: [
+      { defId: 'loaded_die', spent: false }, { defId: 'ink_bottle', spent: false },
+    ] })], [makeEnemy()]), phase: 'start', die: 6,
+  }, 'p1', 0, {
+    targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0,
+  })
+  assertEqual(empty.presentationEvents.some((event) => event.kind === 'turn'), false,
+    'a copied die Relic with no actual mutation published an impact')
   assertEqual(used.players[0].relics[0].spent, true)
   assertEqual(activateRelic(used, 'p1', 0, {
     targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0,
@@ -9958,6 +10207,14 @@ check('copied Tungsten Rod keeps its solo 3 Block effect', () => {
   ] }
   const resolved = resolvePendingDieRelicChoice(queued, 'p1', { exhaustUids: [fuel.uid] })
   assertEqual(resolved.players[0].block, 3)
+  assertDeepEqual(resolved.presentationEvents.filter((event) => event.kind === 'turn').map((event) => ({
+    sourceId: event.sourceId, effect: event.effect, actorTargeted: event.actorTargeted,
+    enemyIds: event.enemyIds, playerIds: event.playerIds,
+  })), [
+    { sourceId: 'fuel_canister', effect: 'exhaust', actorTargeted: true, enemyIds: [], playerIds: [] },
+    { sourceId: 'fuel_canister', effect: 'buff', actorTargeted: true, enemyIds: [], playerIds: [] },
+    { sourceId: 'tungsten_rod', effect: 'block', actorTargeted: true, enemyIds: [], playerIds: [] },
+  ], 'queued private and following copied die Relics publish only their actual semantic impacts')
 
   const party = { ...combat([
     makePlayer({ relics: [
@@ -10122,6 +10379,17 @@ check('The Last Stand continues only Boss fights and retargets an empty dead row
   assertEqual(beaten.players[0].dead, true)
   assertEqual(beaten.players[1].hp, 2, 'Beat of Death finishes hitting every survivor after one player dies')
 
+  const ordinaryBeat = createCombat(createRng(42), [
+    makePlayer({ id: 'fragile', name: 'Fragile', row: 0, hp: 1 }),
+    makePlayer({ id: 'unprocessed', name: 'Unprocessed', row: 1, hp: 3 }),
+  ], [makeEnemy({ uid: 'ordinary-heart', defId: 'corrupt_heart', isBoss: true, abilityCubes: 1 })],
+  'ordinary-beat')
+  const lostToBeat = beginEndPlayerTurn({ ...ordinaryBeat, phase: 'player' })
+  const beatEvent = lostToBeat.presentationEvents.find((event) => event.kind === 'turn' &&
+    event.sourceId === 'corrupt_heart')
+  assertDeepEqual([beatEvent.actorTargeted, beatEvent.actorId, beatEvent.playerIds], [true, 'fragile', []],
+    'Beat of Death animated a player after fatal party defeat stopped processing')
+
   const ordinary = createCombat(createRng(42), players, [makeEnemy()], 'not-a-boss', [], 3, {}, true)
   assertEqual(enemyTurn({ ...ordinary, phase: 'enemy' }).phase, 'lost',
     'the optional rule never changes an ordinary encounter')
@@ -10191,12 +10459,104 @@ check('Act IV Facing applies legal cross-side and single-enemy row plans atomica
     id: ability.id, enemyUid: index < 2 ? 'spear' : 'shield', shivEnemyUids: [],
   })))
   assertDeepEqual(swapped.players.map((player) => player.row), [2, 3, 0, 1])
+  assertDeepEqual(swapped.presentationEvents.filter((event) => event.kind === 'turn').map((event) =>
+    [event.sourceId, event.effect]), [
+    ['spire_spear', 'burn'], ['spire_spear', 'burn'],
+    ['spire_shield', 'weak'], ['spire_shield', 'weak'],
+  ], 'Facing penalties distinguish added Burns from immediate damage')
   const alone = { ...combat(players, [shield]), phase: 'start', startTurnStage: 'facing' }
   const split = resolveStartPlayerTurn(alone, startTurnAbilities(alone).map((ability, index) => ({
     id: ability.id, enemyUid: index < 2 ? 'none' : 'shield', shivEnemyUids: [],
   })))
   assertDeepEqual(split.players.map((player) => player.row), [2, 3, 0, 1])
   assertDeepEqual(split.players.map((player) => player.facingEnemyUid), [null, null, 'shield', 'shield'])
+
+  const unaffected = {
+    ...combat([makePlayer({ energy: 0 })], [shield]),
+    phase: 'start', startTurnStage: 'facing',
+  }
+  const [unaffectedAbility] = startTurnAbilities(unaffected)
+  const unchanged = resolveStartPlayerTurn(unaffected, [{
+    id: unaffectedAbility.id, enemyUid: 'shield', shivEnemyUids: [],
+  }])
+  assertEqual(unchanged.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'spire_shield').length, 0,
+  'Facing publishes no impact when its penalty changes nothing')
+
+  const statusSupplySpent = {
+    ...combat([makePlayer({ draw: Array.from({ length: CAPS.status }, () => instance('burn')) })], [spear]),
+    phase: 'start', startTurnStage: 'facing',
+  }
+  const [spentAbility] = startTurnAbilities(statusSupplySpent)
+  const noBurnAdded = resolveStartPlayerTurn(statusSupplySpent, [{
+    id: spentAbility.id, enemyUid: 'spear', shivEnemyUids: [],
+  }])
+  assertEqual(noBurnAdded.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'spire_spear').length, 0,
+  'Spear Facing publishes no Burn impact when the shared Status supply is exhausted')
+})
+
+check('turn trigger VFX follows only the executed conditional branch', () => {
+  const infernal = instance('infernal_form')
+  const state = combat([makePlayer({
+    name: 'Hexaghost', character: 'hexaghost', heat: 5, powers: [infernal],
+  })], [makeEnemy()])
+  Object.assign(state, { phase: 'roundEnd', turn: 1 })
+  const prepared = preparePlayerTurn(state)
+  const resolved = resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+  assertEqual(resolved.players[0].strength, 0)
+  assertDeepEqual(resolved.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'infernal_form').map((event) => event.effect), ['buff'],
+  'Infernal Form at Heat 5 must not preview the inactive Strength branch')
+})
+
+check('one recurring source groups duplicate semantics but preserves distinct impacts and targets', () => {
+  CARDS.fixture_multi_turn_vfx = {
+    id: 'fixture_multi_turn_vfx', name: 'Fixture Multi Turn VFX', owner: 'ironclad', type: 'power', rarity: 'special', cost: 0,
+    trigger: { kind: 'startOfTurn' }, target: 'enemy', supportTarget: 'anyPlayer', effects: [
+      { kind: 'block', amount: 1, toChosen: true },
+      { kind: 'gainStrength', amount: 1, toChosen: true },
+      { kind: 'poison', amount: 1 },
+      { kind: 'damage', amount: 1 },
+      { kind: 'block', amount: 1, toChosen: true },
+    ],
+  }
+  try {
+    const state = {
+      ...combat([
+        makePlayer({ powers: [instance('fixture_multi_turn_vfx')] }),
+        makePlayer({ id: 'p2', name: 'Silent' }),
+      ], [makeEnemy({ hp: 10, maxHp: 10 })]),
+      phase: 'start', turn: 1,
+    }
+    const ability = startTurnAbilities(state).find((candidate) => candidate.label.includes('Fixture Multi Turn VFX'))
+    const resolved = resolveStartPlayerTurn(state, [{
+      id: ability.id, enemyUid: 'e1', targetPlayerId: 'p2', shivEnemyUids: [],
+    }])
+    assertDeepEqual(resolved.presentationEvents.filter((event) => event.kind === 'turn' &&
+      event.sourceId === 'fixture_multi_turn_vfx').map((event) => [
+      event.effect, event.actorTargeted, event.enemyIds, event.playerIds,
+    ]), [
+      ['block', false, [], ['p2']],
+      ['strength', false, [], ['p2']],
+      ['poison', false, ['e1'], []],
+      ['damage', false, ['e1'], []],
+    ])
+  } finally {
+    delete CARDS.fixture_multi_turn_vfx
+  }
+})
+
+check('Cracked Core uses only its dedicated Orb channel VFX', () => {
+  const state = combat([makePlayer({
+    character: 'defect', relics: [{ defId: 'cracked_core', spent: false }],
+  })], [makeEnemy()])
+  const prepared = preparePlayerTurn(state)
+  const resolved = resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+  assertDeepEqual(resolved.presentationEvents.filter((event) => event.kind === 'orb').map((event) =>
+    [event.sourceId, event.orb]), [['cracked_core', 'lightning']])
+  assertEqual(resolved.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'cracked_core').length, 0)
 })
 
 check('Darkling Regrow keeps its ordered identity when an earlier effect kills its source', () => {
@@ -10218,6 +10578,10 @@ check('Darkling Regrow keeps its ordered identity when an earlier effect kills i
   assertDeepEqual(resolved.enemies.map((enemy) => [enemy.uid, enemy.dead, enemy.hp]), [
     ['fragile', false, 4], ['survivor', false, 8], ['fallen', false, 4],
   ])
+  const regrowEvents = resolved.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'darkling_bha' && event.effect === 'heal')
+  assertEqual(regrowEvents.length, 1, 'Regrow published more than one native start-turn impact')
+  assertDeepEqual(regrowEvents[0].enemyIds, ['fragile', 'fallen'], 'Regrow targets only the enemies it revived')
 
   const fumes = instance('noxious_fumes')
   const targetState = combat([makePlayer({ character: 'silent', powers: [fumes] })], [
@@ -10239,6 +10603,175 @@ check('Darkling Regrow keeps its ordered identity when an earlier effect kills i
   const targeted = resolveStartPlayerTurn(targetPrepared, choices)
   assertEqual(targeted.phase, 'player')
   assertEqual(targeted.enemies.find((enemy) => enemy.uid === 'revived').poison, 1)
+})
+
+check('native enemy start-turn Block publishes one semantic target impact', () => {
+  const state = {
+    ...combat([makePlayer()], [makeEnemy({ defId: 'spheric_guardian' })]),
+    phase: 'start', turn: 1,
+  }
+  const ability = startTurnAbilities(state).find((candidate) => candidate.id === 'enemy:e1/starting-block')
+  const resolved = resolveStartPlayerTurn(state, [{ id: ability.id, shivEnemyUids: [] }])
+  assertEqual(resolved.enemies[0].block, 10)
+  const events = resolved.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'spheric_guardian')
+  assertDeepEqual(events.map((event) => ({
+    effect: event.effect, actorId: event.actorId, actorTargeted: event.actorTargeted,
+    enemyIds: event.enemyIds, playerIds: event.playerIds,
+  })), [{ effect: 'block', actorId: 'p1', actorTargeted: false, enemyIds: ['e1'], playerIds: [] }])
+})
+
+check('native enemy start-round effects publish only their actual semantic impacts', () => {
+  const vulnerable = preparePlayerTurn({
+    ...combat([makePlayer()], [makeEnemy({ defId: 'downfall_wrathful_wrath' })]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(vulnerable.enemies[0].vulnerable, 1)
+  assertDeepEqual(vulnerable.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'downfall_wrathful_wrath').map((event) =>
+    [event.effect, event.enemyIds]), [['vulnerable', ['e1']]])
+
+  const capped = preparePlayerTurn({
+    ...combat([makePlayer()], [makeEnemy({ defId: 'downfall_wrathful_wrath', vulnerable: CAPS.vulnerable })]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(capped.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'downfall_wrathful_wrath').length, 0,
+  'capped Vulnerable published a no-op impact')
+
+  const revived = preparePlayerTurn({
+    ...combat([makePlayer()], [
+      makeEnemy({ uid: 'wraith', defId: 'downfall_wraith', hp: 70, maxHp: 70 }),
+      makeEnemy({ uid: 'shiv', defId: 'downfall_shiv', hp: 0, maxHp: 6, dead: true }),
+    ]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(revived.enemies[1].dead, false)
+  assertDeepEqual(revived.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'downfall_wraith').map((event) =>
+    [event.effect, event.enemyIds]), [['heal', ['shiv']]])
+
+  const noRevival = preparePlayerTurn({
+    ...combat([makePlayer()], [makeEnemy({ uid: 'wraith', defId: 'downfall_wraith', hp: 70, maxHp: 70 })]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(noRevival.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'downfall_wraith').length, 0,
+  'Infinite Blades published an impact without reviving a Shiv')
+})
+
+check('turn VFX publishes only actual mutations and actual targets', () => {
+  for (const powerId of ['omega', 'panache']) {
+    const state = combat([makePlayer({
+      character: powerId === 'omega' ? 'watcher' : 'ironclad',
+      powers: [instance(powerId)], hand: [], damageDealtZeroThisTurn: true,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    const ability = endTurnAbilities(state).find((entry) => entry.label.includes(CARDS[powerId].name))
+    const resolved = beginEndPlayerTurn(state, [chooseEndTurnTarget(ability.id, 'e1')])
+    assertEqual(resolved.enemies[0].hp, 20)
+    assertEqual(resolved.presentationEvents.filter((event) =>
+      event.kind === 'turn' && event.sourceId === powerId).length, 0,
+    `${CARDS[powerId].name} published damage VFX after damage was suppressed`)
+  }
+
+  CARDS.fixture_turn_row_hit = {
+    id: 'fixture_turn_row_hit', name: 'Fixture Turn Row Hit', owner: 'ironclad', type: 'power', rarity: 'special', cost: 0,
+    trigger: { kind: 'endOfTurn' }, target: 'row', effects: [{ kind: 'hit', amount: 2 }],
+  }
+  try {
+    const rowState = combat([makePlayer({ powers: [instance('fixture_turn_row_hit')] })], [
+      makeEnemy({ uid: 'row-a', hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'row-b', hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'other', row: 1, hp: 10, maxHp: 10 }),
+    ])
+    const ability = endTurnAbilities(rowState).find((entry) => entry.label.includes('Fixture Turn Row Hit'))
+    const hit = beginEndPlayerTurn(rowState, [chooseEndTurnTarget(ability.id, 'row-a')])
+    const event = hit.presentationEvents.find((candidate) =>
+      candidate.kind === 'turn' && candidate.sourceId === 'fixture_turn_row_hit')
+    assertDeepEqual(event?.enemyIds, ['row-a', 'row-b'], 'row Hit impact included an untouched enemy')
+
+    rowState.players[0].damageDealtZeroThisTurn = true
+    const suppressed = beginEndPlayerTurn(rowState, [chooseEndTurnTarget(ability.id, 'row-a')])
+    assertEqual(suppressed.presentationEvents.filter((candidate) =>
+      candidate.kind === 'turn' && candidate.sourceId === 'fixture_turn_row_hit').length, 0,
+    'zero-damage row Hit published impact VFX')
+  } finally {
+    delete CARDS.fixture_turn_row_hit
+  }
+
+  const fumes = instance('noxious_fumes', true)
+  const poisonState = {
+    ...combat([makePlayer({ character: 'silent', powers: [fumes] })], [
+      makeEnemy({ uid: 'changed', poison: 0 }),
+      makeEnemy({ uid: 'capped', poison: CAPS.poison - 1 }),
+    ]),
+    phase: 'start', turn: 1,
+  }
+  const fumesAbility = startTurnAbilities(poisonState).find((ability) => ability.label.includes('Noxious Fumes'))
+  const poisoned = resolveStartPlayerTurn(poisonState, [{
+    id: fumesAbility.id, enemyUid: 'changed', shivEnemyUids: [],
+  }])
+  const poisonEvent = poisoned.presentationEvents.find((event) =>
+    event.kind === 'turn' && event.sourceId === 'noxious_fumes')
+  assertDeepEqual(poisonEvent?.enemyIds, ['changed'], 'capped Poison target received false impact VFX')
+
+  const cappedBlock = {
+    ...combat([makePlayer({ block: CAPS.block,
+      relics: [{ defId: 'oddly_smooth_stone', spent: false }] })], [makeEnemy()]),
+    phase: 'start', turn: 1, die: 4,
+  }
+  const stone = startTurnAbilities(cappedBlock).find((ability) => ability.label.includes('Oddly Smooth Stone'))
+  const blocked = resolveStartPlayerTurn(cappedBlock, [{
+    id: stone.id, targetPlayerId: 'p1', shivEnemyUids: [],
+  }])
+  assertEqual(blocked.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'oddly_smooth_stone').length, 0,
+  'capped Block published a no-op impact')
+
+  const cappedStrength = {
+    ...combat([makePlayer({ strength: CAPS.strength,
+      relics: [{ defId: 'vajra', spent: false }] })], [makeEnemy()]),
+    phase: 'start', turn: 1, die: 2,
+  }
+  const vajra = startTurnAbilities(cappedStrength).find((ability) => ability.label.includes('Vajra'))
+  const strengthened = resolveStartPlayerTurn(cappedStrength, [{ id: vajra.id, shivEnemyUids: [] }])
+  assertEqual(strengthened.presentationEvents.filter((event) =>
+    event.kind === 'turn' && event.sourceId === 'vajra').length, 0,
+  'capped Strength published a no-op impact')
+})
+
+check('passive and evoked Orb VFX require their Orb to change the board', () => {
+  const lightning = combat([makePlayer({
+    character: 'defect', orbs: ['lightning'], damageDealtZeroThisTurn: true,
+  })], [makeEnemy()])
+  const noLightning = beginEndPlayerTurn(lightning, ['p1/orb:0@e1'])
+  assertEqual(noLightning.presentationEvents.filter((event) =>
+    event.kind === 'orb' && event.sourceId === 'orb-end-turn').length, 0)
+
+  const frost = combat([makePlayer({
+    character: 'defect', orbs: ['frost'], block: CAPS.block,
+  })], [makeEnemy()])
+  const noFrost = beginEndPlayerTurn(frost, ['p1/orb:0'])
+  assertEqual(noFrost.presentationEvents.filter((event) =>
+    event.kind === 'orb' && event.sourceId === 'orb-end-turn').length, 0)
+
+  const preventedFrost = combat([makePlayer({
+    character: 'defect', orbs: ['frost'], powers: [instance('panic_button')],
+  })], [makeEnemy()])
+  const noPreventedFrost = beginEndPlayerTurn(preventedFrost, ['p1/orb:0'])
+  assertEqual(noPreventedFrost.players[0].block, 0)
+  assertEqual(noPreventedFrost.presentationEvents.filter((event) =>
+    event.kind === 'orb' && event.sourceId === 'orb-end-turn').length, 0)
+
+  const dual = instance('dual_cast')
+  const dark = combat([makePlayer({
+    character: 'defect', hand: [dual], energy: 1, orbs: ['dark'], damageDealtZeroThisTurn: true,
+  })], [makeEnemy()])
+  const noDark = playCard(dark, 'p1', dual.uid, {
+    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
+  })
+  assertEqual(noDark.presentationEvents.filter((event) =>
+    event.kind === 'orb' && event.sourceId === 'orb-evoke').length, 0)
 })
 
 check('Distilled Chaos prunes queued cards moved out of hand by an earlier card', () => {
@@ -10286,12 +10819,25 @@ check('Oddly Smooth Stone pauses for an explicit living player target', () => {
   assert(prepared, 'fixture did not roll the printed 4 face')
   const ability = startTurnAbilities(prepared).find((candidate) => candidate.label.includes('Oddly Smooth Stone'))
   assertDeepEqual(ability.players.map((player) => player.id), ['p1', 'p2'])
+  assertDeepEqual(ability.visual, { kind: 'relic', relicId: 'oddly_smooth_stone' })
   const choices = defaultStartTurnChoices(prepared).map((choice) => choice.id === ability.id
     ? { ...choice, targetPlayerId: 'p2' }
     : choice)
   const resolved = resolveStartPlayerTurn(prepared, choices)
   assertEqual(resolved.players[0].block, 0)
   assertEqual(resolved.players[1].block, 2)
+  const events = resolved.presentationEvents.filter((candidate) =>
+    candidate.kind === 'turn' && candidate.sourceId === 'oddly_smooth_stone')
+  assertEqual(events.length, 1, 'Oddly Smooth Stone published more than one trigger-source impact')
+  const event = events[0]
+  assertDeepEqual(event && {
+    effect: event.effect,
+    actorId: event.actorId,
+    actorTargeted: event.actorTargeted,
+    enemyIds: event.enemyIds,
+    playerIds: event.playerIds,
+  }, { effect: 'block', actorId: 'p1', actorTargeted: false, enemyIds: [], playerIds: ['p2'] },
+  'Oddly Smooth Stone publishes a Block impact only on its chosen recipient')
 })
 
 check('Golden Eye persists a private Scry choice and validates the revealed cards', () => {
@@ -10430,6 +10976,10 @@ check('Devotion pays out each Start of Turn and exhausts at its printed cube thr
       state = startPlayerTurn(state)
       assertEqual(state.players[0].miracles, cube)
       assertEqual(state.players[0].hand.length, cube * 6)
+      assertDeepEqual(state.presentationEvents.filter((event) => event.kind === 'turn' &&
+        event.sourceId === 'devotion').slice(-3).map((event) => event.effect),
+      [cube < threshold ? 'countdown' : 'exhaust', 'buff', 'draw'],
+      'Devotion preserves each distinct Start-of-Turn mutation')
       if (cube < threshold) assertEqual(state.players[0].powers[0].counter, cube)
     }
     assertEqual(state.players[0].powers.some((card) => card.uid === devotion.uid), false)

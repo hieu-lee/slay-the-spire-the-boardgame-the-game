@@ -107,13 +107,14 @@ export function chooseEvent(state: RunState, playerId: string, decision: EventDe
   const next = chooseEventInternal(state, playerId, decision, false)
   if (next === state) return state
   const resolved = mirrorItemSupplies(applyDeadlyEvent(state, next), next.itemDecks)
-  return resolved.roomState?.kind === 'event' ? {
+  const visible = resolved.roomState?.kind === 'event' ? {
     ...resolved,
     roomState: { ...resolved.roomState, availableRewardSources: {
       card: availableRewardSources(resolved, false),
       rare: availableRewardSources(resolved, true),
     } },
   } : resolved
+  return settleUnavailableEventPlayers(visible)
 }
 
 function chooseEventInternal(state: RunState, playerId: string, decision: EventDecision, acceptedTrade: boolean): RunState {
@@ -717,7 +718,8 @@ function eventOptionAvailable(state: RunState, player: Player, option: EventCard
 }
 
 export function canSkipEvent(state: RunState, playerId: string): boolean {
-  if (state.phase !== 'room' || state.roomState?.kind !== 'event' || state.roomState.decisions[playerId]) return false
+  if (state.phase !== 'room' || state.roomState?.kind !== 'event' || state.roomState.decisions[playerId] ||
+    state.roomState.pendingDecisions?.[playerId]) return false
   const player = state.players.find((candidate) => candidate.id === playerId && !candidate.dead)
   const used = usedBigFishOptionIds(state, playerId)
   return Boolean(player && !state.roomState.card.options.some((option) => !used.has(option.id) && eventOptionAvailable(state, player, option)))
@@ -739,8 +741,19 @@ function usedBigFishOptionIds(state: RunState, playerId: string): Set<string> {
 }
 
 export function skipEvent(state: RunState, playerId: string): RunState {
-  if (!canSkipEvent(state, playerId) || state.roomState?.kind !== 'event') return state
-  const decisions = { ...state.roomState.decisions, [playerId]: { optionIds: ['unavailable'] } }
+  return canSkipEvent(state, playerId) ? settleUnavailableEventPlayers(state) : state
+}
+
+/** Settle every seat that has no legal Event choice; no input is being discarded. */
+export function settleUnavailableEventPlayers(state: RunState): RunState {
+  if (state.phase !== 'room' || state.roomState?.kind !== 'event') return state
+  // A staged choice may return shared Gold/items or consume them permanently;
+  // nobody is truly optionless until that choice finishes.
+  if (state.roomState.pendingTrade || Object.keys(state.roomState.pendingDecisions ?? {}).length > 0) return state
+  const automatic = state.players.filter((player) => canSkipEvent(state, player.id)).map((player) => player.id)
+  if (automatic.length === 0) return state
+  const decisions = { ...state.roomState.decisions,
+    ...Object.fromEntries(automatic.map((id) => [id, { optionIds: ['unavailable'] }])) }
   const done = state.roomState.card.scope === 'party' || state.players.filter((player) => !player.dead).every((player) => decisions[player.id])
   const next: RunState = done
     ? { ...state, phase: 'map', roomState: null, log: [...state.log, `${state.roomState.card.name} is left unresolved.`] }

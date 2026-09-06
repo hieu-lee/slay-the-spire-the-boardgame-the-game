@@ -8,7 +8,7 @@ import { canUpgradeCard, hasModifier, hasPendingRelicAcquisition, nextRunUid } f
 import { merchantItemDecks } from './supplies.ts'
 import type { CardRewardOffer, RewardSource, RunState } from './types.ts'
 import { queueNewGuardianSockets } from './guardian-gems.ts'
-import { gainGold, removeCard, transformCard, upgradeCard } from '../acquisition.ts'
+import { availableTransformRewards, gainGold, removeCard, transformCard, upgradeCard } from '../acquisition.ts'
 import { isActIVUnlocked, isColorlessUnlocked } from '../campaign.ts'
 import { cardIsCurse } from '../cards.ts'
 import { buildEventDeck } from '../events.ts'
@@ -100,8 +100,19 @@ function setupOffer(playerId: string, kind: 'cardReward' | 'rareReward' | 'potio
   }
 }
 
+function quickSetupNeedsCardChoice(state: RunState): boolean {
+  const setup = state.setup
+  const step = setup ? currentQuickSetupStep(setup) : null
+  const player = setup && state.players.find((candidate) => candidate.id === setup.playerIds[setup.playerIndex] && !candidate.dead)
+  if (!step || !player) return false
+  if (step.kind === 'upgrade') return player.deck.some(canUpgradeCard)
+  if (step.kind === 'cardRemove') return player.deck.some((card) => card.defId !== 'ascenders_bane')
+  return step.kind === 'transform' && availableTransformRewards(player) > 0 &&
+    player.deck.some((card) => !cardIsCurse(card.defId))
+}
+
 /** Resolve one authoritative Quick Start / Catch Up step without revealing future rewards. */
-export function advanceQuickSetup(state: RunState, cardUids: readonly string[] = []): RunState {
+function advanceQuickSetupUnit(state: RunState, cardUids: readonly string[] = []): RunState {
   const setup = state.setup
   const step = setup ? currentQuickSetupStep(setup) : null
   if (state.phase !== 'setup' || !setup || !step || hasPendingRelicAcquisition(state) ||
@@ -163,14 +174,31 @@ export function advanceQuickSetup(state: RunState, cardUids: readonly string[] =
   } else {
     const eligible = step.kind === 'upgrade' ? owner.deck.filter(canUpgradeCard)
       : step.kind === 'cardRemove' ? owner.deck.filter((card) => card.defId !== 'ascenders_bane')
-        : owner.deck.filter((card) => !cardIsCurse(card.defId))
+        : availableTransformRewards(owner) > 0
+          ? owner.deck.filter((card) => !cardIsCurse(card.defId)) : []
     const required = Math.min(1, eligible.length)
     if (cardUids.length !== required || cardUids.some((uid) => !eligible.some((card) => card.uid === uid))) return state
     const uid = cardUids[0]
     if (uid && step.kind === 'upgrade') owner = upgradeCard(owner, uid)
     else if (uid && step.kind === 'cardRemove') owner = removeCard(owner, uid)
-    else if (uid) owner = transformCard(state.rng, owner, uid, `c${nextRunUid(state.players)}`)
+    else if (uid) {
+      const transformed = transformCard(state.rng, owner, uid, `c${nextRunUid(state.players)}`)
+      if (transformed === owner) return state
+      owner = transformed
+    }
   }
   return queueNewGuardianSockets(state,
     withAdvancedSetup({ ...state, players: state.players.map((candidate) => candidate.id === owner.id ? owner : candidate) }))
+}
+
+/** Advance deterministic/no-op setup rows until the next choice or revealed reward. */
+export function advanceQuickSetup(state: RunState, cardUids: readonly string[] = []): RunState {
+  let next = advanceQuickSetupUnit(state, cardUids)
+  if (next === state) return next
+  while (next.phase === 'setup' && next.setup && !quickSetupNeedsCardChoice(next)) {
+    const advanced = advanceQuickSetupUnit(next)
+    if (advanced === next) break
+    next = advanced
+  }
+  return next
 }

@@ -950,6 +950,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           players={run.players}
           rubyAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.ruby}
           restAllowed={!run.meta.modifierIds.includes('night_terrors')}
+          ruleset={run.meta.ruleset}
           onResolve={(choices) => setRun((current) => resolveCampfire(current, choices))}
         />
       ) : null}

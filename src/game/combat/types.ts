@@ -71,7 +71,7 @@ export type CombatState = {
   potionLimit: 2 | 3
   discardedThisTurn: string[]
   stanceChangedThisTurn: string[]
-  /** Power instance ids already spent by a printed once-per-turn ability or trigger. */
+  /** Trigger source ids already spent by a once-per-turn ability or privately staged start trigger. */
   powerTriggersUsedThisTurn: string[]
   /** Facing is resolved after ordinary Start-of-Turn abilities. */
   startTurnStage?: 'effects' | 'facing'
@@ -177,12 +177,18 @@ export type PresentationTargets = {
   enemyRow?: number
 }
 
+export type TurnEffectPresentation =
+  | 'block' | 'damage' | 'burn' | 'poison' | 'weak' | 'vulnerable' | 'draw'
+  | 'discard' | 'exhaust' | 'buff' | 'strength' | 'heal' | 'countdown'
+  | 'blockLoss' | 'strengthLoss'
+
 export type CombatPresentationEvent = PresentationTargets & (
   | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number; resolvedType?: CardType }
   | { kind: 'slime'; slimeUid: string; upgraded: boolean; animationIndex: number }
   | { kind: 'potion' }
   | { kind: 'shiv' }
   | { kind: 'orb'; orb: OrbType }
+  | { kind: 'turn'; effect: TurnEffectPresentation; actorTargeted: boolean }
 )
 
 export type NewPresentationEvent = Omit<PresentationTargets, 'seq'> & (
@@ -191,12 +197,15 @@ export type NewPresentationEvent = Omit<PresentationTargets, 'seq'> & (
   | { kind: 'potion' }
   | { kind: 'shiv' }
   | { kind: 'orb'; orb: OrbType }
+  | { kind: 'turn'; effect: TurnEffectPresentation; actorTargeted: boolean }
 )
 
 export type PendingTrigger = {
   id: number
   playerId: string
   sourceId: string
+  /** A private choice staged before this owner confirms the Start-of-Turn quorum. */
+  startTurn?: true
   /** Event-bound target, such as the enemy that received a token. */
   enemyUid?: string
 }
@@ -239,6 +248,10 @@ export type StartTurnAbility = {
   id: string
   playerId: string
   label: string
+  /** The public source shown while this targeted effect is being resolved. */
+  visual?:
+    | { kind: 'relic'; relicId: string }
+    | { kind: 'card'; cardUid: string }
   /** A recurring single-enemy effect still needs its owner to choose. */
   targets?: { uid: string; label: string }[]
   /** A supporting relic may give its effect to any living player. */
@@ -274,6 +287,17 @@ export type StartTurnChoice = {
   /** Chosen Orb slot and Lightning/Dark target for each forced Evoke, in order. */
   evokeSlots?: number[]
   evokeEnemyUids?: (string | null)[]
+  /** Private Hermit/Slime trigger input, applied only when this ordered source resolves. */
+  trigger?: {
+    enemyRow?: number
+    enemyUid?: string
+    targetPlayerId?: string
+    loadUids?: string[]
+    chamberUids?: string[]
+    hermitEnemyUids?: string[]
+    slimeUids?: string[]
+    slimeEnemyUids?: string[]
+  }
 }
 
 export type StartTurnScryPreview = {
@@ -466,6 +490,13 @@ export type PlayContext = {
   drewSkill?: boolean
   /** Public source label for Orb channel animations, including triggered Powers and relics. */
   presentationSourceId?: string
+  /** Actual visible mutations made by an opaque recurring effect, grouped by semantic. */
+  turnEffectApplications?: {
+    effect: TurnEffectPresentation
+    actorTargeted?: boolean
+    enemyIds?: string[]
+    playerIds?: string[]
+  }[]
   /** Cards taken by this card's variable discard clause. */
   discardedByCard?: number
   /** Cards taken by this card's automatic Exhaust clause. */

@@ -76,6 +76,8 @@ import {
   chooseEndTurnTarget,
   combatRowLabel,
   defaultStartTurnChoices,
+  discardNeedsChoice,
+  discardTopNeedsChoice,
   activePowerWindow,
   endPlayerTurn,
   endTurnResolutionAbility,
@@ -169,7 +171,7 @@ import {
   shouldDisarmCardFlight,
   stageScaleFor,
 } from './board-signals.ts'
-import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe } from './combat-vfx.ts'
+import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, turnEffectVfxRecipe } from './combat-vfx.ts'
 import { playSoundEffect } from './sfx.ts'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -341,6 +343,10 @@ function CombatScreenView({
   mutationsEnabled = true,
   drawCount,
   decidedPlayerIds,
+  requiredEndTurnPlayerIds,
+  endTurnTopPlayerIds,
+  startTurnDecidedPlayerIds,
+  requiredStartTurnPlayerIds,
   savedDiscardOrder,
   partyEndTurnAbilities,
   partyStartTurnAbilities,
@@ -356,6 +362,7 @@ function CombatScreenView({
   cardPreview,
   powerPreview,
   authoritativePendingTrigger,
+  stagedStartTurnTriggers,
   authoritativeVersion,
   authoritativeRefresh,
   authoritativeRestoration,
@@ -392,6 +399,7 @@ function CombatScreenView({
   const [usingPotion, setUsingPotion] = useState(false)
   const [usingPower, setUsingPower] = useState(false)
   const [usingTrigger, setUsingTrigger] = useState(false)
+  const [editingStagedStartTurnTrigger, setEditingStagedStartTurnTrigger] = useState<number | null>(null)
   const [usingDieRelic, setUsingDieRelic] = useState(false)
   const [usingCard, setUsingCard] = useState(false)
   const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
@@ -642,7 +650,12 @@ function CombatScreenView({
   const extraCrispyPower = viewer?.powers.find((power) => power.defId === 'extra_crispy' &&
     !powerAbilityUsed(state, viewerId, power.uid))
   const pendingTrigger = dieRelicPending ? null
-    : authoritativePendingTrigger !== undefined ? authoritativePendingTrigger : pendingTriggerAbility(state)
+    : authoritativePendingTrigger !== undefined
+      ? authoritativePendingTrigger ?? stagedStartTurnTriggers
+        ?.find((trigger) => trigger.id === editingStagedStartTurnTrigger) ?? null
+      : pendingTriggerAbility(state)
+  const stagedStartTurnTriggerPending = state.phase === 'start' &&
+    state.pendingTriggers.some((trigger) => trigger.startTurn && trigger.playerId === viewerId)
   const triggerHermitChoicesReady = !pendingTrigger?.hermitChoices ||
     triggerHermitLoadUids.length >= pendingTrigger.hermitChoices.loadMinimum &&
     triggerHermitLoadUids.length <= pendingTrigger.hermitChoices.loadAmount &&
@@ -825,11 +838,15 @@ function CombatScreenView({
     }
   }
   useEffect(() => {
-    setTriggerHermitLoadUids([])
-    setTriggerHermitChamberUids([])
-    setTriggerSlimeUids([])
-    setTriggerSlimeEnemyUids([])
-  }, [pendingTrigger?.id])
+    const editing = stagedStartTurnTriggers?.find((trigger) => trigger.id === editingStagedStartTurnTrigger)
+    const staged = editing
+      ? savedStartTurnChoices?.find((choice) => choice.id === editing.choiceId)?.trigger
+      : undefined
+    setTriggerHermitLoadUids(staged?.loadUids ?? [])
+    setTriggerHermitChamberUids(staged?.chamberUids ?? [])
+    setTriggerSlimeUids(staged?.slimeUids ?? [])
+    setTriggerSlimeEnemyUids(staged?.slimeEnemyUids ?? [])
+  }, [pendingTrigger?.id, editingStagedStartTurnTrigger, stagedStartTurnTriggers, savedStartTurnChoices])
   useEffect(() => {
     setDieRelicCardUids([])
     setDieRelicEnemyUid(null)
@@ -851,6 +868,7 @@ function CombatScreenView({
     : baseStartTurnScries.map((ability) => ability.id)
   const orderedStartTurnScries = startTurnScryIds.map((id) =>
     baseStartTurnScries.find((ability) => ability.id === id)).filter((ability) => ability !== undefined)
+  const canOrderStartTurnScries = !onAction || startTurnCoordinatorId === viewerId
   const forcedCardUid = forcedCard?.playerId === viewerId && typeof forcedCard.cardUid === 'string'
     ? forcedCard.cardUid
     : null
@@ -870,18 +888,17 @@ function CombatScreenView({
   const baseStartAbilities = useMemo(() => state.phase === 'start' && !pendingTrigger
     ? (partyStartTurnAbilities ?? startTurnAbilities(state))
     : [], [partyStartTurnAbilities, pendingTrigger?.id, state])
-  const savedStartChoiceKey = savedStartTurnChoices?.map((choice) =>
-    `${choice.id}:${choice.enemyUid ?? ''}:${choice.targetPlayerId ?? ''}:` +
-    `${choice.guardianModeShift ?? ''}:` +
-    `${choice.exhaustUids?.join(',') ?? ''}:` +
-    `${choice.shivEnemyUids.join(',')}:${choice.evokeSlots?.join(',') ?? ''}:` +
-    `${choice.evokeEnemyUids?.join(',') ?? ''}`).join('\0') ?? ''
   const startAbilityKey = baseStartAbilities.map((ability) =>
     `${ability.id}:${ability.overflowShivs}:${ability.targets?.map((target) => target.uid).join(',') ?? ''}:` +
     `${ability.players?.map((player) => player.id).join(',') ?? ''}:` +
     `${ability.exhaustCards?.map((card) => card.uid).join(',') ?? ''}:` +
     `${ability.evokeChoice?.options.map((option) => `${option.slot}:${option.orb}`).join(',') ?? ''}:` +
-    `${savedStartTurnEnemyTargets?.[ability.id] ?? ''}`).join('\0') + `\0${savedStartChoiceKey}`
+    `${!onAction || ability.playerId === viewerId ? savedStartTurnEnemyTargets?.[ability.id] ?? '' : ''}`).join('\0') +
+    `\0${savedStartTurnChoices?.filter((choice) => !onAction || baseStartAbilities.some((ability) =>
+      ability.id === choice.id && ability.playerId === viewerId)).map((choice) =>
+      `${choice.id}:${choice.enemyUid ?? ''}:${choice.targetPlayerId ?? ''}:${choice.guardianModeShift ?? ''}:` +
+      `${choice.exhaustUids?.join(',') ?? ''}:${choice.shivEnemyUids.join(',')}:` +
+      `${choice.evokeSlots?.join(',') ?? ''}:${choice.evokeEnemyUids?.join(',') ?? ''}`).join('\0') ?? ''}`
 
   const { hits } = useStruck(
     state,
@@ -939,10 +956,12 @@ function CombatScreenView({
       resolved.push({
         event,
         recipe: event.kind === 'orb'
-          ? orbVfxRecipe(event.orb)
-          : event.kind === 'shiv'
-            ? shivVfxRecipe()
-            : cardVfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded, event.resolvedType),
+          ? orbVfxRecipe(event.orb, event.sourceId)
+          : event.kind === 'turn'
+            ? turnEffectVfxRecipe(event.effect)
+            : event.kind === 'shiv'
+              ? shivVfxRecipe()
+              : cardVfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded, event.resolvedType),
       })
     }
     return resolved
@@ -962,11 +981,12 @@ function CombatScreenView({
     ordered.forEach(({ event }, index) => delays.set(event.seq, index * ORB_END_TURN_STAGGER_MS))
     return delays
   }, [activeVfx])
-  const actorVfxFor = (playerId: string) => activeVfx.filter(({ event }) => event.actorId === playerId)
+  const actorVfxFor = (playerId: string) => activeVfx.filter(({ event }) =>
+    event.actorId === playerId && (event.kind !== 'turn' || event.actorTargeted))
   const playerVfxFor = (playerId: string) => activeVfx.filter(({ event, recipe }) =>
     event.actorId !== playerId && event.playerIds.includes(playerId) &&
-    !['slash', 'blunt', 'projectile', 'poison', 'shiv', 'lightning', 'dark', 'debuff']
-      .includes(recipe.family))
+    (event.kind === 'turn' || !['slash', 'blunt', 'projectile', 'poison', 'shiv', 'lightning', 'dark', 'debuff']
+      .includes(recipe.family)))
   const enemyVfxFor = (enemy: Enemy) => activeVfx.filter(({ event }) => event.enemyIds.includes(enemy.uid))
   useEffect(() => {
     const uid = slimeCardZoom?.card.uid
@@ -1004,6 +1024,7 @@ function CombatScreenView({
       const latestNonAttackSeq = (state.presentationEvents ?? []).reduce((latest, event) => {
         if (event.actorId !== player.id || event.kind === 'orb' || event.kind === 'slime' ||
           event.sourceId === 'fairy_in_a_bottle') return latest
+        if (event.kind === 'turn') return Math.max(latest, event.seq)
         const recipe = event.kind === 'potion'
           ? potionVfxRecipe(event.sourceId)
           : event.kind === 'shiv'
@@ -1013,7 +1034,7 @@ function CombatScreenView({
       }, -1)
       const latestAttackSeq = (state.presentationEvents ?? []).reduce((latest, event) => {
         if (event.actorId !== player.id || event.kind === 'potion' || event.kind === 'orb' ||
-          event.kind === 'slime') return latest
+          event.kind === 'slime' || event.kind === 'turn') return latest
         const recipe = event.kind === 'shiv'
           ? shivVfxRecipe()
           : cardVfxRecipe(player.character, event.sourceId, event.mode, event.upgraded, event.resolvedType)
@@ -1826,14 +1847,19 @@ function CombatScreenView({
     pendingPower.attachedGemId === 'guardian_jasper' || pendingPower.attachedGemId === 'guardian_amethyst'
   ))
   const pendingPotionOverflow = potionOverflowRequired
+  const endTurnParticipants = requiredEndTurnPlayerIds ?? livingPlayers.filter(discardNeedsChoice).map((player) => player.id)
   const confirmedDiscards = decidedPlayerIds
-    ? livingPlayers.filter((player) => decidedPlayerIds.includes(player.id)).length
-    : livingPlayers.filter((player) => discardOrders[player.id]).length
+    ? endTurnParticipants.filter((playerId) => decidedPlayerIds.includes(playerId)).length
+    : endTurnParticipants.filter((playerId) => discardOrders[playerId]).length
   // Online only: hotseat has no per-seat readiness, so one click ends the turn
   // for the table and a counter there would sit at 0 until it vanished.
-  const endTurnCount = decidedPlayerIds && livingPlayers.length > 1
-    ? `${confirmedDiscards}/${livingPlayers.length}`
+  const endTurnCount = decidedPlayerIds && endTurnParticipants.length > 1
+    ? `${confirmedDiscards}/${endTurnParticipants.length}`
     : null
+  const viewerNeedsEndTurnChoice = endTurnParticipants.includes(viewer.id)
+  const viewerNeedsDiscardTop = endTurnTopPlayerIds
+    ? endTurnTopPlayerIds.includes(viewer.id)
+    : discardTopNeedsChoice(viewer)
   const chamberCardsVisible = chamberOpen
   const visibleHand = chamberCardsVisible ? [...viewer.chamber, ...viewer.hand] : viewer.hand
   const visibleChamberUids = chamberCardsVisible
@@ -1894,6 +1920,9 @@ function CombatScreenView({
   const endTurnEffectDragSlimeAsset = !endTurnEffectDrag?.sourceOrb && endTurnEffectDragVisual?.kind === 'slime'
     ? assetPath(`combat/slimes/${slimeAssetSlug(endTurnEffectDragVisual.cardId)}.webp`)
     : undefined
+  const endTurnEffectDragRelicId = !endTurnEffectDrag?.sourceOrb && endTurnEffectDragVisual?.kind === 'relic'
+    ? endTurnEffectDragVisual.relicId
+    : undefined
 
   function showSlimeCard(card: CardInstance, target: HTMLElement) {
     if (!tryClaimCardZoom(closeSlimeCardZoom.current)) return
@@ -1932,13 +1961,27 @@ function CombatScreenView({
   const orderedStartAbilities = useMemo(() => baseStartAbilities.length > 0
     ? startTurnAbilities(state, startIds, startChoiceDrafts)
     : [], [baseStartAbilities, startChoiceDrafts, startIds, state])
-  const canResolveStartTurn = !onAction || viewer.id === startTurnCoordinatorId
+  const fumesOwnerId = startTurnChoiceId
+    ? orderedStartAbilities.find((ability) => ability.id === startTurnChoiceId)?.playerId
+    : undefined
+  const canResolveStartTurn = !onAction || Boolean(requiredStartTurnPlayerIds?.includes(viewer.id) &&
+    (viewer.id === startTurnCoordinatorId || viewer.id !== fumesOwnerId))
+  const canCommitStartTurnOrder = canResolveStartTurn &&
+    (!partyStartTurnOrderPending || viewer.id === startTurnCoordinatorId)
+  const startTurnCount = startTurnDecidedPlayerIds && requiredStartTurnPlayerIds?.length
+    ? `${startTurnDecidedPlayerIds.filter((id) => requiredStartTurnPlayerIds.includes(id)).length}/${requiredStartTurnPlayerIds.length}`
+    : null
   const orderTargetIndex = startTurnChoiceId
     ? orderedStartAbilities.findIndex((ability) => ability.id === startTurnChoiceId)
     : -1
-  const startChoiceAbilities = partyStartTurnOrderPending
+  const ownedStartAbilities = onAction
+    ? orderedStartAbilities.filter((ability) => ability.playerId === viewer.id)
+    : orderedStartAbilities
+  const startChoiceAbilities = partyStartTurnOrderPending && viewer.id === startTurnCoordinatorId
     ? orderedStartAbilities.slice(0, orderTargetIndex < 0 ? orderedStartAbilities.length : orderTargetIndex)
-    : orderedStartAbilities.filter((ability) => !startTurnChoiceId || ability.id === startTurnChoiceId)
+      .filter((ability) => !onAction || ability.playerId === viewer.id)
+    : ownedStartAbilities.filter((ability) => !startTurnChoiceId || viewer.id !== fumesOwnerId ||
+      ability.id === startTurnChoiceId)
   const pendingStartChoice = canResolveStartTurn
     ? startChoiceAbilities
       .flatMap<PendingStartChoice>((ability) => {
@@ -1966,6 +2009,14 @@ function CombatScreenView({
     : undefined
   const pendingStartEnemy = pendingStartChoice?.kind === 'enemy' ? pendingStartChoice.ability : undefined
   const pendingStartPlayer = pendingStartChoice?.kind === 'player' ? pendingStartChoice.ability : undefined
+  const startTurnEffectVisual = pendingStartPlayer?.visual
+  const startTurnEffectCard = startTurnEffectVisual?.kind === 'card'
+    ? state.players.find((player) => player.id === pendingStartPlayer?.playerId)
+      ?.powers.find((power) => power.uid === startTurnEffectVisual.cardUid)
+    : undefined
+  const startTurnEffectRelicId = startTurnEffectVisual?.kind === 'relic'
+    ? startTurnEffectVisual.relicId
+    : undefined
   const pendingStartExhaust = pendingStartChoice?.kind === 'exhaust' ? pendingStartChoice.ability : undefined
   const pendingStartModeShift = pendingStartChoice?.kind === 'guardianModeShift'
     ? pendingStartChoice.ability : undefined
@@ -1990,7 +2041,7 @@ function CombatScreenView({
   function moveStartTurnAbility(id: string, delta: -1 | 1) {
     const from = startIds.indexOf(id)
     const to = from + delta
-    if (!canResolveStartTurn || partyStartTurnOrderLocked || from < 0 || to < 0 || to >= startIds.length) return
+    if (!canCommitStartTurnOrder || partyStartTurnOrderLocked || from < 0 || to < 0 || to >= startIds.length) return
     const order = [...startIds]
     ;[order[from], order[to]] = [order[to]!, order[from]!]
     const plan = startTurnAbilities(state, order)
@@ -2024,8 +2075,11 @@ function CombatScreenView({
   function startEnemyChoiceAvailable(enemyUid: string) {
     if (!pendingStartEnemy?.targets?.some((target) => target.uid === enemyUid)) return false
     if (!pendingStartEnemy.id.startsWith('facing:')) return true
-    return facingChoicesAreValid(state, startChoiceDrafts.map((choice) =>
-      choice.id === pendingStartEnemy.id ? { ...choice, enemyUid } : choice))
+    return facingChoicesAreValid(state, startChoiceDrafts.map((choice) => {
+      const saved = savedStartTurnChoices?.find((candidate) => candidate.id === choice.id)
+      return choice.id === pendingStartEnemy.id ? { ...choice, enemyUid }
+        : saved?.enemyUid ? { ...choice, enemyUid: saved.enemyUid } : choice
+    }))
   }
 
   function chooseStartTurnPlayer(playerId: string) {
@@ -2094,14 +2148,14 @@ function CombatScreenView({
   function moveStartTurnScry(id: string, delta: -1 | 1) {
     const from = startTurnScryIds.indexOf(id)
     const to = from + delta
-    if (!canResolveStartTurn || from < 0 || to < 0 || to >= startTurnScryIds.length) return
+    if (!canOrderStartTurnScries || from < 0 || to < 0 || to >= startTurnScryIds.length) return
     const order = [...startTurnScryIds]
     ;[order[from], order[to]] = [order[to]!, order[from]!]
     setStartTurnScryOrder(order)
   }
 
   function finishStartTurnScryOrder() {
-    if (!canResolveStartTurn || orderedStartTurnScries.length !== baseStartTurnScries.length) return
+    if (!canOrderStartTurnScries || orderedStartTurnScries.length !== baseStartTurnScries.length) return
     if (onAction) onAction({ kind: 'orderStartTurnScries', order: startTurnScryIds })
     else onChange?.(orderStartTurnScries(state, startTurnScryIds))
   }
@@ -2146,21 +2200,15 @@ function CombatScreenView({
   // Resolve the engine's deterministic default plan; keep every meaningful
   // order, target, overflow, or Orb decision manual.
   useEffect(() => {
-    if (!autoAdvance || state.phase !== 'start' || !canResolveStartTurn || meaningfulStartTurnChoice ||
+    if (onAction || !autoAdvance || state.phase !== 'start' || !canResolveStartTurn || meaningfulStartTurnChoice ||
       baseStartTurnScries.length > 0 || activeStartTurnScry ||
       activeStartTurnDiscard || pendingTrigger || forcedCard) return undefined
-    let cancelled = false
-    const timer = window.setTimeout(async () => {
+    const timer = window.setTimeout(() => {
       const choices = defaultStartTurnChoices(state)
-      if (onAction) {
-        const outcome = await onAction({ kind: 'resolveStartTurn', choices })
-        if (!cancelled && outcome && (outcome.status === 'refused' || outcome.status === 'unknown' ||
-          outcome.status === 'reconciled' && outcome.snapshot?.run?.combat?.phase === 'start' &&
-          outcome.snapshot.run.combat.turn === state.turn)) setAutoAdvanceRetry((attempt) => attempt + 1)
-      } else onChange?.(resolveStartPlayerTurn(state, choices))
+      onChange?.(resolveStartPlayerTurn(state, choices))
     }, 250)
-    return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [autoAdvance, autoAdvanceRetry, authoritativeRefresh, state.phase, state.turn, canResolveStartTurn,
+    return () => window.clearTimeout(timer)
+  }, [onAction, autoAdvance, autoAdvanceRetry, authoritativeRefresh, state.phase, state.turn, canResolveStartTurn,
     meaningfulStartTurnChoice, baseStartTurnScries.length, activeStartTurnScry,
     activeStartTurnDiscard, pendingTrigger, forcedCard])
 
@@ -2252,7 +2300,7 @@ function CombatScreenView({
       onAction({ kind: 'discardHand', discardOrder: orders[viewer.id] })
       return
     }
-    if (livingPlayers.every((player) => orders[player.id])) {
+    if (endTurnParticipants.every((playerId) => orders[playerId])) {
       setDiscardTops({})
       setDiscardOrders({})
       onChange?.(endPlayerTurn(state, orders))
@@ -2563,6 +2611,7 @@ function CombatScreenView({
       slimeEnemyUids: triggerSlimeEnemyAmount > 0 ? slimeEnemyUids : undefined,
       preflight: true,
     }))
+      .then(() => setEditingStagedStartTurnTrigger(null))
       .finally(() => setUsingTrigger(false))
   }
   // Ordinary costs choose from the visible hand minus the card being played.
@@ -3280,8 +3329,8 @@ function CombatScreenView({
     return id && state.players.some((candidate) => candidate.id === id && !candidate.dead) ? id : null
   }
 
-  function endTurnTargetForEnemy(enemy: Enemy, ability = endTurnEffect): string | null {
-    if (ability?.orbChoice) return null
+  function endTurnTargetForEnemy(enemy: Enemy, ability: EndTurnEffectDrag['ability'] | undefined = endTurnEffect): string | null {
+    if (ability && 'orbChoice' in ability && ability.orbChoice) return null
     if (state.endTurnProgress?.rowTiebreakFor && enemy.isBoss) return null
     return ability?.targets?.find((target) => target.uid === enemy.uid || target.uid.endsWith(`:${enemy.uid}`))?.uid ??
       ability?.targets?.find((target) =>
@@ -3313,6 +3362,10 @@ function CombatScreenView({
 
   function endTurnEffectDragTargetAt(active: EndTurnEffectDrag, x: number, y: number): string | null {
     if (active.sourceTargetUid) return endTurnEffectCardTargetAt(x, y) ? active.sourceTargetUid : null
+    if ('players' in active.ability && active.ability.players) {
+      const playerId = dragPlayerAt(x, y)
+      return active.ability.players.some((player) => player.id === playerId) ? playerId : null
+    }
     const enemyUid = dragTargetAt(x, y, false)
     const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
     return enemy ? endTurnTargetForEnemy(enemy, active.ability) : null
@@ -3342,7 +3395,12 @@ function CombatScreenView({
       armedEndTurnAbilityId === endTurnEffect?.id)
   }
 
-  function resolveEndTurnTarget(abilityId: string, targetUid: string) {
+  function resolveTurnEffectTarget(abilityId: string, targetUid: string) {
+    if (pendingStartPlayer?.id === abilityId && pendingStartPlayer.players?.some((player) => player.id === targetUid)) {
+      chooseStartTurnPlayer(targetUid)
+      setArmedEndTurnAbilityId(null)
+      return
+    }
     if (!endTurnEffect || !canResolveEndTurn || endTurnEffect.id !== abilityId ||
       !endTurnEffect.targets?.some((target) => target.uid === targetUid)) return
     setArmedEndTurnAbilityId(null)
@@ -3355,10 +3413,13 @@ function CombatScreenView({
   }
 
   function endTurnEffectCanStartDrag(abilityId: string) {
-    return canResolveEndTurn && endTurnEffect?.id === abilityId && !pendingTrigger && !endTurnEffectDrag
+    return !pendingTrigger && !endTurnEffectDrag && (
+      canResolveEndTurn && endTurnEffect?.id === abilityId ||
+      canResolveStartTurn && pendingStartPlayer?.id === abilityId
+    )
   }
 
-  function onEndTurnEffectPointerDown(ability: NonNullable<typeof endTurnEffect>, event: React.PointerEvent<HTMLButtonElement>) {
+  function onEndTurnEffectPointerDown(ability: EndTurnEffectDrag['ability'], event: React.PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || !endTurnEffectCanStartDrag(ability.id)) return
     event.currentTarget.setPointerCapture(event.pointerId)
     endTurnEffectDragStart.current = {
@@ -3429,14 +3490,14 @@ function CombatScreenView({
         if (suppressEndTurnEffectClick.current === start.ability.id) suppressEndTurnEffectClick.current = null
       }, 0)
     }
-    if (targetUid) resolveEndTurnTarget(start.ability.id, targetUid)
+    if (targetUid) resolveTurnEffectTarget(start.ability.id, targetUid)
   }
 
   function cancelEndTurnEffectDrag(event: React.PointerEvent<HTMLElement>) {
     if (endTurnEffectDragStart.current?.pointerId === event.pointerId) clearEndTurnEffectDrag()
   }
 
-  function activateEndTurnEffect(ability: NonNullable<typeof endTurnEffect>) {
+  function activateEndTurnEffect(ability: EndTurnEffectDrag['ability']) {
     if (suppressEndTurnEffectClick.current === ability.id) {
       suppressEndTurnEffectClick.current = null
       return
@@ -3662,7 +3723,7 @@ function CombatScreenView({
   function onEnemyClick(enemy: Enemy) {
     const endTurnTarget = endTurnTargetForEnemy(enemy)
     if (endTurnTarget && armedEndTurnAbilityId === endTurnEffect?.id) {
-      resolveEndTurnTarget(endTurnEffect.id, endTurnTarget)
+      resolveTurnEffectTarget(endTurnEffect.id, endTurnTarget)
       return
     }
     if (pendingTrigger && pendingTrigger.playerId === viewer?.id) {
@@ -3879,7 +3940,7 @@ function CombatScreenView({
   function onRowLaneClick(row: number) {
     const endTurnTarget = endTurnTargetForRow(row)
     if (endTurnTarget && armedEndTurnAbilityId === endTurnEffect?.id) {
-      resolveEndTurnTarget(endTurnEffect.id, endTurnTarget)
+      resolveTurnEffectTarget(endTurnEffect.id, endTurnTarget)
       return
     }
     if (pendingTrigger && pendingTrigger.playerId === viewer?.id &&
@@ -4011,6 +4072,12 @@ function CombatScreenView({
 
   function onAllyClick(ally: Player) {
     if (ally.dead) return
+    if (pendingStartPlayer?.players?.some((player) => player.id === ally.id) &&
+      armedEndTurnAbilityId === pendingStartPlayer.id) {
+      chooseStartTurnPlayer(ally.id)
+      setArmedEndTurnAbilityId(null)
+      return
+    }
     if (pendingPowerUid && pendingPower &&
       guardianCardNeedsAlly(pendingPowerDef!, viewer!, pendingPower.attachedGemId)) {
       choosePowerContext({ playerId: ally.id })
@@ -4473,7 +4540,8 @@ function CombatScreenView({
                   })}
                 </span>
               ) : null}
-              {state.phase === 'discard' && discardCandidates.length > 1 ? (
+              {state.phase === 'discard' && viewerNeedsEndTurnChoice && viewerNeedsDiscardTop &&
+              discardCandidates.length > 1 ? (
                 <label className="discard-order">
                   Top discard
                   <select
@@ -4495,14 +4563,20 @@ function CombatScreenView({
                   ends when everyone says so, and being told who the table is
                   waiting on is the whole reason a second screen existed. */}
               {!forcedCard && !distilled ? <button type="button" ref={endTurnRef} className="combat__end-turn" onClick={finishTurn}
-                disabled={Boolean(pending?.choiceCards) || Boolean(pendingTrigger) || endTurnResolving || chamberClosing}>
+                disabled={Boolean(pending?.choiceCards) || Boolean(pendingTrigger) || endTurnResolving || chamberClosing ||
+                  state.phase === 'discard' && !viewerNeedsEndTurnChoice}>
                 {state.phase === 'discard'
-                  ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} ${viewer.name} (${confirmedDiscards}/${livingPlayers.length})`
+                  ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} end-turn effect (${confirmedDiscards}/${endTurnParticipants.length})`
                   : endTurnCount ? `End turn ${endTurnCount}` : 'End turn'}
               </button> : null}
             </>
           ) : null}
-          {state.phase === 'start' && !forcedCard && !pendingTrigger && !activeStartTurnScry &&
+          {stagedStartTurnTriggerPending && startTurnCount ? (
+            <button type="button" className="combat__end-turn" disabled>
+              Resolve start turn {startTurnCount}
+            </button>
+          ) : null}
+          {state.phase === 'start' && !forcedCard && !pendingTrigger && !stagedStartTurnTriggerPending && !activeStartTurnScry &&
           orderedStartTurnScries.length > 0 ? (
             <>
               <details className="start-turn-order" open>
@@ -4511,24 +4585,29 @@ function CombatScreenView({
                   {orderedStartTurnScries.map((ability, index) => (
                     <li key={ability.id}>
                       <span>{ability.label} — Scry {ability.amount}</span>
-                      <button type="button" disabled={!canResolveStartTurn || index === 0}
+                      <button type="button" disabled={!canOrderStartTurnScries || index === 0}
                         aria-label={`Move ${ability.label} earlier`}
                         onClick={() => moveStartTurnScry(ability.id, -1)}>↑</button>
-                      <button type="button" disabled={!canResolveStartTurn || index === orderedStartTurnScries.length - 1}
+                      <button type="button" disabled={!canOrderStartTurnScries || index === orderedStartTurnScries.length - 1}
                         aria-label={`Move ${ability.label} later`}
                         onClick={() => moveStartTurnScry(ability.id, 1)}>↓</button>
                     </li>
                   ))}
                 </ol>
               </details>
-              <button type="button" disabled={!canResolveStartTurn} onClick={finishStartTurnScryOrder}>
-                {canResolveStartTurn ? 'Confirm before-draw order' : 'Waiting for before-draw order'}
+              <button type="button" disabled={!canOrderStartTurnScries} onClick={finishStartTurnScryOrder}>
+                {canOrderStartTurnScries ? 'Confirm before-draw order' : 'Waiting for before-draw order'}
               </button>
             </>
           ) : null}
-          {state.phase === 'start' && !forcedCard && !pendingTrigger && !activeStartTurnScry &&
+          {state.phase === 'start' && !forcedCard && !pendingTrigger && !stagedStartTurnTriggerPending && !activeStartTurnScry &&
           orderedStartTurnScries.length === 0 ? (
             <>
+              {stagedStartTurnTriggers?.map((trigger) => (
+                <button type="button" key={trigger.id} onClick={() => setEditingStagedStartTurnTrigger(trigger.id)}>
+                  Edit {trigger.label}
+                </button>
+              ))}
               <details className="start-turn-order">
                 <summary>Start-of-turn order ({orderedStartAbilities.length})</summary>
                 <ol aria-label="Start-of-turn order" tabIndex={0}>
@@ -4549,10 +4628,10 @@ function CombatScreenView({
                           : ''}{evoked > 0 || ability.evokeChoice
                           ? ` — Evoke ${evoked}${ability.evokeChoice ? '+' : ''}`
                           : ''}</span>
-                        <button type="button" disabled={!canResolveStartTurn || partyStartTurnOrderLocked || index === 0}
+                        <button type="button" disabled={!canCommitStartTurnOrder || partyStartTurnOrderLocked || index === 0}
                           aria-label={`Move ${ability.label} earlier`}
                           onClick={() => moveStartTurnAbility(ability.id, -1)}>↑</button>
-                        <button type="button" disabled={!canResolveStartTurn || partyStartTurnOrderLocked || index === orderedStartAbilities.length - 1}
+                        <button type="button" disabled={!canCommitStartTurnOrder || partyStartTurnOrderLocked || index === orderedStartAbilities.length - 1}
                           aria-label={`Move ${ability.label} later`}
                           onClick={() => moveStartTurnAbility(ability.id, 1)}>↓</button>
                       </li>
@@ -4608,9 +4687,10 @@ function CombatScreenView({
               <button type="button" className="combat__end-turn" onClick={finishStartTurn}
                 disabled={!startTurnReady || !canResolveStartTurn}>
                 {canResolveStartTurn
-                  ? partyStartTurnOrderPending ? 'Confirm start-of-turn order'
-                    : startTurnChoiceId ? 'Confirm Noxious Fumes target' : 'Resolve start of turn'
-                  : 'Waiting for start-turn order'}
+                  ? partyStartTurnOrderPending && viewer.id === startTurnCoordinatorId ? 'Confirm start-of-turn order'
+                    : startTurnChoiceId && viewer.id === fumesOwnerId ? 'Confirm Noxious Fumes target'
+                      : startTurnCount ? `Resolve start turn ${startTurnCount}` : 'Resolve start of turn'
+                  : startTurnCount ? `Resolve start turn ${startTurnCount}` : 'Waiting for start-turn order'}
               </button>
             </>
           ) : null}
@@ -4764,10 +4844,10 @@ function CombatScreenView({
               ) : null}
             </span>
           ) : null}
-          {pendingStartPlayer?.players?.map((player) => (
+          {!pendingStartPlayer?.visual ? pendingStartPlayer?.players?.map((player) => (
             <button type="button" className="prompt__mode" key={player.id}
               onClick={() => chooseStartTurnPlayer(player.id)}>{player.label}</button>
-          ))}
+          )) : null}
           {pending && overflowOnly && choiceSatisfied ? (
             <button type="button" className="prompt__cancel" onClick={() => commit(pending, true)}>
               Skip remaining overflow attacks
@@ -5427,6 +5507,44 @@ function CombatScreenView({
         </dialog>
       ) : null}
 
+      {pendingStartPlayer?.visual ? (
+        <section className="end-turn-effects start-turn-effects" aria-live="polite" aria-label="Start-turn effect">
+          <p className="end-turn-effects__prompt">
+            Drag {pendingStartPlayer.label} to a highlighted player
+          </p>
+          {startTurnEffectCard ? (
+            <Card
+              className="end-turn-effect end-turn-effect--card"
+              card={startTurnEffectCard}
+              playable={canResolveStartTurn}
+              selected={armedEndTurnAbilityId === pendingStartPlayer.id}
+              onClick={() => activateEndTurnEffect(pendingStartPlayer)}
+              onPointerDown={(event) => onEndTurnEffectPointerDown(pendingStartPlayer, event)}
+              onPointerMove={onEndTurnEffectPointerMove}
+              onPointerUp={finishEndTurnEffectDrag}
+              onPointerCancel={cancelEndTurnEffectDrag}
+              onLostPointerCapture={cancelEndTurnEffectDrag}
+            />
+          ) : startTurnEffectRelicId ? (
+            <button
+              type="button"
+              className="end-turn-effect end-turn-effect--relic"
+              disabled={!canResolveStartTurn}
+              aria-label={`Resolve ${pendingStartPlayer.label}`}
+              aria-pressed={armedEndTurnAbilityId === pendingStartPlayer.id}
+              onClick={() => activateEndTurnEffect(pendingStartPlayer)}
+              onPointerDown={(event) => onEndTurnEffectPointerDown(pendingStartPlayer, event)}
+              onPointerMove={onEndTurnEffectPointerMove}
+              onPointerUp={finishEndTurnEffectDrag}
+              onPointerCancel={cancelEndTurnEffectDrag}
+              onLostPointerCapture={cancelEndTurnEffectDrag}
+            >
+              <img className="item-icon-image" src={relicIconPath(startTurnEffectRelicId)} alt="" />
+            </button>
+          ) : null}
+        </section>
+      ) : null}
+
       {endTurnEffect ? (
         <section className="end-turn-effects" aria-live="polite" aria-label="End-turn effect">
           <p className="end-turn-effects__prompt">
@@ -5477,7 +5595,7 @@ function CombatScreenView({
           {endTurnChoiceTargets.length > 0 ? (
             <div className="end-turn-effects__choices" role="group" aria-label={`Resolve ${endTurnEffect.label}`}>
               {endTurnChoiceTargets.map((target) => (
-                <button key={target.uid} type="button" onClick={() => resolveEndTurnTarget(endTurnEffect.id, target.uid)}>
+                <button key={target.uid} type="button" onClick={() => resolveTurnEffectTarget(endTurnEffect.id, target.uid)}>
                   {target.label}
                 </button>
               ))}
@@ -5600,6 +5718,7 @@ function CombatScreenView({
                         characterAttack ? `seat--attack-${occupant.character}` : '',
                         (!occupant.dead && ((pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
                           pendingPowerNeedsAlly ||
+                          pendingStartPlayer?.players?.some((player) => player.id === occupant.id) ||
                           cardDrag?.needsPlayer ||
                           (independentPlayerPending && enemyChoicesDone && choiceSatisfied) ||
                           (pending?.needsAlly && pending.playerId === null && enemyChoicesDone && choiceSatisfied) ||
@@ -5607,7 +5726,11 @@ function CombatScreenView({
                         )
                           ? 'seat--targetable'
                           : '',
-                        cardDrag?.targetPlayerId === occupant.id ? 'seat--targeted' : '',
+                        cardDrag?.targetPlayerId === occupant.id ||
+                          endTurnEffectDrag?.targetUid === occupant.id ||
+                          armedEndTurnAbilityId === pendingStartPlayer?.id &&
+                            pendingStartPlayer.players?.some((player) => player.id === occupant.id)
+                          ? 'seat--targeted' : '',
                       ]
                         .filter(Boolean)
                         .join(' ')}
@@ -5621,7 +5744,8 @@ function CombatScreenView({
                         '--silent-attack-duration': `${1900 + Math.max(0,
                           ...characterAttackMotions.map((attack) => attack.targets.length - 1)) * 70}ms`,
                       } as React.CSSProperties : undefined}
-                      aria-label={describeSeat(occupant)}
+                      aria-label={`${describeSeat(occupant)}${pendingStartPlayer?.players?.some((player) =>
+                        player.id === occupant.id) ? `. Target for ${pendingStartPlayer.label}` : ''}`}
                     >
                       <span className="seat__portrait" aria-hidden="true">
                         {occupant.character === 'watcher' && occupant.stance !== 'neutral' ? (
@@ -5980,7 +6104,7 @@ function CombatScreenView({
                           return
                         }
                         if (targetUid && armedEndTurnAbilityId === endTurnEffect?.id) {
-                          resolveEndTurnTarget(endTurnEffect.id, targetUid)
+                          resolveTurnEffectTarget(endTurnEffect.id, targetUid)
                         }
                       }}
                     />
@@ -6347,6 +6471,9 @@ function CombatScreenView({
             style={{ left: endTurnEffectDrag.startX, top: endTurnEffectDrag.startY } as React.CSSProperties}
             aria-hidden="true" inert>
             {endTurnEffectDragCard ? <Card card={endTurnEffectDragCard} playable={false} />
+              : endTurnEffectDragRelicId ? (
+                <img className="item-icon-image" src={relicIconPath(endTurnEffectDragRelicId)} alt="" />
+              )
               : endTurnEffectDragSlimeAsset ? (
                 <img className="end-turn-effect__slime" src={endTurnEffectDragSlimeAsset} alt="" />
               ) : (

@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { assetPath, campfireScenePath } from '../game/assets.ts'
-import { canUpgradeCard } from '../game/run.ts'
+import { campfireNeedsDecision, campfireRestAvailable, canUpgradeCard } from '../game/run.ts'
 import type { CampfireDecision } from '../game/run.ts'
+import { rulesetForCharacters } from '../game/meta.ts'
+import type { RuleSet } from '../game/meta.ts'
+import { cardIsCurse } from '../game/cards.ts'
 import type { Player } from '../game/types.ts'
 import { CardPicker } from './CardPicker.tsx'
 import { Icon } from './Icon.tsx'
@@ -12,6 +15,7 @@ type CampfireScreenProps = {
   onResolve: (choices: Record<string, CampfireDecision>) => void
   rubyAvailable?: boolean
   restAllowed?: boolean
+  ruleset?: RuleSet
 }
 
 type Decision = CampfireDecision
@@ -26,12 +30,14 @@ function choiceLabel(choice: Decision['choice']) {
  * every living player has decided, which mirrors the table: you all leave the
  * campfire together.
  */
-export function CampfireScreen({ players, onResolve, rubyAvailable = false, restAllowed = true }: CampfireScreenProps) {
+export function CampfireScreen({ players, onResolve, rubyAvailable = false, restAllowed = true,
+  ruleset: requestedRuleset = 'base' }: CampfireScreenProps) {
   const [decisions, setDecisions] = useState<Record<string, Decision>>({})
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(() => new Set())
   const [picker, setPicker] = useState<'remove' | 'transform' | 'upgrade' | null>(null)
   const living = players.filter((player) => !player.dead)
   const livingCharacters = living.map((seat) => seat.character)
+  const ruleset = rulesetForCharacters(players.map((seat) => seat.character), requestedRuleset)
   const [focusedId, setFocusedId] = useState(living[0]?.id ?? '')
   const player = living.find((candidate) => candidate.id === focusedId) ?? living[0]
   const focusedIndex = Math.max(0, living.findIndex((candidate) => candidate.id === player?.id))
@@ -43,8 +49,14 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
   const straightRazor = player?.relics.some((relic) => relic.defId === 'straight_razor') ?? false
   const restHeal = player ? 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0) : 3
   const upgradable = player?.deck.filter(canUpgradeCard) ?? []
-  const restBlocked = coffee || !restAllowed
-  const blocked = restBlocked && (hammer || upgradable.length === 0)
+  const restAvailable = player ? campfireRestAvailable(player, restAllowed, ruleset) : false
+  const rubyDeclineOnly = player ? rubyAvailable && !campfireNeedsDecision(player, false, restAllowed, ruleset) : false
+  const blocked = !restAvailable && (hammer || upgradable.length === 0)
+  const requiredIds = living.filter((seat) => campfireNeedsDecision(seat, rubyAvailable, restAllowed, ruleset))
+    .map((seat) => seat.id)
+  useEffect(() => {
+    if (requiredIds.length === 0) onResolve({})
+  }, [requiredIds.length])
   const clearDecision = () => {
     if (!player) return
     setDecisions((current) => {
@@ -62,7 +74,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
     if (!player) return
     const next = { ...decisions, [player.id]: nextDecision }
     setPicker(null)
-    if (living.every((seat) => next[seat.id] && (seat.id === player.id || confirmedIds.has(seat.id)))) {
+    if (requiredIds.every((id) => next[id] && (id === player.id || confirmedIds.has(id)))) {
       onResolve(next)
       return
     }
@@ -89,15 +101,11 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                 {confirmed && decision ? <p className="campfire__choice-status" role="status">
                   {player.name} chose to {choiceLabel(decision.choice)}.
                 </p> : <>
-                {blocked ? <button type="button"
-                  className={decision?.choice === 'leave' ? 'is-chosen' : ''}
-                  onClick={() => confirmDecision({ choice: 'leave' })}>
-                  Leave <span className="muted">No campfire action available</span>
-                </button> : null}
+                {blocked && !rubyAvailable ? <p className="campfire__choice-status" role="status">No Campfire action to resolve.</p> : null}
                 <button
                   type="button"
                   className={decision?.choice === 'rest' ? 'is-chosen' : ''}
-                  disabled={restBlocked}
+                  disabled={!restAvailable}
                   onClick={() => {
                     const next: Decision = { choice: 'rest' }
                     if (peacePipe || straightRazor) {
@@ -115,6 +123,10 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                   className={decision?.choice === 'ruby' ? 'is-chosen' : ''}
                   onClick={() => confirmDecision({ choice: 'ruby' })}
                 >◆ Ruby Key <span className="muted">skip campfire</span></button> : null}
+                {rubyDeclineOnly ? <button type="button" className={decision?.choice === 'leave' ? 'is-chosen' : ''}
+                  onClick={() => confirmDecision({ choice: 'leave' })}>
+                  Leave <span className="muted">decline Ruby Key</span>
+                </button> : null}
                 <button
                   type="button"
                   className={decision?.choice === 'smith' ? 'is-chosen' : ''}
@@ -135,7 +147,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
 
       {player && decision && picker ? <CardPicker
         cards={picker === 'upgrade' ? upgradable : player.deck.filter((card) => picker === 'remove'
-          ? card.defId !== 'ascenders_bane' : card.defId !== 'ascenders_bane' && card.uid !== decision.removeCardUid)}
+          ? card.defId !== 'ascenders_bane' : !cardIsCurse(card.defId) && card.uid !== decision.removeCardUid)}
         verb={picker === 'upgrade' ? 'Upgrade' : picker === 'remove' ? 'Remove' : 'Transform'}
         selectedCardUids={[picker === 'upgrade' ? decision.cardUid : picker === 'remove' ? decision.removeCardUid : decision.transformCardUid]
           .filter((uid): uid is string => Boolean(uid))}

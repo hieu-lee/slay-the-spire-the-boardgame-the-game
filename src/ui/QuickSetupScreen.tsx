@@ -1,8 +1,9 @@
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { cardIsCurse } from '../game/cards.ts'
 import type { QuickStartStep } from '../game/meta.ts'
-import { canUpgradeCard } from '../game/run.ts'
+import { availableTransformRewards, canUpgradeCard } from '../game/run.ts'
 import type { CardInstance, Player } from '../game/types.ts'
+import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
 import { Card } from './Card.tsx'
 
 type QuickSetup = Readonly<{
@@ -20,8 +21,9 @@ type Props = Readonly<{
   players: readonly Player[]
   currentStep: QuickStartStep | null
   enabled?: boolean
+  transformAvailable?: boolean
   disabledMessage?: string
-  onAdvance: (cardUids?: string[]) => void
+  onAdvance: (cardUids?: string[]) => void | Promise<ActionOutcome>
 }>
 
 const STEP_LABELS: Record<QuickStartStep['kind'], string> = {
@@ -47,7 +49,8 @@ function selectableCards(player: Player | undefined, kind: QuickStartStep['kind'
   return []
 }
 
-export function QuickSetupScreen({ setup, players, currentStep, enabled = true, disabledMessage, onAdvance }: Props) {
+export function QuickSetupScreen({ setup, players, currentStep, enabled = true, transformAvailable,
+  disabledMessage, onAdvance }: Props) {
   const titleId = useId()
   const activePlayerId = setup.playerIds[setup.playerIndex]
   const activePlayer = players.find((player) => player.id === activePlayerId)
@@ -59,12 +62,42 @@ export function QuickSetupScreen({ setup, players, currentStep, enabled = true, 
     [activePlayer, selectionKind],
   )
   const [selectedUid, setSelectedUid] = useState<string | null>(null)
+  const submittedAutomaticStep = useRef('')
+  const [automaticRetry, setAutomaticRetry] = useState(0)
   useEffect(() => setSelectedUid(null), [setup.rowIndex, setup.repeatIndex, setup.playerIndex, setup.die?.value, setup.die?.effectIndex])
 
-  const actionLabel = currentStep?.kind === 'rollDie' && setup.die === null
-    ? 'Roll'
-    : selectionKind ? 'Confirm' : 'Continue'
-  const selectionRequired = selectionKind !== undefined && eligible.length > 0
+  const selectionRequired = selectionKind !== undefined && eligible.length > 0 &&
+    (selectionKind !== 'transform' || (transformAvailable ?? Boolean(activePlayer &&
+      availableTransformRewards(activePlayer) > 0)))
+  const automaticStep = `${setup.rowIndex}/${setup.repeatIndex}/${setup.playerIndex}/${setup.die?.value ?? ''}/${setup.die?.effectIndex ?? ''}`
+  useEffect(() => {
+    if (!enabled) {
+      submittedAutomaticStep.current = ''
+      return
+    }
+    if (!currentStep || selectionRequired || submittedAutomaticStep.current === automaticStep) return
+    submittedAutomaticStep.current = automaticStep
+    const pending = onAdvance()
+    if (!pending) return
+    let timer = 0
+    const rearm = (outcome?: ActionOutcome) => {
+      if (submittedAutomaticStep.current !== automaticStep) return
+      if (outcome?.status === 'accepted') return
+      const next = outcome?.snapshot?.run
+      const nextSetup = next?.setup
+      const nextStep = nextSetup
+        ? `${nextSetup.rowIndex}/${nextSetup.repeatIndex}/${nextSetup.playerIndex}/${nextSetup.die?.value ?? ''}/${nextSetup.die?.effectIndex ?? ''}`
+        : ''
+      if (next && (next.phase !== 'setup' || nextStep !== automaticStep)) return
+      timer = window.setTimeout(() => {
+        if (submittedAutomaticStep.current !== automaticStep) return
+        submittedAutomaticStep.current = ''
+        setAutomaticRetry((attempt) => attempt + 1)
+      }, 250)
+    }
+    void pending.then(rearm, () => rearm())
+    return () => window.clearTimeout(timer)
+  }, [automaticRetry, automaticStep, currentStep, enabled, selectionRequired])
   const stepLabel = currentStep ? STEP_LABELS[currentStep.kind] : 'Setup complete'
   const quantity = currentStep?.kind === 'gold' ? ` · ${currentStep.count} Gold`
     : currentStep && currentStep.count > 1 ? ` · ${setup.repeatIndex + 1} of ${currentStep.count}` : ''
@@ -99,14 +132,14 @@ export function QuickSetupScreen({ setup, players, currentStep, enabled = true, 
         : <p className="quick-setup__empty" role="status">No eligible card. Continue to resolve this reward as a no-op.</p>}
     </fieldset> : null}
 
-    <button
+    {selectionRequired ? <button
       type="button"
       className="quick-setup__advance"
-      disabled={!enabled || (selectionRequired && selectedUid === null)}
-      onClick={() => onAdvance(selectionKind ? selectedUid ? [selectedUid] : [] : undefined)}
+      disabled={!enabled || selectedUid === null}
+      onClick={() => onAdvance(selectedUid ? [selectedUid] : [])}
     >
-      {actionLabel}
-    </button>
+      Confirm
+    </button> : enabled ? <p className="quick-setup__empty" role="status">Resolving automatically…</p> : null}
     {!enabled && disabledMessage ? <p className="quick-setup__empty" role="status">{disabledMessage}</p> : null}
   </section>
 }

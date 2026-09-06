@@ -184,6 +184,51 @@ const localNightTerrorsRestDisabled = await page.getByRole('button', { name: /^R
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  window.__campfireOriginalRun = structuredClone(run)
+  const original = run.players[0]
+  run.meta.ruleset = 'downfall'
+  run.meta.modifierIds = []
+  run.players = [
+    { ...structuredClone(original), id: 'dead-downfall-campfire', character: 'guardian', dead: true, hp: 0 },
+    { ...original, character: 'ironclad', dead: false, hp: 6, maxHp: 10,
+      relics: [{ defId: 'mark_of_pain', spent: false }, { defId: 'fusion_hammer', spent: false }] },
+  ]
+  debug.setRun(run)
+})
+const downfallSurvivorRest = await page.getByRole('button', { name: /^Rest/ }).isEnabled()
+check('a dead Downfall character keeps the authoritative Campfire ruleset for survivors', () => {
+  assert(downfallSurvivorRest, 'the surviving Mark of Pain player was incorrectly capped by base rules')
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(window.__campfireOriginalRun)
+  run.campaignProgress.actIV = 5
+  run.campaign.keys.ruby = false
+  run.players[0] = { ...run.players[0], hp: run.players[0].maxHp,
+    relics: [{ defId: 'coffee_dripper', spent: false }, { defId: 'fusion_hammer', spent: false }] }
+  debug.setRun(run)
+})
+const rubyOnlyTake = page.getByRole('button', { name: /Ruby Key skip campfire/ })
+const rubyOnlyLeave = page.getByRole('button', { name: /Leave.*decline Ruby Key/ })
+await rubyOnlyTake.waitFor()
+await rubyOnlyLeave.waitFor()
+await page.setViewportSize({ width: 844, height: 390 })
+await page.locator('.card-morph').waitFor({ state: 'detached' })
+const rubyOnlyContained = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
+await page.screenshot({ path: join(outDir, 'campfire-ruby-decline-horizontal-phone.png'), fullPage: true })
+await rubyOnlyLeave.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+const declinedRubyKey = await page.evaluate(() => window.__STS_DEBUG__.getRun().campaign.keys.ruby)
+const rubyOnlyClosed = await rubyOnlyTake.count()
+check('an optionless solo player can decline Ruby without overflowing a horizontal phone', () => {
+  assertEqual(rubyOnlyClosed, 0, 'the campfire remained open after Leave')
+  assert(rubyOnlyContained)
+  assertEqual(declinedRubyKey, false)
+})
+await page.setViewportSize({ width: 1100, height: 760 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.phase = 'setup'
   run.setup = { ...run.setup, rowIndex: 3, repeatIndex: 0, playerIndex: 0, die: null }
   debug.setRun(run)
@@ -195,6 +240,15 @@ await page.locator('.quick-setup__cards .card').first().click()
 const localSetupSelectionEnables = await localSetupConfirm.isEnabled()
 const localSetupContained = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
 await page.screenshot({ path: join(outDir, 'quick-start-active-desktop.png'), fullPage: true })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players = run.players.map((player) => ({ ...player, cardRewards: ['golden_ticket'], rareRewards: [] }))
+  run.setup = { ...run.setup, rowIndex: 3, repeatIndex: 0, playerIndex: 0, die: null }
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().setup?.rowIndex !== 3)
+const impossibleSetupTransformPrompts = await page.getByRole('heading', { name: 'Transform a card' }).count()
 
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__)
@@ -375,6 +429,7 @@ check('meta setup, achievements, and compact title layout survive real local nav
   assert(localNightTerrorsRestDisabled, 'Night Terrors left Rest available at the Campfire')
   assert(localSetupRequiresCard && localSetupSelectionEnables, 'Quick Start card selection did not gate confirmation')
   assert(localSetupContained, 'Quick Start cards escaped the desktop viewport')
+  assertEqual(impossibleSetupTransformPrompts, 0, 'Quick Start rendered an unusable Transform choice')
   assert(!compactMetaFrame.documentOverflow && compactMetaFrame.optionsContained && compactMetaFrame.panelContained,
     'Custom options or their meta panel escaped the 720×360 title frame')
 })
@@ -500,13 +555,15 @@ const localNeowCompact = await page.evaluate(() => ({
 }))
 await page.setViewportSize({ width: 1024, height: 768 })
 const localNeowMinimumDesktopOverlap = await readNeowFaceActionOverlap()
-const localNeowMinimumDesktopFacesVisible = await page.evaluate(() => {
-  const stage = document.querySelector('.neow-screen')?.getBoundingClientRect()
-  return Boolean(stage) && [...document.querySelectorAll('.neow-face')].every((face) => {
+const localNeowMinimumDesktopLayout = await page.evaluate(() => ({
+  viewportHeight: innerHeight,
+  faces: [...document.querySelectorAll('.neow-face')].map((face) => {
     const box = face.getBoundingClientRect()
-    return box.top >= stage.top && box.bottom <= stage.bottom + 1
-  })
-})
+    return { top: box.top, bottom: box.bottom }
+  }),
+}))
+const localNeowMinimumDesktopFacesVisible = localNeowMinimumDesktopLayout.faces.every((box) =>
+  box.top >= 0 && box.bottom <= localNeowMinimumDesktopLayout.viewportHeight + 1)
 await page.screenshot({ path: join(outDir, 'neow-4p-minimum-desktop.png'), fullPage: true })
 await page.setViewportSize({ width: 1280, height: 800 })
 check('local Neow exposes every dealt face while Card Rewards use the private shared picker', () => {
@@ -527,7 +584,8 @@ check('local Neow exposes every dealt face while Card Rewards use the private sh
   assert(!localNeowCompact.overflow, 'Neow overflowed the compact desktop viewport')
   assertEqual(localNeowCompact.actionOverlap, false, 'Neow actions cover a compact-desktop dealt card')
   assertEqual(localNeowMinimumDesktopOverlap, false, 'Neow actions cover a minimum-desktop dealt card')
-  assert(localNeowMinimumDesktopFacesVisible, 'a minimum-desktop Neow face is clipped')
+  assert(localNeowMinimumDesktopFacesVisible,
+    `a minimum-desktop Neow face is clipped: ${JSON.stringify(localNeowMinimumDesktopLayout)}`)
   assert(localNeowCompact.target >= 44, 'Neow exposed a desktop control shorter than 44px')
 })
 check('Neow action labels keep readable computed contrast in every enabled state', () => {
@@ -2571,30 +2629,37 @@ check("N'loth keeps its singular Potion payment valid when another Potion is cho
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  run.players[0] = { ...run.players[0], relics: [], potions: [] }
+  run.players = run.players.map((player) => ({ ...player, relics: [], potions: [] }))
   run.roomState = { kind: 'event', card: { id: 'nloth', instanceId: 'browser-nloth-empty', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: "N'loth", scope: 'player', options: [
     { id: 'offer_relic', label: 'Offer', description: 'Give a random Relic. Gain a Rare Reward.', effects: [{ tag: 'lose-relic', random: true }, { tag: 'rare-reward' }] },
   ] }, decisions: {}, dieRolls: {} }
   debug.setRun(run)
 })
-const emptyNlothDisabled = await page.getByRole('button', { name: /random Relic/ }).isDisabled()
+const emptyNlothSettled = await page.waitForFunction(() => {
+  const run = window.__STS_DEBUG__.getRun()
+  return run.phase === 'map' && run.roomState === null
+}).then(() => true)
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  run.phase = 'room'
   run.roomState = { kind: 'event', card: { id: 'forgotten_altar', instanceId: 'browser-forgotten-empty', act: 2, minAscension: 3, requiresColorlessUnlock: false, name: 'Forgotten Altar', scope: 'player', options: [
     { id: 'offer', label: 'Offer', description: 'Lose your selected Relic. Gain a Relic.', effects: [{ tag: 'lose-relic', random: true }, { tag: 'gain-relic' }] },
   ] }, decisions: {}, dieRolls: {}, revealedRelics: {} }
   debug.setRun(run)
 })
-const emptyAltarDisabled = await page.getByRole('button', { name: /Lose your selected Relic/ }).isDisabled()
-check('random Relic payments disable when no Relic can be offered', () => {
-  assert(emptyNlothDisabled)
-  assert(emptyAltarDisabled)
+const emptyAltarSettled = await page.waitForFunction(() => {
+  const run = window.__STS_DEBUG__.getRun()
+  return run.phase === 'map' && run.roomState === null
+}).then(() => true)
+check('impossible random Relic payments advance without a redundant action', () => {
+  assert(emptyNlothSettled && emptyAltarSettled)
 })
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  run.phase = 'room'
   const actor = run.players[0]
   run.players[0] = { ...actor, relics: [{ defId: 'anchor', spent: false }] }
   run.roomState = { kind: 'event', card: { id: 'nloth', instanceId: 'browser-nloth-random-relic', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: "N'loth", scope: 'player', options: [
@@ -2770,7 +2835,9 @@ const skullConfirmRevalidated = await skullConfirm.isDisabled()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  run.players = run.players.map((player) => ({ ...player, cardRewards: [], rareRewards: [] }))
+  run.players = run.players.map((player) => ({ ...player, cardRewards: [], rareRewards: [],
+    relics: player.relics.some((relic) => relic.defId === 'prismatic_shard')
+      ? player.relics : [...player.relics, { defId: 'prismatic_shard', spent: false }] }))
   run.itemDecks.colorless = []
   run.itemDecks.characterCards = Object.fromEntries(Object.keys(run.itemDecks.characterCards).map((id) => [id, []]))
   run.itemDecks.characterRares = Object.fromEntries(Object.keys(run.itemDecks.characterRares).map((id) => [id, []]))
@@ -2780,32 +2847,42 @@ await page.evaluate(() => {
   ] }, decisions: {}, dieRolls: {}, availableRewardSources: { card: [], rare: [] } }
   debug.setRun(run)
 })
-await page.getByRole('button', { name: /No legal choice/ }).waitFor()
+const exhaustedPrismaticSettled = await page.waitForFunction(() => {
+  const run = window.__STS_DEBUG__.getRun()
+  return run.phase === 'map' && run.roomState === null
+}).then(() => true)
 const exhaustedPrismaticEvent = {
-  normalDisabled: await page.getByRole('button', { name: /\[Skim\]/ }).isDisabled(),
-  rareDisabled: await page.getByRole('button', { name: /\[Take\]/ }).isDisabled(),
-  escapeVisible: await page.getByRole('button', { name: /No legal choice/ }).isVisible(),
+  settled: exhaustedPrismaticSettled,
+  redundantActions: await page.getByRole('button', { name: /No legal choice/ }).count(),
 }
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  run.players[0] = {
-    ...run.players[0],
+  run.phase = 'room'
+  run.players = run.players.map((player) => ({
+    ...player,
     gold: 3,
-    deck: run.players[0].deck.map((card) => ({ ...card, upgraded: true })),
-  }
+    deck: player.deck.map((card) => ({ ...card, upgraded: true })),
+  }))
   run.roomState = { kind: 'event', card: { id: 'the_cleric', instanceId: 'browser-cleric-no-upgrade', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'The Cleric', scope: 'player', options: [
     { id: 'prayer', label: 'Prayer', description: 'Pay 2 Gold. Upgrade a card.', effects: [{ tag: 'pay-gold', amount: 2 }, { tag: 'upgrade-card' }] },
   ] }, decisions: {}, dieRolls: {} }
   debug.setRun(run)
 })
-const impossiblePrayerDisabled = await page.getByRole('button', { name: /\[Prayer\]/ }).isDisabled()
-const impossiblePrayerEscape = await page.getByRole('button', { name: /No legal choice/ }).isVisible()
+const impossiblePrayerSettled = await page.waitForFunction(() => {
+  const run = window.__STS_DEBUG__.getRun()
+  return run.phase === 'map' && run.roomState === null
+}).then(() => true)
+const impossiblePrayer = {
+  settled: impossiblePrayerSettled,
+  redundantActions: await page.getByRole('button', { name: /No legal choice/ }).count(),
+}
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  run.phase = 'room'
   run.players = run.players.map((player) => ({ ...player, gold: 0 }))
   run.roomState = { kind: 'event', card: { id: 'designer', instanceId: 'browser-focus-enabled', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Designer In-Spire', scope: 'player', options: [
     { id: 'pay', label: 'Pay', description: 'Pay 2 Gold.', effects: [{ tag: 'pay-gold', amount: 2 }] },
@@ -2823,10 +2900,10 @@ check('Event source and focus controls expose only legal actions', () => {
   assert(skimEnabledWithOrdinarySources && takeDisabledWithoutRareSources && takeEnabledWithRareSources,
     'mixed normal/Rare Event options did not gate their own Prismatic source choices')
   assert(skullConfirmReady && skullConfirmRevalidated, 'Knowing Skull Confirm ignored its selected Prismatic reward requirements')
-  assert(exhaustedPrismaticEvent.normalDisabled && exhaustedPrismaticEvent.rareDisabled && exhaustedPrismaticEvent.escapeVisible,
-    'exhausted Prismatic Event rewards hid the no-legal-choice escape')
-  assert(impossiblePrayerDisabled && impossiblePrayerEscape,
-    'The Cleric enabled an upgrade choice that the engine would reject')
+  assert(exhaustedPrismaticEvent.settled)
+  assertEqual(exhaustedPrismaticEvent.redundantActions, 0)
+  assert(impossiblePrayer.settled)
+  assertEqual(impossiblePrayer.redundantActions, 0)
   assert(focusedLegalEventOption.includes('[Punch!]'), 'Event did not focus its first enabled option')
 })
 
@@ -2867,15 +2944,23 @@ await page.evaluate(() => {
   run.roomState.decisions[teammate.id] = { optionIds: ['donut'] }
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.querySelector('.card-picker__confirm')?.disabled === true)
+await liveEventConfirm.evaluate((button) => new Promise((resolve) => {
+  if (button.disabled) return resolve()
+  const observer = new MutationObserver(() => {
+    if (!button.disabled) return
+    observer.disconnect()
+    resolve()
+  })
+  observer.observe(button, { attributes: true, attributeFilter: ['disabled'] })
+}))
 const liveEventConfirmAfterClaim = await liveEventConfirm.isDisabled()
 const focusedSelectionAfterClaim = await page.evaluate(() => document.activeElement?.closest('.card-picker') !== null)
 check('Event focus and an open picker react when a teammate claims a unique option', () => {
-  assert(liveEventFocus.includes('[Donut]'))
-  assert(liveEventConfirmBeforeClaim)
+  assert(liveEventFocus.includes('[Donut]'), `Event focus was ${JSON.stringify(liveEventFocus)}`)
+  assert(liveEventConfirmBeforeClaim, 'the unique Event choice did not start confirmable')
   assertEqual(liveEventConfirmIsTick, 1)
   assertEqual(liveEventConfirmTooltip, null)
-  assert(liveEventConfirmAfterClaim)
+  assert(liveEventConfirmAfterClaim, 'the claimed unique Event choice stayed confirmable')
   assert(focusedSelectionBeforeClaim && focusedSelectionAfterClaim, 'a teammate update stole focus from the active Event resolver')
 })
 
@@ -2967,23 +3052,15 @@ await page.evaluate(() => {
   run.roomState = { kind: 'event', card: { id: 'old_beggar', instanceId: 'browser-no-choice', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Old Beggar', scope: 'player', options: [{ id: 'give', label: 'Give', description: 'Pay 2 Gold. Remove a card.', effects: [{ tag: 'pay-gold', amount: 2 }, { tag: 'remove-card' }] }] }, decisions: {}, dieRolls: {} }
   debug.setRun(run)
 })
-const unaffordableEventOptionDisabled = await page.getByRole('button', { name: /\[Give\]/ }).isDisabled()
-const noChoicePlayerIds = await page.evaluate(() => window.__STS_DEBUG__.getRun().players.filter((player) => !player.dead).map((player) => player.id))
-for (const [index, playerId] of noChoicePlayerIds.entries()) {
-  await page.evaluate((id) => window.__STS_DEBUG__.setViewer(id), playerId)
-  await page.getByRole('button', { name: /No legal choice/ }).click()
-  await page.waitForFunction(
-    ({ id, last }) => last
-      ? window.__STS_DEBUG__.getRun().roomState === null
-      : Boolean(window.__STS_DEBUG__.getRun().roomState?.decisions?.[id]),
-    { id: playerId, last: index === noChoicePlayerIds.length - 1 },
-  )
-}
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().roomState === null)
-const skippedEventPhase = await page.evaluate(() => window.__STS_DEBUG__.getRun().phase)
-check('an Event with no legal Pay or Give option disables it and exposes a bounded leave action', () => {
-  assert(unaffordableEventOptionDisabled, 'unaffordable Event payment remained enabled')
-  assertEqual(skippedEventPhase, 'map')
+const skippedEvent = await page.evaluate(() => ({
+  phase: window.__STS_DEBUG__.getRun().phase,
+  redundantActions: document.querySelectorAll('button').length && [...document.querySelectorAll('button')]
+    .filter((button) => button.textContent?.includes('No legal choice')).length,
+}))
+check('an Event with no legal Pay or Give option advances without a redundant action', () => {
+  assertEqual(skippedEvent.redundantActions, 0)
+  assertEqual(skippedEvent.phase, 'map')
 })
 
 await page.evaluate(() => {
@@ -3360,7 +3437,7 @@ await guestLobbyPage.getByRole('heading', { name: 'Transform a card' }).waitFor(
 const activeSetupConfirm = lobbyPage.getByRole('button', { name: 'Confirm' })
 const waitingSetupConfirm = guestLobbyPage.getByRole('button', { name: 'Confirm' })
 const activeSetupRequiresCard = await activeSetupConfirm.isDisabled()
-const waitingSetupDisabled = await waitingSetupConfirm.isDisabled()
+const waitingSetupControls = await waitingSetupConfirm.count()
 const waitingSetupStatus = await guestLobbyPage.getByRole('status').filter({ hasText: 'Waiting for Ann' }).count()
 const waitingSetupFalseNoOp = await guestLobbyPage.getByText(/No eligible card/).count()
 const onlineModifierSummary = await lobbyPage.locator('.run-modifiers > summary').textContent()
@@ -3375,7 +3452,8 @@ await guestLobbyPage.waitForFunction(() => [...document.querySelectorAll('.quick
   ![...document.querySelectorAll('.quick-setup [role="status"]')].some((status) => status.textContent?.includes('Waiting for Ann')))
 check('online Quick Setup exposes only the active seat controls and keeps hidden foreign decks neutral', () => {
   assert(activeSetupRequiresCard, 'active Transform did not require a card')
-  assert(waitingSetupDisabled && waitingSetupStatus === 1, 'foreign seat was not held on an explicit waiting state')
+  assert(waitingSetupControls === 0 && waitingSetupStatus === 1,
+    'foreign seat was not held without redundant controls on an explicit waiting state')
   assertEqual(waitingSetupFalseNoOp, 0, 'redacted foreign deck was falsely described as having no eligible cards')
   assert(onlineModifierSummary?.includes('Custom Run · 2 modifiers'))
   assert(waitingSetupContained, 'Quick Setup waiting state overflowed compact desktop')
@@ -3546,6 +3624,20 @@ for (const seat of onlineSeats) {
   onlinePages.push(onlinePage)
 }
 const [ann, bo] = onlinePages
+async function refuseFirstAutomaticAction(kind) {
+  let attempts = 0
+  const handler = async (route) => {
+    if (route.request().postDataJSON()?.action?.kind !== kind) return route.continue()
+    attempts += 1
+    if (attempts === 1) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'transient test refusal' }) })
+    return route.continue()
+  }
+  await ann.route('**/api/rooms/*/action', handler)
+  return { attempts: () => attempts, stop: () => ann.unroute('**/api/rooms/*/action', handler) }
+}
+async function waitForAutomaticRetry(probe) {
+  for (let attempt = 0; attempt < 100 && probe() < 2; attempt++) await ann.waitForTimeout(50)
+}
 liveRoom.run.players = liveRoom.run.players.map((player, index) => ({ ...player, gold: index === 0 ? 1 : 0 }))
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
@@ -3879,6 +3971,68 @@ check('online Prismatic reward selections reconcile after another seat exhausts 
   assert(onlineRewardSelectionReconciled.disabled)
 })
 
+const automaticRetryErrorStart = failures.length
+const setupRetry = await refuseFirstAutomaticAction('setupStep')
+const setupRetryDeck = liveRoom.run.players[0].deck
+liveRoom.run.phase = 'setup'
+liveRoom.run.roomState = null
+liveRoom.run.players[0].deck = liveRoom.run.players[0].deck.map((card) => ({ ...card, defId: 'ascenders_bane', upgraded: true }))
+liveRoom.run.setup = { kind: 'quick-start', targetAct: 2, playerIds: onlineSeats.map((seat) => seat.playerId), rowIndex: 3, repeatIndex: 0, playerIndex: 0, die: null }
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await waitForAutomaticRetry(setupRetry.attempts)
+await setupRetry.stop()
+const setupRetryPlayerIndex = liveRoom.run.setup?.playerIndex
+liveRoom.run.players[0].deck = setupRetryDeck
+check('automatic Quick Setup retries a transient authoritative refusal', () => {
+  assertEqual(setupRetryPlayerIndex, 1)
+  assertEqual(setupRetry.attempts(), 2)
+})
+
+const relicRetry = await refuseFirstAutomaticAction('relicReward')
+liveRoom.run.phase = 'room'
+liveRoom.run.setup = null
+liveRoom.run.roomState = {
+  kind: 'treasure', offers: Object.fromEntries(onlineSeats.map((seat) => [seat.playerId, null])),
+  playerIds: onlineSeats.map((seat) => seat.playerId),
+  decisions: Object.fromEntries(onlineSeats.slice(1).map((seat) => [seat.playerId, 'skip'])),
+}
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await waitForAutomaticRetry(relicRetry.attempts)
+await relicRetry.stop()
+const relicRetryPhase = liveRoom.run.phase
+check('automatic Relic skip retries a transient authoritative refusal', () => {
+  assertEqual(relicRetryPhase, 'map')
+  assertEqual(relicRetry.attempts(), 2)
+})
+
+const eventRetry = await refuseFirstAutomaticAction('eventSkip')
+liveRoom.run.phase = 'room'
+liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, gold: 0 }))
+liveRoom.run.roomState = {
+  kind: 'event', card: { id: 'old_beggar', instanceId: 'browser-event-retry', act: 2, minAscension: 0,
+    requiresColorlessUnlock: false, name: 'Old Beggar', scope: 'player', options: [
+      { id: 'give', label: 'Give', description: 'Pay 2 Gold.', effects: [{ tag: 'pay-gold', amount: 2 }] },
+    ] },
+  decisions: Object.fromEntries(onlineSeats.slice(1).map((seat) => [seat.playerId, { optionIds: ['give'] }])),
+  dieRolls: {},
+}
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await waitForAutomaticRetry(eventRetry.attempts)
+await eventRetry.stop()
+const eventRetryPhase = liveRoom.run.phase
+check('automatic Event exit retries a transient authoritative refusal', () => {
+  assertEqual(eventRetryPhase, 'map')
+  assertEqual(eventRetry.attempts(), 2)
+})
+const automaticRetryErrors = failures.splice(automaticRetryErrorStart)
+check('deliberate automatic-action refusals produced only their expected 409 responses', () => {
+  assertEqual(automaticRetryErrors.length, 3)
+  assert(automaticRetryErrors.every((failure) => failure.includes('409 (Conflict)')), automaticRetryErrors.join('\n'))
+})
+
 liveRoom.run.phase = 'room'
 liveRoom.run.roomState = {
   kind: 'treasure', offers: {}, playerIds: onlineSeats.map((seat) => seat.playerId),
@@ -3950,12 +4104,15 @@ const onlineSkullRevalidated = await onlineSkullConfirm.isDisabled()
 check('online Knowing Skull revalidates selected Prismatic sources after another seat exhausts one', () => assert(onlineSkullRevalidated))
 
 const onlineEventRewardSupply = {
-  players: liveRoom.run.players.map((player) => ({ cardRewards: [...player.cardRewards], rareRewards: [...player.rareRewards] })),
+  players: liveRoom.run.players.map((player) => ({ cardRewards: [...player.cardRewards], rareRewards: [...player.rareRewards], relics: [...player.relics] })),
   colorless: [...liveRoom.run.itemDecks.colorless],
   characterCards: structuredClone(liveRoom.run.itemDecks.characterCards),
   characterRares: structuredClone(liveRoom.run.itemDecks.characterRares),
 }
-liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, cardRewards: [], rareRewards: [] }))
+const automaticEventConflictStart = failures.length
+liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, cardRewards: [], rareRewards: [],
+  relics: player.relics.some((relic) => relic.defId === 'prismatic_shard')
+    ? player.relics : [...player.relics, { defId: 'prismatic_shard', spent: false }] }))
 liveRoom.run.itemDecks.colorless = []
 liveRoom.run.itemDecks.characterCards = Object.fromEntries(Object.keys(liveRoom.run.itemDecks.characterCards).map((id) => [id, []]))
 liveRoom.run.itemDecks.characterRares = Object.fromEntries(Object.keys(liveRoom.run.itemDecks.characterRares).map((id) => [id, []]))
@@ -3967,13 +4124,14 @@ liveRoom.run.roomState = {
 }
 liveRoom.version += 1
 rooms.publishRoom(create.snapshot.code)
-await ann.getByRole('button', { name: /No legal choice/ }).waitFor()
+await ann.locator('.map').waitFor()
 const onlineExhaustedPrismaticEvent = {
-  normalDisabled: await ann.getByRole('button', { name: /\[Skim\]/ }).isDisabled(),
-  rareDisabled: await ann.getByRole('button', { name: /\[Take\]/ }).isDisabled(),
+  phase: liveRoom.run.phase,
+  redundantActions: await ann.getByRole('button', { name: /No legal choice/ }).count(),
 }
-check('online exhausted normal and Rare Prismatic Events expose the authoritative escape', () => {
-  assert(onlineExhaustedPrismaticEvent.normalDisabled && onlineExhaustedPrismaticEvent.rareDisabled)
+check('online exhausted normal and Rare Prismatic Events advance without an action', () => {
+  assertEqual(onlineExhaustedPrismaticEvent.phase, 'map')
+  assertEqual(onlineExhaustedPrismaticEvent.redundantActions, 0)
 })
 liveRoom.run.players = liveRoom.run.players.map((player, index) => ({ ...player, ...onlineEventRewardSupply.players[index] }))
 liveRoom.run.itemDecks.colorless = onlineEventRewardSupply.colorless
@@ -4173,18 +4331,19 @@ await onlinePrayerPicker.locator('.card-picker__preview').waitFor()
 const onlinePrayerPreviewCards = await onlinePrayerPicker.locator('.card-picker__preview > .card').count()
 const onlinePrayerConfirm = onlinePrayerPicker.getByRole('button', { name: 'Confirm Event card' })
 const onlinePrayerInitiallyReady = await onlinePrayerConfirm.isEnabled()
-liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, gold: 0 }))
-liveRoom.version += 1
-rooms.publishRoom(liveRoom.code)
-await ann.waitForFunction(() => document.querySelector('.card-picker[role="dialog"] .card-picker__confirm')?.disabled === true)
-const onlinePrayerInvalidated = await onlinePrayerConfirm.isDisabled()
-check('an open online Event picker disables when authoritative availability changes', () => {
-  assert(onlinePrayerInitiallyReady, 'the valid Event upgrade did not start ready')
-  assert(onlinePrayerInvalidated, 'the Event upgrade stayed enabled after its payment became unaffordable')
-  assertEqual(onlinePrayerPreviewCards, 2, 'the Event upgrade did not retain its before/after preview')
-})
+  liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, gold: 0 }))
+  liveRoom.version += 1
+  rooms.publishRoom(liveRoom.code)
+  await ann.locator('.map').waitFor()
+  const onlinePrayerPickerDismissed = await onlinePrayerPicker.count()
+  check('an open online Event picker closes when its owner no longer has a legal action', () => {
+    assert(onlinePrayerInitiallyReady, 'the valid Event upgrade did not start ready')
+    assertEqual(onlinePrayerPickerDismissed, 0, 'the unaffordable Event upgrade did not auto-settle')
+    assertEqual(onlinePrayerPreviewCards, 2, 'the Event upgrade did not retain its before/after preview')
+  })
 
-liveRoom.run.itemDecks.potions = ['swift_potion']
+  liveRoom.run.phase = 'room'
+  liveRoom.run.itemDecks.potions = ['swift_potion']
 liveRoom.run.roomState = {
   kind: 'event', card: { id: 'knowing_skull', instanceId: 'browser-online-skull-race', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Knowing Skull', scope: 'player', rule: 'Choose one or two options.', options: [
     { id: 'pick_me_up', label: 'Pick Me Up?', description: 'Gain a Potion. Lose 1 HP.', effects: [{ tag: 'gain-potion' }, { tag: 'lose-hp', amount: 1 }] },
@@ -4243,12 +4402,17 @@ await di.waitForFunction(() => [...document.querySelectorAll('button')].some((bu
 const repeatEventPledgeDisabled = await di.getByRole('button', { name: /Contribute/ }).isDisabled()
 await cy.reload({ waitUntil: 'networkidle' })
 await cy.getByRole('button', { name: /Contribute/ }).click()
-await ann.getByText(/choice is locked/i).waitFor()
+await ann.locator('.map').waitFor()
+await ann.waitForTimeout(100)
+const automaticEventFailures = failures.splice(automaticEventConflictStart)
 check('paid Event funding preserves the chooser action without leaking it to contributors', () => {
   assert(repeatEventPledgeDisabled, 'Event repeat contribution could replace an existing payer total')
   assert(!JSON.stringify(contributorSnapshot.eventPledge).includes(removedUid))
   assertEqual(liveRoom.run.players[0].deck.length, deckSize - 1)
   assertEqual(liveRoom.run.players[1].gold, 0)
+})
+check('concurrent automatic Event settlement only races through recoverable room conflicts', () => {
+  assert(automaticEventFailures.every((failure) => failure.includes('409 (Conflict)')), automaticEventFailures.join('\n'))
 })
 liveRoom.run.phase = 'victory'
 liveRoom.run.campaign = { ...liveRoom.run.campaign, finalized: true }

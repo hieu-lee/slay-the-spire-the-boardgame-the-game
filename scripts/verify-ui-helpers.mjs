@@ -5,7 +5,15 @@ import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
 import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import { POTIONS } from '../src/game/relics.ts'
-import { bossAttackMotionFor, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from '../src/ui/combat-vfx.ts'
+import {
+  bossAttackMotionFor,
+  cardVfxRecipe,
+  orbVfxRecipe,
+  potionVfxRecipe,
+  turnEffectVfxRecipe,
+  vfxAssetPath,
+  vfxToneColor,
+} from '../src/ui/combat-vfx.ts'
 import { CHARACTER_IDS } from '../src/game/types.ts'
 import { cardSfxRecipe, potionSfxRecipe } from '../src/ui/combat-sfx.ts'
 import {
@@ -136,6 +144,10 @@ check('notable card identities stay distinct and portable between characters', (
   assert(cardVfxRecipe('defect', 'darkness').asset !== 'dark-channel')
   assertDeepEqual(['lightning', 'frost', 'dark'].map((orb) => orbVfxRecipe(orb).asset),
     ['lightning-channel', 'frost-channel', 'dark-channel'])
+  for (const sourceId of ['orb-end-turn', 'orb-evoke']) {
+    assertDeepEqual(['lightning', 'frost', 'dark'].map((orb) => orbVfxRecipe(orb, sourceId).asset),
+      ['turn-lightning-passive-impact', 'turn-frost-passive-impact', 'turn-dark-evoke-impact'])
+  }
   assert(cardVfxRecipe('watcher', 'vigilance').tone !== cardVfxRecipe('watcher', 'eruption').tone,
     'Calm and Wrath cannot be text-only palette twins')
   assert(cardVfxRecipe('silent', 'deadly_poison').family !== cardVfxRecipe('silent', 'blade_dance').family,
@@ -152,6 +164,16 @@ check('notable card identities stay distinct and portable between characters', (
   const defenseWhirl = cardVfxRecipe('slime_boss', 'guardian_guardian_whirl', undefined, false, 'skill')
   assertDeepEqual([defenseWhirl.family, defenseWhirl.actorMotion], ['block', 'recoil'],
     'a foreign Guardian variable card uses its resolved Defense-mode presentation')
+})
+
+check('turn-trigger semantics use dedicated impact assets', () => {
+  const effects = ['block', 'damage', 'burn', 'poison', 'weak', 'vulnerable', 'draw', 'discard', 'exhaust',
+    'buff', 'strength', 'heal', 'countdown', 'blockLoss', 'strengthLoss']
+  const assets = effects.map((effect) => turnEffectVfxRecipe(effect).asset)
+  assertDeepEqual(assets, effects.map((effect) =>
+    `turn-${effect.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-impact`))
+  assertEqual(new Set(assets).size, effects.length,
+    'distinct recurring mutations cannot collapse back to the same impact art')
 })
 
 check('all physical potion IDs have explicit VFX recipes', () => {

@@ -47,7 +47,8 @@ export function characterAttackContactMs(
   targetId: string,
   event?: CombatPresentationEvent,
 ): number {
-  if (!event || event.kind === 'potion' || event.kind === 'orb' || !event.enemyIds.includes(targetId)) return 0
+  if (!event || event.kind === 'potion' || event.kind === 'orb' || event.kind === 'turn' ||
+    !event.enemyIds.includes(targetId)) return 0
   if (event.kind === 'slime') return SLIME_COMMAND_CONTACT_MS + event.animationIndex * SLIME_COMMAND_ANIMATION_MS
   const actor = state.players.find((player) => player.id === event.actorId)
   if (!actor) return 0

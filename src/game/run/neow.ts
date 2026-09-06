@@ -24,6 +24,7 @@ import type { PotionRewardDecision, RewardSource, RunState } from './types.ts'
 import { bottomGuardianGems, queueNewGuardianSockets, revealGuardianDraftGems } from './guardian-gems.ts'
 import {
   addCard,
+  availableTransformRewards,
   bottomCardChoices,
   drawCardChoices,
   gainGold,
@@ -42,11 +43,6 @@ function neowCardOffer(player: Player, kind: 'card' | 'rare', look: 3 | 5 = 3, u
   if (kind === 'card') return { kind, ...drawCardChoices(player, look, replaceDuplicates), look, upgraded }
   const cardsDrawn = player.rareRewards.slice(0, look)
   return { kind, choices: [...cardsDrawn], cardsDrawn, raresDrawn: [], look, upgraded }
-}
-
-function availableTransformRewards(player: Pick<Player, 'cardRewards' | 'rareRewards'>): number {
-  return player.cardRewards.filter((id) => id !== GOLDEN_TICKET).length +
-    Math.min(player.cardRewards.filter((id) => id === GOLDEN_TICKET).length, player.rareRewards.length)
 }
 
 export function nextNeowReward(state: RunState, playerId: string): RunState {

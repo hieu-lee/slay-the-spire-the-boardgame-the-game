@@ -29,6 +29,7 @@ import {
   flushPendingTriggers,
   losePlayerHp,
   pendingTriggerSlimeEnemyChoiceCount,
+  publishTurnEffect,
   resolveOrbAtEndOfTurn,
   resolveQueuedTriggerSource,
   resolveSlimeCommand,
@@ -50,11 +51,20 @@ import {
   continueStartTurn,
   finishStartTurnDraw,
   resolveDueSummons,
+  stageStartTurnTriggerChoice,
   triggerTargets,
 } from './start-turn.ts'
 import { chooseEndTurnTarget, defaultEndTurnOrder, endTurnChoiceId, endTurnChoiceTarget } from './types.ts'
 import { cardHasRetain, mandatoryChoicePending } from './queries.ts'
-import type { CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PendingTriggerAbility, TriggerSource } from './types.ts'
+import type {
+  CombatState,
+  DiscardOrders,
+  EndTurnAbility,
+  EndTurnOrder,
+  PendingTriggerAbility,
+  TriggerSource,
+  TurnEffectPresentation,
+} from './types.ts'
 import { cardDef, faceOf } from '../cards.ts'
 import { gainBlock, gainWeak } from '../damage.ts'
 import { enemyAbilities, enemyDef } from '../enemies.ts'
@@ -217,6 +227,12 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
     ? livingEnemies(state).flatMap((enemy) => enemyAbilities(enemyDef(enemy.defId, enemy.ascension)))
       .find((ability) => ability.kind === 'fireBreathing')
     : undefined
+  const presentations = new Set<TurnEffectPresentation>()
+  const publishPresentations = () => {
+    for (const effect of presentations) {
+      publishTurnEffect(state, player.id, def.id, effect, { actorTargeted: true })
+    }
+  }
   for (const effect of def.handEndOfTurn ?? []) {
     if ('handSizeAtMost' in effect && effect.handSizeAtMost !== undefined &&
       player.hand.length > effect.handSizeAtMost) continue
@@ -226,6 +242,7 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
       const outcome = damagePlayer(state, player, amount)
       const lost = outcome.hpLost
       const blocked = block - player.block
+      if (lost > 0 || blocked > 0) presentations.add('damage')
       state.log = [...state.log, lost > 0
         ? `${def.name} damages ${player.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
         : outcome.fullyBlocked
@@ -233,26 +250,39 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
           : `${def.name} did no damage to ${player.name}${blocked > 0 ? ` (${blocked} blocked)` : ''}`]
     } else if (effect.kind === 'loseHp') {
       const lost = losePlayerHp(state, player, effect.amount, true)
-      if (lost > 0) state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} HP`]
+      if (lost > 0) {
+        presentations.add('damage')
+        state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} HP`]
+      }
     } else if (effect.kind === 'gainWeak') {
       if (!playerCanGainDebuffs(player)) continue
       const before = player.weak
       player.weak = gainWeak(player.weak, effect.amount)
       if (player.weak > before) {
+        presentations.add('weak')
         state.log = [...state.log, `${def.name}: ${player.name} gains ${player.weak - before} Weak`]
       }
     } else {
       const lost = Math.min(player.block, effect.amount)
       player.block -= lost
-      if (lost > 0) state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} Block`]
+      if (lost > 0) {
+        presentations.add('blockLoss')
+        state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} Block`]
+      }
     }
     if (player.dead) {
       state.log = [...state.log, `${player.name} has fallen`]
-      if (!fireBreathing) return
+      if (!fireBreathing) {
+        publishPresentations()
+        return
+      }
       break
     }
   }
-  if (!def.ethereal && !fireBreathing) return
+  if (!def.ethereal && !fireBreathing) {
+    publishPresentations()
+    return
+  }
 
   player.hand = player.hand.filter((card) => card.uid !== uid)
   const before = new Set(player.hand.map((card) => card.uid))
@@ -261,6 +291,8 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
   // end-turn/Ethereal text and are not discarded during this step.
   for (const card of player.hand) if (!before.has(card.uid)) card.endTurnProtected = true
   state.log = [...state.log, `${player.name} exhausts ${def.name}${def.ethereal ? ' (Ethereal)' : ''}`]
+  presentations.add('exhaust')
+  publishPresentations()
 }
 
 function continueEndPlayerTurn(
@@ -290,6 +322,7 @@ function continueEndPlayerTurn(
       return settle(next)
     }
     resolveFirst = false
+    const presentationActor = next.players.find((candidate) => !candidate.dead) ?? next.players[0]
     if (id.startsWith('poison:')) {
       const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(7))
       if (enemy && !enemy.dead && enemy.poison > 0) {
@@ -307,14 +340,19 @@ function continueEndPlayerTurn(
           enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'shift')) {
           grantShiftBlock(next, enemy, outcome.hpLost)
         }
+        if (outcome.hpLost > 0 && presentationActor) publishTurnEffect(next, presentationActor.id, 'poison', 'poison', {
+          enemyIds: [enemy.uid],
+        })
       }
     } else if (id.startsWith('beat:')) {
       const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(5) && !candidate.dead)
       const beat = enemy && enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
         .find((ability) => ability.kind === 'beatOfDeath')
       if (enemy && beat?.kind === 'beatOfDeath') {
+        const targetIds: string[] = []
         const amount = (enemy.abilityCubes ?? 0) * beat.damagePerCube
         for (const player of next.players.filter((candidate) => !candidate.dead)) {
+          const before = [player.hp, player.block, player.dead]
           const block = player.block
           const outcome = damagePlayer(next, player, amount)
           const lost = outcome.hpLost
@@ -322,11 +360,18 @@ function continueEndPlayerTurn(
           next.log = [...next.log, lost > 0
             ? `${enemyLabel(next.enemies, enemy)}'s Beat of Death hit ${player.name} for ${lost}${blocked ? ` (${blocked} blocked)` : ''}`
             : outcome.fullyBlocked ? `${player.name} blocked Beat of Death` : `Beat of Death did no damage to ${player.name}`]
+          if (player.hp !== before[0] || player.block !== before[1] || player.dead !== before[2]) {
+            targetIds.push(player.id)
+          }
           if (player.dead) {
             next.log = [...next.log, `${player.name} has fallen`]
             if (combatIsOver(next)) break
           }
         }
+        if (targetIds.length > 0 && presentationActor) publishTurnEffect(next, presentationActor.id, enemy.defId, 'damage', {
+          actorTargeted: targetIds.includes(presentationActor.id),
+          playerIds: targetIds.filter((playerId) => playerId !== presentationActor.id),
+        })
       }
     } else if (id.startsWith('berserk:')) {
       const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(8) && !candidate.dead)
@@ -340,6 +385,9 @@ function continueEndPlayerTurn(
           enemy.dead = true
           triggerEnemyDeath(next, enemy)
         }
+        if (outcome.hpLost > 0 && presentationActor) publishTurnEffect(next, presentationActor.id, enemy.defId, 'damage', {
+          enemyIds: [enemy.uid],
+        })
       }
     } else {
       const slash = id.indexOf('/')
@@ -359,6 +407,7 @@ function continueEndPlayerTurn(
             card.stasisRetained = true
             next.log = [...next.log,
               `${player.name}'s Stasis Engine Retains ${cardDef(card.defId).name}`]
+            publishTurnEffect(next, player.id, source!.presentationSourceId, 'buff', { actorTargeted: true })
           }
           continue
         }
@@ -399,12 +448,17 @@ function continueEndPlayerTurn(
         if (loss > 0) {
           player.strength -= loss
           next.log = [...next.log, `${player.name} loses ${loss} Strength at end of turn`]
+          publishTurnEffect(next, player.id, 'temporary-strength', 'strengthLoss', { actorTargeted: true })
         }
         player.strengthLossAtEndOfTurn = 0
       } else if (localId.startsWith('slime-vigor:')) {
         const slime = player.slimes.find((candidate) =>
           candidate.card.uid === localId.slice('slime-vigor:'.length))
-        if (slime) removeTemporarySlimeVigor(slime)
+        if (slime) {
+          const loss = slime.vigorLossAtEndOfTurn
+          removeTemporarySlimeVigor(slime)
+          if (loss > 0) publishTurnEffect(next, player.id, slime.card.defId, 'strengthLoss', { actorTargeted: true })
+        }
       } else if (localId.startsWith('slime:')) {
         const slime = player.slimes.find((candidate) => candidate.card.uid === localId.slice(6))
         if (slime) resolveSlimeCommand(next, player, slime, {
@@ -415,6 +469,7 @@ function continueEndPlayerTurn(
           continue
         }
       } else if (localId === 'wrath') {
+        const block = player.block
         const outcome = damagePlayer(next, player, 1)
         next.log = [...next.log, outcome.hpLost > 0
           ? `${player.name} takes 1 from Wrath`
@@ -422,6 +477,9 @@ function continueEndPlayerTurn(
             ? `${player.name} blocks the bite of Wrath`
             : `${player.name}'s Wrath did no damage`]
         if (player.dead) next.log = [...next.log, `${player.name} has fallen`]
+        if (outcome.hpLost > 0 || player.block < block) {
+          publishTurnEffect(next, player.id, 'wrath', 'damage', { actorTargeted: true })
+        }
       } else if (localId.startsWith('card:')) {
         resolveHandEndTurn(next, player, localId.slice(5))
       } else if (localId.startsWith('downfall-slimed:')) {
@@ -434,6 +492,7 @@ function continueEndPlayerTurn(
           if (lost > 0) next.log = [...next.log,
             `${enemyLabel(next.enemies, enemy)} makes ${player.name} lose ${lost} HP for Slimed in hand`]
           if (player.dead) next.log = [...next.log, `${player.name} has fallen`]
+          if (lost > 0) publishTurnEffect(next, player.id, enemy.defId, 'damage', { actorTargeted: true })
         }
       }
     }
@@ -491,15 +550,21 @@ function readsDiscardTop(card: CardInstance): boolean {
  * phase is the server's answer to this question; nothing in `src/ui/` should ask
  * it again.
  */
-export function discardNeedsChoice(player: Player): boolean {
+export function discardTopNeedsChoice(player: Player): boolean {
   if (player.dead) return false
-  if ((player.retainCardsThisTurn ?? 0) > 0) return true
   const discarding = player.hand.filter((card) => !card.endTurnProtected && !card.retainThisTurn &&
     !cardHasRetain(player, card))
   if (discarding.length <= 1) return false
   // Every pile, not just the hand: the card that cares may still be undrawn.
   return [player.hand, player.draw, player.discard, player.exhaust, player.powers, player.chamber]
     .some((pile) => pile.some(readsDiscardTop))
+}
+
+export function discardNeedsChoice(player: Player): boolean {
+  if (player.dead) return false
+  const discarding = player.hand.filter((card) => !card.endTurnProtected && !card.retainThisTurn &&
+    !cardHasRetain(player, card))
+  return (player.retainCardsThisTurn ?? 0) > 0 && discarding.length > 0 || discardTopNeedsChoice(player)
 }
 
 /** The next live target effect in the drag-to-resolve end-turn sequence. */
@@ -544,8 +609,12 @@ function prepareEndTurn(state: CombatState): CombatState {
   for (const player of next.players) {
     player.hand = player.hand.map(({ stasisRetained: _stasis, ...card }) => card)
     if (player.block === 0 && playerCanGainBlock(player) && player.relics.some((relic) => relic.defId === 'orichalcum')) {
+      const before = player.block
       player.block = gainBlock(player.block, 1)
-      next.log = [...next.log, `${player.name}'s Orichalcum grants 1 Block`]
+      if (player.block > before) {
+        next.log = [...next.log, `${player.name}'s Orichalcum grants 1 Block`]
+        publishTurnEffect(next, player.id, 'orichalcum', 'block', { actorTargeted: true })
+      }
     }
   }
   return next
@@ -783,6 +852,10 @@ export function resolvePendingTrigger(
     hermitChoices,
   )
   if (!resolved) return state
+  if (queued.startTurn) {
+    const key = `${queued.playerId}/${queued.sourceId}`
+    if (!next.powerTriggersUsedThisTurn.includes(key)) next.powerTriggersUsedThisTurn.push(key)
+  }
   flushPendingTriggers(next)
   const rollPending = next.startTurnProgress?.rollPending
   if (rollPending && (next.pendingTriggers.length === 0 || combatIsOver(next))) {
@@ -797,6 +870,10 @@ export function resolvePendingTrigger(
     return continueBeforeDraw(next)
   }
   const settled = settle(next)
+  if ((settled.pendingTriggers?.length ?? 0) === 0 && settled.phase === 'start') {
+    const staged = stageStartTurnTriggerChoice(settled)
+    if (staged !== settled) return staged
+  }
   if ((settled.pendingTriggers?.length ?? 0) === 0 && settled.phase === 'start' &&
     settled.startTurnProgress && !settled.startTurnProgress.forcedCard &&
     !settled.startTurnProgress.beforeDraw && !settled.startTurnProgress.rollPending &&

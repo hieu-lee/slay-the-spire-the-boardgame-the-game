@@ -42,18 +42,15 @@ check('Shiny queues Guardian Sockets during initial and Catch Up setup', () => {
   assertEqual(caught.guardianGemDeck.length, 24 - caught.pendingGuardianSockets.length)
 })
 
-check('Quick Start grants each player one row at a time and stages no future offer', () => {
+check('Quick Start skips deterministic Gold clicks and stages no future offer', () => {
   let run = createRun(32, party, 0, createCampaignProgress(), false, false, { quickStartAct: 2 })
   run = { ...run, phase: 'setup', neow: null }
   assertEqual(currentQuickSetupStep(run.setup).kind, 'gold')
   const before = run.players.map((player) => player.gold)
   run = advanceQuickSetup(run)
   assertEqual(run.players[0].gold, before[0] + 6)
-  assertEqual(currentQuickSetupStep(run.setup).kind, 'gold')
-  run = advanceQuickSetup(run)
   assertEqual(run.players[1].gold, before[1] + 6)
   assertEqual(currentQuickSetupStep(run.setup).kind, 'cardReward')
-  run = advanceQuickSetup(run)
   assertEqual(run.phase, 'reward')
   assertEqual(run.rewards.length, 1)
   assertEqual(run.rewards[0].choices, null)
@@ -64,12 +61,49 @@ check('Quick Start grants each player one row at a time and stages no future off
   assertEqual(run.setup.playerIndex, 1)
 })
 
-check('Quick Start die keeps only the public current result', () => {
+check('Quick Start rolls its die and advances directly to the resulting real choice', () => {
   let run = createRun(33, [party[0]], 0, createCampaignProgress(), false, false, { quickStartAct: 2 })
   run = { ...run, phase: 'setup', neow: null, setup: { ...run.setup, rowIndex: 4, playerIndex: 0, repeatIndex: 0, die: null } }
   run = advanceQuickSetup(run)
-  assert(run.setup.die && run.setup.die.value >= 1 && run.setup.die.value <= 6)
-  assert(currentQuickSetupStep(run.setup).kind !== 'rollDie')
+  assert(run.phase === 'reward' || currentQuickSetupStep(run.setup)?.kind === 'transform' ||
+    currentQuickSetupStep(run.setup)?.kind === 'upgrade' || currentQuickSetupStep(run.setup)?.kind === 'cardRemove')
+  assert(currentQuickSetupStep(run.setup)?.kind !== 'rollDie')
+})
+
+check('Quick Start skips an optionless card operation before revealing the next reward', () => {
+  let run = createRun(3301, [party[0]], 0, createCampaignProgress(), false, false, { quickStartAct: 2 })
+  run = {
+    ...run,
+    phase: 'setup',
+    neow: null,
+    players: run.players.map((player) => ({ ...player, deck: player.deck.map((card) => ({ ...card, upgraded: true })) })),
+    setup: { ...run.setup, rowIndex: 9, playerIndex: 0, repeatIndex: 0, die: null },
+  }
+  run = advanceQuickSetup(run)
+  assertEqual(run.phase, 'room')
+  assertEqual(run.roomState?.kind, 'merchant')
+})
+
+check('Quick Start and Catch Up skip Transform when the physical replacement supply is unusable', () => {
+  for (const kind of ['quick-start', 'catch-up']) {
+    let run = createRun(kind === 'quick-start' ? 3302 : 3303, [party[0]], 0,
+      createCampaignProgress(), false, false, { quickStartAct: 2 })
+    const owner = run.players[0]
+    run = {
+      ...run,
+      phase: 'setup',
+      neow: null,
+      players: [{ ...owner, cardRewards: ['golden_ticket'], rareRewards: [] }],
+      setup: { ...run.setup, kind, rowIndex: 3, playerIndex: 0, repeatIndex: 0, die: null },
+    }
+    const before = structuredClone(run)
+    assertEqual(advanceQuickSetup(run, [owner.deck[0].uid]), run,
+      `${kind} accepted a Transform that cannot draw a replacement`)
+    const skipped = advanceQuickSetup(run)
+    assert(currentQuickSetupStep(skipped.setup)?.kind !== 'transform', `${kind} retained an impossible Transform prompt`)
+    assertDeepEqual(skipped.players[0].deck, before.players[0].deck)
+    assertDeepEqual(skipped.players[0].cardRewards, ['golden_ticket'])
+  }
 })
 
 check('Catch Up admits new unique characters only at an untouched Act boundary', () => {

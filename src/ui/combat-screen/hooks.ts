@@ -519,7 +519,7 @@ export function usePersonalCombatSoundEffects(
     }
     if (motionCollapsed) for (const event of events) {
       if (!played.current.has(event.seq) || event.kind === 'potion' || event.kind === 'orb' ||
-        event.kind === 'slime') continue
+        event.kind === 'slime' || event.kind === 'turn') continue
       if ((impactDue.current.get(event.seq) ?? 0) <= performance.now()) continue
       const target = event.enemyIds[0]
       if (!target || characterAttackContactMs(state, target, event) <= 0) continue
@@ -552,6 +552,10 @@ export function usePersonalCombatSoundEffects(
         continue
       }
       if (event.kind === 'slime') {
+        played.current.add(event.seq)
+        continue
+      }
+      if (event.kind === 'turn') {
         played.current.add(event.seq)
         continue
       }

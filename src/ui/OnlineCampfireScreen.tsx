@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { assetPath, campfireScenePath } from '../game/assets.ts'
-import { canUpgradeCard } from '../game/run.ts'
+import { campfireNeedsDecision, campfireRestAvailable, canUpgradeCard } from '../game/run.ts'
+import { rulesetForCharacters } from '../game/meta.ts'
+import type { RuleSet } from '../game/meta.ts'
+import { cardIsCurse } from '../game/cards.ts'
 import type { ActionOutcome, PublicSeat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import type { CampfireDecision } from '../game/run.ts'
 import { CardPicker } from './CardPicker.tsx'
@@ -22,23 +25,30 @@ type Props = {
   onAction: (action: object) => Promise<ActionOutcome>
   rubyAvailable?: boolean
   restAllowed?: boolean
+  ruleset?: RuleSet
+  transformAvailable?: boolean
 }
 
-export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, rubyAvailable = false, restAllowed = true }: Props) {
+export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, rubyAvailable = false,
+  restAllowed = true, ruleset: requestedRuleset = 'base', transformAvailable = false }: Props) {
   const [decision, setDecision] = useState<Decision | null>(saved ?? null)
   const [picker, setPicker] = useState<'remove' | 'transform' | 'upgrade' | null>(null)
   const [actionPending, setActionPending] = useState(false)
   const actionPendingRef = useRef(false)
   const deck = player.deck ?? []
   const upgradable = deck.filter(canUpgradeCard)
-  const coffee = player.relics.some((relic) => relic.defId === 'coffee_dripper')
   const hammer = player.relics.some((relic) => relic.defId === 'fusion_hammer')
   const peacePipe = player.relics.some((relic) => relic.defId === 'peace_pipe')
   const straightRazor = player.relics.some((relic) => relic.defId === 'straight_razor')
   const restHeal = 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0)
   const alive = seats.some((seat) => seat.playerId === player.id)
   const seatCharacters = seats.map((seat) => seat.character)
+  const ruleset = rulesetForCharacters(seatCharacters, requestedRuleset)
   const locked = decided.includes(player.id)
+  const visiblePlayer = { ...player, deck, campfireTransformAvailable: transformAvailable }
+  const restAvailable = campfireRestAvailable(visiblePlayer, restAllowed, ruleset)
+  const needsDecision = campfireNeedsDecision(visiblePlayer, rubyAvailable, restAllowed, ruleset)
+  const rubyDeclineOnly = rubyAvailable && !campfireNeedsDecision(visiblePlayer, false, restAllowed, ruleset)
   const confirmDecision = (next: Decision) => {
     if (locked || actionPendingRef.current) return
     actionPendingRef.current = true
@@ -68,6 +78,12 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
     }
   }, [locked, saved?.cardUid, saved?.choice, saved?.removeCardUid, saved?.transformCardUid])
 
+  useEffect(() => {
+    if (!alive || needsDecision || locked || actionPendingRef.current) return
+    const timer = window.setTimeout(() => confirmDecision({ choice: 'leave' }), 250)
+    return () => window.clearTimeout(timer)
+  }, [actionPending, alive, locked, needsDecision])
+
   return (
     <section className="campfire" data-party-size={seats.length}
       style={{ '--campfire-scene': `url("${new URL(campfireScenePath(seatCharacters), window.location.href).href}")` } as CSSProperties}>
@@ -79,11 +95,8 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
           {(locked || actionPending) && decision ? <p className="campfire__choice-status" role="status">
             {player.name} chose to {choiceLabel(decision.choice)}.
           </p> : <>
-          {(coffee || !restAllowed) && (hammer || upgradable.length === 0) ? <button type="button" className={decision?.choice === 'leave' ? 'is-chosen' : ''}
-            onClick={() => confirmDecision({ choice: 'leave' })}>
-            Leave <span className="muted">No campfire action available</span>
-          </button> : null}
-          <button type="button" disabled={coffee || !restAllowed} className={decision?.choice === 'rest' ? 'is-chosen' : ''} onClick={() => {
+          {!needsDecision ? <p className="campfire__choice-status" role="status">No Campfire action to resolve.</p> : null}
+          <button type="button" disabled={!restAvailable} className={decision?.choice === 'rest' ? 'is-chosen' : ''} onClick={() => {
             const next: Decision = { choice: 'rest' }
             if (peacePipe || straightRazor) {
               setDecision(next)
@@ -100,13 +113,17 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
           {rubyAvailable ? <button type="button" className={decision?.choice === 'ruby' ? 'is-chosen' : ''} onClick={() => confirmDecision({ choice: 'ruby' })}>
             ◆ Ruby Key <span className="muted">skip campfire</span>
           </button> : null}
+          {rubyDeclineOnly ? <button type="button" className={decision?.choice === 'leave' ? 'is-chosen' : ''}
+            onClick={() => confirmDecision({ choice: 'leave' })}>
+            Leave <span className="muted">decline Ruby Key</span>
+          </button> : null}
           </>}
         </div>
       </div> : <p className="campfire__spectator" role="status">Your climb has ended. You are watching the surviving party choose.</p>}
       </div>
       {alive && !locked && !actionPending && decision && picker ? <CardPicker
         cards={picker === 'upgrade' ? upgradable : deck.filter((card) => picker === 'remove'
-          ? card.defId !== 'ascenders_bane' : card.defId !== 'ascenders_bane' && card.uid !== decision.removeCardUid)}
+          ? card.defId !== 'ascenders_bane' : !cardIsCurse(card.defId) && card.uid !== decision.removeCardUid)}
         verb={picker === 'upgrade' ? 'Upgrade' : picker === 'remove' ? 'Remove' : 'Transform'}
         selectedCardUids={[picker === 'upgrade' ? decision.cardUid : picker === 'remove' ? decision.removeCardUid : decision.transformCardUid]
           .filter((uid): uid is string => Boolean(uid))}

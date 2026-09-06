@@ -27,6 +27,7 @@ import { rewardSourceLabel } from "./reward-source.ts";
 import { ItemImage } from "./ItemImage.tsx";
 import { RewardItem } from "./RewardScreen.tsx";
 import { CardRewardPicker } from "./CardRewardPicker.tsx";
+import type { ActionOutcome } from "../multiplayer/useRoomSession.ts";
 
 type Props = {
   room: MerchantState | RelicRewardState | EventRoomState;
@@ -41,7 +42,7 @@ type Props = {
   ) => void;
   onFinishMerchant: () => void;
   onResumeMerchant?: () => void;
-  onRelic: (playerId: string, decision: TreasureDecision) => void;
+  onRelic: (playerId: string, decision: TreasureDecision) => void | Promise<ActionOutcome>;
   onEvent: (playerId: string, decision: EventDecision) => void;
   onPreparedHermitSetup?: (cardUid: string, enemyUid: string | null) => void;
   onPreparedStartTurnScryOrder?: (order: string[]) => void;
@@ -56,7 +57,7 @@ type Props = {
   onCancelEventPayment?: () => void;
   eventCanSkip?: boolean;
   unavailableEventOptionIds?: string[];
-  onSkipEvent?: (playerId: string) => void;
+  onSkipEvent?: (playerId: string) => void | Promise<ActionOutcome>;
   /** Arms the next deck change to play as a reveal, for a card gained without ever being shown (a random card/rare reward). */
   onArmCardGain?: () => void;
 };
@@ -629,6 +630,35 @@ function RelicRoomScreen({
   const firstSharedOffer = room.sharedOffers?.findIndex(
     (id, index) => Boolean(id) && !Object.values(room.decisions).includes(index),
   ) ?? -1;
+  const automaticSkip = decided === undefined && (room.sharedOffers ? firstSharedOffer < 0 : !relic) &&
+    !(sapphireAvailable && fullReward && Object.values(room.decisions).every((choice) => choice === "sapphire"));
+  const automaticSkipKey = `${room.kind}/${player.id}/${JSON.stringify(room.offers)}/${JSON.stringify(room.sharedOffers)}/${JSON.stringify(room.decisions)}`;
+  const automaticSkipSent = useRef("");
+  const [automaticSkipRetry, setAutomaticSkipRetry] = useState(0);
+  useEffect(() => {
+    if (!automaticSkip) {
+      automaticSkipSent.current = "";
+      return;
+    }
+    if (automaticSkipSent.current === automaticSkipKey) return;
+    automaticSkipSent.current = automaticSkipKey;
+    const pending = onRelic(player.id, "skip");
+    if (!pending) return;
+    let timer = 0;
+    const rearm = (outcome?: ActionOutcome) => {
+      if (automaticSkipSent.current !== automaticSkipKey) return;
+      if (outcome?.status === "accepted") return;
+      const next = outcome?.snapshot?.run?.roomState;
+      if (next && (next.kind !== "treasure" && next.kind !== "elite" || next.decisions[player.id] !== undefined)) return;
+      timer = window.setTimeout(() => {
+        if (automaticSkipSent.current !== automaticSkipKey) return;
+        automaticSkipSent.current = "";
+        setAutomaticSkipRetry((attempt) => attempt + 1);
+      }, 250);
+    };
+    void pending.then(rearm, () => rearm());
+    return () => window.clearTimeout(timer);
+  }, [automaticSkip, automaticSkipKey, automaticSkipRetry, player.id]);
   const firstAction = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (decided === undefined) firstAction.current?.focus();
@@ -662,14 +692,14 @@ function RelicRoomScreen({
         >
           Take relic
         </button> : null}
-        <button
+        {!automaticSkip ? <button
           ref={room.sharedOffers ? firstSharedOffer < 0 ? firstAction : undefined : !relic ? firstAction : undefined}
           type="button"
           disabled={decided !== undefined}
           onClick={() => onRelic(player.id, "skip")}
         >
           Skip
-        </button>
+        </button> : <p role="status">No Relic or Sapphire choice remains · skipping automatically…</p>}
         {sapphireAvailable ? (
           <button
             type="button"
@@ -713,6 +743,34 @@ function EventScreen({
     printsRulesInline ? undefined : relicOptionLabel(id, withCost);
   const player =
     players.find((candidate) => candidate.id === viewerId) ?? players[0]!;
+  const automaticSkip = useRef("");
+  const [automaticSkipRetry, setAutomaticSkipRetry] = useState(0);
+  useEffect(() => {
+    if (!eventCanSkip) {
+      automaticSkip.current = "";
+      return;
+    }
+    const key = `${room.card.instanceId}/${player.id}`;
+    if (automaticSkip.current === key) return;
+    automaticSkip.current = key;
+    const pending = onSkipEvent?.(player.id);
+    if (!pending) return;
+    let timer = 0;
+    const rearm = (outcome?: ActionOutcome) => {
+      if (automaticSkip.current !== key) return;
+      if (outcome?.status === "accepted") return;
+      const next = outcome?.snapshot;
+      const nextRoom = next?.run?.roomState;
+      if (next && (nextRoom?.kind !== "event" || nextRoom.card.instanceId !== room.card.instanceId || !next.eventCanSkip)) return;
+      timer = window.setTimeout(() => {
+        if (automaticSkip.current !== key) return;
+        automaticSkip.current = "";
+        setAutomaticSkipRetry((attempt) => attempt + 1);
+      }, 250);
+    };
+    void pending.then(rearm, () => rearm());
+    return () => window.clearTimeout(timer);
+  }, [automaticSkipRetry, eventCanSkip, player.id, room.card.instanceId]);
   const [cards, setCards] = useState<string[]>([]);
   const [pickerCardUids, setPickerCardUids] = useState<string[]>([]);
   const [tradeCardDraft, setTradeCardDraft] = useState({ stage: "", uid: "" });
@@ -1525,7 +1583,7 @@ function EventScreen({
           selectedOptionInvalidated || selectedOptionUnavailable || selectedUnaffordable}
         disabled={Boolean(pendingDecision?.cardUids?.length)}
       />, document.body) : null}
-      {eventCanSkip ? <button type="button" className="room-proceed" onClick={() => onSkipEvent?.(player.id)}>No legal choice · Leave event →</button> : null}
+      {eventCanSkip ? <p className="room-proceed" role="status">No legal choice · leaving event automatically…</p> : null}
     </section>
   );
 }

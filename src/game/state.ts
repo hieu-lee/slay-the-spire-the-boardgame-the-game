@@ -173,6 +173,7 @@ export type { PotionDef, RelicDef, RelicTrigger } from './relics.ts'
 
 export {
   GOLDEN_TICKET,
+  availableTransformRewards,
   canUpgradeCard,
   hasPendingRelicAcquisition,
   healingCapFor,

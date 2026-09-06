@@ -351,7 +351,8 @@ button.pile:hover { filter: brightness(1.15); }
 }
 
 button.end-turn-effect--orb,
-button.end-turn-effect--slime {
+button.end-turn-effect--slime,
+button.end-turn-effect--relic {
   display: grid;
   place-items: center;
   width: 4.5rem;
@@ -367,10 +368,25 @@ button.end-turn-effect--slime {
   background: radial-gradient(circle, rgb(160 239 69 / 0.36), rgb(28 63 26 / 0.78) 66%, rgb(8 18 9 / 0.9));
 }
 
+button.end-turn-effect--relic {
+  background: radial-gradient(circle, rgb(255 226 132 / 0.34), rgb(52 34 17 / 0.82) 66%, rgb(12 8 5 / 0.92));
+}
+
+button.end-turn-effect--relic .item-icon-image,
+.end-turn-effect-drag > .item-icon-image {
+  width: 4rem;
+  height: 4rem;
+  margin: 0;
+  object-fit: contain;
+  pointer-events: none;
+}
+
 button.end-turn-effect--orb:hover:not(:disabled),
 button.end-turn-effect--orb[aria-pressed='true'],
 button.end-turn-effect--slime:hover:not(:disabled),
-button.end-turn-effect--slime[aria-pressed='true'] {
+button.end-turn-effect--slime[aria-pressed='true'],
+button.end-turn-effect--relic:hover:not(:disabled),
+button.end-turn-effect--relic[aria-pressed='true'] {
   border-color: #fff7ad;
   filter: brightness(1.22);
 }
@@ -426,6 +442,12 @@ button.end-turn-effect--slime[aria-pressed='true'] {
 
 @media (prefers-reduced-motion: reduce) {
   .end-turn-effect { animation: none; }
+}
+
+@media (orientation: landscape) and (max-height: 26.25rem) {
+  .app-shell--online.app-shell--combat .end-turn-effects {
+    top: max(7.1rem, calc(env(safe-area-inset-top) + 6.7rem));
+  }
 }
 
 @keyframes card-target-flow { to { stroke-dashoffset: -16; } }

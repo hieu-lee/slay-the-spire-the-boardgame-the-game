@@ -827,6 +827,7 @@ check('card exchanges wait for the target owner and survive as serializable room
   const pending = chooseEvent(run, 'p1', { optionIds: ['exchange'], cardUids: [offered.uid], targetPlayerId: 'p2' })
   assertEqual(pending.players[0].deck[0].uid, offered.uid)
   assertEqual(pending.roomState.pendingTrade?.targetId, 'p2')
+  assertDeepEqual(skipEvent(pending, 'p3'), pending, 'Optionless seats cannot auto-settle a pending trade')
   assertEqual(chooseEvent(pending, 'p3', { optionIds: ['accept_trade'], cardUids: [run.players[2].deck[0].uid] }), pending)
   const accepted = chooseEvent(pending, 'p2', { optionIds: ['accept_trade'], cardUids: [returned.uid] })
   assert(accepted.players[0].deck.some((card) => card.uid === returned.uid))
@@ -1216,6 +1217,35 @@ check('Prismatic Shard reserves chosen Event reward decks and bottoms unused car
   assertDeepEqual(run.players[0].cardRewards, ['cleave', 'anger'])
   assertDeepEqual(run.itemDecks.characterCards.silent, ['backflip'])
   assertDeepEqual(run.itemDecks.characterCards.defect, ['leap', 'claw'])
+})
+
+check('Event seats with no legal choice settle without a Leave action', () => {
+  let run = inEvent('old_beggar', 2)
+  run = {
+    ...run,
+    players: run.players.map((player) => ({ ...player, gold: 0, relics: [], potions: [] })),
+    roomState: {
+      ...run.roomState,
+      card: {
+        ...run.roomState.card,
+        options: [{ id: 'give', label: 'Give', description: 'Pay 2 Gold.', effects: [{ tag: 'pay-gold', amount: 2 }] }],
+      },
+    },
+  }
+  run = skipEvent(run, 'p1')
+  assertEqual(run.phase, 'map')
+  assertEqual(run.roomState, null)
+})
+
+check('a choice auto-settles seats left without a legal unique Event option', () => {
+  let run = inEvent('big_fish', 2)
+  run = { ...run, roomState: { ...run.roomState, card: {
+    ...run.roomState.card,
+    options: [{ id: 'box', label: 'Box', description: 'Nothing.', effects: [{ tag: 'nothing' }] }],
+  } } }
+  run = chooseEvent(run, 'p1', { optionIds: ['box'] })
+  assertEqual(run.phase, 'map')
+  assertEqual(run.roomState, null)
 })
 
 report('physical Event resolution')
