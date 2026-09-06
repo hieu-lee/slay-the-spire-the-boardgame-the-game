@@ -552,6 +552,7 @@ export function EnemyCard({
       data-attack-motion={bossAttackMotion}
       data-boss-art={visibleEnemy.isBoss ? bossArtId : undefined}
       data-animation={animatedBoss ? bossAttacking ? 'attack' : 'idle' : 'static'}
+      data-webmcp-pending={stageVisualDamage && visualSignature !== JSON.stringify(visibleEnemy) || undefined}
       data-row={enemy.row}
       style={{
         '--stage-index': stageIndex,

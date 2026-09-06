@@ -143,6 +143,7 @@ export function useCardMorphs(
   const previousPhase = useRef(phase)
   const previousScope = useRef(scopeId)
   const [queue, setQueue] = useState<CardMorphRequest[]>([])
+  const scopeChanged = previousRun.current !== runId || previousScope.current !== scopeId
   // Set right before an action that may silently add a random card (Neow's
   // random Rare, an event's random card reward), consumed by the very next
   // deck diff so it cannot leak onto a later, unrelated add. If that action
@@ -179,5 +180,5 @@ export function useCardMorphs(
   const dismiss = useCallback(() => setQueue((pending) => pending.slice(1)), [])
   const armGain = useCallback(() => { gainArmed.current = true }, [])
 
-  return { current: queue[0] ?? null, dismiss, armGain }
+  return { current: scopeChanged ? null : queue[0] ?? null, dismiss, armGain }
 }

@@ -974,7 +974,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           CardMorph, which keys its inner stage instead so the veil survives a
           queue. */}
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
-      <CardMorphAnnouncement request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
+      <CardMorphAnnouncement key={`${snapshot?.run?.campaign.runId ?? ''}:${snapshot?.you.playerId ?? ''}`}
+        request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
     {compendiumOpen ? <CompendiumScreen onBack={() => {
       setCompendiumOpen(false)

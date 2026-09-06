@@ -1043,7 +1043,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           for the suites. A bare live region announces without claiming a role.
           Rendered always, empty when idle, because a live region has to exist
           before its text changes for the change to be announced. */}
-      <CardMorphAnnouncement request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
+      <CardMorphAnnouncement key={`${open ? run.campaign.runId : ''}:${viewerId}`} request={morph.current}
+        name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
     {compendium ? <CompendiumScreen onBack={() => {
       setCompendium(false)

@@ -94,7 +94,13 @@ const controls = await page.evaluate(async () => {
     <button title="Strike" aria-label="Strike, 1 Energy, Attack, Deal 6 damage" aria-describedby="strike-description">Strike</button>
     <button aria-disabled="true" aria-label="Bash, 2 Energy, Attack, Deal 8 damage and apply 2 Vulnerable">Bash</button>
     <button aria-label="Delayed advance">Delayed advance</button>
+    <button aria-label="Staged advance">Staged advance</button>
+    <button aria-label="Presented advance">Presented advance</button>
+    <button aria-label="Second morph sequence">Second morph sequence</button>
+    <button aria-label="Defeated enemy cleanup">Defeated enemy cleanup</button>
     <button aria-label="Cancelled delayed advance">Cancelled delayed advance</button>
+    <span data-vfx-seq="99" aria-hidden="true">Unrelated teammate presentation</span>
+    <span id="morph-summary" hidden data-webmcp-transient-status></span>
     <div data-webmcp-passive>Party voice token noise<button aria-label="Join voice">Join voice</button></div>
     <span data-webmcp-passive>Voice unavailable</span>
     <button aria-label="No-op button">No-op button</button>
@@ -123,6 +129,63 @@ const controls = await page.evaluate(async () => {
       delayedButton.setAttribute('aria-label', 'Delayed next')
       delayedButton.textContent = 'Delayed next'
     }, 250)
+  })
+  const stagedButton = fixture.querySelector('[aria-label="Staged advance"]')
+  stagedButton.addEventListener('click', () => {
+    stagedButton.setAttribute('aria-label', 'Stage one')
+    stagedButton.textContent = 'Stage one'
+    setTimeout(() => {
+      stagedButton.setAttribute('aria-label', 'Stage two')
+      stagedButton.textContent = 'Stage two'
+    }, 650)
+  })
+  const presentedButton = fixture.querySelector('[aria-label="Presented advance"]')
+  presentedButton.addEventListener('click', () => {
+    presentedButton.setAttribute('aria-label', 'Presentation started')
+    const pending = document.createElement('span')
+    pending.dataset.webmcpPending = 'true'
+    const announcement = fixture.querySelector('#morph-summary')
+    announcement.textContent = 'Strike upgraded to Strike+.'
+    fixture.append(pending)
+    setTimeout(() => {
+      announcement.textContent += ' Defend upgraded to Defend+.'
+    }, 900)
+    setTimeout(() => {
+      presentedButton.setAttribute('aria-label', 'Presentation settled')
+      presentedButton.textContent = 'Presentation settled'
+      pending.remove()
+    }, 1450)
+  })
+  const secondMorphButton = fixture.querySelector('[aria-label="Second morph sequence"]')
+  secondMorphButton.addEventListener('click', () => {
+    secondMorphButton.setAttribute('aria-label', 'Second morph pending')
+    const prior = fixture.querySelector('#morph-summary')
+    const announcement = prior.cloneNode(false)
+    delete announcement.dataset.webmcpReported
+    announcement.textContent = 'Gained Lesson Learned.'
+    prior.replaceWith(announcement)
+    const pending = document.createElement('span')
+    pending.dataset.webmcpPending = 'true'
+    fixture.append(pending)
+    setTimeout(() => {
+      secondMorphButton.setAttribute('aria-label', 'Second morph settled')
+      secondMorphButton.textContent = 'Second morph settled'
+      pending.remove()
+    }, 250)
+  })
+  const defeatedButton = fixture.querySelector('[aria-label="Defeated enemy cleanup"]')
+  defeatedButton.addEventListener('click', () => {
+    defeatedButton.setAttribute('aria-label', 'Defeat started')
+    const falling = document.createElement('button')
+    falling.className = 'enemy enemy--falling'
+    falling.disabled = true
+    falling.setAttribute('aria-label', 'Cultist, defeated')
+    fixture.append(falling)
+    setTimeout(() => {
+      falling.remove()
+      defeatedButton.setAttribute('aria-label', 'Defeat settled')
+      defeatedButton.textContent = 'Defeat settled'
+    }, 1800)
   })
   const cancelledButton = fixture.querySelector('[aria-label="Cancelled delayed advance"]')
   cancelledButton.addEventListener('click', () => setTimeout(() => {
@@ -167,7 +230,15 @@ const controls = await page.evaluate(async () => {
   })()
   const inspectedWhilePending = await inspect.execute({})
   const delayed = await delayedPending
-  const cancelledControl = delayed.state.controls.find((control) => control.label === 'Cancelled delayed advance')
+  const stagedControl = delayed.state.controls.find((control) => control.label === 'Staged advance')
+  const staged = await interact.execute({ controlId: stagedControl.id })
+  const presentedControl = staged.state.controls.find((control) => control.label === 'Presented advance')
+  const presented = await interact.execute({ controlId: presentedControl.id })
+  const secondMorphControl = presented.state.controls.find((control) => control.label === 'Second morph sequence')
+  const secondMorph = await interact.execute({ controlId: secondMorphControl.id })
+  const defeatedControl = secondMorph.state.controls.find((control) => control.label === 'Defeated enemy cleanup')
+  const defeated = await interact.execute({ controlId: defeatedControl.id })
+  const cancelledControl = defeated.state.controls.find((control) => control.label === 'Cancelled delayed advance')
   const cancellation = await (async () => {
     const controller = new AbortController()
     const pending = interact.execute({ controlId: cancelledControl.id }, { signal: controller.signal })
@@ -225,6 +296,10 @@ const controls = await page.evaluate(async () => {
     buttonClicks,
     orbClicks,
     delayed,
+    staged,
+    presented,
+    secondMorph,
+    defeated,
     inspectedWhilePending,
     invokedWhilePending,
     cancellation,
@@ -350,6 +425,15 @@ const pagination = await page.evaluate(async () => {
   }
 })
 const portal = await page.evaluate(async () => {
+  const backgroundAnnouncement = document.createElement('span')
+  backgroundAnnouncement.hidden = true
+  backgroundAnnouncement.dataset.webmcpTransientStatus = ''
+  backgroundAnnouncement.textContent = 'Gained a background card.'
+  document.getElementById('root').append(backgroundAnnouncement)
+  const hiddenSurface = document.createElement('section')
+  hiddenSurface.style.display = 'none'
+  hiddenSurface.innerHTML = '<span data-webmcp-transient-status>Hidden viewer card.</span><span data-webmcp-pending="true"></span>'
+  document.getElementById('root').append(hiddenSurface)
   const picker = document.createElement('section')
   picker.className = 'card-picker'
   picker.setAttribute('role', 'dialog')
@@ -369,12 +453,23 @@ const portal = await page.evaluate(async () => {
   const action = listed.controls.find((candidate) => candidate.label.startsWith('Bash,'))
   if (!action) throw new Error('portal card picker action was not listed')
   await document.modelContext.executeTool(interact, { controlId: action.id })
+  const gameMain = document.querySelector('main')
+  gameMain.dataset.webmcpPending = 'true'
+  const pendingModal = await inspect.execute({})
+  delete gameMain.dataset.webmcpPending
   picker.remove()
+  const afterModal = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
+  backgroundAnnouncement.remove()
+  hiddenSurface.remove()
   return {
     clicks,
     heading: listed.screen.headings.includes('Portal card picker'),
     hidesBackground: !listed.controls.some((candidate) => candidate.label === 'Single Player'),
     observation: listed.screen.observations.includes('Choose a card to upgrade'),
+    backgroundDeferred: !listed.screen.announcements &&
+      afterModal.screen.announcements?.includes('Gained a background card.'),
+    hiddenSurfaceExcluded: !afterModal.screen.announcements?.includes('Hidden viewer card.'),
+    ancestorPending: pendingModal.pending && pendingModal.controls.length === 0,
   }
 })
 const exclusions = await page.evaluate(async () => {
@@ -444,12 +539,13 @@ const realFlow = await page.evaluate(async () => {
     await document.modelContext.executeTool(interact, { controlId: control.id })
   }
   await choose('Standard')
+  await choose('Watcher')
   const character = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
   await choose('Embark')
   const started = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
   return {
-    ironcladSelected: character.controls.find((control) => control.label === 'Ironclad')?.selected,
-    describesIronclad: character.screen.text.includes('builds Strength'),
+    watcherSelected: character.controls.find((control) => control.label === 'Watcher')?.selected,
+    describesWatcher: character.screen.text.includes('divine Stances'),
     startedHeading: started.screen.headings[0],
     startedControls: started.controls.length,
   }
@@ -495,7 +591,16 @@ await page.waitForFunction(() => document.querySelector('.enemy--targeted') || (
 const targetInspection = await inspectAll()
 const targetLabel = await page.locator('.enemy--targeted').first().getAttribute('aria-label').catch(() => null)
 const target = targetInspection.controls.find((control) => control.label === targetLabel)
-if (target) await interact(target.id)
+const targetSettlement = target ? await page.evaluate(async (controlId) => {
+  const interact = (await document.modelContext.getTools()).find((tool) => tool.name === 'interact_with_game')
+  let settled = false
+  const pending = interact.execute({ controlId }, { signal: new AbortController().signal })
+    .then((result) => { settled = true; return result })
+  await new Promise((resolve) => setTimeout(resolve, 800))
+  const marked = Boolean(document.querySelector('.enemy[data-webmcp-pending="true"]'))
+  const settledBeforeContact = settled
+  return { marked, settledBeforeContact, result: await pending }
+}, target.id) : null
 await page.waitForFunction(({ energy, enemyHp }) => {
   const state = window.__STS_DEBUG__.getState()
   return state.players[0].energy < energy || state.enemies.reduce((total, enemy) => total + enemy.hp, 0) < enemyHp
@@ -513,6 +618,9 @@ const combatFlow = {
   seesEnergy: /Energy/.test(JSON.stringify(combatInspection)),
   richAttack: attack.label,
   targetLabel,
+  targetSettlementMarked: targetSettlement?.marked,
+  targetSettledBeforeContact: targetSettlement?.settledBeforeContact,
+  targetReturnedState: Boolean(targetSettlement?.result.state),
   changed: afterAttack.energy < beforeAttack.energy || afterAttack.enemyHp < beforeAttack.enemyHp,
   nextTurnReturned: /Turn 2/.test(endTurnResult.state?.screen.text ?? ''),
 }
@@ -587,6 +695,18 @@ check('returns visible gameplay context and drives every gameplay control kind',
   assert(controls.buttonClicks === 1 && controls.orbClicks === 1, 'button and role-button controls use their visible click paths')
   assert(controls.delayed.state.controls.some((control) => control.label === 'Delayed next'),
     'interaction waits for a delayed authoritative update before returning reusable controls')
+  assert(controls.staged.state.controls.some((control) => control.label === 'Stage two'),
+    'interaction waits for a stable final state after an immediate intermediate update')
+  assert(controls.presented.state.controls.some((control) => control.label === 'Presentation settled'),
+    'interaction waits through the longest production combat presentation delay')
+  assert(controls.presented.state.screen.announcements?.includes('Strike upgraded to Strike+. Defend upgraded to Defend+.'),
+    'interaction returns every result from a queued multi-card change')
+  assert(controls.secondMorph.state.screen.announcements?.includes('Gained Lesson Learned.'),
+    'a later morph sequence on the same persistent host returns its new result')
+  assert(!controls.defeated.state.screen.announcements,
+    'a reported multi-card result is omitted from the next unrelated interaction')
+  assert(controls.defeated.state.controls.some((control) => control.label === 'Defeat settled'),
+    'interaction waits until a defeated enemy is removed after presentation ends')
   assert(controls.inspectedWhilePending.pending && controls.inspectedWhilePending.controls.length === 0 &&
     controls.invokedWhilePending.includes('Game interaction is pending'),
   'inspection reports pending authority without minting invokable control IDs')
@@ -624,7 +744,8 @@ check('keeps snapshots scoped, stable, opaque, and current', () => {
   assert(pagination.unavailableCount === 30 && pagination.totalUnavailable >= 35 && pagination.unavailableTruncated &&
     pagination.unavailableCount + pagination.secondPageUnavailable === pagination.totalUnavailable,
   `unavailable controls paginate without losing planning choices: ${JSON.stringify(pagination)}`)
-  assert(portal.heading && portal.hidesBackground && portal.observation && portal.clicks === 1,
+  assert(portal.heading && portal.hidesBackground && portal.observation && portal.clicks === 1 &&
+    portal.backgroundDeferred && portal.hiddenSurfaceExcluded && portal.ancestorPending,
     `a portal card picker exposes its complete modal context without background controls: ${JSON.stringify(portal)}`)
   assert(exclusions.ariaDisabled && exclusions.inert && exclusions.hidesObservation && exclusions.hidesText,
     'aria-disabled and inert controls are not listed, and hidden content is not disclosed')
@@ -636,8 +757,8 @@ check('keeps snapshots scoped, stable, opaque, and current', () => {
   assert(stale.includes('Control is no longer available'), 'a control ID cannot outlive its visible screen')
 })
 
-check('starts a real Ironclad run through WebMCP and loads cleanly', () => {
-  assert(realFlow.ironcladSelected && realFlow.describesIronclad, 'inspection exposes the selected hero and its gameplay identity')
+check('starts a real Watcher run through WebMCP and loads cleanly', () => {
+  assert(realFlow.watcherSelected && realFlow.describesWatcher, 'inspection exposes the selected hero and its gameplay identity')
   assert(realFlow.startedHeading && realFlow.startedControls > 0, 'WebMCP reaches the first playable run screen')
   assert(mapInspection.totalUnavailableControls > 0 &&
     JSON.stringify(mapInspection.unavailableControls.filter((control) => control.context?.startsWith('Floor '))
@@ -646,8 +767,9 @@ check('starts a real Ironclad run through WebMCP and loads cleanly', () => {
     mapInteraction.state.controls.some((control) => control.label === 'End turn' || control.label === 'Resolve start of turn'),
   'map inspection preserves every future route-planning room and map entry returns the settled combat screen')
   assert(combatFlow.seesTurn && combatFlow.seesEnergy, 'combat inspection exposes turn and Energy')
-  assert(/, attack,/i.test(combatFlow.richAttack) && combatFlow.targetLabel && combatFlow.changed && combatFlow.nextTurnReturned,
-    `a real Ironclad Attack is described, targeted, and resolved: ${JSON.stringify(combatFlow)}`)
+  assert(/, attack,/i.test(combatFlow.richAttack) && combatFlow.targetLabel && combatFlow.targetSettlementMarked &&
+    !combatFlow.targetSettledBeforeContact && combatFlow.targetReturnedState && combatFlow.changed && combatFlow.nextTurnReturned,
+  `a real Watcher Attack remains pending through contact, then returns settled controls: ${JSON.stringify(combatFlow)}`)
   assertDeepEqual(errors, [])
   assertDeepEqual(fallbackErrors, [])
 })

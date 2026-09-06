@@ -49,6 +49,14 @@ function invalidateControls() {
   pageSnapshot = null
 }
 
+function interactionPending() {
+  const selector = '[data-webmcp-pending="true"], .enemy--falling'
+  return Boolean(document.documentElement.dataset.mapTransition ||
+    document.documentElement.dataset.webmcpPending === 'true' ||
+    [...document.querySelectorAll<HTMLElement>(selector)].some((element) =>
+      element.getClientRects().length > 0 && element.parentElement && rendered(element.parentElement)))
+}
+
 function activeScopes(): HTMLElement[] {
   const modal = document.querySelector<HTMLElement>('dialog:modal, [role="dialog"][aria-modal="true"]')
   if (modal) return [modal]
@@ -174,13 +182,29 @@ function screenText(scopes: HTMLElement[]): string {
     while (walker.nextNode()) {
       const parent = walker.currentNode.parentElement
       const value = walker.currentNode.textContent?.replace(/\s+/g, ' ').trim()
-      if (parent && value && rendered(parent) && !parent.closest('[data-webmcp-passive]')) chunks.push(value)
+      if (parent && value && rendered(parent) &&
+        !parent.closest('[data-webmcp-passive], [data-webmcp-transient-status]')) chunks.push(value)
     }
   }
   return chunks.join(' ').replace(/\s+/g, ' ').trim()
 }
 
-function gameScreen() {
+function announcementElements(includeReported = false) {
+  return activeScopes().flatMap((scope) => [...scope.querySelectorAll<HTMLElement>(
+    '[data-webmcp-transient-status]',
+  )]).filter((element) => element.parentElement && rendered(element.parentElement) && text(element) &&
+    (includeReported || element.dataset.webmcpReported !== 'true'))
+}
+
+function announcementTexts(elements = announcementElements()) {
+  return elements.map(text).map((value) => value.slice(0, SCREEN_TEXT_LIMIT))
+}
+
+function acknowledgeAnnouncements(elements: HTMLElement[]) {
+  for (const element of elements) element.dataset.webmcpReported = 'true'
+}
+
+function gameScreen(announcementNodes = announcementElements()) {
   const scopes = activeScopes()
   const read = (selector: string) => scopes.flatMap((scope) => [...scope.querySelectorAll<HTMLElement>(selector)])
     .filter((element) => rendered(element) && !element.closest('[data-webmcp-passive]')).map(text).filter(Boolean)
@@ -191,12 +215,14 @@ function gameScreen() {
   ]).filter((element) => rendered(element) && !element.closest('[data-webmcp-passive]') &&
       !element.matches(CONTROL_SELECTOR) &&
       !element.closest('button, summary, [role="button"]')).map(label).filter(Boolean))]
+  const announcements = announcementTexts(announcementNodes)
   return {
     headings: [...new Set(read('h1, h2, h3, [role="heading"]'))],
     status: [...new Set(read('[role="status"], [role="alert"]'))],
     text: rawText.slice(0, SCREEN_TEXT_LIMIT),
     textTruncated: rawText.length > SCREEN_TEXT_LIMIT,
     observations,
+    ...(announcements.length > 0 ? { announcements } : {}),
   }
 }
 
@@ -213,7 +239,7 @@ function objectInput(input: unknown, allowed: readonly string[]): Record<string,
   return value
 }
 
-function inspectGame(input: unknown) {
+function captureGame(input: unknown, acknowledge: boolean) {
   const { offset, snapshotId } = objectInput(input, ['offset', 'snapshotId'])
   if (offset !== undefined && (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0)) {
     throw new Error('offset must be a non-negative integer.')
@@ -223,7 +249,7 @@ function inspectGame(input: unknown) {
   if (start > 0 && (typeof snapshotId !== 'string' || snapshotId.length === 0 || snapshotId.length > 32)) {
     throw new Error('snapshotId from the first page is required when offset is greater than 0.')
   }
-  if (document.querySelector('[data-webmcp-pending="true"]') || document.documentElement.dataset.mapTransition) {
+  if (interactionPending()) {
     invalidateControls()
     return {
       ...(start === 0 ? { screen: gameScreen() } : {}),
@@ -238,9 +264,10 @@ function inspectGame(input: unknown) {
   }
   let available = visibleControls()
   const unavailable = unavailableControls()
-  const screen = gameScreen()
+  const capturedAnnouncements = announcementElements()
+  const screen = gameScreen(capturedAnnouncements)
   const stateSignature = JSON.stringify({
-    screen,
+    screen: { ...screen, announcements: announcementTexts(announcementElements(true)) },
     controls: available.map(({ id: _, ...control }) => control),
     unavailableControls: unavailable,
   })
@@ -257,7 +284,7 @@ function inspectGame(input: unknown) {
   }
   if (start === 0) pageSnapshot = { id: String(++pageSnapshotSequence), signature: paginationSignature }
   controlStateSignature = stateSignature
-  return {
+  const result = {
     ...(start === 0 ? { screen } : {}),
     controls: page,
     unavailableControls: unavailablePage,
@@ -267,11 +294,18 @@ function inspectGame(input: unknown) {
     snapshotId: pageSnapshot!.id,
     nextOffset: start + PAGE_SIZE < Math.max(available.length, unavailable.length) ? start + PAGE_SIZE : null,
   }
+  if (acknowledge) acknowledgeAnnouncements(capturedAnnouncements)
+  return result
+}
+
+function inspectGame(input: unknown) {
+  return captureGame(input, true)
 }
 
 function stateSignature() {
+  const screen = gameScreen()
   return JSON.stringify({
-    screen: gameScreen(),
+    screen: { ...screen, announcements: announcementTexts(announcementElements(true)) },
     controls: visibleControls().map(({ id: _, ...control }) => control),
     unavailableControls: unavailableControls(),
   })
@@ -289,19 +323,20 @@ async function waitForInteraction(before: string, signal?: AbortSignal) {
     if (signal?.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
     await new Promise<void>((resolve) => setTimeout(resolve, 100))
     if (signal?.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
-    if (document.querySelector('[data-webmcp-pending="true"]') || document.documentElement.dataset.mapTransition) {
+    if (interactionPending()) {
       quietChecks = 0
       continue
     }
-    const signature = stateSignature()
+    const state = captureGame({}, false)
+    const signature = controlStateSignature
     if (signature === lastSignature) {
-      if (++quietChecks >= (signature === before ? 3 : 20)) return inspectGame({})
+      if (++quietChecks >= (signature === before || hasProgressControl(state) ? 7 : 20)) {
+        return captureGame({}, true)
+      }
       continue
     }
     lastSignature = signature
     quietChecks = 0
-    const state = inspectGame({})
-    if (hasProgressControl(state)) return state
   } while (Date.now() < deadline)
   return null
 }
@@ -353,7 +388,7 @@ export function useWebMcp() {
         annotations: { untrustedContentHint: true },
         execute: async (input, options) => {
           if (options?.signal.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
-          if (document.querySelector('[data-webmcp-pending="true"]') || document.documentElement.dataset.mapTransition) {
+          if (interactionPending()) {
             invalidateControls()
             throw new Error('Game interaction is pending. Wait and call inspect_game again.')
           }

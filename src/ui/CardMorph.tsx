@@ -11,7 +11,7 @@
 // status regions and a second one both competes with them and makes
 // `getByRole('status')` ambiguous for the suites. A screen reader hears what the
 // card became without the visual having to finish.
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CardInstance } from '../game/types.ts'
 import { Card } from './Card.tsx'
 
@@ -87,7 +87,8 @@ export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDo
     // aria-hidden subtree containing a focusable control is the classic
     // aria-hidden-focus violation — a Tab during the overlay landed on an
     // invisible key in the middle of the flow the player was already in.
-    <div className={`card-morph card-morph--${request.kind} card-morph--${beat}`} aria-hidden="true" inert>
+    <div className={`card-morph card-morph--${request.kind} card-morph--${beat}`} aria-hidden="true" inert
+      data-webmcp-pending="true">
       {/* Keyed so each card's own transitions start from the top even though
           the veil around them persists across the queue. */}
       <div className="card-morph__stage" key={request.key}>
@@ -155,20 +156,37 @@ export function CardMorphAnnouncement({ request, name }: {
   name: (card: CardInstance) => string
 }) {
   const [spoken, setSpoken] = useState('')
+  const [announcements, setAnnouncements] = useState<string[]>([])
+  const sequenceActive = useRef(false)
+  const sequence = useRef(0)
+  const [announcementSequence, setAnnouncementSequence] = useState(0)
   const key = request?.key
 
   useEffect(() => {
     if (!request) {
+      sequenceActive.current = false
       setSpoken('')
       return undefined
     }
+    const announcement = cardMorphAnnouncement(request, name)
+    if (sequenceActive.current) setAnnouncements((current) => [...current, announcement])
+    else {
+      setAnnouncements([announcement])
+      setAnnouncementSequence(++sequence.current)
+    }
+    sequenceActive.current = true
     setSpoken('')
-    const speak = setTimeout(() => setSpoken(cardMorphAnnouncement(request, name)), 60)
+    const speak = setTimeout(() => setSpoken(announcement), 60)
     return () => clearTimeout(speak)
     // Keyed on the request identity: `name` is an inline closure at both call
     // sites and would re-run this every render if it were a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
 
-  return <p className="visually-hidden" aria-live="polite">{spoken}</p>
+  return <>
+    <p className="visually-hidden" aria-live="polite">{spoken}</p>
+    {announcements.length > 0 ? <span key={announcementSequence} hidden data-webmcp-transient-status>
+      {announcements.join(' ')}
+    </span> : null}
+  </>
 }
