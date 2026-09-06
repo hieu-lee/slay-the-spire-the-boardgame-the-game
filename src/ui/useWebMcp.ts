@@ -315,7 +315,7 @@ function hasProgressControl(state: ReturnType<typeof inspectGame>) {
   return state.controls.some((control) => !/^(Current deck|Map$|Settings$|Discard pile|Exhaust pile)/.test(control.label))
 }
 
-async function waitForInteraction(before: string, signal?: AbortSignal) {
+async function waitForInteraction(before: string, signal?: AbortSignal, shortQuietChecks = 7) {
   const deadline = Date.now() + 10_000
   let lastSignature = before
   let quietChecks = 0
@@ -330,7 +330,7 @@ async function waitForInteraction(before: string, signal?: AbortSignal) {
     const state = captureGame({}, false)
     const signature = controlStateSignature
     if (signature === lastSignature) {
-      if (++quietChecks >= (signature === before || hasProgressControl(state) ? 7 : 20)) {
+      if (++quietChecks >= (signature === before || hasProgressControl(state) ? shortQuietChecks : 20)) {
         return captureGame({}, true)
       }
       continue
@@ -440,7 +440,8 @@ export function useWebMcp() {
             setValue(element as HTMLInputElement | HTMLSelectElement, value)
           }
           invalidateControls()
-          const state = await waitForInteraction(before, options?.signal)
+          const target = element.matches('.enemy, .seat, .row__lane-target')
+          const state = await waitForInteraction(before, options?.signal, target ? 18 : 7)
           return state ? { action: entry.label, state }
             : { action: entry.label, pending: true, next: 'Call inspect_game after the action settles.' }
         },

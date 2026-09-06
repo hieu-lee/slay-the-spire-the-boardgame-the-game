@@ -95,6 +95,7 @@ const controls = await page.evaluate(async () => {
     <button aria-disabled="true" aria-label="Bash, 2 Energy, Attack, Deal 8 damage and apply 2 Vulnerable">Bash</button>
     <button aria-label="Delayed advance">Delayed advance</button>
     <button aria-label="Staged advance">Staged advance</button>
+    <button class="enemy enemy--targeted" aria-label="Delayed enemy target">Delayed enemy target</button>
     <button aria-label="Presented advance">Presented advance</button>
     <button aria-label="Second morph sequence">Second morph sequence</button>
     <button aria-label="Defeated enemy cleanup">Defeated enemy cleanup</button>
@@ -138,6 +139,15 @@ const controls = await page.evaluate(async () => {
       stagedButton.setAttribute('aria-label', 'Stage two')
       stagedButton.textContent = 'Stage two'
     }, 650)
+  })
+  const delayedTarget = fixture.querySelector('[aria-label="Delayed enemy target"]')
+  delayedTarget.addEventListener('click', () => {
+    delayedTarget.setAttribute('aria-label', 'Enemy target committed')
+    delayedTarget.textContent = 'Enemy target committed'
+    setTimeout(() => {
+      delayedTarget.setAttribute('aria-label', 'Enemy target resolved')
+      delayedTarget.textContent = 'Enemy target resolved'
+    }, 1050)
   })
   const presentedButton = fixture.querySelector('[aria-label="Presented advance"]')
   presentedButton.addEventListener('click', () => {
@@ -232,7 +242,9 @@ const controls = await page.evaluate(async () => {
   const delayed = await delayedPending
   const stagedControl = delayed.state.controls.find((control) => control.label === 'Staged advance')
   const staged = await interact.execute({ controlId: stagedControl.id })
-  const presentedControl = staged.state.controls.find((control) => control.label === 'Presented advance')
+  const delayedTargetControl = staged.state.controls.find((control) => control.label === 'Delayed enemy target')
+  const resolvedTarget = await interact.execute({ controlId: delayedTargetControl.id })
+  const presentedControl = resolvedTarget.state.controls.find((control) => control.label === 'Presented advance')
   const presented = await interact.execute({ controlId: presentedControl.id })
   const secondMorphControl = presented.state.controls.find((control) => control.label === 'Second morph sequence')
   const secondMorph = await interact.execute({ controlId: secondMorphControl.id })
@@ -297,6 +309,7 @@ const controls = await page.evaluate(async () => {
     orbClicks,
     delayed,
     staged,
+    resolvedTarget,
     presented,
     secondMorph,
     defeated,
@@ -697,6 +710,8 @@ check('returns visible gameplay context and drives every gameplay control kind',
     'interaction waits for a delayed authoritative update before returning reusable controls')
   assert(controls.staged.state.controls.some((control) => control.label === 'Stage two'),
     'interaction waits for a stable final state after an immediate intermediate update')
+  assert(controls.resolvedTarget.state.controls.some((control) => control.label === 'Enemy target resolved'),
+    'target interaction waits for delayed semantic damage even before a pending marker appears')
   assert(controls.presented.state.controls.some((control) => control.label === 'Presentation settled'),
     'interaction waits through the longest production combat presentation delay')
   assert(controls.presented.state.screen.announcements?.includes('Strike upgraded to Strike+. Defend upgraded to Defend+.'),
