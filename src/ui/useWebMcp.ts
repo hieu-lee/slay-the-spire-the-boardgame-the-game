@@ -10,7 +10,7 @@ type Tool = {
     untrustedContentHint?: boolean
     consequentialHint?: boolean
   }
-  execute: (input: unknown, options: { signal: AbortSignal }) => unknown
+  execute: (input: unknown, options?: { signal: AbortSignal }) => unknown
 }
 
 type ModelContext = {
@@ -188,7 +188,8 @@ function gameScreen() {
 }
 
 function context(): ModelContext | undefined {
-  return (document as Document & { modelContext?: ModelContext }).modelContext
+  return (document as Document & { modelContext?: ModelContext }).modelContext ??
+    (navigator as Navigator & { modelContext?: ModelContext }).modelContext
 }
 
 function objectInput(input: unknown, allowed: readonly string[]): Record<string, unknown> {
@@ -260,7 +261,7 @@ export function useWebMcp() {
         },
         annotations: { untrustedContentHint: true },
         execute: (input, options) => {
-          if (options.signal.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
+          if (options?.signal.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
           const { controlId, value } = objectInput(input, ['controlId', 'value'])
           if (typeof controlId !== 'string' || controlId.length === 0 || controlId.length > 64) {
             throw new Error('controlId must be a listed control ID.')

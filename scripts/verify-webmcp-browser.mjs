@@ -391,6 +391,33 @@ const stale = await page.evaluate(async (controlId) => {
     return String(error)
   }
 }, exclusions.controlId)
+const bridge = await browser.newPage({ viewport: { width: 844, height: 390 } })
+await bridge.addInitScript(() => {
+  const tools = new Map()
+  Object.defineProperty(navigator, 'modelContext', {
+    configurable: true,
+    value: {
+      registerTool(tool) { tools.set(tool.name, tool); return Promise.resolve() },
+      listTools() { return [...tools.values()] },
+      callTool(name, input) { return tools.get(name)?.execute(input) },
+    },
+  })
+})
+await bridge.goto(`http://localhost:${address.port}`)
+await bridge.waitForFunction(() => navigator.modelContext?.listTools().length === 2)
+const bridgeCompatibility = await bridge.evaluate(async () => {
+  const inspect = navigator.modelContext.listTools().find((tool) => tool.name === 'inspect_game')
+  const interact = navigator.modelContext.listTools().find((tool) => tool.name === 'interact_with_game')
+  const before = await inspect.execute({})
+  const singlePlayer = before.controls.find((control) => control.label === 'Single Player')
+  if (!singlePlayer) throw new Error('navigator-only WebMCP bridge did not expose Single Player')
+  await interact.execute({ controlId: singlePlayer.id })
+  return {
+    tools: navigator.modelContext.listTools().map((tool) => tool.name),
+    reachedModeSelect: (await inspect.execute({})).controls.some((control) => control.label === 'Standard'),
+  }
+})
+await bridge.close()
 const fallback = await browser.newPage({ viewport: { width: 844, height: 390 } })
 const fallbackErrors = []
 fallback.on('console', (message) => { if (message.type() === 'error') fallbackErrors.push(message.text()) })
@@ -408,6 +435,10 @@ check('registers two low-friction, safely annotated game tools', () => {
   assert(tools[1].annotations.untrustedContentHint && !tools[1].annotations.consequentialHint,
     'in-game interactions are marked untrusted but not as real-world consequential actions')
   assert(tools[1].inputSchema.properties.value.oneOf[0].maxLength === 1000, 'free-form tool strings are schema-bounded')
+  assertDeepEqual(bridgeCompatibility, {
+    tools: ['inspect_game', 'interact_with_game'],
+    reachedModeSelect: true,
+  })
 })
 
 check('returns visible gameplay context and drives every gameplay control kind', () => {
