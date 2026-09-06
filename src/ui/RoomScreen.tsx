@@ -1143,7 +1143,7 @@ function EventScreen({
     const effectiveRelic = pending?.relicIds?.[0] ?? relicId;
     const effectiveTarget = pending?.targetPlayerId ?? targetPlayerId;
     let potionIndex = -1;
-    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div ref={eventResolver} className="event-panel event-panel--resolver"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} />{relicDef(relic.defId).name}<RelicOptionText id={relic.defId} /></button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-items item-offer-list">{itemOffers.map((offer, index) => {
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div ref={eventResolver} className="event-panel event-panel--resolver"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} />{relicDef(relic.defId).name}<RelicOptionText id={relic.defId} /></button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select required disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-items item-offer-list">{itemOffers.map((offer, index) => {
       if (offer.kind === 'potion') potionIndex += 1;
       const at = potionIndex;
       const recipient = offer.kind === 'potion' ? players.find((candidate) => candidate.id === (potionRecipientIds[at] || player.id) && !candidate.dead) : player;
@@ -1153,7 +1153,7 @@ function EventScreen({
         <button type="button" disabled={takeBlocked} aria-pressed={rewardItemChoices[index] === 'take'} onClick={() => setRewardItemChoices((current) => current.map((choice, choiceIndex) => choiceIndex === index ? 'take' : choice))}>Take</button>
         <button type="button" aria-pressed={rewardItemChoices[index] === 'skip'} onClick={() => setRewardItemChoices((current) => current.map((choice, choiceIndex) => choiceIndex === index ? 'skip' : choice))}>Skip</button>
         {offer.kind === 'potion' ? <>
-          <label>Pass to<select aria-label="Pass to" value={potionRecipientIds[at] ?? ''} onChange={(event) => setPotionRecipientIds((current) => current.map((id, idIndex) => idIndex === at ? event.target.value : id))}><option value="">{hasSozu(player) ? 'Choose a recipient' : 'Keep or replace yours'}</option>{players.filter((candidate) => candidate.id !== player.id && !candidate.dead && !hasSozu(candidate) && candidate.potions.length < potionLimit(ascension, candidate)).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
+          <label>Pass to<select aria-label="Pass to" required={hasSozu(player)} value={potionRecipientIds[at] ?? ''} onChange={(event) => setPotionRecipientIds((current) => current.map((id, idIndex) => idIndex === at ? event.target.value : id))}><option value="">{hasSozu(player) ? 'Choose a recipient' : 'Keep or replace yours'}</option>{players.filter((candidate) => candidate.id !== player.id && !candidate.dead && !hasSozu(candidate) && candidate.potions.length < potionLimit(ascension, candidate)).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
           {!hasSozu(player) ? <fieldset className="event-potion-replacement" aria-label="Replace"><legend>Replace</legend><button type="button" aria-pressed={!potionReplacementIds[at]} onClick={() => setPotionReplacementIds((current) => current.map((id, idIndex) => idIndex === at ? null : id))}>None</button>{player.potions.map((id, heldIndex) => <button type="button" key={`${id}-${heldIndex}`} aria-pressed={potionReplacementIds[at] === id} onClick={() => setPotionReplacementIds((current) => current.map((held, idIndex) => idIndex === at ? id : held))}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}</fieldset> : null}
         </> : null}
       </RewardItem>;
@@ -1392,6 +1392,7 @@ function EventScreen({
           {needsTarget ? <label>
             Target player
             <select
+              required
               disabled={Boolean(pendingDecision?.targetPlayerId)}
               value={effectiveTargetPlayerId}
               onChange={(event) => setTargetPlayerId(event.target.value)}
@@ -1429,6 +1430,7 @@ function EventScreen({
             <label>
               Forward room
               <select
+                required
                 disabled={Boolean(pendingDecision?.roomId)}
                 value={effectiveRoomId}
                 onChange={(event) => setRoomId(event.target.value)}

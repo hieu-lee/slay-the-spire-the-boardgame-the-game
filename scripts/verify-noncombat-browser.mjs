@@ -2219,6 +2219,7 @@ await page.evaluate(() => {
 await page.getByText('These rewards are face-up').waitFor()
 const sozuEventTake = page.getByRole('button', { name: 'Take' })
 const sozuPass = page.getByLabel('Pass to', { exact: true })
+const sozuPassRequired = await sozuPass.evaluate((select) => select.required)
 const sozuPassOptions = await sozuPass.locator('option').allTextContents()
 const sozuEventTakeDisabled = await sozuEventTake.isDisabled()
 const sozuReplacementControls = await page.getByLabel('Replace', { exact: true }).count()
@@ -2226,6 +2227,7 @@ await sozuPass.selectOption({ label: 'Defect' })
 const passedEventTakeEnabled = await sozuEventTake.isEnabled()
 check('Event Potion pass excludes Sozu seats and requires a legal recipient', () => {
   assert(sozuEventTakeDisabled, 'Sozu holder could keep an Event Potion')
+  assert(sozuPassRequired, 'Sozu-forced Potion recipient was not marked required')
   assert(!sozuPassOptions.includes('Silent'), 'Sozu teammate remained a Potion recipient')
   assertEqual(sozuReplacementControls, 0)
   assert(passedEventTakeEnabled, 'legal non-Sozu recipient could not receive the Potion')
@@ -2266,8 +2268,12 @@ await page.evaluate(() => {
 })
 await page.getByRole('heading', { name: 'Dead Adventurer' }).waitFor()
 const targetChoices = await page.getByLabel('Reward recipient').locator('option').count()
+const targetRequired = await page.getByLabel('Reward recipient').evaluate((select) => select.required)
 const targetExpected = await page.evaluate(() => 1 + window.__STS_DEBUG__.getRun().players.filter((player) => !player.dead).length)
-check('staged one-player item rewards retain their recipient selector', () => assertEqual(targetChoices, targetExpected))
+check('staged one-player item rewards retain their recipient selector', () => {
+  assertEqual(targetChoices, targetExpected)
+  assert(targetRequired, 'mandatory reward recipient was not marked required')
+})
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -4476,6 +4482,7 @@ await page.evaluate(() => {
 await page.getByRole('heading', { name: 'Secret Portal' }).waitFor()
 await page.getByRole('button', { name: /Enter the Portal/ }).click()
 const forward = page.getByLabel('Forward room')
+const forwardRequired = await forward.evaluate((select) => select.required)
 assert((await forward.locator('option').count()) > 1, 'Secret Portal did not list higher rooms')
 const targetlessPortalDisabled = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 await forward.selectOption({ index: 1 })
@@ -4485,6 +4492,7 @@ await page.waitForFunction((roomId) => window.__STS_DEBUG__.getRun().map.positio
 const internalIdInputs = await page.locator('input[placeholder="Room id"]').count()
 check('Secret Portal exposes and enters labeled higher rooms without internal IDs', () => {
   assert(targetlessPortalDisabled, 'Secret Portal enabled before a destination was chosen')
+  assert(forwardRequired, 'mandatory Secret Portal destination was not marked required')
   assertEqual(internalIdInputs, 0)
 })
 

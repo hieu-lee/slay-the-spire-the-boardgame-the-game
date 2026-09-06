@@ -41,6 +41,8 @@ await page.goto(`http://localhost:${address.port}`)
 await page.waitForFunction(async () => (await document.modelContext.getTools()).length === 2)
 const tools = await page.evaluate(async () => (await document.modelContext.getTools()).map((tool) => ({
   name: tool.name,
+  title: tool.title,
+  description: tool.description,
   annotations: tool.annotations,
   inputSchema: tool.inputSchema,
 })))
@@ -102,6 +104,15 @@ const controls = await page.evaluate(async () => {
     <button aria-label="Cancelled delayed advance">Cancelled delayed advance</button>
     <span data-vfx-seq="99" aria-hidden="true">Unrelated teammate presentation</span>
     <span id="morph-summary" hidden data-webmcp-transient-status></span>
+    <span class="visually-hidden">Draw pile, 7 cards. 3 Energy. 5 Gold.</span>
+    <span id="achievement-detail" class="visually-hidden">Unique achievement challenge.</span>
+    <article aria-label="Achievement" aria-describedby="achievement-detail"></article>
+    <span id="hidden-owner-detail">Visible hidden-owner narrative.</span>
+    <button hidden aria-describedby="hidden-owner-detail">Hidden owner</button>
+    <span id="passive-owner-detail">Visible passive-owner narrative.</span>
+    <span data-webmcp-passive><button aria-describedby="passive-owner-detail">Passive owner</button></span>
+    <span id="upload-detail">Visible upload detail.</span>
+    <label>Upload<input type="file" aria-describedby="upload-detail"></label>
     <div data-webmcp-passive>Party voice token noise<button aria-label="Join voice">Join voice</button></div>
     <span data-webmcp-passive>Voice unavailable</span>
     <button aria-label="No-op button">No-op button</button>
@@ -109,6 +120,9 @@ const controls = await page.evaluate(async () => {
     <span role="button" tabindex="0" aria-label="Choose lightning Orb 1">Orb</span>
     <label><input type="checkbox"> Keep Bash</label>
     <select aria-label="Target"><option value="cultist">Cultist</option><option value="jaw-worm">Jaw Worm</option></select>
+    <select aria-label="Pass to"><option value="">Keep yours</option><option value="ally">Ally</option></select>
+    <label><input type="checkbox" disabled checked> Locked choice</label>
+    <label>Locked target<select disabled><option value="cultist">Cultist</option><option value="jaw-worm" selected>Jaw Worm</option></select></label>
     <input type="text" aria-label="Player name" maxlength="12" value="Ironclad">
     <input type="search" aria-label="Search cards">
     <input type="range" aria-label="Volume" min="0" max="100" step="5" value="50">
@@ -240,17 +254,17 @@ const controls = await page.evaluate(async () => {
   })()
   const inspectedWhilePending = await inspect.execute({})
   const delayed = await delayedPending
-  const stagedControl = delayed.state.controls.find((control) => control.label === 'Staged advance')
+  const stagedControl = delayed.controls.find((control) => control.label === 'Staged advance')
   const staged = await interact.execute({ controlId: stagedControl.id })
-  const delayedTargetControl = staged.state.controls.find((control) => control.label === 'Delayed enemy target')
+  const delayedTargetControl = staged.controls.find((control) => control.label === 'Delayed enemy target')
   const resolvedTarget = await interact.execute({ controlId: delayedTargetControl.id })
-  const presentedControl = resolvedTarget.state.controls.find((control) => control.label === 'Presented advance')
+  const presentedControl = resolvedTarget.controls.find((control) => control.label === 'Presented advance')
   const presented = await interact.execute({ controlId: presentedControl.id })
-  const secondMorphControl = presented.state.controls.find((control) => control.label === 'Second morph sequence')
+  const secondMorphControl = presented.controls.find((control) => control.label === 'Second morph sequence')
   const secondMorph = await interact.execute({ controlId: secondMorphControl.id })
-  const defeatedControl = secondMorph.state.controls.find((control) => control.label === 'Defeated enemy cleanup')
+  const defeatedControl = secondMorph.controls.find((control) => control.label === 'Defeated enemy cleanup')
   const defeated = await interact.execute({ controlId: defeatedControl.id })
-  const cancelledControl = defeated.state.controls.find((control) => control.label === 'Cancelled delayed advance')
+  const cancelledControl = defeated.controls.find((control) => control.label === 'Cancelled delayed advance')
   const cancellation = await (async () => {
     const controller = new AbortController()
     const pending = interact.execute({ controlId: cancelledControl.id }, { signal: controller.signal })
@@ -274,6 +288,8 @@ const controls = await page.evaluate(async () => {
   waiting.remove()
   let strike = listed.controls.find((control) => control.label.startsWith('Strike,'))
   const unavailableBash = listed.unavailableControls.find((control) => control.label.startsWith('Bash,'))
+  const unavailableLockedChoice = listed.unavailableControls.find((control) => control.label === 'Locked choice')
+  const unavailableLockedTarget = listed.unavailableControls.find((control) => control.label === 'Locked target')
   if (!strike) throw new Error('rich card action was not listed')
   const invalid = {}
   for (const [name, value] of [['Strike,', true], ['Target', 'missing'], ['Player name', 'name-that-is-too-long'],
@@ -285,6 +301,20 @@ const controls = await page.evaluate(async () => {
     } catch (error) {
       invalid[name] = String(error)
     }
+  }
+  const targetWithoutValue = (await read()).controls.find((control) => control.label === 'Target')
+  try {
+    await document.modelContext.executeTool(interact, { controlId: targetWithoutValue.id })
+    invalid.TargetOmitted = ''
+  } catch (error) {
+    invalid.TargetOmitted = String(error)
+  }
+  const optionalSelect = (await read()).controls.find((control) => control.label === 'Pass to')
+  try {
+    await document.modelContext.executeTool(interact, { controlId: optionalSelect.id })
+    invalid.OptionalSelectOmitted = ''
+  } catch (error) {
+    invalid.OptionalSelectOmitted = String(error)
   }
   strike = (await read()).controls.find((control) => control.label.startsWith('Strike,'))
   await document.modelContext.executeTool(interact, { controlId: strike.id })
@@ -322,10 +352,20 @@ const controls = await page.evaluate(async () => {
     waitingMs,
     passiveListed,
     passiveTextListed: listed.screen.text.includes('Party voice token noise') || listed.screen.text.includes('Voice unavailable'),
+    duplicateTextListed: listed.screen.text.includes('Delayed advance') || listed.screen.text.includes('Reliable opening damage.'),
+    wrappedLabelDuplicated: listed.screen.text.includes('Keep Bash') || listed.screen.text.includes('Locked target'),
+    semanticTextListed: listed.screen.text.includes('Draw pile, 7 cards. 3 Energy. 5 Gold.'),
+    nonControlDescriptionListed: listed.screen.text.includes('Unique achievement challenge.'),
+    unlistedDescriptionOwnersPreserved: listed.screen.text.includes('Visible hidden-owner narrative.') &&
+      listed.screen.text.includes('Visible passive-owner narrative.'),
+    unsupportedInputPreserved: listed.screen.text.includes('Upload') && listed.screen.text.includes('Visible upload detail.') &&
+      !listed.controls.some((control) => control.label === 'Upload'),
     richLabel: strike.label,
     context: strike.context,
     description: strike.description,
     unavailableBash,
+    unavailableLockedChoice,
+    unavailableLockedTarget,
     invalid,
     stale,
     checked: find('Keep Bash')?.value,
@@ -335,6 +375,7 @@ const controls = await page.evaluate(async () => {
     volume: find('Volume')?.value,
     range: { min: find('Volume')?.min, max: find('Volume')?.max, step: find('Volume')?.step },
     options: find('Target')?.options,
+    payloadChars: JSON.stringify(listed).length,
   }
 })
 const disclosure = await page.evaluate(async () => {
@@ -527,15 +568,17 @@ const exclusions = await page.evaluate(async () => {
     hidesText: !inspected.screen.text.includes('Secret hidden dialog text'),
   }
 })
-const guessed = await page.evaluate(async () => {
+const guessed = await page.evaluate(async (listedId) => {
   const interact = (await document.modelContext.getTools()).find((tool) => tool.name === 'interact_with_game')
+  const last = listedId.at(-1)
+  const guessedId = `${listedId.slice(0, -1)}${last === '0' ? '1' : '0'}`
   try {
-    await document.modelContext.executeTool(interact, { controlId: 'control-1-1' })
+    await document.modelContext.executeTool(interact, { controlId: guessedId })
     return ''
   } catch (error) {
     return String(error)
   }
-})
+}, exclusions.controlId)
 const invoked = await page.evaluate(async (controlId) => {
   const interact = (await document.modelContext.getTools()).find((tool) => tool.name === 'interact_with_game')
   return JSON.parse(await document.modelContext.executeTool(interact, { controlId }))
@@ -563,6 +606,41 @@ const realFlow = await page.evaluate(async () => {
     startedControls: started.controls.length,
   }
 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const playerId = run.players[0].id
+  run.phase = 'room'
+  run.roomState = {
+    kind: 'event',
+    card: {
+      id: 'lab', instanceId: 'webmcp-lab-select', act: 1, minAscension: 0,
+      requiresColorlessUnlock: false, name: 'Lab', scope: 'automatic', options: [{
+        id: 'resolve', label: 'Take Potions',
+        description: 'Each player gains a Potion. Roll once for the party; on 4–6 one player gains another Potion.',
+        effects: [{ tag: 'gain-potion', target: 'each-player' }, {
+          tag: 'roll-d6', results: { 6: [{ tag: 'gain-potion', target: 'one-player' }] },
+        }],
+      }],
+    },
+    decisions: {}, dieRolls: {}, pendingRolls: { [playerId]: [6] },
+    pendingDecisions: { [playerId]: { optionIds: ['resolve'] } },
+  }
+  debug.setRun(run)
+})
+await page.getByLabel('Target player').waitFor()
+const labInspection = await inspectAll()
+const labTarget = labInspection.controls.find((control) => control.label === 'Target player')
+if (!labTarget) throw new Error(`Lab target select is missing from WebMCP: ${JSON.stringify(labInspection.controls)}`)
+const labInteraction = await interact(labTarget.id)
+const labSelect = {
+  required: labTarget.required,
+  value: await page.getByLabel('Target player').inputValue(),
+  confirmEnabled: await page.getByRole('button', { name: /Confirm choice/ }).isEnabled(),
+  returnedConfirm: labInteraction.controls.some((control) => /Confirm choice/.test(control.label)),
+  labelDuplicated: labInspection.screen.text.includes('Target player'),
+  payloadChars: JSON.stringify(labInspection).length,
+}
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -628,14 +706,15 @@ if (!endTurn) throw new Error('WebMCP did not expose End turn after a real attac
 const endTurnResult = await interact(endTurn.id)
 const combatFlow = {
   seesTurn: /Turn \d+/.test(combatInspection.screen.text),
-  seesEnergy: /Energy/.test(JSON.stringify(combatInspection)),
+  seesEnergy: /\b\d+ Energy\b/.test(combatInspection.screen.text),
+  seesDrawPile: /Draw pile, \d+ cards/.test(combatInspection.screen.text),
   richAttack: attack.label,
   targetLabel,
   targetSettlementMarked: targetSettlement?.marked,
   targetSettledBeforeContact: targetSettlement?.settledBeforeContact,
-  targetReturnedState: Boolean(targetSettlement?.result.state),
+  targetReturnedState: Boolean(targetSettlement?.result.controls),
   changed: afterAttack.energy < beforeAttack.energy || afterAttack.enemyHp < beforeAttack.enemyHp,
-  nextTurnReturned: /Turn 2/.test(endTurnResult.state?.screen.text ?? ''),
+  nextTurnReturned: /Turn 2/.test(endTurnResult.screen?.text ?? ''),
 }
 const stale = await page.evaluate(async (controlId) => {
   const interact = (await document.modelContext.getTools()).find((tool) => tool.name === 'interact_with_game')
@@ -669,7 +748,7 @@ const bridgeCompatibility = await bridge.evaluate(async () => {
   const result = await interact.execute({ controlId: singlePlayer.id })
   return {
     tools: navigator.modelContext.listTools().map((tool) => tool.name),
-    reachedModeSelect: result.state.controls.some((control) => control.label === 'Standard'),
+    reachedModeSelect: result.controls.some((control) => control.label === 'Standard'),
   }
 })
 await bridge.close()
@@ -680,6 +759,15 @@ fallback.on('pageerror', (error) => fallbackErrors.push(String(error)))
 await fallback.goto(`http://localhost:${address.port}`)
 await fallback.getByRole('button', { name: 'Single Player' }).waitFor()
 await fallback.close()
+
+const payloadChars = {
+  metadata: JSON.stringify(tools).length,
+  start: JSON.stringify(initial).length,
+  fixture: controls.payloadChars,
+  lab: labSelect.payloadChars,
+  map: JSON.stringify(mapInspection).length,
+  combat: JSON.stringify(combatInspection).length,
+}
 
 suite('WebMCP browser contract')
 
@@ -697,7 +785,7 @@ check('registers two low-friction, safely annotated game tools', () => {
 })
 
 check('returns visible gameplay context and drives every gameplay control kind', () => {
-  assert(initial.screen.headings.length > 0 && initial.screen.text.includes('THE BOARD GAME'), 'inspection reads the visible start screen')
+  assert(initial.screen.headings.length > 0, 'inspection reads the visible start screen')
   assert(initial.controls.some((control) => control.label === 'Single Player'), 'inspection lists the visible menu')
   assert(malformed.inspectNull.includes('Expected an object input') && malformed.inspectOffset.includes('offset must be') &&
     malformed.inspectExtra.includes('Unexpected input property') && malformed.interactNull.includes('Expected an object input') &&
@@ -706,35 +794,48 @@ check('returns visible gameplay context and drives every gameplay control kind',
   assert(controls.richLabel.includes('Deal 6 damage') && controls.context === 'Ironclad training hand' &&
     controls.description === 'Reliable opening damage.', 'card actions preserve rich accessible context')
   assert(controls.buttonClicks === 1 && controls.orbClicks === 1, 'button and role-button controls use their visible click paths')
-  assert(controls.delayed.state.controls.some((control) => control.label === 'Delayed next'),
+  assert(controls.delayed.controls.some((control) => control.label === 'Delayed next'),
     'interaction waits for a delayed authoritative update before returning reusable controls')
-  assert(controls.staged.state.controls.some((control) => control.label === 'Stage two'),
+  assert(controls.staged.controls.some((control) => control.label === 'Stage two'),
     'interaction waits for a stable final state after an immediate intermediate update')
-  assert(controls.resolvedTarget.state.controls.some((control) => control.label === 'Enemy target resolved'),
+  assert(controls.resolvedTarget.controls.some((control) => control.label === 'Enemy target resolved'),
     'target interaction waits for delayed semantic damage even before a pending marker appears')
-  assert(controls.presented.state.controls.some((control) => control.label === 'Presentation settled'),
+  assert(controls.presented.controls.some((control) => control.label === 'Presentation settled'),
     'interaction waits through the longest production combat presentation delay')
-  assert(controls.presented.state.screen.announcements?.includes('Strike upgraded to Strike+. Defend upgraded to Defend+.'),
+  assert(controls.presented.screen.announcements?.includes('Strike upgraded to Strike+. Defend upgraded to Defend+.'),
     'interaction returns every result from a queued multi-card change')
-  assert(controls.secondMorph.state.screen.announcements?.includes('Gained Lesson Learned.'),
+  assert(controls.secondMorph.screen.announcements?.includes('Gained Lesson Learned.'),
     'a later morph sequence on the same persistent host returns its new result')
-  assert(!controls.defeated.state.screen.announcements,
+  assert(!controls.defeated.screen.announcements,
     'a reported multi-card result is omitted from the next unrelated interaction')
-  assert(controls.defeated.state.controls.some((control) => control.label === 'Defeat settled'),
+  assert(controls.defeated.controls.some((control) => control.label === 'Defeat settled'),
     'interaction waits until a defeated enemy is removed after presentation ends')
   assert(controls.inspectedWhilePending.pending && controls.inspectedWhilePending.controls.length === 0 &&
     controls.invokedWhilePending.includes('Game interaction is pending'),
   'inspection reports pending authority without minting invokable control IDs')
   assert(controls.cancellation.includes('AbortError'), 'a cancelled delayed interaction stops settling promptly')
-  assert(controls.noOp.action === 'No-op button' && controls.noOp.state && controls.noOpMs < 2_000,
+  assert(controls.noOp.controls && controls.noOpMs < 2_000,
     'a completed no-op returns current state without waiting for the long timeout')
-  assert(controls.waitingResult.state.screen.status.includes('Waiting for another player') && controls.waitingMs < 3_000,
+  assert(controls.waitingResult.screen.status.includes('Waiting for another player') && controls.waitingMs < 3_000,
     'a changed stable waiting screen settles without being misreported as pending')
   assert(!controls.passiveListed && !controls.passiveTextListed,
     'non-game utility controls and text stay out of gameplay state and settlement')
+  assert(!controls.duplicateTextListed && !controls.wrappedLabelDuplicated,
+    'structured control, wrapped-label, and description text is not repeated in screen text')
+  assert(controls.semanticTextListed && controls.nonControlDescriptionListed && controls.unlistedDescriptionOwnersPreserved &&
+    controls.unsupportedInputPreserved,
+  'unique hidden and non-control described state survives unlisted description owners')
   assert(controls.unavailableBash && controls.unavailableBash.id === undefined,
     'unplayable cards remain visible for planning without becoming invokable')
+  assert(controls.unavailableLockedChoice?.kind === 'checkbox' && controls.unavailableLockedChoice.value === true &&
+    controls.unavailableLockedTarget?.kind === 'select' && controls.unavailableLockedTarget.value === 'jaw-worm' &&
+    controls.unavailableLockedTarget.options?.some((option) => option.value === 'jaw-worm' && option.label === 'Jaw Worm'),
+  `disabled form controls preserve their visible state: ${JSON.stringify({
+    choice: controls.unavailableLockedChoice, target: controls.unavailableLockedTarget,
+  })}`)
   assert(controls.invalid['Strike,'].includes('value must be omitted') && controls.invalid.Target.includes('enabled listed option') &&
+    controls.invalid.TargetOmitted.includes('value must be a string') &&
+    controls.invalid.OptionalSelectOmitted.includes('value must be a string') &&
     controls.invalid['Player name'].includes('at most 12') && controls.invalid['Search cards'].includes('at most 1000') &&
     controls.invalid.Volume.includes('control step'),
   `control-specific runtime validation rejects unsafe or impossible values: ${JSON.stringify(controls.invalid)}`)
@@ -765,23 +866,33 @@ check('keeps snapshots scoped, stable, opaque, and current', () => {
   assert(exclusions.ariaDisabled && exclusions.inert && exclusions.hidesObservation && exclusions.hidesText,
     'aria-disabled and inert controls are not listed, and hidden content is not disclosed')
   assert(exclusions.guarded.includes('Control is no longer available'), 'an interaction lock prevents a listed token from executing')
-  assert(/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(exclusions.controlId), 'listed control IDs are opaque tokens')
+  assert(/^[\da-f]{8}-[\da-f]{3}$/i.test(exclusions.controlId),
+    'listed control IDs are short opaque snapshot tokens')
   assert(guessed.includes('Control is no longer available'), 'a guessed control ID is rejected')
-  assert(invoked.action === 'Single Player' && invoked.state.controls.some((control) => control.label === 'Standard'),
-    'an interaction returns the refreshed screen and new control IDs')
+  assert(invoked.controls.some((control) => control.label === 'Standard') &&
+    invoked.screen.text.includes('Embark on a quest to Slay the Spire!'),
+  'an interaction returns refreshed controls and visible copy not repeated by their accessible labels')
   assert(stale.includes('Control is no longer available'), 'a control ID cannot outlive its visible screen')
+})
+
+check('keeps representative WebMCP payloads compact', () => {
+  assert(payloadChars.metadata < 1_200 && payloadChars.start < 900 && payloadChars.fixture < 3_700 && payloadChars.lab < 950,
+    `payload budget exceeded: ${JSON.stringify(payloadChars)}`)
 })
 
 check('starts a real Watcher run through WebMCP and loads cleanly', () => {
   assert(realFlow.watcherSelected && realFlow.describesWatcher, 'inspection exposes the selected hero and its gameplay identity')
   assert(realFlow.startedHeading && realFlow.startedControls > 0, 'WebMCP reaches the first playable run screen')
+  assert(labSelect.required && labSelect.value && labSelect.confirmEnabled && labSelect.returnedConfirm && !labSelect.labelDuplicated,
+    `a controlId-only Lab interaction selects its sole recipient and returns the enabled action: ${JSON.stringify(labSelect)}`)
   assert(mapInspection.totalUnavailableControls > 0 &&
     JSON.stringify(mapInspection.unavailableControls.filter((control) => control.context?.startsWith('Floor '))
       .map((control) => control.context).sort()) === JSON.stringify(futureRoomContexts) &&
     futureRoomContexts.some((context) => context.includes('; exits to floor ')) &&
-    mapInteraction.state.controls.some((control) => control.label === 'End turn' || control.label === 'Resolve start of turn'),
+    mapInteraction.controls.some((control) => control.label === 'End turn' || control.label === 'Resolve start of turn'),
   'map inspection preserves every future route-planning room and map entry returns the settled combat screen')
-  assert(combatFlow.seesTurn && combatFlow.seesEnergy, 'combat inspection exposes turn and Energy')
+  assert(combatFlow.seesTurn && combatFlow.seesEnergy && combatFlow.seesDrawPile,
+    'combat inspection exposes turn, current Energy, and draw-pile count')
   assert(/, attack,/i.test(combatFlow.richAttack) && combatFlow.targetLabel && combatFlow.targetSettlementMarked &&
     !combatFlow.targetSettledBeforeContact && combatFlow.targetReturnedState && combatFlow.changed && combatFlow.nextTurnReturned,
   `a real Watcher Attack remains pending through contact, then returns settled controls: ${JSON.stringify(combatFlow)}`)
@@ -791,4 +902,4 @@ check('starts a real Watcher run through WebMCP and loads cleanly', () => {
 
 await browser.close()
 await server.close()
-report('WebMCP browser')
+report(`WebMCP browser; payload chars ${Object.entries(payloadChars).map(([name, size]) => `${name}=${size}`).join(', ')}`)

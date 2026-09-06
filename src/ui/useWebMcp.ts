@@ -30,6 +30,7 @@ type VisibleControl = {
   max?: number
   step?: number
   maxLength?: number
+  required?: boolean
   options?: { value: string; label: string }[]
 }
 type Control = VisibleControl & { element: HTMLElement }
@@ -38,10 +39,15 @@ const PAGE_SIZE = 30
 const SCREEN_TEXT_LIMIT = 8_000
 const TEXT_VALUE_LIMIT = 1_000
 const CONTROL_SELECTOR = 'button, summary, input, select, [role="button"]'
+const STRUCTURED_TEXT_SELECTOR = 'h1, h2, h3, [role="heading"], [role="status"], [role="alert"]'
 let controls: Control[] = []
 let controlStateSignature = ''
 let pageSnapshot: { id: string; signature: string } | null = null
 let pageSnapshotSequence = 0
+
+function identify(current: Control[]): Control[] {
+  return current.map((control) => ({ ...control, id: crypto.randomUUID().slice(0, 12) }))
+}
 
 function invalidateControls() {
   controls = []
@@ -90,7 +96,11 @@ function referencedText(element: HTMLElement, attribute: 'aria-labelledby' | 'ar
 function label(element: HTMLElement): string {
   const labelled = referencedText(element, 'aria-labelledby')
   const labels = element instanceof HTMLInputElement || element instanceof HTMLSelectElement
-    ? [...(element.labels ?? [])].map(text).filter(Boolean).join(' ')
+    ? [...(element.labels ?? [])].map((label) => {
+      const copy = label.cloneNode(true) as HTMLLabelElement
+      copy.querySelectorAll(CONTROL_SELECTOR).forEach((control) => control.remove())
+      return text(copy)
+    }).filter(Boolean).join(' ')
     : ''
   return labelled || element.getAttribute('aria-label')?.trim() || labels || text(element) ||
     element.getAttribute('title')?.trim() || (element instanceof HTMLInputElement ? element.placeholder.trim() : '') || 'Unnamed control'
@@ -138,6 +148,7 @@ function publicControl(element: HTMLElement, id = ''): VisibleControl | null {
   }
   if (element instanceof HTMLSelectElement) {
     result.value = element.value
+    if (element.required) result.required = true
     result.options = [...element.options].filter((option) => !option.disabled)
       .map((option) => ({ value: option.value, label: text(option) }))
   }
@@ -160,7 +171,7 @@ function visibleControls(): VisibleControl[] {
     const previous = controls[index]
     return previous?.element === control.element && JSON.stringify(snapshot(previous)) === JSON.stringify(snapshot(control))
   })
-  if (!unchanged) controls = current.map((control) => ({ ...control, id: crypto.randomUUID() }))
+  if (!unchanged) controls = identify(current)
   return controls.map(({ element: _, ...control }) => control)
 }
 
@@ -170,20 +181,41 @@ function unavailableControls() {
     .flatMap((element) => {
       const control = publicControl(element)
       if (!control) return []
-      const { id: _, ...result } = control
-      return [result]
+      if (control.kind !== 'button') {
+        const { id: _, ...result } = control
+        return [result]
+      }
+      return [{
+        label: control.label,
+        ...(control.context ? { context: control.context } : {}),
+        ...(control.description ? { description: control.description } : {}),
+        ...(control.selected !== undefined ? { selected: control.selected } : {}),
+      }]
     })
 }
 
 function screenText(scopes: HTMLElement[]): string {
   const chunks: string[] = []
+  const describedNodes = scopes.flatMap((scope) => [...scope.querySelectorAll<HTMLElement>('[aria-describedby]')])
+    .filter((element) => element.matches(CONTROL_SELECTOR) && controlKind(element) && rendered(element) &&
+      !element.closest('[data-webmcp-passive]'))
+    .flatMap((element) => (element.getAttribute('aria-describedby') ?? '').split(/\s+/))
+    .map((id) => document.getElementById(id)).filter((element): element is HTMLElement => Boolean(element))
   for (const scope of scopes) {
     const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT)
     while (walker.nextNode()) {
       const parent = walker.currentNode.parentElement
       const value = walker.currentNode.textContent?.replace(/\s+/g, ' ').trim()
+      const ownerLabel = parent?.closest('label')
+      const candidate = parent?.closest<HTMLElement>(CONTROL_SELECTOR) ?? ownerLabel?.control
+      const control = candidate && controlKind(candidate) ? candidate : null
+      const duplicatesControl = control && (control instanceof HTMLSelectElement ||
+        `${label(control)} ${referencedText(control, 'aria-describedby')}`.includes(value ?? ''))
       if (parent && value && rendered(parent) &&
-        !parent.closest('[data-webmcp-passive], [data-webmcp-transient-status]')) chunks.push(value)
+        !parent.closest('[data-webmcp-passive], [data-webmcp-transient-status]') &&
+        !parent.closest(STRUCTURED_TEXT_SELECTOR) &&
+        !duplicatesControl &&
+        !describedNodes.some((element) => element.contains(parent))) chunks.push(value)
     }
   }
   return chunks.join(' ').replace(/\s+/g, ' ').trim()
@@ -209,16 +241,19 @@ function gameScreen(announcementNodes = announcementElements()) {
   const read = (selector: string) => scopes.flatMap((scope) => [...scope.querySelectorAll<HTMLElement>(selector)])
     .filter((element) => rendered(element) && !element.closest('[data-webmcp-passive]')).map(text).filter(Boolean)
   const rawText = screenText(scopes)
+  const headings = [...new Set(read('h1, h2, h3, [role="heading"]'))]
+  const status = [...new Set(read('[role="status"], [role="alert"]'))]
+  const structuredText = new Set([...headings, ...status])
   const observations = [...new Set(scopes.flatMap((scope) => [
     ...(scope.matches('[aria-label], [aria-labelledby]') ? [scope] : []),
     ...scope.querySelectorAll<HTMLElement>('[aria-label], [aria-labelledby]'),
   ]).filter((element) => rendered(element) && !element.closest('[data-webmcp-passive]') &&
       !element.matches(CONTROL_SELECTOR) &&
-      !element.closest('button, summary, [role="button"]')).map(label).filter(Boolean))]
+      !element.closest('button, summary, [role="button"]')).map(label).filter((value) => value && !structuredText.has(value)))]
   const announcements = announcementTexts(announcementNodes)
   return {
-    headings: [...new Set(read('h1, h2, h3, [role="heading"]'))],
-    status: [...new Set(read('[role="status"], [role="alert"]'))],
+    headings,
+    status,
     text: rawText.slice(0, SCREEN_TEXT_LIMIT),
     textTruncated: rawText.length > SCREEN_TEXT_LIMIT,
     observations,
@@ -272,7 +307,7 @@ function captureGame(input: unknown, acknowledge: boolean) {
     unavailableControls: unavailable,
   })
   if (controlStateSignature && stateSignature !== controlStateSignature) {
-    controls = controls.map((control) => ({ ...control, id: crypto.randomUUID() }))
+    controls = identify(controls)
     available = controls.map(({ element: _, ...control }) => control)
   }
   const page = available.slice(start, start + PAGE_SIZE)
@@ -357,12 +392,12 @@ export function useWebMcp() {
       {
         name: 'inspect_game',
         title: 'Inspect game',
-        description: 'Read only the current viewer-visible game screen and list its gameplay controls. Call this first; after a successful interaction use the refreshed state returned by interact_with_game instead. Follow nextOffset until null to see every enabled and unavailable choice, passing snapshotId on continuation pages; they omit unchanged screen text and reject mixed states. Results include route topology, rich card and enemy descriptions, control state, and opaque control IDs. While pending is true, wait and inspect again; no actions are exposed.',
+        description: 'Read the visible game state and controls. Page with nextOffset and snapshotId. Includes unavailable future rooms for route planning. If pending, wait and inspect again.',
         inputSchema: {
           type: 'object',
           properties: {
-            offset: { type: 'integer', minimum: 0, description: 'Zero-based control page offset.' },
-            snapshotId: { type: 'string', maxLength: 32, description: 'First-page snapshotId, required with nonzero offset.' },
+            offset: { type: 'integer', minimum: 0, description: 'Control-page offset.' },
+            snapshotId: { type: 'string', maxLength: 32, description: 'First-page ID for later pages.' },
           },
           additionalProperties: false,
         },
@@ -372,14 +407,14 @@ export function useWebMcp() {
       {
         name: 'interact_with_game',
         title: 'Interact with game',
-        description: 'Use one control ID from the latest state to click it or set its value through the same visible UI path a human uses. Pass a boolean for a checkbox, a listed string for a select or text control, and a number for a number or range control; omit value for buttons. Changes only this game session. A settled call returns the refreshed state and new control IDs; if pending is true, wait and call inspect_game once.',
+        description: 'Use a current control ID. Omit value for buttons or a required empty select with one choice; otherwise pass the listed string, number, or boolean. Returns the settled refreshed state.',
         inputSchema: {
           type: 'object',
           properties: {
-            controlId: { type: 'string', minLength: 1, maxLength: 64, description: 'Opaque control ID returned by inspect_game.' },
+            controlId: { type: 'string', minLength: 1, maxLength: 64, description: 'ID from the latest state.' },
             value: {
               oneOf: [{ type: 'string', maxLength: TEXT_VALUE_LIMIT }, { type: 'number' }, { type: 'boolean' }],
-              description: 'Required for form controls; omit for buttons.',
+              description: 'Control value when needed.',
             },
           },
           required: ['controlId'],
@@ -428,22 +463,26 @@ export function useWebMcp() {
             }
             setValue(input, String(value))
           } else {
-            if (typeof value !== 'string') throw new Error(`value must be a string for a ${entry.kind}.`)
-            if (element instanceof HTMLSelectElement && ![...element.options].some((option) => !option.disabled && option.value === value)) {
+            let nextValue = value
+            if (element instanceof HTMLSelectElement && nextValue === undefined && element.required && element.value === '') {
+              const alternatives = [...element.options].filter((option) => !option.disabled && option.value)
+              if (alternatives.length === 1) nextValue = alternatives[0]!.value
+            }
+            if (typeof nextValue !== 'string') throw new Error(`value must be a string for a ${entry.kind}.`)
+            if (element instanceof HTMLSelectElement && ![...element.options].some((option) => !option.disabled && option.value === nextValue)) {
               throw new Error('value must match an enabled listed option.')
             }
             const limit = element instanceof HTMLInputElement && element.maxLength >= 0
               ? Math.min(element.maxLength, TEXT_VALUE_LIMIT) : TEXT_VALUE_LIMIT
-            if (value.length > limit) {
+            if (nextValue.length > limit) {
               throw new Error(`value must be at most ${limit} characters.`)
             }
-            setValue(element as HTMLInputElement | HTMLSelectElement, value)
+            setValue(element as HTMLInputElement | HTMLSelectElement, nextValue)
           }
           invalidateControls()
           const target = element.matches('.enemy, .seat, .row__lane-target')
           const state = await waitForInteraction(before, options?.signal, target ? 18 : 7)
-          return state ? { action: entry.label, state }
-            : { action: entry.label, pending: true, next: 'Call inspect_game after the action settles.' }
+          return state ?? { pending: true }
         },
       },
     ]
