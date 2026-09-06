@@ -72,6 +72,13 @@ function roomName(room: Room | undefined, bossDefId?: string | null): string {
   return ROOM_LABEL[room.kind]
 }
 
+function routeContext(map: SpireMap, room: Room, bossDefId?: string | null): string {
+  const here = `Floor ${room.row + 1}, branch ${room.column + 1}`
+  const exits = room.exits.map((id) => map.rooms[id]).filter((next): next is Room => Boolean(next))
+    .map((next) => `floor ${next.row + 1} branch ${next.column + 1} (${roomName(next, bossDefId)})`)
+  return exits.length ? `${here}; exits to ${exits.join(', ')}` : here
+}
+
 type Line = { key: string; x1: number; y1: number; x2: number; y2: number; live: boolean }
 
 /**
@@ -413,6 +420,7 @@ export function MapScreen({
                   type="button"
                   key={id}
                   data-room={id}
+                  data-webmcp-context={routeContext(map, room, bossDefId)}
                   className={[
                     'room',
                     `room--${room.kind}`,

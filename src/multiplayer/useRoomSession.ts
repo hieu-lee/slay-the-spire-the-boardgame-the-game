@@ -600,6 +600,8 @@ export function useRoomSession() {
     generation: 0,
     pending: Promise.resolve(),
   })
+  const pendingWrites = useRef(0)
+  const [mutationPending, setMutationPending] = useState(false)
   const enqueue = useCallback((operation: string, body: object | (() => object)) => {
     if (connectionRef.current !== 'connected') return Promise.resolve({ status: 'refused' } satisfies ActionOutcome)
     const actionGeneration = generation.current
@@ -610,6 +612,13 @@ export function useRoomSession() {
     const next = writes.current.pending.then(() => connectionRef.current === 'connected' && connectionEpoch.current === actionConnectionEpoch
       ? post(operation, typeof body === 'function' ? body() : body, actionGeneration)
       : { status: 'refused' } satisfies ActionOutcome)
+    pendingWrites.current++
+    setMutationPending(true)
+    const settled = () => {
+      pendingWrites.current--
+      if (pendingWrites.current === 0) setMutationPending(false)
+    }
+    void next.then(settled, settled)
     writes.current = { generation: actionGeneration, pending: next.catch(() => {}) }
     return next
   }, [post])
@@ -685,6 +694,7 @@ export function useRoomSession() {
     refreshEpoch,
     restorationEpoch,
     connection,
+    mutationPending,
     error,
     entering,
     activeCode: credentials?.code,

@@ -39,6 +39,15 @@ const SCREEN_TEXT_LIMIT = 8_000
 const TEXT_VALUE_LIMIT = 1_000
 const CONTROL_SELECTOR = 'button, summary, input, select, [role="button"]'
 let controls: Control[] = []
+let controlStateSignature = ''
+let pageSnapshot: { id: string; signature: string } | null = null
+let pageSnapshotSequence = 0
+
+function invalidateControls() {
+  controls = []
+  controlStateSignature = ''
+  pageSnapshot = null
+}
 
 function activeScopes(): HTMLElement[] {
   const modal = document.querySelector<HTMLElement>('dialog:modal, [role="dialog"][aria-modal="true"]')
@@ -80,6 +89,8 @@ function label(element: HTMLElement): string {
 }
 
 function contextLabel(element: HTMLElement): string | undefined {
+  const direct = element.dataset.webmcpContext?.trim()
+  if (direct) return direct
   const group = element.parentElement?.closest<HTMLElement>(
     'fieldset, [role="group"][aria-label], [role="group"][aria-labelledby], [aria-label], [aria-labelledby]',
   )
@@ -133,7 +144,7 @@ function snapshot(control: Control): Omit<Control, 'id' | 'element'> {
 function visibleControls(): VisibleControl[] {
   const current = activeScopes().flatMap((scope) => [...scope.querySelectorAll<HTMLElement>(
     CONTROL_SELECTOR,
-  )]).filter(available).flatMap((element) => {
+  )]).filter((element) => available(element) && !element.closest('[data-webmcp-passive]')).flatMap((element) => {
     const control = publicControl(element)
     return control ? [{ ...control, element }] : []
   })
@@ -147,7 +158,8 @@ function visibleControls(): VisibleControl[] {
 
 function unavailableControls() {
   return activeScopes().flatMap((scope) => [...scope.querySelectorAll<HTMLElement>(CONTROL_SELECTOR)])
-    .filter((element) => rendered(element) && !available(element)).flatMap((element) => {
+    .filter((element) => rendered(element) && !available(element) && !element.closest('[data-webmcp-passive]'))
+    .flatMap((element) => {
       const control = publicControl(element)
       if (!control) return []
       const { id: _, ...result } = control
@@ -162,7 +174,7 @@ function screenText(scopes: HTMLElement[]): string {
     while (walker.nextNode()) {
       const parent = walker.currentNode.parentElement
       const value = walker.currentNode.textContent?.replace(/\s+/g, ' ').trim()
-      if (parent && value && rendered(parent)) chunks.push(value)
+      if (parent && value && rendered(parent) && !parent.closest('[data-webmcp-passive]')) chunks.push(value)
     }
   }
   return chunks.join(' ').replace(/\s+/g, ' ').trim()
@@ -171,12 +183,13 @@ function screenText(scopes: HTMLElement[]): string {
 function gameScreen() {
   const scopes = activeScopes()
   const read = (selector: string) => scopes.flatMap((scope) => [...scope.querySelectorAll<HTMLElement>(selector)])
-    .filter(rendered).map(text).filter(Boolean)
+    .filter((element) => rendered(element) && !element.closest('[data-webmcp-passive]')).map(text).filter(Boolean)
   const rawText = screenText(scopes)
   const observations = [...new Set(scopes.flatMap((scope) => [
     ...(scope.matches('[aria-label], [aria-labelledby]') ? [scope] : []),
     ...scope.querySelectorAll<HTMLElement>('[aria-label], [aria-labelledby]'),
-  ]).filter((element) => rendered(element) && !element.matches(CONTROL_SELECTOR) &&
+  ]).filter((element) => rendered(element) && !element.closest('[data-webmcp-passive]') &&
+      !element.matches(CONTROL_SELECTOR) &&
       !element.closest('button, summary, [role="button"]')).map(label).filter(Boolean))]
   return {
     headings: [...new Set(read('h1, h2, h3, [role="heading"]'))],
@@ -200,6 +213,99 @@ function objectInput(input: unknown, allowed: readonly string[]): Record<string,
   return value
 }
 
+function inspectGame(input: unknown) {
+  const { offset, snapshotId } = objectInput(input, ['offset', 'snapshotId'])
+  if (offset !== undefined && (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0)) {
+    throw new Error('offset must be a non-negative integer.')
+  }
+  const start = offset ?? 0
+  if (start === 0 && snapshotId !== undefined) throw new Error('snapshotId must be omitted when offset is 0.')
+  if (start > 0 && (typeof snapshotId !== 'string' || snapshotId.length === 0 || snapshotId.length > 32)) {
+    throw new Error('snapshotId from the first page is required when offset is greater than 0.')
+  }
+  if (document.querySelector('[data-webmcp-pending="true"]') || document.documentElement.dataset.mapTransition) {
+    invalidateControls()
+    return {
+      ...(start === 0 ? { screen: gameScreen() } : {}),
+      controls: [],
+      unavailableControls: [],
+      totalUnavailableControls: 0,
+      unavailableControlsTruncated: false,
+      totalControls: 0,
+      nextOffset: null,
+      pending: true,
+    }
+  }
+  let available = visibleControls()
+  const unavailable = unavailableControls()
+  const screen = gameScreen()
+  const stateSignature = JSON.stringify({
+    screen,
+    controls: available.map(({ id: _, ...control }) => control),
+    unavailableControls: unavailable,
+  })
+  if (controlStateSignature && stateSignature !== controlStateSignature) {
+    controls = controls.map((control) => ({ ...control, id: crypto.randomUUID() }))
+    available = controls.map(({ element: _, ...control }) => control)
+  }
+  const page = available.slice(start, start + PAGE_SIZE)
+  const unavailablePage = unavailable.slice(start, start + PAGE_SIZE)
+  const paginationSignature = JSON.stringify({ stateSignature, controlIds: available.map((control) => control.id) })
+  if (start > 0 && (snapshotId !== pageSnapshot?.id || paginationSignature !== pageSnapshot?.signature)) {
+    invalidateControls()
+    throw new Error('Game state changed during pagination. Restart inspect_game at offset 0.')
+  }
+  if (start === 0) pageSnapshot = { id: String(++pageSnapshotSequence), signature: paginationSignature }
+  controlStateSignature = stateSignature
+  return {
+    ...(start === 0 ? { screen } : {}),
+    controls: page,
+    unavailableControls: unavailablePage,
+    totalUnavailableControls: unavailable.length,
+    unavailableControlsTruncated: start + unavailablePage.length < unavailable.length,
+    totalControls: available.length,
+    snapshotId: pageSnapshot!.id,
+    nextOffset: start + PAGE_SIZE < Math.max(available.length, unavailable.length) ? start + PAGE_SIZE : null,
+  }
+}
+
+function stateSignature() {
+  return JSON.stringify({
+    screen: gameScreen(),
+    controls: visibleControls().map(({ id: _, ...control }) => control),
+    unavailableControls: unavailableControls(),
+  })
+}
+
+function hasProgressControl(state: ReturnType<typeof inspectGame>) {
+  return state.controls.some((control) => !/^(Current deck|Map$|Settings$|Discard pile|Exhaust pile)/.test(control.label))
+}
+
+async function waitForInteraction(before: string, signal?: AbortSignal) {
+  const deadline = Date.now() + 10_000
+  let lastSignature = before
+  let quietChecks = 0
+  do {
+    if (signal?.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
+    await new Promise<void>((resolve) => setTimeout(resolve, 100))
+    if (signal?.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
+    if (document.querySelector('[data-webmcp-pending="true"]') || document.documentElement.dataset.mapTransition) {
+      quietChecks = 0
+      continue
+    }
+    const signature = stateSignature()
+    if (signature === lastSignature) {
+      if (++quietChecks >= (signature === before ? 3 : 20)) return inspectGame({})
+      continue
+    }
+    lastSignature = signature
+    quietChecks = 0
+    const state = inspectGame({})
+    if (hasProgressControl(state)) return state
+  } while (Date.now() < deadline)
+  return null
+}
+
 function setValue(element: HTMLInputElement | HTMLSelectElement, value: string) {
   const prototype = element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
   Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(element, value)
@@ -216,37 +322,22 @@ export function useWebMcp() {
       {
         name: 'inspect_game',
         title: 'Inspect game',
-        description: 'Read only the current viewer-visible game screen and list its enabled controls. Call this first and again after every interaction; follow nextOffset until null to see every control. The first page also includes up to 30 unavailable choices for planning. Results include rich card and enemy descriptions, control state, and opaque control IDs.',
+        description: 'Read only the current viewer-visible game screen and list its gameplay controls. Call this first; after a successful interaction use the refreshed state returned by interact_with_game instead. Follow nextOffset until null to see every enabled and unavailable choice, passing snapshotId on continuation pages; they omit unchanged screen text and reject mixed states. Results include route topology, rich card and enemy descriptions, control state, and opaque control IDs. While pending is true, wait and inspect again; no actions are exposed.',
         inputSchema: {
           type: 'object',
-          properties: { offset: { type: 'integer', minimum: 0, description: 'Zero-based control page offset.' } },
+          properties: {
+            offset: { type: 'integer', minimum: 0, description: 'Zero-based control page offset.' },
+            snapshotId: { type: 'string', maxLength: 32, description: 'First-page snapshotId, required with nonzero offset.' },
+          },
           additionalProperties: false,
         },
         annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: (input) => {
-          const offset = objectInput(input, ['offset']).offset
-          if (offset !== undefined && (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0)) {
-            throw new Error('offset must be a non-negative integer.')
-          }
-          const available = visibleControls()
-          const start = offset ?? 0
-          const page = available.slice(start, start + PAGE_SIZE)
-          const unavailable = start === 0 ? unavailableControls() : []
-          return {
-            screen: gameScreen(),
-            controls: page,
-            unavailableControls: unavailable.slice(0, PAGE_SIZE),
-            totalUnavailableControls: start === 0 ? unavailable.length : 0,
-            unavailableControlsTruncated: start === 0 && unavailable.length > PAGE_SIZE,
-            totalControls: available.length,
-            nextOffset: start + page.length < available.length ? start + page.length : null,
-          }
-        },
+        execute: inspectGame,
       },
       {
         name: 'interact_with_game',
         title: 'Interact with game',
-        description: 'Use one control ID from inspect_game to click it or set its value through the same visible UI path a human uses. Pass a boolean for a checkbox, a listed string for a select or text control, and a number for a number or range control; omit value for buttons. Changes only this game session. Inspect again after every call.',
+        description: 'Use one control ID from the latest state to click it or set its value through the same visible UI path a human uses. Pass a boolean for a checkbox, a listed string for a select or text control, and a number for a number or range control; omit value for buttons. Changes only this game session. A settled call returns the refreshed state and new control IDs; if pending is true, wait and call inspect_game once.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -260,8 +351,12 @@ export function useWebMcp() {
           additionalProperties: false,
         },
         annotations: { untrustedContentHint: true },
-        execute: (input, options) => {
+        execute: async (input, options) => {
           if (options?.signal.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
+          if (document.querySelector('[data-webmcp-pending="true"]') || document.documentElement.dataset.mapTransition) {
+            invalidateControls()
+            throw new Error('Game interaction is pending. Wait and call inspect_game again.')
+          }
           const { controlId, value } = objectInput(input, ['controlId', 'value'])
           if (typeof controlId !== 'string' || controlId.length === 0 || controlId.length > 64) {
             throw new Error('controlId must be a listed control ID.')
@@ -272,6 +367,11 @@ export function useWebMcp() {
           const current = element ? publicControl(element, controlId) : null
           if (!entry || !element || !available(element) || !current || JSON.stringify(snapshot(entry)) !== JSON.stringify(snapshot({ ...current, element }))) {
             throw new Error('Control is no longer available. Call inspect_game again.')
+          }
+          const before = stateSignature()
+          if (before !== controlStateSignature) {
+            invalidateControls()
+            throw new Error('Game state changed. Call inspect_game again.')
           }
           if (entry.kind === 'button') {
             if (value !== undefined) throw new Error('value must be omitted for a button.')
@@ -304,14 +404,19 @@ export function useWebMcp() {
             }
             setValue(element as HTMLInputElement | HTMLSelectElement, value)
           }
-          controls = []
-          return { controlId, control: entry.label, next: 'Call inspect_game again.' }
+          invalidateControls()
+          const state = await waitForInteraction(before, options?.signal)
+          return state ? { action: entry.label, state }
+            : { action: entry.label, pending: true, next: 'Call inspect_game after the action settles.' }
         },
       },
     ]
     void Promise.all(tools.map((tool) => modelContext.registerTool(tool, { signal: controller.signal }))).catch((error: unknown) => {
       if (!controller.signal.aborted) console.error('WebMCP tool registration failed.', error)
     })
-    return () => { controller.abort(); controls = [] }
+    return () => {
+      controller.abort()
+      invalidateControls()
+    }
   }, [])
 }

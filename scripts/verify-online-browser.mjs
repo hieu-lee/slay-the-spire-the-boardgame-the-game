@@ -187,6 +187,7 @@ try {
   }, { times: 1 })
   await guardedEntry.getByRole('button', { name: 'Create room' }).click()
   const backDisabledDuringEntry = await guardedEntry.getByRole('button', { name: 'Back to solo table' }).isDisabled()
+  const webMcpPendingDuringEntry = await guardedEntry.locator('main.online-entry').getAttribute('data-webmcp-pending')
   await guardedEntry.locator('.online-lobby').waitFor()
   const guardedCredentials = await credentials(guardedEntry)
   const preserveContext = await browser.newContext({ viewport: { width: 1024, height: 768 } })
@@ -230,6 +231,8 @@ try {
   }, { times: 1 })
   await guardedEntry.getByRole('button', { name: 'Leave room' }).click()
   await leaveStarted
+  const webMcpPendingDuringLeave = await guardedEntry.locator('main[data-webmcp-pending="true"]')
+    .getAttribute('data-webmcp-pending')
   await guardedEntry.getByRole('button', { name: `Resume ${spare.snapshot.code}` }).click()
   await guardedEntry.locator('.online-lobby').waitFor()
   releaseLeave()
@@ -273,6 +276,8 @@ try {
   await guardedEntry.close()
   check('a pending room entry cannot be abandoned behind the UI', () => {
     assert(backDisabledDuringEntry, 'solo mode stayed active while the room request was pending')
+    assertEqual(webMcpPendingDuringEntry, 'true', 'WebMCP did not wait for room creation authority')
+    assertEqual(webMcpPendingDuringLeave, 'true', 'WebMCP did not wait for room leave authority')
   })
 
   await enterOnline(a, 'Ann', 'ironclad', undefined, 'kept-local-run', true)

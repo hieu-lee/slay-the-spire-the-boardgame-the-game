@@ -207,10 +207,11 @@ function VoiceControls({ voice, seats, connected, volume, compact = false }: {
   volume: number
   compact?: boolean
 }) {
-  if (!voice.available) return compact ? null : <span className="voice voice--unavailable">Voice unavailable</span>
+  if (!voice.available) return compact ? null
+    : <span className="voice voice--unavailable" data-webmcp-passive>Voice unavailable</span>
   if (!voice.enabled) {
     return (
-      <div className={`voice${compact ? ' voice--compact' : ''}`}>
+      <div className={`voice${compact ? ' voice--compact' : ''}`} data-webmcp-passive>
         <button type="button" disabled={!connected || voice.starting} onClick={voice.start}>
           {voice.starting ? 'Opening microphone…' : 'Join voice'}
         </button>
@@ -220,7 +221,7 @@ function VoiceControls({ voice, seats, connected, volume, compact = false }: {
   }
   const connectedPeers = Object.values(voice.peerStates).filter((state) => state === 'connected').length
   return (
-    <div className={`voice${compact ? ' voice--compact' : ''}`} aria-label="Party voice">
+    <div className={`voice${compact ? ' voice--compact' : ''}`} aria-label="Party voice" data-webmcp-passive>
       {/* The peer count rides the Leave button rather than sitting beside it as
           a third element: it is a fact ABOUT the voice channel, and three
           separate controls in a row was what crowded this corner. */}
@@ -248,6 +249,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const [settingsReturnToPause, setSettingsReturnToPause] = useState(false)
   const [mapSelectionPending, setMapSelectionPending] = useState(false)
   const [giveUpStartPending, setGiveUpStartPending] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const [expiredGiveUpDeadline, setExpiredGiveUpDeadline] = useState<number | null>(null)
   const pauseDialog = useRef<HTMLDialogElement>(null)
   const runShell = useRef<HTMLElement>(null)
@@ -415,7 +417,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
 
   if (!snapshot && room.activeCode) {
     return (
-      <main className="online-entry online-reconnecting sts-scope">
+      <main className="online-entry online-reconnecting sts-scope"
+        data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}>
         <button type="button" className="online-entry__back ribbon-back" aria-label="Back to solo table"
           onClick={() => { room.forget(); onLocal() }}><span aria-hidden="true"></span></button>
         <section className="online-entry__panel">
@@ -434,7 +437,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
 
   if (!snapshot) {
     return (
-      <main className="online-entry sts-scope">
+      <main className="online-entry sts-scope"
+        data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}>
         <button type="button" className="online-entry__back ribbon-back" aria-label="Back to solo table" disabled={room.entering}
           onClick={() => { room.forget(); onLocal() }}><span aria-hidden="true"></span></button>
         <section className="online-entry__panel">
@@ -481,10 +485,16 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     const isPartyLeader = partyLeader?.playerId === snapshot.you.playerId
     if (achievementsOpen) return <AchievementsScreen onBack={() => setAchievementsOpen(false)} />
     return (
-      <main className="online-lobby sts-scope">
+      <main className="online-lobby sts-scope"
+        data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}>
         <header>
           <button type="button" className="online-lobby__leave ribbon-back" aria-label="Leave room"
-            onClick={async () => { voice.stop(); if (await room.leave()) onLocal() }}><span aria-hidden="true"></span></button>
+            onClick={async () => {
+              setLeaving(true)
+              voice.stop()
+              if (await room.leave()) onLocal()
+              else setLeaving(false)
+            }}><span aria-hidden="true"></span></button>
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>
         </header>
         <section className="online-lobby__table">
@@ -603,7 +613,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     run.setup?.kind === 'catch-up' && !run.setup.playerIds.includes(snapshot.you.playerId)
   return (
     <>
-    <main ref={runShell} tabIndex={-1} inert={compendiumOpen || undefined} aria-hidden={compendiumOpen || undefined} className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendiumOpen ? ' app-shell--compendium-open' : ''}`}>
+    <main ref={runShell} tabIndex={-1} inert={compendiumOpen || undefined} aria-hidden={compendiumOpen || undefined}
+      data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}
+      className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendiumOpen ? ' app-shell--compendium-open' : ''}`}>
       <header className="app-shell__header">
         <h1>Slay the Spire</h1>
         <div className="run-status">

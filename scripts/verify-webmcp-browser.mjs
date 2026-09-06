@@ -48,12 +48,14 @@ const inspectAll = async () => page.evaluate(async () => {
   const inspect = (await document.modelContext.getTools()).find((tool) => tool.name === 'inspect_game')
   const first = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
   const controls = [...first.controls]
+  const unavailableControls = [...first.unavailableControls]
   for (let offset = first.nextOffset; offset !== null;) {
-    const page = JSON.parse(await document.modelContext.executeTool(inspect, { offset }))
+    const page = JSON.parse(await document.modelContext.executeTool(inspect, { offset, snapshotId: first.snapshotId }))
     controls.push(...page.controls)
+    unavailableControls.push(...page.unavailableControls)
     offset = page.nextOffset
   }
-  return { ...first, controls }
+  return { ...first, controls, unavailableControls }
 })
 const interact = async (controlId, value) => page.evaluate(async ({ controlId, value }) => {
   const tool = (await document.modelContext.getTools()).find((candidate) => candidate.name === 'interact_with_game')
@@ -91,18 +93,53 @@ const controls = await page.evaluate(async () => {
     <span id="strike-description">Reliable opening damage.</span>
     <button title="Strike" aria-label="Strike, 1 Energy, Attack, Deal 6 damage" aria-describedby="strike-description">Strike</button>
     <button aria-disabled="true" aria-label="Bash, 2 Energy, Attack, Deal 8 damage and apply 2 Vulnerable">Bash</button>
+    <button aria-label="Delayed advance">Delayed advance</button>
+    <button aria-label="Cancelled delayed advance">Cancelled delayed advance</button>
+    <div data-webmcp-passive>Party voice token noise<button aria-label="Join voice">Join voice</button></div>
+    <span data-webmcp-passive>Voice unavailable</span>
+    <button aria-label="No-op button">No-op button</button>
+    <button aria-label="Finish private choice">Finish private choice</button>
     <span role="button" tabindex="0" aria-label="Choose lightning Orb 1">Orb</span>
     <label><input type="checkbox"> Keep Bash</label>
     <select aria-label="Target"><option value="cultist">Cultist</option><option value="jaw-worm">Jaw Worm</option></select>
     <input type="text" aria-label="Player name" maxlength="12" value="Ironclad">
     <input type="search" aria-label="Search cards">
     <input type="range" aria-label="Volume" min="0" max="100" step="5" value="50">
+    <span id="fixture-status"></span>
   `
   document.getElementById('root').append(fixture)
   let buttonClicks = 0
   let orbClicks = 0
-  fixture.querySelector('button').addEventListener('click', () => { buttonClicks++ })
-  fixture.querySelector('[role="button"]').addEventListener('click', () => { orbClicks++ })
+  fixture.querySelector('button').addEventListener('click', () => {
+    buttonClicks++
+    fixture.querySelector('#fixture-status').textContent = `Card actions ${buttonClicks}`
+  })
+  const delayedButton = fixture.querySelector('[aria-label="Delayed advance"]')
+  delayedButton.addEventListener('click', () => {
+    document.documentElement.dataset.webmcpPending = 'true'
+    delayedButton.textContent = 'Locally pending'
+    setTimeout(() => {
+      delete document.documentElement.dataset.webmcpPending
+      delayedButton.setAttribute('aria-label', 'Delayed next')
+      delayedButton.textContent = 'Delayed next'
+    }, 250)
+  })
+  const cancelledButton = fixture.querySelector('[aria-label="Cancelled delayed advance"]')
+  cancelledButton.addEventListener('click', () => setTimeout(() => {
+    cancelledButton.textContent = 'Cancelled action eventually settled'
+  }, 250))
+  fixture.querySelector('[role="button"]').addEventListener('click', () => {
+    orbClicks++
+    fixture.querySelector('#fixture-status').textContent = `Orb actions ${orbClicks}`
+  })
+  let waiting
+  fixture.querySelector('[aria-label="Finish private choice"]').addEventListener('click', () => {
+    waiting = document.createElement('section')
+    waiting.setAttribute('role', 'dialog')
+    waiting.setAttribute('aria-modal', 'true')
+    waiting.innerHTML = '<p role="status">Waiting for another player</p><button data-webmcp-passive>Join voice</button>'
+    document.body.append(waiting)
+  })
   const tools = await document.modelContext.getTools()
   const inspect = tools.find((tool) => tool.name === 'inspect_game')
   const interact = tools.find((tool) => tool.name === 'interact_with_game')
@@ -116,6 +153,42 @@ const controls = await page.evaluate(async () => {
     return control
   }
   const listed = await read()
+  const passiveListed = listed.controls.some((control) => control.label === 'Join voice')
+  const delayedControl = listed.controls.find((control) => control.label === 'Delayed advance')
+  const delayedPending = interact.execute({ controlId: delayedControl.id }, { signal: new AbortController().signal })
+  await new Promise((resolve) => setTimeout(resolve, 25))
+  const invokedWhilePending = await (async () => {
+    try {
+      await interact.execute({ controlId: listed.controls.find((control) => control.label.startsWith('Strike,')).id })
+      return ''
+    } catch (error) {
+      return String(error)
+    }
+  })()
+  const inspectedWhilePending = await inspect.execute({})
+  const delayed = await delayedPending
+  const cancelledControl = delayed.state.controls.find((control) => control.label === 'Cancelled delayed advance')
+  const cancellation = await (async () => {
+    const controller = new AbortController()
+    const pending = interact.execute({ controlId: cancelledControl.id }, { signal: controller.signal })
+    setTimeout(() => controller.abort(), 50)
+    try {
+      await pending
+      return ''
+    } catch (error) {
+      return String(error)
+    }
+  })()
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  const noOpControl = (await inspect.execute({})).controls.find((control) => control.label === 'No-op button')
+  const noOpStarted = performance.now()
+  const noOp = await interact.execute({ controlId: noOpControl.id })
+  const noOpMs = performance.now() - noOpStarted
+  const waitingControl = (await inspect.execute({})).controls.find((control) => control.label === 'Finish private choice')
+  const waitingStarted = performance.now()
+  const waitingResult = await interact.execute({ controlId: waitingControl.id })
+  const waitingMs = performance.now() - waitingStarted
+  waiting.remove()
   let strike = listed.controls.find((control) => control.label.startsWith('Strike,'))
   const unavailableBash = listed.unavailableControls.find((control) => control.label.startsWith('Bash,'))
   if (!strike) throw new Error('rich card action was not listed')
@@ -151,6 +224,16 @@ const controls = await page.evaluate(async () => {
   return {
     buttonClicks,
     orbClicks,
+    delayed,
+    inspectedWhilePending,
+    invokedWhilePending,
+    cancellation,
+    noOp,
+    noOpMs,
+    waitingResult,
+    waitingMs,
+    passiveListed,
+    passiveTextListed: listed.screen.text.includes('Party voice token noise') || listed.screen.text.includes('Voice unavailable'),
     richLabel: strike.label,
     context: strike.context,
     description: strike.description,
@@ -192,7 +275,7 @@ const pagination = await page.evaluate(async () => {
   for (let index = 1; index <= 35; index++) {
     const button = document.createElement('button')
     button.textContent = `WebMCP page action ${index}`
-    button.addEventListener('click', () => { clicks++ })
+    button.addEventListener('click', () => { clicks++; button.textContent = `Used WebMCP page action ${index}` })
     fixture.append(button)
   }
   for (let index = 1; index <= 35; index++) {
@@ -205,16 +288,61 @@ const pagination = await page.evaluate(async () => {
   const tools = await document.modelContext.getTools()
   const inspect = tools.find((tool) => tool.name === 'inspect_game')
   const interact = tools.find((tool) => tool.name === 'interact_with_game')
+  const staleFirstPage = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
+  const staleAction = staleFirstPage.controls.find((control) => control.label === 'WebMCP page action 1')
+  const update = document.createElement('p')
+  update.textContent = 'Concurrent room update'
+  fixture.append(update)
+  const refreshedPage = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
+  const refreshedAction = refreshedPage.controls.find((control) => control.label === 'WebMCP page action 1')
+  const idsRotated = staleAction.id !== refreshedAction.id
+  const staleActionResult = await (async () => {
+    try {
+      await document.modelContext.executeTool(interact, { controlId: staleAction.id })
+      return ''
+    } catch (error) {
+      return String(error)
+    }
+  })()
+  const mixedPage = await (async () => {
+    try {
+      await document.modelContext.executeTool(inspect,
+        { offset: staleFirstPage.nextOffset, snapshotId: staleFirstPage.snapshotId })
+      return ''
+    } catch (error) {
+      return String(error)
+    }
+  })()
+  update.remove()
+  const abaFirstPage = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
+  const replaced = [...fixture.querySelectorAll('button')]
+    .find((button) => button.textContent === 'WebMCP page action 35')
+  replaced.replaceWith(replaced.cloneNode(true))
+  const abaPage = await (async () => {
+    try {
+      await document.modelContext.executeTool(inspect,
+        { offset: abaFirstPage.nextOffset, snapshotId: abaFirstPage.snapshotId })
+      return ''
+    } catch (error) {
+      return String(error)
+    }
+  })()
   const firstPage = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
   const firstAction = firstPage.controls.find((control) => control.label === 'WebMCP page action 1')
-  const secondPage = JSON.parse(await document.modelContext.executeTool(inspect, { offset: firstPage.nextOffset }))
+  const secondPage = JSON.parse(await document.modelContext.executeTool(inspect,
+    { offset: firstPage.nextOffset, snapshotId: firstPage.snapshotId }))
   if (!firstAction || secondPage.nextOffset === undefined) throw new Error('pagination fixture did not span two pages')
   await document.modelContext.executeTool(interact, { controlId: firstAction.id })
   fixture.remove()
   return {
     clicks,
+    mixedPage,
+    abaPage,
+    idsRotated,
+    staleActionResult,
     hasNextPage: firstPage.nextOffset !== null,
     secondPageControls: secondPage.controls.length,
+    secondPageScreen: secondPage.screen,
     unavailableCount: firstPage.unavailableControls.length,
     totalUnavailable: firstPage.totalUnavailableControls,
     unavailableTruncated: firstPage.unavailableControlsTruncated,
@@ -229,7 +357,10 @@ const portal = await page.evaluate(async () => {
   picker.setAttribute('aria-label', 'Choose a card to upgrade')
   picker.innerHTML = '<h2>Portal card picker</h2><button aria-label="Bash, 2 Energy, Attack, Deal 8 damage and apply 2 Vulnerable" title="Bash">Bash</button>'
   let clicks = 0
-  picker.querySelector('button').addEventListener('click', () => { clicks++ })
+  picker.querySelector('button').addEventListener('click', (event) => {
+    clicks++
+    event.currentTarget.textContent = 'Picked portal option'
+  })
   document.body.append(picker)
   const tools = await document.modelContext.getTools()
   const inspect = tools.find((tool) => tool.name === 'inspect_game')
@@ -331,9 +462,11 @@ await page.evaluate(() => {
 await page.locator('.room--reachable').waitFor()
 const roomLabel = await page.locator('.room--reachable').getAttribute('aria-label')
 const mapInspection = await inspectAll()
+const futureRoomContexts = await page.locator('.room[aria-disabled="true"]').evaluateAll((rooms) =>
+  rooms.map((room) => room.getAttribute('data-webmcp-context')).filter(Boolean).sort())
 const roomControl = mapInspection.controls.find((control) => control.label === roomLabel)
 if (!roomControl) throw new Error(`reachable room is missing from WebMCP: ${roomLabel}`)
-await interact(roomControl.id)
+const mapInteraction = await interact(roomControl.id)
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')
 if (await page.evaluate(() => window.__STS_DEBUG__.getState()?.phase === 'start')) {
   const startInspection = await inspectAll()
@@ -374,13 +507,14 @@ const afterAttack = await page.evaluate(() => {
 const afterAttackInspection = await inspectAll()
 const endTurn = afterAttackInspection.controls.find((control) => control.label.startsWith('End turn'))
 if (!endTurn) throw new Error('WebMCP did not expose End turn after a real attack')
-await interact(endTurn.id)
+const endTurnResult = await interact(endTurn.id)
 const combatFlow = {
   seesTurn: /Turn \d+/.test(combatInspection.screen.text),
   seesEnergy: /Energy/.test(JSON.stringify(combatInspection)),
   richAttack: attack.label,
   targetLabel,
   changed: afterAttack.energy < beforeAttack.energy || afterAttack.enemyHp < beforeAttack.enemyHp,
+  nextTurnReturned: /Turn 2/.test(endTurnResult.state?.screen.text ?? ''),
 }
 const stale = await page.evaluate(async (controlId) => {
   const interact = (await document.modelContext.getTools()).find((tool) => tool.name === 'interact_with_game')
@@ -411,10 +545,10 @@ const bridgeCompatibility = await bridge.evaluate(async () => {
   const before = await inspect.execute({})
   const singlePlayer = before.controls.find((control) => control.label === 'Single Player')
   if (!singlePlayer) throw new Error('navigator-only WebMCP bridge did not expose Single Player')
-  await interact.execute({ controlId: singlePlayer.id })
+  const result = await interact.execute({ controlId: singlePlayer.id })
   return {
     tools: navigator.modelContext.listTools().map((tool) => tool.name),
-    reachedModeSelect: (await inspect.execute({})).controls.some((control) => control.label === 'Standard'),
+    reachedModeSelect: result.state.controls.some((control) => control.label === 'Standard'),
   }
 })
 await bridge.close()
@@ -451,6 +585,18 @@ check('returns visible gameplay context and drives every gameplay control kind',
   assert(controls.richLabel.includes('Deal 6 damage') && controls.context === 'Ironclad training hand' &&
     controls.description === 'Reliable opening damage.', 'card actions preserve rich accessible context')
   assert(controls.buttonClicks === 1 && controls.orbClicks === 1, 'button and role-button controls use their visible click paths')
+  assert(controls.delayed.state.controls.some((control) => control.label === 'Delayed next'),
+    'interaction waits for a delayed authoritative update before returning reusable controls')
+  assert(controls.inspectedWhilePending.pending && controls.inspectedWhilePending.controls.length === 0 &&
+    controls.invokedWhilePending.includes('Game interaction is pending'),
+  'inspection reports pending authority without minting invokable control IDs')
+  assert(controls.cancellation.includes('AbortError'), 'a cancelled delayed interaction stops settling promptly')
+  assert(controls.noOp.action === 'No-op button' && controls.noOp.state && controls.noOpMs < 2_000,
+    'a completed no-op returns current state without waiting for the long timeout')
+  assert(controls.waitingResult.state.screen.status.includes('Waiting for another player') && controls.waitingMs < 3_000,
+    'a changed stable waiting screen settles without being misreported as pending')
+  assert(!controls.passiveListed && !controls.passiveTextListed,
+    'non-game utility controls and text stay out of gameplay state and settlement')
   assert(controls.unavailableBash && controls.unavailableBash.id === undefined,
     'unplayable cards remain visible for planning without becoming invokable')
   assert(controls.invalid['Strike,'].includes('value must be omitted') && controls.invalid.Target.includes('enabled listed option') &&
@@ -470,8 +616,14 @@ check('returns visible gameplay context and drives every gameplay control kind',
 check('keeps snapshots scoped, stable, opaque, and current', () => {
   assert(pagination.hasNextPage && pagination.secondPageControls > 0 && pagination.clicks === 1,
     'a page-one control remains valid after fetching the next page')
+  assert(pagination.idsRotated && pagination.mixedPage.includes('Game state changed during pagination') &&
+    pagination.abaPage.includes('Game state changed during pagination') &&
+    pagination.staleActionResult.includes('Control is no longer available'),
+  'concurrent and identical-tree replacements reject mixed pages and stale page-one actions')
+  assert(pagination.secondPageScreen === undefined, 'continuation pages do not repeat unchanged screen text')
   assert(pagination.unavailableCount === 30 && pagination.totalUnavailable >= 35 && pagination.unavailableTruncated &&
-    pagination.secondPageUnavailable === 0, `unavailable controls are explicitly capped and not repeated: ${JSON.stringify(pagination)}`)
+    pagination.unavailableCount + pagination.secondPageUnavailable === pagination.totalUnavailable,
+  `unavailable controls paginate without losing planning choices: ${JSON.stringify(pagination)}`)
   assert(portal.heading && portal.hidesBackground && portal.observation && portal.clicks === 1,
     `a portal card picker exposes its complete modal context without background controls: ${JSON.stringify(portal)}`)
   assert(exclusions.ariaDisabled && exclusions.inert && exclusions.hidesObservation && exclusions.hidesText,
@@ -479,15 +631,22 @@ check('keeps snapshots scoped, stable, opaque, and current', () => {
   assert(exclusions.guarded.includes('Control is no longer available'), 'an interaction lock prevents a listed token from executing')
   assert(/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(exclusions.controlId), 'listed control IDs are opaque tokens')
   assert(guessed.includes('Control is no longer available'), 'a guessed control ID is rejected')
-  assertDeepEqual(invoked, { controlId: exclusions.controlId, control: 'Single Player', next: 'Call inspect_game again.' })
+  assert(invoked.action === 'Single Player' && invoked.state.controls.some((control) => control.label === 'Standard'),
+    'an interaction returns the refreshed screen and new control IDs')
   assert(stale.includes('Control is no longer available'), 'a control ID cannot outlive its visible screen')
 })
 
 check('starts a real Ironclad run through WebMCP and loads cleanly', () => {
   assert(realFlow.ironcladSelected && realFlow.describesIronclad, 'inspection exposes the selected hero and its gameplay identity')
   assert(realFlow.startedHeading && realFlow.startedControls > 0, 'WebMCP reaches the first playable run screen')
+  assert(mapInspection.totalUnavailableControls > 0 &&
+    JSON.stringify(mapInspection.unavailableControls.filter((control) => control.context?.startsWith('Floor '))
+      .map((control) => control.context).sort()) === JSON.stringify(futureRoomContexts) &&
+    futureRoomContexts.some((context) => context.includes('; exits to floor ')) &&
+    mapInteraction.state.controls.some((control) => control.label === 'End turn' || control.label === 'Resolve start of turn'),
+  'map inspection preserves every future route-planning room and map entry returns the settled combat screen')
   assert(combatFlow.seesTurn && combatFlow.seesEnergy, 'combat inspection exposes turn and Energy')
-  assert(/, attack,/i.test(combatFlow.richAttack) && combatFlow.targetLabel && combatFlow.changed,
+  assert(/, attack,/i.test(combatFlow.richAttack) && combatFlow.targetLabel && combatFlow.changed && combatFlow.nextTurnReturned,
     `a real Ironclad Attack is described, targeted, and resolved: ${JSON.stringify(combatFlow)}`)
   assertDeepEqual(errors, [])
   assertDeepEqual(fallbackErrors, [])
