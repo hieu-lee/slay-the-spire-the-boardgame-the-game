@@ -423,13 +423,20 @@ check('Forgotten Altar removes its revealed Relic, not another random Relic', ()
   assert(run.itemDecks.relics.includes('anchor'), 'the offered ordinary Relic was not returned to its deck')
 })
 
-check('Mind Bloom War reserves no reward before combat and records a seeded Act I Boss hook', () => {
+check('Mind Bloom War reserves no reward, keeps the Act III enemy decks, and records a seeded Act I Boss hook', () => {
   let run = inEvent('mind_bloom', 1)
+  run = {
+    ...run,
+    act: 3,
+    enemyDecks: { act: 3, first: [], encounter: [{ defId: 'maw', goldReward: 1, cardReward: 'normal' }], elite: [] },
+  }
   run.map.position = run.map.rows[0][0]
   const relicCount = run.itemDecks.relics.length
+  const enemyDecks = structuredClone(run.enemyDecks)
   run = chooseEvent(run, 'p1', { optionIds: ['war'] })
   assertEqual(run.phase, 'combat')
   assertEqual(run.itemDecks.relics.length, relicCount)
+  assertDeepEqual(run.enemyDecks, enemyDecks)
   assert(['guardian_attack', 'hexaghost', 'slime_boss'].includes(run.eventCombat.bossDefId))
 })
 

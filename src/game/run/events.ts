@@ -669,9 +669,9 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     let enemyDecks = state.enemyDecks
     let combat = preparedCombat
     if (!combat) {
-      enemyDecks = state.enemyDecks.act === (mindBloom ? 1 : state.act)
+      enemyDecks = state.enemyDecks.act === state.act
         ? structuredClone(state.enemyDecks)
-        : createEnemyDecks(rng, mindBloom ? 1 : state.act, state.ascension)
+        : createEnemyDecks(rng, state.act, state.ascension)
       const encounter = buildEncounter(
         rng, enemyDecks, mindBloom ? 1 : state.act, players,
         mindBloom ? 'boss' : result.combat, false, state.ascension,
