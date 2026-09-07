@@ -5,25 +5,15 @@
   position: relative;
   isolation: isolate;
   width: 100vw;
-  margin: -1.25rem calc(50% - 50vw) 0;
+  margin: 0 calc(50% - 50vw);
   padding: 0;
   overflow: clip;
   background:
     linear-gradient(180deg, rgb(2 8 10 / 0.12), transparent 46%, rgb(1 5 6 / 0.45)),
     var(--campfire-scene, url('/assets/noncombat/campfire/ironclad_firecamp.png')) center / cover no-repeat;
   box-shadow: inset 0 0 9rem rgb(0 0 0 / 0.9);
-  /* Now that every child is absolutely positioned, `.campfire` has no in-flow
-     content to size itself by — it depends entirely on a definite height
-     handed down by its container. That height isn't guaranteed: an online
-     reconnect banner or error alert renders as a sibling ABOVE the shell's
-     `1fr` row, which bumps `.campfire` into the trailing `auto` row instead,
-     collapsing it to 0. `.neow-screen` hit this identical failure mode (see
-     its own comment in chrome/neow.css) and this is the same fix: a floor that fills the
-     shell's row when it lands there (`100%`) with a fallback for when a
-     banner has displaced it (`calc(100dvh - 5rem)`), never smaller than a
-     reasonable minimum (`42rem`). */
-  flex-shrink: 0;
-  min-height: max(42rem, 100%, calc(100dvh - 5rem));
+  flex: 1;
+  min-height: 0;
 }
 
 /* A wide four-seat painting cannot both cover a portrait phone and keep its
@@ -197,8 +187,6 @@
 }
 
 @media (max-width: 700px) {
-  .sts-scope .campfire:has(.campfire__deck) { min-height: 100%; }
-
   .sts-scope .campfire:has(.campfire__deck) .campfire__prompt {
     top: 3.5rem;
     max-height: calc(100% - 8rem);
@@ -212,12 +200,6 @@
   .sts-scope .campfire__choices button { min-width: 7rem; min-height: 5.4rem; }
   .sts-scope .campfire__choices button > img { width: 5rem; height: 2.8rem; }
   .sts-scope .campfire__deck { --card-width: clamp(6.5rem, 31vw, 8rem); justify-content: flex-start; }
-}
-
-@media (max-height: 700px) {
-  .sts-scope .campfire:not(:has(.campfire__deck)) {
-    min-height: calc(100dvh - 5rem);
-  }
 }
 
 @media (max-height: 520px) {

@@ -125,17 +125,13 @@
 
    All of these tie on specificity and resolve by SOURCE ORDER — keep the
    header-adjacent and online rules after the general ones. */
-.sts-scope .map,
-.sts-scope .campfire { margin-top: -0.5rem; margin-bottom: -1rem; }
+.sts-scope .map { margin-top: -0.5rem; margin-bottom: -1rem; }
 
-.sts-scope .app-shell__header + .map,
-.sts-scope .app-shell__header + .campfire { margin-top: -1.25rem; margin-bottom: -1.5rem; }
+.sts-scope .app-shell__header + .map { margin-top: -1.25rem; margin-bottom: -1.5rem; }
 
-.app-shell--online .map,
-.app-shell--online .campfire { margin-bottom: -1.5rem; }
+.app-shell--online .map { margin-bottom: -1.5rem; }
 
-.app-shell--online .online-mutations > .map:first-child,
-.app-shell--online .online-mutations > .campfire:first-child { margin-top: -1.25rem; }
+.app-shell--online .online-mutations > .map:first-child { margin-top: -1.25rem; }
 
 /* A band with an in-flow panel after it must not bleed past the shell's
    padding, or it is dragged up underneath that panel. */

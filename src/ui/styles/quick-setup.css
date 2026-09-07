@@ -1,4 +1,9 @@
 .quick-setup {
+  min-height: 0;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
   width: min(72rem, calc(100% - 2rem));
   margin: 1rem auto;
   padding: clamp(1rem, 3vw, 2rem);
@@ -8,6 +13,8 @@
   background: radial-gradient(circle at top, rgb(91 45 53 / .96), rgb(24 20 21 / .98) 65%);
   box-shadow: 0 1rem 2.5rem rgb(0 0 0 / .65), inset 0 0 2rem rgb(224 166 70 / .08);
 }
+
+.quick-setup > * { flex-shrink: 0; }
 
 .quick-setup__header { text-align: center; }
 .quick-setup__eyebrow { color: #e2ba62; text-transform: uppercase; letter-spacing: .12em; }

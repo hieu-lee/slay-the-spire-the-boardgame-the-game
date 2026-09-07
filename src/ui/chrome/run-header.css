@@ -141,3 +141,14 @@
     padding-inline: 0.35rem;
   }
 }
+
+/* Full-screen ceremonies use the space remaining beneath the actual HUD. */
+.app-shell:not(.app-shell--compendium-open):is(.app-shell--neow, :has(.campfire)) {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+  gap: 0;
+}
+
+.app-shell:is(.app-shell--neow, :has(.campfire)) > * { flex-shrink: 0; }
+.app-shell:is(.app-shell--neow, :has(.campfire)) > .online-mutations { flex: 1; }

@@ -5,6 +5,7 @@
 // what you were carrying, what the deck had become. All of it is already in the
 // run state; none of it was on screen.
 import { RelicBar } from './RelicChip.tsx'
+import { PotionTooltipAnchor } from './PotionIcon.tsx'
 import { IconValue } from './Icon.tsx'
 import { assetPath } from '../game/assets.ts'
 import { CHARACTER_LABEL, damageTotals, deckHighlights } from './run-summary-data.ts'
@@ -43,29 +44,39 @@ export function RunSummary({ act, roomsCleared, ascension, seats }: {
         <h3 id="run-summary-damage-heading">Damage chart</h3>
         <ul className="run-summary__damage-list">
           {chart.map(({ seat, totals }) => {
+            const dealtDescription = `Total damage dealt: ${totals.dealt}. Attack damage: ${totals.attack}. Poison damage: ${totals.poison}. Special damage: ${totals.special}.`
+            const takenDescription = `Total damage taken: ${totals.received}. Damage taken: ${totals.taken}. Damage blocked: ${totals.blocked}.`
             const dealtWidth = (value: number) => `${value / greatestDealt * 100}%`
             const receivedWidth = (value: number) => `${value / greatestReceived * 100}%`
             return (
               <li key={seat.id} className="run-summary__damage-row">
                 <img className="run-summary__damage-icon" src={assetPath(`menu/compendium-icons/${seat.character}.webp`)} alt="" />
                 <div className="run-summary__damage-tracks">
-                  <div className="run-summary__damage-track run-summary__damage-track--dealt" role="group" tabIndex={0} aria-label={`${seat.name} damage dealt`}>
-                    <span aria-hidden="true">Dealt</span><i aria-hidden="true"><b className="run-summary__damage--attack" style={{ width: dealtWidth(totals.attack) }} /><b className="run-summary__damage--poison" style={{ width: dealtWidth(totals.poison) }} /><b className="run-summary__damage--special" style={{ width: dealtWidth(totals.special) }} /></i><em aria-hidden="true">{totals.dealt}</em>
+                  <PotionTooltipAnchor id="damage-dealt" name={`${seat.name} damage dealt`}
+                    text={dealtDescription} kindLabel="Damage" tooltipContent={
                     <dl className="run-summary__damage-tip">
                       <div><dt>Total damage dealt</dt><dd>{totals.dealt}</dd></div>
                       <div><dt>Attack damage</dt><dd>{totals.attack}</dd></div>
                       <div><dt>Poison damage</dt><dd>{totals.poison}</dd></div>
                       <div><dt>Special damage</dt><dd>{totals.special}</dd></div>
                     </dl>
-                  </div>
-                  <div className="run-summary__damage-track run-summary__damage-track--taken" role="group" tabIndex={0} aria-label={`${seat.name} damage taken`}>
-                    <span aria-hidden="true">Taken</span><i aria-hidden="true"><b className="run-summary__damage--taken" style={{ width: receivedWidth(totals.taken) }} /><b className="run-summary__damage--blocked" style={{ width: receivedWidth(totals.blocked) }} /></i><em aria-hidden="true">{totals.received}</em>
+                    }>
+                    <div className="run-summary__damage-track run-summary__damage-track--dealt" role="group" tabIndex={0} aria-label={`${seat.name}. ${dealtDescription}`}>
+                      <span aria-hidden="true">Dealt</span><i aria-hidden="true"><b className="run-summary__damage--attack" style={{ width: dealtWidth(totals.attack) }} /><b className="run-summary__damage--poison" style={{ width: dealtWidth(totals.poison) }} /><b className="run-summary__damage--special" style={{ width: dealtWidth(totals.special) }} /></i><em aria-hidden="true">{totals.dealt}</em>
+                    </div>
+                  </PotionTooltipAnchor>
+                  <PotionTooltipAnchor id="damage-taken" name={`${seat.name} damage taken`}
+                    text={takenDescription} kindLabel="Damage" tooltipContent={
                     <dl className="run-summary__damage-tip">
                       <div><dt>Total damage taken</dt><dd>{totals.received}</dd></div>
                       <div><dt>Damage taken</dt><dd>{totals.taken}</dd></div>
                       <div><dt>Damage blocked</dt><dd>{totals.blocked}</dd></div>
                     </dl>
-                  </div>
+                    }>
+                    <div className="run-summary__damage-track run-summary__damage-track--taken" role="group" tabIndex={0} aria-label={`${seat.name}. ${takenDescription}`}>
+                      <span aria-hidden="true">Taken</span><i aria-hidden="true"><b className="run-summary__damage--taken" style={{ width: receivedWidth(totals.taken) }} /><b className="run-summary__damage--blocked" style={{ width: receivedWidth(totals.blocked) }} /></i><em aria-hidden="true">{totals.received}</em>
+                    </div>
+                  </PotionTooltipAnchor>
                 </div>
               </li>
             )
@@ -97,7 +108,7 @@ export function RunSummary({ act, roomsCleared, ascension, seats }: {
                 <IconValue name="gold" value={seat.gold} size={18} />
                 {seat.deck ? <span className="run-summary__deck-size">{seat.deck.length} cards</span> : null}
               </div>
-              <RelicBar relics={seat.relics} label={`${seat.name}'s relics`} />
+              <RelicBar relics={seat.relics} label={`${seat.name}'s relics`} unclipped />
               {highlights.length ? (
                 <p className="run-summary__deck">
                   {highlights.map((entry) => `${entry.count}× ${entry.name}`).join(' · ')}

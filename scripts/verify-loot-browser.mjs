@@ -422,7 +422,7 @@ try {
     window.__SHOW_ONLINE_CAMPFIRE__ = () => {
       window.__ONLINE_REWARD_ACTIONS__ = []
       root.render(createElement(OnlineCampfireScreen, {
-        key: 'campfire', player: { id: 'p1', name: 'Ironclad', hp: 10, maxHp: 10, deck: [], relics: [] },
+        key: 'campfire', player: { id: 'p1', name: 'Ironclad', hp: 7, maxHp: 10, deck: [], relics: [] },
         decided: [], seats: [{ playerId: 'p1', name: 'Ironclad', character: 'ironclad', connected: true }], onAction,
       }))
     }

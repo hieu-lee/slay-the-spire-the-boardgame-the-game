@@ -10,6 +10,10 @@
 }
 
 .sts-scope .room-screen {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  justify-content: safe center;
   padding: clamp(0.6rem, 2vw, 1.25rem);
   border: 0;
   background: transparent;

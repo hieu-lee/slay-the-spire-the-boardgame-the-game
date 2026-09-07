@@ -15,8 +15,8 @@
      the module fell to its floor with card text at 6.4px, under the 7.84px the
      shared card ramp already gives. Legible stock is the point; the dead cloth is
      split above and below the rug by the centring below instead. */
-  max-height: 1040px;
-  min-height: min(34rem, calc(100dvh - 6.6rem));
+  max-height: min(1040px, 100%);
+  min-height: 0;
   padding: clamp(0.55rem, 1.5vw, 1rem);
   /* `auto`, never `clip`. The rug is sized to fit below, but a clip turns any
      miscalculation into stock a player cannot see or reach — which is exactly

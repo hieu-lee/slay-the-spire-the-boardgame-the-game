@@ -74,7 +74,9 @@
 .board .enemy,
 .board .board__bosses .enemy {
   position: absolute;
-  right: calc(1.5rem * var(--stage-scale) + var(--stage-index) * var(--stage-gap));
+  /* A boss can become the rightmost survivor after its summons die. Reserve
+     its enlarged portrait's overhang so that move cannot widen the scroller. */
+  right: calc(max(1.5rem * var(--stage-scale), var(--stage-actor-width) * (var(--boss-scale, 1) - 1) / 2) + var(--stage-index) * var(--stage-gap));
   bottom: calc(1.1rem * var(--stage-scale));
   width: var(--stage-actor-width);
   height: calc(14rem * var(--stage-scale));
@@ -374,7 +376,8 @@ html[data-mobile-performance='true']
 
   .board .enemy .tokens { bottom: 3.7rem; }
   .seat__status-strip {
-    bottom: 2.2rem;
+    /* The compact hand and Energy orb occupy the space below HP. */
+    bottom: 6.25rem;
     justify-content: flex-start;
   }
 

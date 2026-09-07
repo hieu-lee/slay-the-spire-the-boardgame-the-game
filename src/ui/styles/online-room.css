@@ -1,8 +1,10 @@
 .online-entry,
 .online-lobby {
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
   display: grid;
-  place-items: center;
+  place-items: safe center;
   padding: 1rem;
   background:
     radial-gradient(circle at 50% 30%, rgb(163 35 43 / 0.16), transparent 32rem),
@@ -180,6 +182,8 @@
 .courier-combat-lock > .combat {
   height: 100%;
 }
+
+.online-mutations > .room-stage { min-height: 0; flex: 1; }
 
 .online-mutations > .combat,
 .online-mutations > .reward-screen,

@@ -965,15 +965,16 @@ try {
   const onlineTakenTrack = onlineDamageRow.locator('.run-summary__damage-track--taken')
   await onlineDealtTrack.hover()
   const onlineDamageSnapshot = await snapshot(a)
-  const onlineDealtDetails = await onlineDealtTrack.locator('.run-summary__damage-tip').evaluate((tip) => ({
+  const onlineDealtDetails = await a.locator('.potion-tip .run-summary__damage-tip').evaluate((tip) => ({
     shown: getComputedStyle(tip).visibility,
     text: tip.textContent,
   }))
   await onlineTakenTrack.hover()
-  const onlineTakenDetails = await onlineTakenTrack.locator('.run-summary__damage-tip').evaluate((tip) => ({
+  const onlineTakenDetails = await a.locator('.potion-tip .run-summary__damage-tip').evaluate((tip) => ({
     shown: getComputedStyle(tip).visibility,
     text: tip.textContent,
   }))
+  await a.press('body', 'Escape')
   await a.press('body', 'Escape')
   const terminalPause = a.getByRole('dialog', { name: 'Slay the Spire' })
   await terminalPause.waitFor()

@@ -12,6 +12,8 @@ type AnchorProps = {
   name?: string
   text?: string
   kindLabel?: string
+  tooltipContent?: React.ReactNode
+  hoverable?: boolean
   /**
    * What the second tap will actually do, as a verb phrase — today "drink",
    * "aim", or "choose a replacement".
@@ -31,7 +33,7 @@ const tooltipListeners = new Set<(owner: object) => void>()
 
 /** An unclipped Potion tooltip anchor for either an icon or an action button. */
 export function PotionTooltipAnchor({
-  id, children, focusable = false, decorative = false, name, text, kindLabel = 'Potion', confirmLabel,
+  id, children, focusable = false, decorative = false, name, text, kindLabel = 'Potion', confirmLabel, tooltipContent, hoverable = false,
 }: AnchorProps) {
   const def = name === undefined || text === undefined ? potionDef(id) : undefined
   const itemName = name ?? def!.name
@@ -80,14 +82,24 @@ export function PotionTooltipAnchor({
   }
   useLayoutEffect(() => {
     if (!showing || !anchor.current || !tip.current) return
-    const trigger = anchor.current.getBoundingClientRect()
-    const panel = tip.current.getBoundingClientRect()
-    const left = Math.max(16, Math.min(trigger.left, window.innerWidth - panel.width - 16))
-    const below = trigger.bottom + 8
-    const top = below + panel.height <= window.innerHeight - 16
-      ? below
-      : Math.max(16, trigger.top - panel.height - 8)
-    setPosition({ left, top })
+    const place = () => {
+      const trigger = anchor.current!.getBoundingClientRect()
+      const panel = tip.current!.getBoundingClientRect()
+      const left = Math.max(16, Math.min(trigger.left, window.innerWidth - panel.width - 16))
+      const below = trigger.bottom + 8
+      const top = Math.max(16, Math.min(
+        below + panel.height <= window.innerHeight - 16 ? below : trigger.top - panel.height - 8,
+        window.innerHeight - panel.height - 16,
+      ))
+      setPosition({ left, top })
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
     // `readingTap` too: the browser focuses the button before dispatching the
     // click, so `showing` turns true one commit BEFORE the confirm line is
     // added — and the guard above would place the panel using a height that is
@@ -239,8 +251,10 @@ export function PotionTooltipAnchor({
       {readingTap && confirmLabel ? `${itemName}. ${itemText} Activate again to ${confirmLabel}.` : ''}
     </span>
     {showing ? createPortal(<span ref={tip}
-      className={`relic-tip potion-tip${readingTap ? ' potion-tip--hoverable' : ''}`} aria-hidden="true"
+      className={`relic-tip potion-tip${readingTap || hoverable ? ' potion-tip--hoverable' : ''}`} aria-hidden="true"
       style={position}
+      onMouseEnter={hoverable ? enterAnchor : undefined}
+      onMouseLeave={hoverable ? leaveAnchor : undefined}
       // `--hoverable` is the only thing that makes this panel hit-testable
       // (chrome/relic-bar.css). Without it while a tap holds the panel open,
       // the 320px box is a click-through lid: a tap on the rules is delivered
@@ -248,9 +262,9 @@ export function PotionTooltipAnchor({
       // puts it away instead, which is the gesture a player reaches for and the
       // one the relic panel already has by being a child of its own chip.
       onClick={() => setReadingTap(false)}>
-        <strong className="relic-tip__name">{itemName}</strong>
+        {tooltipContent ?? <><strong className="relic-tip__name">{itemName}</strong>
         <span className="relic-tip__pool">{kindLabel}</span>
-        <span className="relic-tip__text">{itemText}</span>
+        <span className="relic-tip__text">{itemText}</span></>}
         {/* Only while a tap is holding the panel open, and only where the call
             site has said what the next tap commits to. */}
         {readingTap && confirmLabel

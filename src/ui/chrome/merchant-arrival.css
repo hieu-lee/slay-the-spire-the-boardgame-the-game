@@ -29,13 +29,10 @@
   --scene-half-height: calc(var(--scene-width) / var(--scene-ar) / 2);
   position: relative;
   container-type: size;
-  /* A definite height, not `min-height`: `100cqh` reads 0 on an auto-height size
-     container, and every child of the scene is absolutely positioned anyway. The
-     online shell stacks rooms in a column flex, where that height is the main size —
-     and size containment floors the automatic minimum at 0 — so without the shrink
-     guard the room would collapse and drop Proceed onto the Merchant. */
-  height: calc(100dvh - 4.8rem);
-  flex-shrink: 0;
+  /* Grid/flex supplies the available height, including a wrapped online HUD. */
+  height: 100%;
+  min-height: 0;
+  flex: 1;
   /* `clip`, not `hidden`: the scene deliberately overflows this box, and a hidden
      overflow would make it a scroll container that focus moves — returning from the
      shop would scroll the room and leave it offset with no way back. */
@@ -214,6 +211,7 @@
 }
 
 @media (max-height: 520px) {
+  .sts-scope .merchant-arrival > .room-proceed { top: 0.5rem; bottom: auto; }
   /* Short frames crop the art tightly, so hold a lower row of the room in the middle:
      that lifts the floor line clear of the Proceed button parked bottom right. */
   .sts-scope .merchant-arrival { --scene-focus-y: 60%; }

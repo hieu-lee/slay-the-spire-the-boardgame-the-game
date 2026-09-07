@@ -17,6 +17,7 @@ import type { RelicDef } from '../game/relics.ts'
 import type { RelicInstance } from '../game/types.ts'
 import { relicIconPath } from '../game/assets.ts'
 import { POINTER_CLICK_WINDOW_MS, useHoverUnavailable } from './touch-input.ts'
+import { PotionTooltipAnchor } from './PotionIcon.tsx'
 
 /**
  * How each relic pool reads on the token. All five, not just the three the
@@ -139,11 +140,12 @@ export function RelicOptionText({ id, withCost = false }: { id: string; withCost
  * prohibited and several screen readers drop it, so the relic would have
  * announced nothing at all.
  */
-function RelicChip({ relic, chipKey, tapOpen, onTapOpen }: {
+function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
   relic: RelicInstance
   chipKey: string
   tapOpen: boolean
   onTapOpen: (key: string, open: boolean) => void
+  unclipped?: boolean
 }) {
   const def = relicDef(relic.defId)
   const rarity = RELIC_POOL_LABEL[def.pool]
@@ -225,6 +227,14 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen }: {
     : relic.uses === 0 ? 'Used up.'
       : relic.uses !== undefined ? `${relic.uses} use${relic.uses === 1 ? '' : 's'} remaining.`
         : undefined
+  if (unclipped) return (
+    <PotionTooltipAnchor id={relic.defId} name={def.name} kindLabel={rarity}
+      text={[def.text, distinctRule(def), note].filter(Boolean).join(' ')} focusable hoverable>
+      <span className={`relic-chip${relic.spent ? ' relic-chip--spent' : ''}`}>
+        <img className="item-icon-image" src={relicIconPath(relic.defId)} alt="" />
+      </span>
+    </PotionTooltipAnchor>
+  )
   return (
     <span className={`relic-chip${relic.spent ? ' relic-chip--spent' : ''}`} tabIndex={0} role="img"
       data-tip-dismissed={dismissed ? 'true' : undefined}
@@ -281,7 +291,7 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen }: {
  * the row ("Ironclad's relics"), and in multiplayer a bare "Relics" would leave
  * a screen-reader user unable to tell whose row they had landed on.
  */
-export function RelicBar({ relics, label }: { relics: readonly RelicInstance[]; label: string }) {
+export function RelicBar({ relics, label, unclipped }: { relics: readonly RelicInstance[]; label: string; unclipped?: boolean }) {
   // Deliberately NOT guarded against an id `relicDef` does not know. CombatScreen
   // and RoomScreen read this same array unguarded, and the engine reads it in a
   // dozen more places — so skipping unknown relics here would not save the run,
@@ -321,7 +331,7 @@ export function RelicBar({ relics, label }: { relics: readonly RelicInstance[]; 
     <span className="relic-bar" role="group" aria-label={label} ref={bar}>
       {relics.map((relic, index) => {
         const key = `${relic.defId}-${index}`
-        return <RelicChip key={key} relic={relic} chipKey={key} tapOpen={openId === key}
+        return <RelicChip key={key} relic={relic} chipKey={key} tapOpen={openId === key} unclipped={unclipped}
           onTapOpen={openChip} />
       })}
     </span>

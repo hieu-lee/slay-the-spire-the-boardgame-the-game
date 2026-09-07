@@ -4607,7 +4607,7 @@ await dealtTrack.hover()
 const damageChart = await page.evaluate(() => {
   const row = document.querySelector('.run-summary__damage-row')
   const icon = row?.querySelector('.run-summary__damage-icon')
-  const tip = row?.querySelector('.run-summary__damage-track--dealt .run-summary__damage-tip')
+  const tip = document.querySelector('.potion-tip .run-summary__damage-tip')
   const filledWidth = (track) => [...track?.querySelectorAll('b') ?? []]
     .reduce((total, segment) => total + segment.getBoundingClientRect().width, 0)
   const dealt = row?.querySelector('.run-summary__damage-track--dealt')
@@ -4619,14 +4619,14 @@ const damageChart = await page.evaluate(() => {
     dealtWidth: filledWidth(dealt),
     peerDealtWidth: filledWidth(peerDealt),
     tip: tip ? getComputedStyle(tip).visibility : null,
-    tipBackground: tip ? getComputedStyle(tip).backgroundColor : null,
+    tipBackground: tip ? getComputedStyle(tip.closest('.potion-tip')).backgroundImage : null,
     tipOpacity: tip ? getComputedStyle(tip).opacity : null,
     detail: tip?.textContent,
   }
 })
 await page.screenshot({ path: join(outDir, 'run-summary-damage-chart.png'), fullPage: true })
 await takenTrack.hover()
-const takenChart = await takenTrack.locator('.run-summary__damage-tip').evaluate((tip) => ({
+const takenChart = await page.locator('.potion-tip .run-summary__damage-tip').evaluate((tip) => ({
   shown: getComputedStyle(tip).visibility,
   detail: tip.textContent,
 }))
@@ -4653,7 +4653,7 @@ check('run completion shows compendium portraits and separate hoverable damage t
   assert(Math.abs(damageChart.dealtWidth - damageChart.peerDealtWidth * 2) < 1,
     `damage bars are not proportional: ${damageChart.dealtWidth}/${damageChart.peerDealtWidth}`)
   assertEqual(damageChart.tip, 'visible')
-  assertEqual(damageChart.tipBackground, 'rgb(30, 41, 44)')
+  assert(damageChart.tipBackground && damageChart.tipBackground !== 'none')
   assertEqual(damageChart.tipOpacity, '1')
   assert(damageChart.detail?.includes('Poison damage') && !damageChart.detail.includes('Damage blocked'), damageChart.detail)
   assertEqual(takenChart.shown, 'visible')
