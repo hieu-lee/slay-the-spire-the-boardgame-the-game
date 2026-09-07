@@ -662,7 +662,7 @@ export function Card({
 }: CardProps) {
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : null
-  const scan = cardThumbPath(def, card.upgraded)
+  const scan = cardThumbPath(def, card.upgraded, attachedGem ?? undefined)
   const hasPublisherScan = def.publisherScan !== false
   const [scanUnavailable, setScanUnavailable] = useState(!hasPublisherScan)
   useEffect(() => setScanUnavailable(!hasPublisherScan), [hasPublisherScan, scan])
@@ -734,7 +734,7 @@ export function Card({
         }}
       /> : null}
       <CardFace def={def} cost={cost} rules={cardRulesText(def)} illustration={scanUnavailable} />
-      {attachedGem ? <img className="card__gem" src={cardThumbPath(attachedGem, false)} alt=""
+      {attachedGem && scanUnavailable ? <img className="card__gem" src={cardThumbPath(attachedGem, false)} alt=""
         draggable={false} title={`${attachedGem.name}: ${cardRuleDescription(attachedGem)}`} /> : null}
       {def.target === 'row' ? (
         // The burst printed on Cleave and its like. Marked hidden because

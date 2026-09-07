@@ -66,6 +66,17 @@
 .card-morph--burn .card-morph__slot--to { opacity: 0.45; transform: scale(1.12); }
 .card-morph--new .card-morph__slot--to { opacity: 1; transform: scale(1); }
 
+/* Socket starts with both physical cards, pulls them into the same flash, then
+   lands the generated combined face through the existing morph beat. */
+.card-morph--socket.card-morph--old .card-morph__slot--from { transform: translateX(58%) scale(0.9); }
+.card-morph__slot--gem { opacity: 1; transform: translateX(-58%) scale(0.9); }
+.card-morph--socket.card-morph--burn :is(.card-morph__slot--from, .card-morph__slot--gem) {
+  opacity: 0;
+  transform: translateX(0) scale(0.82);
+  filter: brightness(3.2) saturate(0);
+}
+.card-morph--socket.card-morph--new .card-morph__slot--gem { opacity: 0; transform: scale(0.82); }
+
 /* The flash between them. Gold for an upgrade, blue-white for a transform,
    because a transform is a different card rather than a better one. */
 .card-morph__burst {
@@ -81,6 +92,7 @@
 
 .card-morph--transform { --morph-flare: rgb(178 226 255 / 0.95); }
 .card-morph--remove { --morph-flare: rgb(255 99 72 / 0.95); }
+.card-morph--socket { --morph-flare: rgb(255 119 221 / 0.95); }
 
 .card-morph--burn .card-morph__burst { animation: card-morph-burst 520ms var(--ease-lerp) both; }
 
@@ -98,6 +110,7 @@
 
 .card-morph--transform .card-morph__caption { color: var(--blue-text); }
 .card-morph--remove .card-morph__caption { color: #ff9b78; }
+.card-morph--socket .card-morph__caption { color: #ff9fdf; }
 .card-morph--new .card-morph__caption { opacity: 1; }
 
 @keyframes card-morph-veil { from { opacity: 0 } to { opacity: 1 } }

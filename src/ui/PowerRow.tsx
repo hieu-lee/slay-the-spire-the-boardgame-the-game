@@ -156,11 +156,13 @@ export function PowerRow({ powers }: PowerRowProps) {
     // Whoever opens one closes everybody else's — unless somebody else has
     // deliberately pinned theirs, which a passing hover must not destroy.
     if (!tryClaimCardZoom(close.current, pinned)) return
+    const def = faceOf(cardDef(card.defId), card.upgraded)
+    const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : undefined
     setZoom({
       uid: card.uid,
-      src: cardThumbPath(cardDef(card.defId), card.upgraded),
-      def: faceOf(cardDef(card.defId), card.upgraded),
-      attachedGem: card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : undefined,
+      src: cardThumbPath(def, card.upgraded, attachedGem),
+      def,
+      attachedGem,
       description,
       x,
       y,
@@ -241,7 +243,7 @@ export function PowerRow({ powers }: PowerRowProps) {
                 {zoom.description}
               </span>
               <CardFace def={zoom.def} rules={cardRulesText(zoom.def)} className="power__zoom-card" />
-              {zoom.attachedGem ? <img className="card__gem"
+              {zoom.attachedGem && !zoom.loaded ? <img className="card__gem"
                 src={cardThumbPath(zoom.attachedGem, false)} alt="" draggable={false}
                 title={`${zoom.attachedGem.name}: ${cardRuleDescription(zoom.attachedGem)}`} /> : null}
               <img

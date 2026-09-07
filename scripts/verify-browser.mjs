@@ -1163,6 +1163,62 @@ check('two identical card upgrades are each announced', () => {
   assert(morphSpoken.regionStillAttached, 'the live region node was replaced rather than blanked')
 })
 await page.waitForFunction(() => !document.querySelector('.card-morph')).catch(() => {})
+await page.evaluate(async () => {
+  const run = structuredClone(window.__STS_DEBUG__.getRun())
+  run.players[0].deck[0] = { ...run.players[0].deck[0], defId: 'guardian_fierce_bash', upgraded: false,
+    attachedGemId: undefined }
+  window.__STS_DEBUG__.setRun(run)
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  const socketed = structuredClone(run)
+  socketed.players[0].deck[0].attachedGemId = 'guardian_garnet'
+  window.__STS_DEBUG__.setRun(socketed)
+})
+await page.locator('.card-morph--socket').waitFor()
+await page.waitForFunction(() => document.querySelector('p.visually-hidden[aria-live="polite"]')
+  ?.textContent?.includes('Fierce Bash socketed with Garnet.'))
+const socketMorph = await page.locator('.card-morph--socket').evaluate((overlay) => ({
+  caption: overlay.querySelector('.card-morph__caption')?.textContent,
+  sourceFaces: [...overlay.querySelectorAll('.card-morph__slot--from img.card__art, .card-morph__slot--gem img.card__art')]
+    .map((image) => image.getAttribute('src')),
+  combinedFace: overlay.querySelector('.card-morph__slot--to img.card__art')?.getAttribute('src'),
+}))
+check('socketing animates the host and Gem combining into the generated face', () => {
+  assertEqual(socketMorph.caption, 'Socketed')
+  assert(socketMorph.sourceFaces.some((src) => src?.endsWith('/guardian__normal__fierce-bash.webp')),
+    JSON.stringify(socketMorph))
+  assert(socketMorph.sourceFaces.some((src) => src?.endsWith('/guardian__normal__garnet.webp')),
+    JSON.stringify(socketMorph))
+  assert(socketMorph.combinedFace?.endsWith('/guardian__normal__fierce-bash--garnet.webp'),
+    JSON.stringify(socketMorph))
+})
+await page.locator('.card-morph--socket.card-morph--new').waitFor()
+await shot('01a-guardian-socket-combine')
+await page.waitForFunction(() => !document.querySelector('.card-morph')).catch(() => {})
+await page.setViewportSize({ width: 844, height: 390 })
+await page.evaluate(async () => {
+  const plain = structuredClone(window.__STS_DEBUG__.getRun())
+  delete plain.players[0].deck[0].attachedGemId
+  window.__STS_DEBUG__.setRun(plain)
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  const socketed = structuredClone(plain)
+  socketed.players[0].deck[0].attachedGemId = 'guardian_garnet'
+  window.__STS_DEBUG__.setRun(socketed)
+})
+await page.locator('.card-morph--socket').waitFor()
+const phoneSocketBounds = await page.locator('.card-morph--socket').evaluate((overlay) => {
+  const boxes = [...overlay.querySelectorAll('.card-morph__slot--from, .card-morph__slot--gem')]
+    .map((slot) => slot.getBoundingClientRect())
+  return boxes.map(({ left, right, top, bottom }) => ({ left, right, top, bottom }))
+})
+check('socket source cards fit a horizontal phone while they combine', () => {
+  assert(phoneSocketBounds.length === 2 && phoneSocketBounds.every((box) =>
+    box.left >= 0 && box.right <= 844 && box.top >= 0 && box.bottom <= 390),
+  JSON.stringify(phoneSocketBounds))
+})
+await page.locator('.card-morph--socket.card-morph--new').waitFor()
+await shot('01b-guardian-socket-combine-phone')
+await page.waitForFunction(() => !document.querySelector('.card-morph')).catch(() => {})
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => {
   const run = structuredClone(window.__STS_DEBUG__.getRun())
   run.players[0].deck = run.players[0].deck.slice(1)
@@ -4177,7 +4233,17 @@ if (args.includes('--downfall-ui-only')) {
     socketedKeywordTips.push({ names: tips.map((tip) => tip.name), tips, expected, excluded })
     if (index === 3) await shot('downfall-guardian-socketed-power-keyword-help')
   }
-  const floatingOrbsGem = await page.locator('.power__zoom .card__gem').getAttribute('title')
+  const floatingOrbsPower = page.locator('.power[aria-label^="Floating Orbs,"]')
+  const floatingOrbsLabel = await floatingOrbsPower.getAttribute('aria-label')
+  await floatingOrbsPower.hover()
+  await page.waitForFunction(() => {
+    const image = document.querySelector('.power__zoom:not(.power__zoom--fallback) .power__zoom-image')
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+  })
+  const floatingOrbsPowerZoom = {
+    source: await page.locator('.power__zoom-image').getAttribute('src'),
+    gemOverlays: await page.locator('.power__zoom .card__gem').count(),
+  }
   check('socketed hand cards and Powers include their exact attached Gem in shared card help', () => {
     assert(socketedKeywordTips.every(({ names, expected, excluded }) =>
       names.includes(expected) && !names.includes('Unplayable') && (!excluded || !names.includes(excluded))),
@@ -4196,7 +4262,11 @@ if (args.includes('--downfall-ui-only')) {
       socketedKeywordTips[3].tips.find((tip) => tip.name === 'Gem Power damage')?.text
         .includes('ignores Strength, Weak, Vulnerable, and Vigor'),
     `Gem Power exception is not visible: ${JSON.stringify(socketedKeywordTips[3])}`)
-    assert(floatingOrbsGem?.startsWith('Ruby: 1 damage.'), floatingOrbsGem)
+    assert(floatingOrbsLabel?.includes('socketed with Ruby: 1 damage.'), floatingOrbsLabel)
+    assert(floatingOrbsPowerZoom.source?.endsWith('/guardian__rare__floating-orbs--ruby.webp'),
+      floatingOrbsPowerZoom.source)
+    assertEqual(floatingOrbsPowerZoom.gemOverlays, 0,
+      'loaded socketed Power zoom still shows a separate Gem overlay')
   })
   await page.keyboard.up('Shift')
   await page.mouse.move(5, 5)
@@ -4454,15 +4524,13 @@ await page.evaluate((run) => {
 }, combatAppearanceRun)
 const socketedCard = page.getByRole('button', { name: /^Strike,.*socketed with Amethyst:/ })
 await socketedCard.waitFor()
-const socketedGem = await socketedCard.locator('img.card__gem').evaluate((image) => ({
+const socketedGem = await socketedCard.locator('img.card__art').evaluate((image) => ({
   source: image.getAttribute('src'),
-  title: image.getAttribute('title'),
   loaded: image.complete && image.naturalWidth > 0,
 }))
 check('Crystallize inheritance shows and announces the exact official Gem face on starter Strikes', () => {
-  assert(socketedGem.source?.endsWith('/guardian__normal__amethyst.webp'), socketedGem.source)
-  assert(socketedGem.title?.startsWith('Amethyst:'), socketedGem.title)
-  assert(socketedGem.loaded, 'the socketed Gem thumbnail did not decode')
+  assert(socketedGem.source?.endsWith('/guardian__starter__strike--amethyst.webp'), socketedGem.source)
+  assert(socketedGem.loaded, 'the combined socketed card face did not decode')
 })
 
 await page.evaluate(async (run) => {

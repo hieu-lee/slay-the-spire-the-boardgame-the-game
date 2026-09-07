@@ -23,6 +23,7 @@ export const CARD_ASSET_ROOT = assetPath('cards')
  * card-reveal moment) at a phone's device pixel ratio.
  */
 export const CARD_THUMB_ROOT = assetPath('cards-sm')
+export const SOCKETED_CARD_THUMB_ROOT = assetPath('cards-socketed-sm')
 export const CARD_ART_ROOT = assetPath('card-art')
 
 const POOL_TIERS: Record<string, string> = {
@@ -89,11 +90,14 @@ export function cardImagePath(def: CardDef, upgraded: boolean): string {
 }
 
 /**
- * The 448px scan. Prefer this everywhere except the compendium's full-screen
- * zoom, which is the one surface that paints a card larger than 448px.
+ * The 448px scan, or the generated combined face when a Gem is attached.
+ * Prefer this everywhere except the compendium's full-screen zoom, which is
+ * the one surface that paints a card larger than 448px.
  */
-export function cardThumbPath(def: CardDef, upgraded: boolean): string {
-  return `${CARD_THUMB_ROOT}/${cardAssetKey(def, upgraded)}.webp`
+export function cardThumbPath(def: CardDef, upgraded: boolean, gem?: CardDef): string {
+  return gem
+    ? `${SOCKETED_CARD_THUMB_ROOT}/${cardAssetKey(def, upgraded)}--${slugify(gem.name)}.webp`
+    : `${CARD_THUMB_ROOT}/${cardAssetKey(def, upgraded)}.webp`
 }
 
 function cardAssetKey(def: CardDef, upgraded: boolean): string {

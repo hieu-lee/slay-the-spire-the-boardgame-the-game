@@ -1,4 +1,4 @@
-// The moment a card changes. The board game resolves an upgrade or a transform
+// The moment a card changes. The board game resolves an upgrade, Socket, or transform
 // by swapping a piece of cardboard, which is over before anyone looks up; the
 // digital game stops the screen, holds the old card up, and burns it into the
 // new one. This is that beat.
@@ -12,6 +12,7 @@
 // `getByRole('status')` ambiguous for the suites. A screen reader hears what the
 // card became without the visual having to finish.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { cardDef } from '../game/cards.ts'
 import type { CardInstance } from '../game/types.ts'
 import { Card } from './Card.tsx'
 
@@ -22,7 +23,7 @@ const HOLD_NEW = 900
 
 export type CardMorphRequest = {
   /** Distinguishes the verb in the caption and the burst's colour. */
-  kind: 'upgrade' | 'transform' | 'gain' | 'remove'
+  kind: 'upgrade' | 'transform' | 'gain' | 'remove' | 'socket'
   /** Null for `gain`: a random reward or blessing card comes from nowhere, not from another card. */
   from: CardInstance | null
   /** Null for `remove`: the old card burns away without a replacement. */
@@ -40,6 +41,9 @@ export type CardMorphRequest = {
  */
 export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDone: () => void }) {
   const [beat, setBeat] = useState<'old' | 'burn' | 'new'>('old')
+  const socketGem = request.kind === 'socket' && request.to?.attachedGemId
+    ? { uid: `${request.to.uid}-socket-gem`, defId: request.to.attachedGemId, upgraded: false }
+    : null
 
   // `useLayoutEffect`, not `useEffect`. The container no longer remounts between
   // queued morphs, so `beat` survives as `'new'` from the previous card — and a
@@ -81,7 +85,8 @@ export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDo
 
   const verb = request.kind === 'upgrade' ? 'Upgraded'
     : request.kind === 'transform' ? 'Transformed'
-      : request.kind === 'remove' ? 'Removed' : 'Gained'
+      : request.kind === 'remove' ? 'Removed'
+        : request.kind === 'socket' ? 'Socketed' : 'Gained'
   return (
     // `inert` as well as `aria-hidden`: `Card` renders a real <button>, and an
     // aria-hidden subtree containing a focusable control is the classic
@@ -99,6 +104,9 @@ export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDo
             <Card card={request.from} playable={false} />
           </div>
         ) : null}
+        {socketGem ? <div className="card-morph__slot card-morph__slot--gem">
+          <Card card={socketGem} playable={false} />
+        </div> : null}
         {request.to ? <div className="card-morph__slot card-morph__slot--to">
           <Card card={request.to} playable={false} />
         </div> : null}
@@ -131,6 +139,8 @@ function cardMorphAnnouncement(request: CardMorphRequest, name: (card: CardInsta
       ? `${name(request.from!)} transformed into ${name(request.to!)}.`
       : request.kind === 'remove'
         ? `Removed ${name(request.from!)}.`
+        : request.kind === 'socket'
+          ? `${name(request.to!)} socketed with ${cardDef(request.to!.attachedGemId!).name}.`
         : `Gained ${name(request.to!)}.`
 }
 

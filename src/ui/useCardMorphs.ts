@@ -15,6 +15,8 @@ import type { CardMorphRequest } from './CardMorph.tsx'
  * Morphs implied by the difference between two decks.
  *
  * Upgrades are exact: same uid, `upgraded` went false to true.
+ * Socketing is exact too: `attachedGemId` gained a value, either on an existing
+ * card or on a card whose acquisition and Gem choice landed atomically.
  *
  * Transforms are inferred, because `transformCard` drops one uid and appends
  * its replacement rather than editing in place — there is no field tying the
@@ -59,25 +61,36 @@ export function diffDeckMorphs(
       key: `upgrade-${card.uid}`,
     }))
 
+  const sockets = after
+    .filter((card) => card.attachedGemId !== undefined &&
+      previous.get(card.uid)?.attachedGemId !== card.attachedGemId)
+    .map((card) => ({
+      kind: 'socket' as const,
+      from: { ...card, attachedGemId: previous.get(card.uid)?.attachedGemId },
+      to: card,
+      key: `socket-${card.uid}-${card.attachedGemId}`,
+    }))
+
   const gone = before.filter((card) =>
     !current.has(card.uid) && CARDS[card.defId]?.owner !== 'status')
   const arrived = after.filter((card) => !previous.has(card.uid))
-  const transforms = gone.length > 0 && arrived.length >= gone.length && upgrades.length === 0
+  const plainArrivals = arrived.filter((card) => card.attachedGemId === undefined)
+  const transforms = gone.length > 0 && plainArrivals.length >= gone.length && upgrades.length === 0
     ? gone.map((card, index) => ({
       kind: 'transform' as const,
       from: card,
-      to: arrived[index]!,
-      key: `transform-${card.uid}-${arrived[index]!.uid}`,
+      to: plainArrivals[index]!,
+      key: `transform-${card.uid}-${plainArrivals[index]!.uid}`,
     }))
     : []
   const removals = arrived.length === 0
     ? gone.map((card) => ({ kind: 'remove' as const, from: card, to: null, key: `remove-${card.uid}` }))
     : []
   const gains = gainArmed
-    ? arrived.slice(transforms.length).map((card) => ({ kind: 'gain' as const, from: null, to: card, key: `gain-${card.uid}` }))
+    ? plainArrivals.slice(transforms.length).map((card) => ({ kind: 'gain' as const, from: null, to: card, key: `gain-${card.uid}` }))
     : []
 
-  return [...upgrades, ...transforms, ...removals, ...gains]
+  return [...upgrades, ...sockets, ...transforms, ...removals, ...gains]
 }
 
 /**

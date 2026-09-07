@@ -57,6 +57,25 @@ check('several upgrades at once all report, so the queue has something to drain'
   assertEqual(diffDeckMorphs(base, after).length, 3)
 })
 
+check('attaching a Guardian Gem morphs the same card into its combined face', () => {
+  const before = [card('socket-host', 'guardian_fierce_bash')]
+  const after = [{ ...before[0], attachedGemId: 'guardian_garnet' }]
+  const found = diffDeckMorphs(before, after)
+  assertEqual(found.length, 1)
+  assertEqual(found[0].kind, 'socket')
+  assertEqual(found[0].from.attachedGemId, undefined)
+  assertEqual(found[0].to.attachedGemId, 'guardian_garnet')
+})
+
+check('an atomic Socket-card gain still combines the new host with its Gem once', () => {
+  const gained = { ...card('socket-host', 'guardian_fierce_bash'), attachedGemId: 'guardian_garnet' }
+  const found = diffDeckMorphs(base, [...base, gained])
+  assertDeepEqual(found.map((entry) => entry.kind), ['socket'])
+  assertEqual(found[0].from.attachedGemId, undefined)
+  assertEqual(found[0].to.attachedGemId, 'guardian_garnet')
+  assertDeepEqual(diffDeckMorphs(base, [...base, gained], true).map((entry) => entry.kind), ['socket'])
+})
+
 check('one card out and one in is inferred as a transform', () => {
   const after = [card('c2', 'strike'), card('c3', 'defend'), card('c9', 'anger')]
   const found = diffDeckMorphs(base, after)

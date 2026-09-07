@@ -23,6 +23,7 @@ import {
   CARD_ART_ROOT,
   CARD_ASSET_ROOT,
   CARD_THUMB_ROOT,
+  SOCKETED_CARD_THUMB_ROOT,
 } from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { POTIONS, RELICS } from '../src/game/relics.ts'
@@ -47,6 +48,7 @@ const listing = (dir, extension) =>
 
 const cardRoot = join(publicRoot, 'assets/cards')
 const cardThumbRoot = join(publicRoot, 'assets/cards-sm')
+const socketedCardThumbRoot = join(publicRoot, 'assets/cards-socketed-sm')
 const cardArtRoot = join(publicRoot, 'assets/card-art')
 const iconRoot = join(publicRoot, 'assets/icons')
 const enemyRoot = join(publicRoot, 'assets/enemies')
@@ -72,6 +74,7 @@ const sfxRoot = join(publicRoot, 'assets/sfx')
 
 const cardFiles = listing(cardRoot, '.webp')
 const cardThumbFiles = listing(cardThumbRoot, '.webp')
+const socketedCardThumbFiles = listing(socketedCardThumbRoot, '.webp')
 const CARD_ART_OWNERS = ['ironclad', 'silent', 'defect', 'watcher']
 const DOWNFALL_CARD_OWNERS = ['slime_boss', 'guardian', 'hexaghost', 'hermit']
 const cardArtFiles = CARD_ART_OWNERS.flatMap((owner) =>
@@ -333,6 +336,28 @@ check('every card scan has a thumbnail inside the decode budget', () => {
   assertDeepEqual(faults, [], `card thumbnails over ${CARD_THUMB_WIDTH}px`)
   const bytes = files.reduce((sum, file) => sum + statSync(file).size, 0)
   assert(bytes < 28 * 1024 * 1024, `card thumbnails total ${(bytes / 1048576).toFixed(1)} MB`)
+})
+
+check('every Guardian Socket and Gem pair has one compact combined face', () => {
+  const gems = Object.values(CARDS).filter((def) => def.guardian?.printedType === 'Gem')
+  const hosts = Object.values(CARDS).filter((def) =>
+    def.guardian?.socket || def.id === 'guardian_strike')
+  const expected = hosts.flatMap((host) => [false, true]
+    .filter((upgraded) => !upgraded || host.upgrade)
+    .flatMap((upgraded) => gems.map((gem) =>
+      cardThumbPath(faceOf(host, upgraded), upgraded, gem).split('/').pop())))
+    .sort()
+  assertEqual(expected.length, 420, 'complete Socket host and Gem face matrix')
+  assertDeepEqual(socketedCardThumbFiles.sort(), expected, 'missing or stale combined Socket faces')
+  const files = expected.map((file) => join(socketedCardThumbRoot, file))
+  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'combined Socket faces did not decode')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, files.length, 'decoded combined Socket face count')
+  assert(inspected.every((block) => Number(block.match(/  Width: (\d+)/)?.[1]) === 448),
+    'combined Socket faces must be 448px wide')
+  assert(files.reduce((bytes, file) => bytes + statSync(file).size, 0) < 32 * 1024 * 1024,
+    'combined Socket faces exceed 32 MiB')
 })
 
 // Path shape is checked even without artwork, since it is pure code.
