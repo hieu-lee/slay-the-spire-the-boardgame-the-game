@@ -902,37 +902,41 @@ check('triggered Hermit Powers pause on serialized Load choices and resume exact
   assert.equal(resolved.pendingTriggers.length, 0)
 })
 
-check('Take Aim pauses and resumes through the real end-turn pipeline', () => {
+check('Take Aim auto-loads its only legal card through the real end-turn pipeline', () => {
   const choice = instance('end-turn-take-aim-choice', 'hermit_strike')
   const takeAim = instance('end-turn-take-aim', 'hermit_take_aim')
-  let combat = createCombat(createRng(502), [player({ hand: [choice], powers: [takeAim] })], [enemy()])
+  const combat = createCombat(createRng(502), [player({ hand: [choice], powers: [takeAim] })], [enemy()])
   combat.pendingHermitSetupLoads = []
-  combat = beginEndPlayerTurn(combat)
-  const preview = pendingTriggerAbility(combat)
-  assert.deepEqual(preview.hermitChoices.loadCards.map(({ uid }) => uid), [choice.uid])
-  combat = resolvePendingTrigger(combat, 'p1', preview.id, undefined, undefined, undefined, {
-    loadUids: [choice.uid], chamberUids: [], hermitEnemyUids: [],
-  })
-  assert(combat.players[0].chamber.some(({ uid }) => uid === choice.uid))
-  assert.equal(combat.phase, 'enemy')
+  const resolved = beginEndPlayerTurn(combat)
+  assert.equal(pendingTriggerAbility(resolved), undefined)
+  assert(resolved.players[0].chamber.some(({ uid }) => uid === choice.uid))
+  assert.equal(resolved.phase, 'enemy')
+})
+
+check('Take Aim still pauses when its owner can choose the loaded card', () => {
+  const first = instance('end-turn-take-aim-first', 'hermit_strike')
+  const second = instance('end-turn-take-aim-second', 'hermit_defend')
+  const takeAim = instance('end-turn-take-aim-choice', 'hermit_take_aim')
+  const combat = createCombat(createRng(503), [player({ hand: [first, second], powers: [takeAim] })], [enemy()])
+  combat.pendingHermitSetupLoads = []
+  const pending = beginEndPlayerTurn(combat)
+  const preview = pendingTriggerAbility(pending)
+  assert.deepEqual(preview.hermitChoices.loadCards.map(({ uid }) => uid), [first.uid, second.uid])
+  assert.equal(pending.phase, 'player')
 })
 
 check('Take Aim auto-targets the only enemy for a loaded Curse', () => {
   const grudge = instance('end-turn-take-aim-grudge', 'hermit_grudge')
   const takeAim = instance('end-turn-take-aim-curse', 'hermit_take_aim')
-  let combat = createCombat(createRng(504), [player({ hand: [grudge], powers: [takeAim] })], [
+  const combat = createCombat(createRng(504), [player({ hand: [grudge], powers: [takeAim] })], [
     enemy({ hp: 10, maxHp: 10 }),
   ])
   combat.pendingHermitSetupLoads = []
-  combat = beginEndPlayerTurn(combat)
-  const preview = pendingTriggerAbility(combat)
-  assert.equal(preview.targets, undefined)
-  combat = resolvePendingTrigger(combat, 'p1', preview.id, undefined, undefined, undefined, {
-    loadUids: [grudge.uid], chamberUids: [], hermitEnemyUids: [],
-  })
-  assert(combat.players[0].chamber.some(({ uid }) => uid === grudge.uid))
-  assert.equal(combat.enemies[0].hp, 8)
-  assert.equal(combat.phase, 'enemy')
+  const resolved = beginEndPlayerTurn(combat)
+  assert.equal(pendingTriggerAbility(resolved), undefined)
+  assert(resolved.players[0].chamber.some(({ uid }) => uid === grudge.uid))
+  assert.equal(resolved.enemies[0].hp, 8)
+  assert.equal(resolved.phase, 'enemy')
 })
 
 check('Combo offers only cards in hand after its draw, not cards left in discard', () => {

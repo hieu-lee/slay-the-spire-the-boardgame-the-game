@@ -7,6 +7,7 @@ import {
   beginEndTurnResolution,
   chooseEndTurnTarget,
   chooseDistilledCard,
+  cardCanBeForced,
   chosenEvokeOrbs,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
@@ -33,6 +34,7 @@ import {
   previewCardChoice,
   previewCardCopyChoice,
   resolveEnemyTargets,
+  resolveDeterministicForcedCard,
   resolveEndTurnAbility,
   mandatoryChoicePending,
   resolvePendingDieRelicChoice,
@@ -46,7 +48,9 @@ import {
   startPlayerTurn,
   startPlayerTurnWithChoices,
   startTurnAbilities,
+  startTurnChoicePlayerIds,
   startTurnDiscardPreview,
+  startTurnOrderChoicePlayerId,
   startTurnScryAbilities,
   startTurnScryPreview,
   startTurnNeedsChoice,
@@ -652,19 +656,23 @@ check('Foresight pauses after Reset, Scries privately, then draws and rolls', ()
     assertEqual(resolved.players[0].block, 1, 'Nirvana resolves from Foresight before Draw')
     assert(resolved.die >= 1 && resolved.die <= 6, 'the shared die rolls after Foresight and Draw')
 
-    const nextRound = preparePlayerTurn({ ...resolved, phase: 'roundEnd' })
+    const nextRound = preparePlayerTurn({
+      ...resolved,
+      phase: 'roundEnd',
+      players: resolved.players.map((player) => ({ ...player, draw: [instance('defend_watcher')] })),
+    })
     const nextPreview = startTurnScryPreview(nextRound)
     assert(nextPreview.id !== preview.id, 'Foresight action id repeated on the next turn')
     assertEqual(resolveStartTurnScry(nextRound, 'p1', preview.id, []), nextRound,
       'replaying last turn\'s keep-all action consumed the next Foresight')
   }
 
-  const empty = preparePlayerTurn(combat([makePlayer({
+  const empty = startPlayerTurnWithChoices(combat([makePlayer({
     character: 'watcher', draw: [], powers: [instance('foresight'), instance('nirvana')], block: 0,
   })], [makeEnemy()]))
-  const emptyPreview = startTurnScryPreview(empty)
-  const resolvedEmpty = resolveStartTurnScry(empty, 'p1', emptyPreview.id, [])
-  assertEqual(resolvedEmpty.players[0].block, 0, 'looking at no cards does not trigger Nirvana')
+  assertEqual(empty.phase, 'player', 'an empty Scry preview required a confirmation')
+  assertEqual(startTurnScryPreview(empty), undefined)
+  assertEqual(empty.players[0].block, 0, 'looking at no cards does not trigger Nirvana')
 })
 
 check('multiple Foresights use the chosen order and reject a replayed source', () => {
@@ -689,6 +697,24 @@ check('multiple Foresights use the chosen order and reject a replayed source', (
   const finished = resolveStartTurnScry(afterFirst, 'p1', second.id, [])
   assertEqual(finished.phase, 'player')
   assertEqual(finished.players[0].hand.length, 5)
+
+  const sameAmount = preparePlayerTurn(combat([makePlayer({
+    character: 'watcher', draw: deck,
+    powers: [instance('foresight'), instance('foresight')],
+  })], [makeEnemy()]))
+  assertEqual(startTurnScryAbilities(sameAmount).length, 0,
+    'identical Scry amounts created a redundant order confirmation')
+  assertEqual(startTurnScryPreview(sameAmount)?.amount, 3)
+
+  const mixed = preparePlayerTurn(combat([
+    makePlayer({ character: 'watcher', draw: [], powers: [instance('foresight')] }),
+    makePlayer({ id: 'p2', name: 'Watcher 2', character: 'watcher', row: 1,
+      draw: [instance('strike_watcher')], powers: [instance('foresight')] }),
+  ], [makeEnemy()]))
+  assertEqual(startTurnScryAbilities(mixed).length, 0,
+    'an empty teammate Scry created a redundant shared order choice')
+  assertEqual(startTurnScryPreview(mixed)?.playerId, 'p2')
+  assertDeepEqual(startTurnChoicePlayerIds(mixed), ['p2'])
 })
 
 check('Foresight rejects an action replayed from an earlier combat', () => {
@@ -711,6 +737,27 @@ check('the die is rolled once per round and is deterministic for a seed', () => 
   assertEqual(a.die, b.die, 'the same seed must roll the same die')
 })
 
+check('discard ordering accounts for costs that change before the next reader', () => {
+  const blood = instance('blood_for_blood', true)
+  const bash = instance('bash')
+  const scrape = instance('scrape')
+  const state = combat([makePlayer({ hand: [blood, bash],
+    draw: [scrape, ...Array.from({ length: 4 }, () => instance('defend_ironclad'))],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state.turn = 1
+  const pending = beginEndPlayerTurn(state)
+  assertEqual(pending.phase, 'discard', 'future HP loss can distinguish currently nonzero discard costs')
+  const discarded = endPlayerTurn(pending, { p1: [bash.uid, blood.uid] })
+  damagePlayer(discarded, discarded.players[0], 1)
+  const nextTurn = startPlayerTurn({ ...discarded, phase: 'roundEnd' })
+  const recovered = playCard(nextTurn, 'p1', scrape.uid, { enemyUid: 'e1', playerId: null })
+  assert(recovered.players[0].hand.some((card) => card.uid === blood.uid), 'Scrape lost the chosen card after its HP-loss discount')
+  assert(discardTopNeedsChoice(combat([makePlayer({ hand: [instance('force_field'), bash], draw: [scrape] })], [makeEnemy()]).players[0]),
+    'future Power counts can make Force Field the only recoverable top card')
+  assert(discardTopNeedsChoice(combat([makePlayer({ hand: [instance('defend_ironclad'), bash],
+    draw: [scrape, instance('corruption')] })], [makeEnemy()]).players[0]), 'playing Corruption can distinguish Skill and Attack costs')
+})
+
 check('end of turn discards every hand', () => {
   const hand = [instance('strike_ironclad'), instance('defend_ironclad')]
   const state = combat([makePlayer({ hand })], [makeEnemy()])
@@ -730,15 +777,41 @@ check('the discard prompt appears only when the arrangement can matter', () => {
   assertEqual(ordinary.players[0].hand.length, 0, 'and it was discarded on the way past')
 
   const clawed = beginEndPlayerTurn(combat([
-    makePlayer({ hand: [instance('bash'), instance('defend_ironclad')], draw: [instance('claw')] }),
+    makePlayer({ hand: [instance('bash'), instance('deflect')], draw: [instance('claw')] }),
   ], [makeEnemy()]))
   assertEqual(clawed.phase, 'discard', 'a Claw makes the top of the discard pile worth choosing')
 
+  const scraped = beginEndPlayerTurn(combat([
+    makePlayer({ hand: [instance('bash'), instance('deflect')], draw: [instance('scrape')] }),
+  ], [makeEnemy()]))
+  assertEqual(scraped.phase, 'discard', 'Scrape also reads the top card cost and needs an order')
+
   const chambered = beginEndPlayerTurn(combat([
-    makePlayer({ character: 'hermit', hand: [instance('bash'), instance('defend_ironclad')],
+    makePlayer({ character: 'hermit', hand: [instance('bash'), instance('deflect')],
       chamber: [instance('claw')] }),
   ], [makeEnemy()]))
   assertEqual(chambered.phase, 'discard', 'a loaded Claw makes the top of the discard pile worth choosing')
+
+  const sameNonzero = beginEndPlayerTurn(combat([
+    makePlayer({ hand: [instance('bash'), instance('defend_ironclad')], draw: [instance('claw')] }),
+  ], [makeEnemy()]))
+  assertEqual(sameNonzero.phase, 'enemy', 'equal nonzero top-card outcomes need no ordering')
+
+  const sameZero = beginEndPlayerTurn(combat([
+    makePlayer({ hand: [instance('deflect'), instance('slice')], draw: [instance('claw')] }),
+  ], [makeEnemy()]))
+  assertEqual(sameZero.phase, 'enemy', 'equal zero-cost top-card outcomes need no ordering')
+
+  for (const [hand, expected] of [
+    [[instance('deflect'), instance('slice')], 'discard'],
+    [[instance('deflect'), instance('deflect')], 'enemy'],
+    [[instance('bash'), instance('defend_ironclad')], 'enemy'],
+  ]) {
+    const recoveredTop = beginEndPlayerTurn(combat([
+      makePlayer({ hand, draw: [instance('scrape')] }),
+    ], [makeEnemy()]))
+    assertEqual(recoveredTop.phase, expected, 'Scrape must distinguish recoverable cards, not just their costs')
+  }
 
   const single = beginEndPlayerTurn(combat([
     makePlayer({ hand: [instance('bash')], draw: [instance('claw')] }),
@@ -1429,13 +1502,13 @@ check('Curses resolve their printed end-of-turn rules before discard', () => {
   const state = combat([
     // The Claw is what keeps the turn parked at the discard prompt, so the hand
     // is still there to inspect after the curses have had their say.
-    makePlayer({ hand: [decay, doubt, shame, pain], draw: [instance('claw')], hp: 8, block: 2 }),
+    makePlayer({ hand: [decay, doubt, shame, pain, instance('deflect')], draw: [instance('claw')], hp: 8, block: 2 }),
   ], [makeEnemy()])
   const next = beginEndPlayerTurn(state)
   assertEqual(next.players[0].hp, 8, 'Decay damage is absorbed by Block')
   assertEqual(next.players[0].block, 0, 'Decay spends one Block and Shame removes one')
   assertEqual(next.players[0].weak, 1, 'Doubt gives Weak')
-  assertEqual(next.players[0].hand.length, 4, 'the curses stay available for discard ordering')
+  assertEqual(next.players[0].hand.length, 5, 'the curses stay available for discard ordering')
   assert(!next.log.some((line) => line.startsWith('Pain:')), 'Pain is inactive above two cards')
 
   const painful = beginEndPlayerTurn(combat([
@@ -4886,37 +4959,36 @@ check('Tools of the Trade privately draws then discards and resumes ordered star
   )
   assertEqual(lethal.phase, 'won')
   assertEqual(lethal.startTurnProgress, undefined, 'lethal deferred draw reaction left stale start progress')
+
+  const onlyCard = instance('tactician')
+  const singleton = startPlayerTurnWithChoices({
+    ...combat([makePlayer({
+      character: 'silent', hand: [], draw: [onlyCard],
+      powers: [instance('tools_of_the_trade')], energy: 0,
+    })], [makeEnemy()]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(singleton.phase, 'player', 'a forced one-card discard still paused for its owner')
+  assertEqual(singleton.startTurnProgress, undefined)
+  assertEqual(singleton.players[0].energy, 5, 'the automatic Tactician discard lost its reaction')
+  assertEqual(singleton.players[0].exhaust.some((card) => card.uid === onlyCard.uid), true)
 })
 
-check('complex Hermit and Slime Boss start powers pause for their owner and resume the order', () => {
+check('Hermit and Slime Boss start powers auto-resolve only unique private inputs', () => {
   const chambered = instance('defend_hermit')
   const calledShot = instance('hermit_called_shot')
   const fumes = instance('noxious_fumes')
-  const hermitPaused = startPlayerTurnWithChoices({
+  const hermitResolved = startPlayerTurnWithChoices({
     ...combat([makePlayer({
       name: 'Hermit', character: 'hermit', chamber: [chambered], chamberSlots: 2,
       powers: [calledShot, fumes],
     })], [makeEnemy({ hp: 10, maxHp: 10 })]),
     phase: 'roundEnd', turn: 1,
   })
-  assertEqual(hermitPaused.pendingTriggers.length, 1)
-  assertEqual(hermitPaused.pendingTriggers[0].playerId, 'p1')
-  assertEqual(hermitPaused.pendingTriggers[0].startTurn, true)
-  assertEqual(hermitPaused.startTurnProgress, undefined,
-    'the private trigger must precede, not consume, the owner readiness click')
-  assertDeepEqual(pendingTriggerAbility(hermitPaused).hermitChoices.chamberCards.map((card) => card.uid),
-    [chambered.uid])
-  assertEqual(resolvePendingTrigger(hermitPaused, 'forged', hermitPaused.pendingTriggers[0].id,
-    undefined, undefined, undefined, { chamberUids: [chambered.uid] }), hermitPaused)
-  const hermitResolved = resolvePendingTrigger(hermitPaused, 'p1', hermitPaused.pendingTriggers[0].id,
-    undefined, undefined, undefined, { chamberUids: [chambered.uid] })
-  assertEqual(hermitResolved.phase, 'start')
+  assertEqual(hermitResolved.phase, 'player')
   assertEqual(hermitResolved.players[0].chamber[0].freeThisTurn, true)
-  assertEqual(hermitResolved.enemies[0].poison, 0, 'a later start power resolved before the owner confirmed')
-  const hermitFinished = resolveStartPlayerTurn(hermitResolved, defaultStartTurnChoices(hermitResolved))
-  assertEqual(hermitFinished.phase, 'player')
-  assertEqual(hermitFinished.enemies[0].poison, 1, 'the later start power did not resume after confirmation')
-  assertDeepEqual(hermitFinished.presentationEvents.filter((event) => event.kind === 'turn' &&
+  assertEqual(hermitResolved.enemies[0].poison, 1, 'the later deterministic start power did not resume')
+  assertDeepEqual(hermitResolved.presentationEvents.filter((event) => event.kind === 'turn' &&
     event.sourceId === 'hermit_called_shot').map((event) =>
     [event.effect, event.actorTargeted]), [['buff', true]],
   'Called Shot must publish its real no-log Chamber discount exactly once')
@@ -4931,9 +5003,7 @@ check('complex Hermit and Slime Boss start powers pause for their owner and resu
     })], [makeEnemy()]),
     phase: 'start', startTurnStage: 'effects',
   }
-  const noOpPaused = resolveStartPlayerTurn(noOpState, defaultStartTurnChoices(noOpState))
-  const noOpResolved = resolvePendingTrigger(noOpPaused, 'p1', noOpPaused.pendingTriggers[0].id,
-    undefined, undefined, undefined, { chamberUids: [alreadyFree.uid] })
+  const noOpResolved = resolveStartPlayerTurn(noOpState, defaultStartTurnChoices(noOpState))
   assertEqual(noOpResolved.phase, 'player', 'legacy deterministic resolution staged the same private trigger twice')
   assertEqual(noOpResolved.presentationEvents.some((event) => event.kind === 'turn' &&
     event.sourceId === 'hermit_called_shot'), false,
@@ -4966,6 +5036,33 @@ check('complex Hermit and Slime Boss start powers pause for their owner and resu
   const slimeFinished = resolveStartPlayerTurn(slimeResolved, defaultStartTurnChoices(slimeResolved))
   assertEqual(slimeFinished.phase, 'player')
   assertEqual(slimeFinished.players[0].strength, 1, 'the later start power did not resume after confirmation')
+
+  const automaticSlime = startPlayerTurnWithChoices({
+    ...combat([makePlayer({
+      name: 'Slime Boss', character: 'slime_boss', slimes: [bruiserSlime(instance('slime_boss_bruiser_slime'))],
+      powers: [instance('slime_boss_minion_master'), instance('demon_form')],
+    })], [makeEnemy({ uid: 'slime-only', hp: 10, maxHp: 10 })]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(automaticSlime.phase, 'player')
+  assertEqual(automaticSlime.pendingTriggers.length, 0)
+  assertEqual(automaticSlime.enemies[0].hp, 9)
+  assertEqual(automaticSlime.players[0].strength, 1)
+
+  const grudge = instance('hermit_grudge')
+  const targetedHermit = startPlayerTurnWithChoices({
+    ...combat([makePlayer({
+      name: 'Hermit', character: 'hermit', hand: [grudge], draw: [], discard: [], chamber: [], chamberSlots: 2,
+      powers: [instance('hermit_eternal_form')],
+    })], [
+      makeEnemy({ uid: 'grudge-left', hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'grudge-right', row: 1, hp: 20, maxHp: 20 }),
+    ]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(targetedHermit.pendingTriggers.length, 1,
+    'a unique private card with multiple enemy outcomes was silently aimed')
+  assertDeepEqual(startTurnChoicePlayerIds(targetedHermit), ['p1'])
 
   const orderedStart = () => ({
     ...combat([makePlayer({
@@ -5227,12 +5324,53 @@ check('later end-turn Lightning retargets after overkill and skips when no targe
   assert(skipped.pendingSummons.length > 0, 'Slime Boss lost its queued Split')
 })
 
+check('a manual end-turn trigger resumes through following deterministic effects', () => {
+  const takeAim = instance('hermit_take_aim')
+  const first = instance('hermit_defend')
+  const second = instance('hermit_strike')
+  const state = combat([makePlayer({
+    name: 'Hermit', character: 'hermit', powers: [takeAim], hand: [first, second],
+    chamber: [], chamberSlots: 2, orbs: ['lightning', null, null],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  const abilities = endTurnAbilities(state)
+  const load = abilities.find((ability) => ability.label.includes('Take Aim'))
+  const lightning = abilities.find((ability) => ability.id.includes('/orb:0'))
+  assert(load && lightning, `missing ordered abilities: ${abilities.map((ability) => ability.id).join(', ')}`)
+  const paused = beginEndPlayerTurn(state, [load.id, chooseEndTurnTarget(lightning.id, 'e1')])
+  const pending = pendingTriggerAbility(paused)
+  assertEqual(pending?.playerId, 'p1', `Take Aim did not stage its real load choice: ${JSON.stringify(pending)}`)
+  const resolved = resolvePendingTrigger(paused, 'p1', pending.id,
+    undefined, undefined, undefined, { loadUids: [first.uid], chamberUids: [], hermitEnemyUids: [] })
+  assertEqual(resolved.phase, 'enemy')
+  assertEqual(resolved.enemies[0].hp, 19, 'the sole following Lightning was not auto-resolved')
+  assertEqual(endTurnResolutionAbility(resolved), undefined)
+})
+
+check('damage suppression preserves optional end-turn choices', () => {
+  for (const powerId of ['guardian_stasis_engine', 'invincible']) {
+    const power = instance(powerId)
+    const held = instance('guardian_strike')
+    const state = combat([makePlayer({
+      character: 'guardian', powers: [power], hand: [held], damageDealtZeroThisTurn: true,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    const paused = beginEndTurnResolution(state)
+    const ability = endTurnResolutionAbility(paused)
+    assert(ability?.targets?.some((target) => target.uid === 'skip'), `${powerId} lost its optional choice`)
+    assertEqual(paused.players[0].powers[0]?.uid, power.uid, `${powerId} was spent without input`)
+    assertEqual(paused.players[0].hand[0]?.stasisRetained, undefined)
+    const skipped = resolveEndTurnAbility(paused, chooseEndTurnTarget(ability.id, 'skip'))
+    assertEqual(skipped.phase, 'enemy')
+    assertEqual(skipped.players[0].powers[0]?.uid, power.uid)
+    assert(skipped.players[0].discard.some((card) => card.uid === held.uid))
+  }
+})
+
 check('interactive end-turn preparation clears Stasis and respects prevent-Block', () => {
   const retained = { ...instance('guardian_defend'), stasisRetained: true }
   const state = combat([makePlayer({
     character: 'guardian', hand: [retained], orbs: ['lightning'],
     powers: [instance('panic_button')], relics: [{ defId: 'orichalcum', spent: false }],
-  })], [makeEnemy()])
+  })], [makeEnemy(), makeEnemy({ uid: 'second', row: 1 })])
   const staged = beginEndTurnResolution(state)
   assertEqual(staged.players[0].hand[0].stasisRetained, undefined)
   assertEqual(staged.players[0].block, 0, 'Orichalcum bypassed Panic Button during interactive resolution')
@@ -5263,8 +5401,7 @@ check('Loop repeats only the selected Lightning slot after overkill', () => {
   staged = resolveEndTurnAbility(staged, `${ability.id}@orb:1`)
   ability = endTurnResolutionAbility(staged)
   staged = resolveEndTurnAbility(staged, `${ability.id}@first`)
-  ability = endTurnResolutionAbility(staged)
-  const resolved = resolveEndTurnAbility(staged, `${ability.id}@second`)
+  const resolved = staged
   assertEqual(resolved.enemies[1].hp, 4, 'Loop did not retarget its selected Lightning Orb')
   assertEqual(resolved.players[0].block, 1, 'Loop silently switched from Lightning to the first Frost slot')
   assertEqual(resolved.presentationEvents.filter((event) =>
@@ -5280,15 +5417,8 @@ check('Loop repeats only the selected Lightning slot after overkill', () => {
   ])
   staged = beginEndTurnResolution(repeated)
   ability = endTurnResolutionAbility(staged)
-  staged = resolveEndTurnAbility(staged, `${ability.id}@orb:0`)
-  ability = endTurnResolutionAbility(staged)
-  staged = resolveEndTurnAbility(staged, `${ability.id}@orb:0`)
-  ability = endTurnResolutionAbility(staged)
   staged = resolveEndTurnAbility(staged, `${ability.id}@repeat-first`)
-  ability = endTurnResolutionAbility(staged)
-  staged = resolveEndTurnAbility(staged, `${ability.id}@repeat-second`)
-  ability = endTurnResolutionAbility(staged)
-  const repeatedResult = resolveEndTurnAbility(staged, `${ability.id}@repeat-second`)
+  const repeatedResult = staged
   assertEqual(repeatedResult.enemies[0].dead, true)
   assertEqual(repeatedResult.enemies[1].hp, 3,
     'Loop+ and the later normal trigger did not retarget while keeping the selected Lightning slot')
@@ -5793,6 +5923,32 @@ check('nested forced cards preserve the outer Start-of-Turn queue', () => {
   assertEqual(finished.startTurnProgress, undefined)
 })
 
+check('Mayhem preserves Study across forced stance changes in either order', () => {
+  for (const [stance, cardId, finalStance] of [
+    ['neutral', 'tranquility', 'calm'], ['calm', 'crescendo', 'wrath'],
+  ]) for (const studyFirst of [false, true]) {
+    const study = instance('study')
+    const mayhem = instance('mayhem')
+    const forcedCard = instance(cardId)
+    const drawn = [instance('strike_watcher'), instance('defend_watcher')]
+    const initialStudyDraw = studyFirst && stance === 'calm' ? drawn : []
+    const state = { ...combat([makePlayer({
+      character: 'watcher', stance, powers: studyFirst ? [study, mayhem] : [mayhem, study],
+      draw: [...initialStudyDraw, forcedCard, ...(initialStudyDraw.length ? [] : drawn)],
+    })], [makeEnemy()]), phase: 'start', turn: 2 }
+    assertEqual(startTurnAbilities(state).length, 2, 'a dormant Study disappeared from the order')
+    assert(startTurnOrderChoicePlayerId(state), 'Mayhem and conditional Study need an order choice')
+    const forced = resolveStartPlayerTurn(state, defaultStartTurnChoices(state))
+    assertEqual(forced.startTurnProgress?.forcedCard?.cardUid, forcedCard.uid)
+    const resolved = resolveDeterministicForcedCard(forced)
+    assertEqual(resolved.phase, 'player', 'the committed Study continuation rejected its changed condition')
+    assertEqual(resolved.players[0].stance, finalStance)
+    const shouldDraw = (studyFirst ? stance : finalStance) === 'calm'
+    assertDeepEqual(resolved.players[0].hand.map((card) => card.uid),
+      shouldDraw ? drawn.map((card) => card.uid) : [], 'Study must use its condition at resolution time')
+  }
+})
+
 check('Mayhem privately pauses Start of Turn and plays its drawn card for 0 Energy', () => {
   for (const upgraded of [false, true]) {
     assertEqual(faceOf(CARDS.mayhem, upgraded).cost, upgraded ? 1 : 2)
@@ -5859,6 +6015,448 @@ check('Mayhem privately pauses Start of Turn and plays its drawn card for 0 Ener
   assertEqual(chained.phase, 'player')
   assertEqual(chained.players[0].freeCardsThisTurn, 0,
     'Mayhem\'s forced card still consumes Madness\'s next-card discount')
+})
+
+check('forced cards auto-play only with one complete legal context', () => {
+  const defend = instance('defend_ironclad')
+  const targetless = {
+    ...combat([makePlayer({ hand: [defend] })], [makeEnemy()]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: defend.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  const blocked = resolveDeterministicForcedCard(targetless)
+  assertEqual(blocked.phase, 'player')
+  assertEqual(blocked.players[0].block, 1)
+
+  const strike = instance('strike_ironclad')
+  const soleTarget = {
+    ...combat([makePlayer({ hand: [strike] })], [makeEnemy({ hp: 6, maxHp: 6 })]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: strike.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  const hit = resolveDeterministicForcedCard(soleTarget)
+  assertEqual(hit.phase, 'player')
+  assertEqual(hit.enemies[0].hp, 5)
+
+  const ambiguousStrike = instance('strike_ironclad')
+  const ambiguousTarget = {
+    ...combat([makePlayer({ hand: [ambiguousStrike] })], [makeEnemy(), makeEnemy({ uid: 'e2', row: 1 })]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: ambiguousStrike.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  assert(resolveDeterministicForcedCard(ambiguousTarget) === ambiguousTarget,
+    'an enemy choice was silently defaulted')
+
+  const survivor = instance('survivor')
+  const choice = instance('defend_silent')
+  const privateChoice = {
+    ...combat([makePlayer({ character: 'silent', hand: [survivor, choice] })], [makeEnemy()]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: survivor.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  const discarded = resolveDeterministicForcedCard(privateChoice)
+  assertEqual(discarded.phase, 'player')
+  assertEqual(discarded.players[0].hand.length, 0, 'the sole mandatory discard was not auto-selected')
+
+  const ambiguousSurvivor = instance('survivor')
+  const ambiguousDiscard = {
+    ...combat([makePlayer({ character: 'silent', hand: [
+      ambiguousSurvivor, instance('defend_silent'), instance('strike_silent'),
+    ] })], [makeEnemy()]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: ambiguousSurvivor.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  assert(resolveDeterministicForcedCard(ambiguousDiscard) === ambiguousDiscard,
+    'a real private discard choice was silently selected')
+
+  const bladeDance = instance('blade_dance')
+  const availableShivs = {
+    ...combat([makePlayer({ character: 'silent', hand: [bladeDance] })], [makeEnemy()]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: bladeDance.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  const danced = resolveDeterministicForcedCard(availableShivs)
+  assertEqual(danced.phase, 'player', 'a forced deterministic Shiv gain stayed behind a Mayhem prompt')
+  assertEqual(danced.players[0].shivs, 2)
+
+  const crowdedDance = instance('blade_dance')
+  const overflowShivs = {
+    ...combat([makePlayer({ character: 'silent', hand: [crowdedDance], shivs: 4 })], [makeEnemy()]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: crowdedDance.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  assert(resolveDeterministicForcedCard(overflowShivs) === overflowShivs,
+    'a real overflow Shiv target choice was silently selected')
+
+  const unload = instance('unload')
+  const emptyBandolier = {
+    ...combat([makePlayer({ character: 'silent', hand: [unload] })], [makeEnemy({ hp: 6, maxHp: 6 })]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: unload.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  const unloaded = resolveDeterministicForcedCard(emptyBandolier)
+  assertEqual(unloaded.phase, 'player', 'zero Shivs kept a forced Unload behind a target prompt')
+  assertEqual(unloaded.enemies[0].hp, 4)
+
+  const armedUnload = instance('unload')
+  const heldShiv = {
+    ...combat([makePlayer({ character: 'silent', hand: [armedUnload], shivs: 1 })], [makeEnemy()]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: armedUnload.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  const thrown = resolveDeterministicForcedCard(heldShiv)
+  assertEqual(thrown.phase, 'player', 'the sole legal Unload target stayed behind a redundant prompt')
+  assertEqual(thrown.enemies[0].hp, 2)
+
+  const incineration = instance('incineration')
+  const noSoulburn = {
+    ...combat([makePlayer({ character: 'hexaghost', hand: [incineration], heat: 3, soulburn: 0 })],
+      [makeEnemy({ hp: 6, maxHp: 6 })]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: incineration.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  const incineratedNothing = resolveDeterministicForcedCard(noSoulburn)
+  assertEqual(incineratedNothing.phase, 'player', 'zero Soulburn kept a forced Incineration prompt open')
+  assertEqual(incineratedNothing.enemies[0].hp, 6)
+
+  const fueledIncineration = instance('incineration')
+  const soleSoulburnTarget = {
+    ...combat([makePlayer({ character: 'hexaghost', hand: [fueledIncineration], heat: 3, soulburn: 2 })],
+      [makeEnemy({ hp: 9, maxHp: 9 })]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: fueledIncineration.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  const burned = resolveDeterministicForcedCard(soleSoulburnTarget)
+  assertEqual(burned.phase, 'player', 'the sole Soulburn target stayed behind a redundant prompt')
+  assertEqual(burned.enemies[0].hp, 3)
+
+  const splitIncineration = instance('incineration')
+  const soulburnChoice = {
+    ...combat([makePlayer({ character: 'hexaghost', hand: [splitIncineration], heat: 3, soulburn: 1 })],
+      [makeEnemy(), makeEnemy({ uid: 'e2', row: 1 })]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: splitIncineration.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  assert(resolveDeterministicForcedCard(soulburnChoice) === soulburnChoice,
+    'a real Soulburn target choice was silently selected')
+
+  const haunted = instance('haunted_hand')
+  const deterministicSequence = {
+    ...combat([makePlayer({ character: 'hexaghost', heat: 2, hand: [haunted] })], [makeEnemy()]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: haunted.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  const hauntedPlayed = resolveDeterministicForcedCard(deterministicSequence)
+  assertEqual(hauntedPlayed.phase, 'player', 'a deterministic sequence stayed behind a Mayhem prompt')
+  assertEqual(hauntedPlayed.startTurnProgress, undefined)
+
+  const dualCast = instance('dual_cast')
+  const soleOrb = {
+    ...combat([makePlayer({ character: 'defect', hand: [dualCast], orbs: ['lightning', null, null] })],
+      [makeEnemy({ hp: 6, maxHp: 6 })]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: dualCast.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  const evoked = resolveDeterministicForcedCard(soleOrb)
+  assertEqual(evoked.phase, 'player')
+  assertEqual(evoked.enemies[0].hp, 2, 'the sole Orb and target did not auto-resolve')
+
+  const lethalDualCast = instance('dual_cast')
+  const lethalOrb = {
+    ...combat([makePlayer({ character: 'defect', hand: [lethalDualCast], orbs: ['lightning', null, null] })],
+      [makeEnemy({ hp: 1, maxHp: 1 })]),
+    phase: 'start',
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p1', cardUid: lethalDualCast.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+    } },
+  }
+  assertEqual(resolveDeterministicForcedCard(lethalOrb).phase, 'won',
+    'combat ending on the first repeated Evoke left the forced card unresolved')
+
+  for (const enemies of [
+    [makeEnemy({ uid: 'row-a' }), makeEnemy({ uid: 'row-b' })],
+    [makeEnemy({ uid: 'row-boss', isBoss: true }), makeEnemy({ uid: 'row-minion', row: 1 })],
+  ]) {
+    const entrance = instance('dramatic_entrance')
+    const row = {
+      ...combat([makePlayer({ hand: [entrance] })], enemies),
+      phase: 'start',
+      startTurnProgress: { choices: [], forcedCard: {
+        playerId: 'p1', cardUid: entrance.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+      } },
+    }
+    const swept = resolveDeterministicForcedCard(row)
+    assertEqual(swept.phase, 'player')
+    assert(swept.enemies.every((enemy) => enemy.hp < enemy.maxHp),
+      'a forced row card failed to auto-target its sole semantic row')
+  }
+
+  for (const [cardId, character, playerState] of [
+    ['blizzard', 'defect', { orbs: ['lightning', 'dark', null] }],
+    ['thunder_strike', 'defect', { orbs: ['frost', 'dark', null] }],
+    ['indignation', 'watcher', { stance: 'neutral' }],
+  ]) {
+    const harmless = instance(cardId)
+    const state = {
+      ...combat([makePlayer({ character, hand: [harmless], ...playerState })], [
+        makeEnemy(), makeEnemy({ uid: 'other-row', row: 1 }),
+      ]),
+      phase: 'start',
+      startTurnProgress: { choices: [], forcedCard: {
+        playerId: 'p1', cardUid: harmless.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+      } },
+    }
+    const played = resolveDeterministicForcedCard(state)
+    assertEqual(played.phase, 'player', `${cardId} asked for a target although it cannot affect an enemy`)
+    assert(played.enemies.every((enemy) => enemy.hp === enemy.maxHp))
+  }
+})
+
+check('forced-card cardinality synthesis covers choice families without defaulting real choices', () => {
+  const slime = (id) => bruiserSlime(id)
+  const forced = ({ cardId, character = 'ironclad', player = {}, enemies, upgraded = false,
+    card = {}, otherPlayers = [], setup }) => {
+    const held = { ...instance(cardId, upgraded), ...card }
+    const base = combat([
+      makePlayer({ character, ...player, hand: [held, ...(player.hand ?? [])] }),
+      ...otherPlayers,
+    ], enemies ?? [makeEnemy({ hp: 20, maxHp: 20 })])
+    if (Object.hasOwn(player, 'guardianMode')) base.players[0].guardianMode = player.guardianMode
+    const state = {
+      ...base,
+      phase: 'start',
+      startTurnProgress: { choices: [], forcedCard: {
+        playerId: 'p1', cardUid: held.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+      } },
+    }
+    setup?.(state, held)
+    return state
+  }
+
+  const auto = [
+    ['Guardian sequence', { cardId: 'guardian_strike', character: 'guardian', player: { guardianMode: 'attack' } }],
+    ['Guardian opaque repeated player choices', {
+      cardId: 'guardian_stasis_field', character: 'guardian', player: { guardianMode: 'defense' },
+    }],
+    ['Roulette die branch', { cardId: 'hermit_roulette', character: 'hermit' }],
+    ['inactive Dead On', { cardId: 'hermit_snapshot', character: 'hermit' }],
+    ['repeated sole enemy', { cardId: 'bouncing_flask', character: 'silent' }],
+    ['repeated sole player', { cardId: 'dodge_and_roll', character: 'watcher' }],
+    ['empty optional discard', { cardId: 'concentrate', character: 'silent' }],
+    ['empty optional exhaust', { cardId: 'purity' }],
+    ['empty discard recovery', { cardId: 'hologram', character: 'defect' }],
+    ['singleton exhaust recovery', { cardId: 'exhume', player: { exhaust: [instance('defend_ironclad')] } }],
+    ['empty optional exhaust-to-draw', { cardId: 'eerie_expedition', character: 'hexaghost' }],
+    ['singleton mandatory exhaust-to-discard', {
+      cardId: 'deep_breath', player: { exhaust: [instance('defend_ironclad')] },
+    }],
+    ['empty scry', { cardId: 'third_eye', character: 'watcher' }],
+    ['empty scry-to-hand', { cardId: 'secret_technique' }],
+    ['singleton draw search', { cardId: 'seek', character: 'defect', player: { draw: [instance('defend_defect')] } }],
+    ['singleton search-and-play', {
+      cardId: 'omniscience', character: 'watcher', player: { draw: [instance('defend_watcher')] },
+    }],
+    ['empty Chamber load', { cardId: 'hermit_covet', character: 'hermit' }],
+    ['singleton Chamber play', {
+      cardId: 'hermit_fan_the_hammer', character: 'hermit',
+      player: { chamber: [instance('hermit_strike')], chamberSlots: 2 },
+    }],
+    ['empty Chamber discard', { cardId: 'hermit_shadow_cloak', character: 'hermit' }],
+    ['zero-discard upgraded Storm of Steel', { cardId: 'storm_of_steel', character: 'silent', upgraded: true }],
+    ['solo row switch', { cardId: 'dash', character: 'silent' }],
+    ['unique legal mode', { cardId: 'carve_reality', character: 'watcher' }],
+    ['Jasper with no eligible card', {
+      cardId: 'guardian_strike', character: 'guardian', player: { guardianMode: 'attack' },
+      card: { attachedGemId: 'guardian_jasper' },
+    }],
+    ['Jasper after an empty draw', {
+      cardId: 'guardian_crystal_edge', character: 'guardian', player: { guardianMode: 'attack' },
+      card: { attachedGemId: 'guardian_jasper' },
+    }],
+    ['Defense Power Beam singleton', {
+      cardId: 'guardian_power_beam', character: 'guardian', player: {
+        guardianMode: 'defense', discard: [instance('guardian_future_plans')],
+      },
+    }],
+    ['positive Shivs with sole enemy', { cardId: 'unload', character: 'silent', player: { shivs: 2 } }],
+    ['Shiv overflow with no living enemy', {
+      cardId: 'blade_dance', character: 'silent', player: { shivs: 4 },
+      enemies: [makeEnemy({ hp: 0, dead: true })],
+      setup: (state) => { state.pendingSummons = [{ sourceUid: 'e1', row: 0, defIds: ['cultist'], turn: 99 }] },
+    }],
+    ['Rain of Goop forced X=0', { cardId: 'slime_boss_rain_of_goop', character: 'slime_boss' }],
+    ['Divide and Conquer forced X=0', { cardId: 'slime_boss_divide_conquer', character: 'slime_boss' }],
+    ['Prepared exact-one preview', {
+      cardId: 'prepared', character: 'silent', player: { draw: [instance('defend_silent')] },
+    }],
+    ['singleton Grow', {
+      cardId: 'slime_boss_growth', character: 'slime_boss', player: { slimes: [slime('forced-grow')] },
+    }],
+    ['singleton Command and target', {
+      cardId: 'slime_boss_delegate', character: 'slime_boss', player: { slimes: [slime('forced-command')] },
+    }],
+    ['singleton Slime Vigor', {
+      cardId: 'slime_boss_gluttony', character: 'slime_boss', player: { slimes: [slime('forced-vigor')] },
+    }],
+    ['singleton Slime Tap', {
+      cardId: 'slime_boss_slime_tap', character: 'slime_boss', player: { slimes: [slime('forced-tap')] },
+    }],
+    ['all Slimes with sole target', {
+      cardId: 'slime_boss_rally_the_troops', character: 'slime_boss', player: { slimes: [slime('forced-all')] },
+    }],
+  ]
+  for (const [label, fixture] of auto) {
+    const state = forced(fixture)
+    assert(resolveDeterministicForcedCard(state) !== state, `${label} stayed behind a redundant prompt`)
+  }
+
+  const manual = [
+    ['multiple enemy distributions', {
+      cardId: 'bouncing_flask', character: 'silent',
+      enemies: [makeEnemy(), makeEnemy({ uid: 'e2', row: 1 })],
+    }],
+    ['multiple player distributions', {
+      cardId: 'dodge_and_roll', character: 'watcher',
+      otherPlayers: [makePlayer({ id: 'p2', row: 1 })],
+    }],
+    ['Guardian opaque multiple player distributions', {
+      cardId: 'guardian_stasis_field', character: 'guardian', player: { guardianMode: 'defense' },
+      otherPlayers: [makePlayer({ id: 'p2', row: 1 })],
+    }],
+    ['optional discard with a candidate', {
+      cardId: 'concentrate', character: 'silent', player: { hand: [instance('defend_silent')] },
+    }],
+    ['optional exhaust with a candidate', { cardId: 'purity', player: { hand: [instance('defend_ironclad')] } }],
+    ['multiple discard recovery cards', {
+      cardId: 'hologram', character: 'defect',
+      player: { discard: [instance('strike_defect'), instance('defend_defect')] },
+    }],
+    ['optional exhaust-to-draw candidate', {
+      cardId: 'eerie_expedition', character: 'hexaghost', player: { exhaust: [instance('defend_ironclad')] },
+    }],
+    ['revealed scry choice', { cardId: 'third_eye', character: 'watcher', player: { draw: [instance('defend_watcher')] } }],
+    ['optional Chamber load candidate', {
+      cardId: 'hermit_covet', character: 'hermit', upgraded: true,
+      player: { hand: [instance('hermit_strike')] },
+    }],
+    ['multiple Chamber play order', {
+      cardId: 'hermit_fan_the_hammer', character: 'hermit', player: {
+        chamber: [instance('hermit_strike'), instance('hermit_defend')], chamberSlots: 2,
+      },
+    }],
+    ['multiple legal modes', { cardId: 'wish', character: 'watcher' }],
+    ['Jasper eligible exhaust', {
+      cardId: 'guardian_strike', character: 'guardian', player: {
+        guardianMode: 'attack', hand: [instance('guardian_defend')],
+      }, card: { attachedGemId: 'guardian_jasper' },
+    }],
+    ['Jasper choice created by an earlier draw', {
+      cardId: 'guardian_crystal_edge', character: 'guardian', player: {
+        guardianMode: 'attack', draw: [instance('guardian_defend')],
+      }, card: { attachedGemId: 'guardian_jasper' },
+    }],
+    ['Defense Power Beam multiple powers', {
+      cardId: 'guardian_power_beam', character: 'guardian', player: {
+        guardianMode: 'defense',
+        discard: [instance('guardian_future_plans'), instance('guardian_charge_up')],
+      },
+    }],
+    ['Shivs split across enemies', {
+      cardId: 'unload', character: 'silent', player: { shivs: 2 },
+      enemies: [makeEnemy(), makeEnemy({ uid: 'e2', row: 1 })],
+    }],
+    ['overflow throw versus decline', {
+      cardId: 'blade_dance', character: 'silent', player: { shivs: 4 },
+    }],
+    ['Prepared revealed-card choice', {
+      cardId: 'prepared', character: 'silent',
+      player: { hand: [instance('strike_silent')], draw: [instance('defend_silent')] },
+    }],
+    ['optional Slime selection', {
+      cardId: 'slime_boss_feeding_frenzy', character: 'slime_boss', player: { slimes: [slime('optional-grow')] },
+    }],
+    ['multiple mandatory Slimes', {
+      cardId: 'slime_boss_growth', character: 'slime_boss',
+      player: { slimes: [slime('grow-a'), slime('grow-b')] },
+    }],
+  ]
+  for (const [label, fixture] of manual) {
+    const state = forced(fixture)
+    assert(resolveDeterministicForcedCard(state) === state, `${label} was silently defaulted`)
+  }
+})
+
+check('forced-card eligibility is mode-aware and rejects impossible mandatory selectors', () => {
+  const player = makePlayer({ character: 'slime_boss', slimes: [] })
+  const state = combat([player], [makeEnemy()])
+  const canForce = (id) => cardCanBeForced(faceOf(cardDef(id), false), state, state.players[0])
+  for (const id of [
+    'slime_boss_growth',
+    'slime_boss_delegate',
+    'slime_boss_opening_tackle',
+    'slime_boss_gluttony',
+    'slime_boss_slime_tap',
+  ]) assertEqual(canForce(id), false, `${id} can arm an impossible zero-Slime prompt`)
+  for (const id of [
+    'slime_boss_feeding_frenzy',
+    'slime_boss_rally_the_troops',
+    'slime_boss_divide_conquer',
+  ]) assertEqual(canForce(id), true, `${id} should allow its legal zero-Slime resolution`)
+
+  const havoc = instance('havoc')
+  const influence = instance('foreign_influence')
+  const pendingSpawn = combat([
+    makePlayer({ character: 'watcher', hand: [havoc], draw: [influence] }),
+    makePlayer({ id: 'p2', hand: [] }),
+  ], [makeEnemy({ hp: 0, dead: true })])
+  pendingSpawn.pendingSummons = [{ sourceUid: 'e1', row: 0, defIds: ['cultist'], turn: 99 }]
+  pendingSpawn.playedCardsThisTurn = [{ playerId: 'p2', card: instance('bash'), copied: false, type: 'attack' }]
+  const armed = playCard(pendingSpawn, 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  assertEqual(armed.startTurnProgress?.forcedCard?.cardUid, influence.uid,
+    'a legal targetless mode was rejected because a sibling mode needed an enemy')
+  const directlyResolved = playCard(armed, 'p1', influence.uid, { enemyUid: null, playerId: null, mode: 1 })
+  assert(directlyResolved !== armed,
+    `the targetless Foreign Influence mode became illegal: ${JSON.stringify(directlyResolved.log.slice(-3))}`)
+  assert(playCard(armed, 'p1', influence.uid, { enemyUid: null, playerId: null, mode: 0 }) === armed,
+    'Foreign Influence damage mode became legal without a living enemy')
+  assert(resolveDeterministicForcedCard(armed) !== armed,
+    'the sole legal player-phase forced mode stayed behind a redundant prompt')
+
+  const choice = structuredClone(armed)
+  choice.enemies = [makeEnemy({ hp: 20, maxHp: 20 }), makeEnemy({ uid: 'e2', hp: 20, maxHp: 20 })]
+  for (const mode of [0, 1]) assert(playCard(choice, 'p1', influence.uid, {
+    mode, enemyUid: mode === 0 ? 'e1' : null, playerId: null,
+  }) !== choice, `Foreign Influence mode ${mode} was not a legal alternative`)
+  assertEqual(resolveDeterministicForcedCard(choice), choice,
+    'a deterministic copy mode hid the legal damage mode that still needs a target')
 })
 
 check('a queued post-Mayhem ability rolls back a partial stale-target resolution', () => {
@@ -10270,24 +10868,35 @@ check('the start of turn stops only for a sequence that can change something', (
     character: 'silent', powers: [instance('noxious_fumes'), instance('noxious_fumes')],
   })], [makeEnemy()])
   const twoAimedAbilities = startTurnAbilities(twoAimed)
-  const originalStructuredClone = globalThis.structuredClone
-  let reusedAbilitiesCloned = false
-  try {
-    globalThis.structuredClone = (value) => {
-      reusedAbilitiesCloned = true
-      return originalStructuredClone(value)
-    }
-    assertEqual(startTurnNeedsChoice(twoAimed, twoAimedAbilities), true,
-      'two aimed abilities can kill each other\'s target, so the order is a real choice')
-  } finally {
-    globalThis.structuredClone = originalStructuredClone
-  }
-  assertEqual(reusedAbilitiesCloned, false, 'the UI can reuse its computed abilities without another simulation')
+  assertEqual(startTurnNeedsChoice(twoAimed, twoAimedAbilities), false,
+    'two commuting aimed effects with one legal target do not need an ordering vote')
 
   const twoTargets = startOf([makePlayer({
     character: 'silent', powers: [instance('noxious_fumes')],
   })], [makeEnemy({ uid: 'left' }), makeEnemy({ uid: 'right', row: 1 })])
   assertEqual(startTurnNeedsChoice(twoTargets), true, 'and a target of its own is always asked for')
+
+  const sameRow = startOf([makePlayer({
+    character: 'silent', powers: [instance('noxious_fumes', true)],
+  })], [makeEnemy({ uid: 'left' }), makeEnemy({ uid: 'right' })])
+  assertEqual(startTurnNeedsChoice(sameRow), false,
+    'an upgraded Noxious Fumes has only one semantic row target')
+  assertEqual(startTurnAbilities(sameRow)[0]?.targets?.length, 1)
+
+  const nativeBlockOrder = {
+    ...startOf([makePlayer({
+      relics: [{ defId: 'stone_calendar', spent: false }],
+    })], [makeEnemy({ defId: 'spheric_guardian', hp: 5, maxHp: 5 })]),
+    turn: 1,
+  }
+  assert(startTurnOrderChoicePlayerId(nativeBlockOrder),
+    'native starting Block and Stone Calendar were treated as commuting')
+
+  const bossAndRow = startOf([makePlayer({
+    character: 'silent', powers: [instance('noxious_fumes', true)],
+  })], [makeEnemy({ uid: 'boss', isBoss: true, row: 2 }), makeEnemy({ uid: 'minion', row: 0 })])
+  assertEqual(startTurnNeedsChoice(bossAndRow), false,
+    'a boss plus one minion row is still one semantic row target')
 
   const revivedTarget = startOf([makePlayer({
     character: 'silent', powers: [instance('noxious_fumes')],
@@ -10297,6 +10906,564 @@ check('the start of turn stops only for a sequence that can change something', (
   ])
   assertEqual(startTurnNeedsChoice(revivedTarget), true,
     'Regrow before Noxious Fumes can expose another legal target')
+
+  const privateOrder = startOf([makePlayer({
+    character: 'hexaghost', hand: [instance('strike_hexaghost')], draw: [instance('defend_hexaghost')],
+    powers: [instance('devils_dance'), instance('worthy_sacrifice')],
+  })], [makeEnemy()])
+  assertEqual(startTurnNeedsChoice(privateOrder), true,
+    'Draw before Exhaust can create a private choice even when each current target is unique')
+  assertDeepEqual(startTurnChoicePlayerIds(privateOrder), ['p1'])
+
+  const handCountOrder = startOf([makePlayer({
+    character: 'hexaghost', hand: [instance('strike_hexaghost')],
+    powers: [instance('worthy_sacrifice')], relics: [{ defId: 'kunai', spent: false }],
+  })], [makeEnemy()])
+  const handCountChoices = defaultStartTurnChoices(handCountOrder)
+  assertEqual(startTurnOrderChoicePlayerId(handCountOrder), 'p1',
+    'Exhaust before an effect that counts Attacks in hand was treated as commuting')
+  assertEqual(resolveStartPlayerTurn(handCountOrder, handCountChoices).players[0].block, 1)
+  assertEqual(resolveStartPlayerTurn(handCountOrder, [...handCountChoices].reverse()).players[0].block, 2)
+
+  const drawCountOrder = startOf([makePlayer({
+    hand: [], draw: [instance('strike_ironclad')], powers: [instance('machine_learning')],
+    relics: [{ defId: 'kunai', spent: false }],
+  })], [makeEnemy()])
+  const drawCountChoices = defaultStartTurnChoices(drawCountOrder)
+  assertEqual(startTurnOrderChoicePlayerId(drawCountOrder), 'p1',
+    'Draw before an effect that counts Attacks in hand was treated as commuting')
+  assertDeepEqual([
+    resolveStartPlayerTurn(drawCountOrder, drawCountChoices).players[0].block,
+    resolveStartPlayerTurn(drawCountOrder, [...drawCountChoices].reverse()).players[0].block,
+  ].sort(), [0, 1])
+
+  const reshuffledPrivateOrder = startOf([makePlayer({
+    character: 'hexaghost', hand: [instance('strike_hexaghost')], draw: [],
+    discard: [instance('defend_hexaghost')],
+    powers: [instance('devils_dance'), instance('worthy_sacrifice')],
+  })], [makeEnemy()])
+  assertEqual(startTurnNeedsChoice(reshuffledPrivateOrder), true,
+    'a draw reshuffled from discard can still change a later private choice')
+
+  const toolsAndDraw = startOf([makePlayer({
+    character: 'silent', hand: [instance('strike_silent')], draw: [instance('defend_silent')],
+    powers: [instance('tools_of_the_trade'), instance('machine_learning')],
+  })], [makeEnemy()])
+  assertEqual(startTurnNeedsChoice(toolsAndDraw), true,
+    'Draw before Tools of the Trade changes its private discard options')
+
+  const loadAndDraw = startOf([makePlayer({
+    character: 'hermit', hand: [instance('hermit_strike')],
+    draw: [instance('hermit_defend'), instance('hermit_strike')],
+    chamberSlots: 1, powers: [instance('hermit_eternal_form'), instance('machine_learning')],
+  })], [makeEnemy()])
+  assertEqual(startTurnNeedsChoice(loadAndDraw), true,
+    'Draw before Eternal Form changes its private Load options')
+
+  const sameTools = startOf([makePlayer({
+    character: 'silent', hand: [instance('strike_silent')],
+    draw: [instance('defend_silent'), instance('neutralize')],
+    powers: [instance('tools_of_the_trade'), instance('tools_of_the_trade')],
+  })], [makeEnemy()])
+  assertEqual(startTurnOrderChoicePlayerId(sameTools), undefined,
+    'two identical draw-then-discard sources do not need a separate order choice')
+
+  const bruiser = bruiserSlime(instance('slime_boss_bruiser_slime'))
+  const interacting = startOf([makePlayer({
+    character: 'slime_boss', slimes: [bruiser],
+    powers: [instance('slime_boss_minion_master'), instance('slime_boss_level_up')],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  assertEqual(startTurnNeedsChoice(interacting), true,
+    'Grow before Command changes damage even though each effect has one target')
+  assertDeepEqual(startTurnChoicePlayerIds(interacting), ['p1'])
+
+  const palindrome = startOf([makePlayer({
+    character: 'hexaghost', heat: 1,
+    powers: [instance('empowered_flame'), instance('devils_dance'), instance('empowered_flame')],
+  })], [makeEnemy()])
+  assertEqual(startTurnNeedsChoice(palindrome), true,
+    'a meaningful middle-effect move cannot hide behind equal canonical and reversed outcomes')
+
+  const wrongOwner = startOf([
+    makePlayer({
+      character: 'hexaghost', heat: 3,
+      powers: [instance('empowered_flame'), instance('devils_dance')],
+    }),
+    makePlayer({
+      id: 'p2', name: 'Slime Boss', character: 'slime_boss', row: 1,
+      slimes: [bruiserSlime(instance('slime_boss_bruiser_slime'))],
+      powers: [instance('slime_boss_minion_master'), instance('slime_boss_level_up')],
+    }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })])
+  assertDeepEqual(startTurnChoicePlayerIds(wrongOwner), ['p2'],
+    'the actual interacting owner, not an earlier heuristic candidate, owns the order choice')
+
+  const crossSeatLethal = startOf([
+    makePlayer({
+      character: 'slime_boss', powers: [instance('slime_boss_prepare_crush')],
+    }),
+    makePlayer({
+      id: 'p2', name: 'Silent', character: 'silent', row: 1,
+      powers: [instance('noxious_fumes')],
+    }),
+  ], [makeEnemy({ hp: 10, maxHp: 10 })])
+  assertEqual(startTurnNeedsChoice(crossSeatLethal), true,
+    'a lethal card and an aimed effect owned by different players need an order choice')
+  assert(startTurnOrderChoicePlayerId(crossSeatLethal),
+    'the cross-seat lethal interaction did not nominate an ordering owner')
+
+  const crossSeatTargets = startOf([
+    makePlayer({
+      character: 'slime_boss', powers: [instance('slime_boss_prepare_crush')],
+    }),
+    makePlayer({
+      id: 'p2', name: 'Silent', character: 'silent', row: 1,
+      powers: [instance('noxious_fumes')],
+    }),
+  ], [
+    makeEnemy({ uid: 'tank', hp: 50, maxHp: 50 }),
+    makeEnemy({ uid: 'fragile', hp: 10, maxHp: 10, row: 1 }),
+  ])
+  assert(startTurnOrderChoicePlayerId(crossSeatTargets),
+    'non-default target assignments escaped the cross-seat ordering choice')
+
+  const crossSeatDraw = startOf([
+    makePlayer({
+      draw: [instance('daze')],
+      powers: [instance('machine_learning'), instance('fire_breathing')],
+    }),
+    makePlayer({
+      id: 'p2', name: 'Silent', character: 'silent', row: 1,
+      draw: [instance('defend_silent')], powers: [instance('machine_learning')],
+    }),
+  ], [makeEnemy({ uid: 'left' }), makeEnemy({ uid: 'right', row: 1 })])
+  assertEqual(startTurnNeedsChoice(crossSeatDraw), true,
+    'identical cross-seat draws can differ when one owner has an on-draw trigger')
+  assert(startTurnOrderChoicePlayerId(crossSeatDraw),
+    'the cross-seat draw reaction did not nominate an ordering owner')
+
+  const oneReactiveDraw = startOf([
+    makePlayer({
+      draw: [instance('daze')],
+      powers: [instance('machine_learning'), instance('fire_breathing')],
+    }),
+    makePlayer({
+      id: 'p2', name: 'Slime Boss', character: 'slime_boss', row: 1,
+      powers: [instance('slime_boss_prepare_crush')],
+    }),
+  ], [makeEnemy({ hp: 10, maxHp: 10 })])
+  assert(startTurnOrderChoicePlayerId(oneReactiveDraw),
+    'one reactive draw and a foreign enemy effect were treated as commuting')
+
+  const crossSeatMayhem = startOf([
+    makePlayer({ draw: [instance('strike_ironclad')], powers: [instance('mayhem')] }),
+    makePlayer({
+      id: 'p2', name: 'Silent', character: 'silent', row: 1,
+      relics: [{ defId: 'stone_calendar', spent: false }],
+    }),
+  ], [makeEnemy({ hp: 1, maxHp: 1 })])
+  const mayhemChoices = defaultStartTurnChoices(crossSeatMayhem)
+  assert(startTurnOrderChoicePlayerId(crossSeatMayhem),
+    'Mayhem and a foreign lethal start effect were treated as commuting')
+  assertDeepEqual([
+    resolveStartPlayerTurn(crossSeatMayhem, mayhemChoices).players[0].draw.length,
+    resolveStartPlayerTurn(crossSeatMayhem, [...mayhemChoices].reverse()).players[0].draw.length,
+  ].sort(), [0, 1])
+
+  const strengthBeforeHit = {
+    ...startOf([makePlayer({
+      character: 'slime_boss', powers: [instance('slime_boss_prepare_crush')],
+      relics: [{ defId: 'mutagen', spent: false }],
+    })], [makeEnemy({ hp: 20, maxHp: 20 })]),
+    turn: 1,
+  }
+  const strengthHitChoices = defaultStartTurnChoices(strengthBeforeHit)
+  assertEqual(startTurnOrderChoicePlayerId(strengthBeforeHit), 'p1',
+    'Strength gain before a start-turn hit was treated as commuting')
+  assertDeepEqual([
+    resolveStartPlayerTurn(strengthBeforeHit, strengthHitChoices).enemies[0].hp,
+    resolveStartPlayerTurn(strengthBeforeHit, [...strengthHitChoices].reverse()).enemies[0].hp,
+  ].sort(), [4, 5])
+
+  const lethalBeforeMutation = {
+    ...startOf([makePlayer({
+      powers: [instance('demon_form')], relics: [{ defId: 'stone_calendar', spent: false }],
+    })], [makeEnemy({ hp: 4, maxHp: 4 })]),
+    turn: 1,
+  }
+  const lethalChoices = defaultStartTurnChoices(lethalBeforeMutation)
+  assertEqual(startTurnOrderChoicePlayerId(lethalBeforeMutation), 'p1',
+    'a lethal start effect silently suppressed a later deterministic mutation')
+  assertDeepEqual([
+    resolveStartPlayerTurn(lethalBeforeMutation, lethalChoices).players[0].strength,
+    resolveStartPlayerTurn(lethalBeforeMutation, [...lethalChoices].reverse()).players[0].strength,
+  ].sort(), [0, 1])
+
+  const sharedShuffle = startOf([
+    makePlayer({ draw: [], discard: [instance('bash'), instance('strike_ironclad'), instance('defend_ironclad')],
+      powers: [instance('machine_learning')] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, draw: [],
+      discard: [instance('neutralize'), instance('strike_silent'), instance('defend_silent')],
+      powers: [instance('machine_learning')] }),
+  ], [makeEnemy()])
+  const shuffleChoices = defaultStartTurnChoices(sharedShuffle)
+  assert(startTurnOrderChoicePlayerId(sharedShuffle),
+    'cross-seat reshuffle draws silently consumed shared RNG in one fixed order')
+  const shuffledFirst = resolveStartPlayerTurn(sharedShuffle, shuffleChoices)
+  const shuffledSecond = resolveStartPlayerTurn(sharedShuffle, [...shuffleChoices].reverse())
+  assert(JSON.stringify(shuffledFirst.players.map((player) => player.hand.map((card) => card.defId))) !==
+    JSON.stringify(shuffledSecond.players.map((player) => player.hand.map((card) => card.defId))),
+  'reversing shared reshuffle draws did not prove the RNG-dependent outcome')
+
+  const expiringPanic = instance('panic_button')
+  expiringPanic.counter = 1
+  const reactiveExhaust = {
+    ...startOf([makePlayer({
+      character: 'hexaghost', heat: 3, hand: [instance('strike_hexaghost')],
+      powers: [expiringPanic, instance('worthy_sacrifice'), instance('feel_no_pain')],
+      relics: [{ defId: 'prismatic_shard', spent: false }],
+    })], [makeEnemy({ hp: 30, maxHp: 30 })]),
+    turn: 2,
+  }
+  const reactiveChoices = defaultStartTurnChoices(reactiveExhaust)
+  assertEqual(startTurnOrderChoicePlayerId(reactiveExhaust), 'p1',
+    'an expiring countdown and an Exhaust reaction were treated as commuting')
+  assertDeepEqual([
+    resolveStartPlayerTurn(reactiveExhaust, reactiveChoices).players[0].block,
+    resolveStartPlayerTurn(reactiveExhaust, [...reactiveChoices].reverse()).players[0].block,
+  ].sort(), [1, 3])
+
+  const expiringBlockRule = instance('panic_button')
+  expiringBlockRule.counter = 1
+  const countdownRule = {
+    ...startOf([makePlayer({
+      powers: [expiringBlockRule], relics: [{ defId: 'oddly_smooth_stone', spent: false }],
+    })], [makeEnemy()]),
+    turn: 2,
+  }
+  const countdownChoices = defaultStartTurnChoices(countdownRule)
+  assertEqual(startTurnOrderChoicePlayerId(countdownRule), 'p1',
+    'an expiring persistent Block rule and Block gain were treated as commuting')
+  assertDeepEqual([
+    resolveStartPlayerTurn(countdownRule, countdownChoices).players[0].block,
+    resolveStartPlayerTurn(countdownRule, [...countdownChoices].reverse()).players[0].block,
+  ].sort(), [0, 2])
+
+  const emptyRain = instance('slime_boss_rain_of_goop')
+  emptyRain.counter = 0
+  const dryRain = startOf([makePlayer({
+    character: 'slime_boss',
+    slimes: [{
+      card: instance('slime_boss_muscle_slime'), level: 1, vigor: 0,
+      commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+    }],
+    powers: [emptyRain],
+  })], [makeEnemy(), makeEnemy({ uid: 'dry-rain-second', row: 1 })])
+  assertDeepEqual(startTurnChoicePlayerIds(dryRain), [],
+    'empty Rain of Goop asked its owner to choose between irrelevant recipients')
+  const dryRainResolved = resolveStartPlayerTurn(dryRain, defaultStartTurnChoices(dryRain))
+  assertEqual(dryRainResolved.phase, 'player')
+  assertEqual(dryRainResolved.players[0].powers.length, 0, 'empty Rain of Goop did not auto-exhaust')
+
+  const reactiveRain = instance('slime_boss_rain_of_goop')
+  reactiveRain.counter = 0
+  const rainReaction = {
+    ...startOf([makePlayer({
+      character: 'slime_boss', slimes: [], powers: [reactiveRain, instance('demon_form'), instance('berserk')],
+      relics: [{ defId: 'prismatic_shard', spent: false }],
+    })], [makeEnemy({ hp: 1, maxHp: 1 })]),
+    turn: 2,
+  }
+  const rainChoices = defaultStartTurnChoices(rainReaction)
+  assertEqual(startTurnOrderChoicePlayerId(rainReaction), 'p1',
+    'Rain of Goop self-Exhaust and its reaction were treated as commuting')
+  assertDeepEqual([
+    resolveStartPlayerTurn(rainReaction, rainChoices).players[0].strength,
+    resolveStartPlayerTurn(rainReaction, [...rainChoices].reverse()).players[0].strength,
+  ].sort(), [0, 1])
+
+  const guardianSourceDiscard = {
+    ...startOf([makePlayer({
+      character: 'guardian', guardianMode: 'attack', guardianModeLocked: true, draw: [],
+      discard: [instance('guardian_strike'), instance('guardian_defend'), instance('guardian_orb_slam')],
+      powers: [instance('guardian_charge_up')], relics: [{ defId: 'gremlin_horn', spent: false }],
+    })], [makeEnemy()]),
+    turn: 2,
+  }
+  const guardianDiscardChoices = defaultStartTurnChoices(guardianSourceDiscard)
+  assertEqual(startTurnOrderChoicePlayerId(guardianSourceDiscard), 'p1',
+    'a Guardian source-card discard and reshuffle draw were treated as commuting')
+  const discardedFirst = resolveStartPlayerTurn(guardianSourceDiscard, guardianDiscardChoices)
+  const drawnFirst = resolveStartPlayerTurn(guardianSourceDiscard, [...guardianDiscardChoices].reverse())
+  assert(discardedFirst.players[0].hand[0]?.defId !== drawnFirst.players[0].hand[0]?.defId,
+    'Charge Up entering the reshuffle pool did not prove a different draw')
+
+  const crossSeatBlockReaction = startOf([
+    makePlayer({ powers: [instance('demon_form')], relics: [{ defId: 'tungsten_rod', spent: false }] }),
+    makePlayer({ id: 'p2', name: 'Ironclad 2', row: 1, powers: [instance('juggernaut')] }),
+  ], [makeEnemy({ hp: 1, maxHp: 1 })])
+  crossSeatBlockReaction.die = 5
+  const blockReactionChoices = defaultStartTurnChoices(crossSeatBlockReaction)
+  assertEqual(startTurnOrderChoicePlayerId(crossSeatBlockReaction), 'p1',
+    'a teammate reaction to shared Block was treated as owner-local')
+  assertDeepEqual([
+    resolveStartPlayerTurn(crossSeatBlockReaction, blockReactionChoices).players[0].strength,
+    resolveStartPlayerTurn(crossSeatBlockReaction, [...blockReactionChoices].reverse()).players[0].strength,
+  ].sort(), [0, 1])
+
+  const discardPileWriter = startOf([makePlayer({
+    character: 'slime_boss', draw: [],
+    discard: [instance('slime_boss_strike'), instance('slime_boss_defend')],
+    relics: [
+      { defId: 'downfall_snecko_eye', spent: false },
+      { defId: 'downfall_ink_bottle', spent: false },
+    ],
+  })], [makeEnemy()])
+  discardPileWriter.die = 6
+  const pileWriterChoices = defaultStartTurnChoices(discardPileWriter)
+  assertEqual(startTurnOrderChoicePlayerId(discardPileWriter), 'p1',
+    'a Daze added before a discard-pile reshuffle was treated as commuting')
+  const statusFirst = resolveStartPlayerTurn(discardPileWriter, pileWriterChoices)
+  const drawFirst = resolveStartPlayerTurn(discardPileWriter, [...pileWriterChoices].reverse())
+  assert(statusFirst.players[0].hand[0]?.defId !== drawFirst.players[0].hand[0]?.defId,
+    'adding Daze before the reshuffle did not prove a different draw')
+
+  const emptyExhaust = startOf([
+    makePlayer({
+      character: 'hexaghost', hand: [], powers: [instance('worthy_sacrifice')],
+    }),
+    makePlayer({
+      id: 'p2', name: 'Silent', character: 'silent', row: 1,
+      powers: [instance('noxious_fumes')],
+    }),
+  ], [makeEnemy({ uid: 'left' }), makeEnemy({ uid: 'right', row: 1 })])
+  const emptyExhaustAbility = startTurnAbilities(emptyExhaust)
+    .find((ability) => ability.label.includes('Worthy Sacrifice'))
+  assertEqual(emptyExhaustAbility?.exhaustCards, undefined,
+    'empty-hand Exhaust exposed an impossible card chooser')
+  assertDeepEqual(startTurnChoicePlayerIds(emptyExhaust), ['p2'])
+
+  const sharedShivs = startOf([
+    makePlayer({ shivs: 4, powers: [instance('infinite_blades')] }),
+    makePlayer({
+      id: 'p2', name: 'Silent', character: 'silent', row: 1,
+      shivs: 0, powers: [instance('infinite_blades')],
+    }),
+  ], [makeEnemy()])
+  assertEqual(startTurnNeedsChoice(sharedShivs), true,
+    'competing shared Shiv gains did not expose their order choice')
+  assert(startTurnOrderChoicePlayerId(sharedShivs),
+    'shared Shiv overflow did not nominate an ordering owner')
+
+  const sharedMiracles = startOf([
+    makePlayer({ character: 'watcher', miracles: 2, powers: [instance('deva_form')] }),
+    makePlayer({
+      id: 'p2', name: 'Watcher 2', character: 'watcher', row: 1,
+      miracles: 2, powers: [instance('deva_form')],
+    }),
+  ], [makeEnemy()])
+  assertEqual(startTurnNeedsChoice(sharedMiracles), true,
+    'competing shared Miracle gains did not expose their order choice')
+  assert(startTurnOrderChoicePlayerId(sharedMiracles),
+    'shared Miracle cap did not nominate an ordering owner')
+})
+
+check('table-facing start turns auto-resolve deterministic effects and require only genuine owners', () => {
+  const automatic = {
+    ...combat([
+      makePlayer({
+        character: 'defect',
+        powers: [instance('machine_learning')],
+        relics: [{ defId: 'cracked_core', spent: false }],
+        draw: [instance('strike_defect')],
+      }),
+      makePlayer({ id: 'p2', name: 'Ironclad', powers: [instance('demon_form')], draw: [] }),
+    ], [makeEnemy()]),
+    phase: 'roundEnd', turn: 0,
+  }
+  const resolved = startPlayerTurnWithChoices(automatic)
+  assertEqual(resolved.phase, 'player')
+  assertEqual(resolved.players[0].orbs[0], 'lightning')
+  assertEqual(resolved.players[1].strength, 1)
+  assertEqual(resolved.players[0].hand.length, 1)
+
+  const storm = {
+    ...combat([
+      makePlayer({
+        character: 'defect', powers: [instance('storm')], orbs: ['frost', 'dark', 'lightning'],
+      }),
+      makePlayer({ id: 'p2', name: 'Ironclad', powers: [instance('demon_form')] }),
+    ], [makeEnemy(), makeEnemy({ uid: 'e2', row: 1 })]),
+    phase: 'start', die: 3,
+  }
+  assertDeepEqual(startTurnChoicePlayerIds(storm), ['p1'],
+    'a deterministic teammate inflated the full-slot Storm owner quorum')
+
+  const sharedOrder = {
+    ...combat([
+      makePlayer({ character: 'silent', powers: [instance('noxious_fumes')] }),
+      makePlayer({ id: 'p2', name: 'Silent 2', character: 'silent', powers: [instance('noxious_fumes')] }),
+    ], [makeEnemy()]),
+    phase: 'start', die: 3,
+  }
+  assertDeepEqual(startTurnChoicePlayerIds(sharedOrder), [],
+    'commuting effects owned by different players should not create an ordering vote')
+
+  const crowded = {
+    ...combat(Array.from({ length: 4 }, (_, index) => makePlayer({
+      id: `p${index + 1}`, name: `Defect ${index + 1}`, character: 'defect', row: index,
+      powers: Array.from({ length: 10 }, (_, power) => instance(power % 2 ? 'fusion' : 'machine_learning')),
+    })), [makeEnemy()]),
+    phase: 'start', die: 3,
+  }
+  const startedAt = performance.now()
+  assertEqual(startTurnNeedsChoice(crowded), false)
+  assert(performance.now() - startedAt < 500, 'deterministic order detection is too slow for a render-time query')
+
+  const poisonCapped = {
+    ...combat([makePlayer({ character: 'silent', powers: [instance('noxious_fumes')] })], [
+      makeEnemy({ uid: 'left', poison: 15 }), makeEnemy({ uid: 'right', row: 1, poison: 15 }),
+    ]),
+    phase: 'start', die: 3,
+  }
+  assertEqual(startTurnNeedsChoice(poisonCapped), false,
+    'targets with the same capped no-op result do not require a choice')
+  assertEqual(startTurnAbilities(poisonCapped)[0]?.targets?.length, 1)
+
+  const blockCapped = {
+    ...combat([
+      makePlayer({ relics: [{ defId: 'oddly_smooth_stone', spent: false }], block: CAPS.block }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, block: CAPS.block }),
+    ], [makeEnemy()]),
+    phase: 'start', die: 4,
+  }
+  assertEqual(startTurnNeedsChoice(blockCapped), false,
+    'equivalent capped player targets do not require a choice')
+  assertEqual(startTurnAbilities(blockCapped)[0]?.players?.length, 1)
+})
+
+check('unique exhaust and empty pre-draw Scry outcomes resolve without confirmation', () => {
+  const sacrifice = {
+    ...combat([makePlayer({
+      character: 'hexaghost',
+      hand: [instance('strike_ironclad')],
+      powers: [instance('worthy_sacrifice')],
+    })], [makeEnemy()]),
+    phase: 'start', die: 3,
+  }
+  assertEqual(startTurnNeedsChoice(sacrifice), false)
+  assertDeepEqual(startTurnChoicePlayerIds(sacrifice), [])
+  const sacrificed = resolveStartPlayerTurn(sacrifice, defaultStartTurnChoices(sacrifice))
+  assertEqual(sacrificed.phase, 'player')
+  assertEqual(sacrificed.players[0].exhaust.length, 1)
+
+  const chooseSacrifice = {
+    ...sacrifice,
+    players: [{ ...sacrifice.players[0], hand: [instance('strike_ironclad'), instance('defend_ironclad')], exhaust: [] }],
+  }
+  assertDeepEqual(startTurnChoicePlayerIds(chooseSacrifice), ['p1'])
+
+  const emptyScry = {
+    ...combat([makePlayer({ powers: [instance('foresight')], draw: [], discard: [] })], [makeEnemy()]),
+    phase: 'roundEnd', turn: 1,
+  }
+  const afterEmptyScry = startPlayerTurnWithChoices(emptyScry)
+  assertEqual(afterEmptyScry.phase, 'player')
+  assertEqual(startTurnScryPreview(afterEmptyScry), undefined)
+
+  const reflex = instance('reflex')
+  const firstFive = [reflex, ...Array.from({ length: 4 }, () => instance('defend_silent'))]
+  const buddies = startPlayerTurnWithChoices(combat([makePlayer({
+    character: 'silent', draw: [...firstFive, instance('strike_silent'), instance('defend_silent')],
+    relics: [{ defId: 'battle_buddies', spent: false }],
+  })], [makeEnemy()]))
+  const firstDiscard = startTurnDiscardPreview(buddies)
+  assertEqual(firstDiscard?.remaining, 2)
+  const held = resolveStartTurnDiscard(buddies, 'p1', firstDiscard.sourceId, reflex.uid)
+  assertEqual(held.players[0].draw.length, 2, 'Reflex reacted before the complete discard was chosen')
+  assertEqual(held.players[0].hand.length, 5)
+  assert(!startTurnDiscardPreview(held).cards.some((card) => card.uid === reflex.uid),
+    'an already selected card remained eligible for the same discard')
+  const secondUid = startTurnDiscardPreview(held).cards[0].uid
+  const atomic = resolveStartTurnDiscard(held, 'p1', firstDiscard.sourceId, secondUid)
+  assertEqual(atomic.phase, 'player')
+  assertEqual(atomic.players[0].draw.length, 0, 'Reflex did not react after the atomic discard')
+  assertEqual(atomic.players[0].hand.length, 5)
+})
+
+check('Battle Buddies auto-discards a forced whole hand and stages a real private partial-hand choice', () => {
+  const opening = (draw) => ({
+    ...combat([makePlayer({
+      relics: [{ defId: 'battle_buddies', spent: false }], hand: [], draw,
+    })], [makeEnemy()]),
+    phase: 'roundEnd', turn: 0,
+  })
+  const forcedCards = [instance('strike_ironclad'), instance('defend_ironclad')]
+  const forced = startPlayerTurnWithChoices(opening(forcedCards))
+  assertEqual(forced.phase, 'player')
+  assertEqual(forced.players[0].hand.length, 0)
+  assertDeepEqual(new Set(forced.players[0].discard.map((card) => card.uid)),
+    new Set(forcedCards.map((card) => card.uid)))
+
+  const choiceCards = Array.from({ length: 4 }, (_unused, index) => ({
+    ...instance(index % 2 ? 'defend_ironclad' : 'strike_ironclad'), uid: `battle-choice-${index}`,
+  }))
+  const paused = startPlayerTurnWithChoices(opening(choiceCards))
+  const first = startTurnDiscardPreview(paused)
+  assertEqual(paused.phase, 'start')
+  assertEqual(first?.remaining, 2)
+  assertEqual(first?.cards.length, 4)
+  assertDeepEqual(startTurnChoicePlayerIds(paused), ['p1'])
+  const once = resolveStartTurnDiscard(paused, 'p1', first.sourceId, first.cards[0].uid)
+  assertEqual(startTurnDiscardPreview(once)?.remaining, 1)
+  const second = startTurnDiscardPreview(once)
+  const completed = resolveStartTurnDiscard(once, 'p1', second.sourceId, second.cards[0].uid)
+  assertEqual(completed.phase, 'player')
+  assertEqual(completed.players[0].hand.length, 2)
+  assertEqual(completed.players[0].discard.length, 2)
+
+  const reflex = instance('reflex')
+  const interrupted = {
+    ...combat([makePlayer({
+      character: 'silent', hand: [reflex, instance('strike_silent')], draw: [instance('daze')],
+      relics: [{ defId: 'battle_buddies', spent: false }],
+      powers: [instance('fire_breathing'), instance('noxious_fumes')],
+    })], [makeEnemy({ uid: 'left' }), makeEnemy({ uid: 'right', row: 1 })]),
+    phase: 'start', turn: 1, die: 3, startTurnStage: 'effects',
+  }
+  const interruptedAbilities = startTurnAbilities(interrupted)
+  const fumes = interruptedAbilities.find((ability) => ability.label.includes('Noxious Fumes'))
+  const waiting = resolveStartPlayerTurn(interrupted, interruptedAbilities.map((ability) => ({
+    id: ability.id,
+    enemyUid: ability.id === fumes?.id ? 'left' : undefined,
+    shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+  })))
+  assert(waiting.pendingTriggers.length > 0, 'the forced discard did not park its Fire Breathing choice')
+  assertDeepEqual(waiting.enemies.map((enemy) => enemy.poison), [0, 0],
+    'a later start effect ran before the forced discard reaction was resolved')
+})
+
+check('Battle Buddies preserves whole-hand discard order before drawing Scrape', () => {
+  const claw = instance('claw')
+  const strike = instance('strike_defect')
+  const scrape = instance('scrape')
+  const state = {
+    ...combat([makePlayer({ character: 'defect', hand: [claw, strike], draw: [scrape],
+      relics: [{ defId: 'battle_buddies', spent: false }], powers: [instance('machine_learning')],
+    })], [makeEnemy({ hp: 20, maxHp: 20 })]),
+    phase: 'start', turn: 1, die: 3, startTurnStage: 'effects',
+  }
+  const abilities = startTurnAbilities(state).sort((a, b) =>
+    Number(!a.label.includes('Battle Buddies')) - Number(!b.label.includes('Battle Buddies')))
+  const paused = resolveStartPlayerTurn(state, abilities.map((ability) => ({ id: ability.id, shivEnemyUids: [] })))
+  const discard = startTurnDiscardPreview(paused)
+  assertEqual(discard?.remaining, 2, 'a forced whole-hand discard hid its meaningful ordering')
+  assertDeepEqual(startTurnChoicePlayerIds(paused), ['p1'])
+  const finished = resolveStartTurnDiscard(paused, 'p1', discard.sourceId, strike.uid)
+  assertEqual(finished.phase, 'player', 'the only remaining discard required a redundant second click')
+  assertDeepEqual(finished.players[0].hand.map((card) => card.uid), [scrape.uid])
+  const recovered = playCard(finished, 'p1', scrape.uid, { enemyUid: 'e1', playerId: null })
+  assert(recovered.players[0].hand.some((card) => card.uid === claw.uid), 'Scrape did not recover the chosen top card')
 })
 
 check('Calipers preserves Block through only the next Reset', () => {

@@ -26,8 +26,11 @@ import {
   resolveTriggerSource,
   resolveShivAttack,
   settle,
+  triggerHermitChoices,
+  triggerNeedsEnemyChoice,
   triggerNeedsHermitChoice,
   triggerNeedsPlayerChoice,
+  triggerNeedsRowChoice,
   triggerSlimeChoice,
   triggerSourceById,
   triggerSources,
@@ -35,7 +38,7 @@ import {
 import { applyEnemyAction } from './enemy-turn.ts'
 import { canActivatePotion, canActivateRelic } from './items.ts'
 import { addStatus, damageEnemy } from './pieces.ts'
-import { conditionIsActive, effectEvokePlan, effectIsActive, invalidPlayChoice, mandatoryChoicePending, reachesEnemy } from './queries.ts'
+import { discardOrderNeedsChoice, effectEvokePlan, effectIsActive, invalidPlayChoice, mandatoryChoicePending, reachesEnemy } from './queries.ts'
 import type {
   CombatState,
   EvokeChoice,
@@ -289,11 +292,32 @@ function beginPlayerTurn(next: CombatState, pauseAfterDraw = false): CombatState
     triggerSources(player, { kind: 'beforeDraw' }).map((source) => ({
       playerId: player.id, sourceId: source.id,
     })))
-  if (beforeDraw.length > 0) {
-    next.startTurnProgress = {
-      choices: [], beforeDraw: { drewFrom, sources: beforeDraw, ordered: beforeDraw.length === 1, pauseAfterDraw },
+  const actionableBeforeDraw = beforeDraw.filter(({ playerId, sourceId }) => {
+    const player = findPlayer(next, playerId)!
+    const source = triggerSourceById(player, sourceId)!
+    if (player.draw.length > 0) return true
+    resolveTriggerSource(next, player, source, false, undefined, undefined, undefined,
+      undefined, undefined, [], undefined, undefined)
+    return false
+  })
+  if (actionableBeforeDraw.length > 0) {
+    const amountsByPlayer = new Map<string, Set<number>>()
+    for (const { playerId, sourceId } of actionableBeforeDraw) {
+      const player = findPlayer(next, playerId)!
+      const source = triggerSourceById(player, sourceId)!
+      const amount = source.effects.find((effect) => effect.kind === 'scry')?.amount
+      if (amount === undefined) continue
+      const amounts = amountsByPlayer.get(playerId) ?? new Set<number>()
+      amounts.add(amount)
+      amountsByPlayer.set(playerId, amounts)
     }
-    return next
+    const orderMatters = [...amountsByPlayer.values()].some((amounts) => amounts.size > 1)
+    next.startTurnProgress = {
+      choices: [], beforeDraw: {
+        drewFrom, sources: actionableBeforeDraw, ordered: !orderMatters, pauseAfterDraw,
+      },
+    }
+    return resolveEmptyStartTurnScries(next)
   }
   return continueStartTurnDraw(next, drewFrom, pauseAfterDraw)
 }
@@ -334,6 +358,29 @@ export function startTurnScryAbilities(state: CombatState): StartTurnScryAbility
       amount: effect.amount,
     }] : []
   })
+}
+
+/** Empty private previews have only one legal outcome: keep nothing and continue. */
+function resolveEmptyStartTurnScries(state: CombatState): CombatState {
+  const preview = startTurnScryPreview(state)
+  return preview && preview.cards.length === 0
+    ? resolveStartTurnScry(state, preview.playerId, preview.id, [])
+    : state
+}
+
+function stableGameplayValue(value: unknown): unknown {
+  return Array.isArray(value) ? value.map(stableGameplayValue) :
+    value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, stableGameplayValue(entry)])) : value
+}
+
+function gameplaySignature(state: CombatState): string {
+  const { log: _log, presentationEvents: _presentationEvents, ...gameplay } = state
+  return JSON.stringify(stableGameplayValue({
+    ...gameplay,
+    powerTriggersUsedThisTurn: [...gameplay.powerTriggersUsedThisTurn].sort(),
+  }))
 }
 
 export function orderStartTurnScries(state: CombatState, order: readonly string[]): CombatState {
@@ -391,7 +438,7 @@ export function resolveStartTurnScry(
   if (!resolveTriggerSource(
     next, actor, liveSource, false, undefined, undefined, undefined, undefined, undefined, discardUids,
   )) return state
-  return continueBeforeDraw(next)
+  return resolveEmptyStartTurnScries(continueBeforeDraw(next))
 }
 
 export function triggerTargets(state: CombatState, player: Player, source: TriggerSource) {
@@ -401,16 +448,60 @@ export function triggerTargets(state: CombatState, player: Player, source: Trigg
     : undefined
 }
 
-function hasActiveStartTurnEffect(effects: readonly Effect[], state: CombatState, player: Player): boolean {
-  return effects.some((effect) => effectIsActive(effect, state, player) && (
-    effect.kind === 'sequence' ? Boolean(effect.guardianAction || effect.guardianGemId) ||
-      hasActiveStartTurnEffect(effect.effects, state, player) :
-    effect.kind === 'branch' ? hasActiveStartTurnEffect(
-      conditionIsActive(effect.condition, state, player) ? effect.effects : effect.otherwise,
-      state,
-      player,
-    ) : true
+/** One physical anchor per distinct row outcome; bosses belong to every row. */
+function triggerChoiceSignature(
+  state: CombatState,
+  player: Player,
+  source: TriggerSource,
+  enemyUid?: string,
+  targetPlayerId?: string,
+): string | undefined {
+  const next = clone(state)
+  const actor = findPlayer(next, player.id)
+  const liveSource = actor && triggerSourceById(actor, source.id)
+  if (!actor || !liveSource || !resolveTriggerSource(
+    next, actor, liveSource, false, undefined, enemyUid, undefined,
+    undefined, undefined, undefined, targetPlayerId,
+  )) return undefined
+  return gameplaySignature(next)
+}
+
+/** Collapses several visible anchors when every one has the same real result. */
+function equivalentTriggerTargets<T extends { uid?: string; id?: string }>(
+  state: CombatState,
+  player: Player,
+  source: TriggerSource,
+  targets: readonly T[],
+  playerTargets = false,
+): T[] {
+  if (targets.length < 2) return [...targets]
+  const signatures = targets.map((target) => triggerChoiceSignature(
+    state, player, source, playerTargets ? undefined : target.uid,
+    playerTargets ? target.id : undefined,
   ))
+  return signatures[0] !== undefined && signatures.every((signature) => signature === signatures[0])
+    ? [targets[0]!] : [...targets]
+}
+
+function startTurnTriggerTargets(state: CombatState, player: Player, source: TriggerSource) {
+  const targets = triggerTargets(state, player, source)
+  if (!targets) return targets
+  if (source.scope !== 'row') return equivalentTriggerTargets(state, player, source, targets)
+  const minions = livingEnemies(state).filter((enemy) => !enemy.isBoss)
+  if (minions.length === 0) return equivalentTriggerTargets(state, player, source, targets.slice(0, 1))
+  const rows = new Set<number>()
+  const rowTargets = minions.flatMap((enemy) => rows.has(enemy.row) ? [] : (
+    rows.add(enemy.row), [{ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }]
+  ))
+  return equivalentTriggerTargets(state, player, source, rowTargets)
+}
+
+function startTurnTriggerPlayers(state: CombatState, player: Player, source: TriggerSource) {
+  return triggerNeedsPlayerChoice(state, source)
+    ? equivalentTriggerTargets(state, player, source, state.players
+      .filter((candidate) => !candidate.dead)
+      .map((candidate) => ({ id: candidate.id, label: candidate.name })), true)
+    : undefined
 }
 
 function startTurnSources(state: CombatState, includeDeadPlayers = false): StartTurnSource[] {
@@ -423,9 +514,10 @@ function startTurnSources(state: CombatState, includeDeadPlayers = false): Start
   ]
   const playerSources = events.flatMap((event) => state.players.flatMap((player) =>
     player.dead && !includeDeadPlayers ? [] :
+    // Earlier effects can change a condition (Mayhem can enter Calm for Study).
+    // Keep the source in the order and evaluate its effects when it resolves.
     triggerSources(player, event).filter((source) =>
-      !state.powerTriggersUsedThisTurn.includes(`${player.id}/${source.id}`) &&
-      hasActiveStartTurnEffect(source.effects, state, player))
+      !state.powerTriggersUsedThisTurn.includes(`${player.id}/${source.id}`))
       .map((source) => ({
       source,
       ability: {
@@ -435,11 +527,8 @@ function startTurnSources(state: CombatState, includeDeadPlayers = false): Start
         visual: source.id.startsWith('relic:')
           ? { kind: 'relic' as const, relicId: source.presentationSourceId }
           : source.powerUid ? { kind: 'card' as const, cardUid: source.powerUid } : undefined,
-        targets: triggerTargets(state, player, source),
-        players: triggerNeedsPlayerChoice(state, source)
-          ? state.players.filter((candidate) => !candidate.dead)
-            .map((candidate) => ({ id: candidate.id, label: candidate.name }))
-          : undefined,
+        targets: startTurnTriggerTargets(state, player, source),
+        players: startTurnTriggerPlayers(state, player, source),
       },
     }))))
   const owner = state.players.find((player) => !player.dead)
@@ -503,11 +592,66 @@ export function stageStartTurnTriggerChoice(state: CombatState): CombatState {
       id: next.nextTriggerId++, playerId: player.id, sourceId: source.id, startTurn: true as const,
     }
     next.pendingTriggers.push(pending)
-    if (triggerNeedsHermitChoice(next, player, source) || triggerSlimeChoice(next, player, source) ||
-      pendingTriggerSlimeEnemyChoiceCount(next, pending.id, []) > 0) continue
+    const needsChoice = triggerNeedsHermitChoice(next, player, source) || triggerSlimeChoice(next, player, source) ||
+      pendingTriggerSlimeEnemyChoiceCount(next, pending.id, []) > 0
+    if (needsChoice && deterministicStartTurnTriggerChoice(next, player, source) === null) continue
     next.pendingTriggers.pop()
   }
   return next.pendingTriggers.length > 0 ? next : state
+}
+
+function forcedTriggerCards(
+  cards: readonly { uid: string }[],
+  minimum: number,
+  amount: number,
+): string[] | null {
+  if (minimum !== amount) return null
+  if (amount === 0) return []
+  return amount === 1 && cards.length === 1 ? [cards[0]!.uid] : null
+}
+
+/** The private trigger context when exactly one complete input is legal. */
+function deterministicStartTurnTriggerChoice(
+  state: CombatState,
+  player: Player,
+  source: TriggerSource,
+): StartTurnChoice['trigger'] | null | undefined {
+  const needsHermit = triggerNeedsHermitChoice(state, player, source)
+  const hermit = triggerHermitChoices(player, source)
+  let trigger: NonNullable<StartTurnChoice['trigger']> = {}
+  if (needsHermit) {
+    if (!hermit) return null
+    const loadUids = forcedTriggerCards(hermit.loadCards, hermit.loadMinimum, hermit.loadAmount)
+    const chamberUids = forcedTriggerCards(hermit.chamberCards, hermit.chamberMinimum, hermit.chamberAmount)
+    if (loadUids === null || chamberUids === null) return null
+    trigger = { loadUids, chamberUids, hermitEnemyUids: [] }
+  }
+  if (triggerNeedsEnemyChoice(state, player, source) || triggerNeedsRowChoice(state, player, source) ||
+    triggerNeedsPlayerChoice(state, source)) return null
+
+  const slime = triggerSlimeChoice(state, player, source)
+  if (slime) {
+    if (slime.minimum !== slime.amount || slime.amount !== 1 || slime.cards.length !== 1) return null
+    trigger.slimeUids = [slime.cards[0]!.uid]
+  }
+  const preview = state.pendingTriggers.some((pending) => pending.playerId === player.id && pending.sourceId === source.id)
+    ? state
+    : (() => {
+        const next = clone(state)
+        next.pendingTriggers.push({ id: next.nextTriggerId++, playerId: player.id, sourceId: source.id, startTurn: true })
+        return next
+      })()
+  const pending = preview.pendingTriggers.find((candidate) =>
+    candidate.playerId === player.id && candidate.sourceId === source.id)!
+  const slimeEnemyAmount = pendingTriggerSlimeEnemyChoiceCount(preview, pending.id, trigger.slimeUids ?? [])
+  if (slimeEnemyAmount > 0) {
+    const enemy = livingEnemies(state)
+    if (enemy.length !== 1) return null
+    trigger.slimeEnemyUids = Array(slimeEnemyAmount).fill(enemy[0]!.uid)
+  }
+  const slimeResolution = source.effects.some((effect) => effectIsActive(effect, state, player) &&
+    ['growSlime', 'commandSlime', 'gainSlimeVigor', 'tapSlime', 'rainOfGoop'].includes(effect.kind))
+  return needsHermit || slime || slimeEnemyAmount > 0 || slimeResolution ? trigger : undefined
 }
 
 function pendingStartTurnSources(state: CombatState): StartTurnSource[] {
@@ -622,8 +766,11 @@ function startTurnAbilitiesFor(
       }
       return { ...entry.ability, overflowShivs: 0 }
     }
-    const playerTargetStale = Boolean(entry.ability.players &&
-      !entry.ability.players.some((candidate) => candidate.id === choice?.targetPlayerId))
+    const players = entry.ability.players
+      ? startTurnTriggerPlayers(simulationState, planningPlayer, entry.source)
+      : undefined
+    const playerTargetStale = Boolean(players &&
+      !players.some((candidate) => candidate.id === choice?.targetPlayerId))
     if (playerTargetStale) planningBlocked = true
     const shivs = entry.source.effects.reduce((sum, effect) => sum + (
       effect.kind === 'gainShiv' && effectIsActive(effect, plannedState, player) ? effect.amount : 0
@@ -631,7 +778,9 @@ function startTurnAbilitiesFor(
     const gained = Math.min(Math.max(0, CAPS.shivs - plannedShivs), shivs)
     const overflowShivs = shivs - gained
     plannedShivs += gained
-    const targets = entry.ability.targets ? targetOptions() : undefined
+    const targets = entry.ability.targets
+      ? startTurnTriggerTargets(simulationState, planningPlayer, entry.source!)
+      : undefined
     const enemyTargetStale = Boolean(targets?.length && choice?.enemyUid !== undefined &&
       !targets.some((target) => target.uid === choice.enemyUid))
     if (entry.ability.targets && targets!.length > 0 &&
@@ -712,7 +861,7 @@ function startTurnAbilitiesFor(
     }
     if (!planningBlocked && evokePlanComplete) {
       const privateDraw = entry.source.effects.some((effect) =>
-        effect.kind === 'draw' || effect.kind === 'drawThenDiscard')
+        effect.kind === 'draw' || effect.kind === 'drawThenDiscard' || effect.kind === 'discard')
       const forcedDraw = entry.source.effects.some((effect) => effect.kind === 'drawAndPlayFree')
       if (forcedDraw) {
         planningBlocked = true
@@ -735,10 +884,9 @@ function startTurnAbilitiesFor(
       }
     }
     return {
-      ...entry.ability, targets, enemyTargetStale,
-      players: entry.ability.players,
+      ...entry.ability, targets, enemyTargetStale, players,
       exhaustCards: entry.source.effects.some((effect) => effect.kind === 'exhaustFromHand')
-        ? planningPlayer.hand
+        ? planningPlayer.hand.length > 0 ? planningPlayer.hand : undefined
         : undefined,
       overflowShivs: shivEndedCombat ? choice?.shivEnemyUids.length ?? 0 : overflowShivs,
       staleShivIndex, shivTargets,
@@ -756,20 +904,40 @@ export function startTurnAbilities(
   return startTurnAbilitiesFor(state, pendingStartTurnSources(state), order, choices)
 }
 
-export function defaultStartTurnChoices(state: CombatState): StartTurnChoice[] {
+function defaultStartTurnChoicesForOrder(
+  state: CombatState,
+  order?: readonly string[],
+  choicePlayers?: Set<string>,
+  enemyTargets?: ReadonlyMap<string, string>,
+  committedChoices: readonly StartTurnChoice[] = [],
+): StartTurnChoice[] {
+  const committedById = new Map(committedChoices.map((choice) => [choice.id, choice]))
   let lastEnemyUid: string | undefined
-  const choices = startTurnAbilities(state).map((ability) => ({
-    id: ability.id,
-    enemyUid: ability.targets?.[0]?.uid,
-    targetPlayerId: ability.players?.[0]?.id,
-    exhaustUids: ability.exhaustCards?.slice(0, 1).map((card) => card.uid),
-    guardianModeShift: ability.guardianModeShift ? false : undefined,
-    shivEnemyUids: Array(ability.overflowShivs).fill(null),
-    evokeSlots: [] as number[],
-    evokeEnemyUids: [] as (string | null)[],
-  }))
+  const choices = startTurnAbilities(state, order).map((ability) => {
+    const committed = committedById.get(ability.id)
+    return committed ? {
+      ...committed,
+      shivEnemyUids: [...committed.shivEnemyUids],
+      evokeSlots: [...(committed.evokeSlots ?? [])],
+      evokeEnemyUids: [...(committed.evokeEnemyUids ?? [])],
+    } : {
+      id: ability.id,
+      enemyUid: enemyTargets?.get(ability.id) ?? ability.targets?.[0]?.uid,
+      targetPlayerId: ability.players?.[0]?.id,
+      exhaustUids: ability.exhaustCards?.slice(0, 1).map((card) => card.uid),
+      guardianModeShift: ability.guardianModeShift ? false : undefined,
+      shivEnemyUids: Array(ability.overflowShivs).fill(null),
+      evokeSlots: [] as number[],
+      evokeEnemyUids: [] as (string | null)[],
+    }
+  })
   while (true) {
-    const abilities = startTurnAbilities(state, undefined, choices)
+    const abilities = startTurnAbilities(state, order, choices)
+    for (const ability of abilities) if (
+      (ability.exhaustCards?.length ?? 0) > 1 || ability.overflowShivs > 0 || ability.guardianModeShift ||
+      (ability.targets?.length ?? 0) > 1 || (ability.players?.length ?? 0) > 1 ||
+      (ability.evokeChoice?.options.length ?? 0) > 1 || (ability.evokeTargets?.length ?? 0) > 1
+    ) choicePlayers?.add(ability.playerId)
     const staleEnemy = abilities.find((ability) => ability.enemyTargetStale && ability.targets?.[0])
     if (staleEnemy) {
       choices.find((choice) => choice.id === staleEnemy.id)!.enemyUid = staleEnemy.targets![0]!.uid
@@ -807,6 +975,10 @@ export function defaultStartTurnChoices(state: CombatState): StartTurnChoice[] {
     choice.evokeEnemyUids!.push(picked.orb === 'frost' ? null : targetUid ?? null)
     if (picked.orb !== 'frost' && targetUid) lastEnemyUid = targetUid
   }
+}
+
+export function defaultStartTurnChoices(state: CombatState): StartTurnChoice[] {
+  return defaultStartTurnChoicesForOrder(state)
 }
 
 /** Resolves the ordered ability phase prepared by `preparePlayerTurn`. */
@@ -885,6 +1057,7 @@ export function continueStartTurn(
   state: CombatState,
   choices: readonly StartTurnChoice[],
   rollback?: CombatState,
+  stopAfterChoiceId?: string,
 ): CombatState {
   const facingRows = state.startTurnStage === 'facing' ? facingRowPlan(state, choices) : null
   if (state.startTurnStage === 'facing' && !facingRows) return rollback ?? state
@@ -967,13 +1140,54 @@ export function continueStartTurn(
           }
         }
       }
+      if (choice.id === stopAfterChoiceId && index + 1 < choices.length) {
+        next.startTurnProgress = { choices: choices.slice(index + 1).map((pending) => ({ ...pending })) }
+        return settle(next)
+      }
       continue
     }
     const checkpoint = rollback ? null : clone(next)
+    // The two recurring discard sources currently consist solely of their
+    // mandatory discard. Do not bypass any future source's companion effects.
+    const privateDiscard = entry.source.effects.length === 1 && entry.source.effects[0]?.kind === 'discard'
+      ? entry.source.effects[0]
+      : undefined
+    if (privateDiscard) {
+      const required = Math.min(privateDiscard.amount, player.hand.length)
+      if (required > 0 && (required < player.hand.length || discardOrderNeedsChoice(player, player.hand))) {
+        next.startTurnProgress = {
+          choices: choices.slice(index + 1).map((pending) => ({ ...pending })),
+          discard: {
+            playerId: player.id,
+            sourceId: entry.source.id,
+            remaining: required,
+            pendingTriggers: [],
+          },
+        }
+        return settle(next)
+      }
+      if (required > 0) {
+        const cards = player.hand.slice(0, required)
+        discardByCardEffect(next, player, cards)
+        publishTurnEffect(next, player.id, entry.source.presentationSourceId, 'discard', { actorTargeted: true })
+      }
+      if (next.pendingTriggers.length > 0) {
+        next.startTurnProgress = { choices: choices.slice(index + 1).map((pending) => ({ ...pending })) }
+        return settle(next)
+      }
+      if (combatIsOver(next)) return settle(next)
+      if (choice.id === stopAfterChoiceId && index + 1 < choices.length) {
+        next.startTurnProgress = { choices: choices.slice(index + 1).map((pending) => ({ ...pending })) }
+        return settle(next)
+      }
+      continue
+    }
     const slimeResolution = entry.source.effects.some((effect) => effectIsActive(effect, next, player) &&
       ['growSlime', 'commandSlime', 'gainSlimeVigor', 'tapSlime', 'rainOfGoop'].includes(effect.kind))
+    const deterministicTrigger = deterministicStartTurnTriggerChoice(next, player, entry.source)
     if ((triggerNeedsHermitChoice(next, player, entry.source) ||
-      triggerSlimeChoice(next, player, entry.source) || slimeResolution) && !choice.trigger) {
+      triggerSlimeChoice(next, player, entry.source) || slimeResolution) && !choice.trigger &&
+      deterministicTrigger === null) {
       next.pendingTriggers ??= []
       next.nextTriggerId ??= 0
       next.pendingTriggers.push({
@@ -986,7 +1200,7 @@ export function continueStartTurn(
       choice.trigger?.enemyUid ?? choice.enemyUid, choice.trigger?.enemyRow,
       choice.evokeSlots, choice.evokeEnemyUids, undefined,
       choice.trigger?.targetPlayerId ?? choice.targetPlayerId, choice.exhaustUids,
-      choice.trigger,
+      choice.trigger ?? deterministicTrigger ?? undefined,
     )) {
       if (rollback) return rollback
       checkpoint!.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
@@ -1005,6 +1219,10 @@ export function continueStartTurn(
       return settle(next)
     }
     if (combatIsOver(next)) return settle(next)
+    if (choice.id === stopAfterChoiceId && index + 1 < choices.length) {
+      next.startTurnProgress = { choices: choices.slice(index + 1).map((pending) => ({ ...pending })) }
+      return settle(next)
+    }
   }
   next.startTurnProgress = undefined
   const facing = livingEnemies(next).some((enemy) =>
@@ -1150,7 +1368,13 @@ export function startTurnDiscardPreview(state: CombatState): StartTurnDiscardPre
   const player = pending && findPlayer(state, pending.playerId)
   const source = player && triggerSourceById(player, pending.sourceId)
   if (!pending || !player || !source) return undefined
-  return { playerId: player.id, sourceId: pending.sourceId, label: source.name, cards: player.hand }
+  return {
+    playerId: player.id,
+    sourceId: pending.sourceId,
+    label: source.name,
+    remaining: pending.remaining ?? 1,
+    cards: player.hand.filter((card) => !pending.selectedUids?.includes(card.uid)),
+  }
 }
 
 /** Resolves Tools of the Trade without exposing its owner's hand to the table. */
@@ -1168,11 +1392,22 @@ export function resolveStartTurnDiscard(
   const choices = [...next.startTurnProgress!.choices]
   const actor = findPlayer(next, playerId)!
   const source = triggerSourceById(actor, pending.sourceId)
-  const card = actor.hand.find((held) => held.uid === discardUid)!
+  const selectedUids = [...(pending.selectedUids ?? []), discardUid]
+  let remaining = (pending.remaining ?? 1) - 1
+  const unselected = actor.hand.filter((card) => !selectedUids.includes(card.uid))
+  if (remaining === unselected.length && !discardOrderNeedsChoice(actor, unselected)) {
+    selectedUids.push(...unselected.map((card) => card.uid))
+    remaining = 0
+  }
+  if (remaining > 0) {
+    next.startTurnProgress!.discard = { ...pending, remaining, selectedUids }
+    return settle(next)
+  }
+  const cards = selectedUids.map((uid) => actor.hand.find((held) => held.uid === uid)!)
+  discardByCardEffect(next, actor, cards)
+  if (source) publishTurnEffect(next, actor.id, source.presentationSourceId, 'discard', { actorTargeted: true })
   next.startTurnProgress = undefined
   next.pendingTriggers = [...next.pendingTriggers, ...pending.pendingTriggers]
-  discardByCardEffect(next, actor, [card])
-  if (source) publishTurnEffect(next, actor.id, source.presentationSourceId, 'discard', { actorTargeted: true })
   flushPendingTriggers(next)
   if (combatIsOver(next)) return settle(next)
   if ((next.pendingTriggers?.length ?? 0) > 0) {
@@ -1230,12 +1465,209 @@ export function hasPostRollStartTurnChoice(state: CombatState): boolean {
  *
  * Two abilities used to be enough on their own, which put a "Resolve start of
  * turn" click in front of a turn where nothing about the sequence could change
- * the outcome. An ORDER only matters between two abilities that are AIMED at an
- * enemy: the target is revalidated on the other side of the turn —
- * "the cause is always an ability aimed at something an earlier ability kills".
- * A pair that only gains Block, draws, or channels an Orb commutes, so the
- * engine resolves them in its own canonical order and gets on with the game.
+ * the outcome. Deterministic effects may still interact, though: Draw before
+ * Exhaust creates a card choice, and Grow before Command changes damage. The
+ * order check below moves only plausibly interacting abilities while ignoring
+ * presentation/log ordering. Inert piles take the zero-simulation fast path.
  */
+export function startTurnOrderChoicePlayerId(
+  state: CombatState,
+  knownAbilities?: readonly StartTurnAbility[],
+): string | undefined {
+  const abilities = knownAbilities ?? startTurnAbilities(state)
+  if (abilities.length < 2) return undefined
+  const entries = pendingStartTurnSources(state)
+  const entriesById = new Map(entries.map((entry) => [entry.ability.id, entry]))
+  const sources = new Map(entries.map((entry) => [entry.ability.id, entry.source]))
+  const candidateIds = new Set<string>()
+  for (const entry of entries) if (!entry.source) candidateIds.add(entry.ability.id)
+  const effectKinds = (effects: readonly Effect[]): string[] => effects.flatMap((effect): string[] => [
+    effect.kind,
+    ...(effect.kind === 'sequence' ? effectKinds(effect.effects) : []),
+    ...(effect.kind === 'branch' ? effectKinds([...effect.effects, ...effect.otherwise]) : []),
+  ])
+  const draws = (kind: string) => kind === 'draw' || kind === 'drawThenDiscard' || kind === 'drawAndPlayFree'
+  const reactionEvents = new Map<string, TriggerEvent['kind'][]>([
+    ['draw', ['onDraw', 'onShuffle']],
+    ['drawThenDiscard', ['onDraw', 'onShuffle', 'onDiscard']],
+    ['drawAndPlayFree', ['onDraw', 'onShuffle', 'onPlayCard']],
+    ['block', ['onGainBlock']],
+    ['blockChoices', ['onGainBlock']],
+    ['discard', ['onDiscard']],
+    ['discardAny', ['onDiscard']],
+    ['discardNonRetain', ['onDiscard']],
+    ['discardHand', ['onDiscard']],
+    ['countdownExhaust', ['onExhaust']],
+    ['exhaustFromHand', ['onExhaust']],
+    ['exhaustAny', ['onExhaust']],
+    ['exhaustHand', ['onExhaust']],
+    ['exhaustDrawTop', ['onExhaust']],
+    ['exhaustDrawPile', ['onExhaust']],
+    ['rainOfGoop', ['onExhaust']],
+    ['advance', ['onAdvance']],
+    ['retract', ['onRetract']],
+    ['enterStance', ['onEnterStance']],
+    ['useAllSoulburn', ['onUseSoulburn']],
+    ['scry', ['onScry']],
+    ['poison', ['onApplyPoison', 'onPutEnemyToken']],
+    ['poisonChoices', ['onApplyPoison', 'onPutEnemyToken']],
+    ['applyWeak', ['onPutEnemyToken']],
+    ['weakChoices', ['onPutEnemyToken']],
+    ['applyVulnerable', ['onPutEnemyToken']],
+    ['vulnerableChoices', ['onPutEnemyToken']],
+  ])
+  const pileWriterKinds = new Set([
+    'addDaze', 'topdeck', 'recoverDiscard', 'recoverExhaustToDraw', 'recoverExhaustToDiscard',
+    'recoverDiscardTopCosts', 'recoverAllDiscardCosts', 'exhaustDrawTop', 'exhaustDrawPile',
+  ])
+  for (const player of state.players) {
+    const owned = abilities.flatMap((ability) => {
+      const source = sources.get(ability.id)
+      return ability.playerId === player.id && source ? [{ id: ability.id, source }] : []
+    })
+    const kinds = owned.map(({ source }) => new Set(effectKinds(source.effects)))
+    const distinct = (left: (kind: string) => boolean, right: (kind: string) => boolean) =>
+      kinds.some((first, index) => [...first].some(left) &&
+        kinds.some((second, other) => other !== index && [...second].some(right)))
+    const drawableCards = player.draw.length + player.discard.length
+    const canDraw = drawableCards > 0
+    const consumesHand = (kind: string) => kind === 'discard' || kind === 'exhaustFromHand' ||
+      kind === 'load' && player.chamber.length < player.chamberSlots ||
+      kind === 'drawThenDiscard' && player.hand.length + drawableCards > 1
+    const handInteraction = kinds.some((first, index) => kinds.some((second, other) => other !== index &&
+      [...first].some(draws) && [...second].some(consumesHand) &&
+      !(first.size === 1 && second.size === 1 && first.has('drawThenDiscard') && second.has('drawThenDiscard'))))
+    // Private possibilities cannot be proven by one arbitrary default card.
+    if (canDraw && handInteraction) return player.id
+
+    const handCounts = new Set([
+      'cardsInHand', 'retainCardsInHand', 'strikesInHand', 'skillsInHand', 'attacksInHand',
+      'otherAttacksInHand', 'cursesInHandAndChamber', 'starterCardsInHandAndChamber', 'otherCardsInHand',
+    ])
+    const amountReadsHand = (amount: unknown) => typeof amount === 'object' && amount !== null &&
+      'per' in amount && typeof amount.per === 'string' && handCounts.has(amount.per)
+    const effectsReadHand = (effects: readonly Effect[]): boolean => effects.some((effect) =>
+      'amount' in effect && amountReadsHand(effect.amount) ||
+      'times' in effect && amountReadsHand(effect.times) ||
+      effect.kind === 'sequence' && effectsReadHand(effect.effects) ||
+      effect.kind === 'branch' && (effectsReadHand(effect.effects) || effectsReadHand(effect.otherwise)))
+    const handReaders = owned.map(({ source }) => effectsReadHand(source.effects))
+    const handWriters = kinds.map((set) => [...set].some((kind) => draws(kind) || consumesHand(kind)))
+    if (handReaders.some((reads, index) => reads && handWriters.some((writes, other) => writes && other !== index))) {
+      owned.forEach(({ id }, index) => {
+        if (handReaders[index] || handWriters[index]) candidateIds.add(id)
+      })
+    }
+    const sourceDiscards = owned.map(({ source }) => source.effects.some((effect) =>
+      effect.kind === 'sequence' && effect.guardianAction === 'card'))
+    const pileWriters = kinds.map((set, index) => sourceDiscards[index] ||
+      [...set].some((kind) => pileWriterKinds.has(kind)))
+    const drawWriters = kinds.map((set) => [...set].some(draws))
+    if (pileWriters.some((writes, index) => writes && drawWriters.some((drawsCards, other) =>
+      drawsCards && other !== index))) {
+      owned.forEach(({ id }, index) => {
+        if (pileWriters[index] || drawWriters[index]) candidateIds.add(id)
+      })
+    }
+    const drawTypes = ['attack', 'skill', 'power', 'slime', 'curse', 'status'] as const
+    const reactsTo = (reactor: Player, kind: TriggerEvent['kind']) => kind === 'onDraw'
+      ? drawTypes.some((cardType) => triggerSources(reactor, { kind, cardType }).length > 0)
+      : kind === 'onEnterStance'
+        ? (['neutral', 'calm', 'wrath'] as const)
+          .some((stance) => triggerSources(reactor, { kind, stance }).length > 0)
+        : triggerSources(reactor, { kind } as TriggerEvent).length > 0
+    owned.forEach(({ id }, index) => {
+      if (kinds[index]!.has('countdownExhaust') ||
+        [...kinds[index]!].some((kind) => reactionEvents.get(kind)?.some((event) =>
+          state.players.some((reactor) => reactsTo(reactor, event))))) candidateIds.add(id)
+    })
+
+    const inGroup = (...group: string[]) => (kind: string) => group.includes(kind)
+    const possible = canDraw && kinds.some((set) => set.has('drawAndPlayFree')) && owned.length > 1 ||
+      distinct(inGroup('advance', 'retract', 'branch'), inGroup('advance', 'retract', 'branch')) ||
+      distinct(inGroup('load', 'discountChamber', 'discardChamber', 'playChamber'),
+        inGroup('load', 'discountChamber', 'discardChamber', 'playChamber')) ||
+      distinct(inGroup('growSlime', 'commandSlime', 'gainSlimeVigor', 'tapSlime', 'rainOfGoop'),
+        inGroup('growSlime', 'commandSlime', 'gainSlimeVigor', 'tapSlime', 'rainOfGoop')) ||
+      distinct(inGroup('gainStrength', 'gainTemporaryStrength', 'doubleStrength'),
+        inGroup('hit', 'rowHit', 'hitChoices')) ||
+      distinct(inGroup('channel'), inGroup('countdownExhaust')) ||
+      distinct(inGroup('sequence'), inGroup('sequence')) ||
+      canDraw && kinds.some((set) => [...set].some(draws)) &&
+        player.powers.some((power) => cardDef(power.defId).trigger?.kind === 'onDraw') && owned.length > 1
+    if (possible) for (const { id } of owned) candidateIds.add(id)
+  }
+  const enemyAffecting = abilities.filter((ability) => {
+    const source = sources.get(ability.id)
+    const player = findPlayer(state, ability.playerId)
+    return Boolean(entriesById.get(ability.id)?.enemyUid ||
+      source && player && source.effects.some((effect) => reachesEnemy(effect, player)))
+  })
+  if (enemyAffecting.length > 0 && abilities.length > 1) {
+    for (const ability of enemyAffecting) candidateIds.add(ability.id)
+  }
+  const drawing = abilities.filter((ability) => {
+    const source = sources.get(ability.id)
+    const player = findPlayer(state, ability.playerId)
+    return source && player && player.draw.length + player.discard.length > 0 &&
+      effectKinds(source.effects).some(draws)
+  })
+  if (abilities.length > 1) for (const ability of drawing) {
+    const source = sources.get(ability.id)
+    if (source && effectKinds(source.effects).includes('drawAndPlayFree')) candidateIds.add(ability.id)
+  }
+  const drawingKinds = new Set(drawing.map((ability) =>
+    `${ability.playerId}:${JSON.stringify(sources.get(ability.id)?.effects ?? [])}`))
+  if (drawing.length > 1 && drawingKinds.size > 1) {
+    for (const ability of drawing) candidateIds.add(ability.id)
+  }
+  const enemyReactiveDraws = drawing.filter((ability) => {
+    const player = findPlayer(state, ability.playerId)
+    return player && triggerSources(player, { kind: 'onDraw' })
+      .some((source) => source.effects.some((effect) => reachesEnemy(effect, player)))
+  })
+  if (enemyReactiveDraws.length > 0 && enemyAffecting.length > 0) {
+    for (const ability of [...enemyReactiveDraws, ...enemyAffecting]) candidateIds.add(ability.id)
+  }
+  const sharedTokenSources = abilities.filter((ability) => {
+    const source = sources.get(ability.id)
+    return source && effectKinds(source.effects).some((kind) => kind === 'gainShiv' || kind === 'gainMiracle')
+  })
+  if (sharedTokenSources.length > 1) for (const ability of sharedTokenSources) candidateIds.add(ability.id)
+  if (candidateIds.size === 0) return undefined
+  const order = abilities.map((ability) => ability.id)
+  const outcome = (ids: readonly string[], targets?: ReadonlyMap<string, string>) => {
+    const choicePlayers = new Set<string>()
+    const resolved = resolveStartPlayerTurn(state,
+      defaultStartTurnChoicesForOrder(state, ids, choicePlayers, targets))
+    return `${gameplaySignature(resolved)}|${[...choicePlayers].sort().join(',')}`
+  }
+  const canonical = outcome(order)
+  // ponytail: quadratic only for plausibly interacting abilities; revisit if
+  // large custom power piles become legal.
+  for (const id of candidateIds) {
+    const from = order.indexOf(id)
+    for (let to = 0; to < order.length; to++) {
+      if (to === from) continue
+      const moved = order.filter((candidate) => candidate !== id)
+      moved.splice(to, 0, id)
+      if (outcome(moved) !== canonical) return abilities.find((ability) => ability.id === id)?.playerId
+      const focus = enemyAffecting.find((ability) => ability.id === id)
+      if (!focus) continue
+      // Pairwise legal targets catch interactions hidden by the first-target
+      // default without taking the Cartesian product of a whole power pile.
+      for (const other of enemyAffecting) {
+        if (other.id === id || (focus.targets?.length ?? 0) < 2 && (other.targets?.length ?? 0) < 2) continue
+        for (const left of focus.targets ?? []) for (const right of other.targets ?? []) {
+          const targets = new Map([[focus.id, left.uid], [other.id, right.uid]])
+          if (outcome(moved, targets) !== outcome(order, targets)) return focus.playerId
+        }
+      }
+    }
+  }
+  return undefined
+}
+
 export function startTurnNeedsChoice(
   state: CombatState,
   knownAbilities?: readonly StartTurnAbility[],
@@ -1243,20 +1675,76 @@ export function startTurnNeedsChoice(
   if (hasPostRollStartTurnChoice(state)) return true
   const abilities = knownAbilities ?? startTurnAbilities(state)
   // An ability that cannot be resolved without input, whatever else is queued.
-  if (abilities.some((ability) => (ability.exhaustCards?.length ?? 0) > 0 || ability.overflowShivs > 0 ||
+  if (abilities.some((ability) => (ability.exhaustCards?.length ?? 0) > 1 || ability.overflowShivs > 0 ||
     ability.guardianModeShift ||
     (ability.targets?.length ?? 0) > 1 ||
     (ability.players?.length ?? 0) > 1 || ability.evokeChoice)) return true
   if (abilities.some((ability) => ability.id === 'enemy:darkling/regrow') &&
     abilities.some((ability) => (ability.targets?.length ?? 0) > 0)) return true
-  return abilities.filter((ability) => (ability.targets?.length ?? 0) > 0).length > 1
+  return startTurnOrderChoicePlayerId(state, abilities) !== undefined
+}
+
+/** Players who genuinely owe input before Start of Turn can finish. */
+export function startTurnChoicePlayerIds(
+  state: CombatState,
+  knownAbilities?: readonly StartTurnAbility[],
+  includeOrderChoice = true,
+  committedChoices: readonly StartTurnChoice[] = [],
+): string[] {
+  if (state.phase !== 'start') return []
+  const players = new Set(state.players.map((player) => player.id))
+  const required = new Set<string>()
+  const add = (playerId: string | undefined) => {
+    if (playerId && players.has(playerId)) required.add(playerId)
+  }
+
+  for (const trigger of state.pendingTriggers ?? []) if (trigger.startTurn) add(trigger.playerId)
+  add(state.startTurnProgress?.discard?.playerId)
+  add(state.startTurnProgress?.forcedCard?.playerId)
+
+  const beforeDraw = state.startTurnProgress?.beforeDraw
+  if (beforeDraw) {
+    if (!beforeDraw.ordered) add(beforeDraw.sources[0]?.playerId)
+    else {
+      const preview = startTurnScryPreview(state)
+      if ((preview?.cards.length ?? 0) > 0) add(preview?.playerId)
+    }
+  }
+
+  const abilities = knownAbilities ?? startTurnAbilities(state)
+  if (includeOrderChoice) add(startTurnOrderChoicePlayerId(state, abilities))
+  // A choice in an earlier ability deliberately blocks simulation of later
+  // effects. Complete the same order with safe defaults so a downstream owner
+  // (for example full-slot Storm behind another player's overflow Shiv) is not
+  // mistaken for an idle seat and omitted from the quorum.
+  const order = abilities.map((ability) => ability.id)
+  const downstreamChoicePlayers = new Set<string>()
+  if (order.length > 0) defaultStartTurnChoicesForOrder(
+    state, order, downstreamChoicePlayers, undefined, committedChoices,
+  )
+  for (const playerId of downstreamChoicePlayers) add(playerId)
+  for (const ability of abilities) if (
+    (ability.exhaustCards?.length ?? 0) > 1 || ability.overflowShivs > 0 || ability.guardianModeShift ||
+    (ability.targets?.length ?? 0) > 1 || (ability.players?.length ?? 0) > 1 || ability.evokeChoice
+  ) add(ability.playerId)
+  for (const player of state.players) {
+    if (!player.dead && playerHasPostRollStartTurnChoice(state, player)) add(player.id)
+  }
+
+  // If input exists only because aimed effects can invalidate one another, one
+  // involved owner commits the shared order; deterministic owners do not vote.
+  if (includeOrderChoice && required.size === 0 && startTurnNeedsChoice(state, abilities)) {
+    add(abilities.find((ability) => (ability.targets?.length ?? 0) > 0)?.playerId ?? abilities[0]?.playerId)
+  }
+  return [...required]
 }
 
 function finishPreparedStartTurnWithChoices(prepared: CombatState): CombatState {
   if (prepared.phase !== 'start' || prepared.startTurnProgress || prepared.pendingTriggers.length > 0) return prepared
   const staged = stageStartTurnTriggerChoice(prepared)
   if (staged !== prepared) return staged
-  return startTurnAbilities(prepared).length > 0 || hasPostRollStartTurnChoice(prepared)
+  const abilities = startTurnAbilities(prepared)
+  return startTurnNeedsChoice(prepared, abilities)
     ? prepared
     : resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
 }

@@ -79,6 +79,34 @@ export function cardHasRetain(player: { powers?: readonly CardInstance[] }, card
       def.guardian?.sourceText.includes('Attack Mode') === true
 }
 
+/** Whether ordering these discarded cards changes a later top-card effect. */
+export function discardOrderNeedsChoice(player: Player, discarding: readonly CardInstance[]): boolean {
+  if (discarding.length <= 1) return false
+  const owned = [player.hand, player.draw, player.discard, player.exhaust, player.powers, player.chamber].flat()
+  const readers = owned.map((card) => {
+      const def = cardDef(card.defId)
+      return JSON.stringify([faceOf(def, false), faceOf(def, true)]).toLowerCase()
+    })
+  if (!readers.some((face) => face.includes('discardtopcosts'))) return false
+  const recoversTop = readers.some((face) => face.includes('recoverdiscardtopcosts'))
+  const canCorrupt = owned.some((card) => cardDef(card.defId).corruptSkills)
+  const outcomes = new Set(discarding.map((card) => {
+    const face = faceOf(cardDef(card.defId), card.upgraded)
+    if (face.unplayable) return false
+    // Match cardCost across later HP loss and Power-count changes, before a
+    // top-card reader resolves. -1 means the cost never reaches zero.
+    const afterHpLoss = face.costAfterHpLoss ?? face.cost
+    const zeroAtPowers = [player.lostHpThisCombat ? afterHpLoss : face.cost, afterHpLoss].map((cost) =>
+      face.cost === 'X' ? -1 : cost === 0 ? 0 : (face.powerCostReduction ?? 0) > 0
+        ? Math.ceil(Number(cost) / face.powerCostReduction!) : -1)
+    const corruptible = canCorrupt && face.type === 'skill'
+    if (zeroAtPowers.every((count) => count < 0) && !corruptible) return false
+    return recoversTop ? JSON.stringify({ ...card, uid: undefined })
+      : zeroAtPowers.every((count) => count === 0) ? true : JSON.stringify([zeroAtPowers, corruptible])
+  }))
+  return outcomes.size > 1
+}
+
 /** Power Beam may pull one Power from either private pile, but never its source card. */
 export function guardianPowerBeamCards(player: Player, sourceCardUid?: string): CardInstance[] {
   return [...player.hand.filter((card) => card.uid !== sourceCardUid), ...player.discard]
@@ -769,7 +797,10 @@ export function cardNeedsEnemy(
 ): boolean {
   if (def.type === 'power' && (def.trigger || (def.activeAbility && !forActivation))) return false
   if ((def.target ?? 'enemy') === 'allEnemies') return false
-  if (def.target === 'row') return true
+  // Several Guardian cards implement their Mode-specific row hit through a
+  // special sequence rather than a literal enemy effect, but still need an anchor.
+  if (def.target === 'row' && def.guardian && def.effects.some((effect) =>
+    effect.kind === 'sequence' && effect.guardianAction)) return true
   if ((attachedGemId && ['guardian_emerald', 'guardian_garnet', 'guardian_ruby'].includes(attachedGemId)) ||
     attachedGemId === 'guardian_peridot' && (!actor || actor.hand?.some((card) => card.uid !== sourceCardUid &&
       cardDef(card.defId).guardian?.printedType.startsWith('Gem')))) return true
@@ -796,7 +827,7 @@ export function cardNeedsEnemy(
 }
 
 /** Soulburn a `useAllSoulburn` effect would spend, before any board choice is made. */
-function soulburnChoiceCount(effects: readonly Effect[], state: CombatState, actor: Player): number {
+export function soulburnChoiceCount(effects: readonly Effect[], state: CombatState, actor: Player): number {
   const spendIndex = effects.findIndex((effect) => effect.kind === 'useAllSoulburn')
   if (spendIndex < 0) return 0
   const gained = effects.slice(0, spendIndex).reduce((sum, effect) =>
@@ -835,6 +866,30 @@ function loadNeedsEnemy(effects: readonly Effect[], actor: Player, sourceCardUid
   })
 }
 
+/** Whether every mandatory Slime-card selector has enough legal cards to satisfy it. */
+function forcedSlimeChoicesExist(
+  def: CardDef,
+  effects: readonly Effect[],
+  state: CombatState,
+  actor: Player,
+  requireAvailableSlimes: boolean,
+): boolean {
+  const active = { ...def, modes: undefined, effects: [...effects] }
+  const available = actor.slimes.filter((slime) =>
+    !requireAvailableSlimes || slimeChoiceIsAvailable(active, state, actor, slime.card.uid, 0)).length
+  return effects.every((raw) => {
+    if (!effectIsActive(raw, state, actor)) return true
+    const effect = raw as unknown as SlimeBossEffect
+    if (effect.kind === 'growSlime') return effect.upToDifferent !== undefined || available >= 1
+    if (effect.kind === 'commandSlime') {
+      if (effect.all || effect.upToDifferent !== undefined && effect.upToDifferent !== 99) return true
+      const required = effect.upToDifferent === 99 ? amountOf(effect.amount, state, actor) : 1
+      return available >= required
+    }
+    return effect.kind !== 'gainSlimeVigor' && effect.kind !== 'tapSlime' || available >= 1
+  })
+}
+
 /**
  * Whether a card about to be locked in as a forced 0-Energy play (Distilled
  * Chaos, Havoc, Revenge Protocol, ...) can still find every choice its printed
@@ -863,21 +918,8 @@ function loadNeedsEnemy(effects: readonly Effect[], actor: Player, sourceCardUid
  * mandatory Hermit `load` that would have no non-curse card left to pick
  * (Rummage's `source: 'discard'` is the one that can actually run dry; a
  * hand-sourced load always still has whatever else is queued alongside it).
- * A modal card is checked mode by mode for every one of those per-mode
- * families: like `cardNeedsEnemy`'s own flattening of every Mode, a single
- * Mode needing an enemy is treated as the whole card needing one, since the
- * printed effects that decide a Mode's own target requirement only see one
- * Mode's effects at a time and cannot otherwise be read before a Mode is
- * chosen.
- *
- * The `livingEnemies(state).length > 0` short-circuit assumes ANY living
- * enemy satisfies every family above, which holds for everything printed
- * today but is not universally true: a `hitChoices` with `distinct: true`
- * needs that many DISTINCT living enemies, not just one. No non-Modal card
- * prints that combination (Watcher's Carve Reality is the only `distinct`
- * user, and its other Mode only ever needs one), so this cannot currently
- * strand anyone -- but a future card that did would need an explicit count
- * check here, not just an existence check.
+ * A modal card needs at least one feasible mode. Distinct-target modes must
+ * have enough living enemies; their sibling modes can remain legal.
  *
  * `def` is run through `effectiveCombatCardDef` first: a raw Guardian `CardDef`
  * never carries `target: 'row'` for Prismatic Spray, Sentry Beam, or an
@@ -902,25 +944,29 @@ export function cardCanBeForced(
   actor: Player,
   attachedGemId?: string,
   sourceCardUid?: string,
+  requireAvailableSlimes = true,
 ): boolean {
   const effective = effectiveCombatCardDef(def, actor.guardianMode)
-  if (livingEnemies(state).length > 0) return true
-  if (cardNeedsEnemy(effective, actor, true, undefined, false, attachedGemId, sourceCardUid)) return false
-  // A triggered or actively-activated Power's printed effects do nothing when
-  // it is played (see `resolvesOnPlay` in play.ts) -- `cardNeedsEnemy` above
-  // already skips them for exactly that reason, so every check below, which
-  // reads the same `effects` directly, must skip them too. Hermit's Take Aim
-  // and Black Wind both mandatorily Load on a later trigger, not on play:
-  // without this, they would be discarded by a Distilled Chaos/Havoc force
-  // even though playing them now is completely safe.
-  if (effective.type === 'power' && (effective.trigger || effective.activeAbility)) return true
-  return !everyModeEffects(effective).some((effects) => {
+  const onPlayEffects = effective.type === 'power' && (effective.trigger || effective.activeAbility)
+    ? [[]]
+    : effective.modes
+      ? effective.modes.flatMap((mode, index) => cardModeIsAvailable(
+        effective, state, actor, index, actor.draw.length, sourceCardUid,
+      ) ? [mode.effects] : [])
+      : everyModeEffects(effective)
+  const enemyCount = livingEnemies(state).length
+  return onPlayEffects.some((effects) => {
+    if (!forcedSlimeChoicesExist(effective, effects, state, actor, requireAvailableSlimes)) return false
     const modeOnly: CardDef = { ...effective, modes: undefined, effects }
-    return cardEnemyChoiceCount(modeOnly, undefined, state, actor) > 0 ||
-      cardShivChoiceCount(modeOnly, actor) > 0 ||
-      soulburnChoiceCount(effects, state, actor) > 0 ||
-      slimeCommandEnemyChoiceCount(modeOnly, state, actor, [], 0, 0) > 0 ||
-      loadNeedsEnemy(effects, actor, sourceCardUid)
+    if (effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct) &&
+      cardEnemyChoiceCount(modeOnly, undefined, state, actor) > enemyCount) return false
+    if (enemyCount > 0) return true
+    return !cardNeedsEnemy(modeOnly, actor, true, undefined, false, attachedGemId, sourceCardUid) &&
+      cardEnemyChoiceCount(modeOnly, undefined, state, actor) === 0 &&
+      cardShivChoiceCount(modeOnly, actor) === 0 &&
+      soulburnChoiceCount(effects, state, actor) === 0 &&
+      slimeCommandEnemyChoiceCount(modeOnly, state, actor, [], 0, 0) === 0 &&
+      !loadNeedsEnemy(effects, actor, sourceCardUid)
   })
 }
 

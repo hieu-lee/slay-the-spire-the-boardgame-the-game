@@ -741,7 +741,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         </p>
       ) : null}
       {foreignStartTurnDiscard ? <p className="online-banner" role="status">
-        Waiting for {discardOwner.name} to discard for Tools of the Trade…
+        Waiting for {discardOwner.name} to discard {snapshot.startTurnDiscard!.remaining} card{
+          snapshot.startTurnDiscard!.remaining === 1 ? '' : 's'} for {snapshot.startTurnDiscard!.label}…
       </p> : null}
       {foreignTrigger ? <p className="online-banner" role="status">
         Waiting for {triggerOwner.name} to resolve a triggered ability…

@@ -101,8 +101,15 @@ export type CombatState = {
     rollPending?: { drewFrom: number; pauseAfterDraw?: boolean }
     /** Opening hands are visible; Mysterious Sphere's party choice is next. */
     pauseAfterDraw?: { drewFrom: number }
-    /** Tools of the Trade drew; only its owner may choose the card to discard. */
-    discard?: { playerId: string; sourceId: string; pendingTriggers: PendingTrigger[] }
+    /** A private start-turn discard; only its owner may choose each card. */
+    discard?: {
+      playerId: string
+      sourceId: string
+      remaining?: number
+      /** Held server-side until the whole printed discard resolves atomically. */
+      selectedUids?: string[]
+      pendingTriggers: PendingTrigger[]
+    }
     forcedCard?: {
       playerId: string
       cardUid: string | null
@@ -314,6 +321,8 @@ export type StartTurnDiscardPreview = {
   playerId: string
   sourceId: string
   label: string
+  /** Mandatory cards still to discard; legacy saves are normalized to one. */
+  remaining: number
   cards: CardInstance[]
 }
 

@@ -89,6 +89,7 @@ export {
   previewCardCopyChoice,
   previewHermitChamberCardChoice,
   previewPowerChoice,
+  resolveDeterministicForcedCard,
   resolveHermitSetupLoad,
   resolveHermitStrengthReward,
 } from './combat/play.ts'
@@ -109,12 +110,15 @@ export {
   startPlayerTurn,
   startPlayerTurnWithChoices,
   startTurnAbilities,
+  startTurnChoicePlayerIds,
   startTurnDiscardPreview,
   startTurnNeedsChoice,
+  startTurnOrderChoicePlayerId,
   startTurnScryAbilities,
   startTurnScryPreview,
 } from './combat/start-turn.ts'
 export {
+  advanceDeterministicEndTurnChoices,
   beginEndTurnResolution,
   beginEndPlayerTurn,
   discardNeedsChoice,

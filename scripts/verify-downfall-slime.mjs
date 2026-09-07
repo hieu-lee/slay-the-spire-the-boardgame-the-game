@@ -14,7 +14,7 @@ import {
   growSlime,
   removeTemporarySlimeVigor,
 } from '../src/game/downfall/slime-boss.ts'
-import { activatePower, beginEndPlayerTurn, cardHasRetain, cardNeedsEnemy, createCombat, endTurnAbilities, guardianPowerBeamCards, maximumXEnergy, pendingTriggerAbility, pendingTriggerSlimeEnemyChoiceCount, pendingTriggerSlimeEnemyChoiceLabels, playCard, playCardCopy, playCost, previewCardCopyChoice, resolvePendingTrigger, slimeChoiceIsAvailable, slimeCommandEnemyChoiceCount, slimeCommandEnemyChoiceLabels } from '../src/game/combat.ts'
+import { activatePower, beginEndPlayerTurn, beginEndTurnResolution, cardHasRetain, cardNeedsEnemy, createCombat, endTurnAbilities, endTurnResolutionAbility, guardianPowerBeamCards, maximumXEnergy, pendingTriggerAbility, pendingTriggerSlimeEnemyChoiceCount, pendingTriggerSlimeEnemyChoiceLabels, playCard, playCardCopy, playCost, previewCardCopyChoice, resolvePendingTrigger, slimeChoiceIsAvailable, slimeCommandEnemyChoiceCount, slimeCommandEnemyChoiceLabels } from '../src/game/combat.ts'
 import { fireTriggers, resolveSlimeCommand } from '../src/game/combat/effects.ts'
 import { createRng } from '../src/game/rng.ts'
 import { CARDS, STARTER_DECKS } from '../src/game/cards.ts'
@@ -118,6 +118,31 @@ const enemy = {
 }
 const combat = createCombat(createRng(47), [player], [enemy])
 
+const soleBruiser = beginEndTurnResolution(combat)
+assert.equal(endTurnResolutionAbility(soleBruiser), undefined,
+  'Bruiser Slime asked where to Command when only one enemy was legal')
+assert.equal(soleBruiser.enemies[0].hp, 5, 'Bruiser Slime did not auto-Command its sole target')
+
+const spikePlayer = structuredClone(player)
+spikePlayer.slimes = [{
+  card: { uid: 'end-turn-spike', defId: byName.get('Spike Slime').id, upgraded: false },
+  level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0,
+}]
+const endTurnSpikeCombat = createCombat(createRng(471), [spikePlayer], [
+  { ...enemy, uid: 'spike-left' }, { ...enemy, uid: 'spike-right', row: 1 },
+])
+const spikeResolved = beginEndTurnResolution(endTurnSpikeCombat)
+assert.equal(endTurnResolutionAbility(spikeResolved), undefined,
+  'all-enemy Spike Slime exposed a target that cannot change its outcome')
+assert.deepEqual(spikeResolved.enemies.map((target) => target.hp), [5, 5],
+  'Spike Slime did not auto-Command all enemies')
+
+const choiceCombat = createCombat(createRng(472), [player], [
+  { ...enemy, uid: 'bruiser-left' }, { ...enemy, uid: 'bruiser-right', row: 1 },
+])
+assert.equal(endTurnResolutionAbility(beginEndTurnResolution(choiceCombat))?.visual?.kind, 'slime',
+  'Bruiser Slime lost its real multi-enemy target choice')
+
 const powerSeparationSlime = { uid: 'power-separation-slime', defId: byName.get('Massive Slime').id, upgraded: false }
 const powerSeparationPlayer = {
   ...player,
@@ -173,8 +198,8 @@ const spike = {
 const spikeCombat = createCombat(createRng(471), [{ ...player, slimes: [spike] }], [enemy])
 const spikeEndTurn = endTurnAbilities(spikeCombat)
   .find((ability) => ability.id === 'slime-player/slime:end-turn-spike')
-assert.deepEqual(spikeEndTurn?.targets, [{ uid: enemy.uid, label: 'Cultist' }],
-  'all-enemy end-turn Commands still expose enemy drop targets for dragging')
+assert.equal(spikeEndTurn?.targets, undefined,
+  'all-enemy end-turn Commands exposed a fake drop target')
 const afterEndTurn = beginEndPlayerTurn(combat)
 assert.equal(afterEndTurn.enemies[0].hp, 5, 'Bruiser end-turn Command resolves through the combat engine')
 assert.deepEqual(afterEndTurn.presentationEvents.at(-1), {
@@ -453,6 +478,19 @@ assert.notEqual(resolvedSpentCopy, copiedSpentLick,
   'a committed Lick original could not finish after its virtual copy spent Armored Slime')
 assert.equal(resolvedSpentCopy.phase, 'player', 'the unavailable copied Command left combat stuck in copy')
 assert.equal(resolvedSpentCopy.players[0].block, 3, 'the spent Armored Slime Command resolved twice')
+const copiedDelegate = { uid: 'copied-spent-delegate', defId: byName.get('Delegate').id, upgraded: false }
+let copiedSpentDelegate = createCombat(createRng(47893), [{ ...player, character: 'slime_boss',
+  hand: [copiedDelegate], energy: 3, block: 0, doubledSkillsThisTurn: 1,
+  slimes: [{ ...spentArmored, card: { ...spentArmored.card, uid: 'delegate-armored' }, commandsThisTurn: 0 }],
+}], [enemy])
+copiedSpentDelegate.players[0].doubledSkillsThisTurn = 1
+const delegateChoices = { enemyUid: null, playerId: player.id, slimeUids: ['delegate-armored'], slimeEnemyUids: [] }
+copiedSpentDelegate = playCard(copiedSpentDelegate, player.id, copiedDelegate.uid, delegateChoices)
+assert.equal(copiedSpentDelegate.phase, 'copy', 'the spent Command skipped the committed Delegate original')
+const resolvedDelegate = playCardCopy(copiedSpentDelegate, player.id, delegateChoices)
+assert.equal(resolvedDelegate.phase, 'player')
+assert.equal(resolvedDelegate.players[0].block, 9, 'the spent Command swallowed the original Delegate Block')
+assert.equal(resolvedDelegate.players[0].cardsPlayedThisTurn, 2, 'the original Delegate lost its play bookkeeping')
 const oozeBath = { uid: 'zero-command-ooze', defId: byName.get('Ooze Bath').id, upgraded: false }
 const zeroCommandOoze = createCombat(createRng(47893), [{ ...player, character: 'slime_boss',
   hand: [oozeBath], energy: 3,

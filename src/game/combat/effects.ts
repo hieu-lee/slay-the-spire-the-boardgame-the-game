@@ -1661,7 +1661,9 @@ export function applyEffect(
     }
     case 'drawThenDiscard': {
       applyEffect(state, actor, { kind: 'draw', amount: effect.amount }, scope, supportScope, context, source)
-      if (actor.hand.length > 0) {
+      if (actor.hand.length === 1) {
+        discardByCardEffect(state, actor, [actor.hand[0]!], context)
+      } else if (actor.hand.length > 1) {
         state.startTurnProgress = {
           choices: [],
           discard: {
@@ -3138,7 +3140,7 @@ export function finishDeferredHavocs(
       }
       pendingTriggers.push(...(context.pendingTriggers ?? []))
     }
-    if (copySourceNames?.length && !cardCanBeForced(def, state, actor, guardianGemForCard(actor, card), card.uid)) {
+    if (copySourceNames?.length && !cardCanBeForced(def, state, actor, guardianGemForCard(actor, card), card.uid, false)) {
       if (!virtualOnly) {
         if (exhaust) exhaustCards(state, actor, [card])
         else actor.discard = [...actor.discard, card]
@@ -3559,7 +3561,10 @@ export function triggerSlimeChoice(state: CombatState, player: Player, source: T
     Extract<SlimeBossEffect, { kind: 'growSlime' | 'commandSlime' | 'gainSlimeVigor' | 'tapSlime' | 'rainOfGoop' }> | undefined
   const cards = (player.slimes ?? []).map((slime) => ({ uid: slime.card.uid, label: cardDef(slime.card.defId).name }))
   if (!effect || cards.length === 0 || effect.kind === 'commandSlime' && effect.all) return undefined
-  if (effect.kind === 'rainOfGoop') return { cards, amount: 1, minimum: 0 }
+  if (effect.kind === 'rainOfGoop') {
+    const held = source.powerUid ? player.powers.find((power) => power.uid === source.powerUid) : undefined
+    return (held?.counter ?? 0) > 0 ? { cards, amount: 1, minimum: 0 } : undefined
+  }
   const requested = effect.kind === 'commandSlime' && effect.upToDifferent === 99
     ? amountOf(effect.amount, state, player)
     : 'upToDifferent' in effect && effect.upToDifferent !== undefined ? effect.upToDifferent : 1
@@ -3589,7 +3594,9 @@ export function pendingTriggerSlimeEnemyChoiceLabels(
     id: `trigger_${source.id}`, name: source.name, owner: 'colorless', type: 'skill', rarity: 'special', cost: 0,
     effects: source.effects,
   }
-  const selected = slimeUids.length === 0 && !triggerSlimeChoice(state, player, source) && player.slimes.length === 1
+  const selected = slimeUids.length === 0 &&
+    source.presentationSourceId !== 'slime_boss_rain_of_goop' &&
+    !triggerSlimeChoice(state, player, source) && player.slimes.length === 1
     ? [player.slimes[0]!.card.uid]
     : slimeUids
   return slimeCommandEnemyChoiceLabels(def, state, player, selected)

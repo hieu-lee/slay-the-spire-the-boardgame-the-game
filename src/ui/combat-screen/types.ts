@@ -62,7 +62,13 @@ export type CombatScreenProps = {
   partyStartTurnOrderPending?: boolean
   partyStartTurnOrderLocked?: boolean
   partyStartTurnScry?: Omit<StartTurnScryPreview, 'cards'> & { cards: CardInstance[] | null }
-  partyStartTurnDiscard?: { playerId: string; sourceId: string; label: string; cards: CardInstance[] | null }
+  partyStartTurnDiscard?: {
+    playerId: string
+    sourceId: string
+    label: string
+    remaining: number
+    cards: CardInstance[] | null
+  }
   /** Room snapshot version; omitted for the local table. */
   authoritativeVersion?: number
   /** Successful REST refresh count; omitted for the local table. */

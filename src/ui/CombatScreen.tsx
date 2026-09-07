@@ -118,6 +118,7 @@ import {
   resolvePendingTrigger,
   resolveEndTurnAbility,
   resolvePendingDieRelicChoice,
+  resolveDeterministicForcedCard,
   resolveHermitSetupLoad,
   resolveHermitStrengthReward,
   resolvePlunderRowSwitch,
@@ -1677,7 +1678,8 @@ function CombatScreenView({
         (ability.players?.length === 1 ? ability.players[0]!.id : undefined),
     ])))
     setStartTurnExhaustUids(Object.fromEntries(baseStartAbilities.map((ability) => [
-      ability.id, savedChoices.get(ability.id)?.exhaustUids?.[0],
+      ability.id, savedChoices.get(ability.id)?.exhaustUids?.[0] ??
+        (ability.exhaustCards?.length === 1 ? ability.exhaustCards[0]!.uid : undefined),
     ])))
     setStartTurnModeShifts(Object.fromEntries(baseStartAbilities.map((ability) => [
       ability.id, savedChoices.get(ability.id)?.guardianModeShift,
@@ -2055,7 +2057,9 @@ function CombatScreenView({
       ability.id,
       ability.players?.length === 1 ? ability.players[0]!.id : undefined,
     ])))
-    setStartTurnExhaustUids({})
+    setStartTurnExhaustUids(Object.fromEntries(plan.map((ability) => [
+      ability.id, ability.exhaustCards?.length === 1 ? ability.exhaustCards[0]!.uid : undefined,
+    ])))
     setStartTurnModeShifts({})
     setStartTurnTargets(Object.fromEntries(plan.map((ability) => [
       ability.id,
@@ -2200,12 +2204,15 @@ function CombatScreenView({
   // Resolve the engine's deterministic default plan; keep every meaningful
   // order, target, overflow, or Orb decision manual.
   useEffect(() => {
-    if (onAction || !autoAdvance || state.phase !== 'start' || !canResolveStartTurn || meaningfulStartTurnChoice ||
-      baseStartTurnScries.length > 0 || activeStartTurnScry ||
-      activeStartTurnDiscard || pendingTrigger || forcedCard) return undefined
+    if (onAction || !autoAdvance || state.phase !== 'start' || !canResolveStartTurn) return undefined
+    const next = forcedCard ? resolveDeterministicForcedCard(state)
+      : meaningfulStartTurnChoice || baseStartTurnScries.length > 0 || activeStartTurnScry ||
+        activeStartTurnDiscard || pendingTrigger
+        ? state
+        : resolveStartPlayerTurn(state, defaultStartTurnChoices(state))
+    if (next === state) return undefined
     const timer = window.setTimeout(() => {
-      const choices = defaultStartTurnChoices(state)
-      onChange?.(resolveStartPlayerTurn(state, choices))
+      onChange?.(next)
     }, 250)
     return () => window.clearTimeout(timer)
   }, [onAction, autoAdvance, autoAdvanceRetry, authoritativeRefresh, state.phase, state.turn, canResolveStartTurn,
@@ -3686,6 +3693,11 @@ function CombatScreenView({
     const card = viewer.hand.find((held) => held.uid === forcedCardUid)
     if (card) {
       forcedAutoAttempt.current = forcedAttemptKey
+      const deterministic = onAction ? state : resolveDeterministicForcedCard(state)
+      if (deterministic !== state) {
+        onChange?.(deterministic)
+        return
+      }
       onCardClick(card)
     }
     // The forced uid is the authoritative transition. The helpers close over
@@ -4595,7 +4607,7 @@ function CombatScreenView({
                   ))}
                 </ol>
               </details>
-              <button type="button" disabled={!canOrderStartTurnScries} onClick={finishStartTurnScryOrder}>
+              <button type="button" className="combat__end-turn" disabled={!canOrderStartTurnScries} onClick={finishStartTurnScryOrder}>
                 {canOrderStartTurnScries ? 'Confirm before-draw order' : 'Waiting for before-draw order'}
               </button>
             </>
@@ -4672,7 +4684,9 @@ function CombatScreenView({
                       ability.id,
                       ability.players?.length === 1 ? ability.players[0]!.id : undefined,
                     ])))
-                    setStartTurnExhaustUids({})
+                    setStartTurnExhaustUids(Object.fromEntries(orderedStartAbilities.map((ability) => [
+                      ability.id, ability.exhaustCards?.length === 1 ? ability.exhaustCards[0]!.uid : undefined,
+                    ])))
                     setStartTurnModeShifts({})
                     setStartTurnTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
                       ability.id,
@@ -5382,8 +5396,10 @@ function CombatScreenView({
         <dialog ref={startTurnDiscardDialogRef} className="choice-modal" aria-labelledby="start-turn-discard-title"
           onCancel={(event) => event.preventDefault()}>
           <div className="choice-modal__panel">
-            <h2 id="start-turn-discard-title">Tools of the Trade — discard 1 card</h2>
-            <p>Choose one card from your hand. This choice is private.</p>
+            <h2 id="start-turn-discard-title">
+              {activeStartTurnDiscard.label} — discard {activeStartTurnDiscard.remaining} card{activeStartTurnDiscard.remaining === 1 ? '' : 's'}
+            </h2>
+            <p>Choose a card from your hand. This choice is private.</p>
             <div className="choice-modal__cards">
               {activeStartTurnDiscard.cards.map((card) => (
                 <Card key={card.uid} card={card} onClick={() => void finishStartTurnDiscard(card)} />

@@ -655,14 +655,11 @@ const roomControl = mapInspection.controls.find((control) => control.label === r
 if (!roomControl) throw new Error(`reachable room is missing from WebMCP: ${roomLabel}`)
 const mapInteraction = await interact(roomControl.id)
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')
-if (await page.evaluate(() => window.__STS_DEBUG__.getState()?.phase === 'start')) {
-  const startInspection = await inspectAll()
-  const start = startInspection.controls.find((control) => control.label === 'Resolve start of turn')
-  if (start) {
-    await interact(start.id)
-    await page.waitForFunction(() => window.__STS_DEBUG__.getState()?.phase === 'player')
-  }
-}
+await page.waitForFunction(() => window.__STS_DEBUG__.getState()?.phase === 'player')
+const automaticStartInspection = await inspectAll()
+const automaticStartPhase = await page.evaluate(() => window.__STS_DEBUG__.getState()?.phase)
+const automaticStartResolveControls = automaticStartInspection.controls.filter((control) =>
+  /^Resolve start/.test(control.label))
 const beforeAttack = await page.evaluate(() => {
   const state = window.__STS_DEBUG__.getState()
   return { energy: state.players[0].energy, enemyHp: state.enemies.reduce((total, enemy) => total + enemy.hp, 0) }
@@ -889,8 +886,11 @@ check('starts a real Watcher run through WebMCP and loads cleanly', () => {
     JSON.stringify(mapInspection.unavailableControls.filter((control) => control.context?.startsWith('Floor '))
       .map((control) => control.context).sort()) === JSON.stringify(futureRoomContexts) &&
     futureRoomContexts.some((context) => context.includes('; exits to floor ')) &&
-    mapInteraction.controls.some((control) => control.label === 'End turn' || control.label === 'Resolve start of turn'),
+    mapInteraction.controls.some((control) => control.label === 'End turn'),
   'map inspection preserves every future route-planning room and map entry returns the settled combat screen')
+  assertDeepEqual({ phase: automaticStartPhase, resolveControls: automaticStartResolveControls.length }, {
+    phase: 'player', resolveControls: 0,
+  }, 'WebMCP exposed a redundant action for deterministic start-of-combat effects')
   assert(combatFlow.seesTurn && combatFlow.seesEnergy && combatFlow.seesDrawPile,
     'combat inspection exposes turn, current Energy, and draw-pile count')
   assert(/, attack,/i.test(combatFlow.richAttack) && combatFlow.targetLabel && combatFlow.targetSettlementMarked &&

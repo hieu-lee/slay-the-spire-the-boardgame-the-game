@@ -4037,6 +4037,138 @@ try {
     b.locator('.combat[data-phase="player"]').waitFor(),
   ])
 
+  const deterministicStartRestore = structuredClone(liveRoom.run.combat)
+  const deterministicStartRoomRestore = {
+    startTurnCombatId: liveRoom.startTurnCombatId,
+    startTurnOrder: liveRoom.startTurnOrder,
+    startTurnEnemyTargets: liveRoom.startTurnEnemyTargets,
+    startTurnChoices: liveRoom.startTurnChoices,
+    startTurnRequired: liveRoom.startTurnRequired,
+    startTurnReady: liveRoom.startTurnReady,
+  }
+  const annAutomatic = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boAutomatic = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(liveRoom.run.combat, {
+    phase: 'roundEnd', turn: 0, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingRelicScry: undefined, pendingCardCopy: undefined,
+    pendingDieRelicChoices: [], pendingDistilled: undefined, pendingPlunderSwitches: [],
+    pendingHermitSetupLoads: [], pendingHermitChamberPlays: [], pendingHermitStrengthRewards: [],
+  })
+  Object.assign(annAutomatic, {
+    character: 'defect', dead: false, relics: [{ defId: 'cracked_core', spent: false }], potions: [],
+    powers: [{ uid: 'online-auto-learning', defId: 'machine_learning', upgraded: false }],
+    orbs: [null, null, null], hand: [], draw: [],
+  })
+  Object.assign(boAutomatic, {
+    dead: false, relics: [], potions: [], powers: [], orbs: [], hand: [], draw: [],
+  })
+  for (const key of Object.keys(deterministicStartRoomRestore)) liveRoom[key] = undefined
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await roomAction(a, { kind: 'startTurn' })
+  await Promise.all([
+    a.locator('.combat[data-phase="player"]').waitFor(),
+    b.locator('.combat[data-phase="player"]').waitFor(),
+  ])
+  const [annAutomaticButtons, boAutomaticButtons, automaticSnapshot] = await Promise.all([
+    a.getByRole('button', { name: /^Resolve start turn/ }).count(),
+    b.getByRole('button', { name: /^Resolve start turn/ }).count(),
+    snapshot(a),
+  ])
+  await a.screenshot({ path: join(outDir, '02c-deterministic-start-auto-desktop.png'), fullPage: true })
+  check('Cracked Core and Machine Learning auto-resolve online without a redundant button', () => {
+    assertEqual(automaticSnapshot.run.combat.phase, 'player')
+    assertEqual(annAutomaticButtons, 0)
+    assertEqual(boAutomaticButtons, 0)
+  })
+
+  Object.assign(liveRoom.run.combat, {
+    phase: 'roundEnd', turn: 0, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingRelicScry: undefined, pendingCardCopy: undefined,
+    pendingDieRelicChoices: [], pendingDistilled: undefined, pendingPlunderSwitches: [],
+    pendingHermitSetupLoads: [], pendingHermitChamberPlays: [], pendingHermitStrengthRewards: [],
+  })
+  Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Ann'), {
+    character: 'defect', dead: false, relics: [{ defId: 'cracked_core', spent: false }], potions: [],
+    powers: [{ uid: 'online-mixed-learning', defId: 'machine_learning', upgraded: false }],
+    orbs: [null, null, null], hand: [], draw: [],
+  })
+  Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Bo'), {
+    character: 'defect', dead: false, relics: [], potions: [],
+    powers: [{ uid: 'online-mixed-storm', defId: 'storm', upgraded: false }],
+    orbs: ['frost', 'lightning', 'dark'], hand: [], draw: [],
+  })
+  for (const key of Object.keys(deterministicStartRoomRestore)) liveRoom[key] = undefined
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await roomAction(a, { kind: 'startTurn' })
+  const [annMixedButton, boMixedButton] = [a, b].map((page) =>
+    page.getByRole('button', { name: 'Resolve start turn 0/1' }))
+  await Promise.all([annMixedButton.waitFor(), boMixedButton.waitFor()])
+  const boFrostChoice = b.getByRole('button', { name: 'Frost Slot 1' })
+  await boFrostChoice.waitFor()
+  const [annMixedDisabled, annFrostChoices, boFrostEnabled, mixedSnapshot] = await Promise.all([
+    annMixedButton.isDisabled(), a.getByRole('button', { name: 'Frost Slot 1' }).count(),
+    boFrostChoice.isEnabled(), snapshot(a),
+  ])
+  for (const [screen, width, height] of [['desktop', 1280, 800], ['phone', 844, 390]]) {
+    await b.setViewportSize({ width, height })
+    await b.locator('.start-turn-order > summary').click()
+    const chooserLayout = await b.evaluate(() => {
+      const rect = (selector) => document.querySelector(selector)?.getBoundingClientRect()
+      const prompt = rect('.prompt:has(.prompt__orb)')
+      const summary = rect('.start-turn-order > summary')
+      const tray = rect('.start-turn-order[open] > ol')
+      const trayElement = document.querySelector('.start-turn-order[open] > ol')
+      const resolve = rect('.combat__end-turn')
+      const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+      return Boolean(prompt && summary && tray && resolve && tray.width > 0 && tray.height > 0 &&
+        tray.left >= 0 && tray.right <= innerWidth && tray.top >= 0 && tray.bottom <= innerHeight &&
+        trayElement.contains(document.elementFromPoint(tray.left + tray.width / 2, tray.top + tray.height / 2)) &&
+        ![summary, tray, resolve].some((control) => overlaps(prompt, control)))
+    })
+    check(`${screen} Storm chooser leaves the order disclosure visible and usable`, () => {
+      assert(chooserLayout, 'the Storm chooser overlaps a control or the open order tray leaves the viewport')
+    })
+    await b.screenshot({ path: join(outDir, `02c-storm-order-open-${screen}.png`), fullPage: true })
+    await b.locator('.start-turn-order > summary').click()
+    await b.screenshot({ path: join(outDir, `02c-storm-only-owner-${screen}.png`), fullPage: true })
+  }
+  await boFrostChoice.click()
+  await boMixedButton.waitFor({ state: 'visible' })
+  const boMixedEnabled = await boMixedButton.isEnabled()
+  const phoneOrderOverlap = await b.evaluate(() => {
+    const order = document.querySelector('.start-turn-order > summary')?.getBoundingClientRect()
+    const resolve = document.querySelector('.combat__end-turn')?.getBoundingClientRect()
+    return Boolean(order && resolve && order.left < resolve.right && order.right > resolve.left &&
+      order.top < resolve.bottom && order.bottom > resolve.top)
+  })
+  await b.screenshot({ path: join(outDir, '02d-storm-ready-phone.png'), fullPage: true })
+  await boMixedButton.click()
+  await Promise.all([
+    a.locator('.combat[data-phase="player"]').waitFor(),
+    b.locator('.combat[data-phase="player"]').waitFor(),
+  ])
+  const mixedResolved = await snapshot(b)
+  await b.setViewportSize({ width: 1280, height: 800 })
+  check('only the full-slot Storm owner joins the online start-turn quorum', () => {
+    assertDeepEqual(mixedSnapshot.startTurnRequired, [boAutomatic.id])
+    assertEqual(annMixedDisabled, true)
+    assertEqual(annFrostChoices, 0)
+    assertEqual(boFrostEnabled, true)
+    assertEqual(boMixedEnabled, true)
+    assertEqual(phoneOrderOverlap, false, 'the horizontal-phone resolve button covers the order summary')
+    assertEqual(mixedResolved.run.combat.phase, 'player')
+  })
+  liveRoom.run.combat = deterministicStartRestore
+  Object.assign(liveRoom, deterministicStartRoomRestore)
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await Promise.all([
+    a.locator('.combat[data-phase="player"]').waitFor(),
+    b.locator('.combat[data-phase="player"]').waitFor(),
+  ])
+
   const charonRestore = structuredClone(liveRoom.run.combat)
   const annBeforeCharon = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeCharon = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
@@ -4702,7 +4834,7 @@ try {
     character: 'defect', hand: [
       { uid: 'online-equilibrium-retain', defId: 'reinforced_body', upgraded: false },
       { uid: 'online-discard-strike', defId: 'strike_ironclad', upgraded: false },
-      { uid: 'online-discard-defend', defId: 'defend_ironclad', upgraded: false },
+      { uid: 'online-discard-defend', defId: 'deflect', upgraded: false },
     ],
     draw: [{ uid: 'online-hidden-claw', defId: 'claw', upgraded: false }],
     powers: [], orbs: ['lightning', 'lightning', null], block: 0, retainCardsThisTurn: 1,

@@ -29,6 +29,9 @@ async function drag(source, target) {
 }
 
 async function fixture({ character, powers = [], orbs = [null, null, null], enemies }) {
+  // Debug fixtures replace one combat in place; let the prior local
+  // auto-advance timer settle before installing another same-phase state.
+  await page.waitForTimeout(300)
   await page.evaluate(({ character, powers, orbs, enemies }) => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())
@@ -46,7 +49,7 @@ async function fixture({ character, powers = [], orbs = [null, null, null], enem
       name: character[0].toUpperCase() + character.slice(1),
       hand: [], draw: [], discard: [], exhaust: [], powers, relics: [], potions: [],
       energy: 0, block: 0, strength: 0, weak: 0, vulnerable: 0, shivs: 0, miracles: 0,
-      stance: 'neutral', orbs, dead: false,
+      stance: 'neutral', orbs, dead: false, damageDealtZeroThisTurn: false,
     }]
     run.combat.enemies = enemies.map((enemy, index) => ({
       ...baseEnemy,
@@ -61,6 +64,7 @@ async function fixture({ character, powers = [], orbs = [null, null, null], enem
     }))
     debug.setRun(run)
   }, { character, powers, orbs, enemies })
+  await page.locator(`[data-enemy-id="${enemies.at(-1).uid}"]`).waitFor()
 }
 
 async function startTurnRelicFixture() {
@@ -104,6 +108,32 @@ try {
   await page.locator('.room--reachable').first().click()
   await page.locator('.combat').waitFor()
 
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const player = run.combat.players[0]
+    const haunted = { uid: 'local-mayhem-haunted', defId: 'haunted_hand', upgraded: false }
+    Object.assign(player, {
+      character: 'hexaghost', heat: 2, hand: [haunted], draw: [], discard: [], exhaust: [], powers: [],
+    })
+    Object.assign(run.combat, {
+      phase: 'start', startTurnProgress: { choices: [], forcedCard: {
+        playerId: player.id, cardUid: haunted.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+      } },
+    })
+    debug.setRun(run)
+  })
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.startTurnProgress?.forcedCard === undefined)
+  const localMayhem = await page.evaluate(() => {
+    const combat = window.__STS_DEBUG__.getRun().combat
+    return { phase: combat.phase, exhausted: combat.players[0].exhaust.some((card) =>
+      card.uid === 'local-mayhem-haunted') }
+  })
+  check('local deterministic Mayhem cards auto-play without a click', () => {
+    assert(localMayhem.phase === 'player' && localMayhem.exhausted,
+      `local Mayhem did not finish automatically: ${JSON.stringify(localMayhem)}`)
+  })
+
   await fixture({
     character: 'defect',
     orbs: ['lightning', 'lightning', null],
@@ -120,12 +150,8 @@ try {
   })
   await page.screenshot({ path: join(output, 'defect-lightning-drag.png'), fullPage: true })
   await drag(firstOrb, page.locator('[data-enemy-id="drag-e1"]'))
-  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies.find((enemy) => enemy.uid === 'drag-e1')?.dead)
-  const secondOrb = page.locator('button.end-turn-effect--orb')
-  await secondOrb.waitFor()
-  await drag(secondOrb, page.locator('[data-enemy-id="drag-e2"]'))
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies.every((enemy) => enemy.dead))
-  check('Lightning Orbs drag from the top effect source and resolve one at a time', () => {
+  check('Lightning Orbs drag only while multiple targets remain', () => {
     assert(firstPrompt.includes('Drag'), `missing drag instruction: ${firstPrompt}`)
     assert(firstPosition.top < 180, `the Orb source was not at the top of the battle: ${firstPosition.top}`)
     assert(firstPosition.animation.includes('end-turn-effect-arrive'), `the Orb did not arrive with its effect animation: ${firstPosition.animation}`)
@@ -186,18 +212,9 @@ try {
     enemies: [{ uid: 'click-loop-enemy', hp: 20 }],
   })
   await page.getByRole('button', { name: 'End turn', exact: true }).click()
-  const clickLoop = page.locator('.end-turn-effect--card')
-  const keyboardOrb = page.getByRole('button', { name: 'Choose lightning Orb 1' })
-  await clickLoop.click()
-  await drag(keyboardOrb, page.getByRole('button', { name: 'End turn', exact: true }))
-  await page.waitForTimeout(50)
-  const loopSelectionsAfterMiss = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.endTurnProgress?.loopSelections)
-  assert(loopSelectionsAfterMiss === undefined, 'a missed Loop Orb drop selected the Orb')
-  await keyboardOrb.click()
-  await clickLoop.click()
-  await keyboardOrb.press('Enter')
-  await page.locator('button.end-turn-effect--orb').waitFor()
-  check('Loop Orb selection accepts click and keyboard confirmation without resolving a missed drag', () => assert(true))
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat?.enemies
+    .find((enemy) => enemy.uid === 'click-loop-enemy')?.hp === 17)
+  check('a sole Loop Orb and enemy resolve without redundant click, keyboard, or drag actions', () => assert(true))
 
   await fixture({
     character: 'defect',
@@ -290,6 +307,14 @@ try {
   const phoneRelic = page.locator('button.end-turn-effect--relic')
   await phoneRelic.waitFor()
   await phoneRelic.evaluate(async (source) => Promise.all(source.getAnimations().map((animation) => animation.finished)))
+  const phoneOrderOverlap = await page.evaluate(() => {
+    const order = document.querySelector('.start-turn-order > summary')?.getBoundingClientRect()
+    const resolve = document.querySelector('.combat__end-turn')?.getBoundingClientRect()
+    const prompt = document.querySelector('.prompt')?.getBoundingClientRect()
+    const overlaps = (left, right) => left && right && left.left < right.right && left.right > right.left &&
+      left.top < right.bottom && left.bottom > right.top
+    return Boolean(overlaps(order, resolve) || overlaps(order, prompt))
+  })
   await page.screenshot({ path: join(output, 'start-turn-oddly-smooth-stone-target-horizontal-phone.png'), fullPage: true })
   await phoneRelic.click()
   await page.locator('.seat[data-player-id="relic-ally"]').press('Enter')
@@ -300,6 +325,7 @@ try {
   await phoneImpact.waitFor()
   const phoneAllyBlock = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[1].block)
   check('horizontal-phone start-turn relic targeting keeps click and keyboard fallback', () => {
+    assert(!phoneOrderOverlap, 'the horizontal-phone action prompt or resolve button covers the order summary')
     assert(phoneAllyBlock === 2, `horizontal-phone relic target did not resolve: ${phoneAllyBlock}`)
   })
 
@@ -312,7 +338,7 @@ try {
       hand: [
         { uid: 'retain-a', defId: 'bash', upgraded: false },
         { uid: 'retain-b', defId: 'defend_ironclad', upgraded: false },
-        { uid: 'retain-c', defId: 'strike_ironclad', upgraded: false },
+        { uid: 'retain-c', defId: 'deflect', upgraded: false },
       ],
       draw: [], discard: [], exhaust: [], powers: [], chamber: [], retainCardsThisTurn: 1,
     })

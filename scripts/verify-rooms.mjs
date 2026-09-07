@@ -34,7 +34,7 @@ import { EVENT_DEFINITIONS } from '../src/game/events.ts'
 import { acquireRelic } from '../src/game/run/rewards.ts'
 import { fireTriggers } from '../src/game/combat/effects.ts'
 import { pendingTriggerAbility } from '../src/game/combat/end-turn.ts'
-import { stageStartTurnTriggerChoice } from '../src/game/combat/start-turn.ts'
+import { stageStartTurnTriggerChoice, startTurnAbilities } from '../src/game/combat/start-turn.ts'
 import { createRng, nextInt } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, assertThrows, report } from './lib/harness.mjs'
 
@@ -176,7 +176,7 @@ check('a persisted legacy end-turn order resets safely into the drag flow', () =
   }
 })
 
-check('a persisted legacy Loop target is rebuilt into an Orb selection', () => {
+check('a persisted legacy Loop target auto-selects its only Orb before rebuilding the copied effect', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) player.hand = []
   const defect = room.run.combat.players.find((player) => player.id === a.playerId)
@@ -208,13 +208,59 @@ check('a persisted legacy Loop target is rebuilt into an Orb selection', () => {
     const choice = snapshotFor(restored, reconnectA.token).endTurnAbilities[0]
     assertEqual(restored.run.combat.endTurnProgress.rowTiebreakFor, undefined,
       'a legacy Loop row tiebreak was not cleared before rebuilding its Orb selection')
-    assertEqual(choice.orbChoice, true, 'the stale Loop prompt was not rebuilt as an Orb selection')
-    assertDeepEqual(choice.targets.map((target) => target.uid), ['orb:0'])
+    assertEqual(choice.visual?.kind, 'orb', 'the only Loop Orb was not selected automatically')
     apply(restored, reconnectA.token, {
-      kind: 'resolveEndTurnEffect', abilityId: choice.id, targetUid: 'orb:0',
+      kind: 'resolveEndTurnEffect', abilityId: choice.id, targetUid: choice.targets[0].uid,
     })
-    assertEqual(snapshotFor(restored, reconnectA.token).endTurnAbilities[0].visual?.kind, 'orb',
-      'the rebuilt Loop selection could not advance to its copied Orb effect')
+    assertEqual(snapshotFor(restored, reconnectA.token).endTurnAbilities[0].visual?.kind, 'orb')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+check('restored rooms discard deterministic start quorums and one-target end prompts', () => {
+  const { room, a, b } = twoSeatRoom()
+  const startSaved = structuredClone(room)
+  for (const player of startSaved.run.combat.players) {
+    Object.assign(player, { draw: [], hand: [], relics: [], powers: [
+      { uid: `restored-demon-${player.id}`, defId: 'demon_form', upgraded: false },
+    ] })
+  }
+  Object.assign(startSaved.run.combat, {
+    phase: 'start', turn: 2, startTurnStage: 'effects', startTurnProgress: undefined, pendingTriggers: [],
+  })
+  startSaved.startTurnCombatId = startSaved.run.combat.combatId
+  startSaved.startTurnRequired = [a.playerId, b.playerId]
+  startSaved.startTurnReady = { [a.playerId]: false, [b.playerId]: false }
+
+  const endSaved = structuredClone(room)
+  for (const player of endSaved.run.combat.players) player.hand = []
+  endSaved.run.combat.players.find((player) => player.id === a.playerId).orbs = ['lightning', null, null]
+  apply(endSaved, a.token, { kind: 'endTurn' })
+  apply(endSaved, b.token, { kind: 'endTurn' })
+  assert(endSaved.run.combat.endTurnProgress?.interactive, 'the restore fixture did not publish its Orb target')
+  const surviving = endSaved.run.combat.enemies.find((enemy) => !enemy.dead)
+  for (const enemy of endSaved.run.combat.enemies) enemy.dead = enemy.uid !== surviving.uid
+  const hpBeforeRestore = surviving.hp
+
+  const directory = mkdtempSync(join(tmpdir(), 'sts-deterministic-restore-'))
+  const file = join(directory, 'rooms.json')
+  try {
+    writeFileSync(file, JSON.stringify({ rooms: [startSaved] }))
+    const restoredStart = createStore({ file }).rooms.get(startSaved.code)
+    assertEqual(restoredStart.startTurnRequired, undefined, 'a stale deterministic start quorum survived load')
+    joinRoom(restoredStart, { token: a.token })
+    assertEqual(restoredStart.run.combat.phase, 'player', 'the first reconnect did not settle deterministic start effects')
+    assertEqual(restoredStart.run.combat.players.find((player) => player.id === a.playerId).strength, 1)
+    assertEqual(restoredStart.run.combat.players.find((player) => player.id === b.playerId).strength, 1)
+
+    writeFileSync(file, JSON.stringify({ rooms: [endSaved] }))
+    const restoredEnd = createStore({ file }).rooms.get(endSaved.code)
+    assertEqual(restoredEnd.endTurnAbilities, undefined, 'a deterministic restored end effect was republished')
+    assertEqual(restoredEnd.run.combat.endTurnProgress?.interactive, undefined,
+      'restored one-target end progress still waits for a drag')
+    assert(restoredEnd.run.combat.enemies.find((enemy) => enemy.uid === surviving.uid).hp < hpBeforeRestore,
+      'restoring the deterministic end effect skipped its impact')
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
@@ -232,6 +278,9 @@ function wantsDiscardOrder(room, ...playerIds) {
   for (const playerId of playerIds) {
     const player = room.run.combat.players.find((candidate) => candidate.id === playerId)
     player.draw = [...player.draw, { uid: `claw-${playerId}`, defId: 'claw', upgraded: false }]
+    if (player.hand.length > 1) player.hand[player.hand.length - 1] = {
+      ...player.hand[player.hand.length - 1], defId: 'deflect',
+    }
   }
 }
 
@@ -1967,8 +2016,8 @@ check('an online boss drop uses the sole living minion row', () => {
   room.run.combat.enemies.push({ ...first, uid: 'one-row-boss', row: 0, isBoss: true, hp: 20, maxHp: 20 })
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
-  const omega = snapshotFor(room, b.token).endTurnAbilities[0]
-  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: omega.id, targetUid: 'one-row-boss' })
+  assertEqual(snapshotFor(room, b.token).endTurnAbilities, undefined,
+    'a sole semantic row published a redundant target prompt')
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'only-row-minion').hp, 15,
     'the sole minion row is damaged even when the boss is displayed elsewhere')
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'one-row-boss').hp, 15,
@@ -1985,8 +2034,7 @@ check('a remaining targeted effect is skipped when its earlier drag ends combat'
   for (const enemy of room.run.combat.enemies.slice(1)) Object.assign(enemy, { hp: 0, dead: true })
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
-  const orb = snapshotFor(room, a.token).endTurnAbilities[0]
-  apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: orb.id, targetUid: target.uid })
+  assertEqual(room.run.combat.phase, 'won', 'the sole legal Lightning target did not resolve automatically')
   assertEqual(snapshotFor(room, a.token).endTurnAbilities, undefined, 'no target prompt survives after the last enemy dies')
 })
 
@@ -2644,7 +2692,6 @@ check('Establishment discounts survive reconnect without exposing the retained h
   })
 
   apply(room, a.token, { kind: 'startTurn' })
-  confirmStartTurn(room, a)
   const owner = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === a.playerId)
   const retainedOwnerCard = owner.hand.find((card) => card.uid === retained.uid)
   assertEqual(retainedOwnerCard.costReductionThisTurn, 2)
@@ -2726,12 +2773,8 @@ check('Panache receives only live targets after Poison resolves first', () => {
   Object.assign(survivor, { row: 1, hp: 20, maxHp: 20, poison: 0, dead: false })
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
-  const panache = snapshotFor(room, a.token).endTurnAbilities[0]
-  assertEqual(panache.label.includes('Panache'), true, 'Poison resolves before the targeted source is published')
-  assertEqual(panache.targets.some((target) => target.uid === anchor.uid), false, 'the dead anchor is not offered')
-  apply(room, a.token, {
-    kind: 'resolveEndTurnEffect', abilityId: panache.id, targetUid: survivor.uid,
-  })
+  assertEqual(snapshotFor(room, a.token).endTurnAbilities, undefined,
+    'Panache published a redundant prompt after Poison left one live target')
   assertEqual(room.run.combat.enemies[0].dead, true)
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === survivor.uid).hp, 17,
     'the newly selected living row resolves after the earlier death')
@@ -3653,11 +3696,12 @@ check('a Hermit start power resolves privately before its owner confirms Start o
   const hermit = room.run.combat.players.find((player) => player.id === a.playerId)
   const peer = room.run.combat.players.find((player) => player.id === b.playerId)
   const chambered = { uid: 'room-start-called-shot-card', defId: 'defend_hermit', upgraded: false }
+  const alternate = { uid: 'room-start-called-shot-alternate', defId: 'hermit_strike', upgraded: false }
   Object.assign(room.run.combat, {
     phase: 'roundEnd', turn: 1, startTurnProgress: undefined, pendingTriggers: [],
   })
   Object.assign(hermit, {
-    character: 'hermit', hand: [], draw: [], discard: [], chamber: [chambered], chamberSlots: 2,
+    character: 'hermit', hand: [], draw: [], discard: [], chamber: [chambered, alternate], chamberSlots: 2,
     relics: [], powers: [{ uid: 'room-start-called-shot', defId: 'hermit_called_shot', upgraded: false }],
   })
   Object.assign(peer, { relics: [], powers: [] })
@@ -3669,7 +3713,7 @@ check('a Hermit start power resolves privately before its owner confirms Start o
   assertEqual(pending.playerId, a.playerId)
   assertDeepEqual(mine.startTurnRequired, [a.playerId])
   assertDeepEqual(mine.startTurnDecided, [])
-  assertDeepEqual(pending.hermitChoices.chamberCards.map((card) => card.uid), [chambered.uid])
+  assertDeepEqual(pending.hermitChoices.chamberCards.map((card) => card.uid), [chambered.uid, alternate.uid])
   assertEqual(hidden.run.combat.pendingTriggerAbility, null)
   assert(!allStrings(hidden).includes(chambered.uid), 'Called Shot leaked its owner\'s Chamber card')
   let refused = null
@@ -3884,7 +3928,7 @@ check('Noxious Fumes keeps its Start-of-Turn enemy target authoritative', () => 
     'the Silent target was not preserved for the combined order')
   assertEqual(staged.startTurnCoordinatorId, a.playerId,
     'the earlier Infinite Blades owner should resolve the remaining order')
-  chosen.hp = 1
+  room.run.combat.enemies.find((enemy) => enemy.uid === chosen.uid).hp = 1
   const reopened = snapshotFor(room, b.token)
   assertEqual(reopened.run.combat.phase, 'start')
   assertEqual(reopened.startTurnCoordinatorId, b.playerId)
@@ -4334,41 +4378,64 @@ check('start-turn readiness is effect-owner-only and excludes an idle third play
   assertEqual(room.run.combat.players.find((player) => player.id === c.playerId).block, 0)
 })
 
-check('automatic start-turn effects still require one explicit confirmation per owner', () => {
+check('deterministic start-turn effects auto-resolve without an owner quorum', () => {
   const { room, a, b } = twoSeatRoom()
   Object.assign(room.run.combat, {
-    phase: 'roundEnd', turn: 1, die: 4, startTurnStage: 'effects', startTurnProgress: undefined,
+    phase: 'roundEnd', turn: 0, die: 4, startTurnStage: 'effects', startTurnProgress: undefined,
     pendingTriggers: [],
   })
-  room.run.combat.players.forEach((player, index) => Object.assign(player, {
-    powers: [{ uid: `room-auto-${index}`, defId: 'demon_form', upgraded: false }],
-    relics: [], strength: 0,
-  }))
+  const defect = room.run.combat.players.find((player) => player.id === a.playerId)
+  const learner = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(defect, {
+    character: 'defect', powers: [], relics: [{ defId: 'cracked_core', spent: false }],
+    orbs: [null, null, null], orbSlots: 3,
+  })
+  Object.assign(learner, {
+    powers: [{ uid: 'room-auto-learning', defId: 'machine_learning', upgraded: false }],
+    relics: [], hand: [], draw: [{ uid: 'room-auto-draw', defId: 'defend_silent', upgraded: false }],
+  })
   apply(room, a.token, { kind: 'startTurn' })
   const initial = snapshotFor(room, a.token)
-  assertDeepEqual(new Set(initial.startTurnRequired), new Set([a.playerId, b.playerId]))
-  assert(initial.startTurnAbilities.every((ability) => !ability.targets && !ability.players &&
-    !ability.exhaustCards && !ability.guardianModeShift && ability.overflowShivs === 0 && !ability.evokeChoice),
-  'the automatic-effect fixture unexpectedly required a target choice')
-  const choices = initial.startTurnAbilities.map((ability) => ({
-    id: ability.id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
-  }))
-  const unattended = structuredClone(room)
-  markDisconnected(unattended, a.token)
-  markDisconnected(unattended, b.token)
-  assertEqual(unattended.run.combat.phase, 'start',
-    'the final disconnect resolved an unattended Start-of-Turn quorum')
-  assertDeepEqual(unattended.run.combat.players.map((player) => player.strength), [0, 0])
-  joinRoom(unattended, { token: a.token })
-  assertEqual(unattended.run.combat.phase, 'player',
-    'the first returning seat could not default the still-absent owner')
-  assertDeepEqual(unattended.run.combat.players.map((player) => player.strength), [1, 1])
-  apply(room, b.token, { kind: 'resolveStartTurn', choices })
-  assertEqual(room.run.combat.phase, 'start', 'one automatic-effect owner advanced the shared turn')
-  assertDeepEqual(snapshotFor(room, a.token).startTurnDecided, [b.playerId])
-  apply(room, a.token, { kind: 'resolveStartTurn', choices })
+  assertEqual(initial.run.combat.phase, 'player')
+  assertDeepEqual(initial.startTurnRequired, undefined)
+  assertDeepEqual(initial.run.combat.players.find((player) => player.id === a.playerId).orbs,
+    ['lightning', null, null])
+  assertEqual(room.run.combat.players.find((player) => player.id === b.playerId)
+    .hand.some((card) => card.uid === 'room-auto-draw'), true)
+  assertThrows(() => apply(room, a.token, { kind: 'resolveStartTurn', choices: [] }),
+    'a deterministic turn exposed a redundant resolve action')
+})
+
+check('a deterministic owner does not inflate a full-slot Storm quorum', () => {
+  const { room, a, b } = twoSeatRoom()
+  const automatic = room.run.combat.players.find((player) => player.id === a.playerId)
+  const defect = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, {
+    phase: 'start', turn: 1, die: 4, startTurnStage: 'effects', startTurnProgress: undefined,
+    pendingTriggers: [],
+  })
+  Object.assign(automatic, {
+    character: 'defect', relics: [{ defId: 'cracked_core', spent: false }],
+    powers: [{ uid: 'room-mixed-learning', defId: 'machine_learning', upgraded: false }],
+    orbs: [null, null, null], hand: [], draw: [],
+  })
+  Object.assign(defect, {
+    character: 'defect', relics: [],
+    powers: [{ uid: 'room-mixed-storm', defId: 'storm', upgraded: false }],
+    orbs: ['frost', 'lightning', 'dark'], hand: [], draw: [],
+  })
+  const initial = snapshotFor(room, a.token)
+  assertDeepEqual(initial.startTurnRequired, [b.playerId])
+  assertDeepEqual(initial.startTurnDecided, [])
+  assertThrows(() => confirmStartTurn(room, a), 'the deterministic owner joined the 0/1 quorum')
+  const storm = initial.startTurnAbilities.find((ability) => ability.id.includes('room-mixed-storm'))
+  apply(room, b.token, { kind: 'resolveStartTurn', choices: initial.startTurnAbilities.map((ability) => ({
+    id: ability.id,
+    shivEnemyUids: [],
+    evokeSlots: ability.id === storm.id ? [0] : [],
+    evokeEnemyUids: ability.id === storm.id ? [null] : [],
+  })) })
   assertEqual(room.run.combat.phase, 'player')
-  assertDeepEqual(room.run.combat.players.map((player) => player.strength), [1, 1])
 })
 
 check('ordinary player-turn relics do not inflate the start-turn owner denominator', () => {
@@ -4376,12 +4443,11 @@ check('ordinary player-turn relics do not inflate the start-turn owner denominat
   const owner = room.run.combat.players.find((player) => player.id === a.playerId)
   const ordinary = room.run.combat.players.find((player) => player.id === b.playerId)
   Object.assign(room.run.combat, {
-    phase: 'roundEnd', turn: 1, die: 4, startTurnStage: 'effects', startTurnProgress: undefined,
+    phase: 'start', turn: 2, die: 4, startTurnStage: 'effects', startTurnProgress: undefined,
     pendingTriggers: [],
   })
   Object.assign(owner, {
-    powers: [{ uid: 'room-real-start-owner', defId: 'demon_form', upgraded: false }],
-    relics: [], potions: [], strength: 0,
+    powers: [], relics: [{ defId: 'oddly_smooth_stone', spent: false }], potions: [], block: 0,
   })
   Object.assign(ordinary, {
     powers: [], potions: [], relics: [
@@ -4390,14 +4456,13 @@ check('ordinary player-turn relics do not inflate the start-turn owner denominat
     ],
   })
 
-  apply(room, b.token, { kind: 'startTurn' })
   assertDeepEqual(snapshotFor(room, a.token).startTurnRequired, [a.playerId])
   confirmStartTurn(room, a)
   assertEqual(room.run.combat.phase, 'player')
-  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).strength, 1)
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).block, 2)
 })
 
-check('inactive Study skips start-turn readiness while Calm Study still requires its owner', () => {
+check('conditional deterministic Study skips readiness whether inactive or active', () => {
   const { room, a } = twoSeatRoom()
   const watcher = room.run.combat.players.find((player) => player.id === a.playerId)
   const teammate = room.run.combat.players.find((player) => player.id !== a.playerId)
@@ -4421,11 +4486,8 @@ check('inactive Study skips start-turn readiness while Calm Study still requires
 
   apply(calm, a.token, { kind: 'startTurn' })
   const active = snapshotFor(calm, a.token)
-  assertEqual(active.run.combat.phase, 'start')
-  assertDeepEqual(active.startTurnRequired, [a.playerId])
-  assert(active.startTurnAbilities.some((ability) => ability.id.includes('room-inactive-study')),
-    'Study in Calm disappeared from start-turn resolution')
-  confirmStartTurn(calm, a)
+  assertEqual(active.run.combat.phase, 'player')
+  assertEqual(active.startTurnRequired, undefined)
   assertEqual(calm.run.combat.phase, 'player')
 })
 
@@ -4442,8 +4504,8 @@ check('a pending Noxious Fumes target does not block another effect owner', () =
     relics: [], draw: [], hand: [],
   })
   Object.assign(otherOwner, {
-    powers: [{ uid: 'room-independent-demon', defId: 'demon_form', upgraded: false }],
-    relics: [], draw: [], hand: [], strength: 0,
+    powers: [{ uid: 'room-independent-shiv', defId: 'infinite_blades', upgraded: false }],
+    relics: [], draw: [], hand: [], shivs: 5,
   })
   Object.assign(idle, { powers: [], relics: [], draw: [], hand: [] })
   room.run.combat.enemies.push({ ...room.run.combat.enemies[0], uid: 'room-independent-fumes-target', row: 2 })
@@ -4453,8 +4515,11 @@ check('a pending Noxious Fumes target does not block another effect owner', () =
   const pending = snapshotFor(room, b.token)
   assert(pending.startTurnChoiceId?.includes('room-independent-fumes'))
   apply(room, b.token, {
-    kind: 'resolveStartTurn', choices: pending.startTurnAbilities.map((ability) => ({
-      id: ability.id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+    kind: 'resolveStartTurn', choices: [...pending.startTurnAbilities]
+      .sort((ability) => ability.playerId === b.playerId ? -1 : 1).map((ability) => ({
+      id: ability.id,
+      shivEnemyUids: ability.playerId === b.playerId ? [null] : [],
+      evokeSlots: [], evokeEnemyUids: [],
     })),
   })
   const staged = snapshotFor(room, a.token)
@@ -4505,7 +4570,8 @@ check('a staged private trigger can confirm while a foreign Noxious Fumes order 
     kind: 'resolveTrigger', triggerId: pending.id, slimeEnemyUids: [target.uid], preflight: true,
   })
   const staged = snapshotFor(room, c.token)
-  assertEqual(staged.startTurnCoordinatorId, a.playerId)
+  assertEqual(staged.startTurnCoordinatorId, b.playerId,
+    'the interacting Noxious Fumes owner was not nominated to coordinate the shared order')
   assertEqual(staged.startTurnOrderPending, true)
   const privateChoice = staged.startTurnChoices.find((choice) => choice.id.includes('room-private-fumes-minion'))
   assertDeepEqual(privateChoice.trigger.slimeEnemyUids, [target.uid])
@@ -4626,15 +4692,13 @@ check('revising a stored start-turn prefix resets every owner confirmation', () 
   const choice = (id, shivEnemyUids = [], enemyUid) => ({
     id, enemyUid, shivEnemyUids, evokeSlots: [], evokeEnemyUids: [],
   })
-  apply(room, c.token, { kind: 'resolveStartTurn', choices: initial.startTurnAbilities.map((ability) =>
-    choice(ability.id)) })
   apply(room, a.token, { kind: 'resolveStartTurn', choices: [
     choice(first.id, [null]), choice(fumes.id), choice(later.id, [null]), choice(demon.id),
   ] })
   apply(room, b.token, { kind: 'resolveStartTurn', choices: [
     choice(first.id), choice(fumes.id, [], room.run.combat.enemies[0].uid), choice(later.id), choice(demon.id),
   ] })
-  assertDeepEqual(new Set(snapshotFor(room, a.token).startTurnDecided), new Set([b.playerId, c.playerId]))
+  assertDeepEqual(snapshotFor(room, a.token).startTurnDecided, [b.playerId])
 
   apply(room, a.token, { kind: 'resolveStartTurn', choices: [
     choice(first.id, [room.run.combat.enemies[0].uid]),
@@ -4642,7 +4706,7 @@ check('revising a stored start-turn prefix resets every owner confirmation', () 
   ] })
   assertEqual(room.run.combat.phase, 'start')
   assertDeepEqual(snapshotFor(room, a.token).startTurnDecided, [],
-    'revising the only stored owned prefix did not reset Resolve start turn to 0/3')
+    'revising the only stored owned prefix did not reset Resolve start turn to 0/2')
 })
 
 check('a Noxious order commit reuses a foreign owner choice without revealing it', () => {
@@ -4743,9 +4807,9 @@ check('Mayhem keeps its forced card private, owner-authoritative, and settles di
   })
   const target = room.run.combat.enemies[0]
   Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  room.run.combat.enemies.push({ ...target, uid: 'mayhem-private-second-target', row: target.row + 1 })
 
   apply(room, a.token, { kind: 'startTurn' })
-  confirmStartTurn(room, a)
   const owner = snapshotFor(room, a.token)
   const teammate = snapshotFor(room, b.token)
   assertEqual(owner.run.combat.phase, 'start')
@@ -4780,6 +4844,25 @@ check('Mayhem keeps its forced card private, owner-authoritative, and settles di
   joinRoom(disconnectRoom, { token: a.token })
   assertEqual(snapshotFor(disconnectRoom, a.token).run.combat.startTurnProgress, undefined,
     'reconnect restored a settled Mayhem card')
+})
+
+check('Mayhem auto-plays a forced card with one complete legal context', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const opening = Array.from({ length: 5 }, (_, index) => ({
+    uid: `mayhem-auto-opening-${index}`, defId: 'defend_ironclad', upgraded: false,
+  }))
+  const forced = { uid: 'mayhem-auto-defend', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(actor, {
+    powers: [{ uid: 'mayhem-auto-power', defId: 'mayhem', upgraded: false }],
+    draw: [...opening, forced], hand: [], discard: [], block: 0,
+  })
+
+  apply(room, a.token, { kind: 'startTurn' })
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).block, 1)
 })
 
 check('Havoc keeps its immediate draw private without pausing teammates', () => {
@@ -4871,7 +4954,6 @@ check('a disconnected Mayhem owner resolves a previewed Thinking Ahead fallback'
   })
 
   apply(room, a.token, { kind: 'startTurn' })
-  confirmStartTurn(room, a)
   const revealed = apply(room, a.token, { kind: 'previewCard', cardUid: thinking.uid }).snapshot.cardPreview
   const fallback = revealed.cards[0].uid
   for (const card of hidden) {
@@ -5410,7 +5492,7 @@ check('discard confirmation counts only players with a meaningful end-turn choic
   })
   Object.assign(defect, {
     hand: [
-      { uid: 'required-top-a', defId: 'defend_defect', upgraded: false },
+      { uid: 'required-top-a', defId: 'deflect', upgraded: false },
       { uid: 'required-top-b', defId: 'strike_defect', upgraded: false },
     ], draw: [{ uid: 'required-claw', defId: 'claw', upgraded: false }], discard: [], powers: [], relics: [], orbs: [],
   })
@@ -6169,7 +6251,10 @@ check('private complex start choices wait for quorum without blocking another ow
   })
   Object.assign(peer, {
     character: 'hermit', draw: [], hand: [], chamberSlots: 2,
-    chamber: [{ uid: 'quorum-chamber', defId: 'defend_hermit', upgraded: false }],
+    chamber: [
+      { uid: 'quorum-chamber', defId: 'defend_hermit', upgraded: false },
+      { uid: 'quorum-chamber-alternate', defId: 'hermit_strike', upgraded: false },
+    ],
     powers: [{ uid: 'quorum-called-shot', defId: 'hermit_called_shot', upgraded: false }],
   })
   room.run.combat = stageStartTurnTriggerChoice({
@@ -6242,10 +6327,11 @@ check('a staged complex start choice reopens when an earlier effect makes it sta
   const owner = room.run.combat.players.find((player) => player.id === a.playerId)
   const peer = room.run.combat.players.find((player) => player.id === b.playerId)
   const chambered = { uid: 'stale-called-shot-card', defId: 'hermit_defend', upgraded: false }
+  const alternate = { uid: 'stale-called-shot-alternate', defId: 'hermit_strike', upgraded: false }
   const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
   Object.assign(target, { hp: 10, maxHp: 10, block: 0 })
   Object.assign(owner, {
-    character: 'hermit', draw: [], hand: [], chamber: [chambered], chamberSlots: 2,
+    character: 'hermit', draw: [], hand: [], chamber: [chambered, alternate], chamberSlots: 2,
     powers: [
       { uid: 'stale-smoking-barrel', defId: 'hermit_smoking_barrel', upgraded: false },
       { uid: 'stale-called-shot', defId: 'hermit_called_shot', upgraded: false },
@@ -6289,7 +6375,7 @@ check('a staged complex start choice reopens when an earlier effect makes it sta
   apply(room, b.token, { kind: 'resolveStartTurn', choices: orderedChoices() })
   apply(room, a.token, { kind: 'resolveStartTurn', choices: orderedChoices() })
   assertEqual(room.run.combat.phase, 'start')
-  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).chamber.length, 1,
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).chamber.length, 2,
     'a stale staged target partially committed earlier start effects')
   assertEqual(snapshotFor(room, a.token).run.combat.pendingTriggerAbility?.id, smoking.id,
     'a stale staged target did not reopen its owner-only trigger')
@@ -6378,6 +6464,401 @@ check('a stale staged choice from a disconnected owner falls back without deadlo
   assertEqual(snapshotFor(room, a.token).stagedStartTurnTriggers?.length ?? 0, 0)
 })
 
+check('a disconnected deterministic trigger cannot consume a connected owner\'s later choice', () => {
+  const { room, a, b } = twoSeatRoom()
+  const slime = room.run.combat.players.find((player) => player.id === a.playerId)
+  const defect = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(slime, {
+    character: 'slime_boss', draw: [], hand: [], relics: [],
+    powers: [{ uid: 'replay-minion-master', defId: 'slime_boss_minion_master', upgraded: false }],
+    slimes: [{
+      card: { uid: 'replay-bruiser', defId: 'slime_boss_bruiser_slime', upgraded: false },
+      level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+    }],
+  })
+  Object.assign(defect, {
+    character: 'defect', draw: [], hand: [], relics: [], orbs: ['frost', 'dark', 'lightning'],
+    powers: [{ uid: 'replay-storm', defId: 'storm', upgraded: false }],
+  })
+  const first = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const second = { ...first, uid: 'replay-second-target', row: 1, hp: 10, maxHp: 10 }
+  room.run.combat.enemies = [{ ...first, hp: 10, maxHp: 10 }, second]
+  room.run.combat = stageStartTurnTriggerChoice({
+    ...room.run.combat, phase: 'start', turn: 2, startTurnStage: 'effects',
+    pendingTriggers: [], startTurnProgress: undefined,
+  })
+  const pending = room.run.combat.pendingTriggers.find((trigger) => trigger.playerId === a.playerId)
+  assert(pending?.startTurn, 'the replay fixture did not stage its private trigger')
+  const abilities = snapshotFor(room, b.token).startTurnAbilities
+  const minion = abilities.find((ability) => ability.label.includes('Minion Master'))
+  const storm = abilities.find((ability) => ability.label.includes('Storm'))
+  assert(minion && storm?.evokeChoice, 'the replay fixture lost its downstream Storm choice')
+  room.startTurnCombatId = room.run.combat.combatId
+  room.startTurnOrder = [minion.id, storm.id]
+  room.run.combat.enemies.find((enemy) => enemy.uid === second.uid).dead = true
+
+  markDisconnected(room, a.token)
+
+  assertEqual(room.run.combat.phase, 'start', 'the disconnected fallback consumed the later owner\'s Storm')
+  assertDeepEqual(snapshotFor(room, b.token).startTurnRequired, [b.playerId])
+  assertDeepEqual(room.run.combat.players.find((player) => player.id === b.playerId).orbs,
+    ['frost', 'dark', 'lightning'], 'the disconnected replay evoked the connected owner\'s Orb')
+  assertEqual(room.run.combat.pendingTriggers.length, 0, 'the disconnected deterministic trigger stayed queued')
+})
+
+check('a disconnected shared-order coordinator transfers to a connected affected owner', () => {
+  const { room, a, b } = twoSeatRoom()
+  const first = room.run.combat.players.find((player) => player.id === a.playerId)
+  const second = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(first, {
+    draw: [{ uid: 'transfer-daze', defId: 'daze', upgraded: false }], hand: [], relics: [],
+    powers: [
+      { uid: 'transfer-learning-a', defId: 'machine_learning', upgraded: false },
+      { uid: 'transfer-breathing', defId: 'fire_breathing', upgraded: false },
+    ],
+  })
+  Object.assign(second, {
+    draw: [{ uid: 'transfer-safe', defId: 'defend_silent', upgraded: false }], hand: [], relics: [],
+    powers: [{ uid: 'transfer-learning-b', defId: 'machine_learning', upgraded: false }],
+  })
+  Object.assign(room.run.combat, {
+    phase: 'start', turn: 2, die: 3, startTurnStage: 'effects', startTurnProgress: undefined,
+    pendingTriggers: [],
+  })
+  const initial = snapshotFor(room, a.token).startTurnRequired
+  assertEqual(initial.length, 1, 'the transfer fixture did not nominate one order coordinator')
+  room.startTurnRequired = [...initial]
+  room.startTurnReady = { [initial[0]]: false }
+  const coordinator = room.seats.find((seat) => seat.playerId === initial[0])
+  const replacement = room.seats.find((seat) => seat !== coordinator)
+
+  markDisconnected(room, coordinator.token)
+
+  assertEqual(room.run.combat.phase, 'start', 'disconnect defaulted a shared order owned by a connected player')
+  const transferred = snapshotFor(room, replacement.token)
+  assertDeepEqual(transferred.startTurnRequired, [replacement.playerId])
+  assertEqual(transferred.startTurnCoordinatorId, replacement.playerId,
+    'the replacement quorum owner did not receive order authority')
+  const reversed = [...transferred.startTurnAbilities].reverse()
+  apply(room, replacement.token, { kind: 'resolveStartTurn', choices: reversed.map((ability) => ({
+    id: ability.id,
+    enemyUid: ability.targets?.[0]?.uid,
+    targetPlayerId: ability.players?.[0]?.id,
+    exhaustUids: ability.exhaustCards?.slice(0, 1).map((card) => card.uid),
+    guardianModeShift: ability.guardianModeShift ? false : undefined,
+    shivEnemyUids: Array(ability.overflowShivs).fill(null),
+    evokeSlots: [], evokeEnemyUids: [],
+  })) })
+  assertEqual(room.run.combat.phase, 'player',
+    'the replacement coordinator could not submit a noncanonical order')
+})
+
+check('a disconnected shared-order coordinator transfers within a mixed quorum', () => {
+  const { room, a, b, c } = threeSeatRoom()
+  const first = room.run.combat.players.find((player) => player.id === a.playerId)
+  const replacement = room.run.combat.players.find((player) => player.id === b.playerId)
+  const targetOwner = room.run.combat.players.find((player) => player.id === c.playerId)
+  Object.assign(first, {
+    draw: [{ uid: 'mixed-transfer-daze', defId: 'daze', upgraded: false }], hand: [], relics: [],
+    powers: [
+      { uid: 'mixed-transfer-learning-a', defId: 'machine_learning', upgraded: false },
+      { uid: 'mixed-transfer-breathing', defId: 'fire_breathing', upgraded: false },
+    ],
+  })
+  Object.assign(replacement, {
+    draw: [{ uid: 'mixed-transfer-safe', defId: 'defend_silent', upgraded: false }], hand: [], relics: [],
+    powers: [{ uid: 'mixed-transfer-learning-b', defId: 'machine_learning', upgraded: false }],
+  })
+  Object.assign(targetOwner, {
+    character: 'silent', draw: [], hand: [], relics: [],
+    powers: [{ uid: 'mixed-transfer-fumes', defId: 'noxious_fumes', upgraded: false }],
+  })
+  Object.assign(room.run.combat, {
+    phase: 'start', turn: 2, die: 3, startTurnStage: 'effects', startTurnProgress: undefined,
+    pendingTriggers: [],
+  })
+  for (const enemy of room.run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, dead: false })
+  const initial = snapshotFor(room, a.token)
+  assertDeepEqual([...initial.startTurnRequired].sort(), [a.playerId, c.playerId].sort())
+  assertEqual(initial.startTurnCoordinatorId, a.playerId)
+
+  markDisconnected(room, a.token)
+
+  const transferred = snapshotFor(room, b.token)
+  assertDeepEqual(new Set(transferred.startTurnRequired), new Set([b.playerId, c.playerId]))
+  assertEqual(transferred.startTurnCoordinatorId, b.playerId)
+  const reversed = [...transferred.startTurnAbilities].reverse()
+  apply(room, b.token, { kind: 'resolveStartTurn', choices: reversed.map((ability) => ({
+    id: ability.id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+  })) })
+  assertDeepEqual(room.startTurnOrder, reversed.map((ability) => ability.id),
+    'the mixed-quorum replacement could not commit a noncanonical order')
+})
+
+check('a disconnected private-choice owner transfers only its shared order', () => {
+  const { room, a, b } = twoSeatRoom()
+  const owner = room.run.combat.players.find((player) => player.id === a.playerId)
+  const replacement = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(owner, {
+    character: 'silent', draw: [], hand: [],
+    powers: [{ uid: 'private-order-fumes', defId: 'noxious_fumes', upgraded: false }],
+    relics: [{ defId: 'stone_calendar', spent: false }],
+  })
+  Object.assign(replacement, {
+    draw: [{ uid: 'private-order-draw', defId: 'defend_silent', upgraded: false }], hand: [], relics: [],
+    powers: [{ uid: 'private-order-learning', defId: 'machine_learning', upgraded: false }],
+  })
+  Object.assign(room.run.combat, {
+    phase: 'start', turn: 2, die: 4, startTurnStage: 'effects', startTurnProgress: undefined,
+    pendingTriggers: [],
+  })
+  const firstEnemy = room.run.combat.enemies[0]
+  Object.assign(firstEnemy, { hp: 1, maxHp: 1, dead: false })
+  room.run.combat.enemies.push({ ...firstEnemy, uid: 'private-order-survivor', hp: 20, maxHp: 20, row: 1 })
+  const initial = snapshotFor(room, a.token)
+  assertDeepEqual(initial.startTurnRequired, [a.playerId])
+  assertEqual(initial.startTurnCoordinatorId, a.playerId)
+
+  markDisconnected(room, a.token)
+
+  const transferred = snapshotFor(room, b.token)
+  assertEqual(transferred.run.combat.phase, 'start',
+    'disconnect resolved the shared order along with the private fallback')
+  assertDeepEqual(transferred.startTurnRequired, [b.playerId])
+  assertEqual(transferred.startTurnCoordinatorId, b.playerId)
+  assert(transferred.startTurnChoices.some((choice) => choice.id.includes('private-order-fumes') && choice.enemyUid),
+    'the disconnected private target was not defaulted before order transfer')
+  const reversed = [...transferred.startTurnAbilities].reverse()
+  const resolved = apply(room, b.token, { kind: 'resolveStartTurn', choices: reversed.map((ability) => ({
+    id: ability.id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+  })) }).snapshot
+  assertEqual(resolved.run.combat.phase, 'player',
+    'the transferred order reopened the disconnected private target')
+  assertEqual(resolved.startTurnCoordinatorId ?? null, null)
+  assertEqual(resolved.startTurnChoiceId ?? null, null)
+})
+
+check('only the generic start-order owner can commit a private Draw-versus-Exhaust order', () => {
+  const { room, a, b } = twoSeatRoom()
+  const hexaghost = room.run.combat.players.find((player) => player.id === a.playerId)
+  const defect = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(hexaghost, {
+    character: 'hexaghost', hand: [{ uid: 'authority-hand', defId: 'strike_hexaghost', upgraded: false }],
+    draw: [{ uid: 'authority-draw', defId: 'defend_hexaghost', upgraded: false }], relics: [],
+    powers: [
+      { uid: 'authority-dance', defId: 'devils_dance', upgraded: false },
+      { uid: 'authority-sacrifice', defId: 'worthy_sacrifice', upgraded: false },
+    ],
+  })
+  Object.assign(defect, {
+    character: 'defect', hand: [], draw: [], relics: [], orbs: ['frost', 'dark', 'lightning'],
+    powers: [{ uid: 'authority-storm', defId: 'storm', upgraded: false }],
+  })
+  Object.assign(room.run.combat, {
+    phase: 'start', turn: 2, die: 3, startTurnStage: 'effects', startTurnProgress: undefined,
+    pendingTriggers: [],
+  })
+  const peerView = snapshotFor(room, b.token)
+  assertEqual(peerView.startTurnCoordinatorId, a.playerId,
+    'the generic private order owner was not published as coordinator')
+  const reversed = [...peerView.startTurnAbilities].reverse().map((ability) => ({
+    id: ability.id,
+    enemyUid: ability.playerId === b.playerId ? ability.targets?.[0]?.uid : undefined,
+    exhaustUids: ability.playerId === b.playerId && ability.exhaustCards?.[0]
+      ? [ability.exhaustCards[0].uid] : undefined,
+    guardianModeShift: ability.playerId === b.playerId && ability.guardianModeShift ? false : undefined,
+    shivEnemyUids: ability.playerId === b.playerId ? Array(ability.overflowShivs).fill(null) : [],
+    evokeSlots: [], evokeEnemyUids: [],
+  }))
+  apply(room, b.token, { kind: 'resolveStartTurn', choices: reversed })
+  assertEqual(room.startTurnOrder, undefined,
+    'a different effect owner committed the private shared order')
+  assertDeepEqual(snapshotFor(room, b.token).startTurnDecided, [b.playerId],
+    'the non-coordinator could not still resolve their own independent effect')
+})
+
+check('the shared-Shiv order coordinator finishes when the moved choice is theirs', () => {
+  const { room, a, b } = twoSeatRoom()
+  const first = room.run.combat.players.find((player) => player.id === a.playerId)
+  const second = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(first, {
+    shivs: 4, draw: [], hand: [], relics: [],
+    powers: [{ uid: 'shared-shiv-a', defId: 'infinite_blades', upgraded: false }],
+  })
+  Object.assign(second, {
+    shivs: 0, draw: [], hand: [], relics: [],
+    powers: [{ uid: 'shared-shiv-b', defId: 'infinite_blades', upgraded: false }],
+  })
+  Object.assign(room.run.combat, {
+    phase: 'start', turn: 2, die: 3, startTurnStage: 'effects', startTurnProgress: undefined,
+    pendingTriggers: [],
+  })
+  const view = snapshotFor(room, a.token)
+  const coordinator = room.seats.find((seat) => seat.playerId === view.startTurnCoordinatorId)
+  assert(coordinator, 'the shared Shiv fixture did not nominate an order coordinator')
+  const order = startTurnAbilities(room.run.combat).map((ability) => ability.id).reverse()
+  const planned = startTurnAbilities(room.run.combat, order)
+  const overflowOwner = planned.find((ability) => ability.overflowShivs > 0)?.playerId
+  assertEqual(overflowOwner, coordinator.playerId, 'the fixture did not move the overflow choice to its coordinator')
+  apply(room, coordinator.token, { kind: 'resolveStartTurn', choices: planned.map((ability) => ({
+    id: ability.id,
+    shivEnemyUids: Array(ability.overflowShivs).fill(null),
+    evokeSlots: [], evokeEnemyUids: [],
+  })) })
+  assertEqual(room.run.combat.phase, 'player',
+    'the coordinator had to confirm again after resolving the moved overflow choice')
+})
+
+check('a committed shared order replaces connected owners whose choices moved', () => {
+  const { room, a, b, c } = threeSeatRoom()
+  for (const [index, player] of room.run.combat.players.entries()) Object.assign(player, {
+    shivs: 1, draw: [], hand: [], relics: [],
+    powers: [{ uid: `moving-shiv-${index}`, defId: 'infinite_blades', upgraded: false }],
+  })
+  Object.assign(room.run.combat, {
+    phase: 'start', turn: 2, die: 3, startTurnStage: 'effects', startTurnProgress: undefined,
+    pendingTriggers: [],
+  })
+  const initial = snapshotFor(room, a.token)
+  assertDeepEqual([...initial.startTurnRequired].sort(), [a.playerId, c.playerId].sort())
+  const byOwner = new Map(initial.startTurnAbilities.map((ability) => [ability.playerId, ability.id]))
+  const order = [byOwner.get(c.playerId), byOwner.get(a.playerId), byOwner.get(b.playerId)]
+  const planned = startTurnAbilities(room.run.combat, order)
+  const choices = planned.map((ability) => ({
+    id: ability.id,
+    shivEnemyUids: Array(ability.overflowShivs).fill(null),
+    evokeSlots: [], evokeEnemyUids: [],
+  }))
+  apply(room, a.token, { kind: 'resolveStartTurn', choices })
+  const moved = snapshotFor(room, b.token)
+  assertDeepEqual([...moved.startTurnRequired].sort(), [a.playerId, b.playerId].sort(),
+    'the committed order kept the old connected overflow owner in its quorum')
+  assertDeepEqual(moved.startTurnDecided, [a.playerId])
+  assertThrows(() => apply(room, c.token, { kind: 'resolveStartTurn', choices }),
+    'the former overflow owner still had a redundant resolve action')
+  apply(room, b.token, { kind: 'resolveStartTurn', choices })
+  assertEqual(room.run.combat.phase, 'player', 'the replacement overflow owner could not finish the turn')
+})
+
+check('a committed order keeps a downstream choice created after an earlier choice', () => {
+  const { room, a, b, c } = threeSeatRoom()
+  const first = room.run.combat.players.find((player) => player.id === a.playerId)
+  const second = room.run.combat.players.find((player) => player.id === b.playerId)
+  const defect = room.run.combat.players.find((player) => player.id === c.playerId)
+  Object.assign(first, {
+    shivs: 4, draw: [], hand: [], relics: [],
+    powers: [{ uid: 'downstream-shiv-a', defId: 'infinite_blades', upgraded: false }],
+  })
+  Object.assign(second, {
+    shivs: 0, draw: [], hand: [], relics: [],
+    powers: [{ uid: 'downstream-shiv-b', defId: 'infinite_blades', upgraded: false }],
+  })
+  Object.assign(defect, {
+    character: 'defect', shivs: 0, orbs: ['frost', 'dark', null], draw: [], hand: [], relics: [],
+    powers: [
+      { uid: 'downstream-storm-a', defId: 'storm', upgraded: false },
+      { uid: 'downstream-storm-b', defId: 'storm', upgraded: false },
+    ],
+  })
+  Object.assign(room.run.combat, {
+    phase: 'start', turn: 2, die: 3, startTurnStage: 'effects', startTurnProgress: undefined,
+    pendingTriggers: [],
+  })
+  const lethalRoom = structuredClone(room)
+  const initial = snapshotFor(room, a.token)
+  assertEqual(initial.startTurnCoordinatorId, a.playerId)
+  const ability = (uid) => initial.startTurnAbilities.find((candidate) => candidate.id.includes(uid))
+  const order = [
+    ability('downstream-shiv-b').id,
+    ability('downstream-shiv-a').id,
+    ability('downstream-storm-a').id,
+    ability('downstream-storm-b').id,
+  ]
+  const planned = startTurnAbilities(room.run.combat, order)
+  apply(room, a.token, { kind: 'resolveStartTurn', choices: planned.map((candidate) => ({
+    id: candidate.id,
+    shivEnemyUids: Array(candidate.overflowShivs).fill(null),
+    evokeSlots: [], evokeEnemyUids: [],
+  })) })
+  const downstream = snapshotFor(room, c.token)
+  assert(downstream.startTurnRequired.includes(c.playerId),
+    'the committed order omitted the owner of the newly exposed Storm choice')
+  const storm = downstream.startTurnAbilities.find((candidate) => candidate.evokeChoice)
+  assert(storm?.playerId === c.playerId, 'the later Storm did not expose its Orb choice')
+  apply(room, c.token, { kind: 'resolveStartTurn', choices: downstream.startTurnAbilities.map((candidate) => ({
+    id: candidate.id,
+    shivEnemyUids: [],
+    evokeSlots: candidate.id === storm.id ? [0] : [],
+    evokeEnemyUids: candidate.id === storm.id ? [null] : [],
+  })) })
+  assertEqual(room.run.combat.phase, 'player', 'the downstream Storm owner could not finish the turn')
+
+  const lethalTarget = lethalRoom.run.combat.enemies.find((enemy) => !enemy.dead)
+  for (const enemy of lethalRoom.run.combat.enemies) Object.assign(enemy, {
+    hp: enemy === lethalTarget ? 1 : 0,
+    maxHp: enemy === lethalTarget ? 1 : enemy.maxHp,
+    dead: enemy !== lethalTarget,
+  })
+  const lethalInitial = snapshotFor(lethalRoom, a.token)
+  const lethalAbility = (uid) => lethalInitial.startTurnAbilities.find((candidate) => candidate.id.includes(uid))
+  const lethalOrder = [
+    lethalAbility('downstream-shiv-b').id,
+    lethalAbility('downstream-shiv-a').id,
+    lethalAbility('downstream-storm-a').id,
+    lethalAbility('downstream-storm-b').id,
+  ]
+  const lethalPlanned = startTurnAbilities(lethalRoom.run.combat, lethalOrder)
+  apply(lethalRoom, a.token, { kind: 'resolveStartTurn', choices: lethalPlanned.map((candidate) => ({
+    id: candidate.id,
+    shivEnemyUids: Array(candidate.overflowShivs).fill(lethalTarget.uid),
+    evokeSlots: [], evokeEnemyUids: [],
+  })) })
+  assert(lethalRoom.run.combat.phase !== 'start',
+    'a lethal committed Shiv left a redundant downstream Storm confirmation')
+})
+
+check('a committed order does not nominate a deterministic target owner', () => {
+  const { room, a, b } = twoSeatRoom()
+  const drawer = room.run.combat.players.find((player) => player.id === a.playerId)
+  const hitter = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(drawer, {
+    row: 0, draw: [{ uid: 'order-only-daze', defId: 'daze', upgraded: false }], hand: [], relics: [],
+    powers: [
+      { uid: 'order-only-learning', defId: 'machine_learning', upgraded: false },
+      { uid: 'order-only-breathing', defId: 'fire_breathing', upgraded: false },
+    ],
+  })
+  Object.assign(hitter, {
+    row: 0, draw: [], hand: [], powers: [], relics: [{ defId: 'stone_calendar', spent: false }],
+  })
+  Object.assign(room.run.combat, {
+    phase: 'start', turn: 2, die: 4, startTurnStage: 'effects', startTurnProgress: undefined,
+    pendingTriggers: [],
+  })
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  for (const enemy of room.run.combat.enemies) Object.assign(enemy, {
+    row: 0,
+    hp: enemy === target ? 1 : 0,
+    maxHp: enemy === target ? 1 : enemy.maxHp,
+    dead: enemy !== target,
+  })
+  const initial = snapshotFor(room, a.token)
+  assertEqual(initial.startTurnCoordinatorId, a.playerId)
+  assertDeepEqual(initial.startTurnRequired, [a.playerId])
+  const order = [
+    initial.startTurnAbilities.find((ability) => ability.id.includes('order-only-learning')).id,
+    initial.startTurnAbilities.find((ability) => ability.playerId === b.playerId).id,
+  ]
+  const planned = startTurnAbilities(room.run.combat, order)
+  apply(room, a.token, { kind: 'resolveStartTurn', choices: planned.map((ability) => ({
+    id: ability.id,
+    enemyUid: ability.targets?.[0]?.uid,
+    shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+  })) })
+  assert(room.run.combat.phase !== 'start',
+    'the deterministic target owner was asked to confirm an already-committed order')
+})
+
 check('Guardian printed start-turn Mode Shift choice is authoritative online', () => {
   const { room, a } = twoSeatRoom()
   const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
@@ -6423,7 +6904,7 @@ check('Gem Finder Scry preview is private and required online', () => {
   apply(room, a.token, { kind: 'activatePower', powerUid: finder.uid,
     powerPreviewId: revealed.snapshot.powerPreview.id,
     scryDiscardUids: [hidden[1].uid], preflight: true })
-  assertEqual(room.run.combat.phase, 'start')
+  assertEqual(room.run.combat.phase, 'player')
   assertEqual(snapshotFor(room, a.token).powerPreview, undefined)
   assertDeepEqual(room.run.combat.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid),
     [hidden[1].uid])
@@ -8868,13 +9349,9 @@ check('Foresight orders private pre-draw choices and rejects replayed actions', 
   assertEqual(snapshotFor(room, a.token).startTurnScry.id, second.id)
   apply(room, a.token, { kind: 'resolveStartTurnScry', sourceId: second.id, discardUids: [] })
   const afterScry = snapshotFor(room, a.token)
-  assertEqual(room.run.combat.phase, 'start')
-  assertDeepEqual(afterScry.startTurnRequired, [a.playerId],
-    'the pre-draw Scry cached an empty final start-effect quorum')
-  assert(afterScry.startTurnAbilities.some((ability) => ability.id.includes('room-foresight-demon')),
-    'the post-draw start effect disappeared after Scry resolution')
-  confirmStartTurn(room, a)
   assertEqual(room.run.combat.phase, 'player')
+  assertEqual(afterScry.startTurnRequired, undefined,
+    'the pre-draw Scry left a deterministic final start-effect quorum')
   assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).strength, 1)
   assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hand.length, 5)
   const publicAfter = snapshotFor(room, b.token)
@@ -8903,7 +9380,6 @@ check('Tools of the Trade keeps its start-turn hand private and survives reconne
   })
 
   apply(room, a.token, { kind: 'startTurn' })
-  confirmStartTurn(room, b)
   const owner = snapshotFor(room, b.token)
   const teammate = snapshotFor(room, a.token)
   assertEqual(owner.startTurnDiscard.playerId, b.playerId)
@@ -8942,6 +9418,47 @@ check('Tools of the Trade keeps its start-turn hand private and survives reconne
   assertEqual(room.run.combat.players.find((player) => player.id === b.playerId).energy, 5)
   assert(!secrets.slice(1).some((card) => allStrings(snapshotFor(room, a.token)).includes(card.uid)),
     'Tools of the Trade leaked the owner\'s remaining hand after resolution')
+})
+
+check('multi-card start relic discards stay atomic, private, and reconnect-safe', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const reflex = { uid: 'room-buddies-reflex', defId: 'reflex', upgraded: false }
+  const opening = [reflex, ...Array.from({ length: 4 }, (_, index) => ({
+    uid: `room-buddies-hand-${index}`, defId: 'defend_silent', upgraded: false,
+  }))]
+  const draw = Array.from({ length: 2 }, (_, index) => ({
+    uid: `room-buddies-draw-${index}`, defId: 'strike_silent', upgraded: false,
+  }))
+  Object.assign(room.run.combat, {
+    phase: 'roundEnd', turn: 0, startTurnProgress: undefined, pendingTriggers: [],
+  })
+  Object.assign(actor, {
+    character: 'silent', hand: [], draw: [...opening, ...draw], discard: [], exhaust: [],
+    relics: [{ defId: 'battle_buddies', spent: false }],
+  })
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const pending = snapshotFor(room, b.token).startTurnDiscard
+  assertEqual(pending.remaining, 2)
+  apply(room, b.token, {
+    kind: 'resolveStartTurnDiscard', sourceId: pending.sourceId, discardUid: reflex.uid,
+  })
+  const midway = snapshotFor(room, b.token)
+  assertEqual(midway.startTurnDiscard.remaining, 1)
+  assert(!midway.startTurnDiscard.cards.some((card) => card.uid === reflex.uid))
+  assertEqual(room.run.combat.players.find((player) => player.id === b.playerId).draw.length, 2,
+    'Reflex resolved before the whole discard was selected')
+  const teammate = snapshotFor(room, a.token)
+  assert(!allStrings(teammate.run.combat.startTurnProgress.discard).includes(reflex.uid),
+    'a partial private discard leaked through the reconnect payload')
+
+  markDisconnected(room, b.token)
+  assertEqual(room.run.combat.phase, 'player', 'a disconnected partial discard held the table')
+  const rejoined = joinRoom(room, { token: b.token })
+  const restored = snapshotFor(room, rejoined.token).run.combat.players
+    .find((player) => player.id === b.playerId)
+  assertEqual(restored.handCount, 5, 'the atomic Reflex reaction was not restored after reconnect fallback')
 })
 
 check('Indignation chooses no target outside Wrath and upgrades to a row', () => {
@@ -12046,6 +12563,33 @@ check('die Relic hand choices stay owner-authoritative and settle on disconnect'
     'the room resolved Combo before the die Relic owner payment')
   room.run.combat.pendingTriggers = []
 
+  const nudge = { uid: 'wheel-auto-nudge', defId: 'strike_ironclad', upgraded: false }
+  const secondNudge = { uid: 'wheel-auto-nudge-2', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(room.run.combat.players.find((player) => player.id === a.playerId), {
+    hand: [nudge, secondNudge], energy: 2,
+  })
+  const singleton = { uid: 'private-wheel-only', defId: 'strike_silent', upgraded: false }
+  room.run.combat.players.find((player) => player.id === b.playerId).hand = [singleton]
+  room.run.combat.pendingDieRelicChoices = [{
+    id: 103, playerId: b.playerId, relicDefId: 'wheel_of_change', abilityIndex: 0,
+    sourceLabel: 'Cheat', enemyUid: null, targetPlayerId: b.playerId,
+  }]
+  apply(room, a.token, { kind: 'playCard', cardUid: secondNudge.uid, enemyUid: room.run.combat.enemies[0].uid,
+    preflight: true })
+  assertEqual(room.run.combat.pendingDieRelicChoices.length, 0,
+    'a mandatory singleton die Relic payment still prompted')
+  assertEqual(room.run.combat.players.find((player) => player.id === b.playerId).discard.at(-1)?.uid, singleton.uid)
+
+  room.run.combat.players.find((player) => player.id === b.playerId).hand = []
+  room.run.combat.pendingDieRelicChoices = [{
+    id: 104, playerId: b.playerId, relicDefId: 'wheel_of_change', abilityIndex: 0,
+    sourceLabel: 'Cheat', enemyUid: null, targetPlayerId: b.playerId,
+  }]
+  apply(room, a.token, { kind: 'playCard', cardUid: nudge.uid, enemyUid: room.run.combat.enemies[0].uid,
+    preflight: true })
+  assertEqual(room.run.combat.pendingDieRelicChoices.length, 0,
+    'an empty mandatory die Relic payment still prompted')
+
   const disconnectCards = [
     { uid: 'disconnect-wheel-a', defId: 'strike_silent', upgraded: false },
     { uid: 'disconnect-wheel-b', defId: 'defend_silent', upgraded: false },
@@ -12374,23 +12918,16 @@ check('Mysterious Sphere settles disconnected owners after Scry ordering and res
   {
     const { room, a, b } = twoSeatRoom()
     prepare(room, a, b)
+    room.run.roomState.preparedCombat.startTurnProgress.beforeDraw.sources.reverse()
     markDisconnected(room, b.token)
-    const abilities = snapshotFor(room, a.token).run.roomState.preparedStartTurnScryAbilities
-    const mine = abilities.find((ability) => ability.playerId === a.playerId)
-    const absent = abilities.find((ability) => ability.playerId === b.playerId)
-    apply(room, a.token, { kind: 'orderStartTurnScries', order: [absent.id, mine.id] })
     assertEqual(snapshotFor(room, a.token).run.roomState.preparedStartTurnScry.playerId, a.playerId,
-      'ordering did not settle the disconnected first Scry owner')
+      'the disconnected first Scry owner did not settle automatically')
   }
 
   {
     const { room, a, b } = twoSeatRoom()
     prepare(room, a, b)
     markDisconnected(room, b.token)
-    const abilities = snapshotFor(room, a.token).run.roomState.preparedStartTurnScryAbilities
-    const mine = abilities.find((ability) => ability.playerId === a.playerId)
-    const absent = abilities.find((ability) => ability.playerId === b.playerId)
-    apply(room, a.token, { kind: 'orderStartTurnScries', order: [mine.id, absent.id] })
     const preview = snapshotFor(room, a.token).run.roomState.preparedStartTurnScry
     apply(room, a.token, { kind: 'resolveStartTurnScry', sourceId: preview.id, discardUids: [] })
     assert(room.run.roomState.preparedCombat.startTurnProgress?.pauseAfterDraw,

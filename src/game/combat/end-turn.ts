@@ -55,7 +55,7 @@ import {
   triggerTargets,
 } from './start-turn.ts'
 import { chooseEndTurnTarget, defaultEndTurnOrder, endTurnChoiceId, endTurnChoiceTarget } from './types.ts'
-import { cardHasRetain, mandatoryChoicePending } from './queries.ts'
+import { amountOf, cardHasRetain, conditionIsActive, discardOrderNeedsChoice, effectIsActive, mandatoryChoicePending } from './queries.ts'
 import type {
   CombatState,
   DiscardOrders,
@@ -66,6 +66,7 @@ import type {
   TurnEffectPresentation,
 } from './types.ts'
 import { cardDef, faceOf } from '../cards.ts'
+import type { Effect } from '../cards.ts'
 import { gainBlock, gainWeak } from '../damage.ts'
 import { enemyAbilities, enemyDef } from '../enemies.ts'
 import { discardHand } from '../piles.ts'
@@ -83,7 +84,10 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
           { uid: 'skip', label: 'Retain no card' }]
         : source.effects.some((effect) => effect.kind === 'optionalPreventRoundHpLoss')
           ? [{ uid: 'use', label: 'Exhaust to prevent HP loss' }, { uid: 'skip', label: 'Keep Invincible' }]
-          : loop ? loopOrbTargets(player) : triggerTargets(state, player, source)
+          : loop ? loopOrbTargets(player)
+          : source.presentationSourceId === 'guardian_laser_turret'
+            ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
+            : triggerTargets(state, player, source)
       return {
         id: source.id,
         label: source.name.replace(`${player.name}'s `, ''),
@@ -102,7 +106,7 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
     if (def.slimeEndOfTurn) {
       const scope = commandSlimePreviewScope(slime)
       abilities.push({ id: `slime:${slime.card.uid}`, label: `${def.name} — Command`,
-        targets: scope === 'enemy' || scope === 'allEnemies'
+        targets: scope === 'enemy'
           ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
           : undefined,
         visual: { kind: 'slime', cardId: def.id } })
@@ -137,6 +141,21 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
     })
   }
   return abilities
+}
+
+function activeEndTurnEffects(effects: readonly Effect[], state: CombatState, player: Player): Effect[] {
+  return effects.flatMap((effect): Effect[] => {
+    if (!effectIsActive(effect, state, player)) return []
+    if (effect.kind === 'sequence') return effect.guardianAction || effect.guardianGemId
+      ? [effect]
+      : activeEndTurnEffects(effect.effects, state, player)
+    if (effect.kind === 'branch') return activeEndTurnEffects(
+      conditionIsActive(effect.condition, state, player) ? effect.effects : effect.otherwise,
+      state,
+      player,
+    )
+    return [effect]
+  })
 }
 
 function commandSlimePreviewScope(slime: Player['slimes'][number]) {
@@ -207,7 +226,8 @@ function refreshEndTurnTargets(state: CombatState, order: EndTurnOrder): EndTurn
       power.uid === source.powerUid && power.defId === 'guardian_stasis_engine')
     if (stasis) return chooseEndTurnTarget(id, 'skip')
     // A row-targeting ability keeps its chosen row even when its enemy anchor died.
-    if (source?.scope === 'row' && state.enemies.some((enemy) => enemy.uid === target)) return choice
+    if (player && source && sourceTargetsRows(player, source) &&
+      state.enemies.some((enemy) => enemy.uid === target)) return choice
     const loopTarget = source?.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
       ? parseLoopOrbTarget(target)
       : undefined
@@ -418,7 +438,7 @@ function continueEndPlayerTurn(
         // A row is chosen when the order is submitted. Preserve that row if
         // an earlier ability kills its enemy anchor, without teaching ordinary
         // card plays that a dead enemy is a valid target.
-        const selected = source?.scope === 'row'
+        const selected = source && sourceTargetsRows(player, source)
           ? next.enemies.find((enemy) => enemy.uid === target)
           : undefined
         const livingMinionRows = selected?.isBoss
@@ -522,25 +542,12 @@ function continueEndPlayerTurn(
 }
 
 /**
- * Whether either face of this card reads the top of the discard pile.
- *
- * A scan of the whole face rather than a walk down `amount.bonus.when`, which is
- * the only shape the condition takes today: this decides whether a player is
- * ASKED for an order, and a card added later in some other shape would silently
- * stop being asked rather than fail loudly.
- */
-function readsDiscardTop(card: CardInstance): boolean {
-  const def = cardDef(card.defId)
-  return JSON.stringify([faceOf(def, false), faceOf(def, true)]).includes('discardTopCosts')
-}
-
-/**
  * Whether this player's end-of-turn discard is a decision or a formality.
  *
  * Only two things make it a decision. An optional Retain, where the player picks
  * which cards stay. And the order itself — but that decides one thing only, what
  * sits on TOP of the discard pile, which nothing reads unless this player owns a
- * Claw or a Steam Barrier. So the prompt asks a Defect running Claws and stays
+ * Claw, Scrape, or a Steam Barrier. So the prompt asks a Defect running Claws and stays
  * out of everybody else's way; it used to stop all four players every round to
  * collect confirmations of an arrangement that could not matter.
  *
@@ -554,10 +561,7 @@ export function discardTopNeedsChoice(player: Player): boolean {
   if (player.dead) return false
   const discarding = player.hand.filter((card) => !card.endTurnProtected && !card.retainThisTurn &&
     !cardHasRetain(player, card))
-  if (discarding.length <= 1) return false
-  // Every pile, not just the hand: the card that cares may still be undrawn.
-  return [player.hand, player.draw, player.discard, player.exhaust, player.powers, player.chamber]
-    .some((pile) => pile.some(readsDiscardTop))
+  return discardOrderNeedsChoice(player, discarding)
 }
 
 export function discardNeedsChoice(player: Player): boolean {
@@ -565,6 +569,61 @@ export function discardNeedsChoice(player: Player): boolean {
   const discarding = player.hand.filter((card) => !card.endTurnProtected && !card.retainThisTurn &&
     !cardHasRetain(player, card))
   return (player.retainCardsThisTurn ?? 0) > 0 && discarding.length > 0 || discardTopNeedsChoice(player)
+}
+
+function endTurnSource(state: CombatState, ability: EndTurnAbility) {
+  const slash = ability.id.indexOf('/')
+  const player = findPlayer(state, ability.id.slice(0, slash))
+  const source = player && triggerSources(player, { kind: 'endOfTurn' })
+    .find((candidate) => candidate.id === ability.id.slice(slash + 1))
+  return { player, source }
+}
+
+function sourceTargetsRows(player: Player, source: TriggerSource): boolean {
+  if (source.scope === 'row') return true
+  if (source.presentationSourceId !== 'guardian_laser_turret' || !source.powerUid) return false
+  return player.powers.find((power) => power.uid === source.powerUid)?.upgraded === true
+}
+
+/** The only legal outcome, when every displayed target resolves identically. */
+function deterministicEndTurnTarget(state: CombatState, ability: EndTurnAbility): string | undefined {
+  const targets = ability.targets
+  if (!targets?.length) return undefined
+  if (targets.length === 1) return targets[0]!.uid
+  const { player, source } = endTurnSource(state, ability)
+  if (!player) return undefined
+  if (ability.orbChoice) {
+    const orbs = targets.map((target) => {
+      const choice = parseLoopOrbTarget(target.uid)
+      return choice && player.orbs[choice.slot]
+    })
+    return orbs[0] && orbs.every((orb) => orb === orbs[0]) ? targets[0]!.uid : undefined
+  }
+  const localId = ability.id.slice(ability.id.indexOf('/') + 1)
+  const activeEffects = source && activeEndTurnEffects(source.effects, state, player)
+  const damageCannotChangeState = activeEffects?.every((effect) =>
+    player.damageDealtZeroThisTurn
+      ? effect.kind === 'hit' || effect.kind === 'rowHit' || effect.kind === 'damage'
+      : effect.kind === 'damage' && amountOf(effect.amount, state, player) <= 0)
+  if (damageCannotChangeState || player.damageDealtZeroThisTurn &&
+    (localId.startsWith('orb:') || localId.startsWith('slime:') ||
+      source?.presentationSourceId === 'guardian_laser_turret')) {
+    return targets[0]!.uid
+  }
+
+  const targetsRows = source ? sourceTargetsRows(player, source) : localId.startsWith('orb:') &&
+    lightningTargetsRows(player)
+  if (!targetsRows) return undefined
+  const minionRows = new Set(livingEnemies(state).filter((enemy) => !enemy.isBoss).map((enemy) => enemy.row))
+  if (minionRows.size === 0 && livingEnemies(state).length === 1) return targets[0]!.uid
+  const semanticRows = new Set(targets.map((target) => {
+    const explicitRow = lightningRowFromTarget(target.uid)
+    if (explicitRow !== null) return explicitRow
+    const enemy = state.enemies.find((candidate) => candidate.uid === target.uid)
+    if (!enemy?.isBoss) return enemy?.row ?? target.uid
+    return minionRows.size === 1 ? [...minionRows][0]! : target.uid
+  }))
+  return semanticRows.size === 1 ? targets[0]!.uid : undefined
 }
 
 /** The next live target effect in the drag-to-resolve end-turn sequence. */
@@ -595,10 +654,12 @@ function needsBossRowTiebreak(state: CombatState, ability: EndTurnAbility, targe
   const player = findPlayer(state, ability.id.slice(0, slash))
   const source = player && triggerSources(player, { kind: 'endOfTurn' })
     .find((candidate) => candidate.id === ability.id.slice(slash + 1))
-  const targetsRows = source?.scope === 'row' || player !== undefined && (
-    ability.id.slice(slash + 1).startsWith('orb:') ||
-    source?.effects.some((effect) => effect.kind === 'triggerOrbEndTurn') === true
-  ) && lightningTargetsRows(player)
+  const targetsRows = player !== undefined && (
+    source !== undefined && sourceTargetsRows(player, source) ||
+    (ability.id.slice(slash + 1).startsWith('orb:') ||
+      source?.effects.some((effect) => effect.kind === 'triggerOrbEndTurn') === true) &&
+      lightningTargetsRows(player)
+  )
   return targetsRows && new Set(livingEnemies(state)
     .filter((enemy) => !enemy.isBoss)
     .map((enemy) => enemy.row)).size > 1
@@ -625,11 +686,12 @@ export function beginEndTurnResolution(state: CombatState): CombatState {
   if (state.phase !== 'player' || state.startTurnProgress?.forcedCard ||
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const next = prepareEndTurn(state)
-  return continueEndPlayerTurn(next, defaultEndTurnOrder(endTurnAbilities(next)), true)
+  return advanceDeterministicEndTurnChoices(
+    continueEndPlayerTurn(next, defaultEndTurnOrder(endTurnAbilities(next)), true),
+  )
 }
 
-/** Resolves the displayed target effect, then advances until another live target is needed. */
-export function resolveEndTurnAbility(state: CombatState, choice: string): CombatState {
+function resolveEndTurnAbilityOnce(state: CombatState, choice: string): CombatState {
   const ability = endTurnResolutionAbility(state)
   const target = endTurnChoiceTarget(choice)
   if (!ability || target === undefined || endTurnChoiceId(choice) !== ability.id ||
@@ -672,6 +734,28 @@ export function resolveEndTurnAbility(state: CombatState, choice: string): Comba
   return continueEndPlayerTurn(next, [choice, ...order.slice(1)], true, true)
 }
 
+export function advanceDeterministicEndTurnChoices(state: CombatState): CombatState {
+  let next = state
+  for (;;) {
+    const resolvedTrigger = resolveDeterministicEndTurnTrigger(next)
+    if (resolvedTrigger !== next) {
+      next = resolvedTrigger
+      continue
+    }
+    const ability = endTurnResolutionAbility(next)
+    const target = ability && deterministicEndTurnTarget(next, ability)
+    if (!ability || target === undefined) return next
+    const resolved = resolveEndTurnAbilityOnce(next, chooseEndTurnTarget(ability.id, target))
+    if (resolved === next) return next
+    next = resolved
+  }
+}
+
+/** Resolves the displayed target effect, then advances until another real choice is needed. */
+export function resolveEndTurnAbility(state: CombatState, choice: string): CombatState {
+  return advanceDeterministicEndTurnChoices(resolveEndTurnAbilityOnce(state, choice))
+}
+
 /** Resolves end-of-turn effects in each player's chosen order, then asks for discards. */
 export function beginEndPlayerTurn(
   state: CombatState,
@@ -683,7 +767,7 @@ export function beginEndPlayerTurn(
   if (!validEndTurnOrder(abilities, order)) return state
   if (abilities.some((ability) => ability.orbChoice)) return beginEndTurnResolution(state)
   const next = prepareEndTurn(state)
-  return continueEndPlayerTurn(next, order)
+  return advanceDeterministicEndTurnChoices(continueEndPlayerTurn(next, order))
 }
 
 /** Whether an ordered discard omits only cards this player may Retain. */
@@ -786,6 +870,56 @@ export function pendingTriggerAbility(state: CombatState): PendingTriggerAbility
   }
 }
 
+function forcedCardUids(
+  cards: readonly CardInstance[],
+  minimum: number,
+  amount: number,
+): string[] | null {
+  if (minimum !== amount) return null
+  if (amount === 0) return []
+  return amount === 1 && cards.length === 1 ? [cards[0]!.uid] : null
+}
+
+/** Resolves a parked end-turn trigger only when its private input has one legal value. */
+function resolveDeterministicEndTurnTrigger(state: CombatState): CombatState {
+  if (!state.endTurnProgress || state.pendingTriggers.length === 0) return state
+  const pending = state.pendingTriggers[0]!
+  const ability = pendingTriggerAbility(state)
+  if (!ability) return state
+  const row = ability.rows?.length === 1 ? ability.rows[0]!.row : undefined
+  const enemyUid = ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined
+  const playerId = ability.players?.length === 1 ? ability.players[0]!.id : undefined
+  if ((ability.rows?.length ?? 0) > 1 || (ability.targets?.length ?? 0) > 1 ||
+    (ability.players?.length ?? 0) > 1 || ability.slimeChoice) return state
+
+  let hermitChoices: Parameters<typeof resolvePendingTrigger>[6]
+  if (ability.hermitChoices) {
+    const loadUids = forcedCardUids(
+      ability.hermitChoices.loadCards,
+      ability.hermitChoices.loadMinimum,
+      ability.hermitChoices.loadAmount,
+    )
+    const chamberUids = forcedCardUids(
+      ability.hermitChoices.chamberCards,
+      ability.hermitChoices.chamberMinimum,
+      ability.hermitChoices.chamberAmount,
+    )
+    if (loadUids === null || chamberUids === null) return state
+    hermitChoices = { loadUids, chamberUids, hermitEnemyUids: [] }
+  }
+  if (ability.slimeEnemyAmount > 0) {
+    const soleEnemy = livingEnemies(state)
+    if (soleEnemy.length !== 1) return state
+    hermitChoices = { ...hermitChoices,
+      slimeEnemyUids: Array(ability.slimeEnemyAmount).fill(soleEnemy[0]!.uid) }
+  }
+  if (!ability.hermitChoices && ability.slimeEnemyAmount === 0 && row === undefined &&
+    enemyUid === undefined && playerId === undefined) return state
+  return resolvePendingTrigger(
+    state, pending.playerId, pending.id, row, enemyUid, playerId, hermitChoices,
+  )
+}
+
 function triggerChoicePlayer(state: CombatState, player: Player, source: TriggerSource): Player {
   if (source.presentationSourceId !== 'hermit_combo') return player
   const preview = clone(state)
@@ -885,7 +1019,7 @@ export function resolvePendingTrigger(
     const { order: pendingOrder, interactive } = settled.endTurnProgress
     const order = refreshEndTurnTargets(settled, pendingOrder)
     delete settled.endTurnProgress
-    return continueEndPlayerTurn(settled, order, interactive === true)
+    return advanceDeterministicEndTurnChoices(continueEndPlayerTurn(settled, order, interactive === true))
   }
   return settled
 }

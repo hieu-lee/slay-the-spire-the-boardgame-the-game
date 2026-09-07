@@ -42,12 +42,14 @@ import {
   activatePower,
   amountOf,
   beginEndPlayerTurn,
+  beginEndTurnResolution,
   chooseDistilledCard,
   chooseEndTurnTarget,
   createCombat,
   defaultEndTurnOrder,
   endPlayerTurn,
   endTurnAbilities,
+  endTurnResolutionAbility,
   enemyTurn,
   effectiveCombatCardDef,
   livingEnemies,
@@ -56,6 +58,7 @@ import {
   playCost,
   previewPowerChoice,
   preparePlayerTurn,
+  resolveEndTurnAbility,
   resolveStartPlayerTurn,
   startTurnAbilities,
   startPlayerTurn,
@@ -1012,6 +1015,13 @@ check('opaque Guardian turn Powers publish their actual semantic effect and targ
   player.powers = [{ uid: 'laser', defId: 'guardian_laser_turret', upgraded: false }]
   let combat = createCombat({ seed: 4391, calls: 0 }, [player], [enemy('left', 0), enemy('right', 1)],
     'guardian-laser-vfx')
+  const aimed = beginEndTurnResolution(combat)
+  const laser = endTurnResolutionAbility(aimed)
+  assert.deepEqual(laser?.targets?.map((target) => target.uid), ['left', 'right'],
+    'base Laser Turret did not expose its real multi-enemy choice')
+  const aimedRight = resolveEndTurnAbility(aimed, chooseEndTurnTarget(laser.id, 'right'))
+  assert.deepEqual(aimedRight.enemies.map((target) => target.hp), [30, 29],
+    'base Laser Turret ignored its chosen enemy')
   combat = beginEndPlayerTurn(combat)
   assert.deepEqual(combat.presentationEvents.filter((event) => event.kind === 'turn').map((event) =>
     [event.sourceId, event.effect, event.enemyIds]), [['guardian_laser_turret', 'damage', ['left']]])
@@ -1033,6 +1043,45 @@ check('opaque Guardian turn Powers publish their actual semantic effect and targ
   combat = beginEndPlayerTurn(combat)
   assert.equal(combat.presentationEvents.some((event) => event.kind === 'turn'), false,
     'a zero-damage opaque Power published a generic turn overlay')
+
+  player = fresh(4394)
+  player.powers = [{ uid: 'laser-row', defId: 'guardian_laser_turret', upgraded: true }]
+  combat = createCombat({ seed: 4394, calls: 0 }, [player], [enemy('row-left', 0), enemy('row-right', 1)],
+    'guardian-laser-row-choice')
+  const rowChoice = endTurnResolutionAbility(beginEndTurnResolution(combat))
+  assert.deepEqual(rowChoice?.targets?.map((target) => target.uid), ['row-left', 'row-right'],
+    'upgraded Laser Turret did not preserve its multi-row choice')
+
+  player = fresh(43941)
+  player.powers = [{ uid: 'laser-boss-row', defId: 'guardian_laser_turret', upgraded: true }]
+  combat = createCombat({ seed: 43941, calls: 0 }, [player], [
+    enemy('boss-row-left', 0), enemy('boss-row-right', 1),
+    { ...enemy('boss-row', 0), isBoss: true },
+  ], 'guardian-laser-boss-row-choice')
+  const bossStage = beginEndTurnResolution(combat)
+  const bossLaser = endTurnResolutionAbility(bossStage)
+  const bossRowChoice = resolveEndTurnAbility(bossStage, chooseEndTurnTarget(bossLaser.id, 'boss-row'))
+  assert.deepEqual(bossRowChoice.enemies.map((target) => target.hp), [30, 30, 30],
+    'choosing a boss resolved upgraded Laser Turret before its row tiebreak')
+  assert.deepEqual(endTurnResolutionAbility(bossRowChoice)?.targets?.map((target) => target.uid),
+    ['boss-row-left', 'boss-row-right'], 'upgraded Laser Turret omitted the boss row tiebreak')
+
+  player = fresh(43942)
+  player.powers = [{ uid: 'laser-two-bosses', defId: 'guardian_laser_turret', upgraded: true }]
+  combat = beginEndTurnResolution(createCombat({ seed: 43942, calls: 0 }, [player], [
+    { ...enemy('donu', 0), isBoss: true }, { ...enemy('deca', 1), isBoss: true },
+  ], 'guardian-laser-two-bosses'))
+  assert.deepEqual(endTurnResolutionAbility(combat)?.targets?.map((target) => target.uid), ['donu', 'deca'],
+    'two distinct boss targets were silently collapsed')
+  assert.deepEqual(combat.enemies.map((target) => target.hp), [30, 30])
+
+  player = fresh(4395)
+  player.powers = [{ uid: 'laser-sole', defId: 'guardian_laser_turret', upgraded: false }]
+  combat = beginEndTurnResolution(createCombat({ seed: 4395, calls: 0 }, [player], [enemy('sole', 0)],
+    'guardian-laser-sole'))
+  assert.equal(endTurnResolutionAbility(combat), undefined,
+    'Laser Turret asked its owner to confirm the only enemy')
+  assert.equal(combat.enemies[0].hp, 29)
 })
 
 check('Guardian board Mode Shift, colorless Vigor, and Exhaust recovery use explicit choices', () => {

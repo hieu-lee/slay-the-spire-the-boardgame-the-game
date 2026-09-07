@@ -110,7 +110,7 @@
 
 /* One row preserves more of the combat stage than a wrapped header on the
    shortest landscape phones. The semantic heading stays in the document. */
-@media (orientation: landscape) and (max-width: 37.5rem) and (max-height: 21.25rem) {
+@media (orientation: landscape) and (max-width: 56.25rem) and (max-height: 26.25rem) {
   .app-shell--combat > .app-shell__header {
     min-height: 3.25rem;
     padding: 0.3rem 0.5rem;

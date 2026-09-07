@@ -34,7 +34,12 @@
 }
 
 .start-turn-order {
-  position: relative;
+  position: fixed;
+  z-index: 59;
+  top: 5rem;
+  right: 1rem;
+  max-width: 13rem;
+  text-align: right;
   color: var(--ink-dim);
   font-size: 0.72rem;
 }
@@ -44,11 +49,23 @@
   padding: 0.25rem 0;
 }
 
+.combat:has(.start-turn-order) > .prompt {
+  left: calc((100% - 16rem) / 2);
+  max-width: calc(100% - 18rem);
+  box-sizing: border-box;
+}
+
+.combat:has(.start-turn-order) > .prompt:has(.prompt__orb) > .prompt__text {
+  flex-basis: 100%;
+  text-align: center;
+}
+
 .start-turn-order[open] > ol {
   position: absolute;
   z-index: 20;
   right: 0;
-  min-width: min(30rem, calc(100vw - 2rem));
+  width: 13rem;
+  box-sizing: border-box;
   /* These trays open unasked — the party ordering stage opens the end-turn one,
      the before-draw Scry list is always open — and a four-seat party fills them:
      cap the list so it scrolls instead of growing without bound, with a
@@ -74,7 +91,7 @@
 }
 
 .start-turn-order li > span {
-  white-space: nowrap;
+  white-space: normal;
 }
 
 /* The one select that keeps its own FONT: this row lists a target per orb and

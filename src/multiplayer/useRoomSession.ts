@@ -192,6 +192,7 @@ export type RoomSnapshot = {
     playerId: string
     sourceId: string
     label: string
+    remaining: number
     cards: CardInstance[] | null
   }
   discardOrder?: string[]
