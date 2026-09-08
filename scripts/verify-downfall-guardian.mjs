@@ -707,6 +707,30 @@ check('Blitz can be ordered before a free-Power effect', () => {
   assert.equal(playCost(faceOf(CARDS.guardian_floating_orbs, false), player), 0)
 })
 
+check('Ruby and Peridot Gem Powers double attack damage and spend Vulnerable', () => {
+  for (const upgraded of [false, true]) for (const [gem, base] of [['guardian_ruby', 1], ['guardian_peridot', 2]]) {
+    const player = createRun(814, [{ id: 'p1', name: 'Guardian', character: 'guardian' }]).players[0]
+    player.strength = 3
+    player.weak = 2
+    player.hand = [{ uid: 'gem-in-hand', defId: 'guardian_harden', upgraded: false }]
+    player.powers = [{ uid: 'orbs', defId: 'guardian_floating_orbs', upgraded, attachedGemId: gem }]
+    const enemy = { uid: 'e1', defId: 'jaw_worm', row: 0, isBoss: false, hp: 20, maxHp: 20,
+      block: 0, strength: 0, vulnerable: 2, weak: 0, poison: 0, goldReward: 0,
+      cardReward: null, actionIndex: 0, abilityUsed: false, dead: false }
+    for (const block of [0, 5]) {
+      let combat = createCombat({ seed: 814, calls: 0 }, [player], [{ ...enemy, block }], 'gem-power-vulnerable')
+      combat.players[0].vigorSpentThisTurn = 2
+      combat = activatePower(combat, 'p1', 'orbs', { enemyUid: 'e1' })
+      assert.equal(combat.enemies[0].hp, 20 - Math.max(0, base * 2 - block))
+      assert.equal(combat.enemies[0].block, Math.max(0, block - base * 2))
+      assert.equal(combat.enemies[0].vulnerable, 1)
+      assert.equal(combat.players[0].weak, 2)
+      assert.equal(combat.players[0].vigorSpentThisTurn, 2)
+      assert.equal(activatePower(combat, 'p1', 'orbs', { enemyUid: 'e1' }), combat)
+    }
+  }
+})
+
 check('a copied Gem card triggers Brilliant Scales for both plays', () => {
   const player = createRun(813, [{ id: 'p1', name: 'Guardian', character: 'guardian' }]).players[0]
   player.energy = 3
@@ -749,8 +773,8 @@ check('reviewed Guardian Power timing, selection, and Retain rules resolve exact
   combat.players[0].guardianMode = 'attack'
   combat.players[0].vigorSpentThisTurn = 1
   combat = playCard(combat, 'p1', 'strike', { enemyUid: 'e1', playerId: 'p1' })
-  assert.deepEqual([combat.enemies[0].hp, combat.players[0].weak, combat.enemies[0].vulnerable], [24, 1, 1],
-    'Crystallize Ruby damage did not ignore Strength, Weak, Vulnerable, and Vigor')
+  assert.deepEqual([combat.enemies[0].hp, combat.players[0].weak, combat.enemies[0].vulnerable], [23, 1, 0],
+    'Crystallize Ruby must use Vulnerable while ignoring owner Strength, Weak, and Vigor')
   combat = endPlayerTurn(combat)
   combat = startPlayerTurn(enemyTurn(combat))
   assert.equal(combat.players[0].energy, 4,

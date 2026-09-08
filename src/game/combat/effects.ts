@@ -1211,7 +1211,7 @@ export function applyEffect(
           const slow = abilities.find((ability) => ability.kind === 'slow')
           const flying = abilities.find((ability) => ability.kind === 'flying')
           let amount = each + (slow?.kind === 'slow' ? slow.damagePerHit : 0)
-          amount = hitDamage(amount, mods, { vulnerable: ignoresHitModifiers ? 0 : vulnerableAtStart })
+          amount = hitDamage(amount, mods, { vulnerable: slimeCommand ? 0 : vulnerableAtStart })
           if (actor.damageDealtZeroThisTurn) amount = 0
           if (flying?.kind === 'flying') amount = Math.min(amount, flying.maxDamagePerHit)
           const result = damageEnemy(state, target, amount, !slimeCommand && context.sourceCardType !== undefined)
@@ -1235,7 +1235,7 @@ export function applyEffect(
             if (gained > 0) poisonEvents += 1
           }
         }
-        if (!ignoresHitModifiers && !deferVulnerableSpend && vulnerableAtStart > 0) {
+        if (!slimeCommand && !deferVulnerableSpend && vulnerableAtStart > 0) {
           target.vulnerable = vulnerableAtStart - 1
         }
         // One line for the whole attack, not one per swing: a five-hit card
