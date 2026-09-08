@@ -152,7 +152,7 @@ export type Amount =
       per?: CountOf
       /** Multiplies the counted units; Heavy Blade changes each Strength token. */
       scale?: number
-      /** Choke adds every Strength, Vulnerable, Weak, and Poison token on its target to one hit. */
+      /** Choke adds each Weak and Poison token on its target to one hit. */
       targetTokens?: readonly EnemyTokenKind[]
       perSlime?: number
       plusHighestSlimeLevel?: boolean
@@ -731,7 +731,10 @@ export const CARDS: Record<string, CardDef> = {
     supportTarget: 'anyPlayer',
     effects: [{ kind: 'block', amount: 2, toChosen: true }],
     exhaustReaction: { effects: [{ kind: 'gainEnergy', amount: 2 }] },
-    upgrade: { effects: [{ kind: 'block', amount: 3, toChosen: true }] },
+    upgrade: {
+      effects: [{ kind: 'block', amount: 3, toChosen: true }],
+      exhaustReaction: { effects: [{ kind: 'gainEnergy', amount: 3 }] },
+    },
   }),
   fiend_fire: card({
     id: 'fiend_fire', name: 'Fiend Fire', owner: 'ironclad', type: 'attack', rarity: 'rare', cost: 2,
@@ -1818,7 +1821,7 @@ export const CARDS: Record<string, CardDef> = {
     id: 'tantrum', name: 'Tantrum', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 1,
     toDrawTop: true,
     effects: [{ kind: 'hit', amount: 2 }, { kind: 'enterStance', stance: 'wrath' }],
-    upgrade: { effects: [{ kind: 'hitChoices', amount: 1, targets: 2 }, { kind: 'enterStance', stance: 'wrath' }] },
+    upgrade: { effects: [{ kind: 'hit', amount: 1, times: 2 }, { kind: 'enterStance', stance: 'wrath' }] },
   }),
   weave: card({
     id: 'weave', name: 'Weave', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 0,
@@ -1834,8 +1837,8 @@ export const CARDS: Record<string, CardDef> = {
   }),
   brilliance: card({
     id: 'brilliance', name: 'Brilliance', owner: 'watcher', type: 'attack', rarity: 'rare', cost: 1,
-    effects: [{ kind: 'hit', amount: { base: 0, per: 'miracles', scale: 2 } }],
-    upgrade: { effects: [{ kind: 'hit', amount: { base: 0, per: 'miracles', scale: 3 } }] },
+    effects: [{ kind: 'hit', amount: 2, times: { base: 0, per: 'miracles' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3, times: { base: 0, per: 'miracles' } }] },
   }),
   devotion: card({
     id: 'devotion', name: 'Devotion', owner: 'watcher', type: 'power', rarity: 'rare', cost: 1,
@@ -2242,10 +2245,13 @@ export const CARDS: Record<string, CardDef> = {
   reinforced_body: card({
     id: 'reinforced_body', name: 'Reinforced Body', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 'X',
     minimumX: 1,
-    effects: [{ kind: 'blockChoices', amount: { base: 1, per: 'energySpent' }, targets: 1 }],
+    effects: [{ kind: 'block', amount: { base: 1, per: 'energySpent' } }],
     upgrade: {
       minimumX: 0,
-      effects: [{ kind: 'blockChoices', amount: { base: 0, per: 'energySpent' }, targets: 2 }],
+      effects: [
+        { kind: 'block', amount: { base: 0, per: 'energySpent' } },
+        { kind: 'block', amount: { base: 0, per: 'energySpent' } },
+      ],
     },
   }),
   equilibrium: card({
@@ -2630,8 +2636,8 @@ export const CARDS: Record<string, CardDef> = {
   }),
   flechettes: card({
     id: 'flechettes', name: 'Flechettes', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 1,
-    effects: [{ kind: 'hit', amount: { base: 0, per: 'skillsInHand' } }],
-    upgrade: { effects: [{ kind: 'hit', amount: { base: 1, per: 'skillsInHand' } }] },
+    effects: [{ kind: 'hit', amount: 1, times: { base: 0, per: 'skillsInHand' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 1, times: { base: 1, per: 'skillsInHand' } }] },
   }),
   adrenaline: card({
     id: 'adrenaline', name: 'Adrenaline', owner: 'silent', type: 'skill', rarity: 'rare', cost: 0,
@@ -2769,8 +2775,8 @@ export const CARDS: Record<string, CardDef> = {
   }),
   choke: card({
     id: 'choke', name: 'Choke', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 2,
-    effects: [{ kind: 'hit', amount: { base: 3, targetTokens: ['strength', 'vulnerable', 'weak', 'poison'] } }],
-    upgrade: { effects: [{ kind: 'hit', amount: { base: 4, targetTokens: ['strength', 'vulnerable', 'weak', 'poison'] } }] },
+    effects: [{ kind: 'hit', amount: { base: 3, targetTokens: ['weak', 'poison'] } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 4, targetTokens: ['weak', 'poison'] } }] },
   }),
   footwork: card({
     id: 'footwork', name: 'Footwork', owner: 'silent', type: 'power', rarity: 'uncommon', cost: 2,
@@ -2829,7 +2835,7 @@ export const CARDS: Record<string, CardDef> = {
   }),
   distraction: card({
     id: 'distraction', name: 'Distraction', owner: 'silent', type: 'power', rarity: 'uncommon', cost: 2,
-    trigger: { kind: 'onApplyPoison' },
+    trigger: { kind: 'onPutEnemyToken' },
     oncePerTurn: true,
     effects: [{ kind: 'block', amount: 2 }],
     upgrade: { cost: 1 },

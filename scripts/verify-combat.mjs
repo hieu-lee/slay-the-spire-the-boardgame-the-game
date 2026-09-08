@@ -7438,27 +7438,27 @@ check('Thunder Strike hits one chosen row per Lightning Orb and needs no target 
   assertEqual(harmless.players[0].energy, 0)
 })
 
-check('Reinforced Body enforces its base X minimum and assigns upgraded Block icons separately', () => {
+check('Reinforced Body enforces its base X minimum and keeps both upgraded Block icons on the owner', () => {
   const base = instance('reinforced_body')
   const baseState = combat([
     makePlayer({ character: 'defect', hand: [base], energy: 3 }),
     makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
   ], [makeEnemy()])
   assertEqual(playCard(baseState, 'p1', base.uid, {
-    enemyUid: null, playerId: null, playerIds: ['p2'], energySpent: 0,
+    enemyUid: null, playerId: null, energySpent: 0,
   }), baseState, 'Reinforced Body cannot use X = 0')
   const blocked = playCard(baseState, 'p1', base.uid, {
-    enemyUid: null, playerId: null, playerIds: ['p2'], energySpent: 2,
+    enemyUid: null, playerId: null, energySpent: 2,
   })
-  assertEqual(blocked.players[0].block, 0)
-  assertEqual(blocked.players[1].block, 3)
+  assertEqual(blocked.players[0].block, 3)
+  assertEqual(blocked.players[1].block, 0)
   assertEqual(blocked.players[0].energy, 1)
 
   const discounted = combat([makePlayer({
     character: 'defect', hand: [instance('reinforced_body')], energy: 3, freeCardsThisTurn: 1,
   })], [makeEnemy()])
   assertEqual(playCard(discounted, 'p1', discounted.players[0].hand[0].uid, {
-    enemyUid: null, playerId: null, playerIds: ['p1'], energySpent: 0,
+    enemyUid: null, playerId: null, energySpent: 0,
   }), discounted, 'a free-card discount cannot bypass the printed X minimum')
 
   const upgraded = instance('reinforced_body', true)
@@ -7468,10 +7468,10 @@ check('Reinforced Body enforces its base X minimum and assigns upgraded Block ic
   ], [makeEnemy()])
   upgradedState.players[0].cardBlockBonus = 1
   const zero = playCard(upgradedState, 'p1', upgraded.uid, {
-    enemyUid: null, playerId: null, playerIds: ['p1', 'p2'], energySpent: 0,
+    enemyUid: null, playerId: null, energySpent: 0,
   })
-  assertEqual(zero.players[0].block, 1, 'Footwork modifies the first printed X Block icon at X = 0')
-  assertEqual(zero.players[1].block, 1, 'the second printed icon has its own target and Footwork bonus')
+  assertEqual(zero.players[0].block, 2, 'Footwork modifies both printed X Block icons at X = 0')
+  assertEqual(zero.players[1].block, 0, 'neither Block icon targets an ally')
   assertEqual(zero.players[0].energy, 3)
 
   const havoc = instance('havoc', true)
@@ -8225,7 +8225,7 @@ check('Inner Peace draws in Calm and otherwise enters Calm', () => {
   }
 })
 
-check('Choke adds every enemy Strength, Vulnerable, Weak, and Poison token to one hit', () => {
+check('Choke counts Weak and Poison without counting Strength or Vulnerable', () => {
   for (const upgraded of [false, true]) {
     for (const token of ['strength', 'vulnerable', 'weak', 'poison']) {
       const choke = instance('choke', upgraded)
@@ -8234,7 +8234,7 @@ check('Choke adds every enemy Strength, Vulnerable, Weak, and Poison token to on
         [makeEnemy({ hp: 30, maxHp: 30, [token]: 1 })],
       )
       const played = playCard(state, 'p1', choke.uid, { enemyUid: 'e1', playerId: null })
-      const countedHit = (upgraded ? 4 : 3) + 1
+      const countedHit = (upgraded ? 4 : 3) + Number(token === 'weak' || token === 'poison')
       const damage = token === 'vulnerable' ? countedHit * 2 : countedHit
       assertEqual(played.enemies[0].hp, 30 - damage, `Choke did not count enemy ${token}`)
       assertEqual(played.enemies[0][token], token === 'vulnerable' ? 0 : 1,
@@ -8244,15 +8244,15 @@ check('Choke adds every enemy Strength, Vulnerable, Weak, and Poison token to on
     const combinedChoke = instance('choke', upgraded)
     const combined = combat(
       // Cancel the ordinary hit modifiers so this assertion isolates the sum
-      // of every cube, including counts above one.
+      // of the Weak and Poison cubes, including counts above one.
       [makePlayer({ character: 'silent', hand: [combinedChoke], weak: 1 })],
       [makeEnemy({ hp: 40, maxHp: 40, strength: 2, vulnerable: 2, weak: 3, poison: 4 })],
     )
     const combinedPlay = playCard(combined, 'p1', combinedChoke.uid, { enemyUid: 'e1', playerId: null })
-    assertEqual(combinedPlay.enemies[0].hp, upgraded ? 25 : 26,
-      'Choke must count every cube, not only each present token type')
+    assertEqual(combinedPlay.enemies[0].hp, upgraded ? 29 : 30,
+      'Choke counts every Weak and Poison cube')
     assertEqual(combinedPlay.enemies[0].strength, 2)
-    assertEqual(combinedPlay.enemies[0].vulnerable, 1, 'the hit spends one Vulnerable after counting both')
+    assertEqual(combinedPlay.enemies[0].vulnerable, 1, 'the hit spends one Vulnerable without counting it as bonus damage')
     assertEqual(combinedPlay.enemies[0].weak, 3)
     assertEqual(combinedPlay.enemies[0].poison, 4)
   }
@@ -8400,7 +8400,7 @@ check('Concentrate gains Energy from exactly the optional cards it discards', ()
   assertEqual(empty.players[0].energy, 2, 'the upgraded face adds one even when none are discarded')
 })
 
-check('Distraction grants Block only on the first real Poison gain each turn', () => {
+check('Distraction grants Block on the first real token placement each turn', () => {
   const flask = instance('bouncing_flask')
   const poison = instance('deadly_poison')
   let state = {
@@ -12209,9 +12209,9 @@ check('Tantrum enters Wrath and returns its physical card to draw top', () => {
       character: 'watcher', hand: [tantrum], energy: 1,
     })], enemies)
     const next = playCard(state, 'p1', tantrum.uid, upgraded ? {
-      enemyUid: null, enemyUids: ['left', 'right'], playerId: null,
+      enemyUid: 'left', playerId: null,
     } : { enemyUid: 'e1', playerId: null })
-    assertDeepEqual(next.enemies.map((enemy) => enemy.hp), upgraded ? [9, 9] : [8])
+    assertDeepEqual(next.enemies.map((enemy) => enemy.hp), upgraded ? [8, 10] : [8])
     assertEqual(next.players[0].stance, 'wrath')
     assertEqual(next.players[0].draw.at(-1)?.uid, tantrum.uid)
     assertEqual(next.players[0].energy, 0)
