@@ -55,6 +55,19 @@ try {
       // Only the party list or the action panel may scroll; never the game viewport.
       for (const button of await page.locator('.neow-action button:enabled').all()) {
         await button.scrollIntoViewIfNeeded()
+        const scrollSize = () => {
+          const panel = document.querySelector('.neow-action')
+          return { x: panel.scrollWidth > panel.clientWidth + 1, y: panel.scrollHeight > panel.clientHeight + 1 }
+        }
+        await page.mouse.move(0, 0)
+        await page.evaluate(() => document.activeElement?.blur())
+        await page.waitForTimeout(250)
+        const before = await page.evaluate(scrollSize)
+        await button.hover()
+        await page.waitForTimeout(250)
+        const hovered = await page.evaluate(scrollSize)
+        assert(!hovered.x || before.x, `${label}: hover created horizontal scrolling`)
+        assert(!hovered.y || before.y, `${label}: hover created vertical scrolling`)
         await button.focus()
         assert(await button.evaluate(element => {
           const box = element.getBoundingClientRect()

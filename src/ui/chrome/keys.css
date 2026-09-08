@@ -50,13 +50,11 @@
   cursor: pointer;
   transition:
     color var(--motion-lerp) var(--ease-lerp),
-    filter var(--motion-lerp) var(--ease-lerp),
-    transform var(--motion-lerp) var(--ease-lerp);
+    filter var(--motion-lerp) var(--ease-lerp);
 }
 
-/* The client's hover affordance for a row of text is the text turning gold and
-   the row stretching slightly MORE vertically than horizontally. Both of those
-   are here; neither is a background swap. */
+/* Keep text keys within their layout box: scaling full-width choices creates
+   scrollbars in bounded panels such as Neow, Heart's Boon and dialogs. */
 :is(
   .sts-scope button:not([class]),
   .sts-scope button[class=''],
@@ -72,7 +70,6 @@
   /* --light-yellow, not --sts-gold: gold on this slate plate measures 4.12:1
      at the top of the glyph band. Same warm hover family, clears 4.5:1. */
   color: var(--light-yellow);
-  transform: scale(1.03, 1.09);
   filter: drop-shadow(var(--hard-shadow)) brightness(1.15);
 }
 
@@ -88,7 +85,6 @@
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ):active:not(:disabled) {
-  transform: translateY(2px) scale(1, 1);
   filter: none;
   box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.6);
 }
