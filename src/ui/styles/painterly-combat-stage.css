@@ -403,7 +403,7 @@
     transition: none;
   }
 
-  .slime-party__actor--commanding {
+  html:not([data-mobile-performance='true']) .slime-party__actor--commanding {
     animation: none;
   }
 

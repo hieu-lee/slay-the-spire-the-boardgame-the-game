@@ -1003,7 +1003,7 @@ function CombatScreenView({
   // The enemy phase stays open until the prior player attacks clear, so bosses
   // start after that shared presentation window while player attacks remain concurrent.
   const characterAttacksActive = !prefersReducedMotion && (
-    activeVfx.some(isCharacterAttack) || livePresentationEvents.some((event) => event.kind === 'slime'))
+    activeVfx.some(isCharacterAttack) || livePresentation.slimeCommandsPending)
   const [characterAttacks, setCharacterAttacks] = useState<Record<string, CharacterAttackMotion[]>>({})
   const [slimeCommandMotions, setSlimeCommandMotions] = useState<Record<string, {
     seq: number
@@ -1102,6 +1102,13 @@ function CombatScreenView({
     }
     const next: typeof slimeCommandMotions = {}
     for (const event of commands) {
+      const key = `${event.actorId}:${event.slimeUid}`
+      // Other actors can start/finish while this slime is in flight. Keep its
+      // original path instead of measuring its currently transformed bounds.
+      if (slimeCommandMotions[key]?.seq === event.seq) {
+        next[key] = slimeCommandMotions[key]!
+        continue
+      }
       const row = board.querySelector<HTMLElement>(`.seat[data-player-id="${CSS.escape(event.actorId)}"]`)?.closest('.row')
       const actor = row?.querySelector<HTMLElement>(`.slime-party__actor[data-slime-uid="${CSS.escape(event.slimeUid)}"]`)
       const target = event.enemyIds.flatMap((id) => {
@@ -6084,6 +6091,11 @@ function CombatScreenView({
                               onMouseLeave={hideSlimeCard}
                               onFocus={(event) => showSlimeCard(slime.card, event.currentTarget)}
                               onBlur={hideSlimeCard}
+                              onAnimationEnd={(event) => {
+                                if (event.target === event.currentTarget && event.animationName === 'slime-party-command' && activeCommandEvent) {
+                                  livePresentation.finishSlimeCommand(activeCommandEvent.seq)
+                                }
+                              }}
                               data-slime-uid={slime.card.uid}
                               data-slime-def={def.id}
                               data-slime-level={slime.level}

@@ -14,7 +14,7 @@ import type { CombatPresentationEvent, CombatState } from '../../game/combat.ts'
 import { drawnCardUids } from '../board-signals.ts'
 import { cardSfxRecipe, potionSfxRecipe, shivSfxRecipe } from '../combat-sfx.ts'
 import { playCombatSound, playSoundEffect } from '../sfx.ts'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 export const ACTOR_DEFEAT_MS = 1_800
 
@@ -26,17 +26,12 @@ function slimeAnimationDelays(
 ): Map<number, number> {
   const now = performance.now()
   const delays = new Map<number, number>()
-  const batchStart = new Map<string, number>()
   for (const event of events) {
     if (event.kind === 'slime') {
       const key = `command:${event.actorId}:${event.slimeUid}`
-      if (event.animationIndex === 0 || !batchStart.has(key)) {
-        batchStart.set(key, Math.max(now, queueEnd.get(key) ?? now))
-      }
-      const start = batchStart.get(key)!
-      delays.set(event.seq, start - now + event.animationIndex * SLIME_COMMAND_ANIMATION_MS)
-      queueEnd.set(key, Math.max(queueEnd.get(key) ?? now,
-        start + (event.animationIndex + 1) * SLIME_COMMAND_ANIMATION_MS))
+      const start = Math.max(now, queueEnd.get(key) ?? now)
+      delays.set(event.seq, start - now)
+      queueEnd.set(key, start + SLIME_COMMAND_ANIMATION_MS)
       continue
     }
     const key = event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
@@ -363,6 +358,8 @@ export function usePresentationEvents(
 ): {
   events: CombatPresentationEvent[]
   soundEvents: CombatPresentationEvent[]
+  slimeCommandsPending: boolean
+  finishSlimeCommand: (seq: number) => void
   contactDeadlines: ReadonlyMap<string, TargetContactDeadline>
 } {
   const baseline = useRef<number | null>(animateOpeningHand ? -1 : null)
@@ -373,6 +370,25 @@ export function usePresentationEvents(
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
   const slimeQueueEnd = useRef(new Map<string, number>())
   const [active, setActive] = useState<CombatPresentationEvent[]>([])
+  const [slimeCommands, setSlimeCommands] = useState<CombatPresentationEvent[]>([])
+  const liveSlimeCommands = useMemo(() => slimeCommands.filter((event) => event.kind === 'slime' &&
+    state.players.some((player) => player.id === event.actorId &&
+      player.slimes.some((slime) => slime.card.uid === event.slimeUid))), [slimeCommands, state.players])
+  const presented = useMemo(() => {
+    const commanding = new Set<string>()
+    const visibleCommands = liveSlimeCommands.filter((event) => {
+      if (event.kind !== 'slime') return false
+      const key = `${event.actorId}:${event.slimeUid}`
+      if (commanding.has(key)) return false
+      commanding.add(key)
+      return true
+    })
+    return [...active, ...visibleCommands].sort((a, b) => a.seq - b.seq)
+  }, [active, liveSlimeCommands])
+  // Include this render's arrivals before layout effects enqueue them: enemy
+  // effects must never see an unlocked frame when the phase changes with a hit.
+  const unseenSlimeCommands = baseline.current !== null &&
+    (state.presentationEvents ?? []).some((event) => event.kind === 'slime' && event.seq > baseline.current!)
   const [reducedSoundEvents, setReducedSoundEvents] = useState<CombatPresentationEvent[]>([])
   const contactDeadlines = useRef(new Map<string, TargetContactDeadline>())
   const [targetContactDeadlines, setTargetContactDeadlines] =
@@ -398,6 +414,7 @@ export function usePresentationEvents(
       slimeQueueEnd.current.clear()
       contactDeadlines.current.clear()
       setActive((current) => current.length === 0 ? current : [])
+      setSlimeCommands([])
       setReducedSoundEvents(reducedEffects && motionChanged ? active : [])
       setTargetContactDeadlines((current) => current.size === 0 ? current : new Map())
       return
@@ -413,7 +430,8 @@ export function usePresentationEvents(
     if (unseen.length === 0) return
     const delays = updateTargetContactDeadlines(state, unseen, slimeQueueEnd.current, contactDeadlines.current)
     setTargetContactDeadlines(new Map(contactDeadlines.current))
-    const immediate = unseen.filter((event) => (delays.get(event.seq) ?? 0) === 0)
+    setSlimeCommands((current) => [...current, ...unseen.filter((event) => event.kind === 'slime')])
+    const immediate = unseen.filter((event) => event.kind !== 'slime' && (delays.get(event.seq) ?? 0) === 0)
     setActive((current) => [
       ...current.filter((event) => !unseen.some((next) => next.seq === event.seq)),
       ...immediate,
@@ -430,6 +448,9 @@ export function usePresentationEvents(
       .filter((event) => event.kind === 'orb' && event.sourceId === 'orb-end-turn')
       .sort((a, b) => a.seq - b.seq)
     for (const event of unseen) {
+      // Slime commands release their per-actor queue on CSS animationend,
+      // after returning home, rather than racing a wall-clock removal timer.
+      if (event.kind === 'slime') continue
       const prior = timers.current.get(event.seq)
       if (prior) clearTimeout(prior)
       const lastTarget = event.enemyIds.at(-1)
@@ -442,14 +463,13 @@ export function usePresentationEvents(
         // unmount the last pose before it paints.
         ? characterAttackContactMs(state, lastTarget, event)
         : 0
-      const slimeAnimation = event.kind === 'slime' ||
-        event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
+      const slimeAnimation = event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
       const delay = delays.get(event.seq) ?? 0
-      const localAttackContact = event.kind === 'slime' ? SLIME_COMMAND_CONTACT_MS : Math.max(0, attackContact - delay)
-      const slimeBossAttack = event.kind !== 'slime' && state.players.some((player) =>
+      const localAttackContact = Math.max(0, attackContact - delay)
+      const slimeBossAttack = state.players.some((player) =>
         player.id === event.actorId && player.character === 'slime_boss') && attackContact > 0
       const lifetime = (localAttackContact > 0
-        ? slimeBossAttack || event.kind === 'slime' ? SLIME_COMMAND_ANIMATION_MS + 100
+        ? slimeBossAttack ? SLIME_COMMAND_ANIMATION_MS + 100
           : Math.max(1_800, localAttackContact + 1_200)
         : slimeAnimation ? SLIME_SPAWN_ANIMATION_MS + 100 : 900) +
         staggerIndex * ORB_END_TURN_STAGGER_MS
@@ -473,8 +493,10 @@ export function usePresentationEvents(
   }, [])
 
   return {
-    events: active,
-    soundEvents: reducedEffects && reducedSoundEvents.length > 0 ? reducedSoundEvents : active,
+    events: presented,
+    soundEvents: reducedEffects && reducedSoundEvents.length > 0 ? reducedSoundEvents : presented,
+    slimeCommandsPending: !reducedEffects && (liveSlimeCommands.length > 0 || unseenSlimeCommands),
+    finishSlimeCommand: (seq) => setSlimeCommands((current) => current.filter((event) => event.seq !== seq)),
     contactDeadlines: targetContactDeadlines,
   }
 }
