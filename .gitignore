@@ -31,3 +31,6 @@ artifacts/
 # Runtime icons and enemy cutouts are bundled under public/assets.
 public/assets/cards-hd/
 public/assets/enemies/
+
+# Offline animation renderer bytecode and native kernel cache.
+scripts/animation/__pycache__/

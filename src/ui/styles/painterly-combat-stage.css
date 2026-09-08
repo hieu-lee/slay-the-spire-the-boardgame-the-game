@@ -639,13 +639,7 @@
   filter: none;
 }
 
-.enemy--boss[data-animation='attack'] .enemy__portrait > :is(.enemy__art--cutout, .boss-demon-grounded) {
-  inset: auto 4rem 0 auto;
-  width: auto;
-  max-width: none;
-  height: 100%;
-  transform: scale(var(--boss-scale)) scale(var(--boss-attack-scale, 1));
-}
+
 
 .enemy--boss.enemy--acting[data-attack-motion='melee'] .enemy__portrait > .enemy__art--cutout {
   animation: boss-melee-dash var(--boss-attack-duration, 1830ms) cubic-bezier(0.3, 0, 0.2, 1) both;
@@ -814,4 +808,24 @@
   from { opacity: 0; transform: scaleX(0.08) scaleY(0.45); }
   18%, 72% { opacity: 1; }
   to { opacity: 0; transform: scaleX(1) scaleY(1); }
+}
+
+/* Elite silhouettes tower over heroes without enlarging their UI or hit boxes.
+   Fixed art geometry is shared by idle, anticipation, contact and recovery. */
+.enemy--elite .enemy__portrait > .enemy__art--cutout {
+  width: 180%;
+  max-width: none;
+  height: var(--elite-art-height);
+  inset: auto auto 0 -40%;
+  transform: none;
+}
+.enemy--elite.enemy--acting { z-index: 9; }
+.enemy--elite.enemy--acting .enemy__portrait > .enemy__art--cutout {
+  animation: elite-attack 1830ms ease-in-out both;
+}
+@keyframes elite-attack {
+  0%, 100% { translate: 0; }
+  20% { translate: 3% 0; }
+  40%, 52% { translate: -12% 0; }
+  76% { translate: 1% 0; }
 }

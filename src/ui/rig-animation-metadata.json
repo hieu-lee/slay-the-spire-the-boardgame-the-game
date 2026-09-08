@@ -1,0 +1,218 @@
+{
+  "hero-ironclad": {
+    "contactLeft": 48,
+    "height": 267
+  },
+  "hero-silent": {
+    "contactLeft": 71,
+    "height": 267
+  },
+  "hero-defect": {
+    "contactLeft": 83,
+    "height": 267
+  },
+  "hero-watcher": {
+    "contactLeft": 26,
+    "height": 406
+  },
+  "hero-guardian": {
+    "contactLeft": 69,
+    "height": 400
+  },
+  "hero-hermit": {
+    "contactLeft": 51,
+    "height": 400
+  },
+  "hero-slime_boss": {
+    "contactLeft": 33,
+    "height": 400
+  },
+  "hero-guardian-defense": {
+    "contactLeft": 24,
+    "height": 400
+  },
+  "hero-hexaghost-heat-0": {
+    "contactLeft": 22,
+    "height": 400
+  },
+  "hero-hexaghost-heat-1": {
+    "contactLeft": 21,
+    "height": 400
+  },
+  "hero-hexaghost-heat-2": {
+    "contactLeft": 21,
+    "height": 400
+  },
+  "hero-hexaghost-heat-3": {
+    "contactLeft": 21,
+    "height": 400
+  },
+  "hero-hexaghost-heat-4": {
+    "contactLeft": 22,
+    "height": 400
+  },
+  "hero-hexaghost-heat-5": {
+    "contactLeft": 24,
+    "height": 400
+  },
+  "hero-hexaghost-heat-6": {
+    "contactLeft": 24,
+    "height": 400
+  },
+  "awakened_one_phase_1": {
+    "contactLeft": 16,
+    "height": 267
+  },
+  "awakened_one_phase_2": {
+    "contactLeft": 45,
+    "height": 267
+  },
+  "bronze_automaton": {
+    "contactLeft": 109,
+    "height": 400
+  },
+  "corrupt_heart": {
+    "contactLeft": 107,
+    "height": 267
+  },
+  "deca": {
+    "contactLeft": 51,
+    "height": 400
+  },
+  "donu": {
+    "contactLeft": 4,
+    "height": 267
+  },
+  "downfall_blasphemer": {
+    "contactLeft": 24,
+    "height": 400
+  },
+  "downfall_corrupted": {
+    "contactLeft": 33,
+    "height": 400
+  },
+  "downfall_dark_core": {
+    "contactLeft": 13,
+    "height": 400
+  },
+  "downfall_demon": {
+    "contactLeft": 34,
+    "height": 400
+  },
+  "downfall_doppelganger": {
+    "contactLeft": 64,
+    "height": 400
+  },
+  "downfall_flame_barrier": {
+    "contactLeft": 39,
+    "height": 400
+  },
+  "downfall_inferno": {
+    "contactLeft": 63,
+    "height": 400
+  },
+  "downfall_neow": {
+    "contactLeft": 35,
+    "height": 400
+  },
+  "downfall_orb_master": {
+    "contactLeft": 44,
+    "height": 400
+  },
+  "downfall_trickster": {
+    "contactLeft": 55,
+    "height": 400
+  },
+  "downfall_witch": {
+    "contactLeft": 26,
+    "height": 400
+  },
+  "downfall_wraith": {
+    "contactLeft": 33,
+    "height": 400
+  },
+  "downfall_wrathful": {
+    "contactLeft": 18,
+    "height": 400
+  },
+  "guardian_attack": {
+    "contactLeft": 65,
+    "height": 413
+  },
+  "guardian_defensive": {
+    "contactLeft": 21,
+    "height": 393
+  },
+  "hexaghost": {
+    "contactLeft": 63,
+    "height": 343
+  },
+  "slime_boss": {
+    "contactLeft": 29,
+    "height": 300
+  },
+  "the_champ": {
+    "contactLeft": 34,
+    "height": 400
+  },
+  "the_collector": {
+    "contactLeft": 77,
+    "height": 420
+  },
+  "time_eater": {
+    "contactLeft": 33,
+    "height": 267
+  },
+  "gremlin_nob": {
+    "contactLeft": 69,
+    "height": 400
+  },
+  "lagavulin": {
+    "contactLeft": 57,
+    "height": 297
+  },
+  "sentry": {
+    "contactLeft": 95,
+    "height": 601
+  },
+  "book_of_stabbing": {
+    "contactLeft": 140,
+    "height": 330
+  },
+  "gremlin_leader": {
+    "contactLeft": 40,
+    "height": 414
+  },
+  "taskmaster": {
+    "contactLeft": 12,
+    "height": 560
+  },
+  "giant_head": {
+    "contactLeft": 50,
+    "height": 280
+  },
+  "nemesis": {
+    "contactLeft": 82,
+    "height": 420
+  },
+  "reptomancer": {
+    "contactLeft": 58,
+    "height": 601
+  },
+  "spire_shield": {
+    "contactLeft": 13,
+    "height": 400
+  },
+  "spire_spear": {
+    "contactLeft": 43,
+    "height": 267
+  },
+  "red_slaver": {
+    "contactLeft": 75,
+    "height": 266
+  },
+  "blue_slaver": {
+    "contactLeft": 90,
+    "height": 400
+  }
+}

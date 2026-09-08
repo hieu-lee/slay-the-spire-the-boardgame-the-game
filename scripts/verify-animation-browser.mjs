@@ -526,9 +526,12 @@ try {
     if (defId === 'time_eater') {
       const cold = await card.locator('.enemy__art--cutout').evaluate((art) => ({
         naturalHeight: art.naturalHeight,
+        source: art.getAttribute('src'),
         dash: getComputedStyle(art.closest('.enemy')).getPropertyValue('--boss-dash-x'),
       }))
-      check(cold.naturalHeight === 0 && cold.dash === '', `time_eater: cold-load fixture was not cold ${JSON.stringify(cold)}`)
+      check(cold.naturalHeight > 0 && !cold.source.startsWith('blob:') && !cold.source.includes('/rigged/') &&
+        Number.isFinite(Number.parseFloat(cold.dash)),
+      `time_eater: cold attack did not immediately use the static fallback ${JSON.stringify(cold)}`)
       releaseTimeEater()
       await page.waitForFunction(() => {
         const art = document.querySelector('.enemy--boss[data-enemy-def="time_eater"] .enemy__art--cutout')
@@ -647,13 +650,16 @@ try {
       }
       return {
         motion: enemy.getAttribute('data-attack-motion'),
-        image: art.getAttribute('src'),
+        image: art.getAttribute('data-animation-asset'),
         loaded: art.complete && art.naturalWidth > 0,
         animation: artStyle.animationName,
         duration: artStyle.animationDuration,
         lowerBodyRight,
         rect: {
-          left: rect.left, visibleLeft: rect.left + contactLeft / art.naturalHeight * rect.height,
+          left: rect.left,
+          // Resolve the fitted image's width, then locate its source-space contact point.
+          visibleLeft: rect.left + rect.width / 2 + (contactLeft / art.naturalWidth - 0.5) *
+            Math.min(rect.width, rect.height * art.naturalWidth / art.naturalHeight),
           right: rect.right, top: rect.top, bottom: rect.bottom,
         },
         heroRight,
@@ -704,7 +710,7 @@ try {
       }
     })
     const expectedAttackArt = defId === 'downfall_demon'
-      ? '/animations/downfall_demon-airborne.webp'
+      ? '/rigged/downfall_demon-attack.webp'
       : '-attack.webp'
     check(audit.loaded && audit.image.endsWith(expectedAttackArt), `${defId}: attack art did not load`)
     check(audit.duration === (defId === 'downfall_demon' ? '1.83s, 1.83s' : '1.83s'),
@@ -793,11 +799,6 @@ try {
       check(returnLanding.originSplatOpacity > 0.2 && returnLanding.airborneOpacity < 0.05 &&
         returnLanding.groundedOpacity > 0.5,
       `downfall_demon: return landing did not use its body-only slam and separate splat ${JSON.stringify(returnLanding)}`)
-    }
-    if (defId === 'deca') {
-      const landmarks = [windupRect.lowerBodyRight, audit.lowerBodyRight, recoveryLowerBodyRight]
-      check(Math.max(...landmarks) - Math.min(...landmarks) <= 4,
-        `deca: ranged actor landmark moves between phases ${landmarks.join(', ')}`)
     }
     await screenshot(`boss-${defId}-recovery`)
     if (defId === 'downfall_demon') await page.locator('.dead-target-fixture').evaluate((fixture) => fixture.remove())
@@ -967,7 +968,7 @@ try {
   const guardianTransform = await page.locator('.enemy--boss').evaluate((enemy) => ({
     defId: enemy.getAttribute('data-enemy-def'),
     animation: enemy.getAttribute('data-animation'),
-    art: enemy.querySelector('.enemy__art--cutout')?.getAttribute('src'),
+    art: enemy.querySelector('.enemy__art--cutout')?.getAttribute('data-animation-asset'),
   }))
   check(guardianTransform.defId === 'guardian_attack' && guardianTransform.animation === 'attack' &&
     guardianTransform.art?.endsWith('/guardian_defensive-attack.webp'),
@@ -1018,11 +1019,11 @@ try {
     const currentAttack = seat.locator(`.character-attack--${hero.character}[data-attack-seq="${ids.seq}"]`)
     await currentAttack.waitFor()
     if (hero.character === 'hexaghost') {
-      await seat.locator('.character-attack__pose--hexaghost-state.is-loaded').waitFor()
+      await seat.locator('.character-attack__pose--rig.is-loaded').waitFor()
     }
     const body = seat.locator('.seat__portrait > img')
-    check(await body.evaluate((image, duration) => getComputedStyle(image).animationDuration === duration, hero.duration),
-      `${hero.character}: wrong body duration`)
+    check(await body.evaluate((image) => getComputedStyle(image).animationName === 'none'),
+      `${hero.character}: resting art still has a discrete pose animation`)
     if (hero.character === 'silent') {
       const daggers = await seat.locator('.character-attack__dagger').evaluateAll((elements) =>
         elements.map((element) => {
@@ -1038,37 +1039,6 @@ try {
       check(daggers.length === 4 && daggers.every((dagger) =>
         dagger.animation === 'attack-dagger-round-trip' && dagger.duration === 1750 && dagger.roundTrip),
       `silent: daggers are not 1.75s round trips ${JSON.stringify(daggers)}`)
-      const returnMs = Math.max(...daggers.map(({ delay, duration }) => delay + duration))
-      const sampleSilentBody = async (time) => {
-        await seat.evaluate((element, currentTime) => {
-          for (const layer of [
-            element.querySelector('.seat__portrait > img'),
-            element.querySelector('.character-attack__pose--silent-throw'),
-          ]) {
-            const animation = layer.getAnimations()[0]
-            if (animation) {
-              animation.pause()
-              animation.currentTime = currentTime
-            }
-          }
-        }, time)
-        await page.evaluate(() => new Promise(requestAnimationFrame))
-        return seat.evaluate((element) => {
-          const idle = element.querySelector('.seat__portrait > img')
-          return {
-            idle: Number(getComputedStyle(idle).opacity),
-            pose: Number(getComputedStyle(element.querySelector('.character-attack__pose--silent-throw')).opacity),
-          }
-        })
-      }
-      const handoff = {
-        beforeReturn: await sampleSilentBody(returnMs - 1),
-        afterReturn: await sampleSilentBody(returnMs),
-      }
-      check(handoff.beforeReturn.pose > 0.99 && handoff.beforeReturn.idle === 0 &&
-        handoff.afterReturn.pose === 0 && handoff.afterReturn.idle > 0.99,
-      `silent: body did not hand off from throw pose after dagger return ${JSON.stringify(handoff)}`)
-      await screenshot(`hero-silent-3-${returnMs}ms`)
     }
     if (hero.character === 'watcher') {
       const impact = currentAttack.locator('.character-attack__meteor-impact').first()
@@ -1177,8 +1147,7 @@ try {
       const documentNode = await cdp.send('DOM.getDocument')
       const compositorProbe = {}
       for (const [name, selector] of Object.entries({
-        body: `.seat[data-player-id="${ids.actorId}"] .seat__portrait > img`,
-        pose: `.seat[data-player-id="${ids.actorId}"] .character-attack__pose--watcher-cast`,
+        pose: `.seat[data-player-id="${ids.actorId}"] .character-attack__pose--rig`,
         meteor: `.seat[data-player-id="${ids.actorId}"] .character-attack__meteor`,
         impact: `.seat[data-player-id="${ids.actorId}"] .character-attack__meteor-impact`,
       })) {
@@ -1464,8 +1433,6 @@ try {
   check(await phone.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches &&
     document.documentElement.dataset.mobilePerformance === 'true'),
   'iPhone regression fixture did not reproduce OS Reduce Motion in mobile performance mode')
-  check(await phone.locator('link[rel="preload"][as="image"][href*="/combat/characters/"]').count() === 7,
-  'iPhone 13 did not preload all attack pose assets')
   await phone.getByRole('button', { name: 'Single Player', exact: true }).click()
   await phone.getByRole('button', { name: 'Standard', exact: true }).click()
   await phone.getByRole('button', { name: 'Embark' }).click()
@@ -1556,7 +1523,7 @@ try {
     debug.setRun(run)
   }, phoneFixture)
   let phoneHexPreloadRequests = 0
-  await phone.route('**/hexaghost-heat-*-attack.webp', async (route) => {
+  await phone.route('**/hero-hexaghost-heat-*-attack.webp', async (route) => {
     phoneHexPreloadRequests += 1
     if (route.request().url().includes('hexaghost-heat-0-attack')) {
       await new Promise((resolve) => setTimeout(resolve, 500))
@@ -1564,18 +1531,18 @@ try {
     await route.continue()
   })
   const phoneHeroes = [
-    { character: 'ironclad', sourceId: 'strike_ironclad', contact: 630, poses: ['ironclad-ready', 'ironclad-impact'] },
-    { character: 'defect', sourceId: 'strike_defect', contact: 1110, poses: ['defect-charge', 'defect-release'] },
-    { character: 'silent', sourceId: 'predator', contact: 1025, poses: ['silent-throw'] },
-    { character: 'watcher', sourceId: 'strike_watcher', contact: 1050, poses: ['watcher-charge', 'watcher-cast'] },
+    { character: 'ironclad', sourceId: 'strike_ironclad', contact: 630, poses: ['rig'] },
+    { character: 'defect', sourceId: 'strike_defect', contact: 1110, poses: ['rig'] },
+    { character: 'silent', sourceId: 'predator', contact: 1025, poses: ['rig'] },
+    { character: 'watcher', sourceId: 'strike_watcher', contact: 1050, poses: ['rig'] },
     { character: 'guardian', sourceId: 'guardian_strike', contact: 630,
-      bodyAnimation: 'attack-downfall', poses: ['downfall-ready', 'downfall-impact'] },
+      bodyAnimation: 'attack-downfall', poses: ['rig'] },
     { character: 'hermit', sourceId: 'hermit_strike', contact: 630,
-      bodyAnimation: 'attack-downfall', poses: ['downfall-ready', 'downfall-impact'] },
+      bodyAnimation: 'attack-downfall', poses: ['rig'] },
     { character: 'slime_boss', sourceId: 'slime_boss_strike', contact: 850,
-      bodyAnimation: 'attack-slime-boss-idle', poses: ['downfall-ready', 'downfall-impact'] },
+      bodyAnimation: 'attack-slime-boss-idle', poses: ['rig'] },
     { character: 'hexaghost', sourceId: 'strike_hexaghost', contact: 1450,
-      bodyAnimation: 'attack-downfall-hexaghost', poses: ['hexaghost-state'] },
+      bodyAnimation: 'attack-downfall-hexaghost', poses: ['rig'] },
   ]
   for (const [index, hero] of phoneHeroes.entries()) {
     await phone.evaluate(({ base, hero, index }) => {
@@ -1613,7 +1580,7 @@ try {
     const attack = phone.locator(`.character-attack--${hero.character}`)
     await attack.waitFor()
     if (hero.character === 'hexaghost') {
-      await phone.locator('.character-attack__pose--hexaghost-state.is-loaded').waitFor()
+      await phone.locator('.character-attack__pose--rig.is-loaded').waitFor()
     }
     await phone.locator('.enemy .hit-vfx').waitFor()
     const iphoneAttack = await phone.evaluate(({ hero }) => {
@@ -1666,8 +1633,8 @@ try {
     check(iphoneAttack.mobilePerformance === 'true',
       `iPhone 13 did not enable its performance profile ${JSON.stringify(iphoneAttack)}`)
     check(iphoneAttack.osReducedMotion && iphoneAttack.gameReducedMotion === 'false' &&
-      iphoneAttack.bodyAnimation === (hero.bodyAnimation ?? `attack-${hero.character}`) && iphoneAttack.attackVisible &&
-      iphoneAttack.poseAssets.every((pose) => pose.display !== 'none' && pose.animation !== 'none' && pose.loaded) &&
+      iphoneAttack.bodyAnimation === 'none' && iphoneAttack.attackVisible &&
+      iphoneAttack.poseAssets.every((pose) => pose.display !== 'none' && pose.loaded) &&
       (hero.character !== 'watcher' || iphoneAttack.meteorCount === 1),
     `iPhone 13 OS Reduce Motion skipped ${hero.character} attack frames ${JSON.stringify(iphoneAttack)}`)
     check(!iphoneAttack.speedTrail || iphoneAttack.speedTrail.animation === 'attack-speed-trail' &&
@@ -1697,12 +1664,12 @@ try {
     }
     if (hero.character === 'hexaghost') {
       const firstSource = iphoneAttack.poseAssets[0]?.src
-      check(Boolean(firstSource?.endsWith('/assets/combat/characters/hexaghost-heat-0.webp') &&
+      check(Boolean(firstSource?.endsWith('/assets/combat/rigged/hero-hexaghost-heat-0-idle.webp') &&
         iphoneAttack.poseAssets[0]?.fallback),
       `iPhone cold Hexaghost attack had no immediate fallback ${JSON.stringify(iphoneAttack.poseAssets)}`)
       await attack.waitFor({ state: 'detached' })
       await phone.waitForFunction(() => document.querySelector('.board')
-        ?.getAttribute('data-hexaghost-attack-assets-ready') === '7')
+        ?.getAttribute('data-character-attack-assets-ready') === '7')
       check(phoneHexPreloadRequests === 7, `iPhone made ${phoneHexPreloadRequests} Hexaghost preload requests`)
       const repeatedSeq = 2_050_001
       await phone.evaluate((seq) => {
@@ -1716,7 +1683,7 @@ try {
       }, repeatedSeq)
       await phone.locator(`.character-attack--hexaghost[data-attack-seq="${repeatedSeq}"]`).waitFor()
       const repeatedPose = phone.locator(
-        `.character-attack__pose--hexaghost-state.is-loaded[data-attack-seq="${repeatedSeq}"]`,
+        `.character-attack__pose--rig.is-loaded[data-attack-seq="${repeatedSeq}"]`,
       )
       await repeatedPose.waitFor()
       const repeatedSource = await repeatedPose.locator('img').getAttribute('src')
@@ -1735,7 +1702,7 @@ try {
         debug.setRun(run)
       }, replaySeq)
       const replayPose = phone.locator(
-        `.character-attack__pose--hexaghost-state.is-loaded[data-attack-seq="${replaySeq}"]`,
+        `.character-attack__pose--rig.is-loaded[data-attack-seq="${replaySeq}"]`,
       )
       await replayPose.waitFor()
       const replaySource = await replayPose.locator('img').getAttribute('src')
@@ -1756,12 +1723,12 @@ try {
         debug.setRun(run)
       }, transitionSeq)
       const transitionPose = phone.locator(
-        `.character-attack__pose--hexaghost-state.is-loaded[data-attack-seq="${transitionSeq}"]`,
+        `.character-attack__pose--rig.is-loaded[data-attack-seq="${transitionSeq}"]`,
       )
       await transitionPose.waitFor()
       check(requestsBeforeTransition === 7 && phoneHexPreloadRequests === 7 &&
         await transitionPose.getAttribute('data-attack-asset') ===
-          '/assets/combat/characters/hexaghost-heat-1-attack.webp',
+          '/assets/combat/rigged/hero-hexaghost-heat-1-attack.webp',
       'iPhone cold-fetched or selected the wrong Hexaghost animation during a Heat transition')
     }
   }

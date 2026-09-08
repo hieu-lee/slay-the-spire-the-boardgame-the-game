@@ -76,7 +76,7 @@
   position: absolute;
   /* A boss can become the rightmost survivor after its summons die. Reserve
      its enlarged portrait's overhang so that move cannot widen the scroller. */
-  right: calc(max(1.5rem * var(--stage-scale), var(--stage-actor-width) * (var(--boss-scale, 1) - 1) / 2) + var(--stage-index) * var(--stage-gap));
+  right: calc(max(1.5rem * var(--stage-scale), var(--stage-actor-width) * (var(--elite-scale, var(--boss-scale, 1)) - 1) / 2) + var(--elite-end-turn-clearance, 0rem) + var(--stage-index) * var(--stage-gap));
   bottom: calc(1.1rem * var(--stage-scale));
   width: var(--stage-actor-width);
   height: calc(14rem * var(--stage-scale));
@@ -397,4 +397,47 @@ html[data-mobile-performance='true']
   .board:not([data-rows='1']) .row--viewer .row__seat {
     translate: -7.5rem 0;
   }
+}
+
+.board .enemy--elite {
+  --elite-scale: 1.8;
+  --elite-art-height: calc(var(--stage-actor-width) * 2.3 / 1.45);
+  --elite-floor-offset: 0rem;
+}
+/* Reserve distinct bands above the full art canvas, including tall elite rigs.
+   The smaller four-player portrait ratio gives a safe bound for every row. */
+.board .enemy--elite > .enemy__intent {
+  position: absolute;
+  top: auto;
+  bottom: calc(var(--elite-art-height) + 4.2rem * var(--stage-scale) + var(--elite-floor-offset));
+  right: -25%;
+  left: -25%;
+}
+.board .enemy--elite > .enemy__ability {
+  top: auto;
+  bottom: calc(var(--elite-art-height) + 1.9rem * var(--stage-scale) + var(--elite-floor-offset));
+  right: -15%;
+  left: -15%;
+  max-width: none;
+  max-height: calc(2.1rem * var(--stage-scale));
+  overflow: auto;
+  white-space: normal;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+.board .enemy--elite > .enemy__ability::-webkit-scrollbar { display: none; }
+
+@media (orientation: landscape) and (max-height: 26.25rem) {
+  .board .enemy--elite {
+    --elite-art-height: min(calc(var(--stage-actor-width) * 1.45), max(4rem, calc(100dvh - 17.5rem)));
+    --elite-floor-offset: 4.75rem;
+    --elite-end-turn-clearance: 8rem;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 26.25rem) {
+  .board .enemy--elite > .enemy__intent {
+    bottom: calc(var(--elite-art-height) + 3.2rem * var(--stage-scale) + var(--elite-floor-offset));
+  }
+  .board .enemy--elite > .enemy__ability { max-height: calc(1.1rem * var(--stage-scale)); }
 }

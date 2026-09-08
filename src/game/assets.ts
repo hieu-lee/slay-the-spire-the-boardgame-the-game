@@ -114,9 +114,9 @@ export function enemyImagePath(def: EnemyDef): string {
   return assetPath(`combat/enemies/${artId}.webp`)
 }
 
-export function bossAnimationImagePath(def: EnemyDef, pose: 'idle' | 'attack'): string {
+export function enemyAnimationImagePath(def: EnemyDef, pose: 'idle' | 'attack'): string {
   const artId = def.artId ?? def.id
-  return assetPath(`combat/enemies/animations/${artId}-${pose}.webp`)
+  return assetPath(`combat/rigged/${artId}-${pose}.webp`)
 }
 
 /**

@@ -1,5 +1,5 @@
 import { cardDef } from '../game/cards.ts'
-import { assetPath, bossAnimationImagePath, cardThumbPath, enemyImagePath } from '../game/assets.ts'
+import { assetPath, enemyAnimationImagePath, cardThumbPath, enemyImagePath } from '../game/assets.ts'
 import { abilityText, actionsForEnemy, enemyAbilities, enemyAttackBonus, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 // Aliased: `hitDamage` is also this component's floating hit-VFX number.
@@ -15,7 +15,6 @@ import {
   bossAttackContactLeftFor,
   bossAttackDurationFor,
   bossAttackMotionFor,
-  bossAttackScaleFor,
   bossProjectileImagePath,
 } from './combat-vfx.ts'
 
@@ -27,7 +26,7 @@ type EnemyCardProps = {
   /** The round's shared die, which decides what a die-pattern enemy will do. */
   die: number
   acting?: boolean
-  animateBoss?: boolean
+  animateArt?: boolean
   /** A player attack is still presenting; bosses begin only after it clears. */
   deferBossAttack?: boolean
   targeted?: boolean
@@ -280,7 +279,7 @@ export function EnemyCard({
   label,
   die,
   acting = false,
-  animateBoss = false,
+  animateArt = false,
   deferBossAttack = false,
   targeted = false,
   disabled = false,
@@ -301,11 +300,12 @@ export function EnemyCard({
   const [visibleEnemy, setVisibleEnemy] = useState(enemy)
   const displayTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
   const pendingVisuals = useRef(new Map<number, { eventSeq: number; enemy: Enemy }>())
-  const attackPreload = useRef<HTMLImageElement | null>(null)
+  const attackPreload = useRef<{ source: string; blob: Blob } | null>(null)
   const bossAttackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [presentedBossAttack, setPresentedBossAttack] = useState<{
     art: string
     artId: string
+    source: string
   } | null>(null)
   const [awaitingNextEnemyPhase, setAwaitingNextEnemyPhase] = useState(acting)
   const displayBeat = useRef(0)
@@ -372,64 +372,62 @@ export function EnemyCard({
   const actualName = enemyDef(enemy.defId, enemy.ascension).name
   const visibleLabel = label.startsWith(actualName) ? `${def.name}${label.slice(actualName.length)}` : label
   const actions = actionsForEnemy(visibleEnemy, die)
-  const animatedBoss = Boolean(visibleEnemy.isBoss && animateBoss && !visibleEnemy.dead)
+  const animatedEnemy = Boolean(animateArt && !visibleEnemy.dead && (visibleEnemy.isBoss || def.elite ||
+    ['sentry', 'red_slaver', 'blue_slaver'].includes(def.artId ?? def.id)))
   const currentBossArtId = def.artId ?? def.id
   const bossHasAttackAction = actions.some((action) => action.kind === 'attack' || action.kind === 'attackSequence')
-  const currentBossAttackArt = currentBossArtId === 'downfall_demon'
-    ? assetPath('combat/enemies/animations/downfall_demon-airborne.webp')
-    : bossAnimationImagePath(def, 'attack')
+  const currentBossAttackArt = enemyAnimationImagePath(def, 'attack')
+  const currentStaticArt = enemyImagePath(def)
   const currentBossProjectileArt = bossProjectileImagePath(currentBossArtId)
-  const bossAttackRequested = Boolean(animatedBoss && acting && bossHasAttackAction)
+  const bossAttackRequested = Boolean(animatedEnemy && acting && bossHasAttackAction)
   useLayoutEffect(() => {
     if (!acting) setAwaitingNextEnemyPhase(false)
   }, [acting])
   const bossAttackTriggered = bossAttackRequested && !deferBossAttack &&
     !resetVisuals && !awaitingNextEnemyPhase
-  const bossAttacking = Boolean(animatedBoss && presentedBossAttack)
+  const bossAttacking = Boolean(animatedEnemy && presentedBossAttack)
   useEffect(() => {
     if (!bossAttackTriggered) return
-    setPresentedBossAttack({ art: currentBossAttackArt, artId: currentBossArtId })
+    const cached = attackPreload.current
+    // Each one-shot WebP needs its own URL; a decoded preload shares an ended timeline.
+    const art = cached?.source === currentBossAttackArt
+      ? URL.createObjectURL(cached.blob) : currentStaticArt
+    setPresentedBossAttack({ art, artId: currentBossArtId, source: currentBossAttackArt })
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
     bossAttackTimer.current = setTimeout(() => {
       setPresentedBossAttack(null)
       bossAttackTimer.current = null
     }, bossAttackDurationFor(currentBossArtId))
-  }, [bossAttackTriggered, currentBossArtId, currentBossAttackArt])
+  }, [bossAttackTriggered, currentBossArtId, currentBossAttackArt, currentStaticArt])
+  useEffect(() => () => {
+    if (presentedBossAttack?.art.startsWith('blob:')) URL.revokeObjectURL(presentedBossAttack.art)
+  }, [presentedBossAttack])
   useEffect(() => () => {
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
   }, [])
-  const art = animatedBoss
-    ? bossAttacking ? presentedBossAttack?.art ?? currentBossAttackArt : bossAnimationImagePath(def, 'idle')
+  const art = animatedEnemy
+    ? bossAttacking ? presentedBossAttack?.art ?? currentBossAttackArt : enemyAnimationImagePath(def, 'idle')
     : enemyImagePath(def)
-  const bossAttackArt = animatedBoss && bossHasAttackAction ? currentBossAttackArt : undefined
+  const bossAttackArt = animatedEnemy ? currentBossAttackArt : undefined
   useEffect(() => {
     if (!bossAttackArt) return
-    const link = document.createElement('link')
-    link.rel = 'preload'
-    link.as = 'image'
-    link.href = bossAttackArt
-    link.dataset.bossAttackPreload = def.artId ?? def.id
-    document.head.append(link)
-    const preload = new Image()
-    attackPreload.current = preload
-    preload.src = bossAttackArt
-    void preload.decode?.().catch(() => undefined)
+    let cancelled = false
+    void fetch(bossAttackArt).then(async (response) => {
+      if (!response.ok) return
+      const blob = await response.blob()
+      if (!cancelled) attackPreload.current = { source: bossAttackArt, blob }
+    }).catch(() => undefined)
     return () => {
-      link.remove()
-      if (attackPreload.current === preload) attackPreload.current = null
+      cancelled = true
+      attackPreload.current = null
     }
-  }, [bossAttackArt, def.artId, def.id])
+  }, [bossAttackArt])
   useEffect(() => {
-    if (!animatedBoss || currentBossArtId !== 'downfall_demon') return
-    for (const src of [
-      assetPath('combat/enemies/animations/downfall_demon-ground-slam.webp'),
-      assetPath('combat/vfx/actions/downfall-demon-ground-splat.webp'),
-    ]) {
-      const preload = new Image()
-      preload.src = src
-      void preload.decode?.().catch(() => undefined)
-    }
-  }, [animatedBoss, currentBossArtId])
+    if (!animatedEnemy || currentBossArtId !== 'downfall_demon') return
+    const preload = new Image()
+    preload.src = assetPath('combat/vfx/actions/downfall-demon-ground-splat.webp')
+    void preload.decode?.().catch(() => undefined)
+  }, [animatedEnemy, currentBossArtId])
   useEffect(() => {
     if (!currentBossProjectileArt) return
     const preload = new Image()
@@ -438,11 +436,7 @@ export function EnemyCard({
   }, [currentBossProjectileArt])
   const bossArtId = presentedBossAttack?.artId ?? currentBossArtId
   const demonAttacking = bossAttacking && bossArtId === 'downfall_demon'
-  const displayedArt = demonAttacking
-    ? assetPath('combat/enemies/animations/downfall_demon-airborne.webp')
-    : art
-  const bossAttackMotion = animatedBoss ? bossAttackMotionFor(bossArtId) : 'ranged'
-  const bossAttackScale = bossAttackScaleFor(bossArtId)
+  const bossAttackMotion = animatedEnemy ? bossAttackMotionFor(bossArtId) : 'ranged'
   const bossAttackContactLeft = bossAttackContactLeftFor(bossArtId)
   const bossProjectileArt = bossAttackMotion === 'ranged' ? bossProjectileImagePath(bossArtId) : undefined
   const rangedTargetKey = rangedTargetPlayerIds.join('\0')
@@ -461,7 +455,9 @@ export function EnemyCard({
       const animation = boss.style.animation
       boss.style.animation = 'none'
       const bossRect = boss.getBoundingClientRect()
-      const visibleBossLeft = bossRect.left + bossAttackContactLeft / boss.naturalHeight * bossRect.height
+      const imageScale = Math.min(bossRect.width / boss.naturalWidth, bossRect.height / boss.naturalHeight)
+      const imageInset = (bossRect.width - boss.naturalWidth * imageScale) / 2
+      const visibleBossLeft = bossRect.left + imageInset + bossAttackContactLeft * imageScale
       boss.style.animation = animation
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
       card.style.setProperty('--boss-dash-x', `${Math.min(0, heroRight - visibleBossLeft) / rem}rem`)
@@ -535,6 +531,7 @@ export function EnemyCard({
     falling && visibleEnemy.dead ? 'enemy--falling' : '',
     targeted ? 'enemy--targeted' : '',
     visibleEnemy.isBoss ? 'enemy--boss' : '',
+    def.elite || (def.artId ?? def.id) === 'sentry' ? 'enemy--elite' : '',
     bossAttacking ? 'enemy--acting' : '',
   ]
     .filter(Boolean)
@@ -551,12 +548,11 @@ export function EnemyCard({
       data-boss-act={def.bossAct}
       data-attack-motion={bossAttackMotion}
       data-boss-art={visibleEnemy.isBoss ? bossArtId : undefined}
-      data-animation={animatedBoss ? bossAttacking ? 'attack' : 'idle' : 'static'}
+      data-animation={animatedEnemy ? bossAttacking ? 'attack' : 'idle' : 'static'}
       data-webmcp-pending={stageVisualDamage && visualSignature !== JSON.stringify(visibleEnemy) || undefined}
       data-row={enemy.row}
       style={{
         '--stage-index': stageIndex,
-        '--boss-attack-scale': bossAttackScale,
         '--boss-contact-left': bossAttackContactLeft,
         '--boss-attack-duration': `${bossAttackDurationFor(bossArtId)}ms`,
       } as CSSProperties}
@@ -629,17 +625,21 @@ export function EnemyCard({
         <img
           key={`${def.artId ?? def.id}-${bossAttacking ? 'attack' : 'idle'}`}
           className="enemy__art--cutout"
-          src={displayedArt}
+          src={art}
+          data-animation-asset={bossAttacking ? presentedBossAttack?.source : art}
           alt=""
           loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
           onError={(event) => {
             // Keep combat usable if a bundled image fails to load.
-            event.currentTarget.style.display = 'none'
+            if (event.currentTarget.dataset.fallback !== 'true') {
+              event.currentTarget.dataset.fallback = 'true'
+              event.currentTarget.src = enemyImagePath(def)
+            } else event.currentTarget.style.display = 'none'
           }}
         />
         {demonAttacking ? <img
           className="boss-demon-grounded"
-          src={assetPath('combat/enemies/animations/downfall_demon-ground-slam.webp')}
+          src={art}
           alt=""
           aria-hidden="true"
         /> : null}

@@ -24,38 +24,11 @@
    Ironclad adds two 90ms travel beats between three 540ms body phases. Silent
    holds her throw pose through the last dagger's return.
    Visual layers move; the button and its hit box stay in its lane. */
-.seat[class*='seat--attack-'] .seat__portrait > img {
-  will-change: opacity, transform;
-  animation-duration: 1650ms;
-  animation-delay: 0s;
-  animation-fill-mode: both;
-  animation-iteration-count: 1;
-  animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1);
-}
-
-.seat.seat--attack-ironclad .seat__portrait > img { animation-duration: 1800ms; }
-.seat.seat--attack-silent .seat__portrait > img {
-  animation-duration: var(--silent-attack-duration, 1900ms);
-  animation-timing-function: linear;
-}
-.seat.seat--attack-hexaghost .seat__portrait > img { animation: none; }
-.seat.seat--attack-hexaghost:has(.character-attack__pose--hexaghost-state.is-loaded) .seat__portrait > img {
-  animation: attack-downfall-hexaghost 2000ms both;
-}
-
-.seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
-.seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
-.seat--attack-silent .seat__portrait > img { animation-name: attack-silent; }
-.seat--attack-defect .seat__portrait > img {
-  animation-name: attack-defect;
-  animation-delay: 0s;
-}
-.seat--attack-guardian .seat__portrait > img,
-.seat--attack-hermit .seat__portrait > img { animation-name: attack-downfall; }
-.seat.seat--attack-slime_boss .seat__portrait > img {
-  animation-name: attack-slime-boss-idle;
-  animation-duration: 1700ms;
-  animation-timing-function: linear;
+/* One continuously rigged drawing replaces the old alternating pose layers.
+   Keep the resting image visible until the attack image has decoded. */
+.seat[class*='seat--attack-']:has(.character-attack__pose--rig.is-loaded) .seat__portrait > img {
+  opacity: 0;
+  animation: none;
 }
 
 .seat--attack-ironclad .character-attack--ironclad {
@@ -66,13 +39,6 @@
 
 .seat--attack-ironclad .character-attack--ironclad { animation-name: attack-ironclad-motion; }
 
-@keyframes attack-ironclad {
-  0%, 69.99% { opacity: 0; transform: translate(0) scale(1); }
-  70%, 100% { opacity: 1; }
-  80% { transform: translate(-1%, 0) scale(0.99, 1.01); }
-  90% { transform: translate(1%, 0) scale(1.01, 0.99); }
-}
-
 @keyframes attack-ironclad-motion {
   0%, 24%, 100% { transform: translate(0) scale(1); }
   28% { transform: translate(-3%, 1%) scale(1.02, 0.98); }
@@ -81,44 +47,6 @@
   46% { transform: translate(calc(var(--attack-x) + 3%), var(--attack-y)) scale(1.045, 0.97); }
   58% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
   70%, 100% { transform: translate(0) scale(1); }
-}
-
-@keyframes attack-watcher {
-  0%, 66.66% { opacity: 0; transform: translateY(0) rotate(0) scale(1); }
-  66.67%, 100% { opacity: 1; }
-  77.78% { transform: translateY(1%) rotate(-1deg) scale(0.99); }
-  88.89% { transform: translateY(-1%) rotate(1deg) scale(1.01); }
-}
-
-@keyframes attack-silent {
-  0%, 7.89%, 100% { opacity: 1; transform: translate(0) rotate(0); }
-  7.9%, 99.99% { opacity: 0; }
-  20%, 80% { opacity: 0; transform: translate(-2%, 1%) rotate(-3deg); }
-  50% { opacity: 0; transform: translate(2%, -1%) rotate(4deg); }
-}
-
-@keyframes attack-defect {
-  0%, 66.66% { opacity: 0; transform: translateY(0) scale(1); }
-  66.67%, 100% { opacity: 1; }
-  77.78% { transform: translateY(2%) scale(0.99); }
-  88.89% { transform: translateY(-1%) scale(1.01); }
-}
-
-@keyframes attack-downfall {
-  0%, 66.66% { opacity: 0; transform: translateY(0) scale(1); }
-  66.67%, 100% { opacity: 1; }
-  80% { transform: translateY(1%) scale(0.99, 1.01); }
-  90% { transform: translateY(-1%) scale(1.01, 0.99); }
-}
-
-@keyframes attack-slime-boss-idle {
-  0%, 99.99% { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-@keyframes attack-downfall-hexaghost {
-  0%, 99.99% { opacity: 0; }
-  100% { opacity: 1; }
 }
 
 .character-attack {
@@ -202,136 +130,8 @@
   object-position: center bottom;
 }
 
-.character-attack__pose--ironclad-ready { animation: ironclad-ready-pose 1800ms both; }
-.character-attack__pose--ironclad-impact { animation: ironclad-impact-pose 1800ms both; }
-.character-attack__pose--silent-throw {
-  animation: silent-throw-pose var(--silent-attack-duration, 1900ms) linear both;
-}
-.character-attack__pose--defect-charge { animation: defect-charge-pose 1650ms both; }
-.character-attack__pose--defect-release { animation: defect-release-pose 1650ms both; }
-.character-attack__pose--watcher-charge { animation: watcher-charge-pose 1650ms both; }
-.character-attack__pose--watcher-cast { animation: watcher-cast-pose 1650ms both; }
-.character-attack__pose--downfall-ready { animation: downfall-ready-pose 1650ms both; }
-.character-attack__pose--downfall-impact { animation: downfall-impact-pose 1650ms both; }
-.character-attack--slime_boss .character-attack__pose--downfall-ready {
-  animation: slime-boss-ready-pose 1700ms linear both;
-}
-.character-attack--slime_boss .character-attack__pose--downfall-impact {
-  animation: slime-boss-impact-pose 1700ms linear both;
-}
-.character-attack__pose--hexaghost-state { opacity: 0; }
-.seat--attack-hexaghost .character-attack__pose--hexaghost-state.is-loaded {
-  animation: hexaghost-state-visibility 2000ms linear both;
-}
-.seat--attack-hexaghost .character-attack__pose--hexaghost-state.is-fallback.is-loaded {
-  animation-name: hexaghost-fallback-motion;
-}
+.character-attack__pose--rig { opacity: 1; }
 
-@keyframes hexaghost-state-visibility {
-  0%, 99.99% { opacity: 1; }
-  100% { opacity: 0; }
-}
-
-@keyframes hexaghost-fallback-motion {
-  0% { opacity: 1; transform: rotate(-4deg) scale(0.96); }
-  27% { opacity: 1; transform: rotate(7deg) scale(1.05); }
-  45%, 62% { opacity: 1; transform: translateX(3%) scale(1.04, 0.98); }
-  72%, 99.99% { opacity: 1; transform: translateX(0) scale(1); }
-  100% { opacity: 0; }
-}
-
-@keyframes downfall-ready-pose {
-  0%, 33.32% { opacity: 1; }
-  33.33%, 100% { opacity: 0; }
-  0% { transform: translate(-2%, 1%) rotate(-2deg) scale(0.98); }
-  18% { transform: translate(0) rotate(0) scale(1); }
-  33.32% { transform: translate(2%, -1%) rotate(1deg) scale(1.02); }
-}
-
-@keyframes downfall-impact-pose {
-  0%, 33.32%, 66.67%, 100% { opacity: 0; }
-  33.33%, 66.66% { opacity: 1; }
-  33.33% { transform: translate(1%, 0) rotate(1deg) scale(1.02); }
-  50% { transform: translate(3%, 1%) rotate(2deg) scale(1.04); }
-  66.66% { transform: translate(0) rotate(0) scale(1); }
-}
-
-@keyframes slime-boss-ready-pose {
-  0%, 35.293%, 64.707%, 99.99% { opacity: 1; }
-  35.294%, 64.706%, 100% { opacity: 0; }
-}
-
-@keyframes slime-boss-impact-pose {
-  0%, 35.293%, 64.707%, 100% { opacity: 0; }
-  35.294%, 64.706% { opacity: 1; }
-  50% { opacity: 1; transform: translateX(4%) scale(1.08, 0.94); }
-}
-
-@keyframes ironclad-ready-pose {
-  0%, 34.99% { opacity: 1; }
-  35%, 100% { opacity: 0; }
-  0%, 100% { transform: translate(-2%, 1%) rotate(-2deg) scale(0.98); }
-  10% { transform: translate(-1%, 1%) rotate(-1deg) scale(0.99); }
-  20% { transform: translate(0) rotate(0) scale(1); }
-  30% { transform: translate(2%, -1%) rotate(1deg) scale(1.02); }
-}
-
-@keyframes ironclad-impact-pose {
-  0%, 34.99%, 70%, 100% { opacity: 0; }
-  35%, 69.99% { opacity: 1; }
-  0%, 100% { transform: translate(-3%, -1%) rotate(-2deg) scale(0.96); }
-  35% { transform: translate(1%, 0) rotate(1deg) scale(1.02); }
-  45% { transform: translate(3%, 1%) rotate(2deg) scale(1.04); }
-  55% { transform: translate(2%, 1%) rotate(1deg) scale(1.02); }
-  65% { transform: translate(0) rotate(0) scale(1); }
-}
-
-@keyframes silent-throw-pose {
-  0%, 7.89%, 100% { opacity: 0; }
-  7.9%, 99.99% { opacity: 1; }
-  0%, 100% { transform: translate(-3%, 1%) rotate(-3deg) scale(0.97); }
-  22%, 78% { opacity: 1; transform: translate(-1%, 0) rotate(-1deg) scale(1); }
-  38%, 62% { opacity: 1; transform: translate(3%, -1%) rotate(3deg) scale(1.04); }
-  50% { opacity: 1; transform: translate(4%, -1%) rotate(4deg) scale(1.05); }
-}
-
-@keyframes defect-charge-pose {
-  0%, 33.32% { opacity: 1; }
-  33.33%, 100% { opacity: 0; }
-  0%, 100% { transform: translateY(2%) scale(0.97); }
-  11.11% { transform: translateY(1%) scale(0.985); }
-  22.22% { transform: translateY(0) scale(1); }
-  33.33% { transform: translateY(-1%) scale(1.02); }
-}
-
-@keyframes defect-release-pose {
-  0%, 32.99%, 67%, 100% { opacity: 0; }
-  33.33%, 66.66% { opacity: 1; }
-  0%, 100% { transform: translateY(1%) scale(0.97); }
-  33.33% { transform: translateY(-2%) scale(1.03); }
-  44.44% { transform: translateY(-2%) scale(1.035); }
-  55.56% { transform: translateY(-1%) scale(1.02); }
-  66.67% { transform: translateY(0) scale(1); }
-}
-
-@keyframes watcher-charge-pose {
-  0%, 33.32% { opacity: 1; }
-  33.33%, 100% { opacity: 0; }
-  0%, 100% { transform: translateY(1%) rotate(-1deg) scale(0.98); }
-  11.11% { transform: translateY(0) rotate(0) scale(0.99); }
-  22.22% { transform: translateY(0) rotate(0) scale(1); }
-  33.33% { transform: translateY(-1%) rotate(1deg) scale(1.02); }
-}
-
-@keyframes watcher-cast-pose {
-  0%, 32.99%, 67%, 100% { opacity: 0; }
-  33.33%, 66.66% { opacity: 1; }
-  0%, 100% { transform: translateY(1%) rotate(-1deg) scale(0.97); }
-  33.33% { transform: translateY(-1%) rotate(1deg) scale(1.03); }
-  44.44% { transform: translateY(-1%) rotate(1deg) scale(1.035); }
-  55.56% { transform: translateY(0) rotate(0) scale(1.02); }
-  66.67% { transform: translateY(0) rotate(0) scale(1); }
-}
 
 .character-attack__dagger,
 .character-attack__bolt {

@@ -16,7 +16,7 @@ import {
   cardArtPath,
   cardImagePath,
   cardThumbPath,
-  bossAnimationImagePath,
+  enemyAnimationImagePath,
   campfireScenePath,
   enemyImagePath,
   relicIconPath,
@@ -28,9 +28,6 @@ import {
 import { ENEMIES } from '../src/game/enemies.ts'
 import { POTIONS, RELICS } from '../src/game/relics.ts'
 import {
-  bossAttackContactLeftFor,
-  bossAttackDurationFor,
-  bossAttackScaleFor,
   bossProjectileImagePath,
 } from '../src/ui/combat-vfx.ts'
 import { DOWNFALL_COLORLESS_CARD_DEFS } from '../src/game/downfall/items.ts'
@@ -600,177 +597,17 @@ check('every Downfall enemy asset maps to an official source', () => {
   ), 'Downfall Shiv is not the deterministic lossless conversion of the existing base-game Shiv asset')
 })
 
-check('every boss has the transparent animation assets used by its actions', () => {
-  const bosses = Object.values(ENEMIES).filter((def) => def.isBoss)
-  const artIds = [...new Set(bosses.map((def) => def.artId ?? def.id))].sort()
-  const layeredBosses = new Set(['downfall_demon'])
-  const attacklessBosses = new Set(['downfall_flame_barrier'])
-  const expected = [
-    ...artIds.flatMap((id) => [
-      `${id}-idle.webp`,
-      ...(layeredBosses.has(id) || attacklessBosses.has(id) ? [] : [`${id}-attack.webp`]),
-    ]),
-    'downfall_demon-airborne.webp', 'downfall_demon-ground-slam.webp',
-  ].sort()
-  assertDeepEqual(bossAnimationFiles.sort(), expected, 'boss animation inventory')
-  const missing = bosses.flatMap((def) => ['idle', ...(layeredBosses.has(def.artId ?? def.id) ||
-    attacklessBosses.has(def.artId ?? def.id) ? [] : ['attack'])].filter((pose) => {
-    const relative = bossAnimationImagePath(def, pose).replace(/^\/assets\//, '')
-    return !existsSync(join(publicRoot, 'assets', relative))
-  }).map((pose) => `${def.id}: ${pose}`))
-  assert(missing.length === 0, `missing boss animations:\n    ${missing.join('\n    ')}`)
-
-  const probe = `
-import sys, json, os, re, subprocess
-from collections import deque
-from PIL import Image
-faults = []
-metadata = json.loads(sys.argv[1])
-runtime_durations = json.loads(sys.argv[2])
-def components(alpha):
-    pixels = alpha.load()
-    seen = set()
-    sizes = []
-    for y in range(alpha.height):
-        for x in range(alpha.width):
-            if pixels[x, y] <= 32 or (x, y) in seen:
-                continue
-            queue = deque([(x, y)])
-            seen.add((x, y))
-            size = 0
-            while queue:
-                px, py = queue.popleft()
-                size += 1
-                for point in ((px - 1, py), (px + 1, py), (px, py - 1), (px, py + 1)):
-                    if 0 <= point[0] < alpha.width and 0 <= point[1] < alpha.height and \
-                      pixels[point[0], point[1]] > 32 and point not in seen:
-                        seen.add(point)
-                        queue.append(point)
-            sizes.append(size)
-    return sorted(sizes, reverse=True)
-for name in sys.argv[3:]:
-    im = Image.open(name)
-    is_static = "/animations/" not in name.replace("\\\\", "/") or \
-      name.endswith(("downfall_demon-airborne.webp", "downfall_demon-ground-slam.webp"))
-    is_evil = any(f"downfall_pc_{hero}" in name for hero in ("ironclad", "silent", "defect", "watcher"))
-    is_dark_core = "downfall_dark_core" in name
-    if getattr(im, "n_frames", 1) < 2 and not is_static:
-        faults.append(f"{name}: not animated")
-        continue
-    boxes = []
-    mux = subprocess.run(["webpmux", "-info", name], check=True, capture_output=True, text=True).stdout
-    loop_match = re.search(r"Loop Count\\s*:\\s*(\\d+)", mux)
-    loop = int(loop_match.group(1)) if loop_match else None
-    durations = [int(line.split()[6]) for line in mux.splitlines()
-                 if line.lstrip()[:1].isdigit() and line.split()[0].endswith(":" )]
-    one_shot = re.search(r"hexaghost-heat-\\d-attack\\.webp$", name)
-    if one_shot and loop != 1:
-        faults.append(f"{name}: one-shot attack has loop count {loop}")
-    for frame in range(im.n_frames):
-        im.seek(frame)
-        rgba = im.convert("RGBA")
-        alpha = rgba.getchannel("A")
-        w, h = rgba.size
-        visible_box = alpha.point(lambda value: 255 if value > 16 else 0).getbbox()
-        boxes.append(visible_box)
-        corners = [alpha.getpixel((0, 0)), alpha.getpixel((w - 1, 0)),
-                   alpha.getpixel((0, h - 1)), alpha.getpixel((w - 1, h - 1))]
-        if max(corners) > 16:
-            faults.append(f"{name} frame {frame}: opaque corners {corners}")
-            break
-        if is_dark_core:
-            near_white = sum(a > 240 and min(r, g, b) > 235 and max(r, g, b) - min(r, g, b) < 12
-                             for r, g, b, a in rgba.getdata())
-            if near_white > 256:
-                faults.append(f"{name} frame {frame}: opaque light background island remains {near_white}px")
-                break
-        if name.endswith("-attack.webp") and visible_box and min(
-            visible_box[0], visible_box[1], w - visible_box[2], h - visible_box[3]
-        ) < 20:
-            faults.append(f"{name} frame {frame}: attack art has no transparent safety margin {visible_box}")
-            break
-        if is_evil:
-            box = alpha.getbbox()
-            if not box or box[0] <= 1 or box[1] <= 1 or box[2] >= w - 1 or box[3] >= h - 1:
-                faults.append(f"{name} frame {frame}: character clips the canvas edge {box}")
-            islands = components(alpha)
-            if islands and any(size >= w * h * .001 and size < islands[0] * .02 for size in islands[1:]):
-                faults.append(f"{name} frame {frame}: detached sheet fragment detected {islands[:5]}")
-            opaque = alpha.point(lambda value: 255 if value > 32 else 0)
-            band_rows = sum(sum(bool(value) for value in opaque.crop((0, y, w, y + 1)).getdata()) > w * .85
-                            for y in range(h))
-            band_columns = sum(sum(bool(value) for value in opaque.crop((x, 0, x + 1, h)).getdata()) > h * .85
-                               for x in range(w))
-            if band_rows > h * .12 or band_columns > w * .25:
-                faults.append(f"{name} frame {frame}: opaque extraction band detected {(band_rows, band_columns)}")
-        if name.endswith("bronze_automaton-attack.webp") and frame == 0 and alpha.crop((int(w * .72), 0, w, h)).getbbox():
-            faults.append(f"{name}: impact leaked into the wind-up frame")
-    if len(boxes) >= 2 and all(boxes[:2]) and name.endswith("bronze_automaton-attack.webp"):
-        heights = [box[3] - box[1] for box in boxes[:2]]
-        if abs(heights[0] - heights[1]) > h * .08:
-            faults.append(f"{name}: attack frames use different character heights {heights}")
-    if len(boxes) >= 2 and all(boxes[:2]) and name.endswith("bronze_automaton-idle.webp"):
-        centers = [(box[0] + box[2]) / 2 for box in boxes[:2]]
-        if abs(centers[0] - centers[1]) > w * .03:
-            faults.append(f"{name}: idle frames jump sideways {centers}")
-    is_demon_slam = name.endswith("downfall_demon-ground-slam.webp")
-    art_id = "downfall_demon" if is_demon_slam else os.path.basename(name).removesuffix("-attack.webp")
-    if name.endswith("-attack.webp") and sum(durations) != runtime_durations[art_id]:
-        faults.append(f'{name}: animation is {sum(durations)}ms, runtime shows it for {runtime_durations[art_id]}ms')
-    if name.endswith("-attack.webp") and (art_id in metadata or art_id.startswith("downfall_")):
-        phase_sizes = (2, 1, 2, 2) if "awakened_one_phase_" in name else (3, 1, 3, 3)
-        expected = (550, 180, 550, 550)
-        if len(durations) != sum(phase_sizes):
-            faults.append(f"{name}: expected {sum(phase_sizes)} timed frames, got {len(durations)}")
-        else:
-            offset = 0
-            for label, size, total in zip(("windup", "dash", "impact", "recovery"), phase_sizes, expected):
-                phase = durations[offset:offset + size]
-                offset += size
-                if sum(phase) != total:
-                    faults.append(f"{name}: {label} is {sum(phase)}ms, expected {total}ms")
-                if size > 1 and max(phase) - min(phase) > 1:
-                    faults.append(f"{name}: {label} cadence is uneven {phase}")
-    if (name.endswith("-attack.webp") or is_demon_slam) and art_id in metadata:
-        art = metadata[art_id]
-        contact_frame = 0 if is_demon_slam else 4 if "awakened_one_phase_" in name else 5
-        if boxes[contact_frame][0] != art["contactLeft"]:
-            faults.append(f'{name}: contact edge is {boxes[contact_frame][0]}px, metadata says {art["contactLeft"]}px')
-        idle = Image.open(name.replace("-ground-slam.webp", "-idle.webp") if is_demon_slam else
-                          name.replace("-attack.webp", "-idle.webp"))
-        idle_heights = []
-        for frame in range(idle.n_frames):
-            idle.seek(frame)
-            box = idle.convert("RGBA").getchannel("A").point(lambda value: 255 if value > 16 else 0).getbbox()
-            idle_heights.append(box[3] - box[1])
-        idle_css_height = sum(idle_heights) / len(idle_heights) * min(144 / idle.width, 137 / idle.height)
-        attack_css_height = (boxes[0][3] - boxes[0][1]) * 137 / im.height * art["scale"]
-        if not art_id.startswith("downfall_") and abs(attack_css_height / idle_css_height - 1) > .03:
-            faults.append(f"{name}: scaled wind-up height {attack_css_height:.1f}px differs from idle {idle_css_height:.1f}px")
-print(json.dumps(faults))
-`
-  const paths = [...new Set([
-    ...expected.map((file) => join(bossAnimationRoot, file)),
-    ...artIds.filter((id) => id.startsWith('downfall_')).map((id) => join(combatEnemyRoot, `${id}.webp`)),
-    ...['ironclad', 'silent', 'defect', 'watcher'].map((hero) => join(combatEnemyRoot, `downfall_pc_${hero}.webp`)),
-  ])]
-  const timedBossArtIds = [
-    'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'corrupt_heart',
-    'deca', 'donu', 'guardian_attack', 'guardian_defensive', 'hexaghost', 'slime_boss',
-    'the_champ', 'the_collector', 'time_eater', 'downfall_demon', 'downfall_doppelganger',
-    'downfall_trickster', 'downfall_wrathful',
-  ]
-  const metadata = Object.fromEntries(timedBossArtIds.map((id) => [id, {
-    scale: bossAttackScaleFor(id),
-    contactLeft: bossAttackContactLeftFor(id),
-  }]))
-  const runtimeDurations = Object.fromEntries(artIds.map((id) => [id, bossAttackDurationFor(id)]))
-  const result = spawnSync('python3', [
-    '-c', probe, JSON.stringify(metadata), JSON.stringify(runtimeDurations), ...paths,
-  ], { encoding: 'utf8' })
-  assert(result.status === 0, result.stderr || 'boss animation audit requires python3 + Pillow')
-  const faults = JSON.parse(result.stdout.trim().split('\n').pop())
-  assert(faults.length === 0, `invalid boss animation assets:\n    ${faults.join('\n    ')}`)
+check('every boss and elite resolves to the continuous rig inventory', () => {
+  const defs = Object.values(ENEMIES).filter((def) => def.isBoss || def.elite ||
+    ['sentry', 'red_slaver', 'blue_slaver'].includes(def.artId ?? def.id))
+  for (const def of defs) for (const pose of ['idle', 'attack']) {
+    const relative = enemyAnimationImagePath(def, pose).replace(/^\/assets\//, '')
+    assert(existsSync(join(publicRoot, 'assets', relative)), `${def.id}: missing ${pose} rig`)
+  }
+  const result = spawnSync('python3', ['scripts/animation/review-rigs.py', '--check-only'], {
+    cwd: repoRoot, encoding: 'utf8',
+  })
+  assert(result.status === 0, result.stderr || result.stdout || 'rig audit requires Python and Pillow')
 })
 
 check('every ranged Downfall boss has one complete transparent projectile', () => {

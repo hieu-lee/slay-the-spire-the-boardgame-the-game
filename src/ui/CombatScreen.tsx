@@ -261,7 +261,7 @@ function chargedCardEnergy(def: CardDef, player: Player, card: CardInstance): nu
   return typeof cost === 'number' ? cost : undefined
 }
 
-function HexaghostAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, attackSeq }: {
+function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, attackSeq }: {
   asset?: Blob
   assetPath: string
   fallbackAsset: string
@@ -279,7 +279,7 @@ function HexaghostAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, att
   if (!src) return null
   return (
     <span
-      className={['character-attack__pose', 'character-attack__pose--hexaghost-state',
+      className={['character-attack__pose', 'character-attack__pose--rig',
         replayAsset ? '' : 'is-fallback', loaded ? 'is-loaded' : ''].filter(Boolean).join(' ')}
       data-attack-asset={sourceAsset}
       data-attack-seq={attackSeq}
@@ -321,7 +321,9 @@ function GuardianPortrait({ mode, animate, restartKey }: {
     : mode === 'defense' ? 'guardian-defense.webp' : 'guardian.webp'
   return <img
     key={`${transition ?? mode}-${restartKey}`}
-    src={assetPath(`combat/characters/${file}`)}
+    src={assetPath(animate && !transition
+      ? `combat/rigged/hero-${mode === 'defense' ? 'guardian-defense' : 'guardian'}-idle.webp`
+      : `combat/characters/${file}`)}
     data-guardian-mode={mode}
     data-guardian-transition={transition ?? undefined}
     data-vfx-seq={typeof restartKey === 'number' ? restartKey : undefined}
@@ -527,18 +529,20 @@ function CombatScreenView({
   }
   const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
-  const [hexaghostAttackBlobs, setHexaghostAttackBlobs] = useState<Map<string, Blob>>(() => new Map())
-  const hexaghostAttackAssets = state.players.some((player) => player.character === 'hexaghost' && !player.dead)
-    ? Array.from({ length: 7 }, (_, heat) =>
-      assetPath(`combat/characters/hexaghost-heat-${heat}-attack.webp`)).join('|')
-    : ''
+  const [characterAttackBlobs, setCharacterAttackBlobs] = useState<Map<string, Blob>>(() => new Map())
+  const characterAttackAssets = prefersReducedMotion ? '' : [...new Set(state.players.filter((player) => !player.dead).flatMap((player) =>
+    player.character === 'hexaghost'
+      ? Array.from({ length: 7 }, (_, heat) => assetPath(`combat/rigged/hero-hexaghost-heat-${heat}-attack.webp`))
+      : player.character === 'guardian'
+        ? ['guardian', 'guardian-defense'].map((id) => assetPath(`combat/rigged/hero-${id}-attack.webp`))
+        : [assetPath(`combat/rigged/hero-${player.character}-attack.webp`)]))].sort().join('|')
   useEffect(() => {
     const controller = new AbortController()
-    const assets = hexaghostAttackAssets.split('|').filter(Boolean)
-    setHexaghostAttackBlobs((current) => new Map(assets
+    const assets = characterAttackAssets.split('|').filter(Boolean)
+    setCharacterAttackBlobs((current) => new Map(assets
       .filter((src) => current.has(src))
       .map((src) => [src, current.get(src)!])))
-    assets.forEach((src) => {
+    assets.filter((src) => !characterAttackBlobs.has(src)).forEach((src) => {
       void fetch(src, { signal: controller.signal }).then(async (response) => {
         if (!response.ok) return
         const blob = await response.blob()
@@ -551,11 +555,11 @@ function CombatScreenView({
           URL.revokeObjectURL(decodeUrl)
         }
         if (controller.signal.aborted) return
-        setHexaghostAttackBlobs((current) => new Map(current).set(src, blob))
+        setCharacterAttackBlobs((current) => new Map(current).set(src, blob))
       }).catch(() => undefined)
     })
     return () => controller.abort()
-  }, [hexaghostAttackAssets])
+  }, [characterAttackAssets])
   const hermitSetupPending = state.pendingHermitSetupLoads?.[0]?.playerId === viewerId
   const hermitStrengthPending = state.pendingHermitStrengthRewards?.[0]?.playerId === viewerId
   const dieRelicPending = state.pendingDieRelicChoices?.[0]
@@ -5659,7 +5663,7 @@ function CombatScreenView({
         className="board"
         data-rows={rows.length}
         data-crowded={livingEnemies(state).length >= 3 || undefined}
-        data-hexaghost-attack-assets-ready={hexaghostAttackBlobs.size || undefined}
+        data-character-attack-assets-ready={characterAttackBlobs.size || undefined}
         ref={boardRef}
         tabIndex={0}
         aria-label="Combat board"
@@ -5674,7 +5678,7 @@ function CombatScreenView({
                 label={enemyLabel(state.enemies, enemy)}
                 die={state.die}
                 acting={state.phase === 'enemy' && !prefersReducedMotion}
-                animateBoss={!prefersReducedMotion}
+                animateArt={!prefersReducedMotion}
                 deferBossAttack={characterAttacksActive}
                 falling={falling.has(enemy.uid)}
                 visualContactMs={prefersReducedMotion ? 0 : targetPresentationTimings.get(enemy.uid)?.contact}
@@ -5740,9 +5744,11 @@ function CombatScreenView({
           const occupantHeat = occupant?.character === 'hexaghost'
             ? Math.max(0, Math.min(6, occupant.heat))
             : 0
-          const hexaghostAttackAsset = assetPath(
-            `combat/characters/hexaghost-heat-${occupantHeat}-attack.webp`,
-          )
+          const rigId = occupant?.character === 'hexaghost' ? `hexaghost-heat-${occupantHeat}`
+            : occupant?.character === 'guardian' && occupant.guardianMode === 'defense' ? 'guardian-defense'
+            : occupant?.character
+          const characterAttackAsset = assetPath(`combat/rigged/hero-${rigId}-attack.webp`)
+          const characterIdleAsset = assetPath(`combat/rigged/hero-${rigId}-idle.webp`)
           return (
             <div
               className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
@@ -5805,13 +5811,13 @@ function CombatScreenView({
                         {occupant.character === 'guardian' && occupant.guardianMode ? (
                           <GuardianPortrait
                             mode={occupant.guardianMode}
-                            animate={!prefersReducedMotion}
+                            animate={!prefersReducedMotion && !occupant.dead}
                             restartKey={characterAttack?.active.event.seq ?? 'idle'}
                           />
                         ) : (
                           <img
                             key={`${occupant.character}-${occupantHeat}-${slimeSpawnEvent?.seq ?? characterAttack?.active.event.seq ?? 'idle'}`}
-                            src={assetPath(occupant.character === 'hexaghost'
+                            src={!prefersReducedMotion && !occupant.dead && !slimeSpawnEvent ? characterIdleAsset : assetPath(occupant.character === 'hexaghost'
                               ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
                               : occupant.character === 'slime_boss' && slimeSpawnEvent
                                 ? 'combat/characters/slime_boss-spawn.webp'
@@ -5838,57 +5844,17 @@ function CombatScreenView({
                               '--attack-y': `${characterAttack.y}px`,
                             } as React.CSSProperties}
                           >
-                            {occupant.character === 'ironclad' &&
-                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
-                              <>
-                                <span className="character-attack__pose character-attack__pose--ironclad-ready">
-                                  <img src={assetPath('combat/characters/ironclad-ready.webp')} alt="" />
-                                </span>
-                                <span className="character-attack__pose character-attack__pose--ironclad-impact">
-                                  <img src={assetPath('combat/characters/ironclad-impact.webp')} alt="" />
-                                </span>
-                              </>
-                            ) : null}
-                            {occupant.character !== 'hexaghost' &&
-                            DOWNFALL_CHARACTER_IDS.includes(occupant.character as (typeof DOWNFALL_CHARACTER_IDS)[number]) &&
-                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
-                              <>
-                                <span className="character-attack__pose character-attack__pose--downfall-ready">
-                                  <img src={assetPath(`combat/characters/${occupant.character}-ready.webp`)} alt="" />
-                                </span>
-                                <span className="character-attack__pose character-attack__pose--downfall-impact">
-                                  <img src={assetPath(`combat/characters/${occupant.character}-impact.webp`)} alt="" />
-                                </span>
-                              </>
-                            ) : null}
-                            {occupant.character === 'hexaghost' &&
-                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
-                              <HexaghostAttackPose
+                            {characterAttack.active.event.seq === latestCharacterAttackSeq ? (
+                              <CharacterAttackPose
                                 key={characterAttack.active.event.seq}
                                 attackSeq={characterAttack.active.event.seq}
-                                assetPath={hexaghostAttackAsset}
-                                fallbackAsset={assetPath(`combat/characters/hexaghost-heat-${occupantHeat}.webp`)}
-                                asset={hexaghostAttackBlobs.get(hexaghostAttackAsset)}
+                                assetPath={characterAttackAsset}
+                                fallbackAsset={characterIdleAsset}
+                                asset={characterAttackBlobs.get(characterAttackAsset)}
                               />
-                            ) : null}
-                            {occupant.character === 'silent' &&
-                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
-                              <span className="character-attack__pose character-attack__pose--silent-throw">
-                                <img src={assetPath('combat/characters/silent-throw.webp')} alt="" />
-                              </span>
                             ) : null}
                             {occupant.character === 'watcher' ? (
                               <>
-                                {characterAttack.active.event.seq === latestCharacterAttackSeq ? (
-                                  <>
-                                    <span className="character-attack__pose character-attack__pose--watcher-charge">
-                                      <img src={assetPath('combat/characters/watcher-ready.webp')} alt="" />
-                                    </span>
-                                    <span className="character-attack__pose character-attack__pose--watcher-cast">
-                                      <img src={assetPath('combat/characters/watcher-thrust.webp')} alt="" />
-                                    </span>
-                                  </>
-                                ) : null}
                                 {characterAttack.targets.map((target, index) => (
                                   <span
                                     className="character-attack__meteor"
@@ -5923,12 +5889,6 @@ function CombatScreenView({
                             {occupant.character === 'defect' &&
                             characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <>
-                                <span className="character-attack__pose character-attack__pose--defect-charge">
-                                  <img src={assetPath('combat/characters/defect-charge.webp')} alt="" />
-                                </span>
-                                <span className="character-attack__pose character-attack__pose--defect-release">
-                                  <img src={assetPath('combat/characters/defect-release.webp')} alt="" />
-                                </span>
                                 <span className="character-attack__core">
                                   <img src={assetPath('combat/vfx/actions/defect-face-orb.webp')} alt="" />
                                 </span>
@@ -6190,6 +6150,9 @@ function CombatScreenView({
                       enemies={state.enemies}
                       label={enemyLabel(state.enemies, enemy)}
                       die={state.die}
+                      acting={state.phase === 'enemy' && !prefersReducedMotion}
+                      animateArt={!prefersReducedMotion}
+                      deferBossAttack={characterAttacksActive}
                       falling={falling.has(enemy.uid)}
                       visualContactMs={prefersReducedMotion ? 0 : targetPresentationTimings.get(enemy.uid)?.contact}
                       visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
