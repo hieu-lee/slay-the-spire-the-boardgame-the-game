@@ -93,13 +93,14 @@ try {
     'Relic loot effect details are not exposed to assistive technology')
   const row = page.locator('.loot-choice').first()
   await row.hover()
+  await relicTip.waitFor({ state: 'hidden' })
   assert.equal(await row.evaluate((button) => getComputedStyle(button, '::after').opacity), '1',
     'hovering loot does not reveal its corner brackets')
   const desktop = await page.evaluate(() => {
     const box = (selector) => document.querySelector(selector).getBoundingClientRect()
     return { panel: box('.reward-screen__players'), row: box('.loot-choice'), skip: box('.reward-screen__skip') }
   })
-  assert(desktop.panel.width <= 420 && desktop.panel.height >= 430, 'desktop loot sheet lost its compact tall silhouette')
+  assert(desktop.panel.width <= 520 && desktop.panel.height >= desktop.panel.width, 'desktop loot sheet lost its compact tall silhouette')
   assert(desktop.row.height >= 52 && desktop.row.height <= 76, 'desktop loot row no longer matches the compact reference')
   assert(desktop.skip.left > desktop.panel.right && desktop.skip.bottom <= 900, 'global Skip is not outside the panel at bottom-right')
   await page.screenshot({ path: join(out, 'desktop-loot-hover.png') })

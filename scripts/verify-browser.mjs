@@ -620,7 +620,7 @@ check('the title menu fills the viewport without clipping its controls', () => {
 })
 
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
-await page.getByRole('heading', { name: 'Choose your run', exact: true }).waitFor()
+await page.getByRole('region', { name: 'Run modes', exact: true }).waitFor()
 const runModeSelection = await page.locator('.start-menu__mode-select').evaluate((screen) => ({
   contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
   choices: [...screen.querySelectorAll('.start-menu__mode-choice')].map((choice) => ({

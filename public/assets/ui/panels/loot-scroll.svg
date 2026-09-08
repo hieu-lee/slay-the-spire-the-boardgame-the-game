@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="132" viewBox="0 0 660 132" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="paper" x2=".2" y2="1"><stop stop-color="#bca888"/><stop offset=".65" stop-color="#b29a76"/><stop offset="1" stop-color="#9e835e"/></linearGradient>
+    <linearGradient id="fold"><stop stop-color="#71583b"/><stop offset=".6" stop-color="#b19873"/><stop offset="1" stop-color="#c3ab83"/></linearGradient>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".1" numOctaves="3" seed="4"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope=".08"/></feComponentTransfer><feBlend in="SourceGraphic" mode="soft-light"/></filter>
+    <path id="banner" d="M79 25 Q124 9 174 12 L184 8 191 11 216 7 Q403 1 543 15 L551 12 558 17 580 20 588 29 585 99 Q592 111 572 116 L547 109 Q430 93 330 99 L325 94 316 99 Q204 94 101 112 L84 109 Q71 104 73 90Z"/>
+    <clipPath id="cut"><use href="#banner"/></clipPath>
+  </defs>
+  <path d="m82 47-49 10-23-1 5 11-4 4 8 29-1 13 24-6 51 1 41-15 393 1 46 16 49-1 19 3-3-14 9-29-7 1 7-13-25 2-48-13Z" fill="url(#paper)" stroke="#776348" stroke-width="3"/>
+  <path d="m23 63 7 35 51-3 M580 60l50 5-6 33-42-4" fill="none" stroke="#dcc9a4" stroke-opacity=".4" stroke-width="3"/>
+  <path d="M79 84q-19 45 33 26l28-22 M584 84q20 45-33 26l-28-22" fill="url(#fold)" stroke="#806547" stroke-width="3"/>
+  <use href="#banner" fill="url(#paper)" stroke="#806c50" stroke-width="3"/>
+  <g clip-path="url(#cut)">
+    <path d="M91 31 Q297-4 570 27 M82 99 Q315 70 576 99" fill="none" stroke="#e1cda6" stroke-opacity=".3" stroke-width="4"/>
+    <path d="m97 17 54-6 24 68-47 12Z M490 10l66 8-33 62-35 8Z" fill="#e2cc9f" opacity=".09"/>
+    <use href="#banner" fill="transparent" filter="url(#grain)"/>
+  </g>
+</svg>

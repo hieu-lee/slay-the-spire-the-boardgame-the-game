@@ -167,22 +167,16 @@
   position: absolute;
   inset: clamp(2.4rem, 7vh, 5rem) clamp(1rem, 7vw, 7rem) clamp(2rem, 6vh, 4rem);
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: 1fr;
   align-items: center;
   justify-items: center;
   gap: clamp(0.65rem, 2vh, 1.3rem);
 }
 
-.start-menu__mode-select > h1 {
-  margin: 0;
-  color: #f5cf62;
-  font-size: clamp(2.2rem, 4.7vw, 4.25rem);
-  text-shadow: 0 3px 2px #20130d, 0 0 10px #000;
-}
-
 .start-menu__mode-choices {
   display: grid;
-  grid-template-columns: repeat(3, minmax(12rem, 19rem));
+  grid-template-columns: repeat(3, minmax(0, 22rem));
+  width: min(74rem, 100%);
   align-items: center;
   justify-content: center;
   gap: clamp(0.65rem, 2vw, 2rem);
@@ -190,39 +184,43 @@
 
 .start-menu__mode-choice {
   position: relative;
+  isolation: isolate;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: min(32rem, 65vh);
-  gap: clamp(0.65rem, 1.8vh, 1.15rem);
-  padding: clamp(1rem, 3vw, 2rem) clamp(0.85rem, 2vw, 1.45rem);
-  overflow: hidden;
-  border: 2px solid rgb(71 46 28 / 0.78);
-  border-radius: 0.65rem 0.65rem 1.4rem 1.4rem / 0.45rem 0.45rem 0.85rem 0.85rem;
+  grid-template-rows: auto auto 1fr;
+  align-items: center;
+  height: min(44rem, 80vh);
+  gap: clamp(1rem, 3.5vh, 2rem);
+  padding: clamp(2rem, 8vh, 4.5rem) 11% 14%;
+  border: 0;
+  border-radius: 0;
   color: #fff8ea;
-  background: linear-gradient(105deg, #d7ba87, #aa8456 62%, #765035);
-  box-shadow: inset 0 0 0 0.28rem rgb(255 241 201 / 0.24), 0 0.8rem 1.25rem rgb(0 0 0 / 0.46);
-  font: 700 clamp(1rem, 1.45vw, 1.22rem) 'Kreon', Georgia, serif;
+  background: none;
+  box-shadow: none;
+  font: 700 clamp(1rem, 1.65vw, 1.5rem) 'Kreon', Georgia, serif;
   line-height: 1.28;
   text-shadow: 0 2px 2px #302013;
 }
 
 .start-menu__mode-choice::before {
   position: absolute;
+  z-index: -1;
   inset: 0;
   content: '';
   pointer-events: none;
-  background: linear-gradient(90deg, rgb(255 255 255 / 0.18), transparent 34%, rgb(42 23 18 / 0.17));
+  background: url('/assets/ui/panels/parchment.svg') center / 100% 100% no-repeat;
+  filter: drop-shadow(0 0.5rem 0.15rem rgb(0 0 0 / 0.7));
 }
 
-.start-menu__mode-choice[data-mode='daily'] { background: linear-gradient(105deg, #a8d1df, #6996ad 62%, #3b6174); }
-.start-menu__mode-choice[data-mode='custom'] { background: linear-gradient(105deg, #c79691, #95605d 62%, #653b3b); }
+.start-menu__mode-choice[data-mode='daily']::before { filter: sepia(.3) hue-rotate(155deg) saturate(.65) brightness(.75) drop-shadow(0 0.5rem 0.15rem rgb(0 0 0 / 0.7)); }
+.start-menu__mode-choice[data-mode='custom']::before { filter: sepia(.3) hue-rotate(310deg) saturate(.65) brightness(.75) drop-shadow(0 0.5rem 0.15rem rgb(0 0 0 / 0.7)); }
 
 .start-menu__mode-choice:hover,
 .start-menu__mode-choice:focus-visible {
   z-index: 1;
-  border-color: #ffe08a;
   outline: 0;
-  box-shadow: inset 0 0 0 0.28rem rgb(255 249 210 / 0.38), 0 0 0 3px rgb(255 207 90 / 0.28), 0 1rem 1.65rem rgb(0 0 0 / 0.55);
+  background: none;
+  box-shadow: none;
+  filter: brightness(1.14) drop-shadow(0 0 0.3rem #e9c47d);
   transform: translateY(-0.35rem) scale(1.015);
 }
 
@@ -230,13 +228,12 @@
 .start-menu__mode-choice img {
   position: relative;
   width: 100%;
-  aspect-ratio: 1;
-  align-self: center;
+  aspect-ratio: 4 / 3;
   border: 3px solid #e9c47d;
   box-shadow: 0 0 0 2px #433228, 0 0.3rem 0.45rem rgb(0 0 0 / 0.36);
   object-fit: cover;
 }
-.start-menu__mode-choice span { position: relative; align-self: end; }
+.start-menu__mode-choice span { position: relative; }
 
 .start-menu__screen-back {
   min-height: 2.75rem;
@@ -484,11 +481,10 @@
 @media (max-width: 760px), (max-height: 620px) {
   .start-menu__title { left: 37vw; }
   .start-menu__mode-select { inset: 0.75rem; gap: 0.3rem; }
-  .start-menu__mode-select > h1 { font-size: clamp(1.45rem, 5vw, 2rem); }
-  .start-menu__mode-choices { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem; }
-  .start-menu__mode-choice { min-height: 0; gap: 0.4rem; padding: 0.65rem 0.5rem; font-size: clamp(0.7rem, 1.9vw, 0.9rem); }
+  .start-menu__mode-choices { width: min(44rem, 100%); grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; padding-bottom: 2rem; }
+  .start-menu__mode-choice { height: calc(100dvh - 3.5rem); min-height: 0; gap: 0.75rem; padding: 1.5rem 11% 1.6rem; font-size: clamp(0.7rem, 1.9vw, 0.95rem); }
   .start-menu__mode-choice h2 { font-size: clamp(1rem, 4vw, 1.4rem); }
-  .start-menu__mode-choice img { border-width: 2px; }
+  .start-menu__mode-choice img { width: 100%; max-height: 34vh; border-width: 2px; }
   .start-menu__screen-back { min-height: 2rem; padding: 0.25rem 0.6rem; }
   .start-menu__run-options { inset: 0.65rem; gap: 0.35rem; }
   .start-menu__run-options > h1 { font-size: clamp(1.4rem, 4.8vw, 2rem); }

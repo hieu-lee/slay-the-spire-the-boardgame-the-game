@@ -583,7 +583,7 @@ const invoked = await page.evaluate(async (controlId) => {
   const interact = (await document.modelContext.getTools()).find((tool) => tool.name === 'interact_with_game')
   return JSON.parse(await document.modelContext.executeTool(interact, { controlId }))
 }, exclusions.controlId)
-await page.getByRole('heading', { name: 'Choose your run' }).waitFor()
+await page.getByRole('region', { name: 'Run modes' }).waitFor()
 const realFlow = await page.evaluate(async () => {
   const tools = await document.modelContext.getTools()
   const inspect = tools.find((tool) => tool.name === 'inspect_game')

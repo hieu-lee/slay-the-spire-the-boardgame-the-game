@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="700" viewBox="0 0 360 700" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="paper" x2=".85" y2="1">
+      <stop stop-color="#baa88c"/><stop offset=".48" stop-color="#aa977b"/><stop offset="1" stop-color="#948066"/>
+    </linearGradient>
+    <radialGradient id="light"><stop stop-color="#e6d7b7" stop-opacity=".2"/><stop offset="1" stop-color="#e6d7b7" stop-opacity="0"/></radialGradient>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".075" numOctaves="3" seed="12"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope=".1"/></feComponentTransfer><feBlend in="SourceGraphic" mode="soft-light"/></filter>
+    <path id="edge" d="M12 14 30 10 39 13 41 7 83 12 88 27 91 12 96 14 99 10 Q138 16 174 8 T278 11 L334 16 348 20 345 35 350 38 344 99 346 167 342 171 347 176 343 218 348 223 342 226 346 311 343 370 347 421 343 427 348 431 344 488 345 568 342 640 347 653 345 675 351 689 337 685 331 691 Q299 680 271 684 L229 689 221 686 154 689 Q116 692 82 688 L78 677 75 690 64 689 61 677 58 688 28 690 21 684 14 693 5 686 10 667 11 593 8 579 12 570 10 497 12 429 9 420 13 413 11 348 13 293 10 245 13 188 11 125 13 67Z"/>
+    <clipPath id="cut"><use href="#edge"/></clipPath>
+  </defs>
+  <use href="#edge" fill="#3c3026" transform="translate(1 5)"/>
+  <g clip-path="url(#cut)">
+    <use href="#edge" fill="url(#paper)" stroke="#6e5c46" stroke-width="4"/>
+    <path d="M19 24 Q93 26 171 18 T337 26 L333 128 336 238 332 351 336 480 331 574 336 674 Q267 663 203 678 T21 677 L22 547 20 433 23 318 20 205Z" fill="none" stroke="#65543f" stroke-opacity=".52" stroke-width="2"/>
+    <path d="M24 30 19 171 23 335 19 548 21 667 M29 19 Q127 30 174 15 T333 22" fill="none" stroke="#e3d2ae" stroke-opacity=".4" stroke-width="3"/>
+    <path d="M12 49 60 30 83 108 119 162 54 207 17 180Z M347 371 281 426 308 524 341 557Z M20 629 110 588 159 689 15 690Z" fill="#d2bd99" opacity=".09"/>
+    <ellipse cx="150" cy="243" rx="227" ry="350" fill="url(#light)"/>
+    <path d="m18 15 11 1 2 15 13 2 M336 21l-10 1-2 13 15 3 M14 658l15-3 2 24 M332 657l-9 13 2 13 M82 14l4 8 M344 214l-9 11 8 3 M12 569l8 9-7 15 M282 682l22-8 19 3" fill="none" stroke="#66533d" stroke-opacity=".6" stroke-width="2"/>
+    <use href="#edge" fill="transparent" filter="url(#grain)"/>
+  </g>
+</svg>

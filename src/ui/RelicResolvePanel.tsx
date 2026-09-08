@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react'
-import { assetPath } from '../game/assets.ts'
 import { pendingRelicEligibleCards, previewTinyHouseRewardCard } from '../game/run.ts'
 import type { PendingGuardianSocket, PendingRelicPreview, PotionRewardDecision } from '../game/run.ts'
 import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
@@ -155,9 +154,6 @@ export function RelicResolvePanel({ pending, player, potion, ascension, onPotion
   if (isTinyHouse && (!rewardReady || typeof potion === 'string')) return <section className="reward-screen reward-screen--loot">
     <h2 className="reward-screen__title">Tiny House</h2>
     <div className="reward-screen__players"><div className="reward-screen__player">
-      {!player.relics.some((relic) => relic.defId === 'ectoplasm')
-        ? <LootChoice icon={<img src={assetPath('icons/gold.png')} alt="" />}>3 Gold</LootChoice>
-        : null}
       {typeof potion === 'string' ? <PotionLootChoices potionId={potion} player={player} ascension={ascension}
         disabled={resolving} onChoose={choosePotion} /> : null}
       {(pending.rewardChoices ?? []).map((_choices, reward) => rewards[reward] === undefined ? <LootChoice key={reward}

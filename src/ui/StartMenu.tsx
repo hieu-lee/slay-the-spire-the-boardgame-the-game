@@ -135,8 +135,7 @@ export function StartMenu({
           onClick={() => setSettingsOpen(true)}>Settings</button>
       </nav> : null}
 
-      {screen === 'mode' ? <section className="start-menu__mode-select" aria-labelledby="run-mode-title">
-        <h1 id="run-mode-title">Choose your run</h1>
+      {screen === 'mode' ? <section className="start-menu__mode-select" aria-label="Run modes">
         <div className="start-menu__mode-choices">
           {RUN_MODES.map((choice) => <button type="button" key={choice.id} aria-label={choice.name} className="start-menu__mode-choice" data-mode={choice.id}
             onClick={() => { onMode(choice.id); setScreen(choice.id === 'standard' ? 'character' : choice.id) }}>

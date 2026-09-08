@@ -40,18 +40,27 @@ await page.evaluate(() => {
     potion: false, bossRelics: ['tiny_house'] }]
   debug.setRun(run)
 })
+const goldBefore = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold)
 await page.getByRole('button', { name: 'Tiny House', exact: true }).click()
 await page.getByRole('heading', { name: 'Tiny House', exact: true }).waitFor()
 
+const goldAcquired = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold)
+check('Tiny House awards its Gold on acquisition', () => assertEqual(goldAcquired, goldBefore + 3))
+await page.reload({ waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'Resume', exact: true }).click()
+await page.getByRole('heading', { name: 'Tiny House', exact: true }).waitFor()
+const goldResumed = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold)
+check('resuming Tiny House does not grant Gold twice', () => assertEqual(goldResumed, goldAcquired))
+
 const loot = await page.locator('.reward-screen--loot').evaluate((screen) => ({
   rows: [...screen.querySelectorAll('.loot-choice')].map((row) => row.textContent?.trim()),
-  goldStatic: screen.querySelector('.loot-choice--static')?.textContent?.trim(),
+  goldRows: [...screen.querySelectorAll('.loot-choice')].filter((row) => row.textContent?.includes('Gold')).length,
   deckCards: screen.querySelectorAll('.campfire__deck .card, .card-picker__grid .card').length,
   overflow: screen.scrollWidth > screen.clientWidth + 1,
 }))
 check('Tiny House first reuses the compact Loot panel', () => {
-  assertEqual(loot.rows.length, 3)
-  assertEqual(loot.goldStatic, '3 Gold')
+  assertEqual(loot.rows.length, 2)
+  assertEqual(loot.goldRows, 0)
   assert(loot.rows.some((row) => row === 'Add a card to your deck.'))
   assertEqual(loot.deckCards, 0)
   assertEqual(loot.overflow, false)
@@ -64,7 +73,8 @@ const tinyHousePotionText = await tinyHousePotionTip.locator('.relic-tip__text')
 check('Tiny House Potion hover shows its effect details', () => {
   assert(tinyHousePotionText.trim().length > 0)
 })
-await page.waitForTimeout(250)
+await page.mouse.move(20, 20)
+await tinyHousePotionTip.waitFor({ state: 'hidden' })
 await page.screenshot({ path: join(output, 'tiny-house-loot-desktop.png'), fullPage: true })
 await page.setViewportSize({ width: 844, height: 390 })
 const phoneLoot = await page.locator('.reward-screen--loot').evaluate((screen) => ({
@@ -129,10 +139,12 @@ await page.waitForFunction(() => !window.__STS_DEBUG__.getRun().players.some((pl
 const resolved = {
   heading: await page.getByRole('heading', { name: 'Tiny House', exact: true }).count(),
   phase: await page.evaluate(() => window.__STS_DEBUG__.getRun().phase),
+  gold: await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold),
 }
 check('Tiny House resolves only after the upgrade', () => {
   assertEqual(resolved.heading, 0)
   assertEqual(resolved.phase, 'map')
+  assertEqual(resolved.gold, goldAcquired)
 })
 
 await page.evaluate(() => {
@@ -142,13 +154,22 @@ await page.evaluate(() => {
   player.deck = player.deck.map((card) => ({ ...card, upgraded: true }))
   player.potions = []
   player.relics = player.relics.filter((relic) => relic.defId !== 'tiny_house' && !relic.pending)
+  player.relics.push({ defId: 'ectoplasm', spent: false })
   run.phase = 'reward'
   run.rewardDestination = 'map'
   run.rewards = [{ playerId: player.id, cardReward: false, choices: null, upgraded: false,
     potion: false, bossRelics: ['tiny_house'] }]
   debug.setRun(run)
 })
+const ectoplasmGoldBefore = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold)
 await page.getByRole('button', { name: 'Tiny House', exact: true }).click()
+await page.getByRole('heading', { name: 'Tiny House', exact: true }).waitFor()
+const ectoplasmGoldAfter = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold)
+const ectoplasmGoldRows = await page.locator('.reward-screen--loot .loot-choice').filter({ hasText: 'Gold' }).count()
+check('Ectoplasm blocks Tiny House Gold and no Gold row is shown', () => {
+  assertEqual(ectoplasmGoldAfter, ectoplasmGoldBefore)
+  assertEqual(ectoplasmGoldRows, 0)
+})
 await page.getByRole('button', { name: 'Skip', exact: true }).click()
 await page.getByText('No eligible cards.', { exact: true }).waitFor()
 await page.getByRole('button', { name: 'Confirm Tiny House' }).click()

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="550" viewBox="0 0 500 550" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="stone" x2=".8" y2="1"><stop stop-color="#395764"/><stop offset=".55" stop-color="#304e5c"/><stop offset="1" stop-color="#3b5a68"/></linearGradient>
+    <linearGradient id="well" x2=".3" y2="1"><stop stop-color="#0a171d"/><stop offset="1" stop-color="#071217"/></linearGradient>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".11" numOctaves="3" seed="8"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope=".065"/></feComponentTransfer><feBlend in="SourceGraphic" mode="soft-light"/></filter>
+    <path id="edge" d="M17 9 112 7 124 10 252 8 258 12 392 8 472 11 488 22 486 60 491 65 487 99 490 130 486 134 490 213 487 287 491 293 487 370 489 421 484 429 490 455 484 471 489 508 481 537 460 544 416 540 404 544 322 541 316 544 219 541 213 545 123 541 115 545 26 543 11 533 10 507 6 498 11 454 9 443 12 353 8 344 12 262 9 255 12 155 8 142 11 101 7 88 12 46 9 31Z"/>
+    <clipPath id="cut"><use href="#edge"/></clipPath>
+  </defs>
+  <use href="#edge" fill="url(#stone)" filter="url(#grain)" stroke="#1a303b" stroke-width="5"/>
+  <g clip-path="url(#cut)">
+    <path d="m18 26 17 25-12 68 6 155-8 195 13 48-17 13 M480 22l-12 38 12 75-10 147 10 147-16 64 15 38" fill="none" stroke="#64818b" stroke-opacity=".32" stroke-width="5"/>
+    <path d="M39 53 67 49 72 53 191 51 198 55 340 51 346 56 452 51 465 65 460 147 464 156 459 250 463 260 458 386 462 455 452 490 438 499 53 498 32 485 30 429 33 281 30 273 34 163 31 154 34 68Z" fill="url(#well)" stroke="#172d36" stroke-width="6"/>
+    <path d="m34 77 9-17 62 1 M456 68l-5 408-14 15-374-1" fill="none" stroke="#030c10" stroke-width="4"/>
+    <path d="m12 37 13 7 11 17-10 19-16 7 m3 70 13 10 7 22 M13 259l12 7 6 16 M488 110l-13 9-13 21 M485 323l-16 7-9-7 M488 452l-17 3-8 17-17 6-3 23-23 8-14 33 M14 483l16 8 9 24 27 11 13 18 M27 542l12-27-5-17 M470 540l-13-22-14-17 M92 543l10-15 20-1 15 15 M265 9l-9 21 9 22 M370 9l11 18-8 24" fill="none" stroke="#203b48" stroke-width="3"/>
+    <path d="m16 482 18 10 10 23 24 10 M423 510l22-6 2-23 17-6 9-16 12-2 M15 38l14 9 11 15" fill="none" stroke="#78919a" stroke-opacity=".23" stroke-width="2"/>
+  </g>
+</svg>

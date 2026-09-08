@@ -177,11 +177,12 @@
 .sts-scope .reward-screen--loot .reward-screen__title,
 .sts-scope .reward-screen--card-choice .reward-screen__title {
   position: relative;
+  z-index: 2;
   isolation: isolate;
-  width: min(31rem, 88vw);
-  min-height: 5.8rem;
+  width: min(40rem, 94vw);
+  min-height: 8rem;
   margin: 0;
-  padding: 1rem 2.8rem 1.7rem;
+  padding: 1.15rem 4.5rem 2rem;
   border: 0;
   background: none;
   clip-path: none;
@@ -199,53 +200,21 @@
   content: '';
   position: absolute;
   z-index: -1;
-  inset: 0 7%;
-  background:
-    radial-gradient(ellipse at 12% 18%, rgb(255 241 194 / 0.2), transparent 26%),
-    linear-gradient(92deg, #ae8958, #d1ad79 18%, #cba673 52%, #d6b27d 82%, #a47d4e);
-  box-shadow: inset 0 -0.18rem 0 #8c693f, inset 0 0.1rem 0 rgb(255 236 187 / 0.32);
-  clip-path: polygon(4% 8%, 16% 1%, 83% 2%, 96% 10%, 98% 64%, 91% 72%, 88% 91%, 80% 98%, 70% 91%, 28% 94%, 18% 99%, 10% 90%, 8% 72%, 2% 62%);
-}
-
-.sts-scope .reward-screen--loot .reward-screen__title::after,
-.sts-scope .reward-screen--card-choice .reward-screen__title::after {
-  content: '';
-  position: absolute;
-  z-index: -2;
-  inset: 31% 0 8%;
-  background: linear-gradient(90deg, #987445, #c39b66 13% 87%, #8e693e);
-  clip-path: polygon(0 18%, 12% 5%, 17% 21%, 83% 21%, 88% 5%, 100% 18%, 96% 88%, 87% 76%, 82% 98%, 18% 98%, 13% 76%, 4% 88%);
+  inset: 0;
+  background: url('/assets/ui/panels/loot-scroll.svg') center / 100% 100% no-repeat;
+  pointer-events: none;
 }
 
 .sts-scope .reward-screen--loot .reward-screen__players {
   position: relative;
-  width: min(25rem, 82vw);
-  min-height: min(29rem, 66vh);
+  width: min(31rem, 82vw);
+  min-height: min(34rem, 66vh);
   max-height: 70vh;
   margin: -1.55rem 0 0;
-  padding: 2.25rem 2.45rem 2rem;
+  padding: 3.2rem 3rem 3.5rem;
   overflow: hidden auto;
-  background:
-    linear-gradient(92deg, rgb(255 255 255 / 0.08), transparent 9% 88%, rgb(0 0 0 / 0.22)),
-    linear-gradient(180deg, #315b69, #204653 68%, #183b49);
-  box-shadow:
-    inset 0 0 0 0.15rem #386879,
-    inset 0 0 0 0.38rem #153543,
-    inset 0 0 2.1rem rgb(0 0 0 / 0.42),
-    0 1rem 1.6rem rgb(0 0 0 / 0.78);
-  clip-path: polygon(3% 0, 97% 0, 100% 2%, 99% 96%, 96% 100%, 88% 98.6%, 79% 100%, 68% 98.2%, 57% 100%, 47% 98.4%, 36% 100%, 25% 98.3%, 14% 100%, 4% 98.4%, 0 95%, 1% 3%);
-}
-
-.sts-scope .reward-screen--loot .reward-screen__players::before {
-  content: '';
-  position: absolute;
-  inset: 1.25rem 1rem 1.1rem;
-  background:
-    radial-gradient(ellipse at 48% 18%, rgb(24 54 63 / 0.35), transparent 45%),
-    linear-gradient(145deg, #06111a, #020a11 62%, #07131b);
-  box-shadow: inset 0 0 0 0.13rem #0a2430, inset 0 0 1.2rem rgb(0 0 0 / 0.9);
-  clip-path: polygon(2% 0, 98% 0, 100% 2%, 99% 98%, 96% 100%, 4% 100%, 1% 97%, 0 3%);
-  pointer-events: none;
+  background: url('/assets/ui/panels/loot-stone.svg') center / 100% 100% no-repeat;
+  filter: drop-shadow(0 0.6rem 0.4rem rgb(0 0 0 / 0.7));
 }
 
 .sts-scope .reward-screen--loot .reward-screen__player {
@@ -411,9 +380,8 @@
   .sts-scope .reward-screen--loot { align-content: start; padding-top: 0.15rem; }
   .sts-scope .reward-screen--loot > .reward-screen__skip { right: 0.55rem; bottom: 0.25rem; min-width: 8.2rem; font-size: 1.12rem; }
   .sts-scope .reward-screen--loot .reward-screen__title,
-  .sts-scope .reward-screen--card-choice .reward-screen__title { min-height: 4rem; padding-block: 0.7rem 1.15rem; font-size: 1.6rem; }
-  .sts-scope .reward-screen--loot .reward-screen__players { width: min(21rem, 64vw); min-height: 18rem; max-height: calc(100vh - 3.5rem); margin-top: -1rem; padding: 1.5rem 1.9rem 1.1rem; }
-  .sts-scope .reward-screen--loot .reward-screen__players::before { inset: 0.85rem 0.75rem 0.65rem; }
+  .sts-scope .reward-screen--card-choice .reward-screen__title { width: min(31rem, 80vw); min-height: 4.5rem; padding-block: 0.55rem 1.3rem; font-size: 1.6rem; }
+  .sts-scope .reward-screen--loot .reward-screen__players { width: min(24rem, 64vw); min-height: min(18rem, calc(100dvh - 3.5rem)); max-height: calc(100dvh - 3.5rem); margin-top: -1rem; padding: 1.6rem 2.25rem 2rem; }
   .sts-scope .reward-screen--loot .loot-choice { min-height: 3.15rem; font-size: 0.93rem; }
   .sts-scope .loot-choice__icon { width: 2rem; height: 2rem; flex-basis: 2rem; }
   .sts-scope .reward-screen--card-choice { gap: 0.8rem; padding-block: 0.35rem; }
