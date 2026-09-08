@@ -189,7 +189,8 @@ export function requirementsOf(
       ...(replacementMax > 0 ? { baseAmount: chamberAmount, openAfterBase, loadSelf } : {}),
     } : null,
     chooseLoadSelf: selectableEffects.some((effect) => effect.kind === 'loadSelf' && effect.optional) ? null : false,
-    spendVigor: viewer.guardianMode !== null && viewer.vigor > 0 &&
+    spendVigor: state.startTurnProgress?.forcedCard?.playerId === viewer.id &&
+      viewer.guardianMode !== null && viewer.vigor > 0 &&
       (def.type === 'attack' || def.type === 'skill') ? null : 0,
     guardianModeShift: ['guardian_hack', 'guardian_gear_up', 'guardian_speed_boost'].includes(def.id) ? null : false,
     secondGuardianModeShift: def.id === 'guardian_bauble_burst' && attachedGemId === 'guardian_amethyst' ? null : false,
@@ -338,6 +339,7 @@ export function describeSeat(player: Player): string {
   const tokens: [string, number][] = [
     ['Block', player.block],
     ['Strength', player.strength],
+    ['Vigor active this turn', player.vigorSpentThisTurn ?? 0],
     ['Vulnerable', player.vulnerable],
     ['Weak', player.weak],
     ['Shivs', player.shivs],

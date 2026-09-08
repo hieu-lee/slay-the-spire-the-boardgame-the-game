@@ -128,6 +128,7 @@ import {
   spendMiracle,
   spendShiv,
   spendSoulburn,
+  spendVigor,
   startPlayerTurnWithChoices,
   startTurnAbilities,
   startTurnDiscardPreview,
@@ -2322,7 +2323,9 @@ function CombatScreenView({
   // guess on behalf of the party.
   const viewerHasLegalAction = !voluntaryActionsBlocked && (viewer.hand.some((card) => canAfford(state, viewer, card, false, drawCount)) ||
     viewer.chamber.some(chamberCardCanStartDrag) ||
-    viewer.shivs > 0 || viewer.soulburn > 0 || viewer.miracles > 0 && viewer.energy < CAPS.energy && (
+    viewer.shivs > 0 || viewer.soulburn > 0 ||
+    viewer.guardianMode && viewer.vigor > 0 && !viewer.cardPlayLocked && !reachedTimeWarpLimit(state, viewer) ||
+    viewer.miracles > 0 && viewer.energy < CAPS.energy && (
       viewer.relics.some((relic) => relic.defId === 'ice_cream') ||
       viewer.hand.some((card) => canAfford(state, viewer, card, true, drawCount))) ||
     viewer.potions.some((potionId) => canActivatePotion(state, viewer, potionId)) ||
@@ -4482,6 +4485,26 @@ function CombatScreenView({
                   <StatusIcon name="shiv" size={22} />
                 </button>
               ) : null}
+              {state.phase === 'player' && viewer.guardianMode ? (
+                <button type="button"
+                  disabled={viewer.vigor < 1 || Boolean(pending?.choiceCards) || Boolean(forcedCard) || Boolean(distilled) ||
+                    Boolean(relicScry) || endTurnResolving || Boolean(pendingTrigger) ||
+                    viewer.cardPlayLocked || reachedTimeWarpLimit(state, viewer)}
+                  aria-label={`Spend 1 Vigor, ${viewer.vigor} available`}
+                  title="Spend 1 Vigor to boost your card effects for the rest of this turn"
+                  onClick={() => {
+                    setPending(null)
+                    setPendingPowerUid(null)
+                    setPendingPotion(null)
+                    setSpendingShiv(false)
+                    setSpendingSoulburn(false)
+                    if (onAction) onAction({ kind: 'spendVigor' })
+                    else onChange?.(spendVigor(state, viewer.id))
+                  }}>
+                  <StatusIcon name="vigor" size={22} />
+                  <span aria-hidden="true">{viewer.vigor}</span>
+                </button>
+              ) : null}
               {state.phase === 'player' && !forcedCard && !distilled && !relicScry && !endTurnResolving &&
               !pendingTrigger && !viewer.cardPlayLocked && !reachedTimeWarpLimit(state, viewer) && viewer.soulburn > 0 ? (
                 <button
@@ -5973,9 +5996,6 @@ function CombatScreenView({
                         </span>
                       </span>
                       <span className="seat__meta">
-                      {occupant.character === 'guardian' && occupant.guardianMode ? (
-                        <span className="seat__mechanic">Vigor {occupant.vigor}</span>
-                      ) : null}
                       {occupant.strengthLossAtEndOfTurn > 0 ? (
                         <span className="seat__pending">
                           −{occupant.strengthLossAtEndOfTurn} Strength at end of turn
@@ -6130,11 +6150,12 @@ function CombatScreenView({
                       }}
                     />
                     </div>
-                    <div className="seat__status-strip" tabIndex={0}
-                      aria-label={`${occupant.name} permanent effects`}>
+                    <div className="seat__status-strip" data-guardian-mode={occupant.guardianMode ?? undefined} tabIndex={0}
+                      aria-label={`${occupant.name} combat effects`}>
                       <TokenRow
                         block={occupant.block}
                         strength={occupant.strength}
+                        vigorSpent={occupant.vigorSpentThisTurn}
                         vulnerable={occupant.vulnerable}
                         weak={occupant.weak}
                         shivs={occupant.shivs}

@@ -148,6 +148,7 @@ export {
   resumePlayerTurnAfterDraw,
   spendMiracle,
   spendSoulburn,
+  spendVigor,
   spendShiv,
   startPlayerTurn,
   startPlayerTurnWithChoices,

@@ -125,6 +125,7 @@ import {
   spendMiracle,
   spendShiv,
   spendSoulburn,
+  spendVigor,
   tradePotion,
   usePotionOutsideCombat,
   switchBetweenCombatRow,
@@ -4341,6 +4342,12 @@ function dispatch(run, seat, action, lockedPreview) {
       if (!run.combat) fail('No combat in progress')
       const combat = spendShiv(run.combat, seat.playerId, action.enemyUid)
       if (combat === run.combat) fail('That Shiv target is no longer legal')
+      return { ...run, combat }
+    }
+    case 'spendVigor': {
+      if (!run.combat) fail('No combat in progress')
+      const combat = spendVigor(run.combat, seat.playerId)
+      if (combat === run.combat) fail('Vigor cannot be spent right now')
       return { ...run, combat }
     }
     case 'spendSoulburn': {

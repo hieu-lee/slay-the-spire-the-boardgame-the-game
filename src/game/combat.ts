@@ -141,6 +141,7 @@ export {
   chooseDistilledCard,
   spendMiracle,
   spendSoulburn,
+  spendVigor,
   spendShiv,
   resolvePlunderRowSwitch,
 } from './combat/items.ts'

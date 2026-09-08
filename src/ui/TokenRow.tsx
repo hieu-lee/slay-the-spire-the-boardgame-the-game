@@ -6,6 +6,7 @@ import type { StatusIconName } from './Icon.tsx'
 type TokenRowProps = {
   block?: number
   strength?: number
+  vigorSpent?: number
   vulnerable?: number
   weak?: number
   poison?: number
@@ -19,6 +20,7 @@ type CountKey = keyof TokenRowProps
 const TOKENS: { key: CountKey; icon: StatusIconName; label: string }[] = [
   { key: 'block', icon: 'block', label: 'Block' },
   { key: 'strength', icon: 'strength', label: 'Strength' },
+  { key: 'vigorSpent', icon: 'vigor', label: 'Vigor active this turn' },
   { key: 'vulnerable', icon: 'vulnerable', label: 'Vulnerable' },
   { key: 'weak', icon: 'weak', label: 'Weak' },
   { key: 'poison', icon: 'poison', label: 'Poison' },

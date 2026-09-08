@@ -381,6 +381,11 @@ html[data-mobile-performance='true']
     justify-content: flex-start;
   }
 
+  .seat__status-strip[data-guardian-mode] {
+    bottom: 2.25rem;
+    justify-content: safe flex-end;
+  }
+
   .seat__status-strip > .powers { order: -1; }
 }
 

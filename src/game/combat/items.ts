@@ -266,6 +266,21 @@ export function spendShiv(state: CombatState, playerId: string, enemyUid: string
   return settle(next)
 }
 
+/** Move one available Vigor to the Spent zone whenever Guardian could play a card. */
+export function spendVigor(state: CombatState, playerId: string): CombatState {
+  if (state.phase !== 'player' || state.pendingDistilled || state.pendingRelicScry || mandatoryChoicePending(state) ||
+    state.startTurnProgress?.forcedCard || (state.pendingTriggers?.length ?? 0) > 0) return state
+  const player = findPlayer(state, playerId)
+  if (!player || player.dead || !player.guardianMode || player.vigor < 1 ||
+    player.cardPlayLocked || reachedTimeWarpLimit(state, player)) return state
+  const next = clone(state)
+  const actor = findPlayer(next, playerId)!
+  actor.vigor -= 1
+  actor.vigorSpentThisTurn += 1
+  next.log = [...next.log, `${actor.name} spends 1 Vigor (${actor.vigorSpentThisTurn} active this turn)`]
+  return next
+}
+
 /** Spend one Hexaghost Soulburn for plain damage equal to current Heat. */
 export function spendSoulburn(
   state: CombatState,

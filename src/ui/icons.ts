@@ -30,6 +30,7 @@ export type IconName =
   | 'die6'
 
 export type StatusIconName =
+  | 'vigor'
   | 'attack'
   | 'aoe'
   | 'block'
