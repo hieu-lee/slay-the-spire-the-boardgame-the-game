@@ -642,7 +642,7 @@ export function reachesEnemy(
   const times = effect.times
   if (typeof times === 'number') return times > 0
   if (times.bonus) return true
-  return times.base + (times.per
+  return times.base + (times.perSlime ?? 0) * (actor.slimes?.length ?? 0) + (times.per
     ? countOf(times.per, actor, undefined,
       times.per === 'energySpent' && energySpent === undefined ? 1 : energySpent)
     : 0) > 0

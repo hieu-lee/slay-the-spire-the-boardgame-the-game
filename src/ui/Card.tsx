@@ -323,7 +323,7 @@ function effectText(effect: Effect): string {
     case 'loadSelf': return `${effect.optional ? 'may ' : ''}Load this card${condition}`
     case 'playChamber': return `play ${effect.amount === 'all' ? 'every card' : `${effect.amount} card`} in your Chamber${effect.free ? ' for 0 Energy' : ''}${condition}`
     case 'gainChamberSlot': return `gain ${effect.amount} Chamber slot${effect.amount === 1 ? '' : 's'}${condition}`
-    case 'discardChamber': return `${effect.optional ? 'may ' : ''}discard ${effect.amount} ${effect.curseOnly ? 'Curse ' : ''}from your Chamber${effect.then?.length ? `, then ${effect.then.map(effectText).join(', ')}` : ''}${condition}`
+    case 'discardChamber': return `${effect.optional ? 'may ' : ''}discard ${effect.amount} ${effect.curseOnly ? 'Curse from your hand or Chamber' : 'from your Chamber'}${effect.then?.length ? `, then ${effect.then.map(effectText).join(', ')}` : ''}${condition}`
     case 'discountChamber': return `choose ${effect.amount} Chamber card to cost 0 this turn${condition}`
     case 'deadOnEffects': return `Dead On: ${effect.effects.map(effectText).join(', then ')}`
     case 'deadOnPrintedBlock': return `gain ${effect.amount} Block from printed damage`

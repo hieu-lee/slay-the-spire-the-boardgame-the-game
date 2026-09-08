@@ -4223,7 +4223,7 @@ function CombatScreenView({
       : pendingPowerDef.id === 'guardian_revenge_protocol'
         ? 'Revenge Protocol — choose an Attack in hand'
       : pendingPowerDef.id === 'hermit_shadow_cloak'
-      ? 'Shadow Cloak — choose a Curse to discard from the Chamber'
+      ? 'Shadow Cloak — choose a Curse to discard from hand or Chamber'
       : pendingPowerDef.id === 'hermit_black_wind'
         ? powerChamberUids.length === 0 ? 'Black Wind — choose a Chamber card to discard'
           : powerLoadUids.length === 0 ? 'Black Wind — choose a card to Load'
@@ -4380,7 +4380,7 @@ function CombatScreenView({
                   type="button"
                   key={power.uid}
                   disabled={usingPower || used || Boolean(pending?.choiceCards) ||
-                    def.id === 'hermit_shadow_cloak' && !viewer.chamber.some((card) =>
+                    def.id === 'hermit_shadow_cloak' && ![...viewer.hand, ...viewer.chamber].some((card) =>
                       faceOf(cardDef(card.defId), card.upgraded).type === 'curse') ||
                     def.id === 'hermit_black_wind' && (viewer.chamber.length === 0 || viewer.hand.length === 0)}
                   aria-label={used ? `${def.name}${attachedGem ? ` with ${attachedGem}` : ''} used`
@@ -4769,7 +4769,7 @@ function CombatScreenView({
               ) : null}
             </span>
           ) : null}
-          {pendingHermitPower && pendingPowerDef?.id === 'hermit_shadow_cloak' ? viewer.chamber
+          {pendingHermitPower && pendingPowerDef?.id === 'hermit_shadow_cloak' ? [...viewer.hand, ...viewer.chamber]
             .filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'curse').map((card) => (
               <button type="button" className="prompt__mode" key={card.uid}
                 onClick={() => usePower(pendingPowerUid!, { chamberUids: [card.uid] })}>

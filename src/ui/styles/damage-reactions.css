@@ -476,6 +476,8 @@
 }
 
 @media (orientation: landscape) and (max-height: 43.75rem) {
+  /* Reserve the fixed End turn button's lane so active Powers stay tappable. */
+  .combat__bar { padding-right: 12rem; }
   /* The bottom lane belongs to the hand, Energy and piles on landscape phones. */
   .combat__end-turn { top: 3.8rem; right: 1rem; bottom: auto; }
   .start-turn-order {

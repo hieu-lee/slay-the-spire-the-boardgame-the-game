@@ -1926,10 +1926,15 @@ export function applyEffect(
         for (let index = 0; index < times; index++) {
           if (combatIsOver(state)) break
           const before = slime.commandsThisTurn
+          const targetCursor = context.slimeEnemyChoiceIndex ?? 0
           if (!resolveSlimeCommand(state, actor, slime, context)) {
-            // An available Command with an invalidated target must fail the
-            // atomic turn-effect replay so its owner can choose again.
-            if (previewSlimeCommand(slime)) context.invalidSlimeChoice = true
+            // Earlier Commands can kill a prevalidated target. Skip it without
+            // spending this Slime's Command; unknown targets still reject atomically.
+            const targetUid = context.slimeEnemyUids?.[targetCursor] ?? context.enemyUid
+            if (previewSlimeCommand(slime)) {
+              if (state.enemies.some((enemy) => enemy.uid === targetUid && enemy.dead)) continue
+              context.invalidSlimeChoice = true
+            }
             break
           }
           note(`${actor.name} Commands ${slimeDef(slime).name} (level ${slime.level})`)
@@ -2006,9 +2011,7 @@ export function applyEffect(
     }
     case 'blockIfRetain':
       if (actor.hand.some((held) => cardHasRetain(actor, held))) {
-        const before = actor.block
-        grantBlock(state, actor, effect.amount, context.sourceCardId ? context.pendingTriggers : undefined)
-        if (actor.block > before) markTurnEffect(context, 'block', { actor: true })
+        applyEffect(state, actor, { kind: 'block', amount: effect.amount }, scope, supportScope, context, source)
       }
       return
     case 'vulnerableIfTackle':
@@ -2754,8 +2757,9 @@ export function applyEffect(
       return
     case 'discardChamber': {
       const cursor = context.chamberChoiceIndex ?? 0
-      const eligible = actor.chamber.filter((card) => !effect.curseOnly || faceOf(cardDef(card.defId), card.upgraded).type === 'curse')
-      const wanted = Math.min(effect.amount, eligible.length)
+      // Shadow Cloak pays with a Curse from either private zone.
+      const eligible = (effect.curseOnly ? [...actor.hand, ...actor.chamber] : actor.chamber).filter((card) => !effect.curseOnly || faceOf(cardDef(card.defId), card.upgraded).type === 'curse')
+      const wanted = effect.curseOnly ? effect.amount : Math.min(effect.amount, eligible.length)
       const selected = (context.chamberUids ?? []).slice(cursor, cursor + wanted)
       if (effect.optional && selected.length === 0) return
       if (selected.length !== wanted || new Set(selected).size !== selected.length ||
@@ -2764,11 +2768,12 @@ export function applyEffect(
         return
       }
       context.chamberChoiceIndex = cursor + selected.length
-      const cards = actor.chamber.filter((card) => selected.includes(card.uid))
+      const cards = eligible.filter((card) => selected.includes(card.uid))
+      if (effect.curseOnly) actor.hand = actor.hand.filter((card) => !selected.includes(card.uid))
       actor.chamber = actor.chamber.filter((card) => !selected.includes(card.uid))
       actor.discard.push(...cards.map(forgetRetain))
       if (cards.length) {
-        note(`${actor.name} discards ${cards.map((card) => cardDef(card.defId).name).join(', ')} from the Chamber`)
+        note(`${actor.name} discards ${cards.map((card) => cardDef(card.defId).name).join(', ')} from ${effect.curseOnly ? 'hand or Chamber' : 'the Chamber'}`)
         markTurnEffect(context, 'discard', { actor: true })
       }
       for (const nested of cards.length > 0 ? effect.then ?? [] : []) {

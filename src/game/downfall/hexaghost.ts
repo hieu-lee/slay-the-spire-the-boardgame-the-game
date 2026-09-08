@@ -298,11 +298,11 @@ export const HEXAGHOST_CARDS = {
   forked_flame: card({
     id: 'forked_flame', name: 'Forked Flame', owner: 'hexaghost', type: 'attack', rarity: 'rare', cost: 2,
     effects: [], modes: [
-      { label: 'Three hits', effects: [{ kind: 'hitChoices', amount: 1, targets: 3 }] },
+      { label: 'Three hits', effects: [{ kind: 'hit', amount: 1, times: 3 }] },
       { label: 'Hit and Advance', effects: [{ kind: 'hit', amount: 2 }, advance] },
       { label: 'Row hit', effects: [{ kind: 'rowHit', amount: 3 }] },
     ], upgrade: { modes: [
-      { label: 'Three hits', effects: [{ kind: 'hitChoices', amount: 2, targets: 3 }] },
+      { label: 'Three hits', effects: [{ kind: 'hit', amount: 2, times: 3 }] },
       { label: 'Hit and Advance', effects: [{ kind: 'hit', amount: 3 }, advance] },
       { label: 'Row hit', effects: [{ kind: 'rowHit', amount: 4 }] },
     ] },

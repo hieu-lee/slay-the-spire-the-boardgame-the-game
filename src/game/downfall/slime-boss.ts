@@ -164,7 +164,7 @@ const C: SlimeBossCard[] = [
   card('Spear Tackle', 'rewards', 21, 'attack', 'uncommon', 1, 2, 'Deal 2 damage twice.', [hit(2, 2)], {
     upgrade: { printedText: 'Deal 3 damage twice.', effects: [hit(3, 2)] },
   }),
-  card('Growth', 'rewards', 22, 'skill', 'common', 2, 1, 'Gain 2 Block. Grow a Slime.', [block(2), grow(1)], {
+  card('Growth', 'rewards', 22, 'skill', 'common', 2, 2, 'Gain 2 Block. Grow a Slime.', [block(2), grow(1)], {
     upgrade: { printedText: 'Gain 3 Block. Grow a Slime.', effects: [block(3), grow(1)] },
   }),
   card('Reformation', 'rewards', 24, 'skill', 'common', 2, 1, 'Grow a Slime. Exhaust.', [grow(1)], {
@@ -176,8 +176,8 @@ const C: SlimeBossCard[] = [
   card('Recollect', 'rewards', 28, 'skill', 'common', 2, 1, 'Retain. Draw 2 cards.', [{ kind: 'draw', amount: 2 }], {
     retain: true, upgrade: { printedText: 'Retain. Draw 3 cards.', effects: [{ kind: 'draw', amount: 3 }] },
   }),
-  card('Pile On!', 'rewards', 30, 'attack', 'uncommon', 1, 1, 'Deal 1 damage for each Slime you have in play.', [hit({ base: 0, perSlime: 1 })], {
-    upgrade: { printedText: 'Deal 2 damage for each Slime you have in play.', effects: [{ kind: 'hit', amount: { base: 0, perSlime: 2 } }] },
+  card('Pile On!', 'rewards', 30, 'attack', 'uncommon', 1, 1, 'Deal 1 damage for each Slime you have in play.', [hit(1, { base: 0, perSlime: 1 })], {
+    upgrade: { printedText: 'Deal 2 damage for each Slime you have in play.', effects: [hit(2, { base: 0, perSlime: 1 })] },
   }),
   card('Just Desserts', 'rewards', 31, 'skill', 'uncommon', 1, 0, 'Retain. The next Power or Slime you play this turn costs 1 less.', [slimeEffect({ kind: 'discountNextPowerOrSlime', amount: 1 })], {
     retain: true, upgrade: { printedText: 'Retain. The next Power or Slime you play this turn costs 0.', effects: [slimeEffect({ kind: 'discountNextPowerOrSlime', amount: 'free' })] },
@@ -216,8 +216,8 @@ const C: SlimeBossCard[] = [
   card('Living Wall', 'rewards', 45, 'skill', 'uncommon', 1, 2, 'Gain 2 Block, +1 Block per Slime you have in play.', [{ kind: 'block', amount: { base: 2, perSlime: 1 } }], {
     upgrade: { printedText: 'Gain 3 Block, +1 Block per Slime you have in play.', effects: [{ kind: 'block', amount: { base: 3, perSlime: 1 } }] },
   }),
-  card('Prepare Crush', 'rewards', 46, 'power', 'uncommon', 1, 3, 'Retain. Start of turn: Deal 15 damage, then discard this card.', [{ kind: 'hit', amount: 15 }], {
-    retain: true, trigger: { kind: 'startOfTurn' }, upgrade: { printedText: 'Retain. Start of turn: Deal 20 damage, then discard this card.', effects: [hit(20)] },
+  card('Prepare Crush', 'rewards', 46, 'power', 'uncommon', 1, 3, 'Retain. Start of turn: Deal 15 damage, then discard this card.', [{ kind: 'damage', amount: 15 }], {
+    retain: true, trigger: { kind: 'startOfTurn' }, upgrade: { printedText: 'Retain. Start of turn: Deal 20 damage, then discard this card.', effects: [{ kind: 'damage', amount: 20 }] },
   }),
   card('Spit', 'rewards', 47, 'skill', 'common', 2, 1, 'Draw 1 card. Command.', [{ kind: 'draw', amount: 1 }, command(1)], {
     upgrade: { printedText: 'Draw 2 cards. Command.', effects: [{ kind: 'draw', amount: 2 }, command(1)] },
