@@ -1156,9 +1156,9 @@ check('an end-of-turn draw is preserved when a discard order was submitted', () 
   }
   const bash = instance('bash')
   const defend = instance('defend_ironclad')
-  const drawn = instance('strike_ironclad')
+  const drawn = instance('anger')
   const state = combat([
-    // A Claw held back makes the discard top worth arranging, which is what
+    // Claw can read the drawn zero-cost Anger, so the discard top matters; this
     // keeps the turn at the prompt long enough to inspect the post-trigger hand.
     player({
       hand: [defend, bash], draw: [drawn], discard: [instance('claw')],

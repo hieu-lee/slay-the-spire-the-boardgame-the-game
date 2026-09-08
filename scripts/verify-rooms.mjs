@@ -7252,11 +7252,19 @@ check('Floating Orbs Gem choices stay authoritative and private online', () => {
     powers: [{ uid: 'room-capped-orbs', defId: 'guardian_floating_orbs', upgraded: false,
       attachedGemId: 'guardian_jasper' }],
   })
-  assertThrows(() => apply(room, a.token, {
-    kind: 'activatePower', powerUid: 'room-capped-orbs', exhaustUids: overCap.map((card) => card.uid), preflight: true,
-  }), 'Floating Orbs Jasper accepted more than three cards')
-  assertDeepEqual(player.hand.map((card) => card.uid), overCap.map((card) => card.uid))
-  assertDeepEqual(player.exhaust, [])
+  const beforeInvalid = structuredClone(room.run.combat)
+  for (const exhaustUids of [overCap.map((card) => card.uid), [overCap[0].uid, overCap[0].uid], ['foreign-card']]) {
+    assertThrows(() => apply(room, a.token, {
+      kind: 'activatePower', powerUid: 'room-capped-orbs', exhaustUids, preflight: true,
+    }), 'Floating Orbs Jasper accepted an invalid exhaust choice')
+    assertDeepEqual(room.run.combat, beforeInvalid, 'a rejected choice changed combat or spent the Power')
+  }
+  apply(room, a.token, {
+    kind: 'activatePower', powerUid: 'room-capped-orbs', exhaustUids: overCap.slice(0, 3).map((card) => card.uid), preflight: true,
+  })
+  const afterValid = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  assertDeepEqual(afterValid.hand.map((card) => card.uid), [overCap[3].uid])
+  assertDeepEqual(afterValid.exhaust.map((card) => card.uid), overCap.slice(0, 3).map((card) => card.uid))
 })
 
 check('Defense-mode Power Beam validates and chains the chosen online Power for 0 Energy', () => {

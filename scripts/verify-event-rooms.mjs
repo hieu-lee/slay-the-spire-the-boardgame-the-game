@@ -752,11 +752,14 @@ check('Vintage converts a normal Event-combat Card Reward into a Relic reward', 
   let run = enterEvent('colosseum', ['vintage'])
   run = chooseEvent(run, 'p1', { optionIds: ['warm_up'] })
   run.combat = { ...run.combat, phase: 'won', enemies: run.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })) }
+  const expectedRelic = run.itemDecks.relics[0]
+  const remainingRelics = run.itemDecks.relics.slice(1)
   run = resolveCombat(run)
   const reward = run.rewards.find((offer) => offer.playerId === 'p1')
   assertEqual(run.phase, 'reward')
   assertEqual(reward.cardReward, false)
-  assertEqual(reward.relic, null)
+  assertEqual(reward.relic, expectedRelic, 'the converted Relic is revealed automatically')
+  assertDeepEqual(run.itemDecks.relics, remainingRelics, 'the revealed Relic leaves the shared supply once')
 })
 
 check('a lethal Event loss immediately defeats the party', () => {

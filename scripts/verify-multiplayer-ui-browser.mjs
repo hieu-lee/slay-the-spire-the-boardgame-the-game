@@ -134,7 +134,7 @@ try {
         ribbonClear: Boolean(ribbonBox && panelBox && ribbonBox.bottom <= panelBox.top),
         withinViewport: Boolean(panelBox && panelBox.left >= -1 && panelBox.right <= innerWidth + 1),
         overflow: document.documentElement.scrollWidth > innerWidth + 1,
-        scrollTop: scrollY,
+        scrollTop: screen.scrollTop,
       }
     })
     assert.equal(lobbyChrome.seats, 4, `${viewport.name}: party staging lost seats`)

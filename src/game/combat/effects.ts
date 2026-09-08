@@ -1041,11 +1041,10 @@ function resolveGuardianGem(
   const inheritedFromCrystallize = context.sourceCardId !== undefined &&
     isStarterStrikeOrDefend(context.sourceCardId, 'Strike') && actor.powers.some((power) =>
       power.defId === 'guardian_crystallize' && power.attachedGemId === id)
-  const gemContext = sourceFace?.guardian?.printedType === 'Gem Power' || inheritedFromCrystallize
-    ? { ...context, guardianGemPowerDamage: true }
-    : context
+  const powerDamage = sourceFace?.guardian?.printedType === 'Gem Power' || inheritedFromCrystallize
   const doEffect = (effect: Effect, targetScope = scope, allyScope = supportScope) =>
-    applyEffect(state, actor, effect, targetScope, allyScope, gemContext, source)
+    applyEffect(state, actor, effect, targetScope, allyScope,
+      powerDamage && effect.kind === 'hit' ? { ...context, guardianGemPowerDamage: true } : context, source)
   switch (id) {
     case 'guardian_amethyst': if (context.guardianModeShift) shiftGuardianModeLive(state, actor); break
     case 'guardian_emerald': doEffect({ kind: 'applyWeak', amount: 1 }); break
@@ -3646,6 +3645,8 @@ export function resolveTriggerSource(
   exhaustUids?: readonly string[],
   hermitContext?: Pick<PlayContext, 'loadUids' | 'chamberUids' | 'hermitEnemyUids' | 'slimeUids' | 'slimeEnemyUids'>,
 ): boolean {
+  // Revalidate staged targets before this source begins; later Commands may still kill their own targets.
+  if (hermitContext?.slimeEnemyUids?.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))) return false
   const exhaust = source.effects.find((effect) => effect.kind === 'exhaustFromHand')
   if (exhaust) {
     const chosen = exhaustUids ?? []

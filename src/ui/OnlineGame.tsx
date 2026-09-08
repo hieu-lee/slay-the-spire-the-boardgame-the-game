@@ -491,7 +491,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         : !isPartyLeader ? `${partyLeader?.name ?? 'The party leader'} chooses the campaign.` : undefined)} />
     if (achievementsOpen) return <AchievementsScreen onBack={() => setAchievementsOpen(false)} />
     return (
-      <main className="online-lobby sts-scope"
+      <main key="lobby" className="online-lobby sts-scope"
         data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}>
         <header>
           <button type="button" className="online-lobby__leave ribbon-back" aria-label="Leave room"
