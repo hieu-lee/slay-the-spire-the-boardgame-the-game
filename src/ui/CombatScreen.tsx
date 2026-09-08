@@ -4172,8 +4172,13 @@ function CombatScreenView({
     : overflowOnly
     ? `Choose overflow Shiv target ${(pending?.shivEnemyUids.length ?? 0) - (pending?.spentShivs ?? 0) + 1}/${pending?.overflowShivs}, or skip the rest`
     : normalEnemyPrompt
+  const visibleStartModeShift = state.phase === 'start' && !forcedCard && !pendingTrigger &&
+    !stagedStartTurnTriggerPending && !activeStartTurnScry && orderedStartTurnScries.length === 0
+    ? pendingStartModeShift : undefined
   const startTurnPrompt = pendingStartExhaust
     ? `${pendingStartExhaust.label} — choose a card to Exhaust`
+    : visibleStartModeShift
+      ? `${visibleStartModeShift.label} — choose whether to change Mode`
     : pendingStartShiv
       ? `${pendingStartShiv.ability.label} — choose overflow Shiv ${pendingStartShiv.index + 1}/${pendingStartShiv.ability.overflowShivs}, or skip`
       : pendingStartEnemy
@@ -4659,12 +4664,6 @@ function CombatScreenView({
                     onClick={() => chooseStartTurnExhaust(card.uid)} />)}
                 </div>
               ) : null}
-              {pendingStartModeShift ? (
-                <div className="prompt__modes" role="group" aria-label={`${pendingStartModeShift.label}?`}>
-                  <button type="button" onClick={() => chooseStartTurnModeShift(false)}>Stay in current Mode</button>
-                  <button type="button" onClick={() => chooseStartTurnModeShift(true)}>Mode Shift</button>
-                </div>
-              ) : null}
               {orderedStartAbilities.some((ability) =>
                 (ability.targets?.length ?? 0) > 1 && startTurnEnemyTargets[ability.id] !== undefined) ||
                 Object.values(startTurnPlayerTargets).some((playerId) => playerId !== undefined) ||
@@ -4720,6 +4719,12 @@ function CombatScreenView({
       {prompt ? (
         <div className="prompt">
           <span className="prompt__text" role="status">{prompt}</span>
+          {visibleStartModeShift ? (
+            <div className="prompt__modes" role="group" aria-label={`${visibleStartModeShift.label}?`}>
+              <button type="button" className="prompt__mode" onClick={() => chooseStartTurnModeShift(false)}>Stay in current Mode</button>
+              <button type="button" className="prompt__mode" onClick={() => chooseStartTurnModeShift(true)}>Mode Shift</button>
+            </div>
+          ) : null}
           {pendingPlunder?.playerId === viewerId ? (
             <>
               <button type="button" className="prompt__mode" onClick={() => submitPlunderRow(null)}>Stay</button>
