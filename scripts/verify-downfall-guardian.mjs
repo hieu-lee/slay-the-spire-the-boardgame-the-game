@@ -649,6 +649,48 @@ check('active Powers remain usable during legal Start- and End-of-Turn windows',
     'an active Power interrupted the mandatory Draw/Roll step')
 })
 
+check('Turbocharge and Armored Protocol only Exhaust at their printed trigger', () => {
+  const enemy = { uid: 'e1', defId: 'jaw_worm', row: 0, isBoss: false, hp: 20, maxHp: 20,
+    block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0,
+    cardReward: null, actionIndex: 0, abilityUsed: false, dead: false }
+  const fresh = (seed) => createRun(seed, [{ id: 'p1', name: 'Guardian', character: 'guardian' }]).players[0]
+
+  assert.equal(CARDS.guardian_turbocharge.upgrade?.cost, 1)
+  assert.equal(CARDS.guardian_turbocharge.guardian?.sourceText,
+    'End of turn: If you are in Attack Mode, [vigor]. Otherwise, Exhaust this card.')
+
+  let player = fresh(8121)
+  player.energy = 3
+  player.hand = [{ uid: 'turbo', defId: 'guardian_turbocharge', upgraded: false }]
+  let combat = createCombat({ seed: 8121, calls: 0 }, [player], [enemy], 'turbocharge-attack')
+  combat = playCard(combat, 'p1', 'turbo')
+  assert(combat.players[0].powers.some((card) => card.uid === 'turbo'),
+    'Turbocharge Exhausted when played')
+  assert.equal(combat.players[0].exhaust.length, 0)
+  combat = endPlayerTurn(combat)
+  assert.equal(combat.players[0].vigor, 1)
+  assert(combat.players[0].powers.some((card) => card.uid === 'turbo'),
+    'Attack Mode exhausted Turbocharge at end of turn')
+
+  player = fresh(8122)
+  player.energy = 2
+  player.powers = [{ uid: 'turbo', defId: 'guardian_turbocharge', upgraded: true }]
+  combat = createCombat({ seed: 8122, calls: 0 }, [player], [enemy], 'turbocharge-defense')
+  combat.players[0].guardianMode = 'defense'
+  combat = endPlayerTurn(combat)
+  assert.equal(combat.players[0].energy, 2, 'Turbocharge incorrectly granted Energy in Defense Mode')
+  assert(!combat.players[0].powers.some((card) => card.uid === 'turbo'))
+  assert(combat.players[0].exhaust.some((card) => card.uid === 'turbo'))
+
+  player = fresh(8123)
+  player.energy = 4
+  player.hand = [{ uid: 'protocol', defId: 'guardian_armored_protocol', upgraded: false }]
+  combat = createCombat({ seed: 8123, calls: 0 }, [player], [enemy], 'armored-protocol-play')
+  combat = playCard(combat, 'p1', 'protocol')
+  assert(combat.players[0].powers.some((card) => card.uid === 'protocol'),
+    'Armored Protocol Exhausted before it could prevent HP loss')
+})
+
 check('Blitz can be ordered before a free-Power effect', () => {
   const player = createRun(812, [{ id: 'p1', name: 'Guardian', character: 'guardian' }]).players[0]
   player.nextCardCost = 1

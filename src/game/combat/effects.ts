@@ -863,12 +863,14 @@ function resolveGuardianCard(
     case 'guardian_vent_steam': if (attack) doEffect({ kind: 'applyVulnerable', amount: 1 }, upgraded ? 'row' : scope); else doEffect({ kind: 'applyWeak', amount: 1 }, upgraded ? 'row' : scope); break
     case 'guardian_turbocharge':
       if (context.sourcePowerUid) {
-        attack ? vigor() : doEffect({ kind: 'gainEnergy', amount: 1 })
-        const held = actor.powers.find((card) => card.uid === context.sourcePowerUid)
-        if (held) {
-          actor.powers = actor.powers.filter((card) => card.uid !== held.uid)
-          exhaustCards(state, actor, [held])
-          markTurnEffect(context, 'exhaust', { actor: true })
+        if (attack) vigor()
+        else {
+          const held = actor.powers.find((card) => card.uid === context.sourcePowerUid)
+          if (held) {
+            actor.powers = actor.powers.filter((card) => card.uid !== held.uid)
+            exhaustCards(state, actor, [held])
+            markTurnEffect(context, 'exhaust', { actor: true })
+          }
         }
       }
       break

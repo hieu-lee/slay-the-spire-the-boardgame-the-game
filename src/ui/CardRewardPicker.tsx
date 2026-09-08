@@ -7,13 +7,18 @@ type Props = {
   upgraded?: boolean
   disabled?: boolean
   uidPrefix?: string
+  title?: string
+  description?: string
   style?: CSSProperties
   onChoose: (index: number) => void
-  onSkip: () => void
+  onSkip?: () => void
 }
 
-/** The one card-reward surface, regardless of whether combat, an Event, Neow, or a Relic created it. */
-export function CardRewardPicker({ choices, upgraded = false, disabled = false, uidPrefix = 'card-reward', style, onChoose, onSkip }: Props) {
+/** The shared full-screen choice surface for Card Rewards and mandatory Guardian Gems. */
+export function CardRewardPicker({
+  choices, upgraded = false, disabled = false, uidPrefix = 'card-reward',
+  title = 'Choose a Card', description, style, onChoose, onSkip,
+}: Props) {
   const picker = useRef<HTMLElement>(null)
   const rewardKey = `${uidPrefix}:${upgraded}:${choices.join(',')}`
   const pickerStyle = { ...style, '--reward-card-count': Math.max(choices.length, 1) } as CSSProperties
@@ -34,15 +39,17 @@ export function CardRewardPicker({ choices, upgraded = false, disabled = false, 
     return () => { root?.removeEventListener('keydown', trap); if (previous?.isConnected) previous.focus() }
   }, [rewardKey])
   return <section ref={picker} className="reward-screen reward-screen--card-choice" style={pickerStyle}
-    role="dialog" aria-modal="true" tabIndex={-1} aria-labelledby={`${uidPrefix}-title`}>
-    <h2 className="reward-screen__title" id={`${uidPrefix}-title`}>Choose a Card</h2>
+    role="dialog" aria-modal="true" tabIndex={-1} aria-labelledby={`${uidPrefix}-title`}
+    aria-describedby={description ? `${uidPrefix}-description` : undefined}>
+    <h2 className="reward-screen__title" id={`${uidPrefix}-title`}>{title}</h2>
+    {description ? <p className="muted" id={`${uidPrefix}-description`}>{description}</p> : null}
     <div className="reward-screen__cards">
       {choices.map((defId, index) => <Card key={`${defId}-${index}`}
         card={{ uid: `${uidPrefix}-${index}`, defId, upgraded }} playable={!disabled}
         tabIndex={disabled ? -1 : undefined}
         onClick={() => !disabled && onChoose(index)} />)}
     </div>
-    <button className="reward-screen__skip" type="button" disabled={disabled} onClick={onSkip}>Skip</button>
+    {onSkip ? <button className="reward-screen__skip" type="button" disabled={disabled} onClick={onSkip}>Skip</button> : null}
   </section>
 }
 

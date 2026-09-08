@@ -5492,6 +5492,28 @@ try {
   })
   await a.screenshot({ path: join(outDir, '08c-compact-desktop-card-loot.png'), fullPage: true })
 
+  liveRoom.run = structuredClone(itemBaseline)
+  const socketOwner = liveRoom.run.players.find((player) => player.id === annRun.id)
+  socketOwner.deck.push({ uid: 'online-socket-host', defId: 'guardian_crystal_edge', upgraded: false })
+  Object.assign(liveRoom.run, {
+    phase: 'map', combat: null, rewards: [],
+    pendingGuardianSockets: [{ playerId: annRun.id, cardUid: 'online-socket-host',
+      gemIds: ['guardian_ruby', 'guardian_onyx'], source: 'gain' }],
+  })
+  rooms.publishRoom(code)
+  const onlineGemPicker = a.getByRole('dialog', { name: 'Choose a Gem' })
+  await onlineGemPicker.waitFor()
+  const ownerGemChoices = await onlineGemPicker.locator('.card').count()
+  const ownerGemSkip = await onlineGemPicker.getByRole('button', { name: 'Skip' }).count()
+  const foreignGemPicker = await b.getByRole('dialog', { name: 'Choose a Gem' }).count()
+  check('mandatory online Gem choices use the private Card Reward surface without Skip', () => {
+    assertEqual(ownerGemChoices, 2)
+    assertEqual(foreignGemPicker, 0)
+    assertEqual(ownerGemSkip, 0)
+  })
+  await onlineGemPicker.getByRole('button', { name: /^Ruby,/ }).click()
+  await a.waitForFunction(() => !document.querySelector('[role="dialog"][aria-labelledby^="guardian-socket-"]'))
+
   liveRoom.run = { ...itemBaseline, phase: 'betweenCombat', combat: null, act: 3, ascension: 13,
     pendingBossDefId: 'time_eater' }
   await roomAction(a, { kind: 'switchBetweenCombatRow', row: 1 })

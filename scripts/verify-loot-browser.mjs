@@ -309,13 +309,20 @@ try {
     player.deck.push(first, second)
     run.phase = 'map'
     run.pendingGuardianSockets = [first, second].map((card) => ({
-      playerId: player.id, cardUid: card.uid, gemIds: ['guardian_ruby'], source: 'gain',
+      playerId: player.id, cardUid: card.uid, gemIds: ['guardian_ruby', 'guardian_onyx'], source: 'gain',
     }))
     debug.setRun(run)
     return { firstUid: first.uid, secondUid: second.uid }
   })
-  await page.getByRole('heading', { name: /Socket a Gem into/ }).waitFor()
-  await page.locator('.relic-resolve .card').evaluate((card) => {
+  const gemPicker = page.locator('.reward-screen--card-choice')
+  await gemPicker.getByRole('heading', { name: 'Choose a Gem' }).waitFor()
+  await page.locator('.card-morph').waitFor({ state: 'attached', timeout: 1_000 }).catch(() => {})
+  if (await page.locator('.card-morph').count()) await page.locator('.card-morph').waitFor({ state: 'detached' })
+  assert.equal(await gemPicker.locator('.reward-screen__cards > .card').count(), 2)
+  assert.equal(await gemPicker.getByRole('button', { name: 'Skip' }).count(), 0,
+    'mandatory Gem picker added a Skip button')
+  await page.screenshot({ path: join(out, 'desktop-guardian-gem-picker.png') })
+  await gemPicker.locator('.card').first().evaluate((card) => {
     card.click()
     card.click()
   })
@@ -331,8 +338,18 @@ try {
     }
   }, socketCards), { first: 'guardian_ruby', second: undefined, pending: [socketCards.secondUid] },
   'a stale double-click socketed the next queued card')
-  await page.locator('.relic-resolve .card').click()
+  if (await page.locator('.card-morph').count()) await page.locator('.card-morph').waitFor({ state: 'detached' })
+  await page.setViewportSize({ width: 844, height: 390 })
+  const phoneGemCards = await gemPicker.locator('.card').evaluateAll((cards) => cards.map((card) => {
+    const box = card.getBoundingClientRect()
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
+  }))
+  assert(phoneGemCards.every((box) => box.left >= 0 && box.right <= 844 && box.top >= 0 && box.bottom <= 390),
+    `Gem picker clips a horizontal phone: ${JSON.stringify(phoneGemCards)}`)
+  await page.screenshot({ path: join(out, 'horizontal-phone-guardian-gem-picker.png') })
+  await gemPicker.locator('.card').first().click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().pendingGuardianSockets.length === 0)
+  await page.setViewportSize({ width: 1440, height: 900 })
 
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__

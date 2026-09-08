@@ -211,13 +211,9 @@ export function GuardianSocketPanel({ pending, deck, onResolve }: {
   onResolve: (gemId: string) => void
 }) {
   const host = deck.find((card) => card.uid === pending.cardUid)
-  return <section className="room-screen relic-resolve">
-    <h2>Socket a Gem{host ? ` into ${cardDef(host.defId).name}` : ''}</h2>
-    <p className="room-item-text">Choose one revealed Gem. The others return to the bottom of the Gem deck.</p>
-    <div className="campfire__deck">
-      {pending.gemIds.map((gemId) => <Card key={gemId}
-        card={{ uid: `socket-${gemId}`, defId: gemId, upgraded: false }}
-        onClick={() => onResolve(gemId)} />)}
-    </div>
-  </section>
+  const hostName = host ? cardDef(host.defId).name : 'this card'
+  return <CardRewardPicker choices={pending.gemIds} uidPrefix={`guardian-socket-${pending.cardUid}`}
+    title="Choose a Gem"
+    description={`Socket into ${hostName}. Unchosen Gems return to the bottom of the Gem deck.`}
+    onChoose={(index) => onResolve(pending.gemIds[index]!)} />
 }
