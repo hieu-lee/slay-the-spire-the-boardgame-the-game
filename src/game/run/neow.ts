@@ -148,6 +148,17 @@ export function finishNeowStep(state: RunState, playerId: string): RunState {
     ? state : completeNeowPlayer(state, playerId)
 }
 
+/** Resume blessings suspended by a nested acquisition, including restored saves. */
+export function resumeNeow(state: RunState): RunState {
+  if (state.phase !== 'neow' || !state.neow) return state
+  let next = state
+  for (const [playerId, progress] of Object.entries(state.neow.players)) {
+    if (progress.blueOption === null || progress.redGoldPending || progress.redRewardPending) continue
+    next = finishNeowStep(nextNeowReward(next, playerId), playerId)
+  }
+  return next
+}
+
 /** Public, authoritative Neow state. The remaining face-down deck is intentionally omitted. */
 export function neowPreview(state: RunState, playerId: string, viewerId = playerId): {
   card: ReturnType<typeof neowCard>

@@ -2,6 +2,9 @@ import { CARDS } from '../src/game/cards.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
 import { HEARTS_BOON_CARDS, NEOW_CARDS, formatHeartBoonLabel } from '../src/game/neow.ts'
 import {
+  abandonGuardianSocket,
+  resolveGuardianSocket,
+  resumeNeow,
   chooseNeow,
   createRun,
   GOLDEN_TICKET,
@@ -42,6 +45,66 @@ const beginHeart = (seed, cardId) => {
   while (run.neow.players.p1.redRewardPending) run = resolveNeowReward(run, 'p1', null)
   return forceCard(run, cardId)
 }
+
+check('Socket rewards resume the last Heart boon, queued costs, and saved deadlocks', () => {
+  const boon = HEARTS_BOON_CARDS.find((card) => card.options.some((option) =>
+    option.effects.some((effect) => effect.kind === 'reward' && effect.look === 5)))
+  for (const disconnect of [false, true]) {
+    let run = beginHeart(8123, boon.id)
+    run.players[0].cardRewards = ['guardian_crystal_edge', ...run.players[0].cardRewards]
+    const option = boon.options.findIndex((option) => option.effects.some((effect) => effect.look === 5))
+    run = chooseNeow(run, 'p1', option)
+    run = revealNeowReward(run, 'p1')
+    assertEqual(run.neow.players.p1.reward.look, 5)
+    const index = run.neow.players.p1.reward.choices.findIndex((id) => CARDS[id]?.guardian?.socket)
+    assert(index >= 0)
+    const hp = run.players[0].hp
+    run = resolveNeowReward(run, 'p1', index)
+    assertEqual(run.phase, 'neow')
+    assertEqual(run.pendingGuardianSockets.length, 1)
+    const pending = run.pendingGuardianSockets[0]
+    assertEqual(resolveGuardianSocket(run, 'p1', pending.cardUid, 'invalid'), run)
+    const suspended = structuredClone(run)
+    run = disconnect ? abandonGuardianSocket(run, 'p1')
+      : resolveGuardianSocket(run, 'p1', pending.cardUid, pending.gemIds[0])
+    assertEqual(run.phase, 'map')
+    assertEqual(run.players[0].hp, hp - 1)
+    assertEqual(run.pendingGuardianSockets.length, 0)
+    assertEqual(run.players[0].deck.find((card) => card.uid === pending.cardUid).attachedGemId, pending.gemIds[0])
+    assertEqual(resumeNeow(run), run)
+    // The previous version persisted the attached card but left the boon suspended.
+    suspended.players = structuredClone(run.players)
+    suspended.players[0].hp = hp
+    suspended.players[0].gold = 0
+    suspended.pendingGuardianSockets = []
+    const recovered = resumeNeow(JSON.parse(JSON.stringify(suspended)))
+    assertEqual(recovered.phase, 'map')
+    assertEqual(recovered.players[0].hp, hp - 1)
+    assertEqual(recovered.players[0].gold, 2)
+  }
+})
+
+check('Socket completion resumes other suspended seats without choosing their boon', () => {
+  let run = createRun(8124, [
+    { id: 'p1', name: 'Guardian', character: 'guardian' },
+    { id: 'p2', name: 'Hexaghost', character: 'hexaghost' },
+  ])
+  const untouched = structuredClone(run.neow.players.p2)
+  run.neow.players.p1 = { ...run.neow.players.p1, redGoldPending: false, redRewardPending: false,
+    blueOption: 0, pendingEffect: null, rewardKind: null, reward: null, rewardQueue: [] }
+  const host = { uid: 'c999', defId: 'guardian_crystal_edge', upgraded: false }
+  run.players[0].deck.push(host)
+  run.pendingGuardianSockets = [{ playerId: 'p1', cardUid: host.uid, gemIds: ['guardian_ruby'], source: 'draft' }]
+  const waiting = resolveGuardianSocket(run, 'p1', host.uid, 'guardian_ruby')
+  assertEqual(waiting.phase, 'neow')
+  assertEqual(waiting.neow.players.p1.done, true)
+  assertDeepEqual(waiting.neow.players.p2, untouched)
+  run.neow.players.p2 = { ...run.neow.players.p2, redGoldPending: false, redRewardPending: false,
+    blueOption: 0, pendingEffect: null, rewardKind: null, reward: null, rewardQueue: [{ kind: 'loseHp', amount: 1 }] }
+  const finished = resolveGuardianSocket(JSON.parse(JSON.stringify(run)), 'p1', host.uid, 'guardian_ruby')
+  assertEqual(finished.phase, 'map')
+  assertEqual(finished.players[1].hp, run.players[1].hp - 1)
+})
 
 const choiceUids = (run, option) => {
   const selection = option.effects.find((effect) => ['upgrade', 'remove', 'transform'].includes(effect.kind) && !effect.random)

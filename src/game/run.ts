@@ -28,6 +28,7 @@ export {
 } from './run/rules.ts'
 export { ROOM_LABEL, beginCatchUp, createPlayer, createRun, enteringRoom } from './run/setup.ts'
 export {
+  resumeNeow,
   chooseNeow,
   neowEffectSelection,
   neowPreview,

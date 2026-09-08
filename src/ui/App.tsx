@@ -23,6 +23,7 @@ import {
   purchaseAtMerchant,
   removeAtCurrentMerchant,
   resolveCampfire,
+  resumeNeow,
   resolveNeowEffect,
   resolveNeowGold,
   revealNeowReward,
@@ -173,7 +174,7 @@ function savedSoloRun(): SoloRunSave | null {
       (built.meta.quickStartAct === undefined || [1, 2, 3, 4].includes(built.meta.quickStartAct)) &&
       (built.meta.ruleset === undefined || built.meta.ruleset === 'base' || built.meta.ruleset === 'downfall') &&
       resumablePhase(run)
-      ? saved as SoloRunSave
+      ? { ...saved as SoloRunSave, run: resumeNeow(run as RunState) }
       : null
   } catch {
     return null

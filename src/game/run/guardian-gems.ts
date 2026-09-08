@@ -1,5 +1,6 @@
 import { CARDS } from '../cards.ts'
 import { attachGuardianGem, GUARDIAN_CARDS_BY_ID } from '../downfall/guardian.ts'
+import { resumeNeow } from './neow.ts'
 import type { RunState } from './types.ts'
 
 export function cardHasGuardianSocket(defId: string): boolean {
@@ -108,7 +109,7 @@ export function resolveGuardianSocket(state: RunState, playerId: string, cardUid
     const revealed = drawGuardianGemChoices(guardianGemDeck, 2)
     roomState = { ...roomState, guardianGems: { ...roomState.guardianGems, [playerId]: revealed } }
   }
-  return {
+  return resumeNeow({
     ...state,
     players: state.players.map((candidate) => candidate.id !== playerId ? candidate : {
       ...candidate,
@@ -118,7 +119,7 @@ export function resolveGuardianSocket(state: RunState, playerId: string, cardUid
     roomState,
     pendingGuardianSockets: state.pendingGuardianSockets.filter((_choice, index) => index !== pendingIndex),
     log: [...state.log, `${player.name} sockets ${gemId.replace(/^guardian_/, '')}.`],
-  }
+  })
 }
 
 /** Disconnect fallback: the top revealed Gem is a deterministic legal choice. */
