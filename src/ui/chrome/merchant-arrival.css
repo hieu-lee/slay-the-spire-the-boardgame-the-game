@@ -167,13 +167,21 @@
   isolation: isolate;
 }
 
+.sts-scope .merchant-hand-layer {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 40;
+  /* Clip to the existing scroll area, including stock below a short viewport. */
+  overflow: clip;
+  pointer-events: none;
+}
+
 .sts-scope .merchant-hand {
   position: absolute;
-  z-index: 40;
   left: var(--merchant-point-x);
   top: var(--merchant-point-y);
   width: auto;
-  height: min(155%, 82rem);
+  height: min(155cqh, 82rem);
   pointer-events: none;
   transform-origin: 50% 100%;
   animation: merchant-point 900ms cubic-bezier(0.18, 0.78, 0.24, 1) both;

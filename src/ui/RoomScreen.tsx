@@ -198,7 +198,7 @@ function MerchantScreen({
   const [discardPotionId, setDiscardPotionId] = useState("");
   const [shopOpen, setShopOpen] = useState(false);
   const [localReady, setLocalReady] = useState<string[]>([]);
-  const [point, setPoint] = useState<{ key: number; x: number; y: number; angle: number } | null>(null);
+  const [point, setPoint] = useState<{ key: number; x: number; y: number; angle: number; width: number; height: number } | null>(null);
   const merchantStage = useRef<HTMLElement>(null);
   const pointKey = useRef(0);
   const visitors = players.filter((candidate) => Object.hasOwn(room.cards, candidate.id));
@@ -211,7 +211,8 @@ function MerchantScreen({
     const frame = stage.getBoundingClientRect();
     const item = target.getBoundingClientRect();
     const x = item.left - frame.left + stage.scrollLeft + item.width / 2;
-    setPoint({ key: pointKey.current += 1, x, y: item.top - frame.top + stage.scrollTop + item.height * 0.55, angle: (x / frame.width - 0.5) * 10 });
+    setPoint({ key: pointKey.current += 1, x, y: item.top - frame.top + stage.scrollTop + item.height * 0.55,
+      angle: (x / frame.width - 0.5) * 10, width: stage.scrollWidth, height: stage.scrollHeight });
   };
   const pointAtTarget = (id: string) => pointAt(merchantStage.current?.querySelector<HTMLElement>(`[data-merchant-target="${id}"]`) ?? null);
   const validDiscardPotionId = buyer.potions.includes(discardPotionId) ? discardPotionId : "";
@@ -535,8 +536,11 @@ function MerchantScreen({
           </button>
         </div>
       </div>
-      {point ? <img key={point.key} className="merchant-hand" src={assetPath("noncombat/merchant/merchant-hand.webp")} alt="" aria-hidden="true"
-        style={{ "--merchant-point-x": `${point.x}px`, "--merchant-point-y": `${point.y}px`, "--merchant-point-angle": `${point.angle}deg` } as CSSProperties} /> : null}
+      {point ? <div className="merchant-hand-layer" aria-hidden="true" style={{ width: point.width, height: point.height }}>
+        <img key={point.key} className="merchant-hand" src={assetPath("noncombat/merchant/merchant-hand.webp")} alt=""
+          onAnimationEnd={() => setPoint(null)}
+          style={{ "--merchant-point-x": `${point.x}px`, "--merchant-point-y": `${point.y}px`, "--merchant-point-angle": `${point.angle}deg` } as CSSProperties} />
+      </div> : null}
       <dialog ref={potionReplacementDialog} className="choice-modal merchant-potion-dialog" aria-labelledby="merchant-potion-title"
         onCancel={(event) => { event.preventDefault(); setPotionReplacementSlot(null); setDiscardPotionId(""); }}>
         <section className="choice-modal__panel">
