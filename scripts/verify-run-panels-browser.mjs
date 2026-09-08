@@ -40,8 +40,36 @@ try {
     }
     await page.mouse.move(0, 0)
     await page.screenshot({ path: `${output}/${name}-run-modes.png` })
+    if (!touch) {
+      for (const card of await cards.all()) {
+        await card.hover()
+        await card.evaluate(async (element) => {
+          const transitions = element.getAnimations()
+          if (!['transform', 'filter'].every((property) => transitions.some((animation) =>
+            animation.transitionProperty === property))) throw new Error('mode hover must animate lift and glow')
+          for (const animation of transitions) { animation.pause(); animation.currentTime = 120 }
+          const lift = new DOMMatrixReadOnly(getComputedStyle(element).transform).m42
+          if (!(lift < 0 && lift > -5.6)) throw new Error('mode hover jumped to its endpoint')
+          for (const animation of transitions) animation.finish()
+        })
+        await page.mouse.move(0, 0)
+        await card.evaluate(async (element) => {
+          const transitions = element.getAnimations()
+          if (!transitions.some((animation) => animation.transitionProperty === 'transform'))
+            throw new Error('mode hover must ease back on exit')
+          await Promise.all(transitions.map((animation) => animation.finished))
+        })
+      }
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await cards.first().hover()
+      assert.equal(await cards.first().evaluate((element) => getComputedStyle(element).transform), 'none')
+      assert.equal(await cards.first().evaluate((element) => getComputedStyle(element).transitionDuration), '0s')
+      await page.mouse.move(0, 0)
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+    }
     await cards.first().focus()
     await page.keyboard.press('ArrowRight')
+    await cards.first().evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)))
     assert(await cards.first().evaluate((element) => getComputedStyle(element).filter.includes('brightness')),
       'keyboard focus lost its highlight')
     await page.screenshot({ path: `${output}/${name}-run-mode-focus.png` })

@@ -199,6 +199,7 @@
   font: 700 clamp(1rem, 1.65vw, 1.5rem) 'Kreon', Georgia, serif;
   line-height: 1.28;
   text-shadow: 0 2px 2px #302013;
+  transition: transform 240ms ease-out, filter 240ms ease-out;
 }
 
 .start-menu__mode-choice::before {
@@ -470,9 +471,11 @@
 }
 
 .start-menu[data-reduced-motion='true'] :is(.start-menu__character-wallpaper, .start-menu__character-copy) { animation: none; }
+.start-menu[data-reduced-motion='true'] .start-menu__mode-choice { transition: none; transform: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .start-menu :is(.start-menu__character-wallpaper, .start-menu__character-copy) { animation: none; }
+  .start-menu__mode-choice { transition: none; }
   .start-menu__mode-choice:hover,
   .start-menu__mode-choice:focus-visible,
   .start-menu__character-roster button[aria-pressed='true'] { transform: none; }
