@@ -505,6 +505,7 @@ try {
   await b.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '6')
 
   await a.getByRole('button', { name: 'Enter the Spire' }).click()
+  await a.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await a.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 
   // Reveal a Neow reward through the real online UI. Every other Neow test in
@@ -863,6 +864,7 @@ try {
   await enterOnline(soloGiveUpPage, 'Solo', 'defect', undefined, 'solo-give-up')
   const soloGiveUpCode = (await credentials(soloGiveUpPage)).code
   await soloGiveUpPage.getByRole('button', { name: 'Enter the Spire' }).click()
+  await soloGiveUpPage.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await soloGiveUpPage.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
   const soloGiveUpRoom = rooms.store.rooms.get(soloGiveUpCode)
   bypassRoomNeow(soloGiveUpRoom)
@@ -5626,6 +5628,7 @@ try {
     .find((label) => label.textContent?.includes('Ascension'))?.querySelectorAll('option').length === 14)
   await fourPages[0].locator('.online-lobby').getByLabel('Ascension').selectOption('13')
   await fourPages[0].getByRole('button', { name: 'Enter the Spire' }).click()
+  await fourPages[0].getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await fourPages[0].getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
   const fourRoom = rooms.store.rooms.get(fourCode)
   bypassRoomNeow(fourRoom)

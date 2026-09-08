@@ -153,6 +153,7 @@ export type VisibleRun = {
 export type RoomSnapshot = {
   code: string
   phase: 'lobby' | 'run'
+  selectingCampaign: boolean
   ascension: number
   chooseYourRelic: boolean
   lastStand: boolean
@@ -669,7 +670,8 @@ export function useRoomSession() {
       ? current.modifiers.includes(id) ? current.modifiers : [...current.modifiers, id]
       : current.modifiers.filter((candidate) => candidate !== id) }
   }), [enqueue])
-  const start = useCallback(() => enqueue('start', {}), [enqueue])
+  const selectCampaign = useCallback((enabled: boolean) => enqueue('campaign-select', { enabled }), [enqueue])
+  const start = useCallback((campaign: 'base' | 'downfall') => enqueue('start', { campaign }), [enqueue])
   const act = useCallback((action: object) => enqueue('action', { action }), [enqueue])
   const sendVoiceSignal = useCallback((to: string, signal: VoiceSignal['signal']) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return false
@@ -711,6 +713,7 @@ export function useRoomSession() {
     chooseRunMeta,
     chooseRunModifier,
     start,
+    selectCampaign,
     act,
     sendVoiceSignal,
     onVoiceSignal,

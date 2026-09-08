@@ -173,6 +173,7 @@ function savedSoloRun(): SoloRunSave | null {
         DAILY_MODIFIERS.some((modifier) => modifier.id === id))) &&
       (built.meta.quickStartAct === undefined || [1, 2, 3, 4].includes(built.meta.quickStartAct)) &&
       (built.meta.ruleset === undefined || built.meta.ruleset === 'base' || built.meta.ruleset === 'downfall') &&
+      (built.meta.campaign === undefined || built.meta.campaign === 'base' || built.meta.campaign === 'downfall') &&
       resumablePhase(run)
       ? { ...saved as SoloRunSave, run: resumeNeow(run as RunState) }
       : null
@@ -717,10 +718,10 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         ? current.includes(id) ? current : [...current, id]
         : current.filter((candidate) => candidate !== id))}
       onQuickStartAct={setQuickStartAct}
-      onStart={() => {
+      onStart={(campaign) => {
         discardSoloRun()
         setChoosingNextCharacter(false)
-        restart(1, seedText, ascension, false, false, characters, metaOptions)
+        restart(1, seedText, ascension, false, false, characters, { ...metaOptions, campaign })
         onOpen()
       }}
       onResume={resume ? resumeSoloRun : undefined}

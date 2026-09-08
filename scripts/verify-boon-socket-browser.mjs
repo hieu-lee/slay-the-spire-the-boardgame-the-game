@@ -29,6 +29,7 @@ try {
     await page.getByRole('button', { name: 'Single Player', exact: true }).click()
     await page.getByRole('button', { name: 'Standard', exact: true }).click()
     await page.getByRole('button', { name: 'Embark' }).click()
+    await page.getByRole('button', { name: 'Start Downfall campaign', exact: true }).click()
     await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
     await page.getByRole('heading', { name: 'Choose a Gem', exact: true }).waitFor()
     await page.waitForTimeout(500)

@@ -20,7 +20,7 @@ import { addBurningElite, generateMap } from '../map.ts'
 import type { RoomKind } from '../map.ts'
 import { normalizeModifierIds, rollDailyModifiers, rulesetForCharacters } from '../meta.ts'
 import type { DailyModifierId, QuickSetupState, RunMetaOptions } from '../meta.ts'
-import { dealBlessings, neowCard } from '../neow.ts'
+import { dealBlessings, neowCard, NEOW_CARDS } from '../neow.ts'
 import type { NeowState } from '../neow.ts'
 import { STARTING_RELIC, createRelicDecks, createRelicInstance } from '../relics.ts'
 import { createRng, shuffle } from '../rng.ts'
@@ -192,16 +192,17 @@ export function createRun(
   }
   if (ascension >= 9) for (const player of players) player.hp -= 1
 
-  const ruleset = rulesetForCharacters(party.map((member) => member.character), metaOptions.ruleset)
+  const ruleset = rulesetForCharacters(party.map((member) => member.character), metaOptions.campaign === 'downfall' ? 'downfall' : metaOptions.ruleset)
+  const campaign = metaOptions.campaign ?? ruleset
   const relicDecks = createRelicDecks(rng, ruleset)
   const keys = createSpireKeys()
   const baseMap = generateMap(rng, 1, ascension)
   const map = isActIVUnlocked(campaignProgress) ? addBurningElite(rng, baseMap) : baseMap
-  const actBossDefId = rollActBoss(rng, 1, ruleset)
+  const actBossDefId = rollActBoss(rng, 1, campaign)
   const colorlessUnlocked = isColorlessUnlocked(campaignProgress)
   const itemDecks = createItemDecks(rng, colorlessUnlocked || modifier('all_star') || modifier('prismatic_shard'), campaignProgress, party.map((member) => member.character), ruleset)
   itemDecks.relics = [...relicDecks.relicDeck]
-  const dealt = dealBlessings(rng, players, colorlessUnlocked, ruleset)
+  const dealt = dealBlessings(rng, players, colorlessUnlocked)
   const neow: NeowState = {
     deck: dealt.deck,
     heartDeck: dealt.heartDeck,
@@ -280,7 +281,7 @@ export function createRun(
     rewards: [],
     rewardDestination: null,
     itemDecks,
-    eventDeck: buildEventDeck(rng, 1, ascension, colorlessUnlocked, ruleset),
+    eventDeck: buildEventDeck(rng, 1, ascension, colorlessUnlocked, campaign),
     eventsVisited: 0,
     roomState: null,
     eventCombat: null,
@@ -291,6 +292,7 @@ export function createRun(
       mode,
       modifierIds,
       ruleset,
+      campaign,
     },
     setup,
     campaignProgress: nextCampaignProgress,
@@ -362,8 +364,14 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
   if (adding && state.neow && state.setup) {
     const deck = [...state.neow.deck]
     const heartDeck = [...(state.neow.heartDeck ?? [])]
+    // Older Downfall Catch Up saves dealt only Heart boons and stored no Neow supply.
+    if (deck.length === 0 && newPlayers.some((player) => !DOWNFALL_CHARACTER_IDS.some((id) => id === player.character))) {
+      const dealt = new Set(Object.values(state.neow.players).map((progress) => progress.cardId))
+      deck.push(...shuffle(rng, NEOW_CARDS.filter((card) => !dealt.has(card.id) &&
+        (isColorlessUnlocked(state.campaignProgress) || !card.unlocked)).map((card) => card.id)))
+    }
     const progress = Object.fromEntries(newPlayers.map((player) => {
-      const downfall = ruleset === 'downfall'
+      const downfall = DOWNFALL_CHARACTER_IDS.some((id) => id === player.character)
       const cardId = downfall ? heartDeck.shift() : deck.shift()
       return [player.id, {
         cardId: cardId!, redGoldPending: !downfall, redRewardPending: true, redRewardsRemaining: downfall ? 3 : 1,
@@ -386,7 +394,7 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
     if (hasModifier(state, 'heirloom')) next = grantHeirlooms(next, newPlayers.map((player) => player.id))
     return next
   }
-  const dealt = dealBlessings(rng, newPlayers, isColorlessUnlocked(state.campaignProgress), ruleset)
+  const dealt = dealBlessings(rng, newPlayers, isColorlessUnlocked(state.campaignProgress))
   let next = mirrorItemSupplies({
     ...state,
     rng,

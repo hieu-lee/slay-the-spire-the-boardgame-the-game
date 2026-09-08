@@ -20,6 +20,7 @@ try {
     await page.getByRole('button', { name: 'Single Player', exact: true }).click()
     await page.getByRole('button', { name: 'Standard', exact: true }).click()
     await page.getByRole('button', { name: 'Embark' }).click()
+    await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
     await page.waitForFunction(() => window.__STS_DEBUG__?.getRun()?.phase === 'neow')
     const viewerId = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].id)
     async function load(mode, character = 'guardian', forced = false) {

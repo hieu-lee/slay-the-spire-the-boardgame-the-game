@@ -664,7 +664,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     const mindBloom = result.event.card.id === 'mind_bloom' && finalDecision.optionIds.includes('war')
     // The boss-content integration consumes this seeded physical Boss id. The
     // legacy combat shell falls back only while those enemy faces are absent.
-    const actOneBosses = state.meta.ruleset === 'downfall' ? DOWNFALL_BOSSES[1]! : BOSSES[1]!
+    const actOneBosses = (state.meta.campaign ?? state.meta.ruleset) === 'downfall' ? DOWNFALL_BOSSES[1]! : BOSSES[1]!
     const bossDefId = mindBloom ? actOneBosses[nextInt(rng, actOneBosses.length)] : undefined
     let enemyDecks = state.enemyDecks
     let combat = preparedCombat
@@ -675,7 +675,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
       const encounter = buildEncounter(
         rng, enemyDecks, mindBloom ? 1 : state.act, players,
         mindBloom ? 'boss' : result.combat, false, state.ascension,
-        bossDefId, undefined, state.meta.ruleset,
+        bossDefId, undefined, state.meta.campaign ?? state.meta.ruleset,
       )
       // Mind Bloom prints its own Relic + Card Reward, not the boss card's Gold.
       if (mindBloom) encounter.enemies.find((enemy) => enemy.uid === 'boss-0')!.goldReward = 0

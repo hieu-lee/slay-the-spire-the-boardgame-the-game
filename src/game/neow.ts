@@ -1,6 +1,6 @@
 import { shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
-import type { RuleSet } from './meta.ts'
+import { DOWNFALL_CHARACTER_IDS } from './types.ts'
 import type { CharacterId } from './types.ts'
 import { formatDownfallText, HEARTS_BOONS } from './downfall/items.ts'
 
@@ -227,20 +227,21 @@ export function dealNeow(rng: RngState, playerIds: readonly string[], colorlessU
 
 export function dealBlessings(
   rng: RngState,
-  players: readonly { id: string }[],
+  players: readonly { id: string; character: CharacterId }[],
   prototypesUnlocked: boolean,
-  ruleset: RuleSet,
 ): { deck: string[]; heartDeck: string[]; dealt: Record<string, string> } {
   if (players.length < 1 || players.length > 4 || new Set(players.map(({ id }) => id)).size !== players.length) {
     throw new Error('Blessings require 1 to 4 unique players')
   }
-  const deck = shuffle(rng, (ruleset === 'downfall' ? HEARTS_BOON_CARDS : NEOW_CARDS)
-    .filter((card) => prototypesUnlocked || !card.unlocked).map((card) => card.id))
-  return {
-    dealt: Object.fromEntries(players.map((player, index) => [player.id, deck[index]!])),
-    deck: ruleset === 'base' ? deck.slice(players.length) : [],
-    heartDeck: ruleset === 'downfall' ? deck.slice(players.length) : [],
-  }
+  const hasDownfall = players.some((player) => DOWNFALL_CHARACTER_IDS.some((id) => id === player.character))
+  const hasBase = players.some((player) => !DOWNFALL_CHARACTER_IDS.some((id) => id === player.character))
+  // Prepare the other deck for Catch Up without changing existing single-roster seeds.
+  const deck = shuffle(hasBase ? rng : { ...rng }, NEOW_CARDS.filter((card) => prototypesUnlocked || !card.unlocked).map((card) => card.id))
+  const heartDeck = shuffle(hasDownfall ? rng : { ...rng }, HEARTS_BOON_CARDS.filter((card) => prototypesUnlocked || !card.unlocked).map((card) => card.id))
+  const dealt = Object.fromEntries(players.map((player) => [player.id,
+    (DOWNFALL_CHARACTER_IDS.some((id) => id === player.character) ? heartDeck : deck).shift()!,
+  ]))
+  return { dealt, deck, heartDeck }
 }
 
 export const neowCard = (id: string): NeowCard | undefined =>

@@ -118,6 +118,7 @@ try {
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
   await page.getByRole('button', { name: 'Standard', exact: true }).click()
   await page.getByRole('button', { name: 'Embark' }).click()
+  await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await page.waitForFunction(() => Boolean(window.__STS_DEBUG__?.getRun()))
   const enrichedOutbox = await page.evaluate(async () => {
     const run = structuredClone(window.__STS_DEBUG__.getRun())

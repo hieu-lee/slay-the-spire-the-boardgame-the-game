@@ -598,6 +598,7 @@ const realFlow = await page.evaluate(async () => {
   await choose('Watcher')
   const character = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
   await choose('Embark')
+  await choose('Start standard campaign')
   const started = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
   return {
     watcherSelected: character.controls.find((control) => control.label === 'Watcher')?.selected,

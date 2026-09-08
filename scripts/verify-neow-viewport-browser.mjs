@@ -69,6 +69,7 @@ try {
     await page.getByRole('button', { name: 'Single Player', exact: true }).click()
     await page.getByRole('button', { name: 'Standard', exact: true }).click()
     await page.getByRole('button', { name: 'Embark' }).click()
+    await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
     await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
     await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'neow-viewport'))
     await capture('solo-gold')

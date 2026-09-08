@@ -83,6 +83,7 @@ try {
   await enter(guest, 'Guest', 'Silent', credentials.code)
   const guestCredentials = await guest.evaluate(() => JSON.parse(sessionStorage.getItem('sts-room-session')))
   await host.getByRole('button', { name: 'Enter the Spire' }).click()
+  await host.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await Promise.all([
     host.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor(),
     guest.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor(),

@@ -1115,6 +1115,17 @@ function settleDisconnectedStartTurnChoices(room) {
   clearStartTurnPlan(room)
 }
 
+export function selectCampaign(room, seatToken, enabled) {
+  const seat = findSeat(room, seatToken) ?? fail('Claim a seat before starting')
+  if (seat !== room.seats[0]) fail('Only the party leader may choose the campaign')
+  if (room.phase !== 'lobby') fail('The run has already started')
+  if (typeof enabled !== 'boolean') fail('Choose whether to open the campaign picker')
+  if (room.selectingCampaign === enabled) return snapshotFor(room, seatToken)
+  room.selectingCampaign = enabled
+  room.version += 1
+  return snapshotFor(room, seatToken)
+}
+
 /**
  * Starts the run.
  *
@@ -1123,11 +1134,12 @@ function settleDisconnectedStartTurnChoices(room) {
  * which is the very thing `snapshotFor` withholds the rng state to prevent.
  * Tests and playtests pass one explicitly.
  */
-export function startRun(room, seatToken, { seed } = {}) {
+export function startRun(room, seatToken, { seed, campaign } = {}) {
   const seat = findSeat(room, seatToken) ?? fail('Claim a seat before starting')
   if (seat !== room.seats[0]) fail('Only the party leader may start the run')
   if (room.phase !== 'lobby') fail('The run has already started')
   if (room.seats.length === 0) fail('Nobody has claimed a seat')
+  if (campaign !== undefined && !['base', 'downfall'].includes(campaign)) fail('Choose a valid campaign')
 
   const party = room.seats.map((seat) => ({
     id: seat.playerId,
@@ -1137,11 +1149,12 @@ export function startRun(room, seatToken, { seed } = {}) {
   if (!Number.isInteger(room.ascension) || room.ascension < 0 || room.ascension > room.campaignProgress.highestAscension) {
     fail('That Ascension is not unlocked')
   }
-  room.run = createRun(seed ?? Number(BigInt('0x' + randomBytes(4).toString('hex'))), party, room.ascension, room.campaignProgress, room.chooseYourRelic && party.length > 1, room.lastStand && party.length > 1, room.metaOptions)
+  room.run = createRun(seed ?? Number(BigInt('0x' + randomBytes(4).toString('hex'))), party, room.ascension, room.campaignProgress, room.chooseYourRelic && party.length > 1, room.lastStand && party.length > 1, { ...room.metaOptions, campaign })
   room.concurrentCardCopies = undefined
   room.concurrentDistilled = undefined
   room.concurrentRelicScries = undefined
   room.concurrentForcedCards = undefined
+  room.selectingCampaign = false
   room.phase = 'run'
   room.version += 1
   return snapshotFor(room, seatToken)
@@ -4581,6 +4594,7 @@ export function snapshotFor(room, seatToken) {
   return {
     code: room.code,
     phase: room.phase,
+    selectingCampaign: room.selectingCampaign === true,
     ascension: room.ascension,
     chooseYourRelic: room.chooseYourRelic === true,
     lastStand: room.lastStand === true,

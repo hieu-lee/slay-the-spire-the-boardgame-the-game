@@ -49,6 +49,7 @@ try {
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
   await page.getByRole('button', { name: 'Standard', exact: true }).click()
   await page.getByRole('button', { name: 'Embark' }).click()
+  await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
   await page.evaluate(() => {
     const run = structuredClone(window.__STS_DEBUG__.getRun())
@@ -202,6 +203,7 @@ try {
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
   await page.getByRole('button', { name: 'Standard', exact: true }).click()
   await page.getByRole('button', { name: 'Embark' }).click()
+  await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await page.waitForFunction((oldId) => {
     const saved = JSON.parse(localStorage.getItem('sts-solo-run') ?? 'null')
     return saved?.run?.campaign?.runId && saved.run.campaign.runId !== oldId

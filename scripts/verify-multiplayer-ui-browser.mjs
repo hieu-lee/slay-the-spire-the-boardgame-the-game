@@ -147,6 +147,7 @@ try {
     assert.equal(lobbyChrome.scrollTop, 0, `${viewport.name}: lobby retained stale form scroll`)
 
     await lobby.getByRole('button', { name: 'Enter the Spire', exact: true }).click()
+    await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
     await page.getByRole('heading', { name: 'Neow’s Blessing', exact: true }).waitFor()
     await context.close()
     assert.deepEqual(browserErrors, [], `${viewport.name}: browser errors\n${browserErrors.join('\n')}`)

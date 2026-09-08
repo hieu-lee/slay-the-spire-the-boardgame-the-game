@@ -19,6 +19,7 @@ import {
   saveStore,
   snapshotFor,
   startRun,
+  selectCampaign,
 } from './lib/rooms.mjs'
 
 const JSON_HEADERS = {
@@ -327,7 +328,7 @@ export function createRoomServer({
           throw error
         }
       }
-      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|leave|character|ascension|relic-rule|last-stand-rule|run-meta|start|action|voice-ice))?$/)
+      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|leave|character|ascension|relic-rule|last-stand-rule|run-meta|campaign-select|start|action|voice-ice))?$/)
       if (!match) return send(response, 404, { error: 'Not found' })
       const room = roomOrThrow(match[1])
       const operation = match[2]
@@ -412,11 +413,12 @@ export function createRoomServer({
         queueSave()
         return send(response, 200, { ok: true })
       }
+      else if (operation === 'campaign-select') snapshot = selectCampaign(room, token, body.enabled)
       else if (operation === 'start') {
         if (room.seats.some((seat) => !seat.connected)) {
           return send(response, 409, { error: 'Every seat must be connected before starting' })
         }
-        snapshot = startRun(room, token)
+        snapshot = startRun(room, token, { campaign: body.campaign })
       }
       else if (operation === 'action') {
         const result = apply(room, token, body.action)

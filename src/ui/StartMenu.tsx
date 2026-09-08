@@ -4,6 +4,7 @@ import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
 import { relicDef, STARTING_RELIC } from '../game/relics.ts'
 import { ASCENSION_RULES } from '../game/run.ts'
 import type { CharacterId } from '../game/types.ts'
+import { CampaignSelect } from './CampaignSelect.tsx'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import type { GameSettings } from './game-settings.ts'
@@ -24,7 +25,7 @@ type StartMenuProps = {
   onMode: (mode: RunMode) => void
   onCustomModifier: (id: DailyModifierId, enabled: boolean) => void
   onQuickStartAct: (act: 1 | 2 | 3 | 4) => void
-  onStart: () => void
+  onStart: (campaign: 'base' | 'downfall') => void
   onResume?: () => void
   onOnline?: () => void
   onLeaderboard: () => void
@@ -90,7 +91,7 @@ export function StartMenu({
   initiallyChoosingCharacter = false,
 }: StartMenuProps) {
   const [selection, setSelection] = useState(onResume ? 'Resume' : 'Single Player')
-  const [screen, setScreen] = useState<'main' | 'mode' | 'daily' | 'custom' | 'character'>(initiallyChoosingCharacter ? 'character' : 'main')
+  const [screen, setScreen] = useState<'main' | 'mode' | 'daily' | 'custom' | 'character' | 'campaign'>(initiallyChoosingCharacter ? 'character' : 'main')
   const [characterTransition, setCharacterTransition] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
@@ -100,6 +101,7 @@ export function StartMenu({
     if (character !== hero.id) setCharacterTransition((current) => !current)
     onCharacter(0, character)
   }
+  if (screen === 'campaign') return <CampaignSelect onChoose={onStart} onBack={() => setScreen('character')} />
   return (
     <main className="start-menu" data-reduced-motion={settings.reducedMotion || undefined}>
       {screen === 'main' ? <div className="start-menu__profile" aria-label="Current profile">
@@ -195,7 +197,7 @@ export function StartMenu({
         </div>
         <button type="button" className="start-menu__character-back ribbon-back" aria-label="Back" title="Back"
           onClick={() => { setScreen('main'); onCharacterBack() }}><span aria-hidden="true"></span></button>
-        <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" onClick={onStart}><span aria-hidden="true">✓</span></button>
+        <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" onClick={() => setScreen('campaign')}><span aria-hidden="true">✓</span></button>
       </section> : null}
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onChange={onSettings} />

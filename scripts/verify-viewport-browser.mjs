@@ -109,6 +109,7 @@ try {
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
     await capture('character-select', '.start-menu')
     await page.getByRole('button', { name: 'Embark' }).click()
+    await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
     await page.locator('.neow-screen').waitFor()
     await checkRunCompendium('neow-compendium')
     await setRun(base)

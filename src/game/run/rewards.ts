@@ -222,7 +222,7 @@ export function availableRewardSources(state: RunState, rare: boolean): RewardSo
 /** Repair open Act I-II boss rewards written before their yellow icon was classified as Rare. */
 export function migrateLegacyBossRareRewards(state: RunState): RunState {
   if (state.phase !== 'reward' || state.act > 2 || state.rewardDestination !== 'victory') return state
-  const legacyDownfallBosses = state.meta.ruleset === 'downfall'
+  const legacyDownfallBosses = (state.meta.campaign ?? state.meta.ruleset) === 'downfall'
     ? state.rewards.filter((offer) => offer.cardSource === 'ordinary' &&
       offer.relic === null && offer.bossRelics === false)
     : []

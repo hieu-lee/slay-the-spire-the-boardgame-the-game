@@ -12,6 +12,7 @@ import type { PublicSeat, VisibleCombat, VisiblePlayer } from '../multiplayer/us
 import { useVoiceChat } from '../multiplayer/useVoiceChat.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { IconValue } from './Icon.tsx'
+import { CampaignSelect } from './CampaignSelect.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { MapOverlay } from './MapOverlay.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
@@ -483,6 +484,11 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     const connected = room.connection === 'connected'
     const partyLeader = snapshot.seats[0]
     const isPartyLeader = partyLeader?.playerId === snapshot.you.playerId
+    if (snapshot.selectingCampaign) return <CampaignSelect onChoose={room.start}
+      onBack={isPartyLeader && connected && !room.mutationPending ? () => { void room.selectCampaign(false) } : undefined}
+      disabled={!connected || !ready || !isPartyLeader || room.mutationPending}
+      message={room.error || (!connected || !ready ? 'Waiting for every seat to connect.'
+        : !isPartyLeader ? `${partyLeader?.name ?? 'The party leader'} chooses the campaign.` : undefined)} />
     if (achievementsOpen) return <AchievementsScreen onBack={() => setAchievementsOpen(false)} />
     return (
       <main className="online-lobby sts-scope"
@@ -563,7 +569,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           </div>
 
           <button className="online-lobby__start" type="button"
-            disabled={!connected || !ready || !isPartyLeader} onClick={room.start}>
+            disabled={!connected || !ready || !isPartyLeader || room.mutationPending} onClick={() => room.selectCampaign(true)}>
             {connected && ready
               ? isPartyLeader ? 'Enter the Spire' : `${partyLeader?.name ?? 'The party leader'} starts the run`
               : 'Waiting for every seat'}

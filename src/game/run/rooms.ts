@@ -40,7 +40,7 @@ import { DOWNFALL_BOSSES, DOWNFALL_SELF_BOSS_REROLLS } from '../downfall/enemies
 
 export function canRerollDownfallSelfBoss(state: RunState): boolean {
   const current = state.actBossDefId
-  return state.meta.ruleset === 'downfall' && !state.selfBossRerolled && current !== null &&
+  return (state.meta.campaign ?? state.meta.ruleset) === 'downfall' && !state.selfBossRerolled && current !== null &&
     (state.phase === 'neow' || state.phase === 'map') && state.map.position === null &&
     state.players.some((player) => player.character in DOWNFALL_SELF_BOSS_REROLLS &&
       DOWNFALL_SELF_BOSS_REROLLS[player.character as keyof typeof DOWNFALL_SELF_BOSS_REROLLS]?.includes(current))
@@ -125,7 +125,7 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
     const first = state.act === 1 && state.map.position === null && room.id === state.map.rows[0]?.[0]
     const { enemies, summonSupply, nextBossDefId } = buildEncounter(
       rng, enemyDecks, state.act, players, room.kind, first, state.ascension,
-      undefined, state.actBossDefId, state.meta.ruleset,
+      undefined, state.actBossDefId, state.meta.campaign ?? state.meta.ruleset,
     )
     // Start the first Player Turn immediately: entering a room with no cards in
     // hand and nothing to do is not a state the game ever sits in.
@@ -200,7 +200,7 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
     }
     if (card.id === 'downfall_event_act3_mysterious_sphere') {
       const players = roomPlayers.map((player) => readyForCombat(rng, player))
-      const encounter = buildEncounter(rng, enemyDecks, state.act, players, 'encounter', false, state.ascension, undefined, undefined, state.meta.ruleset)
+      const encounter = buildEncounter(rng, enemyDecks, state.act, players, 'encounter', false, state.ascension, undefined, undefined, state.meta.campaign ?? state.meta.ruleset)
       const prepared = createCombat(
         rng, players, encounter.enemies, room.id, state.potionDeck,
         state.ascension >= 4 ? 2 : 3, encounter.summonSupply, state.lastStand, state.meta.ruleset,
@@ -245,7 +245,7 @@ function preparePendingBossCombat(
     state.ascension,
     state.pendingBossDefId!,
     undefined,
-    state.meta.ruleset,
+    state.meta.campaign ?? state.meta.ruleset,
   )
   return {
     rng,
@@ -583,10 +583,10 @@ export function advanceAct(state: RunState): RunState {
     players,
     combat: null,
     pendingBossDefId: null,
-    actBossDefId: rollActBoss(rng, act, state.meta.ruleset),
+    actBossDefId: rollActBoss(rng, act, state.meta.campaign ?? state.meta.ruleset),
     selfBossRerolled: false,
     guardianGemDeck: shuffle(rng, [...(state.guardianGemDeck ?? [])]),
-    eventDeck: act === 4 ? [] : buildEventDeck(rng, act as 1 | 2 | 3, state.ascension, colorlessUnlocked, state.meta.ruleset),
+    eventDeck: act === 4 ? [] : buildEventDeck(rng, act as 1 | 2 | 3, state.ascension, colorlessUnlocked, state.meta.campaign ?? state.meta.ruleset),
     eventsVisited: 0,
     roomState: null,
     eventCombat: null,

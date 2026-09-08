@@ -26,7 +26,7 @@ import {
   whaleAleDrawCount,
 } from '../src/game/downfall/items.ts'
 import { POTIONS, RELICS } from '../src/game/relics.ts'
-import { HEARTS_BOON_CARDS, dealBlessings, formatHeartBoonLabel } from '../src/game/neow.ts'
+import { HEARTS_BOON_CARDS, NEOW_CARDS, dealBlessings, formatHeartBoonLabel } from '../src/game/neow.ts'
 import { addCard, bottomCardChoices, drawCardChoices } from '../src/game/acquisition.ts'
 import { createRng } from '../src/game/rng.ts'
 import {
@@ -326,21 +326,21 @@ assert(HEARTS_BOON_CARDS.every((card) => card.options.every(({ label }) => !/\[[
   'Heart Boon labels must not expose icon transcription tokens')
 const mixedDeal = dealBlessings(createRng(47), [
   { id: 'base', character: 'ironclad' }, { id: 'downfall', character: 'guardian' },
-], false, 'downfall')
-assert.match(mixedDeal.dealt.base, /^heart_boon_/)
+], false)
+assert.match(mixedDeal.dealt.base, /^neow_/)
 assert.match(mixedDeal.dealt.downfall, /^heart_boon_/)
-assert.equal(mixedDeal.deck.length, 0)
-assert.equal(mixedDeal.heartDeck.length, 12)
+assert.equal(mixedDeal.deck.length, NEOW_CARDS.filter((card) => !card.unlocked).length - 1)
+assert.equal(mixedDeal.heartDeck.length, 13)
 
 let integration = createRun(91, [
   { id: 'base', name: 'Base', character: 'ironclad' },
   { id: 'downfall', name: 'Downfall', character: 'guardian' },
 ])
 assert.equal(integration.meta.ruleset, 'downfall')
-assert.match(integration.neow.players.base.cardId, /^heart_boon_/)
+assert.match(integration.neow.players.base.cardId, /^neow_/)
 assert.match(integration.neow.players.downfall.cardId, /^heart_boon_/)
-assert.equal(integration.neow.players.base.redGoldPending, false)
-assert.equal(integration.neow.players.base.redRewardsRemaining, 3)
+assert.equal(integration.neow.players.base.redGoldPending, true)
+assert.equal(integration.neow.players.base.redRewardsRemaining, 1)
 assert.equal(integration.neow.players.downfall.redGoldPending, false)
 assert.equal(integration.neow.players.downfall.redRewardsRemaining, 3)
 const beforePain = integration.players[0]

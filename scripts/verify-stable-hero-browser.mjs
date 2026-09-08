@@ -29,6 +29,7 @@ await page.goto(`http://localhost:${address.port}`, { waitUntil: 'networkidle' }
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('button', { name: 'Standard', exact: true }).click()
 await page.getByRole('button', { name: 'Embark' }).click()
+await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'neow')
 
 const installCombat = async (enemyCount, suffix) => {

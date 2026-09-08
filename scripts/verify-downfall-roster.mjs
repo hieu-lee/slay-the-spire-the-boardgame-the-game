@@ -57,15 +57,27 @@ check('Catch Up cannot mix a Downfall character into an existing base-ruleset ru
   assertEqual(beginCatchUp(ready, [{ id: 'p2', name: 'Guardian', character: 'guardian' }]), ready)
 })
 
-check('Downfall Catch Up deals Heart boons across sequential mixed additions', () => {
+check('Catch Up deals character-specific blessings across sequential mixed additions', () => {
   let run = createRun(470, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 0,
     createCampaignProgress(), false, false, { ruleset: 'downfall' })
   run = { ...run, act: 2, phase: 'map', neow: null, map: { ...run.map, act: 2, position: null } }
   run = beginCatchUp(run, [{ id: 'p2', name: 'Silent', character: 'silent' }])
   run = beginCatchUp(run, [{ id: 'p3', name: 'Guardian', character: 'guardian' }])
   assertEqual(run.players.length, 3)
-  assertEqual(run.neow.players.p2.cardId.startsWith('heart_boon_'), true)
+  assertEqual(run.neow.players.p2.cardId.startsWith('neow_'), true)
   assertEqual(run.neow.players.p3.cardId.startsWith('heart_boon_'), true)
+})
+
+check('legacy Downfall Catch Up restores the unused Neow supply for a normal hero', () => {
+  let run = createRun(471, [{ id: 'p1', name: 'Guardian', character: 'guardian' }])
+  run = { ...run, act: 2, phase: 'map', neow: null, map: { ...run.map, act: 2, position: null } }
+  run = beginCatchUp(run, [{ id: 'p2', name: 'Hexaghost', character: 'hexaghost' }])
+  const existing = structuredClone(run.neow.players)
+  run = { ...run, neow: { ...run.neow, deck: [] } }
+  run = beginCatchUp(run, [{ id: 'p3', name: 'Silent', character: 'silent' }])
+  assertEqual(run.players.length, 3)
+  assertEqual(run.neow.players.p3.cardId.startsWith('neow_'), true)
+  assertDeepEqual(run.neow.players.p2, existing.p2)
 })
 
 check('server restart migrates legacy runs without ruleset metadata', () => {

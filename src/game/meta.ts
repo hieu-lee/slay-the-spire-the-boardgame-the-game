@@ -33,8 +33,10 @@ export type RunMetaOptions = Readonly<{
   modifiers?: readonly DailyModifierId[]
   /** Act 1 is the ordinary setup; Acts 2–4 use the Quick Start table. */
   quickStartAct?: 1 | 2 | 3 | 4
-  /** Downfall swaps in its public-v1.47 bosses, Events, items, and Heart's Boons. */
+  /** Content supplies and character rules, independent of the selected campaign. */
   ruleset?: RuleSet
+  /** Bosses and Events; older saves fall back to ruleset. */
+  campaign?: RuleSet
 }>
 
 export type RunMetaState = Readonly<{
@@ -42,6 +44,8 @@ export type RunMetaState = Readonly<{
   modifierIds: readonly DailyModifierId[]
   /** Absent on older saves and therefore equivalent to the base game. */
   ruleset?: RuleSet
+  /** Bosses and Events; older saves fall back to ruleset. */
+  campaign?: RuleSet
 }>
 
 /** Downfall content is mandatory for a party containing a Downfall character. */

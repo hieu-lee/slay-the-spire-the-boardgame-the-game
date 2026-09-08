@@ -24,6 +24,7 @@ try {
   await page.getByRole('button', { name: 'Standard', exact: true }).click()
   await page.getByRole('button', { name: 'Ironclad', exact: true }).click()
   await page.getByRole('button', { name: 'Embark', exact: true }).click()
+  await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 
   const stage = async () => {
@@ -581,6 +582,7 @@ try {
   await touchPage.getByRole('button', { name: 'Standard', exact: true }).click()
   await touchPage.getByRole('button', { name: 'Ironclad', exact: true }).click()
   await touchPage.getByRole('button', { name: 'Embark', exact: true }).click()
+  await touchPage.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await touchPage.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
   await touchPage.evaluate(() => {
     const debug = window.__STS_DEBUG__
