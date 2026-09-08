@@ -109,9 +109,15 @@ check('Guardian Whirl is neither an Egg nor Whetstone target outside combat', ()
   assert.equal(refused.players[0].deck.find((card) => card.uid === 'whirl').upgraded, false)
 })
 
-check('all 83 definitions match every manifest field exactly', () => {
+check('all 83 definitions retain their physical manifest metadata', () => {
   assert.equal(GUARDIAN_SOURCE_CARDS.length, 83)
-  if (manifest) assert.deepEqual(GUARDIAN_SOURCE_CARDS, manifest.cards)
+  // The local OCR manifest predates the corrections in docs/guardian-card-audit.md.
+  // Check physical identity here; executable printed-rule regressions live in
+  // verify-guardian-card-audit.mjs rather than accepting the old OCR as truth.
+  if (manifest) {
+    const physical = ({ base_text, upgraded_text, ocr_uncertainty, ...metadata }) => metadata
+    assert.deepEqual(GUARDIAN_SOURCE_CARDS.map(physical), manifest.cards.map(physical))
+  }
   assert.equal(GUARDIAN_CARDS.length, 83)
   assert.equal(Object.keys(GUARDIAN_CARDS_BY_ID).length, 83)
 })
@@ -203,7 +209,7 @@ check('printed icon and mode metadata is derived from both faces', () => {
   assert.equal(sentry.base.vigorReference, 'gain')
   assert.deepEqual(GUARDIAN_CARDS_BY_ID.guardian_guardian_whirl.upgraded.modeEffects, ['attack', 'defense'])
   assert.equal(GUARDIAN_CARDS_BY_ID.guardian_time_sifter.base.vigorReference, 'spent-zone')
-  assert.equal(GUARDIAN_CARDS_BY_ID.guardian_tourmaline.base.vigorReference, 'spend-attached')
+  assert.equal(GUARDIAN_CARDS_BY_ID.guardian_tourmaline.base.vigorReference, 'gain-and-spend')
 })
 
 check('variable card types resolve only in combat and Gems retain their playable type', () => {
@@ -1241,11 +1247,11 @@ check('Guardian card and socket choices are enforced by the shared play path', (
   run.players[0].energy = 3
   let combat = createCombat({ seed: 426, calls: 0 }, run.players, [foe], 'guardian-choices')
   assert.equal(playCard(combat, 'p1', 'stasis', { enemyUid: null, playerId: null }), combat,
-    'Stasis Field resolved without assigning its three Block icons')
+    'Stasis Field resolved without assigning its four Block icons')
   combat = playCard(combat, 'p1', 'stasis', {
-    enemyUid: null, playerId: null, playerIds: ['p1', 'p2', 'p2'],
+    enemyUid: null, playerId: null, playerIds: ['p1', 'p2', 'p2', 'p2'],
   })
-  assert.deepEqual(combat.players.map((player) => player.block), [1, 2])
+  assert.deepEqual(combat.players.map((player) => player.block), [1, 3])
 
   const socketRun = createRun(427, [
     { id: 'p1', name: 'Guardian', character: 'guardian' },
@@ -1312,7 +1318,7 @@ check('Guardian card and socket choices are enforced by the shared play path', (
   prismRun.players[0].energy = 3
   for (const player of prismRun.players) Object.assign(player, { weak: 2, vulnerable: 2 })
   combat = createCombat({ seed: 431, calls: 0 }, prismRun.players, [foe], 'guardian-prismatic-onyx')
-  combat = playCard(combat, 'p1', 'prism', { enemyUid: null, playerId: null })
+  combat = playCard(combat, 'p1', 'prism', { enemyUid: null, playerId: 'p1' })
   assert.deepEqual(combat.players.map((player) => [player.weak, player.vulnerable]), [[0, 0], [0, 0]])
 
   const prismDamageRun = createRun(4311, [{ id: 'p1', name: 'Guardian', character: 'guardian' }])

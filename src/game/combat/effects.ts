@@ -836,12 +836,12 @@ function resolveGuardianCard(
     case 'guardian_strike': hit(upgraded ? 2 : 1); break
     case 'guardian_twin_slam': hit(2); if (attack) hit(upgraded ? 3 : 1); break
     case 'guardian_orb_support': hit(attack ? (upgraded ? 4 : 3) : 1); block(defense ? (upgraded ? 4 : 3) : 1); break
-    case 'guardian_resilient_plate': block((upgraded ? 4 : 3) + (defense ? powers : 0)); break
-    case 'guardian_overload': draw(upgraded ? 5 : 4); break
-    case 'guardian_prismatic_barrier': block(upgraded ? 2 : 1, true, 'allPlayers'); break
+    case 'guardian_resilient_plate': block(upgraded ? 4 : 3); if (defense) block(powers); break
+    case 'guardian_overload': draw(upgraded ? 5 : 4); modeShift(); break
+    case 'guardian_prismatic_barrier': block(upgraded ? 2 : 1, true, 'anyPlayer'); break
     case 'guardian_prismatic_spray': hit(upgraded ? 2 : 1, undefined, 'row'); break
     case 'guardian_tune_up': block(upgraded ? 3 : 2); if (attack) doEffect({ kind: 'discountNextAttack' }); break
-    case 'guardian_stasis_field': doEffect({ kind: 'blockChoices', amount: 1, targets: upgraded ? 4 : 3 }, scope, 'anyPlayer'); break
+    case 'guardian_stasis_field': doEffect({ kind: 'blockChoices', amount: 1, targets: upgraded ? 5 : 4 }, scope, 'anyPlayer'); break
     case 'guardian_strike_for_strike': hit(upgraded ? 2 : 1); if (attack) doEffect({ kind: 'gainBlockFromLastHit' }); break
     case 'guardian_sentry_beam': hit(upgraded ? 4 : 3, undefined, 'row'); if (attack) { vigor(); modeShift() } break
     case 'guardian_disrupt': block(upgraded ? 2 : 1); doEffect({ kind: 'applyVulnerable', amount: 1 }); break
@@ -949,9 +949,19 @@ function resolveGuardianCard(
       break
     case 'guardian_blitz': draw(upgraded ? 2 : 1); actor.nextCardCost = 1; break
     case 'guardian_bauble_burst': hit(upgraded ? 4 : 2); break
-    case 'guardian_body_crash': { const paid = Math.min(actor.block, context.guardianBlockSpend ?? 0); actor.block -= paid; hit(paid * paid); break }
+    case 'guardian_body_crash': { const paid = Math.min(actor.block, context.guardianBlockSpend ?? 0); actor.block -= paid; hit(paid, 2); break }
     case 'guardian_spiker_protocol': if (context.sourcePowerUid) doEffect({ kind: 'damagePerAttackIntent', amount: upgraded ? 4 : 3 }); break
-    case 'guardian_evade': block(upgraded ? 3 : 2); if (defense) block(actor.block); break
+    case 'guardian_evade':
+      block(upgraded ? 3 : 2)
+      if (defense) {
+        const before = actor.block
+        grantBlock(state, actor, before, context.pendingTriggers)
+        if (actor.block > before) {
+          state.log = [...state.log, `${actor.name} gains ${actor.block - before} Block`]
+          markTurnEffect(context, 'block', { actor: true })
+        }
+      }
+      break
     case 'guardian_giga_beam': if (attack) { hit(upgraded ? 7 : 5, undefined, 'row'); actor.guardianMode = 'attack'; actor.guardianModeLocked = true } break
     case 'guardian_revenge_protocol': break
     case 'guardian_armored_protocol': break
@@ -985,7 +995,7 @@ function resolveGuardianCard(
     case 'guardian_floating_orbs': break
     case 'guardian_time_capacitor': vigor(powers); break
     case 'guardian_destroy': hit((upgraded ? 5 : 4) + gemsInHand * (upgraded ? 5 : 4)); break
-    case 'guardian_refracted_beam': if (attack) hit(0, upgraded ? 4 : 3, 'row'); else for (let i = 0; i < (upgraded ? 4 : 3); i++) block(0, true, 'allPlayers'); break
+    case 'guardian_refracted_beam': if (attack) hit(0, upgraded ? 4 : 3); else for (let i = 0; i < (upgraded ? 4 : 3); i++) block(0); break
     case 'guardian_forecasting': if (context.sourcePowerUid && defense) {
       const before = new Set(actor.hand.map((card) => card.uid))
       draw(2)
@@ -1001,7 +1011,7 @@ function resolveGuardianCard(
       doEffect({ kind: 'exhaustAny', amount: 6 })
     } else {
       const gemScope = prismatic ? 'row' : scope
-      const gemSupportScope = prismatic ? 'allPlayers' : supportScope
+      const gemSupportScope = prismatic && context.sourceAttachedGemId === 'guardian_onyx' ? 'allPlayers' : supportScope
       resolveGuardianGem(state, actor, context.sourceAttachedGemId,
         gemScope, gemSupportScope, context, source)
       if (id === 'guardian_bauble_burst') {
@@ -1043,9 +1053,16 @@ function resolveGuardianGem(
     case 'guardian_opal': if (actor.guardianMode === 'defense') doEffect({ kind: 'draw', amount: 2 }); break
     case 'guardian_ruby': doEffect({ kind: 'hit', amount: 1 }); break
     case 'guardian_sapphire': doEffect({ kind: 'block', amount: 1 }); break
-    case 'guardian_tourmaline': { const gained = (context as PlayContext & { guardianVigorGained?: number }).guardianVigorGained ?? 0; const spent = Math.min(actor.vigor, gained); actor.vigor -= spent; actor.vigorSpentThisTurn += spent; break }
+    case 'guardian_tourmaline': {
+      const before = actor.vigor
+      gainGuardianVigorLive(state, actor, 1, context)
+      const gained = actor.vigor - before
+      actor.vigor -= gained
+      actor.vigorSpentThisTurn += gained
+      break
+    }
     case 'guardian_amber': if (actor.guardianMode === 'attack') doEffect({ kind: 'draw', amount: 2 }); break
-    case 'guardian_aquamarine': doEffect({ kind: 'preventCardPlay' }); break
+    case 'guardian_aquamarine': gainGuardianVigorLive(state, actor, 1, context); doEffect({ kind: 'preventCardPlay' }); break
     case 'guardian_bismuth': doEffect({ kind: 'block', amount: otherGemsInHand }); break
     case 'guardian_morganite': if ((actor.cardsPlayedThisTurn ?? 0) <= 1) doEffect({ kind: 'gainEnergy', amount: 1 }); break
     case 'guardian_jasper': doEffect({ kind: 'exhaustAny', amount: 3 }); break

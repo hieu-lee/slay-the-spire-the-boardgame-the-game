@@ -554,7 +554,7 @@ export function cardKeywordTips(def: CardDef): readonly {
     (effect as { kind: string }).kind === 'gainSlimeVigor')
   const cardRules = cardRulesText(def)
   const keywordRules = cardRules.replace(
-    /All \[damage\], \[block\], \[debuff\] on this card have (\[aoe\])\.?/gi,
+    /All \[damage\], \[weak\], \[debuff\] on this card have (\[aoe\])\.?/gi,
     '$1',
   )
   const exhaust = /\bexhaust/i.test(cardRules.replace('ethereal, exhausts at end of turn if still in hand', ''))

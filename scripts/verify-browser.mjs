@@ -4126,7 +4126,7 @@ if (args.includes('--downfall-ui-only')) {
     }
     assert(downfallKeywordTips.guardianGem[0].includes('Area effect') &&
       !downfallKeywordTips.guardianGem[0].includes('All in a row'),
-    'Prismatic Barrier mislabels its defensive area effect')
+    'Prismatic Barrier mislabels its conditional area effect')
     assert(downfallKeywordTips.prismaticNoGem[0].includes('Block') &&
       !downfallKeywordTips.prismaticNoGem[0].includes('Hit') &&
       !downfallKeywordTips.prismaticNoGem[0].includes('Vulnerable'),
@@ -4601,9 +4601,8 @@ await page.evaluate((run) => {
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
 await page.getByRole('button', { name: /^Stasis Field,/ }).click()
-await page.locator('button.seat').nth(0).click()
-await page.locator('button.seat').nth(1).click()
-await page.locator('button.seat').nth(1).click()
+await page.locator('button.seat--viewer').click()
+for (let i = 0; i < 3; i++) await page.locator('button.seat:not(.seat--viewer)').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
 downfallChoiceResults.guardianStasis = await page.evaluate(() =>
   window.__STS_DEBUG__.getRun().combat.players.map((player) => player.block))
@@ -5060,7 +5059,7 @@ check('Downfall combat choices are reachable from the real card UI', () => {
   assert(downfallCardAssets.every(({ source }) => source?.startsWith('/assets/cards-sm/')),
     `Downfall card scan paths: ${JSON.stringify(downfallCardAssets)}`)
   assertDeepEqual(downfallChoiceResults.guardian, [0, 16], 'Guardian spends chosen Block after its Vigor choice')
-  assertDeepEqual(downfallChoiceResults.guardianStasis, [2, 1],
+  assertDeepEqual(downfallChoiceResults.guardianStasis, [1, 3],
     'Guardian assigns every Stasis Field Block icon independently')
   assertDeepEqual(downfallChoiceResults.guardianWhirl, [1, 2, 20, 'skill'],
     'Defense Mode Guardian Whirl keeps its Attack discount and targets an ally')

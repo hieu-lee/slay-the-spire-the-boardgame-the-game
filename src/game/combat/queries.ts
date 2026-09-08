@@ -20,7 +20,7 @@ import type { SlimeBossEffect } from '../downfall/slime-boss.ts'
 const GUARDIAN_ROW_CARDS = new Set(['guardian_prismatic_spray', 'guardian_sentry_beam'])
 const GUARDIAN_UPGRADED_ROW_CARDS = new Set(['guardian_roll_attack', 'guardian_vent_steam'])
 const GUARDIAN_ATTACK_MODE_ROW_CARDS = new Set([
-  'guardian_guardian_whirl', 'guardian_giga_beam', 'guardian_refracted_beam',
+  'guardian_guardian_whirl', 'guardian_giga_beam',
 ])
 
 export function effectiveCombatCardDef(def: CardDef, guardianMode?: GuardianMode | null): CardDef {
@@ -805,6 +805,7 @@ export function cardNeedsEnemy(
     attachedGemId === 'guardian_peridot' && (!actor || actor.hand?.some((card) => card.uid !== sourceCardUid &&
       cardDef(card.defId).guardian?.printedType.startsWith('Gem')))) return true
   if (def.guardian) {
+    if (def.id === 'guardian_refracted_beam') return def.type === 'attack'
     return new Set([
       'guardian_strike', 'guardian_twin_slam', 'guardian_orb_support', 'guardian_strike_for_strike',
       'guardian_disrupt', 'guardian_crystal_edge', 'guardian_fierce_bash', 'guardian_orb_slam',
@@ -997,8 +998,9 @@ export function guardianCardNeedsAlly(
   actor: Pick<Player, 'guardianMode'>,
   attachedGemId?: string,
 ): boolean {
+  if (def.id === 'guardian_prismatic_barrier') return true
   if (attachedGemId === 'guardian_onyx') {
-    return def.id !== 'guardian_prismatic_barrier' && def.id !== 'guardian_prismatic_spray'
+    return def.id !== 'guardian_prismatic_spray'
   }
   if (def.id === 'guardian_harden') return true
   if ((def.id === 'guardian_curl_up' || def.id === 'guardian_defend') &&
