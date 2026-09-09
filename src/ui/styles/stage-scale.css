@@ -74,6 +74,12 @@
 .board .enemy,
 .board .board__bosses .enemy {
   position: absolute;
+  /* Elite and boss art deliberately reaches beyond its narrow button so the
+     creature can look imposing without widening the stage. Paint and hit-test
+     the nearer (rightmost) lane above the oversized artwork behind it: without
+     an explicit stack order, Taskmaster's art can capture a tap on Red Slaver
+     on a compressed horizontal screen. */
+  z-index: calc(100 - var(--stage-index));
   /* A boss can become the rightmost survivor after its summons die. Reserve
      its enlarged portrait's overhang so that move cannot widen the scroller. */
   right: calc(max(1.5rem * var(--stage-scale), var(--stage-actor-width) * (var(--elite-scale, var(--boss-scale, 1)) - 1) / 2) + var(--elite-end-turn-clearance, 0rem) + var(--stage-index) * var(--stage-gap));
