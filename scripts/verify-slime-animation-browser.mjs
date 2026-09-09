@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium } from './lib/profile-browser.mjs'
 
 
 async function checkSlimeLayout(page) {

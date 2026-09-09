@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { mkdirSync } from 'node:fs'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium } from './lib/profile-browser.mjs'
 import { CARDS } from '../src/game/cards.ts'
 import { HEARTS_BOON_CARDS } from '../src/game/neow.ts'
 import { createRun, chooseNeow, resolveNeowReward, revealNeowReward } from '../src/game/run.ts'

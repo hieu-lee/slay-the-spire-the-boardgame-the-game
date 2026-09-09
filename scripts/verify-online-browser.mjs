@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { chromium, setTestUsername } from './lib/profile-browser.mjs'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
 import { createCombat } from '../src/game/combat.ts'
@@ -95,10 +95,10 @@ for (const page of [a, b]) {
 
 async function enterOnline(page, name, character, code, localSeed, doubleSubmit = false) {
   await page.goto(origin, { waitUntil: 'networkidle' })
+  await setTestUsername(page, name)
   void localSeed
   await page.getByRole('button', { name: 'Play online' }).click()
   const entry = page.locator('main.online-entry')
-  await entry.getByLabel('Your name').fill(name)
   const characterLabel = character.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ')
   await entry.locator('.online-character-roster').getByRole('button', { name: characterLabel }).click()
   if (code) {
@@ -179,8 +179,8 @@ try {
   suite('online browser')
   const guardedEntry = installScreenAudit(await cContext.newPage())
   await guardedEntry.goto(origin, { waitUntil: 'networkidle' })
+  await setTestUsername(guardedEntry, 'Guard')
   await guardedEntry.getByRole('button', { name: 'Play online' }).click()
-  await guardedEntry.getByLabel('Your name').fill('Guard')
   await guardedEntry.route('**/api/rooms', async (route) => {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 250))
     await route.continue()
@@ -5953,7 +5953,7 @@ try {
   const forbiddenNextAct = await fourPages[0].getByRole('button', { name: 'Climb to Act 2' }).count()
   const recordLastStand = await fourPages[0].getByRole('button', { name: 'Stop and record result' }).count()
   const terminalPotions = await fourPages[0].locator('.outside-potions').count()
-  const compactTitle = await fourPages[0].getByRole('heading', { name: 'Slay the Spire' }).evaluate((heading) => {
+  const compactTitle = await fourPages[0].locator('.player-title').evaluate((heading) => {
     const box = heading.getBoundingClientRect()
     const range = document.createRange()
     range.selectNodeContents(heading)

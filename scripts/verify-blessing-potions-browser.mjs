@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium } from './lib/profile-browser.mjs'
 
 const out=resolve('artifacts/blessing-potions')
 mkdirSync(out,{recursive:true})
@@ -47,7 +47,7 @@ try {
       const button=page.getByRole('button',{name,exact:true})
       if(screen==='horizontal-phone' && name!=='Skip') {
         await button.tap()
-        assert.equal(await page.evaluate(()=>window.fixture.choices.length),previous,'first tap must show potion details')
+        assert.equal(await page.evaluate(()=>window.fixture.choices.length),previous,'first tap must show item details')
         await button.tap()
       } else await button.click()
       await page.waitForFunction(n=>window.fixture.choices.length===n+1,previous)
@@ -58,7 +58,7 @@ try {
       await loot.waitFor()
       await page.evaluate(()=>document.fonts.ready)
       await page.waitForTimeout(350)
-      assert.equal(await page.locator('.reward-screen__title').textContent(),'Blessing')
+      assert.equal(await page.locator('.reward-screen__title').textContent(),heart?'Boon':'Blessing')
       const art=await loot.evaluate(e=>({scroll:getComputedStyle(e.querySelector('h2'),'::before').backgroundImage,
         stone:getComputedStyle(e.querySelector('.reward-screen__players')).backgroundImage}))
       assert(art.scroll.includes('loot-scroll.svg')&&art.stone.includes('loot-stone.svg'))
@@ -71,6 +71,23 @@ try {
       await choose('Weak Potion',{kind:'gain'})
       await choose('Pass Weak Potion to Friend',{kind:'pass',playerId:'p2'})
       await choose('Skip',{kind:'skip'})
+    }
+    for (const heart of [false, true]) {
+      await page.evaluate(heart => {
+        const f = window.fixture
+        f.install(heart)
+        f.progress.p1.rewardKind = 'relic'
+        f.progress.p1.reward = { kind: 'relic', choices: ['golden_idol'], cardsDrawn: [], raresDrawn: [] }
+        f.render()
+      }, heart)
+      await page.getByRole('heading', { name: heart ? 'Boon' : 'Blessing', exact: true }).waitFor()
+      await page.waitForTimeout(350)
+      await page.screenshot({path:resolve(out,`${screen}-${heart?'heart':'neow'}-relic.png`)})
+      await choose('Golden Idol', 0)
+      await choose('Skip', null)
+      await page.evaluate(()=>{window.fixture.enabled=false;window.fixture.render()})
+      await page.getByRole('status').filter({hasText:'Reconnecting'}).waitFor()
+      assert.equal(await loot.locator('button:enabled').count(),0)
     }
     await page.evaluate(()=>window.fixture.install(false,['fire_potion']))
     await choose('Weak Potion — replace Fire Potion',{kind:'replace',potionId:'fire_potion'})

@@ -61,7 +61,7 @@ jobs:
           source_origin=$(jq -r '.origin // empty' <<< "$config")
           compatible_origin() {
             curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-              "$1/api/health" | jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version' >/dev/null
+              "$1/api/health" | jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version and .profiles == true' >/dev/null
           }
           wait_for_live_successor() {
             wait_for_start=${1:-false}
@@ -111,6 +111,13 @@ jobs:
               if compatible_origin "$source_origin"; then
                 echo 'PUBLISH_CLIENT=true' >> "$GITHUB_ENV"
                 echo "SOURCE_RUN=$source_run" >> "$GITHUB_ENV"
+                exit 0
+              fi
+              # Keep the working client until the scheduled room handoff installs
+              # registration support; publishing the login gate first locks out newcomers.
+              if curl --fail --silent --max-time 30 "$source_origin/api/health" | \
+                jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version and .profiles != true' >/dev/null; then
+                echo 'Client refresh deferred until the profile-capable room handoff.'
                 exit 0
               fi
               wait_for_live_successor true && exit 0
@@ -181,7 +188,7 @@ jobs:
           [ "$live_run" = "$SOURCE_RUN" ] || [ "$live_source" = "$SOURCE_RUN" ]
           room_origin=$(jq -r '.origin // empty' pages-refresh/session.json)
           curl --fail --silent --show-error --max-time 30 "$room_origin/api/health" | \
-            jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version' >/dev/null
+            jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version and .profiles == true' >/dev/null
           jq --arg sha "$NEXT_SHA" --argjson protocol "$EXPECTED_PROTOCOL_VERSION" \
             '.sha = $sha | .protocolVersion = $protocol' pages-refresh/session.json > pages-refresh/session.next.json
           mv pages-refresh/session.next.json pages-refresh/session.json

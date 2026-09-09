@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { chromium } from 'playwright'
+import { chromium, setTestUsername } from './lib/profile-browser.mjs'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
 import { createStore, saveStore } from './lib/rooms.mjs'
@@ -67,8 +67,8 @@ const guest = await phone.newPage()
 
 async function enter(page, name, character, code) {
   await page.goto(pagesOrigin, { waitUntil: 'networkidle' })
+  await setTestUsername(page, name)
   await page.getByRole('button', { name: 'Play online' }).click()
-  await page.getByLabel('Your name').fill(name)
   await page.locator('.online-character-roster').getByRole('button', { name: character }).click()
   if (code) {
     await page.getByLabel('Room code').fill(code)

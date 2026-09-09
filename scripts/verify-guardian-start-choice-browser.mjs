@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
-import { chromium } from 'playwright'
+import { chromium } from './lib/profile-browser.mjs'
 import { createServer } from 'vite'
 import { createRun } from '../src/game/run.ts'
 import { createCombat, startPlayerTurnWithChoices } from '../src/game/combat.ts'

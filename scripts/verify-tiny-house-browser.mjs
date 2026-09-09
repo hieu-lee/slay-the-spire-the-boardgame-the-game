@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium } from './lib/profile-browser.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')

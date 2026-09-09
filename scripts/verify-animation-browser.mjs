@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
-import { chromium, devices, webkit } from 'playwright'
+import { chromium, devices, webkit } from './lib/profile-browser.mjs'
 import { actionsForEnemy } from '../src/game/enemies.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')

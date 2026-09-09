@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium } from './lib/profile-browser.mjs'
 import { assert, assertDeepEqual, assertEqual, check, report, suite } from './lib/harness.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')

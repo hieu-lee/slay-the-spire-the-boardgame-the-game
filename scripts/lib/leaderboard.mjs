@@ -8,6 +8,17 @@ const integer = (value, name, minimum, maximum) => {
   return value
 }
 
+function finalDeck(value) {
+  if (!Array.isArray(value) || value.length > 1000) bad('Final deck is invalid')
+  return value.map((card) => {
+    if (!card || typeof card.defId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(card.defId) ||
+        typeof card.upgraded !== 'boolean' || card.attachedGemId !== undefined &&
+        (typeof card.attachedGemId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(card.attachedGemId))) bad('Final deck card is invalid')
+    return { defId: card.defId, upgraded: card.upgraded,
+      ...(card.attachedGemId === undefined ? {} : { attachedGemId: card.attachedGemId }) }
+  })
+}
+
 export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) bad('Leaderboard run must be an object')
   if (typeof value.id !== 'string' || !/^[a-zA-Z0-9:_-]{8,160}$/.test(value.id)) bad('Run id is invalid')
@@ -15,6 +26,8 @@ export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
   if (!MODES.has(value.mode)) bad('Run mode is invalid')
   return {
     id: value.id,
+    ...(typeof value.username === 'string' && value.username.length <= 24 ? { username: value.username } : {}),
+    ...(value.highestBossActDefeated >= 3 && value.finalDeck !== undefined ? { finalDeck: finalDeck(value.finalDeck) } : {}),
     character: value.character,
     ascension: integer(value.ascension, 'Ascension', 0, 13),
     mode: value.mode,
@@ -44,8 +57,14 @@ export function addLeaderboardRun(store, value, recordedAt = Date.now()) {
   const run = normalizeLeaderboardRun(value, recordedAt)
   const existing = store.leaderboardRuns.findIndex((entry) => entry.id === run.id)
   if (existing >= 0) {
-    if (store.leaderboardRuns[existing].floorsCleared == null && run.floorsCleared != null) {
-      store.leaderboardRuns[existing] = { ...store.leaderboardRuns[existing], floorsCleared: run.floorsCleared }
+    const previous = store.leaderboardRuns[existing]
+    const updates = {
+      ...(previous.floorsCleared == null && run.floorsCleared != null ? { floorsCleared: run.floorsCleared } : {}),
+      ...(previous.highestBossActDefeated >= 3 && previous.finalDeck === undefined && run.finalDeck !== undefined ? { finalDeck: run.finalDeck } : {}),
+      ...(previous.username === undefined && run.username !== undefined ? { username: run.username } : {}),
+    }
+    if (Object.keys(updates).length) {
+      store.leaderboardRuns[existing] = { ...previous, ...updates }
       return true
     }
     return false

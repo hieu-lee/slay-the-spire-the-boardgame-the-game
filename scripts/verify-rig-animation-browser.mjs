@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium } from './lib/profile-browser.mjs'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { bossAttackMotionFor, bossProjectileImagePath } from '../src/ui/combat-vfx.ts'
 

@@ -1,3 +1,5 @@
+import { savedProfile } from '../profile.ts'
+import { PlayerTitle } from './PlayerTitle.tsx'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import { assetPath, preloadImages, releasePreloadedImages } from '../game/assets.ts'
@@ -239,7 +241,7 @@ function VoiceControls({ voice, seats, connected, volume, compact = false }: {
 export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const room = useRoomSession()
   const prefersReducedMotion = usePrefersReducedMotion()
-  const [name, setName] = useState('')
+  const name = savedProfile()?.username ?? ''
   const [code, setCode] = useState('')
   const [character, setCharacter] = useState<(typeof CHARACTERS)[number][0]>('ironclad')
   const [achievementsOpen, setAchievementsOpen] = useState(false)
@@ -454,10 +456,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           <span className="online-entry__eyebrow">Co-op expedition</span>
           <h1>Climb together</h1>
           <p>Open a room for up to four players, or enter the six-glyph code your party shared.</p>
-          <label>
-            Your name
-            <input maxLength={24} autoComplete="nickname" value={name} onChange={(event) => setName(event.target.value)} />
-          </label>
           <div className="online-entry__character">
             <span>Choose your character</span>
             <CharacterRoster character={character} disabled={room.entering} onChoose={setCharacter} />
@@ -631,7 +629,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}
       className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendiumOpen ? ' app-shell--compendium-open' : ''}`}>
       <header className="app-shell__header">
-        <h1>Slay the Spire</h1>
+        <PlayerTitle character={viewer?.character} />
         <div className="run-status">
           <span className="pip">Room {snapshot.code}</span>
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>

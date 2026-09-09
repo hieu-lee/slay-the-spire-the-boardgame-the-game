@@ -6,12 +6,12 @@ import { neowCard } from '../game/neow.ts'
 import { neowEffectSelection } from '../game/run/neow.ts'
 import type { PotionRewardDecision, RewardSource } from '../game/run.ts'
 import { rewardSourceLabel } from './reward-source.ts'
-import { potionDef, relicDef } from '../game/relics.ts'
+import { potionDef } from '../game/relics.ts'
 import type { CardInstance, Player } from '../game/types.ts'
 import { CardRewardPicker } from './CardRewardPicker.tsx'
 import { CardPicker } from './CardPicker.tsx'
 import { IconValue } from './Icon.tsx'
-import { ItemLootChoice, RewardItem } from './RewardScreen.tsx'
+import { ItemLootChoice } from './RewardScreen.tsx'
 import { potionLimit } from '../game/acquisition.ts'
 
 type NeowUiPlayer = Pick<Player, 'id' | 'name' | 'character' | 'hp' | 'maxHp' | 'gold' | 'potions' | 'relics'> & {
@@ -54,13 +54,14 @@ function selectableCards(player: NeowUiPlayer, effect: NeowImmediateReward | nul
   return { cards, count }
 }
 
-function OfferChoice({ offer, player, players, ascension, enabled, status, onResolve }: {
+function OfferChoice({ offer, player, players, ascension, enabled, status, title, onResolve }: {
   offer: NeowRewardOffer
   player: NeowUiPlayer
   players: NeowUiPlayer[]
   ascension: number
   enabled: boolean
   status?: string
+  title: string
   onResolve: (choice: number | null | PotionRewardDecision) => void
 }) {
   if (offer.kind === 'potion') {
@@ -68,7 +69,7 @@ function OfferChoice({ offer, player, players, ascension, enabled, status, onRes
     const blocked = player.relics.some((relic) => relic.defId === 'sozu')
     const limit = potionLimit(ascension, player)
     return <section className="reward-screen reward-screen--loot" aria-labelledby="blessing-title">
-      <h2 id="blessing-title" className="reward-screen__title">Blessing</h2>
+      <h2 id="blessing-title" className="reward-screen__title">{title}</h2>
       <div className="reward-screen__players"><div className="reward-screen__player">
         {players.length > 1 ? <h3>{player.name}</h3> : null}
         {potionId ? <>
@@ -96,15 +97,19 @@ function OfferChoice({ offer, player, players, ascension, enabled, status, onRes
   }
 
   if (offer.kind === 'relic') {
-    return <div className="neow-offer neow-offer--relic item-offer-list">
-      {offer.choices.length > 0 ? offer.choices.map((relicId, index) =>
-        <RewardItem key={`${relicId}-${index}`} kind="relic" id={relicId} title={relicDef(relicId).name}>
-          <button type="button" disabled={!enabled} onClick={() => onResolve(index)}>Take Relic</button>
-        </RewardItem>) : <RewardItem kind="relic" title="Empty Relic supply" note="No Relic remains in the supply." />}
-      <div className="neow-offer__actions">
-        <button type="button" disabled={!enabled} onClick={() => onResolve(null)}>Skip Relic</button>
-      </div>
-    </div>
+    return <section className="reward-screen reward-screen--loot" aria-labelledby="blessing-title">
+      <h2 id="blessing-title" className="reward-screen__title">{title}</h2>
+      <div className="reward-screen__players"><div className="reward-screen__player">
+        {players.length > 1 ? <h3>{player.name}</h3> : null}
+        {offer.choices.length > 0 ? offer.choices.map((relicId, index) =>
+          <ItemLootChoice key={`${relicId}-${index}`} kind="relic" id={relicId}
+            confirmLabel="claim this relic" disabled={!enabled} onClick={() => onResolve(index)} />)
+          : <p>No Relic remains in the supply.</p>}
+        {status ? <p role="status">{status}</p> : null}
+      </div></div>
+      <button type="button" className="reward-screen__skip" disabled={!enabled}
+        onClick={() => onResolve(null)}>Skip</button>
+    </section>
   }
 
   return <CardRewardPicker choices={offer.choices} upgraded={offer.upgraded === true} disabled={!enabled}
@@ -159,9 +164,9 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
     })
   }
 
-  if (viewerParticipates && currentOffer?.kind === 'potion') return <OfferChoice
+  if (viewerParticipates && (currentOffer?.kind === 'potion' || currentOffer?.kind === 'relic')) return <OfferChoice
     key={`${viewer.id}:${currentOffer.kind}:${currentOffer.cardsDrawn.join(',')}`}
-    offer={currentOffer} player={viewer} players={players} ascension={ascension} enabled={canAct}
+    title={blessingWord} offer={currentOffer} player={viewer} players={players} ascension={ascension} enabled={canAct}
     status={submitting ? 'Resolving choice…' : !enabled ? disabledMessage ?? `Reconnecting… your ${blessingWord} is preserved.` : undefined}
     onResolve={(choice) => submit(() => onReward(viewer.id, choice, viewerProgress.redReward ? 'red' : 'reward'))} />
 
@@ -219,7 +224,7 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
         </div>
       </div> : null}
       {currentOffer ? <OfferChoice key={`${viewer.id}:${currentOffer.kind}:${currentOffer.cardsDrawn.join(',')}`}
-        offer={currentOffer} player={viewer} players={players} ascension={ascension} enabled={canAct}
+        title={blessingWord} offer={currentOffer} player={viewer} players={players} ascension={ascension} enabled={canAct}
         onResolve={(choice) => submit(() => onReward(viewer.id, choice, viewerProgress.redReward ? 'red' : 'reward'))} /> : null}
       {blueReady && card ? <div className="neow-options">
         {card.options.map((option, index) => <button type="button" key={option.label} disabled={!canAct}

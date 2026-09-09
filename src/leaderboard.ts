@@ -1,3 +1,4 @@
+import { savedProfile } from './profile.ts'
 import type { RunState } from './game/run.ts'
 import type { CharacterId } from './game/types.ts'
 import { resetRoomEndpoint, roomUrl } from './multiplayer/room-endpoint.ts'
@@ -24,6 +25,8 @@ export type LeaderboardSnapshot = { totalRuns: number; rows: LeaderboardRow[] }
 
 type LeaderboardSubmission = {
   id: string
+  profileToken?: string
+  finalDeck?: { defId: string; upgraded: boolean; attachedGemId?: string }[]
   character: CharacterId
   ascension: number
   mode: RunState['meta']['mode']
@@ -71,6 +74,12 @@ export function queueFinishedSoloRun(run: RunState) {
   const totals = damageTotals(run.players[0]?.damageStats)
   const submission: LeaderboardSubmission = {
     id: `${installationId()}:${run.campaign.runId}:${run.seed}`,
+    profileToken: savedProfile()?.token,
+    ...(run.campaign.highestBossActDefeated >= 3 ? {
+      finalDeck: run.players[0]!.deck.map(({ defId, upgraded, attachedGemId }) => ({
+        defId, upgraded, ...(attachedGemId ? { attachedGemId } : {}),
+      })),
+    } : {}),
     character: run.players[0]!.character,
     ascension: run.ascension,
     mode: run.meta.mode,
@@ -88,8 +97,13 @@ export function queueFinishedSoloRun(run: RunState) {
   const queued = readOutbox()
   const existing = queued.findIndex((entry) => entry.id === submission.id)
   if (existing < 0) return writeOutbox([...queued, submission])
-  if (queued[existing]!.floorsCleared === undefined && submission.floorsCleared !== undefined) {
-    queued[existing] = { ...queued[existing]!, floorsCleared: submission.floorsCleared }
+  if (queued[existing]!.floorsCleared === undefined && submission.floorsCleared !== undefined ||
+      queued[existing]!.finalDeck === undefined && submission.finalDeck !== undefined) {
+    queued[existing] = { ...queued[existing]!,
+      ...(queued[existing]!.floorsCleared === undefined ? { floorsCleared: submission.floorsCleared } : {}),
+      ...(queued[existing]!.finalDeck === undefined ? { finalDeck: submission.finalDeck } : {}),
+      ...(queued[existing]!.profileToken === undefined ? { profileToken: submission.profileToken } : {}),
+    }
     writeOutbox(queued)
   }
 }
@@ -110,8 +124,10 @@ async function flush() {
           continue
         }
         if (!response.ok) throw new Error('Leaderboard submission failed')
-        const acknowledged = await response.json().catch(() => null) as { floorsClearedAccepted?: boolean } | null
-        if (run.floorsCleared !== undefined && acknowledged?.floorsClearedAccepted !== true) {
+        const acknowledged = await response.json().catch(() => null) as { floorsClearedAccepted?: boolean; finalDeckAccepted?: boolean; profileAccepted?: boolean } | null
+        if (run.floorsCleared !== undefined && acknowledged?.floorsClearedAccepted !== true ||
+            run.finalDeck !== undefined && acknowledged?.finalDeckAccepted !== true ||
+            run.profileToken !== undefined && acknowledged?.profileAccepted !== true) {
           resetRoomEndpoint()
           if (attempt === 1) return
           continue

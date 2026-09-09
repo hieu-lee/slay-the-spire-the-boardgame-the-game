@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { claimProfile } from './lib/profiles.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { writeFileSync } from 'node:fs'
 import { WebSocketServer } from 'ws'
@@ -288,7 +289,18 @@ export function createRoomServer({
       }
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (request.method === 'GET' && url.pathname === '/api/health') {
-        return send(response, 200, { ok: true, rooms: store.rooms.size, protocolVersion: MULTIPLAYER_PROTOCOL_VERSION })
+        return send(response, 200, { ok: true, rooms: store.rooms.size, protocolVersion: MULTIPLAYER_PROTOCOL_VERSION, profiles: true })
+      }
+      if (request.method === 'POST' && url.pathname === '/api/profile') {
+        if (!consume(createRates, sourceOf(request), CREATE_WINDOW_MS, MAX_CREATES_PER_WINDOW)) {
+          return send(response, 429, { error: 'Too many name requests. Please try again shortly.' })
+        }
+        const profile = claimProfile(store.profiles, await readJson(request))
+        if (!attemptSave()) {
+          queueSave()
+          return send(response, 503, { error: 'Could not save your name. Please try again.' })
+        }
+        return send(response, 200, { username: profile.username })
       }
       if (request.method === 'GET' && url.pathname === '/api/leaderboard') {
         return send(response, 200, leaderboardSnapshot(store.leaderboardRuns))
@@ -298,9 +310,12 @@ export function createRoomServer({
         if (!consume(leaderboardRates, source, CREATE_WINDOW_MS, MAX_LEADERBOARD_WRITES_PER_WINDOW)) {
           return send(response, 429, { error: 'Too many leaderboard submissions' })
         }
-        const added = addLeaderboardRun(store, await readJson(request))
+        const body = await readJson(request)
+        const profile = store.profiles.find((entry) => entry.token === body.profileToken)
+        if (body.profileToken && !profile) return send(response, 409, { error: 'Profile unavailable' })
+        const added = addLeaderboardRun(store, { ...body, username: profile?.username })
         if (added) queueSave()
-        return send(response, added ? 201 : 200, { ok: true, added, floorsClearedAccepted: true })
+        return send(response, added ? 201 : 200, { ok: true, added, floorsClearedAccepted: true, finalDeckAccepted: true, profileAccepted: true })
       }
       if (request.method === 'POST' && url.pathname === '/api/rooms') {
         sweepRooms()

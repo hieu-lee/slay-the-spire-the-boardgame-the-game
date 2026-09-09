@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createServer as createViteServer } from 'vite'
+import { createCombat } from '../src/game/combat.ts'
 import { createRoomServer } from './room-server.mjs'
 import { assert, assertEqual, check, report, suite } from './lib/harness.mjs'
 
@@ -20,7 +21,7 @@ const viteAddress = vite.httpServer?.address()
 if (!viteAddress || typeof viteAddress === 'string') throw new Error('Vite did not report a port')
 const origin = `http://127.0.0.1:${viteAddress.port}`
 const browser = await chromium.launch({ headless: true })
-const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: true })
 const page = await context.newPage()
 const errors = []
 page.on('pageerror', (error) => errors.push(String(error)))
@@ -55,6 +56,30 @@ try {
   })
 
   await page.goto(origin, { waitUntil: 'networkidle' })
+  await waitForImages()
+  await page.screenshot({ path: join(output, 'wallpaper-desktop.png'), fullPage: true })
+  assertEqual(await page.locator('#welcome-name').count(), 0)
+  await page.keyboard.press('a')
+  await page.getByLabel('How should we call you?').waitFor()
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: join(output, 'welcome-desktop.png'), fullPage: true })
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.screenshot({ path: join(output, 'wallpaper-horizontal-phone.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Tap, click, or press any key to start' }).tap()
+  await page.getByLabel('How should we call you?').waitFor()
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: join(output, 'welcome-horizontal-phone.png'), fullPage: true })
+  const welcomeFit = await page.getByRole('button', { name: 'Confirm username' }).boundingBox()
+  check('the welcome confirmation fits a horizontal phone', () => {
+    assert(welcomeFit && welcomeFit.y >= 0 && welcomeFit.y + welcomeFit.height <= 390)
+  })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.getByLabel('How should we call you?').fill('ArchiveTester')
+  await page.getByRole('button', { name: 'Confirm username' }).click()
+  await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
+  await page.reload({ waitUntil: 'networkidle' })
+  check('a returning machine skips the welcome page', () => assertEqual(rooms.store.profiles.length, 1))
   await page.getByRole('button', { name: 'Leaderboard', exact: true }).click()
   await page.getByRole('heading', { name: 'All heroes' }).waitFor()
   await page.getByRole('row', { name: /Silent Ascension 3/ }).waitFor()
@@ -120,6 +145,26 @@ try {
   await page.getByRole('button', { name: 'Embark' }).click()
   await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await page.waitForFunction(() => Boolean(window.__STS_DEBUG__?.getRun()))
+  await page.getByRole('heading', { name: 'ArchiveTester the Ironclad' }).waitFor()
+  const combatRun = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
+  combatRun.neow = null
+  combatRun.phase = 'combat'
+  combatRun.combat = createCombat({ seed: 911, calls: 0 }, combatRun.players, [{
+    uid: 'e0', defId: 'jaw_worm', row: 0, isBoss: false, hp: 40, maxHp: 40,
+    block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0, cardReward: null,
+    actionIndex: 0, abilityUsed: false, dead: false,
+  }], 'profile-title')
+  await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatRun)
+  await page.locator('.combat').waitFor()
+  await waitForImages()
+  await page.screenshot({ path: join(output, 'username-desktop.png'), fullPage: true })
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.screenshot({ path: join(output, 'username-horizontal-phone.png'), fullPage: true })
+  const titleFit = await page.locator('.player-title').boundingBox()
+  check('username and character remain visible on a horizontal phone', () => {
+    assert(titleFit && titleFit.width > 20 && titleFit.height > 10 && titleFit.x >= 0 && titleFit.x + titleFit.width <= 844)
+  })
+  await page.setViewportSize({ width: 1440, height: 900 })
   const enrichedOutbox = await page.evaluate(async () => {
     const run = structuredClone(window.__STS_DEBUG__.getRun())
     run.phase = 'defeat'
@@ -185,6 +230,24 @@ try {
     assertEqual(logged.damageDealt, 15)
     assertEqual(logged.damageBlocked, 6)
     assertEqual(logged.floorsCleared, 4)
+  })
+  const winningDeck = await page.evaluate(async () => {
+    const run = structuredClone(window.__STS_DEBUG__.getRun())
+    run.campaign.runId = 'winning-deck-check'
+    run.campaign.highestBossActDefeated = 3
+    run.campaign.finalized = true
+    run.phase = 'defeat' // Dying in optional Act IV still preserves an Act III clear.
+    run.players[0].deck[0].upgraded = true
+    const { queueFinishedSoloRun, flushLeaderboardOutbox } = await import('/src/leaderboard.ts')
+    queueFinishedSoloRun(run)
+    await flushLeaderboardOutbox(true)
+    return run.players[0].deck.map(({ defId, upgraded }) => ({ defId, upgraded }))
+  })
+  check('an Act III clear uploads the final deck even after an Act IV defeat', () => {
+    const saved = rooms.store.leaderboardRuns.at(-1)
+    assertEqual(saved.username, 'ArchiveTester')
+    assertEqual(JSON.stringify(saved.finalDeck), JSON.stringify(winningDeck))
+    assertEqual(rooms.store.leaderboardRuns.at(-2).finalDeck, undefined)
   })
   check('the leaderboard surface raised no browser errors', () => assertEqual(errors.length, 0, errors.join('\n')))
 } finally {

@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { mkdirSync } from 'node:fs'
 import { createServer } from 'vite'
-import { chromium, webkit } from 'playwright'
+import { chromium, webkit } from './lib/profile-browser.mjs'
 import { createRun } from '../src/game/run.ts'
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
 

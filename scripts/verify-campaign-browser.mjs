@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
-import { chromium } from 'playwright'
+import { chromium, setTestUsername } from './lib/profile-browser.mjs'
 import { createServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
 
@@ -150,8 +150,8 @@ try {
       for (const [page, name, character] of [[host, 'Host', 'Ironclad'], [guest, 'Guest', 'Guardian']]) {
         page.on('pageerror', (error) => errors.push(String(error)))
         await page.goto(origin, { waitUntil: 'networkidle' })
+        await setTestUsername(page, name)
         await page.getByRole('button', { name: 'Play online', exact: true }).click()
-        await page.getByLabel('Your name').fill(name)
         await page.locator('.online-character-roster').getByRole('button', { name: character, exact: true }).click()
       }
       await host.getByRole('button', { name: 'Create room', exact: true }).click()

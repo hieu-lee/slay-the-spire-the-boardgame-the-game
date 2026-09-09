@@ -1,0 +1,31 @@
+.welcome { min-height: 100dvh; display: grid; place-items: center; padding: 1.5rem; background: #101820; }
+.welcome__wallpaper { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sts-scope .welcome__panel.reward-screen { position: relative; width: min(36rem, 100%); overflow: visible; padding: 0; background: none; gap: 0; }
+.sts-scope .welcome__panel .reward-screen__title { display: grid; place-items: center; padding: 1rem 3rem; width: 100%; font-size: clamp(1.4rem, 3vw, 2rem); letter-spacing: 0; }
+.sts-scope .welcome__panel .reward-screen__players { width: 94%; min-height: 0; max-height: none; padding: 3rem 3rem 2.2rem; justify-items: center; gap: .8rem; text-align: center; }
+.welcome__panel p { margin: 0; color: #f6ecd6; text-shadow: 0 2px 2px #152022; }
+.welcome__panel input { width: 100%; min-height: 3rem; padding: .5rem .75rem; border: 2px solid #aa9466; border-radius: .25rem; color: #f9efd8; background: #1b2b30; font: 1.3rem 'Kreon', Georgia, serif; text-align: center; }
+.welcome__panel input:focus-visible, .welcome__confirm:focus-visible { outline: 3px solid #f8d67b; outline-offset: 3px; }
+#welcome-hint { font-size: .8rem; }
+#welcome-error { color: #ffe4ba; font-size: .9rem; }
+#welcome-error:empty { display: none; }
+.sts-scope button.welcome__confirm { width: 3.8rem; min-height: 3.3rem; padding: 0; border: 2px solid #c7b17b; border-radius: .5rem; background: linear-gradient(#468d89, #244b50); color: #fff1b7; font-size: 2.2rem; box-shadow: 0 3px 5px #152329; }
+.sts-scope button.welcome__confirm:disabled { opacity: .5; }
+.app-shell > .app-shell__header > h1.player-title { display: flex; position: static; width: auto; height: auto; clip-path: none; gap: .5rem; align-items: baseline; min-width: 0; max-width: 26rem; overflow: hidden; letter-spacing: 0; text-transform: none; font-size: clamp(1rem, 1.7vw, 1.5rem); }
+.player-title > span { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-title > small { flex-shrink: 0; font-size: .65em; font-weight: 400; color: #d0d2cc; white-space: nowrap; }
+@media (orientation: landscape) and (max-height: 600px) {
+  .welcome { padding: .5rem; }
+  .sts-scope .welcome__panel { max-width: 29rem; }
+  .sts-scope .welcome__panel .reward-screen__title { font-size: 1.5rem; }
+  .sts-scope .welcome__panel .reward-screen__players { width: 94%; min-height: 0; max-height: none; padding: 1.8rem 2.7rem 1.5rem; gap: .4rem; }
+  .welcome__panel input { min-height: 2.5rem; }
+  .app-shell > .app-shell__header > h1.player-title { flex-direction: column; justify-content: center; align-items: flex-start; gap: 0; max-width: 8rem; flex-shrink: 1; font-size: .9rem; }
+}
+
+.welcome__start { position: fixed; inset: 0; display: grid; align-items: end; justify-items: center; width: 100%; padding: 0 1rem max(2rem, 7vh); border: 0; background: transparent; color: #fff4d5; cursor: pointer; font: 1.25rem 'Kreon', Georgia, serif; text-shadow: 0 2px 4px #000, 0 0 12px #000; }
+.welcome__start span { padding: .6rem 1rem; }
+.welcome__start:focus-visible span { outline: 2px solid #f8d67b; outline-offset: 3px; border-radius: .2rem; }
+.sts-scope .welcome__panel.reward-screen { animation: welcome-reveal 450ms ease-out both; }
+@keyframes welcome-reveal { from { opacity: 0; transform: translateY(1.5rem) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .sts-scope .welcome__panel.reward-screen { animation: none; } }

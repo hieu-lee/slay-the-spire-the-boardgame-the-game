@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium } from './lib/profile-browser.mjs'
 import { postNeowRun } from './lib/post-neow-run.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { chromium, setTestUsername } from './lib/profile-browser.mjs'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
 
@@ -25,10 +25,11 @@ const browser = await chromium.launch({ headless: true })
 
 async function openExpedition(page, name, character) {
   await page.goto(origin, { waitUntil: 'networkidle' })
+  await setTestUsername(page, name)
   await page.getByRole('button', { name: 'Play online', exact: true }).click()
   const entry = page.locator('.online-entry')
   await entry.waitFor()
-  await entry.getByLabel('Your name').fill(name)
+  assert.equal(await entry.getByLabel('Your name').count(), 0)
   await entry.locator('.online-character-roster').getByRole('button', { name: character, exact: true }).click()
   return entry
 }
@@ -71,7 +72,7 @@ try {
     }))
     assert(entryBackHover.filter.includes('brightness(1.2)') && entryBackHover.filter.includes('drop-shadow'), `${viewport.name}: back hover lost its clean glow: ${JSON.stringify(entryBackHover)}`)
     assert.equal(entryBackHover.outline, 'none', `${viewport.name}: back hover retains the clipped outline`)
-    for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+Tab')
+    for (let i = 0; i < 2; i++) await page.keyboard.press('Shift+Tab')
     await page.waitForTimeout(250)
     const entryBackFocus = await entryBack.evaluate((button) => ({
       focusVisible: button.matches(':focus-visible'),
