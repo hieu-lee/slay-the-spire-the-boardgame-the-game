@@ -344,6 +344,7 @@
   .row__seat .seat .bar,
   .board .enemy .bar { bottom: calc(0.35rem * var(--stage-scale) + 4.75rem); }
 
+  .row__seat:has(.slime-party) { bottom: calc(6rem * var(--stage-scale)); }
   .slime-party { bottom: calc(1.75rem * var(--stage-scale)); }
 
   .board .enemy .tokens { bottom: 3.7rem; }

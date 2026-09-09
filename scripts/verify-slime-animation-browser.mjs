@@ -25,7 +25,8 @@ async function checkSlimeLayout(page) {
       const owner = party.closest('.seat__interactive')
       const actors = [...party.children].map(e => e.getBoundingClientRect())
       const board = party.closest('.board').getBoundingClientRect()
-      return { left: actors[0].left, right: actors.at(-1).right, delta: paintedEdge(party.querySelector('img')) - paintedEdge(owner.querySelector('.seat__portrait > img')),
+      const energy = document.querySelector('.pip--energy').getBoundingClientRect()
+      return { energy: energy.toJSON(), first: actors[0].toJSON(), energyOverlap: actors.some(r=>r.left<energy.right&&r.right>energy.left&&r.top<energy.bottom&&r.bottom>energy.top), left: actors[0].left, right: actors.at(-1).right, delta: paintedEdge(party.querySelector('img')) - owner.querySelector('.bar').getBoundingClientRect().left,
         gaps: actors.slice(1).map((r,i) => r.left - actors[i].right),
         top: actors[0].top, bottom: actors[0].bottom, boardBottom: board.bottom,
         hpBottom: owner.querySelector('.bar').getBoundingClientRect().bottom }
@@ -34,8 +35,9 @@ async function checkSlimeLayout(page) {
   const ordered = parties.toSorted((a,b)=>a.left-b.left)
   for (let i=1;i<ordered.length;i++) assert(ordered[i].left >= ordered[i-1].right, 'neighboring slime parties overlap')
   for (const party of parties) {
-    assert(Math.abs(party.delta) < 3, `painted left alignment: ${JSON.stringify(party)}`)
+    assert(Math.abs(party.delta) < 3, `HP bar left alignment: ${JSON.stringify(party)}`)
     assert(party.gaps.every(gap => gap > 0 && Math.abs(gap - party.gaps[0]) < .1), 'slimes must run left to right with constant spacing')
+    assert(!party.energyOverlap, `slimes overlap the energy orb: ${JSON.stringify(party)}`)
     assert(party.top >= party.hpBottom, 'foreground slimes overlap owner HP')
     assert(party.bottom <= party.boardBottom, 'foreground slimes clipped by stage')
   }

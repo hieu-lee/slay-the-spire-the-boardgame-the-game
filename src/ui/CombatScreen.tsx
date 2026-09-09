@@ -5845,11 +5845,6 @@ function CombatScreenView({
                                 ? 'combat/characters/slime_boss-spawn.webp'
                               : `combat/characters/${occupant.character}.webp`)}
                             data-vfx-seq={characterAttack?.active.event.seq}
-                            onLoad={occupant.character === 'slime_boss' ? (event) => {
-                              const image = event.currentTarget
-                              image.closest<HTMLElement>('.seat__interactive')?.style.setProperty(
-                                '--slime-body-left', String((paintedLeft(image) - 0.5) * (image.dataset.staticArt ? 1 : characterArtScale)))
-                            } : undefined}
                             alt=""
                             onError={(event) => {
                               if (occupant.character === 'slime_boss' && slimeSpawnEvent &&

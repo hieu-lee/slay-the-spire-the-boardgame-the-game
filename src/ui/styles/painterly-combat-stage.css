@@ -232,15 +232,14 @@
    feet. This compact party belongs to the seat instead of stealing a full HUD
    row, with each party arranged left to right. */
 .slime-party {
-  --slime-size: min(calc(3.08rem * var(--stage-scale)),
-    calc(var(--stage-actor-width) / (var(--slime-count) * 1.114)));
+  --slime-size: min(calc(3.3rem * var(--stage-scale)),
+    calc((var(--stage-gap) - 0.5rem * var(--stage-scale)) / (var(--slime-count) * 1.114)));
   position: absolute;
   z-index: 7;
   width: max-content;
   bottom: calc(-3rem * var(--stage-scale));
-  /* First painted pixel aligns with the owner's painted left edge. */
-  left: calc(50% + min(100%, var(--portrait-height)) * var(--slime-body-left, -0.399625)
-    - var(--slime-size) * var(--slime-first-inset, 0.059635));
+  /* Align the first painted pixel with the HP bar's left edge. */
+  left: calc(1px - var(--slime-size) * var(--slime-first-inset, 0.059635));
   display: flex;
   flex-wrap: nowrap;
   align-items: flex-end;
@@ -263,7 +262,7 @@
 }
 
 @media (orientation: landscape) and (max-width: 40rem) and (max-height: 26.25rem) {
-  .slime-party { --slime-size: min(calc(2.25rem * var(--stage-scale)), calc(var(--stage-actor-width) / (var(--slime-count) * 1.114))); }
+  .slime-party { --slime-size: min(calc(2.5rem * var(--stage-scale)), calc((var(--stage-gap) - 0.5rem * var(--stage-scale)) / (var(--slime-count) * 1.114))); }
 }
 
 .slime-party__actor:is(:hover, :focus-visible) {
