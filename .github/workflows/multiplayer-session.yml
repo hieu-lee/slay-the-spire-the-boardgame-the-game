@@ -25,6 +25,12 @@ on:
         required: false
         type: boolean
         default: false
+      archive_backup_run_id:
+        description: Optional verified legacy archive backup when clearing rooms
+        required: false
+      archive_live_run_id:
+        description: Live legacy source that inherited the archive backup
+        required: false
       refresh_only:
         description: Internal static-client refresh without starting a room host
         required: false
@@ -348,6 +354,26 @@ jobs:
           mkdir -p .rooms
           gpg --batch --yes --pinentry-mode loopback --passphrase "$ROOM_STORE_KEY" \
             --output .rooms/rooms.json --decrypt "$RUNNER_TEMP/handoff/rooms.json.gpg"
+      - name: Restore a verified legacy archive without its rooms
+        if: inputs.archive_backup_run_id != ''
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROOM_STORE_KEY: ${{ secrets.ROOM_STORE_KEY }}
+          BACKUP_RUN: ${{ inputs.archive_backup_run_id }}
+          LIVE_RUN: ${{ inputs.archive_live_run_id }}
+          DISCARD_ROOMS: ${{ inputs.discard_existing_rooms }}
+          SOURCE_RUN: ${{ inputs.source_run_id }}
+        run: |
+          [ "$DISCARD_ROOMS" = true ]
+          [ -z "$SOURCE_RUN" ]
+          [[ "$BACKUP_RUN" =~ ^[0-9]+$ ]]
+          [[ "$LIVE_RUN" =~ ^[0-9]+$ ]]
+          timeout 60s gh run download "$BACKUP_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "room-store-$BACKUP_RUN" --dir "$RUNNER_TEMP/archive-backup"
+          printf '%s' "$ROOM_STORE_KEY" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --output "$RUNNER_TEMP/archive-backup/rooms.json" --decrypt "$RUNNER_TEMP/archive-backup/rooms.json.gpg"
+          node scripts/restore-archive-backup.mjs "$RUNNER_TEMP/archive-backup/rooms.json" .rooms/rooms.json "$LIVE_RUN" "$BACKUP_RUN"
       - name: Start the room server
         timeout-minutes: 5
         env:
@@ -358,6 +384,12 @@ jobs:
           echo "$!" > "$RUNNER_TEMP/rooms.pid"
           curl --fail --retry 30 --retry-all-errors --retry-delay 1 http://127.0.0.1:5180/api/health
           curl --fail --retry 30 --retry-all-errors --retry-delay 1 "$TUNNEL_URL/api/health"
+      - name: Recheck the source archive before publishing
+        if: inputs.archive_backup_run_id != ''
+        env:
+          BACKUP_RUN: ${{ inputs.archive_backup_run_id }}
+          LIVE_RUN: ${{ inputs.archive_live_run_id }}
+        run: node scripts/restore-archive-backup.mjs "$RUNNER_TEMP/archive-backup/rooms.json" .rooms/rooms.json "$LIVE_RUN" "$BACKUP_RUN" --check-only
       - name: Point the stable Pages URL at this session
         timeout-minutes: 2
         env:
