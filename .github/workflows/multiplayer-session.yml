@@ -408,7 +408,7 @@ jobs:
           echo "HANDOFF_AT=$handoff_at" >> "$GITHUB_ENV"
           echo "PREWARM_AT=$prewarm_at" >> "$GITHUB_ENV"
           cp -R dist pages
-          printf '{"origin":"%s","runId":"%s","sourceRunId":"%s","sha":"%s","handoffAt":%s,"protocolVersion":%s}\n' \
+          printf '{"origin":"%s","runId":"%s","sourceRunId":"%s","sha":"%s","handoffAt":%s,"protocolVersion":%s,"manualHandoff":true}\n' \
             "$TUNNEL_URL" "$GITHUB_RUN_ID" "$SOURCE_RUN_ID" "$SESSION_SHA" "$handoff_at" \
             "$EXPECTED_PROTOCOL_VERSION" > pages/session.json
       - uses: actions/upload-artifact@v4
@@ -457,7 +457,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          manual_handoff=false
+          poll_manual_handoff() {
+            [ "$manual_handoff" != true ] || return 0
+            local requests
+            requests=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/request-session-handoff.yml/runs?branch=master&event=workflow_dispatch&per_page=100") || return 0
+            if jq -e --arg title "Manual handoff for run $GITHUB_RUN_ID" \
+                'any(.workflow_runs[]; .display_title == $title and .head_branch == "master" and .event == "workflow_dispatch" and .conclusion == "success")' <<< "$requests" >/dev/null; then
+              manual_handoff=true
+              requested_deadline=$(( $(date +%s) + 600 ))
+              [ "$HANDOFF_AT" -le "$requested_deadline" ] || HANDOFF_AT=$requested_deadline
+              echo 'Manual handoff requested; preparing a successor before freezing state.'
+            fi
+          }
           while [ "$(date +%s)" -lt "$PREWARM_AT" ]; do
+            poll_manual_handoff
+            [ "$manual_handoff" != true ] || break
             if ! curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
               "$TUNNEL_URL/api/health" >/dev/null; then
               echo '::warning::The current room endpoint is unhealthy; preserving its latest durable state now.'
@@ -490,6 +505,7 @@ jobs:
           winner_sha=
           replacement_requested_at=0
           while [ "$(date +%s)" -lt "$HANDOFF_AT" ]; do
+            poll_manual_handoff
             if ! curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
               "$TUNNEL_URL/api/health" >/dev/null; then
               echo '::warning::The current room endpoint is unhealthy; preserving its latest durable state now.'
@@ -554,6 +570,10 @@ jobs:
                 selected_winner=$winner
                 selected_sha=$successor_sha
                 selected_url=$successor_url
+                # A manual request can freeze as soon as a healthy candidate is ready.
+                if [ "$manual_handoff" = true ] && [ "$successor_sha" = "$next_sha" ] && [ "$candidate_too_old" = false ]; then
+                  HANDOFF_AT=$(date +%s)
+                fi
               fi
             fi
             [ "$cancel_requested_at" -eq 0 ] || ready=0
@@ -600,7 +620,8 @@ jobs:
             selected_status=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_winner" --jq .status 2>/dev/null || true)
             selected_started=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_winner" --jq .run_started_at 2>/dev/null || true)
             selected_started_epoch=$([ -n "$selected_started" ] && date --date="$selected_started" +%s 2>/dev/null || true)
-            if [ "$selected_status" != in_progress ] || ! [[ "$selected_started_epoch" =~ ^[0-9]+$ ]] || \
+            if [ "$selected_status" != in_progress ] || { [ "$manual_handoff" = true ] && [ "$selected_sha" != "$next_sha" ]; } || \
+              ! [[ "$selected_started_epoch" =~ ^[0-9]+$ ]] || \
               [ "$(( selected_started_epoch + 18900 ))" -lt "$(( $(date +%s) + 18000 ))" ]; then
               selected_winner=
               selected_sha=
@@ -644,6 +665,7 @@ jobs:
                   fallback_started=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$replacement_run" --jq .run_started_at 2>/dev/null || true)
                   fallback_started_epoch=$([ -n "$fallback_started" ] && date --date="$fallback_started" +%s 2>/dev/null || true)
                   if [[ "$fallback_sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$fallback_started_epoch" =~ ^[0-9]+$ ]] && \
+                    { [ "$manual_handoff" != true ] || [ "$fallback_sha" = "$next_sha" ]; } && \
                     [ "$(( fallback_started_epoch + 18900 ))" -ge "$(( $(date +%s) + 18000 ))" ] && \
                     curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
                     "$fallback_url/" >/dev/null; then

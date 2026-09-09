@@ -1,0 +1,32 @@
+name: Request safe server update
+run-name: Manual handoff for run ${{ inputs.run_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Current host runId from the live session.json
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  request:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate the live handoff target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN: ${{ inputs.run_id }}
+        run: |
+          [[ "$TARGET_RUN" =~ ^[0-9]+$ ]]
+          [ "$GITHUB_REF" = refs/heads/master ]
+          config=$(curl --fail --silent --show-error --max-time 30 \
+            "https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/session.json?manual=$GITHUB_RUN_ID")
+          jq -e --arg run "$TARGET_RUN" '.runId == $run and .manualHandoff == true' <<< "$config" >/dev/null
+          [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TARGET_RUN" --jq .status)" = in_progress ]
+          echo 'Request accepted. The target host will prepare a replacement and transfer its complete encrypted state.'
