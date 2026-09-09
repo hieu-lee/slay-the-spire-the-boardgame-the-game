@@ -1,218 +1,272 @@
 {
   "hero-ironclad": {
-    "contactLeft": 48,
-    "height": 267
+    "contactLeft": 132,
+    "height": 266,
+    "scale": 2.1
   },
   "hero-silent": {
-    "contactLeft": 71,
-    "height": 267
+    "contactLeft": 61,
+    "height": 266,
+    "scale": 1.15
   },
   "hero-defect": {
-    "contactLeft": 83,
-    "height": 267
+    "contactLeft": 101,
+    "height": 266,
+    "scale": 1.15
   },
   "hero-watcher": {
-    "contactLeft": 26,
-    "height": 406
+    "contactLeft": 137,
+    "height": 406,
+    "scale": 2.2
   },
   "hero-guardian": {
-    "contactLeft": 69,
-    "height": 400
+    "contactLeft": 97,
+    "height": 400,
+    "scale": 1.15
   },
   "hero-hermit": {
-    "contactLeft": 51,
-    "height": 400
+    "contactLeft": 115,
+    "height": 400,
+    "scale": 1.5
   },
   "hero-slime_boss": {
-    "contactLeft": 33,
-    "height": 400
+    "contactLeft": 51,
+    "height": 400,
+    "scale": 1.15
   },
   "hero-guardian-defense": {
-    "contactLeft": 24,
-    "height": 400
+    "contactLeft": 89,
+    "height": 400,
+    "scale": 1.15
   },
   "hero-hexaghost-heat-0": {
-    "contactLeft": 22,
-    "height": 400
+    "contactLeft": 91,
+    "height": 400,
+    "scale": 1.15
   },
   "hero-hexaghost-heat-1": {
-    "contactLeft": 21,
-    "height": 400
+    "contactLeft": 93,
+    "height": 400,
+    "scale": 1.15
   },
   "hero-hexaghost-heat-2": {
-    "contactLeft": 21,
-    "height": 400
+    "contactLeft": 93,
+    "height": 400,
+    "scale": 1.15
   },
   "hero-hexaghost-heat-3": {
-    "contactLeft": 21,
-    "height": 400
+    "contactLeft": 91,
+    "height": 400,
+    "scale": 1.15
   },
   "hero-hexaghost-heat-4": {
-    "contactLeft": 22,
-    "height": 400
+    "contactLeft": 93,
+    "height": 400,
+    "scale": 1.15
   },
   "hero-hexaghost-heat-5": {
-    "contactLeft": 24,
-    "height": 400
+    "contactLeft": 93,
+    "height": 400,
+    "scale": 1.15
   },
   "hero-hexaghost-heat-6": {
-    "contactLeft": 24,
-    "height": 400
+    "contactLeft": 62,
+    "height": 400,
+    "scale": 1.15
   },
   "awakened_one_phase_1": {
-    "contactLeft": 16,
-    "height": 267
+    "contactLeft": 76,
+    "height": 267,
+    "scale": 1.65
   },
   "awakened_one_phase_2": {
-    "contactLeft": 45,
-    "height": 267
+    "contactLeft": 114,
+    "height": 267,
+    "scale": 1.65
   },
   "bronze_automaton": {
-    "contactLeft": 109,
-    "height": 400
+    "contactLeft": 87,
+    "height": 400,
+    "scale": 1.65
   },
   "corrupt_heart": {
-    "contactLeft": 107,
-    "height": 267
+    "contactLeft": 128,
+    "height": 267,
+    "scale": 1.65
   },
   "deca": {
-    "contactLeft": 51,
-    "height": 400
+    "contactLeft": 72,
+    "height": 400,
+    "scale": 2.1
   },
   "donu": {
-    "contactLeft": 4,
-    "height": 267
+    "contactLeft": 95,
+    "height": 267,
+    "scale": 1.65
   },
   "downfall_blasphemer": {
-    "contactLeft": 24,
-    "height": 400
+    "contactLeft": 113,
+    "height": 400,
+    "scale": 1.65
   },
   "downfall_corrupted": {
-    "contactLeft": 33,
-    "height": 400
+    "contactLeft": 100,
+    "height": 400,
+    "scale": 1.65
   },
   "downfall_dark_core": {
-    "contactLeft": 13,
-    "height": 400
+    "contactLeft": 124,
+    "height": 400,
+    "scale": 1.65
   },
   "downfall_demon": {
-    "contactLeft": 34,
-    "height": 400
+    "contactLeft": 39,
+    "height": 400,
+    "scale": 1
   },
   "downfall_doppelganger": {
-    "contactLeft": 64,
-    "height": 400
+    "contactLeft": 120,
+    "height": 400,
+    "scale": 1.65
   },
   "downfall_flame_barrier": {
-    "contactLeft": 39,
-    "height": 400
+    "contactLeft": 40,
+    "height": 400,
+    "scale": 1
   },
   "downfall_inferno": {
-    "contactLeft": 63,
-    "height": 400
+    "contactLeft": 105,
+    "height": 400,
+    "scale": 1.65
   },
   "downfall_neow": {
-    "contactLeft": 35,
-    "height": 400
+    "contactLeft": 75,
+    "height": 400,
+    "scale": 1.65
   },
   "downfall_orb_master": {
-    "contactLeft": 44,
-    "height": 400
+    "contactLeft": 95,
+    "height": 400,
+    "scale": 1.65
   },
   "downfall_trickster": {
-    "contactLeft": 55,
-    "height": 400
+    "contactLeft": 38,
+    "height": 400,
+    "scale": 1.65
   },
   "downfall_witch": {
-    "contactLeft": 26,
-    "height": 400
+    "contactLeft": 84,
+    "height": 400,
+    "scale": 1.65
   },
   "downfall_wraith": {
-    "contactLeft": 33,
-    "height": 400
+    "contactLeft": 106,
+    "height": 400,
+    "scale": 1.65
   },
   "downfall_wrathful": {
-    "contactLeft": 18,
-    "height": 400
+    "contactLeft": 71,
+    "height": 400,
+    "scale": 1.65
   },
   "guardian_attack": {
-    "contactLeft": 65,
-    "height": 413
+    "contactLeft": 126,
+    "height": 413,
+    "scale": 1.65
   },
   "guardian_defensive": {
-    "contactLeft": 21,
-    "height": 393
+    "contactLeft": 108,
+    "height": 393,
+    "scale": 1.65
   },
   "hexaghost": {
-    "contactLeft": 63,
-    "height": 343
+    "contactLeft": 89,
+    "height": 343,
+    "scale": 1.65
   },
   "slime_boss": {
-    "contactLeft": 29,
-    "height": 300
+    "contactLeft": 76,
+    "height": 300,
+    "scale": 1.65
   },
   "the_champ": {
     "contactLeft": 34,
-    "height": 400
+    "height": 400,
+    "scale": 2.0
   },
   "the_collector": {
-    "contactLeft": 77,
-    "height": 420
+    "contactLeft": 53,
+    "height": 420,
+    "scale": 1.65
   },
   "time_eater": {
-    "contactLeft": 33,
-    "height": 267
+    "contactLeft": 119,
+    "height": 267,
+    "scale": 1.65
   },
   "gremlin_nob": {
-    "contactLeft": 69,
-    "height": 400
+    "contactLeft": 73,
+    "height": 500,
+    "scale": 1.8
   },
   "lagavulin": {
-    "contactLeft": 57,
-    "height": 297
+    "contactLeft": 64,
+    "height": 297,
+    "scale": 1.25
   },
   "sentry": {
-    "contactLeft": 95,
-    "height": 601
+    "contactLeft": 115,
+    "height": 601,
+    "scale": 1.25
   },
   "book_of_stabbing": {
-    "contactLeft": 140,
-    "height": 330
+    "contactLeft": 119,
+    "height": 330,
+    "scale": 1.25
   },
   "gremlin_leader": {
-    "contactLeft": 40,
-    "height": 414
+    "contactLeft": 72,
+    "height": 415,
+    "scale": 1.25
   },
   "taskmaster": {
-    "contactLeft": 12,
-    "height": 560
+    "contactLeft": 51,
+    "height": 560,
+    "scale": 3
   },
   "giant_head": {
-    "contactLeft": 50,
-    "height": 280
+    "contactLeft": 100,
+    "height": 280,
+    "scale": 1.25
   },
   "nemesis": {
-    "contactLeft": 82,
-    "height": 420
+    "contactLeft": 67,
+    "height": 420,
+    "scale": 1.25
   },
   "reptomancer": {
-    "contactLeft": 58,
-    "height": 601
+    "contactLeft": 39,
+    "height": 601,
+    "scale": 1
   },
   "spire_shield": {
-    "contactLeft": 13,
-    "height": 400
+    "contactLeft": 61,
+    "height": 400,
+    "scale": 1.25
   },
   "spire_spear": {
-    "contactLeft": 43,
-    "height": 267
+    "contactLeft": 60,
+    "height": 266,
+    "scale": 1.25
   },
   "red_slaver": {
-    "contactLeft": 75,
-    "height": 266
+    "contactLeft": 66,
+    "height": 266,
+    "scale": 1.25
   },
   "blue_slaver": {
-    "contactLeft": 90,
-    "height": 400
+    "contactLeft": 95,
+    "height": 400,
+    "scale": 1.25
   }
 }

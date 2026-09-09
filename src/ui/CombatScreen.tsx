@@ -7,6 +7,7 @@
 // combat-screen/types.ts for the shapes, helpers.ts for the questions it asks
 // of the board, hooks.ts for the senses that watch the board change, and
 // vfx.tsx for the effect overlay a play puts on it.
+import rigMetadata from './rig-animation-metadata.json' with { type: 'json' }
 import {
   PHASE_LABEL,
   canAfford,
@@ -5749,6 +5750,8 @@ function CombatScreenView({
             : occupant?.character
           const characterAttackAsset = assetPath(`combat/rigged/hero-${rigId}-attack.webp`)
           const characterIdleAsset = assetPath(`combat/rigged/hero-${rigId}-idle.webp`)
+          const characterArtScale = prefersReducedMotion || occupant?.dead ? 1
+            : (rigMetadata as Record<string, { scale?: number }>)[`hero-${rigId}`]?.scale ?? 1
           return (
             <div
               className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
@@ -5804,7 +5807,7 @@ function CombatScreenView({
                       aria-label={`${describeSeat(occupant)}${pendingStartPlayer?.players?.some((player) =>
                         player.id === occupant.id) ? `. Target for ${pendingStartPlayer.label}` : ''}`}
                     >
-                      <span className="seat__portrait" aria-hidden="true">
+                      <span className="seat__portrait" aria-hidden="true" style={{ '--character-art-scale': characterArtScale } as React.CSSProperties}>
                         {occupant.character === 'watcher' && occupant.stance !== 'neutral' ? (
                           <span className={`stance-aura stance-aura--${occupant.stance}`} />
                         ) : null}
@@ -5817,6 +5820,7 @@ function CombatScreenView({
                         ) : (
                           <img
                             key={`${occupant.character}-${occupantHeat}-${slimeSpawnEvent?.seq ?? characterAttack?.active.event.seq ?? 'idle'}`}
+                            data-static-art={Boolean(slimeSpawnEvent) || undefined}
                             src={!prefersReducedMotion && !occupant.dead && !slimeSpawnEvent ? characterIdleAsset : assetPath(occupant.character === 'hexaghost'
                               ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
                               : occupant.character === 'slime_boss' && slimeSpawnEvent

@@ -13,6 +13,7 @@ import numpy as np
 from PIL import Image
 from scipy.interpolate import PchipInterpolator
 from numba import njit
+from authored import available as has_authored_attack, render as render_authored
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -73,25 +74,36 @@ def weight(points, bone):
     return result
 
 
-def deform(points, bones, phase, pose, contact):
+def bone_motion(bone, phase, pose, contact, duration):
+    if pose == 'idle':
+        lag = bone.get('lag', 0)
+        angle = bone.get('idle', 1) * (math.sin(phase*2*math.pi+lag)-math.sin(lag))
+        return math.radians(angle), np.zeros(2)
+    if 'motion' in bone:
+        keys = np.array(bone['motion'])
+        values = PchipInterpolator(keys[:,0], keys[:,1:], axis=0)(phase*duration)
+        return math.radians(values[0]), values[1:]
+    anticipation = max(.08, contact-.18)
+    curve = PchipInterpolator([0, anticipation, contact, min(.88,contact+.23),1], [0,-.42,1,-.08,0])
+    return math.radians(bone.get('attack',0)*float(curve(phase))), np.zeros(2)
+
+
+def deform(points, bones, phase, pose, contact, duration=1830, aspect=1):
     moved = points.copy()
+    rigid = []
     for bone in bones:
-        if pose == 'idle':
-            # Begin/end at the rest drawing; different phases give cloth lag.
-            lag = bone.get('lag', 0)
-            amount = math.sin(phase * 2 * math.pi + lag) - math.sin(lag)
-            angle = bone.get('idle', 1) * amount
-        else:
-            anticipation = max(.08, contact - .18)
-            curve = PchipInterpolator([0, anticipation, contact, min(.88, contact+.23), 1],
-                                      [0, -.42, 1, -.08, 0])
-            angle = bone.get('attack', 0) * float(curve(phase))
-        angle = math.radians(angle)
+        angle, offset = bone_motion(bone,phase,pose,contact,duration)
         pivot = np.array(bone['pivot'])
-        rotation = np.array([[math.cos(angle), -math.sin(angle)],
-                             [math.sin(angle), math.cos(angle)]])
-        delta = (points - pivot) @ rotation.T + pivot - points
-        moved += delta * weight(points, bone)[..., None]
+        rotation = np.array([[math.cos(angle),-math.sin(angle)], [math.sin(angle),math.cos(angle)]])
+        transformed = ((points-pivot)*[aspect,1])@rotation.T/[aspect,1]+pivot+offset
+        moved += (transformed-points)*weight(points,bone)[...,None]
+        if 'rigid' in bone:
+            rigid.append((bone, transformed))
+    # A weapon has ONE rigid transform. Overlapping shoulder/cloth weights must
+    # not stretch its shaft or blade. Only the attachment boundary is feathered.
+    for bone, transformed in rigid:
+        region = weight(points, {**bone['rigid'], 'feather': .015})
+        moved = moved*(1-region[...,None])+transformed*region[...,None]
     return moved
 
 
@@ -100,10 +112,11 @@ def render(spec, pose, output, size=400, fps=30):
     width, height = size, round(size * source.height / source.width)
     source = source.crop(source.getbbox())
     # Generous fixed overscan for weapons, never independently fit each frame.
-    scale = min(width * .8 / source.width, height * spec.get('heightFit', .88) / source.height)
+    display_scale = spec.get('displayScale', 1)
+    scale = min(width * .8 / source.width, height * spec.get('heightFit', .88) / source.height) / display_scale
     sw, sh = [round(v * scale) for v in source.size]
     source = source.resize((sw, sh), Image.Resampling.LANCZOS)
-    ox, oy = (width-sw)//2, round(height*spec.get('ground', .98))-sh
+    ox, oy = (width-sw)//2, round(height*(1-(1-spec.get('ground', .98))/display_scale))-sh
     canvas = Image.new('RGBA', (width, height))
     canvas.paste(source, (ox, oy))
     canvas = canvas.convert('RGBa')  # Premultiplication prevents dark alpha seams.
@@ -116,7 +129,7 @@ def render(spec, pose, output, size=400, fps=30):
     pixels = np.asarray(canvas, dtype=np.float32)
     for index in range(count):
         phase = index / (count if pose == 'idle' else count-1)
-        moved = deform(target, spec['bones'], phase, pose, spec.get('contact', .4))
+        moved = deform(target, spec['bones'], phase, pose, spec.get('contact', .4), duration, sw/sh)
         rendered = raster(pixels, moved * [sw, sh] + [ox, oy], grid)
         frames.append(Image.fromarray(rendered.clip(0,255).astype('uint8'), 'RGBa').convert('RGBA'))
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -134,5 +147,23 @@ if __name__ == '__main__':
     for name, spec in json.loads(args.manifest.read_text()).items():
         if args.only and name not in args.only.split(','):
             continue
+        if name in ('gremlin_nob', 'hero-ironclad'):
+            import runpy
+            renderer = 'render-nob.py' if name == 'gremlin_nob' else 'render-ironclad.py'
+            runpy.run_path(str(ROOT / 'scripts/animation' / renderer), run_name='__main__')
+            continue
+        if name == 'downfall_demon':
+            import runpy
+            runpy.run_path(str(ROOT / 'scripts/animation/register-demon.py'), run_name='__main__')
         for pose in ('idle', 'attack'):
-            render(spec, pose, ROOT / spec['output'] / f'{name}-{pose}.webp')
+            output = ROOT / spec['output'] / f'{name}-{pose}.webp'
+            if pose == 'attack' and name == 'hero-guardian-defense':
+                import runpy
+                runpy.run_path(str(ROOT / 'scripts/animation/render-guardian-defense.py'), run_name='__main__')
+            elif pose == 'attack' and 'drawnSheet' in spec:
+                from drawn import render as render_drawn
+                render_drawn(name, spec, output)
+            elif pose == 'attack' and has_authored_attack(name):
+                render_authored(name, spec, output)
+            else:
+                render(spec, pose, output)

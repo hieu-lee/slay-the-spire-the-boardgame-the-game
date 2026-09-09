@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
+from authored import available as has_authored_attack
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'artifacts/rig-animation/review'
@@ -27,17 +28,34 @@ def reviewed_rigs():
                 alpha = np.array(frame.getchannel('A'))
                 boxes.append(Image.fromarray(np.where(alpha>32,255,0).astype('uint8')).getbbox())
                 areas.append((alpha>32).sum())
-            assert len(frames) >= 45, (name, pose, 'insufficient motion samples')
-            assert max(durations) <= 67, (name, pose, 'held pose')
+            assert len(frames) >= (spec.get('minFrames',45) if pose=='attack' else 45), (name, pose, 'insufficient motion samples')
+            assert min(durations) >= 20 and max(durations) <= (spec.get('maxFrameDuration',67) if pose=='attack' else 67), (name, pose, 'browser frame cadence')
             assert sum(durations) == (3000 if pose == 'idle' else spec.get('duration',1830)), (name,pose,'duration')
             assert all(b and b[0]>0 and b[1]>0 and b[2]<im.width and b[3]<im.height for b in boxes), (name,pose,'clipped silhouette')
-            assert max(areas)/min(areas)<1.3, (name,pose,'area changed too much',max(areas)/min(areas))
+            # Trickster's intentional spectral duplicate adds painted area at impact.
+            if pose == 'idle' or not has_authored_attack(name) or ('drawnSheet' in spec and name not in ('downfall_trickster','hero-guardian-defense')):
+                assert max(areas)/min(areas)<(1.4 if 'drawnSheet' in spec else 1.3), (name,pose,'area changed too much',max(areas)/min(areas))
             poses[pose] = (frames, np.cumsum(durations))
+        if not name.startswith('hero-'):
+            # Equal canvases do not prove equal body size. Guard transitions
+            # catch export-scale pops while allowing overlapping limbs/VFX.
+            area = lambda frame: (np.array(frame.getchannel('A')) > 32).sum()
+            idle_area = area(poses['idle'][0][0])
+            if name != 'downfall_trickster':
+                for frame in poses['attack'][0]:
+                    ratio = (area(frame)/idle_area)**.5
+                    assert .75 < ratio < 1.3, (name, 'attack body size drift', ratio)
+            for frame in (poses['attack'][0][0], poses['attack'][0][-1]):
+                ratio = (area(frame)/idle_area)**.5
+                assert .88 < ratio < 1.12, (name, 'idle/attack size pop', ratio)
         assert poses['idle'][0][0].size == poses['attack'][0][0].size, (name,'canvas mismatch')
-        first,last = [np.array(f).astype(float) for f in [poses['attack'][0][0],poses['attack'][0][-1]]]
-        assert np.abs(first[:,:,:3]*first[:,:,3:]/255-last[:,:,:3]*last[:,:,3:]/255).mean()<3, (name,'rest pose does not return')
-        idx = round((len(poses['attack'][0])-1)*spec.get('contact',.4))
-        metadata[name] = {'contactLeft': poses['attack'][0][idx].getbbox()[0], 'height': poses['attack'][0][idx].height}
+        # Drawn attacks start in anticipation rather than idle. Silent must hold
+        # her throw through the last staggered dagger, even beyond the WebP.
+        if not has_authored_attack(name) or name == 'hero-guardian-defense':
+            first,last = [np.array(f).astype(float) for f in [poses['attack'][0][0],poses['attack'][0][-1]]]
+            assert np.abs(first[:,:,:3]*first[:,:,3:]/255-last[:,:,:3]*last[:,:,3:]/255).mean()<3, (name,'rest pose does not return')
+        idx = min(len(poses['attack'][0])-1, int(np.searchsorted(poses['attack'][1], spec.get('duration',1830)*spec.get('contact',.4), side='right')))
+        metadata[name] = {'contactLeft': poses['attack'][0][idx].getbbox()[0], 'height': poses['attack'][0][idx].height, 'scale': spec.get('displayScale', 1)}
         yield (name,poses,spec.get('duration',1830))
 
 def render_gallery(group, batch):

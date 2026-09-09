@@ -477,7 +477,6 @@
 .enemy--boss {
   box-shadow: none;
   --boss-aura: rgb(241 177 74 / 0.5);
-  --boss-scale: 1.75;
 }
 
 .enemy[data-enemy-def='slime_boss'] { --boss-aura: rgb(142 221 80 / 0.52); }
@@ -614,7 +613,7 @@
 }
 
 .enemy--boss .enemy__portrait > :is(.enemy__art--cutout, .boss-demon-grounded) {
-  transform: scale(var(--boss-scale));
+  transform: none;
   filter:
     saturate(1.08)
     contrast(1.03)
@@ -622,13 +621,8 @@
     drop-shadow(0 0 0.55rem var(--boss-aura));
 }
 
-.enemy--boss[data-enemy-def='donu'],
-.enemy--boss[data-enemy-def='deca'] {
-  --boss-scale: 1.55;
-}
-
 .enemy--boss:not([data-animation='attack']):not(:disabled):hover .enemy__portrait > .enemy__art--cutout {
-  transform: scale(var(--boss-scale));
+  transform: none;
 }
 
 .enemy--boss.enemy--acting[data-attack-motion='melee'] {
@@ -812,7 +806,8 @@
 
 /* Elite silhouettes tower over heroes without enlarging their UI or hit boxes.
    Fixed art geometry is shared by idle, anticipation, contact and recovery. */
-.enemy--elite .enemy__portrait > .enemy__art--cutout {
+.enemy--elite .enemy__portrait > .enemy__art--cutout,
+.enemy--boss .enemy__portrait > :is(.enemy__art--cutout, .boss-demon-grounded) {
   width: 180%;
   max-width: none;
   height: var(--elite-art-height);
@@ -820,12 +815,151 @@
   transform: none;
 }
 .enemy--elite.enemy--acting { z-index: 9; }
-.enemy--elite.enemy--acting .enemy__portrait > .enemy__art--cutout {
-  animation: elite-attack 1830ms ease-in-out both;
+/* Root motion follows each elite's anatomy; the exported limbs use the same
+   730ms contact clock. UI bands remain stationary above the moving cutout. */
+.enemy--elite.enemy--acting .enemy__portrait > .enemy__art--cutout,
+.enemy--acting[data-enemy-art="red_slaver"] .enemy__art--cutout,
+.enemy--acting[data-enemy-art="blue_slaver"] .enemy__art--cutout {
+  animation: var(--elite-attack-motion, elite-thrust) 1830ms ease-in-out both;
 }
-@keyframes elite-attack {
+.enemy--elite[data-enemy-art='gremlin_nob'] { --elite-attack-motion: elite-club; }
+.enemy--elite[data-enemy-art='gremlin_nob'] .enemy__art--cutout {
+  /* Fixed overscan lets the complete club arc without resizing the body. */
+  bottom: calc(var(--elite-art-height) * -.066);
+}
+.enemy--elite[data-enemy-art='lagavulin'] { --elite-attack-motion: elite-pounce; }
+.enemy--elite[data-enemy-art='sentry'] { --elite-attack-motion: elite-core; }
+.enemy--elite[data-enemy-art='book_of_stabbing'] { --elite-attack-motion: elite-stabs; }
+.enemy--elite[data-enemy-art='gremlin_leader'] { --elite-attack-motion: elite-jab; }
+.enemy--elite[data-enemy-art='taskmaster'] { --elite-attack-motion: elite-whip; }
+.enemy--elite[data-enemy-art='giant_head'] { --elite-attack-motion: elite-slam; }
+.enemy--elite[data-enemy-art='nemesis'] { --elite-attack-motion: elite-scythe; }
+.enemy--elite[data-enemy-art='reptomancer'] { --elite-attack-motion: elite-conjure; }
+.enemy--elite[data-enemy-art='spire_shield'] { --elite-attack-motion: elite-bash; }
+.enemy[data-enemy-art='blue_slaver'] { --elite-attack-motion: elite-hook; }
+
+@keyframes elite-club {
   0%, 100% { translate: 0; }
-  20% { translate: 3% 0; }
-  40%, 52% { translate: -12% 0; }
-  76% { translate: 1% 0; }
+  28% { translate: 4% -2%; }
+  40%, 55% { translate: var(--boss-dash-x, -18%) var(--boss-dash-y, 1%); }
+  70% { translate: -9% 0; }
+}
+@keyframes elite-pounce {
+  0%, 100% { translate: 0; }
+  20% { translate: 2% 1%; }
+  30% { translate: -4% -5%; }
+  40%, 54% { translate: var(--boss-dash-x) 0; }
+  72% { translate: -7% -2%; }
+}
+@keyframes elite-core {
+  0%, 100% { translate: 0; }
+  30% { translate: 0 -4%; }
+  40% { translate: 5% -1%; }
+  55% { translate: 1% 0; }
+}
+@keyframes elite-stabs {
+  0%, 100% { translate: 0; }
+  28% { translate: 4% -1%; }
+  36%, 40%, 47%, 54% { translate: var(--boss-dash-x) 0; }
+  43%, 51% { translate: calc(var(--boss-dash-x) + 5%) 0; }
+  70% { translate: -2% 0; }
+}
+@keyframes elite-jab {
+  0%, 100% { translate: 0; }
+  28% { translate: 3% 0; }
+  40%, 48% { translate: var(--boss-dash-x) 0; }
+  52% { translate: -8% 0; }
+  68% { translate: 1% 0; }
+}
+@keyframes elite-whip {
+  0%, 100% { translate: 0; }
+  27% { translate: 4% 1%; }
+  40%, 48% { translate: var(--boss-dash-x) 0; }
+  52% { translate: -3% 0; }
+  70% { translate: 1% 0; }
+}
+@keyframes elite-slam {
+  0%, 100% { translate: 0; }
+  32% { translate: 2% -8%; }
+  40%, 46% { translate: -11% 1%; }
+  50% { translate: -10% -1%; }
+  60% { translate: -8% 0; }
+}
+@keyframes elite-scythe {
+  0%, 100% { translate: 0; }
+  28% { translate: 5% -3%; }
+  40% { translate: var(--boss-dash-x) 0; }
+  60% { translate: var(--boss-dash-x) 1%; }
+  78% { translate: -5% 0; }
+}
+@keyframes elite-conjure {
+  0%, 100% { translate: 0; }
+  30% { translate: 2% -2%; }
+  40% { translate: -5% -1%; }
+  60% { translate: -2% 0; }
+}
+@keyframes elite-bash {
+  0%, 100% { translate: 0; }
+  30% { translate: 5% 0; }
+  40%, 58% { translate: var(--boss-dash-x) 0; }
+  72% { translate: -6% 0; }
+}
+@keyframes elite-thrust {
+  0%, 100% { translate: 0; }
+  30% { translate: 5% 0; }
+  40%, 54% { translate: var(--boss-dash-x) 0; }
+  70% { translate: -4% 0; }
+}
+@keyframes elite-hook {
+  0%, 100% { translate: 0; }
+  30% { translate: 3% -1%; }
+  40% { translate: var(--boss-dash-x) 0; }
+  55% { translate: var(--boss-dash-x) 1%; }
+  70% { translate: 2% 0; }
+}
+.elite-attack-effect {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+  left: 50%;
+  bottom: calc(var(--elite-art-height) * .5 + 1.5rem);
+  width: 3rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ecffff, #66dfff 22%, transparent 68%);
+  opacity: 0;
+  animation: elite-core-charge 1830ms ease-in-out both;
+}
+.enemy--elite[data-enemy-art='giant_head'] .elite-attack-effect {
+  bottom: 1.5rem;
+  left: 10%;
+  width: 80%;
+  aspect-ratio: 3;
+  border: .15rem solid #d5c49b;
+  background: radial-gradient(ellipse, #d0bc8733, transparent 68%);
+  animation-name: elite-ground-wave;
+}
+.enemy--elite[data-enemy-art='reptomancer'] .elite-attack-effect {
+  background: radial-gradient(circle, #ffffca, #98f783 24%, transparent 68%);
+}
+@keyframes elite-core-charge {
+  0%, 12%, 66%, 100% { opacity: 0; scale: .3; }
+  30% { opacity: .9; scale: 1.2; }
+  40% { opacity: 1; scale: 1.7; }
+  50% { opacity: .5; scale: .8; }
+}
+@keyframes elite-ground-wave {
+  0%, 39%, 76%, 100% { opacity: 0; scale: .1; }
+  40% { opacity: .9; scale: .3; }
+  66% { opacity: 0; scale: 1.8; }
+}
+
+/* Baked transparent overscan keeps wide swings inside their source canvas.
+   Restore the artwork's physical size, without scaling UI or hit targets. */
+.enemy[data-animation]:not([data-animation='static']) .enemy__art--cutout {
+  scale: var(--animation-art-scale, 1);
+}
+.seat__portrait > img:not([data-static-art]):not([data-guardian-transition]), .character-attack__pose--rig > img {
+  scale: var(--character-art-scale, 1);
+  transform-origin: center bottom;
 }

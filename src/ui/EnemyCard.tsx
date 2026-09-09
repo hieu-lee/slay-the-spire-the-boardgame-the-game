@@ -14,6 +14,7 @@ import { revealDecodedImage } from './Card.tsx'
 import {
   bossAttackContactLeftFor,
   bossAttackDurationFor,
+  enemyArtScaleFor,
   bossAttackMotionFor,
   bossProjectileImagePath,
 } from './combat-vfx.ts'
@@ -376,8 +377,10 @@ export function EnemyCard({
     ['sentry', 'red_slaver', 'blue_slaver'].includes(def.artId ?? def.id)))
   const currentBossArtId = def.artId ?? def.id
   const bossHasAttackAction = actions.some((action) => action.kind === 'attack' || action.kind === 'attackSequence')
-  const currentBossAttackArt = enemyAnimationImagePath(def, 'attack')
-  const currentStaticArt = enemyImagePath(def)
+  const currentBossAttackArt = currentBossArtId === 'downfall_demon'
+    ? assetPath('combat/rigged/downfall_demon-airborne.webp')
+    : enemyAnimationImagePath(def, 'attack')
+  const currentIdleArt = enemyAnimationImagePath(def, 'idle')
   const currentBossProjectileArt = bossProjectileImagePath(currentBossArtId)
   const bossAttackRequested = Boolean(animatedEnemy && acting && bossHasAttackAction)
   useLayoutEffect(() => {
@@ -391,14 +394,14 @@ export function EnemyCard({
     const cached = attackPreload.current
     // Each one-shot WebP needs its own URL; a decoded preload shares an ended timeline.
     const art = cached?.source === currentBossAttackArt
-      ? URL.createObjectURL(cached.blob) : currentStaticArt
+      ? URL.createObjectURL(cached.blob) : currentIdleArt
     setPresentedBossAttack({ art, artId: currentBossArtId, source: currentBossAttackArt })
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
     bossAttackTimer.current = setTimeout(() => {
       setPresentedBossAttack(null)
       bossAttackTimer.current = null
     }, bossAttackDurationFor(currentBossArtId))
-  }, [bossAttackTriggered, currentBossArtId, currentBossAttackArt, currentStaticArt])
+  }, [bossAttackTriggered, currentBossArtId, currentBossAttackArt, currentIdleArt])
   useEffect(() => () => {
     if (presentedBossAttack?.art.startsWith('blob:')) URL.revokeObjectURL(presentedBossAttack.art)
   }, [presentedBossAttack])
@@ -406,7 +409,7 @@ export function EnemyCard({
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
   }, [])
   const art = animatedEnemy
-    ? bossAttacking ? presentedBossAttack?.art ?? currentBossAttackArt : enemyAnimationImagePath(def, 'idle')
+    ? bossAttacking ? presentedBossAttack?.art ?? currentBossAttackArt : currentIdleArt
     : enemyImagePath(def)
   const bossAttackArt = animatedEnemy ? currentBossAttackArt : undefined
   useEffect(() => {
@@ -424,9 +427,12 @@ export function EnemyCard({
   }, [bossAttackArt])
   useEffect(() => {
     if (!animatedEnemy || currentBossArtId !== 'downfall_demon') return
-    const preload = new Image()
-    preload.src = assetPath('combat/vfx/actions/downfall-demon-ground-splat.webp')
-    void preload.decode?.().catch(() => undefined)
+    for (const path of ['combat/rigged/downfall_demon-ground-slam.webp',
+      'combat/vfx/actions/downfall-demon-ground-splat.webp']) {
+      const preload = new Image()
+      preload.src = assetPath(path)
+      void preload.decode?.().catch(() => undefined)
+    }
   }, [animatedEnemy, currentBossArtId])
   useEffect(() => {
     if (!currentBossProjectileArt) return
@@ -444,14 +450,14 @@ export function EnemyCard({
     const card = cardRef.current
     if (!card || !bossAttacking || bossAttackMotion !== 'melee') return
     const boss = card.querySelector<HTMLImageElement>('.enemy__art--cutout')
-    const heroes = [...(card.closest('.board')?.querySelectorAll<HTMLElement>('.seat:not(.seat--dead) .seat__portrait > img') ?? [])]
+    const heroes = [...(card.closest('.board')?.querySelectorAll<HTMLElement>('.seat:not(.seat--dead) .seat__portrait') ?? [])]
     if (!boss || heroes.length === 0) return
     const measure = () => {
       if (boss.naturalHeight === 0) return
-      const heroAnimations = heroes.map((hero) => hero.style.animation)
-      for (const hero of heroes) hero.style.animation = 'none'
-      const heroRight = Math.max(...heroes.map((hero) => hero.getBoundingClientRect().right))
-      heroes.forEach((hero, index) => { hero.style.animation = heroAnimations[index] ?? '' })
+      // The image includes scaled transparent overscan; the stable portrait
+      // lane still describes the target's physical position.
+      const heroRects = heroes.map((hero) => hero.getBoundingClientRect())
+      const heroRight = Math.max(...heroRects.map((rect) => rect.right))
       const animation = boss.style.animation
       boss.style.animation = 'none'
       const bossRect = boss.getBoundingClientRect()
@@ -461,6 +467,13 @@ export function EnemyCard({
       boss.style.animation = animation
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
       card.style.setProperty('--boss-dash-x', `${Math.min(0, heroRight - visibleBossLeft) / rem}rem`)
+      if (bossArtId === 'gremlin_nob') {
+        // Authored 730ms skull contact is at source y=460 of the 500px canvas.
+        // Step onto the hero's ground plane for the low club smash.
+        const contactY = bossRect.bottom - (500-460)*imageScale
+        const targetY = Math.max(...heroRects.map((rect) => rect.bottom-rect.height*.08))
+        card.style.setProperty('--boss-dash-y', `${(targetY-contactY)/rem}rem`)
+      }
       if (bossArtId === 'downfall_demon') {
         const boardTop = card.closest('.board')?.getBoundingClientRect().top ?? 0
         const launchY = boardTop - bossRect.bottom - rem
@@ -475,6 +488,7 @@ export function EnemyCard({
     return () => {
       boss.removeEventListener('load', measure)
       card.style.removeProperty('--boss-dash-x')
+      card.style.removeProperty('--boss-dash-y')
       card.style.removeProperty('--boss-launch-x')
       card.style.removeProperty('--boss-launch-y')
     }
@@ -488,8 +502,14 @@ export function EnemyCard({
     const measure = () => {
       const cardRect = card.getBoundingClientRect()
       const bossRect = boss.getBoundingClientRect()
-      const startX = bossRect.left + bossRect.width * 0.34
-      const startY = bossRect.top + bossRect.height * 0.48
+      // Overscan enlarges transparent padding, not the body. Anchor to the
+      // physical portrait before applying the original attachment fractions.
+      const scale = enemyArtScaleFor(bossArtId)
+      const fit = Math.min(bossRect.width / boss.naturalWidth, bossRect.height / boss.naturalHeight)
+      const bodyWidth = boss.naturalWidth * fit / scale
+      const bodyHeight = boss.naturalHeight * fit / scale
+      const startX = bossRect.left + bossRect.width / 2 - bodyWidth * .16
+      const startY = bossRect.bottom - bodyHeight * .52
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
       for (const projectile of card.querySelectorAll<HTMLElement>('.boss-projectile')) {
         const playerId = projectile.dataset.targetPlayer
@@ -507,7 +527,7 @@ export function EnemyCard({
     if (boss.complete && boss.naturalHeight > 0) measure()
     else boss.addEventListener('load', measure, { once: true })
     return () => boss.removeEventListener('load', measure)
-  }, [art, bossAttacking, bossProjectileArt, rangedTargetKey])
+  }, [art, bossArtId, bossAttacking, bossProjectileArt, rangedTargetKey])
   const abilities = enemyAbilities(def)
   const mods = attackerModsOfEnemy(visibleEnemy)
   const intent = actions.flatMap((action) => intentParts(action, (printed) => swingDamage(
@@ -548,12 +568,14 @@ export function EnemyCard({
       data-boss-act={def.bossAct}
       data-attack-motion={bossAttackMotion}
       data-boss-art={visibleEnemy.isBoss ? bossArtId : undefined}
+      data-enemy-art={bossArtId}
       data-animation={animatedEnemy ? bossAttacking ? 'attack' : 'idle' : 'static'}
       data-webmcp-pending={stageVisualDamage && visualSignature !== JSON.stringify(visibleEnemy) || undefined}
       data-row={enemy.row}
       style={{
         '--stage-index': stageIndex,
         '--boss-contact-left': bossAttackContactLeft,
+        '--animation-art-scale': enemyArtScaleFor(bossArtId),
         '--boss-attack-duration': `${bossAttackDurationFor(bossArtId)}ms`,
       } as CSSProperties}
       disabled={enemy.dead || disabled}
@@ -602,6 +624,9 @@ export function EnemyCard({
         </span>
       ) : null}
 
+      {bossAttacking && ['sentry', 'giant_head', 'reptomancer'].includes(bossArtId) ? (
+        <span className="elite-attack-effect" aria-hidden="true" />
+      ) : null}
       {bossAttacking && bossProjectileArt ? rangedTargetPlayerIds.map((playerId) => (
         <span className="boss-projectile" data-target-player={playerId} key={playerId} aria-hidden="true">
           <img src={bossProjectileArt} alt="" />
@@ -633,13 +658,14 @@ export function EnemyCard({
             // Keep combat usable if a bundled image fails to load.
             if (event.currentTarget.dataset.fallback !== 'true') {
               event.currentTarget.dataset.fallback = 'true'
+              event.currentTarget.style.scale = '1'
               event.currentTarget.src = enemyImagePath(def)
             } else event.currentTarget.style.display = 'none'
           }}
         />
         {demonAttacking ? <img
           className="boss-demon-grounded"
-          src={art}
+          src={assetPath('combat/rigged/downfall_demon-ground-slam.webp')}
           alt=""
           aria-hidden="true"
         /> : null}

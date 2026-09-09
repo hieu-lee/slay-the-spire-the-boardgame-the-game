@@ -333,34 +333,6 @@
   text-shadow: 0 1px 2px #000, 0 0 2px #000;
 }
 
-@media (max-height: 700px) {
-  .board .board__bosses .enemy--boss {
-    --boss-scale: 1.5;
-  }
-
-  .board .board__bosses .enemy--boss:is([data-enemy-def='donu'], [data-enemy-def='deca']) {
-    --boss-scale: 1.4;
-  }
-
-  .board .board__bosses .enemy--boss > .enemy__intent {
-    top: calc(-4.4rem * var(--stage-scale));
-  }
-
-  .board .board__bosses .enemy--boss > .enemy__ability {
-    top: calc(-2.15rem * var(--stage-scale));
-    max-height: calc(1.5rem * var(--stage-scale));
-  }
-}
-
-html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
-  --boss-scale: 1.5;
-}
-
-html[data-mobile-performance='true']
-  .board .board__bosses .enemy--boss:is([data-enemy-def='donu'], [data-enemy-def='deca']) {
-  --boss-scale: 1.4;
-}
-
 @media (orientation: landscape) and (max-height: 26.25rem) {
   .row__seat { bottom: calc(1.1rem * var(--stage-scale)); }
 
@@ -399,21 +371,21 @@ html[data-mobile-performance='true']
   }
 }
 
-.board .enemy--elite {
+.board :is(.enemy--elite, .board__bosses .enemy--boss) {
   --elite-scale: 1.8;
   --elite-art-height: calc(var(--stage-actor-width) * 2.3 / 1.45);
   --elite-floor-offset: 0rem;
 }
 /* Reserve distinct bands above the full art canvas, including tall elite rigs.
    The smaller four-player portrait ratio gives a safe bound for every row. */
-.board .enemy--elite > .enemy__intent {
+.board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__intent {
   position: absolute;
   top: auto;
   bottom: calc(var(--elite-art-height) + 4.2rem * var(--stage-scale) + var(--elite-floor-offset));
   right: -25%;
   left: -25%;
 }
-.board .enemy--elite > .enemy__ability {
+.board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__ability {
   top: auto;
   bottom: calc(var(--elite-art-height) + 1.9rem * var(--stage-scale) + var(--elite-floor-offset));
   right: -15%;
@@ -425,19 +397,29 @@ html[data-mobile-performance='true']
   scrollbar-width: none;
   pointer-events: auto;
 }
-.board .enemy--elite > .enemy__ability::-webkit-scrollbar { display: none; }
+.board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__ability::-webkit-scrollbar { display: none; }
+
+/* Phones use the app's 720px virtual desktop viewport. Their longest boss
+   intents need less empty space above the art than full-height desktops. */
+html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
+  --elite-floor-offset: -1rem;
+}
 
 @media (orientation: landscape) and (max-height: 26.25rem) {
-  .board .enemy--elite {
+  .board :is(.enemy--elite, .board__bosses .enemy--boss) {
     --elite-art-height: min(calc(var(--stage-actor-width) * 1.45), max(4rem, calc(100dvh - 17.5rem)));
     --elite-floor-offset: 4.75rem;
     --elite-end-turn-clearance: 8rem;
   }
+  .board .board__bosses .enemy--boss {
+    /* Boss intents can have an additional action line on short screens. */
+    --elite-floor-offset: 3.9rem;
+  }
 }
 
 @media (orientation: landscape) and (max-height: 26.25rem) {
-  .board .enemy--elite > .enemy__intent {
+  .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__intent {
     bottom: calc(var(--elite-art-height) + 3.2rem * var(--stage-scale) + var(--elite-floor-offset));
   }
-  .board .enemy--elite > .enemy__ability { max-height: calc(1.1rem * var(--stage-scale)); }
+  .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__ability { max-height: calc(1.1rem * var(--stage-scale)); }
 }

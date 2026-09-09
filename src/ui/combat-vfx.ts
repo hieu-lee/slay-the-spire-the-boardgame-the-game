@@ -13,6 +13,9 @@ export type VfxFamily =
 export type ActorMotion = 'none' | 'lunge' | 'recoil' | 'cast' | 'drink' | 'throw'
 
 const MELEE_BOSS_ART = new Set([
+  'gremlin_nob',
+  'lagavulin', 'book_of_stabbing', 'gremlin_leader', 'taskmaster',
+  'nemesis', 'spire_shield', 'spire_spear', 'blue_slaver', 'red_slaver',
   'slime_boss',
   'guardian_attack',
   'guardian_defensive',
@@ -47,7 +50,12 @@ export function bossAttackDurationFor(_artId: string): number {
   return 1830
 }
 
+export function enemyArtScaleFor(artId: string): number {
+  return (rigMetadata as Record<string, { scale?: number }>)[artId]?.scale ?? 1
+}
+
 export function bossAttackContactLeftFor(artId: string): number {
+  if (artId === 'downfall_demon') return 38
   return (rigMetadata as Record<string, { contactLeft: number }>)[artId]?.contactLeft ?? 48
 }
 

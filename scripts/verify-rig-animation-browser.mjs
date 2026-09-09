@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { ENEMIES } from '../src/game/enemies.ts'
+import { bossAttackMotionFor, bossProjectileImagePath } from '../src/ui/combat-vfx.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const output = resolve(root, 'artifacts/rig-animation/browser')
@@ -16,10 +17,11 @@ const browser = await chromium.launch({ headless: true })
 const errors = []
 const heroes = {
   ironclad: 'strike_ironclad', silent: 'predator', defect: 'strike_defect', watcher: 'strike_watcher',
-  guardian: 'guardian_strike', hermit: 'hermit_strike', slime_boss: 'slime_boss_strike', hexaghost: 'strike_hexaghost',
+  guardian: 'guardian_strike', 'guardian-defense': 'guardian_strike', hermit: 'hermit_strike', slime_boss: 'slime_boss_strike', hexaghost: 'strike_hexaghost',
 }
 const enemies = [...new Map(Object.values(ENEMIES).filter((e) => e.isBoss || e.elite ||
   ['sentry_a','sentry_b','red_slaver','blue_slaver'].includes(e.id)).map((e) => [e.artId ?? e.id,e])).values()]
+  .filter(e=>!process.argv.some(a=>a.startsWith('--only='))||process.argv.includes(`--only=${e.id}`))
 try {
   for (const [screen,viewport] of [['desktop',{width:1440,height:900}],['horizontal-phone',{width:844,height:390}]]) {
     if(process.argv.includes('--phone-only') && screen!=='horizontal-phone')continue
@@ -45,10 +47,11 @@ try {
         authoritativeRestoration:f.restoration,onAction:()=>{},
       }))
       f.install=(character,defId='guardian_attack',isBoss=true,count=1)=>{
-        const rng=createRng(47);const player=createPlayer(rng,'p1',character,character,0)
+        const rng=createRng(47);const player=createPlayer(rng,'p1',character,character==='guardian-defense'?'guardian':character,0)
         player.hp=player.maxHp=999;player.hand=[];player.draw=[];player.relics=[]
         const enemy={uid:'enemy-0',defId,row:0,isBoss,hp:999,maxHp:999,block:0,strength:0,vulnerable:0,weak:0,poison:0,actionIndex:0,abilityUsed:false,dead:false}
         f.state=createCombat(rng,[player],Array.from({length:count},(_,i)=>({...enemy,uid:`enemy-${i}`})))
+        if(character==='guardian-defense')f.state.players[0].guardianMode='defense'
         f.state.phase='player';f.state.presentationEvents=[]
         f.attacks=false
         for(let die=1;die<=6&&!f.attacks;die++)for(let actionIndex=0;actionIndex<8&&!f.attacks;actionIndex++){
@@ -70,7 +73,8 @@ try {
       await page.evaluate(c=>window.fixture.install(c),character)
       await page.waitForFunction(()=>document.querySelector('.seat__portrait > img')?.complete)
       await page.waitForTimeout(100)
-      await page.waitForFunction(c=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=(c==='hexaghost'?7:c==='guardian'?2:1),character)
+      await page.waitForFunction(c=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=(c==='hexaghost'?7:c.startsWith('guardian')?2:1),character)
+      await page.waitForFunction(()=>[...document.querySelectorAll('.seat__portrait > img')].every(i=>i.complete&&!i.dataset.guardianTransition))
       await page.waitForTimeout(100)
       const before=await page.locator('.seat__portrait > img').boundingBox()
       const seq=await page.evaluate(id=>window.fixture.attack(id),source)
@@ -81,6 +85,7 @@ try {
       await page.locator('.board').screenshot({path:resolve(output,`${screen}-${character}-attack.png`)})
       await page.waitForTimeout(1800)
       const after=await page.locator('.seat__portrait > img').boundingBox()
+      if(character==='guardian-defense')assert.equal(await page.locator('.seat__portrait > img').getAttribute('data-guardian-mode'),'defense')
       for(const key of ['x','y','width','height'])assert(Math.abs(before[key]-after[key])<.6,`${screen}/${character}: layout jumped`)
       // A second attack must get a fresh replay URL rather than reuse the ended WebP timeline.
       const firstSrc=await page.evaluate(()=>window.fixture.seq)
@@ -89,33 +94,75 @@ try {
       await page.locator(`[data-attack-seq="${next}"] .character-attack__pose--rig.is-loaded:not(.is-fallback)`).waitFor()
       await page.waitForTimeout(2100)
     }
-    for (const enemy of (screen==='desktop'?enemies:enemies.filter(e=>e.elite))) {
+    for (const enemy of enemies) {
       await page.evaluate(e=>window.fixture.install('defect',e.id,!!e.isBoss),enemy)
       const card=page.locator(`.enemy[data-enemy-def="${enemy.id}"]`)
       await card.waitFor()
       await page.waitForFunction(()=>[...document.querySelectorAll('.enemy__art--cutout')].every(i=>i.complete&&i.naturalWidth>0))
       assert.equal(await card.getAttribute('data-animation'),'idle',enemy.id)
       const before=await card.locator('.enemy__art--cutout').boundingBox()
-      if(enemy.elite){
+      const silhouette=await card.locator('.enemy__art--cutout').evaluate(image=>{
+        const rect=image.getBoundingClientRect(), canvas=document.createElement('canvas')
+        canvas.width=image.naturalWidth;canvas.height=image.naturalHeight
+        const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0)
+        const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data
+        let left=canvas.width,top=canvas.height,right=0,bottom=0
+        for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)if(pixels[(y*canvas.width+x)*4+3]>32){
+          left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y)
+        }
+        const fit=Math.min(rect.width/canvas.width,rect.height/canvas.height)
+        const ox=rect.left+(rect.width-canvas.width*fit)/2,oy=rect.bottom-canvas.height*fit
+        return {left:ox+left*fit,right:ox+right*fit,top:oy+top*fit,bottom:oy+bottom*fit}
+      })
+      if(enemy.elite||enemy.isBoss){
         const bands=await card.evaluate(e=>{
-          const art=e.querySelector('.enemy__art--cutout').getBoundingClientRect()
+          const image=e.querySelector('.enemy__art--cutout')
+          const art=image.getBoundingClientRect()
+          const canvas=document.createElement('canvas')
+          canvas.width=image.naturalWidth;canvas.height=image.naturalHeight
+          const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0)
+          const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data
+          let visibleTop=canvas.height
+          for(let y=0;y<canvas.height&&visibleTop===canvas.height;y++)
+            for(let x=0;x<canvas.width;x++)if(pixels[(y*canvas.width+x)*4+3]>32){visibleTop=y;break}
+          const fit=Math.min(art.width/canvas.width,art.height/canvas.height)
+          // Transparent weapon overscan does not obscure the UI. Measure the
+          // actual composited silhouette, including CSS scale/object-fit.
+          const artTop=art.bottom-(canvas.height-visibleTop)*fit
           const intent=e.querySelector('.enemy__intent').getBoundingClientRect()
           const effect=e.querySelector('.enemy__ability')?.getBoundingClientRect()
-          return {boardTop:e.closest('.board').getBoundingClientRect().top,artTop:art.top,intentTop:intent.top,intentBottom:intent.bottom,effectTop:effect?.top,effectBottom:effect?.bottom}
+          return {boardTop:e.closest('.board').getBoundingClientRect().top,artTop,intentTop:intent.top,intentBottom:intent.bottom,effectTop:effect?.top,effectBottom:effect?.bottom,
+            viewport:[innerWidth,innerHeight],floor:getComputedStyle(e).getPropertyValue('--elite-floor-offset'),bossLane:!!e.closest('.board__bosses')}
         })
         assert(bands.intentTop>=bands.boardTop,`${screen}/${enemy.id}: intent clipped by board ${JSON.stringify(bands)}`)
         assert(bands.intentBottom<=(bands.effectTop??bands.artTop)+1,`${screen}/${enemy.id}: intent overlaps effect/art ${JSON.stringify(bands)}`)
         assert(!bands.effectBottom||bands.effectBottom<=bands.artTop+1,`${screen}/${enemy.id}: effect overlaps art ${JSON.stringify(bands)}`)
       }
-      await page.waitForTimeout(180)
-      if(enemy.elite)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-idle.png`)})
+      await page.waitForTimeout(1000) // Allow encounter attack preloads before the synthetic end-turn.
+      if(enemy.elite||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-idle.png`)})
       const attacks=await page.evaluate(()=>{const f=window.fixture;f.state.phase='enemy';f.render();return f.attacks})
       if(attacks){
         await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='attack')
+        assert((await card.locator('.enemy__art--cutout').getAttribute('src')).startsWith('blob:'),`${enemy.id}: recording captured the unloaded idle fallback`)
         await page.waitForTimeout(760)
         const after=await card.locator('.enemy__art--cutout').boundingBox()
         assert(Math.abs(before.width-after.width)<1&&Math.abs(before.height-after.height)<1,`${enemy.id}: attack scale changed`)
-        if(enemy.elite)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-attack.png`)})
+        if(bossProjectileImagePath(enemy.artId??enemy.id)){
+          const origin=await card.evaluate(e=>{
+            const p=e.querySelector('.boss-projectile'),r=e.getBoundingClientRect()
+            const rem=parseFloat(getComputedStyle(document.documentElement).fontSize)
+            return p?{x:r.left+parseFloat(p.style.getPropertyValue('--boss-projectile-start-x'))*rem,
+              y:r.top+parseFloat(p.style.getPropertyValue('--boss-projectile-start-y'))*rem}:null
+          })
+          assert(origin&&origin.x>=silhouette.left&&origin.x<=silhouette.right&&origin.y>=silhouette.top&&origin.y<=silhouette.bottom,
+            `${enemy.id}: projectile detached from body ${JSON.stringify({origin,silhouette})}`)
+        }
+        if(!enemy.isBoss&&bossAttackMotionFor(enemy.artId??enemy.id)==='melee'){
+          const dash=await card.evaluate(e=>parseFloat(e.style.getPropertyValue('--boss-dash-x')))
+          assert(Number.isFinite(dash)&&dash<0,`${enemy.id}: melee has no measured target travel`)
+          assert(after.x<before.x-20,`${enemy.id}: physical attack stayed in its origin lane`)
+        }
+        if(enemy.elite||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-attack.png`)})
         await page.waitForTimeout(1250)
         assert.equal(await card.getAttribute('data-animation'),'idle',`${enemy.id}: return`)
       }else assert.equal(await card.getAttribute('data-animation'),'idle',`${enemy.id}: nonattack intent`)
@@ -133,13 +180,18 @@ try {
         assert(src.startsWith('blob:') && src!==previousSrc,`${screen}/${id}: attack did not get a fresh replay URL`)
         previousSrc=src
         await art.evaluate(i=>{i.style.animation='none';i.style.translate='0';i.style.opacity='1';i.style.backgroundColor='#17222d'})
-        if(id==='downfall_demon')assert.equal(await page.locator('.boss-demon-grounded').getAttribute('src'),src,'Demon layers lost synchronization')
+        if(id==='downfall_demon'){
+          const grounded=page.locator('.boss-demon-grounded')
+          assert((await grounded.getAttribute('src')).endsWith('/downfall_demon-ground-slam.webp'),'Demon lost its crouched landing pose')
+          assert((await art.getAttribute('data-animation-asset')).endsWith('/downfall_demon-airborne.webp'),'Demon lost its airborne pose')
+          assert.notEqual(await grounded.getAttribute('src'),src,'Demon must use distinct airborne and grounded drawings')
+        }
         const frames=[]
         for(let sample=0;sample<3;sample++) {
           await page.waitForTimeout(300)
           frames.push(createHash('sha256').update(await art.screenshot()).digest('hex'))
         }
-        assert(new Set(frames).size>1,`${screen}/${id}: attack ${repeat+1} texture is frozen`)
+        if(id!=='downfall_demon')assert(new Set(frames).size>1,`${screen}/${id}: attack ${repeat+1} texture is frozen`)
         await page.waitForTimeout(1100)
         await page.evaluate(()=>{const f=window.fixture;f.state.phase='player';f.render()})
         await page.waitForTimeout(100)
