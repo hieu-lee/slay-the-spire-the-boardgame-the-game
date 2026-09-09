@@ -425,7 +425,8 @@ export function cardPlayConditionMet(
   drawCount = actor.draw.length,
   sourceInHand = true,
 ): boolean {
-  // Online snapshots hide draw identities but publish their count.
+  // Online snapshots hide draw order and redact identities from non-owners;
+  // use the public count whenever the set is unavailable.
   if (def.playCondition?.kind === 'drawPileEmpty') return drawCount === 0
   if (def.playCondition?.kind === 'onlyAttackInHand') {
     const attacks = actor.hand.filter((card) => effectiveCombatCardDef(

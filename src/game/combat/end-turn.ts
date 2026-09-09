@@ -551,11 +551,10 @@ function continueEndPlayerTurn(
  * out of everybody else's way; it used to stop all four players every round to
  * collect confirmations of an arrangement that could not matter.
  *
- * AUTHORITATIVE STATE ONLY. It reads `player.draw`, which the room server
- * redacts from every client — a browser asking this about a teammate, or about
- * itself online, would get "no choice" for a deck that has a Claw in it. The
- * phase is the server's answer to this question; nothing in `src/ui/` should ask
- * it again.
+ * AUTHORITATIVE STATE ONLY. It reads `player.draw`, whose order is private to
+ * the room server; online snapshots expose only an unordered owner set and no
+ * teammate identities. The phase is the server's answer to this question;
+ * nothing in `src/ui/` should ask it again.
  */
 export function discardTopNeedsChoice(player: Player): boolean {
   if (player.dead) return false

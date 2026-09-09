@@ -2858,8 +2858,9 @@ function CombatScreenView({
       evokeSlots: next.evokeSlots,
       evokeEnemyUids: next.evokeEnemyUids as (string | null)[],
     }
-    // The online draw pile is redacted. The room has already bound this action
-    // to its private preview, so only the authoritative engine can validate it.
+    // The online draw pile is not authoritative for action validation. The room
+    // has already bound this action to its private preview, so only the engine
+    // can validate it.
     const result = onAction && next.choiceCards
       ? undefined
       : next.chamberPlay
