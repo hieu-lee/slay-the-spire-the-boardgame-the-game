@@ -154,10 +154,12 @@ export function DefectEvokeVfx({ event }: { event: Extract<CombatPresentationEve
     const source = anchor.current
     const board = source?.closest('.board')
     const portrait = source?.closest<HTMLElement>('.seat__portrait')
-    const art = portrait?.querySelector<HTMLImageElement>(':scope > img')
-    if (!source || !board || !portrait || !art) return
+    if (!source || !board || !portrait) return
     const measure = () => {
-      if (!art.naturalWidth || !art.naturalHeight) return
+      // Finishing an attack replaces the keyed idle image while evokes can
+      // still be playing. Never measure the detached image from an earlier render.
+      const art = portrait.querySelector<HTMLImageElement>(':scope > img')
+      if (!art?.complete || !art.naturalWidth || !art.naturalHeight) return
       const image = art.getBoundingClientRect()
       const parent = portrait.getBoundingClientRect()
       const fit = Math.min(image.width / art.naturalWidth, image.height / art.naturalHeight)

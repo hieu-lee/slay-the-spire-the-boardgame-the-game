@@ -21,7 +21,7 @@ import {
   bossAttackMotionFor,
   bossProjectileImagePath,
 } from './combat-vfx.ts'
-import { combatBodyPoint } from './combat-geometry.ts'
+import { combatArtBounds, combatBodyPoint } from './combat-geometry.ts'
 
 type EnemyCardProps = {
   enemy: Enemy
@@ -415,6 +415,28 @@ export function EnemyCard({
   const art = animatedEnemy
     ? bossAttacking ? presentedBossAttack?.art ?? currentBossAttackArt : currentIdleArt
     : enemyImagePath(def)
+  // Hit only the painted creature and its HUD, never a neighbour's transparent
+  // animation canvas. The art itself remains free to overflow during attacks.
+  useLayoutEffect(() => {
+    const portrait = cardRef.current?.querySelector<HTMLElement>('.enemy__portrait')
+    const hit = portrait?.querySelector<HTMLElement>('.enemy__hit-area')
+    const image = portrait?.querySelector<HTMLImageElement>(':scope > img')
+    if (!portrait || !hit || !image) return
+    const measure = () => {
+      const bounds = combatArtBounds(portrait)
+      const parent = portrait.getBoundingClientRect()
+      Object.assign(hit.style, {
+        left: `${bounds.left - parent.left}px`, top: `${bounds.top - parent.top}px`,
+        width: `${bounds.width}px`, height: `${bounds.height}px`,
+      })
+    }
+    measure()
+    portrait.addEventListener('load', measure, true)
+    const resize = new ResizeObserver(measure)
+    resize.observe(portrait)
+    resize.observe(image)
+    return () => { resize.disconnect(); portrait.removeEventListener('load', measure, true) }
+  }, [art])
   const bossAttackArt = animatedEnemy ? currentBossAttackArt : undefined
   useEffect(() => {
     if (!bossAttackArt) return
@@ -626,7 +648,9 @@ export function EnemyCard({
         <span
           className="enemy__ability"
           title={abilityLabels.join('\n')}
-          onClick={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            if (visibleEnemy.isBoss || def.elite || bossArtId === 'sentry') event.stopPropagation()
+          }}
         >
           {abilities.map((ability, index) => {
             const spent = visibleEnemy.abilityUsed && (ability.kind === 'curlUp' ||
@@ -668,6 +692,7 @@ export function EnemyCard({
       ) : null}
 
       <span className="enemy__portrait">
+        <span className="enemy__hit-area" aria-hidden="true" />
         {demonAttacking ? <>
           <span className="boss-demon-ground-splat boss-demon-ground-splat--origin" aria-hidden="true" />
           <span className="boss-demon-ground-splat boss-demon-ground-splat--target" aria-hidden="true" />

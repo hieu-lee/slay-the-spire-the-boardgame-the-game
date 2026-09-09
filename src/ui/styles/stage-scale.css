@@ -74,11 +74,7 @@
 .board .enemy,
 .board .board__bosses .enemy {
   position: absolute;
-  /* Elite and boss art deliberately reaches beyond its narrow button so the
-     creature can look imposing without widening the stage. Paint and hit-test
-     the nearer (rightmost) lane above the oversized artwork behind it: without
-     an explicit stack order, Taskmaster's art can capture a tap on Red Slaver
-     on a compressed horizontal screen. */
+  /* Keep overlapping painted creatures ordered by their stage lane. */
   z-index: calc(100 - var(--stage-index));
   /* A boss can become the rightmost survivor after its summons die. Reserve
      its enlarged portrait's overhang so that move cannot widen the scroller. */
@@ -427,3 +423,11 @@ html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
   }
   .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__ability { max-height: calc(1.1rem * var(--stage-scale)); }
 }
+
+/* Transparent rig overscan must not steal taps or drags from adjacent enemies. */
+.board button.enemy { pointer-events: none; }
+.board .enemy__portrait > img { pointer-events: none; }
+.board .enemy :is(.enemy__hit-area, .enemy__head, .enemy__intent, .enemy__ability, .enemy__attachment, .bar, .tokens) {
+  pointer-events: auto;
+}
+.enemy__hit-area { position: absolute; z-index: 2; inset: 0; }

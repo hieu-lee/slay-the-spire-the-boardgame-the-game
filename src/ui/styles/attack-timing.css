@@ -499,6 +499,10 @@
   66.67% { transform: translateY(0) rotate(0) scale(1); }
 }
 
+/* WebKit clips a long beam to the seat's filter surface. The sprite already
+   has its own shadow; keep the beam free to reach across the board. */
+.board .seat:has(.defect-evoke) { filter: none; }
+
 /* A beam stays connected to its source and target; it never flies as an orb. */
 .defect-evoke {
   position: absolute;
