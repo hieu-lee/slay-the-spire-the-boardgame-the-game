@@ -12,14 +12,22 @@ assert.equal(config.runId, '34346831748', 'Live source changed; re-audit before 
 const live = await fetch(`${config.origin}/api/leaderboard`, { signal: AbortSignal.timeout(15000) }).then(r => {
   assert(r.ok); return r.json()
 })
+const snapshot = leaderboardSnapshot(runs)
+const unknownFloors = runs.filter(run => run.floorsCleared == null)
+const unknownFloorGroups = unknownFloors.map(run => ({
+  character: run.character, ascension: run.ascension,
+  average: snapshot.rows.find(row => row.character === run.character && row.ascension === run.ascension).averageFloorsCleared,
+}))
 const report = {
   backupSource: '34319525470', liveSource: config.runId, liveSha: config.sha,
   backupRuns: runs.length, liveRuns: live.totalRuns,
-  missingFloorCounts: runs.filter(run => run.floorsCleared == null).length,
-  aggregateMatches: JSON.stringify(leaderboardSnapshot(runs)) === JSON.stringify(live),
+  missingFloorCounts: unknownFloors.length, unknownFloorGroups,
+  aggregateMatches: JSON.stringify(snapshot) === JSON.stringify(live),
 }
-// The old server only appends rows or fills absent floor counts. A matching
-// count with no absent floor counts proves this inherited backup is unchanged.
-report.backupComplete = report.backupRuns === report.liveRuns && report.missingFloorCounts === 0 && report.aggregateMatches
+// The old server only appends or fills absent integer floor counts. With one
+// absent count, filling it cannot leave a fractional (or null) average unchanged.
+const floorsUnchanged = unknownFloors.length === 0 ||
+  unknownFloors.length === 1 && !Number.isInteger(unknownFloorGroups[0].average)
+report.backupComplete = report.backupRuns === report.liveRuns && floorsUnchanged && report.aggregateMatches
 writeFileSync(process.argv[3], JSON.stringify(report, null, 2))
 console.log(JSON.stringify(report))
