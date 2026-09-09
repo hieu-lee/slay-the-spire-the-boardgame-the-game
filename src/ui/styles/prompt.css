@@ -176,6 +176,66 @@
   overflow-x: auto;
 }
 
+/* Secret Technique and Secret Weapon ask the player to make two independent
+   choices from the same reveal.  Reserve space below every card so the
+   eligible-card control does not make that column look like a broken layout. */
+.choice-modal--scry-to-hand { width: min(760px, calc(100% - 2rem)); }
+
+.choice-modal--scry-to-hand .choice-modal__panel {
+  display: grid;
+  justify-items: center;
+  gap: 0.8rem;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+}
+
+.choice-modal--scry-to-hand .choice-modal__panel h2,
+.choice-modal--scry-to-hand .choice-modal__panel p { margin: 0; }
+
+.choice-modal--scry-to-hand .choice-modal__cards {
+  --card-width: clamp(105px, 15vw, 142px);
+  align-items: start;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0.25rem 0.4rem;
+}
+
+.choice-modal__card-option {
+  flex: 0 0 var(--card-width);
+  display: grid;
+  grid-template-rows: calc(var(--card-width) * var(--card-ratio)) minmax(2.7rem, auto);
+  align-items: start;
+  gap: 0.55rem;
+}
+
+.choice-modal__card-option .card { width: 100%; }
+
+.choice-modal__card-action {
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0.4rem 0.55rem;
+  color: var(--ink);
+  background: linear-gradient(#314858, #17242e);
+  border: 1px solid #7fa4b9;
+  border-radius: 5px;
+  box-shadow: inset 0 1px rgb(255 255 255 / 0.12), 0 2px 0 #0d1419;
+  font: 700 0.9rem/1.1 'Kreon', Georgia, serif;
+}
+
+.choice-modal__card-action[aria-pressed='true'] {
+  color: #241807;
+  background: linear-gradient(#ffe79a, #c99331);
+  border-color: #ffe79a;
+}
+
+@media (max-width: 640px) {
+  .choice-modal--scry-to-hand .choice-modal__panel { gap: 0.6rem; }
+  .choice-modal--scry-to-hand .choice-modal__cards {
+    --card-width: clamp(94px, 27vw, 120px);
+    justify-content: flex-start;
+  }
+}
+
 .choice-modal__panel > button {
   padding: 0.45rem 0.8rem;
   background: var(--bg-raised);
