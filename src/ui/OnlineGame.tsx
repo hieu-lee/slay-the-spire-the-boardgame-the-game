@@ -71,7 +71,7 @@ function playerForUi(player: VisiblePlayer): Player {
   return {
     ...player,
     deck: player.deck ?? [],
-    draw: [],
+    draw: player.draw ?? [],
     hand: player.hand ?? [],
     chamber: player.chamber ?? [],
     cardRewards: [],

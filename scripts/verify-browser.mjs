@@ -11063,6 +11063,67 @@ await shot('06zj-fiend-fire-resolved')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  run.combat.players[0].draw = [
+    { uid: 'ui-draw-strike', defId: 'strike_ironclad', upgraded: false },
+    { uid: 'ui-draw-strike-silent', defId: 'strike_silent', upgraded: false },
+    { uid: 'ui-draw-defend', defId: 'defend_ironclad', upgraded: false },
+    { uid: 'ui-draw-bash', defId: 'bash', upgraded: false },
+  ]
+  debug.setRun(run)
+})
+const drawPile = page.getByRole('button', { name: 'Draw pile, 4 cards' })
+await drawPile.waitFor()
+await drawPile.click()
+const drawPileDialog = page.getByRole('dialog', { name: 'Draw pile' })
+await drawPileDialog.waitFor()
+const drawPileCards = await drawPileDialog.locator('.card').evaluateAll((cards) => cards.map((card) => ({
+  title: card.getAttribute('title'),
+  art: card.querySelector('img')?.getAttribute('src') ?? '',
+})))
+const drawPileTitles = drawPileCards.map(({ title }) => title)
+const drawPileSortLabels = await drawPileDialog.locator('.card-collection__sort button').allTextContents()
+check('the Draw pile opens the shared viewer as an unordered card set', () => {
+  assertDeepEqual(drawPileTitles, ['Bash', 'Defend', 'Strike', 'Strike'])
+  const duplicateStrikeSources = drawPileCards.filter(({ title }) => title === 'Strike').map(({ art }) => art)
+  assert(duplicateStrikeSources[0]?.includes('/ironclad/'), duplicateStrikeSources.join(' | '))
+  assert(duplicateStrikeSources[1]?.includes('/silent/'), duplicateStrikeSources.join(' | '))
+  assert(!drawPileSortLabels.some((label) => label.includes('Obtained')), drawPileSortLabels.join(' | '))
+})
+await shot('06zj1-draw-pile')
+await drawPileDialog.getByRole('button', { name: 'Back', exact: true }).click()
+await page.setViewportSize({ width: 844, height: 390 })
+await drawPile.click()
+await drawPileDialog.waitFor()
+const drawPilePhoneLayout = await drawPileDialog.evaluate((dialog) => {
+  const panel = dialog.querySelector('.card-collection__sort')
+  const dialogBox = dialog.getBoundingClientRect()
+  const panelBox = panel?.getBoundingClientRect()
+  const buttons = [...(panel?.querySelectorAll('button') ?? [])].map((button) => {
+    const box = button.getBoundingClientRect()
+    return { left: box.left, right: box.right }
+  })
+  return {
+    dialogWithinViewport: dialogBox.left >= 0 && dialogBox.right <= innerWidth && dialogBox.top >= 0 && dialogBox.bottom <= innerHeight,
+    sortWithinDialog: panelBox && panelBox.left >= dialogBox.left && panelBox.right <= dialogBox.right,
+    buttonCount: buttons.length,
+    buttonsWithinPanel: buttons.every(({ left, right }) => panelBox && left >= panelBox.left && right <= panelBox.right),
+    columns: panel ? getComputedStyle(panel).gridTemplateColumns.split(' ').length : 0,
+  }
+})
+check('the unordered Draw pile sort bar fits a horizontal phone', () => {
+  assert(drawPilePhoneLayout.dialogWithinViewport, 'the Draw pile dialog spills outside the horizontal phone viewport')
+  assert(drawPilePhoneLayout.sortWithinDialog, 'the Draw pile sort bar spills outside its dialog')
+  assertEqual(drawPilePhoneLayout.buttonCount, 3)
+  assert(drawPilePhoneLayout.buttonsWithinPanel, 'a Draw pile sort button spills outside the sort bar')
+  assertEqual(drawPilePhoneLayout.columns, 3, 'the unordered sort bar kept an empty fourth column')
+})
+await shot('06zj2-draw-pile-phone')
+await drawPileDialog.getByRole('button', { name: 'Back', exact: true }).click()
+await page.setViewportSize({ width: 1440, height: 900 })
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   Object.assign(run.combat.players[0], {
     hand: [
       { uid: 'ui-corruption', defId: 'corruption', upgraded: true },

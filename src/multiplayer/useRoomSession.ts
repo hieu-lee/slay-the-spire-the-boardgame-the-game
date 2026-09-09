@@ -27,6 +27,7 @@ export type VisiblePlayer = Omit<
   'deck' | 'draw' | 'hand' | 'chamber' | 'cardRewards' | 'rareRewards'
 > & {
   deck: CardInstance[] | null
+  draw: CardInstance[] | null
   hand: CardInstance[] | null
   chamber: CardInstance[] | null
   deckCount: number

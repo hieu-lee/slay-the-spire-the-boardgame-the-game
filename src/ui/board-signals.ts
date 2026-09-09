@@ -82,8 +82,9 @@ export function cardMotionDestination(
   if (player.exhaust.some((card) => card.uid === cardUid)) return 'exhaust'
   if (player.discard.some((card) => card.uid === cardUid)) return 'discard'
   if (player.draw.some((card) => card.uid === cardUid)) return 'draw'
-  // Online snapshots deliberately redact the draw pile, so the public card
-  // rule is the fallback for Anger/Tantrum after visible piles are checked.
+  // A draw card may still be missing during an online transition, so the
+  // public card rule remains the fallback for Anger/Tantrum after visible
+  // piles are checked.
   if (returnsToDraw) return 'draw'
   return 'stage'
 }

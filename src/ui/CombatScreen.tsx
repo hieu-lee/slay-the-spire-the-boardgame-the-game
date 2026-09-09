@@ -2960,7 +2960,7 @@ function CombatScreenView({
             ...viewer!,
             ...authoritative.player,
             deck: authoritative.player.deck ?? viewer!.deck,
-            draw: viewer!.draw,
+            draw: authoritative.player.draw ?? viewer!.draw,
             hand: authoritative.player.hand ?? viewer!.hand,
             chamber: authoritative.player.chamber ?? [],
             cardRewards: viewer!.cardRewards,
@@ -6375,13 +6375,13 @@ function CombatScreenView({
               Skip unplayable {cardDef(requiredChamberCard.defId).name}
             </button>
           ) : null}
-          <span className={['pile', motionActive.has('draw')
-            ? `motion-pulse-${motionBeats.draw % 2}` : ''].filter(Boolean).join(' ')}
-            data-pile="draw" title="Draw pile">
+          <CardCollectionOverlay cards={viewer.draw} label="Draw pile" dataPile="draw" ordered={false}
+            triggerClassName={['pile', motionActive.has('draw')
+              ? `motion-pulse-${motionBeats.draw % 2}` : ''].filter(Boolean).join(' ')}>
             <img className="pile__stack" src={assetPath('combat/piles/draw.webp')} alt="" />
             <span className="pile__count" aria-hidden="true">{displayedPileCount('draw', drawPileCount)}</span>
             <span className="visually-hidden">Draw pile, {drawCount ?? viewer.draw.length} cards</span>
-          </span>
+          </CardCollectionOverlay>
           <span className="pile-group">
             {([
               ['discard', 'Discard pile', viewer.discard],

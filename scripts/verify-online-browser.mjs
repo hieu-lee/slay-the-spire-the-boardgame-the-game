@@ -1138,8 +1138,12 @@ try {
     const bId = bView.you.playerId
     assert(Array.isArray(aView.run.combat.players.find((player) => player.id === aId).hand))
     assertEqual(aView.run.combat.players.find((player) => player.id === bId).hand, null)
+    assert(Array.isArray(aView.run.combat.players.find((player) => player.id === aId).draw))
+    assertEqual(aView.run.combat.players.find((player) => player.id === bId).draw, null)
     assert(Array.isArray(bView.run.combat.players.find((player) => player.id === bId).hand))
     assertEqual(bView.run.combat.players.find((player) => player.id === aId).hand, null)
+    assert(Array.isArray(bView.run.combat.players.find((player) => player.id === bId).draw))
+    assertEqual(bView.run.combat.players.find((player) => player.id === aId).draw, null)
     assertEqual(aView.run.players.find((player) => player.id === bId).deck, null)
   })
   check('every online seat shows every face-up potion without granting its controls', () => {
@@ -1174,6 +1178,14 @@ try {
   await onlineFinale.waitFor()
   const finaleLockedOnline = await onlineFinale.getAttribute('aria-disabled') === 'true'
   const hiddenDrawSnapshot = await snapshot(b)
+  const peerHiddenDrawSnapshot = await snapshot(a)
+  await b.locator('[data-pile="draw"]').click()
+  const onlineDrawPileDialog = b.getByRole('dialog', { name: 'Draw pile' })
+  await onlineDrawPileDialog.waitFor()
+  const onlineDrawPileTitles = await onlineDrawPileDialog.locator('.card').evaluateAll((cards) =>
+    cards.map((card) => card.getAttribute('title')))
+  const onlineDrawPileSortLabels = await onlineDrawPileDialog.locator('.card-collection__sort button').allTextContents()
+  await onlineDrawPileDialog.getByRole('button', { name: 'Back', exact: true }).click()
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(boLive, { draw: [], miracles: 1 })
   const publishUnlockedFinale = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
@@ -1207,11 +1219,17 @@ try {
     return button?.getAttribute('aria-disabled') === 'true' && !document.querySelector('.prompt')?.textContent?.includes('Choose an enemy')
   })
   const finaleClearedAfterRefill = await b.locator('.enemy--targeted').count() === 0
-  check('online Grand Finale uses the public draw count without revealing the pile', () => {
+  check('online draw inspection is owner-only and keeps the shuffled order hidden', () => {
     const visibleBo = hiddenDrawSnapshot.run.combat.players
       .find((player) => player.id === hiddenDrawSnapshot.you.playerId)
     assertEqual(visibleBo.drawCount, 1)
-    assertEqual(visibleBo.draw, undefined)
+    assertDeepEqual(visibleBo.draw.map((card) => card.uid), ['online-finale-draw'])
+    assertEqual(peerHiddenDrawSnapshot.run.combat.players.find((player) => player.id === hiddenDrawSnapshot.you.playerId).draw,
+      null)
+    assertDeepEqual(onlineDrawPileTitles, ['Defend'])
+    assert(!onlineDrawPileSortLabels.some((label) => label.includes('Obtained')), onlineDrawPileSortLabels.join(' | '))
+  })
+  check('online Grand Finale still uses the public draw count', () => {
     assert(finaleLockedOnline, 'Grand Finale was enabled while the hidden draw pile had a card')
     assert(finaleUnlockedOnline, 'Grand Finale stayed disabled after the hidden draw pile emptied')
     assert(finaleClearedAfterRefill, 'a staged Grand Finale kept its targets after the draw pile refilled')

@@ -4521,8 +4521,8 @@ function dispatch(run, seat, action, lockedPreview) {
  *    nobody at the table could tell it had happened.
  *  - Other players' hands. The rulebook is explicit (p.12): ask "How much
  *    damage do you have?" "rather than look at a player's hand".
- *  - Every draw pile, including the viewer's own. It is a shuffled face-down
- *    stack; its owner is no more entitled to read ahead than anyone else.
+ *  - Other players' draw piles. Your own draw pile is inspectable as an
+ *    unordered set, but its shuffled order is never sent to the client.
  *  - Other players' deck lists. Least privilege: no screen needs them, since
  *    each client only ever upgrades its own cards. Sending them would also
  *    make the hand redaction above much weaker, because deck minus the face-up
@@ -5109,7 +5109,9 @@ function redactPlayer(player, viewerId) {
     potions: player.potions,
     chamberSlots: player.chamberSlots ?? 0,
     chamberCount: player.chamber?.length ?? 0,
-    // Sizes are public — you can see how big a stack is — but not contents.
+    // Sizes are public — you can see how big a stack is. The owner may inspect
+    // their draw pile as a set, so keep it in a stable non-pile order rather
+    // than leaking the authoritative shuffled order.
     handCount: player.hand.length,
     drawCount: player.draw.length,
     deckCount: player.deck.length,
@@ -5117,9 +5119,11 @@ function redactPlayer(player, viewerId) {
     // Face-down reward stacks, secret even from their owner until drawn.
     cardRewardCount: player.cardRewards.length,
     rareRewardCount: player.rareRewards.length,
-    // Yours alone. Never the draw pile: it is shuffled and face down, and its
-    // owner is no more entitled to read ahead than anyone else.
+    // Yours alone. Hands are ordered; draw piles are sorted only to erase the
+    // authoritative top-to-bottom order before they reach the client.
     hand: mine ? player.hand : null,
+    draw: mine ? [...player.draw].sort((left, right) =>
+      left.defId.localeCompare(right.defId) || left.uid.localeCompare(right.uid)) : null,
     chamber: mine ? player.chamber ?? [] : null,
     deck: mine ? player.deck : null,
   }

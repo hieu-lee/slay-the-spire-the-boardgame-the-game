@@ -2208,12 +2208,18 @@ check('the order of the viewer\'s own draw pile is not revealed', () => {
   )
 })
 
-check('no draw pile is sent as a list', () => {
-  const { room, a } = twoSeatRoom()
-  for (const player of snapshotFor(room, a.token).run.combat.players) {
-    assertEqual(player.draw, undefined, 'a draw pile was serialised')
-    assert(typeof player.drawCount === 'number', 'the draw pile size should still be sent')
-  }
+check('the viewer can inspect their own draw pile without its order', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ownerView = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === a.playerId)
+  assert(Array.isArray(ownerView.draw), 'the viewer cannot inspect their own draw pile')
+  assertDeepEqual(ownerView.draw.map((card) => card.uid).sort(), mine.draw.map((card) => card.uid).sort(),
+    'the viewer draw view does not contain the same set of cards')
+  assert(typeof ownerView.drawCount === 'number', 'the draw pile size should still be sent')
+
+  const teammateView = snapshotFor(room, b.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(teammateView.draw, null, 'another player can inspect the draw pile contents')
+  assertEqual(teammateView.drawCount, mine.draw.length, 'another player lost the public draw count')
 })
 
 check("another player's deck list is not sent", () => {
@@ -2380,7 +2386,7 @@ check('Glacier+ publishes redirected Block and the caster\'s Frost together', ()
   assertEqual(seen.find((player) => player.id === b.playerId).block, 3)
 })
 
-check('Good Instincts+ publishes its zero-cost ally Block without exposing hidden piles', () => {
+check('Good Instincts+ publishes its zero-cost ally Block without exposing foreign draw piles', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)
   const ally = room.run.combat.players.find((player) => player.id === b.playerId)
@@ -2399,7 +2405,8 @@ check('Good Instincts+ publishes its zero-cost ally Block without exposing hidde
   assertEqual(currentActor.discard.some((card) => card.uid === instincts.uid), true)
   const seen = result.snapshot.run.combat.players
   assertEqual(seen.find((player) => player.id === b.playerId).block, 2)
-  assert(!allStrings(result.snapshot).includes('still-hidden'), 'the untouched draw pile leaked through the card update')
+  assert(allStrings(result.snapshot).includes('still-hidden'), 'the owner could not inspect its untouched draw pile')
+  assert(!allStrings(snapshotFor(room, b.token)).includes('still-hidden'), 'the untouched draw pile leaked to a teammate')
 })
 
 check('Master of Strategy draws privately while its Exhaust stays public', () => {

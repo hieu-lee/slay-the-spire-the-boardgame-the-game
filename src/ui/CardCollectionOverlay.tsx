@@ -9,30 +9,34 @@ type CardCollectionOverlayProps = {
   label: string
   triggerClassName: string
   children: ReactNode
-  dataPile?: 'discard' | 'exhaust'
+  dataPile?: 'draw' | 'discard' | 'exhaust'
+  ordered?: boolean
 }
 
-/** One read-only card viewer for the deck and both face-up combat piles. */
+/** One read-only card viewer for the deck and combat piles. */
 export function CardCollectionOverlay({
-  cards, label, triggerClassName, children, dataPile,
+  cards, label, triggerClassName, children, dataPile, ordered = true,
 }: CardCollectionOverlayProps) {
   const [open, setOpen] = useState(false)
   return <>
     <button type="button" className={triggerClassName} data-pile={dataPile}
       aria-label={`${label}, ${cards.length} card${cards.length === 1 ? '' : 's'}`}
       title={label} onClick={() => setOpen(true)}>{children}</button>
-    <CardCollectionDialog cards={cards} label={label} open={open} onClose={() => setOpen(false)} />
+    <CardCollectionDialog cards={cards} label={label} open={open} ordered={ordered} onClose={() => setOpen(false)} />
   </>
 }
 
-export function CardCollectionDialog({ cards, label, onClose, open = true }: {
-  cards: readonly CardInstance[]; label: string; onClose: () => void; open?: boolean
+export function CardCollectionDialog({ cards, label, onClose, open = true, ordered = true }: {
+  cards: readonly CardInstance[]; label: string; onClose: () => void; open?: boolean; ordered?: boolean
 }) {
-  const [sort, setSort] = useState<'obtained' | 'type' | 'cost' | 'name'>('obtained')
+  const [sort, setSort] = useState<'obtained' | 'type' | 'cost' | 'name'>(() => ordered ? 'obtained' : 'name')
   const [ascending, setAscending] = useState(true)
   const [viewUpgrades, setViewUpgrades] = useState(false)
   const dialog = useRef<HTMLDialogElement | null>(null)
   const titleId = useId()
+  const sortOptions = ordered
+    ? ([['obtained', 'Obtained'], ['type', 'Card Type'], ['cost', 'Cost'], ['name', 'A - Z']] as const)
+    : ([['type', 'Card Type'], ['cost', 'Cost'], ['name', 'A - Z']] as const)
   const sortedCards = useMemo(() => cards.map((card, index) => ({
     card: viewUpgrades && cardDef(card.defId).upgrade ? { ...card, upgraded: true } : card, index,
   })).sort((left, right) => {
@@ -46,7 +50,10 @@ export function CardCollectionDialog({ cards, label, onClose, open = true }: {
       : sort === 'type' ? byType
         : sort === 'cost' ? leftCost - rightCost || byName
           : byName
-    return (compared || left.index - right.index) * (ascending ? 1 : -1)
+    const tieBreak = ordered
+      ? left.index - right.index
+      : left.card.defId.localeCompare(right.card.defId) || left.card.uid.localeCompare(right.card.uid)
+    return (compared || tieBreak) * (ascending ? 1 : -1)
   }).map(({ card }) => card),
   [ascending, cards, sort, viewUpgrades])
   const chooseSort = (next: typeof sort) => {
@@ -67,8 +74,9 @@ export function CardCollectionDialog({ cards, label, onClose, open = true }: {
       <div className="choice-modal__panel">
         <header className="card-collection__header"><h2 id={titleId}>{label}</h2>
           <span>{cards.length} card{cards.length === 1 ? '' : 's'}</span></header>
-        <div className="card-collection__sort" role="group" aria-label="Sort cards">
-          {([['obtained', 'Obtained'], ['type', 'Card Type'], ['cost', 'Cost'], ['name', 'A - Z']] as const).map(([key, text]) =>
+        <div className={`card-collection__sort${ordered ? '' : ' card-collection__sort--unordered'}`}
+          role="group" aria-label="Sort cards">
+          {sortOptions.map(([key, text]) =>
             <button type="button" key={key} aria-pressed={sort === key} onClick={() => chooseSort(key)}>
               {text} <span aria-hidden="true">{sort === key ? ascending ? '↑' : '↓' : '↕'}</span>
             </button>)}

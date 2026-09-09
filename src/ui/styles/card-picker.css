@@ -90,6 +90,7 @@
 .card-collection__header h2 { margin: 0; }
 .card-collection__header span { color: #c5d4d7; }
 .card-collection__sort { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; margin: .75rem 0; padding: .45rem; background: #287da8; }
+.card-collection__sort--unordered { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .card-collection__sort button { min-height: 2.4rem; padding: .25rem .5rem; color: #f8d867; background: #195a7c; border: 0; font: inherit; font-weight: 800; text-shadow: 1px 1px #000; }
 .card-collection__sort button[aria-pressed='true'] { color: #fff4bf; background: #143d58; }
 .card-collection .choice-modal__cards { --card-width: min(15rem, calc((100% - 8rem) / 5)); display: grid; grid-template-columns: repeat(5, var(--card-width)); align-content: start; justify-content: center; gap: clamp(.75rem, 1.8vw, 2rem); overflow: auto; padding: .5rem; }
