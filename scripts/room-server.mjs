@@ -3,7 +3,7 @@ import { claimProfile } from './lib/profiles.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { writeFileSync } from 'node:fs'
 import { WebSocketServer } from 'ws'
-import { addLeaderboardRun, leaderboardSnapshot } from './lib/leaderboard.mjs'
+import { addLeaderboardRun, leaderboardSnapshot, winningDecksPage } from './lib/leaderboard.mjs'
 import {
   apply,
   chooseAscension,
@@ -301,6 +301,9 @@ export function createRoomServer({
           return send(response, 503, { error: 'Could not save your name. Please try again.' })
         }
         return send(response, 200, { username: profile.username })
+      }
+      if (request.method === 'GET' && url.pathname === '/api/leaderboard/decks') {
+        return send(response, 200, winningDecksPage(store.leaderboardRuns, url.searchParams))
       }
       if (request.method === 'GET' && url.pathname === '/api/leaderboard') {
         return send(response, 200, leaderboardSnapshot(store.leaderboardRuns))

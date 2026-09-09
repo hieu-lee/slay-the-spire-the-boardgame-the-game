@@ -6498,7 +6498,7 @@ const dialogTooltip = await dialogCard.evaluate((card) => {
 })
 await shot('02e-card-dialog-keyword-help')
 await page.keyboard.up('Shift')
-await cardDialog.getByRole('button', { name: 'Close' }).click()
+await cardDialog.getByRole('button', { name: 'Back', exact: true }).click()
 const symbolKeywordTips = await page.evaluate(async () => {
   const [{ CARDS }, { cardKeywordTips }] = await Promise.all([
     import('/src/game/cards.ts'), import('/src/ui/Card.tsx'),
@@ -6919,7 +6919,7 @@ check('the deck viewer sorts cards and previews their upgrades', () => {
   assertDeepEqual(alphabeticalDeckNames, [...alphabeticalDeckNames].sort((left, right) => left.localeCompare(right)))
   assert((deckUpgradePreview ?? '').includes('+, '), `the deck upgrade preview is not shown: ${deckUpgradePreview}`)
 })
-await currentDeckDialog.getByRole('button', { name: 'Close' }).click()
+await currentDeckDialog.getByRole('button', { name: 'Back', exact: true }).click()
 await page.getByRole('button', { name: 'Map' }).click()
 await page.locator('.map-peek[open] .room').first().waitFor()
 const peekBossNode = page.locator('.map-peek .room--boss').first()
@@ -10979,7 +10979,7 @@ const exhaustedCardTitles = await exhaustPileDialog.locator('.card').evaluateAll
 check('the Exhaust pile opens the same read-only card viewer', () => {
   assertDeepEqual(exhaustedCardTitles, ['Strike', 'Sentinel', 'Daze', 'Fiend Fire+'])
 })
-await exhaustPileDialog.getByRole('button', { name: 'Close' }).click()
+await exhaustPileDialog.getByRole('button', { name: 'Back', exact: true }).click()
 await shot('06zj-fiend-fire-resolved')
 
 await page.evaluate(() => {
@@ -11486,7 +11486,7 @@ check('discounted attacks spend their current cost and still resolve', () => {
   assertEqual(discountedPlay.players[0].hand.length, 0)
   assertEqual(discountedDiscardTitles.at(-1), 'Streamline+')
 })
-await discardPileDialog.getByRole('button', { name: 'Close' }).click()
+await discardPileDialog.getByRole('button', { name: 'Back', exact: true }).click()
 await shot('07g-power-discounted-attacks')
 
 await page.evaluate(() => {

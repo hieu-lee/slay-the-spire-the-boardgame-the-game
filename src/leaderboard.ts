@@ -1,6 +1,6 @@
 import { savedProfile } from './profile.ts'
 import type { RunState } from './game/run.ts'
-import type { CharacterId } from './game/types.ts'
+import type { CardInstance, CharacterId } from './game/types.ts'
 import { resetRoomEndpoint, roomUrl } from './multiplayer/room-endpoint.ts'
 import { damageTotals } from './ui/run-summary-data.ts'
 
@@ -161,4 +161,32 @@ export async function loadLeaderboard(): Promise<LeaderboardSnapshot> {
     }
   }
   throw new Error('Leaderboard unavailable')
+}
+
+export type WinningDeckSort = 'character' | 'ascension' | 'cardCount' | 'username' | 'recordedAt'
+export type WinningDeck = {
+  id: string
+  character: CharacterId
+  ascension: number
+  cardCount: number
+  username: string
+  recordedAt: number
+  cards: Omit<CardInstance, 'uid'>[]
+}
+export type WinningDeckPage = { total: number; rows: WinningDeck[]; nextCursor: string | null }
+
+export async function loadWinningDecks(params: URLSearchParams, signal: AbortSignal): Promise<WinningDeckPage> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(await roomUrl(`/api/leaderboard/decks?${params}`), { cache: 'no-store', signal })
+      if (response.status === 404) throw new Error('Winning decks will be available after the archive server updates. Please try again shortly.')
+      if (!response.ok) throw new Error('Could not load winning decks. Please try again.')
+      return await response.json() as WinningDeckPage
+    } catch (error) {
+      if (signal.aborted) throw error
+      resetRoomEndpoint()
+      if (attempt === 1) throw error
+    }
+  }
+  throw new Error('Could not load winning decks.')
 }

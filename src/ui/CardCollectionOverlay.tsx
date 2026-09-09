@@ -17,6 +17,17 @@ export function CardCollectionOverlay({
   cards, label, triggerClassName, children, dataPile,
 }: CardCollectionOverlayProps) {
   const [open, setOpen] = useState(false)
+  return <>
+    <button type="button" className={triggerClassName} data-pile={dataPile}
+      aria-label={`${label}, ${cards.length} card${cards.length === 1 ? '' : 's'}`}
+      title={label} onClick={() => setOpen(true)}>{children}</button>
+    <CardCollectionDialog cards={cards} label={label} open={open} onClose={() => setOpen(false)} />
+  </>
+}
+
+export function CardCollectionDialog({ cards, label, onClose, open = true }: {
+  cards: readonly CardInstance[]; label: string; onClose: () => void; open?: boolean
+}) {
   const [sort, setSort] = useState<'obtained' | 'type' | 'cost' | 'name'>('obtained')
   const [ascending, setAscending] = useState(true)
   const [viewUpgrades, setViewUpgrades] = useState(false)
@@ -51,14 +62,8 @@ export function CardCollectionOverlay({
     } else if (element.open) element.close()
   }, [open])
 
-  return <>
-    <button type="button" className={triggerClassName} data-pile={dataPile}
-      aria-label={`${label}, ${cards.length} card${cards.length === 1 ? '' : 's'}`}
-      title={label} onClick={() => setOpen(true)}>
-      {children}
-    </button>
-    <dialog ref={dialog} className="choice-modal card-collection" aria-labelledby={titleId}
-      onClose={() => setOpen(false)}>
+  return <dialog ref={dialog} className="choice-modal card-collection" aria-labelledby={titleId}
+      onClose={onClose}>
       <div className="choice-modal__panel">
         <header className="card-collection__header"><h2 id={titleId}>{label}</h2>
           <span>{cards.length} card{cards.length === 1 ? '' : 's'}</span></header>
@@ -72,10 +77,11 @@ export function CardCollectionOverlay({
           {open ? sortedCards.map((card) => <Card key={card.uid} card={card} playable={false} />) : null}
           {open && cards.length === 0 ? <span className="muted">No cards.</span> : null}
         </div>
-        <footer className="card-collection__footer"><label><input type="checkbox" aria-label={`${label} upgrade preview`} checked={viewUpgrades}
+        <footer className="card-collection__footer">
+          <button type="button" className="ribbon-back" aria-label="Back" title="Back" onClick={onClose}><span aria-hidden="true" /></button>
+          <label><input type="checkbox" aria-label={`${label} upgrade preview`} checked={viewUpgrades}
           onChange={(event) => setViewUpgrades(event.target.checked)} /> View Upgrades</label>
-          <button type="button" onClick={() => setOpen(false)}>Close</button></footer>
+        </footer>
       </div>
     </dialog>
-  </>
 }

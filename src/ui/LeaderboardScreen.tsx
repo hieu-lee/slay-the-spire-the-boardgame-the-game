@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { assetPath } from '../game/assets.ts'
 import type { CharacterId } from '../game/types.ts'
 import { loadLeaderboard, type LeaderboardSnapshot } from '../leaderboard.ts'
+import { WinningDecks } from './WinningDecks.tsx'
 import { CHARACTER_LABEL } from './run-summary-data.ts'
 
 const HEROES = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'] as const
@@ -11,6 +12,7 @@ const percent = (value: number | null) => value === null ? '—' : `${Math.round
 const decimal = (value: number | null | undefined) => value == null ? '—' : value.toFixed(1)
 
 export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
+  const [tab, setTab] = useState<'statistics' | 'decks'>('statistics')
   const [filter, setFilter] = useState<Filter>('all')
   const [ascension, setAscension] = useState<number | 'all'>('all')
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null)
@@ -50,6 +52,10 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
           <option value="all">All ascensions</option>
           {Array.from({ length: 14 }, (_, value) => <option key={value} value={value}>Ascension {value}</option>)}
         </select></label>
+        <div className="leaderboard__tabs" role="group" aria-label="Leaderboard view">
+          <button type="button" aria-pressed={tab === 'statistics'} onClick={() => setTab('statistics')}>Win rates</button>
+          <button type="button" aria-pressed={tab === 'decks'} onClick={() => setTab('decks')}>Winning decks</button>
+        </div>
         <p className="leaderboard__count"><strong>{snapshot?.totalRuns ?? 0}</strong><span>solo run{snapshot?.totalRuns === 1 ? '' : 's'} chronicled</span></p>
       </aside>
 
@@ -58,7 +64,7 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
           <div><p>Hall of Ascension</p><h2 id="leaderboard-title">{filter === 'all' ? 'All heroes' : CHARACTER_LABEL[filter]}{ascension === 'all' ? '' : ` · A${ascension}`}</h2></div>
           <span>Solo · all run modes</span>
         </header>
-        {failed ? <div className="leaderboard__message" role="alert"><strong>The archive is beyond reach.</strong><span>Your finished run remains safely queued.</span><button type="button" onClick={() => setRequest((value) => value + 1)}>Try again</button></div>
+        {tab === 'decks' ? <WinningDecks character={filter} ascension={ascension} /> : failed ? <div className="leaderboard__message" role="alert"><strong>The archive is beyond reach.</strong><span>Your finished run remains safely queued.</span><button type="button" onClick={() => setRequest((value) => value + 1)}>Try again</button></div>
           : !snapshot ? <div className="leaderboard__message" aria-live="polite"><span className="leaderboard__spinner" aria-hidden="true"></span><strong>Opening the archive…</strong></div>
           : rows.length === 0 ? <div className="leaderboard__message"><strong>No names are etched here yet.</strong><span>Finish a solo run to claim the first place.</span></div>
           : <div className="leaderboard__table-wrap"><table>

@@ -203,7 +203,7 @@ try {
     `collection cards collapsed to thumbnails: ${JSON.stringify(deckCardSize)}`)
   await deck.getByLabel('Current deck upgrade preview').check()
   assert((await deck.locator('.choice-modal__cards > .card').first().getAttribute('aria-label'))?.includes('+, '))
-  await deck.getByRole('button', { name: 'Close' }).click()
+  await deck.getByRole('button', { name: 'Back', exact: true }).click()
 
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__

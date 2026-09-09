@@ -1,5 +1,6 @@
 const CHARACTERS = new Set(['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'])
 const MODES = new Set(['standard', 'daily', 'custom'])
+const compareNames = new Intl.Collator('en', { sensitivity: 'base' }).compare
 export const MAX_LEADERBOARD_RUNS = 20_000
 
 const bad = (message) => { throw Object.assign(new Error(message), { status: 400 }) }
@@ -130,4 +131,40 @@ export function leaderboardSnapshot(runs) {
     (right.averageDamagePerFight ?? -1) - (left.averageDamagePerFight ?? -1) ||
     right.runs - left.runs || left.character.localeCompare(right.character) || left.ascension - right.ascension)
   return { totalRuns: runs.length, rows }
+}
+
+/** Public archive pages expose no installation IDs, profile tokens, or active runs. */
+export function winningDecksPage(runs, params = new URLSearchParams()) {
+  const sort = params.get('sort') ?? 'recordedAt'
+  const direction = params.get('direction') ?? 'desc'
+  const character = params.get('character') ?? 'all'
+  const ascension = params.get('ascension') ?? 'all'
+  const cursor = params.get('cursor')
+  if (!['character', 'ascension', 'cardCount', 'username', 'recordedAt'].includes(sort) ||
+      !['asc', 'desc'].includes(direction) || character !== 'all' && !CHARACTERS.has(character) ||
+      ascension !== 'all' && !/^(?:[0-9]|1[0-3])$/.test(ascension) ||
+      cursor !== null && !/^(0|[1-9][0-9]{0,5})$/.test(cursor)) bad('Invalid winning deck query')
+  const value = run => sort === 'cardCount' ? run.finalDeck.length
+    : sort === 'username' ? run.username ?? 'Unknown' : run[sort]
+  // The archive is capped at 20,000 runs; sort metadata before copying one page.
+  const eligible = runs.map((run, index) => ({ run, index }))
+    .filter(({ run }) => run.highestBossActDefeated >= 3 && Array.isArray(run.finalDeck) &&
+      (character === 'all' || run.character === character) && (ascension === 'all' || run.ascension === Number(ascension)))
+    .sort((a, b) => {
+      const left = value(a.run), right = value(b.run)
+      const compared = typeof left === 'string' ? compareNames(left, right) : left - right
+      return compared * (direction === 'asc' ? 1 : -1) || b.run.recordedAt - a.run.recordedAt || b.index - a.index
+    })
+  const previous = cursor === null ? -1 : eligible.findIndex(entry => entry.index === Number(cursor))
+  if (cursor !== null && previous < 0) bad('Winning deck cursor is no longer available')
+  const page = eligible.slice(previous + 1, previous + 21)
+  return {
+    total: eligible.length,
+    rows: page.map(({ run, index }) => ({
+      id: String(index), character: run.character, ascension: run.ascension,
+      cardCount: run.finalDeck.length, username: run.username ?? 'Unknown',
+      recordedAt: run.recordedAt, cards: run.finalDeck,
+    })),
+    nextCursor: previous + 1 + page.length < eligible.length ? String(page.at(-1).index) : null,
+  }
 }
