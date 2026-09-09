@@ -383,7 +383,7 @@ jobs:
           nohup node scripts/room-server.mjs > "$RUNNER_TEMP/rooms.log" 2>&1 &
           echo "$!" > "$RUNNER_TEMP/rooms.pid"
           curl --fail --retry 30 --retry-all-errors --retry-delay 1 http://127.0.0.1:5180/api/health
-          curl --fail --retry 30 --retry-all-errors --retry-delay 1 "$TUNNEL_URL/api/health"
+          curl --fail --max-time 10 --retry 40 --retry-all-errors --retry-delay 5 --retry-max-time 240 "$TUNNEL_URL/api/health"
       - name: Recheck the source archive before publishing
         if: inputs.archive_backup_run_id != ''
         env:
