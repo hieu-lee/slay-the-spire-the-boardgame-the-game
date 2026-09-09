@@ -230,28 +230,28 @@
 
 /* PC Downfall keeps commanded Slimes on the battlefield at their owner's
    feet. This compact party belongs to the seat instead of stealing a full HUD
-   row, so multiplayer seats scale and wrap independently. */
+   row, with each party arranged left to right. */
 .slime-party {
+  --slime-size: min(calc(3.08rem * var(--stage-scale)),
+    calc(var(--stage-actor-width) / (var(--slime-count) * 1.114)));
   position: absolute;
   z-index: 7;
-  width: calc(22.25rem * var(--stage-scale));
-  bottom: calc(3.15rem * var(--stage-scale));
-  left: 42%;
+  width: max-content;
+  bottom: calc(-3rem * var(--stage-scale));
+  /* First painted pixel aligns with the owner's painted left edge. */
+  left: calc(50% + min(100%, var(--portrait-height)) * var(--slime-body-left, -0.399625)
+    - var(--slime-size) * var(--slime-first-inset, 0.059635));
   display: flex;
-  flex-wrap: wrap-reverse;
-  align-content: flex-start;
+  flex-wrap: nowrap;
   align-items: flex-end;
-  justify-content: flex-start;
-  column-gap: calc(0.08rem * var(--stage-scale));
-  row-gap: calc(0.58rem * var(--stage-scale));
+  column-gap: calc(var(--slime-size) * 0.114);
   pointer-events: none;
-  transform: translateX(calc(0.35rem * var(--stage-scale)));
 }
 
 .slime-party__actor {
   position: relative;
-  flex: 0 0 calc(3.08rem * var(--stage-scale));
-  width: calc(3.08rem * var(--stage-scale));
+  flex: 0 0 var(--slime-size);
+  width: var(--slime-size);
   aspect-ratio: 1 / 0.95;
   border-radius: 50%;
   outline: none;
@@ -259,41 +259,16 @@
   cursor: pointer;
   filter: drop-shadow(0 0.3rem 0.2rem rgb(0 0 0 / 0.64));
   transform-origin: center bottom;
-  transition: filter 120ms ease, transform 120ms ease;
-}
-
-@media (orientation: landscape) and (max-height: 26.25rem) {
-  .slime-party {
-    left: -21%;
-    column-gap: 0;
-  }
-}
-
-.board[data-rows='3'] .slime-party,
-.board[data-rows='4'] .slime-party {
-  left: 50%;
-  width: calc(9.24rem * var(--stage-scale));
-  column-gap: 0;
-  row-gap: calc(0.1rem * var(--stage-scale));
-  transform: translateX(-50%);
+  transition: filter 120ms ease;
 }
 
 @media (orientation: landscape) and (max-width: 40rem) and (max-height: 26.25rem) {
-  .slime-party {
-    width: calc(9rem * var(--stage-scale));
-    row-gap: calc(0.1rem * var(--stage-scale));
-  }
-
-  .slime-party__actor {
-    flex-basis: calc(2.25rem * var(--stage-scale));
-    width: calc(2.25rem * var(--stage-scale));
-  }
+  .slime-party { --slime-size: min(calc(2.25rem * var(--stage-scale)), calc(var(--stage-actor-width) / (var(--slime-count) * 1.114))); }
 }
 
 .slime-party__actor:is(:hover, :focus-visible) {
   z-index: 3;
   filter: drop-shadow(0 0 0.28rem #8de871) drop-shadow(0 0.35rem 0.22rem #000);
-  transform: scale(1.16);
 }
 
 .slime-party__actor--spent {
@@ -313,15 +288,13 @@
 
 .slime-party__command {
   z-index: 2;
-  width: 155%;
-  max-width: none;
-  height: 155%;
-  transform: translate(-12%, -24%);
+  transform-origin: center bottom;
+  animation: slime-party-impact 1700ms ease-in-out both;
 }
 
 .slime-party__actor--commanding {
   z-index: 4;
-  animation: slime-party-command 1700ms linear both;
+  animation: slime-party-command 1700ms cubic-bezier(0.333333, 0, 0.666667, 1) both;
 }
 
 .slime-party__actor--commanding .slime-party__art {
@@ -357,7 +330,7 @@
 .slime-party__level {
   position: absolute;
   z-index: 4;
-  top: calc(100% + 0.02rem * var(--stage-scale));
+  bottom: calc(0.4rem * var(--stage-scale));
   left: 50%;
   color: #fff4bd;
   font: 700 min(0.68rem, calc(0.76rem * var(--stage-scale))) / 1 Georgia, serif;
@@ -383,12 +356,18 @@
   filter: none;
 }
 
+/* Travel and contact retain the existing 600/850/1100/1700ms queue clock.
+   The canonical sprite stays at its idle size; CSS supplies continuous motion. */
 @keyframes slime-party-command {
-  0%, 100% { transform: translate(0) scale(1); }
-  8% { transform: translate(0) scale(1.08, 0.92); }
-  35.294%, 64.706% { transform: translate(var(--slime-command-x, 0px), var(--slime-command-y, 0px)) scale(1); }
-  50% { transform: translate(var(--slime-command-x, 0px), var(--slime-command-y, 0px)) scale(1.08, 0.94); }
-  92% { transform: translate(0) scale(1.06, 0.94); }
+  0%, 8%, 100% { transform: translate(0); }
+  35.294%, 64.706% { transform: translate(var(--slime-command-x, 0px), var(--slime-command-y, 0px)); }
+}
+
+@keyframes slime-party-impact {
+  0%, 8%, 35.294%, 64.706%, 100% { transform: translateY(0) rotate(0); }
+  23% { transform: translateY(-12%) rotate(-5deg); }
+  50% { transform: translateX(5%) rotate(4deg); }
+  80% { transform: translateY(-8%) rotate(3deg); }
 }
 
 .board[data-rows='3'] .slime-party__actor::before,
@@ -963,3 +942,9 @@
   scale: var(--character-art-scale, 1);
   transform-origin: center bottom;
 }
+
+@media (min-height: 26.251rem) {
+  .row__seat:has(.slime-party) { bottom: calc(4.1rem * var(--stage-scale) + 1.5rem); }
+}
+
+.seat__interactive:has(.slime-party) .seat__portrait > img { min-height: 0; min-width: 0; }

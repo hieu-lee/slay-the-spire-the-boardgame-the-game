@@ -152,6 +152,10 @@ if __name__ == '__main__':
             renderer = 'render-nob.py' if name == 'gremlin_nob' else 'render-ironclad.py'
             runpy.run_path(str(ROOT / 'scripts/animation' / renderer), run_name='__main__')
             continue
+        if name.startswith('hero-hexaghost-heat-') and not name.endswith('-0'):
+            import runpy
+            runpy.run_path(str(ROOT/'scripts/animation/render-hexaghost-heat.py'))['render'](int(name.rsplit('-',1)[1]))
+            continue
         if name == 'downfall_demon':
             import runpy
             runpy.run_path(str(ROOT / 'scripts/animation/register-demon.py'), run_name='__main__')

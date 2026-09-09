@@ -2086,7 +2086,7 @@ for (const fixture of [
     slimeCommandClearedHover = true
     const command = page.locator('.slime-party__actor[data-slime-uid="ui-hud-bruiser"] .slime-party__command')
     await command.waitFor()
-    await page.waitForFunction(() => document.querySelector('.slime-party__command')?.naturalWidth === 256)
+    await page.waitForFunction(() => document.querySelector('.slime-party__command')?.naturalWidth === 384)
     slimeCommandVisual = await command.evaluate((image, targetUid) => {
       const target = document.querySelector(`[data-enemy-id="${targetUid}"]`)
       const box = target?.getBoundingClientRect()
@@ -3132,7 +3132,7 @@ check('Slime Boss minions use battlefield actors and their own one-shot animatio
     spikeEndTurnVisual.animatedTarget === spikeEndTurnVisual.selectedTarget,
   `Spike Slime animated toward the wrong selected enemy: ${JSON.stringify(spikeEndTurnVisual)}`)
   assertDeepEqual(slimeCommandVisual, {
-    source: '/assets/combat/slimes/bruiser-command.webp',
+    source: '/assets/combat/slimes/bruiser.webp',
     idleHidden: true,
     bossIdle: true,
     actorUid: 'ui-hud-bruiser',

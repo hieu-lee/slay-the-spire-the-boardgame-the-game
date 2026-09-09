@@ -5,6 +5,42 @@ import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 
+
+async function checkSlimeLayout(page) {
+  const parties = await page.evaluate(() => {
+    const paintedEdge = image => {
+      const canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+      const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0)
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+      let left = canvas.width
+      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < left; x++) {
+        if (data[(y * canvas.width + x) * 4 + 3] > 32) { left = x; break }
+      }
+      const box = image.getBoundingClientRect()
+      const width = Math.min(box.width, box.height * canvas.width / canvas.height)
+      return box.x + (box.width - width) / 2 + width * left / canvas.width
+    }
+    return [...document.querySelectorAll('.slime-party')].map(party => {
+      const owner = party.closest('.seat__interactive')
+      const actors = [...party.children].map(e => e.getBoundingClientRect())
+      const board = party.closest('.board').getBoundingClientRect()
+      return { left: actors[0].left, right: actors.at(-1).right, delta: paintedEdge(party.querySelector('img')) - paintedEdge(owner.querySelector('.seat__portrait > img')),
+        gaps: actors.slice(1).map((r,i) => r.left - actors[i].right),
+        top: actors[0].top, bottom: actors[0].bottom, boardBottom: board.bottom,
+        hpBottom: owner.querySelector('.bar').getBoundingClientRect().bottom }
+    })
+  })
+  const ordered = parties.toSorted((a,b)=>a.left-b.left)
+  for (let i=1;i<ordered.length;i++) assert(ordered[i].left >= ordered[i-1].right, 'neighboring slime parties overlap')
+  for (const party of parties) {
+    assert(Math.abs(party.delta) < 3, `painted left alignment: ${JSON.stringify(party)}`)
+    assert(party.gaps.every(gap => gap > 0 && Math.abs(gap - party.gaps[0]) < .1), 'slimes must run left to right with constant spacing')
+    assert(party.top >= party.hpBottom, 'foreground slimes overlap owner HP')
+    assert(party.bottom <= party.boardBottom, 'foreground slimes clipped by stage')
+  }
+}
+
 const root = resolve(import.meta.dirname, '..')
 const output = resolve(root, 'artifacts/slime-animation-browser')
 mkdirSync(output, { recursive: true })
@@ -16,7 +52,7 @@ try {
   for (const [name, viewport, reducedMotion = 'no-preference'] of [['desktop', { width: 1440, height: 900 }],
     ['horizontal-phone', { width: 844, height: 390 }],
     ['horizontal-phone-os-reduced', { width: 844, height: 390 }, 'reduce']]) {
-    const page = await browser.newPage({ viewport, reducedMotion })
+    const page = await browser.newPage({ viewport, reducedMotion, recordVideo: { dir: output, size: viewport } })
     page.on('pageerror', (error) => errors.push(String(error)))
     await page.goto(`http://localhost:${server.httpServer.address().port}`)
     await page.evaluate(() => {
@@ -70,6 +106,11 @@ try {
     })
     const x = page.locator('[data-slime-uid="x"]')
     await x.waitFor()
+    await page.waitForFunction(()=>[...document.querySelectorAll('.slime-party__art')].every(i=>i.complete&&i.naturalWidth>0))
+    await checkSlimeLayout(page)
+    await page.screenshot({path:resolve(output,`${name}-slime-idle.png`)})
+    const idleBox=await x.locator('.slime-party__art').boundingBox()
+
     await page.evaluate(() => {
       const f = window.fixture
       f.state.phase = 'enemy'
@@ -83,6 +124,25 @@ try {
       const animation = node.getAnimations().find((item) => item.animationName === 'slime-party-command')
       animation.pause(); animation.currentTime = 600
     })
+    const art=await x.locator('.slime-party__command').getAttribute('src')
+    assert.equal(art,await x.locator('.slime-party__art').getAttribute('src'),'command must keep the canonical body')
+    const geometry=await x.evaluate(node=>{
+      const command=node.querySelector('.slime-party__command'),idle=node.querySelector('.slime-party__art')
+      return [idle,command].map(i=>({width:i.clientWidth,height:i.clientHeight}))
+    })
+    assert.deepEqual(geometry[0],geometry[1],'command image changed physical size')
+    const scales=await x.evaluate(node=>{
+      const animation=node.getAnimations().find(a=>a.animationName==='slime-party-command')
+      const saved=animation.currentTime
+      const result=[0,136,391,600,850,1100,1360,1700].map(t=>{
+        animation.currentTime=t
+        const m=new DOMMatrix(getComputedStyle(node).transform)
+        return [m.a,m.d]
+      })
+      animation.currentTime=saved
+      return result
+    })
+    assert(scales.every(([x,y])=>x===1&&y===1),'command grew or squashed the whole actor')
     const path = await x.getAttribute('style')
     await page.evaluate(() => {
       const f = window.fixture
@@ -101,6 +161,8 @@ try {
     await page.locator('[data-command-seq="2"]').waitFor()
     assert.equal(await page.locator('.enemy[data-animation="attack"]').count(), 0, 'boss must wait for second return')
     await page.waitForFunction(() => !document.querySelector('.slime-party__actor--commanding'))
+    const returned=await x.locator('.slime-party__art').boundingBox()
+    for(const key of ['x','y','width','height'])assert(Math.abs(returned[key]-idleBox[key])<.6,`slime return changed ${key}`)
     await page.locator('.enemy[data-animation="attack"]').waitFor()
     await page.screenshot({ path: resolve(output, `${name}-boss-after-slimes.png`) })
     const events = await page.evaluate(() => window.fixture.events)
@@ -156,6 +218,36 @@ try {
     })
     await page.waitForFunction(() => window.fixture.actions.some((action) => action.kind === 'resolveEnemies'))
     assert.equal(await page.locator('.enemy[data-animation="attack"]').count(), 0, 'dead boss cannot attack')
+    // Foreground minions must also fit beside the HUD in a full co-op party.
+    await page.evaluate(()=>{
+      const f=window.fixture, base=f.state.players[0]
+      f.state.phase='player';f.state.presentationEvents=[];f.restoration++
+      f.state.players=Array.from({length:4},(_,i)=>({...structuredClone(base),id:`p${i+1}`,row:i,name:`Slime ${i+1}`,
+        slimes:['massive','psychic','bruiser','royal','bruiser'].map((slug,j)=>({card:{uid:`party-${i}-${j}`,defId:`slime_boss_${slug}_slime`,upgraded:false},
+          level:1,vigor:0,commandsThisTurn:0,vigorLossAtEndOfTurn:0}))}))
+      f.render()
+    })
+    await page.waitForFunction(()=>document.querySelectorAll('.slime-party__art').length===20&&
+      [...document.querySelectorAll('.slime-party__art')].every(i=>i.complete&&i.naturalWidth>0))
+    await page.waitForTimeout(350)
+    await checkSlimeLayout(page)
+    await page.screenshot({path:resolve(output,`${name}-slime-party.png`)})
+    await page.evaluate(()=>{
+      const f=window.fixture
+      f.state.players.forEach(player=>player.slimes.shift())
+      f.render()
+    })
+    await page.waitForFunction(()=>document.querySelectorAll('.slime-party__art').length===16&&
+      [...document.querySelectorAll('.slime-party__art')].every(i=>i.complete&&i.naturalWidth>0))
+    await checkSlimeLayout(page)
+    await page.evaluate(()=>{
+      const f=window.fixture
+      f.state.presentationEvents=[{kind:'card',seq:999,actorId:'p1',sourceId:'slime_boss_bruiser_slime',
+        enemyIds:[],playerIds:[],upgraded:false,copied:false,energy:1}]
+      f.render()
+    })
+    await page.waitForFunction(()=>document.querySelector('.seat__portrait > img[data-static-art]')?.complete)
+    await checkSlimeLayout(page)
     await page.close()
     console.log(`${name}: command completion, stable paths, enemy barrier, reconnect and reduced motion passed`)
   }

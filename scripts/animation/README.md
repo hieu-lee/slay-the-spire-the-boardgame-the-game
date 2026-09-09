@@ -105,3 +105,8 @@ idle/attack endpoint painted size, and checks size drift throughout the attack.
 Trickster's intentional spectral duplicate is excluded from the whole-frame
 area heuristic. These checks supplement full-size pose inspection, which must
 verify heads, torsos, fingers and weapons themselves.
+
+Hexaghost's heat variants share the zero-heat body registration and animation.
+`render-hexaghost-heat.py` composites upright native-alpha flame artwork at
+fixed bases with independent vertical flicker. It also exports matching static
+variants for reduced motion; crowns of heat never rotate with the purple body.

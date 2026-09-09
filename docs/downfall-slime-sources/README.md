@@ -11,3 +11,9 @@ Captured from Jorbs' PC *Downfall* Slime Boss run:
 - `generated-animation-contact-sheet.jpg` records all thirteen generated Command sheets and the Slime Boss minion-spawn sheet, in filename order from left to right and top to bottom.
 
 The runtime exports are optimized WebPs under `public/assets/combat/slimes/`.
+
+Small Slime commands now reuse their canonical static WebPs at exactly the idle
+size. Native CSS animates the dash, rigid hop/impact tilt and return over the
+existing 1700ms command window; the generated twelve-frame command exports are
+retained as historical sources, not used in gameplay. This preserves crowns,
+chairs and other props without generated body-size jumps or WebP replay state.

@@ -168,6 +168,32 @@ try {
       }
       await page.waitForTimeout(2100)
     }
+    if (process.argv.includes('--hero=hexaghost')) {
+      for (let heat = 1; heat <= 6; heat++) {
+        await page.evaluate(heat => {
+          const f = window.fixture; f.install('hexaghost')
+          f.state.players[0].heat = heat; f.render()
+        }, heat)
+        const idle = page.locator('.seat__portrait > img')
+        await page.waitForFunction(heat => {
+          const image = document.querySelector('.seat__portrait > img')
+          return image?.complete && image.src.endsWith(`hero-hexaghost-heat-${heat}-idle.webp`)
+        }, heat)
+        const first = await idle.screenshot()
+        await page.waitForTimeout(170)
+        assert.notDeepEqual(first, await idle.screenshot(), `heat ${heat}: idle flames must burn`)
+        await page.screenshot({path:resolve(output,`${screen}-heat-${heat}-idle.png`)})
+        await page.waitForFunction(()=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=7)
+        const seq = await page.evaluate(()=>window.fixture.attack('strike_hexaghost'))
+        await page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig.is-loaded:not(.is-fallback)`).waitFor()
+        await page.waitForTimeout(1000)
+        await page.screenshot({path:resolve(output,`${screen}-heat-${heat}-attack.png`)})
+        await page.waitForTimeout(1300)
+        await page.evaluate(()=>{document.documentElement.dataset.reducedMotion='true';window.fixture.render()})
+        await page.waitForFunction(heat=>document.querySelector('.seat__portrait > img')?.src.endsWith(`characters/hexaghost-heat-${heat}.webp`),heat)
+        await page.evaluate(()=>{document.documentElement.dataset.reducedMotion='false';window.fixture.render()})
+      }
+    }
     for (const enemy of enemies) {
       await page.evaluate(e=>window.fixture.install('defect',e.id,!!e.isBoss),enemy)
       const card=page.locator(`.enemy[data-enemy-def="${enemy.id}"]`)

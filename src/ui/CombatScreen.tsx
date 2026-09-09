@@ -262,6 +262,20 @@ function chargedCardEnergy(def: CardDef, player: Player, card: CardInstance): nu
   return typeof cost === 'number' ? cost : undefined
 }
 
+// Alpha bounds locate the painted edge rather than transparent sprite padding.
+function paintedLeft(image: HTMLImageElement): number {
+  const canvas = document.createElement('canvas')
+  canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+  const context = canvas.getContext('2d')!
+  context.drawImage(image, 0, 0)
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+  let left = canvas.width
+  for (let y = 0; y < canvas.height; y++) for (let x = 0; x < left; x++) {
+    if (pixels[(y * canvas.width + x) * 4 + 3]! > 32) { left = x; break }
+  }
+  return left / canvas.width
+}
+
 function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, attackSeq }: {
   asset?: Blob
   assetPath: string
@@ -5831,6 +5845,11 @@ function CombatScreenView({
                                 ? 'combat/characters/slime_boss-spawn.webp'
                               : `combat/characters/${occupant.character}.webp`)}
                             data-vfx-seq={characterAttack?.active.event.seq}
+                            onLoad={occupant.character === 'slime_boss' ? (event) => {
+                              const image = event.currentTarget
+                              image.closest<HTMLElement>('.seat__interactive')?.style.setProperty(
+                                '--slime-body-left', String((paintedLeft(image) - 0.5) * (image.dataset.staticArt ? 1 : characterArtScale)))
+                            } : undefined}
                             alt=""
                             onError={(event) => {
                               if (occupant.character === 'slime_boss' && slimeSpawnEvent &&
@@ -6043,7 +6062,8 @@ function CombatScreenView({
                     </button>
                     {occupant.character === 'slime_boss' && occupant.slimes.length > 0 ? (
                       <span className="slime-party combat__slime-status" role="list"
-                        aria-label={`${occupant.name}'s Slimes`}>
+                        aria-label={`${occupant.name}'s Slimes`}
+                        style={{ '--slime-count': occupant.slimes.length } as React.CSSProperties}>
                         {occupant.slimes.map((slime) => {
                           const def = faceOf(cardDef(slime.card.defId), slime.card.upgraded)
                           const name = def.name.replace(/ Slime\+?$/, '')
@@ -6092,7 +6112,14 @@ function CombatScreenView({
                                 `${commandReady ? 'ready to Command' : 'Command limit reached'}, ` + commandText}>
                               <img
                                 className="slime-party__art"
+                                key={slime === occupant.slimes[0] ? 'first' : 'following'}
                                 src={assetPath(`combat/slimes/${slug}.webp`)}
+                                onLoad={(event) => {
+                                  const image = event.currentTarget
+                                  const party = image.closest<HTMLElement>('.slime-party')
+                                  if (party?.firstElementChild === image.parentElement) party.style.setProperty(
+                                    '--slime-first-inset', String(0.025 + 0.95 * paintedLeft(image)))
+                                }}
                                 alt=""
                                 onError={(event) => {
                                   if (event.currentTarget.dataset.fallback === 'true') {
@@ -6108,7 +6135,7 @@ function CombatScreenView({
                                   className="slime-party__command"
                                   key={activeCommandEvent.seq}
                                   data-command-seq={activeCommandEvent.seq}
-                                  src={assetPath(`combat/slimes/${slug}-command.webp`)}
+                                  src={assetPath(`combat/slimes/${slug}.webp`)}
                                   alt=""
                                   onError={(event) => {
                                     event.currentTarget.style.display = 'none'
