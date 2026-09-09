@@ -20,7 +20,7 @@ timing and visual hierarchy used while implementing the web table's motion.
 - `reward-deal.png`: revealed reward cards enter in a short stagger.
 
 Regenerate these after intentional motion changes with
-`UPDATE_ANIMATION_REFERENCES=1 node scripts/verify-browser.mjs`. Routine browser
+`UPDATE_ANIMATION_REFERENCES=1 pnpm verify:browser`. Routine browser
 verification writes equivalent captures under its artifact output instead of
 overwriting these reviewed references. Reduced-motion mode is separately
 asserted to collapse every effect.

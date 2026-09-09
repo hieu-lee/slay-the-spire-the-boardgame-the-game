@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { assetPath } from '../game/assets.ts'
+import { useEffect, useRef, useState } from 'react'
+import { assetPath, isPreloadedImageDecoded, preloadImages, releasePreloadedImages } from '../game/assets.ts'
 import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
 import { relicDef, STARTING_RELIC } from '../game/relics.ts'
 import { ASCENSION_RULES } from '../game/run.ts'
@@ -48,6 +48,36 @@ const HEROES: { id: CharacterId; name: string }[] = [
   { id: 'hermit', name: 'Hermit' },
 ]
 
+const CHARACTER_WALLPAPERS = HEROES.map(({ id }) => `menu/character-select/character-${id}-wallpaper.webp`)
+const CAMPAIGN_ART = ['menu/campaign-standard-menu.webp', 'menu/campaign-downfall-menu.webp']
+
+function warmRunSetup(character: CharacterId): Promise<void> {
+  const selectedWallpaper = `menu/character-select/character-${character}-wallpaper.webp`
+  // Campaign art is the next screen's largest payload. Alternate character
+  // art begins on its roster button's hover/focus, so it cannot be starved
+  // behind a speculative low-priority request if the player picks it.
+  void preloadImages(CAMPAIGN_ART, { decode: true, fetchPriority: 'high' })
+  return preloadImages([selectedWallpaper], { decode: true, fetchPriority: 'high' })
+}
+
+function CharacterWallpaper({ character, transition }: { character: CharacterId; transition: boolean }) {
+  const image = useRef<HTMLImageElement>(null)
+  const [decoded, setDecoded] = useState(false)
+  useEffect(() => {
+    let active = true
+    const element = image.current
+    if (!element) return undefined
+    void element.decode().then(
+      () => { if (active) setDecoded(true) },
+      () => { if (active) setDecoded(true) },
+    )
+    return () => { active = false }
+  }, [])
+  const animation = decoded ? `start-menu__character-wallpaper--${transition ? 'a' : 'b'}` : ''
+  return <img ref={image} data-decoded={decoded || undefined} className={`start-menu__character-wallpaper ${animation}`}
+    src={assetPath(`menu/character-select/character-${character}-wallpaper.webp`)} alt="" aria-hidden="true" />
+}
+
 const RUN_MODES: { id: RunMode; name: string; copy: string }[] = [
   { id: 'standard', name: 'Standard', copy: 'Embark on a quest to Slay the Spire!' },
   { id: 'daily', name: 'Daily', copy: 'A new challenge is available once a day. Compete for the highest score!' },
@@ -90,18 +120,105 @@ export function StartMenu({
   onSettings,
   initiallyChoosingCharacter = false,
 }: StartMenuProps) {
+  const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
   const [selection, setSelection] = useState(onResume ? 'Resume' : 'Single Player')
   const [screen, setScreen] = useState<'main' | 'mode' | 'daily' | 'custom' | 'character' | 'campaign'>(initiallyChoosingCharacter ? 'character' : 'main')
   const [characterTransition, setCharacterTransition] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
+  const [embarking, setEmbarking] = useState(false)
+  const [preparingCharacter, setPreparingCharacter] = useState(() =>
+    initiallyChoosingCharacter && !isPreloadedImageDecoded(`menu/character-select/character-${hero.id}-wallpaper.webp`))
+  const campaignLoad = useRef(0)
+  const characterLoad = useRef(0)
+  const characterButtons = useRef(new Map<CharacterId, HTMLButtonElement>())
+  const loadingBack = useRef<HTMLButtonElement>(null)
+  const hoveredWallpaper = useRef<string | null>(null)
+  const mainMenuButton = useRef<HTMLButtonElement>(null)
   const startingRelic = STARTING_RELIC[hero.id]
   const special = startingRelic ? relicDef(startingRelic) : null
-  const selectCharacter = (character: CharacterId) => {
-    if (character !== hero.id) setCharacterTransition((current) => !current)
-    onCharacter(0, character)
+  useEffect(() => {
+    if (screen === 'main' || screen === 'campaign') return
+    // Run setup gives these assets time to load before character selection.
+    // Decode only the displayed wallpaper and campaign pair: decoding all
+    // eight full-screen wallpapers would pressure small-device GPU memory.
+    void warmRunSetup(hero.id)
+  }, [hero.id, screen])
+  useEffect(() => {
+    if (screen !== 'character' || !preparingCharacter) return
+    let active = true
+    void warmRunSetup(hero.id).then(() => {
+      if (!active) return
+      setPreparingCharacter(false)
+      requestAnimationFrame(() => characterButtons.current.get(hero.id)?.focus())
+    })
+    return () => { active = false }
+  }, [hero.id, preparingCharacter, screen])
+  useEffect(() => {
+    if (screen === 'character' && preparingCharacter) loadingBack.current?.focus()
+  }, [preparingCharacter, screen])
+  useEffect(() => () => {
+    campaignLoad.current += 1
+    releasePreloadedImages([...CHARACTER_WALLPAPERS, ...CAMPAIGN_ART])
+  }, [])
+  const returnToMain = () => {
+    campaignLoad.current += 1
+    characterLoad.current += 1
+    setEmbarking(false)
+    setPreparingCharacter(false)
+    releasePreloadedImages([...CHARACTER_WALLPAPERS, ...CAMPAIGN_ART])
+    setScreen('main')
+    requestAnimationFrame(() => mainMenuButton.current?.focus())
   }
-  if (screen === 'campaign') return <CampaignSelect onChoose={onStart} onBack={() => setScreen('character')} />
+  const startCampaign = () => {
+    const load = ++campaignLoad.current
+    setEmbarking(true)
+    void preloadImages(CAMPAIGN_ART, { decode: true, fetchPriority: 'high' }).then(() => {
+      if (campaignLoad.current !== load) return
+      // Keep the active hero ready for the campaign selector's Back action;
+      // alternate wallpapers are no longer a likely next asset.
+      releasePreloadedImages(CHARACTER_WALLPAPERS.filter((path) =>
+        path !== `menu/character-select/character-${hero.id}-wallpaper.webp`))
+      setScreen('campaign')
+    })
+  }
+  const startCharacterSelection = () => {
+    const load = ++characterLoad.current
+    setPreparingCharacter(true)
+    void warmRunSetup(hero.id).then(() => {
+      if (characterLoad.current !== load) return
+      setPreparingCharacter(false)
+      setScreen('character')
+      requestAnimationFrame(() => characterButtons.current.get(hero.id)?.focus())
+    })
+  }
+  const warmRosterWallpaper = (character: CharacterId, decode = false) => {
+    const path = `menu/character-select/character-${character}-wallpaper.webp`
+    const selectedPath = `menu/character-select/character-${hero.id}-wallpaper.webp`
+    const previous = hoveredWallpaper.current
+    if (previous && previous !== selectedPath && previous !== path) releasePreloadedImages([previous])
+    hoveredWallpaper.current = path
+    return preloadImages([path], { decode, fetchPriority: 'high' })
+  }
+  const selectCharacter = (character: CharacterId) => {
+    if (character === hero.id) return
+    const load = ++characterLoad.current
+    const previousWallpaper = `menu/character-select/character-${hero.id}-wallpaper.webp`
+    setPreparingCharacter(true)
+    void warmRosterWallpaper(character, true).then(() => {
+      if (characterLoad.current !== load) return
+      setCharacterTransition((current) => !current)
+      onCharacter(0, character)
+      releasePreloadedImages([previousWallpaper])
+      setPreparingCharacter(false)
+      requestAnimationFrame(() => characterButtons.current.get(character)?.focus())
+    })
+  }
+  if (screen === 'campaign') return <CampaignSelect onChoose={onStart} onBack={() => {
+    campaignLoad.current += 1
+    setEmbarking(false)
+    setScreen('character')
+    requestAnimationFrame(() => characterButtons.current.get(hero.id)?.focus())
+  }} />
   return (
     <main className="start-menu" data-reduced-motion={settings.reducedMotion || undefined}>
       {screen === 'main' ? <div className="start-menu__profile" aria-label="Current profile">
@@ -120,7 +237,7 @@ export function StartMenu({
           onClick={onResume}>Resume</button> : null}
         <button type="button" aria-label="Single Player" data-selected={selection === 'Single Player'}
           onFocus={() => setSelection('Single Player')} onMouseEnter={() => setSelection('Single Player')}
-          onClick={() => setScreen('mode')}>Single Player</button>
+          ref={mainMenuButton} onClick={() => { warmRunSetup(hero.id); setScreen('mode') }}>Single Player</button>
         {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" data-selected={selection === 'Multiplayer'}
           onFocus={() => setSelection('Multiplayer')} onMouseEnter={() => setSelection('Multiplayer')} onClick={onOnline}>Multiplayer</button>
           : null}
@@ -138,13 +255,17 @@ export function StartMenu({
       {screen === 'mode' ? <section className="start-menu__mode-select" aria-label="Run modes">
         <div className="start-menu__mode-choices">
           {RUN_MODES.map((choice) => <button type="button" key={choice.id} aria-label={choice.name} className="start-menu__mode-choice" data-mode={choice.id}
-            onClick={() => { onMode(choice.id); setScreen(choice.id === 'standard' ? 'character' : choice.id) }}>
+            disabled={preparingCharacter} onClick={() => {
+              onMode(choice.id)
+              if (choice.id === 'standard') startCharacterSelection()
+              else setScreen(choice.id)
+            }}>
             <h2>{choice.name}</h2>
             <img src={assetPath(`menu/run-modes/mode-${choice.id}.webp`)} alt="" />
             <span>{choice.copy}</span>
           </button>)}
         </div>
-        <button type="button" className="start-menu__screen-back ribbon-back" aria-label="Back" onClick={() => setScreen('main')}><span aria-hidden="true"></span></button>
+        <button type="button" className="start-menu__screen-back ribbon-back" aria-label="Back" onClick={returnToMain}><span aria-hidden="true"></span></button>
       </section> : null}
 
       {screen === 'custom' || screen === 'daily' ? <section className="start-menu__run-options" aria-labelledby="run-options-title">
@@ -163,14 +284,17 @@ export function StartMenu({
           showMode={false}
         />
         <footer>
-          <button type="button" className="ribbon-back" aria-label="Back" onClick={() => setScreen('mode')}><span aria-hidden="true"></span></button>
-          <button type="button" onClick={() => setScreen('character')}>Continue</button>
+          <button type="button" className="ribbon-back" aria-label="Back" onClick={() => {
+            characterLoad.current += 1
+            setPreparingCharacter(false)
+            setScreen('mode')
+          }}><span aria-hidden="true"></span></button>
+          <button type="button" disabled={preparingCharacter} onClick={startCharacterSelection}>Continue</button>
         </footer>
       </section> : null}
 
-      {screen === 'character' ? <section className="start-menu__character-select" aria-labelledby="character-select-title">
-        <img className={`start-menu__character-wallpaper start-menu__character-wallpaper--${characterTransition ? 'a' : 'b'}`}
-          src={assetPath(`menu/character-select/character-${hero.id}-wallpaper.webp`)} alt="" aria-hidden="true" />
+      {screen === 'character' && !preparingCharacter ? <section className="start-menu__character-select" aria-labelledby="character-select-title">
+        <CharacterWallpaper key={hero.id} character={hero.id} transition={characterTransition} />
         <div className={`start-menu__character-copy start-menu__character-copy--${characterTransition ? 'a' : 'b'}`}>
           <p>Choose your character</p>
           <h1 id="character-select-title">{hero.name}</h1>
@@ -190,13 +314,26 @@ export function StartMenu({
         <div className="start-menu__character-roster" aria-label="Characters">
           {HEROES.map((candidate) => <button type="button" key={candidate.id}
             aria-label={candidate.name} aria-pressed={candidate.id === hero.id}
-            onClick={() => selectCharacter(candidate.id)}>
+            disabled={preparingCharacter || embarking} onClick={() => selectCharacter(candidate.id)}
+            ref={(element) => {
+              if (element) characterButtons.current.set(candidate.id, element)
+              else characterButtons.current.delete(candidate.id)
+            }}
+            onFocus={() => void warmRosterWallpaper(candidate.id)}
+            onMouseEnter={() => void warmRosterWallpaper(candidate.id)}>
             <img src={assetPath(`menu/character-select/portrait-${candidate.id}.png`)} alt="" />
           </button>)}
         </div>
         <button type="button" className="start-menu__character-back ribbon-back" aria-label="Back" title="Back"
-          onClick={() => { setScreen('main'); onCharacterBack() }}><span aria-hidden="true"></span></button>
-        <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" onClick={() => setScreen('campaign')}><span aria-hidden="true">✓</span></button>
+          onClick={() => { returnToMain(); onCharacterBack() }}><span aria-hidden="true"></span></button>
+        <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" disabled={embarking}
+          aria-busy={embarking || undefined} onClick={startCampaign}><span aria-hidden="true">✓</span></button>
+      </section> : null}
+      {screen === 'character' && preparingCharacter ? <section className="start-menu__character-select start-menu__character-loading"
+        aria-label="Preparing character selection" aria-busy="true">
+        <p role="status">Preparing character artwork…</p>
+        <button type="button" className="start-menu__character-back ribbon-back" aria-label="Back" title="Back"
+          ref={loadingBack} onClick={() => { returnToMain(); onCharacterBack() }}><span aria-hidden="true"></span></button>
       </section> : null}
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onChange={onSettings} />

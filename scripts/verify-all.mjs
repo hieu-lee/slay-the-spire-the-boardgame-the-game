@@ -129,7 +129,7 @@ const isBrowser = (script) => {
 
 function runOnce(script) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [join(scriptsDir, script)], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(process.execPath, ['--experimental-strip-types', join(scriptsDir, script)], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     child.stdout.on('data', (d) => (out += d))
     child.stderr.on('data', (d) => (out += d))

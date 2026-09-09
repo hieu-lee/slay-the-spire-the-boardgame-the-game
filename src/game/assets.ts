@@ -11,6 +11,81 @@ import { BASE_CHARACTER_IDS, CHARACTER_IDS, type CharacterId } from './types.ts'
 /** Public asset URL under Vite's current deployment base. */
 export const assetPath = (path: string): string => `${import.meta.env?.BASE_URL ?? '/'}assets/${path}`
 
+type PreloadedImage = {
+  image: HTMLImageElement
+  decoded: boolean
+  failed: boolean
+}
+
+const preloadedImages = new Map<string, PreloadedImage>()
+
+function decodePreloadedImage(preloaded: PreloadedImage): Promise<void> {
+  const decode = () => preloaded.image.decode().then(
+    () => { preloaded.decoded = true },
+    () => undefined,
+  )
+  if (preloaded.image.complete && (preloaded.image.naturalWidth > 0 || preloaded.failed)) return decode()
+  return new Promise((resolve) => {
+    preloaded.image.addEventListener('load', () => { void decode().then(resolve) }, { once: true })
+    preloaded.image.addEventListener('error', () => resolve(), { once: true })
+  })
+}
+
+/**
+ * Starts downloading images before their destination screen mounts.
+ *
+ * The image elements are retained so browsers can keep decoded pixels available
+ * for the screen that immediately follows. Call this only for a small,
+ * user-directed set of likely next screens; speculative whole-game preloading
+ * would evict the gameplay textures it is intended to help.
+ */
+export function preloadImages(paths: Iterable<string>, options: {
+  decode?: boolean
+  fetchPriority?: 'high' | 'low'
+} = {}): Promise<void> {
+  if (typeof Image === 'undefined') return Promise.resolve()
+  const decodes: Promise<void>[] = []
+  for (const path of paths) {
+    const url = assetPath(path)
+    const existing = preloadedImages.get(url)
+    if (existing) {
+      if (options.fetchPriority) existing.image.fetchPriority = options.fetchPriority
+      if (options.decode && !existing.decoded) decodes.push(decodePreloadedImage(existing))
+      continue
+    }
+    const image = new Image()
+    const preloaded = { image, decoded: false, failed: false }
+    image.decoding = 'async'
+    if (options.fetchPriority) image.fetchPriority = options.fetchPriority
+    image.onerror = () => {
+      preloaded.failed = true
+      if (preloadedImages.get(url) === preloaded) preloadedImages.delete(url)
+    }
+    image.src = url
+    preloadedImages.set(url, preloaded)
+    if (options.decode) decodes.push(decodePreloadedImage(preloaded))
+  }
+  return Promise.all(decodes).then(() => undefined)
+}
+
+/** Whether a prior preload has finished decoding an image for immediate paint. */
+export function isPreloadedImageDecoded(path: string): boolean {
+  return preloadedImages.get(assetPath(path))?.decoded ?? false
+}
+
+/** Releases preload-only image elements once their destination is no longer likely. */
+export function releasePreloadedImages(paths: Iterable<string>): void {
+  for (const path of paths) {
+    const url = assetPath(path)
+    const preloaded = preloadedImages.get(url)
+    if (!preloaded) continue
+    preloadedImages.delete(url)
+    // Dropping the element alone leaves a browser fetch eligible to continue.
+    // Clearing its source cancels an unused in-flight preload where supported.
+    preloaded.image.src = ''
+  }
+}
+
 /** Where the sync script writes, and where the client reads from. */
 export const CARD_ASSET_ROOT = assetPath('cards')
 /**

@@ -51,9 +51,11 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: filter .25s ease, transform .4s ease;
+  opacity: 0;
+  transition: filter .25s ease, opacity .18s ease, transform .4s ease;
   filter: brightness(.72);
 }
+.campaign-select__side img[data-decoded] { opacity: 1; }
 .campaign-select__side--downfall img { left: auto; right: 0; }
 .campaign-select__copy {
   position: absolute;
