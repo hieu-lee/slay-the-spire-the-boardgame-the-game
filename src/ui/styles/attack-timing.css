@@ -21,11 +21,11 @@
 
 /* Character attacks use only authoritative targets already rendered on the
    board. Defect and Watcher spend 550ms each on windup, release and recovery.
-   Ironclad adds two 90ms travel beats between three 540ms body phases. Silent
+   Ironclad adds two 90ms travel beats around a 500ms swing. Silent
    holds her throw pose through the last dagger's return.
    Visual layers move; the button and its hit box stay in its lane. */
-/* One continuously rigged drawing replaces the old alternating pose layers.
-   Keep the resting image visible until the attack image has decoded. */
+/* Rigged attacks keep the resting image visible until their image has decoded.
+   Ironclad and Watcher use the original pose layers and their own rest clocks. */
 .seat[class*='seat--attack-']:has(.character-attack__pose--rig.is-loaded) .seat__portrait > img {
   opacity: 0;
   animation: none;
@@ -40,13 +40,35 @@
 .seat--attack-ironclad .character-attack--ironclad { animation-name: attack-ironclad-motion; }
 
 @keyframes attack-ironclad-motion {
-  0%, 24%, 100% { transform: translate(0) scale(1); }
-  28% { transform: translate(-3%, 1%) scale(1.02, 0.98); }
-  30% { transform: translate(0) scale(1); }
-  35%, 65% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
-  46% { transform: translate(calc(var(--attack-x) + 3%), var(--attack-y)) scale(1.045, 0.97); }
-  58% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
-  70%, 100% { transform: translate(0) scale(1); }
+  0%, 24%, 30%, 70%, 100% { transform: translate(0); }
+  28% { transform: translate(-2%, 0); }
+  35%, 65% { transform: translate(var(--attack-x), var(--attack-y)); }
+}
+
+.seat--attack-ironclad .seat__portrait > img { animation: ironclad-rest-pose 1800ms both; }
+.character-attack__pose--ironclad-ready { animation: ironclad-ready-pose 1800ms both; }
+.character-attack__pose--ironclad-impact { animation: ironclad-impact-pose 1800ms both; }
+
+@keyframes ironclad-rest-pose {
+  0%, 69.99% { opacity: 0; }
+  70%, 100% { opacity: 1; }
+}
+
+@keyframes ironclad-ready-pose {
+  0%, 34.99% { opacity: 1; }
+  35%, 100% { opacity: 0; }
+  0% { transform: translate(-1%, 1%) rotate(-1deg); }
+  30%, 100% { transform: translate(0) rotate(0); }
+}
+
+/* At the target: 630–1130ms swing/follow-through, then 40ms settle.
+   Hold the finish through the 1170–1260ms return dash. No body scaling. */
+@keyframes ironclad-impact-pose {
+  0%, 34.99%, 70%, 100% { opacity: 0; }
+  35%, 69.99% { opacity: 1; }
+  0%, 35% { transform: translate(-2%, -1%) rotate(-3deg); }
+  47% { transform: translate(2%, 1%) rotate(2deg); }
+  62.7778%, 100% { transform: translate(0) rotate(0); }
 }
 
 .character-attack {
@@ -59,6 +81,26 @@
 }
 
 .character-attack--ironclad { will-change: transform; }
+
+.character-attack--guardian {
+  will-change: transform;
+  animation: guardian-punch-travel 1650ms cubic-bezier(0.333333, 0, 0.666667, 1) both;
+}
+
+.character-attack--guardian[data-guardian-mode='defense'] {
+  animation-name: guardian-roll-travel;
+}
+
+@keyframes guardian-punch-travel {
+  0%, 24.2424%, 86.6667%, 100% { transform: translate(0); }
+  33.3333%, 66.6667% { transform: translate(var(--attack-x), var(--attack-y)); }
+}
+
+/* Matches the rigid shell rotation baked by render-guardian-defense.py. */
+@keyframes guardian-roll-travel {
+  0%, 12.1212%, 84.8485%, 100% { transform: translate(0); }
+  38.1818%, 51.5152% { transform: translate(var(--attack-x), var(--attack-y)); }
+}
 
 .character-attack--slime_boss {
   will-change: transform;
@@ -106,7 +148,7 @@
   filter: drop-shadow(0 0 0.35rem #ff6b28);
   opacity: 0;
   will-change: opacity, transform;
-  animation: attack-swing 550ms 630ms cubic-bezier(0.16, 0.82, 0.24, 1) both;
+  animation: attack-swing 500ms 630ms cubic-bezier(0.16, 0.82, 0.24, 1) both;
 }
 
 @keyframes attack-swing {

@@ -84,12 +84,23 @@ def render(name, spec, output):
         prop['angles'] = [prop['angles'][i] for i in order]
         support = [prop.get('supportGrips', [None]*24)[i] for i in order]
     if name == 'hero-hermit':
+        # Reuse the first gun's native-alpha flash for the second muzzle.
+        flash = Image.open(ROOT / spec['drawnSheet']).convert('RGBA').crop((728,296,782,353))
+        muzzles = {8:(675,362),10:(1195,357),12:(165,610),14:(668,611),16:(1173,609)}
         drawings[2] = drawings[1]  # Reject the isolated premature gun-lowering pose.
     for index, (drawing, box) in enumerate(drawings):
         x, y = round(center-foot(drawing)*scale), ground-round(drawing.getbbox()[3]*scale)
         drawing = drawing.resize((round(drawing.width*scale), round(drawing.height*scale)), Image.Resampling.LANCZOS)
         frame = Image.new('RGBA', idle.size)
         frame.alpha_composite(drawing, (x, y))
+        if name == 'hero-hermit' and index in muzzles:
+            mx, my = muzzles[index]
+            gx, gy = x+(mx-box[0])*scale, y+(my-box[1])*scale
+            angle = math.radians(25 if index == 8 else 12)
+            c, s = math.cos(angle)/scale, math.sin(angle)/scale
+            second_flash = flash.transform(frame.size, Image.Transform.AFFINE,
+                (c,s,-c*gx-s*gy,-s,c,30+s*gx-c*gy), Image.Resampling.BICUBIC)
+            frame.alpha_composite(second_flash)
         if name == 'the_champ' or prop:
             points.append((x+(grips[index][0]-box[0])*scale,y+(grips[index][1]-box[1])*scale))
         if prop:

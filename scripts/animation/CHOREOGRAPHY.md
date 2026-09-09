@@ -7,11 +7,13 @@ existing clocks.
 
 | Actor | Preserved phases (milliseconds) |
 | --- | --- |
-| Ironclad | windup 0–540; dash 540–630; two-handed downward sword swing 630–1170; return dash 1170–1260; recovery 1260–1800 |
+| Ironclad | original raised-sword windup 0–540; dash 540–630; downward strike/follow-through 630–1130 (500ms); settle 1130–1170; return dash 1170–1260; horizontal-sword recovery 1260–1800 |
 | Silent | ready 0–150; throw/outbound daggers 150–1025; hold throw through returning daggers 1025–1900 (including existing per-target stagger) |
 | Defect | charge 0–550; release 550–1100; recover 1100–1650; bolt contact remains 1110 |
 | Watcher | ready 0–550; staff cast 550–1100; recover 1100–1650; meteor contact remains 1050 |
-| Guardian / Hermit | ready 0–550; claw / pistol action 550–1100; recover 1100–1650 |
+| Guardian attack form | brace 0–400; dash 400–550; punch 550–1100; return 1100–1430; recover 1430–1650 |
+| Guardian defense form | brace 0–200; roll into target 200–630; contact hold 630–850; reverse roll 850–1400; settle 1400–1650 |
+| Hermit | ready 0–550; both pistols flash during the existing firing poses 550–1100; recover 1100–1650 |
 | Slime hero | prepare / surf outward 0–600; squash against target 600–1100; surf back / settle 1100–1700 |
 | Hexaghost hero | channel 0–550; flame flight 550–1450; recover through 2000 |
 | Bosses | windup 0–550; travel / transition 550–730; attack 730–1280; recover 1280–1830 |

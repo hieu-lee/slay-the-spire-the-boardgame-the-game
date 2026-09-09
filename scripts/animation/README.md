@@ -8,12 +8,16 @@ changes combat rules or multiplayer authority.
 Use the method that fits the drawing:
 
 - Ironclad rests in his canonical horizontal-sword artwork and returns to it
-  during the 1260–1800ms recovery. Watcher uses the original raised-staff and
+  during the 1260–1800ms recovery. His original ready/impact images now drive
+  the attack: 90ms dash, 500ms strike/follow-through, brief settle and 90ms
+  return. CSS keeps physical scale fixed. Watcher uses the original raised-staff and
   downward meteor-cast assets with their original CSS phase clocks; her newer
-  experimental rig exports are not used in gameplay.
+  experimental rig exports and Ironclad's generated attack are not used in gameplay.
 - Actors use either their original drawn attacks with audited RIFE in-betweens,
-  or new native-alpha body pose sheets. Defensive Guardian reuses its existing
-  drawn unfold/fold transitions around the claw action, ending in the same shell. Failed optical-flow candidates are rejected
+  or new native-alpha body pose sheets. Guardian dashes before the attack-form punch; defense form rolls its
+  canonical rigid shell to the target and back. Its static holds are encoded
+  as longer WebP frames. Hermit reuses the native-alpha muzzle flash at both
+  pistol mouths in every firing pose. Failed optical-flow candidates are rejected
   rather than blended through missing limbs. The exporters preserve phase
   boundaries and register body scale independently of weapon extent. Wide swings get transparent overscan, compensated by the same
   display scale for idle and attack.

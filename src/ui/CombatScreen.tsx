@@ -536,8 +536,9 @@ function CombatScreenView({
       ? Array.from({ length: 7 }, (_, heat) => assetPath(`combat/rigged/hero-hexaghost-heat-${heat}-attack.webp`))
       : player.character === 'guardian'
         ? ['guardian', 'guardian-defense'].map((id) => assetPath(`combat/rigged/hero-${id}-attack.webp`))
-        : player.character === 'watcher'
-          ? ['ready', 'thrust'].map((pose) => assetPath(`combat/characters/watcher-${pose}.webp`))
+        : player.character === 'watcher' || player.character === 'ironclad'
+          ? ['ready', player.character === 'watcher' ? 'thrust' : 'impact']
+            .map((pose) => assetPath(`combat/characters/${player.character}-${pose}.webp`))
           : [assetPath(`combat/rigged/hero-${player.character}-attack.webp`)]))].sort().join('|')
   useEffect(() => {
     const controller = new AbortController()
@@ -5845,6 +5846,7 @@ function CombatScreenView({
                             className={`character-attack character-attack--${occupant.character}`}
                             data-attack-seq={characterAttack.active.event.seq}
                             data-attack-target-count={characterAttack.targets.length}
+                            data-guardian-mode={occupant.character === 'guardian' ? occupant.guardianMode ?? 'attack' : undefined}
                             key={characterAttack.active.event.seq}
                             style={{
                               '--attack-x': `${characterAttack.x}px`,
@@ -5852,7 +5854,14 @@ function CombatScreenView({
                             } as React.CSSProperties}
                           >
                             {characterAttack.active.event.seq === latestCharacterAttackSeq ? (
-                              occupant.character === 'watcher' ? <>
+                              occupant.character === 'ironclad' ? <>
+                                <span className="character-attack__pose character-attack__pose--ironclad-ready">
+                                  <img src={assetPath('combat/characters/ironclad-ready.webp')} alt="" />
+                                </span>
+                                <span className="character-attack__pose character-attack__pose--ironclad-impact">
+                                  <img src={assetPath('combat/characters/ironclad-impact.webp')} alt="" />
+                                </span>
+                              </> : occupant.character === 'watcher' ? <>
                                 <span className="character-attack__pose character-attack__pose--watcher-charge">
                                   <img src={assetPath('combat/characters/watcher-ready.webp')} alt="" />
                                 </span>

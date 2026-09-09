@@ -74,20 +74,25 @@ try {
       await page.evaluate(c=>window.fixture.install(c),character)
       await page.waitForFunction(()=>document.querySelector('.seat__portrait > img')?.complete)
       await page.waitForTimeout(100)
-      await page.waitForFunction(c=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=(c==='hexaghost'?7:c.startsWith('guardian')||c==='watcher'?2:1),character)
+      await page.waitForFunction(c=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=(c==='hexaghost'?7:c.startsWith('guardian')||c==='watcher'||c==='ironclad'?2:1),character)
       await page.waitForFunction(()=>[...document.querySelectorAll('.seat__portrait > img')].every(i=>i.complete&&!i.dataset.guardianTransition))
       await page.waitForTimeout(100)
       const before=await page.locator('.seat__portrait > img').boundingBox()
       const seq=await page.evaluate(id=>window.fixture.attack(id),source)
-      const poseSelector=character==='watcher'?'.character-attack__pose--watcher-charge':'.character-attack__pose--rig.is-loaded:not(.is-fallback)'
+      const poseSelector=character==='ironclad'?'.character-attack__pose--ironclad-ready':character==='watcher'?'.character-attack__pose--watcher-charge':'.character-attack__pose--rig.is-loaded:not(.is-fallback)'
       const pose=page.locator(`[data-attack-seq="${seq}"] ${poseSelector}`)
       await pose.waitFor()
-      if(character==='watcher') {
+      if(character==='ironclad') {
+        assert((await pose.locator('img').getAttribute('src')).endsWith('/ironclad-ready.webp'))
+        const impact=page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--ironclad-impact img`)
+        assert((await impact.getAttribute('src')).endsWith('/ironclad-impact.webp'))
+        assert.equal(await page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig`).count(),0)
+      } else if(character==='watcher') {
         assert((await pose.locator('img').getAttribute('src')).endsWith('/watcher-ready.webp'))
         assert.equal(await pose.evaluate(e=>getComputedStyle(e).opacity),'1','Watcher must raise her staff before casting')
         assert.equal(await page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig`).count(),0)
       } else assert.equal(await pose.locator('img').evaluate(i=>i.naturalWidth),400,character)
-      await page.waitForTimeout(character==='hexaghost'?1400:600)
+      await page.waitForTimeout(character==='hexaghost'?1400:character==='ironclad'?850:600)
       if(character==='watcher') {
         const cast=page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--watcher-cast`)
         assert((await cast.locator('img').getAttribute('src')).endsWith('/watcher-thrust.webp'))
@@ -99,11 +104,68 @@ try {
       const after=await page.locator('.seat__portrait > img').boundingBox()
       if(character==='guardian-defense')assert.equal(await page.locator('.seat__portrait > img').getAttribute('data-guardian-mode'),'defense')
       for(const key of ['x','y','width','height'])assert(Math.abs(before[key]-after[key])<.6,`${screen}/${character}: layout jumped`)
-      // A second attack must get a fresh replay URL rather than reuse the ended WebP timeline.
+      // A second attack must replay the poses and return to the same resting geometry.
       const firstSrc=await page.evaluate(()=>window.fixture.seq)
       const next=await page.evaluate(id=>window.fixture.attack(id),source)
       assert(next>firstSrc)
       await page.locator(`[data-attack-seq="${next}"] ${poseSelector}`).waitFor()
+      if(character.startsWith('guardian')) {
+        const travel=await page.locator(`[data-attack-seq="${next}"] .character-attack__pose--rig`).evaluate(pose=>{
+          const layer=pose.parentElement
+          const animation=layer.getAnimations()[0]
+          const saved=animation.currentTime
+          const samples=[0,630,1400,1430,1640].map(time=>{
+            animation.pause();animation.currentTime=time
+            const m=new DOMMatrixReadOnly(getComputedStyle(layer).transform)
+            return {time,x:m.e,y:m.f,scaleX:m.a,scaleY:m.d}
+          })
+          animation.currentTime=saved;animation.play()
+          return {mode:layer.dataset.guardianMode,name:animation.animationName,samples,
+            x:parseFloat(layer.style.getPropertyValue('--attack-x')),
+            y:parseFloat(layer.style.getPropertyValue('--attack-y'))}
+        })
+        const defense=character==='guardian-defense'
+        assert.equal(travel.mode,defense?'defense':'attack')
+        assert.equal(travel.name,defense?'guardian-roll-travel':'guardian-punch-travel')
+        assert(travel.x>0,'Guardian must travel to its target')
+        for(const sample of travel.samples.filter(s=>s.time!==1400||defense)) {
+          assert(Math.abs(sample.x-(sample.time===630?travel.x:0))<.1,JSON.stringify(sample))
+          assert(Math.abs(sample.y-(sample.time===630?travel.y:0))<.1,JSON.stringify(sample))
+          assert.equal(sample.scaleX,1)
+          assert.equal(sample.scaleY,1)
+        }
+      }
+      if(character==='ironclad') {
+        const clock=await page.locator(`[data-attack-seq="${next}"]`).evaluate(layer=>{
+          const rest=layer.parentElement.querySelector(':scope > img')
+          const ready=layer.querySelector('.character-attack__pose--ironclad-ready')
+          const impact=layer.querySelector('.character-attack__pose--ironclad-impact')
+          const animations=[...layer.getAnimations({subtree:true}),...rest.getAnimations()]
+          const swing=animations.find(a=>a.animationName==='attack-swing').effect.getTiming()
+          const saved=animations.map(a=>a.currentTime)
+          const samples=[0,540,630,850,1130,1170,1260,1700].map(time=>{
+            animations.forEach(a=>{a.pause();a.currentTime=time})
+            const m=new DOMMatrixReadOnly(getComputedStyle(layer).transform)
+            return {time,x:m.e,y:m.f,scaleX:m.a,scaleY:m.d,
+              poses:[ready,impact,rest].map(e=>Number(getComputedStyle(e).opacity))}
+          })
+          animations.forEach((a,i)=>{a.currentTime=saved[i];a.play()})
+          return {duration:swing.duration,delay:swing.delay,samples,
+            x:parseFloat(layer.style.getPropertyValue('--attack-x')),
+            y:parseFloat(layer.style.getPropertyValue('--attack-y'))}
+        })
+        assert.equal(clock.duration,500,'Ironclad sword swing must last 500ms')
+        assert.equal(clock.delay,630,'Ironclad sword swing starts after the dash')
+        assert(clock.x>0,'Ironclad must dash to the target')
+        for(const sample of clock.samples){
+          const atTarget=sample.time>=630&&sample.time<=1170
+          assert(Math.abs(sample.x-(atTarget?clock.x:0))<.1,JSON.stringify(sample))
+          assert(Math.abs(sample.y-(atTarget?clock.y:0))<.1,JSON.stringify(sample))
+          assert.equal(sample.scaleX,1,'Ironclad grew during travel')
+          assert.equal(sample.scaleY,1,'Ironclad squashed during travel')
+          assert.deepEqual(sample.poses,sample.time<630?[1,0,0]:sample.time<1260?[0,1,0]:[0,0,1],JSON.stringify(sample))
+        }
+      }
       await page.waitForTimeout(2100)
     }
     for (const enemy of enemies) {
