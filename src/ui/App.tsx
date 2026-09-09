@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { orderStartTurnScries, resolveHermitSetupLoad, resolveStartTurnScry, type CombatState } from '../game/combat.ts'
-import { assetPath } from '../game/assets.ts'
+import { assetPath, preloadImages, releasePreloadedImages } from '../game/assets.ts'
 import {
   advanceAct,
   advanceQuickSetup,
@@ -682,6 +682,17 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const allocatingCampaignMarks = run.campaign.finalized || run.campaignProgress.unspentMarks > 0
+  useEffect(() => {
+    if (!allocatingCampaignMarks) return
+    // The campaign journal precedes the direct character-selection route.
+    // Warm its selected hero and the following campaign choice while players
+    // assign marks or review their result.
+    const campaignArt = ['menu/campaign-standard-menu.webp', 'menu/campaign-downfall-menu.webp']
+    const characterArt = `menu/character-select/character-${characters[0] ?? 'ironclad'}-wallpaper.webp`
+    void preloadImages(campaignArt, { decode: true, fetchPriority: 'high' })
+    void preloadImages([characterArt], { decode: true, fetchPriority: 'high' })
+    return () => releasePreloadedImages([...campaignArt, characterArt])
+  }, [allocatingCampaignMarks, characters])
   function allocateCampaignMark(colorless: number, actIV: number) {
     setRun((current) => {
       const progress = allocateSharedMarks(current.campaignProgress, colorless, actIV)

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
-import { assetPath } from '../game/assets.ts'
+import { assetPath, preloadImages, releasePreloadedImages } from '../game/assets.ts'
 import type { CombatState } from '../game/combat.ts'
 import { ASCENSION_RULES, canGiveUpRun, hasPendingRelicAcquisition, victoryIsTerminal } from '../game/run.ts'
 import { relicDef } from '../game/relics.ts'
@@ -257,6 +257,14 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const previousOnlineScreen = useRef<string | null>(null)
   const snapshot = room.snapshot
   const giveUpVote = snapshot?.giveUpVote?.deadlineAt === expiredGiveUpDeadline ? undefined : snapshot?.giveUpVote
+  useEffect(() => {
+    if (!snapshot || snapshot.run) return
+    // Players spend time in the lobby while the party forms. Use it to warm
+    // the only next-screen artwork rather than delaying campaign selection.
+    const campaignArt = ['menu/campaign-standard-menu.webp', 'menu/campaign-downfall-menu.webp']
+    preloadImages(campaignArt, { decode: true, fetchPriority: 'high' })
+    return () => releasePreloadedImages(campaignArt)
+  }, [snapshot?.code, snapshot?.run])
   useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected',
     settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_SOUND_DELAY_MS)
   useCombatMusic(snapshot?.run, settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume)

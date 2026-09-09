@@ -688,6 +688,7 @@ for (const name of ['Ironclad', 'Silent', 'Defect', 'Watcher']) {
 await page.getByRole('button', { name: 'Silent', exact: true }).click()
 const selectedCharacterScreen = page.locator('.start-menu__character-select').last()
 await selectedCharacterScreen.locator('.start-menu__character-wallpaper[src$="character-silent-wallpaper.webp"]').waitFor()
+await selectedCharacterScreen.locator('.start-menu__character-wallpaper[data-decoded]').waitFor()
 const characterTransition = await selectedCharacterScreen.locator('.start-menu__character-wallpaper').evaluate((wallpaper) =>
   getComputedStyle(wallpaper).animationName)
 await page.getByRole('button', { name: 'Ironclad', exact: true }).click()

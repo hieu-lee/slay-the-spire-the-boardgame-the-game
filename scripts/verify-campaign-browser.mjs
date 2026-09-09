@@ -15,6 +15,12 @@ await vite.listen()
 const origin = `http://127.0.0.1:${vite.httpServer.address().port}`
 const browser = await chromium.launch({ headless: true })
 const errors = []
+const campaignAssetPaths = ['menu/campaign-standard-menu.webp', 'menu/campaign-downfall-menu.webp']
+
+async function waitForCampaignAssets(page) {
+  await page.waitForFunction((paths) => paths.every((path) => performance.getEntriesByType('resource')
+    .some((entry) => entry.name.endsWith(`/assets/${path}`) && entry.responseEnd > 0)), campaignAssetPaths)
+}
 
 async function chooseSide(page, campaign, touch = false) {
   // Select the center of each clipped campaign panel.
@@ -27,13 +33,12 @@ async function chooseSide(page, campaign, touch = false) {
 async function inspect(page, name) {
   const split = page.locator('.campaign-select__split')
   await split.scrollIntoViewIfNeeded()
-  await page.locator('.campaign-select__side img').evaluateAll(async (images) => {
-    await Promise.all(images.map((image) => image.decode()))
-  })
+  await page.waitForFunction(() => [...document.querySelectorAll('.campaign-select__side img')]
+    .every((image) => image.dataset.decoded === 'true'))
   const geometry = await split.evaluate((element) => {
     const box = element.getBoundingClientRect()
     return { width: box.width, left: box.left, right: box.right, viewport: innerWidth, top: box.top, bottom: box.bottom, height: innerHeight,
-      images: [...element.querySelectorAll('img')].every((image) => image.naturalWidth >= 2048),
+      images: [...element.querySelectorAll('img')].every((image) => image.naturalWidth >= 1280),
       clips: [...element.querySelectorAll('button')].map((button) => getComputedStyle(button).clipPath) }
   })
   assert.equal(geometry.left, 0)
@@ -47,6 +52,44 @@ async function inspect(page, name) {
   await page.screenshot({ path: `${out}/${name}.png`, fullPage: true })
 }
 try {
+  const loadingContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const loadingPage = await loadingContext.newPage()
+  const heldRequests = new Map()
+  let allRequestsHeld
+  const allHeld = new Promise((resolve) => { allRequestsHeld = resolve })
+  const delayedAssets = [
+    'menu/character-select/character-ironclad-wallpaper.webp',
+    ...campaignAssetPaths,
+  ]
+  await loadingPage.route('**/assets/menu/**', async (route) => {
+    const path = delayedAssets.find((asset) => route.request().url().endsWith(`/assets/${asset}`))
+    if (!path) return route.continue()
+    await new Promise((resolve) => {
+      heldRequests.set(path, () => void route.continue().then(resolve, resolve))
+      if (heldRequests.size === delayedAssets.length) allRequestsHeld()
+    })
+  })
+  const assetRequests = Promise.all(delayedAssets.map((asset) =>
+    loadingPage.waitForRequest((request) => request.url().endsWith(`/assets/${asset}`))))
+  await loadingPage.goto(origin, { waitUntil: 'networkidle' })
+  await loadingPage.getByRole('button', { name: 'Single Player', exact: true }).click()
+  await Promise.all([assetRequests, allHeld])
+  await loadingPage.getByRole('button', { name: 'Standard', exact: true }).click()
+  assert.equal(await loadingPage.getByRole('button', { name: 'Standard', exact: true }).isDisabled(), true)
+  assert.equal(await loadingPage.locator('.start-menu__character-select').count(), 0)
+  await loadingPage.locator('.start-menu__mode-loading').waitFor()
+  heldRequests.get('menu/character-select/character-ironclad-wallpaper.webp')?.()
+  await loadingPage.locator('.start-menu__character-wallpaper').waitFor()
+  await loadingPage.getByRole('button', { name: 'Embark', exact: true }).click()
+  assert.equal(await loadingPage.getByRole('button', { name: 'Embark', exact: true }).isDisabled(), true)
+  assert.equal(await loadingPage.locator('.campaign-select').count(), 0)
+  await loadingPage.getByRole('button', { name: 'Back', exact: true }).click()
+  await loadingPage.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
+  for (const asset of campaignAssetPaths) heldRequests.get(asset)?.()
+  await loadingPage.waitForTimeout(50)
+  assert.equal(await loadingPage.locator('.campaign-select').count(), 0)
+  await loadingContext.close()
+
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'landscape-phone', width: 844, height: 390 }]) {
     for (const [campaign, character] of [['base', 'Guardian'], ['downfall', 'Ironclad']]) {
       const touch = viewport.name === 'landscape-phone'
@@ -57,8 +100,18 @@ try {
       await page.getByRole('button', { name: 'Single Player', exact: true }).click()
       await page.getByRole('button', { name: 'Standard', exact: true }).click()
       await page.getByRole('button', { name: character, exact: true }).click()
+      await waitForCampaignAssets(page)
       await page.getByRole('button', { name: 'Embark', exact: true }).click()
+      await page.locator('.campaign-select').waitFor()
       await inspect(page, `solo-${viewport.name}-${campaign}`)
+      await page.getByRole('button', { name: 'Back', exact: true }).click()
+      const characterScreen = page.locator('.start-menu__character-select')
+      await characterScreen.waitFor()
+      assert.equal(await characterScreen.locator('.start-menu__character-wallpaper').evaluate((image) => image.naturalWidth >= 2048), true)
+      await page.waitForFunction((name) => [...document.querySelectorAll('button')]
+        .some((button) => button.getAttribute('aria-label') === name && button === document.activeElement), character)
+      await page.getByRole('button', { name: 'Embark', exact: true }).click()
+      await page.locator('.campaign-select').waitFor()
       assert.equal(await page.getByRole('heading', { name: 'Choose your campaign' }).evaluate((el) => el === document.activeElement), true)
       if (!touch) {
         const side = page.locator('.campaign-select__side--base')
@@ -107,6 +160,7 @@ try {
       await guest.getByRole('button', { name: 'Join', exact: true }).click()
       await guest.locator('.online-lobby').waitFor()
       await host.waitForFunction(() => !document.querySelector('.online-lobby__start')?.disabled)
+      await Promise.all([waitForCampaignAssets(host), waitForCampaignAssets(guest)])
       assert.equal(await host.locator('.campaign-select').count(), 0)
       await host.getByRole('button', { name: 'Enter the Spire', exact: true }).click()
       await guest.locator('.campaign-select').waitFor()

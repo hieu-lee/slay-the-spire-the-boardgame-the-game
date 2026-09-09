@@ -5,6 +5,10 @@ The user supplied both cover images. They were edited with the imagegen skill CL
 - `public/assets/menu/campaign-standard.webp`
 - `public/assets/menu/campaign-downfall.webp`
 
+The originals stay at 2816 × 2816 for source-quality reference. Campaign selection
+uses the derived 1280 × 1280 `*-menu.webp` variants, encoded at WebP quality 88,
+so the menu does not retain two roughly 30 MiB textures while it preloads the next screen.
+
 First pass: remove all text, lettering, title and publisher logos, banners behind lettering, and watermarks; reconstruct the artwork behind them while preserving characters, poses, composition, painterly style, lighting and floating cards. Output: 2048 × 2048.
 
 Second pass used those cleaned outputs as edit inputs, at the user's request. Output: 2816 × 2816. Prompt for the standard artwork:
