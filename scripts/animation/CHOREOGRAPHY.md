@@ -10,6 +10,7 @@ existing clocks.
 | Ironclad | original raised-sword windup 0–540; dash 540–630; downward strike/follow-through 630–1130 (500ms); settle 1130–1170; return dash 1170–1260; horizontal-sword recovery 1260–1800 |
 | Silent | ready 0–150; throw/outbound daggers 150–1025; hold throw through returning daggers 1025–1900 (including existing per-target stagger) |
 | Defect | charge 0–550; release 550–1100; recover 1100–1650; bolt contact remains 1110 |
+| Defect evokes | Lightning and Dark beams connect mouth to authoritative targets at 240ms, flicker through 760ms; Frost blooms on self for 800ms; normal attacks retain blue orbs |
 | Watcher | ready 0–550; staff cast 550–1100; recover 1100–1650; meteor contact remains 1050 |
 | Guardian attack form | brace 0–400; dash 400–550; punch 550–1100; return 1100–1430; recover 1430–1650 |
 | Guardian defense form | brace 0–200; roll into target 200–630; contact hold 630–850; reverse roll 850–1400; settle 1400–1650 |
@@ -43,6 +44,23 @@ These are authored from the original silhouettes, weapons and anatomy:
 | Spire Spear | draw spear back along its shaft, straight forward thrust, pause at extension, pull back |
 | Red Slaver | short spear draw-back and jab, delayed net sway, return to guard |
 | Blue Slaver | extend hooked blade, sweep down and pull back as if catching an opponent, recover |
+
+## Normal enemies and summons
+
+All 47 normal enemy art IDs have idle and attack sequences, sharing the existing
+1830ms enemy turn and 730ms contact. Melee designs brace, advance into their
+target, strike and return; ranged designs charge at home, release at 500ms,
+and recover while the projectile travels for 230ms. Impacts bloom for 480ms.
+Acid splashes rise from the target's feet. Row, facing and area attacks use the
+same living-player target rules as combat resolution.
+
+Slimes pulse and spit or hop; lice and parasites pounce; Jaw Worm and Maw bite;
+Byrds flap and dive; fungi, Darklings and Gremlins brace and bash; humanoid
+blades thrust; Centurion drives its shield; tentacles and Snake Plant lash.
+Casters tilt their intact staff or core toward the target and discharge matching
+magic, poison, fire, frost or lightning. Rigid daggers and shivs dart tip first.
+Downfall Slayer silhouettes retain their own weapons and casting style. Hard
+props use rigid motion; flesh, wings and cloth use small weighted bends.
 
 Rigid blades must remain rigid. If a cutout cannot reach its intended poses
 without breaking anatomy, use drawn key poses and in-betweens, preserving the

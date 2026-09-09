@@ -25,7 +25,13 @@
 }
 
 .combat-vfx--actor { z-index: 3; }
-.combat-vfx--target { z-index: 12; }
+.combat-vfx--target {
+  z-index: 12;
+  inset: auto;
+  left: calc(var(--vfx-center-x, 50%) - 74%);
+  top: calc(var(--vfx-center-y, 50%) - 74%);
+  width: 148%; height: 148%;
+}
 
 .combat-vfx::before,
 .combat-vfx::after {

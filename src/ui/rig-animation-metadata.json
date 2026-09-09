@@ -217,7 +217,13 @@
   "sentry": {
     "contactLeft": 115,
     "height": 601,
-    "scale": 1.25
+    "scale": 1.25,
+    "projectile": "lightning-channel",
+    "impact": "turn-lightning-passive-impact",
+    "origin": [
+      200,
+      350
+    ]
   },
   "book_of_stabbing": {
     "contactLeft": 119,
@@ -268,5 +274,415 @@
     "contactLeft": 95,
     "height": 400,
     "scale": 1.25
+  },
+  "small_slime": {
+    "contactLeft": 59,
+    "height": 320,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-pounce"
+  },
+  "acid_slime": {
+    "contactLeft": 59,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "silent-poison",
+    "impact": "turn-poison-impact",
+    "origin": [
+      133,
+      338
+    ]
+  },
+  "large_slime": {
+    "contactLeft": 64,
+    "height": 225,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "silent-poison",
+    "impact": "turn-poison-impact",
+    "origin": [
+      138,
+      172
+    ]
+  },
+  "spike_slime": {
+    "contactLeft": 58,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-pounce"
+  },
+  "cultist": {
+    "contactLeft": 32,
+    "height": 469,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "jaw_worm": {
+    "contactLeft": 62,
+    "height": 250,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-pounce"
+  },
+  "green_louse": {
+    "contactLeft": 50,
+    "height": 250,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-pounce"
+  },
+  "red_louse": {
+    "contactLeft": 51,
+    "height": 250,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-pounce"
+  },
+  "fungi_beast": {
+    "contactLeft": 62,
+    "height": 266,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-pounce"
+  },
+  "looter": {
+    "contactLeft": 52,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "mugger": {
+    "contactLeft": 66,
+    "height": 411,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-stabs"
+  },
+  "mad_gremlin": {
+    "contactLeft": 60,
+    "height": 420,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "sneaky_gremlin": {
+    "contactLeft": 70,
+    "height": 545,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-stabs"
+  },
+  "gremlin_wizard": {
+    "contactLeft": 74,
+    "height": 437,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "magic-burst",
+    "impact": "turn-dark-evoke-impact",
+    "origin": [
+      111,
+      173
+    ]
+  },
+  "fat_gremlin": {
+    "contactLeft": 1,
+    "height": 533,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "chosen": {
+    "contactLeft": 71,
+    "height": 601,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "dark-channel",
+    "impact": "turn-dark-evoke-impact",
+    "origin": [
+      181,
+      353
+    ]
+  },
+  "centurion": {
+    "contactLeft": 53,
+    "height": 601,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-bash"
+  },
+  "mystic": {
+    "contactLeft": 87,
+    "height": 421,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "magic-burst",
+    "impact": "magic-burst",
+    "origin": [
+      117,
+      90
+    ]
+  },
+  "byrd": {
+    "contactLeft": 74,
+    "height": 266,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-pounce"
+  },
+  "snake_plant": {
+    "contactLeft": 50,
+    "height": 413,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-stabs"
+  },
+  "shelled_parasite": {
+    "contactLeft": 64,
+    "height": 266,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-pounce"
+  },
+  "snecko": {
+    "contactLeft": 64,
+    "height": 302,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "spheric_guardian": {
+    "contactLeft": 50,
+    "height": 266,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "lightning-channel",
+    "impact": "turn-lightning-passive-impact",
+    "origin": [
+      186,
+      133
+    ]
+  },
+  "spire_growth": {
+    "contactLeft": 57,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "repulsor": {
+    "contactLeft": 104,
+    "height": 266,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "dark-channel",
+    "impact": "turn-dark-evoke-impact",
+    "origin": [
+      164,
+      161
+    ]
+  },
+  "exploder": {
+    "contactLeft": 47,
+    "height": 312,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "lightning-channel",
+    "impact": "turn-damage-impact",
+    "origin": [
+      186,
+      188
+    ]
+  },
+  "orb_walker": {
+    "contactLeft": 56,
+    "height": 352,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "hexaghost-flame",
+    "impact": "hexaghost-flame-impact",
+    "origin": [
+      186,
+      225
+    ]
+  },
+  "maw": {
+    "contactLeft": 67,
+    "height": 266,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "writhing_mass": {
+    "contactLeft": 66,
+    "height": 266,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "darkling": {
+    "contactLeft": 61,
+    "height": 266,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-pounce"
+  },
+  "spiker": {
+    "contactLeft": 56,
+    "height": 374,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "dagger": {
+    "contactLeft": 97,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "torch_head": {
+    "contactLeft": 16,
+    "height": 601,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "bronze_orb": {
+    "contactLeft": 125,
+    "height": 601,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "lightning-channel",
+    "impact": "turn-lightning-passive-impact",
+    "origin": [
+      179,
+      362
+    ]
+  },
+  "downfall_dark_orb": {
+    "contactLeft": 61,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "dark-channel",
+    "impact": "turn-dark-evoke-impact",
+    "origin": [
+      200,
+      249
+    ]
+  },
+  "downfall_lightning_orb": {
+    "contactLeft": 41,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "lightning-channel",
+    "impact": "turn-lightning-passive-impact",
+    "origin": [
+      200,
+      255
+    ]
+  },
+  "downfall_frost_orb": {
+    "contactLeft": 82,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "frost-channel",
+    "impact": "turn-frost-passive-impact",
+    "origin": [
+      200,
+      252
+    ]
+  },
+  "downfall_shiv": {
+    "contactLeft": 29,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "downfall_pc_ironclad": {
+    "contactLeft": 39,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
+  },
+  "downfall_pc_silent": {
+    "contactLeft": 63,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "silent-knife",
+    "impact": "turn-damage-impact",
+    "origin": [
+      161,
+      219
+    ]
+  },
+  "downfall_pc_defect": {
+    "contactLeft": 46,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "lightning-channel",
+    "impact": "turn-lightning-passive-impact",
+    "origin": [
+      111,
+      194
+    ]
+  },
+  "downfall_pc_watcher": {
+    "contactLeft": 60,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "magic-burst",
+    "impact": "magic-burst",
+    "origin": [
+      108,
+      316
+    ]
+  },
+  "downfall_loot_chest": {
+    "contactLeft": 48,
+    "height": 400,
+    "scale": 1.15,
+    "attackMotion": "ranged",
+    "rootMotion": "elite-core",
+    "projectile": "hexaghost-flame",
+    "impact": "hexaghost-flame-impact",
+    "origin": [
+      117,
+      265
+    ]
+  },
+  "transient": {
+    "contactLeft": 74,
+    "height": 320,
+    "scale": 1.15,
+    "attackMotion": "melee",
+    "rootMotion": "elite-thrust"
   }
 }

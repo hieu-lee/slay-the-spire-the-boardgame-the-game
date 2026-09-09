@@ -498,3 +498,52 @@
   55.56% { transform: translateY(0) rotate(0) scale(1.02); }
   66.67% { transform: translateY(0) rotate(0) scale(1); }
 }
+
+/* A beam stays connected to its source and target; it never flies as an orb. */
+.defect-evoke {
+  position: absolute;
+  z-index: 12;
+  left: 50%; top: 58%; width: 0; height: 0;
+  pointer-events: none;
+  color: #f8ed77;
+}
+.defect-evoke--dark { color: #b46bff; }
+.defect-evoke__ray {
+  position: absolute;
+  left: 0; top: -1.1rem;
+  width: var(--beam-length); height: 2.2rem;
+  transform: rotate(var(--beam-angle));
+  transform-origin: left center;
+}
+.defect-evoke__beam {
+  width: 100%; height: 100%; overflow: visible;
+  filter: drop-shadow(0 0 .35rem currentColor);
+  transform-origin: left center;
+  animation: defect-evoke-beam 520ms 240ms ease-out both;
+}
+.defect-evoke__beam path {
+  fill: none; stroke: #fffbe0; stroke-width: 2.5;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.defect-evoke__beam .defect-evoke__glow { stroke: currentColor; stroke-width: 10; opacity: .6; }
+.defect-evoke--dark .defect-evoke__beam path { stroke: #ead5ff; stroke-width: 5; }
+.defect-evoke--dark .defect-evoke__beam .defect-evoke__glow { stroke: #7327c4; stroke-width: 20; opacity: .85; }
+.defect-evoke__beam .defect-evoke__fork { stroke: currentColor; stroke-width: 1.5; opacity: .8; }
+.defect-evoke__frost {
+  position: absolute;
+  width: calc(10rem * var(--stage-scale)); max-width: none;
+  height: calc(10rem * var(--stage-scale));
+  transform: translate(-50%, -50%);
+  animation: defect-evoke-frost 800ms ease-out both;
+}
+@keyframes defect-evoke-beam {
+  0% { opacity: 0; scale: 1 .2; }
+  8%, 28%, 52% { opacity: 1; scale: 1 1; }
+  18%, 40% { opacity: .75; scale: 1 .7; }
+  100% { opacity: 0; scale: 1 .25; }
+}
+@keyframes defect-evoke-frost {
+  0% { opacity: 0; scale: .6; }
+  20%, 45% { opacity: .95; }
+  100% { opacity: 0; scale: 1.15; }
+}

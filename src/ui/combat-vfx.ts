@@ -1,9 +1,11 @@
 import { CARDS, faceOf, type CardDef, type Effect } from '../game/cards.ts'
+import { actionsForEnemy } from '../game/enemies.ts'
+import { playersInRowOf } from '../game/combat/board.ts'
 import { assetPath } from '../game/assets.ts'
 import rigMetadata from './rig-animation-metadata.json' with { type: 'json' }
 import { POTIONS } from '../game/relics.ts'
-import type { TurnEffectPresentation } from '../game/combat/types.ts'
-import type { CardType, CharacterId, OrbType } from '../game/types.ts'
+import type { CombatState, TurnEffectPresentation } from '../game/combat/types.ts'
+import type { CardType, CharacterId, OrbType, Enemy } from '../game/types.ts'
 
 export type VfxFamily =
   | 'slash' | 'blunt' | 'projectile' | 'poison' | 'shiv' | 'lightning' | 'frost' | 'dark'
@@ -31,8 +33,21 @@ const MELEE_BOSS_ART = new Set([
   'downfall_wrathful',
 ])
 
+/** Mirror the attack's row, facing and area targeting for visual effects. */
+export function enemyAttackTargetPlayerIds(state: CombatState, enemy: Enemy): string[] {
+  const actions = actionsForEnemy(enemy, state.die)
+  const rowTargets = playersInRowOf(state, enemy)
+  return state.players.filter(player => !player.dead && actions.some(action => {
+    if (action.kind === 'attack') return action.aoe || (action.facing
+      ? player.facingEnemyUid === enemy.uid : rowTargets.includes(player))
+    return action.kind === 'attackSequence' && action.hits.some(hit =>
+      hit.aoe || rowTargets.includes(player))
+  })).map(player => player.id)
+}
+
 export function bossAttackMotionFor(artId: string): 'melee' | 'ranged' {
-  return MELEE_BOSS_ART.has(artId) ? 'melee' : 'ranged'
+  return (rigMetadata as Record<string, { attackMotion?: 'melee' | 'ranged' }>)[artId]?.attackMotion
+    ?? (MELEE_BOSS_ART.has(artId) ? 'melee' : 'ranged')
 }
 
 const BOSS_PROJECTILE_ART = new Set([
@@ -41,9 +56,25 @@ const BOSS_PROJECTILE_ART = new Set([
 ])
 
 export function bossProjectileImagePath(artId: string): string | undefined {
+  const projectile = (rigMetadata as Record<string, { projectile?: string }>)[artId]?.projectile
+  if (projectile) return assetPath(`combat/vfx/actions/${projectile}.webp`)
   return BOSS_PROJECTILE_ART.has(artId)
     ? assetPath(`combat/enemies/projectiles/${artId}.webp`)
     : undefined
+}
+
+export function enemyProjectileImpactPath(artId: string): string | undefined {
+  const impact = (rigMetadata as Record<string, { impact?: string }>)[artId]?.impact
+  return impact ? assetPath(`combat/vfx/actions/${impact}.webp`) : undefined
+}
+
+export function enemyProjectileOriginFor(artId: string): [number, number] | undefined {
+  const origin = (rigMetadata as Record<string, { origin?: number[] }>)[artId]?.origin
+  return origin?.length === 2 ? [origin[0]!, origin[1]!] : undefined
+}
+
+export function enemyAttackAnimationFor(artId: string): string | undefined {
+  return (rigMetadata as Record<string, { rootMotion?: string }>)[artId]?.rootMotion
 }
 
 export function bossAttackDurationFor(_artId: string): number {

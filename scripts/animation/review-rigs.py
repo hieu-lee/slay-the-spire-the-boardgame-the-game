@@ -56,6 +56,10 @@ def reviewed_rigs():
             assert np.abs(first[:,:,:3]*first[:,:,3:]/255-last[:,:,:3]*last[:,:,3:]/255).mean()<3, (name,'rest pose does not return')
         idx = min(len(poses['attack'][0])-1, int(np.searchsorted(poses['attack'][1], spec.get('duration',1830)*spec.get('contact',.4), side='right')))
         metadata[name] = {'contactLeft': poses['attack'][0][idx].getbbox()[0], 'height': poses['attack'][0][idx].height, 'scale': spec.get('displayScale', 1)}
+        metadata[name].update({key:spec[key] for key in ('attackMotion','rootMotion','projectile','impact') if key in spec})
+        if 'emitter' in spec:
+            left,top,right,bottom = poses['idle'][0][0].getbbox()
+            metadata[name]['origin'] = [round(left+(right-left)*spec['emitter'][0]), round(top+(bottom-top)*spec['emitter'][1])]
         yield (name,poses,spec.get('duration',1830))
 
 def render_gallery(group, batch):

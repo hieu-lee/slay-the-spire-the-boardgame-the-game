@@ -597,9 +597,8 @@ check('every Downfall enemy asset maps to an official source', () => {
   ), 'Downfall Shiv is not the deterministic lossless conversion of the existing base-game Shiv asset')
 })
 
-check('every boss and elite resolves to the continuous rig inventory', () => {
-  const defs = Object.values(ENEMIES).filter((def) => def.isBoss || def.elite ||
-    ['sentry', 'red_slaver', 'blue_slaver'].includes(def.artId ?? def.id))
+check('every enemy resolves to the continuous rig inventory', () => {
+  const defs = Object.values(ENEMIES)
   for (const def of defs) for (const pose of ['idle', 'attack']) {
     const relative = enemyAnimationImagePath(def, pose).replace(/^\/assets\//, '')
     assert(existsSync(join(publicRoot, 'assets', relative)), `${def.id}: missing ${pose} rig`)
@@ -900,8 +899,13 @@ check('combat animation effects are complete, transparent, and compact', () => {
     'watcher-calm-aura.webp', 'watcher-meteor-impact.webp', 'watcher-meteor.webp',
     'watcher-pray.webp', 'watcher-wrath-aura.webp',
   ]
+  const expectedTurnEffects = [
+    'block', 'block-loss', 'buff', 'burn', 'countdown', 'damage', 'dark-evoke',
+    'discard', 'draw', 'exhaust', 'frost-passive', 'heal', 'lightning-passive',
+    'poison', 'strength', 'strength-loss', 'vulnerable', 'weak',
+  ].map(name => `turn-${name}-impact.webp`)
   assertDeepEqual(combatVfxFiles.sort(), expected, 'combat VFX inventory')
-  assertDeepEqual(combatActionVfxFiles.sort(), expectedActions, 'personal combat VFX inventory')
+  assertDeepEqual(combatActionVfxFiles.sort(), [...expectedActions, ...expectedTurnEffects].sort(), 'personal combat VFX inventory')
   const entryHtml = readFileSync(join(repoRoot, 'index.html'), 'utf8')
   for (const file of expectedActions.filter((file) => file !== 'downfall-demon-ground-splat.webp')) {
     assert(entryHtml.includes(`/assets/combat/vfx/actions/${file}`), `${file} is not preloaded for first use`)
@@ -909,11 +913,11 @@ check('combat animation effects are complete, transparent, and compact', () => {
   assert(!entryHtml.includes('/assets/combat/vfx/actions/downfall-demon-ground-splat.webp'),
     'Demon-only splat is globally preloaded')
   assert(readFileSync(join(repoRoot, 'src/ui/EnemyCard.tsx'), 'utf8')
-    .includes("assetPath('combat/vfx/actions/downfall-demon-ground-splat.webp')"),
+    .includes("'combat/vfx/actions/downfall-demon-ground-splat.webp'"),
   'Demon splat is not conditionally preloaded with the rendered boss')
   const files = [
     ...expected.map((file) => join(combatVfxRoot, file)),
-    ...expectedActions.map((file) => join(combatActionVfxRoot, file)),
+    ...[...expectedActions, ...expectedTurnEffects].map((file) => join(combatActionVfxRoot, file)),
   ]
   const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
   assert(result.status === 0, result.stderr || 'could not inspect combat VFX')
@@ -960,7 +964,7 @@ print(json.dumps(faults))
 check('bundled stage and generated icon inventories are complete and decodable', () => {
   const expectedStatus = [
     'aoe', 'attack', 'block', 'burn', 'draw', 'energy', 'miracle', 'orb', 'poison',
-    'power', 'shiv', 'slime', 'strength', 'vulnerable', 'weak',
+    'power', 'shiv', 'slime', 'strength', 'vigor', 'vulnerable', 'weak',
   ].map((name) => `${name}.png`)
   const expectedPowers = [
     'accuracy', 'after_image', 'apotheosis', 'barricade', 'capacitor', 'combust', 'consume',
@@ -990,8 +994,9 @@ check('bundled stage and generated icon inventories are complete and decodable',
     ...potionIconFiles.map((name) => join(potionIconRoot, name))]) {
     const bytes = readFileSync(file)
     assert(bytes.subarray(1, 4).toString() === 'PNG', `${file} is not a PNG`)
-    assert(bytes.readUInt32BE(16) === 256 && bytes.readUInt32BE(20) === 256,
-      `${file} is not 256x256`)
+    const size = file === join(statusIconRoot, 'vigor.png') ? 128 : 256
+    assert(bytes.readUInt32BE(16) === size && bytes.readUInt32BE(20) === size,
+      `${file} is not ${size}x${size}`)
     assert(bytes[25] === 6, `${file} is not an RGBA PNG`)
   }
 })

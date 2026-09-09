@@ -15,9 +15,13 @@ import {
   bossAttackContactLeftFor,
   bossAttackDurationFor,
   enemyArtScaleFor,
+  enemyAttackAnimationFor,
+  enemyProjectileImpactPath,
+  enemyProjectileOriginFor,
   bossAttackMotionFor,
   bossProjectileImagePath,
 } from './combat-vfx.ts'
+import { combatBodyPoint } from './combat-geometry.ts'
 
 type EnemyCardProps = {
   enemy: Enemy
@@ -373,8 +377,7 @@ export function EnemyCard({
   const actualName = enemyDef(enemy.defId, enemy.ascension).name
   const visibleLabel = label.startsWith(actualName) ? `${def.name}${label.slice(actualName.length)}` : label
   const actions = actionsForEnemy(visibleEnemy, die)
-  const animatedEnemy = Boolean(animateArt && !visibleEnemy.dead && (visibleEnemy.isBoss || def.elite ||
-    ['sentry', 'red_slaver', 'blue_slaver'].includes(def.artId ?? def.id)))
+  const animatedEnemy = Boolean(animateArt && !visibleEnemy.dead)
   const currentBossArtId = def.artId ?? def.id
   const bossHasAttackAction = actions.some((action) => action.kind === 'attack' || action.kind === 'attackSequence')
   const currentBossAttackArt = currentBossArtId === 'downfall_demon'
@@ -382,6 +385,7 @@ export function EnemyCard({
     : enemyAnimationImagePath(def, 'attack')
   const currentIdleArt = enemyAnimationImagePath(def, 'idle')
   const currentBossProjectileArt = bossProjectileImagePath(currentBossArtId)
+  const currentProjectileImpact = enemyProjectileImpactPath(currentBossArtId)
   const bossAttackRequested = Boolean(animatedEnemy && acting && bossHasAttackAction)
   useLayoutEffect(() => {
     if (!acting) setAwaitingNextEnemyPhase(false)
@@ -435,16 +439,19 @@ export function EnemyCard({
     }
   }, [animatedEnemy, currentBossArtId])
   useEffect(() => {
-    if (!currentBossProjectileArt) return
-    const preload = new Image()
-    preload.src = currentBossProjectileArt
-    void preload.decode?.().catch(() => undefined)
-  }, [currentBossProjectileArt])
+    for (const path of [currentBossProjectileArt, currentProjectileImpact]) {
+      if (!path) continue
+      const preload = new Image()
+      preload.src = path
+      void preload.decode?.().catch(() => undefined)
+    }
+  }, [currentBossProjectileArt, currentProjectileImpact])
   const bossArtId = presentedBossAttack?.artId ?? currentBossArtId
   const demonAttacking = bossAttacking && bossArtId === 'downfall_demon'
   const bossAttackMotion = animatedEnemy ? bossAttackMotionFor(bossArtId) : 'ranged'
   const bossAttackContactLeft = bossAttackContactLeftFor(bossArtId)
   const bossProjectileArt = bossAttackMotion === 'ranged' ? bossProjectileImagePath(bossArtId) : undefined
+  const projectileImpact = enemyProjectileImpactPath(bossArtId)
   const rangedTargetKey = rangedTargetPlayerIds.join('\0')
   useLayoutEffect(() => {
     const card = cardRef.current
@@ -500,6 +507,7 @@ export function EnemyCard({
     const board = card.closest('.board')
     if (!boss || !board) return
     const measure = () => {
+      if (!boss.naturalWidth || !boss.naturalHeight) return
       const cardRect = card.getBoundingClientRect()
       const bossRect = boss.getBoundingClientRect()
       // Overscan enlarges transparent padding, not the body. Anchor to the
@@ -508,26 +516,33 @@ export function EnemyCard({
       const fit = Math.min(bossRect.width / boss.naturalWidth, bossRect.height / boss.naturalHeight)
       const bodyWidth = boss.naturalWidth * fit / scale
       const bodyHeight = boss.naturalHeight * fit / scale
-      const startX = bossRect.left + bossRect.width / 2 - bodyWidth * .16
-      const startY = bossRect.bottom - bodyHeight * .52
+      const origin = enemyProjectileOriginFor(bossArtId)
+      const startX = origin ? bossRect.left + (bossRect.width - boss.naturalWidth * fit) / 2 + origin[0] * fit
+        : bossRect.left + bossRect.width / 2 - bodyWidth * .16
+      const startY = origin ? bossRect.bottom - boss.naturalHeight * fit + origin[1] * fit
+        : bossRect.bottom - bodyHeight * .52
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-      for (const projectile of card.querySelectorAll<HTMLElement>('.boss-projectile')) {
+      const groundImpact = projectileImpact?.endsWith('/turn-poison-impact.webp')
+      for (const projectile of card.querySelectorAll<HTMLElement>('.boss-projectile, .enemy-projectile-impact')) {
         const playerId = projectile.dataset.targetPlayer
         const target = playerId
           ? board.querySelector<HTMLElement>(`.seat[data-player-id="${CSS.escape(playerId)}"] .seat__portrait`)
           : null
         if (!target) continue
         const targetRect = target.getBoundingClientRect()
+        const body = combatBodyPoint(target)
         projectile.style.setProperty('--boss-projectile-start-x', `${(startX - cardRect.left) / rem}rem`)
         projectile.style.setProperty('--boss-projectile-start-y', `${(startY - cardRect.top) / rem}rem`)
-        projectile.style.setProperty('--boss-projectile-x', `${(targetRect.left + targetRect.width / 2 - startX) / rem}rem`)
-        projectile.style.setProperty('--boss-projectile-y', `${(targetRect.top + targetRect.height / 2 - startY) / rem}rem`)
+        projectile.style.setProperty('--boss-projectile-x', `${(body.x - startX) / rem}rem`)
+        projectile.style.setProperty('--boss-projectile-y', `${((groundImpact ? targetRect.bottom : body.y) - startY) / rem}rem`)
       }
     }
-    if (boss.complete && boss.naturalHeight > 0) measure()
-    else boss.addEventListener('load', measure, { once: true })
-    return () => boss.removeEventListener('load', measure)
-  }, [art, bossArtId, bossAttacking, bossProjectileArt, rangedTargetKey])
+    measure()
+    board.addEventListener('load', measure, true)
+    const resize = new ResizeObserver(measure)
+    resize.observe(board)
+    return () => { resize.disconnect(); board.removeEventListener('load', measure, true) }
+  }, [art, bossArtId, bossAttacking, bossProjectileArt, projectileImpact, rangedTargetKey])
   const abilities = enemyAbilities(def)
   const mods = attackerModsOfEnemy(visibleEnemy)
   const intent = actions.flatMap((action) => intentParts(action, (printed) => swingDamage(
@@ -567,13 +582,16 @@ export function EnemyCard({
       data-enemy-def={def.id}
       data-boss-act={def.bossAct}
       data-attack-motion={bossAttackMotion}
+      data-attack-choreography={enemyAttackAnimationFor(bossArtId)}
       data-boss-art={visibleEnemy.isBoss ? bossArtId : undefined}
       data-enemy-art={bossArtId}
+      data-projectile-impact={projectileImpact ? true : undefined}
       data-animation={animatedEnemy ? bossAttacking ? 'attack' : 'idle' : 'static'}
       data-webmcp-pending={stageVisualDamage && visualSignature !== JSON.stringify(visibleEnemy) || undefined}
       data-row={enemy.row}
       style={{
         '--stage-index': stageIndex,
+        '--enemy-attack-motion': enemyAttackAnimationFor(bossArtId),
         '--boss-contact-left': bossAttackContactLeft,
         '--animation-art-scale': enemyArtScaleFor(bossArtId),
         '--boss-attack-duration': `${bossAttackDurationFor(bossArtId)}ms`,
@@ -630,6 +648,13 @@ export function EnemyCard({
       {bossAttacking && bossProjectileArt ? rangedTargetPlayerIds.map((playerId) => (
         <span className="boss-projectile" data-target-player={playerId} key={playerId} aria-hidden="true">
           <img src={bossProjectileArt} alt="" />
+        </span>
+      )) : null}
+
+      {bossAttacking && projectileImpact ? rangedTargetPlayerIds.map(playerId => (
+        <span className="enemy-projectile-impact" data-target-player={playerId} key={playerId} aria-hidden="true"
+          data-impact-anchor={projectileImpact.endsWith('/turn-poison-impact.webp') ? 'feet' : undefined}>
+          <img src={projectileImpact} alt="" />
         </span>
       )) : null}
 

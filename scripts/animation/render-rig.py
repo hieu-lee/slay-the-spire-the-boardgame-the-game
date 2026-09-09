@@ -109,6 +109,7 @@ def deform(points, bones, phase, pose, contact, duration=1830, aspect=1):
 
 def render(spec, pose, output, size=400, fps=30):
     source = Image.open(ROOT / spec['source']).convert('RGBA')
+    if spec.get('flipX'): source = source.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     width, height = size, round(size * source.height / source.width)
     source = source.crop(source.getbbox())
     # Generous fixed overscan for weapons, never independently fit each frame.

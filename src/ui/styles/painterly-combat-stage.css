@@ -947,3 +947,44 @@
 }
 
 .seat__interactive:has(.slime-party) .seat__portrait > img { min-height: 0; min-width: 0; }
+
+/* Normal enemies share the established limb/contact clock without elite sizing. */
+.enemy[data-attack-choreography].enemy--acting { z-index: 9; filter: none; }
+.enemy[data-attack-choreography].enemy--acting .enemy__portrait > .enemy__art--cutout {
+  animation: var(--enemy-attack-motion) 1830ms ease-in-out both;
+}
+.enemy[data-projectile-impact] .boss-projectile {
+  width: clamp(2rem, 4vw, 3.5rem);
+  animation-duration: 230ms;
+  animation-delay: 500ms;
+}
+.enemy-projectile-impact {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  top: var(--boss-projectile-start-y);
+  left: var(--boss-projectile-start-x);
+  width: clamp(3rem, 7vw, 6rem);
+  aspect-ratio: 1;
+  transform: translate(calc(var(--boss-projectile-x) - 50%), calc(var(--boss-projectile-y) - 50%));
+}
+.enemy-projectile-impact > img {
+  display: block;
+  width: 100%; height: 100%; object-fit: contain;
+  animation: enemy-projectile-impact 480ms 730ms ease-out both;
+}
+@keyframes enemy-projectile-impact {
+  0% { opacity: 0; scale: .45; }
+  12% { opacity: 1; scale: .8; }
+  50% { opacity: .9; }
+  100% { opacity: 0; scale: 1.2; }
+}
+
+.enemy-projectile-impact[data-impact-anchor='feet'] {
+  transform: translate(calc(var(--boss-projectile-x) - 50%), calc(var(--boss-projectile-y) - 100%));
+}
+.enemy-projectile-impact[data-impact-anchor='feet'] > img {
+  /* Native splash ends at y=446 in its 512px canvas. Grow from painted ground. */
+  translate: 0 12.890625%;
+  transform-origin: 50% 87.109375%;
+}

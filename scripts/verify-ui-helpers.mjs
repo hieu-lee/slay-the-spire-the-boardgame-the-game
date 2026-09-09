@@ -7,6 +7,9 @@ import { CARDS, faceOf } from '../src/game/cards.ts'
 import { POTIONS } from '../src/game/relics.ts'
 import {
   bossAttackMotionFor,
+  enemyAttackTargetPlayerIds,
+  bossProjectileImagePath,
+  enemyProjectileImpactPath,
   cardVfxRecipe,
   orbVfxRecipe,
   potionVfxRecipe,
@@ -33,6 +36,27 @@ import { wingBootLabel } from '../src/ui/wing-boots.ts'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 suite('ui helpers')
+
+check('enemy projectiles respect row, facing, area and living targets', () => {
+  const players = [{id:'p1',row:0,dead:false,facingEnemyUid:'e'},
+    {id:'p2',row:1,dead:false,facingEnemyUid:'other'}, {id:'p3',row:1,dead:true,facingEnemyUid:'e'}]
+  const enemy = {uid:'e',defId:'green_louse',row:1,isBoss:false,actionIndex:0}
+  const state = {players,enemies:[enemy],die:1,lastStand:false}
+  assertDeepEqual(enemyAttackTargetPlayerIds(state,enemy),['p2'])
+  assertDeepEqual(enemyAttackTargetPlayerIds(state,{...enemy,isBoss:true}),['p1','p2'])
+  assertDeepEqual(enemyAttackTargetPlayerIds(state,{...enemy,defId:'exploder',actionIndex:2}),['p1','p2'])
+  assertDeepEqual(enemyAttackTargetPlayerIds(state,{...enemy,defId:'spire_spear'}),['p1'])
+  assertDeepEqual(enemyAttackTargetPlayerIds(state,{...enemy,defId:'snake_plant'}),['p2'])
+  assertDeepEqual(enemyAttackTargetPlayerIds(state,{...enemy,defId:'exploder',actionIndex:1}),[])
+  const lastStand = {...state,lastStand:true,enemies:[enemy,{uid:'boss',isBoss:true}],
+    players:players.map(p=>p.id==='p2'?{...p,dead:true}:p)}
+  assertDeepEqual(enemyAttackTargetPlayerIds(lastStand,enemy),['p1'])
+  assertDeepEqual(enemyAttackTargetPlayerIds(lastStand,{...enemy,defId:'snake_plant'}),['p1'])
+  assertDeepEqual(enemyAttackTargetPlayerIds({...lastStand,lastStand:false},enemy),[])
+  assert(bossProjectileImagePath('gremlin_wizard').endsWith('/magic-burst.webp'))
+  assert(enemyProjectileImpactPath('gremlin_wizard').endsWith('/turn-dark-evoke-impact.webp'))
+})
+
 
 check('every die face maps to its own icon', () => {
   for (let face = 1; face <= 6; face++) {

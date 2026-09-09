@@ -110,3 +110,18 @@ Hexaghost's heat variants share the zero-heat body registration and animation.
 `render-hexaghost-heat.py` composites upright native-alpha flame artwork at
 fixed bases with independent vertical flicker. It also exports matching static
 variants for reduced motion; crowns of heat never rotate with the purple body.
+
+Normal enemies use the same renderer and native-transparent source artwork.
+`rigs.json` specifies each design's root motion, optional projectile/impact and
+emitter position within the first idle silhouette. The audit exports the emitter
+in source pixels, so browser attachment accounts for aspect ratio and overscan.
+`flipX` faces the enemy Ironclad's sword and summoned Shiv toward the heroes
+before registration.
+Run `node scripts/verify-rig-animation-browser.mjs --normal-only` to record and
+check the full normal roster on desktop and horizontal phones; use
+`--hero=defect --only=none` for blue orbs, mouth-origin Lightning/Dark beams and
+self Frost. Both cover repeated playback and reduced motion; evokes also check
+reconnect cleanup. `review-rigs.py` records pose galleries for visual inspection.
+Damage impacts and projectile destinations use the cached painted body center,
+with sprite scale, padding and object fit applied. Acid instead grows from its
+painted base at foot level; Defect's beam source retains its mouth registration.

@@ -47,6 +47,7 @@ import type {
 } from './combat-screen/types.ts'
 import {
   CombatVfx,
+  DefectEvokeVfx,
   characterAttackContactMs,
   isCharacterAttack,
   latestTargetPresentationEvent,
@@ -174,7 +175,8 @@ import {
   shouldDisarmCardFlight,
   stageScaleFor,
 } from './board-signals.ts'
-import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, turnEffectVfxRecipe } from './combat-vfx.ts'
+import { enemyAttackTargetPlayerIds, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, turnEffectVfxRecipe } from './combat-vfx.ts'
+import { combatBodyPoint } from './combat-geometry.ts'
 import { playSoundEffect } from './sfx.ts'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -1079,10 +1081,11 @@ function CombatScreenView({
           const target = enemies.find((enemy) => enemy.dataset.enemyId === id)?.querySelector<HTMLElement>('.enemy__portrait')
           if (!target) return []
           const rect = target.getBoundingClientRect()
-          const x = rect.left + rect.width / 2 - actorCenterX -
+          const body = combatBodyPoint(target)
+          const x = body.x - actorCenterX -
             (player.character === 'silent' ? actorRect.width * 0.15 :
               player.character === 'defect' ? -actorRect.width * 0.03 : 0)
-          const y = (player.character === 'watcher' ? rect.bottom : rect.top + rect.height / 2) -
+          const y = (player.character === 'watcher' ? rect.bottom : body.y) -
             actorCenterY + (player.character === 'silent' ? actorRect.height * 0.19 :
               player.character === 'defect' ? actorRect.height * 0.35 : 0)
           const startY = player.character === 'watcher'
@@ -5715,7 +5718,7 @@ function CombatScreenView({
                     revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
                   />
                 ))}
-                rangedTargetPlayerIds={livingPlayers.map((player) => player.id)}
+                rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
                 stageIndex={stageEnemies.length + index}
                 // A boss stands in every row, so the only reading that means
                 // anything to the person looking at the screen is their own.
@@ -5747,7 +5750,8 @@ function CombatScreenView({
           const occupant = state.players.find((player) => player.row === row)
           const foes = stageEnemies.filter((enemy) => enemy.row === row)
           const actorEvents = occupant ? actorVfxFor(occupant.id) : []
-          const actorVfx = actorEvents.filter(({ event }) => event.enemyIds.length === 0)
+          const actorVfx = actorEvents.filter(({ event }) => event.enemyIds.length === 0 &&
+            !(occupant?.character === 'defect' && event.kind === 'orb' && event.sourceId === 'orb-evoke'))
           const characterAttackMotions = occupant ? characterAttacks[occupant.id] ?? [] : []
           const characterAttack = characterAttackMotions.at(-1)
           const latestCharacterAttackSeq = characterAttack?.active.event.seq
@@ -5969,6 +5973,9 @@ function CombatScreenView({
                               : null}
                           </span>
                         ))}
+                        {!prefersReducedMotion && occupant.character === 'defect' ? actorEvents.map(({ event }) =>
+                          event.kind === 'orb' && event.sourceId === 'orb-evoke'
+                            ? <DefectEvokeVfx key={`evoke-${event.seq}`} event={event} /> : null) : null}
                         {actorVfx.map((active) => (
                           <CombatVfx key={`actor-${active.event.seq}-${active.recipe.asset}`} active={active} role="actor"
                             revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)} />
@@ -6215,6 +6222,7 @@ function CombatScreenView({
                           revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
                         />
                       ))}
+                      rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
                       stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
                       rowLabel={occupant?.name ?? `Player ${row + 1}`}
                       defender={occupant}

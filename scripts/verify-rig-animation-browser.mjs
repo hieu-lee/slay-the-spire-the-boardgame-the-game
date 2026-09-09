@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium } from './lib/profile-browser.mjs'
 import { ENEMIES } from '../src/game/enemies.ts'
-import { bossAttackMotionFor, bossProjectileImagePath } from '../src/ui/combat-vfx.ts'
+import { bossAttackMotionFor, bossProjectileImagePath, enemyProjectileImpactPath } from '../src/ui/combat-vfx.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const output = resolve(root, 'artifacts/rig-animation/browser')
@@ -19,7 +19,8 @@ const heroes = {
   ironclad: 'strike_ironclad', silent: 'predator', defect: 'strike_defect', watcher: 'strike_watcher',
   guardian: 'guardian_strike', 'guardian-defense': 'guardian_strike', hermit: 'hermit_strike', slime_boss: 'slime_boss_strike', hexaghost: 'strike_hexaghost',
 }
-const enemies = [...new Map(Object.values(ENEMIES).filter((e) => e.isBoss || e.elite ||
+const normalsOnly = process.argv.includes('--normal-only')
+const enemies = [...new Map(Object.values(ENEMIES).filter((e) => normalsOnly ? !e.isBoss && !e.elite : e.isBoss || e.elite ||
   ['sentry_a','sentry_b','red_slaver','blue_slaver'].includes(e.id)).map((e) => [e.artId ?? e.id,e])).values()]
   .filter(e=>!process.argv.some(a=>a.startsWith('--only='))||process.argv.includes(`--only=${e.id}`))
 try {
@@ -52,6 +53,7 @@ try {
         const enemy={uid:'enemy-0',defId,row:0,isBoss,hp:999,maxHp:999,block:0,strength:0,vulnerable:0,weak:0,poison:0,actionIndex:0,abilityUsed:false,dead:false}
         f.state=createCombat(rng,[player],Array.from({length:count},(_,i)=>({...enemy,uid:`enemy-${i}`})))
         if(character==='guardian-defense')f.state.players[0].guardianMode='defense'
+        f.state.players[0].facingEnemyUid='enemy-0'
         f.state.phase='player';f.state.presentationEvents=[]
         f.attacks=false
         for(let die=1;die<=6&&!f.attacks;die++)for(let actionIndex=0;actionIndex<8&&!f.attacks;actionIndex++){
@@ -69,7 +71,7 @@ try {
       }
       f.install('ironclad')
     })
-    for (const [character,source] of (process.argv.includes('--elites-only')?[]:Object.entries(heroes))
+    for (const [character,source] of (normalsOnly||process.argv.includes('--elites-only')?[]:Object.entries(heroes))
       .filter(([id])=>!process.argv.some(a=>a.startsWith('--hero='))||process.argv.includes(`--hero=${id}`))) {
       await page.evaluate(c=>window.fixture.install(c),character)
       await page.waitForFunction(()=>document.querySelector('.seat__portrait > img')?.complete)
@@ -167,6 +169,64 @@ try {
         }
       }
       await page.waitForTimeout(2100)
+      if(character==='defect') {
+        await page.evaluate(()=>window.fixture.install('defect','jaw_worm',false,2))
+        await page.waitForTimeout(300)
+        for(const orb of ['lightning','dark','frost']) for(const count of (orb==='frost'?[0]:[1,2])) {
+          const seq=await page.evaluate(({orb,count})=>{
+            const f=window.fixture
+            const seq=++f.seq
+            f.state.presentationEvents=[{kind:'orb',orb,seq,actorId:'p1',sourceId:'orb-evoke',
+              enemyIds:f.state.enemies.slice(0,count).map(e=>e.uid),playerIds:[]}]
+            f.render();return seq
+          },{orb,count})
+          const effect=page.locator(`.defect-evoke[data-evoke-seq="${seq}"]`)
+          await effect.waitFor({state:'attached'})
+          assert.equal(await page.locator('.character-attack__bolt').count(),0,`${orb}: evoke fired a blue orb`)
+          if(orb==='frost') {
+            assert.equal(await effect.locator('.defect-evoke__ray').count(),0,'Frost must stay on Defect')
+            await effect.locator('img').waitFor()
+          } else {
+            await page.waitForFunction(({seq,count})=>document.querySelectorAll(`.defect-evoke[data-evoke-seq="${seq}"] .defect-evoke__ray`).length===count,{seq,count})
+            const geometry=await effect.evaluate(node=>{
+              const origin=node.getBoundingClientRect()
+              const art=node.closest('.seat__portrait').querySelector(':scope > img')
+              const image=art.getBoundingClientRect()
+              const fit=Math.min(image.width/art.naturalWidth,image.height/art.naturalHeight)
+              const mouthX=image.left+(image.width-art.naturalWidth*fit)/2+222*fit
+              const mouthY=image.bottom-(art.naturalHeight-89)*fit
+              return [...node.querySelectorAll('.defect-evoke__ray')].map(ray=>{
+                const portrait=document.querySelector(`.enemy[data-enemy-id="${ray.dataset.evokeTarget}"] .enemy__portrait`)
+                const targetArt=portrait.querySelector(':scope > img')
+                const target=targetArt.getBoundingClientRect()
+                const targetFit=Math.min(target.width/targetArt.naturalWidth,target.height/targetArt.naturalHeight)
+                // Jaw Worm's painted torso in the canonical 400 x 250 idle rig.
+                const targetX=target.left+(target.width-targetArt.naturalWidth*targetFit)/2+170.3*targetFit
+                const targetY=target.bottom-(targetArt.naturalHeight-181)*targetFit
+                const impact=portrait.querySelector(`.combat-vfx--target[data-vfx-seq="${node.dataset.evokeSeq}"]`).getBoundingClientRect()
+                const length=parseFloat(ray.style.getPropertyValue('--beam-length'))
+                const angle=parseFloat(ray.style.getPropertyValue('--beam-angle'))*Math.PI/180
+                return {x:origin.x+length*Math.cos(angle),y:origin.y+length*Math.sin(angle),
+                  targetX,targetY,impactX:impact.left+impact.width/2,impactY:impact.top+impact.height/2,
+                  originX:origin.x,originY:origin.y,mouthX,mouthY,
+                  delay:ray.querySelector('svg').getAnimations()[0].effect.getTiming().delay}
+              })
+            })
+            for(const ray of geometry) {
+              assert(Math.abs(ray.x-ray.targetX)<3&&Math.abs(ray.y-ray.targetY)<3,`${orb}: beam misses painted torso`)
+              assert(Math.abs(ray.impactX-ray.targetX)<3&&Math.abs(ray.impactY-ray.targetY)<3,`${orb}: damage impact misses painted torso`)
+              assert(Math.abs(ray.originX-ray.mouthX)<1&&Math.abs(ray.originY-ray.mouthY)<1,`${orb}: beam detached from mouth`)
+              assert.equal(ray.delay,240,`${orb}: beam and impact clock differ`)
+            }
+          }
+          await page.waitForTimeout(350)
+          await page.locator('.board').screenshot({path:resolve(output,`${screen}-defect-evoke-${orb}-${count}.png`)})
+          await page.waitForTimeout(550)
+        }
+        await page.evaluate(()=>{window.fixture.restoration++;window.fixture.render()})
+        await page.waitForTimeout(100)
+        assert.equal(await page.locator('.defect-evoke').count(),0,'reconnect replayed old evokes')
+      }
     }
     if (process.argv.includes('--hero=hexaghost')) {
       for (let heat = 1; heat <= 6; heat++) {
@@ -238,8 +298,14 @@ try {
         assert(bands.intentBottom<=(bands.effectTop??bands.artTop)+1,`${screen}/${enemy.id}: intent overlaps effect/art ${JSON.stringify(bands)}`)
         assert(!bands.effectBottom||bands.effectBottom<=bands.artTop+1,`${screen}/${enemy.id}: effect overlaps art ${JSON.stringify(bands)}`)
       }
+      if(normalsOnly) {
+        const art = card.locator('.enemy__art--cutout')
+        const first = await art.screenshot()
+        await page.waitForTimeout(250)
+        assert.notDeepEqual(first, await art.screenshot(), `${enemy.id}: idle texture frozen`)
+      }
       await page.waitForTimeout(1000) // Allow encounter attack preloads before the synthetic end-turn.
-      if(enemy.elite||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-idle.png`)})
+      if(normalsOnly||enemy.elite||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-idle.png`)})
       const attacks=await page.evaluate(()=>{const f=window.fixture;f.state.phase='enemy';f.render();return f.attacks})
       if(attacks){
         await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='attack')
@@ -257,18 +323,54 @@ try {
           assert(origin&&origin.x>=silhouette.left&&origin.x<=silhouette.right&&origin.y>=silhouette.top&&origin.y<=silhouette.bottom,
             `${enemy.id}: projectile detached from body ${JSON.stringify({origin,silhouette})}`)
         }
+        if(enemyProjectileImpactPath(enemy.artId??enemy.id)) {
+          const effect = card.locator('.enemy-projectile-impact')
+          assert.equal(await effect.count(),1,`${enemy.id}: missing targeted impact`)
+          const timing = await effect.locator('img').evaluate(image=>{
+            const anim=image.getAnimations()[0]
+            const {delay,duration}=anim.effect.getTiming()
+            return {delay,duration,loaded:image.complete&&image.naturalWidth>0}
+          })
+          assert.deepEqual(timing,{delay:730,duration:480,loaded:true},`${enemy.id}: impact clock or asset`)
+          const flight = await card.locator('.boss-projectile').evaluate(e=>{
+            const {delay,duration}=e.getAnimations()[0].effect.getTiming()
+            return {delay,duration}
+          })
+          assert.deepEqual(flight,{delay:500,duration:230},`${enemy.id}: projectile arrival misses impact`)
+          if(await effect.getAttribute('data-impact-anchor')==='feet') {
+            const anchor=await effect.evaluate(e=>{
+              const image=e.querySelector('img').getBoundingClientRect()
+              const ground=image.bottom-image.height*66/512
+              const feet=document.querySelector(`.seat[data-player-id="${e.dataset.targetPlayer}"] .seat__portrait`).getBoundingClientRect().bottom
+              return {ground,feet}
+            })
+            assert(Math.abs(anchor.ground-anchor.feet)<1,`${enemy.id}: acid splash is not grounded at the feet ${JSON.stringify(anchor)}`)
+          } else {
+            const anchor=await effect.evaluate(e=>{
+              const impact=e.getBoundingClientRect()
+              const art=document.querySelector(`.seat[data-player-id="${e.dataset.targetPlayer}"] .seat__portrait > img`)
+              const image=art.getBoundingClientRect()
+              const fit=Math.min(image.width/art.naturalWidth,image.height/art.naturalHeight)
+              // Defect's torso is below his mouth at (222, 89), at stable rig scale.
+              return {x:impact.left+impact.width/2,y:impact.top+impact.height/2,
+                bodyX:image.left+(image.width-art.naturalWidth*fit)/2+195.4*fit,
+                bodyY:image.bottom-(art.naturalHeight-149.4)*fit}
+            })
+            assert(Math.abs(anchor.x-anchor.bodyX)<3&&Math.abs(anchor.y-anchor.bodyY)<3,`${enemy.id}: damage impact misses painted torso ${JSON.stringify(anchor)}`)
+          }
+        }
         if(!enemy.isBoss&&bossAttackMotionFor(enemy.artId??enemy.id)==='melee'){
           const dash=await card.evaluate(e=>parseFloat(e.style.getPropertyValue('--boss-dash-x')))
           assert(Number.isFinite(dash)&&dash<0,`${enemy.id}: melee has no measured target travel`)
           assert(after.x<before.x-20,`${enemy.id}: physical attack stayed in its origin lane`)
         }
-        if(enemy.elite||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-attack.png`)})
+        if(normalsOnly||enemy.elite||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-attack.png`)})
         await page.waitForTimeout(1250)
         assert.equal(await card.getAttribute('data-animation'),'idle',`${enemy.id}: return`)
       }else assert.equal(await card.getAttribute('data-animation'),'idle',`${enemy.id}: nonattack intent`)
     }
     // Sample the rendered texture, with CSS travel disabled so it cannot hide a frozen rig.
-    for (const [id,isBoss] of [['gremlin_nob',false],['guardian_attack',true],['downfall_demon',true]]) {
+    for (const [id,isBoss] of (normalsOnly ? ['looter','gremlin_wizard','byrd'].map(artId=>[Object.values(ENEMIES).find(e=>(e.artId??e.id)===artId).id,false]) : [['gremlin_nob',false],['guardian_attack',true],['downfall_demon',true]])) {
       await page.evaluate(([id,isBoss])=>window.fixture.install('defect',id,isBoss),[id,isBoss])
       await page.waitForTimeout(2400) // Longer than a decoded one-shot preload's entire timeline.
       let previousSrc
@@ -297,9 +399,24 @@ try {
         await page.waitForTimeout(100)
       }
     }
-    await page.evaluate(()=>window.fixture.install('defect','sentry_a',false,3))
+    if(normalsOnly) for(const [id,expected] of [['acid_slime',1],['gremlin_wizard',2]]) {
+      await page.evaluate(id=>{
+        const f=window.fixture;f.install('defect',id,false)
+        f.state.players.push({...structuredClone(f.state.players[0]),id:'p2',name:'Second player',row:1,facingEnemyUid:undefined})
+        f.render()
+      },id)
+      await page.waitForTimeout(1000)
+      await page.evaluate(()=>{const f=window.fixture;f.state.phase='enemy';f.render()})
+      await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='attack')
+      assert.equal(await page.locator('.boss-projectile').count(),expected,`${id}: multiplayer projectile targets`)
+      assert.equal(await page.locator('.enemy-projectile-impact').count(),expected,`${id}: multiplayer impact targets`)
+      await page.waitForTimeout(780)
+      await page.locator('.board').screenshot({path:resolve(output,`${screen}-${id}-multiplayer.png`)})
+      await page.waitForTimeout(1200)
+    }
+    await page.evaluate(normal=>window.fixture.install('defect',normal?'gremlin_wizard':'sentry_a',false,3),normalsOnly)
     await page.waitForTimeout(500)
-    await page.locator('.board').screenshot({path:resolve(output,`${screen}-three-sentries.png`)})
+    await page.locator('.board').screenshot({path:resolve(output,`${screen}-three-${normalsOnly?'normal-casters':'sentries'}.png`)})
     await page.evaluate(()=>{const f=window.fixture;f.state.players[0].dead=true;f.state.players[0].hp=0;f.render()})
     await page.waitForTimeout(100)
     assert(!await page.locator('.seat__portrait > img').getAttribute('src').then(s=>s.includes('/rigged/')), 'dead hero still breathes')
@@ -307,6 +424,13 @@ try {
     await page.waitForTimeout(200)
     assert.equal(await page.locator('.enemy').getAttribute('data-animation'),'static')
     assert(!await page.locator('.seat__portrait > img').getAttribute('src').then(s=>s.includes('/rigged/')))
+    await page.evaluate(()=>{
+      const f=window.fixture
+      f.state.presentationEvents=[{kind:'orb',orb:'lightning',seq:++f.seq,actorId:'p1',sourceId:'orb-evoke',enemyIds:['enemy-0'],playerIds:[]}]
+      f.render()
+    })
+    await page.waitForTimeout(100)
+    assert.equal(await page.locator('.defect-evoke').count(),0,'reduced motion still renders evoke beams')
     await context.close()
     console.log(`PASS ${screen}: heroes, enemy rigs, return geometry, repeat attacks, reduced motion`)
   }
