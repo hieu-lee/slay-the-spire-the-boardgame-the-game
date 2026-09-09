@@ -3093,7 +3093,7 @@ function CombatScreenView({
       def, state, viewer!, next.evokeSlots, next.evokeEnemyUids,
       next.mode ?? undefined, next.effectEnergy ?? 0,
     )
-    if (evokeProgress.endedCombat && next.evokeEnemyUids.length > evokeProgress.index) {
+    if (evokeProgress.complete && next.evokeEnemyUids.length > evokeProgress.index) {
       next = { ...next, evokeEnemyUids: next.evokeEnemyUids.slice(0, evokeProgress.index) }
     }
     const overflowShivs = overflowShivCount(state,

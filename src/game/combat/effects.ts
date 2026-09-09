@@ -3078,18 +3078,21 @@ export function evokeTargetProgress(
   targets: readonly (string | null | undefined)[],
   mode?: number,
   energySpent = 0,
-): { index: number; options: { uid: string; label: string }[]; complete: boolean; endedCombat: boolean } {
+): { index: number; options: { uid: string; label: string }[]; complete: boolean } {
   const chosen = evokePlan(def, actor, slots, mode, energySpent).chosen
   const simulation = clone(state)
   const simulationActor = findPlayer(simulation, actor.id)
-  if (!simulationActor) return { index: 0, options: [], complete: false, endedCombat: false }
+  if (!simulationActor) return { index: 0, options: [], complete: false }
   for (let index = 0; index < chosen.length; index++) {
-    if (combatIsOver(simulation)) return { index, options: [], complete: true, endedCombat: true }
+    if (combatIsOver(simulation)) return { index, options: [], complete: true }
     const orb = chosen[index]!
     const target = targets[index]
     if (orb === 'frost') {
-      if (target !== null) return { index, options: [], complete: false, endedCombat: false }
+      if (target !== null) return { index, options: [], complete: false }
       continue
+    }
+    if (livingEnemies(simulation).length === 0) {
+      return { index, options: [], complete: true }
     }
     const options = orb === 'lightning'
       ? lightningTargetOptions(simulation, simulationActor, def.id)
@@ -3097,13 +3100,13 @@ export function evokeTargetProgress(
         uid: enemy.uid, label: enemyLabel(simulation.enemies, enemy),
       }))
     if (typeof target !== 'string' || !options.some((option) => option.uid === target)) {
-      return { index, options, complete: false, endedCombat: false }
+      return { index, options, complete: false }
     }
     if (!applyOrbEvokeEffect(simulation, simulationActor, orb, target, def.id)) {
-      return { index, options, complete: false, endedCombat: false }
+      return { index, options, complete: false }
     }
   }
-  return { index: chosen.length, options: [], complete: true, endedCombat: false }
+  return { index: chosen.length, options: [], complete: true }
 }
 
 export function resolveEnraged(state: CombatState, actor: Player): void {

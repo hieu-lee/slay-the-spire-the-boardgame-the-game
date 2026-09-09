@@ -1758,7 +1758,7 @@ function deterministicForcedCardContext(
       continue
     }
     const target = evokeTargetProgress(evokeDef, state, player, evokeSlots, evokeEnemyUids, undefined, 0)
-    if (target.complete && target.endedCombat) break
+    if (target.complete) break
     if (target.options.length !== 1) return null
     evokeEnemyUids.push(target.options[0]!.uid)
   }

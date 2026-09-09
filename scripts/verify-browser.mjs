@@ -7514,6 +7514,32 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   const player = run.combat.players[0]
+  player.hand = [{ uid: 'ui-lethal-dual-cast', defId: 'dual_cast', upgraded: true }]
+  player.energy = 3
+  player.orbs = ['lightning', null, null]
+  player.orbEvokeBonus = 1
+  run.combat.phase = 'player'
+  run.combat.pendingSummons = []
+  run.combat.enemies.forEach((enemy, index) => Object.assign(enemy, index === 0
+    ? { defId: 'slime_boss', isBoss: true, hp: 3, maxHp: 3, block: 0, dead: false, abilityUsed: false }
+    : { hp: 0, block: 0, dead: true }))
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Dual Cast\+,/ }).click()
+await page.getByRole('button', { name: /lightning slot 1/i }).click()
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const splitEvoke = await readState()
+check('Dual Cast resolves in the UI when its first Evoke kills a splitting Slime Boss', () => {
+  assert(splitEvoke.enemies[0].dead)
+  assert(splitEvoke.pendingSummons.length > 0, 'Slime Boss did not queue its Split')
+  assertDeepEqual(splitEvoke.players[0].orbs, [null, null, null])
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
   player.hand = [{ uid: 'ui-recursion', defId: 'recursion', upgraded: false }]
   player.energy = 3
   player.orbs = ['lightning', 'frost', 'dark']

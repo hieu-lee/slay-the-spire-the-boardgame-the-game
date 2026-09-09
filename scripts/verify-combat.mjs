@@ -4682,6 +4682,24 @@ check('a lethal first repeated Evoke ends combat after removing only the chosen 
   assert(!forced.log.includes('Defect channels 1 lightning'), 'an Orb that was never placed was logged as channeled')
 })
 
+check('Dual Cast resolves after its first Evoke kills a splitting Slime Boss', () => {
+  for (const electrodynamics of [false, true]) {
+    const dualCast = instance('dual_cast', true)
+    const state = combat([makePlayer({
+      character: 'defect', hand: [dualCast], orbs: ['lightning', null, null], orbEvokeBonus: 1,
+      powers: electrodynamics ? [instance('electrodynamics')] : [],
+    })], [makeEnemy({ defId: 'slime_boss', isBoss: true, hp: 3, maxHp: 3 })])
+    const resolved = playCard(state, 'p1', dualCast.uid, {
+      enemyUid: 'e1', playerId: null, evokeSlots: [0],
+      evokeEnemyUids: [electrodynamics ? lightningRowTarget(0) : 'e1'],
+    })
+    assert(resolved !== state, 'the targetless second Evoke rejected the whole card')
+    assert(resolved.enemies[0].dead)
+    assertEqual(resolved.pendingSummons.length, 1)
+    assertDeepEqual(resolved.players[0].orbs, [null, null, null])
+  }
+})
+
 check('Immolate and the Silent clouds reach one row and the boss before their later clauses', () => {
   for (const upgraded of [false, true]) {
     const enemies = [
