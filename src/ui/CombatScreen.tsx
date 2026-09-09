@@ -5470,7 +5470,9 @@ function CombatScreenView({
       ) : null}
 
       {pending?.choiceCards && pending.choice && !pending.choiceConfirmed ? (
-        <dialog ref={choiceDialogRef} className="choice-modal" aria-labelledby="choice-modal-title"
+        <dialog ref={choiceDialogRef}
+          className={`choice-modal${pending.choice.kind === 'scryToHand' ? ' choice-modal--scry-to-hand' : ''}`}
+          aria-labelledby="choice-modal-title"
           onCancel={(event) => {
             event.preventDefault()
             if ((pending.cardInHand || pending.chamberPlay) &&
@@ -5527,25 +5529,31 @@ function CombatScreenView({
                   : ''} The card is committed.`}
             </p>
             <div className="choice-modal__cards">
-              {pending.choiceCards.map((card) => <div key={card.uid}>
+              {pending.choiceCards.map((card) => <div key={card.uid}
+                className={pending.choice?.kind === 'scryToHand' ? 'choice-modal__card-option' : undefined}>
                 <Card card={card} selected={pending.picked.includes(card.uid) || pending.scryToHandUid === card.uid}
                   onClick={onChoiceCardClick} />
                 {pending.choice?.kind === 'scryToHand' && effectiveCombatCardDef(
                   faceOf(cardDef(card.defId), card.upgraded), viewer.guardianMode,
                 ).type ===
                   (pendingDef?.effects.find((effect) => effect.kind === 'scryToHand') as { cardType?: string } | undefined)?.cardType
-                  ? <button type="button" aria-pressed={pending.scryToHandUid === card.uid}
+                  ? <button type="button" className="choice-modal__card-action"
+                    aria-pressed={pending.scryToHandUid === card.uid}
                     onClick={() => setPending({ ...pending,
                       picked: pending.picked.filter((uid) => uid !== card.uid),
                       scryToHandUid: pending.scryToHandUid === card.uid ? undefined : card.uid,
                       choiceConfirmed: false,
-                    })}>Put in hand</button> : null}
+                    })}>{pending.scryToHandUid === card.uid ? 'Will put in hand' : 'Put in hand'}</button> : null}
               </div>)}
               {pending.choiceCards.length === 0 ? <span className="muted">No cards were revealed.</span> : null}
             </div>
             <button type="button" disabled={!handChoiceSatisfied} onClick={confirmChoice}>
               {pending.choice.kind === 'scry' || pending.choice.kind === 'scryToHand'
-                ? pending.picked.length === 0 ? 'Keep all' : `Discard ${pending.picked.length} and continue`
+                ? pending.choice.kind === 'scryToHand' && pending.scryToHandUid
+                  ? pending.picked.length === 0
+                    ? 'Put selected card in hand and keep the rest'
+                    : `Discard ${pending.picked.length}, put selected card in hand`
+                  : pending.picked.length === 0 ? 'Keep all' : `Discard ${pending.picked.length} and continue`
                 : pending.choice.kind === 'topdeck'
                   ? `Put selected card${choiceNeeded === 1 ? '' : 's'} on top`
                 : pending.choice.kind === 'recover'
