@@ -27,6 +27,15 @@ from rigid_weapon import attach_weapon
 def attach(body,grip,degrees):
     return attach_weapon(body,weapon,pivot,grip,degrees,7)
 
+# Idle is the canonical horizontal-sword drawing, never a swing's final pose.
+original=Image.open(ROOT/'public/assets/combat/characters/ironclad.webp').convert('RGBA')
+box=original.getbbox()
+rest_scale=(bodies[23].getbbox()[3]-bodies[23].getbbox()[1])/(box[3]-box[1])
+feet=original.getchannel('A').crop((0,round(box[3]*.8),original.width,box[3])).getbbox()
+rest=Image.new('RGBA',size)
+rest.alpha_composite(original.resize((round(original.width*rest_scale),round(original.height*rest_scale)),Image.Resampling.LANCZOS),
+    (round(235-(feet[0]+feet[2])/2*rest_scale),263-round(box[3]*rest_scale)))
+
 # The full original clock is preserved: raise, dash, swing, return, recover.
 # Pose 15 briefly reverses the descending hands; omit that drawing.
 sequence=[i for i in range(24) if i != 15]
@@ -39,17 +48,18 @@ for action,duration in [('idle',3000),('attack',1800)]:
     times=[a+round(i*(b-a)/max(1,round((b-a)/30))) for a,b in zip(segments,segments[1:]) for i in range(max(1,round((b-a)/30)))]
     frames=[]
     for t in times:
-        if action=='idle':
-            body=bodies[23];grip=points[23];angle=angles[23]
+        if action=='idle' or t>=1260:
+            # Rigid vertical breathing keeps the sword parallel to the floor.
+            frame=rest.transform(size,Image.Transform.AFFINE,
+                (1,0,0,0,1,.4*math.sin(2*math.pi*t/duration)),Image.Resampling.BICUBIC)
         else:
             k=min(max(i for i,(ms,_) in enumerate(keys) if ms<=t),len(keys)-2)
             a,ai=keys[k];b,bi=keys[k+1];u=(t-a)/(b-a)
             body=bodies[ai]
             grip=points[ai]
             angle=angles[ai]*(1-u)+angles[bi]*u
-        frame=attach(body,grip,angle)
-        # Subtle rigid weight shift keeps the resting grip and blade unchanged.
-        frame=frame.rotate(.45*math.sin(2*math.pi*t/duration),Image.Resampling.BICUBIC,center=(235,263))
+            frame=attach(body,grip,angle)
+            frame=frame.rotate(.45*math.sin(2*math.pi*t/duration),Image.Resampling.BICUBIC,center=(235,263))
         frames.append(frame)
     durations=[b-a for a,b in zip(times,times[1:]+[duration])]
     assert sum(durations)==duration and min(durations)>=20

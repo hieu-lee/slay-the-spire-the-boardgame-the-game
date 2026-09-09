@@ -423,3 +423,36 @@
   22% { opacity: 1; transform: translateY(-0.35rem) scale(1.08); }
   to { opacity: 0; transform: translateY(-2rem) scale(1); }
 }
+
+/* Original Watcher meteor call: raise, cast downward, then recover. */
+.seat--attack-watcher .seat__portrait > img {
+  animation: attack-watcher 1650ms cubic-bezier(0.22, 0.8, 0.24, 1) both;
+}
+.character-attack__pose--watcher-charge { animation: watcher-charge-pose 1650ms both; }
+.character-attack__pose--watcher-cast { animation: watcher-cast-pose 1650ms both; }
+
+@keyframes attack-watcher {
+  0%, 66.66% { opacity: 0; transform: translateY(0) rotate(0) scale(1); }
+  66.67%, 100% { opacity: 1; }
+  77.78% { transform: translateY(1%) rotate(-1deg) scale(0.99); }
+  88.89% { transform: translateY(-1%) rotate(1deg) scale(1.01); }
+}
+
+@keyframes watcher-charge-pose {
+  0%, 33.32% { opacity: 1; }
+  33.33%, 100% { opacity: 0; }
+  0%, 100% { transform: translateY(1%) rotate(-1deg) scale(0.98); }
+  11.11% { transform: translateY(0) rotate(0) scale(0.99); }
+  22.22% { transform: translateY(0) rotate(0) scale(1); }
+  33.33% { transform: translateY(-1%) rotate(1deg) scale(1.02); }
+}
+
+@keyframes watcher-cast-pose {
+  0%, 32.99%, 67%, 100% { opacity: 0; }
+  33.33%, 66.66% { opacity: 1; }
+  0%, 100% { transform: translateY(1%) rotate(-1deg) scale(0.97); }
+  33.33% { transform: translateY(-1%) rotate(1deg) scale(1.03); }
+  44.44% { transform: translateY(-1%) rotate(1deg) scale(1.035); }
+  55.56% { transform: translateY(0) rotate(0) scale(1.02); }
+  66.67% { transform: translateY(0) rotate(0) scale(1); }
+}

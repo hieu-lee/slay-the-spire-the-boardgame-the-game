@@ -69,19 +69,31 @@ try {
       }
       f.install('ironclad')
     })
-    for (const [character,source] of (process.argv.includes('--elites-only')?[]:Object.entries(heroes))) {
+    for (const [character,source] of (process.argv.includes('--elites-only')?[]:Object.entries(heroes))
+      .filter(([id])=>!process.argv.some(a=>a.startsWith('--hero='))||process.argv.includes(`--hero=${id}`))) {
       await page.evaluate(c=>window.fixture.install(c),character)
       await page.waitForFunction(()=>document.querySelector('.seat__portrait > img')?.complete)
       await page.waitForTimeout(100)
-      await page.waitForFunction(c=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=(c==='hexaghost'?7:c.startsWith('guardian')?2:1),character)
+      await page.waitForFunction(c=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=(c==='hexaghost'?7:c.startsWith('guardian')||c==='watcher'?2:1),character)
       await page.waitForFunction(()=>[...document.querySelectorAll('.seat__portrait > img')].every(i=>i.complete&&!i.dataset.guardianTransition))
       await page.waitForTimeout(100)
       const before=await page.locator('.seat__portrait > img').boundingBox()
       const seq=await page.evaluate(id=>window.fixture.attack(id),source)
-      const pose=page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig.is-loaded:not(.is-fallback)`)
+      const poseSelector=character==='watcher'?'.character-attack__pose--watcher-charge':'.character-attack__pose--rig.is-loaded:not(.is-fallback)'
+      const pose=page.locator(`[data-attack-seq="${seq}"] ${poseSelector}`)
       await pose.waitFor()
-      assert.equal(await pose.locator('img').evaluate(i=>i.naturalWidth),400,character)
+      if(character==='watcher') {
+        assert((await pose.locator('img').getAttribute('src')).endsWith('/watcher-ready.webp'))
+        assert.equal(await pose.evaluate(e=>getComputedStyle(e).opacity),'1','Watcher must raise her staff before casting')
+        assert.equal(await page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig`).count(),0)
+      } else assert.equal(await pose.locator('img').evaluate(i=>i.naturalWidth),400,character)
       await page.waitForTimeout(character==='hexaghost'?1400:600)
+      if(character==='watcher') {
+        const cast=page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--watcher-cast`)
+        assert((await cast.locator('img').getAttribute('src')).endsWith('/watcher-thrust.webp'))
+        assert.equal(await cast.evaluate(e=>getComputedStyle(e).opacity),'1','Watcher must cast downward while the meteor falls')
+        assert(await page.locator(`[data-attack-seq="${seq}"] .character-attack__meteor`).count()>0,'Watcher lost the meteor')
+      }
       await page.locator('.board').screenshot({path:resolve(output,`${screen}-${character}-attack.png`)})
       await page.waitForTimeout(1800)
       const after=await page.locator('.seat__portrait > img').boundingBox()
@@ -91,7 +103,7 @@ try {
       const firstSrc=await page.evaluate(()=>window.fixture.seq)
       const next=await page.evaluate(id=>window.fixture.attack(id),source)
       assert(next>firstSrc)
-      await page.locator(`[data-attack-seq="${next}"] .character-attack__pose--rig.is-loaded:not(.is-fallback)`).waitFor()
+      await page.locator(`[data-attack-seq="${next}"] ${poseSelector}`).waitFor()
       await page.waitForTimeout(2100)
     }
     for (const enemy of enemies) {

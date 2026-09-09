@@ -7,6 +7,10 @@ changes combat rules or multiplayer authority.
 
 Use the method that fits the drawing:
 
+- Ironclad rests in his canonical horizontal-sword artwork and returns to it
+  during the 1260–1800ms recovery. Watcher uses the original raised-staff and
+  downward meteor-cast assets with their original CSS phase clocks; her newer
+  experimental rig exports are not used in gameplay.
 - Actors use either their original drawn attacks with audited RIFE in-betweens,
   or new native-alpha body pose sheets. Defensive Guardian reuses its existing
   drawn unfold/fold transitions around the claw action, ending in the same shell. Failed optical-flow candidates are rejected
@@ -72,7 +76,7 @@ not shipped browser assets. The wrapper transports premultiplied native RGBA
 through the same motion field and supports CPU, CUDA and MPS.
 
 RIFE is used only for the accepted source sequences; 24 drawn poses replace the
-occlusion failures in Watcher, Hermit, Guardian hero attack form, Awakened phase1,
+occlusion failures in Hermit, Guardian hero attack form, Awakened phase1,
 Bronze Automaton, Guardian attack, Champ, Collector, Time Eater, Trickster and
 Wrathful. Taskmaster's drawn whip now unfurls toward the target; its wider
 transparent overscan keeps the full tip visible at a constant physical size.

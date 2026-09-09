@@ -536,7 +536,9 @@ function CombatScreenView({
       ? Array.from({ length: 7 }, (_, heat) => assetPath(`combat/rigged/hero-hexaghost-heat-${heat}-attack.webp`))
       : player.character === 'guardian'
         ? ['guardian', 'guardian-defense'].map((id) => assetPath(`combat/rigged/hero-${id}-attack.webp`))
-        : [assetPath(`combat/rigged/hero-${player.character}-attack.webp`)]))].sort().join('|')
+        : player.character === 'watcher'
+          ? ['ready', 'thrust'].map((pose) => assetPath(`combat/characters/watcher-${pose}.webp`))
+          : [assetPath(`combat/rigged/hero-${player.character}-attack.webp`)]))].sort().join('|')
   useEffect(() => {
     const controller = new AbortController()
     const assets = characterAttackAssets.split('|').filter(Boolean)
@@ -5749,8 +5751,9 @@ function CombatScreenView({
             : occupant?.character === 'guardian' && occupant.guardianMode === 'defense' ? 'guardian-defense'
             : occupant?.character
           const characterAttackAsset = assetPath(`combat/rigged/hero-${rigId}-attack.webp`)
-          const characterIdleAsset = assetPath(`combat/rigged/hero-${rigId}-idle.webp`)
-          const characterArtScale = prefersReducedMotion || occupant?.dead ? 1
+          const characterIdleAsset = assetPath(occupant?.character === 'watcher'
+            ? 'combat/characters/watcher.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
+          const characterArtScale = prefersReducedMotion || occupant?.dead || occupant?.character === 'watcher' ? 1
             : (rigMetadata as Record<string, { scale?: number }>)[`hero-${rigId}`]?.scale ?? 1
           return (
             <div
@@ -5849,7 +5852,14 @@ function CombatScreenView({
                             } as React.CSSProperties}
                           >
                             {characterAttack.active.event.seq === latestCharacterAttackSeq ? (
-                              <CharacterAttackPose
+                              occupant.character === 'watcher' ? <>
+                                <span className="character-attack__pose character-attack__pose--watcher-charge">
+                                  <img src={assetPath('combat/characters/watcher-ready.webp')} alt="" />
+                                </span>
+                                <span className="character-attack__pose character-attack__pose--watcher-cast">
+                                  <img src={assetPath('combat/characters/watcher-thrust.webp')} alt="" />
+                                </span>
+                              </> : <CharacterAttackPose
                                 key={characterAttack.active.event.seq}
                                 attackSeq={characterAttack.active.event.seq}
                                 assetPath={characterAttackAsset}
