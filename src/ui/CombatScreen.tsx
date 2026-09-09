@@ -6459,10 +6459,7 @@ function CombatScreenView({
                     setPending(null)
                     return
                   }
-                  submitHermitChamber(card, cardNeedsEnemy(def, cardViewer, true, undefined, false,
-                    undefined, displayedCard.uid, chargedCardEnergy(def, cardViewer, displayedCard),
-                    displayedCard.hermitDeadOn === true) &&
-                    livingEnemies(state).length === 1 ? livingEnemies(state)[0]?.uid ?? null : null)
+                  submitHermitChamber(card)
                 }
                 : hermitSetupPending
                 ? () => setupPlayable && submitHermitSetup(card, setupTarget?.uid ?? null)

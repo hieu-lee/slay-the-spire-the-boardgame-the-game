@@ -3435,6 +3435,9 @@ const chamberHeadshot = page.locator('.hand .card--chamber-drawn[title="Headshot
 await chamberHeadshot.waitFor()
 const headshotHpBeforeClick = (await readRun()).combat.enemies[0].hp
 await chamberHeadshot.click()
+await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[title="Headshot"]')
+  ?.getAttribute('aria-pressed') === 'true')
+await page.locator('.enemy:not(.enemy--dead)').first().click()
 await page.waitForFunction((hp) => {
   const combat = window.__STS_DEBUG__.getRun().combat
   return combat.players[0].chamber.length === 0 && combat.enemies[0].hp === hp - 5
