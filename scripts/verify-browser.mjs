@@ -7667,6 +7667,58 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   const player = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    hand: [{ uid: 'ui-secret-weapon', defId: 'secret_weapon', upgraded: false }],
+    draw: [
+      { uid: 'ui-secret-weapon-strike', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'ui-secret-weapon-burn', defId: 'burn', upgraded: false },
+      { uid: 'ui-secret-weapon-defend', defId: 'defend_ironclad', upgraded: false },
+    ],
+    discard: [], energy: 0,
+  })
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Secret Weapon,/ }).click()
+const secretWeaponDialog = page.getByRole('dialog', { name: 'Scry 3' })
+await secretWeaponDialog.waitFor()
+const secretWeaponLayout = await secretWeaponDialog.evaluate((dialog) => {
+  const options = [...dialog.querySelectorAll('.choice-modal__card-option')]
+  const cardBoxes = options.map((option) => option.querySelector('.card')?.getBoundingClientRect())
+  const optionBoxes = options.map((option) => option.getBoundingClientRect())
+  const action = dialog.querySelector('.choice-modal__card-action')?.getBoundingClientRect()
+  return {
+    options: options.length,
+    cardsSameWidth: cardBoxes.every((box) => box && Math.abs(box.width - cardBoxes[0].width) < 1),
+    columnsSameHeight: optionBoxes.every((box) => Math.abs(box.height - optionBoxes[0].height) < 1),
+    actionMatchesCard: Boolean(action && cardBoxes[0] && Math.abs(action.width - cardBoxes[0].width) < 1),
+  }
+})
+await shot('06h-secret-weapon-scry-to-hand')
+await secretWeaponDialog.getByRole('button', { name: 'Put in hand' }).click()
+const secretWeaponSelected = await secretWeaponDialog.getByRole('button', { name: 'Will put in hand' }).getAttribute('aria-pressed')
+const secretWeaponConfirm = secretWeaponDialog.getByRole('button', { name: 'Put selected card in hand and keep the rest' })
+check('Secret Weapon keeps its optional hand action aligned and names the final result', () => {
+  assertEqual(secretWeaponLayout.options, 3)
+  assert(secretWeaponLayout.cardsSameWidth, 'Secret Weapon reveal cards are not equally sized')
+  assert(secretWeaponLayout.columnsSameHeight, 'the optional hand action left the card columns uneven')
+  assert(secretWeaponLayout.actionMatchesCard, 'the optional hand action does not align with its card')
+  assertEqual(secretWeaponSelected, 'true')
+})
+await secretWeaponConfirm.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand
+  .some((card) => card.uid === 'ui-secret-weapon-strike'))
+const secretWeaponState = await readState()
+check('Secret Weapon puts its selected Attack in hand without discarding the other revealed cards', () => {
+  assertEqual(secretWeaponState.players[0].hand.some((card) => card.uid === 'ui-secret-weapon-strike'), true)
+  assertDeepEqual(secretWeaponState.players[0].draw.map((card) => card.uid),
+    ['ui-secret-weapon-burn', 'ui-secret-weapon-defend'])
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
   player.hand = [
     { uid: 'ui-dagger-throw', defId: 'dagger_throw', upgraded: true },
     { uid: 'ui-dagger-existing', defId: 'defend_silent', upgraded: false },
