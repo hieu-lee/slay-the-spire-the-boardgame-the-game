@@ -23,6 +23,7 @@ import {
 } from './combat-vfx.ts'
 import { combatArtBounds, combatBodyPoint } from './combat-geometry.ts'
 import enemyArtSizes from './enemy-art-size.json'
+import enemyFootAnchors from './enemy-foot-anchors.json'
 
 type EnemyCardProps = {
   enemy: Enemy
@@ -416,6 +417,7 @@ export function EnemyCard({
   const art = animatedEnemy
     ? bossAttacking ? presentedBossAttack?.art ?? currentBossAttackArt : currentIdleArt
     : enemyImagePath(def)
+  const bossArtId = presentedBossAttack?.artId ?? currentBossArtId
   // Hit only the painted creature and its HUD, never a neighbour's transparent
   // animation canvas. The art itself remains free to overflow during attacks.
   useLayoutEffect(() => {
@@ -424,6 +426,15 @@ export function EnemyCard({
     const image = portrait?.querySelector<HTMLImageElement>(':scope > img')
     if (!portrait || !hit || !image) return
     const measure = () => {
+      // Reviewed normalized X anchors: [animated resting pose, static fallback].
+      // Feet/body bases belong over HP; keep this anchor throughout the attack.
+      const feet = (enemyFootAnchors as Record<string, number[]>)[bossArtId]
+      if (feet && image.naturalWidth && image.naturalHeight) {
+        const staticArt = !animatedEnemy || image.dataset.fallback === 'true'
+        const fit = Math.min(image.clientWidth / image.naturalWidth, image.clientHeight / image.naturalHeight)
+        const scale = staticArt ? 1 : enemyArtScaleFor(bossArtId)
+        image.style.marginLeft = `${(.5 - feet[staticArt ? 1 : 0]!) * image.naturalWidth * fit * scale}px`
+      }
       const bounds = combatArtBounds(portrait)
       const parent = portrait.getBoundingClientRect()
       Object.assign(hit.style, {
@@ -437,7 +448,7 @@ export function EnemyCard({
     resize.observe(portrait)
     resize.observe(image)
     return () => { resize.disconnect(); portrait.removeEventListener('load', measure, true) }
-  }, [art])
+  }, [art, animatedEnemy, bossArtId])
   const bossAttackArt = animatedEnemy ? currentBossAttackArt : undefined
   useEffect(() => {
     if (!bossAttackArt) return
@@ -469,7 +480,6 @@ export function EnemyCard({
       void preload.decode?.().catch(() => undefined)
     }
   }, [currentBossProjectileArt, currentProjectileImpact])
-  const bossArtId = presentedBossAttack?.artId ?? currentBossArtId
   const demonAttacking = bossAttacking && bossArtId === 'downfall_demon'
   const bossAttackMotion = animatedEnemy ? bossAttackMotionFor(bossArtId) : 'ranged'
   const bossAttackContactLeft = bossAttackContactLeftFor(bossArtId)
@@ -561,10 +571,18 @@ export function EnemyCard({
       }
     }
     measure()
-    board.addEventListener('load', measure, true)
+    // Measure this image at the target, after its portrait's capture handler
+    // aligns it. Other board images can still update the projectile's target.
+    const onLoad = (event: Event) => { if (event.target !== boss) measure() }
+    board.addEventListener('load', onLoad, true)
+    boss.addEventListener('load', measure)
     const resize = new ResizeObserver(measure)
     resize.observe(board)
-    return () => { resize.disconnect(); board.removeEventListener('load', measure, true) }
+    return () => {
+      resize.disconnect()
+      board.removeEventListener('load', onLoad, true)
+      boss.removeEventListener('load', measure)
+    }
   }, [art, bossArtId, bossAttacking, bossProjectileArt, projectileImpact, rangedTargetKey])
   const abilities = enemyAbilities(def)
   const mods = attackerModsOfEnemy(visibleEnemy)

@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium } from './lib/profile-browser.mjs'
 import { ENEMIES } from '../src/game/enemies.ts'
-import { bossAttackMotionFor, bossProjectileImagePath, enemyProjectileImpactPath } from '../src/ui/combat-vfx.ts'
+import { bossAttackMotionFor, bossProjectileImagePath, enemyProjectileImpactPath, enemyProjectileOriginFor, enemyArtScaleFor } from '../src/ui/combat-vfx.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const output = resolve(root, 'artifacts/rig-animation/browser')
@@ -311,6 +311,29 @@ try {
       if(attacks){
         await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='attack')
         assert((await card.locator('.enemy__art--cutout').getAttribute('src')).startsWith('blob:'),`${enemy.id}: recording captured the unloaded idle fallback`)
+        if (bossProjectileImagePath(enemy.artId ?? enemy.id)) {
+          // Reload through a fresh blob URL after the initial resize delivery.
+          // Native load dispatch can run microtasks between ancestor listeners;
+          // synthetic dispatchEvent would hide that ordering bug.
+          const originError = await card.evaluate(async (card, { origin, scale }) => {
+            const image = card.querySelector('.enemy__art--cutout')
+            await new Promise(requestAnimationFrame)
+            const source = URL.createObjectURL(await (await fetch(image.src)).blob())
+            const loaded = new Promise(resolve => image.addEventListener('load', resolve, { once: true }))
+            image.style.marginLeft = '0px'
+            image.src = source
+            await loaded
+            URL.revokeObjectURL(source)
+            const r = image.getBoundingClientRect(), parent = card.getBoundingClientRect()
+            const fit = Math.min(r.width / image.naturalWidth, r.height / image.naturalHeight)
+            const expected = origin ? r.left + (r.width - image.naturalWidth * fit) / 2 + origin[0] * fit
+              : r.left + r.width / 2 - image.naturalWidth * fit / scale * .16
+            const projectile = card.querySelector('.boss-projectile')
+            const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+            return Math.abs(parent.left + parseFloat(projectile.style.getPropertyValue('--boss-projectile-start-x')) * rem - expected)
+          }, { origin: enemyProjectileOriginFor(enemy.artId ?? enemy.id), scale: enemyArtScaleFor(enemy.artId ?? enemy.id) })
+          assert(originError < 1, `${enemy.id}: projectile was measured before loaded art alignment (${originError}px)`)
+        }
         await page.waitForTimeout(760)
         const after=await card.locator('.enemy__art--cutout').boundingBox()
         assert(Math.abs(before.width-after.width)<1&&Math.abs(before.height-after.height)<1,`${enemy.id}: attack scale changed`)

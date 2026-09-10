@@ -4,6 +4,8 @@ import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium, webkit } from './lib/profile-browser.mjs'
+import { ENEMIES } from '../src/game/enemies.ts'
+import footAnchors from '../src/ui/enemy-foot-anchors.json' with { type: 'json' }
 
 const root = resolve(import.meta.dirname, '..')
 const output = resolve(root, 'artifacts/enemy-layout')
@@ -37,6 +39,7 @@ try {
             import('/src/ui/styles.css'), import('/src/ui/chrome.css'),
           ])
           const reactRoot = (D.createRoot ?? D.default.createRoot)(node)
+          const { ENEMIES: CATALOG } = await import('/src/game/enemies.ts')
           const f = window.fixture = { restoration: 0, seq: 0 }
           f.render = () => reactRoot.render((R.createElement ?? R.default.createElement)(CombatScreen, {
             state: structuredClone(f.state), act: 3, viewerId: 'p1', autoAdvance: false,
@@ -52,7 +55,7 @@ try {
               return ally
             })]
             f.state = C.createCombat(rng, party, defs.map((defId, i) => ({ uid: `enemy-${i}`, defId, row: Math.floor(i / 3) % partySize,
-              isBoss: ['donu', 'deca', 'slime_boss', 'the_collector'].includes(defId), hp: 50, maxHp: 50, block: 0, strength: 0,
+              isBoss: CATALOG[defId]?.isBoss ?? false, hp: 50, maxHp: 50, block: 0, strength: 0,
               weak: 0, vulnerable: 0, poison: 0, actionIndex: 0, abilityUsed: false, dead: false })))
             f.state.die = 1; f.state.phase = 'player'; f.state.presentationEvents = []
             f.seq += 100; f.state.combatId = String(f.seq); f.restoration++; f.render()
@@ -84,6 +87,60 @@ try {
           await page.waitForTimeout(250)
           await page.waitForFunction(() => !document.querySelector('.combat').getAnimations().some(a => a.playState === 'running'))
         }
+        const bossesAndElites = [...new Map(Object.values(ENEMIES)
+          .filter(def => def.isBoss || def.elite || def.artId === 'sentry')
+          .map(def => [def.artId ?? def.id, def])).values()]
+        const checkFeet = async (artId, mode) => {
+          const alignment = await page.locator('.enemy').evaluate((enemy, anchor) => {
+            const image = enemy.querySelector('.enemy__art--cutout'), r = image.getBoundingClientRect()
+            const fit = Math.min(r.width / image.naturalWidth, r.height / image.naturalHeight)
+            const bar = enemy.querySelector('.bar').getBoundingClientRect()
+            return Math.abs(r.left + (r.width - image.naturalWidth * fit) / 2 + anchor * image.naturalWidth * fit - bar.left - bar.width / 2)
+          }, footAnchors[artId][mode === 'idle' ? 0 : 1])
+          assert(alignment < 1, `${engineName}/${screen}/${artId}/${mode}: feet miss HP center by ${alignment}px`)
+        }
+        for (const def of bossesAndElites) {
+          const artId = def.artId ?? def.id
+          assert(footAnchors[artId], `Missing foot calibration: ${artId}`)
+          await page.evaluate(id => window.fixture.install([id]), def.id)
+          for (const mode of ['idle', 'static']) {
+            await page.evaluate(mode => { document.documentElement.dataset.reducedMotion = String(mode === 'static') }, mode)
+            await ready()
+            await checkFeet(artId, mode)
+            await page.screenshot({ path: resolve(output, `${engineName}-${screen}-${artId}-${mode}.png`) })
+          }
+        }
+        console.log(`${engineName}/${screen}: ${bossesAndElites.length} boss/elite poses centered in animated and static modes`)
+        await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'false' })
+        await page.evaluate(() => window.fixture.install(['gremlin_nob']))
+        await ready()
+        // Check the reported creature against the painted feet, independently
+        // of the calibration data used by the layout.
+        const paintedFeetError = await page.locator('.enemy').evaluate(enemy => {
+          const image = enemy.querySelector('.enemy__art--cutout'), canvas = document.createElement('canvas')
+          canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+          const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0)
+          const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+          let top = canvas.height, bottom = 0, left = canvas.width, right = 0
+          for (let i = 0; i < pixels.length; i += 4) if (pixels[i + 3] > 96) {
+            top = Math.min(top, Math.floor(i / 4 / canvas.width)); bottom = Math.max(bottom, Math.floor(i / 4 / canvas.width))
+          }
+          for (let y = Math.round(bottom - (bottom - top) * .15); y <= bottom; y++)
+            for (let x = 0; x < canvas.width; x++) if (pixels[(y * canvas.width + x) * 4 + 3] > 96) {
+              left = Math.min(left, x); right = Math.max(right, x)
+            }
+          const r = image.getBoundingClientRect(), bar = enemy.querySelector('.bar').getBoundingClientRect()
+          const fit = Math.min(r.width / canvas.width, r.height / canvas.height)
+          return Math.abs(r.left + (r.width - canvas.width * fit) / 2 + (left + right) / 2 * fit - bar.left - bar.width / 2)
+        })
+        assert(paintedFeetError < 3, `Gremlin Nob painted feet miss HP center by ${paintedFeetError}px`)
+        await page.locator('.enemy__art--cutout').evaluate(image => { image.src = '/missing-nob.webp' })
+        await ready()
+        assert.equal(await page.locator('.enemy__art--cutout').getAttribute('data-fallback'), 'true')
+        await checkFeet('gremlin_nob', 'fallback')
+        await page.evaluate(() => { const f = window.fixture; f.restoration++; f.render() })
+        await ready()
+        await checkFeet('gremlin_nob', 'fallback')
         await page.evaluate(() => window.fixture.install(['cultist', 'jaw_worm']))
         await ready()
         const ratios = await page.evaluate(() => {
