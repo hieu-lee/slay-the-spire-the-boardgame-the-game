@@ -25,14 +25,10 @@ export function healthBand(hp: number, maxHp: number): 'healthy' | 'hurt' | 'cri
 
 /** Stage geometry at full size, in rem: actor pitch, then the slack either end. */
 export const STAGE_GAP_REM = 10
-export const STAGE_MARGIN_REM = 4
+// Leave room between the party and the enlarged frontmost boss.
+export const STAGE_MARGIN_REM = 10
 /** Below this a card stops being readable, so the board scrolls instead. */
 export const MIN_STAGE_SCALE = 0.66
-
-/** Reclaim empty space before shrinking a full party's creatures. */
-export function stageEnemyGapFor(enemies: number): number {
-  return Math.max(11.5, Math.min(14, 14.9 - enemies * .3))
-}
 
 /**
  * How far to shrink the stage so its actors fit the board.
@@ -44,7 +40,7 @@ export function stageEnemyGapFor(enemies: number): number {
  * what they are fighting.
  */
 export function stageScaleFor(actors: number, boardWidthPx: number, remPx: number, enemyCount = 0): number {
-  const needed = (actors * STAGE_GAP_REM + enemyCount * (stageEnemyGapFor(enemyCount) - STAGE_GAP_REM) + STAGE_MARGIN_REM) * remPx
+  const needed = (actors * STAGE_GAP_REM + STAGE_MARGIN_REM) * remPx
   if (actors <= 0 || needed <= 0 || boardWidthPx <= 0) return 1
   // A full party can face twelve summons. Fit that crowd together, retaining
   // a floor for readable targets; ordinary parties keep their existing scale.

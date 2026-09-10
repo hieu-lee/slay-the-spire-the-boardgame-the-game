@@ -174,7 +174,6 @@ import {
   pendingUiSurvivesContext,
   shouldDisarmCardFlight,
   stageScaleFor,
-  stageEnemyGapFor,
 } from './board-signals.ts'
 import { enemyAttackTargetPlayerIds, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, turnEffectVfxRecipe } from './combat-vfx.ts'
 import { combatBodyPoint } from './combat-geometry.ts'
@@ -4442,11 +4441,10 @@ function CombatScreenView({
         backgroundImage: `linear-gradient(90deg, rgb(2 5 8 / 0.38), transparent 22%, transparent 74%, rgb(2 5 8 / 0.32)), url("${assetPath(`backgrounds/boss-act-${stageAct}.webp`)}")`,
         '--stage-scale': stageScale,
         '--stage-enemy-count': stageSlots,
-        '--stage-enemy-pitch': adaptiveStage ? stageEnemyGapFor(stageSlots) : 14,
         '--stage-width': `calc(${state.players.length} * var(--stage-player-gap) + var(--stage-enemy-count) * var(--stage-enemy-gap) + ${STAGE_MARGIN_REM}rem * var(--stage-scale) + var(--slime-enemy-clearance, 0rem))`,
         '--slime-count': largestSlimeParty,
         '--stage-gap': `calc(${STAGE_GAP_REM}rem * var(--stage-scale))`,
-        '--stage-enemy-gap': 'calc(var(--stage-enemy-pitch) * 1rem * var(--stage-scale))',
+        '--stage-enemy-gap': 'var(--stage-gap)',
         '--stage-actor-width': `calc(${STAGE_GAP_REM - 1}rem * var(--stage-scale))`,
       } as React.CSSProperties}
     >

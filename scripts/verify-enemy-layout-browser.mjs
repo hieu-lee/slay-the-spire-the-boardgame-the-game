@@ -270,9 +270,12 @@ try {
           assert(await page.locator('.enemy__head').evaluateAll(heads => heads.every(head =>
             getComputedStyle(head).backgroundImage === 'none' && getComputedStyle(head).backgroundColor === 'rgba(0, 0, 0, 0)')),
           'enemy names must not have dark background boxes')
+          const crowdScale = await page.locator('.combat').evaluate(e => +getComputedStyle(e).getPropertyValue('--stage-scale'))
           const crowdState = await page.evaluate(() => structuredClone(window.fixture.state))
-          const crowdPitch = await page.locator('.combat').evaluate(e => +getComputedStyle(e).getPropertyValue('--stage-enemy-pitch'))
-          assert(crowdPitch < 14, 'crowds should reclaim the space between enemies')
+          assert(await page.locator('.combat').evaluate(e => {
+            const style = getComputedStyle(e)
+            return style.getPropertyValue('--stage-enemy-gap') === style.getPropertyValue('--stage-gap')
+          }), 'enemies and heroes share the same pitch')
           const geometry = await page.evaluate(() => {
             const b = window.fixture.bounds
             const enemies = [...document.querySelectorAll('.enemy')].map(e => ({
@@ -285,9 +288,12 @@ try {
           })
           const heroFront = await page.locator('.seat__portrait > img').evaluateAll(images =>
             Math.max(...images.map(image => { const b = window.fixture.bounds(image); return b.left + b.width })))
-          assert(geometry[0].body.left > heroFront + 2, `${label}: the front enemy overlaps the party`)
-          for (const enemy of geometry) assert(enemy.name.bottom <= enemy.health.top - 1,
-            `${label}: health bar covers the enemy name: ${JSON.stringify(enemy)}`)
+          assert(geometry[0].body.left > heroFront + 2, `${label}: the front enemy overlaps the party: ${geometry[0].body.left} <= ${heroFront}`)
+          for (const enemy of geometry) {
+            assert(enemy.body.top + enemy.body.height <= enemy.name.top, `${label}: art covers the enemy name: ${JSON.stringify(enemy)}`)
+            assert(enemy.name.bottom <= enemy.health.top - 1,
+              `${label}: health bar covers the enemy name: ${JSON.stringify(enemy)}`)
+          }
           for (let i = 1; i < geometry.length; i++) {
             const previous = geometry[i - 1], current = geometry[i]
             assert(previous.body.left + previous.body.width + 2 < current.body.left,
@@ -322,7 +328,6 @@ try {
           // intermediate scales rather than jumping as actors leave the row.
           for (const survivors of [6, 3]) {
             const beforeScale = await page.locator('.combat').evaluate(e => +getComputedStyle(e).getPropertyValue('--stage-scale'))
-            const beforePitch = await page.locator('.combat').evaluate(e => +getComputedStyle(e).getPropertyValue('--stage-enemy-pitch'))
             await page.evaluate(survivors => {
               const f = window.fixture
               f.state.enemies.forEach((enemy, i) => { if (i >= survivors) { enemy.hp = 0; enemy.dead = true } })
@@ -360,8 +365,6 @@ try {
               `${engineName}/${screen}/${label}/${survivors}: scale recovery jumped: ${recovery}`)
             assert(recovery.every((s, i) => i === 0 || s >= recovery[i - 1] - .001), 'scale recovery oscillates')
             await ready()
-            assert(await page.locator('.combat').evaluate((e, beforePitch) =>
-              +getComputedStyle(e).getPropertyValue('--stage-enemy-pitch') > beforePitch, beforePitch), 'survivors should gradually space out')
           }
           await page.screenshot({ path: resolve(output, `${engineName}-${screen}-${label}-recovered.png`) })
           // Reconnecting during an enemy phase must fit the snapshot immediately,
@@ -370,7 +373,8 @@ try {
             const f = window.fixture; f.state = state; f.state.phase = 'enemy'; f.restoration++; f.render()
           }, crowdState)
           await ready()
-          assert(await page.locator('.combat').evaluate(e => +getComputedStyle(e).getPropertyValue('--stage-scale') < .66),
+          assert(await page.locator('.combat').evaluate((e, scale) =>
+            Math.abs(+getComputedStyle(e).getPropertyValue('--stage-scale') - scale) < .001, crowdScale),
             'enemy-phase reconnect left the crowd at the previous uncrowded scale')
           const restoredBodies = await page.locator('.enemy').evaluateAll(enemies => enemies.map(e => ({
             uid: e.dataset.enemyId, body: window.fixture.bounds(e.querySelector('.enemy__art--cutout')),

@@ -1,11 +1,10 @@
 @property --stage-scale { syntax: '<number>'; inherits: true; initial-value: 1; }
 @property --stage-enemy-count { syntax: '<number>'; inherits: true; initial-value: 0; }
-@property --stage-enemy-pitch { syntax: '<number>'; inherits: true; initial-value: 14; }
 @property --stage-index { syntax: '<number>'; inherits: false; initial-value: 0; }
 
 /* Native interpolation scales every actor together, including its HUD. */
 .combat[data-stage-motion] {
-  transition: --stage-scale 900ms ease, --stage-enemy-count 900ms ease, --stage-enemy-pitch 900ms ease;
+  transition: --stage-scale 900ms ease, --stage-enemy-count 900ms ease;
 }
 .combat[data-stage-motion] .enemy { transition: --stage-index 900ms ease; }
 .combat[data-party-size='4'] .board { --stage-scale: inherit; }
@@ -31,6 +30,7 @@
 /* Co-op lanes share one physical stage: every actor stands on the same floor. */
 .board {
   --stage-scale: 1;
+  --enemy-name-height: 1.5rem;
 
   display: block;
   overflow: auto hidden;
@@ -140,7 +140,7 @@
 .board .enemy__portrait {
   position: absolute;
   right: 0;
-  bottom: calc(1.7rem * var(--stage-scale));
+  bottom: calc(1.7rem * var(--stage-scale) + var(--enemy-name-height));
   left: 0;
 }
 
@@ -177,11 +177,11 @@
   font-size: min(0.78rem, calc(0.86rem * var(--stage-scale)));
 }
 
-.combat[data-party-size='4'] .enemy__head {
-  /* HP bars keep a readable 16px height even at the crowd scale floor. */
-  bottom: max(-.1rem, calc(18px - 1.35rem * var(--stage-scale)));
-  gap: calc(.35rem * var(--stage-scale));
-  padding: calc(.8rem * var(--stage-scale)) calc(.25rem * var(--stage-scale)) calc(.1rem * var(--stage-scale));
+/* The name owns a strip below the portrait, above the HP bar. */
+.board .enemy .enemy__head {
+  top: 100%;
+  bottom: auto;
+  padding: .5rem .25rem .1rem;
 }
 .combat[data-party-size='4'] .enemy__head > .icon { width: 1em; height: 1em; }
 .combat[data-party-size='4'] .enemy__name { white-space: nowrap; }
@@ -364,7 +364,7 @@
   .row__seat { bottom: calc(1.1rem * var(--stage-scale)); }
 
   .row__seat .seat__portrait { bottom: calc(3rem * var(--stage-scale) + 4.75rem); }
-  .board .enemy__portrait { bottom: calc(1.7rem * var(--stage-scale) + 4.75rem); }
+  .board .enemy__portrait { bottom: calc(1.7rem * var(--stage-scale) + 4.75rem + var(--enemy-name-height)); }
 
   .row__seat .seat__name { bottom: max(calc(1.55rem * var(--stage-scale) + 4.75rem), calc(18px + 0.35rem * var(--stage-scale) + 4.75rem)); }
 
@@ -401,13 +401,13 @@
 .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__intent {
   position: absolute;
   top: auto;
-  bottom: calc(var(--elite-art-height) + 4.2rem * var(--stage-scale) + var(--elite-floor-offset));
+  bottom: calc(var(--elite-art-height) + 4.2rem * var(--stage-scale) + var(--elite-floor-offset) + var(--enemy-name-height));
   right: -25%;
   left: -25%;
 }
 .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__ability {
   top: auto;
-  bottom: calc(var(--elite-art-height) + 1.9rem * var(--stage-scale) + var(--elite-floor-offset));
+  bottom: calc(var(--elite-art-height) + 1.9rem * var(--stage-scale) + var(--elite-floor-offset) + var(--enemy-name-height));
   right: -15%;
   left: -15%;
   max-width: none;
@@ -450,7 +450,7 @@ html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
 
 @media (orientation: landscape) and (max-height: 26.25rem) {
   .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__intent {
-    bottom: calc(var(--elite-art-height) + 3.2rem * var(--stage-scale) + var(--elite-floor-offset));
+    bottom: calc(var(--elite-art-height) + 3.2rem * var(--stage-scale) + var(--elite-floor-offset) + var(--enemy-name-height));
   }
   .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__ability { max-height: calc(1.1rem * var(--stage-scale)); }
 }

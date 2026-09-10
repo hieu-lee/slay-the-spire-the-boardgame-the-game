@@ -142,7 +142,10 @@
 }
 
 .hand-area {
-  position: relative;
+  /* Safari can shorten the visible viewport without changing vh-sized actors. */
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
   z-index: 40;
   pointer-events: none;
   min-height: calc(var(--card-width) * var(--card-ratio) + 2rem);
