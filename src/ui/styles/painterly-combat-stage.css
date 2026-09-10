@@ -228,12 +228,14 @@
   padding-bottom: calc(0.65rem * var(--stage-scale));
 }
 
-/* PC Downfall keeps commanded Slimes on the battlefield at their owner's
-   feet. This compact party belongs to the seat instead of stealing a full HUD
-   row, with each party arranged left to right. */
+/* Summons keep their physical size. Reserve room between players for the
+   largest foreground party, letting the existing stage scroller handle overflow. */
+.combat {
+  --slime-size: calc(3.3rem * var(--stage-scale));
+  --stage-player-gap: max(var(--stage-gap), calc(var(--slime-count) * var(--slime-size) * 1.114 + 0.5rem * var(--stage-scale)));
+}
+
 .slime-party {
-  --slime-size: min(calc(3.3rem * var(--stage-scale)),
-    calc((var(--stage-gap) - 0.5rem * var(--stage-scale)) / (var(--slime-count) * 1.114)));
   position: absolute;
   z-index: 7;
   width: max-content;
@@ -262,7 +264,7 @@
 }
 
 @media (orientation: landscape) and (max-width: 40rem) and (max-height: 26.25rem) {
-  .slime-party { --slime-size: min(calc(2.5rem * var(--stage-scale)), calc((var(--stage-gap) - 0.5rem * var(--stage-scale)) / (var(--slime-count) * 1.114))); }
+  .combat { --slime-size: calc(2.5rem * var(--stage-scale)); }
 }
 
 .slime-party__actor:is(:hover, :focus-visible) {

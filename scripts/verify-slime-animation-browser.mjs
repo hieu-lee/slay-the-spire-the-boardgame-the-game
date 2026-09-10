@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium } from './lib/profile-browser.mjs'
+import { chromium, webkit } from './lib/profile-browser.mjs'
 
 
 async function checkSlimeLayout(page) {
@@ -26,7 +26,9 @@ async function checkSlimeLayout(page) {
       const actors = [...party.children].map(e => e.getBoundingClientRect())
       const board = party.closest('.board').getBoundingClientRect()
       const energy = document.querySelector('.pip--energy').getBoundingClientRect()
-      return { energy: energy.toJSON(), first: actors[0].toJSON(), energyOverlap: actors.some(r=>r.left<energy.right&&r.right>energy.left&&r.top<energy.bottom&&r.bottom>energy.top), left: actors[0].left, right: actors.at(-1).right, delta: paintedEdge(party.querySelector('img')) - owner.querySelector('.bar').getBoundingClientRect().left,
+      const enemies = [...document.querySelectorAll('.enemy:not(.enemy--dead) .enemy__portrait')].map(enemy => enemy.getBoundingClientRect())
+      return { enemyOverlap: actors.some(r => enemies.some(enemy => r.left < enemy.right && r.right > enemy.left && r.top < enemy.bottom && r.bottom > enemy.top)),
+        energy: energy.toJSON(), first: actors[0].toJSON(), energyOverlap: actors.some(r=>r.left<energy.right&&r.right>energy.left&&r.top<energy.bottom&&r.bottom>energy.top), left: actors[0].left, right: actors.at(-1).right, delta: paintedEdge(party.querySelector('img')) - owner.querySelector('.bar').getBoundingClientRect().left,
         gaps: actors.slice(1).map((r,i) => r.left - actors[i].right),
         top: actors[0].top, bottom: actors[0].bottom, boardBottom: board.bottom,
         hpBottom: owner.querySelector('.bar').getBoundingClientRect().bottom }
@@ -38,21 +40,24 @@ async function checkSlimeLayout(page) {
     assert(Math.abs(party.delta) < 3, `HP bar left alignment: ${JSON.stringify(party)}`)
     assert(party.gaps.every(gap => gap > 0 && Math.abs(gap - party.gaps[0]) < .1), 'slimes must run left to right with constant spacing')
     assert(!party.energyOverlap, `slimes overlap the energy orb: ${JSON.stringify(party)}`)
+    assert(!party.enemyOverlap, `idle slimes overlap a live enemy: ${JSON.stringify(party)}`)
     assert(party.top >= party.hpBottom, 'foreground slimes overlap owner HP')
     assert(party.bottom <= party.boardBottom, 'foreground slimes clipped by stage')
   }
 }
 
 const root = resolve(import.meta.dirname, '..')
-const output = resolve(root, 'artifacts/slime-animation-browser')
+const engine = process.argv.includes('--webkit') ? webkit : chromium
+const output = resolve(root, 'artifacts/slime-animation-browser', process.argv.includes('--webkit') ? 'webkit' : 'chromium')
 mkdirSync(output, { recursive: true })
 const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
 await server.listen()
-const browser = await chromium.launch({ headless: true })
+const browser = await engine.launch({ headless: true })
 const errors = []
 try {
   for (const [name, viewport, reducedMotion = 'no-preference'] of [['desktop', { width: 1440, height: 900 }],
     ['horizontal-phone', { width: 844, height: 390 }],
+    ['small-horizontal-phone', { width: 568, height: 320 }],
     ['horizontal-phone-os-reduced', { width: 844, height: 390 }, 'reduce']]) {
     const page = await browser.newPage({ viewport, reducedMotion, recordVideo: { dir: output, size: viewport } })
     page.on('pageerror', (error) => errors.push(String(error)))
@@ -94,6 +99,10 @@ try {
         authoritativeRestoration: f.restoration, authoritativeConnected: f.connected,
         onAction: (action) => { f.actions.push(action) },
       }))
+      f.summon = count => {
+        f.state.players[0].slimes = Array.from({ length: count }, (_, i) => bruiserSlime(i === 0 ? 'x' : i === 1 ? 'y' : `extra-${i}`))
+        f.render()
+      }
       f.command = (seq, slimeUid = 'x', animationIndex = 0) => ({
         kind: 'slime', seq, actorId: 'p1', sourceId: 'slime_boss_bruiser_slime',
         slimeUid, upgraded: false, animationIndex, enemyIds: ['boss'], playerIds: [],
@@ -109,6 +118,20 @@ try {
     const x = page.locator('[data-slime-uid="x"]')
     await x.waitFor()
     await page.waitForFunction(()=>[...document.querySelectorAll('.slime-party__art')].every(i=>i.complete&&i.naturalWidth>0))
+    let firstSize
+    for (const count of [1, 2, 3, 5, 8, 10, 4, 2]) {
+      await page.evaluate(count => window.fixture.summon(count), count)
+      await page.waitForFunction(count => document.querySelectorAll('.slime-party__art').length === count &&
+        [...document.querySelectorAll('.slime-party__art')].every(i => i.complete && i.naturalWidth), count)
+      const sizes = await page.locator('.slime-party__art').evaluateAll(images => images.map(i => {
+        const r = i.getBoundingClientRect(); return { width: r.width, height: r.height }
+      }))
+      firstSize ??= sizes[0]
+      for (const size of sizes) for (const dimension of ['width', 'height']) assert(Math.abs(size[dimension] - firstSize[dimension]) < .1,
+        `${name}: ${count} summoned slimes changed ${dimension} from ${firstSize[dimension]} to ${size[dimension]}`)
+      await checkSlimeLayout(page)
+      if (count === 8) await page.screenshot({path:resolve(output,`${name}-eight-slimes.png`)})
+    }
     await checkSlimeLayout(page)
     await page.screenshot({path:resolve(output,`${name}-slime-idle.png`)})
     const idleBox=await x.locator('.slime-party__art').boundingBox()
@@ -234,6 +257,19 @@ try {
     await page.waitForTimeout(350)
     await checkSlimeLayout(page)
     await page.screenshot({path:resolve(output,`${name}-slime-party.png`)})
+    assert(await page.locator('.seat--viewer').evaluate(seat => {
+      const r = seat.getBoundingClientRect(), board = seat.closest('.board').getBoundingClientRect()
+      return r.left >= board.left && r.right <= board.right
+    }), 'growing co-op parties moved the viewer off screen')
+    // Explicit inspection of another lane must survive a later party resize.
+    await page.locator('.board').evaluate(board => {
+      board.dispatchEvent(new WheelEvent('wheel', { deltaX: -500 }))
+      board.scrollLeft = 0
+    })
+    await page.waitForTimeout(100)
+    const fullPartySizes = await page.locator('.slime-party__actor').evaluateAll(actors => Object.fromEntries(actors.map(actor => {
+      const r = actor.getBoundingClientRect(); return [actor.dataset.slimeUid, { width: r.width, height: r.height }]
+    })))
     await page.evaluate(()=>{
       const f=window.fixture
       f.state.players.forEach(player=>player.slimes.shift())
@@ -242,6 +278,12 @@ try {
     await page.waitForFunction(()=>document.querySelectorAll('.slime-party__art').length===16&&
       [...document.querySelectorAll('.slime-party__art')].every(i=>i.complete&&i.naturalWidth>0))
     await checkSlimeLayout(page)
+    assert.equal(await page.locator('.board').evaluate(board => board.scrollLeft), 0, 'party resize overrode manual board scrolling')
+    for (const actor of await page.locator('.slime-party__actor').all()) {
+      const uid = await actor.getAttribute('data-slime-uid'), size = await actor.boundingBox()
+      for (const dimension of ['width', 'height']) assert(Math.abs(size[dimension] - fullPartySizes[uid][dimension]) < .1,
+        `${name}: removing a co-op slime changed ${dimension}`)
+    }
     await page.evaluate(()=>{
       const f=window.fixture
       f.state.presentationEvents=[{kind:'card',seq:999,actorId:'p1',sourceId:'slime_boss_bruiser_slime',
@@ -250,8 +292,72 @@ try {
     })
     await page.waitForFunction(()=>document.querySelector('.seat__portrait > img[data-static-art]')?.complete)
     await checkSlimeLayout(page)
+
+    // Growing/removing a party during contact must keep the attack on its
+    // target without restarting it. Newcomer contact feedback stays concurrent.
+    await page.evaluate(() => {
+      const f = window.fixture
+      f.state.players.forEach(player => { player.slimes = player.slimes.slice(0, 2) })
+      f.state.enemies[0].hp = 100; f.state.enemies[0].dead = false
+      f.state.presentationEvents = []; f.restoration++; f.render()
+    })
+    await page.waitForFunction(() => document.querySelectorAll('.slime-party__art').length === 8)
+    await page.evaluate(() => {
+      const f = window.fixture
+      f.state.presentationEvents = [f.command(1000, 'party-0-2')]; f.render()
+    })
+    const attacker = page.locator('[data-slime-uid="party-0-2"]')
+    await page.locator('[data-command-seq="1000"]').waitFor()
+    await attacker.evaluate(node => {
+      const animation = node.getAnimations().find(a => a.animationName === 'slime-party-command')
+      animation.pause(); animation.currentTime = 600
+    })
+    const targetGeometry = () => attacker.evaluate(node => {
+      const actor = node.getBoundingClientRect()
+      const enemy = document.querySelector('.enemy__portrait').getBoundingClientRect()
+      return { x: enemy.left - (actor.right - actor.width * .22), y: enemy.bottom - actor.bottom,
+        time: node.getAnimations().find(a => a.animationName === 'slime-party-command').currentTime }
+    })
+    const beforeGrowth = await targetGeometry()
+    await page.evaluate(() => {
+      const f = window.fixture, player = f.state.players[0]
+      for (let i = 0; i < 3; i++) {
+        const slime = structuredClone(player.slimes[0]); slime.card.uid = `new-${i}`
+        player.slimes.push(slime)
+      }
+      player.slimes.shift()
+      f.state.enemies[0].hp = 80
+      f.state.presentationEvents.push(f.command(1001, 'new-0')); f.render()
+    })
+    await page.waitForFunction(() => window.fixture.state.players[0].slimes.length === 4 &&
+      !document.querySelector('[data-slime-uid="party-0-1"]'))
+    await page.locator('[data-command-seq="1001"]').waitFor()
+    const afterGrowth = await targetGeometry()
+    assert.equal(afterGrowth.time, beforeGrowth.time, 'party changes restarted the active command')
+    assert(Math.abs(afterGrowth.x) < 1 && Math.abs(afterGrowth.y) < 1,
+      `party changes pulled the command off its target: ${JSON.stringify(afterGrowth)}`)
+    const newcomer = page.locator('[data-slime-uid="new-0"]')
+    await newcomer.evaluate(node => {
+      const animation = node.getAnimations().find(a => a.animationName === 'slime-party-command')
+      animation.pause(); animation.currentTime = 0
+    })
+    const newSize = await newcomer.boundingBox(), oldSize = await attacker.boundingBox()
+    for (const dimension of ['width', 'height']) assert(Math.abs(newSize[dimension] - oldSize[dimension]) < .1,
+      `a newcomer changed ${dimension} during an existing command`)
+    assert(await page.locator('.enemy .bar').innerText().then(text => text.includes('100/100')),
+      'newcomer damage appeared before its contact phase')
+    await newcomer.evaluate(node => node.getAnimations().find(a => a.animationName === 'slime-party-command').play())
+    await page.waitForFunction(() => document.querySelector('.enemy .bar').textContent.includes('80/100'))
+    assert.equal(await page.locator('[data-command-seq="1001"]').count(), 1, 'newcomer damage must accompany its visible command')
+    await page.screenshot({ path: resolve(output, `${name}-summoned-during-command.png`) })
+    await attacker.evaluate(node => node.getAnimations().find(a => a.animationName === 'slime-party-command').finish())
+    await page.waitForFunction(() => !document.querySelector('.slime-party__actor--commanding'))
+    await page.waitForFunction(() => document.querySelectorAll('.slime-party__art').length === 10 &&
+      [...document.querySelectorAll('.slime-party__art')].every(i => i.complete && i.naturalWidth))
+    await checkSlimeLayout(page)
+    await page.screenshot({ path: resolve(output, `${name}-party-after-command-growth.png`) })
     await page.close()
-    console.log(`${name}: command completion, stable paths, enemy barrier, reconnect and reduced motion passed`)
+    console.log(`${name}: constant summon size, co-op spacing, commands, reconnect and reduced motion passed`)
   }
   assert.deepEqual(errors, [], 'browser runtime errors')
 } finally {

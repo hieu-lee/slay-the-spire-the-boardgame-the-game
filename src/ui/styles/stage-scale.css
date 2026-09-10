@@ -60,7 +60,7 @@
 .row__seat {
   position: absolute;
   bottom: calc(1.1rem * var(--stage-scale) + 1.5rem);
-  left: calc(clamp(1.5rem, 4vw, 5rem) + var(--stage-row) * var(--stage-gap));
+  left: calc(clamp(1.5rem, 4vw, 5rem) + var(--stage-row) * var(--stage-player-gap));
   width: var(--stage-actor-width);
   height: calc(18.5rem * var(--stage-scale));
   align-content: start;
@@ -366,7 +366,7 @@
 
 
 @media (max-width: 48.125rem) {
-  .board:not([data-rows='1']) .row--viewer .row__seat {
+  .board:not([data-rows='1']):not([data-slime-formation]) .row--viewer .row__seat {
     translate: -7.5rem 0;
   }
 }
@@ -406,6 +406,11 @@ html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
 }
 
 @media (orientation: landscape) and (max-height: 26.25rem) {
+  /* Foreground summons need the space that bosses/elite enemies reserve for
+     the End turn control, as well as their own full-size row. */
+  .combat:has(.slime-party):has(.enemy--elite, .enemy--boss) {
+    --slime-enemy-clearance: 8rem;
+  }
   .board :is(.enemy--elite, .board__bosses .enemy--boss) {
     --elite-art-height: min(calc(var(--stage-actor-width) * 1.45), max(4rem, calc(100dvh - 17.5rem)));
     --elite-floor-offset: 4.75rem;

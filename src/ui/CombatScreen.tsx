@@ -1034,6 +1034,7 @@ function CombatScreenView({
     x: number
     y: number
   }>>({})
+  const [slimeLayoutVersion, setSlimeLayoutVersion] = useState(0)
   useLayoutEffect(() => {
     const board = boardRef.current
     if (!board) return
@@ -1128,12 +1129,6 @@ function CombatScreenView({
     const next: typeof slimeCommandMotions = {}
     for (const event of commands) {
       const key = `${event.actorId}:${event.slimeUid}`
-      // Other actors can start/finish while this slime is in flight. Keep its
-      // original path instead of measuring its currently transformed bounds.
-      if (slimeCommandMotions[key]?.seq === event.seq) {
-        next[key] = slimeCommandMotions[key]!
-        continue
-      }
       const row = board.querySelector<HTMLElement>(`.seat[data-player-id="${CSS.escape(event.actorId)}"]`)?.closest('.row')
       const actor = row?.querySelector<HTMLElement>(`.slime-party__actor[data-slime-uid="${CSS.escape(event.slimeUid)}"]`)
       const target = event.enemyIds.flatMap((id) => {
@@ -1143,14 +1138,22 @@ function CombatScreenView({
       if (!actor) continue
       const actorRect = actor.getBoundingClientRect()
       const targetRect = target?.getBoundingClientRect()
-      next[`${event.actorId}:${event.slimeUid}`] = {
+      // Measure from the home position, removing this command's translation.
+      // Growing a party can move both actors and targets mid-command; using the
+      // animated bounds feeds travel back into the path and makes it drift.
+      const transform = getComputedStyle(actor).transform
+      const travel = new DOMMatrix(transform === 'none' ? undefined : transform)
+      const motion = {
         seq: event.seq,
-        x: targetRect ? Math.max(0, targetRect.left - actorRect.right + actorRect.width * 0.22) : 0,
-        y: targetRect ? targetRect.bottom - actorRect.bottom : 0,
+        x: targetRect ? Math.max(0, targetRect.left - actorRect.right + travel.e + actorRect.width * 0.22) : 0,
+        y: targetRect ? targetRect.bottom - actorRect.bottom + travel.f : 0,
       }
+      const prior = slimeCommandMotions[key]
+      next[key] = prior?.seq === event.seq && Math.abs(prior.x - motion.x) < 0.1 && Math.abs(prior.y - motion.y) < 0.1
+        ? prior : motion
     }
     setSlimeCommandMotions(next)
-  }, [livePresentationEvents, prefersReducedMotion, stageScale])
+  }, [livePresentationEvents, prefersReducedMotion, stageScale, state.players, slimeLayoutVersion])
   useCombatSoundEffects(state, viewerId, animateOpeningHand, authoritativeRestoration, authoritativeConnected)
 
   // Animate only changes witnessed while this combat is live. A reconnect or
@@ -1772,6 +1775,7 @@ function CombatScreenView({
   const stageCount = stageActors.current.maximum
   const stageScaleActors = stageActors.current.initial
   const stageGap = STAGE_GAP_REM * stageScale
+  const largestSlimeParty = Math.max(0, ...state.players.map(player => player.character === 'slime_boss' ? player.slimes.length : 0))
 
   useLayoutEffect(() => {
     const board = boardRef.current
@@ -1793,12 +1797,18 @@ function CombatScreenView({
   //
   // A layout effect, not a plain one: this must run before paint, or the board
   // is briefly drawn scrolled to the wrong row and then jumps.
-  // Enemy VFX, deaths, and summons must not recenter the board underneath the
+  // Enemy VFX, deaths, and enemy summons must not recenter the board underneath the
   // player. Only a new combat or an explicit seat switch chooses a new view.
   useLayoutEffect(() => {
     followViewerRow.current = true
     recenterViewerRow()
   }, [viewerId, state.combatId])
+
+  // A wider foreground party can move the viewer's seat. Keep following it
+  // unless the player has deliberately scrolled to inspect another lane.
+  useLayoutEffect(() => {
+    if (followViewerRow.current) recenterViewerRow()
+  }, [largestSlimeParty])
 
   useEffect(() => {
     const board = boardRef.current
@@ -4394,7 +4404,8 @@ function CombatScreenView({
       style={{
         backgroundImage: `linear-gradient(90deg, rgb(2 5 8 / 0.38), transparent 22%, transparent 74%, rgb(2 5 8 / 0.32)), url("${assetPath(`backgrounds/boss-act-${stageAct}.webp`)}")`,
         '--stage-scale': stageScale,
-        '--stage-width': `${stageCount * stageGap + STAGE_MARGIN_REM * stageScale}rem`,
+        '--stage-width': `calc(${stageCount * stageGap + STAGE_MARGIN_REM * stageScale}rem + ${state.players.length} * (var(--stage-player-gap) - var(--stage-gap)) + var(--slime-enemy-clearance, 0rem))`,
+        '--slime-count': largestSlimeParty,
         '--stage-gap': `${stageGap}rem`,
         '--stage-actor-width': `${stageGap - 1 * stageScale}rem`,
       } as React.CSSProperties}
@@ -5692,6 +5703,7 @@ function CombatScreenView({
       <div
         className="board"
         data-rows={rows.length}
+        data-slime-formation={state.players.some(player => player.character === 'slime_boss') || undefined}
         data-crowded={livingEnemies(state).length >= 3 || undefined}
         data-character-attack-assets-ready={characterAttackBlobs.size || undefined}
         ref={boardRef}
@@ -6073,8 +6085,7 @@ function CombatScreenView({
                     </button>
                     {occupant.character === 'slime_boss' && occupant.slimes.length > 0 ? (
                       <span className="slime-party combat__slime-status" role="list"
-                        aria-label={`${occupant.name}'s Slimes`}
-                        style={{ '--slime-count': occupant.slimes.length } as React.CSSProperties}>
+                        aria-label={`${occupant.name}'s Slimes`}>
                         {occupant.slimes.map((slime) => {
                           const def = faceOf(cardDef(slime.card.defId), slime.card.upgraded)
                           const name = def.name.replace(/ Slime\+?$/, '')
@@ -6128,8 +6139,13 @@ function CombatScreenView({
                                 onLoad={(event) => {
                                   const image = event.currentTarget
                                   const party = image.closest<HTMLElement>('.slime-party')
-                                  if (party?.firstElementChild === image.parentElement) party.style.setProperty(
-                                    '--slime-first-inset', String(0.025 + 0.95 * paintedLeft(image)))
+                                  if (party?.firstElementChild === image.parentElement) {
+                                    const inset = String(0.025 + 0.95 * paintedLeft(image))
+                                    if (party.style.getPropertyValue('--slime-first-inset') !== inset) {
+                                      party.style.setProperty('--slime-first-inset', inset)
+                                      setSlimeLayoutVersion(version => version + 1)
+                                    }
+                                  }
                                 }}
                                 alt=""
                                 onError={(event) => {
