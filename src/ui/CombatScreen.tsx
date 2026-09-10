@@ -4467,6 +4467,16 @@ function CombatScreenView({
   return (
     <div
       className="combat"
+      onClick={(event) => {
+        if (!(event.target instanceof Element) || event.target.closest(
+          'button, a, input, select, textarea, [role="button"], dialog, .card-keyword-tips',
+        )) return
+        if (!pending || usingCard || pending.choiceCards || pending.card.uid === forcedCardUid ||
+          (!pending.cardInHand && !pending.chamberPlay)) return
+        setPending(null)
+        const focused = document.activeElement
+        if (focused instanceof HTMLElement && focused.closest('.hand')) focused.blur()
+      }}
       inert={chamberClosing}
       aria-busy={chamberClosing || undefined}
       data-act={stageAct}
