@@ -95,33 +95,41 @@ try {
         await page.screenshot({ path: resolve(output, `${engineName}-${screen}-reference-proportions.png`) })
         console.log(`${engineName}/${screen}: Cultist ${ratios[0].toFixed(2)}, Jaw Worm ${ratios[1].toFixed(2)} of hero height`)
         const endTurn = page.locator('.combat__end-turn')
-        assert((await endTurn.evaluate(e => getComputedStyle(e).backgroundImage)).includes('stone-key.webp'))
+        assert((await endTurn.evaluate(e => getComputedStyle(e).clipPath)).includes('16px'))
         await page.keyboard.press('Tab'); await endTurn.focus()
         assert(await endTurn.evaluate(e => e.matches(':focus-visible') && getComputedStyle(e).outlineStyle !== 'none'))
-        // Selected and disabled plain controls must keep the stone plate too.
+        // Every plain combat control keeps the same fixed 45-degree chamfer.
         await page.evaluate(() => {
           const host = document.createElement('div'); host.id = 'stone-state-probe'; host.className = 'sts-scope'
-          for (const kind of ['bare', 'empty', 'chosen', 'disabled']) {
+          const surface = document.createElement('div'); surface.className = 'combat'; host.append(surface)
+          for (const kind of ['idle', 'bare', 'empty', 'chosen', 'disabled', 'cancel']) {
             const button = document.createElement('button'); button.textContent = kind
             if (kind === 'empty') button.className = ''
             if (kind === 'chosen') button.className = 'is-chosen'
             if (kind === 'disabled') button.disabled = true
-            else button.setAttribute('aria-pressed', 'true')
-            host.append(button)
+            if (kind === 'cancel') button.className = 'prompt__cancel'
+            else if (kind !== 'idle') button.setAttribute('aria-pressed', 'true')
+            surface.append(button)
           }
           document.body.append(host)
         })
-        for (const button of await page.locator('#stone-state-probe button').all()) {
-          assert((await button.evaluate(e => getComputedStyle(e).backgroundImage))
-            .includes(await button.isDisabled() ? 'stone-key.webp' : 'stone-key-selected.webp'))
-        }
+        for (const button of await page.locator('#stone-state-probe button').all())
+          assert((await button.evaluate(e => getComputedStyle(e).clipPath)).includes('16px'))
         if (engineName === 'chromium') {
           await page.emulateMedia({ forcedColors: 'active' })
-          const selected = page.locator('#stone-state-probe button').first()
+          const idle = page.locator('#stone-state-probe button').first()
+          await idle.hover()
+          const forcedHover = await idle.evaluate(e => ({ backgroundImage: getComputedStyle(e).backgroundImage, filter: getComputedStyle(e).filter }))
+          assert(forcedHover.backgroundImage === 'none' && forcedHover.filter === 'none',
+            `forced colors must keep a hovered unselected button system-coloured: ${JSON.stringify(forcedHover)}`)
+          const selected = page.locator('#stone-state-probe button').nth(1)
           await selected.focus()
           assert(await selected.evaluate(e => getComputedStyle(e).outlineStyle === 'double' &&
             getComputedStyle(e).outlineWidth === '5px' && getComputedStyle(e).backgroundImage === 'none'),
           'forced colors must distinguish selected keyboard focus and remove the bitmap')
+          await selected.hover()
+          assert(await selected.evaluate(e => getComputedStyle(e).outlineStyle === 'double' && getComputedStyle(e).filter === 'none'),
+            'forced colors must retain keyboard focus and reset hover filtering')
           await page.emulateMedia({ forcedColors: 'none' })
         }
         await page.locator('#stone-state-probe').evaluate(e => e.remove())

@@ -55,6 +55,23 @@ async function audit(page, selector, label) {
   console.log(`${label}: ${checked} controls, hover and focus stable`)
 }
 
+async function assertStoneKey(page, selector, expected, label) {
+  const button = page.locator(selector).first()
+  assert(await button.isVisible(), `${label}: missing button`)
+  await button.hover()
+  const style = await button.evaluate(element => ({ clipPath: getComputedStyle(element).clipPath, transition: getComputedStyle(element).transition, outlineStyle: getComputedStyle(element).outlineStyle }))
+  assert.equal(style.clipPath.includes('16px'), expected, `${label}: unexpected stone treatment`)
+  if (expected) {
+    assert(style.transition.includes('0.24s'), `${label}: hover transition is not smooth`)
+    assert.equal(style.outlineStyle, 'none', `${label}: hover must not leave an old outline at the plate ends`)
+    await button.evaluate(element => element.focus({ focusVisible: true }))
+    await button.hover()
+    const focused = await button.evaluate(element => ({ visible: element.matches(':focus-visible'), outlineStyle: getComputedStyle(element).outlineStyle }))
+    assert(focused.visible && focused.outlineStyle !== 'none', `${label}: hover must retain the keyboard focus ring`)
+    await button.evaluate(element => element.blur())
+  }
+}
+
 try {
   for (const viewport of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) {
     const page = installScreenAudit(await browser.newPage({ viewport,
@@ -77,6 +94,7 @@ try {
       await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
       await page.locator('.neow-options').waitFor()
       await audit(page, '.neow-action', `${character}-${viewport.width}`)
+      await assertStoneKey(page, '.neow-options button', true, `${character}-neow-${viewport.width}`)
     }
     for (const kind of ['merchant', 'event', 'treasure', 'campfire']) {
       const run = createRun(1, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
@@ -104,6 +122,30 @@ try {
       const selector = kind === 'campfire' ? '.campfire' : `.${kind}-stage`
       await page.locator(selector).waitFor()
       await audit(page, selector, `${kind}-${viewport.width}`)
+      if (kind === 'event') {
+        await assertStoneKey(page, '.event-options button', true, `event-${viewport.width}`)
+        await page.evaluate(() => {
+          const button = document.createElement('button'); button.className = 'room-proceed'; button.textContent = 'Proceed'
+          document.querySelector('.event-panel').append(button)
+        })
+        await assertStoneKey(page, '.event-stage .room-proceed', true, `event-proceed-${viewport.width}`)
+        const alignment = await page.locator('.event-stage .room-proceed').evaluate(button => {
+          const panel = button.parentElement.getBoundingClientRect(), box = button.getBoundingClientRect()
+          const style = getComputedStyle(button)
+          return { aligned: box.right > panel.left + panel.width * .75, panel: [panel.left, panel.width], button: [box.left, box.width], display: style.display, marginLeft: style.marginLeft }
+        })
+        assert(alignment.aligned, `event-proceed-${viewport.width}: CTA must remain right-aligned: ${JSON.stringify(alignment)}`)
+        const box = await page.locator('.event-stage .room-proceed').boundingBox()
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+        await page.mouse.down()
+        await page.waitForTimeout(300)
+        const activeFilter = await page.locator('.event-stage .room-proceed').evaluate(element => getComputedStyle(element).filter)
+        assert(Number(activeFilter.match(/brightness\(([^)]+)/)?.[1]) < 1,
+          `event-proceed-${viewport.width}: press must darken instead of retaining hover brightness: ${activeFilter}`)
+        await page.mouse.up()
+        await page.locator('.event-stage .room-proceed').evaluate(element => element.remove())
+      }
+      if (kind === 'campfire') await assertStoneKey(page, '.campfire__choices button', false, `campfire-${viewport.width}`)
       if (kind === 'merchant') {
         await page.getByRole('button', { name: /Card Removal Service/ }).click()
         await page.getByRole('group', { name: 'Card to remove' }).getByRole('button').first().click()
@@ -123,6 +165,22 @@ try {
     })
     await page.locator('.reward-screen--loot').waitFor()
     await audit(page, '.reward-screen--loot', `loot-${viewport.width}`)
+    await page.evaluate(() => {
+      const debug = window.__STS_DEBUG__
+      const run = structuredClone(debug.getRun())
+      run.phase = 'defeat'; run.combat = null; run.campaign.finalized = false
+      debug.setRun(run)
+    })
+    await page.locator('.room-screen:has(> .run-summary)').waitFor()
+    await assertStoneKey(page, '.room-screen:has(> .run-summary) > button', true, `record-result-${viewport.width}`)
+    await page.evaluate(() => {
+      const debug = window.__STS_DEBUG__
+      const run = structuredClone(debug.getRun())
+      run.campaign.finalized = true; run.campaignProgress.unspentMarks = 0
+      debug.setRun(run)
+    })
+    await page.locator('.campaign-end').waitFor()
+    await assertStoneKey(page, '.campaign-end > div > button', true, `next-run-${viewport.width}`)
     assert.deepEqual(errors, [])
     await page.close()
   }

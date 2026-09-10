@@ -1,33 +1,37 @@
-/* Shared carved controls. Pictorial cards, loot rows and ribbon/arrow navigation
-   keep their own artwork. The text remains HTML over Blender's text-free plate. */
-.sts-scope button:is(
-  :not([class]), [class=''], .is-chosen, .reward-screen__skip, .neow-offer__skip,
-  .prompt__cancel, .online-lobby__copy, .online-lobby__start,
-  .merchant-removal-dialog__confirm, .merchant-potion-dialog__confirm,
-  .combat__end-turn, .card-picker__confirm, .event-card-confirm
+/* Carved controls belong to combat, Events, and Neow/Heart blessings. Pictorial
+   cards, loot rows, ribbon navigation, and the campfire retain their own art. */
+.sts-scope :is(
+  .combat button:not([class]), .combat button[class=''], .combat button.is-chosen, .combat .prompt__cancel, .combat__end-turn,
+  .event-stage button:not([class]), .event-stage button[class=''], .event-stage button.is-chosen, .event-stage .room-proceed, .event-card-confirm,
+  .neow-screen button:not([class]), .neow-screen button[class=''], .neow-screen button.is-chosen,
+  .neow-screen .reward-screen__skip, .neow-screen .neow-offer__skip,
+  .room-screen:has(> .run-summary) > button, .campaign-end > div > button
 ):not(.ribbon-back) {
-  --stone-key-art: url('/assets/ui/panels/stone-key.webp');
   display: inline-flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  border: 0;
+  border: 0.3rem solid transparent;
   border-radius: 0;
-  clip-path: polygon(12% 0, 88% 0, 100% 50%, 88% 100%, 12% 100%, 0 50%);
-  background: var(--stone-key-art) center / 100% 100% no-repeat #263b48;
-  box-shadow: none;
+  clip-path: polygon(1rem 0, calc(100% - 1rem) 0, 100% 1rem, 100% calc(100% - 1rem), calc(100% - 1rem) 100%, 1rem 100%, 0 calc(100% - 1rem), 0 1rem);
+  background:
+    linear-gradient(180deg, #435c67, #2d4651 52%, #20353d) padding-box,
+    linear-gradient(135deg, #aaa894, #687878 48%, #928c76) border-box;
+  box-shadow: inset 0 0 0 2px #10232c, 0 3px 3px #0008;
   color: #fff2d3;
   text-shadow: 0 2px 2px #101b20;
-  transition: filter 160ms ease, color 160ms ease;
+  transition: filter 240ms cubic-bezier(.22, .61, .36, 1), color 240ms ease;
 
-  &:hover:not(:disabled) { filter: brightness(1.13) drop-shadow(0 3px 3px #0008); transform: none; }
+  &:hover:not(:disabled) { filter: brightness(1.13); transform: none; }
+  &:hover:not(:disabled):not(:focus-visible) { outline: none; }
   &:active:not(:disabled) { filter: brightness(.9); transform: none; }
   &:focus-visible { outline: 3px solid #ffe29d; outline-offset: -5px; }
-  &:disabled { background-image: var(--stone-key-art); color: #adc9c9; filter: saturate(.45) brightness(.8); opacity: 1; }
+  &:disabled { color: #adc9c9; filter: saturate(.45) brightness(.8); opacity: 1; }
 
   &:is(.is-chosen, [aria-pressed='true']):not(:disabled) {
-    --stone-key-art: url('/assets/ui/panels/stone-key-selected.webp');
-    background-image: var(--stone-key-art);
+    background:
+      linear-gradient(180deg, #f3d16a, #c69036 52%, #9d6d20) padding-box,
+      linear-gradient(135deg, #aaa894, #687878 48%, #928c76) border-box;
     color: #271b0a;
     text-shadow: 0 1px 0 #fff4;
   }
@@ -40,9 +44,15 @@
     clip-path: none;
     filter: none;
     text-shadow: none;
+    transition: none;
+    &:hover:not(:disabled), &:active:not(:disabled) { background: ButtonFace; background-image: none; filter: none; }
     &:is(.is-chosen, [aria-pressed='true']):not(:disabled) { background: ButtonFace; color: ButtonText; text-shadow: none; }
     &:disabled { background: ButtonFace; color: GrayText; filter: none; }
     &:focus-visible { outline-color: Highlight; }
     &:is(.is-chosen, [aria-pressed='true']):focus-visible { outline: 5px double Highlight; outline-offset: -5px; }
   }
 }
+
+/* Event CTAs keep the block outer display that makes their auto left margin
+   align them with the panel's right edge. */
+.sts-scope .event-stage .event-panel .room-proceed:not(.ribbon-back) { display: block; margin-left: auto; }
