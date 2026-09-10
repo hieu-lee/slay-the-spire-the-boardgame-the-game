@@ -133,22 +133,16 @@ try {
           await page.waitForFunction(target => window.fixture.state.enemies.find(e => e.uid === target).hp < 50, target)
           assert.equal(await page.evaluate(target => window.fixture.state.enemies.find(e => e.uid !== target).hp, target), 50)
         }
-        // Ordinary enemy rules were click-through targets; only the scrollable
-        // boss/elite rules should consume a click without playing the card.
-        await page.evaluate(() => window.fixture.install(['green_louse', 'jaw_worm']))
-        await ready()
-        await page.locator('.hand .card').first().click()
-        await page.locator('[data-enemy-id="enemy-0"] .enemy__ability').click()
-        await page.waitForFunction(() => window.fixture.state.enemies[0].hp < 50)
-        assert.equal(await page.evaluate(() => window.fixture.state.enemies[1].hp), 50)
-        await page.evaluate(() => window.fixture.install(['gremlin_nob', 'jaw_worm']))
-        await ready()
-        await page.locator('.hand .card').first().click()
-        await page.locator('[data-enemy-id="enemy-0"] .enemy__ability').click()
-        assert.equal(await page.evaluate(() => window.fixture.state.players[0].hand.length), 1)
-        assert.equal(await page.evaluate(() => window.fixture.state.enemies[0].hp), 50)
-        await page.locator('[data-enemy-id="enemy-0"] .enemy__head').click()
-        await page.waitForFunction(() => window.fixture.state.enemies[0].hp < 50)
+        // Moving rules into hover help must keep both ordinary and elite
+        // portraits targetable without an inline rule label consuming clicks.
+        for (const defId of ['green_louse', 'gremlin_nob']) {
+          await page.evaluate(defId => window.fixture.install([defId, 'jaw_worm']), defId)
+          await ready()
+          await page.locator('.hand .card').first().click()
+          await page.locator('[data-enemy-id="enemy-0"] .enemy__head').click()
+          await page.waitForFunction(() => window.fixture.state.enemies[0].hp < 50)
+          assert.equal(await page.evaluate(() => window.fixture.state.enemies[1].hp), 50)
+        }
         // The native enemy button remains keyboard operable.
         await page.evaluate(() => window.fixture.install(['deca', 'donu']))
         await ready()

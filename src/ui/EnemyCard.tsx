@@ -10,7 +10,7 @@ import { Icon, IconValue } from './Icon.tsx'
 import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
 import { healthBand } from './board-signals.ts'
-import { revealDecodedImage } from './Card.tsx'
+import { CardKeywordHelp, revealDecodedImage } from './Card.tsx'
 import {
   bossAttackContactLeftFor,
   bossAttackDurationFor,
@@ -237,47 +237,28 @@ function displayedAbilityText(
   enemy: Enemy,
   defId: string,
   die: number,
-  compact: boolean,
 ): string {
-  if (ability.kind === 'confusion') return compact
-    ? `Confusion · first card costs ${ability.byRoll[die] ?? '?'}`
-    : `Confusion: the first card played this turn costs ${ability.byRoll[die] ?? '?'} Energy`
-  if (ability.kind === 'thorns') return compact
-    ? `Thorns · ${enemy.abilityCubes ?? 0} cubes`
-    : `Thorns: ${enemy.abilityCubes ?? 0} cubes; after an Attack, ${ability.damagePerCube} damage per cube`
-  if (ability.kind === 'beatOfDeath') return compact
-    ? `Beat of Death · ${enemy.abilityCubes ?? 0} cubes`
-    : `Beat of Death: ${enemy.abilityCubes ?? 0} cubes; deals that much damage to every player at end of turn`
+  if (ability.kind === 'confusion') return `Confusion: the first card played this turn costs ${ability.byRoll[die] ?? '?'} Energy`
+  if (ability.kind === 'thorns') return `Thorns: ${enemy.abilityCubes ?? 0} cubes; after an Attack, ${ability.damagePerCube} damage per cube`
+  if (ability.kind === 'beatOfDeath') return `Beat of Death: ${enemy.abilityCubes ?? 0} cubes; deals that much damage to every player at end of turn`
   if (ability.kind === 'immuneOnSlots') return ability.slots.includes(enemy.actionIndex)
-    ? 'Cannot lose HP this turn'
-    : compact ? 'HP immunity · inactive' : 'Cannot lose HP while the cube is on a marked action'
+    ? 'HP immunity: cannot lose HP this turn'
+    : 'HP immunity: inactive; cannot lose HP while the cube is on a marked action'
   if (ability.kind === 'invincible') return enemy.abilityUsed
-    ? compact ? 'Invincible · removed' : 'Invincible: removed'
-    : compact
-      ? `Invincible · no Weak · floor ${ability.hpPerPlayer}/player`
-      : `Invincible: cannot gain Weak or fall below ${ability.hpPerPlayer} HP per player`
+    ? 'Invincible: removed'
+    : `Invincible: cannot gain Weak or fall below ${ability.hpPerPlayer} HP per player`
   if (ability.kind === 'facing') {
-    if (ability.effect === 'spear') return compact
-      ? 'Facing · start: gain 2 Burn'
-      : 'Facing: gain 2 Burn at the start of turn while facing Spire Spear'
+    if (ability.effect === 'spear') return 'Facing: gain 2 Burn at the start of turn while facing Spire Spear'
     const penalty = enemy.actionIndex === 0 ? 'lose 1 Energy' : enemy.actionIndex === 1 ? 'cannot draw' : 'deal 0 damage'
-    return compact ? `Facing · ${penalty}` : `Facing: ${penalty} this turn while facing Spire Shield`
+    return `Facing: ${penalty} this turn while facing Spire Shield`
   }
   if (ability.kind === 'rebirth') {
-    if (defId === 'time_eater') {
-      if (enemy.abilityUsed) return compact ? 'Haste · spent' : 'Haste: spent'
-      return compact
-        ? `Haste · ${ability.hpPerPlayer} HP/player · +1 Strength · clear Weak/Vulnerable · Poison remains`
-        : `Haste: when first defeated, return with ${ability.hpPerPlayer} HP per player, gain 1 Strength, remove all Weak and Vulnerable; Poison remains`
-    }
-    if (defId === 'the_champ') return compact
-      ? `Anger · Fury at ${ability.hpPerPlayer}/player`
-      : `Anger: when first defeated, enter Fury with ${ability.hpPerPlayer} HP per player`
-    if (defId === 'awakened_one_phase_1') return compact
-      ? `Awaken · return at end of turn${(enemy.ascension ?? 0) >= 10 ? ' · Strength from largest Power count' : ''}`
-      : `Awaken: return at end of turn in a second form${(enemy.ascension ?? 0) >= 10 ? ' and gain Strength equal to the largest number of Powers a player has in play' : ''}`
+    if (defId === 'time_eater') return enemy.abilityUsed ? 'Haste: spent'
+      : `Haste: when first defeated, return with ${ability.hpPerPlayer} HP per player, gain 1 Strength, remove all Weak and Vulnerable; Poison remains`
+    if (defId === 'the_champ') return `Anger: when first defeated, enter Fury with ${ability.hpPerPlayer} HP per player`
+    if (defId === 'awakened_one_phase_1') return `Awaken: return at end of turn in a second form${(enemy.ascension ?? 0) >= 10 ? ' and gain Strength equal to the largest number of Powers a player has in play' : ''}`
   }
-  return abilityText(ability, compact)
+  return abilityText(ability)
 }
 
 export function EnemyCard({
@@ -596,7 +577,7 @@ export function EnemyCard({
     intent.push(...intentParts({ kind: 'actsLast' }, swing))
   }
   const abilityLabels = abilities.map((ability) => {
-    const text = displayedAbilityText(ability, visibleEnemy, def.id, die, false)
+    const text = displayedAbilityText(ability, visibleEnemy, def.id, die)
     return `${text}${visibleEnemy.abilityUsed && ability.kind === 'curlUp' ? ', spent' : ''}`
   })
   const hpFraction = visibleEnemy.maxHp === 0 ? 0 : visibleEnemy.hp / visibleEnemy.maxHp
@@ -617,9 +598,20 @@ export function EnemyCard({
     .filter(Boolean)
     .join(' ')
 
+  const tips: { name: string, text: string }[] = []
+  if (!visibleEnemy.dead) for (const label of abilityLabels) {
+    const separator = label.indexOf(':')
+    const name = separator < 0 ? 'Special effects' : label.slice(0, separator)
+    const text = separator < 0 ? label : label.slice(separator + 1).trim()
+    const existing = tips.find(tip => tip.name === name)
+    if (existing) existing.text += `; ${text}`
+    else tips.push({ name, text })
+  }
   return (
+    <CardKeywordHelp extraTips={tips} hover>{(helpProps) => (
     <button
-      ref={cardRef}
+      {...helpProps}
+      ref={(element) => { cardRef.current = element; helpProps.ref?.(element) }}
       type="button"
       className={className}
       data-sfx="enemy"
@@ -671,28 +663,6 @@ export function EnemyCard({
           ))
         )}
       </span>
-      {abilities.length > 0 ? (
-        <span
-          className="enemy__ability"
-          title={abilityLabels.join('\n')}
-          onClick={(event) => {
-            if (visibleEnemy.isBoss || def.elite || bossArtId === 'sentry') event.stopPropagation()
-          }}
-        >
-          {abilities.map((ability, index) => {
-            const spent = visibleEnemy.abilityUsed && (ability.kind === 'curlUp' ||
-              (ability.kind === 'rebirth' && def.id === 'time_eater'))
-            return (
-              <span className={spent ? 'enemy__ability--spent' : undefined} key={`${ability.kind}-${index}`}>
-                {spent && ability.kind === 'curlUp'
-                  ? 'Curl Up · spent'
-                  : displayedAbilityText(ability, visibleEnemy, def.id, die, true)}
-              </span>
-            )
-          })}
-        </span>
-      ) : null}
-
       {bossAttacking && ['sentry', 'giant_head', 'reptomancer'].includes(bossArtId) ? (
         <span className="elite-attack-effect" aria-hidden="true" />
       ) : null}
@@ -797,5 +767,6 @@ export function EnemyCard({
       />
       )}
     </button>
+    )}</CardKeywordHelp>
   )
 }

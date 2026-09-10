@@ -19,6 +19,8 @@ type CardProps = {
   /** Current cost after board-state reductions. */
   cost?: number | 'X'
   playable?: boolean
+  /** Recessed combat cards reveal on the first tap, then activate on the next. */
+  inspectOnTouch?: boolean
   /** Staged for play, waiting on a target or a choice. */
   selected?: boolean
   /** Chosen as the subject of another card's discard or exhaust effect. */
@@ -573,8 +575,9 @@ export function cardKeywordTips(def: CardDef): readonly {
     .map(([name, , text, icon, statusIcon]) => ({ name, text, icon, statusIcon }))
 }
 
-export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips = [], children }: {
-  def: CardDef
+export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips = [], hover = false, children }: {
+  def?: CardDef
+  hover?: boolean
   additionalDef?: CardDef | null
   gemPowerDamage?: boolean
   extraTips?: readonly { name: string, text: string, icon?: IconName, statusIcon?: StatusIconName }[]
@@ -582,10 +585,11 @@ export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips 
     ref?: (element: HTMLElement | null) => void
     'aria-describedby'?: string
     'data-keyword-help-id'?: string
+    'data-help-on-hover'?: boolean
   }) => React.ReactNode
 }) {
   const attachedTips = additionalDef ? cardKeywordTips(additionalDef) : []
-  const attachedGemPowerDamage = (gemPowerDamage ?? def.guardian?.printedType === 'Gem Power') &&
+  const attachedGemPowerDamage = (gemPowerDamage ?? def?.guardian?.printedType === 'Gem Power') &&
     attachedTips.some((tip) => tip.name === 'Hit')
   const additionalTips = additionalDef ? [
     { name: additionalDef.name, text: cardRuleDescription(additionalDef) },
@@ -596,8 +600,9 @@ export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips 
       icon: 'attack' as IconName,
     }] : []),
   ] : []
-  const tips = [...cardKeywordTips(def), ...additionalTips, ...extraTips]
+  const tips = [...(def ? cardKeywordTips(def) : []), ...additionalTips, ...extraTips]
     .filter((tip, index, all) => all.findIndex((candidate) => candidate.name === tip.name) === index)
+  const tipsKey = JSON.stringify(tips)
   const tooltipId = `card-keyword-help-${useId()}`
   const anchorRef = useRef<HTMLElement | null>(null)
   const [mounted, setMounted] = useState(false)
@@ -609,12 +614,13 @@ export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips 
   }, [])
   useEffect(() => {
     if (mounted && tips.length > 0) anchorRef.current?.dispatchEvent(new Event('card-keyword-help-ready', { bubbles: true }))
-  }, [additionalDef?.id, def.id, mounted, tips.length])
+  }, [mounted, tipsKey])
   const host = mounted && anchorRef.current ? anchorRef.current.closest('dialog') ?? document.body : null
   const props = tips.length > 0 ? {
     ref: setAnchor,
     'aria-describedby': `${tooltipId}-description`,
     'data-keyword-help-id': tooltipId,
+    'data-help-on-hover': hover || undefined,
   } : mounted ? { ref: setAnchor } : {}
   return <>
     {children(props)}
@@ -648,6 +654,7 @@ export function Card({
   style,
   cost,
   playable = true,
+  inspectOnTouch = false,
   selected = false,
   picked = false,
   gemPowerDamage,
@@ -660,6 +667,7 @@ export function Card({
   onPointerCancel,
   onLostPointerCapture,
 }: CardProps) {
+  const touchNeedsInspection = useRef(false)
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : null
   const scan = cardThumbPath(def, card.upgraded, attachedGem ?? undefined)
@@ -694,12 +702,22 @@ export function Card({
         '--fan-lift': `${Math.abs(fan) * 14}px`,
       } as React.CSSProperties}
       aria-disabled={!playable}
-      onPointerDown={onPointerDown}
+      onPointerDown={(event) => {
+        touchNeedsInspection.current = inspectOnTouch && event.pointerType === 'touch' &&
+          document.activeElement !== event.currentTarget
+        onPointerDown?.(event)
+      }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
       onLostPointerCapture={onLostPointerCapture}
       onClick={(event) => {
+        const inspect = touchNeedsInspection.current && event.detail !== 0
+        touchNeedsInspection.current = false
+        if (inspect) {
+          event.currentTarget.focus({ preventScroll: true })
+          return
+        }
         if (!playable) {
           event.preventDefault()
           return

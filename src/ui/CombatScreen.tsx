@@ -6523,6 +6523,7 @@ function CombatScreenView({
                 chamberCard ? 'card--chamber-drawn' : '',
                 setupPlayable ? 'card--load-choice' : ''].filter(Boolean).join(' ') || undefined}
               style={{ '--deal-index': index } as React.CSSProperties}
+              inspectOnTouch
               fan={fanOf(index, visibleHand.length)}
               card={chamberCard ? displayedCard : shownCard}
               gemPowerDamage={attachedGemId !== card.attachedGemId || undefined}

@@ -15608,10 +15608,10 @@ check('every player row is rendered on screen', () => {
   assertEqual(rowCount, 4, 'the board should show four rows')
 })
 const enemyAbilities = await page.locator('.enemy').evaluateAll((enemies) => enemies.map((enemy) => ({
-  text: enemy.querySelector('.enemy__ability')?.textContent ?? '',
+  text: document.getElementById(enemy.getAttribute('aria-describedby'))?.textContent ?? '',
   label: enemy.getAttribute('aria-label') ?? '',
 })))
-check('printed enemy special abilities are visible and announced', () => {
+check('printed enemy special abilities are available in help and announced', () => {
   const curl = enemyAbilities.find((ability) => ability.text.includes('Curl Up'))
   assert(curl, 'the Louse Curl Up ability is absent from the board')
   assert(curl.label.includes('after the first damage'), `the accessible rule is incomplete: ${curl.label}`)
@@ -15625,16 +15625,14 @@ await page.evaluate(() => {
 })
 await page.locator('.hand .card[aria-label^="Strike,"]').first().click()
 await page.locator('.enemy').filter({ hasText: 'Red Louse' }).click()
-await page.waitForFunction(() => document.querySelector('.enemy__ability--spent') !== null)
-const spentCurl = await page.locator('.enemy__ability--spent').evaluate((ability) => ({
-  text: ability.textContent ?? '',
-  label: ability.closest('.enemy')?.getAttribute('aria-label') ?? '',
-  decoration: getComputedStyle(ability).textDecorationLine,
+await page.waitForFunction(() => document.querySelector('.enemy[aria-label*="Curl Up"][aria-label*="spent"]') !== null)
+const spentCurl = await page.locator('.enemy[aria-label*="Curl Up"][aria-label*="spent"]').evaluate((enemy) => ({
+  text: document.getElementById(enemy.getAttribute('aria-describedby'))?.textContent ?? '',
+  label: enemy.getAttribute('aria-label') ?? '',
 }))
-check('a used Curl Up is visibly and accessibly spent', () => {
-  assert(spentCurl.text.includes('spent'), `the visible ability still looks active: ${spentCurl.text}`)
+check('a used Curl Up is marked spent in help and its accessible label', () => {
+  assert(spentCurl.text.includes('spent'), `the help still looks active: ${spentCurl.text}`)
   assert(spentCurl.label.includes('spent'), `the accessible ability still sounds active: ${spentCurl.label}`)
-  assert(spentCurl.decoration.includes('line-through'), 'the spent state has no non-colour visual treatment')
 })
 
 await page.evaluate(() => {
@@ -15643,15 +15641,17 @@ await page.evaluate(() => {
   for (const enemy of run.combat.enemies) Object.assign(enemy, { defId: 'fungi_beast', abilityUsed: false })
   debug.setRun(run)
 })
-const longAbilityInspect = await page.locator('.enemy').filter({ hasText: 'Fungi Beast' })
-  .locator('.enemy__ability').filter({ hasText: 'Spore Cloud' }).first().evaluate((ability) => ({
+await page.locator('.enemy').filter({ hasText: 'Fungi Beast' }).first().locator('.enemy__hit-area').hover()
+await page.locator('.card-keyword-tips[data-open]').waitFor()
+const longAbilityInspect = await page.locator('.card-keyword-tips[data-open]').evaluate((ability) => ({
   text: ability.textContent ?? '',
   clipped: ability.scrollHeight > ability.clientHeight + 1 || ability.scrollWidth > ability.clientWidth + 1,
 }))
-check('the longest enemy ability is fully visible', () => {
+check('the enemy ability is fully visible on hover', () => {
   assert(longAbilityInspect.text.includes('Spore Cloud'), `unexpected rule: ${longAbilityInspect.text}`)
   assert(!longAbilityInspect.clipped, 'Spore Cloud is clipped')
 })
+await page.mouse.move(0, 0)
 
 // A normal Red Louse encounter can put a main enemy plus two summons in one
 // row. The fixed opening only reaches two, so exercise the real wider case.
@@ -17993,12 +17993,8 @@ const bossVisuals = await page.locator('.enemy--boss').evaluateAll((cards) => ca
   headBox: card.querySelector('.enemy__head').getBoundingClientRect().toJSON(),
   hpBox: card.querySelector('.bar').getBoundingClientRect().toJSON(),
   intentBox: card.querySelector('.enemy__intent').getBoundingClientRect().toJSON(),
-  abilityBox: card.querySelector('.enemy__ability').getBoundingClientRect().toJSON(),
-  abilityScrollHeight: card.querySelector('.enemy__ability').scrollHeight,
-  abilityClientHeight: card.querySelector('.enemy__ability').clientHeight,
-  abilityOverflowY: getComputedStyle(card.querySelector('.enemy__ability')).overflowY,
-  abilityScrollbarWidth: getComputedStyle(card.querySelector('.enemy__ability')).scrollbarWidth,
-  abilityPosition: getComputedStyle(card.querySelector('.enemy__ability')).position,
+  help: document.getElementById(card.getAttribute('aria-describedby'))?.textContent ?? '',
+  inlineAbility: card.querySelector('.enemy__ability') !== null,
   box: card.getBoundingClientRect().toJSON(),
 })))
 const bossStage = await page.locator('.combat').evaluate((combat) => ({
@@ -18027,18 +18023,10 @@ check('boss portraits, backdrops, mechanics, and accessible labels render togeth
     'boss auras should follow each boss identity, not only the act')
   assert(bossVisuals.every((boss) => boss.intentBox.bottom <= boss.artBox.top + 4),
     `boss intent must sit above the portrait: ${JSON.stringify(bossVisuals.map((boss) => ({ art: boss.artBox, intent: boss.intentBox })))}`)
-  assert(bossVisuals.every((boss) => boss.abilityBox.top >= boss.intentBox.bottom - 4 &&
-    boss.abilityBox.left >= boss.intentBox.left - 1 && boss.abilityBox.right <= boss.intentBox.right + 1),
-    `boss ability must sit in the clear band below intent: ${JSON.stringify(bossVisuals.map((boss) => ({ intent: boss.intentBox, ability: boss.abilityBox })))}`)
-  assert(bossVisuals.every((boss) => boss.abilityPosition === 'absolute'),
-    'boss ability text must not reflow the portrait or its HP bar')
+  assert(bossVisuals.every((boss) => !boss.inlineAbility && boss.help), 'boss rules belong in hover help')
   assert(bossVisuals.every((boss) => [boss.artBox, boss.portraitBox, boss.headBox]
     .every((box) => Math.abs((box.left + box.right) / 2 - (boss.hpBox.left + boss.hpBox.right) / 2) <= 1)),
   `boss art, name, and HP centers diverged: ${JSON.stringify(bossVisuals.map((boss) => ({ art: boss.artBox, portrait: boss.portraitBox, head: boss.headBox, hp: boss.hpBox })))}`)
-  assert(bossVisuals.every((boss) => boss.abilityOverflowY === 'auto' && boss.abilityScrollbarWidth === 'none'),
-    'boss ability bands must scroll vertically without visible scrollbars')
-  assert(bossVisuals.some((boss) => boss.abilityScrollHeight > boss.abilityClientHeight),
-    'the long boss ability fixture did not exercise vertical overflow')
   assert(bossVisuals.every((boss) => boss.visualHeight > bossStage.heroHeight * 1.12),
     `boss silhouettes should read larger than the hero: hero ${bossStage.heroHeight}, bosses ${bossVisuals.map((boss) => boss.visualHeight).join(', ')}`)
   assert(hoveredBossHeight > bossStage.heroHeight * 1.12,
@@ -18049,8 +18037,8 @@ check('boss portraits, backdrops, mechanics, and accessible labels render togeth
   assert(bossVisuals.some((boss) => boss.label.includes('gain 1 Strength')
     && boss.label.includes('remove all Weak and Vulnerable') && boss.label.includes('Poison remains')))
   assert(bossVisuals.some((boss) => boss.label.includes('Invincible: cannot gain Weak')))
-  assert(bossVisuals.some((boss) => boss.text.includes('Haste')))
-  assert(bossVisuals.some((boss) => boss.text.includes('Invincible · no Weak')))
+  assert(bossVisuals.some((boss) => boss.help.includes('Haste')))
+  assert(bossVisuals.some((boss) => boss.help.includes('Invincible: cannot gain Weak')))
   assert(bossVisuals.every((boss) => boss.box.width <= 320 && boss.box.height <= 360),
     'boss cards must remain card-sized')
 })
@@ -18196,18 +18184,17 @@ await page.evaluate(() => {
   run.combat.enemies.find((enemy) => enemy.defId === 'time_eater').abilityUsed = true
   debug.setRun(run)
 })
-const spentHaste = await page.locator('.enemy--boss').filter({ hasText: 'Haste · spent' }).getAttribute('aria-label')
-const timeEaterAbilities = await page.locator('.enemy--boss').filter({ hasText: 'Haste · spent' })
-  .locator('.enemy__ability > span').evaluateAll((abilities) => abilities.map((ability) => ({
-    text: ability.textContent,
-    decoration: getComputedStyle(ability).textDecorationLine,
-  })))
+const timeEater = page.locator('.enemy--boss[data-enemy-def="time_eater"]')
+await timeEater.locator('.enemy__hit-area').hover()
+await page.locator('.card-keyword-tips[data-open]').waitFor()
+const spentHaste = await timeEater.getAttribute('aria-label')
+const timeEaterHelp = await page.locator('.card-keyword-tips[data-open]').innerText()
 check('Time Eater exposes Haste as spent after its one revival', () => {
   assert(spentHaste.includes('Haste: spent'))
-  assert(timeEaterAbilities.find((ability) => ability.text.includes('Haste'))?.decoration.includes('line-through'))
-  assert(!timeEaterAbilities.find((ability) => ability.text.includes('Time Warp'))?.decoration.includes('line-through'),
-    'spending Haste must not strike through active Time Warp')
+  assert(timeEaterHelp.includes('Haste') && timeEaterHelp.includes('spent'))
+  assert(timeEaterHelp.includes('Time Warp'), 'spending Haste must retain Time Warp')
 })
+await page.mouse.move(0, 0)
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -18220,13 +18207,13 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 const ascendedAbilities = await page.locator('.enemy--boss').evaluateAll((cards) => cards.map((card) => ({
-  text: card.querySelector('.enemy__ability')?.textContent ?? '',
+  text: document.getElementById(card.getAttribute('aria-describedby'))?.textContent ?? '',
   label: card.getAttribute('aria-label') ?? '',
 })))
 check('ascended boss abilities are visible and announced', () => {
-  assert(ascendedAbilities.some((ability) => ability.text.includes('Large Slimes +1 Strength')
+  assert(ascendedAbilities.some((ability) => ability.text.includes('Large Slimes gain 1 Strength')
     && ability.label.includes('Large Slimes gain 1 Strength')))
-  assert(ascendedAbilities.some((ability) => ability.text.includes('Strength from largest Power count')
+  assert(ascendedAbilities.some((ability) => ability.text.includes('Strength equal to the largest number of Powers')
     && ability.label.includes('Strength equal to the largest number of Powers')))
 })
 

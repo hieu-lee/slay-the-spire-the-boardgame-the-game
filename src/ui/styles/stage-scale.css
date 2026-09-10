@@ -363,7 +363,6 @@
   .seat__status-strip > .powers { order: -1; }
 }
 
-
 .board :is(.enemy--elite, .board__bosses .enemy--boss) {
   --elite-scale: 1.8;
   --elite-art-height: calc(var(--stage-actor-width) * 2.3 / 1.45);
@@ -378,22 +377,9 @@
   right: -25%;
   left: -25%;
 }
-.board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__ability {
-  top: auto;
-  bottom: calc(var(--elite-art-height) + 1.9rem * var(--stage-scale) + var(--elite-floor-offset) + var(--enemy-name-height));
-  right: -15%;
-  left: -15%;
-  max-width: none;
-  max-height: calc(2.1rem * var(--stage-scale));
-  overflow: auto;
-  white-space: normal;
-  scrollbar-width: none;
-  pointer-events: auto;
-}
-.board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__ability::-webkit-scrollbar { display: none; }
 
 /* Intents share the compact pitch instead of extending into the next enemy. */
-.combat[data-party-size='4'] .board :is(.enemy--elite, .enemy--boss) > :is(.enemy__intent, .enemy__ability) {
+.combat[data-party-size='4'] .board :is(.enemy--elite, .enemy--boss) > .enemy__intent {
   left: calc((var(--stage-actor-width) - var(--stage-enemy-gap)) / 2 + .25rem * var(--stage-scale));
   right: calc((var(--stage-actor-width) - var(--stage-enemy-gap)) / 2 + .25rem * var(--stage-scale));
 }
@@ -425,13 +411,12 @@ html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
   .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__intent {
     bottom: calc(var(--elite-art-height) + 3.2rem * var(--stage-scale) + var(--elite-floor-offset) + var(--enemy-name-height));
   }
-  .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__ability { max-height: calc(1.1rem * var(--stage-scale)); }
 }
 
 /* Transparent rig overscan must not steal taps or drags from adjacent enemies. */
 .board button.enemy { pointer-events: none; }
 .board .enemy__portrait > img { pointer-events: none; }
-.board .enemy :is(.enemy__hit-area, .enemy__head, .enemy__intent, .enemy__ability, .enemy__attachment, .bar, .tokens) {
+.board .enemy :is(.enemy__hit-area, .enemy__head, .enemy__intent, .enemy__attachment, .bar, .tokens) {
   pointer-events: auto;
 }
 .enemy__hit-area { position: absolute; z-index: 2; inset: 0; }
