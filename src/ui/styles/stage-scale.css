@@ -365,12 +365,6 @@
 }
 
 
-@media (max-width: 48.125rem) {
-  .board:not([data-rows='1']):not([data-slime-formation]) .row--viewer .row__seat {
-    translate: -7.5rem 0;
-  }
-}
-
 .board :is(.enemy--elite, .board__bosses .enemy--boss) {
   --elite-scale: 1.8;
   --elite-art-height: calc(var(--stage-actor-width) * 2.3 / 1.45);
