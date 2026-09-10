@@ -1,0 +1,48 @@
+/* Shared carved controls. Pictorial cards, loot rows and ribbon/arrow navigation
+   keep their own artwork. The text remains HTML over Blender's text-free plate. */
+.sts-scope button:is(
+  :not([class]), [class=''], .is-chosen, .reward-screen__skip, .neow-offer__skip,
+  .prompt__cancel, .online-lobby__copy, .online-lobby__start,
+  .merchant-removal-dialog__confirm, .merchant-potion-dialog__confirm,
+  .combat__end-turn, .card-picker__confirm, .event-card-confirm
+):not(.ribbon-back) {
+  --stone-key-art: url('/assets/ui/panels/stone-key.webp');
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(12% 0, 88% 0, 100% 50%, 88% 100%, 12% 100%, 0 50%);
+  background: var(--stone-key-art) center / 100% 100% no-repeat #263b48;
+  box-shadow: none;
+  color: #fff2d3;
+  text-shadow: 0 2px 2px #101b20;
+  transition: filter 160ms ease, color 160ms ease;
+
+  &:hover:not(:disabled) { filter: brightness(1.13) drop-shadow(0 3px 3px #0008); transform: none; }
+  &:active:not(:disabled) { filter: brightness(.9); transform: none; }
+  &:focus-visible { outline: 3px solid #ffe29d; outline-offset: -5px; }
+  &:disabled { background-image: var(--stone-key-art); color: #adc9c9; filter: saturate(.45) brightness(.8); opacity: 1; }
+
+  &:is(.is-chosen, [aria-pressed='true']):not(:disabled) {
+    --stone-key-art: url('/assets/ui/panels/stone-key-selected.webp');
+    background-image: var(--stone-key-art);
+    color: #271b0a;
+    text-shadow: 0 1px 0 #fff4;
+  }
+
+  @media (prefers-reduced-motion: reduce) { transition: none; }
+  @media (forced-colors: active) {
+    background: ButtonFace;
+    color: ButtonText;
+    border: 2px solid ButtonText;
+    clip-path: none;
+    filter: none;
+    text-shadow: none;
+    &:is(.is-chosen, [aria-pressed='true']):not(:disabled) { background: ButtonFace; color: ButtonText; text-shadow: none; }
+    &:disabled { background: ButtonFace; color: GrayText; filter: none; }
+    &:focus-visible { outline-color: Highlight; }
+    &:is(.is-chosen, [aria-pressed='true']):focus-visible { outline: 5px double Highlight; outline-offset: -5px; }
+  }
+}

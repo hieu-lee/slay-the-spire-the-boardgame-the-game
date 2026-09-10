@@ -364,9 +364,11 @@
   position: relative;
   z-index: 5;
   align-items: flex-end;
-  height: calc(var(--card-width) * var(--card-ratio) + 2.5rem);
+  height: calc(var(--card-width) * var(--card-ratio) + 3rem);
   min-height: 0;
-  padding: 1rem 20.5rem 1.5rem 8.5rem;
+  /* The tilted outer corners need 2rem below them even while enlarged. A
+     smaller gutter makes WebKit scroll this hidden Y axis during hover. */
+  padding: 1rem 20.5rem 2rem 8.5rem;
   /* `overflow-x: auto` from the base layout forces a declared visible Y axis
      to compute as auto too, clipping card crowns and hover lifts. Desktop hands
      overlap to fit, so both axes can stay visible. */
@@ -383,7 +385,8 @@
 .hand .card:hover,
 .hand .card:focus-visible {
   z-index: 9;
-  transform: translateY(-2.4rem) scale(1.15);
+  /* Preserve the resting fan's hit area while enlarging from its bottom edge. */
+  transform: rotate(var(--fan-angle, 0deg)) translateY(var(--fan-lift, 0px)) scale(1.15);
   filter: drop-shadow(0 0.8rem 0.65rem rgb(0 0 0 / 0.82)) brightness(1.08);
 }
 
@@ -458,6 +461,8 @@
     margin-inline: -0.25rem;
   }
 
+  .hand .card:is(:hover, :focus-visible) { transform: scale(1.15); }
+
   .pip--energy {
     bottom: 4rem;
     width: 3.4rem;
@@ -480,6 +485,9 @@
   .combat__bar { padding-right: 12rem; }
   /* The bottom lane belongs to the hand, Energy and piles on landscape phones. */
   .combat__end-turn { top: 3.8rem; right: 1rem; bottom: auto; }
+  /* Summoned parties raise their owner above the fixed HUD, so reserve the
+     otherwise-empty top-right corner for the action control. */
+  .combat:has(.slime-party) .combat__end-turn { top: 0.5rem; }
   .start-turn-order {
     top: 7rem;
   }

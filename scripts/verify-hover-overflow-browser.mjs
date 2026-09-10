@@ -8,8 +8,9 @@ import { installScreenAudit } from './lib/browser-screen-audit.mjs'
 const server = await createServer({ logLevel: 'silent', server: { port: 0 } })
 await server.listen()
 const engine = process.argv.includes('--webkit') ? webkit : chromium
+const engineName = process.argv.includes('--webkit') ? 'webkit' : 'chromium'
 const browser = await engine.launch()
-const out = `artifacts/hover-overflow/${engine.name()}`
+const out = `artifacts/hover-overflow/${engineName}`
 mkdirSync(out, { recursive: true })
 
 // Inspect nested scroll containers too: document-only bounds miss the Neow bug.

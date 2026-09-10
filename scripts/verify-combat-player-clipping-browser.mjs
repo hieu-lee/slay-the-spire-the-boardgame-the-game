@@ -44,6 +44,10 @@ try {
     })
     assert(bounds.seats.every(seat => seat.left >= bounds.board.left && seat.right <= bounds.board.right),
       `${viewport.width}x${viewport.height} player seat is clipped: ${JSON.stringify(bounds)}`)
+    assert(await page.locator('.combat').evaluate(combat =>
+      combat.getBoundingClientRect().bottom >= combat.closest('.app-shell').getBoundingClientRect().bottom - 1 &&
+      combat.querySelector('.combat__end-turn').getBoundingClientRect().bottom <= combat.getBoundingClientRect().bottom + 1),
+    'battlefield background must extend beneath End Turn to the bottom of the real app shell')
     await page.screenshot({ path: join(out, `${viewport.width}x${viewport.height}.png`) })
     await context.close()
   }

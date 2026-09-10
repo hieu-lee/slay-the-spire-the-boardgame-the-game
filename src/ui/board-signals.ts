@@ -29,6 +29,11 @@ export const STAGE_MARGIN_REM = 4
 /** Below this a card stops being readable, so the board scrolls instead. */
 export const MIN_STAGE_SCALE = 0.66
 
+/** Reclaim empty space before shrinking a full party's creatures. */
+export function stageEnemyGapFor(enemies: number): number {
+  return Math.max(11.5, Math.min(14, 14.9 - enemies * .3))
+}
+
 /**
  * How far to shrink the stage so its actors fit the board.
  *
@@ -38,10 +43,13 @@ export const MIN_STAGE_SCALE = 0.66
  * having to choose between showing a player their own character and showing them
  * what they are fighting.
  */
-export function stageScaleFor(actors: number, boardWidthPx: number, remPx: number): number {
-  const needed = (actors * STAGE_GAP_REM + STAGE_MARGIN_REM) * remPx
+export function stageScaleFor(actors: number, boardWidthPx: number, remPx: number, enemyCount = 0): number {
+  const needed = (actors * STAGE_GAP_REM + enemyCount * (stageEnemyGapFor(enemyCount) - STAGE_GAP_REM) + STAGE_MARGIN_REM) * remPx
   if (actors <= 0 || needed <= 0 || boardWidthPx <= 0) return 1
-  return Math.min(1, Math.max(MIN_STAGE_SCALE, boardWidthPx / needed))
+  // A full party can face twelve summons. Fit that crowd together, retaining
+  // a floor for readable targets; ordinary parties keep their existing scale.
+  const minimum = enemyCount > 0 && actors - enemyCount === 4 ? .42 : MIN_STAGE_SCALE
+  return Math.min(1, Math.max(minimum, boardWidthPx / needed))
 }
 
 export function pendingUiSurvivesContext(

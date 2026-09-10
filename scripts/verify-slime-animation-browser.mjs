@@ -21,17 +21,40 @@ async function checkSlimeLayout(page) {
       const width = Math.min(box.width, box.height * canvas.width / canvas.height)
       return box.x + (box.width - width) / 2 + width * left / canvas.width
     }
+    const paintedBounds = image => {
+      const canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+      const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0)
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+      let left = canvas.width, right = 0, top = canvas.height, bottom = 0
+      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+        if (data[(y * canvas.width + x) * 4 + 3] > 32) {
+          left = Math.min(left, x); right = Math.max(right, x + 1)
+          top = Math.min(top, y); bottom = Math.max(bottom, y + 1)
+        }
+      }
+      const box = image.getBoundingClientRect()
+      const fit = Math.min(box.width / canvas.width, box.height / canvas.height)
+      return { left: box.left + (box.width - canvas.width * fit) / 2 + left * fit,
+        right: box.left + (box.width - canvas.width * fit) / 2 + right * fit,
+        top: box.bottom - (canvas.height - top) * fit,
+        bottom: box.bottom - (canvas.height - bottom) * fit }
+    }
     return [...document.querySelectorAll('.slime-party')].map(party => {
       const owner = party.closest('.seat__interactive')
       const actors = [...party.children].map(e => e.getBoundingClientRect())
       const board = party.closest('.board').getBoundingClientRect()
       const energy = document.querySelector('.pip--energy').getBoundingClientRect()
+      const endTurn = document.querySelector('.combat__end-turn').getBoundingClientRect()
+      const portraits = [...document.querySelectorAll('.seat__portrait > img')].map(paintedBounds)
       const enemies = [...document.querySelectorAll('.enemy:not(.enemy--dead) .enemy__portrait')].map(enemy => enemy.getBoundingClientRect())
+      const name = owner.querySelector('.seat__name').getBoundingClientRect()
+      const health = owner.querySelector('.bar').getBoundingClientRect()
       return { enemyOverlap: actors.some(r => enemies.some(enemy => r.left < enemy.right && r.right > enemy.left && r.top < enemy.bottom && r.bottom > enemy.top)),
-        energy: energy.toJSON(), first: actors[0].toJSON(), energyOverlap: actors.some(r=>r.left<energy.right&&r.right>energy.left&&r.top<energy.bottom&&r.bottom>energy.top), left: actors[0].left, right: actors.at(-1).right, delta: paintedEdge(party.querySelector('img')) - owner.querySelector('.bar').getBoundingClientRect().left,
+        energy: energy.toJSON(), first: actors[0].toJSON(), energyOverlap: actors.some(r=>r.left<energy.right&&r.right>energy.left&&r.top<energy.bottom&&r.bottom>energy.top), endTurnOverlap: portraits.some(r=>r.left<endTurn.right&&r.right>endTurn.left&&r.top<endTurn.bottom&&r.bottom>endTurn.top), left: actors[0].left, right: actors.at(-1).right, delta: paintedEdge(party.querySelector('img')) - owner.querySelector('.bar').getBoundingClientRect().left,
         gaps: actors.slice(1).map((r,i) => r.left - actors[i].right),
         top: actors[0].top, bottom: actors[0].bottom, boardBottom: board.bottom,
-        hpBottom: owner.querySelector('.bar').getBoundingClientRect().bottom }
+        hpBottom: health.bottom, nameOverlap: name.bottom > health.top }
     })
   })
   const ordered = parties.toSorted((a,b)=>a.left-b.left)
@@ -40,6 +63,8 @@ async function checkSlimeLayout(page) {
     assert(Math.abs(party.delta) < 3, `HP bar left alignment: ${JSON.stringify(party)}`)
     assert(party.gaps.every(gap => gap > 0 && Math.abs(gap - party.gaps[0]) < .1), 'slimes must run left to right with constant spacing')
     assert(!party.energyOverlap, `slimes overlap the energy orb: ${JSON.stringify(party)}`)
+    assert(!party.endTurnOverlap, `End Turn overlaps a hero: ${JSON.stringify(party)}`)
+    assert(!party.nameOverlap, `hero name overlaps its HP bar: ${JSON.stringify(party)}`)
     assert(!party.enemyOverlap, `idle slimes overlap a live enemy: ${JSON.stringify(party)}`)
     assert(party.top >= party.hpBottom, 'foreground slimes overlap owner HP')
     assert(party.bottom <= party.boardBottom, 'foreground slimes clipped by stage')
@@ -69,6 +94,7 @@ try {
       const container = document.createElement('div')
       container.id = 'test'
       container.className = 'app-shell app-shell--combat sts-scope'
+      container.style.gridTemplateRows = 'minmax(0, 1fr)'
       document.body.append(container)
     })
     await page.evaluate(async () => {

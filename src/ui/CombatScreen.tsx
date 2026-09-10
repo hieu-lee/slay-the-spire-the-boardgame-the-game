@@ -174,6 +174,7 @@ import {
   pendingUiSurvivesContext,
   shouldDisarmCardFlight,
   stageScaleFor,
+  stageEnemyGapFor,
 } from './board-signals.ts'
 import { enemyAttackTargetPlayerIds, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, turnEffectVfxRecipe } from './combat-vfx.ts'
 import { combatBodyPoint } from './combat-geometry.ts'
@@ -448,7 +449,11 @@ function CombatScreenView({
   const [triggerHermitChamberUids, setTriggerHermitChamberUids] = useState<string[]>([])
   const [triggerSlimeUids, setTriggerSlimeUids] = useState<string[]>([])
   const [triggerSlimeEnemyUids, setTriggerSlimeEnemyUids] = useState<string[]>([])
-  const [stageScale, setStageScale] = useState(1)
+  const [{ scale: stageScale, enemySlots: stageEnemySlots }, setStageLayout] = useState({
+    scale: 1, enemySlots: livingEnemies(state).length,
+  })
+  const [stageMotionReady, setStageMotionReady] = useState(false)
+  const fittedStage = useRef<{ combatId: typeof state.combatId; restoration: number | undefined } | null>(null)
   const currentStageActors = state.players.length + livingEnemies(state).length
   const stageActors = useRef({
     combatId: state.combatId,
@@ -1028,6 +1033,28 @@ function CombatScreenView({
   // start after that shared presentation window while player attacks remain concurrent.
   const characterAttacksActive = !prefersReducedMotion && (
     activeVfx.some(isCharacterAttack) || livePresentation.slimeCommandsPending)
+  const stageAttacksActive = characterAttacksActive || activeVfx.some(({ event }) =>
+    event.kind === 'orb' && event.sourceId === 'orb-evoke' && event.orb !== 'frost')
+  useLayoutEffect(() => {
+    // Commit restored positions and scale together before allowing new tweens.
+    setStageMotionReady(false)
+    const frame = requestAnimationFrame(() => {
+      boardRef.current?.getBoundingClientRect()
+      setStageMotionReady(true)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [state.combatId, authoritativeRestoration])
+  useLayoutEffect(() => {
+    if (state.players.length !== 4 || prefersReducedMotion) return
+    const busy = stageAttacksActive || falling.size > 0 || state.phase === 'enemy'
+    // A new attack can begin midway through a camera tween. Hold native stage
+    // transitions before attack offsets are measured, then continue recovery.
+    for (const animation of boardRef.current?.closest('.combat')?.getAnimations({ subtree: true }) ?? []) {
+      if (!(animation instanceof CSSTransition) || !animation.transitionProperty.startsWith('--stage-')) continue
+      if (busy) animation.pause()
+      else animation.play()
+    }
+  }, [stageAttacksActive, falling.size, state.phase, state.players.length, state.enemies, prefersReducedMotion])
   const [characterAttacks, setCharacterAttacks] = useState<Record<string, CharacterAttackMotion[]>>({})
   const [slimeCommandMotions, setSlimeCommandMotions] = useState<Record<string, {
     seq: number
@@ -1772,28 +1799,36 @@ function CombatScreenView({
   const visibleEnemies = displayedEnemies(state.enemies, prefersReducedMotion ? new Set() : falling)
   const bosses = visibleEnemies.filter((enemy) => enemy.isBoss)
   const stageEnemies = visibleEnemies.filter((enemy) => !enemy.isBoss)
-  const stageCount = stageActors.current.maximum
-  const stageScaleActors = stageActors.current.initial
-  const stageGap = STAGE_GAP_REM * stageScale
+  const adaptiveStage = state.players.length === 4
+  const stageEnemyCount = adaptiveStage ? visibleEnemies.length : 0
+  const stageScaleActors = adaptiveStage ? state.players.length + stageEnemyCount : stageActors.current.initial
+  const stageSlots = adaptiveStage ? stageEnemySlots : stageActors.current.maximum - state.players.length
+  const stagePresentationBusy = !prefersReducedMotion && (stageAttacksActive || falling.size > 0 || state.phase === 'enemy')
   const largestSlimeParty = Math.max(0, ...state.players.map(player => player.character === 'slime_boss' ? player.slimes.length : 0))
 
   useLayoutEffect(() => {
     const board = boardRef.current
     if (!board) return
+    // Let contact, death and recovery finish before changing the stage camera.
+    if (adaptiveStage && stagePresentationBusy && fittedStage.current?.combatId === state.combatId &&
+      fittedStage.current.restoration === authoritativeRestoration) return
     const fit = () => {
       if (board.clientWidth === 0) return
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-      setStageScale(stageScaleFor(stageScaleActors, board.clientWidth, rem))
+      const scale = stageScaleFor(stageScaleActors, board.clientWidth, rem, stageEnemyCount)
+      fittedStage.current = { combatId: state.combatId, restoration: authoritativeRestoration }
+      setStageLayout(previous => previous.scale === scale && previous.enemySlots === stageEnemyCount
+        ? previous : { scale, enemySlots: stageEnemyCount })
     }
     fit()
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(fit)
     observer.observe(board)
     return () => observer.disconnect()
-  }, [stageScaleActors, state.combatId])
+  }, [adaptiveStage, stagePresentationBusy, stageScaleActors, stageEnemyCount, state.combatId, authoritativeRestoration])
 
-  // With a full party the board can outgrow the viewport. Rather than shrink
-  // everything, keep the row the player actually controls on screen.
+  // When the scale floor or foreground summons still require scrolling, keep
+  // the row the player actually controls on screen.
   //
   // A layout effect, not a plain one: this must run before paint, or the board
   // is briefly drawn scrolled to the wrong row and then jumps.
@@ -4401,13 +4436,18 @@ function CombatScreenView({
       data-act={stageAct}
       data-character={viewer.character}
       data-phase={state.phase}
+      data-party-size={state.players.length}
+      data-stage-motion={adaptiveStage && stageMotionReady && !prefersReducedMotion || undefined}
       style={{
         backgroundImage: `linear-gradient(90deg, rgb(2 5 8 / 0.38), transparent 22%, transparent 74%, rgb(2 5 8 / 0.32)), url("${assetPath(`backgrounds/boss-act-${stageAct}.webp`)}")`,
         '--stage-scale': stageScale,
-        '--stage-width': `calc(${stageCount * stageGap + STAGE_MARGIN_REM * stageScale}rem + ${state.players.length} * (var(--stage-player-gap) - var(--stage-gap)) + var(--slime-enemy-clearance, 0rem))`,
+        '--stage-enemy-count': stageSlots,
+        '--stage-enemy-pitch': adaptiveStage ? stageEnemyGapFor(stageSlots) : 14,
+        '--stage-width': `calc(${state.players.length} * var(--stage-player-gap) + var(--stage-enemy-count) * var(--stage-enemy-gap) + ${STAGE_MARGIN_REM}rem * var(--stage-scale) + var(--slime-enemy-clearance, 0rem))`,
         '--slime-count': largestSlimeParty,
-        '--stage-gap': `${stageGap}rem`,
-        '--stage-actor-width': `${stageGap - 1 * stageScale}rem`,
+        '--stage-gap': `calc(${STAGE_GAP_REM}rem * var(--stage-scale))`,
+        '--stage-enemy-gap': 'calc(var(--stage-enemy-pitch) * 1rem * var(--stage-scale))',
+        '--stage-actor-width': `calc(${STAGE_GAP_REM - 1}rem * var(--stage-scale))`,
       } as React.CSSProperties}
     >
       <header className="combat__bar">

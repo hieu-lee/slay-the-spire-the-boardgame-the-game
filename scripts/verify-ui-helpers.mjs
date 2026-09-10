@@ -31,6 +31,7 @@ import {
   shouldAnimateOnlineOpeningHand,
   shouldDisarmCardFlight,
   stageScaleFor,
+  stageEnemyGapFor,
 } from '../src/ui/board-signals.ts'
 import { wingBootLabel } from '../src/ui/wing-boots.ts'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
@@ -407,6 +408,12 @@ check('the stage shrinks only as far as it has to', () => {
   const slimeSplit = stageScaleFor(17, 1280, rem)
   assert(slimeSplit >= MIN_STAGE_SCALE, `the floor holds: ${slimeSplit}`)
   assert(slimeSplit < 1, 'and seventeen actors on a 1280px board do need shrinking')
+  const crowded = [12, 9, 6, 3].map(enemies => stageScaleFor(4 + enemies, 1440, rem, enemies))
+  assert(crowded[0] < MIN_STAGE_SCALE, 'extreme four-player crowds can fit below the ordinary floor')
+  assert(crowded.every((scale, i) => i === 0 || scale > crowded[i - 1]), 'each cleared group restores scale')
+  assertEqual(crowded.at(-1), 1, 'three survivors restore the wanted size')
+  assertEqual(stageEnemyGapFor(12), 11.5, 'large crowds use compact spacing')
+  assertEqual(stageEnemyGapFor(3), 14, 'survivors recover ordinary spacing')
 })
 
 report('ui helpers')

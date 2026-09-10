@@ -22,6 +22,7 @@ import {
   bossProjectileImagePath,
 } from './combat-vfx.ts'
 import { combatArtBounds, combatBodyPoint } from './combat-geometry.ts'
+import enemyArtSizes from './enemy-art-size.json'
 
 type EnemyCardProps = {
   enemy: Enemy
@@ -581,6 +582,10 @@ export function EnemyCard({
     return `${text}${visibleEnemy.abilityUsed && ability.kind === 'curlUp' ? ', spent' : ''}`
   })
   const hpFraction = visibleEnemy.maxHp === 0 ? 0 : visibleEnemy.hp / visibleEnemy.maxHp
+  // Generated rest-canvas width/height for animated and static art, then body height.
+  const normalSize = !visibleEnemy.isBoss && !def.elite
+    ? (enemyArtSizes as Record<string, number[]>)[currentBossArtId] : undefined
+  const sizeOffset = animatedEnemy ? 0 : 2
 
   const className = [
     'enemy',
@@ -607,6 +612,7 @@ export function EnemyCard({
       data-attack-choreography={enemyAttackAnimationFor(bossArtId)}
       data-boss-art={visibleEnemy.isBoss ? bossArtId : undefined}
       data-enemy-art={bossArtId}
+      data-normal-size={normalSize ? true : undefined}
       data-projectile-impact={projectileImpact ? true : undefined}
       data-animation={animatedEnemy ? bossAttacking ? 'attack' : 'idle' : 'static'}
       data-webmcp-pending={stageVisualDamage && visualSignature !== JSON.stringify(visibleEnemy) || undefined}
@@ -616,6 +622,9 @@ export function EnemyCard({
         '--enemy-attack-motion': enemyAttackAnimationFor(bossArtId),
         '--boss-contact-left': bossAttackContactLeft,
         '--animation-art-scale': enemyArtScaleFor(bossArtId),
+        '--normal-canvas-width': normalSize?.[sizeOffset],
+        '--normal-canvas-height': normalSize?.[sizeOffset + 1],
+        '--normal-body-height': normalSize?.[4],
         '--boss-attack-duration': `${bossAttackDurationFor(bossArtId)}ms`,
       } as CSSProperties}
       disabled={enemy.dead || disabled}
@@ -709,6 +718,11 @@ export function EnemyCard({
             if (event.currentTarget.dataset.fallback !== 'true') {
               event.currentTarget.dataset.fallback = 'true'
               event.currentTarget.style.scale = '1'
+              if (normalSize) {
+                event.currentTarget.style.width = `calc(var(--stage-actor-width) * ${normalSize[2]})`
+                event.currentTarget.style.height = `calc(var(--stage-actor-width) * ${normalSize[3]})`
+                event.currentTarget.style.left = `calc(50% - var(--stage-actor-width) * ${normalSize[2]} / 2)`
+              }
               event.currentTarget.src = enemyImagePath(def)
             } else event.currentTarget.style.display = 'none'
           }}

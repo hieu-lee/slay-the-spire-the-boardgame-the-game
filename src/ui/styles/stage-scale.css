@@ -1,3 +1,18 @@
+@property --stage-scale { syntax: '<number>'; inherits: true; initial-value: 1; }
+@property --stage-enemy-count { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --stage-enemy-pitch { syntax: '<number>'; inherits: true; initial-value: 14; }
+@property --stage-index { syntax: '<number>'; inherits: false; initial-value: 0; }
+
+/* Native interpolation scales every actor together, including its HUD. */
+.combat[data-stage-motion] {
+  transition: --stage-scale 900ms ease, --stage-enemy-count 900ms ease, --stage-enemy-pitch 900ms ease;
+}
+.combat[data-stage-motion] .enemy { transition: --stage-index 900ms ease; }
+.combat[data-party-size='4'] .board { --stage-scale: inherit; }
+.combat[data-party-size='4'] .row__seat {
+  left: calc(clamp(1.5rem, 4vw, 5rem) * var(--stage-scale) + var(--stage-row) * var(--stage-player-gap));
+}
+
 /* A full party stays on one stage; shrinking lanes is better than scrolling
    teammates above the visible battlefield. */
 .board[data-rows='3'] > .row:has(.seat--empty):not(:has(.enemy)),
@@ -78,7 +93,7 @@
   z-index: calc(100 - var(--stage-index));
   /* A boss can become the rightmost survivor after its summons die. Reserve
      its enlarged portrait's overhang so that move cannot widen the scroller. */
-  right: calc(max(1.5rem * var(--stage-scale), var(--stage-actor-width) * (var(--elite-scale, var(--boss-scale, 1)) - 1) / 2) + var(--elite-end-turn-clearance, 0rem) + var(--stage-index) * var(--stage-gap));
+  right: calc(max(1.5rem * var(--stage-scale), var(--stage-actor-width) * (var(--elite-scale, var(--boss-scale, 1)) - 1) / 2) + var(--elite-end-turn-clearance, 0rem) + var(--stage-index) * var(--stage-enemy-gap));
   bottom: calc(1.1rem * var(--stage-scale));
   width: var(--stage-actor-width);
   height: calc(14rem * var(--stage-scale));
@@ -141,7 +156,7 @@
 .row__seat .seat__name {
   position: absolute;
   right: 0;
-  bottom: calc(1.55rem * var(--stage-scale));
+  bottom: max(calc(1.55rem * var(--stage-scale)), calc(18px + 0.35rem * var(--stage-scale)));
   left: 0;
 }
 
@@ -156,10 +171,20 @@
 /* The name and HP strips are the first things to become unreadable as the stage
    shrinks, so they scale too — but never above their full-size value. */
 .board .enemy__head,
+.board .enemy__name,
 .board .seat__name,
 .board .bar__label {
   font-size: min(0.78rem, calc(0.86rem * var(--stage-scale)));
 }
+
+.combat[data-party-size='4'] .enemy__head {
+  /* HP bars keep a readable 16px height even at the crowd scale floor. */
+  bottom: max(-.1rem, calc(18px - 1.35rem * var(--stage-scale)));
+  gap: calc(.35rem * var(--stage-scale));
+  padding: calc(.8rem * var(--stage-scale)) calc(.25rem * var(--stage-scale)) calc(.1rem * var(--stage-scale));
+}
+.combat[data-party-size='4'] .enemy__head > .icon { width: 1em; height: 1em; }
+.combat[data-party-size='4'] .enemy__name { white-space: nowrap; }
 
 .board .enemy__intent .intent {
   zoom: min(1, calc(var(--stage-scale) + 0.15));
@@ -341,12 +366,13 @@
   .row__seat .seat__portrait { bottom: calc(3rem * var(--stage-scale) + 4.75rem); }
   .board .enemy__portrait { bottom: calc(1.7rem * var(--stage-scale) + 4.75rem); }
 
-  .row__seat .seat__name { bottom: calc(1.55rem * var(--stage-scale) + 4.75rem); }
+  .row__seat .seat__name { bottom: max(calc(1.55rem * var(--stage-scale) + 4.75rem), calc(18px + 0.35rem * var(--stage-scale) + 4.75rem)); }
 
   .row__seat .seat .bar,
   .board .enemy .bar { bottom: calc(0.35rem * var(--stage-scale) + 4.75rem); }
 
-  .row__seat:has(.slime-party) { bottom: calc(6rem * var(--stage-scale)); }
+  /* Keep summons above the fixed Energy orb as the crowded stage shrinks. */
+  .row__seat:has(.slime-party) { bottom: calc(7.75rem - 1.75rem * var(--stage-scale)); }
   .slime-party { bottom: calc(1.75rem * var(--stage-scale)); }
 
   .board .enemy .tokens { bottom: 3.7rem; }
@@ -393,6 +419,12 @@
 }
 .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__ability::-webkit-scrollbar { display: none; }
 
+/* Intents share the compact pitch instead of extending into the next enemy. */
+.combat[data-party-size='4'] .board :is(.enemy--elite, .enemy--boss) > :is(.enemy__intent, .enemy__ability) {
+  left: calc((var(--stage-actor-width) - var(--stage-enemy-gap)) / 2 + .25rem * var(--stage-scale));
+  right: calc((var(--stage-actor-width) - var(--stage-enemy-gap)) / 2 + .25rem * var(--stage-scale));
+}
+
 /* Phones use the app's 720px virtual desktop viewport. Their longest boss
    intents need less empty space above the art than full-height desktops. */
 html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
@@ -403,7 +435,7 @@ html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
   /* Foreground summons need the space that bosses/elite enemies reserve for
      the End turn control, as well as their own full-size row. */
   .combat:has(.slime-party):has(.enemy--elite, .enemy--boss) {
-    --slime-enemy-clearance: 8rem;
+    --slime-enemy-clearance: 13rem;
   }
   .board :is(.enemy--elite, .board__bosses .enemy--boss) {
     --elite-art-height: min(calc(var(--stage-actor-width) * 1.45), max(4rem, calc(100dvh - 17.5rem)));
@@ -430,3 +462,17 @@ html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
   pointer-events: auto;
 }
 .enemy__hit-area { position: absolute; z-index: 2; inset: 0; }
+
+/* Size the resting painted silhouette, not the transparent animation canvas.
+   Idle and attack share this calibration, so wider swings never resize a body. */
+.board .enemy[data-normal-size] .enemy__portrait > .enemy__art--cutout {
+  width: calc(var(--stage-actor-width) * var(--normal-canvas-width));
+  height: calc(var(--stage-actor-width) * var(--normal-canvas-height));
+  max-width: none;
+  inset: auto auto 0 calc(50% - var(--stage-actor-width) * var(--normal-canvas-width) / 2);
+}
+
+.board .enemy[data-normal-size] .enemy__row {
+  top: auto;
+  bottom: calc(var(--stage-actor-width) * var(--normal-body-height) + .4rem);
+}

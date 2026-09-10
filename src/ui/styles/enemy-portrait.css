@@ -30,8 +30,6 @@
   align-items: center;
   gap: 0.3rem;
   padding: 0.5rem 0.4rem 0.2rem;
-  /* A scrim so the name stays legible over any artwork. */
-  background: linear-gradient(to top, rgb(14 12 10 / 0.95), transparent);
   font-size: 0.8rem;
 }
 
@@ -247,11 +245,10 @@ button.pile:hover { filter: brightness(1.15); }
   margin-left: 0.8rem;
 }
 
-/* A card sits in the fan at an angle set by its distance from the middle, and
-   lifts out of it when you reach for it. */
+/* Cards keep their fan angle and bottom anchor when enlarged for inspection. */
 .hand .card {
   transform: rotate(var(--fan-angle, 0deg)) translateY(var(--fan-lift, 0px));
-  transform-origin: 50% 130%;
+  transform-origin: center bottom;
   margin-inline: -0.9rem;
   touch-action: none;
   transition:
@@ -259,10 +256,9 @@ button.pile:hover { filter: brightness(1.15); }
     filter var(--motion-fast) var(--ease);
 }
 
-/* Lift with transform alone. Changing the margin re-flowed the whole hand on
-   every hover, so the fan shuffled sideways as the pointer crossed it. */
+/* Transform alone: changing margins reflows the neighbouring cards. */
 .hand .card--selected {
-  transform: translateY(-20px) scale(1.07);
+  transform: rotate(var(--fan-angle, 0deg)) translateY(var(--fan-lift, 0px)) scale(1.07);
   z-index: 6;
 }
 

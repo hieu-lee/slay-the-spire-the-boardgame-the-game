@@ -28,6 +28,7 @@ try {
           document.documentElement.dataset.reducedMotion = 'false'
           const node = document.createElement('div')
           node.className = 'app-shell app-shell--combat sts-scope'
+          node.style.gridTemplateRows = 'minmax(0, 1fr)'
           document.body.append(node)
           const [R, D, { CombatScreen }, { createPlayer }, C, { createRng }] = await Promise.all([
             import('/@id/react'), import('/@id/react-dom/client'), import('/src/ui/CombatScreen.tsx'),
@@ -56,7 +57,7 @@ try {
               weak: 0, vulnerable: 0, poison: 0, actionIndex: 0, abilityUsed: false, dead: false })))
             f.state.die = 1; f.state.phase = 'player'; f.state.presentationEvents = []
             if (stormOrb) { f.state.phase = 'roundEnd'; f.state.turn = 1; f.state = C.preparePlayerTurn(f.state) }
-            f.seq += 100; f.restoration++; f.render()
+            f.seq += 100; f.state.combatId = String(f.seq); f.restoration++; f.render()
           }
           // Independent full-resolution alpha bounds, used to click visible bodies,
           // not the DOM hit areas that this test is meant to verify.
@@ -78,9 +79,11 @@ try {
           }
         })
         const ready = async () => {
+          await page.waitForTimeout(100)
           await page.waitForFunction(() => document.querySelector('.enemy') &&
             [...document.querySelectorAll('.enemy__art--cutout,.seat__portrait > img')].every(i => i.complete && i.naturalWidth))
           await page.waitForTimeout(120)
+          await page.waitForFunction(() => !document.querySelector('.combat').getAnimations().some(a => a.playState === 'running'))
         }
         const bodyPoint = async id => page.evaluate(id => {
           const b = window.fixture.bounds(document.querySelector(`[data-enemy-id="${id}"] .enemy__art--cutout`))
@@ -168,6 +171,8 @@ try {
             await page.getByRole('button', { name: `${orb} slot ${orb === 'dark' ? i + 1 : 1}`, exact: true }).click()
             await page.locator('.enemy__head').click()
           }
+          // Commit the last local target choice before injecting another render.
+          await page.waitForFunction(() => document.querySelector('.combat__end-turn')?.disabled === false)
           // A preceding attack expires 2310ms after arrival. Resolve the real
           // Storm+ choices while it recovers, so idle remounts during the beam.
           await page.evaluate(() => {
@@ -178,7 +183,10 @@ try {
           })
           await page.locator('.character-attack').waitFor({ state: 'attached' })
           await page.waitForTimeout(2000)
-          await page.getByRole('button', { name: 'Resolve start of turn', exact: true }).click()
+          const resolveStart = page.getByRole('button', { name: 'Resolve start of turn', exact: true })
+          assert((await resolveStart.evaluate(e => getComputedStyle(e).backgroundImage)).includes('stone-key.webp'))
+          await page.screenshot({ path: resolve(output, `${engineName}-${screen}-${orb}-${partySize}-resolve.png`) })
+          await resolveStart.click()
           await page.waitForFunction(() => document.querySelectorAll('.defect-evoke__beam').length === 2)
           const events = await page.evaluate(() => window.fixture.state.presentationEvents.filter(e => e.sourceId === 'orb-evoke').map(e => e.orb))
           assert.deepEqual(events, [orb, orb])

@@ -36,6 +36,7 @@ try {
       document.documentElement.dataset.mobilePerformance=String(matchMedia('(pointer: coarse)').matches || innerWidth<900)
       document.documentElement.dataset.reducedMotion='false'
       const node=document.createElement('div');node.className='app-shell app-shell--combat sts-scope';document.body.append(node)
+      node.style.gridTemplateRows='minmax(0, 1fr)'
       const [R,D,{CombatScreen},{createPlayer},{createCombat},{createRng},{actionsForEnemy},] = await Promise.all([
         import('/@id/react'),import('/@id/react-dom/client'),import('/src/ui/CombatScreen.tsx'),
         import('/src/game/run.ts'),import('/src/game/combat.ts'),import('/src/game/rng.ts'),import('/src/game/enemies.ts'),

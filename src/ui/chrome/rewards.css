@@ -372,7 +372,9 @@
 .sts-scope .reward-screen--card-choice .reward-screen__cards > .card:focus-visible {
   z-index: 2;
   filter: drop-shadow(0 0.55rem 0.6rem rgb(0 0 0 / 0.7));
-  transform: translateY(-1rem) scale(1.11);
+  /* Keep the resting hit area inside the enlarged card at every frame. Lifting
+     its bottom edge away from the pointer repeatedly toggles hover on/off. */
+  transform: scale(1.11);
 }
 
 @media (max-height: 700px) {
