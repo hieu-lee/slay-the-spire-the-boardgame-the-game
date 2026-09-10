@@ -7,11 +7,6 @@
   transition: --stage-scale 900ms ease, --stage-enemy-count 900ms ease;
 }
 .combat[data-stage-motion] .enemy { transition: --stage-index 900ms ease; }
-.combat[data-party-size='4'] .board { --stage-scale: inherit; }
-.combat[data-party-size='4'] .row__seat {
-  left: calc(clamp(1.5rem, 4vw, 5rem) * var(--stage-scale) + var(--stage-row) * var(--stage-player-gap));
-}
-
 /* A full party stays on one stage; shrinking lanes is better than scrolling
    teammates above the visible battlefield. */
 .board[data-rows='3'] > .row:has(.seat--empty):not(:has(.enemy)),
@@ -19,18 +14,10 @@
   overflow: hidden;
 }
 
-.board[data-rows='3'] .seat {
-  --portrait-height: calc(7.4rem * var(--stage-scale));
-}
-
-.board[data-rows='4'] .seat {
-  --portrait-height: calc(5.7rem * var(--stage-scale));
-}
-
 /* Co-op lanes share one physical stage: every actor stands on the same floor. */
 .board {
-  --stage-scale: 1;
-  --enemy-name-height: 1.5rem;
+  --stage-scale: inherit;
+  --enemy-name-height: 1.75rem;
 
   display: block;
   overflow: auto hidden;
@@ -47,7 +34,8 @@
   position: absolute;
   inset: 0 auto 0 0;
   display: block;
-  width: max(100%, var(--stage-width));
+  width: max(70%, var(--stage-width));
+  left: max(0px, calc((100% - max(70%, var(--stage-width))) / 2));
   padding: 0;
   border: 0;
   pointer-events: none;
@@ -63,7 +51,8 @@
   position: absolute;
   inset: 0 auto 0 0;
   display: block;
-  width: max(100%, var(--stage-width));
+  width: max(70%, var(--stage-width));
+  left: max(0px, calc((100% - max(70%, var(--stage-width))) / 2));
   min-height: 0;
   padding: 0;
 }
@@ -74,8 +63,8 @@
    measured width. */
 .row__seat {
   position: absolute;
-  bottom: calc(1.1rem * var(--stage-scale) + 1.5rem);
-  left: calc(clamp(1.5rem, 4vw, 5rem) + var(--stage-row) * var(--stage-player-gap));
+  bottom: calc(1.1rem * var(--stage-scale) + 2.75rem);
+  left: calc(1.5rem * var(--stage-scale) + var(--stage-row) * var(--stage-player-gap));
   width: var(--stage-actor-width);
   height: calc(18.5rem * var(--stage-scale));
   align-content: start;
@@ -94,8 +83,9 @@
   /* A boss can become the rightmost survivor after its summons die. Reserve
      its enlarged portrait's overhang so that move cannot widen the scroller. */
   right: calc(max(1.5rem * var(--stage-scale), var(--stage-actor-width) * (var(--elite-scale, var(--boss-scale, 1)) - 1) / 2) + var(--elite-end-turn-clearance, 0rem) + var(--stage-index) * var(--stage-enemy-gap));
-  bottom: calc(1.1rem * var(--stage-scale));
+  bottom: calc(1.1rem * var(--stage-scale) + 2.75rem);
   width: var(--stage-actor-width);
+  max-width: none;
   height: calc(14rem * var(--stage-scale));
 }
 
@@ -110,8 +100,9 @@
 .row__lane-target {
   position: absolute;
   left: calc(34% + var(--stage-row) * var(--stage-gap));
-  bottom: calc(1.1rem * var(--stage-scale));
+  bottom: calc(1.1rem * var(--stage-scale) + 2.75rem);
   width: var(--stage-actor-width);
+  max-width: none;
   height: calc(14rem * var(--stage-scale));
 }
 
@@ -183,7 +174,7 @@
   bottom: auto;
   padding: .5rem .25rem .1rem;
 }
-.combat[data-party-size='4'] .enemy__head > .icon { width: 1em; height: 1em; }
+.board .enemy__head > .icon { width: 1em; height: 1em; }
 .combat[data-party-size='4'] .enemy__name { white-space: nowrap; }
 
 .board .enemy__intent .intent {
@@ -271,30 +262,11 @@
   box-shadow: inset 0 0 0 0.125rem #e8c877;
 }
 
-/* Pending-effect chips and held-Potion icons used to sit at a flat
-   `top: 1.95rem`, tuned back when Orbs floated low enough (over the top of
-   the portrait, not above it — the bug `.orbs` in styles/enemy-portrait.css
-   exists to fix) that the two never met. Once Orbs moved to float above the
-   portrait instead,
-   this row landed squarely on top of them. Anchoring from `bottom` instead
-   — using the same `--portrait-height` the portrait itself is sized from,
-   plus the portrait's own fixed anchor point off the seat's floor — lands
-   this row's OWN bottom edge just above the portrait's top edge regardless
-   of stage scale or row count, and `--orb-clearance` (the fixed gap `.orbs`
-   guarantees above the portrait at any orb count, see
-   styles/enemy-portrait.css) is exactly the room this row now floats in: below
-   the Orbs, above the character.
-   `max-height` makes that an enforced ceiling rather than a coincidence:
-   nothing here otherwise stops a future taller chip (a bigger icon, a
-   second line of text) from growing this row past `--orb-clearance` and
-   landing back on the Orbs it sits above — this row's own `overflow-y:
-   hidden` already clips vertical overflow, so capping the height just
-   makes that clipping happen safely INSIDE this row's reserved space
-   instead of the row growing out of it and over the Orbs. */
+/* Share the Orbs' painted-head anchor; chips fit in their reserved clearance. */
 .seat__meta {
   position: absolute;
   z-index: 7;
-  bottom: calc(3rem * var(--stage-scale) + var(--portrait-height) + 0.2rem);
+  bottom: calc(3rem * var(--stage-scale) + var(--portrait-floor-extra, 0rem) + var(--hero-head-height, var(--portrait-height)) + 0.2rem);
   right: 0;
   left: 0;
   display: flex;
@@ -361,9 +333,10 @@
 }
 
 @media (orientation: landscape) and (max-height: 26.25rem) {
-  .row__seat { bottom: calc(1.1rem * var(--stage-scale)); }
+  .row__seat { bottom: calc(1.1rem * var(--stage-scale) + 2.75rem); }
 
-  .row__seat .seat__portrait { bottom: calc(3rem * var(--stage-scale) + 4.75rem); }
+  .board { --portrait-floor-extra: 4.75rem; }
+  .row__seat .seat__portrait { bottom: calc(3rem * var(--stage-scale) + var(--portrait-floor-extra)); }
   .board .enemy__portrait { bottom: calc(1.7rem * var(--stage-scale) + 4.75rem + var(--enemy-name-height)); }
 
   .row__seat .seat__name { bottom: max(calc(1.55rem * var(--stage-scale) + 4.75rem), calc(18px + 0.35rem * var(--stage-scale) + 4.75rem)); }
@@ -475,4 +448,13 @@ html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
 .board .enemy[data-normal-size] .enemy__row {
   top: auto;
   bottom: calc(var(--stage-actor-width) * var(--normal-body-height) + .4rem);
+}
+
+/* Keep ordinary telegraphs near the painted head, including short Slimes. */
+.board .enemy[data-normal-size] > .enemy__intent {
+  position: absolute;
+  top: auto;
+  bottom: calc(1.7rem * var(--stage-scale) + var(--portrait-floor-extra, 0rem) + var(--enemy-name-height) + var(--stage-actor-width) * var(--normal-body-height) + 2rem);
+  left: 0;
+  right: 0;
 }

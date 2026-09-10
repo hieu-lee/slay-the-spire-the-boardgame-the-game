@@ -8,6 +8,7 @@
 // of the board, hooks.ts for the senses that watch the board change, and
 // vfx.tsx for the effect overlay a play puts on it.
 import rigMetadata from './rig-animation-metadata.json' with { type: 'json' }
+import { enemyDef } from '../game/enemies.ts'
 import {
   PHASE_LABEL,
   canAfford,
@@ -453,17 +454,6 @@ function CombatScreenView({
   })
   const [stageMotionReady, setStageMotionReady] = useState(false)
   const fittedStage = useRef<{ combatId: typeof state.combatId; restoration: number | undefined } | null>(null)
-  const currentStageActors = state.players.length + livingEnemies(state).length
-  const stageActors = useRef({
-    combatId: state.combatId,
-    initial: currentStageActors,
-    maximum: currentStageActors,
-  })
-  if (stageActors.current.combatId !== state.combatId) {
-    stageActors.current = { combatId: state.combatId, initial: currentStageActors, maximum: currentStageActors }
-  } else {
-    stageActors.current.maximum = Math.max(stageActors.current.maximum, currentStageActors)
-  }
   const reducedMotion = useReducedEffects()
 
   useEffect(() => registerCardZoomCloser(closeSlimeCardZoom.current), [])
@@ -1044,14 +1034,26 @@ function CombatScreenView({
     return () => cancelAnimationFrame(frame)
   }, [state.combatId, authoritativeRestoration])
   useLayoutEffect(() => {
-    if (state.players.length !== 4 || prefersReducedMotion) return
+    if (prefersReducedMotion) return
     const busy = stageAttacksActive || falling.size > 0 || state.phase === 'enemy'
     // A new attack can begin midway through a camera tween. Hold native stage
     // transitions before attack offsets are measured, then continue recovery.
     for (const animation of boardRef.current?.closest('.combat')?.getAnimations({ subtree: true }) ?? []) {
       if (!(animation instanceof CSSTransition) || !animation.transitionProperty.startsWith('--stage-')) continue
-      if (busy) animation.pause()
-      else animation.play()
+      if (busy) {
+        // pause() alone schedules a pause for the next frame in WebKit.
+        // Freeze this frame before measuring attack source/target offsets.
+        const time = animation.currentTime
+        animation.pause()
+        if (time !== null) animation.currentTime = time
+      } else if (animation.playState === 'paused') {
+        const time = animation.currentTime
+        animation.play()
+        // WebKit otherwise reuses the transition's original, now-expired start.
+        if (typeof time === 'number' && typeof document.timeline.currentTime === 'number') {
+          animation.startTime = document.timeline.currentTime - time
+        }
+      }
     }
   }, [stageAttacksActive, falling.size, state.phase, state.players.length, state.enemies, prefersReducedMotion])
   const [characterAttacks, setCharacterAttacks] = useState<Record<string, CharacterAttackMotion[]>>({})
@@ -1798,10 +1800,16 @@ function CombatScreenView({
   const visibleEnemies = displayedEnemies(state.enemies, prefersReducedMotion ? new Set() : falling)
   const bosses = visibleEnemies.filter((enemy) => enemy.isBoss)
   const stageEnemies = visibleEnemies.filter((enemy) => !enemy.isBoss)
-  const adaptiveStage = state.players.length === 4
-  const stageEnemyCount = adaptiveStage ? visibleEnemies.length : 0
-  const stageScaleActors = adaptiveStage ? state.players.length + stageEnemyCount : stageActors.current.initial
-  const stageSlots = adaptiveStage ? stageEnemySlots : stageActors.current.maximum - state.players.length
+  const stageEnemyCount = visibleEnemies.length
+  const stageScaleActors = state.players.length + stageEnemyCount
+  // EnemyCard can briefly retain its previous visual during restoration.
+  // Fit from encounter data so new tall enemies start at the correct scale.
+  const stageHasTallEnemy = visibleEnemies.some(enemy => {
+    const def = enemyDef(enemy.defId)
+    return enemy.isBoss || def.elite || (def.artId ?? def.id) === 'sentry'
+  })
+  const stageHasOrbs = state.players.some(player => player.character === 'defect'
+    ? player.orbs.length > 0 : player.orbs.some(Boolean))
   const stagePresentationBusy = !prefersReducedMotion && (stageAttacksActive || falling.size > 0 || state.phase === 'enemy')
   const largestSlimeParty = Math.max(0, ...state.players.map(player => player.character === 'slime_boss' ? player.slimes.length : 0))
 
@@ -1809,12 +1817,21 @@ function CombatScreenView({
     const board = boardRef.current
     if (!board) return
     // Let contact, death and recovery finish before changing the stage camera.
-    if (adaptiveStage && stagePresentationBusy && fittedStage.current?.combatId === state.combatId &&
+    if (stagePresentationBusy && fittedStage.current?.combatId === state.combatId &&
       fittedStage.current.restoration === authoritativeRestoration) return
     const fit = () => {
       if (board.clientWidth === 0) return
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-      const scale = stageScaleFor(stageScaleActors, board.clientWidth, rem, stageEnemyCount)
+      const widthScale = stageScaleFor(stageScaleActors, board.clientWidth, rem, stageEnemyCount)
+      // Painted actors scale; the readable status/intent bands keep fixed gutters.
+      const heightRem = board.clientHeight / rem
+      const compact = matchMedia('(orientation: landscape) and (max-height: 26.25rem)').matches
+      const heroGutter = compact ? (largestSlimeParty ? 12.5 : 7.5) : (largestSlimeParty ? 1.5 : 2.75)
+      const heroFloor = largestSlimeParty ? (compact ? 1.25 : 7.1) : 4.1
+      const heroFit = (heightRem - heroGutter - (stageHasOrbs ? 7 : 0)) / ((STAGE_GAP_REM - 1) * 1.2 + heroFloor)
+      const enemyFit = stageHasTallEnemy
+        ? (heightRem - 6.6) / ((STAGE_GAP_REM - 1) * 1.6 + 5.3) : 1
+      const scale = Math.min(widthScale, Math.max(.3, Math.min(heroFit, enemyFit)))
       fittedStage.current = { combatId: state.combatId, restoration: authoritativeRestoration }
       setStageLayout(previous => previous.scale === scale && previous.enemySlots === stageEnemyCount
         ? previous : { scale, enemySlots: stageEnemyCount })
@@ -1824,7 +1841,27 @@ function CombatScreenView({
     const observer = new ResizeObserver(fit)
     observer.observe(board)
     return () => observer.disconnect()
-  }, [adaptiveStage, stagePresentationBusy, stageScaleActors, stageEnemyCount, state.combatId, authoritativeRestoration])
+  }, [stagePresentationBusy, stageScaleActors, stageEnemyCount, largestSlimeParty, stageHasTallEnemy, stageHasOrbs, state.combatId, authoritativeRestoration])
+
+  useLayoutEffect(() => {
+    const board = boardRef.current
+    const stage = board?.querySelector('.row')
+    if (!board || !stage) return
+    // Transparent animation overscan can create a phantom scroll range even
+    // when the entire formation fits. It must never hide the first hero's HP.
+    const fitScroll = () => {
+      const fits = stage.getBoundingClientRect().width <= board.clientWidth + 1
+      board.style.overflow = fits ? 'clip' : 'auto hidden'
+      if (fits) board.scrollLeft = 0
+      else if (followViewerRow.current && board.querySelector('.slime-party')) recenterViewerRow()
+    }
+    fitScroll()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(fitScroll)
+    observer.observe(stage)
+    observer.observe(board)
+    return () => observer.disconnect()
+  }, [state.combatId])
 
   // When the scale floor or foreground summons still require scrolling, keep
   // the row the player actually controls on screen.
@@ -4436,11 +4473,11 @@ function CombatScreenView({
       data-character={viewer.character}
       data-phase={state.phase}
       data-party-size={state.players.length}
-      data-stage-motion={adaptiveStage && stageMotionReady && !prefersReducedMotion || undefined}
+      data-stage-motion={stageMotionReady && !prefersReducedMotion || undefined}
       style={{
         backgroundImage: `linear-gradient(90deg, rgb(2 5 8 / 0.38), transparent 22%, transparent 74%, rgb(2 5 8 / 0.32)), url("${assetPath(`backgrounds/boss-act-${stageAct}.webp`)}")`,
         '--stage-scale': stageScale,
-        '--stage-enemy-count': stageSlots,
+        '--stage-enemy-count': stageEnemySlots,
         '--stage-width': `calc(${state.players.length} * var(--stage-player-gap) + var(--stage-enemy-count) * var(--stage-enemy-gap) + ${STAGE_MARGIN_REM}rem * var(--stage-scale) + var(--slime-enemy-clearance, 0rem))`,
         '--slime-count': largestSlimeParty,
         '--stage-gap': `calc(${STAGE_GAP_REM}rem * var(--stage-scale))`,
@@ -5843,7 +5880,7 @@ function CombatScreenView({
               <div className="row__seat">
                 {occupant ? (
                   <>
-                    <div className="seat__interactive" data-player-id={occupant.id}
+                    <div className="seat__interactive" data-player-id={occupant.id} data-character={occupant.character}
                       onPointerDown={(event) => onEndTurnOrbPointerDown(occupant, event)}
                       onPointerMove={onEndTurnEffectPointerMove}
                       onPointerUp={finishEndTurnEffectDrag}

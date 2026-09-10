@@ -15,6 +15,7 @@ await server.listen()
 const errors = []
 try {
   for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+    if (process.argv.includes('--webkit-only') && engineName !== 'webkit') continue
     const browser = await engine.launch({ headless: true })
     try {
       for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }], ['horizontal-phone', { width: 844, height: 390 }]]) {
@@ -48,7 +49,7 @@ try {
           f.install = (defs, partySize = 1) => {
             const rng = createRng(47), player = createPlayer(rng, 'p1', 'Ironclad', 'ironclad', 0)
             Object.assign(player, { hp: 8, maxHp: 8, relics: [], draw: [], discard: [],
-              hand: [{ uid: 'strike', defId: 'strike_ironclad', upgraded: false }], powers: [] })
+              hand: [{ uid: 'strike', defId: 'strike_ironclad', upgraded: false }], powers: [{ uid: 'status-power', defId: 'the_bomb', upgraded: true, counter: 2 }], block: 3, strength: 2 })
             const party = [player, ...Array.from({ length: partySize - 1 }, (_, i) => {
               const ally = createPlayer(rng, `p${i + 2}`, `Ally ${i + 1}`, 'ironclad', 0)
               Object.assign(ally, { row: i + 1, relics: [], hand: [], draw: [], powers: [] })
@@ -348,7 +349,18 @@ try {
                 await new Promise(r => setTimeout(r, 300))
                 return Math.abs(+getComputedStyle(e).getPropertyValue('--stage-scale') - before)
               })
-              assert(held < .002, 'a new attack must hold the moving stage while its offsets are in use')
+              assert(held < .002, `a new attack must hold the moving stage while its offsets are in use: drift ${held}`)
+              // Start sampling before Playwright observes detachment: WebKit can
+              // finish the recovery tail between locator polls.
+              await page.evaluate(() => {
+                const f = window.fixture
+                f.recoveryFrames = []
+                const sample = () => {
+                  f.recoveryFrames.push(+getComputedStyle(document.querySelector('.combat')).getPropertyValue('--stage-scale'))
+                  f.recoveryFrame = requestAnimationFrame(sample)
+                }
+                sample()
+              })
               await page.locator('.character-attack').waitFor({ state: 'detached' })
             }
             const recovery = await page.locator('.combat').evaluate(async e => {
@@ -360,12 +372,27 @@ try {
               return result
             })
             assert(recovery.at(-1) > beforeScale + .05, 'deaths must gradually restore scale')
-            // An attack can interrupt near the end of the ease, leaving only a short tail.
-            assert(new Set(recovery.map(s => s.toFixed(4))).size > (label === 'slime-split' && survivors === 6 ? 1 : 3),
-              `${engineName}/${screen}/${label}/${survivors}: scale recovery jumped: ${recovery}`)
+            const resumeFrames = await page.evaluate(() => {
+              const f = window.fixture
+              cancelAnimationFrame(f.recoveryFrame)
+              const frames = f.recoveryFrames ?? []
+              f.recoveryFrames = []
+              return frames
+            })
+            assert(new Set([...resumeFrames, ...recovery].map(s => s.toFixed(4))).size > 3,
+              `${engineName}/${screen}/${label}/${survivors}: scale recovery jumped: ${resumeFrames.slice(-20)} / ${recovery}`)
             assert(recovery.every((s, i) => i === 0 || s >= recovery[i - 1] - .001), 'scale recovery oscillates')
             await ready()
           }
+          assert(await page.locator('.board').evaluate(board => {
+            const frame = board.getBoundingClientRect()
+            const statuses = [...board.querySelectorAll('.seat__status-strip .token, .seat__status-strip .power, .seat__status-strip .power__counter')]
+            if (!statuses.length || statuses.some(e => e.getBoundingClientRect().bottom > frame.bottom + 1)) return false
+            return [...board.querySelectorAll('.row__seat .bar')].every(bar => {
+              const bounds = bar.getBoundingClientRect()
+              return bounds.left >= frame.left - 1 && bounds.right <= frame.right + 1
+            })
+          }), `${label}: a surviving hero HP bar is clipped after recovery`)
           await page.screenshot({ path: resolve(output, `${engineName}-${screen}-${label}-recovered.png`) })
           // Reconnecting during an enemy phase must fit the snapshot immediately,
           // even though ordinary attacks hold off a camera change until recovery.

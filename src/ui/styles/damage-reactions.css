@@ -148,9 +148,13 @@
   bottom: 0;
   z-index: 40;
   pointer-events: none;
-  min-height: calc(var(--card-width) * var(--card-ratio) + 2rem);
-  margin-top: -4.6rem;
-  padding: 4.6rem 0 0.25rem;
+  --hand-recess: calc(var(--card-width) * var(--card-ratio) * .65);
+  height: calc(var(--card-width) * var(--card-ratio) * .5 + 3rem);
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  /* Keep the resting lower half off stage without creating a hidden Y scroller. */
+  clip-path: inset(-100vh 0 0);
   overflow: visible;
   background: none;
   border: 0;
@@ -172,8 +176,10 @@
 
 .hand-scroll {
   min-width: 0;
-  margin-top: -4rem;
-  padding-top: 4rem;
+  position: absolute;
+  inset: auto 0 calc(-1 * var(--hand-recess));
+  height: calc(var(--card-width) * var(--card-ratio) * 1.8 + 5rem);
+  padding-top: calc(var(--card-width) * var(--card-ratio) * .8 + 1rem);
   overflow: auto hidden;
   overscroll-behavior-inline: contain;
   scrollbar-width: none;
@@ -367,11 +373,14 @@
   position: relative;
   z-index: 5;
   align-items: flex-end;
-  height: calc(var(--card-width) * var(--card-ratio) + 3rem);
+  /* Include the HUD gutters in the scroll range, even for an oversized hand. */
+  width: max-content;
+  min-width: 100%;
+  height: calc(var(--card-width) * var(--card-ratio) + 4rem);
   min-height: 0;
   /* The tilted outer corners need 2rem below them even while enlarged. A
      smaller gutter makes WebKit scroll this hidden Y axis during hover. */
-  padding: 1rem 20.5rem 2rem 8.5rem;
+  padding: 1rem 12rem 3rem 10rem;
   /* `overflow-x: auto` from the base layout forces a declared visible Y axis
      to compute as auto too, clipping card crowns and hover lifts. Desktop hands
      overlap to fit, so both axes can stay visible. */
@@ -386,10 +395,10 @@
 }
 
 .hand .card:hover,
-.hand .card:focus-visible {
+.hand .card:focus,
+.hand .card--selected {
   z-index: 9;
-  /* Preserve the resting fan's hit area while enlarging from its bottom edge. */
-  transform: rotate(var(--fan-angle, 0deg)) translateY(var(--fan-lift, 0px)) scale(1.15);
+  transform: translateY(calc(-1 * var(--hand-recess))) scale(1.1);
   filter: drop-shadow(0 0.8rem 0.65rem rgb(0 0 0 / 0.82)) brightness(1.08);
 }
 
@@ -425,34 +434,10 @@
     min-height: 18rem;
   }
 
-  .seat,
-  .seat__interactive {
-    --portrait-height: 6.5rem;
-  }
-
-  .hand-area {
-    position: absolute;
-    inset: auto 0 0;
-    width: 100%;
-    height: calc(var(--card-width) * var(--card-ratio) + 2rem);
-    min-height: 0;
-    margin: 0;
-    padding: 0;
-  }
-
-  .hand-scroll {
-    position: absolute;
-    inset: auto 0 0;
-    height: calc(100% + 4rem);
-    margin: 0;
-    padding-top: 4rem;
-  }
-
   .hand {
     justify-content: flex-start;
-    width: 100%;
-    height: calc(var(--card-width) * var(--card-ratio) + 2rem);
-    padding: 1rem 18rem 0.25rem 5.4rem;
+    height: calc(var(--card-width) * var(--card-ratio) + 4rem);
+    padding: 1rem 18rem 3rem 5.4rem;
   }
 
   .hand-area[data-has-chamber='true'] .hand {
@@ -464,7 +449,9 @@
     margin-inline: -0.25rem;
   }
 
-  .hand .card:is(:hover, :focus-visible) { transform: scale(1.15); }
+  .hand .card:is(:hover, :focus, .card--selected) {
+    transform: translateY(calc(-1 * var(--hand-recess))) scale(1.1);
+  }
 
   .pip--energy {
     bottom: 4rem;
@@ -488,9 +475,8 @@
   .combat__bar { padding-right: 12rem; }
   /* The bottom lane belongs to the hand, Energy and piles on landscape phones. */
   .combat__end-turn { top: 3.8rem; right: 1rem; bottom: auto; }
-  /* Summoned parties raise their owner above the fixed HUD, so reserve the
-     otherwise-empty top-right corner for the action control. */
-  .combat:has(.slime-party) .combat__end-turn { top: 0.5rem; }
+  /* Summoned parties raise their owner, so use the reserved bottom HUD lane. */
+  .combat:has(.slime-party) .combat__end-turn { top: auto; right: 10rem; bottom: 1rem; }
   .start-turn-order {
     top: 7rem;
   }
@@ -513,8 +499,6 @@
 
 @media (orientation: landscape) and (max-height: 26.25rem) {
   :root { --card-width: clamp(3.25rem, 13vh, 4rem); }
-
-  .hand .card { transform: none !important; }
 }
 
 @media (orientation: landscape) and (max-width: 37.5rem) and (max-height: 21.25rem) {

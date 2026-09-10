@@ -23,10 +23,11 @@ export function healthBand(hp: number, maxHp: number): 'healthy' | 'hurt' | 'cri
   return 'critical'
 }
 
-/** Stage geometry at full size, in rem: actor pitch, then the slack either end. */
-export const STAGE_GAP_REM = 10
+/** Full-size actor pitch. Change this to resize both sides and their spacing;
+ * portraits use pitch minus 1rem, including every idle/attack/static pose. */
+export const STAGE_GAP_REM = 14
 // Leave room between the party and the enlarged frontmost boss.
-export const STAGE_MARGIN_REM = 10
+export const STAGE_MARGIN_REM = 6
 /** Below this a card stops being readable, so the board scrolls instead. */
 export const MIN_STAGE_SCALE = 0.66
 
@@ -43,8 +44,8 @@ export function stageScaleFor(actors: number, boardWidthPx: number, remPx: numbe
   const needed = (actors * STAGE_GAP_REM + STAGE_MARGIN_REM) * remPx
   if (actors <= 0 || needed <= 0 || boardWidthPx <= 0) return 1
   // A full party can face twelve summons. Fit that crowd together, retaining
-  // a floor for readable targets; ordinary parties keep their existing scale.
-  const minimum = enemyCount > 0 && actors - enemyCount === 4 ? .42 : MIN_STAGE_SCALE
+  // a 4rem target-width floor even when the desired actor size changes.
+  const minimum = enemyCount > 0 && actors - enemyCount === 4 ? 4 / (STAGE_GAP_REM - 1) : MIN_STAGE_SCALE
   return Math.min(1, Math.max(minimum, boardWidthPx / needed))
 }
 

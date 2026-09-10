@@ -408,9 +408,10 @@ check('the stage shrinks only as far as it has to', () => {
   assert(slimeSplit >= MIN_STAGE_SCALE, `the floor holds: ${slimeSplit}`)
   assert(slimeSplit < 1, 'and seventeen actors on a 1280px board do need shrinking')
   const crowded = [12, 9, 6, 3].map(enemies => stageScaleFor(4 + enemies, 1440, rem, enemies))
+  assert(crowded[0] * fits(16) <= 1440 + .1, 'the full Sentry crowd fits without pushing heroes off screen')
   assert(crowded[0] < MIN_STAGE_SCALE, 'extreme four-player crowds can fit below the ordinary floor')
   assert(crowded.every((scale, i) => i === 0 || scale > crowded[i - 1]), 'each cleared group restores scale')
-  assertEqual(crowded.at(-1), 1, 'three survivors restore the wanted size')
+  assertEqual(stageScaleFor(5, 1440, rem, 1), 1, 'one survivor restores the wanted size')
 })
 
 report('ui helpers')

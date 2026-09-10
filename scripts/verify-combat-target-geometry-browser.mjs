@@ -164,9 +164,35 @@ try {
         await page.waitForFunction(() => window.fixture.state.enemies[1].hp < 50)
         await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'false' })
 
+        // Prismatic Shard can give other heroes Orbs; Defect's short-body
+        // anchor must not pull those controls into a taller character's head.
+        await page.evaluate(() => {
+          window.fixture.install(['jaw_worm'])
+          window.fixture.state.players[0].character = 'hermit'
+          window.fixture.render()
+        })
+        await ready()
+        assert(await page.evaluate(() => {
+          const seat = document.querySelector('.seat__interactive[data-character="hermit"]')
+          const head = window.fixture.bounds(seat.querySelector('.seat__portrait > img')).top
+          const orbs = [...seat.querySelectorAll('.token--orb')]
+          return orbs.length === 3 && orbs.every(orb => orb.getBoundingClientRect().bottom < head)
+        }), `${engineName}/${screen}: borrowed Orbs overlap Hermit's head`)
+        await page.screenshot({ path: resolve(output, `${engineName}-${screen}-hermit-orbs.png`) })
+
         for (const partySize of [1, 4]) for (const orb of ['lightning', 'dark']) {
           await page.evaluate(({ orb, partySize }) => window.fixture.install(['jaw_worm'], orb, partySize), { orb, partySize })
           await ready()
+          await page.locator('.seat__interactive[data-character="defect"] > .orbs').waitFor()
+          const orbGap = await page.evaluate(() => {
+            const seat = document.querySelector('.seat__interactive:has(> .orbs)')
+            const image = seat.querySelector('.seat__portrait > img')
+            const paintedTop = window.fixture.bounds(image).top
+            const lowestOrb = Math.max(...[...seat.querySelectorAll('.token--orb')].map(el => el.getBoundingClientRect().bottom))
+            return (paintedTop - lowestOrb) / parseFloat(getComputedStyle(document.documentElement).fontSize)
+          })
+          assert(orbGap >= 0 && orbGap < 4, `${engineName}/${screen}/party${partySize}: Orbs too far from Defect: ${orbGap}rem`)
+          await page.screenshot({ path: resolve(output, `${engineName}-${screen}-orbs-${partySize}.png`) })
           for (let i = 0; i < 2; i++) {
             await page.getByRole('button', { name: `${orb} slot ${orb === 'dark' ? i + 1 : 1}`, exact: true }).click()
             await page.locator('.enemy__head').click()

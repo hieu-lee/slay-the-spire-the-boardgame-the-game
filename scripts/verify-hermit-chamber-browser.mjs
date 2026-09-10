@@ -37,6 +37,20 @@ try {
       run.neow = null
       await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
       await page.waitForTimeout(1200)
+      const intentsClearArt = await page.locator('.enemy').evaluateAll(enemies => enemies.every(enemy => {
+        const image = enemy.querySelector('.enemy__art--cutout')
+        const canvas = document.createElement('canvas')
+        canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+        const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0)
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+        let firstPixel = 0
+        while (firstPixel < canvas.width * canvas.height && pixels[firstPixel * 4 + 3] <= 96) firstPixel++
+        const box = image.getBoundingClientRect()
+        const fit = Math.min(box.width / canvas.width, box.height / canvas.height)
+        const paintedTop = box.bottom - (canvas.height - Math.floor(firstPixel / canvas.width)) * fit
+        return enemy.querySelector('.enemy__intent').getBoundingClientRect().bottom <= paintedTop
+      }))
+      assert(intentsClearArt, `${name}: enemy intent overlaps painted body`)
       const chamber = page.getByRole('button', { name: /^Chamber,/ })
       if (await chamber.getAttribute('aria-expanded') !== 'true') await chamber.click()
     }
@@ -48,16 +62,20 @@ try {
       assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length), 1,
         'Clicking a Chamber attack must wait for a target even with one enemy')
       assert.equal(await card.getAttribute('aria-pressed'), 'true')
+      assert(await card.evaluate(e => e.getBoundingClientRect().bottom <=
+        document.querySelector('.app-shell').getBoundingClientRect().bottom + 1), `${name}: selected Chamber card is clipped`)
       await page.screenshot({ path: `${out}/${name}-${defId}-target.png` })
       await card.click() // Cancel without spending energy or moving the card.
       assert.equal(await card.getAttribute('aria-pressed'), 'false')
       await card.click()
-      await page.locator('.enemy:not(.enemy--dead)').first().click()
+      await page.locator('.enemy:not(.enemy--dead) .enemy__head').first().click()
       await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 0)
       assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp), 40 - damage)
       await load(2, defId)
+      await card.focus()
+      await page.waitForTimeout(250)
       const source = await card.boundingBox()
-      const target = await page.locator('.enemy:not(.enemy--dead)').last().boundingBox()
+      const target = await page.locator('.enemy:not(.enemy--dead) .enemy__head').last().boundingBox()
       await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
       await page.mouse.down()
       await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 15 })

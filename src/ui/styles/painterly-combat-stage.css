@@ -29,8 +29,10 @@
 
 .combat {
   --combat-bar-height: 4rem;
+  --card-width: clamp(4rem, 25vh, 13rem);
   position: relative;
   isolation: isolate;
+  overflow: clip;
   gap: 0;
   height: 100%;
   min-height: 0;
@@ -75,10 +77,10 @@
 .combat__end-turn {
   position: fixed;
   z-index: 60;
-  right: 10.5rem;
-  bottom: 4.5rem;
-  width: 10rem;
-  min-width: 10rem;
+  right: 1.5rem;
+  bottom: 5rem;
+  width: 8rem;
+  min-width: 8rem;
   min-height: 3rem;
   clip-path: polygon(9% 0, 91% 0, 100% 24%, 100% 76%, 91% 100%, 9% 100%, 0 76%, 0 24%);
   font-family: 'Kreon', Georgia, serif !important;
@@ -133,7 +135,7 @@
 .row--viewer {
   z-index: 4;
   border: 0;
-  background: radial-gradient(ellipse at 13% 76%, rgb(88 205 235 / 0.1), transparent 28%) !important;
+  background: none !important;
 }
 
 .row__seat {
@@ -163,19 +165,21 @@
      descendant — it can't read a custom property set on .seat__portrait
      itself) can share the exact same value to position itself relative to
      the portrait's top edge without duplicating each of the values below. */
-  --portrait-height: calc(clamp(7.5rem, 18vh, 12rem) * var(--stage-scale));
+  --portrait-height: calc(var(--stage-actor-width) * 1.2);
   /* The guaranteed clear space `.orbs` (styles/enemy-portrait.css) keeps above
      the portrait's top edge, at any orb count — shared here so `.seat__meta`
      (pending effects, held potions; also floats above the portrait, also a
      SIBLING of .seat__portrait rather than a descendant of .orbs) can float in
      that exact space instead of guessing at its own fixed offset and
      landing on top of whichever Orbs happen to be floating there. */
-  --orb-clearance: 3rem;
+  --orb-clearance: 2rem;
 }
 
 .seat--viewer {
   border: 0;
 }
+
+.seat--viewer .seat__name { color: #ffe2a4; }
 
 .seat--targetable {
   outline: 2px solid rgb(75 191 238 / 0.9);
@@ -190,17 +194,17 @@
   position: relative;
   display: inline-block;
   width: 100%;
-  --portrait-height: calc(clamp(7.5rem, 18vh, 12rem) * var(--stage-scale));
-  --orb-clearance: 3rem;
+  --portrait-height: calc(var(--stage-actor-width) * 1.2);
+  --orb-clearance: 2rem;
 }
 
-.board[data-rows='3'] .seat__interactive { --portrait-height: calc(7.4rem * var(--stage-scale)); }
-.board[data-rows='4'] .seat__interactive { --portrait-height: calc(5.7rem * var(--stage-scale)); }
-
-/* Orb target controls sit beside the seat button, so anchor them to the same
-   floor-relative portrait box they occupied before becoming interactive. */
+/* Defect's wide animation canvas has empty space above its head. Anchor
+   Orbs and metadata to the painted body; the ratio also fits static art. */
+.seat__interactive[data-character='defect']:has(> .orbs) {
+  --hero-head-height: calc(var(--stage-actor-width) * 0.66);
+}
 .seat__interactive > .orbs {
-  top: calc(100% - (3rem * var(--stage-scale)) - var(--portrait-height) - var(--orb-size) - var(--orb-margin));
+  top: calc(100% - (3rem * var(--stage-scale)) - var(--portrait-floor-extra, 0rem) - var(--hero-head-height, var(--portrait-height)) - var(--orb-size) - var(--orb-margin));
 }
 
 .seat__portrait {
@@ -473,7 +477,7 @@
 .enemy--targeted,
 .enemy--targeted:not(:disabled):hover {
   border: 0;
-  transform: translateY(-3px);
+  transform: none;
   filter: drop-shadow(0 0 0.35rem #65e8ff) drop-shadow(0 0 0.8rem rgb(55 203 234 / 0.7));
   animation: none;
 }

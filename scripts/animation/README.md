@@ -106,6 +106,26 @@ Trickster's intentional spectral duplicate is excluded from the whole-frame
 area heuristic. These checks supplement full-size pose inspection, which must
 verify heads, torsos, fingers and weapons themselves.
 
+The September 2026 size audit covers all 98 idle/attack rig pairs, plus the live
+Ironclad/Watcher poses and Guardian mode transitions. Guardian's attack previously
+started at 90% of idle stature because opaque-area fitting confused pixel density
+with body size. `hero-guardian` now uses `drawnFit: "height"`: register the first
+upright pose to idle stature, then apply that one scale to the entire sequence.
+`review-rigs.py` guards its opening height ratio. Rebuild with
+`python3 scripts/animation/render-rig.py scripts/animation/rigs.json --only hero-guardian` and refresh metadata with
+`python3 scripts/animation/review-rigs.py --write-metadata`.
+Watcher CSS no longer scales the whole body between poses, and enemy hover uses
+the targeting glow without enlarging the body. Crouches, weapon arcs,
+Slime squash/stretch, death collapse and Demon flight remain intentional motion;
+never fit each frame independently to its silhouette.
+
+For a larger battlefield cast, change `STAGE_GAP_REM` in `src/ui/board-signals.ts`.
+Hero portraits and normal/elite/boss art derive from the same actor width, while
+`stageScaleFor` fits crowded encounters and smoothly restores size after deaths.
+Export overscan compensation stays separate from that display-size control.
+`verify-character-size-browser.mjs` checks shared sizing through idle, attacks,
+static art and Guardian transitions in Chromium and WebKit on both screen classes.
+
 Hexaghost's heat variants share the zero-heat body registration and animation.
 `render-hexaghost-heat.py` composites upright native-alpha flame artwork at
 fixed bases with independent vertical flicker. It also exports matching static

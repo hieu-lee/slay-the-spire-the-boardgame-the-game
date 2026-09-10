@@ -21,7 +21,7 @@
 }
 
 .hand .card--chamber-drawn {
-  animation: card-draw 360ms cubic-bezier(0.16, 0.8, 0.24, 1) both;
+  animation: card-draw 360ms cubic-bezier(0.16, 0.8, 0.24, 1) backwards;
   animation-delay: calc(var(--deal-index, 0) * 35ms);
 }
 

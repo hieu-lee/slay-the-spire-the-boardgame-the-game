@@ -19,10 +19,6 @@
   transition: transform var(--motion-medium) var(--ease);
 }
 
-.enemy:not(:disabled):hover .enemy__portrait > img {
-  transform: scale(1.04);
-}
-
 .enemy__head {
   position: absolute;
   inset: auto 0 0 0;
@@ -77,29 +73,8 @@
 .token--orb-frost::before { background-image: url('/assets/combat/vfx/actions/frost-channel.webp'); }
 .token--orb-dark::before { background-image: url('/assets/combat/vfx/actions/dark-channel.webp'); }
 
-/* `top`/`height` used to be percentages of the portrait box (-8% / 70%),
-   which reached far enough down to sit the orbs over the top third or so of
-   the character art instead of above it — most noticeable on Defect, whose
-   sprite already has an arm raised into that same region. `--orb-size` is
-   the same expression the orb sprites themselves are sized from, so the
-   band's placement scales with the actual orbs in it rather than with the
-   portrait's height: it now sits entirely above the portrait box.
-   `--orb-margin` is the gap between the portrait's top edge and the LOWEST
-   point any orb can reach, and it has to grow with the orb count, not stay
-   flat: `--orb-depth` (the outermost orbs' shallow arc, applied as
-   `translateY` below) grows without bound as more orbs join the row — its
-   worst case is `(orb-count - 1) / 2 * 1.05rem` — so a fixed margin sized
-   for a small hand of orbs (Capacitor alone puts a Defect at 5, two copies
-   at 7) eventually gets outrun and the outermost orb dips back into the
-   portrait, the exact bug this rule exists to prevent.
-   The `(orb-count - 1) * 0.525rem` term below is that exact same worst case
-   (`1.05rem / 2` is `0.525rem`), added rather than maxed against, which is
-   deliberate, not just "big enough": subtracting it back off always leaves
-   a CONSTANT `--orb-clearance` (set on `.seat` in
-   styles/painterly-combat-stage.css) of clear space above the portrait's top
-   edge, not a shrinking one — which is what lets
-   `.seat__meta` float in that space without the two ever competing for
-   room, however many orbs are in play. */
+/* Arc depth grows by .525rem per slot. Reserve that depth plus a fixed
+   clearance above the painted head for pending-effect and Potion chips. */
 .orbs {
   --orb-count: 3;
   --orb-size: clamp(1.7rem, calc(11rem / var(--orb-count)), 3rem);
@@ -262,7 +237,7 @@ button.pile:hover { filter: brightness(1.15); }
   z-index: 6;
 }
 
-.hand .card--dragging { opacity: 0.18; }
+.hand-area .hand .card--dragging { opacity: 0.18; pointer-events: none; }
 
 .card-drag {
   position: fixed;

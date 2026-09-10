@@ -49,6 +49,14 @@ def reviewed_rigs():
                 ratio = (area(frame)/idle_area)**.5
                 assert .88 < ratio < 1.12, (name, 'idle/attack size pop', ratio)
         assert poses['idle'][0][0].size == poses['attack'][0][0].size, (name,'canvas mismatch')
+        if name == 'hero-guardian':
+            # Same upright opening pose: equal opaque area hid a 10% shorter body.
+            def painted_height(frame):
+                box = frame.getchannel('A').point(lambda a: 255 if a > 96 else 0).getbbox()
+                return box[3] - box[1]
+            ratio = painted_height(poses['attack'][0][0]) / painted_height(poses['idle'][0][0])
+            assert .98 <= ratio <= 1.02, (name, 'opening attack shrinks the body', ratio)
+
         # Drawn attacks start in anticipation rather than idle. Silent must hold
         # her throw through the last staggered dagger, even beyond the WebP.
         if not has_authored_attack(name) or name == 'hero-guardian-defense':

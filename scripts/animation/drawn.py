@@ -48,6 +48,12 @@ def render(name, spec, output):
     idle = Image.open(ROOT / spec['output'] / f'{name}-idle.webp').convert('RGBA')
     area = lambda image: sum(image.getchannel('A').histogram()[33:])
     scale = math.sqrt(area(idle) / area(drawings[0][0]))
+    if spec.get('drawnFit') == 'height':
+        # Upright reference poses must match stature, not opaque pixel density.
+        def height(image):
+            box = image.getchannel('A').point(lambda a: 255 if a > 96 else 0).getbbox()
+            return box[3] - box[1]
+        scale = height(idle) / height(drawings[0][0])
     if name == 'the_collector':
         scale *= .94  # Canonical idle includes the staff, body-only source does not.
     ground = idle.getbbox()[3]
