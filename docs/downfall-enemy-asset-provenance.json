@@ -335,14 +335,14 @@
       "sourceKind": "base-game-extraction-via-pc-downfall",
       "source": "docs/downfall-enemy-sources/base/spire-shield-capture.webp",
       "upstreamCode": "src/main/java/charbosses/monsters/Fortification.java",
-      "pipeline": "PC Downfall/base-game render -> transparent static combat cutout",
+      "pipeline": "PC Downfall/base-game render -> transparent static combat cutout -> GPT Image 2.5 Sunburst resolution restoration (scripts/animation/sources/PROMPTS.md)",
       "runtime": [
         "public/assets/combat/enemies/spire_shield.webp"
       ],
       "sourceSha256": "0f1d1e76128ed4938c786976b385f3bb17a6ec5f6e645287f22c8dd85721a3fc",
       "upstreamCodeSha256": "eb36651d76b723cf059762b4f21978369cc7eb9f97e73a676367297e963a2255",
       "runtimeSha256": {
-        "public/assets/combat/enemies/spire_shield.webp": "1b9ce13db433d2505951e3cb04ca54bb657a7f33bf0fbbd079ba7954a9b0594a"
+        "public/assets/combat/enemies/spire_shield.webp": "ba110d4b3e9edcb8c55951a08d354eec026e6f5b5a94d62e9aca4c4856dcecc5"
       }
     },
     {

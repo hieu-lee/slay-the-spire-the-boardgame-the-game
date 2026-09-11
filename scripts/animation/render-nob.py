@@ -4,6 +4,7 @@
 Sources: GPT Image 2.5 Sunburst, background=transparent. Cell positions and
 grips are authored coordinates, not independent per-frame bounding-box fits.
 """
+import json
 import math
 from pathlib import Path
 
@@ -13,8 +14,10 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ROOT / 'scripts/animation/sources'
 OUTPUT = ROOT / 'public/assets/combat/rigged'
-SIZE = (600, 500)
-ORIGIN = (200, 228)
+WIDTH = json.loads((ROOT / "scripts/animation/rigs.json").read_text())["gremlin_nob"].get("size", 600)
+SCALE = WIDTH / 600
+SIZE = (WIDTH, round(500 * SCALE))
+ORIGIN = (round(200 * SCALE), round(228 * SCALE))
 GRIPS = [(60,135), (61,119), (61,76), (58,54), (61,38), (70,21),
          (75,22), (77,19), (62,23), (37,44), (28,76), (17,86),
          (51,181), (61,194), (59,191), (61,167), (52,134), (42,60),
@@ -30,13 +33,13 @@ KEYS = [(0,0,10), (60,1,-2), (140,2,-22), (240,3,-35), (340,4,-45),
 
 def render(pose, angle, bodies, club, pivot, breath=0):
     body = bodies[pose]
-    gx, gy = GRIPS[pose]
+    gx, gy = (v * SCALE for v in GRIPS[pose])
     if breath:
         sy = 1 + breath
         body = body.transform(body.size, Image.Transform.AFFINE,
-                              (1, 0, 0, 0, 1 / sy, 246 * (1 - 1 / sy)),
+                              (1, 0, 0, 0, 1 / sy, 246 * SCALE * (1 - 1 / sy)),
                               Image.Resampling.BICUBIC)
-        gy = 246 + (gy - 246) * sy
+        gy = 246 * SCALE + (gy - 246 * SCALE) * sy
     grip = (ORIGIN[0] + gx, ORIGIN[1] + gy)
     frame = Image.new('RGBA', SIZE)
     frame.alpha_composite(body, ORIGIN)
@@ -51,7 +54,7 @@ def render(pose, angle, bodies, club, pivot, breath=0):
     # removal; all source transparency comes directly from the image model.
     fingers = body.copy()
     mask = Image.new('L', body.size)
-    ImageDraw.Draw(mask).ellipse((gx-11, gy-11, gx+11, gy+11), fill=255)
+    ImageDraw.Draw(mask).ellipse((gx-11*SCALE, gy-11*SCALE, gx+11*SCALE, gy+11*SCALE), fill=255)
     fingers.putalpha(Image.fromarray(np.minimum(np.array(body.getchannel('A')),
                                                 np.array(mask))))
     frame.alpha_composite(fingers, ORIGIN)
@@ -60,12 +63,16 @@ def render(pose, angle, bodies, club, pivot, breath=0):
 
 def main():
     sheet = Image.open(SOURCES / 'nob-body-poses.png').convert('RGBA')
-    bodies = [sheet.crop((i % 6 * 256, i // 6 * 256,
-                         (i % 6 + 1) * 256, (i // 6 + 1) * 256)) for i in range(24)]
+    cell = sheet.width // 6
+    assert sheet.size == (cell * 6, cell * 4), 'expected 6 by 4 square sprite cells'
+    bodies = [sheet.crop((i % 6 * cell, i // 6 * cell,
+                         (i % 6 + 1) * cell, (i // 6 + 1) * cell)).resize(
+                             (round(256 * SCALE), round(256 * SCALE)), Image.Resampling.LANCZOS)
+              for i in range(24)]
     club = Image.open(SOURCES / 'nob-club.png').convert('RGBA')
-    club = club.resize((235, round(235 * club.height / club.width)), Image.Resampling.LANCZOS)
-    shaft = np.flatnonzero(np.array(club.getchannel('A'))[:, 49] > 32)
-    pivot = (49, (int(shaft[0]) + int(shaft[-1])) / 2)
+    club = club.resize((round(235 * SCALE), round(235 * SCALE * club.height / club.width)), Image.Resampling.LANCZOS)
+    shaft = np.flatnonzero(np.array(club.getchannel('A'))[:, round(49 * SCALE)] > 32)
+    pivot = (49 * SCALE, (int(shaft[0]) + int(shaft[-1])) / 2)
     for action, duration in [('idle', 3000), ('attack', 1830)]:
         boundaries = {key[0] for key in KEYS}
         # Browsers stretch very short animation frames. Keep exact authored

@@ -21,9 +21,10 @@ const heroes = {
 }
 const normalsOnly = process.argv.includes('--normal-only')
 const bossesOnly = process.argv.includes('--boss-only')
+const elitesOnly = process.argv.includes('--elites-only')
+const eliteArt = e => e.elite || ['sentry_a','sentry_b','red_slaver','blue_slaver'].includes(e.id)
 const rigs = JSON.parse(readFileSync(resolve(root, 'scripts/animation/rigs.json'), 'utf8'))
-const enemies = [...new Map(Object.values(ENEMIES).filter((e) => bossesOnly ? e.isBoss : normalsOnly ? !e.isBoss && !e.elite : e.isBoss || e.elite ||
-  ['sentry_a','sentry_b','red_slaver','blue_slaver'].includes(e.id)).map((e) => [e.artId ?? e.id,e])).values()]
+const enemies = [...new Map(Object.values(ENEMIES).filter((e) => bossesOnly ? e.isBoss : elitesOnly ? eliteArt(e) : normalsOnly ? !e.isBoss && !e.elite : e.isBoss || eliteArt(e)).map((e) => [e.artId ?? e.id,e])).values()]
   .filter(e=>!process.argv.some(a=>a.startsWith('--only='))||process.argv.includes(`--only=${e.id}`))
 try {
   for (const [screen,viewport] of [['desktop',{width:1440,height:900}],['horizontal-phone',{width:844,height:390}]]) {
@@ -74,7 +75,7 @@ try {
       }
       f.install('ironclad')
     })
-    for (const [character,source] of (bossesOnly||normalsOnly||process.argv.includes('--elites-only')?[]:Object.entries(heroes))
+    for (const [character,source] of (bossesOnly||normalsOnly||elitesOnly?[]:Object.entries(heroes))
       .filter(([id])=>!process.argv.some(a=>a.startsWith('--hero='))||process.argv.includes(`--hero=${id}`))) {
       await page.evaluate(c=>window.fixture.install(c),character)
       await page.waitForFunction(()=>document.querySelector('.seat__portrait > img')?.complete)
@@ -263,7 +264,7 @@ try {
       await card.waitFor()
       await page.waitForFunction(()=>[...document.querySelectorAll('.enemy__art--cutout')].every(i=>i.complete&&i.naturalWidth>0))
       assert.equal(await card.getAttribute('data-animation'),'idle',enemy.id)
-      if (enemy.isBoss) assert.equal(await card.locator('.enemy__art--cutout').evaluate(i => i.naturalWidth), rigs[enemy.artId ?? enemy.id].size, `${enemy.id}: idle resolution`)
+      if (enemy.isBoss || eliteArt(enemy)) assert.equal(await card.locator('.enemy__art--cutout').evaluate(i => i.naturalWidth), rigs[enemy.artId ?? enemy.id].size, `${enemy.id}: idle resolution`)
       const before=await card.locator('.enemy__art--cutout').boundingBox()
       const silhouette=await card.locator('.enemy__art--cutout').evaluate(image=>{
         const rect=image.getBoundingClientRect(), canvas=document.createElement('canvas')
@@ -309,12 +310,12 @@ try {
         assert.notDeepEqual(first, await art.screenshot(), `${enemy.id}: idle texture frozen`)
       }
       await page.waitForTimeout(1000) // Allow encounter attack preloads before the synthetic end-turn.
-      if(normalsOnly||enemy.elite||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-idle.png`)})
+      if(normalsOnly||eliteArt(enemy)||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-idle.png`)})
       const attacks=await page.evaluate(()=>{const f=window.fixture;f.state.phase='enemy';f.render();return f.attacks})
       if(attacks){
         await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='attack')
         assert((await card.locator('.enemy__art--cutout').getAttribute('src')).startsWith('blob:'),`${enemy.id}: recording captured the unloaded idle fallback`)
-        if (enemy.isBoss) assert.equal(await card.locator('.enemy__art--cutout').evaluate(i => i.naturalWidth), rigs[enemy.artId ?? enemy.id].size, `${enemy.id}: attack resolution`)
+        if (enemy.isBoss || eliteArt(enemy)) assert.equal(await card.locator('.enemy__art--cutout').evaluate(i => i.naturalWidth), rigs[enemy.artId ?? enemy.id].size, `${enemy.id}: attack resolution`)
         if (bossProjectileImagePath(enemy.artId ?? enemy.id)) {
           // Reload through a fresh blob URL after the initial resize delivery.
           // Native load dispatch can run microtasks between ancestor listeners;
@@ -392,13 +393,13 @@ try {
           assert(Number.isFinite(dash)&&dash<0,`${enemy.id}: melee has no measured target travel`)
           assert(after.x<before.x-20,`${enemy.id}: physical attack stayed in its origin lane`)
         }
-        if(normalsOnly||enemy.elite||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-attack.png`)})
+        if(normalsOnly||eliteArt(enemy)||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-attack.png`)})
         await page.waitForTimeout(1250)
         assert.equal(await card.getAttribute('data-animation'),'idle',`${enemy.id}: return`)
       }else assert.equal(await card.getAttribute('data-animation'),'idle',`${enemy.id}: nonattack intent`)
     }
     // Sample the rendered texture, with CSS travel disabled so it cannot hide a frozen rig.
-    for (const [id,isBoss] of (normalsOnly ? ['looter','gremlin_wizard','byrd'].map(artId=>[Object.values(ENEMIES).find(e=>(e.artId??e.id)===artId).id,false]) : [['gremlin_nob',false],['guardian_attack',true],['downfall_demon',true]])) {
+    for (const [id,isBoss] of (elitesOnly ? [['gremlin_nob',false]] : normalsOnly ? ['looter','gremlin_wizard','byrd'].map(artId=>[Object.values(ENEMIES).find(e=>(e.artId??e.id)===artId).id,false]) : [['gremlin_nob',false],['guardian_attack',true],['downfall_demon',true]])) {
       await page.evaluate(([id,isBoss])=>window.fixture.install('defect',id,isBoss),[id,isBoss])
       await page.waitForTimeout(2400) // Longer than a decoded one-shot preload's entire timeline.
       let previousSrc
@@ -427,7 +428,7 @@ try {
         if(id!=='downfall_demon')assert(new Set(frames).size>1,`${screen}/${id}: attack ${repeat+1} texture is frozen`)
         await page.waitForTimeout(1100)
         await page.evaluate(()=>{const f=window.fixture;f.state.phase='player';f.render()})
-        await page.waitForTimeout(100)
+        await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='idle')
       }
     }
     if(normalsOnly) for(const [id,expected] of [['acid_slime',1],['gremlin_wizard',2]]) {

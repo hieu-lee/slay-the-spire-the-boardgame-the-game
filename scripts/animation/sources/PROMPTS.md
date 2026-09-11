@@ -92,3 +92,21 @@ Edit target: the attached exact The Champ Slay the Spire game sprite. Upscale an
 Attack prompt:
 
 Edit target: these EXACT THREE consecutive game-animation sprites of The Champ. Upscale all three with crisp painted armor edges and details, preserving each original pose, blue armor, visor, gold crown, red shield, cape, anatomy, hands, palette and facing direction. Exactly three full-body sprites in one horizontal row, same order, with large transparent gaps and padding around every sprite. Enlarge all three consistently to use the canvas. Preserve the precise arm positions and shield grip. Do not add a sword: the game attaches it separately to the empty weapon hand. No redesign, extra limbs, aura, shadows, backdrop, text or frames. Native transparent RGBA background, alpha 0 outside the three bodies, opaque characters. Each source is an edit target, not loose inspiration.
+
+## Elite resolution refresh — 2026-09-11
+
+Model: `gpt-image-2.5-sunburst`, imagegen CLI edits, high quality, native transparent background. Restored the 13 elite encounter art sets: Blue/Red Slaver, Book of Stabbing, Gremlin Leader, Taskmaster, Giant Head, Nemesis, Reptomancer, Sentry, Gremlin Nob, Lagavulin, Spire Shield and Spire Spear. Each static source was edited at 1024×1024 and registered into its original silhouette bounds on a canvas twice the original dimensions. Transparent padding was cropped for registration; alpha was retained, without background removal.
+
+Gremlin Nob and Taskmaster also received 8 three-pose edits each at 1536×1024, packed back into their original 24 poses at twice the source resolution (3072×2048). Registration uses visible alpha bounds rather than faint transparent fringes; Taskmaster poses retain their original painted areas and foot positions. Nob retains the original rigid club source and authored grip coordinates; his renderer scales the complete coordinate system together. Other elites animate the restored canonical source through their existing joint tracks. Idle/attack outputs are 800px wide, except Nob's existing wider club-swing canvas, now 1200×1000 instead of 600×500. Timing and display scale are unchanged. Giant Head and Red Slaver have additional bottom overscan so their sharper attack outlines remain inside the canvas.
+
+Static edit prompt:
+
+```text
+Use case: identity-preserve. Edit target: the attached original Slay the Spire enemy game sprite. Restore this EXACT drawing at higher resolution with crisp painted edges and details. Preserve the exact character design, pose, silhouette, anatomy, expression, clothing, weapons, colors, proportions and facing direction. This is resolution restoration only, not redesign. Preserve all original parts, full body and transparent padding; no new parts, texture style, aura, glow, shadow, background, text or watermark. Native transparent RGBA background, alpha 0 outside character. Match original composition and relative positions exactly. Keep the original flat painted game art style.
+```
+
+Three-pose edit prompt:
+
+```text
+Use case: identity-preserve. Edit target: these EXACT THREE consecutive game animation sprites. Upscale all three with crisp painted edges and details, preserving each original pose, anatomy, hands, face, clothing, colors, weapons and facing direction. Exactly three full body sprites in ONE horizontal row, same order, with transparent gaps and padding around every sprite. Enlarge all three consistently to use the canvas. Preserve precise hand and limb positions, physical proportions, and the original flat game art style. Do not add weapons to empty hands. No redesign, extra limbs, aura, shadows, backdrop, text or frames. Native transparent RGBA background, alpha 0 outside bodies. Input is an exact edit target, not loose inspiration.
+```

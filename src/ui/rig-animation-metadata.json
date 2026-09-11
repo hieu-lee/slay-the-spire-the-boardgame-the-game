@@ -205,74 +205,74 @@
     "scale": 1.65
   },
   "gremlin_nob": {
-    "contactLeft": 73,
-    "height": 500,
+    "contactLeft": 149,
+    "height": 1000,
     "scale": 1.8
   },
   "lagavulin": {
-    "contactLeft": 64,
-    "height": 297,
+    "contactLeft": 129,
+    "height": 594,
     "scale": 1.25
   },
   "sentry": {
-    "contactLeft": 115,
-    "height": 601,
+    "contactLeft": 232,
+    "height": 1201,
     "scale": 1.25,
     "projectile": "lightning-channel",
     "impact": "turn-lightning-passive-impact",
     "origin": [
-      200,
-      350
+      400,
+      699
     ]
   },
   "book_of_stabbing": {
-    "contactLeft": 119,
-    "height": 330,
+    "contactLeft": 237,
+    "height": 661,
     "scale": 1.25
   },
   "gremlin_leader": {
-    "contactLeft": 72,
-    "height": 415,
+    "contactLeft": 176,
+    "height": 829,
     "scale": 1.25
   },
   "taskmaster": {
-    "contactLeft": 51,
-    "height": 560,
+    "contactLeft": 132,
+    "height": 1119,
     "scale": 3
   },
   "giant_head": {
-    "contactLeft": 100,
-    "height": 280,
+    "contactLeft": 151,
+    "height": 559,
     "scale": 1.25
   },
   "nemesis": {
-    "contactLeft": 67,
-    "height": 420,
+    "contactLeft": 133,
+    "height": 839,
     "scale": 1.25
   },
   "reptomancer": {
-    "contactLeft": 39,
-    "height": 601,
+    "contactLeft": 79,
+    "height": 1201,
     "scale": 1
   },
   "spire_shield": {
-    "contactLeft": 61,
-    "height": 400,
+    "contactLeft": 117,
+    "height": 800,
     "scale": 1.25
   },
   "spire_spear": {
-    "contactLeft": 60,
-    "height": 266,
+    "contactLeft": 120,
+    "height": 533,
     "scale": 1.25
   },
   "red_slaver": {
-    "contactLeft": 66,
-    "height": 266,
+    "contactLeft": 133,
+    "height": 533,
     "scale": 1.25
   },
   "blue_slaver": {
-    "contactLeft": 95,
-    "height": 400,
+    "contactLeft": 193,
+    "height": 800,
     "scale": 1.25
   },
   "small_slime": {

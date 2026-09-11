@@ -133,7 +133,7 @@ const cardIndex = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json')
  */
 const PILE_ICON_EDGE = [160, 256]
 const ENEMY_CUTOUT_EDGE = [256, 512]
-const BOSS_CUTOUT_EDGE = [256, 1024]
+const BOSS_ELITE_CUTOUT_EDGE = [256, 1024]
 /** Only the `-hero` pair, painted by the character-select and Neow scenes. */
 const CHARACTER_HERO_EDGE = [700, 1536]
 /** Every other character cutout: combat seats, roster thumbs, lobby seats. */
@@ -750,7 +750,8 @@ check('bundled combat cutouts are sized for their render box, with transparency'
       .map((file) => join(combatCharacterRoot, file)),
   ]
   const enemyPathSet = new Set(enemyPaths)
-  const bossFiles = new Set(Object.values(ENEMIES).filter(enemy => enemy.isBoss)
+  const bossEliteFiles = new Set(Object.values(ENEMIES).filter(enemy => enemy.isBoss || enemy.elite ||
+      ['sentry_a', 'sentry_b', 'red_slaver', 'blue_slaver'].includes(enemy.id))
     .map(enemy => `${enemy.artId ?? enemy.id}.webp`))
   const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
   assert(result.status === 0, result.stderr || 'could not inspect combat cutouts')
@@ -762,7 +763,7 @@ check('bundled combat cutouts are sized for their render box, with transparency'
     const width = Number(block.match(/  Width: (\d+)/)?.[1])
     const height = Number(block.match(/  Height: (\d+)/)?.[1])
     const alpha = /Alpha:\s+1/.test(block)
-    const [floor, cap] = enemyPathSet.has(path) ? (bossFiles.has(file) ? BOSS_CUTOUT_EDGE : ENEMY_CUTOUT_EDGE)
+    const [floor, cap] = enemyPathSet.has(path) ? (bossEliteFiles.has(file) ? BOSS_ELITE_CUTOUT_EDGE : ENEMY_CUTOUT_EDGE)
       : file.endsWith('-hero.webp') ? CHARACTER_HERO_EDGE
       : CHARACTER_CUTOUT_EDGE
     const resolution = Math.min(width, height) >= floor / 2 &&
