@@ -1,3 +1,7 @@
+export const CARD_FLIGHT_MS = 1500
+export const CARD_TRAVEL_START_MS = 720
+export const CARD_SMOKE_MS = 900
+
 /** Snapshot the visible pile, never the private cards inside it. */
 export function cardFlightPath(destination: 'draw' | 'discard' | 'exhaust' | 'stage') {
   const x = innerWidth / 2
@@ -11,5 +15,13 @@ export function cardFlightPath(destination: 'draw' | 'discard' | 'exhaust' | 'st
   const path = `M ${x} ${handY} L ${x} ${stageY} ${curve}`
   const measure = document.createElementNS('http://www.w3.org/2000/svg', 'path')
   measure.setAttribute('d', path)
-  return { path, trailPath, hold: `${Math.abs(handY - stageY) / measure.getTotalLength() * 100}%` }
+  const hold = `${Math.abs(handY - stageY) / measure.getTotalLength() * 100}%`
+  measure.setAttribute('d', trailPath)
+  const length = measure.getTotalLength()
+  const smoke = destination === 'stage' ? [] : Array.from({ length: 32 }, (_, index) => {
+    const fraction = index / 31
+    const point = measure.getPointAtLength(length * fraction)
+    return { x: point.x, y: point.y, delay: CARD_TRAVEL_START_MS + (CARD_FLIGHT_MS - CARD_TRAVEL_START_MS) * fraction, turn: index * 137.5 }
+  })
+  return { path, smoke, hold }
 }

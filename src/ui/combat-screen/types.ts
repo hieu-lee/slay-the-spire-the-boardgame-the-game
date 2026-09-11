@@ -106,7 +106,7 @@ export type CardFlight = {
   card: CardInstance
   destination: ReturnType<typeof cardMotionDestination>
   path: string
-  trailPath: string
+  smoke: { x: number; y: number; delay: number; turn: number }[]
   hold: string
   landed?: boolean
 }

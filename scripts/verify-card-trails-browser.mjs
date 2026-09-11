@@ -11,12 +11,15 @@ const server = await createServer({ root, logLevel: 'silent', server: { port: 0 
 await server.listen()
 const colors = { ironclad: '#e74b38', silent: '#54ca68', defect: '#42aef5', watcher: '#a35ce5', hexaghost: '#a35ce5', slime_boss: '#a5df42', guardian: '#49d9c5', hermit: '#e8b650' }
 const errors = []
+const recording = process.argv.includes('--record')
 try {
   for (const [engineName, engine] of [['chromium', chromium], ['webkit', webkit]]) {
     const browser = await engine.launch()
     try {
+      if (recording && engineName !== 'chromium') continue
       for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 844, height: 390 }]]) {
-        const context = await browser.newContext({ viewport, hasTouch: screen === 'phone', ...(engineName === 'chromium' && screen === 'desktop' ? { recordVideo: { dir: out, size: viewport } } : {}) })
+        if (recording && screen !== 'desktop') continue
+        const context = await browser.newContext({ viewport, hasTouch: screen === 'phone', ...(recording ? { recordVideo: { dir: out, size: viewport } } : {}) })
         const page = await context.newPage()
         page.on('pageerror', error => errors.push(String(error)))
         await page.goto(`http://localhost:${server.httpServer.address().port}`, { waitUntil: 'networkidle' })
@@ -81,12 +84,13 @@ try {
           const flight = page.locator(`.card-flight--${destination}.card-flight`)
           await flight.waitFor()
           assert.equal(await flight.evaluate(el => getComputedStyle(el).getPropertyValue('--flight-trace').trim()), colors[character])
-          assert.equal(await page.locator('.card-flight-effect feGaussianBlur').getAttribute('stdDeviation'), '3', 'Smoke uses the SVG blur supported by WebKit')
+          assert.equal(await page.locator('.card-smoke').count(), 32)
+          assert.equal(await page.locator('.card-flight-effect filter').count(), 0, 'No live noise filter during playback')
           // Freeze close to landing to verify the real pile coordinates, then let it finish.
-          const distance = await flight.evaluate(el => {
+          const distance = recording ? 0 : await flight.evaluate(el => {
             const animation = el.getAnimations().find(a => a.animationName === 'card-resolve')
             const previousTime = animation.currentTime
-            animation.pause(); animation.currentTime = 979
+            animation.pause(); animation.currentTime = 1499
             const rect = el.getBoundingClientRect()
             const pile = document.querySelector(`[data-pile="${el.className.match(/card-flight--(draw|discard|exhaust)/)[1]}"]`).getBoundingClientRect()
             const distance = Math.hypot(rect.x + rect.width / 2 - pile.x - pile.width / 2, rect.y + rect.height / 2 - pile.y - pile.height / 2)
@@ -94,12 +98,12 @@ try {
             return distance
           })
           assert(distance < 20, `${engineName} ${screen} ${destination} missed pile by ${distance}`)
-          await page.waitForTimeout(800)
-          await page.screenshot({ path: `${out}/${engineName}-${screen}-${character}-${destination}.png` })
+          await page.waitForTimeout(1100)
+          if (!recording) await page.screenshot({ path: `${out}/${engineName}-${screen}-${character}-${destination}.png` })
           await flight.waitFor({ state: 'detached' })
-          const trail = page.locator('.card-flight-trail__core')
+          const trail = page.locator('.card-smoke').last()
           assert.equal(await trail.count(), 1, 'Trail should linger after card lands')
-          assert(Number(await trail.evaluate(el => getComputedStyle(el).opacity)) > 0, 'Lingering trail is visible')
+          assert(await page.locator('.card-smoke').evaluateAll(puffs => puffs.some(el => Number(getComputedStyle(el).opacity) > 0)), 'Lingering trail is visible')
           await trail.waitFor({ state: 'detached' })
         }
         await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true'; const run = window.__STS_DEBUG__.getRun(); run.combat.players[0].hand = [{ uid: 'quiet', defId: 'defend_silent', upgraded: false }]; window.__STS_DEBUG__.setRun({ ...run }) })

@@ -5663,7 +5663,7 @@ const cardPlayLanding = await page.evaluate(() => {
   const flight = [...document.querySelectorAll('.card-flight')].at(-1)
   const animation = flight?.getAnimations().find((candidate) => candidate.animationName === 'card-resolve')
   if (!animation) return null
-  animation.currentTime = 979
+  animation.currentTime = 1499
   const flightRect = flight?.getBoundingClientRect()
   const pile = document.querySelector('[data-pile="discard"]')?.getBoundingClientRect()
   if (!flightRect || !pile) return null
@@ -6056,13 +6056,13 @@ await page.mouse.up()
 await page.waitForFunction(() => document.querySelector('.card-flight--exhaust'))
 const exhaustFlight = await page.locator('.card-flight--exhaust').evaluate((flight) => ({
   childAnimation: getComputedStyle(flight.querySelector('.card')).animationName,
-  trailAnimation: getComputedStyle(flight.parentElement.querySelector('.card-flight-trail path')).animationName,
+  trailAnimation: getComputedStyle(flight.parentElement.querySelector('.card-smoke')).animationName,
   traceColor: getComputedStyle(flight).getPropertyValue('--flight-trace').trim(),
   countInFlight: document.querySelector('[data-pile="exhaust"] .pile__count')?.textContent,
 }))
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (['card-resolve', 'card-flight-smoke', 'card-flight-motes'].includes(animation.animationName)) {
+    if (['card-resolve', 'card-smoke-puff'].includes(animation.animationName)) {
       animation.currentTime = 500
       animation.pause()
     }
@@ -6071,7 +6071,7 @@ await page.evaluate(() => {
 await shot('03b-card-center-hold')
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (['card-resolve', 'card-flight-smoke', 'card-flight-motes'].includes(animation.animationName)) {
+    if (['card-resolve', 'card-smoke-puff'].includes(animation.animationName)) {
       animation.currentTime = 850
     }
   }
@@ -6100,7 +6100,7 @@ const tracePalette = await page.evaluate(() => {
 check('an Exhausting special-effect card settles, shrinks, smokes, and lands in Exhaust', () => {
   assertDeepEqual(draggedSpecial.players[0].exhaust.map((card) => card.uid), ['drag-flex'])
   assertEqual(exhaustFlight.childAnimation, 'none')
-  assertEqual(exhaustFlight.trailAnimation, 'card-flight-smoke')
+  assertEqual(exhaustFlight.trailAnimation, 'card-smoke-puff')
   assertEqual(exhaustFlight.traceColor, '#a35ce5')
   assertEqual(exhaustFlight.countInFlight, '0')
   assertEqual(exhaustLanding.count, '1')
