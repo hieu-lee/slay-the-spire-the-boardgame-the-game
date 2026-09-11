@@ -84,13 +84,13 @@ try {
           const flight = page.locator(`.card-flight--${destination}.card-flight`)
           await flight.waitFor()
           assert.equal(await flight.evaluate(el => getComputedStyle(el).getPropertyValue('--flight-trace').trim()), colors[character])
-          assert.equal(await page.locator('.card-smoke').count(), 32)
+          await page.locator('.card-flight-trail[data-texture-ready="true"]').waitFor()
           assert.equal(await page.locator('.card-flight-effect filter').count(), 0, 'No live noise filter during playback')
           // Freeze close to landing to verify the real pile coordinates, then let it finish.
           const distance = recording ? 0 : await flight.evaluate(el => {
             const animation = el.getAnimations().find(a => a.animationName === 'card-resolve')
             const previousTime = animation.currentTime
-            animation.pause(); animation.currentTime = 1499
+            animation.pause(); animation.currentTime = 979
             const rect = el.getBoundingClientRect()
             const pile = document.querySelector(`[data-pile="${el.className.match(/card-flight--(draw|discard|exhaust)/)[1]}"]`).getBoundingClientRect()
             const distance = Math.hypot(rect.x + rect.width / 2 - pile.x - pile.width / 2, rect.y + rect.height / 2 - pile.y - pile.height / 2)
@@ -98,12 +98,12 @@ try {
             return distance
           })
           assert(distance < 20, `${engineName} ${screen} ${destination} missed pile by ${distance}`)
-          await page.waitForTimeout(1100)
+          await page.waitForTimeout(700)
           if (!recording) await page.screenshot({ path: `${out}/${engineName}-${screen}-${character}-${destination}.png` })
           await flight.waitFor({ state: 'detached' })
-          const trail = page.locator('.card-smoke').last()
+          const trail = page.locator('.card-flight-trail__reveal')
           assert.equal(await trail.count(), 1, 'Trail should linger after card lands')
-          assert(await page.locator('.card-smoke').evaluateAll(puffs => puffs.some(el => Number(getComputedStyle(el).opacity) > 0)), 'Lingering trail is visible')
+          assert(Number(await trail.evaluate(el => getComputedStyle(el).opacity)) > 0, 'Lingering trail is visible')
           await trail.waitFor({ state: 'detached' })
         }
         await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true'; const run = window.__STS_DEBUG__.getRun(); run.combat.players[0].hand = [{ uid: 'quiet', defId: 'defend_silent', upgraded: false }]; window.__STS_DEBUG__.setRun({ ...run }) })

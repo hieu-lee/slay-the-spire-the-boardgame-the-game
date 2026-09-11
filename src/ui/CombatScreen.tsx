@@ -1,5 +1,6 @@
+import { SmokeTrail } from './combat-screen/SmokeTrail.tsx'
 import type { CSSProperties } from 'react'
-import { cardFlightPath, CARD_FLIGHT_MS, CARD_SMOKE_MS } from './combat-screen/card-flight.ts'
+import { cardFlightPath } from './combat-screen/card-flight.ts'
 // The combat screen: the board, the hand, and every prompt a fight puts up.
 //
 // One component, because the fight is one interaction — a card being dragged
@@ -1261,8 +1262,8 @@ function CombatScreenView({
           motionTimers.current.set(timerKey, setTimeout(() => {
             motionTimers.current.delete(timerKey)
             setCardFlights((current) => current.filter((flight) => flight.beat !== beat))
-          }, CARD_SMOKE_MS))
-        }, CARD_FLIGHT_MS))
+          }, 820))
+        }, 980))
       }
     } else if (state.phase !== 'player' && state.phase !== 'copy') {
       armedCardFlight.current = null
@@ -6667,14 +6668,12 @@ function CombatScreenView({
           </div>
         </>
       ) : null}
-      <link rel="preload" as="image" href={assetPath('combat/card-smoke.webp')} />
       {cardFlights.map((flight) => (
-        <div key={flight.beat} className={`card-flight-effect card-flight--${viewer.character}`} style={{ "--smoke-duration": `${CARD_SMOKE_MS}ms` } as CSSProperties} aria-hidden="true" inert>
-          {flight.smoke.map((puff, index) => <span key={index} className="card-smoke"
-            style={{ left: puff.x, top: puff.y, '--smoke-delay': `${puff.delay}ms`, '--smoke-turn': `${puff.turn}deg` } as CSSProperties} />)}
+        <div key={flight.beat} className={`card-flight-effect card-flight--${viewer.character}`} aria-hidden="true" inert>
+          {flight.destination !== 'stage' ? <SmokeTrail path={flight.trailPath} /> : null}
           {!flight.landed ? <div
             className={`card-flight card-flight--${flight.destination} card-flight--${viewer.character}`}
-            style={{ offsetPath: `path('${flight.path}')`, '--flight-hold': flight.hold, animationDuration: `${CARD_FLIGHT_MS}ms` } as CSSProperties}
+            style={{ offsetPath: `path('${flight.path}')`, '--flight-hold': flight.hold } as CSSProperties}
           >
             <Card card={flight.card} playable={false} />
           </div> : null}

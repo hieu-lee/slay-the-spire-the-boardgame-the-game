@@ -1,36 +1,60 @@
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { createServer } from 'vite'
 import { chromium, webkit } from './lib/profile-browser.mjs'
-const asset = `data:image/webp;base64,${readFileSync(new URL('../public/assets/combat/card-smoke.webp', import.meta.url)).toString('base64')}`
-const css = readFileSync(new URL('../src/ui/styles/feedback.css', import.meta.url), 'utf8').replace('/assets/combat/card-smoke.webp', asset)
+const root = fileURLToPath(new URL('../', import.meta.url))
+const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
+await server.listen()
 const results = {}
-for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
- const browser = await engine.launch()
- try {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
-  await page.setContent(`<style>${css}</style><div class="card-flight-effect card-flight--defect" style="--smoke-duration:900ms"></div>`)
-  await page.evaluate(async src => { const image = new Image(); image.src = src; await image.decode() }, asset)
-  results[name] = await page.evaluate(() => new Promise(resolve => {
-   const root = document.querySelector('.card-flight-effect')
-   for(let i=0;i<32;i++) {
-    const t=i/31, p=document.createElement('span'); p.className='card-smoke'
-    p.style.cssText=`left:${720+610*(2*t-t*t)}px;top:${387-180*t+653*t*t}px;--smoke-delay:${720+780*t}ms;--smoke-turn:${i*137.5}deg`
-    root.append(p)
+try {
+ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
+  const browser = await engine.launch()
+  try {
+   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+   await page.goto(`http://localhost:${server.httpServer.address().port}`, { waitUntil: 'networkidle' })
+   await page.evaluate(async () => {
+    const { default: React } = await import('/node_modules/.vite/deps/react.js')
+    const { default: { createRoot } } = await import('/node_modules/.vite/deps/react-dom_client.js')
+    const { SmokeTrail } = await import('/src/ui/combat-screen/SmokeTrail.tsx')
+    const host = document.createElement('div'); host.className='card-flight-effect card-flight--defect'; document.body.append(host)
+    const root = createRoot(host)
+    new MutationObserver(() => {
+      if (window.smokeReadyMs === undefined && host.querySelector('[data-texture-ready="true"]')) window.smokeReadyMs = performance.now() - window.smokeStarted
+    }).observe(host, { childList: true, subtree: true, attributes: true })
+    window.mountSmoke = key => {
+      window.smokeStarted = performance.now(); window.smokeReadyMs = undefined
+      root.render(React.createElement(SmokeTrail, { path: 'M 720 387 Q 1330 297 1330 860', key }))
+    }
+   })
+   results[name] = []
+   for (const phase of ['cold','cached']) {
+    await page.evaluate(phase => window.mountSmoke(phase), phase)
+    await page.locator('.card-flight-trail').waitFor()
+    const metrics = await page.evaluate(() => new Promise(resolve => {
+     const trail = document.querySelector('.card-flight-trail')
+     const reveal = trail.querySelector('path')
+     const gaps=[], progress=[]; let previous, start, readyAt
+     function sample(time) {
+      start ??= time
+      if (trail.dataset.textureReady === 'true') readyAt ??= time-start
+      if (previous !== undefined && time-start>650 && time-start<1100) gaps.push(time-previous)
+      previous=time
+      progress.push(1-parseFloat(getComputedStyle(reveal).strokeDashoffset))
+      if (time-start<1800) requestAnimationFrame(sample)
+      else { const sorted=[...gaps].sort((a,b)=>a-b); resolve({ phase, readyAt: window.smokeReadyMs, p95: sorted[Math.floor(sorted.length*.95)], max:Math.max(...gaps), maxRevealStep:Math.max(...progress.slice(1).map((p,i)=>p-progress[i])) }) }
+     }
+     const phase = trail.dataset.textureReady === 'true' ? 'ready' : 'preparing'
+     requestAnimationFrame(sample)
+    }))
+    assert(metrics.readyAt < 500, `${name} ${phase}: texture missed preparation window ${JSON.stringify(metrics)}`)
+    assert(metrics.p95 < 50, `${name} ${phase}: dropped frames ${JSON.stringify(metrics)}`)
+    assert(metrics.maxRevealStep < .3, `${name} ${phase}: trail jumped ${JSON.stringify(metrics)}`)
+    results[name].push(metrics)
    }
-   const intervals=[], emissions=[]; let previous, start
-   function sample(time) {
-    start ??= time
-    if(previous !== undefined && time-start>700 && time-start<1800) intervals.push(time-previous)
-    previous=time
-    emissions.push([...root.children].filter(el => {const a=el.getAnimations()[0]; return a.currentTime>=a.effect.getTiming().delay}).length/32)
-    if(time-start<2450) requestAnimationFrame(sample)
-    else {const sorted=[...intervals].sort((a,b)=>a-b); resolve({frames:intervals.length,p95:sorted[Math.floor(sorted.length*.95)],max:Math.max(...intervals),maxRevealStep:Math.max(...emissions.slice(1).map((p,i)=>p-emissions[i]))})}
-   } requestAnimationFrame(sample)
-  }))
-  assert(results[name].p95 < 50, `${name}: smoke frame p95 ${results[name].p95}ms`)
-  assert(results[name].maxRevealStep <= .2, `${name}: smoke jumped ${results[name].maxRevealStep}`)
- } finally { await browser.close() }
-}
-mkdirSync(new URL('../artifacts/card-trails/', import.meta.url), { recursive: true })
-writeFileSync(new URL('../artifacts/card-trails/smoke-after-perf.json', import.meta.url), JSON.stringify(results,null,2))
+  } finally { await browser.close() }
+ }
+} finally { await server.close() }
+mkdirSync(`${root}artifacts/card-trails`, { recursive: true })
+writeFileSync(`${root}artifacts/card-trails/restored-smoke-performance.json`, JSON.stringify(results,null,2))
 console.log(results)
