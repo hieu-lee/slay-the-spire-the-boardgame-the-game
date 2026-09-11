@@ -139,35 +139,23 @@ html[data-map-transition='true'] .app-shell {
   z-index: 4;
   top: 15%;
   right: clamp(1rem, 4vw, 4.5rem);
-  width: 12rem;
-  padding: 0.8rem 1rem 0.95rem;
-  color: #2f2115;
-  clip-path: polygon(4% 0, 96% 1%, 100% 5%, 97% 18%, 100% 45%, 97% 72%, 100% 94%, 94% 100%, 68% 98%, 40% 100%, 5% 98%, 0 93%, 3% 68%, 0 36%, 3% 6%);
-  background:
-    linear-gradient(90deg, rgb(96 61 29 / 0.24), transparent 12%, transparent 86%, rgb(96 61 29 / 0.2)),
-    url('/assets/noncombat/map-parchment.webp') center / cover;
-  box-shadow: 0 0.65rem 1rem rgb(42 25 12 / 0.42), inset 0 0 1.4rem rgb(82 52 24 / 0.2);
-  rotate: 1.2deg;
+  width: 13rem;
+  padding: 1.4rem 1.6rem 1.8rem;
+  color: #20485b;
+  background: url('/assets/noncombat/map-legend-scroll.webp') center / 100% 100% no-repeat;
+  filter: drop-shadow(0 0.45rem 0.35rem #0006);
   font-family: 'Kreon', Georgia, serif;
 }
-
-.map__legend::before,
-.map__legend::after {
-  content: '';
-  position: absolute;
-  left: 0.6rem;
-  right: 0.6rem;
-  height: 1px;
-  background: rgb(74 46 20 / 0.28);
-  box-shadow: none;
+.map__legend > strong { display: block; margin-bottom: 0.65rem; font-size: 1.6rem; color: #102e3e; text-align: center; }
+.map__legend ul { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.map__legend li { display: flex; align-items: center; gap: 0.55rem; font-size: 1rem; font-weight: 700; }
+.map__legend .icon { width: 1.35rem; height: 1.35rem; flex-shrink: 0; }
+@media (max-height: 500px) and (orientation: landscape) {
+  .map__legend { width: 10.5rem; padding: 1rem 1.2rem 1.3rem; }
+  .map__legend > strong { font-size: 1.3rem; margin-bottom: 0.4rem; }
+  .map__legend ul { gap: 0.15rem; }
+  .map__legend li { font-size: 0.9rem; }
 }
-
-.map__legend::before { top: 0.38rem; }
-.map__legend::after { bottom: 0.38rem; }
-.map__legend > strong { display: block; margin-bottom: 0.4rem; font-size: 1.35rem; text-align: center; letter-spacing: 0.04em; }
-.map__legend ul { display: grid; gap: 0.2rem; margin: 0; padding: 0; list-style: none; }
-.map__legend li { display: flex; align-items: center; gap: 0.55rem; font-size: 0.95rem; font-weight: 700; }
-.map__legend .icon { width: 1.35rem; height: 1.35rem; filter: drop-shadow(0 1px 0 rgb(255 239 188 / 0.72)); }
 
 .map-peek__panel .map__legend {
   right: max(2rem, calc((100vw - 1100px) / 2 + 2rem));

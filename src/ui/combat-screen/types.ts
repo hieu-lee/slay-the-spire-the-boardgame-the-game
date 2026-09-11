@@ -105,6 +105,10 @@ export type CardFlight = {
   beat: number
   card: CardInstance
   destination: ReturnType<typeof cardMotionDestination>
+  path: string
+  trailPath: string
+  hold: string
+  landed?: boolean
 }
 
 export type CardDrag = {

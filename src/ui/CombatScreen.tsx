@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react'
+import { cardFlightPath } from './combat-screen/card-flight.ts'
 // The combat screen: the board, the hand, and every prompt a fight puts up.
 //
 // One component, because the fight is one interaction — a card being dragged
@@ -179,7 +181,7 @@ import {
 import { enemyAttackTargetPlayerIds, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, turnEffectVfxRecipe } from './combat-vfx.ts'
 import { combatBodyPoint } from './combat-geometry.ts'
 import { playSoundEffect } from './sfx.ts'
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 function targetPresentationTiming(
@@ -507,6 +509,7 @@ function CombatScreenView({
   const motionTimers = useRef(new Map<MotionKey | `flight:${number}`, ReturnType<typeof setTimeout>>())
   const flightBeat = useRef(0)
   const [drawnCards, setDrawnCards] = useState<Set<string>>(new Set())
+  const flightFilterId = useId()
   const [cardFlights, setCardFlights] = useState<CardFlight[]>([])
   const [cardDrag, setCardDrag] = useState<CardDrag | null>(null)
   const [motionActive, setMotionActive] = useState<Set<MotionKey>>(new Set())
@@ -1249,14 +1252,17 @@ function CombatScreenView({
       landing = !reducedMotion && destination !== 'stage' ? destination : null
       flightBeat.current += 1
       const beat = flightBeat.current
-      if (!reducedMotion) setCardFlights((current) => [...current, { beat, card: armed.card, destination }])
+      if (!reducedMotion) setCardFlights((current) => [...current, { beat, card: armed.card, destination, ...cardFlightPath(destination) }])
       armedCardFlight.current = null
       if (!reducedMotion) {
         const timerKey = `flight:${beat}` as const
         motionTimers.current.set(timerKey, setTimeout(() => {
-          motionTimers.current.delete(timerKey)
-          setCardFlights((current) => current.filter((flight) => flight.beat !== beat))
+          setCardFlights((current) => current.map((flight) => flight.beat === beat ? { ...flight, landed: true } : flight))
           if (landing) pulseMotion([landing])
+          motionTimers.current.set(timerKey, setTimeout(() => {
+            motionTimers.current.delete(timerKey)
+            setCardFlights((current) => current.filter((flight) => flight.beat !== beat))
+          }, 820))
         }, 980))
       }
     } else if (state.phase !== 'player' && state.phase !== 'copy') {
@@ -4461,7 +4467,7 @@ function CombatScreenView({
     : undefined
   const cardDragTargetRow = cardDrag?.hitsRow ? draggedEnemy?.row : undefined
   const displayedPileCount = (kind: 'draw' | 'discard' | 'exhaust', count: number) =>
-    Math.max(0, count - cardFlights.filter((flight) => flight.destination === kind).length)
+    Math.max(0, count - cardFlights.filter((flight) => flight.destination === kind && !flight.landed).length)
   const drawPileCount = drawCount ?? viewer.draw.length
 
   return (
@@ -6663,13 +6669,26 @@ function CombatScreenView({
         </>
       ) : null}
       {cardFlights.map((flight) => (
-        <div
-          className={`card-flight card-flight--${flight.destination} card-flight--${viewer.character}`}
-          key={flight.beat}
-          aria-hidden="true"
-          inert
-        >
-          <Card card={flight.card} playable={false} />
+        <div key={flight.beat} className={`card-flight-effect card-flight--${viewer.character}`} aria-hidden="true" inert>
+          {flight.destination !== 'stage' ? <svg className="card-flight-trail" width="100%" height="100%">
+            <defs><filter id={`${flightFilterId}-${flight.beat}`} x="-50%" y="-50%" width="200%" height="200%" colorInterpolationFilters="sRGB">
+              <feTurbulence type="fractalNoise" baseFrequency="0.025 0.045" numOctaves="3" seed={flight.beat % 7 + 1} result="noise" />
+              <feDisplacementMap in="SourceGraphic" in2="noise" scale="32" xChannelSelector="R" yChannelSelector="G" result="distorted" />
+              <feGaussianBlur in="distorted" stdDeviation="3" result="soft" />
+              <feColorMatrix in="noise" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1.6 0 0 0 -0.35" result="smokeMask" />
+              <feComposite in="soft" in2="smokeMask" operator="in" />
+            </filter></defs>
+            <g filter={`url(#${flightFilterId}-${flight.beat})`}>
+              <path className="card-flight-trail__glow" d={flight.trailPath} pathLength="1" />
+              <path className="card-flight-trail__core" d={flight.trailPath} pathLength="1" />
+            </g>
+          </svg> : null}
+          {!flight.landed ? <div
+            className={`card-flight card-flight--${flight.destination} card-flight--${viewer.character}`}
+            style={{ offsetPath: `path('${flight.path}')`, '--flight-hold': flight.hold } as CSSProperties}
+          >
+            <Card card={flight.card} playable={false} />
+          </div> : null}
         </div>
       ))}
     </div>

@@ -6056,7 +6056,7 @@ await page.mouse.up()
 await page.waitForFunction(() => document.querySelector('.card-flight--exhaust'))
 const exhaustFlight = await page.locator('.card-flight--exhaust').evaluate((flight) => ({
   childAnimation: getComputedStyle(flight.querySelector('.card')).animationName,
-  trailAnimation: getComputedStyle(flight, '::before').animationName,
+  trailAnimation: getComputedStyle(flight.parentElement.querySelector('.card-flight-trail path')).animationName,
   traceColor: getComputedStyle(flight).getPropertyValue('--flight-trace').trim(),
   countInFlight: document.querySelector('[data-pile="exhaust"] .pile__count')?.textContent,
 }))

@@ -121,6 +121,15 @@ try {
   await page.keyboard.press('Shift+Tab')
   assert(await page.getByRole('button', { name: 'Skip', exact: true }).evaluate((button) => document.activeElement === button),
     'Shift+Tab escaped behind the initially focused Card Reward dialog')
+  const skip = page.getByRole('button', { name: 'Skip', exact: true })
+  await page.mouse.move(5, 5)
+  await skip.evaluate((button) => button.blur())
+  const skipBackground = await skip.evaluate((button) => getComputedStyle(button).backgroundImage)
+  await skip.hover()
+  await page.waitForTimeout(180)
+  assert.equal(await skip.evaluate((button) => getComputedStyle(button).backgroundImage), skipBackground,
+    'Skip changes color on hover instead of smoothly brightening')
+  await page.screenshot({ path: join(out, 'desktop-card-skip-hover.png') })
   const card = page.locator('.reward-screen__cards .card').first()
   const resting = await card.boundingBox()
   await card.hover()
