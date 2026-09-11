@@ -28,7 +28,7 @@ import { PotionTooltipAnchor } from "./PotionIcon.tsx";
 import { useReducedEffects } from "./combat-screen/hooks.ts";
 import { treasureHandPath, treasurePlayerColor } from "./TreasureEffects.tsx";
 import { ItemImage } from "./ItemImage.tsx";
-import { RewardItem } from "./RewardScreen.tsx";
+import { ItemLootChoice, RewardItem } from "./RewardScreen.tsx";
 import { CardRewardPicker } from "./CardRewardPicker.tsx";
 import type { ActionOutcome } from "../multiplayer/useRoomSession.ts";
 
@@ -628,12 +628,10 @@ function RelicRoomScreen({
   sapphireAvailable = false,
 }: Props & { room: RelicRewardState }) {
   const reducedMotion = useReducedEffects();
-  const touchInput = useHoverUnavailable();
   const openingId = useId();
   const keyboardOpening = useRef(false);
   const [opened, setOpened] = useState(Object.keys(room.decisions).length > 0);
   const [playOpening, setPlayOpening] = useState(false);
-  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; slot: number } | null>(null);
   const player =
     players.find((candidate) => candidate.id === viewerId) ?? players[0]!;
   const relic = room.offers[player.id];
@@ -644,8 +642,9 @@ function RelicRoomScreen({
   const firstSharedOffer = room.sharedOffers?.findIndex(
     (id, index) => Boolean(id) && !Object.values(room.decisions).includes(index),
   ) ?? -1;
+  const canChooseSapphire = room.kind === "treasure" && sapphireAvailable;
   const automaticSkip = decided === undefined && (room.sharedOffers ? firstSharedOffer < 0 : !relic) &&
-    !(sapphireAvailable && fullReward && Object.values(room.decisions).every((choice) => choice === "sapphire"));
+    !(canChooseSapphire && fullReward && Object.values(room.decisions).every((choice) => choice === "sapphire"));
   const automaticSkipKey = `${room.kind}/${player.id}/${JSON.stringify(room.offers)}/${JSON.stringify(room.sharedOffers)}/${JSON.stringify(room.decisions)}`;
   const automaticSkipSent = useRef("");
   const [automaticSkipRetry, setAutomaticSkipRetry] = useState(0);
@@ -677,6 +676,17 @@ function RelicRoomScreen({
   useEffect(() => {
     if (decided === undefined && (!opened || keyboardOpening.current)) firstAction.current?.focus();
   }, [decided, firstSharedOffer, player.id, relic, opened]);
+  if (room.kind === "elite") return <section className="reward-screen reward-screen--loot" aria-label="Elite loot">
+    <h2 className="reward-screen__title">Loot!</h2>
+    <div className="reward-screen__players"><div className="reward-screen__player">
+      {(room.sharedOffers ?? [relic]).map((id, index) => id ? <ItemLootChoice key={`${index}-${id}`} kind="relic" id={id}
+        disabled={decided !== undefined || Boolean(room.sharedOffers && Object.values(room.decisions).includes(index))}
+        confirmLabel="claim this relic" onClick={() => onRelic(player.id, room.sharedOffers ? index : "take")} /> : null)}
+      {decided !== undefined ? <p role="status">Choice locked. Waiting for the party…</p>
+        : automaticSkip ? <p role="status">No relic remains · skipping automatically…</p> : null}
+    </div></div>
+    {decided === undefined && !automaticSkip ? <button type="button" className="reward-screen__skip" onClick={() => onRelic(player.id, "skip")}>Skip</button> : null}
+  </section>;
   return (
     <section
       className="room-stage treasure-stage"
@@ -684,11 +694,11 @@ function RelicRoomScreen({
     >
       <div className="treasure-scene">
       <div className="room-banner" data-visible={opened}>
-        <span className="visually-hidden">{room.kind === "elite" ? "Elite reward" : "Treasure room"}</span>
+        <span className="visually-hidden">Treasure room</span>
         <h2 id="treasure-title">Choose the Relic YOU Want!</h2>
         <p>
           {room.sharedOffers ? "Each player chooses one relic from the chest." : "Every player resolves their own face-up relic."}
-          {sapphireAvailable
+          {canChooseSapphire
             ? " The Sapphire Key requires everyone to skip."
             : ""}
         </p>
@@ -713,8 +723,6 @@ function RelicRoomScreen({
                   data-treasure-slot={room.sharedOffers ? index : ownerId} className="treasure-offer__relic"
                   aria-label={`${relicDef(id).name}. ${relicDef(id).text}`}
                   aria-disabled={!canTake}
-                  onMouseEnter={(event) => { if (canTake && !touchInput) { const rect = event.currentTarget.getBoundingClientRect(); setHoverPoint({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, slot: index }); } }}
-                  onMouseLeave={() => setHoverPoint(null)}
                   onClick={() => { if (canTake) onRelic(player.id, room.sharedOffers ? index : "take"); }}>
                   <ItemImage kind="relic" id={id} />
                 </button>
@@ -740,7 +748,7 @@ function RelicRoomScreen({
         >
           Skip
         </button> : <p role="status">No Relic or Sapphire choice remains · skipping automatically…</p>}
-        {sapphireAvailable ? (
+        {canChooseSapphire ? (
           <button
             type="button"
             disabled={!fullReward || decided !== undefined}
@@ -750,7 +758,6 @@ function RelicRoomScreen({
           </button>
         ) : null}
       </div> : null}
-      {hoverPoint && decided === undefined && !reducedMotion && !(room.sharedOffers && Object.values(room.decisions).includes(hoverPoint.slot)) ? createPortal(<div className="sts-scope treasure-claims" aria-hidden="true"><div className={`treasure-claim treasure-preview treasure-claim--${Math.max(0, room.playerIds.indexOf(player.id)) % 4}`} style={{ left: hoverPoint.x, top: hoverPoint.y }}><img className="treasure-claim__hand" src={treasureHandPath(player.character)} alt="" /></div></div>, document.body) : null}
       {decided !== undefined ? (
         <p className="treasure-status" role="status">Choice locked. Waiting for the party…</p>
       ) : null}

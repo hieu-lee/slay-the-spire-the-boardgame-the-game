@@ -33,11 +33,16 @@
   justify-content: flex-end;
 }
 
+.combat__actions:has(.start-turn-order) {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
 .start-turn-order {
-  position: fixed;
+  position: relative;
+  flex: 0 0 auto;
+  align-self: center;
   z-index: 59;
-  top: 5rem;
-  right: 1rem;
   max-width: 13rem;
   text-align: right;
   color: var(--ink-dim);

@@ -106,6 +106,7 @@ export type CardFlight = {
   card: CardInstance
   destination: ReturnType<typeof cardMotionDestination>
   path: string
+  trailBounds: import('./card-flight.ts').TrailBounds
   trailPath: string
   hold: string
   landed?: boolean

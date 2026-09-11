@@ -51,6 +51,7 @@ try {
           assert.match(await page.locator('.potion-tip:visible').innerText(), /Tap again to take this relic/i)
           assert.equal(await page.locator('.treasure-claim:not(.treasure-preview)').count(), 0)
         }
+        assert.equal(await page.locator('.treasure-claim').count(), 0, 'No hover hand')
         await page.screenshot({ path: `${output}/${engineName}-${name}-hover.png` })
         if (name === 'horizontal-phone') await page.locator('[data-treasure-slot="0"]').tap()
         else await page.locator('[data-treasure-slot="0"]').click()
@@ -78,7 +79,7 @@ try {
           await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), fresh)
           await page.getByRole('button', { name: 'Open treasure chest', exact: true }).click()
           await page.locator('[data-treasure-slot="0"]').hover()
-          await page.locator('.treasure-preview').waitFor({ state: 'attached' })
+          assert.equal(await page.locator('.treasure-claim').count(), 0, 'Hover must only show details, never play a reach')
           await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), chooseRelicReward(fresh, 'p2', 0))
           await page.locator('.treasure-preview').waitFor({ state: 'detached' })
           await page.locator('.potion-tip:visible').waitFor({ state: 'detached' })
@@ -120,6 +121,24 @@ try {
             await art.evaluate((image) => image.decode())
           }
           await page.waitForFunction(() => !document.querySelector('.treasure-claim:not(.treasure-preview)'))
+        }
+        // Elite relics use the loot sheet, including shared-choice variants.
+        for (const shared of [false, true]) {
+          const elite = fixture(shared)
+          elite.roomState.kind = 'elite'
+          await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), elite)
+          await page.getByRole('heading', { name: 'Loot!', exact: true }).waitFor()
+          assert.equal(await page.locator('.treasure-chest').count(), 0)
+          assert.equal(await page.locator('.loot-choice').count(), shared ? 4 : 1)
+          const item = page.locator('.loot-choice').first()
+          if (name === 'horizontal-phone') {
+            await item.tap()
+            assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().roomState.decisions), {})
+            await item.tap()
+          } else await item.click()
+          await page.waitForFunction(() => window.__STS_DEBUG__.getRun().roomState.decisions.p1 !== undefined)
+          assert.equal(await page.locator('.treasure-claim').count(), 0)
+          await page.screenshot({ path: `${output}/${engineName}-${name}-elite-${shared}.png` })
         }
         if (page.video()) console.log(`Video: ${await page.video().path()}`)
         await context.close()

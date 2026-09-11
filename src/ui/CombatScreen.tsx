@@ -1,4 +1,4 @@
-import { SmokeTrail } from './combat-screen/SmokeTrail.tsx'
+import { SmokeTrail, warmSmokeTrails } from './combat-screen/SmokeTrail.tsx'
 import type { CSSProperties } from 'react'
 import { cardFlightPath } from './combat-screen/card-flight.ts'
 // The combat screen: the board, the hand, and every prompt a fight puts up.
@@ -543,6 +543,13 @@ function CombatScreenView({
   }
   const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
+  useEffect(() => {
+    if (reducedMotion || !viewer) return
+    let cancel = warmSmokeTrails(viewer.character)
+    const resize = () => { cancel(); cancel = warmSmokeTrails(viewer.character) }
+    window.addEventListener('resize', resize)
+    return () => { cancel(); window.removeEventListener('resize', resize) }
+  }, [viewer?.character, reducedMotion])
   const [characterAttackBlobs, setCharacterAttackBlobs] = useState<Map<string, Blob>>(() => new Map())
   const characterAttackAssets = prefersReducedMotion ? '' : [...new Set(state.players.filter((player) => !player.dead).flatMap((player) =>
     player.character === 'hexaghost'
@@ -6670,7 +6677,7 @@ function CombatScreenView({
       ) : null}
       {cardFlights.map((flight) => (
         <div key={flight.beat} className={`card-flight-effect card-flight--${viewer.character}`} aria-hidden="true" inert>
-          {flight.destination !== 'stage' ? <SmokeTrail path={flight.trailPath} /> : null}
+          {flight.destination !== 'stage' ? <SmokeTrail path={flight.trailPath} bounds={flight.trailBounds} /> : null}
           {!flight.landed ? <div
             className={`card-flight card-flight--${flight.destination} card-flight--${viewer.character}`}
             style={{ offsetPath: `path('${flight.path}')`, '--flight-hold': flight.hold } as CSSProperties}

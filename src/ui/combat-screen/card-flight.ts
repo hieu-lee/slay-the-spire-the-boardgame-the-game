@@ -1,3 +1,5 @@
+export type TrailBounds = { x: number; y: number; width: number; height: number }
+
 /** Snapshot the visible pile, never the private cards inside it. */
 export function cardFlightPath(destination: 'draw' | 'discard' | 'exhaust' | 'stage') {
   const x = innerWidth / 2
@@ -11,5 +13,6 @@ export function cardFlightPath(destination: 'draw' | 'discard' | 'exhaust' | 'st
   const path = `M ${x} ${handY} L ${x} ${stageY} ${curve}`
   const measure = document.createElementNS('http://www.w3.org/2000/svg', 'path')
   measure.setAttribute('d', path)
-  return { path, trailPath, hold: `${Math.abs(handY - stageY) / measure.getTotalLength() * 100}%` }
+  const trailBounds: TrailBounds = { x: Math.floor(Math.min(x, endX) - 64), y: Math.floor(Math.min(stageY - 90, endY) - 64), width: Math.ceil(Math.abs(endX - x) + 128), height: Math.ceil(Math.max(stageY, endY) - Math.min(stageY - 90, endY) + 128) }
+  return { path, trailPath, trailBounds, hold: `${Math.abs(handY - stageY) / measure.getTotalLength() * 100}%` }
 }

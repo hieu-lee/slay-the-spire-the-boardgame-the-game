@@ -156,10 +156,8 @@
 @keyframes treasure-depart { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
 .sts-scope .treasure-claim__hand--reach { animation: treasure-reaching-pose 1400ms steps(1) both; }
 .sts-scope .treasure-claim__hand--grip { animation: treasure-gripping-pose 1400ms steps(1) both; }
-.sts-scope .treasure-preview { animation: treasure-point-in 220ms ease-out both; }
 @keyframes treasure-reaching-pose { 0% { opacity: 1; } 42%, 100% { opacity: 0; } }
 @keyframes treasure-gripping-pose { 0% { opacity: 0; } 42%, 100% { opacity: 1; } }
-@keyframes treasure-point-in { from { opacity: 0; transform: translate(var(--reach-x), var(--reach-y)); } to { opacity: 1; transform: translate(0, 0); } }
 .sts-scope .treasure-scene:has(.treasure-open:hover) .treasure-chest,
 .sts-scope .treasure-scene:has(.treasure-open:focus-visible) .treasure-chest {
   filter: drop-shadow(3px 0 0 #fff8df) drop-shadow(-3px 0 0 #fff8df) drop-shadow(0 3px 0 #fff8df) drop-shadow(0 -3px 0 #fff8df);

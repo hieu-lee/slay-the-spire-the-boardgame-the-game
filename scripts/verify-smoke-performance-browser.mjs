@@ -22,9 +22,17 @@ try {
     new MutationObserver(() => {
       if (window.smokeReadyMs === undefined && host.querySelector('[data-texture-ready="true"]')) window.smokeReadyMs = performance.now() - window.smokeStarted
     }).observe(host, { childList: true, subtree: true, attributes: true })
+    let previousFrame
+    function monitor(time) {
+      if (previousFrame !== undefined && window.smokeStarted && time - window.smokeStarted < 650) window.startupGaps.push(time - previousFrame)
+      previousFrame = time
+      requestAnimationFrame(monitor)
+    }
+    requestAnimationFrame(monitor)
     window.mountSmoke = key => {
+      window.startupGaps = []
       window.smokeStarted = performance.now(); window.smokeReadyMs = undefined
-      root.render(React.createElement(SmokeTrail, { path: 'M 720 387 Q 1330 297 1330 860', key }))
+      root.render(React.createElement(SmokeTrail, { path: 'M 720 387 Q 1330 297 1330 860', bounds: { x: 656, y: 233, width: 738, height: 691 }, key }))
     }
    })
    results[name] = []
@@ -38,16 +46,17 @@ try {
      function sample(time) {
       start ??= time
       if (trail.dataset.textureReady === 'true') readyAt ??= time-start
-      if (previous !== undefined && time-start>650 && time-start<1100) gaps.push(time-previous)
+      if (previous !== undefined && time-start<1100) gaps.push(time-previous)
       previous=time
       progress.push(1-parseFloat(getComputedStyle(reveal).strokeDashoffset))
       if (time-start<1800) requestAnimationFrame(sample)
-      else { const sorted=[...gaps].sort((a,b)=>a-b); resolve({ phase, readyAt: window.smokeReadyMs, p95: sorted[Math.floor(sorted.length*.95)], max:Math.max(...gaps), maxRevealStep:Math.max(...progress.slice(1).map((p,i)=>p-progress[i])) }) }
+      else { const sorted=[...gaps].sort((a,b)=>a-b); resolve({ phase, readyAt: window.smokeReadyMs, startupMax: Math.max(...window.startupGaps), p95: sorted[Math.floor(sorted.length*.95)], max:Math.max(...gaps), maxRevealStep:Math.max(...progress.slice(1).map((p,i)=>p-progress[i])) }) }
      }
      const phase = trail.dataset.textureReady === 'true' ? 'ready' : 'preparing'
      requestAnimationFrame(sample)
     }))
     assert(metrics.readyAt < 500, `${name} ${phase}: texture missed preparation window ${JSON.stringify(metrics)}`)
+    assert(metrics.startupMax < 60, `${name} ${phase}: first-render stall ${JSON.stringify(metrics)}`)
     assert(metrics.p95 < 50, `${name} ${phase}: dropped frames ${JSON.stringify(metrics)}`)
     assert(metrics.maxRevealStep < .3, `${name} ${phase}: trail jumped ${JSON.stringify(metrics)}`)
     results[name].push(metrics)

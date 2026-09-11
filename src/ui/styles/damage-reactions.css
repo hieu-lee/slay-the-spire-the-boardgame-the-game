@@ -488,9 +488,6 @@
   .combat__end-turn { top: 3.8rem; right: 1rem; bottom: auto; }
   /* Summoned parties raise their owner, so use the reserved bottom HUD lane. */
   .combat:has(.slime-party) .combat__end-turn { top: auto; right: 10rem; bottom: 1rem; }
-  .start-turn-order {
-    top: 7rem;
-  }
   .start-turn-order[open] > ol {
     max-height: calc(100dvh - 10rem);
   }

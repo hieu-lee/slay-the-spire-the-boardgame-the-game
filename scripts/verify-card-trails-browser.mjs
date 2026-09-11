@@ -14,10 +14,12 @@ const errors = []
 const recording = process.argv.includes('--record')
 try {
   for (const [engineName, engine] of [['chromium', chromium], ['webkit', webkit]]) {
+    if (process.env.TRAIL_ENGINE && process.env.TRAIL_ENGINE !== engineName) continue
     const browser = await engine.launch()
     try {
       if (recording && engineName !== 'chromium') continue
       for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 844, height: 390 }]]) {
+        if (process.env.TRAIL_SCREEN && process.env.TRAIL_SCREEN !== screen) continue
         if (recording && screen !== 'desktop') continue
         const context = await browser.newContext({ viewport, hasTouch: screen === 'phone', ...(recording ? { recordVideo: { dir: out, size: viewport } } : {}) })
         const page = await context.newPage()
@@ -60,6 +62,36 @@ try {
         if (screen === 'phone') await page.locator('.room--reachable').first().click()
         await page.locator('.combat').waitFor()
         const baseline = await page.evaluate(() => window.__STS_DEBUG__.getRun())
+        if (!recording) {
+          await page.evaluate(baseline => {
+            const run = structuredClone(baseline)
+            run.combat.enemies = [run.combat.enemies[0], { ...run.combat.enemies[0], uid: 'second-order-target', row: 1 }]
+            Object.assign(run.combat, { phase: 'start', turn: 2, die: 1, startTurnProgress: undefined, pendingTriggers: [] })
+            Object.assign(run.combat.players[0], { character: 'silent', shivs: 3, relics: [], powers: [
+              { uid: 'order-demon', defId: 'demon_form', upgraded: false },
+              { uid: 'order-blades', defId: 'infinite_blades', upgraded: true },
+              { uid: 'order-fumes', defId: 'noxious_fumes', upgraded: false },
+            ] })
+            window.__STS_DEBUG__.setRun(run)
+          }, baseline)
+          await page.locator('.start-turn-order > summary').waitFor()
+          await page.locator('.start-turn-order > summary').click()
+          await page.locator('.start-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
+          await page.locator('.start-turn-order > summary').click()
+          await page.locator('.enemy__hit-area').first().click()
+          await page.screenshot({ path: `${out}/${engineName}-${screen}-start-controls-closed.png` })
+          const reset = page.getByRole('button', { name: 'Reset start choices', exact: true })
+          await reset.waitFor()
+          const summary = await page.locator('.start-turn-order > summary').boundingBox()
+          const button = await reset.boundingBox()
+          assert(summary.x + summary.width <= button.x || button.x + button.width <= summary.x || summary.y + summary.height <= button.y || button.y + button.height <= summary.y, 'Reset and order controls must not overlap')
+          await page.locator('.start-turn-order > summary').click()
+          const order = page.locator('.start-turn-order > ol')
+          assert(await order.isVisible())
+          const first = order.getByRole('button').nth(1)
+          await first.click()
+          await page.screenshot({ path: `${out}/${engineName}-${screen}-start-controls.png` })
+        }
         const cases = [['silent','defend_silent','discard'], ['ironclad','flex','exhaust'], ['watcher','tantrum','draw']]
         if (engineName === 'chromium' && screen === 'desktop') for (const character of ['defect','hexaghost','slime_boss','guardian','hermit']) cases.push([character, 'defend_silent', 'discard'])
         for (const [character, card, destination] of cases) {
@@ -82,7 +114,11 @@ try {
           await target.click()
           if (destination === 'draw') await page.locator('.enemy__hit-area').first().click()
           const flight = page.locator(`.card-flight--${destination}.card-flight`)
-          await flight.waitFor()
+          await flight.waitFor({ state: 'attached', timeout: 5000 }).catch(async error => {
+            await page.screenshot({ path: `${out}/${engineName}-${screen}-${character}-failure.png` })
+            console.log(await page.evaluate(() => ({ phase: window.__STS_DEBUG__.getState().phase, prompt: document.querySelector('.prompt')?.textContent, hand: window.__STS_DEBUG__.getState().players[0].hand.map(c => c.defId) })))
+            throw error
+          })
           assert.equal(await flight.evaluate(el => getComputedStyle(el).getPropertyValue('--flight-trace').trim()), colors[character])
           await page.locator('.card-flight-trail[data-texture-ready="true"]').waitFor()
           assert.equal(await page.locator('.card-flight-effect filter').count(), 0, 'No live noise filter during playback')
