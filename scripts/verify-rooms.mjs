@@ -11334,9 +11334,9 @@ check('a shared Relic reward cannot strand a disconnected recipient', () => {
   room.run.roomState = createRelicReward('treasure', room.run.itemDecks, room.run.players)
   const skillUid = room.run.players.find((player) => player.id === a.playerId).deck
     .find((card) => !card.upgraded && CARDS[card.defId]?.type === 'skill').uid
-  apply(room, a.token, { kind: 'relicReward', decision: 'take' })
+  apply(room, a.token, { kind: 'relicReward', decision: 0 })
   markDisconnected(room, a.token)
-  apply(room, b.token, { kind: 'relicReward', decision: 'take' })
+  apply(room, b.token, { kind: 'relicReward', decision: 1 })
   const recipient = room.run.players.find((player) => player.id === a.playerId)
   assert(recipient.deck.find((card) => card.uid === skillUid).upgraded)
   assert(!recipient.relics.some((relic) => relic.pending))

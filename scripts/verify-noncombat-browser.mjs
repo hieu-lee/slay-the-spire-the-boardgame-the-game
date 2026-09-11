@@ -48,7 +48,7 @@ async function setRoom(kind) {
       kind: 'merchant', relics: ['anchor', 'happy_flower', 'akabeko'], potions: ['fire_potion', 'swift_potion', 'blood_potion'], colorless: [],
       cards: Object.fromEntries(run.players.map((player) => [player.id, { choices: player.cardRewards.slice(0, 3), cardsDrawn: player.cardRewards.slice(0, 3), raresDrawn: [] }])), removalUsed: [], purchasedCards: {},
     }
-    else if (roomKind === 'treasure') run.roomState = { kind: 'treasure', offers: Object.fromEntries(run.players.map((player, index) => [player.id, ['anchor', 'happy_flower', 'akabeko', 'lantern'][index]])), playerIds: run.players.map((player) => player.id), decisions: {} }
+    else if (roomKind === 'treasure') run.roomState = { kind: 'treasure', offers: {}, sharedOffers: ['anchor', 'happy_flower', 'akabeko', 'lantern'], playerIds: run.players.map((player) => player.id), decisions: {} }
     else run.roomState = {
       kind: 'event', card: { id: 'big_fish', instanceId: 'browser-big-fish', act: 1, minAscension: 0, requiresColorlessUnlock: false, name: 'Big Fish', scope: 'player', rule: 'Each player chooses a different option.', options: [
         { id: 'banana', label: 'Banana', description: 'Heal 2 HP.', effects: [{ tag: 'heal', amount: 2 }] },
@@ -1931,59 +1931,23 @@ check('leaving the shop returns to the arrival scene and local play waits for ev
 
 await page.evaluate(() => window.__STS_DEBUG__.setViewer('p1'))
 await setRoom('treasure')
+await page.locator('.treasure-chest').waitFor()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  run.roomState.offers.p1 = 'fuel_canister'
+  run.roomState.sharedOffers[0] = 'fuel_canister'
   debug.setRun(run)
 })
-await page.getByRole('heading', { name: 'Choose a Relic' }).waitFor()
+await page.getByRole('button', { name: 'Open treasure chest', exact: true }).focus()
+await page.keyboard.press('Enter')
+await page.getByRole('heading', { name: 'Choose the Relic YOU Want!' }).waitFor()
+await page.locator('.potion-tip:visible').waitFor()
 await page.screenshot({ path: join(outDir, 'treasure-4p-desktop.png'), fullPage: true })
-const treasureName = await page.locator('.treasure-relic > strong').textContent()
-const takeRelicButtons = await page.getByRole('button', { name: /Take relic/ }).count()
-// `public/assets/cards/` is gitignored, so on a fresh checkout `ItemImage`'s
-// GENERATED face is the only renderer a relic or potion card ever gets. Treasure
-// is where that face is still drawn at a size a player reads it at — the shop and
-// the reward rows draw bare icons now, and the reward "Replace" keys draw a 1.4rem
-// icon, which is far too small to prove anything about a card face.
-const treasureFallback = page.locator('.treasure-relic > .item-card-fallback')
-if (await treasureFallback.count() === 0) {
-  await page.locator('.treasure-relic > .item-card-image')
-    .evaluate((image) => { image.src = '/missing-item-card.webp' })
-}
-await treasureFallback.waitFor()
-const treasureFallbackShape = await treasureFallback.evaluate((node) => ({
-  name: node.querySelector('strong')?.textContent?.trim() ?? '',
-  kind: node.querySelector('small')?.textContent?.trim() ?? '',
-  rules: node.querySelector('span')?.textContent?.trim() ?? '',
-  icon: node.querySelector('.item-card-image')?.getAttribute('src') ?? '',
-  hidden: node.getAttribute('aria-hidden'),
-  width: Math.round(node.getBoundingClientRect().width),
-  iconContained: (() => {
-    const card = node.getBoundingClientRect()
-    const icon = node.querySelector('.item-card-image')?.getBoundingClientRect()
-    return Boolean(icon && icon.width > 0 && icon.height > 0 &&
-      icon.left >= card.left && icon.right <= card.right && icon.top >= card.top && icon.bottom <= card.bottom)
-  })(),
-}))
-check('Treasure gives the active seat one dominant face-up relic choice', () => {
-  assertEqual(treasureName, 'Fuel Canister')
-  assertEqual(takeRelicButtons, 1)
-})
-check('a missing item scan falls back to a generated card face that still prints the item', () => {
-  assert(treasureFallbackShape.name.length > 0, 'generated face printed no name')
-  assert(treasureFallbackShape.rules.length > 0, 'generated face printed no rules')
-  assertEqual(treasureFallbackShape.kind, 'Relic')
-  assert(!/\[[a-z][^\]]*\]/.test(treasureFallbackShape.rules), treasureFallbackShape.rules)
-  assert(treasureFallbackShape.icon.endsWith('/assets/relic-icons/fuel_canister.png'), treasureFallbackShape.icon)
-  assert(treasureFallbackShape.icon.startsWith('/assets/relic-icons/'),
-    `generated face used icon "${treasureFallbackShape.icon}"`)
-  // Drawn at a size the printed text can actually be read at, not as a thumbnail.
-  assert(treasureFallbackShape.width >= 96,
-    `generated face rendered only ${treasureFallbackShape.width}px wide`)
-  assert(treasureFallbackShape.iconContained, 'the real relic icon is clipped inside its fallback card')
-  // The surrounding panel already names the relic, so the drawn face is decorative.
-  assertEqual(treasureFallbackShape.hidden, 'true')
+const treasureDetail = await page.locator('.potion-tip:visible').innerText()
+const treasureOfferCount = await page.locator('.treasure-offer__relic').count()
+check('Treasure shares one relic per player with details on focus', () => {
+  assert(treasureDetail.includes('Fuel Canister'))
+  assertEqual(treasureOfferCount, 4)
 })
 
 await page.evaluate(() => {
@@ -1992,7 +1956,7 @@ await page.evaluate(() => {
   run.roomState = { kind: 'treasure', offers: {}, sharedOffers: ['anchor', 'happy_flower', 'akabeko', 'lantern'], playerIds: run.players.map((player) => player.id), decisions: { [run.players[1].id]: 0 } }
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.activeElement?.textContent?.includes('Happy Flower'))
+await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.includes('Happy Flower'))
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

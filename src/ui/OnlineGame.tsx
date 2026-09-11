@@ -1,3 +1,4 @@
+import { TreasureEffects } from "./TreasureEffects.tsx"
 import { savedProfile } from '../profile.ts'
 import { PlayerTitle } from './PlayerTitle.tsx'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -986,6 +987,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           second `role="status"`. The overlay is deliberately NOT keyed — see
           CardMorph, which keys its inner stage instead so the veil survives a
           queue. */}
+      <TreasureEffects room={run.roomState?.kind === 'treasure' || run.roomState?.kind === 'elite' ? run.roomState : null}
+        players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
       <CardMorphAnnouncement key={`${snapshot?.run?.campaign.runId ?? ''}:${snapshot?.you.playerId ?? ''}`}
         request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />

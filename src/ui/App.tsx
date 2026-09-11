@@ -1,3 +1,4 @@
+import { TreasureEffects } from "./TreasureEffects.tsx"
 import { PlayerTitle } from './PlayerTitle.tsx'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { orderStartTurnScries, resolveHermitSetupLoad, resolveStartTurnScry, type CombatState } from '../game/combat.ts'
@@ -1064,6 +1065,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
       {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p><div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => { setSeedText(crypto.randomUUID()); setChoosingNextCharacter(true); onClose() }}>Begin next run →</button> : null}</div></section> : null}
 
+      <TreasureEffects room={run.roomState?.kind === 'treasure' || run.roomState?.kind === 'elite' ? run.roomState : null}
+        players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
       {/* `aria-live` rather than `role="status"`: the run already has status
           regions ("Choice locked. Waiting for the party…"), and a second one

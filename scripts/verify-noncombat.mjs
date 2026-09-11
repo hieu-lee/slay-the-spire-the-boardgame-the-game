@@ -234,6 +234,25 @@ check('Sapphire requires every living player to skip the same relic reward', () 
   assert(denied && !denied.sapphire)
 })
 
+check('every treasure room shares one relic per living player regardless of the optional rule', () => {
+  for (const count of [1, 2, 4]) for (const optionalRule of [false, true]) {
+    const party = players(count)
+    const decks = createItemDecks(createRng(6), false)
+    let reward = createRelicReward('treasure', decks, party, optionalRule)
+    assertDeepEqual(reward.offers, {})
+    assertEqual(reward.sharedOffers.length, count)
+    reward = decideRelicReward(reward, 'p1', count - 1)
+    assert(reward)
+    assertEqual(decideRelicReward(reward, 'p1', 0), null)
+    if (count > 1) assertEqual(decideRelicReward(reward, 'p2', count - 1), null)
+  }
+  const party = players(4)
+  party[3].dead = true
+  const reward = createRelicReward('treasure', createItemDecks(createRng(6), false), party)
+  assertEqual(reward.sharedOffers.length, 3)
+  assertEqual(decideRelicReward(reward, 'p4', 0), null)
+})
+
 check('Choose Your Relic assigns each shared offer exactly once, including slot zero', () => {
   const party = players(4)
   const decks = createItemDecks(createRng(6), false)

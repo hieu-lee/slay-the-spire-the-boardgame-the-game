@@ -280,11 +280,12 @@ export function createRelicReward(
   chooseYourRelic = false,
 ): RelicRewardState {
   const playerIds = players.filter((player) => !player.dead).map((player) => player.id)
+  const shared = kind === 'treasure' || chooseYourRelic
   return {
     kind,
-    offers: chooseYourRelic ? {} : Object.fromEntries(playerIds.map((playerId) => [playerId, drawItems(itemDecks.relics, 1)[0] ?? null])),
+    offers: shared ? {} : Object.fromEntries(playerIds.map((playerId) => [playerId, drawItems(itemDecks.relics, 1)[0] ?? null])),
     playerIds,
-    sharedOffers: chooseYourRelic ? drawItems(itemDecks.relics, playerIds.length) : undefined,
+    sharedOffers: shared ? drawItems(itemDecks.relics, playerIds.length) : undefined,
     decisions: {},
   }
 }

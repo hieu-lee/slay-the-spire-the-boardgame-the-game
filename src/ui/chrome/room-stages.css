@@ -13,9 +13,7 @@
   filter: drop-shadow(var(--hard-shadow-lg));
 }
 
-/* `.sts-scope h2` already wins for the two headings, so only these two need
-   naming. */
-.sts-scope .treasure-relic strong,
+/* Room headings inherit Kreon; event choice names need an explicit override. */
 .sts-scope .event-options button strong {
   font-family: 'Kreon', Georgia, serif;
 }

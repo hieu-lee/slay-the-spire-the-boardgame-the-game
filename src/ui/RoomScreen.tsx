@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { CARDS, cardIsCurse } from "../game/cards.ts";
 import { assetPath, enemyImagePath } from "../game/assets.ts";
@@ -24,6 +24,9 @@ import type { Player } from "../game/types.ts";
 import type { EventEffect } from "../game/events.ts";
 import type { RewardSource } from "../game/run.ts";
 import { rewardSourceLabel } from "./reward-source.ts";
+import { PotionTooltipAnchor } from "./PotionIcon.tsx";
+import { useReducedEffects } from "./combat-screen/hooks.ts";
+import { treasureHandPath, treasurePlayerColor } from "./TreasureEffects.tsx";
 import { ItemImage } from "./ItemImage.tsx";
 import { RewardItem } from "./RewardScreen.tsx";
 import { CardRewardPicker } from "./CardRewardPicker.tsx";
@@ -624,6 +627,13 @@ function RelicRoomScreen({
   onRelic,
   sapphireAvailable = false,
 }: Props & { room: RelicRewardState }) {
+  const reducedMotion = useReducedEffects();
+  const touchInput = useHoverUnavailable();
+  const openingId = useId();
+  const keyboardOpening = useRef(false);
+  const [opened, setOpened] = useState(Object.keys(room.decisions).length > 0);
+  const [playOpening, setPlayOpening] = useState(false);
+  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; slot: number } | null>(null);
   const player =
     players.find((candidate) => candidate.id === viewerId) ?? players[0]!;
   const relic = room.offers[player.id];
@@ -665,31 +675,57 @@ function RelicRoomScreen({
   }, [automaticSkip, automaticSkipKey, automaticSkipRetry, player.id]);
   const firstAction = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (decided === undefined) firstAction.current?.focus();
-  }, [decided, firstSharedOffer, player.id, relic]);
+    if (decided === undefined && (!opened || keyboardOpening.current)) firstAction.current?.focus();
+  }, [decided, firstSharedOffer, player.id, relic, opened]);
   return (
     <section
       className="room-stage treasure-stage"
       aria-labelledby="treasure-title"
     >
-      <div className="room-banner">
-        <span>{room.kind === "elite" ? "Elite reward" : "Treasure room"}</span>
-        <h2 id="treasure-title">Choose a Relic</h2>
+      <div className="treasure-scene">
+      <div className="room-banner" data-visible={opened}>
+        <span className="visually-hidden">{room.kind === "elite" ? "Elite reward" : "Treasure room"}</span>
+        <h2 id="treasure-title">Choose the Relic YOU Want!</h2>
         <p>
-          Every player resolves their own face-up relic.
+          {room.sharedOffers ? "Each player chooses one relic from the chest." : "Every player resolves their own face-up relic."}
           {sapphireAvailable
             ? " The Sapphire Key requires everyone to skip."
             : ""}
         </p>
       </div>
-      {room.sharedOffers ? <div className="treasure-shared" aria-label="Shared relic choices">{room.sharedOffers.map((id, index) => <button ref={index === firstSharedOffer ? firstAction : undefined} type="button" disabled={!id || decided !== undefined || Object.values(room.decisions).includes(index)} key={`${id}-${index}`} onClick={() => onRelic(player.id, index)}>{id ? <ItemImage kind="relic" id={id} card /> : <span>✦</span>}<strong>{id ? relicDef(id).name : "Taken"}</strong>{/* A <span>, not the <p> its siblings use: this one is inside a <button>, whose content model is phrasing only. The prose still folds into the button's accessible name, which is the point of putting it there. */}<span className="room-item-text">{id ? relicDef(id).text : ""}</span></button>)}</div> : <div className="treasure-relic">
-        {relic ? <ItemImage kind="relic" id={relic} card /> : <span>✦</span>}
-        <strong>{relic ? relicDef(relic).name : "No relic remains"}</strong>
-        <p className="room-item-text">{relic ? relicDef(relic).text : ""}</p>
-      </div>}
-      <div className="treasure-actions">
+        {[...new Set(players.flatMap((seat) => [treasureHandPath(seat.character), treasureHandPath(seat.character, true)]))].map((href) => <link key={href} rel="preload" as="image" href={href} />)}
+        <img className="treasure-ground" src={assetPath("noncombat/treasure/background.webp")} alt="" />
+        <img className="treasure-chest" src={`${assetPath(`noncombat/treasure/${!opened ? "chest-closed" : reducedMotion || !playOpening ? "chest-open" : "chest-opening"}.webp`)}${playOpening && !reducedMotion ? `?opening=${encodeURIComponent(openingId)}` : ""}`} alt="A vine-covered treasure chest" />
+        {!opened ? <button className="treasure-open" type="button" ref={firstAction} onClick={(event) => { keyboardOpening.current = event.detail === 0; setPlayOpening(true); setOpened(true); }}>Open treasure chest</button> : null}
+        {opened && playOpening && !reducedMotion ? <div className="treasure-coins" aria-hidden="true">{Array.from({ length: 22 }, (_, index) => <img key={index} src={assetPath("noncombat/treasure/coin.webp")} alt="" style={{ "--coin-x": `${Math.sin(index * 2.4) * 190}px`, "--coin-y": `${-100 - index % 5 * 24}px`, "--coin-delay": `${100 + index % 7 * 65}ms` } as CSSProperties} />)}</div> : null}
+        {opened ? <div className="treasure-offers" aria-label={room.sharedOffers ? "Shared relic choices" : "Party relics"}>
+          {(room.sharedOffers ?? room.playerIds.map((id) => room.offers[id])).map((id, index) => {
+            const ownerId = room.playerIds[index]!;
+            const claimedBy = room.sharedOffers
+              ? room.playerIds.find((pid) => room.decisions[pid] === index)
+              : room.decisions[ownerId] === "take" ? ownerId : undefined;
+            const owner = players.find((candidate) => candidate.id === (claimedBy ?? ownerId));
+            const unavailable = room.sharedOffers ? Boolean(claimedBy) : room.decisions[ownerId] !== undefined;
+            const canTake = Boolean(id) && decided === undefined && !unavailable && Boolean(room.sharedOffers || ownerId === player.id);
+            return <div className="treasure-offer" key={`${index}-${id}`} style={{ "--relic-delay": `${index * 100}ms`, "--claim-color": treasurePlayerColor(index) } as CSSProperties}>
+              {id && !claimedBy ? <PotionTooltipAnchor key={id} id={id} name={relicDef(id).name} text={relicDef(id).text} kindLabel="Relic" confirmLabel={canTake ? "take this relic" : undefined} hoverable>
+                <button type="button" ref={canTake && (room.sharedOffers ? index === firstSharedOffer : true) ? firstAction : undefined}
+                  data-treasure-slot={room.sharedOffers ? index : ownerId} className="treasure-offer__relic"
+                  aria-label={`${relicDef(id).name}. ${relicDef(id).text}`}
+                  aria-disabled={!canTake}
+                  onMouseEnter={(event) => { if (canTake && !touchInput) { const rect = event.currentTarget.getBoundingClientRect(); setHoverPoint({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, slot: index }); } }}
+                  onMouseLeave={() => setHoverPoint(null)}
+                  onClick={() => { if (canTake) onRelic(player.id, room.sharedOffers ? index : "take"); }}>
+                  <ItemImage kind="relic" id={id} />
+                </button>
+              </PotionTooltipAnchor> : claimedBy ? <span className="treasure-offer__relic" data-treasure-slot={room.sharedOffers ? index : ownerId} data-taken="true" aria-hidden="true" /> : <span className="treasure-offer__empty">✦</span>}
+              {!room.sharedOffers && !unavailable ? <small>{owner?.name ?? ownerId}</small> : null}
+            </div>;
+          })}
+        </div> : null}
+      </div>
+      {opened ? <div className="treasure-actions">
         {!room.sharedOffers ? <button
-          ref={relic ? firstAction : undefined}
           type="button"
           disabled={!relic || decided !== undefined}
           onClick={() => onRelic(player.id, "take")}
@@ -713,9 +749,10 @@ function RelicRoomScreen({
             ◆ Skip for Sapphire Key
           </button>
         ) : null}
-      </div>
+      </div> : null}
+      {hoverPoint && decided === undefined && !reducedMotion && !(room.sharedOffers && Object.values(room.decisions).includes(hoverPoint.slot)) ? createPortal(<div className="sts-scope treasure-claims" aria-hidden="true"><div className={`treasure-claim treasure-preview treasure-claim--${Math.max(0, room.playerIds.indexOf(player.id)) % 4}`} style={{ left: hoverPoint.x, top: hoverPoint.y }}><img className="treasure-claim__hand" src={treasureHandPath(player.character)} alt="" /></div></div>, document.body) : null}
       {decided !== undefined ? (
-        <p role="status">Choice locked. Waiting for the party…</p>
+        <p className="treasure-status" role="status">Choice locked. Waiting for the party…</p>
       ) : null}
     </section>
   );

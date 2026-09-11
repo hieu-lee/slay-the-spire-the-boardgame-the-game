@@ -2,7 +2,7 @@
    a price, stacked. The key rule in chrome/keys.css centres its children in a
    row, which would lay all four out side by side — so the tiles opt back into a
    column and grow to fit the prose that this change added to them. */
-.sts-scope :is(.merchant-board, .treasure-shared) button:not(.merchant-removal button) {
+.sts-scope .merchant-board button:not(.merchant-removal button) {
   flex-direction: column;
   /* Top-aligned, not centred: the added prose gives neighbouring tiles
      different content heights, and centring each one independently left the
@@ -60,7 +60,7 @@
   }
 }
 
-.sts-scope :is(.merchant-board, .treasure-shared) button .room-item-text {
+.sts-scope .merchant-board button .room-item-text {
   max-width: 100%;
   color: #fff8e4;
   font-size: 0.74rem;

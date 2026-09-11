@@ -1,27 +1,166 @@
-/* The treasure room was rendered in teal and magenta — the only two hues in the
-   build that appear nowhere else in the game. A relic in its chest is bronze on
-   dark, like every other relic. */
-.sts-scope .treasure-relic {
-  padding: 2.4rem 2rem;
-  background:
-    radial-gradient(circle at 50% 42%, rgb(239 200 81 / 0.22), transparent 62%),
-    radial-gradient(circle at 50% 45%, rgb(59 44 26 / 0.95), rgb(16 12 9 / 0.9) 66%, transparent 70%);
+/* Scene assets were extracted from the supplied recording, including its black void. */
+.sts-scope .treasure-stage {
+  position: relative;
+  isolation: isolate;
+  padding: 0;
+  min-height: 0;
+  background: #000;
+  text-align: center;
+  overflow: auto;
+  clip-path: none;
+  filter: none;
 }
-
-.sts-scope .treasure-relic > span,
-.sts-scope .treasure-shared button > span {
-  color: var(--sts-gold);
-  text-shadow: 0 0 1.6rem rgb(239 200 81 / 0.75);
+.sts-scope .treasure-scene {
+  position: relative;
+  width: min(100%, 1200px);
+  height: min(70vh, 750px);
+  min-height: 300px;
+  margin: auto;
 }
-
-.sts-scope .treasure-relic > strong { color: var(--cream); text-shadow: 3px 3px 0 rgb(0 0 0 / 0.55); }
-.sts-scope .treasure-relic p { color: var(--tip-body); }
-
-.sts-scope .treasure-shared button {
-  border: 1px solid var(--trim-dim);
-  border-radius: 0;
-  background-color: var(--slate);
-  background-image:
-    radial-gradient(circle at 50% 34%, rgb(239 200 81 / 0.16), transparent 60%),
-    linear-gradient(180deg, var(--slate-lit), var(--slate) 46%, var(--slate-dim));
+.sts-scope .treasure-ground, .sts-scope .treasure-chest {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.sts-scope .treasure-stage .room-banner {
+  position: absolute;
+  top: 16%;
+  left: 27%;
+  width: 49%;
+  height: 15%;
+  max-width: none;
+  z-index: 4;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  background: url('/assets/noncombat/treasure/banner.webp') center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+.sts-scope .treasure-stage .room-banner[data-visible='false'] { visibility: hidden; }
+.sts-scope .treasure-stage .room-banner h2 {
+  margin: 0 6% 2%;
+  font-size: clamp(17px, 2.3vw, 30px);
+  color: #f6edcb;
+  text-shadow: 2px 2px 0 #51462f, -1px -1px 0 #51462f;
+}
+.sts-scope .treasure-stage .room-banner p { display: none; }
+.sts-scope .treasure-open {
+  position: absolute;
+  left: 29%; top: 33%; width: 47%; height: 51%;
+  z-index: 3;
+  cursor: pointer;
+  color: #eadbb1;
+  background: transparent;
+  border: 0;
+  font-size: 0;
+}
+.sts-scope .treasure-open:focus-visible { outline: none; }
+.sts-scope .treasure-offers { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.sts-scope .treasure-offer { position: absolute; width: 100px; transform: translate(-50%, -50%); text-align: center; }
+.sts-scope .treasure-offer:nth-child(1) { left: 36%; top: 53%; }
+.sts-scope .treasure-offer:nth-child(2) { left: 49%; top: 42%; }
+.sts-scope .treasure-offer:nth-child(3) { left: 60%; top: 67%; }
+.sts-scope .treasure-offer:nth-child(4) { left: 74%; top: 53%; }
+.sts-scope .treasure-offer:only-child { left: 54%; top: 52%; }
+.sts-scope .treasure-offer__relic {
+  display: grid; place-items: center; width: 88px; height: 88px; margin: auto;
+  padding: 10px; border: 0; background: none; cursor: pointer; pointer-events: auto;
+}
+.sts-scope .treasure-offer__relic .item-icon-image {
+  width: 64px; height: 64px; object-fit: contain;
+  filter: drop-shadow(0 0 12px #69c9d7aa);
+  animation: treasure-reveal 500ms ease-out both;
+  animation-delay: calc(350ms + var(--relic-delay));
+}
+.sts-scope .treasure-offer__relic:hover .item-icon-image { filter: drop-shadow(0 0 16px #a7f6ff); }
+.sts-scope .treasure-offer__relic:focus-visible { outline: 2px solid #b0e5e8; border-radius: 50%; }
+.sts-scope .treasure-offer__relic[aria-disabled='true'] { cursor: default; }
+.sts-scope .treasure-offer__relic[data-taken='true'] { pointer-events: none; }
+.sts-scope .treasure-offer small { color: var(--claim-color); font-size: 12px; text-shadow: 0 2px 3px #000; }
+.sts-scope .treasure-offer__empty { height: 88px; display: grid; place-items: center; }
+.sts-scope .treasure-actions { position: relative; z-index: 4; padding: 0 12px 12px; margin: 0; }
+.sts-scope .treasure-status { margin: 0; padding-bottom: 10px; color: #b9ad89; }
+.sts-scope .treasure-coins { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+.sts-scope .treasure-coins img {
+  position: absolute; left: 54%; top: 58%; width: 23px; height: 23px;
+  animation: treasure-coin 1200ms ease-out both; animation-delay: var(--coin-delay);
+}
+@keyframes treasure-coin {
+  0% { opacity: 0; transform: translate(0, 0) scale(.5); }
+  15% { opacity: 1; }
+  55% { opacity: 1; transform: translate(var(--coin-x), var(--coin-y)) rotate(140deg); }
+  100% { opacity: 0; transform: translate(calc(var(--coin-x) * 1.3), 90px) rotate(300deg) scale(.5); }
+}
+.sts-scope .treasure-claims, .sts-scope.treasure-claims {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  pointer-events: none;
+  overflow: clip;
+}
+.sts-scope .treasure-claim {
+  position: absolute;
+  width: 0;
+  height: 0;
+  --reach-x: 0px;
+  --reach-y: 100vh;
+  --hand-angle: 0deg;
+  animation: treasure-grab 1400ms cubic-bezier(.25,.7,.3,1) both;
+}
+.sts-scope .treasure-claim--1 { --reach-x: -100vw; --reach-y: 0px; --hand-angle: 90deg; }
+.sts-scope .treasure-claim--2 { --reach-x: 100vw; --reach-y: 0px; --hand-angle: -90deg; }
+.sts-scope .treasure-claim--3 { --reach-x: 0px; --reach-y: -100vh; --hand-angle: 180deg; }
+.sts-scope .treasure-claim__hand {
+  position: absolute;
+  width: clamp(250px, 32vh, 350px);
+  max-width: none;
+  height: auto;
+  transform-origin: 50% 16%;
+  transform: translate(-50%, -16%) rotate(var(--hand-angle));
+  filter: drop-shadow(0 5px 8px #0008);
+}
+.sts-scope .treasure-claim__relic { position: absolute; left: -32px; top: -32px; animation: treasure-held 1400ms linear both; }
+.sts-scope .treasure-claim__relic .item-icon-image { width: 64px; height: 64px; object-fit: contain; filter: drop-shadow(0 0 10px #ffdc79); }
+@keyframes treasure-reveal { from { opacity: 0; transform: translateY(100px) scale(.3); } to { opacity: 1; transform: none; } }
+@keyframes treasure-grab {
+  0% { opacity: 0; transform: translate(var(--reach-x), var(--reach-y)); }
+  30%, 52% { opacity: 1; transform: translate(0, 0); }
+  100% { opacity: 0; transform: translate(var(--reach-x), var(--reach-y)); }
+}
+@keyframes treasure-held { 0%, 27% { opacity: 0; } 30%, 100% { opacity: 1; } }
+@media (max-height: 500px) and (orientation: landscape) {
+  .sts-scope .treasure-scene { height: 235px; min-height: 0; width: min(100%, 630px); }
+  .sts-scope .treasure-stage .room-banner h2 { font-size: 17px; }
+  .sts-scope .treasure-offer__relic { width: 48px; height: 48px; padding: 4px; }
+  .sts-scope .treasure-offer__relic .item-icon-image { width: 40px; height: 40px; }
+  .sts-scope .treasure-offer small { font-size: 10px; }
+  .sts-scope .treasure-actions button { min-height: 32px; font-size: 13px; }
+  .sts-scope .treasure-claim__hand { width: 180px; height: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sts-scope .treasure-offer .item-icon-image { animation: none; }
+}
+:root[data-reduced-motion='true'] .sts-scope .treasure-offer .item-icon-image { animation: none; }
+.sts-scope .treasure-departure {
+  position: fixed;
+  background: #000;
+  animation: treasure-depart 1400ms linear both;
+}
+.sts-scope .treasure-departure > img { position: fixed; object-fit: contain; }
+.sts-scope .treasure-claim-source { position: absolute; transform: translate(-50%, -50%); animation: treasure-source 1400ms linear both; }
+.sts-scope .treasure-claim-source .item-icon-image { width: 64px; height: 64px; object-fit: contain; }
+@keyframes treasure-source { 0%, 27% { opacity: 1; } 30%, 100% { opacity: 0; } }
+@keyframes treasure-depart { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
+.sts-scope .treasure-claim__hand--reach { animation: treasure-reaching-pose 1400ms steps(1) both; }
+.sts-scope .treasure-claim__hand--grip { animation: treasure-gripping-pose 1400ms steps(1) both; }
+.sts-scope .treasure-preview { animation: treasure-point-in 220ms ease-out both; }
+@keyframes treasure-reaching-pose { 0% { opacity: 1; } 42%, 100% { opacity: 0; } }
+@keyframes treasure-gripping-pose { 0% { opacity: 0; } 42%, 100% { opacity: 1; } }
+@keyframes treasure-point-in { from { opacity: 0; transform: translate(var(--reach-x), var(--reach-y)); } to { opacity: 1; transform: translate(0, 0); } }
+.sts-scope .treasure-scene:has(.treasure-open:hover) .treasure-chest,
+.sts-scope .treasure-scene:has(.treasure-open:focus-visible) .treasure-chest {
+  filter: drop-shadow(3px 0 0 #fff8df) drop-shadow(-3px 0 0 #fff8df) drop-shadow(0 3px 0 #fff8df) drop-shadow(0 -3px 0 #fff8df);
 }
