@@ -57,7 +57,7 @@ import {
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
 import { damagePlayer, finishDeferredHavocs, flushPendingTriggers } from '../src/game/combat/effects.ts'
-import { ENEMIES } from '../src/game/enemies.ts'
+import { abilityText, ENEMIES } from '../src/game/enemies.ts'
 import { createRng } from '../src/game/rng.ts'
 import { CAPS } from '../src/game/types.ts'
 import { DOWNFALL_COLORLESS_CARD_DEFS } from '../src/game/downfall/items.ts'
@@ -8692,6 +8692,32 @@ check('a Shiv waits while an item card choice is pending', () => {
   timeWarped.players[0].cardsPlayedThisTurn = 99
   assertEqual(spendShiv(timeWarped, 'p1', 'e1'), timeWarped,
     'a Shiv bypassed Time Warp after card play reached its limit')
+})
+
+check('enemy ability explanations state their current player impact', () => {
+  assertEqual(
+    abilityText({ kind: 'timeWarp', limits: [5, 4, 3] }, false, { actionIndex: 1 }),
+    'Time Warp: each player can play at most 4 cards this turn',
+  )
+  assertEqual(
+    abilityText({ kind: 'thorns', damagePerCube: 1, startingCubes: 1, maxCubes: 5 }, false,
+      { actionIndex: 0, abilityCubes: 3 }),
+    'Thorns: after each Attack against this enemy, the attacking player takes 3 damage',
+  )
+  assertEqual(
+    abilityText({ kind: 'beatOfDeath', damagePerCube: 1, startingCubes: 1, maxCubes: 5 }, false,
+      { actionIndex: 0, abilityCubes: 2 }),
+    'Beat of Death: at the end of the turn, every player takes 2 damage',
+  )
+  assertEqual(
+    abilityText({ kind: 'buffer', initialPerPlayer: 1, max: 5 }, false,
+      { actionIndex: 0, abilityCubes: 4 }),
+    'Buffer: prevents the next 4 instances of damage to this enemy',
+  )
+  assertEqual(
+    abilityText({ kind: 'plunder', burns: 2, chests: 1 }),
+    'Plunder: when defeated, every player in this row gains 2 Burns and 1 Loot Chest',
+  )
 })
 
 check('a Plunder row switch stays resolvable for its owner even after they die under Last Stand', () => {

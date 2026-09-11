@@ -21,6 +21,7 @@
     "verify:card-picker": "node --experimental-strip-types scripts/verify-card-picker-browser.mjs",
     "verify:loot": "node --experimental-strip-types scripts/verify-loot-browser.mjs",
     "verify:end-turn-drag": "node --experimental-strip-types scripts/verify-end-turn-drag-browser.mjs",
+    "verify:enemy-effects": "node --experimental-strip-types scripts/verify-enemy-effects-browser.mjs",
     "verify:online": "node --experimental-strip-types scripts/verify-online-browser.mjs",
     "verify:multiplayer-ui": "node --experimental-strip-types scripts/verify-multiplayer-ui-browser.mjs",
     "verify:single-player-build": "node --experimental-strip-types scripts/check-single-player-build.mjs",

@@ -239,8 +239,6 @@ function displayedAbilityText(
   die: number,
 ): string {
   if (ability.kind === 'confusion') return `Confusion: the first card played this turn costs ${ability.byRoll[die] ?? '?'} Energy`
-  if (ability.kind === 'thorns') return `Thorns: ${enemy.abilityCubes ?? 0} cubes; after an Attack, ${ability.damagePerCube} damage per cube`
-  if (ability.kind === 'beatOfDeath') return `Beat of Death: ${enemy.abilityCubes ?? 0} cubes; deals that much damage to every player at end of turn`
   if (ability.kind === 'immuneOnSlots') return ability.slots.includes(enemy.actionIndex)
     ? 'HP immunity: cannot lose HP this turn'
     : 'HP immunity: inactive; cannot lose HP while the cube is on a marked action'
@@ -258,7 +256,7 @@ function displayedAbilityText(
     if (defId === 'the_champ') return `Anger: when first defeated, enter Fury with ${ability.hpPerPlayer} HP per player`
     if (defId === 'awakened_one_phase_1') return `Awaken: return at end of turn in a second form${(enemy.ascension ?? 0) >= 10 ? ' and gain Strength equal to the largest number of Powers a player has in play' : ''}`
   }
-  return abilityText(ability)
+  return abilityText(ability, false, enemy)
 }
 
 export function EnemyCard({

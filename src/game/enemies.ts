@@ -1512,7 +1512,11 @@ export function drawSummon(supply: SummonSupply, name: string): string | null {
   return supply[name]?.shift() ?? null
 }
 
-export function abilityText(ability: EnemyAbility, compact = false): string {
+export function abilityText(
+  ability: EnemyAbility,
+  compact = false,
+  enemy?: Pick<Enemy, 'abilityCubes' | 'actionIndex'>,
+): string {
   switch (ability.kind) {
     case 'curlUp': return compact
       ? `Curl Up · first damage: +${ability.block} Block`
@@ -1550,9 +1554,12 @@ export function abilityText(ability: EnemyAbility, compact = false): string {
     case 'regrow': return compact
       ? 'Regrow · round start: dead Darklings return at 4 HP'
       : 'Regrow: at the start of the round, return every dead Darkling with 4 HP'
-    case 'thorns': return compact
-      ? `Thorns · Attack: ${ability.damagePerCube} damage per cube`
-      : `Thorns: after an Attack against this enemy, take ${ability.damagePerCube} damage per cube`
+    case 'thorns': {
+      const damage = enemy ? (enemy.abilityCubes ?? 0) * ability.damagePerCube : undefined
+      return compact
+        ? `Thorns · after each Attack: ${damage ?? `${ability.damagePerCube} per cube`} damage`
+        : `Thorns: after each Attack against this enemy, the attacking player takes ${damage ?? `${ability.damagePerCube} damage per ability cube`} damage`
+    }
     case 'immuneOnSlots': return compact
       ? 'HP immunity · marked actions'
       : 'Cannot lose HP while the cube is on a marked action'
@@ -1568,9 +1575,21 @@ export function abilityText(ability: EnemyAbility, compact = false): string {
     case 'rebirth': return compact ? 'Second form · once per combat' : 'When first defeated, return in a second form'
     case 'sharpHide': return compact ? `Sharp Hide · Attack: ${ability.damage} damage` : `Sharp Hide: after a player attacks this enemy, deal ${ability.damage} damage to that player`
     case 'curiosity': return compact ? 'Curiosity · attacks +1 per Power' : 'Curiosity: attacks deal 1 extra damage for each Power the target has in play'
-    case 'timeWarp': return compact ? `Time Warp · card limit ${ability.limits.join('/')}` : 'Time Warp: each player cannot play more cards than the current clock value'
+    case 'timeWarp': {
+      const limit = enemy ? ability.limits[enemy.actionIndex] : undefined
+      return compact
+        ? `Time Warp · ${limit ?? ability.limits.join('/')} cards this turn`
+        : limit === undefined
+          ? `Time Warp: each player can play at most ${ability.limits.join(', then ')} cards as the clock advances each turn`
+          : `Time Warp: each player can play at most ${limit} cards this turn`
+    }
     case 'invincible': return compact ? `Invincible · floor ${ability.hpPerPlayer}/player` : `Invincible: cannot fall below ${ability.hpPerPlayer} HP per player while active`
-    case 'beatOfDeath': return compact ? 'Beat of Death · end-turn damage' : 'Beat of Death: at end of turn, damage every player once per ability cube'
+    case 'beatOfDeath': {
+      const damage = enemy ? (enemy.abilityCubes ?? 0) * ability.damagePerCube : undefined
+      return compact
+        ? `Beat of Death · every player: ${damage ?? `${ability.damagePerCube} per cube`} damage`
+        : `Beat of Death: at the end of the turn, every player takes ${damage ?? `${ability.damagePerCube} damage per ability cube`} damage`
+    }
     case 'void': return compact ? 'Void · draw Slimed: pay 1 Energy to Exhaust it' : 'Void: when a player draws a Slimed, if able they immediately spend 1 Energy to Exhaust it'
     case 'facing': return compact
       ? `Facing · choose ${ability.effect}`
@@ -1580,9 +1599,11 @@ export function abilityText(ability: EnemyAbility, compact = false): string {
     case 'buffSummons': return `Summoned ${ability.defIdPrefix} gain ${ability.block} Block and ${ability.strength} Strength`
     case 'blockFromUnblockedDamage': return 'Gains Block equal to unblocked damage dealt'
     case 'startRoundSelfVulnerable': return `Start of round: gain ${ability.amount} Vulnerable`
-    case 'buffer': return `Buffer ${ability.initialPerPlayer} per player, max ${ability.max}`
-    case 'fireBreathing': return `Burns deal ${ability.burnDamage}, draw another card, then Exhaust`
-    case 'burnOnAttackWhileSlot': return `Attack reaction on action ${ability.slot + 1}: gain ${ability.amount} Burn`
+    case 'buffer': return enemy
+      ? `Buffer: prevents the next ${enemy.abilityCubes ?? 0} instances of damage to this enemy`
+      : `Buffer: starts with ${ability.initialPerPlayer} per player (maximum ${ability.max}); each cube prevents one instance of damage`
+    case 'fireBreathing': return `Fire Breathing: when a player draws a Burn, they draw another card; at end of turn that Burn deals ${ability.burnDamage} damage to them, then Exhausts`
+    case 'burnOnAttackWhileSlot': return `Flame Barrier: while the cube is on action ${ability.slot + 1}, each player who Attacks this enemy gains ${ability.amount} Burn`
     case 'protectedBy': return `Cannot lose HP while ${ability.defIdPrefix} lives`
     case 'retainPlayerVulnerable': return 'Players retain Vulnerable after enemy attacks'
     case 'immuneToWeak': return 'Cannot gain Weak'
@@ -1595,8 +1616,8 @@ export function abilityText(ability: EnemyAbility, compact = false): string {
     case 'focusFromAllyStrength': return `Attacks gain damage from ${ability.defId}'s Strength`
     case 'grantAllyBuffer': return `${ability.defId} gains ${ability.amount} Buffer`
     case 'corruptSkills': return 'All player Skills Exhaust'
-    case 'berserkHpLossPerPlayer': return `End of turn: lose ${ability.amount} HP per player`
-    case 'plunder': return `Death: row gains ${ability.burns} Burns and ${ability.chests} chest`
+    case 'berserkHpLossPerPlayer': return `Berserk: at end of turn, this enemy loses ${ability.amount} HP per player`
+    case 'plunder': return `Plunder: when defeated, every player in this row gains ${ability.burns} Burns and ${ability.chests} Loot Chest${ability.chests === 1 ? '' : 's'}`
   }
 }
 
