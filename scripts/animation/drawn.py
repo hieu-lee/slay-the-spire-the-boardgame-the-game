@@ -68,12 +68,14 @@ def render(name, spec, output):
     if name == 'the_champ':
         scale *= .94  # Match body area after excluding the separate sword.
         sword = Image.open(ROOT/'scripts/animation/sources/champ-sword.png').convert('RGBA')
-        sword = sword.resize((round(160*scale),round(160*scale*2/3)),Image.Resampling.LANCZOS)
+        # Body drawings are 2x the original sheet; sword dimensions and grips
+        # use the same source-pixel coordinate system before registration.
+        sword = sword.resize((round(320*scale),round(320*scale*2/3)),Image.Resampling.LANCZOS)
         pivot = (1300*sword.width/1536,520*sword.height/1024)
-        grips = [(199,225),(462,197),(730,126),(989,115),(1250,116),(1508,100),
-                 (218,354),(323,450),(323,450),(830,440),(1090,441),(1351,440),
-                 (70,697),(338,697),(590,696),(1001,654),(1243,639),(1500,631),
-                 (232,872),(482,878),(729,880),(985,882),(1215,962),(1215,962)]
+        grips = [(394,408),(922,405),(1469,254),(1979,216),(2512,219),(3011,213),
+                 (451,707),(635,891),(635,891),(1670,880),(2198,893),(2726,909),
+                 (146,1435),(656,1416),(1160,1418),(1706,1403),(2475,1280),(3011,1254),
+                 (482,1730),(987,1773),(1490,1773),(1989,1773),(2421,1904),(394,408)]
         # Two outliers reverse the attacking hand or fail to return to guard.
         drawings[8] = drawings[7]
         drawings[23] = drawings[0]

@@ -12,13 +12,20 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'artifacts/rig-animation/review'
 OUT.mkdir(parents=True, exist_ok=True)
 rigs = json.loads((ROOT / 'scripts/animation/rigs.json').read_text())
-metadata = {}
+metadata_path = ROOT/'src/ui/rig-animation-metadata.json'
+only = next((arg.removeprefix('--only=') for arg in sys.argv if arg.startswith('--only=')), None)
+if only is not None:
+    selected = set(only.split(','))
+    assert selected <= rigs.keys(), f'unknown rigs: {selected - rigs.keys()}'
+    rigs = {name: spec for name, spec in rigs.items() if name in selected}
+metadata = json.loads(metadata_path.read_text()) if only is not None else {}
 def reviewed_rigs():
     for name, spec in rigs.items():
         poses = {}
         for pose in ('idle', 'attack'):
             path = ROOT / spec['output'] / f'{name}-{pose}.webp'
             im = Image.open(path)
+            assert im.width == spec.get('size', im.width), (name, pose, 'render resolution')
             frames, durations, boxes, areas = [], [], [], []
             for i in range(im.n_frames):
                 im.seek(i)
@@ -105,7 +112,6 @@ if group:
     render_gallery(group, len(rigs) - len(group))
 
 # Contact offsets are expressed in source pixels, matching EnemyCard's measurement.
-metadata_path = ROOT/'src/ui/rig-animation-metadata.json'
 if '--write-metadata' in sys.argv:
     metadata_path.write_text(json.dumps(metadata,indent=2)+'\n')
 else:

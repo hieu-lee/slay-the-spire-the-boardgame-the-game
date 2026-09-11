@@ -32,7 +32,8 @@ def available(name):
 def render(name, spec, output):
     original = Image.open(ROOT / spec['source']).convert('RGBA')
     rest = original.crop(original.getbbox())
-    width, height = 400, round(400 * original.height / original.width)
+    width = spec.get('size', 400)
+    height = round(width * original.height / original.width)
     scale = min(width*.8/rest.width, height*spec.get('heightFit', .88)/rest.height)
     display_scale = spec.get('displayScale', 1)
     scale /= display_scale

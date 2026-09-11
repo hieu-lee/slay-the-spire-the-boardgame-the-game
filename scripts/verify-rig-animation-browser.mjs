@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium } from './lib/profile-browser.mjs'
+import { chromium, webkit } from './lib/profile-browser.mjs'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { bossAttackMotionFor, bossProjectileImagePath, enemyProjectileImpactPath, enemyProjectileOriginFor, enemyArtScaleFor } from '../src/ui/combat-vfx.ts'
 
@@ -13,14 +13,16 @@ const output = resolve(root, 'artifacts/rig-animation/browser')
 mkdirSync(output, { recursive: true })
 const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
 await server.listen()
-const browser = await chromium.launch({ headless: true })
+const browser = await (process.argv.includes('--webkit') ? webkit : chromium).launch({ headless: true })
 const errors = []
 const heroes = {
   ironclad: 'strike_ironclad', silent: 'predator', defect: 'strike_defect', watcher: 'strike_watcher',
   guardian: 'guardian_strike', 'guardian-defense': 'guardian_strike', hermit: 'hermit_strike', slime_boss: 'slime_boss_strike', hexaghost: 'strike_hexaghost',
 }
 const normalsOnly = process.argv.includes('--normal-only')
-const enemies = [...new Map(Object.values(ENEMIES).filter((e) => normalsOnly ? !e.isBoss && !e.elite : e.isBoss || e.elite ||
+const bossesOnly = process.argv.includes('--boss-only')
+const rigs = JSON.parse(readFileSync(resolve(root, 'scripts/animation/rigs.json'), 'utf8'))
+const enemies = [...new Map(Object.values(ENEMIES).filter((e) => bossesOnly ? e.isBoss : normalsOnly ? !e.isBoss && !e.elite : e.isBoss || e.elite ||
   ['sentry_a','sentry_b','red_slaver','blue_slaver'].includes(e.id)).map((e) => [e.artId ?? e.id,e])).values()]
   .filter(e=>!process.argv.some(a=>a.startsWith('--only='))||process.argv.includes(`--only=${e.id}`))
 try {
@@ -72,7 +74,7 @@ try {
       }
       f.install('ironclad')
     })
-    for (const [character,source] of (normalsOnly||process.argv.includes('--elites-only')?[]:Object.entries(heroes))
+    for (const [character,source] of (bossesOnly||normalsOnly||process.argv.includes('--elites-only')?[]:Object.entries(heroes))
       .filter(([id])=>!process.argv.some(a=>a.startsWith('--hero='))||process.argv.includes(`--hero=${id}`))) {
       await page.evaluate(c=>window.fixture.install(c),character)
       await page.waitForFunction(()=>document.querySelector('.seat__portrait > img')?.complete)
@@ -261,6 +263,7 @@ try {
       await card.waitFor()
       await page.waitForFunction(()=>[...document.querySelectorAll('.enemy__art--cutout')].every(i=>i.complete&&i.naturalWidth>0))
       assert.equal(await card.getAttribute('data-animation'),'idle',enemy.id)
+      if (enemy.isBoss) assert.equal(await card.locator('.enemy__art--cutout').evaluate(i => i.naturalWidth), rigs[enemy.artId ?? enemy.id].size, `${enemy.id}: idle resolution`)
       const before=await card.locator('.enemy__art--cutout').boundingBox()
       const silhouette=await card.locator('.enemy__art--cutout').evaluate(image=>{
         const rect=image.getBoundingClientRect(), canvas=document.createElement('canvas')
@@ -311,6 +314,7 @@ try {
       if(attacks){
         await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='attack')
         assert((await card.locator('.enemy__art--cutout').getAttribute('src')).startsWith('blob:'),`${enemy.id}: recording captured the unloaded idle fallback`)
+        if (enemy.isBoss) assert.equal(await card.locator('.enemy__art--cutout').evaluate(i => i.naturalWidth), rigs[enemy.artId ?? enemy.id].size, `${enemy.id}: attack resolution`)
         if (bossProjectileImagePath(enemy.artId ?? enemy.id)) {
           // Reload through a fresh blob URL after the initial resize delivery.
           // Native load dispatch can run microtasks between ancestor listeners;
@@ -411,10 +415,13 @@ try {
           assert((await grounded.getAttribute('src')).endsWith('/downfall_demon-ground-slam.webp'),'Demon lost its crouched landing pose')
           assert((await art.getAttribute('data-animation-asset')).endsWith('/downfall_demon-airborne.webp'),'Demon lost its airborne pose')
           assert.notEqual(await grounded.getAttribute('src'),src,'Demon must use distinct airborne and grounded drawings')
+          assert.equal(await grounded.evaluate(i => i.naturalWidth), rigs.downfall_demon.size, 'Demon landing resolution')
+          assert.equal(await art.evaluate(i => i.naturalWidth), rigs.downfall_demon.size, 'Demon airborne resolution')
         }
         const frames=[]
         for(let sample=0;sample<3;sample++) {
-          await page.waitForTimeout(300)
+          // Finish sampling before the one-shot recovers, even on WebKit.
+          await page.waitForTimeout(100)
           frames.push(createHash('sha256').update(await art.screenshot()).digest('hex'))
         }
         if(id!=='downfall_demon')assert(new Set(frames).size>1,`${screen}/${id}: attack ${repeat+1} texture is frozen`)

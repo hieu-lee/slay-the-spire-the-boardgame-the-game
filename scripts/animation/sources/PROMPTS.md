@@ -77,3 +77,18 @@ Attack row prompt:
 
 Upscale and restore these EXACT SIX successive Bronze Automaton full-body animation poses. Output exactly six separate sprites in ONE horizontal row, evenly spaced left to right, all fully visible and with identical relative poses and same gold bronze armor design as input. Preserve pose progression, silhouette, thin long legs, horned shoulders, hand positions, proportions, colors and painted style. Render each sprite much larger and sharper using the available canvas height; maintain the original body aspect ratios. Native transparent background and transparent gaps between every sprite; no ground, text, shadows, glow, additional limbs or additional poses. This is a fidelity-preserving resolution restoration, not an animation redesign.
 STRICT CUTOUT: All pixels outside the metal body must have alpha 0. The body must be opaque alpha 255. No aura, halo, lighting bloom, vignette, fog, gradient, cast shadow or background of any kind. Preserve transparent empty space. This sprite will be composited directly on a game board.
+
+
+## Boss resolution audit and The Champ — 2026-09-11
+
+Audited all 26 distinct boss art sets, including shared phase art and Downfall bosses. All now render idle and attack on 800px-wide canvases; Bronze Automaton already did. Existing detailed source drawings and attack poses are retained for the other bosses. Authored attacks and Demon’s airborne/landing registration now honor the same per-rig resolution. Frame timing, body scale, weapons, and choreography remain unchanged.
+
+The Champ’s static/idle source was restored with `gpt-image-2.5-sunburst`, imagegen CLI edit, high quality, 1024×1024, native transparent background. Cropped empty padding around the native-alpha silhouette and centered it on a square canvas. Its 24 attack drawings were restored in eight three-pose edits at 1536×1024 and fitted to the original cells at 2× resolution. Re-registered the separate original sword to the restored hand positions; pose order and attack timing are preserved.
+
+Prompt:
+
+Edit target: the attached exact The Champ Slay the Spire game sprite. Upscale and restore crisp painted edges and armor detail while preserving the identical design, blue armor, visor slits, small gold crown, red cape and shield, gold sword, stance, silhouette, proportions, facing direction and palette. This is resolution restoration only, not a redesign. Preserve the entire character, feet, shield and sword with comfortable transparent padding. Native transparent RGBA background: all background pixels alpha 0, solid character opaque. No backdrop, vignette, aura, glow, cast shadow, new details, text or extra parts.
+
+Attack prompt:
+
+Edit target: these EXACT THREE consecutive game-animation sprites of The Champ. Upscale all three with crisp painted armor edges and details, preserving each original pose, blue armor, visor, gold crown, red shield, cape, anatomy, hands, palette and facing direction. Exactly three full-body sprites in one horizontal row, same order, with large transparent gaps and padding around every sprite. Enlarge all three consistently to use the canvas. Preserve the precise arm positions and shield grip. Do not add a sword: the game attaches it separately to the empty weapon hand. No redesign, extra limbs, aura, shadows, backdrop, text or frames. Native transparent RGBA background, alpha 0 outside the three bodies, opaque characters. Each source is an edit target, not loose inspiration.
