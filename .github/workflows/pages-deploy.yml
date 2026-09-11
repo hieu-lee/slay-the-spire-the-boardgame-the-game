@@ -33,7 +33,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Download and validate the prepared site
         env:
@@ -44,8 +44,16 @@ jobs:
           DISCARD_EXISTING_ROOMS: ${{ inputs.discard_existing_rooms }}
           EXPECTED_PROTOCOL_VERSION: '1'
         run: |
-          timeout 60s gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name "$ARTIFACT_NAME" --dir pages
+          for attempt in 1 2; do
+            download_dir="$RUNNER_TEMP/pages-$attempt"
+            if timeout 300s gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --name "$ARTIFACT_NAME" --dir "$download_dir"; then
+              mv "$download_dir" pages
+              break
+            fi
+            sleep 10
+          done
+          test -f pages/session.json
           desired_run=$(jq -r '.runId // empty' pages/session.json)
           desired_source=$(jq -r '.sourceRunId // empty' pages/session.json)
           desired_origin=$(jq -r '.origin // empty' pages/session.json)
