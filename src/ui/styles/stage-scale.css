@@ -16,6 +16,8 @@
 
 /* Co-op lanes share one physical stage: every actor stands on the same floor. */
 .board {
+  /* Actor depth stays inside the battlefield, below combat choice controls. */
+  isolation: isolate;
   --stage-scale: inherit;
   --enemy-name-height: 1.75rem;
 

@@ -62,3 +62,18 @@ Preserve native alpha; extend transparent output space for the full whip arc.
 
 Generated poses and alternate experiments are excluded from runtime until their
 anatomy, grip, prop dimensions, source-cell bounds and playback are reviewed.
+
+
+## Bronze Automaton resolution refresh — 2026-09-11
+
+Model: `gpt-image-2.5-sunburst`, imagegen CLI edit, high quality, native transparent background. Idle: 1024×1024 from the previous `bronze_automaton.webp`. Attack: four 1536×1024 edits of the previous sheet’s six-pose rows; packed the 24 native-alpha sprites without background removal. Runtime idle/attack renders use 800px canvases (previously 400px), retaining timing and rig. Static cutout uses the same generated idle. Cropped stray alpha-1 padding outside the idle silhouette and centered the native-alpha cutout on a square canvas; no background removal.
+
+Idle prompt:
+
+Upscale and restore this exact Bronze Automaton game sprite with crisp painted detail. Preserve the identical character design, gold bronze armor, horned shoulder shapes, crossed-arm idle pose, thin long legs, proportions, palette and full-body silhouette. Improve resolution and edge/detail clarity only; do not redesign, add parts, add glow, text or shadows. Keep entire character centered with transparent padding and native transparent background. This is the edit target, not loose inspiration.
+STRICT CUTOUT: All pixels outside the metal body must have alpha 0. The body must be opaque alpha 255. No aura, halo, lighting bloom, vignette, fog, gradient, cast shadow or background of any kind. Preserve transparent empty space. This sprite will be composited directly on a game board.
+
+Attack row prompt:
+
+Upscale and restore these EXACT SIX successive Bronze Automaton full-body animation poses. Output exactly six separate sprites in ONE horizontal row, evenly spaced left to right, all fully visible and with identical relative poses and same gold bronze armor design as input. Preserve pose progression, silhouette, thin long legs, horned shoulders, hand positions, proportions, colors and painted style. Render each sprite much larger and sharper using the available canvas height; maintain the original body aspect ratios. Native transparent background and transparent gaps between every sprite; no ground, text, shadows, glow, additional limbs or additional poses. This is a fidelity-preserving resolution restoration, not an animation redesign.
+STRICT CUTOUT: All pixels outside the metal body must have alpha 0. The body must be opaque alpha 255. No aura, halo, lighting bloom, vignette, fog, gradient, cast shadow or background of any kind. Preserve transparent empty space. This sprite will be composited directly on a game board.

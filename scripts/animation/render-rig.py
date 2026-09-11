@@ -171,4 +171,4 @@ if __name__ == '__main__':
             elif pose == 'attack' and has_authored_attack(name):
                 render_authored(name, spec, output)
             else:
-                render(spec, pose, output)
+                render(spec, pose, output, size=spec.get('size', 400))

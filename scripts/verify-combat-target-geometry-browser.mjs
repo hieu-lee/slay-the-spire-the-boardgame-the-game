@@ -38,7 +38,7 @@ try {
           const reactRoot = (D.createRoot ?? D.default.createRoot)(node)
           const f = window.fixture = { restoration: 0, seq: 0 }
           f.render = () => reactRoot.render((R.createElement ?? R.default.createElement)(CombatScreen, {
-            state: structuredClone(f.state), act: 3, viewerId: 'p1', autoAdvance: false,
+            key: f.seq, state: structuredClone(f.state), act: 3, viewerId: 'p1', autoAdvance: false,
             authoritativeRestoration: f.restoration, onChange: state => { f.state = state; f.render() },
           }))
           f.install = (defs, stormOrb, partySize = 1) => {
@@ -53,7 +53,7 @@ try {
               return ally
             })]
             f.state = C.createCombat(rng, party, defs.map((defId, i) => ({ uid: `enemy-${i}`, defId, row: 0,
-              isBoss: ['donu', 'deca'].includes(defId), hp: 50, maxHp: 50, block: 0, strength: 0,
+              isBoss: ['donu', 'deca', 'bronze_automaton', 'the_champ'].includes(defId), hp: 50, maxHp: 50, block: 0, strength: 0,
               weak: 0, vulnerable: 0, poison: 0, actionIndex: 0, abilityUsed: false, dead: false })))
             f.state.die = 1; f.state.phase = 'player'; f.state.presentationEvents = []
             if (stormOrb) { f.state.phase = 'roundEnd'; f.state.turn = 1; f.state = C.preparePlayerTurn(f.state) }
@@ -85,6 +85,15 @@ try {
           await page.waitForTimeout(120)
           await page.waitForFunction(() => !document.querySelector('.combat').getAnimations().some(a => a.playState === 'running'))
         }
+        // WebKit touch coordinates include the app's visual viewport scale.
+        const tap = async locator => {
+          const point = await locator.evaluate((element, webkit) => {
+            const r = element.getBoundingClientRect(), v = window.visualViewport
+            return { x: (r.x + r.width / 2 - (webkit ? v.offsetLeft : 0)) * (webkit ? v.scale : 1),
+              y: (r.y + r.height / 2 - (webkit ? v.offsetTop : 0)) * (webkit ? v.scale : 1) }
+          }, engineName === 'webkit')
+          await page.touchscreen.tap(point.x, point.y)
+        }
         const bodyPoint = async id => page.evaluate(id => {
           const b = window.fixture.bounds(document.querySelector(`[data-enemy-id="${id}"] .enemy__art--cutout`))
           return { x: b.left + b.width / 2, y: b.top + b.height * .6 }
@@ -104,6 +113,52 @@ try {
           }
           await page.locator('.board').screenshot({ path: resolve(output, `${engineName}-${screen}-${defs.join('-')}.png`) })
         }
+        // Tall boss hit areas must stay behind the shared Orb choice prompt.
+        for (const boss of ['bronze_automaton', 'the_champ']) {
+          await page.evaluate(boss => window.fixture.install([boss], 'dark'), boss)
+          await ready()
+          const choice = page.getByRole('button', { name: 'frost slot 3', exact: true })
+          await choice.waitFor()
+          assert(await page.locator('.prompt__orb').evaluateAll(buttons => buttons.every(button => {
+            const r = button.getBoundingClientRect()
+            return button.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+          })), `${engineName}/${screen}/${boss}: boss intercepts Orb choice`)
+          await page.screenshot({ path: resolve(output, `${engineName}-${screen}-${boss}-orb-choice.png`) })
+          if (phone) await tap(choice); else await choice.click()
+          await choice.waitFor({ state: 'detached' })
+        }
+        await page.evaluate(() => {
+          window.fixture.install(['bronze_automaton'])
+          window.fixture.state.players[0].hand = [{ uid: 'dual', defId: 'dual_cast', upgraded: false }]
+          window.fixture.render()
+        })
+        await ready()
+        const dual = page.locator('.hand .card').first()
+        if (phone) { await tap(dual); await tap(dual) } else await dual.click()
+        await page.locator('.prompt__orb').first().waitFor()
+        assert(await page.locator('.prompt__orb').evaluateAll(buttons => buttons.every(button => {
+          const r = button.getBoundingClientRect()
+          return button.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+        })), `${engineName}/${screen}: boss intercepts Dual Cast Orb choice`)
+        await page.screenshot({ path: resolve(output, `${engineName}-${screen}-dual-cast-orb-choice.png`) })
+        // Stress the same stacking boundary when a tall boss's transparent
+        // hit region overhangs the choice panel, independent of asset poses.
+        await page.locator('.prompt').evaluate(prompt => {
+          const hit = document.querySelector('.enemy__hit-area').getBoundingClientRect()
+          const combat = document.querySelector('.combat').getBoundingClientRect()
+          const button = prompt.querySelectorAll('.prompt__orb')[1].getBoundingClientRect()
+          const panel = prompt.getBoundingClientRect()
+          prompt.style.left = `${hit.x + hit.width / 2 - combat.x - (button.x + button.width / 2 - panel.x)}px`
+          prompt.style.top = `${hit.y + hit.height / 2 - combat.y - (button.y + button.height / 2 - panel.y)}px`
+          prompt.style.transform = 'none'
+        })
+        assert(await page.locator('.prompt__orb').evaluateAll(buttons => buttons.every(button => {
+          const r = button.getBoundingClientRect()
+          return button.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+        })), `${engineName}/${screen}: boss overhang intercepts the shared prompt`)
+        const frost = page.getByRole('button', { name: 'frost slot 2', exact: true })
+        if (phone) await tap(frost); else await frost.click()
+        await page.waitForFunction(() => window.fixture.state.players[0].block > 0)
         // Boss size remains visibly larger than the hero, with hit areas following
         // changes in the artwork's height when a desktop window is resized.
         await page.evaluate(() => window.fixture.install(['deca', 'donu']))
