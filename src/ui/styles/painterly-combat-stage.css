@@ -42,6 +42,9 @@
     var(--combat-stage-image, url('/assets/backgrounds/boss-act-1.webp')) center / cover no-repeat;
 }
 
+/* Keep the city platform beneath the shared actor floor when wide screens crop it. */
+.combat[data-act='2'] { background-position: center bottom; }
+
 .combat__bar {
   position: relative;
   z-index: 70;

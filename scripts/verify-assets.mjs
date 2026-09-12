@@ -900,6 +900,7 @@ check('combat animation effects are complete, transparent, and compact', () => {
     'hexaghost-flame.webp',
     'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp', 'magic-burst.webp',
     'potion-burst.webp', 'silent-knife.webp', 'silent-poison.webp', 'silent-shiv.webp',
+    'turn-lightning-strike.webp',
     'watcher-calm-aura.webp', 'watcher-meteor-impact.webp', 'watcher-meteor.webp',
     'watcher-pray.webp', 'watcher-wrath-aura.webp',
   ]
@@ -929,7 +930,9 @@ check('combat animation effects are complete, transparent, and compact', () => {
   assertEqual(inspected.length, files.length, 'decoded combat VFX count')
   for (const block of inspected) {
     const file = block.slice(0, block.indexOf('\n')).split('/').pop()
-    assert(/  Width: 512[\s\S]*  Height: 512/.test(block), `${file} is not 512x512`)
+    const dimensions = file === 'turn-lightning-strike.webp'
+      ? /  Width: 384[\s\S]*  Height: 768/ : /  Width: 512[\s\S]*  Height: 512/
+    assert(dimensions.test(block), `${file} has incorrect dimensions`)
     assert(/Alpha:\s+1/.test(block), `${file} has no alpha channel`)
   }
   const probe = `

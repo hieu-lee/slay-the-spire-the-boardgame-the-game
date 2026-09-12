@@ -56,6 +56,7 @@ import {
   isCharacterAttack,
   latestTargetPresentationEvent,
   ORB_END_TURN_STAGGER_MS,
+  isEndTurnLightning,
 } from './combat-screen/vfx.tsx'
 import { assetPath, potionIconPath, relicIconPath } from '../game/assets.ts'
 import { cardCost, cardDef, cardIsCurse, faceOf } from '../game/cards.ts'
@@ -1017,7 +1018,15 @@ function CombatScreenView({
     event.actorId !== playerId && event.playerIds.includes(playerId) &&
     (event.kind === 'turn' || !['slash', 'blunt', 'projectile', 'poison', 'shiv', 'lightning', 'dark', 'debuff']
       .includes(recipe.family)))
-  const enemyVfxFor = (enemy: Enemy) => activeVfx.filter(({ event }) => event.enemyIds.includes(enemy.uid))
+  const enemyVfxFor = (enemy: Enemy, grounded = false) => activeVfx
+    .filter(({ event }) => event.enemyIds.includes(enemy.uid) && isEndTurnLightning(event) === grounded)
+    .map((active) => <CombatVfx
+      key={`${active.event.seq}-${active.recipe.asset}`}
+      active={active}
+      role="target"
+      attackContactMs={prefersReducedMotion ? 0 : characterAttackContactMs(state, enemy.uid, active.event)}
+      revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
+    />)
   useEffect(() => {
     const uid = slimeCardZoom?.card.uid
     if (!uid) return
@@ -5826,17 +5835,8 @@ function CombatScreenView({
                 visualResetKey={visualResetKey}
                 stageVisualDamage={!prefersReducedMotion}
                 hitBeats={hits.get(enemy.uid)}
-                vfx={enemyVfxFor(enemy).map((active) => (
-                  <CombatVfx
-                    key={`${active.event.seq}-${active.recipe.asset}`}
-                    active={active}
-                    role="target"
-                    attackContactMs={prefersReducedMotion
-                      ? 0
-                      : characterAttackContactMs(state, enemy.uid, active.event)}
-                    revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
-                  />
-                ))}
+                vfx={enemyVfxFor(enemy)}
+                groundVfx={enemyVfxFor(enemy, true)}
                 rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
                 stageIndex={stageEnemies.length + index}
                 // A boss stands in every row, so the only reading that means
@@ -6334,17 +6334,8 @@ function CombatScreenView({
                       visualResetKey={visualResetKey}
                       stageVisualDamage={!prefersReducedMotion}
                       hitBeats={hits.get(enemy.uid)}
-                      vfx={enemyVfxFor(enemy).map((active) => (
-                        <CombatVfx
-                          key={`${active.event.seq}-${active.recipe.asset}`}
-                          active={active}
-                          role="target"
-                          attackContactMs={prefersReducedMotion
-                            ? 0
-                            : characterAttackContactMs(state, enemy.uid, active.event)}
-                          revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
-                        />
-                      ))}
+                      vfx={enemyVfxFor(enemy)}
+                      groundVfx={enemyVfxFor(enemy, true)}
                       rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
                       stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
                       rowLabel={occupant?.name ?? `Player ${row + 1}`}

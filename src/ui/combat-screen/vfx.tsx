@@ -35,6 +35,9 @@ export const SLIME_SPAWN_CONTACT_MS = 800
 export const COMBAT_OUTCOME_DELAY_MS = 2_500
 export const COMBAT_OUTCOME_SOUND_DELAY_MS = 2_400
 
+export const isEndTurnLightning = (event: CombatPresentationEvent): boolean =>
+  event.kind === 'orb' && event.orb === 'lightning' && event.sourceId === 'orb-end-turn'
+
 export const combatOutcomeAnimationActive = (): boolean => Boolean(document.querySelector(
   '.slime-party__actor--commanding, .character-attack--slime_boss',
 ))
@@ -101,24 +104,37 @@ export function CombatVfx({
   revealDelayMs?: number
 }) {
   const { event, recipe } = active
+  const lightningStrike = role === 'target' && isEndTurnLightning(event)
   const anchor = useRef<HTMLSpanElement>(null)
   useLayoutEffect(() => {
     const source = anchor.current
-    const portrait = source?.closest<HTMLElement>('.seat__portrait, .enemy__portrait')
+    const portrait = lightningStrike
+      ? source?.closest('.enemy')?.querySelector<HTMLElement>('.enemy__portrait')
+      : source?.closest<HTMLElement>('.seat__portrait, .enemy__portrait')
     if (!source || !portrait || role !== 'target') return
     const art = portrait.querySelector<HTMLImageElement>(':scope > img')
+    const board = portrait.closest('.board')
     const measure = () => {
-      const body = combatBodyPoint(portrait)
       const rect = portrait.getBoundingClientRect()
-      source.style.setProperty('--vfx-center-x', `${body.x - rect.left}px`)
-      source.style.setProperty('--vfx-center-y', `${body.y - rect.top}px`)
+      if (lightningStrike && board) {
+        // Use the resting floor, independent of the portrait's death transform.
+        const ground = portrait.offsetTop + portrait.offsetHeight
+        const parent = source.parentElement!.getBoundingClientRect()
+        source.style.setProperty('--lightning-ground-y', `${ground}px`)
+        source.style.setProperty('--lightning-height', `${(parent.top + ground - board.getBoundingClientRect().top) / .94}px`)
+      } else {
+        const body = combatBodyPoint(portrait)
+        source.style.setProperty('--vfx-center-x', `${body.x - rect.left}px`)
+        source.style.setProperty('--vfx-center-y', `${body.y - rect.top}px`)
+      }
     }
     measure()
     art?.addEventListener('load', measure)
     const resize = new ResizeObserver(measure)
     resize.observe(portrait)
+    if (lightningStrike && board) resize.observe(board)
     return () => { resize.disconnect(); art?.removeEventListener('load', measure) }
-  }, [event.seq, role])
+  }, [event.seq, role, lightningStrike])
 
   return (
     <span
@@ -134,8 +150,10 @@ export function CombatVfx({
       data-vfx-motion={recipe.actorMotion}
       data-vfx-asset={recipe.asset}
       data-vfx-tone={recipe.tone}
+      data-lightning-strike={lightningStrike || undefined}
       style={{
-        '--vfx-image': `url("${vfxAssetPath(recipe)}")`,
+        '--vfx-image': `url("${lightningStrike
+          ? assetPath('combat/vfx/actions/turn-lightning-strike.webp') : vfxAssetPath(recipe)}")`,
         '--vfx-tone-color': vfxToneColor(recipe.tone),
         ...(attackContactMs > 0 ? { '--attack-impact-delay': `${attackContactMs}ms` } : {}),
         ...(revealDelayMs > 0 ? { '--vfx-reveal-delay': `${revealDelayMs}ms` } : {}),

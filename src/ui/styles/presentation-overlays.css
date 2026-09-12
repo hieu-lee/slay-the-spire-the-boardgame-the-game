@@ -94,6 +94,42 @@
   transform: none;
 }
 
+/* Blender-baked branches, glow and ground sparks share one small texture.
+   Keep the foot contact fixed through both flashes; only opacity animates. */
+.combat-vfx[data-lightning-strike] {
+  left: 50%;
+  top: calc(var(--lightning-ground-y) - var(--lightning-height) * .94);
+  width: calc(var(--lightning-height) * .5);
+  height: var(--lightning-height);
+  translate: -50% 0;
+  background-size: 100% 100%;
+  filter: none;
+  mix-blend-mode: normal;
+  will-change: opacity;
+  animation: orb-lightning-strike 360ms linear both;
+  animation-delay: var(--vfx-reveal-delay, 0ms);
+}
+
+.combat-vfx[data-lightning-strike]::before,
+.combat-vfx[data-lightning-strike]::after { content: none; }
+
+/* WebKit clips promoted children at an ancestor's filter surface. The portrait
+   already owns its shadow; let the bolt extend above the enemy's box. */
+.board .enemy:has([data-lightning-strike]) { filter: none; }
+
+/* The next orb can target this enemy before the previous effect unmounts. */
+.board .enemy--targeted:has([data-lightning-strike]) .enemy__portrait {
+  filter: drop-shadow(0 0 0.35rem #65e8ff) drop-shadow(0 0 0.8rem rgb(55 203 234 / 0.7));
+}
+
+@keyframes orb-lightning-strike {
+  0% { opacity: 0; }
+  8%, 28% { opacity: 1; }
+  38% { opacity: .2; }
+  48%, 62% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 .combat-vfx--mantra {
   filter: drop-shadow(0 0 0.55rem var(--vfx-tone-color, #78efff));
 }

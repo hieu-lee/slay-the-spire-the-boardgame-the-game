@@ -48,6 +48,8 @@ type EnemyCardProps = {
   stageVisualDamage?: boolean
   /** Decorative, authoritative action effects aimed at this enemy. */
   vfx?: ReactNode
+  /** Grounded strikes must remain outside the portrait's death animation. */
+  groundVfx?: ReactNode
   /** Living player seats a ranged boss projectile must visibly reach. */
   rangedTargetPlayerIds?: readonly string[]
   stageIndex?: number
@@ -276,6 +278,7 @@ export function EnemyCard({
   visualResetKey = '',
   stageVisualDamage = true,
   vfx,
+  groundVfx,
   rangedTargetPlayerIds = [],
   stageIndex = 0,
   rowLabel,
@@ -742,6 +745,7 @@ export function EnemyCard({
         ))}
       </span>
 
+      {groundVfx}
       <span className="bar" aria-hidden="true">
         <span
           className="bar__fill"
