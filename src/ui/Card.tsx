@@ -21,6 +21,8 @@ type CardProps = {
   playable?: boolean
   /** Recessed combat cards reveal on the first tap, then activate on the next. */
   inspectOnTouch?: boolean
+  /** Transient copies must paint an already-visible scan on their first frame. */
+  immediateArt?: boolean
   /** Staged for play, waiting on a target or a choice. */
   selected?: boolean
   /** Chosen as the subject of another card's discard or exhaust effect. */
@@ -655,6 +657,7 @@ export function Card({
   cost,
   playable = true,
   inspectOnTouch = false,
+  immediateArt = false,
   selected = false,
   picked = false,
   gemPowerDamage,
@@ -734,8 +737,8 @@ export function Card({
         src={scan}
         alt=""
         draggable={false}
-        loading="lazy"
-        decoding="async"
+        loading={immediateArt ? 'eager' : 'lazy'}
+        decoding={immediateArt ? 'sync' : 'async'}
         onLoad={(event) => {
           const image = event.currentTarget
           revealDecodedImage(image, {

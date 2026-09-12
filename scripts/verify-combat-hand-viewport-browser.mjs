@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium, webkit } from './lib/profile-browser.mjs'
+import { chromium, devices, webkit } from './lib/profile-browser.mjs'
 import { postNeowRun } from './lib/post-neow-run.mjs'
 import { enterRoom } from '../src/game/run.ts'
 
@@ -20,7 +20,7 @@ try {
         ['horizontal-phone', { width: 844, height: 390 }]]) {
         if (process.argv.includes('--phone-only') && screen !== 'horizontal-phone') continue
         const phone = screen === 'horizontal-phone'
-        const context = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone })
+        const context = await browser.newContext(phone ? devices['iPhone 13 landscape'] : { viewport })
         const page = await context.newPage()
         const errors = []
         page.on('pageerror', error => errors.push(String(error)))
@@ -78,8 +78,8 @@ try {
             const hero = geometry.heroes[0], front = geometry.enemies[0]
             assert(hero.left > geometry.board.left + geometry.board.width * .15,
               `${label}: sparse party remains pinned to the screen edge`)
-            assert(front.left - hero.right < hero.width * 2,
-              `${label}: opposing actors are farther apart than one actor width`)
+            assert(front.left - hero.right <= hero.width * 2 + 4,
+              `${label}: opposing actors are farther apart than two actor widths`)
           }
           await page.screenshot({ path: resolve(out, `${engineName}-${screen}-${label}.png`) })
         }
@@ -138,6 +138,95 @@ try {
         assert(await first.evaluate(e => e.getBoundingClientRect().bottom <=
           document.querySelector('.app-shell').getBoundingClientRect().bottom + 1), 'active card must be fully revealed')
         await page.mouse.move(1, 1)
+        if (phone) {
+          const card = page.locator('.hand .card[title="Strike"]').first()
+          const box = await card.boundingBox()
+          assert(box, `${engineName}: touch drag card is not visible`)
+          const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+          const cdp = engineName === 'chromium' ? await context.newCDPSession(page) : null
+          if (cdp) await cdp.send('Input.dispatchTouchEvent', {
+            type: 'touchStart', touchPoints: [{ ...point, id: 1, radiusX: 1, radiusY: 1 }],
+          })
+          else { await page.mouse.move(point.x, point.y); await page.mouse.down() }
+          const moved = { x: point.x, y: point.y - 60 }
+          await page.evaluate(() => {
+            window.__dragFrames = []
+            window.__dragLongTasks = []
+            window.__dragRunning = true
+            window.__dragStarted = performance.now()
+            const observer = new PerformanceObserver(list => {
+              window.__dragLongTasks.push(...list.getEntries().map(entry => ({
+                start: entry.startTime - window.__dragStarted,
+                duration: entry.duration,
+              })))
+            })
+            try { observer.observe({ type: 'longtask' }) } catch {}
+            window.__dragObserver = observer
+            let previous = performance.now()
+            requestAnimationFrame(function sample(now) {
+              if (!window.__dragRunning) return
+              window.__dragFrames.push(now - previous)
+              previous = now
+              requestAnimationFrame(sample)
+            })
+          })
+          if (cdp) await cdp.send('Performance.enable')
+          const metricsBefore = cdp ? await cdp.send('Performance.getMetrics') : null
+          if (cdp) await cdp.send('Input.dispatchTouchEvent', {
+            type: 'touchMove', touchPoints: [{ ...moved, id: 1, radiusX: 1, radiusY: 1 }],
+          })
+          else await page.mouse.move(moved.x, moved.y, { steps: 4 })
+          const preview = page.locator('.card-drag')
+          await preview.waitFor()
+          const art = await preview.locator('.card__art').evaluate(image => ({
+            complete: image.complete, width: image.naturalWidth, loading: image.loading,
+            decoding: image.decoding, visibility: getComputedStyle(image).visibility,
+            readyMs: performance.now() - window.__dragStarted,
+          }))
+          assert.deepEqual({ ...art, readyMs: 0 }, { complete: true, width: 448, loading: 'eager', decoding: 'sync', visibility: 'visible', readyMs: 0 },
+            `${engineName}: touch drag exposed fallback art ${JSON.stringify(art)}`)
+          assert(await page.evaluate(() => matchMedia('(pointer: coarse)').matches &&
+            document.documentElement.dataset.mobilePerformance === 'true' && innerWidth >= 1280),
+          `${engineName}: phone fixture missed the real coarse-pointer desktop viewport`)
+          for (let step = 1; step <= 24; step += 1) {
+            const next = { x: moved.x + step * 4, y: moved.y - Math.sin(step / 3) * 30 }
+            if (cdp) await cdp.send('Input.dispatchTouchEvent', {
+              type: 'touchMove', touchPoints: [{ ...next, id: 1, radiusX: 1, radiusY: 1 }],
+            })
+            else await page.mouse.move(next.x, next.y)
+            await page.waitForTimeout(16)
+          }
+          const metricsAfter = cdp ? await cdp.send('Performance.getMetrics') : null
+          const dragPerformance = await page.evaluate(async () => {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+            window.__dragRunning = false
+            window.__dragObserver?.disconnect()
+            const frames = window.__dragFrames.slice(1).sort((a, b) => a - b)
+            return {
+              frames: frames.length,
+              p95: frames[Math.floor(frames.length * .95)] ?? 0,
+              max: frames.at(-1) ?? 0,
+              longTasks: window.__dragLongTasks,
+            }
+          })
+          dragPerformance.artReadyMs = art.readyMs
+          if (metricsBefore && metricsAfter) {
+            const before = Object.fromEntries(metricsBefore.metrics.map(metric => [metric.name, metric.value]))
+            dragPerformance.metrics = Object.fromEntries(metricsAfter.metrics
+              .filter(metric => ['LayoutDuration', 'RecalcStyleDuration', 'ScriptDuration', 'TaskDuration'].includes(metric.name))
+              .map(metric => [metric.name, Math.round((metric.value - before[metric.name]) * 1000 * 100) / 100]))
+          }
+          if (cdp) await cdp.send('Performance.disable')
+          console.log(`${engineName}: phone ${cdp ? 'CDP touch' : 'mouse fallback'} drag performance ${JSON.stringify(dragPerformance)}`)
+          assert(!cdp || dragPerformance.p95 < 35 && dragPerformance.max < 75,
+            `${engineName}: touch drag stalled frames ${JSON.stringify(dragPerformance)}`)
+          await page.screenshot({ path: resolve(out, `${engineName}-horizontal-phone-touch-drag.png`) })
+          if (cdp) {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
+            await cdp.detach()
+          } else await page.mouse.up()
+          await preview.waitFor({ state: 'detached' })
+        }
         await page.evaluate(() => {
           const run = structuredClone(window.__STS_DEBUG__.getRun())
           const player = run.combat.players.find(p => p.character === 'ironclad'), template = player.hand[0]

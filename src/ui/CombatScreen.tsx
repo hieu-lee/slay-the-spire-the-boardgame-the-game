@@ -1018,8 +1018,8 @@ function CombatScreenView({
     event.actorId !== playerId && event.playerIds.includes(playerId) &&
     (event.kind === 'turn' || !['slash', 'blunt', 'projectile', 'poison', 'shiv', 'lightning', 'dark', 'debuff']
       .includes(recipe.family)))
-  const enemyVfxFor = (enemy: Enemy, grounded = false) => activeVfx
-    .filter(({ event }) => event.enemyIds.includes(enemy.uid) && isEndTurnLightning(event) === grounded)
+  const enemyVfxFor = (enemy: Enemy) => activeVfx
+    .filter(({ event }) => event.enemyIds.includes(enemy.uid) && !isEndTurnLightning(event))
     .map((active) => <CombatVfx
       key={`${active.event.seq}-${active.recipe.asset}`}
       active={active}
@@ -1027,6 +1027,15 @@ function CombatScreenView({
       attackContactMs={prefersReducedMotion ? 0 : characterAttackContactMs(state, enemy.uid, active.event)}
       revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
     />)
+  const groundedVfx = state.enemies.flatMap((enemy) => activeVfx
+    .filter(({ event }) => event.enemyIds.includes(enemy.uid) && isEndTurnLightning(event))
+    .map((active) => <CombatVfx
+      key={`${enemy.uid}-${active.event.seq}-${active.recipe.asset}`}
+      active={active}
+      role="target"
+      targetEnemyId={enemy.uid}
+      revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
+    />))
   useEffect(() => {
     const uid = slimeCardZoom?.card.uid
     if (!uid) return
@@ -4529,6 +4538,7 @@ function CombatScreenView({
         '--stage-actor-width': `calc(${STAGE_GAP_REM - 1}rem * var(--stage-scale))`,
       } as React.CSSProperties}
     >
+      {groundedVfx}
       <header className="combat__bar">
         <span className="combat__turn">Turn {state.turn}</span>
         <span className="combat__die" title="The round's shared die">
@@ -5859,7 +5869,6 @@ function CombatScreenView({
                 stageVisualDamage={!prefersReducedMotion}
                 hitBeats={hits.get(enemy.uid)}
                 vfx={enemyVfxFor(enemy)}
-                groundVfx={enemyVfxFor(enemy, true)}
                 rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
                 stageIndex={stageEnemies.length + index}
                 // A boss stands in every row, so the only reading that means
@@ -6358,7 +6367,6 @@ function CombatScreenView({
                       stageVisualDamage={!prefersReducedMotion}
                       hitBeats={hits.get(enemy.uid)}
                       vfx={enemyVfxFor(enemy)}
-                      groundVfx={enemyVfxFor(enemy, true)}
                       rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
                       stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
                       rowLabel={occupant?.name ?? `Player ${row + 1}`}
@@ -6616,7 +6624,7 @@ function CombatScreenView({
       {slimeCardZoom ? createPortal(
         <span className="power__zoom slime-party__zoom" role="tooltip"
           style={{ left: slimeCardZoom.x, top: slimeCardZoom.y }}>
-          <Card card={slimeCardZoom.card} playable={false} />
+          <Card card={slimeCardZoom.card} playable={false} immediateArt />
         </span>,
         document.body,
       ) : null}
@@ -6630,7 +6638,7 @@ function CombatScreenView({
           '--chamber-return-y': `${flight.y}px`,
           '--chamber-return-index': flight.index,
         } as React.CSSProperties} aria-hidden="true" inert>
-          <Card card={flight.card} playable={false} />
+          <Card card={flight.card} playable={false} immediateArt />
         </div>
       ))}
       {cardDrag ? (
@@ -6653,7 +6661,7 @@ function CombatScreenView({
             '--drag-y': `${Math.max(0, cardDrag.y - cardDrag.startY + 210)}px`,
             '--drag-turn': `${Math.max(-8, Math.min(8, (cardDrag.x - cardDrag.startX) / 24))}deg`,
           } as React.CSSProperties} aria-hidden="true" inert>
-            <Card card={cardDrag.card} playable={false} />
+            <Card card={cardDrag.card} playable={false} immediateArt />
           </div>
         </>
       ) : null}
@@ -6675,7 +6683,7 @@ function CombatScreenView({
             className={endTurnEffectDragCard ? 'end-turn-effect-drag end-turn-effect-drag--card' : 'end-turn-effect-drag'}
             style={{ left: endTurnEffectDrag.startX, top: endTurnEffectDrag.startY } as React.CSSProperties}
             aria-hidden="true" inert>
-            {endTurnEffectDragCard ? <Card card={endTurnEffectDragCard} playable={false} />
+            {endTurnEffectDragCard ? <Card card={endTurnEffectDragCard} playable={false} immediateArt />
               : endTurnEffectDragRelicId ? (
                 <img className="item-icon-image" src={relicIconPath(endTurnEffectDragRelicId)} alt="" />
               )
@@ -6696,7 +6704,7 @@ function CombatScreenView({
             className={`card-flight card-flight--${flight.destination} card-flight--${viewer.character}`}
             style={{ offsetPath: `path('${flight.path}')`, '--flight-hold': flight.hold } as CSSProperties}
           >
-            <Card card={flight.card} playable={false} />
+            <Card card={flight.card} playable={false} immediateArt />
           </div> : null}
         </div>
       ))}

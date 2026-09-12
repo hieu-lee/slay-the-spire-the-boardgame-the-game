@@ -97,7 +97,7 @@ export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onR
   const [activeCardPlayerId, setActiveCardPlayerId] = useState<string | null>(() =>
     rewards.find((offer) => offer.cardReward && offer.choices !== null)?.playerId ?? null)
   const [sources, setSources] = useState<RewardSource[]>([])
-  const backdrop = { '--reward-backdrop': `url("${assetPath(`backgrounds/boss-act-${act}.webp`)}")` } as CSSProperties
+  const backdrop = { '--reward-backdrop': `url("${new URL(assetPath(`backgrounds/boss-act-${act}.webp`), window.location.href).href}")` } as CSSProperties
   const activeOffer = activeCardPlayerId === null ? undefined : rewards.find((offer) => offer.playerId === activeCardPlayerId && offer.cardReward)
   const activePlayer = activeOffer && players.find((player) => player.id === activeOffer.playerId)
   const availableSources = activeOffer?.availableSources ?? []

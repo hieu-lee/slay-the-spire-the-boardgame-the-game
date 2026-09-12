@@ -23,7 +23,7 @@ export function OnlineRewardScreen({ run, viewerId, onAction }: Props) {
   const [lootPending, setLootPending] = useState(false)
   const lootPendingRef = useRef(false)
   const [sources, setSources] = useState<RewardSource[]>([])
-  const backdrop = { '--reward-backdrop': `url("${assetPath(`backgrounds/boss-act-${run.act}.webp`)}")` } as CSSProperties
+  const backdrop = { '--reward-backdrop': `url("${new URL(assetPath(`backgrounds/boss-act-${run.act}.webp`), window.location.href).href}")` } as CSSProperties
   const offer = run.rewards.find((candidate) => candidate.playerId === viewerId)
   const player = run.players.find((candidate) => candidate.id === viewerId)
   const availableSources = offer?.availableSources ?? []

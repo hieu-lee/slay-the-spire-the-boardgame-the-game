@@ -844,7 +844,7 @@ function EventScreen({
   const draftStages = useRef<Record<string, string>>({});
   const rewardOffers = room.rewardOffers?.[player.id];
   const guardianGemOffers = room.guardianGemOffers?.[player.id] ?? [];
-  const eventArt = { "--event-art": `url('${assetPath(`noncombat/events/${room.card.id}.webp`)}')` } as CSSProperties;
+  const eventArt = { "--event-art": `url('${new URL(assetPath(`noncombat/events/${room.card.id}.webp`), window.location.href).href}')` } as CSSProperties;
   const itemOffers = room.itemOffers?.[player.id];
   const pendingTrade = room.pendingTrade;
   const pendingTradeStage = pendingTrade

@@ -95,6 +95,7 @@ export function CombatVfx({
   role,
   attackContactMs = 0,
   revealDelayMs = 0,
+  targetEnemyId,
 }: {
   active: ActiveCombatVfx
   role: 'actor' | 'target'
@@ -102,26 +103,35 @@ export function CombatVfx({
   /** Staggers this event's own reveal behind an earlier one in the same
    * state update — see CombatScreen's `orbEndTurnRevealDelayMs`. */
   revealDelayMs?: number
+  targetEnemyId?: string
 }) {
   const { event, recipe } = active
   const lightningStrike = role === 'target' && isEndTurnLightning(event)
+  const image = lightningStrike
+    ? assetPath('combat/vfx/actions/turn-lightning-strike.webp')
+    : vfxAssetPath(recipe)
+  const imageUrl = new URL(image, window.location.href).href
   const anchor = useRef<HTMLSpanElement>(null)
   useLayoutEffect(() => {
     const source = anchor.current
-    const portrait = lightningStrike
-      ? source?.closest('.enemy')?.querySelector<HTMLElement>('.enemy__portrait')
+    const combat = source?.closest<HTMLElement>('.combat')
+    const portrait = lightningStrike && targetEnemyId
+      ? combat?.querySelector<HTMLElement>(`.enemy[data-enemy-id="${CSS.escape(targetEnemyId)}"] .enemy__portrait`)
       : source?.closest<HTMLElement>('.seat__portrait, .enemy__portrait')
     if (!source || !portrait || role !== 'target') return
     const art = portrait.querySelector<HTMLImageElement>(':scope > img')
-    const board = portrait.closest('.board')
     const measure = () => {
       const rect = portrait.getBoundingClientRect()
-      if (lightningStrike && board) {
-        // Use the resting floor, independent of the portrait's death transform.
-        const ground = portrait.offsetTop + portrait.offsetHeight
-        const parent = source.parentElement!.getBoundingClientRect()
+      if (lightningStrike && combat) {
+        const combatRect = combat.getBoundingClientRect()
+        const enemyRect = portrait.closest<HTMLElement>('.enemy')!.getBoundingClientRect()
+        // Span the combat scene while keeping the baked ground contact on the
+        // target's resting feet, independent of its death transform.
+        const ground = enemyRect.top + portrait.offsetTop + portrait.offsetHeight - combatRect.top
+        const center = enemyRect.left + portrait.offsetLeft + portrait.offsetWidth / 2 - combatRect.left
+        source.style.setProperty('--lightning-center-x', `${center}px`)
         source.style.setProperty('--lightning-ground-y', `${ground}px`)
-        source.style.setProperty('--lightning-height', `${(parent.top + ground - board.getBoundingClientRect().top) / .94}px`)
+        source.style.setProperty('--lightning-height', `${ground / .94}px`)
       } else {
         const body = combatBodyPoint(portrait)
         source.style.setProperty('--vfx-center-x', `${body.x - rect.left}px`)
@@ -132,9 +142,14 @@ export function CombatVfx({
     art?.addEventListener('load', measure)
     const resize = new ResizeObserver(measure)
     resize.observe(portrait)
-    if (lightningStrike && board) resize.observe(board)
-    return () => { resize.disconnect(); art?.removeEventListener('load', measure) }
-  }, [event.seq, role, lightningStrike])
+    if (lightningStrike && combat) resize.observe(combat)
+    if (lightningStrike) combat?.addEventListener('scroll', measure, { capture: true, passive: true })
+    return () => {
+      resize.disconnect()
+      art?.removeEventListener('load', measure)
+      if (lightningStrike) combat?.removeEventListener('scroll', measure, true)
+    }
+  }, [event.seq, role, lightningStrike, targetEnemyId])
 
   return (
     <span
@@ -150,10 +165,10 @@ export function CombatVfx({
       data-vfx-motion={recipe.actorMotion}
       data-vfx-asset={recipe.asset}
       data-vfx-tone={recipe.tone}
+      data-vfx-target={targetEnemyId}
       data-lightning-strike={lightningStrike || undefined}
       style={{
-        '--vfx-image': `url("${lightningStrike
-          ? assetPath('combat/vfx/actions/turn-lightning-strike.webp') : vfxAssetPath(recipe)}")`,
+        '--vfx-image': `url("${imageUrl}")`,
         '--vfx-tone-color': vfxToneColor(recipe.tone),
         ...(attackContactMs > 0 ? { '--attack-impact-delay': `${attackContactMs}ms` } : {}),
         ...(revealDelayMs > 0 ? { '--vfx-reveal-delay': `${revealDelayMs}ms` } : {}),
