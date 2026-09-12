@@ -3,15 +3,18 @@ const MULTIPLAYER_PROTOCOL_VERSION = 1
 
 let roomOrigin: string | null = null
 let entryRequestIds = false
+let webSocketActionAcks = false
 const failedOrigins = new Set<string>()
 
 export function resetRoomEndpoint(failedUrl?: string) {
   if (failedUrl && HOSTED_SESSION) failedOrigins.add(new URL(failedUrl, location.href).origin)
   roomOrigin = null
   entryRequestIds = false
+  webSocketActionAcks = false
 }
 
 export const supportsEntryRequestIds = () => !HOSTED_SESSION || entryRequestIds
+export const supportsWebSocketActionAcks = () => HOSTED_SESSION && webSocketActionAcks
 
 export async function roomUrl(path: string) {
   if (!HOSTED_SESSION) return path
@@ -45,7 +48,11 @@ export async function roomUrl(path: string) {
           if (!health.ok) throw new Error('Multiplayer server unavailable')
           const status = await health.json()
           if (status.protocolVersion !== MULTIPLAYER_PROTOCOL_VERSION) throw new Error('Multiplayer server incompatible')
-          return { origin: configured.origin, entryRequestIds: status.entryRequestIds === true }
+          return {
+            origin: configured.origin,
+            entryRequestIds: status.entryRequestIds === true,
+            webSocketActionAcks: status.webSocketActionAcks === true,
+          }
         } catch (error) {
           failedOrigins.add(configured.origin)
           throw error
@@ -53,6 +60,7 @@ export async function roomUrl(path: string) {
       }))
       roomOrigin = selected.origin
       entryRequestIds = selected.entryRequestIds
+      webSocketActionAcks = selected.webSocketActionAcks
     } catch {
       throw new Error('Could not find the multiplayer server')
     }

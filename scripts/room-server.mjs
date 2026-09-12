@@ -110,7 +110,11 @@ export function createRoomServer({
   const seatRates = new Map()
   const voiceRates = new Map()
   const pendingAuth = new Map()
-  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY })
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_BODY,
+    perMessageDeflate: { threshold: 1024, serverNoContextTakeover: true },
+  })
   let saveTimer
   let preserveRoomsOnClose = false
   let saveError = null
@@ -299,7 +303,8 @@ export function createRoomServer({
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (request.method === 'GET' && url.pathname === '/api/health') {
         return send(response, 200, {
-          ok: true, rooms: store.rooms.size, protocolVersion: MULTIPLAYER_PROTOCOL_VERSION, profiles: true, entryRequestIds: true,
+          ok: true, rooms: store.rooms.size, protocolVersion: MULTIPLAYER_PROTOCOL_VERSION, profiles: true,
+          entryRequestIds: true, webSocketActionAcks: true,
         })
       }
       if (request.method === 'POST' && url.pathname === '/api/profile') {
@@ -548,7 +553,19 @@ export function createRoomServer({
           const allowed = message.type === 'voice'
             ? maySignalVoice(room, client.token)
             : mayAct(room, client.token)
-          if (!allowed) return socket.close(4008, 'Rate limit exceeded')
+          if (!allowed) {
+            if (message.type !== 'action' || client.rateLimited) return socket.close(4008, 'Rate limit exceeded')
+            let requestId
+            try { requestId = requestIdOf(message.requestId) } catch { return socket.close(4008, 'Rate limit exceeded') }
+            if (!requestId) return socket.close(4008, 'Rate limit exceeded')
+            client.rateLimited = true
+            if (socket.bufferedAmount > MAX_BUFFERED_BYTES) return socket.terminate()
+            return socket.send(JSON.stringify({
+              type: 'error', requestId, status: 429, error: 'Rate limit exceeded',
+              snapshot: snapshotFor(room, client.token),
+            }))
+          }
+          if (message.type === 'action') client.rateLimited = false
         }
         if (!client) {
           if (message.type !== 'authenticate' || typeof message.token !== 'string') {
@@ -579,21 +596,32 @@ export function createRoomServer({
           return
         }
         if (message.type === 'action') {
-          if (reconnectingHandoff(room)) throw new Error('Waiting for every player to reconnect')
-          // The catch below sends the error frame on this same socket, so it
-          // lands after the snapshot and the refusal still reads: no seat is
-          // skipped here, and a socket client has no other way to catch up.
+          const requestId = requestIdOf(message.requestId)
           const versionBefore = room.version
           try {
+            if (reconnectingHandoff(room)) {
+              throw Object.assign(new Error('Waiting for every player to reconnect'), { status: 409 })
+            }
             const result = apply(room, client.token, message.action)
             if (result.changed) {
               touch(room)
               queueSave()
-              publish(room)
+              publish(room, requestId ? client.token : undefined)
+            }
+            if (requestId) {
+              if (socket.bufferedAmount > MAX_BUFFERED_BYTES) socket.terminate()
+              else socket.send(JSON.stringify({ type: 'snapshot', requestId, snapshot: result.snapshot }))
             }
           } catch (error) {
-            reconcileRefusal(room, versionBefore)
-            throw error
+            reconcileRefusal(room, versionBefore, requestId ? client.token : undefined)
+            if (!requestId) throw error
+            if (socket.bufferedAmount > MAX_BUFFERED_BYTES) socket.terminate()
+            else socket.send(JSON.stringify({
+              type: 'error', requestId,
+              status: error.status ?? (error.name === 'RoomError' ? 409 : 500),
+              error: error instanceof Error ? error.message : 'Bad message',
+              snapshot: snapshotFor(room, client.token),
+            }))
           }
         } else if (message.type === 'voice') {
           if (!message.signal || typeof message.signal !== 'object' || Array.isArray(message.signal)) {

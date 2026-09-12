@@ -306,18 +306,35 @@ try {
 
   const roomId = afterNeow.body.run.map.rows[0][0]
   const inCombat = (message) => message.snapshot.run?.phase === 'combat'
-  const aUpdate = nextMessage(aLive.socket, 'snapshot', inCombat)
+  const actionRequestId = crypto.randomUUID()
+  const aUpdate = nextMessage(aLive.socket, 'snapshot', (message) =>
+    message.requestId === actionRequestId && inCombat(message))
   const bUpdate = nextMessage(bLive.socket, 'snapshot', inCombat)
-  aLive.socket.send(JSON.stringify({ type: 'action', action: { kind: 'enterRoom', roomId } }))
+  aLive.socket.send(JSON.stringify({ type: 'action', requestId: actionRequestId, action: { kind: 'enterRoom', roomId } }))
   const [seenA, seenB] = await Promise.all([aUpdate, bUpdate])
 
-  check('WebSocket actions converge while keeping hands private', () => {
+  check('acknowledged WebSocket actions converge while keeping hands private', () => {
+    assertEqual(seenA.requestId, actionRequestId)
+    assert(aLive.socket.extensions.includes('permessage-deflate'), 'large snapshots did not negotiate WebSocket compression')
     assertEqual(seenA.snapshot.run.phase, 'combat')
     assertEqual(seenB.snapshot.run.phase, 'combat')
     const aViewOfB = seenA.snapshot.run.combat.players.find((player) => player.id === joined[0].playerId)
     const bViewOfB = seenB.snapshot.run.combat.players.find((player) => player.id === joined[0].playerId)
     assertEqual(aViewOfB.hand, null, 'Ann cannot read Bo\'s hand')
     assert(Array.isArray(bViewOfB.hand), 'Bo receives Bo\'s own hand')
+  })
+
+  const refusedRequestId = crypto.randomUUID()
+  const refusedAction = nextMessage(aLive.socket, 'error', (message) => message.requestId === refusedRequestId)
+  aLive.socket.send(JSON.stringify({
+    type: 'action', requestId: refusedRequestId, action: { kind: 'playCard', cardUid: 'missing-card' },
+  }))
+  const refusedMessage = await refusedAction
+  check('refused WebSocket actions return a correlated authoritative snapshot', () => {
+    assertEqual(refusedMessage.requestId, refusedRequestId)
+    assertEqual(refusedMessage.status, 409)
+    assertEqual(refusedMessage.snapshot.code, code)
+    assertEqual(refusedMessage.snapshot.you.playerId, a.playerId)
   })
 
   const voteStarted = await request(`/api/rooms/${code}/action`, {
@@ -589,7 +606,28 @@ try {
     method: 'POST', body: { name: 'Rate', character: 'ironclad' },
   })
   const limitedCode = limited.body.snapshot.code
+  const limitedLive = await connect(limitedCode, limited.body.token)
+  let limitedMessage
   for (let i = 0; i < 60; i++) {
+    const requestId = crypto.randomUUID()
+    const response = nextMessage(limitedLive.socket, 'error', (message) => message.requestId === requestId)
+    limitedLive.socket.send(JSON.stringify({ type: 'action', requestId, action: null }))
+    limitedMessage = await response
+  }
+  check('correlated WebSocket actions report rate limits without reconnecting', () => {
+    assertEqual(limitedMessage.status, 429)
+    assertEqual(limitedLive.socket.readyState, WebSocket.OPEN)
+  })
+  const postLimitVoice = nextMessage(limitedLive.socket, 'error')
+  limitedLive.socket.send(JSON.stringify({ type: 'voice', to: 'missing', signal: { ready: true } }))
+  await postLimitVoice
+  const repeatedRateClose = new Promise((resolve) => limitedLive.socket.once('close', resolve))
+  limitedLive.socket.send(JSON.stringify({ type: 'action', requestId: crypto.randomUUID(), action: null }))
+  const repeatedRateCode = await repeatedRateClose
+  check('voice traffic cannot reset the bounded over-limit WebSocket response', () => {
+    assertEqual(repeatedRateCode, 4008)
+  })
+  for (let i = 0; i < 2; i++) {
     await request(`/api/rooms/${limitedCode}/action`, {
       method: 'POST', token: limited.body.token, body: { action: null },
     })

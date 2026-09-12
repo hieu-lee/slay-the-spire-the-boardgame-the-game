@@ -242,6 +242,21 @@ try {
     await route.continue()
   })
   useUnreliableOrigin('/api/rooms', 'POST', 'stall', true)
+  await host.addInitScript(() => {
+    const addEventListener = WebSocket.prototype.addEventListener
+    window.__roomAddEventListener = addEventListener
+    WebSocket.prototype.addEventListener = function (type, listener, options) {
+      if (type !== 'close') return addEventListener.call(this, type, listener, options)
+      return addEventListener.call(this, type, function (event) {
+        if (window.__holdNextRoomClose) {
+          window.__holdNextRoomClose = false
+          window.__heldRoomClose = () => listener.call(this, event)
+          return
+        }
+        return listener.call(this, event)
+      }, options)
+    }
+  })
   await enter(host, 'Host', 'Ironclad')
   await host.unroute(`${healthyRoomOrigin}/api/rooms/*`)
   assert.equal(unreliableRequests, 1, 'room creation did not fail over from a stalled primary')
@@ -280,6 +295,7 @@ try {
       if (code === 4000) return
       close.call(this, code, reason)
     }
+    window.__holdNextRoomClose = true
   })
   await host.route(`${tertiaryRoomOrigin}/api/rooms/${credentials.code}`, async (route) => {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 6_000))
@@ -289,8 +305,12 @@ try {
   await host.locator('.connection--connected').waitFor({ timeout: 20_000 })
   await host.evaluate(() => {
     WebSocket.prototype.close = window.__roomClose
+    WebSocket.prototype.addEventListener = window.__roomAddEventListener
     delete window.__roomClose
+    delete window.__roomAddEventListener
   })
+  assert(await host.evaluate(() => typeof window.__heldRoomClose === 'function'),
+    'the stale WebSocket close was not held for the action race')
   assert(hostWebSockets.at(-1).startsWith(healthyRoomOrigin.replace('http', 'ws')),
     'an established blackholed WebSocket did not fail over independently of close')
   await host.unroute(`${tertiaryRoomOrigin}/api/rooms/${credentials.code}`)
@@ -302,6 +322,134 @@ try {
   ])
   const liveRoom = rooms.store.rooms.get(credentials.code)
   const ownerId = liveRoom.seats[0].playerId
+  Object.assign(liveRoom.run, { phase: 'map', neow: null })
+  liveRoom.version += 1
+  rooms.publishRoom(liveRoom.code)
+  await host.locator('.map:not([inert]) .room--reachable').first().waitFor()
+  const mapBeforeLegacyAction = structuredClone(liveRoom.run.map)
+  roomOrigin = secondaryRoomOrigin
+  roomOrigins = [secondaryRoomOrigin]
+  await host.route(`${secondaryRoomOrigin}/api/health`, async (route) => {
+    const response = await route.fetch()
+    const { webSocketActionAcks: _ignored, ...legacyHealth } = await response.json()
+    await route.fulfill({ response, body: JSON.stringify(legacyHealth), contentType: 'application/json' })
+  })
+  const socketsBeforeLegacy = hostWebSockets.length
+  rooms.dropConnection(credentials.code, credentials.token)
+  await host.locator('.connection--reconnecting').waitFor()
+  await host.locator('.connection--connected').waitFor()
+  assert(hostWebSockets.length > socketsBeforeLegacy, 'the legacy-capability fixture did not replace its socket')
+  await host.unroute(`${secondaryRoomOrigin}/api/health`)
+  const endpointNowSupportsAcks = await host.evaluate(async () => {
+    const endpoint = await import('/src/multiplayer/room-endpoint.ts')
+    endpoint.resetRoomEndpoint()
+    await endpoint.roomUrl('/api/health')
+    return endpoint.supportsWebSocketActionAcks()
+  })
+  assert(endpointNowSupportsAcks, 'the rolling endpoint fixture did not discover action acknowledgements')
+  let legacyHttpActions = 0
+  await host.route('**/api/rooms/*/action', async (route) => {
+    legacyHttpActions += 1
+    await route.continue()
+  })
+  await host.locator('.map:not([inert]) .room--reachable').first().click()
+  await host.locator('.combat').waitFor()
+  assert.equal(legacyHttpActions, 1, 'an old socket inherited a newer endpoint\'s acknowledgement capability')
+  await host.unroute('**/api/rooms/*/action')
+  Object.assign(liveRoom.run, { phase: 'map', combat: null, roomState: null, map: mapBeforeLegacyAction })
+  liveRoom.version += 1
+  rooms.publishRoom(liveRoom.code)
+  await host.locator('.map:not([inert]) .room--reachable').first().waitFor()
+  const socketsBeforeAcknowledged = hostWebSockets.length
+  rooms.dropConnection(credentials.code, credentials.token)
+  await host.locator('.connection--reconnecting').waitFor()
+  await host.locator('.connection--connected').waitFor()
+  assert(hostWebSockets.length > socketsBeforeAcknowledged, 'the acknowledged socket fixture did not reconnect')
+  const socketsBeforeMissingAck = hostWebSockets.length
+  await host.evaluate(() => {
+    const send = WebSocket.prototype.send
+    window.__roomSend = send
+    WebSocket.prototype.send = function (data) {
+      if (JSON.parse(String(data)).type === 'action') return
+      return send.call(this, data)
+    }
+  })
+  await host.locator('.map:not([inert]) .room--reachable').first().click()
+  await host.locator('.connection--reconnecting').waitFor({ timeout: 12_000 })
+  await host.evaluate(() => {
+    WebSocket.prototype.send = window.__roomSend
+    delete window.__roomSend
+  })
+  await host.locator('.connection--connected').waitFor()
+  assert(hostWebSockets.length > socketsBeforeMissingAck, 'a missing action acknowledgement kept the bad socket active')
+  await host.waitForFunction(() => !document.querySelector('main')?.hasAttribute('data-webmcp-pending'))
+  const refusalSnapshot = await fetch(`${roomTarget}/api/rooms/${credentials.code}`, {
+    headers: { 'x-room-token': credentials.token },
+  }).then((response) => response.json())
+  let refusalRefreshes = 0
+  await host.route(`**/api/rooms/${credentials.code}`, async (route) => {
+    refusalRefreshes += 1
+    await route.continue()
+  })
+  await host.evaluate((snapshot) => {
+    const send = WebSocket.prototype.send
+    window.__roomSend = send
+    WebSocket.prototype.send = function (data) {
+      const message = JSON.parse(String(data))
+      if (message.type !== 'action') return send.call(this, data)
+      queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({
+        type: 'error', requestId: message.requestId, status: 409, error: 'Injected action refusal', snapshot,
+      }) })))
+    }
+  }, refusalSnapshot)
+  await host.locator('.map:not([inert]) .room--reachable').first().click()
+  await host.getByRole('alert').filter({ hasText: 'Injected action refusal' }).waitFor()
+  await host.waitForFunction(() => !document.querySelector('main')?.hasAttribute('data-webmcp-pending'))
+  await host.locator('.map:not(.map--entering)').waitFor()
+  assert.equal(refusalRefreshes, 0, 'a correlated refusal performed a redundant HTTP refresh')
+  await host.evaluate(() => {
+    WebSocket.prototype.send = window.__roomSend
+    delete window.__roomSend
+  })
+  await host.unroute(`**/api/rooms/${credentials.code}`)
+  let delayedHttpActions = 0
+  let staleCloseRefreshes = 0
+  await host.route('**/api/rooms/*/action', async (route) => {
+    delayedHttpActions += 1
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_000))
+    await route.continue()
+  })
+  await host.route(`**/api/rooms/${credentials.code}`, async (route) => {
+    staleCloseRefreshes += 1
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_000))
+    await route.continue()
+  })
+  await host.evaluate(() => {
+    const send = WebSocket.prototype.send
+    window.__roomSend = send
+    WebSocket.prototype.send = function (data) {
+      const message = JSON.parse(String(data))
+      if (message.type === 'action' && window.__heldRoomClose) {
+        const release = window.__heldRoomClose
+        delete window.__heldRoomClose
+        release()
+      }
+      return send.call(this, data)
+    }
+  })
+  const actionStartedAt = Date.now()
+  await host.locator('.map:not([inert]) .room--reachable').first().click()
+  await host.locator('.combat').waitFor({ timeout: 1_500 })
+  await host.waitForFunction(() => !document.querySelector('main')?.hasAttribute('data-webmcp-pending'))
+  assert.equal(delayedHttpActions, 0, 'hosted gameplay still used the delayed HTTP action endpoint')
+  assert.equal(staleCloseRefreshes, 0, 'a stale socket close rejected the replacement socket action')
+  assert(Date.now() - actionStartedAt < 1_500, 'the persistent WebSocket did not bypass injected HTTP latency')
+  await host.evaluate(() => {
+    WebSocket.prototype.send = window.__roomSend
+    delete window.__roomSend
+  })
+  await host.unroute(`**/api/rooms/${credentials.code}`)
+  await host.unroute('**/api/rooms/*/action')
   liveRoom.run = {
     ...liveRoom.run,
     phase: 'map',

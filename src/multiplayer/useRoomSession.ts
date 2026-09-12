@@ -8,7 +8,13 @@ import type { CourierOffer, MerchantState, RelicRewardState } from '../game/nonc
 import type { CampaignProgress, SpireKeys } from '../game/campaign.ts'
 import type { NeowCard, NeowRewardOffer } from '../game/neow.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
-import { resetRoomEndpoint, roomUrl, roomWebSocketUrl, supportsEntryRequestIds } from './room-endpoint.ts'
+import {
+  resetRoomEndpoint,
+  roomUrl,
+  roomWebSocketUrl,
+  supportsEntryRequestIds,
+  supportsWebSocketActionAcks,
+} from './room-endpoint.ts'
 
 const ACTIVE_KEY = 'sts-room-session'
 const RECOVERY_KEY = 'sts-room-recoveries'
@@ -255,10 +261,12 @@ export type VoiceSignal = {
 
 class RequestError extends Error {
   status: number
+  snapshot?: RoomSnapshot
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, snapshot?: RoomSnapshot) {
     super(message)
     this.status = status
+    this.snapshot = snapshot
   }
 }
 
@@ -333,9 +341,23 @@ export function useRoomSession() {
   const generation = useRef(0)
   const departed = useRef(false)
   const socket = useRef<WebSocket | null>(null)
+  const acknowledgedSockets = useRef(new WeakSet<WebSocket>())
+  const socketActions = useRef(new Map<string, {
+    resolve: (snapshot: RoomSnapshot) => void
+    reject: (cause: Error) => void
+    timeout: number
+  }>())
   const snapshotRef = useRef<RoomSnapshot | null>(null)
   const voiceListeners = useRef(new Set<(message: VoiceSignal) => void>())
   connectionRef.current = connection
+
+  const rejectSocketActions = (cause: Error) => {
+    for (const pending of socketActions.current.values()) {
+      clearTimeout(pending.timeout)
+      pending.reject(cause)
+    }
+    socketActions.current.clear()
+  }
 
   useEffect(() => {
     mounted.current = true
@@ -430,6 +452,7 @@ export function useRoomSession() {
         const socketEndpoint = new URL(socketUrl)
         socketEndpoint.protocol = socketEndpoint.protocol === 'wss:' ? 'https:' : 'http:'
         const next = new WebSocket(socketUrl)
+        if (supportsWebSocketActionAcks()) acknowledgedSockets.current.add(next)
         socket.current = next
         let connectionTimeout: number | undefined
         const reconnect = (failedEndpoint?: string) => {
@@ -437,6 +460,7 @@ export function useRoomSession() {
           if (connectionTimeout) clearTimeout(connectionTimeout)
           if (livenessTimer) clearTimeout(livenessTimer)
           livenessTimer = undefined
+          rejectSocketActions(new Error('Connection lost'))
           socket.current = null
           connectionRef.current = 'reconnecting'
           setConnection('reconnecting')
@@ -480,9 +504,23 @@ export function useRoomSession() {
               connectionRef.current = 'connected'
               setConnection('connected')
               setError('')
+              const pending = socketActions.current.get(message.requestId)
+              if (pending) {
+                clearTimeout(pending.timeout)
+                socketActions.current.delete(message.requestId)
+                pending.resolve(message.snapshot)
+              }
             } else if (message.type === 'voice' && message.signal && typeof message.signal === 'object' && !Array.isArray(message.signal)) {
               for (const listener of voiceListeners.current) listener(message)
-            } else if (message.type === 'error') setError(message.error)
+            } else if (message.type === 'error') {
+              const pending = socketActions.current.get(message.requestId)
+              if (pending) {
+                clearTimeout(pending.timeout)
+                socketActions.current.delete(message.requestId)
+                if (message.snapshot && accept(message.snapshot)) setRestorationEpoch((current) => current + 1)
+                pending.reject(new RequestError(message.error, message.status ?? 409, message.snapshot))
+              } else setError(message.error)
+            }
           } catch {
             next.close(1002, 'Invalid room update')
           }
@@ -492,6 +530,7 @@ export function useRoomSession() {
           if (livenessTimer) clearTimeout(livenessTimer)
           livenessTimer = undefined
           if (!active || generation.current !== connectedGeneration || socket.current !== next) return
+          rejectSocketActions(new Error('Connection lost'))
           if ([1000, 4001, 4003, 4004].includes(event.code)) {
             if (event.code === 1000) {
               departed.current = true
@@ -537,6 +576,7 @@ export function useRoomSession() {
       if (livenessTimer) clearTimeout(livenessTimer)
       socket.current?.close()
       socket.current = null
+      rejectSocketActions(new Error('Room session changed'))
     }
   }, [accept, credentials, forget])
 
@@ -617,21 +657,45 @@ export function useRoomSession() {
     if (!credentials || generation.current !== actionGeneration) return { status: 'unknown' } satisfies ActionOutcome
     let endpoint: string | undefined
     try {
-      endpoint = await roomUrl(`/api/rooms/${credentials.code}/${operation}`)
-      const next = await json(await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-room-token': credentials.token },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(ACTION_TIMEOUT_MS),
-      })) as RoomSnapshot
+      let next: RoomSnapshot
+      const activeSocket = socket.current
+      if (operation === 'action' && activeSocket?.readyState === WebSocket.OPEN && acknowledgedSockets.current.has(activeSocket)) {
+        next = await new Promise<RoomSnapshot>((resolve, reject) => {
+          const requestId = crypto.randomUUID()
+          const timeout = window.setTimeout(() => {
+            socketActions.current.delete(requestId)
+            if (socket.current === activeSocket) activeSocket.close(4000, 'Action timed out')
+            reject(new Error('Action timed out'))
+          }, ACTION_TIMEOUT_MS)
+          socketActions.current.set(requestId, { resolve, reject, timeout })
+          try {
+            activeSocket.send(JSON.stringify({ type: 'action', requestId, ...body }))
+          } catch (cause) {
+            clearTimeout(timeout)
+            socketActions.current.delete(requestId)
+            reject(cause)
+          }
+        })
+      } else {
+        endpoint = await roomUrl(`/api/rooms/${credentials.code}/${operation}`)
+        next = await json(await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-room-token': credentials.token },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(ACTION_TIMEOUT_MS),
+        })) as RoomSnapshot
+      }
       if (generation.current === actionGeneration) {
         accept(next)
         setError('')
       }
       return { status: 'accepted', snapshot: next } satisfies ActionOutcome
     } catch (cause) {
-      resetAfterFailure(cause, endpoint)
       if (generation.current === actionGeneration) setError(cause instanceof Error ? cause.message : 'Action failed')
+      if (cause instanceof RequestError && cause.status >= 400 && cause.status < 500 && cause.snapshot) {
+        return { status: 'refused', snapshot: cause.snapshot } satisfies ActionOutcome
+      }
+      resetAfterFailure(cause, endpoint)
       let refreshAttempt: number | undefined
       if (generation.current === actionGeneration) {
         for (const delay of [0, 150, 500]) {
