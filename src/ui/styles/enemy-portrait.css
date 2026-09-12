@@ -316,6 +316,36 @@ button.pile:hover { filter: brightness(1.15); }
   padding: 0.35rem 0.65rem;
 }
 
+.end-turn-effects__phone-orb-prompt,
+.end-turn-effects__orb-choices { display: none; }
+
+html[data-mobile-performance='true'] .end-turn-effects__desktop-orb-prompt { display: none; }
+html[data-mobile-performance='true'] .end-turn-effects__phone-orb-prompt { display: inline; }
+
+html[data-mobile-performance='true'] .end-turn-effects__orb-choices {
+  display: flex;
+  gap: 0.5rem;
+  pointer-events: auto;
+}
+
+.end-turn-effects__orb-choice {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 6.25rem;
+  height: 6.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.end-turn-effects__orb-choices .token--orb {
+  width: 3.25rem;
+  height: 3.25rem;
+  pointer-events: none;
+}
+
 .end-turn-effect {
   pointer-events: auto;
   animation: end-turn-effect-arrive 280ms var(--ease-out, ease-out) both;

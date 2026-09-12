@@ -2040,12 +2040,24 @@ function CombatScreenView({
     : endTurnEffect?.rowTiebreak
     ? `Drag ${endTurnEffect.label} to a minion to choose its row`
     : endTurnEffect?.orbChoice
-      ? `Drag a highlighted Orb to ${endTurnEffect.label}`
+      ? <>
+          <span className="end-turn-effects__desktop-orb-prompt">Drag a highlighted Orb to {endTurnEffect.label}</span>
+          <span className="end-turn-effects__phone-orb-prompt">Choose an Orb to duplicate with {endTurnEffect.label}</span>
+        </>
       : `Drag ${endTurnEffect?.label} to a highlighted enemy`
   const endTurnEffectVisual = endTurnEffect?.visual
-  const endTurnEffectCard = endTurnEffectVisual?.kind === 'card' && endTurnEffect
+  const endTurnEffectPlayer = endTurnEffect
     ? state.players.find((player) => player.id === endTurnEffect.playerId)
-      ?.powers.find((power) => power.uid === endTurnEffectVisual.cardUid)
+    : undefined
+  const endTurnOrbChoices = canResolveEndTurn && endTurnEffect?.orbChoice
+    ? [...new Map((endTurnEffect.targets ?? []).flatMap((target) => {
+        const slot = Number(target.uid.slice(4))
+        const orb = endTurnEffectPlayer?.orbs[slot]
+        return target.uid === `orb:${slot}` && orb ? [[orb, { orb, target }] as const] : []
+      })).values()]
+    : []
+  const endTurnEffectCard = endTurnEffectVisual?.kind === 'card' && endTurnEffect
+    ? endTurnEffectPlayer?.powers.find((power) => power.uid === endTurnEffectVisual.cardUid)
     : undefined
   const endTurnEffectSlimeAsset = endTurnEffectVisual?.kind === 'slime'
     ? assetPath(`combat/slimes/${slimeAssetSlug(endTurnEffectVisual.cardId)}.webp`)
@@ -5795,6 +5807,17 @@ function CombatScreenView({
                   : 'lightning'}`} aria-hidden="true" />}
             </button>
           )}
+          {endTurnOrbChoices.length > 0 ? (
+            <div className="end-turn-effects__orb-choices" role="group" aria-label={`Choose an Orb for ${endTurnEffect.label}`}>
+              {endTurnOrbChoices.map(({ orb, target }) => (
+                <button className="end-turn-effects__orb-choice" key={orb} type="button"
+                  aria-label={`Duplicate ${orb} Orb effect`}
+                  onClick={() => resolveTurnEffectTarget(endTurnEffect.id, target.uid)}>
+                  <span className={`token--orb token--orb-${orb}`} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          ) : null}
           {endTurnChoiceTargets.length > 0 ? (
             <div className="end-turn-effects__choices" role="group" aria-label={`Resolve ${endTurnEffect.label}`}>
               {endTurnChoiceTargets.map((target) => (

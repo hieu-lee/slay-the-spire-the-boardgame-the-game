@@ -15,8 +15,10 @@ try {
   for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     const browser = await engine.launch({ headless: true })
     try {
-      for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }], ['horizontal-phone', { width: 844, height: 390 }]]) {
-        const phone = screen === 'horizontal-phone'
+      for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }],
+        ['horizontal-phone', { width: 844, height: 390 }], ['small-horizontal-phone', { width: 568, height: 320 }]]) {
+        const phone = screen !== 'desktop'
+        const smallPhone = screen === 'small-horizontal-phone'
         const context = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone,
           recordVideo: { dir: output, size: viewport } })
         const page = await context.newPage()
@@ -38,10 +40,11 @@ try {
           const reactRoot = (D.createRoot ?? D.default.createRoot)(node)
           const f = window.fixture = { restoration: 0, seq: 0 }
           f.render = () => reactRoot.render((R.createElement ?? R.default.createElement)(CombatScreen, {
-            key: f.seq, state: structuredClone(f.state), act: 3, viewerId: 'p1', autoAdvance: false,
+            key: f.seq, state: structuredClone(f.state), act: 3, viewerId: f.viewerId, autoAdvance: false,
             authoritativeRestoration: f.restoration, onChange: state => { f.state = state; f.render() },
           }))
           f.install = (defs, stormOrb, partySize = 1) => {
+            f.viewerId = 'p1'
             const rng = createRng(47), player = createPlayer(rng, 'p1', 'Defect', 'defect', 0)
             Object.assign(player, { hp: 8, maxHp: 8, relics: [], draw: [], discard: [],
               hand: [{ uid: 'strike', defId: 'strike_defect', upgraded: false }],
@@ -98,7 +101,7 @@ try {
           const b = window.fixture.bounds(document.querySelector(`[data-enemy-id="${id}"] .enemy__art--cutout`))
           return { x: b.left + b.width / 2, y: b.top + b.height * .6 }
         }, id)
-        for (const defs of [['deca', 'donu'], ['donu', 'deca'], ['taskmaster', 'red_slaver', 'blue_slaver'], ['sentry_a', 'sentry_b', 'sentry_a']]) {
+        if (!smallPhone) for (const defs of [['deca', 'donu'], ['donu', 'deca'], ['taskmaster', 'red_slaver', 'blue_slaver'], ['sentry_a', 'sentry_b', 'sentry_a']]) {
           await page.evaluate(defs => window.fixture.install(defs), defs)
           await ready()
           assert(await page.locator('.enemy').evaluateAll(enemies => enemies.every(e => getComputedStyle(e).pointerEvents === 'none')), 'empty button rectangles must not intercept neighbours')
@@ -114,7 +117,7 @@ try {
           await page.locator('.board').screenshot({ path: resolve(output, `${engineName}-${screen}-${defs.join('-')}.png`) })
         }
         // Tall boss hit areas must stay behind the shared Orb choice prompt.
-        for (const boss of ['bronze_automaton', 'the_champ']) {
+        if (!smallPhone) for (const boss of ['bronze_automaton', 'the_champ']) {
           await page.evaluate(boss => window.fixture.install([boss], 'dark'), boss)
           await ready()
           const choice = page.getByRole('button', { name: 'frost slot 3', exact: true })
@@ -126,6 +129,60 @@ try {
           await page.screenshot({ path: resolve(output, `${engineName}-${screen}-${boss}-orb-choice.png`) })
           if (phone) await tap(choice); else await choice.click()
           await choice.waitFor({ state: 'detached' })
+        }
+        await page.evaluate(() => {
+          const f = window.fixture
+          f.install(['jaw_worm'], undefined, 2)
+          Object.assign(f.state.players[0], {
+            hand: [],
+            orbs: ['lightning', 'frost', 'dark', 'lightning'],
+            powers: [{ uid: 'phone-loop', defId: 'loop', upgraded: true }],
+          })
+          f.render()
+        })
+        await ready()
+        if (phone) await tap(page.getByRole('button', { name: 'End turn', exact: true }))
+        else await page.getByRole('button', { name: 'End turn', exact: true }).click()
+        const loopCard = page.locator('.end-turn-effect--card')
+        await loopCard.waitFor()
+        const loopChoices = page.getByRole('group', { name: /Choose an Orb for .*Loop/ })
+        if (phone) {
+          await page.evaluate(() => { window.fixture.viewerId = 'p2'; window.fixture.render() })
+          await page.waitForFunction(() => document.querySelector('.end-turn-effects__prompt')?.textContent.includes('Waiting for'))
+          assert.equal(await page.locator('.end-turn-effects__orb-choices').count(), 0,
+            `${engineName}/${screen}: non-owner can see Loop Orb choices`)
+          await page.evaluate(() => { window.fixture.viewerId = 'p1'; window.fixture.render() })
+          await loopChoices.waitFor()
+          await loopCard.evaluate(card => Promise.all(card.getAnimations().map(animation => animation.finished)))
+          const cardBox = await loopCard.boundingBox(), choicesBox = await loopChoices.boundingBox()
+          const visibleBottom = await page.evaluate(() =>
+            (window.visualViewport?.offsetTop ?? 0) + (window.visualViewport?.height ?? innerHeight))
+          assert(cardBox && choicesBox && choicesBox.y >= cardBox.y + cardBox.height - 1 &&
+            choicesBox.y + choicesBox.height <= visibleBottom,
+          `${engineName}/${screen}: Loop Orb choices are not visible below the card`)
+          assert.deepEqual(await loopChoices.locator('.token--orb').evaluateAll(tokens => tokens.map(token => token.className)),
+            ['token--orb token--orb-lightning', 'token--orb token--orb-frost', 'token--orb token--orb-dark'])
+          assert(await loopChoices.locator('button').evaluateAll(buttons => buttons.every(button => {
+            const style = getComputedStyle(button)
+            return style.borderWidth === '0px' && style.backgroundImage === 'none' &&
+              style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.boxShadow === 'none' && style.clipPath === 'none'
+          })), `${engineName}/${screen}: Loop Orb assets have visible button chrome`)
+          assert(await loopChoices.locator('button').evaluateAll(buttons => buttons.every(button => {
+            const box = button.getBoundingClientRect(), scale = window.visualViewport?.scale ?? 1
+            return Math.min(box.width, box.height) * scale >= 44
+          })), `${engineName}/${screen}: Loop Orb tap targets are smaller than 44 points`)
+          await page.screenshot({ path: resolve(output, `${engineName}-${screen}-loop-orb-choices.png`) })
+          await tap(page.getByRole('button', { name: 'Duplicate frost Orb effect' }))
+          await tap(page.getByRole('button', { name: 'Duplicate lightning Orb effect' }))
+          await loopCard.waitFor({ state: 'detached' })
+        } else {
+          assert.equal(await page.locator('.end-turn-effects__orb-choices:visible').count(), 0,
+            'desktop must keep the existing Orb drag interaction')
+        }
+        if (smallPhone) {
+          await context.close()
+          console.log(`PASS ${engineName} ${screen}: Loop Orb choices`)
+          continue
         }
         await page.evaluate(() => {
           window.fixture.install(['bronze_automaton'])
