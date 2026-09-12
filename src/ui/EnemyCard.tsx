@@ -431,14 +431,14 @@ export function EnemyCard({
   const bossAttackArt = animatedEnemy ? currentBossAttackArt : undefined
   useEffect(() => {
     if (!bossAttackArt) return
-    let cancelled = false
-    void fetch(bossAttackArt).then(async (response) => {
+    const controller = new AbortController()
+    void fetch(bossAttackArt, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) return
       const blob = await response.blob()
-      if (!cancelled) attackPreload.current = { source: bossAttackArt, blob }
+      if (!controller.signal.aborted) attackPreload.current = { source: bossAttackArt, blob }
     }).catch(() => undefined)
     return () => {
-      cancelled = true
+      controller.abort()
       attackPreload.current = null
     }
   }, [bossAttackArt])

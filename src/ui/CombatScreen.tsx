@@ -567,8 +567,9 @@ function CombatScreenView({
     setCharacterAttackBlobs((current) => new Map(assets
       .filter((src) => current.has(src))
       .map((src) => [src, current.get(src)!])))
-    assets.filter((src) => !characterAttackBlobs.has(src)).forEach((src) => {
-      void fetch(src, { signal: controller.signal }).then(async (response) => {
+    void Promise.all(assets.filter((src) => !characterAttackBlobs.has(src)).map(async (src) => {
+      try {
+        const response = await fetch(src, { signal: controller.signal })
         if (!response.ok) return
         const blob = await response.blob()
         const decodeUrl = URL.createObjectURL(blob)
@@ -579,9 +580,12 @@ function CombatScreenView({
         } finally {
           URL.revokeObjectURL(decodeUrl)
         }
-        if (controller.signal.aborted) return
-        setCharacterAttackBlobs((current) => new Map(current).set(src, blob))
-      }).catch(() => undefined)
+        return [src, blob] as const
+      } catch {}
+    })).then((loaded) => {
+      if (controller.signal.aborted) return
+      const ready = loaded.filter((entry): entry is readonly [string, Blob] => Boolean(entry))
+      if (ready.length) setCharacterAttackBlobs((current) => new Map([...current, ...ready]))
     })
     return () => controller.abort()
   }, [characterAttackAssets])
