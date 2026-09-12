@@ -6,6 +6,7 @@ import { damageTotals } from './ui/run-summary-data.ts'
 
 const INSTALLATION_KEY = 'sts-leaderboard-installation'
 const OUTBOX_KEY = 'sts-leaderboard-outbox'
+const REQUEST_TIMEOUT_MS = 5_000
 const AUTO_FLUSH = import.meta.env.PROD || import.meta.env.VITE_HOSTED_SESSION === 'true' || import.meta.env.VITE_LEADERBOARD === 'true'
 
 export type LeaderboardRow = {
@@ -112,12 +113,17 @@ async function flush() {
   for (const run of readOutbox()) {
     let submitted = false
     for (let attempt = 0; attempt < 2 && !submitted; attempt += 1) {
+      let endpoint: string | undefined
+      let status: number | undefined
       try {
-        const response = await fetch(await roomUrl('/api/leaderboard'), {
+        endpoint = await roomUrl('/api/leaderboard')
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(run),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
+        status = response.status
         if (response.status === 400 || response.status === 413) {
           submitted = true
           writeOutbox(readOutbox().filter((entry) => entry.id !== run.id))
@@ -128,14 +134,14 @@ async function flush() {
         if (run.floorsCleared !== undefined && acknowledged?.floorsClearedAccepted !== true ||
             run.finalDeck !== undefined && acknowledged?.finalDeckAccepted !== true ||
             run.profileToken !== undefined && acknowledged?.profileAccepted !== true) {
-          resetRoomEndpoint()
+          resetRoomEndpoint(endpoint)
           if (attempt === 1) return
           continue
         }
         submitted = true
         writeOutbox(readOutbox().filter((entry) => entry.id !== run.id))
       } catch {
-        resetRoomEndpoint()
+        resetRoomEndpoint(status === undefined || status < 400 || status >= 500 ? endpoint : undefined)
         if (attempt === 1) return
       }
     }
@@ -151,12 +157,16 @@ export function flushLeaderboardOutbox(force = false) {
 export async function loadLeaderboard(): Promise<LeaderboardSnapshot> {
   await flushLeaderboardOutbox(true)
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    let endpoint: string | undefined
+    let status: number | undefined
     try {
-      const response = await fetch(await roomUrl('/api/leaderboard'), { cache: 'no-store' })
+      endpoint = await roomUrl('/api/leaderboard')
+      const response = await fetch(endpoint, { cache: 'no-store', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      status = response.status
       if (!response.ok) throw new Error('Leaderboard unavailable')
       return await response.json() as LeaderboardSnapshot
     } catch (error) {
-      resetRoomEndpoint()
+      resetRoomEndpoint(status === undefined || status < 400 || status >= 500 ? endpoint : undefined)
       if (attempt === 1) throw error
     }
   }
@@ -177,15 +187,27 @@ export type WinningDeckPage = { total: number; rows: WinningDeck[]; nextCursor: 
 
 export async function loadWinningDecks(params: URLSearchParams, signal: AbortSignal): Promise<WinningDeckPage> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    let endpoint: string | undefined
+    let status: number | undefined
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    if (signal.aborted) abort()
+    else signal.addEventListener('abort', abort, { once: true })
+    const timeout = setTimeout(abort, REQUEST_TIMEOUT_MS)
     try {
-      const response = await fetch(await roomUrl(`/api/leaderboard/decks?${params}`), { cache: 'no-store', signal })
+      endpoint = await roomUrl(`/api/leaderboard/decks?${params}`)
+      const response = await fetch(endpoint, { cache: 'no-store', signal: controller.signal })
+      status = response.status
       if (response.status === 404) throw new Error('Winning decks will be available after the archive server updates. Please try again shortly.')
       if (!response.ok) throw new Error('Could not load winning decks. Please try again.')
       return await response.json() as WinningDeckPage
     } catch (error) {
       if (signal.aborted) throw error
-      resetRoomEndpoint()
+      resetRoomEndpoint(status === undefined || status < 400 || status >= 500 ? endpoint : undefined)
       if (attempt === 1) throw error
+    } finally {
+      clearTimeout(timeout)
+      signal.removeEventListener('abort', abort)
     }
   }
   throw new Error('Could not load winning decks.')

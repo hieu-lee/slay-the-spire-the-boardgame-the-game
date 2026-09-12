@@ -56,7 +56,6 @@ jobs:
           test -f pages/session.json
           desired_run=$(jq -r '.runId // empty' pages/session.json)
           desired_source=$(jq -r '.sourceRunId // empty' pages/session.json)
-          desired_origin=$(jq -r '.origin // empty' pages/session.json)
           desired_sha=$(jq -r '.sha // empty' pages/session.json)
           desired_protocol=$(jq -r '.protocolVersion // empty' pages/session.json)
           [[ "$desired_run" =~ ^[0-9]+$ ]]
@@ -76,7 +75,6 @@ jobs:
                 '.sha = $sha | .protocolVersion = $protocol' <<< "$current_config" > pages/session.json
               desired_run=$current_run
               desired_source=$current_source
-              desired_origin=$(jq -r '.origin // empty' pages/session.json)
             fi
             [ "$current_run" = "$desired_run" ]
           elif [ "$DISCARD_EXISTING_ROOMS" = true ]; then
@@ -107,11 +105,12 @@ jobs:
             [ "$current_run" = "$desired_run" ] || \
               [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$current_run" --jq .status 2>/dev/null || true)" = completed ]
           fi
-          [[ "$desired_origin" =~ ^https://[-a-z0-9]+\.trycloudflare\.com$ ]]
+          desired_origins=$(jq -r '([.origin] + (.origins // [])) | unique[]' pages/session.json)
+          [ -n "$desired_origins" ]
+          while IFS= read -r origin; do
+            [[ "$origin" =~ ^https://[-a-z0-9]+\.trycloudflare\.com$ ]]
+          done <<< "$desired_origins"
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: pages
       - name: Verify the room endpoint immediately before deployment
         env:
           GH_TOKEN: ${{ github.token }}
@@ -122,7 +121,6 @@ jobs:
           desired_run=$(jq -r '.runId // empty' pages/session.json)
           desired_source=$(jq -r '.sourceRunId // empty' pages/session.json)
           desired_sha=$(jq -r '.sha // empty' pages/session.json)
-          desired_origin=$(jq -r '.origin // empty' pages/session.json)
           current_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
           current_config=$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 \
             "$PAGES_URL/session.json?final=$GITHUB_RUN_ID")
@@ -142,8 +140,19 @@ jobs:
           elif [ "$SOURCE_RUN_ID" != "$desired_run" ] || [ -z "$desired_source" ] || [ "$current_run" != "$desired_source" ]; then
             [ "$desired_sha" = "$current_sha" ]
           fi
-          curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-            "$desired_origin/api/health" | \
-            jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version' >/dev/null
+          healthy_origin=
+          while IFS= read -r origin; do
+            if curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+                "$origin/api/health" | jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version' >/dev/null; then
+              healthy_origin=$origin
+              break
+            fi
+          done < <(jq -r '([.origin] + (.origins // [])) | unique[]' pages/session.json)
+          [ -n "$healthy_origin" ]
+          jq --arg origin "$healthy_origin" '.origin = $origin' pages/session.json > pages/session.next.json
+          mv pages/session.next.json pages/session.json
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages
       - id: deployment
         uses: actions/deploy-pages@v4

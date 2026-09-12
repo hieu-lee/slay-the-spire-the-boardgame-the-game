@@ -30,6 +30,7 @@ const post = (path, body) => fetch(`http://127.0.0.1:${port}/api/${path}`, {
 try {
   const health = await fetch(`http://127.0.0.1:${port}/api/health`).then((response) => response.json())
   assert.equal(health.profiles, true)
+  assert.equal(health.entryRequestIds, true)
   const token = crypto.randomUUID()
   const results = await Promise.all([post('profile', { token, username: 'North' }), post('profile', { token: crypto.randomUUID(), username: 'NORTH' })])
   assert.deepEqual(results.map((r) => r.status).sort(), [200, 409])

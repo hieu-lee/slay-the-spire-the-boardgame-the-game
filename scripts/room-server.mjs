@@ -75,6 +75,11 @@ async function readJson(request) {
 
 const tokenOf = (request) => request.headers['x-room-token']?.toString()
 const codeOf = (value) => value.trim().toUpperCase()
+const requestIdOf = (value) => {
+  if (value === undefined) return undefined
+  if (typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) return value
+  throw Object.assign(new Error('Invalid request ID'), { status: 400 })
+}
 const sourceOf = (request) => request.headers['cf-connecting-ip']?.toString()
   ?? request.socket.remoteAddress
   ?? 'unknown'
@@ -98,8 +103,10 @@ export function createRoomServer({
   const roomOwners = new Map()
   const createRates = new Map()
   const joinRates = new Map()
+  const entryRetryRates = new Map()
   const leaderboardRates = new Map()
   const upgradeRates = new Map()
+  const invalidUpgradeRates = new Map()
   const seatRates = new Map()
   const voiceRates = new Map()
   const pendingAuth = new Map()
@@ -175,8 +182,10 @@ export function createRoomServer({
   function sweepRooms(now = Date.now()) {
     for (const [key, rate] of createRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) createRates.delete(key)
     for (const [key, rate] of joinRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) joinRates.delete(key)
+    for (const [key, rate] of entryRetryRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) entryRetryRates.delete(key)
     for (const [key, rate] of leaderboardRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) leaderboardRates.delete(key)
     for (const [key, rate] of upgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) upgradeRates.delete(key)
+    for (const [key, rate] of invalidUpgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) invalidUpgradeRates.delete(key)
     for (const [key, rate] of seatRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) seatRates.delete(key)
     for (const [key, rate] of voiceRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) voiceRates.delete(key)
     for (const [code, quorum] of store.reconnectQuorums) {
@@ -289,7 +298,9 @@ export function createRoomServer({
       }
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (request.method === 'GET' && url.pathname === '/api/health') {
-        return send(response, 200, { ok: true, rooms: store.rooms.size, protocolVersion: MULTIPLAYER_PROTOCOL_VERSION, profiles: true })
+        return send(response, 200, {
+          ok: true, rooms: store.rooms.size, protocolVersion: MULTIPLAYER_PROTOCOL_VERSION, profiles: true, entryRequestIds: true,
+        })
       }
       if (request.method === 'POST' && url.pathname === '/api/profile') {
         if (!consume(createRates, sourceOf(request), CREATE_WINDOW_MS, MAX_CREATES_PER_WINDOW)) {
@@ -323,10 +334,21 @@ export function createRoomServer({
       if (request.method === 'POST' && url.pathname === '/api/rooms') {
         sweepRooms()
         const source = sourceOf(request)
-        if (!consume(createRates, source, CREATE_WINDOW_MS, MAX_CREATES_PER_WINDOW)) {
+        const admitted = consume(createRates, source, CREATE_WINDOW_MS, MAX_CREATES_PER_WINDOW)
+        if (!admitted && !consume(entryRetryRates, `${source}:create`, CREATE_WINDOW_MS, MAX_JOINS_PER_WINDOW)) {
           return send(response, 429, { error: 'Too many rooms created' })
         }
         const body = await readJson(request)
+        const requestId = requestIdOf(body.requestId)
+        if (requestId) {
+          for (const existingRoom of store.rooms.values()) {
+            const existingSeat = existingRoom.seats.find((seat) => seat.joinRequestId === requestId)
+            if (existingSeat) return send(response, 200, {
+              token: existingSeat.token, snapshot: snapshotFor(existingRoom, existingSeat.token),
+            })
+          }
+        }
+        if (!admitted) return send(response, 429, { error: 'Too many rooms created' })
         if (store.rooms.size >= MAX_ROOMS) return send(response, 503, { error: 'Room capacity reached' })
         if ([...roomOwners.values()].filter((owner) => owner === source).length >= MAX_ROOMS_PER_IP) {
           return send(response, 429, { error: 'Too many active rooms' })
@@ -335,6 +357,7 @@ export function createRoomServer({
         roomOwners.set(room.code, source)
         try {
           const seat = joinRoom(room, { name: body.name, character: body.character, connected: false })
+          if (requestId) seat.joinRequestId = requestId
           touch(room)
           queueSave()
           return send(response, 201, { token: seat.token, snapshot: snapshotFor(room, seat.token) })
@@ -365,11 +388,19 @@ export function createRoomServer({
       }
       if (request.method !== 'POST') return send(response, 405, { error: 'Method not allowed' })
       if (operation === 'join') {
-        if (!consume(joinRates, sourceOf(request), CREATE_WINDOW_MS, MAX_JOINS_PER_WINDOW)) {
+        const source = sourceOf(request)
+        const admitted = consume(joinRates, source, CREATE_WINDOW_MS, MAX_JOINS_PER_WINDOW)
+        if (!admitted && !consume(entryRetryRates, `${source}:join`, CREATE_WINDOW_MS, MAX_JOINS_PER_WINDOW)) {
           return send(response, 429, { error: 'Too many join attempts' })
         }
         const body = await readJson(request)
         if (store.rooms.get(room.code) !== room) return send(response, 404, { error: 'Room not found' })
+        const requestId = requestIdOf(body.requestId)
+        const repeatedSeat = requestId && room.seats.find((seat) => seat.joinRequestId === requestId)
+        if (repeatedSeat) return send(response, 200, {
+          token: repeatedSeat.token, snapshot: snapshotFor(room, repeatedSeat.token),
+        })
+        if (!admitted) return send(response, 429, { error: 'Too many join attempts' })
         const token = body.token ?? tokenOf(request)
         if (reconnectingHandoff(room) && !findSeat(room, token)) {
           return send(response, 409, { error: 'Waiting for every player to reconnect' })
@@ -382,6 +413,7 @@ export function createRoomServer({
         const seat = joinRoom(room, {
           name: body.name, character: body.character, token, connected: live, settle: !reconnectingHandoff(room),
         })
+        if (requestId) seat.joinRequestId = requestId
         if (live) finishHandoffReconnect(room, seat)
         touch(room)
         if (room.version !== beforeVersion) {
@@ -468,15 +500,23 @@ export function createRoomServer({
       if (url.pathname !== '/ws') throw new Error('Not found')
       if (allowedOrigin && request.headers.origin && request.headers.origin !== allowedOrigin) throw new Error('Origin not allowed')
       const source = sourceOf(request)
+      const code = codeOf(url.searchParams.get('room') ?? '')
+      const room = store.rooms.get(code)
+      if (!room) {
+        const status = consume(invalidUpgradeRates, source, CREATE_WINDOW_MS, maxUpgradesPerWindow) ? 401 : 429
+        socket.write(`HTTP/1.1 ${status} ${status === 401 ? 'Unauthorized' : 'Too Many Requests'}\r\nConnection: close\r\n\r\n`)
+        return socket.destroy()
+      }
+      const bridgedHandoff = handoffRestore
+      const sourceKey = bridgedHandoff ? `${source}:${code}` : source
       const tooManyPending = pendingAuth.size >= MAX_PENDING_AUTH
-        || [...pendingAuth.values()].filter((pendingSource) => pendingSource === source).length >= MAX_PENDING_AUTH_PER_IP
-      if (tooManyPending || !consume(upgradeRates, source, CREATE_WINDOW_MS, maxUpgradesPerWindow)) {
+        || [...pendingAuth.values()].filter((pendingSource) => pendingSource === sourceKey).length >= MAX_PENDING_AUTH_PER_IP
+      if (tooManyPending || !consume(upgradeRates, sourceKey, CREATE_WINDOW_MS, maxUpgradesPerWindow)) {
         socket.write('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n')
         return socket.destroy()
       }
-      const room = roomOrThrow(url.searchParams.get('room') ?? '')
       wss.handleUpgrade(request, socket, head, (webSocket) => {
-        wss.emit('connection', webSocket, { code: room.code, source })
+        wss.emit('connection', webSocket, { code: room.code, source: sourceKey })
       })
     } catch {
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')

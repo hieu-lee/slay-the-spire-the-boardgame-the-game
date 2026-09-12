@@ -64,10 +64,29 @@ jobs:
           config=$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 \
             "$PAGES_URL/session.json?push=$GITHUB_RUN_ID")
           source_run=$(jq -r '.runId // empty' <<< "$config")
-          source_origin=$(jq -r '.origin // empty' <<< "$config")
+          configured_origins() {
+            jq -r '([.origin] + (.origins // [])) | map(select(type == "string" and length > 0)) | unique[]'
+          }
           compatible_origin() {
             curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
               "$1/api/health" | jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version and .profiles == true' >/dev/null
+          }
+          compatible_config() {
+            local config=$1
+            while IFS= read -r origin; do
+              compatible_origin "$origin" && return 0
+            done < <(configured_origins <<< "$config")
+            return 1
+          }
+          legacy_config() {
+            local config=$1
+            while IFS= read -r origin; do
+              if curl --fail --silent --max-time 30 "$origin/api/health" | \
+                  jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version and .profiles != true' >/dev/null; then
+                return 0
+              fi
+            done < <(configured_origins <<< "$config")
+            return 1
           }
           wait_for_live_successor() {
             wait_for_start=${1:-false}
@@ -81,8 +100,7 @@ jobs:
               live_config=$(curl --fail --silent --max-time 30 "$PAGES_URL/session.json?transition=$GITHUB_RUN_ID-$attempt" || true)
               live_run=$(jq -r '.runId // empty' <<< "$live_config" 2>/dev/null || true)
               live_source=$(jq -r '.sourceRunId // empty' <<< "$live_config" 2>/dev/null || true)
-              live_origin=$(jq -r '.origin // empty' <<< "$live_config" 2>/dev/null || true)
-              if [[ "$live_run" =~ ^[0-9]+$ ]] && [ "$live_source" = "$source_run" ] && compatible_origin "$live_origin"; then
+              if [[ "$live_run" =~ ^[0-9]+$ ]] && [ "$live_source" = "$source_run" ] && compatible_config "$live_config"; then
                 echo "SOURCE_RUN=$live_run" >> "$GITHUB_ENV"
                 echo 'PUBLISH_CLIENT=true' >> "$GITHUB_ENV"
                 return 0
@@ -101,8 +119,7 @@ jobs:
               attempt=$(( attempt + 1 ))
               live_config=$(curl --fail --silent --max-time 30 "$PAGES_URL/session.json?fresh=$GITHUB_RUN_ID-$attempt" || true)
               live_run=$(jq -r '.runId // empty' <<< "$live_config" 2>/dev/null || true)
-              live_origin=$(jq -r '.origin // empty' <<< "$live_config" 2>/dev/null || true)
-              if [ "$live_run" = "$active_fresh" ] && compatible_origin "$live_origin"; then
+              if [ "$live_run" = "$active_fresh" ] && compatible_config "$live_config"; then
                 echo "SOURCE_RUN=$live_run" >> "$GITHUB_ENV"
                 echo 'PUBLISH_CLIENT=true' >> "$GITHUB_ENV"
                 return 0
@@ -111,25 +128,24 @@ jobs:
             done
             return 1
           }
-          if [[ "$source_run" =~ ^[0-9]+$ ]] && [ -n "$source_origin" ]; then
+          if [[ "$source_run" =~ ^[0-9]+$ ]] && [ -n "$(configured_origins <<< "$config")" ]; then
             source_status=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_run" --jq .status 2>/dev/null || true)
             if [ "$source_status" != completed ]; then
-              if compatible_origin "$source_origin"; then
+              if compatible_config "$config"; then
                 echo 'PUBLISH_CLIENT=true' >> "$GITHUB_ENV"
                 echo "SOURCE_RUN=$source_run" >> "$GITHUB_ENV"
                 exit 0
               fi
               # Keep the working client until the scheduled room handoff installs
               # registration support; publishing the login gate first locks out newcomers.
-              if curl --fail --silent --max-time 30 "$source_origin/api/health" | \
-                jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version and .profiles != true' >/dev/null; then
+              if legacy_config "$config"; then
                 echo 'Client refresh deferred until the profile-capable room handoff.'
                 exit 0
               fi
               wait_for_live_successor true && exit 0
               source_status=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_run" --jq .status 2>/dev/null || true)
               if [ "$source_status" != completed ]; then
-                if compatible_origin "$source_origin"; then
+                if compatible_config "$config"; then
                   echo 'PUBLISH_CLIENT=true' >> "$GITHUB_ENV"
                   echo "SOURCE_RUN=$source_run" >> "$GITHUB_ENV"
                   exit 0
@@ -192,9 +208,15 @@ jobs:
           live_run=$(jq -r '.runId // empty' pages-refresh/session.json)
           live_source=$(jq -r '.sourceRunId // empty' pages-refresh/session.json)
           [ "$live_run" = "$SOURCE_RUN" ] || [ "$live_source" = "$SOURCE_RUN" ]
-          room_origin=$(jq -r '.origin // empty' pages-refresh/session.json)
-          curl --fail --silent --show-error --max-time 30 "$room_origin/api/health" | \
-            jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version and .profiles == true' >/dev/null
+          room_healthy=false
+          while IFS= read -r room_origin; do
+            if curl --fail --silent --show-error --max-time 30 "$room_origin/api/health" | \
+                jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version and .profiles == true' >/dev/null; then
+              room_healthy=true
+              break
+            fi
+          done < <(jq -r '([.origin] + (.origins // [])) | unique[]' pages-refresh/session.json)
+          [ "$room_healthy" = true ]
           jq --arg sha "$NEXT_SHA" --argjson protocol "$EXPECTED_PROTOCOL_VERSION" \
             '.sha = $sha | .protocolVersion = $protocol' pages-refresh/session.json > pages-refresh/session.next.json
           mv pages-refresh/session.next.json pages-refresh/session.json
@@ -268,7 +290,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: VITE_SINGLE_PLAYER=false VITE_HOSTED_SESSION=true pnpm build
       - run: node scripts/check-single-player-build.mjs dist --multiplayer
-      - name: Prewarm the game frontend and tunnel
+      - name: Prewarm the game frontend and redundant tunnels
         run: |
           nohup pnpm preview --host 127.0.0.1 --port 5180 --strictPort > "$RUNNER_TEMP/game.log" 2>&1 &
           curl --fail --location --silent --show-error \
@@ -276,21 +298,30 @@ jobs:
             --output "$RUNNER_TEMP/cloudflared"
           echo 'f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e  '"$RUNNER_TEMP/cloudflared" | sha256sum --check
           chmod +x "$RUNNER_TEMP/cloudflared"
-          nohup "$RUNNER_TEMP/cloudflared" tunnel --no-autoupdate --metrics 127.0.0.1:45678 --url http://127.0.0.1:5180 \
-            > "$RUNNER_TEMP/tunnel.log" 2>&1 &
-          tunnel_pid=$!
-          for attempt in {1..30}; do
-            kill -0 "$tunnel_pid"
-            tunnel_url=$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$RUNNER_TEMP/tunnel.log" | head -1 || true)
-            [ -n "$tunnel_url" ] && curl --fail --silent http://127.0.0.1:45678/ready && break
-            sleep 2
+          tunnel_urls=()
+          for tunnel_number in 1 2; do
+            metrics_port=$(( 45677 + tunnel_number ))
+            tunnel_log="$RUNNER_TEMP/tunnel-$tunnel_number.log"
+            nohup "$RUNNER_TEMP/cloudflared" tunnel --no-autoupdate --metrics "127.0.0.1:$metrics_port" --url http://127.0.0.1:5180 \
+              > "$tunnel_log" 2>&1 &
+            tunnel_pid=$!
+            tunnel_url=
+            for attempt in {1..30}; do
+              kill -0 "$tunnel_pid"
+              tunnel_url=$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$tunnel_log" | head -1 || true)
+              [ -n "$tunnel_url" ] && curl --fail --silent "http://127.0.0.1:$metrics_port/ready" && break
+              sleep 2
+            done
+            [ -n "$tunnel_url" ]
+            curl --fail --silent "http://127.0.0.1:$metrics_port/ready"
+            tunnel_urls+=("$tunnel_url")
           done
-          [ -n "$tunnel_url" ]
-          curl --fail --silent http://127.0.0.1:45678/ready
-          echo "TUNNEL_URL=$tunnel_url" >> "$GITHUB_ENV"
+          [ "${tunnel_urls[0]}" != "${tunnel_urls[1]}" ]
+          echo "TUNNEL_URL=${tunnel_urls[0]}" >> "$GITHUB_ENV"
+          printf '%s\n' "${tunnel_urls[@]}" | jq -Rsc 'split("\n")[:-1]' | sed 's/^/TUNNEL_URLS=/' >> "$GITHUB_ENV"
       - name: Announce the prewarmed successor
         if: inputs.source_run_id != ''
-        run: printf '%s\n%s\n' "$TUNNEL_URL" "$SESSION_SHA" > "$RUNNER_TEMP/handoff-ready"
+        run: printf '%s\n%s\n%s\n' "$TUNNEL_URL" "$SESSION_SHA" "$TUNNEL_URLS" > "$RUNNER_TEMP/handoff-ready"
       - uses: actions/upload-artifact@v4
         if: inputs.source_run_id != ''
         timeout-minutes: 5
@@ -318,8 +349,14 @@ jobs:
           room_store_ready=false
           for ((waited = 0; waited < SOURCE_WAIT_SECONDS; waited += 10)); do
             if (( waited % 60 == 0 )); then
-              curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-                "$TUNNEL_URL/" >/dev/null
+              successor_alive=false
+              while IFS= read -r origin; do
+                if curl --fail --silent --show-error --max-time 10 "$origin/" >/dev/null; then
+                  successor_alive=true
+                  break
+                fi
+              done < <(jq -r '.[]' <<< "$TUNNEL_URLS")
+              [ "$successor_alive" = true ]
             fi
             artifact=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts" \
               --jq ".artifacts[] | select(.name == \"room-store-$SOURCE_RUN_ID\") | .id" 2>/dev/null || true)
@@ -383,7 +420,19 @@ jobs:
           nohup node scripts/room-server.mjs > "$RUNNER_TEMP/rooms.log" 2>&1 &
           echo "$!" > "$RUNNER_TEMP/rooms.pid"
           curl --fail --retry 30 --retry-all-errors --retry-delay 1 http://127.0.0.1:5180/api/health
-          curl --fail --max-time 10 --retry 40 --retry-all-errors --retry-delay 5 --retry-max-time 240 "$TUNNEL_URL/api/health"
+          public_origins_ready=true
+          primary_origin=
+          while IFS= read -r tunnel_url; do
+            if curl --fail --max-time 10 --retry 20 --retry-all-errors --retry-delay 5 --retry-max-time 120 \
+                "$tunnel_url/api/health"; then
+              [ -n "$primary_origin" ] || primary_origin=$tunnel_url
+            else
+              public_origins_ready=false
+            fi
+          done < <(jq -r '.[]' <<< "$TUNNEL_URLS")
+          [ "$public_origins_ready" = true ]
+          [ -n "$primary_origin" ]
+          echo "TUNNEL_URL=$primary_origin" >> "$GITHUB_ENV"
       - name: Recheck the source archive before publishing
         if: inputs.archive_backup_run_id != ''
         env:
@@ -408,9 +457,11 @@ jobs:
           echo "HANDOFF_AT=$handoff_at" >> "$GITHUB_ENV"
           echo "PREWARM_AT=$prewarm_at" >> "$GITHUB_ENV"
           cp -R dist pages
-          printf '{"origin":"%s","runId":"%s","sourceRunId":"%s","sha":"%s","handoffAt":%s,"protocolVersion":%s,"manualHandoff":true}\n' \
-            "$TUNNEL_URL" "$GITHUB_RUN_ID" "$SOURCE_RUN_ID" "$SESSION_SHA" "$handoff_at" \
-            "$EXPECTED_PROTOCOL_VERSION" > pages/session.json
+          jq -n --arg origin "$TUNNEL_URL" --argjson origins "$TUNNEL_URLS" \
+            --arg run "$GITHUB_RUN_ID" --arg source "$SOURCE_RUN_ID" --arg sha "$SESSION_SHA" \
+            --argjson handoff "$handoff_at" --argjson protocol "$EXPECTED_PROTOCOL_VERSION" \
+            '{origin:$origin,origins:$origins,runId:$run,sourceRunId:$source,sha:$sha,handoffAt:$handoff,protocolVersion:$protocol,manualHandoff:true}' \
+            > pages/session.json
       - uses: actions/upload-artifact@v4
         timeout-minutes: 5
         with:
@@ -446,9 +497,10 @@ jobs:
           while [ "$(date +%s)" -lt "$deployment_deadline" ]; do
             attempt=$(( attempt + 1 ))
             config=$(curl --fail --silent --max-time 30 "$PAGES_URL/session.json?session=$GITHUB_RUN_ID-$attempt" || true)
-            if [ "$(jq -r '.runId // empty' <<< "$config" 2>/dev/null || true)" = "$GITHUB_RUN_ID" ] && \
-              curl --fail --silent --max-time 30 "$TUNNEL_URL/api/health" >/dev/null; then
-              exit 0
+            if [ "$(jq -r '.runId // empty' <<< "$config" 2>/dev/null || true)" = "$GITHUB_RUN_ID" ]; then
+              while IFS= read -r origin; do
+                curl --fail --silent --max-time 30 "$origin/api/health" >/dev/null && exit 0
+              done < <(jq -r '([.origin] + (.origins // [])) | unique[]' <<< "$config")
             fi
             sleep 10
           done
@@ -458,6 +510,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           manual_handoff=false
+          any_origin_healthy() {
+            local origins=$1
+            local path=${2:-/api/health}
+            while IFS= read -r origin; do
+              if curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
+                  "$origin$path" >/dev/null; then
+                return 0
+              fi
+            done < <(jq -r '.[]' <<< "$origins")
+            return 1
+          }
           poll_manual_handoff() {
             [ "$manual_handoff" != true ] || return 0
             local requests
@@ -473,8 +536,7 @@ jobs:
           while [ "$(date +%s)" -lt "$PREWARM_AT" ]; do
             poll_manual_handoff
             [ "$manual_handoff" != true ] || break
-            if ! curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-              "$TUNNEL_URL/api/health" >/dev/null; then
+            if ! any_origin_healthy "$TUNNEL_URLS"; then
               echo '::warning::The current room endpoint is unhealthy; preserving its latest durable state now.'
               HANDOFF_AT=$(date +%s)
               break
@@ -501,13 +563,13 @@ jobs:
           selected_winner=
           selected_sha=
           selected_url=
+          selected_origins=
           winner=
           winner_sha=
           replacement_requested_at=0
           while [ "$(date +%s)" -lt "$HANDOFF_AT" ]; do
             poll_manual_handoff
-            if ! curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-              "$TUNNEL_URL/api/health" >/dev/null; then
+            if ! any_origin_healthy "$TUNNEL_URLS"; then
               echo '::warning::The current room endpoint is unhealthy; preserving its latest durable state now.'
               HANDOFF_AT=$(date +%s)
               break
@@ -552,24 +614,31 @@ jobs:
                 --name "handoff-ready-$GITHUB_RUN_ID" --dir "$RUNNER_TEMP/successor-ready"; then
                 successor_url=$(sed -n '1p' "$RUNNER_TEMP/successor-ready/handoff-ready")
                 successor_sha=$(sed -n '2p' "$RUNNER_TEMP/successor-ready/handoff-ready")
+                successor_origins=$(sed -n '3p' "$RUNNER_TEMP/successor-ready/handoff-ready")
+                if ! jq -e --arg origin "$successor_url" \
+                    'type == "array" and length > 0 and index($origin) != null' <<< "$successor_origins" >/dev/null 2>&1; then
+                  successor_origins=$(jq -cn --arg origin "$successor_url" '[$origin]')
+                fi
               else
                 successor_url=
+                successor_origins=
                 ready=0
               fi
-              if ! [[ "$successor_sha" =~ ^[0-9a-f]{40}$ ]] || [ -z "$successor_url" ] || ! curl --fail --silent --show-error \
-                --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-                "$successor_url/" >/dev/null; then
+              if ! [[ "$successor_sha" =~ ^[0-9a-f]{40}$ ]] || [ -z "$successor_url" ] || \
+                ! any_origin_healthy "$successor_origins" /; then
                 ready=0
                 winner_seen_at=$(( now - 120 ))
                 if [ "$selected_winner" = "$winner" ]; then
                   selected_winner=
                   selected_sha=
                   selected_url=
+                  selected_origins=
                 fi
               else
                 selected_winner=$winner
                 selected_sha=$successor_sha
                 selected_url=$successor_url
+                selected_origins=$successor_origins
                 # A manual request can freeze as soon as a healthy candidate is ready.
                 if [ "$manual_handoff" = true ] && [ "$successor_sha" = "$next_sha" ] && [ "$candidate_too_old" = false ]; then
                   HANDOFF_AT=$(date +%s)
@@ -585,6 +654,7 @@ jobs:
                   selected_winner=
                   selected_sha=
                   selected_url=
+                  selected_origins=
                 fi
               elif [ "$(( now - cancel_requested_at ))" -ge 60 ]; then
                 timeout 30s gh run cancel "$winner" --repo "$GITHUB_REPOSITORY" --force || true
@@ -611,10 +681,11 @@ jobs:
           done
           master_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha 2>/dev/null || true)
           [[ "$master_sha" =~ ^[0-9a-f]{40}$ ]] && next_sha=$master_sha
-          if ! curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-            "$selected_url/" >/dev/null 2>&1; then
+          if ! any_origin_healthy "$selected_origins" /; then
             selected_winner=
             selected_sha=
+            selected_url=
+            selected_origins=
           fi
           if [ -n "$selected_winner" ]; then
             selected_status=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_winner" --jq .status 2>/dev/null || true)
@@ -626,6 +697,7 @@ jobs:
               selected_winner=
               selected_sha=
               selected_url=
+              selected_origins=
             fi
           fi
           fallback_deadline=$(( VERIFY_DEADLINE - 1800 ))
@@ -662,16 +734,21 @@ jobs:
                   --name "handoff-ready-$GITHUB_RUN_ID" --dir "$RUNNER_TEMP/fallback-ready"; then
                   fallback_url=$(sed -n '1p' "$RUNNER_TEMP/fallback-ready/handoff-ready")
                   fallback_sha=$(sed -n '2p' "$RUNNER_TEMP/fallback-ready/handoff-ready")
+                  fallback_origins=$(sed -n '3p' "$RUNNER_TEMP/fallback-ready/handoff-ready")
+                  if ! jq -e --arg origin "$fallback_url" \
+                      'type == "array" and length > 0 and index($origin) != null' <<< "$fallback_origins" >/dev/null 2>&1; then
+                    fallback_origins=$(jq -cn --arg origin "$fallback_url" '[$origin]')
+                  fi
                   fallback_started=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$replacement_run" --jq .run_started_at 2>/dev/null || true)
                   fallback_started_epoch=$([ -n "$fallback_started" ] && date --date="$fallback_started" +%s 2>/dev/null || true)
                   if [[ "$fallback_sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$fallback_started_epoch" =~ ^[0-9]+$ ]] && \
                     { [ "$manual_handoff" != true ] || [ "$fallback_sha" = "$next_sha" ]; } && \
                     [ "$(( fallback_started_epoch + 18900 ))" -ge "$(( $(date +%s) + 18000 ))" ] && \
-                    curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-                    "$fallback_url/" >/dev/null; then
+                    any_origin_healthy "$fallback_origins" /; then
                     selected_winner=$replacement_run
                     selected_sha=$fallback_sha
                     selected_url=$fallback_url
+                    selected_origins=$fallback_origins
                     break
                   fi
                   timeout 30s gh run cancel "$replacement_run" --repo "$GITHUB_REPOSITORY" --force || true
@@ -697,10 +774,11 @@ jobs:
           done
           [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_winner" --jq .status 2>/dev/null || true)" = in_progress ]
           [[ "$selected_sha" =~ ^[0-9a-f]{40}$ ]]
-          curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-            "$selected_url/" >/dev/null
+          any_origin_healthy "$selected_origins" /
           echo "NEXT_SHA=$selected_sha" >> "$GITHUB_ENV"
           echo "SELECTED_WINNER=$selected_winner" >> "$GITHUB_ENV"
+          echo "SELECTED_ORIGIN=$selected_url" >> "$GITHUB_ENV"
+          echo "SELECTED_ORIGINS=$selected_origins" >> "$GITHUB_ENV"
           printf '%s\n%s\n' "$selected_winner" "$selected_sha" > "$RUNNER_TEMP/handoff-selected"
       - uses: actions/upload-artifact@v4
         timeout-minutes: 5
@@ -748,30 +826,113 @@ jobs:
           name: room-store-${{ github.run_id }}
           path: ${{ runner.temp }}/rooms.json.gpg
           retention-days: 1
+      - name: Bridge reads from the old endpoint to the restored successor
+        timeout-minutes: 10
+        run: |
+          rm -f "$RUNNER_TEMP/handoff-proxy-writes"
+          successor_ready=false
+          bridge_deadline=$(( $(date +%s) + 360 ))
+          while [ "$(date +%s)" -lt "$bridge_deadline" ]; do
+            while IFS= read -r origin; do
+              if curl --fail --silent --show-error --max-time 5 "$origin/api/health" >/dev/null; then
+                successor_ready=true
+                break 2
+              fi
+            done < <(jq -r '.[]' <<< "$SELECTED_ORIGINS")
+            sleep 5
+          done
+          if [ "$successor_ready" != true ]; then
+            echo '::warning::The selected successor stopped before restoration; continuing recovery without the old-URL bridge.'
+            exit 0
+          fi
+          bridge_targets=$(jq -c 'unique' <<< "$SELECTED_ORIGINS")
+          STS_HANDOFF_PROXY_TARGETS="$bridge_targets" \
+            STS_HANDOFF_PROXY_WRITE_MARKER="$RUNNER_TEMP/handoff-proxy-writes" \
+            nohup node scripts/handoff-proxy.mjs > "$RUNNER_TEMP/handoff-proxy.log" 2>&1 &
+          bridge_pid=$!
+          echo "$bridge_pid" > "$RUNNER_TEMP/handoff-proxy.pid"
+          printf '%s' "$bridge_targets" > "$RUNNER_TEMP/handoff-proxy-targets"
+          if ! curl --fail --silent --show-error --max-time 5 --retry 5 --retry-all-errors --retry-delay 1 --retry-max-time 30 \
+              http://127.0.0.1:8787/api/health >/dev/null || ! kill -0 "$bridge_pid" 2>/dev/null; then
+            echo '::warning::The old-URL bridge did not start; continuing successor recovery.'
+            kill "$bridge_pid" 2>/dev/null || true
+            rm -f "$RUNNER_TEMP/handoff-proxy.pid" "$RUNNER_TEMP/handoff-proxy-targets"
+          fi
       - name: Start and verify the successor
         timeout-minutes: 30
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           attempt=0
+          refresh_requested=false
           while [ "$(date +%s)" -lt "$VERIFY_DEADLINE" ]; do
             attempt=$(( attempt + 1 ))
             config=$(curl --fail --silent --max-time 30 "$PAGES_URL/session.json?handoff=$GITHUB_RUN_ID-$attempt" || true)
             candidate_run=$(jq -r 'select(.sourceRunId == env.GITHUB_RUN_ID) | .runId // empty' <<< "$config" 2>/dev/null || true)
             winner=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
               --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $GITHUB_RUN_ID\") | .id] | max // empty" 2>/dev/null || true)
-            successor=$(jq -r 'select(.sourceRunId == env.GITHUB_RUN_ID) | .origin // empty' <<< "$config" 2>/dev/null || true)
+            successors=$(jq -c 'select(.sourceRunId == env.GITHUB_RUN_ID) | ([.origin] + (.origins // [])) | unique' <<< "$config" 2>/dev/null || true)
             published_sha=$(jq -r 'select(.sourceRunId == env.GITHUB_RUN_ID) | .sha // empty' <<< "$config" 2>/dev/null || true)
-            if [ -n "$successor" ] && [ "$candidate_run" = "$winner" ] && [ "$successor" != "$TUNNEL_URL" ] && \
-              curl --fail --silent --max-time 30 "$successor/api/health" >/dev/null; then
+            successor_healthy=false
+            if [ "$candidate_run" = "$winner" ] && \
+                jq -e --arg source "$TUNNEL_URL" 'length > 0 and all(.[]; . != $source)' <<< "$successors" >/dev/null 2>&1; then
+              while IFS= read -r successor; do
+                if curl --fail --silent --max-time 30 "$successor/api/health" >/dev/null; then
+                  successor_healthy=true
+                  break
+                fi
+              done < <(jq -r '.[]' <<< "$successors")
+            fi
+            if [ "$successor_healthy" = true ]; then
+              bridge_pid=$(cat "$RUNNER_TEMP/handoff-proxy.pid" 2>/dev/null || true)
+              bridge_targets=$(cat "$RUNNER_TEMP/handoff-proxy-targets" 2>/dev/null || true)
+              if [ "$bridge_targets" != "$successors" ] || ! kill -0 "$bridge_pid" 2>/dev/null; then
+                if [ -n "$bridge_pid" ]; then
+                  kill "$bridge_pid" 2>/dev/null || true
+                  for attempt in {1..20}; do
+                    kill -0 "$bridge_pid" 2>/dev/null || break
+                    sleep 0.25
+                  done
+                  ! kill -0 "$bridge_pid" 2>/dev/null
+                fi
+                rm -f "$RUNNER_TEMP/handoff-proxy.pid" "$RUNNER_TEMP/handoff-proxy-targets"
+                STS_HANDOFF_PROXY_TARGETS="$successors" \
+                  STS_HANDOFF_PROXY_WRITE_MARKER="$RUNNER_TEMP/handoff-proxy-writes" \
+                  nohup node scripts/handoff-proxy.mjs > "$RUNNER_TEMP/handoff-proxy.log" 2>&1 &
+                bridge_pid=$!
+                echo "$bridge_pid" > "$RUNNER_TEMP/handoff-proxy.pid"
+                printf '%s' "$successors" > "$RUNNER_TEMP/handoff-proxy-targets"
+                if ! curl --fail --silent --show-error --max-time 5 --retry 5 --retry-all-errors --retry-delay 1 --retry-max-time 30 \
+                    http://127.0.0.1:8787/api/health >/dev/null || ! kill -0 "$bridge_pid" 2>/dev/null; then
+                  echo '::warning::The old-URL bridge did not start; continuing successor recovery.'
+                  kill "$bridge_pid" 2>/dev/null || true
+                  rm -f "$RUNNER_TEMP/handoff-proxy.pid" "$RUNNER_TEMP/handoff-proxy-targets"
+                fi
+              fi
+              [ ! -f "$RUNNER_TEMP/handoff-proxy.pid" ] || touch "$RUNNER_TEMP/handoff-proxy-writes"
               master_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha 2>/dev/null || true)
               if [[ "$master_sha" =~ ^[0-9a-f]{40}$ ]] && [ "$published_sha" != "$master_sha" ]; then
-                for refresh_attempt in {1..5}; do
-                  timeout 30s gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
-                    -f refresh_only=true && exit 0
-                  sleep 10
-                done
+                if [ "$refresh_requested" != true ]; then
+                  for refresh_attempt in {1..5}; do
+                    if timeout 30s gh workflow run multiplayer-session.yml --repo "$GITHUB_REPOSITORY" --ref master \
+                        -f refresh_only=true; then
+                      refresh_requested=true
+                      break
+                    fi
+                    sleep 10
+                  done
+                  [ "$refresh_requested" = true ]
+                fi
               else
+                # Keep the bridge available while lagging Pages edges age out their old session.json.
+                bridge_grace=720
+                remaining=$(( VERIFY_DEADLINE - $(date +%s) - 60 ))
+                [ "$bridge_grace" -le "$remaining" ] || bridge_grace=$remaining
+                [ "$bridge_grace" -gt 0 ] && sleep "$bridge_grace"
+                if [ -f "$RUNNER_TEMP/handoff-proxy.pid" ]; then
+                  kill -0 "$(cat "$RUNNER_TEMP/handoff-proxy.pid")" || \
+                    echo '::warning::The old-URL bridge stopped during the Pages propagation grace period.'
+                fi
                 exit 0
               fi
             fi

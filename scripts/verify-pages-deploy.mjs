@@ -36,4 +36,6 @@ for (const [failures, expected] of [[0, true], [1, true], [2, false]]) {
 
 assert.match(workflow, /timeout-minutes: 15/)
 assert.match(step, /timeout 300s gh run download/)
+assert(workflow.indexOf('actions/upload-pages-artifact@v4') > workflow.indexOf('Verify the room endpoint immediately before deployment'))
+assert.match(workflow, /jq --arg origin "\$healthy_origin" '\.origin = \$origin'/)
 console.log('✓ Pages artifact downloads retry once with a five-minute attempt budget')

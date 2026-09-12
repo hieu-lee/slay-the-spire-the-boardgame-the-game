@@ -18,6 +18,27 @@ export function archiveOnlyStore(stored, live) {
   return { ...stored, rooms: [], reconnectQuorums: {} }
 }
 
+export async function legacyArchiveSource(config, get) {
+  let lastError
+  for (const origin of [...new Set([config.origin, ...(Array.isArray(config.origins) ? config.origins : [])])].filter(Boolean)) {
+    let health
+    try {
+      health = await get(`${origin}/api/health`)
+    } catch (error) {
+      lastError = error
+      continue
+    }
+    assert.equal(health.protocolVersion, 1)
+    assert.notEqual(health.profiles, true, 'Profile-capable servers require a fresh export, not this legacy recovery path')
+    try {
+      return { origin, leaderboard: await get(`${origin}/api/leaderboard`) }
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError ?? new Error('No compatible legacy archive origin')
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [input, output, expectedLiveRun, backupRun] = process.argv.slice(2)
   assert(/^\d+$/.test(expectedLiveRun) && /^\d+$/.test(backupRun), 'Explicit source run IDs are required')
@@ -29,10 +50,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const config = await get(`https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/session.json?archive-restore=${Date.now()}`)
   assert.equal(config.runId, expectedLiveRun, 'Live source changed')
   assert.equal(config.sourceRunId, backupRun, 'Backup was not inherited by the live source')
-  const health = await get(`${config.origin}/api/health`)
-  assert.equal(health.protocolVersion, 1)
-  assert.notEqual(health.profiles, true, 'Profile-capable servers require a fresh export, not this legacy recovery path')
-  const stored = archiveOnlyStore(JSON.parse(readFileSync(input, 'utf8')), await get(`${config.origin}/api/leaderboard`))
+  const source = await legacyArchiveSource(config, get)
+  const stored = archiveOnlyStore(JSON.parse(readFileSync(input, 'utf8')), source.leaderboard)
   if (!process.argv.includes('--check-only')) {
     mkdirSync(dirname(output), { recursive: true })
     writeFileSync(`${output}.tmp`, JSON.stringify(stored), { mode: 0o600 })

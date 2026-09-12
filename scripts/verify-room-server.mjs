@@ -1,5 +1,6 @@
 import WebSocket from 'ws'
 import { existsSync } from 'node:fs'
+import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
@@ -96,9 +97,13 @@ try {
     assertEqual(replacement.body.snapshot.you.playerId, 'p2')
   })
 
+  const createRequestId = crypto.randomUUID()
   const created = await request('/api/rooms', {
     method: 'POST',
-    body: { name: 'Ann', character: 'ironclad', random: {} },
+    body: { name: 'Ann', character: 'ironclad', random: {}, requestId: createRequestId },
+  })
+  const repeatedCreate = await request('/api/rooms', {
+    method: 'POST', body: { name: 'Ann', character: 'ironclad', requestId: createRequestId },
   })
   const deniedIce = await request(`/api/rooms/${created.body.snapshot.code}/voice-ice`)
   const voiceIce = await request(`/api/rooms/${created.body.snapshot.code}/voice-ice`, { token: created.body.token })
@@ -120,9 +125,17 @@ try {
   const a = { token: created.body.token, playerId: created.body.snapshot.you.playerId }
   const joined = []
   for (const [index, [name, character]] of [['Bo', 'silent'], ['Cy', 'defect'], ['Di', 'watcher']].entries()) {
+    const requestId = crypto.randomUUID()
     const result = await request(`/api/rooms/${code}/join`, {
-      method: 'POST', body: { name, character, ...(index === 0 ? { random: {} } : {}) },
+      method: 'POST', body: { name, character, requestId, ...(index === 0 ? { random: {} } : {}) },
     })
+    if (index === 0) {
+      const repeatedJoin = await request(`/api/rooms/${code}/join`, {
+        method: 'POST', body: { name, character, requestId },
+      })
+      assertEqual(repeatedJoin.body.token, result.body.token)
+      assertEqual(repeatedJoin.body.snapshot.seats.length, result.body.snapshot.seats.length)
+    }
     joined.push({ token: result.body.token, playerId: result.body.snapshot.you.playerId })
   }
   const fifth = await request(`/api/rooms/${code}/join`, {
@@ -135,6 +148,8 @@ try {
 
   check('HTTP creates a private four-seat room and refuses a fifth', () => {
     assertEqual(created.status, 201)
+    assertEqual(repeatedCreate.body.token, created.body.token)
+    assertEqual(repeatedCreate.body.snapshot.code, created.body.snapshot.code)
     assertEqual(created.body.snapshot.you.connected, false, 'HTTP alone must not make a seat live')
     assertEqual(joined.length, 3)
     assertEqual(fifth.status, 409)
@@ -676,6 +691,69 @@ try {
   await retryService.close()
 }
 
+const entryService = createRoomServer()
+const entryAddress = await entryService.listen(0)
+const entryOrigin = `http://127.0.0.1:${entryAddress.port}`
+const entry = (path, body) => fetch(`${entryOrigin}${path}`, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+})
+try {
+  for (let index = 0; index < 9; index += 1) {
+    assertEqual((await entry('/api/rooms', { name: `Fill ${index}`, character: 'ironclad' })).status, 201)
+  }
+  const createRequestId = crypto.randomUUID()
+  const boundaryCreate = await entry('/api/rooms', { name: 'Boundary', character: 'ironclad', requestId: createRequestId })
+  const boundaryBody = await boundaryCreate.json()
+  const repeatedCreate = await entry('/api/rooms', { name: 'Boundary', character: 'ironclad', requestId: createRequestId })
+  for (let index = 1; index < 30; index += 1) {
+    assertEqual((await entry('/api/rooms', { name: 'Boundary', character: 'ironclad', requestId: createRequestId })).status, 200)
+  }
+  const throttledReplay = await entry('/api/rooms', { name: 'Boundary', character: 'ironclad', requestId: createRequestId })
+
+  const code = boundaryBody.snapshot.code
+  for (let index = 0; index < 29; index += 1) {
+    await entry(`/api/rooms/${code}/join`, { name: 'Invalid', character: 'invalid' })
+  }
+  const joinRequestId = crypto.randomUUID()
+  const boundaryJoin = await entry(`/api/rooms/${code}/join`, { name: 'Joining', character: 'silent', requestId: joinRequestId })
+  const repeatedJoin = await entry(`/api/rooms/${code}/join`, { name: 'Joining', character: 'silent', requestId: joinRequestId })
+
+  let requestSeen
+  const seen = new Promise((resolve) => { requestSeen = resolve })
+  const onRequest = (request) => {
+    if (request.url === `/api/rooms/${code}/join`) {
+      entryService.server.off('request', onRequest)
+      requestSeen()
+    }
+  }
+  entryService.server.on('request', onRequest)
+  const expiredResponse = new Promise((resolve, reject) => {
+    const request = httpRequest(`${entryOrigin}/api/rooms/${code}/join`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+    }, (response) => {
+      response.resume()
+      response.once('end', () => resolve(response.statusCode))
+    })
+    request.once('error', reject)
+    request.write('{"name":"Joining",')
+    void seen.then(() => {
+      entryService.store.rooms.delete(code)
+      request.end(`"character":"silent","requestId":"${joinRequestId}"}`)
+    })
+  })
+  const expiredStatus = await expiredResponse
+
+  check('entry retries survive the rate boundary without enabling unlimited replay or stale-room recovery', () => {
+    assertEqual(repeatedCreate.status, 200)
+    assertEqual(throttledReplay.status, 429)
+    assertEqual(boundaryJoin.status, 200)
+    assertEqual(repeatedJoin.status, 200)
+    assertEqual(expiredStatus, 404)
+  })
+} finally {
+  await entryService.close()
+}
+
 const closeErrors = []
 const failingCloseService = createRoomServer({
   storeFile: join(tmpdir(), `sts-room-close-failure-${process.pid}-${Date.now()}.json`),
@@ -750,6 +828,38 @@ await handoffService.close({ preserveRooms: true, markerFile: handoffMarker })
 check('a coordinated handoff flushes the exact room without disconnect settlement', () => {
   assertEqual(JSON.stringify(handoffSaves.at(-1)?.[0]), exactHandoffRoom)
   assert(existsSync(handoffMarker), 'a successful handoff omitted its flush marker')
+})
+
+const restoredService = createRoomServer({ handoffRestore: true })
+const restoredAddress = await restoredService.listen(0)
+const restoredOrigin = `http://127.0.0.1:${restoredAddress.port}`
+const restoredCreated = await fetch(`${restoredOrigin}/api/rooms`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ name: 'Restored', character: 'ironclad' }),
+}).then((response) => response.json())
+for (let index = 0; index < 1024; index += 1) {
+  const invalid = new WebSocket(`ws://127.0.0.1:${restoredAddress.port}/ws?room=MISSING${index}`)
+  const status = await new Promise((resolve, reject) => {
+    invalid.once('unexpected-response', (_request, response) => {
+      response.resume()
+      resolve(response.statusCode)
+    })
+    invalid.once('error', reject)
+  })
+  assertEqual(status, index < 30 ? 401 : 429)
+}
+const restoredSocket = new WebSocket(`ws://127.0.0.1:${restoredAddress.port}/ws?room=${restoredCreated.snapshot.code}`)
+await new Promise((resolve, reject) => {
+  restoredSocket.once('open', resolve)
+  restoredSocket.once('error', reject)
+})
+await new Promise((resolve) => {
+  restoredSocket.once('close', resolve)
+  restoredSocket.close()
+})
+await restoredService.close()
+check('invalid room upgrades cannot exhaust restored-room rate keys', () => {
+  assertEqual(restoredSocket.readyState, WebSocket.CLOSED)
 })
 
 const pagesOrigin = 'https://hieu-lee.github.io'

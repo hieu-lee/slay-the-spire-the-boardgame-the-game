@@ -53,7 +53,7 @@ for (const [target, config, status, ref, accepted] of [
 const fallbackStart = host.indexOf('if [[ "$fallback_sha"')
 const fallbackGuard = host.slice(fallbackStart, host.indexOf('selected_winner=$replacement_run', fallbackStart))
 for (const [manual, candidate, expected] of [[true, 'b', false], [true, 'a', true], [false, 'b', true]]) {
-  const result = run(`date() { echo 1000; }; curl() { return 0; };
+  const result = run(`date() { echo 1000; }; any_origin_healthy() { return 0; };
 ${fallbackGuard}
 echo accepted
 fi`, {
@@ -79,7 +79,7 @@ try {
           shift
         done
         mkdir -p "$destination"
-        printf '%s\\n%s\\n' 'https://successor.test' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$destination/handoff-ready"
+        printf '%s\\n%s\\n%s\\n' 'https://successor.test' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa '["https://successor.test"]' > "$destination/handoff-ready"
       elif [[ "$*" == *request-session-handoff.yml* ]]; then echo "$RESPONSE"
       elif [[ "$*" == *git/ref/heads/master* ]]; then echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
       elif [[ "$*" == */artifacts* ]]; then echo "$ARTIFACTS"
@@ -102,6 +102,7 @@ try {
   for (const ready of [false, true]) {
     const result = run(orchestration, { RUNNER_TEMP: directory, GITHUB_ENV: join(directory, 'env'),
       RESPONSE: JSON.stringify({ workflow_runs: [signal] }), TUNNEL_URL: 'https://source.test', PAGES_URL: 'https://pages.test',
+      TUNNEL_URLS: '["https://source.test"]',
       ARTIFACTS: JSON.stringify({ artifacts: ready ? [{ name: 'handoff-ready-111' }, { name: 'handoff-candidate-111' }] : [] }),
     })
     if (!ready) {
@@ -113,6 +114,6 @@ try {
     }
   }
   assert(workflow.indexOf('Freeze and flush the room state') > workflow.indexOf('Host and prewarm the successor'))
-  assert(workflow.includes('"manualHandoff":true'))
+  assert.match(workflow, /manualHandoff:true/)
 } finally { rmSync(directory, { recursive: true, force: true }) }
 console.log('Manual handoff: authenticated target guards, failed/foreign requests, API failures, idempotence, deadlines and ready-successor orchestration pass')
