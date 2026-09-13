@@ -100,6 +100,12 @@
 
 .orbs--targetable { pointer-events: auto; }
 
+/* Enemy canvases can overlap a visible Orb; their transparent hit surface is
+   irrelevant while the player is choosing that Orb. Keep painted depth intact. */
+.board:has(.orbs--targetable) .enemy :is(
+  .enemy__hit-area, .enemy__head, .enemy__intent, .enemy__attachment, .bar, .tokens
+) { pointer-events: none; }
+
 .orbs__target {
   display: block;
   flex: none;
@@ -244,7 +250,7 @@ button.pile:hover { filter: brightness(1.15); }
   z-index: 122;
   width: calc(var(--card-width) * 1.12);
   pointer-events: none;
-  transform: translate3d(-50%, calc(-50% + var(--drag-y, 0px)), 0) rotate(var(--drag-turn)) scale(1.12);
+  transform: translate3d(calc(-50% + var(--drag-x, 0px)), calc(-50% + var(--drag-y, 0px)), 0) rotate(var(--drag-turn)) scale(1.12);
   filter: drop-shadow(0 1.2rem 1rem rgb(0 0 0 / 0.78));
   will-change: transform;
 }

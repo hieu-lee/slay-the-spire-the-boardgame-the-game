@@ -196,6 +196,23 @@ try {
             else await page.mouse.move(next.x, next.y)
             await page.waitForTimeout(16)
           }
+          const dragVisual = await preview.evaluate(element => {
+            const arrow = document.querySelector('.card-target-arrow__line')
+            const style = getComputedStyle(element)
+            return {
+              x: Number.parseFloat(element.style.getPropertyValue('--drag-x')),
+              arrowAnimation: arrow ? getComputedStyle(arrow).animationName : null,
+              arrowFilter: arrow ? getComputedStyle(arrow).filter : null,
+              cardFilter: style.filter,
+              cardShadow: style.boxShadow,
+            }
+          })
+          assert(dragVisual.x > 60,
+            `${engineName}: dragged card did not track horizontal touch movement: ${dragVisual.x}px`)
+          assert.deepEqual({ animation: dragVisual.arrowAnimation, arrow: dragVisual.arrowFilter,
+            card: dragVisual.cardFilter }, { animation: 'none', arrow: 'none', card: 'none' },
+          `${engineName}: phone drag retained per-frame filter work ${JSON.stringify(dragVisual)}`)
+          assert.notEqual(dragVisual.cardShadow, 'none', `${engineName}: phone drag lost its card shadow`)
           const metricsAfter = cdp ? await cdp.send('Performance.getMetrics') : null
           const dragPerformance = await page.evaluate(async () => {
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))

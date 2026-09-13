@@ -484,9 +484,15 @@ export function cardStaysInPlay(def: Pick<CardDef, 'type'>): boolean {
 }
 
 /** The upgraded face of a card, or the card itself when it is not upgraded. */
+const upgradedFaces = new WeakMap<CardDef, CardDef>()
+
 export function faceOf(def: CardDef, upgraded: boolean): CardDef {
   if (!upgraded || !def.upgrade) return def
-  return { ...def, ...def.upgrade, name: `${def.name}+` }
+  const cached = upgradedFaces.get(def)
+  if (cached) return cached
+  const face = { ...def, ...def.upgrade, name: `${def.name}+` }
+  upgradedFaces.set(def, face)
+  return face
 }
 
 export function cardCost(

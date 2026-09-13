@@ -106,6 +106,7 @@ check('pooled cards ignore rarity and use their own directory', () => {
 
 check('an upgraded face resolves to its own image', () => {
   const bash = CARDS.bash
+  assert(faceOf(bash, true) === faceOf(bash, true), 'upgraded card faces are rebuilt on every render')
   const base = cardImagePath(faceOf(bash, false), false)
   const upgraded = cardImagePath(faceOf(bash, true), true)
   assert(base !== upgraded, 'the upgraded face is a separate scan, not a recolour')

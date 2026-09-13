@@ -17,27 +17,44 @@ const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
 const pageErrors = []
 page.on('pageerror', (error) => pageErrors.push(String(error)))
+let activeFixture = null
+
+async function waitForActiveFixture() {
+  if (!activeFixture) return
+  await page.waitForFunction(({ combatId, turn }) => {
+    const run = window.__STS_DEBUG__.getRun()
+    const combat = run.combat
+    return run.phase !== 'combat' || !combat || combat.combatId !== combatId || combat.phase === 'won' ||
+      combat.phase === 'player' && combat.turn > turn
+  }, activeFixture)
+  activeFixture = null
+}
 
 async function drag(source, target) {
   const from = await source.boundingBox()
-  const to = await target.boundingBox()
+  const to = await target.evaluate((element) => {
+    const surface = element.querySelector('.enemy__hit-area, .seat__portrait') ?? element
+    const rect = surface.getBoundingClientRect()
+    const point = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+    const hit = document.elementFromPoint(point.x, point.y)
+    return hit && (hit === element || element.contains(hit)) ? point : null
+  })
   assert(from && to, 'the drag source and target must be visible')
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
   await page.mouse.down()
-  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 })
+  await page.mouse.move(to.x, to.y, { steps: 8 })
   await page.mouse.up()
 }
 
 async function fixture({ character, powers = [], orbs = [null, null, null], enemies }) {
-  // Debug fixtures replace one combat in place; let the prior local
-  // auto-advance timer settle before installing another same-phase state.
-  await page.waitForTimeout(300)
+  await waitForActiveFixture()
   await page.evaluate(({ character, powers, orbs, enemies }) => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())
     const baseEnemy = run.combat.enemies[0]
     const player = run.combat.players[0]
     run.phase = 'combat'
+    run.combat.combatId = `end-turn-drag:${enemies[0].uid}`
     run.combat.phase = 'player'
     run.combat.pendingTriggers = []
     run.combat.startTurnProgress = undefined
@@ -48,7 +65,9 @@ async function fixture({ character, powers = [], orbs = [null, null, null], enem
       character,
       name: character[0].toUpperCase() + character.slice(1),
       hand: [], draw: [], discard: [], exhaust: [], powers, relics: [], potions: [],
-      energy: 0, block: 0, strength: 0, weak: 0, vulnerable: 0, shivs: 0, miracles: 0,
+      hp: 100, maxHp: 100, energy: 0, block: 0, strength: 0, weak: 0, vulnerable: 0,
+      shivs: 0, miracles: 0, orbEndTurnBonus: 0, lightningEndTurnBonus: 0,
+      orbEvokeBonus: 0, darkOrbEvokeBonus: 0,
       stance: 'neutral', orbs, dead: false, damageDealtZeroThisTurn: false,
     }]
     run.combat.enemies = enemies.map((enemy, index) => ({
@@ -62,12 +81,25 @@ async function fixture({ character, powers = [], orbs = [null, null, null], enem
       poison: 0,
       dead: false,
     }))
+    run.combat.powerTriggersUsedThisTurn = []
+    run.combat.presentationEvents = []
     debug.setRun(run)
   }, { character, powers, orbs, enemies })
+  await page.waitForFunction(({ combatId, enemyUids }) => {
+    const combat = window.__STS_DEBUG__.getRun().combat
+    return combat?.combatId === combatId &&
+      combat.enemies.map((enemy) => enemy.uid).join() === enemyUids.join()
+  }, { combatId: `end-turn-drag:${enemies[0].uid}`, enemyUids: enemies.map((enemy) => enemy.uid) })
+  await page.locator(`.seat__interactive[data-character="${character}"]`).waitFor()
   await page.locator(`[data-enemy-id="${enemies.at(-1).uid}"]`).waitFor()
+  activeFixture = await page.evaluate(() => {
+    const combat = window.__STS_DEBUG__.getRun().combat
+    return { combatId: combat.combatId, turn: combat.turn }
+  })
 }
 
 async function startTurnRelicFixture() {
+  activeFixture = null
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())
@@ -108,6 +140,7 @@ try {
   })
   await page.locator('.room--reachable').first().click()
   await page.locator('.combat').waitFor()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat?.phase === 'player')
 
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__
@@ -118,13 +151,19 @@ try {
       character: 'hexaghost', heat: 2, hand: [haunted], draw: [], discard: [], exhaust: [], powers: [],
     })
     Object.assign(run.combat, {
+      combatId: 'end-turn-drag:mayhem',
       phase: 'start', startTurnProgress: { choices: [], forcedCard: {
         playerId: player.id, cardUid: haunted.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
       } },
     })
     debug.setRun(run)
   })
-  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.startTurnProgress?.forcedCard === undefined)
+  await page.waitForFunction(() => {
+    const combat = window.__STS_DEBUG__.getRun().combat
+    return combat?.combatId === 'end-turn-drag:mayhem' && combat.phase === 'player' &&
+      combat.startTurnProgress?.forcedCard === undefined &&
+      combat.players[0].exhaust.some((card) => card.uid === 'local-mayhem-haunted')
+  })
   const localMayhem = await page.evaluate(() => {
     const combat = window.__STS_DEBUG__.getRun().combat
     return { phase: combat.phase, exhausted: combat.players[0].exhaust.some((card) =>
@@ -151,7 +190,10 @@ try {
   })
   await page.screenshot({ path: join(output, 'defect-lightning-drag.png'), fullPage: true })
   await drag(firstOrb, page.locator('[data-enemy-id="drag-e1"]'))
-  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies.every((enemy) => enemy.dead))
+  await page.waitForFunction(() => {
+    const combat = window.__STS_DEBUG__.getRun().combat
+    return combat.combatId === 'end-turn-drag:drag-e1' && combat.enemies.every((enemy) => enemy.dead)
+  })
   check('Lightning Orbs drag only while multiple targets remain', () => {
     assert(firstPrompt.includes('Drag'), `missing drag instruction: ${firstPrompt}`)
     assert(firstPosition.top < 180, `the Orb source was not at the top of the battle: ${firstPosition.top}`)
@@ -201,7 +243,7 @@ try {
   await panache.waitFor()
   await panache.click()
   await page.locator('.enemy--targeted').first().waitFor()
-  await page.locator('[data-enemy-id="panache-e2"]').click()
+  await page.locator('[data-enemy-id="panache-e2"] .enemy__hit-area').click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies
     .find((enemy) => enemy.uid === 'panache-e2')?.hp === 15)
   check('another end-turn Power uses the same card-to-row targeting flow', () => assert(true))
@@ -213,9 +255,11 @@ try {
     enemies: [{ uid: 'click-loop-enemy', hp: 20 }],
   })
   await page.getByRole('button', { name: 'End turn', exact: true }).click()
-  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat?.enemies
-    .find((enemy) => enemy.uid === 'click-loop-enemy')?.hp === 17)
-  check('a sole Loop Orb and enemy resolve without redundant click, keyboard, or drag actions', () => assert(true))
+  await waitForActiveFixture()
+  const soleLoopHp = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp)
+  check('a sole Loop Orb and enemy resolve without redundant click, keyboard, or drag actions', () => {
+    assert(soleLoopHp === 17, `the sole upgraded Loop resolved to ${soleLoopHp} HP instead of 17`)
+  })
 
   await fixture({
     character: 'defect',
@@ -246,19 +290,25 @@ try {
   assert(loopOrbBox.x >= defectPortraitBox.x - defectPortraitBox.width * 0.3 &&
     loopOrbBox.x + loopOrbBox.width <= defectPortraitBox.x + defectPortraitBox.width * 1.3,
   'the selected Orb detached from the Defect portrait')
-  const orbGap = defectPortraitBox.y - (loopOrbBox.y + loopOrbBox.height)
+  const defectHeadTop = defectPortraitBox.y + defectPortraitBox.height - defectPortraitBox.width * 0.66
+  const orbGap = defectHeadTop - (loopOrbBox.y + loopOrbBox.height)
   assert(orbGap >= -1 && orbGap <= 160, `the selected Orb detached vertically from the Defect: ${orbGap}px`)
-  assert(Math.abs(orbRowBox.y + orbRowBox.height - defectPortraitBox.y) <= 1,
+  assert(Math.abs(orbRowBox.y + orbRowBox.height - defectHeadTop) <= 1,
     'the Orb row no longer rests directly above the Defect portrait')
   await page.setViewportSize({ width: 1440, height: 700 })
   const compactOrbRowBox = await page.locator('.seat--viewer + .orbs').boundingBox()
   const compactPortraitBox = await page.locator('.seat--viewer .seat__portrait').boundingBox()
-  assert(compactOrbRowBox && compactPortraitBox &&
-    Math.abs(compactOrbRowBox.y + compactOrbRowBox.height - compactPortraitBox.y) <= 1,
+  assert(compactOrbRowBox && compactPortraitBox && Math.abs(
+    compactOrbRowBox.y + compactOrbRowBox.height -
+    (compactPortraitBox.y + compactPortraitBox.height - compactPortraitBox.width * 0.66),
+  ) <= 4,
   'the Orb row no longer rests directly above the compact Defect portrait')
   await page.setViewportSize({ width: 1440, height: 900 })
   assert(loopCardBox.y < loopOrbBox.y, 'the Loop card was not above the Orb drag source')
   await drag(loopOrb, loop)
+  await page.waitForFunction(() => Object.values(
+    window.__STS_DEBUG__.getRun().combat.endTurnProgress?.loopSelections ?? {},
+  ).includes(1))
   await drag(loopOrb, loop)
   const copiedLightning = page.locator('button.end-turn-effect--orb')
   await copiedLightning.waitFor()

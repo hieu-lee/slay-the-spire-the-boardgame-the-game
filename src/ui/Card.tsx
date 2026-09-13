@@ -526,9 +526,15 @@ function flattenEffects(effects: readonly Effect[]): Effect[] {
   })
 }
 
-export function cardKeywordTips(def: CardDef): readonly {
+type CardKeywordTip = {
   name: string; text: string; icon?: IconName; statusIcon?: StatusIconName
-}[] {
+}
+
+const keywordTips = new WeakMap<CardDef, readonly CardKeywordTip[]>()
+
+export function cardKeywordTips(def: CardDef): readonly CardKeywordTip[] {
+  const cached = keywordTips.get(def)
+  if (cached) return cached
   const effects = flattenEffects([
     ...def.effects,
     ...(def.modes ?? []).flatMap((mode) => mode.effects),
@@ -572,9 +578,11 @@ export function cardKeywordTips(def: CardDef): readonly {
   const reachesAllEnemies = target === 'allEnemies' || def.id === 'slime_boss_evolution_slime'
   const reach = target === 'row' || reachesRow ? '__row__' : reachesAllEnemies ? '__all_enemies__' : ''
   const rules = `${cardType} ${def.unplayable ? 'unplayable' : ''} ${def.id === 'daze' || def.id === 'burn' ? def.id : ''} ${hitType} ${reach} ${vulnerable ? 'vulnerable' : ''} ${weak ? '__weak__' : ''} ${block ? '__block__' : ''} ${poison ? '__poison__' : ''} ${strength ? '__strength__' : ''} ${orb ? '__orb__' : ''} ${exhaust ? '__exhaust__' : ''} ${guardianGem ? '__guardian_gem__' : ''} ${keywordRules}`
-  return CARD_KEYWORD_TIPS
+  const tips = CARD_KEYWORD_TIPS
     .filter(([, pattern]) => pattern.test(rules))
     .map(([name, , text, icon, statusIcon]) => ({ name, text, icon, statusIcon }))
+  keywordTips.set(def, tips)
+  return tips
 }
 
 export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips = [], hover = false, children }: {

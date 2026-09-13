@@ -12,6 +12,24 @@ html[data-mobile-performance='true'] .choice-modal::backdrop {
   backdrop-filter: none;
 }
 
+/* Keep the same silhouettes without making iOS repaint blurred filters and a
+   flowing full-screen SVG on every pointer frame. */
+html[data-mobile-performance='true'] .card-drag {
+  border-radius: 8px;
+  box-shadow: 0 1.2rem 1rem rgb(0 0 0 / 0.78);
+  filter: none;
+}
+
+html[data-mobile-performance='true'] .card-target-arrow__line {
+  animation: none;
+  filter: none;
+}
+
+html[data-mobile-performance='true'] .seat--targetable {
+  animation: none;
+  box-shadow: 0 0 0 2px rgb(215 169 75 / 0.25);
+}
+
 /* The in-game Reduce motion toggle is authoritative on phones. iOS's hidden
    OS preference must not silently delete combat; desktop still honours it. */
 @media (prefers-reduced-motion: reduce) {
