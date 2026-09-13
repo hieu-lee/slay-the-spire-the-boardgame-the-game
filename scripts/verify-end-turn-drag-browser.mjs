@@ -79,6 +79,7 @@ async function fixture({ character, powers = [], orbs = [null, null, null], enem
       maxHp: enemy.hp,
       block: 0,
       poison: 0,
+      abilityUsed: true,
       dead: false,
     }))
     run.combat.powerTriggersUsedThisTurn = []

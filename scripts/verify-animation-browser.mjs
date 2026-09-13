@@ -283,9 +283,16 @@ try {
     check(await page.locator('.card-drag').count() === 0,
       'a horizontal hand movement immediately opened card targeting feedback')
     await page.mouse.move(startX + 240, from.y + from.height / 2 - 80)
-    await page.locator('.card-drag').waitFor({ timeout: 500 })
+    const dragPreview = page.locator('.card-drag')
+    await dragPreview.waitFor({ timeout: 500 })
     check(await page.locator('.card-target-arrow').isVisible(),
       'a shallow drag toward the enemy delayed its card and targeting feedback')
+    const dragShadow = await dragPreview.evaluate((preview) => {
+      const style = getComputedStyle(preview)
+      return { box: style.boxShadow, filter: style.filter }
+    })
+    check(dragShadow.box !== 'none' && dragShadow.filter === 'none',
+      `desktop card drag retained filter work or lost its shadow ${JSON.stringify(dragShadow)}`)
     await page.screenshot({ path: join(output, `desktop-${browserName}-shallow-card-drag.png`) })
     await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2)
     await page.mouse.up()
@@ -1147,7 +1154,7 @@ try {
       const documentNode = await cdp.send('DOM.getDocument')
       const compositorProbe = {}
       for (const [name, selector] of Object.entries({
-        pose: `.seat[data-player-id="${ids.actorId}"] .character-attack__pose--rig`,
+        pose: `.seat[data-player-id="${ids.actorId}"] .character-attack__pose--watcher-cast`,
         meteor: `.seat[data-player-id="${ids.actorId}"] .character-attack__meteor`,
         impact: `.seat[data-player-id="${ids.actorId}"] .character-attack__meteor-impact`,
       })) {
