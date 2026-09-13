@@ -42,7 +42,9 @@ type LeaderboardSubmission = {
 }
 
 let fallbackOutbox: LeaderboardSubmission[] = []
-let flushing: Promise<void> | null = null
+type FlushReport = { recorded: string[]; rejected: string[] }
+
+let flushing: Promise<FlushReport> | null = null
 
 function readOutbox(): LeaderboardSubmission[] {
   try {
@@ -71,7 +73,7 @@ function installationId() {
 }
 
 export function queueFinishedSoloRun(run: RunState) {
-  if (!run.campaign.finalized || run.players.length !== 1) return
+  if (!run.campaign.finalized || run.players.length !== 1) return null
   const totals = damageTotals(run.players[0]?.damageStats)
   const submission: LeaderboardSubmission = {
     id: `${installationId()}:${run.campaign.runId}:${run.seed}`,
@@ -97,8 +99,8 @@ export function queueFinishedSoloRun(run: RunState) {
   }
   const queued = readOutbox()
   const existing = queued.findIndex((entry) => entry.id === submission.id)
-  if (existing < 0) return writeOutbox([...queued, submission])
-  if (queued[existing]!.floorsCleared === undefined && submission.floorsCleared !== undefined ||
+  if (existing < 0) writeOutbox([...queued, submission])
+  else if (queued[existing]!.floorsCleared === undefined && submission.floorsCleared !== undefined ||
       queued[existing]!.finalDeck === undefined && submission.finalDeck !== undefined) {
     queued[existing] = { ...queued[existing]!,
       ...(queued[existing]!.floorsCleared === undefined ? { floorsCleared: submission.floorsCleared } : {}),
@@ -107,10 +109,12 @@ export function queueFinishedSoloRun(run: RunState) {
     }
     writeOutbox(queued)
   }
+  return submission.id
 }
 
 async function flush() {
-  for (const run of readOutbox()) {
+  const report: FlushReport = { recorded: [], rejected: [] }
+  for (let run of readOutbox()) {
     let submitted = false
     for (let attempt = 0; attempt < 2 && !submitted; attempt += 1) {
       let endpoint: string | undefined
@@ -124,9 +128,17 @@ async function flush() {
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
         status = response.status
+        if (response.status === 409 && run.profileToken !== undefined) {
+          const { profileToken: _, ...anonymous } = run
+          run = anonymous
+          writeOutbox(readOutbox().map((entry) => entry.id === run.id ? run : entry))
+          attempt -= 1
+          continue
+        }
         if (response.status === 400 || response.status === 413) {
           submitted = true
           writeOutbox(readOutbox().filter((entry) => entry.id !== run.id))
+          report.rejected.push(run.id)
           continue
         }
         if (!response.ok) throw new Error('Leaderboard submission failed')
@@ -135,21 +147,23 @@ async function flush() {
             run.finalDeck !== undefined && acknowledged?.finalDeckAccepted !== true ||
             run.profileToken !== undefined && acknowledged?.profileAccepted !== true) {
           resetRoomEndpoint(endpoint)
-          if (attempt === 1) return
+          if (attempt === 1) return report
           continue
         }
         submitted = true
         writeOutbox(readOutbox().filter((entry) => entry.id !== run.id))
+        report.recorded.push(run.id)
       } catch {
         resetRoomEndpoint(status === undefined || status < 400 || status >= 500 ? endpoint : undefined)
-        if (attempt === 1) return
+        if (attempt === 1) return report
       }
     }
   }
+  return report
 }
 
 export function flushLeaderboardOutbox(force = false) {
-  if (!AUTO_FLUSH && !force) return Promise.resolve()
+  if (!AUTO_FLUSH && !force) return Promise.resolve({ recorded: [], rejected: [] })
   flushing ??= flush().finally(() => { flushing = null })
   return flushing
 }

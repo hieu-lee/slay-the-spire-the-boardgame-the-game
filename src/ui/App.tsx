@@ -517,6 +517,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const pauseDialog = useRef<HTMLDialogElement>(null)
   const runShell = useRef<HTMLElement>(null)
   const queuedLeaderboardRun = useRef<string | null>(null)
+  const leaderboardSubmission = useRef<string | null>(null)
+  const [leaderboardStatus, setLeaderboardStatus] = useState<'pending' | 'recorded' | 'queued' | 'rejected' | null>(null)
   const [achievements, setAchievements] = useState(false)
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
   const metaOptions: RunMetaOptions = { mode, modifiers: customModifierIds, quickStartAct }
@@ -547,10 +549,17 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     onOpen()
   }
 
+  const flushQueuedRun = () => void flushLeaderboardOutbox().then(({ recorded, rejected }) => {
+    const id = leaderboardSubmission.current
+    if (!id) return
+    if (recorded.includes(id) || rejected.includes(id)) leaderboardSubmission.current = null
+    setLeaderboardStatus(recorded.includes(id) ? 'recorded' : rejected.includes(id) ? 'rejected' : 'queued')
+  })
+
   useEffect(() => {
-    void flushLeaderboardOutbox()
-    const retry = window.setInterval(() => void flushLeaderboardOutbox(), 60_000)
-    const online = () => void flushLeaderboardOutbox()
+    flushQueuedRun()
+    const retry = window.setInterval(flushQueuedRun, 60_000)
+    const online = flushQueuedRun
     window.addEventListener('online', online)
     return () => { clearInterval(retry); window.removeEventListener('online', online) }
   }, [])
@@ -639,8 +648,11 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     if (run.campaign.finalized) {
       if (queuedLeaderboardRun.current !== run.campaign.runId) {
         queuedLeaderboardRun.current = run.campaign.runId
-        queueFinishedSoloRun(run)
-        void flushLeaderboardOutbox()
+        leaderboardSubmission.current = queueFinishedSoloRun(run)
+        if (leaderboardSubmission.current) {
+          setLeaderboardStatus('pending')
+          flushQueuedRun()
+        } else setLeaderboardStatus(null)
       }
       return discardSoloRun()
     }
@@ -1063,7 +1075,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         </section>
       ) : null}
 
-      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p><div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => { setSeedText(crypto.randomUUID()); setChoosingNextCharacter(true); onClose() }}>Begin next run →</button> : null}</div></section> : null}
+      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p>{run.campaign.finalized && leaderboardStatus ? <p key={leaderboardStatus} aria-live="polite" data-webmcp-transient-status data-webmcp-pending={leaderboardStatus === 'pending' ? 'true' : undefined}>{leaderboardStatus === 'pending' ? 'Recording run on the leaderboard…' : leaderboardStatus === 'recorded' ? 'Run recorded on the leaderboard.' : leaderboardStatus === 'queued' ? 'Leaderboard unavailable — run saved for automatic retry.' : 'Leaderboard rejected this run.'}</p> : null}<div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => { setSeedText(crypto.randomUUID()); setChoosingNextCharacter(true); onClose() }}>Begin next run →</button> : null}</div></section> : null}
 
       <TreasureEffects room={run.roomState?.kind === 'treasure' ? run.roomState : null}
         players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />

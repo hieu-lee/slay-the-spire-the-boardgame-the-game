@@ -5,12 +5,30 @@ import { chromium } from './lib/profile-browser.mjs'
 import { suite, check, assert, assertDeepEqual, report } from './lib/harness.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+process.env.VITE_LEADERBOARD = 'true'
 const server = await createServer({ root: repoRoot, logLevel: 'silent', server: { port: 0 } })
 await server.listen()
 const address = server.httpServer?.address()
 if (!address || typeof address === 'string') throw new Error('vite did not report a port')
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+const leaderboardSubmissions = []
+let leaderboardUnavailable = false
+let transientLeaderboardFailures = 1
+await page.route('**/api/leaderboard', async (route) => {
+  if (route.request().method() !== 'POST') return route.continue()
+  const submission = route.request().postDataJSON()
+  leaderboardSubmissions.push(submission)
+  if (leaderboardUnavailable || transientLeaderboardFailures-- > 0) {
+    return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"Unavailable"}' })
+  }
+  return route.fulfill({
+    status: submission.profileToken ? 409 : 201,
+    contentType: 'application/json',
+    body: submission.profileToken ? '{"error":"Profile unavailable"}' :
+      '{"ok":true,"added":true,"floorsClearedAccepted":true,"finalDeckAccepted":true,"profileAccepted":true}',
+  })
+})
 const errors = []
 page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
 page.on('pageerror', (error) => errors.push(String(error)))
@@ -812,6 +830,77 @@ const relicResolutionFlow = {
   returnedMap: relicResolutionSettled.controls.some((control) => control.context?.startsWith('Floor ')),
 }
 
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  debug.setRun({ ...run, phase: 'defeat', combat: null, campaign: { ...run.campaign, finalized: false } })
+})
+await page.getByRole('button', { name: 'Record campaign result' }).waitFor()
+const defeatInspection = await inspectAll()
+const recordResult = defeatInspection.controls.find((control) => control.label === 'Record campaign result')
+if (!recordResult) throw new Error(`WebMCP did not expose campaign recording: ${JSON.stringify(defeatInspection)}`)
+const recorded = await interact(recordResult.id)
+const leaderboardRecording = {
+  attempts: leaderboardSubmissions.map((submission) => Boolean(submission.profileToken)),
+  announced: recorded.screen.announcements?.includes('Run recorded on the leaderboard.'),
+  queued: await page.evaluate(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]').length),
+}
+
+leaderboardUnavailable = true
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  debug.setRun({
+    ...run,
+    seed: run.seed + 1,
+    phase: 'defeat',
+    campaign: { ...run.campaign, runId: `${run.campaign.runId}-retry`, finalized: false },
+  })
+})
+await page.getByRole('button', { name: 'Record campaign result' }).waitFor()
+const retryInspection = await inspectAll()
+const retryResult = retryInspection.controls.find((control) => control.label === 'Record campaign result')
+if (!retryResult) throw new Error(`WebMCP did not expose retry recording: ${JSON.stringify(retryInspection)}`)
+const queuedResult = await interact(retryResult.id)
+leaderboardUnavailable = false
+await page.evaluate(() => window.dispatchEvent(new Event('online')))
+await page.getByText('Run recorded on the leaderboard.').waitFor()
+const retriedResult = await inspectAll()
+const expectedLeaderboardErrors = errors.filter((error) => /409 \(Conflict\)|503 \(Service Unavailable\)/.test(error))
+for (let index = errors.length - 1; index >= 0; index -= 1) {
+  if (/409 \(Conflict\)|503 \(Service Unavailable\)/.test(errors[index])) errors.splice(index, 1)
+}
+const leaderboardRetry = {
+  queued: queuedResult.screen.announcements?.includes('Leaderboard unavailable — run saved for automatic retry.'),
+  recorded: retriedResult.screen.announcements?.includes('Run recorded on the leaderboard.'),
+  attempts: leaderboardSubmissions.slice(3).map((submission) => Boolean(submission.profileToken)),
+  expectedErrors: expectedLeaderboardErrors.length,
+}
+
+const multiplayerSubmissions = leaderboardSubmissions.length
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const ally = structuredClone(run.players[0])
+  Object.assign(ally, { id: 'webmcp-local-ally', name: 'Local Ally', character: 'ironclad' })
+  debug.setRun({
+    ...run,
+    seed: run.seed + 1,
+    phase: 'defeat',
+    players: [...run.players, ally],
+    campaign: { ...run.campaign, runId: `${run.campaign.runId}-multiplayer`, finalized: false },
+  })
+})
+await page.getByRole('button', { name: 'Record campaign result' }).waitFor()
+const multiplayerInspection = await inspectAll()
+const multiplayerRecord = multiplayerInspection.controls.find((control) => control.label === 'Record campaign result')
+if (!multiplayerRecord) throw new Error('WebMCP did not expose local multiplayer campaign recording')
+const multiplayerRecorded = await interact(multiplayerRecord.id)
+const localMultiplayerRecording = {
+  announced: multiplayerRecorded.screen.announcements?.some((message) => /leaderboard/i.test(message)) ?? false,
+  submissions: leaderboardSubmissions.length - multiplayerSubmissions,
+}
+
 const stale = await page.evaluate(async (controlId) => {
   const interact = (await document.modelContext.getTools()).find((tool) => tool.name === 'interact_with_game')
   try {
@@ -958,6 +1047,17 @@ check('returns visible gameplay context and drives every gameplay control kind',
   assert(controls.stale.includes('Control is no longer available'), 'changed form state invalidates its old control snapshot')
   assert(disclosure.opened && disclosure.hiddenWhenClosed && disclosure.revealedWhenOpen,
     `native details disclosures are inspectable and operable: ${JSON.stringify(disclosure)}`)
+})
+
+check('records a finished run through WebMCP after a stale profile handoff', () => {
+  assertDeepEqual(leaderboardRecording.attempts, [true, true, false])
+  assert(leaderboardRecording.announced, 'WebMCP did not return the leaderboard acknowledgment')
+  assertDeepEqual(leaderboardRecording.queued, 0)
+  assert(leaderboardRetry.queued && leaderboardRetry.recorded,
+    'an automatic retry did not update the WebMCP-visible submission status')
+  assertDeepEqual(leaderboardRetry.attempts, [true, true, true, false])
+  assert(leaderboardRetry.expectedErrors >= 5, 'the retry fixtures did not exercise their expected failures')
+  assertDeepEqual(localMultiplayerRecording, { announced: false, submissions: 0 })
 })
 
 check('keeps snapshots scoped, stable, opaque, and current', () => {
