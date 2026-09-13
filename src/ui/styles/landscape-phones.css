@@ -12,8 +12,14 @@ html[data-mobile-performance='true'] .choice-modal::backdrop {
   backdrop-filter: none;
 }
 
-/* Keep the same silhouettes without making iOS repaint a flowing full-screen
-   SVG on every pointer frame. */
+/* Keep the same silhouettes without making iOS repaint blurred filters and a
+   flowing full-screen SVG on every pointer frame. */
+html[data-mobile-performance='true'] .card-drag {
+  border-radius: 8px;
+  box-shadow: 0 1.2rem 1rem rgb(0 0 0 / 0.78);
+  filter: none;
+}
+
 html[data-mobile-performance='true'] .card-target-arrow__line {
   animation: none;
   filter: none;

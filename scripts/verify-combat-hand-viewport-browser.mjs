@@ -137,12 +137,45 @@ try {
         await check(phone ? 'touch-selected' : 'hovered')
         assert(await first.evaluate(e => e.getBoundingClientRect().bottom <=
           document.querySelector('.app-shell').getBoundingClientRect().bottom + 1), 'active card must be fully revealed')
+        if (!phone) {
+          const card = page.locator('.hand .card[title="Strike"]').first()
+          const [box, target] = await Promise.all([
+            card.boundingBox(), page.locator('.enemy').last().boundingBox(),
+          ])
+          assert(box && target, `${engineName}: desktop drag card or target is not visible`)
+          const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+          await page.mouse.move(point.x, point.y)
+          await page.mouse.down()
+          await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 8 })
+          const preview = page.locator('.card-drag')
+          await preview.waitFor()
+          const dragGeometry = await preview.evaluate(element => {
+            const rect = element.getBoundingClientRect()
+            const arrow = document.querySelector('.card-target-arrow__line')
+            const end = arrow?.getPointAtLength(arrow.getTotalLength())
+            const arrowStyle = arrow && getComputedStyle(arrow)
+            const cardStyle = getComputedStyle(element)
+            return { cardX: rect.x + rect.width / 2, arrowX: end?.x,
+              arrowStroke: arrowStyle?.stroke, arrowVisibility: arrowStyle?.visibility,
+              cardFilter: cardStyle.filter, cardShadow: cardStyle.boxShadow }
+          })
+          assert(Math.abs(dragGeometry.cardX - point.x) < 2 && dragGeometry.arrowX > point.x + 90 &&
+            dragGeometry.arrowStroke !== 'none' && dragGeometry.arrowVisibility === 'visible' &&
+            dragGeometry.cardFilter.includes('drop-shadow') && dragGeometry.cardShadow === 'none',
+            `${engineName}: desktop card followed the cursor or lost its targeting arrow ${JSON.stringify(dragGeometry)}`)
+          await page.screenshot({ path: resolve(out, `${engineName}-desktop-anchored-card-drag.png`) })
+          await page.mouse.up()
+          await preview.waitFor({ state: 'detached' })
+        }
         await page.mouse.move(1, 1)
         if (phone) {
           const card = page.locator('.hand .card[title="Strike"]').first()
-          const box = await card.boundingBox()
-          assert(box, `${engineName}: touch drag card is not visible`)
+          const [box, target] = await Promise.all([
+            card.boundingBox(), page.locator('.enemy').last().boundingBox(),
+          ])
+          assert(box && target, `${engineName}: touch drag card or target is not visible`)
           const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+          const targetPoint = { x: target.x + target.width / 2, y: target.y + target.height / 2 }
           const cdp = engineName === 'chromium' ? await context.newCDPSession(page) : null
           if (cdp) await cdp.send('Input.dispatchTouchEvent', {
             type: 'touchStart', touchPoints: [{ ...point, id: 1, radiusX: 1, radiusY: 1 }],
@@ -189,7 +222,11 @@ try {
             document.documentElement.dataset.mobilePerformance === 'true' && innerWidth >= 1280),
           `${engineName}: phone fixture missed the real coarse-pointer desktop viewport`)
           for (let step = 1; step <= 24; step += 1) {
-            const next = { x: moved.x + step * 4, y: moved.y - Math.sin(step / 3) * 30 }
+            const progress = step / 24
+            const next = {
+              x: moved.x + (targetPoint.x - moved.x) * progress,
+              y: moved.y + (targetPoint.y - moved.y) * progress - Math.sin(Math.PI * progress) * 30,
+            }
             if (cdp) await cdp.send('Input.dispatchTouchEvent', {
               type: 'touchMove', touchPoints: [{ ...next, id: 1, radiusX: 1, radiusY: 1 }],
             })
@@ -199,16 +236,24 @@ try {
           const dragVisual = await preview.evaluate(element => {
             const arrow = document.querySelector('.card-target-arrow__line')
             const style = getComputedStyle(element)
+            const rect = element.getBoundingClientRect()
+            const end = arrow?.getPointAtLength(arrow.getTotalLength())
+            const arrowStyle = arrow && getComputedStyle(arrow)
             return {
-              x: Number.parseFloat(element.style.getPropertyValue('--drag-x')),
-              arrowAnimation: arrow ? getComputedStyle(arrow).animationName : null,
-              arrowFilter: arrow ? getComputedStyle(arrow).filter : null,
+              cardX: rect.x + rect.width / 2,
+              arrowX: end?.x,
+              arrowAnimation: arrowStyle?.animationName ?? null,
+              arrowFilter: arrowStyle?.filter ?? null,
+              arrowStroke: arrowStyle?.stroke,
+              arrowVisibility: arrowStyle?.visibility,
+              targetVisible: Boolean(document.querySelector('.enemy--targeted')),
               cardFilter: style.filter,
               cardShadow: style.boxShadow,
             }
           })
-          assert(dragVisual.x > 60,
-            `${engineName}: dragged card did not track horizontal touch movement: ${dragVisual.x}px`)
+          assert(Math.abs(dragVisual.cardX - point.x) < 2 && dragVisual.arrowX > point.x + 90 &&
+            dragVisual.arrowStroke !== 'none' && dragVisual.arrowVisibility === 'visible' && dragVisual.targetVisible,
+            `${engineName}: phone card followed the cursor or lost its targeting arrow ${JSON.stringify(dragVisual)}`)
           assert.deepEqual({ animation: dragVisual.arrowAnimation, arrow: dragVisual.arrowFilter,
             card: dragVisual.cardFilter }, { animation: 'none', arrow: 'none', card: 'none' },
           `${engineName}: phone drag retained per-frame filter work ${JSON.stringify(dragVisual)}`)

@@ -3761,10 +3761,6 @@ function CombatScreenView({
       cardDragArrowShadow.current?.setAttribute('d', path)
       if (cardDragOverlay.current) {
         cardDragOverlay.current.style.setProperty(
-          '--drag-x',
-          `${next.x - next.startX}px`,
-        )
-        cardDragOverlay.current.style.setProperty(
           '--drag-y',
           `${Math.max(0, next.y - next.startY + 210)}px`,
         )
@@ -6666,7 +6662,6 @@ function CombatScreenView({
           <div ref={cardDragOverlay} className="card-drag" style={{
             left: cardDrag.startX,
             top: cardDrag.startY - 90,
-            '--drag-x': `${cardDrag.x - cardDrag.startX}px`,
             '--drag-y': `${Math.max(0, cardDrag.y - cardDrag.startY + 210)}px`,
             '--drag-turn': `${Math.max(-8, Math.min(8, (cardDrag.x - cardDrag.startX) / 24))}deg`,
           } as React.CSSProperties} aria-hidden="true" inert>

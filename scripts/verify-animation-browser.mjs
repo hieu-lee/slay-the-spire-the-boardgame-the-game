@@ -291,8 +291,8 @@ try {
       const style = getComputedStyle(preview)
       return { box: style.boxShadow, filter: style.filter }
     })
-    check(dragShadow.box !== 'none' && dragShadow.filter === 'none',
-      `desktop card drag retained filter work or lost its shadow ${JSON.stringify(dragShadow)}`)
+    check(dragShadow.box === 'none' && dragShadow.filter.includes('drop-shadow'),
+      `desktop card drag lost its original silhouette shadow ${JSON.stringify(dragShadow)}`)
     await page.screenshot({ path: join(output, `desktop-${browserName}-shallow-card-drag.png`) })
     await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2)
     await page.mouse.up()
