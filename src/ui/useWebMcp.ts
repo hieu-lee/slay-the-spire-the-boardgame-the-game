@@ -385,14 +385,11 @@ function setValue(element: HTMLInputElement | HTMLSelectElement, value: string) 
 
 export function useWebMcp() {
   useEffect(() => {
-    const modelContext = context()
-    if (!modelContext) return
-    const controller = new AbortController()
     const tools: Tool[] = [
       {
         name: 'inspect_game',
         title: 'Inspect game',
-        description: 'Read the visible game state and controls. Page with nextOffset and snapshotId. Includes unavailable future rooms for route planning. If pending, wait and inspect again.',
+        description: 'Read visible state and controls: start-turn choices, relic resolution, and usable relic abilities. Entries in controls work with interact_with_game; unavailableControls and future rooms are planning-only. Page with nextOffset/snapshotId; if pending, wait and inspect again.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -407,7 +404,7 @@ export function useWebMcp() {
       {
         name: 'interact_with_game',
         title: 'Interact with game',
-        description: 'Use a current control ID. Omit value for buttons or a required empty select with one choice; otherwise pass the listed string, number, or boolean. Returns the settled refreshed state.',
+        description: 'Invoke any listed control ID, including start-turn, relic-resolution, and usable-relic controls. Omit value for buttons or a required empty single-choice select; otherwise pass its listed value. Returns settled state.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -486,11 +483,34 @@ export function useWebMcp() {
         },
       },
     ]
-    void Promise.all(tools.map((tool) => modelContext.registerTool(tool, { signal: controller.signal }))).catch((error: unknown) => {
-      if (!controller.signal.aborted) console.error('WebMCP tool registration failed.', error)
-    })
+    let stopped = false
+    let retry: number | undefined
+    let registration: AbortController | undefined
+    let reportedRegistrationError = false
+    const register = async () => {
+      const modelContext = context()
+      if (!modelContext) {
+        retry = window.setTimeout(register, 1_000)
+        return
+      }
+      const attempt = new AbortController()
+      registration = attempt
+      try {
+        await Promise.all(tools.map((tool) => modelContext.registerTool(tool, { signal: attempt.signal })))
+      } catch (error) {
+        attempt.abort()
+        if (!stopped) {
+          if (!reportedRegistrationError) console.error('WebMCP tool registration failed.', error)
+          reportedRegistrationError = true
+          retry = window.setTimeout(register, 1_000)
+        }
+      }
+    }
+    void register()
     return () => {
-      controller.abort()
+      stopped = true
+      if (retry !== undefined) window.clearTimeout(retry)
+      registration?.abort()
       invalidateControls()
     }
   }, [])

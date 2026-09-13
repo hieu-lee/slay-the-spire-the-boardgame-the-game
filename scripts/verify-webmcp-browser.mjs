@@ -705,7 +705,7 @@ const endTurnResult = await interact(endTurn.id)
 const combatFlow = {
   seesTurn: /Turn \d+/.test(combatInspection.screen.text),
   seesEnergy: /\b\d+ Energy\b/.test(combatInspection.screen.text),
-  seesDrawPile: /Draw pile, \d+ cards/.test(combatInspection.screen.text),
+  seesDrawPile: combatInspection.controls.some((control) => /^Draw pile, \d+ cards$/.test(control.label)),
   richAttack: attack.label,
   targetLabel,
   targetSettlementMarked: targetSettlement?.marked,
@@ -714,6 +714,104 @@ const combatFlow = {
   changed: afterAttack.energy < beforeAttack.energy || afterAttack.enemyHp < beforeAttack.enemyHp,
   nextTurnReturned: /Turn 2/.test(endTurnResult.screen?.text ?? ''),
 }
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.relics = [...player.relics.filter((relic) => relic.defId !== 'golden_eye'), {
+    defId: 'golden_eye', spent: false,
+  }]
+  player.draw = Array.from({ length: 5 }, (_, index) => ({
+    uid: `webmcp-golden-eye-${index}`, defId: 'defend_watcher', upgraded: false,
+  }))
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Use Golden Eye/ }).waitFor()
+const activeRelicInspection = await inspectAll()
+const activeRelic = activeRelicInspection.controls.find((control) => control.label.startsWith('Use Golden Eye'))
+if (!activeRelic) throw new Error(`WebMCP did not expose Golden Eye: ${JSON.stringify(activeRelicInspection.controls)}`)
+const activeRelicOpened = await interact(activeRelic.id)
+const finishGoldenEye = activeRelicOpened.controls.find((control) => control.label === 'Discard none')
+if (!finishGoldenEye) throw new Error(`WebMCP did not expose Golden Eye resolution: ${JSON.stringify(activeRelicOpened)}`)
+const activeRelicResolved = await interact(finishGoldenEye.id)
+const activeRelicFlow = {
+  tellsAgentWhatItDoes: activeRelic.label.includes('Once per combat: Scry 3'),
+  opensResolution: activeRelicOpened.screen.headings.includes('Golden Eye — Scry 3'),
+  resolved: await page.evaluate(() => window.__STS_DEBUG__.getState().players[0].relics
+    .find((relic) => relic.defId === 'golden_eye')?.spent === true),
+  leavesPlayableState: activeRelicResolved.controls.some((control) => control.label.startsWith('End turn')),
+}
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 2, log: [] })
+  Object.assign(player, {
+    character: 'silent', hand: [], discard: [], exhaust: [], energy: 0,
+    powers: [{ uid: 'webmcp-noxious-fumes', defId: 'noxious_fumes', upgraded: false }],
+    draw: Array.from({ length: 10 }, (_, index) => ({
+      uid: `webmcp-noxious-draw-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  const enemy = run.combat.enemies.find((candidate) => !candidate.dead) ?? run.combat.enemies[0]
+  run.combat.enemies = [0, 1].map((row) => ({
+    ...enemy, uid: `webmcp-noxious-enemy-${row}`, row, hp: 20, maxHp: 20,
+    block: 0, poison: 0, dead: false, abilityUsed: true,
+  }))
+  debug.setRun(run)
+})
+await page.locator('.combat[data-phase="start"]').waitFor()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Noxious Fumes'))
+const startTurnInspection = await inspectAll()
+const startTurnTargetLabel = await page.locator('.enemy--targeted:not([disabled])').first().getAttribute('aria-label')
+const startTurnTarget = startTurnInspection.controls.find((control) => control.label === startTurnTargetLabel)
+if (!startTurnTarget) throw new Error(`WebMCP did not expose a start-turn target: ${JSON.stringify(startTurnInspection)}`)
+const startTurnTargeted = await interact(startTurnTarget.id)
+const resolveStartTurn = startTurnTargeted.controls.find((control) => control.label === 'Resolve start of turn')
+if (!resolveStartTurn) throw new Error(`WebMCP did not expose start-turn resolution: ${JSON.stringify(startTurnTargeted)}`)
+const startTurnResolved = await interact(resolveStartTurn.id)
+const startTurnFlow = {
+  announcedChoice: startTurnInspection.screen.status.some((status) => status.includes('Noxious Fumes')),
+  targetWasInvokable: Boolean(startTurnTarget.id),
+  resolved: await page.evaluate(() => {
+    const state = window.__STS_DEBUG__.getState()
+    return state.phase === 'player' && state.enemies.filter((enemy) => enemy.poison === 1).length === 1
+  }),
+  leavesPlayableState: startTurnResolved.controls.some((control) => control.label.startsWith('End turn')),
+}
+
+const relicResolutionBefore = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'map'
+  run.combat = null
+  const player = run.players[0]
+  player.relics.push({ defId: 'war_paint', spent: false, pending: true })
+  const upgraded = player.deck.filter((card) => card.upgraded).length
+  debug.setRun(run)
+  return upgraded
+})
+await page.getByRole('heading', { name: 'Resolve War Paint' }).waitFor()
+const relicResolutionInspection = await inspectAll()
+const relicCard = relicResolutionInspection.controls.find((control) => /, skill,/i.test(control.label))
+if (!relicCard) throw new Error(`WebMCP did not expose a War Paint card choice: ${JSON.stringify(relicResolutionInspection)}`)
+const relicCardSelected = await interact(relicCard.id)
+const confirmRelic = relicCardSelected.controls.find((control) => control.label === 'Confirm War Paint')
+if (!confirmRelic) throw new Error(`WebMCP did not expose War Paint confirmation: ${JSON.stringify(relicCardSelected)}`)
+const relicResolutionSettled = await interact(confirmRelic.id)
+const relicResolutionFlow = {
+  explainsResolution: relicResolutionInspection.screen.headings.includes('Resolve War Paint') &&
+    relicResolutionInspection.screen.text.includes('Upgrade a starter Defend and another Skill'),
+  cardWasInvokable: Boolean(relicCard.id),
+  resolved: await page.evaluate((before) => {
+    const player = window.__STS_DEBUG__.getRun().players[0]
+    return !player.relics.some((relic) => relic.pending) && player.deck.filter((card) => card.upgraded).length > before
+  }, relicResolutionBefore),
+  returnedMap: relicResolutionSettled.controls.some((control) => control.context?.startsWith('Floor ')),
+}
+
 const stale = await page.evaluate(async (controlId) => {
   const interact = (await document.modelContext.getTools()).find((tool) => tool.name === 'interact_with_game')
   try {
@@ -724,18 +822,31 @@ const stale = await page.evaluate(async (controlId) => {
   }
 }, exclusions.controlId)
 const bridge = await browser.newPage({ viewport: { width: 844, height: 390 } })
-await bridge.addInitScript(() => {
+await bridge.goto(`http://localhost:${address.port}`)
+await bridge.getByRole('button', { name: 'Single Player' }).waitFor()
+await new Promise((resolve) => setTimeout(resolve, 10_500))
+await bridge.evaluate(() => {
   const tools = new Map()
+  let rejectNext = true
   Object.defineProperty(navigator, 'modelContext', {
     configurable: true,
     value: {
-      registerTool(tool) { tools.set(tool.name, tool); return Promise.resolve() },
+      registerTool(tool, options = {}) {
+        if (rejectNext) {
+          rejectNext = false
+          return Promise.reject(new Error('Bridge is still starting.'))
+        }
+        tools.set(tool.name, tool)
+        options.signal?.addEventListener('abort', () => {
+          if (tools.get(tool.name) === tool) tools.delete(tool.name)
+        }, { once: true })
+        return Promise.resolve()
+      },
       listTools() { return [...tools.values()] },
       callTool(name, input) { return tools.get(name)?.execute(input) },
     },
   })
 })
-await bridge.goto(`http://localhost:${address.port}`)
 await bridge.waitForFunction(() => navigator.modelContext?.listTools().length === 2)
 const bridgeCompatibility = await bridge.evaluate(async () => {
   const inspect = navigator.modelContext.listTools().find((tool) => tool.name === 'inspect_game')
@@ -776,6 +887,10 @@ check('registers two low-friction, safely annotated game tools', () => {
   assert(tools[1].annotations.untrustedContentHint && !tools[1].annotations.consequentialHint,
     'in-game interactions are marked untrusted but not as real-world consequential actions')
   assert(tools[1].inputSchema.properties.value.oneOf[0].maxLength === 1000, 'free-form tool strings are schema-bounded')
+  assert(tools.every((tool) => /start-turn/.test(tool.description) && /relic/.test(tool.description)),
+    'tool metadata tells agents that start-turn and relic controls are actionable')
+  assert(/unavailableControls.*planning-only/.test(tools[0].description),
+    'inspection metadata distinguishes invokable controls from planning-only unavailable controls')
   assertDeepEqual(bridgeCompatibility, {
     tools: ['inspect_game', 'interact_with_game'],
     reachedModeSelect: true,
@@ -874,7 +989,7 @@ check('keeps snapshots scoped, stable, opaque, and current', () => {
 })
 
 check('keeps representative WebMCP payloads compact', () => {
-  assert(payloadChars.metadata < 1_200 && payloadChars.start < 900 && payloadChars.fixture < 3_700 && payloadChars.lab < 950,
+  assert(payloadChars.metadata < 1_350 && payloadChars.start < 900 && payloadChars.fixture < 3_700 && payloadChars.lab < 950,
     `payload budget exceeded: ${JSON.stringify(payloadChars)}`)
 })
 
@@ -893,10 +1008,16 @@ check('starts a real Watcher run through WebMCP and loads cleanly', () => {
     phase: 'player', resolveControls: 0,
   }, 'WebMCP exposed a redundant action for deterministic start-of-combat effects')
   assert(combatFlow.seesTurn && combatFlow.seesEnergy && combatFlow.seesDrawPile,
-    'combat inspection exposes turn, current Energy, and draw-pile count')
+    `combat inspection exposes turn, current Energy, and draw-pile count: ${JSON.stringify(combatInspection)}`)
   assert(/, attack,/i.test(combatFlow.richAttack) && combatFlow.targetLabel && combatFlow.targetSettlementMarked &&
     !combatFlow.targetSettledBeforeContact && combatFlow.targetReturnedState && combatFlow.changed && combatFlow.nextTurnReturned,
   `a real Watcher Attack remains pending through contact, then returns settled controls: ${JSON.stringify(combatFlow)}`)
+  assert(Object.values(activeRelicFlow).every(Boolean),
+    `WebMCP exposes, explains, and resolves an active Relic: ${JSON.stringify(activeRelicFlow)}`)
+  assert(Object.values(startTurnFlow).every(Boolean),
+    `WebMCP exposes and resolves a start-of-turn choice: ${JSON.stringify(startTurnFlow)}`)
+  assert(Object.values(relicResolutionFlow).every(Boolean),
+    `WebMCP exposes, explains, and completes Relic resolution: ${JSON.stringify(relicResolutionFlow)}`)
   assertDeepEqual(errors, [])
   assertDeepEqual(fallbackErrors, [])
 })
