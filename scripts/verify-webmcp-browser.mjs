@@ -843,18 +843,16 @@ await bridge.evaluate(() => {
         return Promise.resolve()
       },
       listTools() { return [...tools.values()] },
-      callTool(name, input) { return tools.get(name)?.execute(input) },
+      callTool(name, input) { return tools.get(name)?.execute(input, {}) },
     },
   })
 })
 await bridge.waitForFunction(() => navigator.modelContext?.listTools().length === 2)
 const bridgeCompatibility = await bridge.evaluate(async () => {
-  const inspect = navigator.modelContext.listTools().find((tool) => tool.name === 'inspect_game')
-  const interact = navigator.modelContext.listTools().find((tool) => tool.name === 'interact_with_game')
-  const before = await inspect.execute({})
+  const before = await navigator.modelContext.callTool('inspect_game', {})
   const singlePlayer = before.controls.find((control) => control.label === 'Single Player')
   if (!singlePlayer) throw new Error('navigator-only WebMCP bridge did not expose Single Player')
-  const result = await interact.execute({ controlId: singlePlayer.id })
+  const result = await navigator.modelContext.callTool('interact_with_game', { controlId: singlePlayer.id })
   return {
     tools: navigator.modelContext.listTools().map((tool) => tool.name),
     reachedModeSelect: result.controls.some((control) => control.label === 'Standard'),

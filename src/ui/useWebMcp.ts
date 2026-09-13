@@ -10,7 +10,7 @@ type Tool = {
     untrustedContentHint?: boolean
     consequentialHint?: boolean
   }
-  execute: (input: unknown, options?: { signal: AbortSignal }) => unknown
+  execute: (input: unknown, options?: { signal?: AbortSignal }) => unknown
 }
 
 type ModelContext = {
@@ -419,7 +419,7 @@ export function useWebMcp() {
         },
         annotations: { untrustedContentHint: true },
         execute: async (input, options) => {
-          if (options?.signal.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
+          if (options?.signal?.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
           if (interactionPending()) {
             invalidateControls()
             throw new Error('Game interaction is pending. Wait and call inspect_game again.')
