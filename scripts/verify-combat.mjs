@@ -2219,6 +2219,21 @@ check('plain damage is not modified the way a hit is', () => {
   assertEqual(next.enemies[0].hp, 18, '2 damage, not 2+3 doubled')
 })
 
+check('Virus hits Vulnerable enemies', () => {
+  const card = instance('virus')
+  const next = playCard(
+    combat(
+      [makePlayer({ id: 'p1', hand: [card], draw: [instance('strike_ironclad'), instance('defend_ironclad')] })],
+      [makeEnemy({ uid: 'e1', hp: 20, vulnerable: 1 })],
+    ),
+    'p1',
+    card.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  assertEqual(next.enemies[0].hp, 16, 'two exhausted cards deal four damage to a Vulnerable enemy')
+  assertEqual(next.enemies[0].vulnerable, 0, 'the hit spends one Vulnerable')
+})
+
 check('losing hit points ignores Block entirely', () => {
   CARDS.fixture_lose_hp = {
     id: 'fixture_lose_hp',

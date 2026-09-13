@@ -4154,7 +4154,7 @@ if (args.includes('--downfall-ui-only')) {
     assert(downfallKeywordTips.poltergeist.tips.includes('Retract') &&
       downfallKeywordTips.poltergeist.accessibleName.includes('whenever you Retract'),
     `Poltergeist is missing its additional trigger: ${JSON.stringify(downfallKeywordTips.poltergeist)}`)
-    assert(!downfallKeywordTips.virus.includes('Hit'), 'Virus non-Hit damage is mislabeled as a Hit')
+    assert(downfallKeywordTips.virus.includes('Hit'), 'Virus is missing its Hit keyword')
     assert(downfallKeywordTips.hermit[0].includes('Chamber') && downfallKeywordTips.hermit[0].includes('Load'),
       'Fully Loaded is missing Chamber or Load')
     assert(downfallKeywordTips.hermit[1].includes('Dead On'), 'Snapshot is missing Dead On')

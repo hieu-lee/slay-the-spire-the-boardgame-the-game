@@ -2795,9 +2795,9 @@ export const DOWNFALL_COLORLESS_CARD_DEFS: Readonly<Record<string, CardDef>> = O
   colorless('Invincible', { type: 'power', cost: 3, trigger: { kind: 'endOfTurn' }, effects: [{ kind: 'optionalPreventRoundHpLoss' }],
     upgrade: { printedText: DOWNFALL_COLORLESS_CARDS[13]!.upgradedText } }),
   colorless('Virus', { type: 'attack', cost: 1, effects: [
-    { kind: 'exhaustDrawTop', amount: 2 }, { kind: 'damage', amount: { base: 0, per: 'cardsInExhaust' } },
+    { kind: 'exhaustDrawTop', amount: 2 }, { kind: 'hit', amount: { base: 0, per: 'cardsInExhaust' } },
   ], upgrade: { printedText: DOWNFALL_COLORLESS_CARDS[14]!.upgradedText, effects: [
-    { kind: 'exhaustDrawTop', amount: 3 }, { kind: 'damage', amount: { base: 0, per: 'cardsInExhaust' } },
+    { kind: 'exhaustDrawTop', amount: 3 }, { kind: 'hit', amount: { base: 0, per: 'cardsInExhaust' } },
   ] } }),
   colorless('YOU ARE MINE!', { type: 'skill', cost: 3, exhaust: true, effects: [
     { kind: 'block', amount: 2 }, { kind: 'applyVulnerable', amount: 2 }, { kind: 'applyWeak', amount: 2 },
