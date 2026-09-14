@@ -4,7 +4,11 @@ import react from '@vitejs/plugin-react'
 const tunneledServer = {
   // Vite 7 rejects requests whose Host header it does not recognise, which
   // blocks the whole point of a tunnel. Allow the tunnel domains explicitly.
-  allowedHosts: ['.trycloudflare.com', '.cfargotunnel.com'],
+  allowedHosts: [
+    '.trycloudflare.com',
+    '.cfargotunnel.com',
+    ...(process.env.TUNNEL_PROVIDER === 'pyjam' ? ['.tunnel.pyjam.as'] : []),
+  ],
   // Let the room server answer the Pages origin's preflight through the proxy.
   cors: false,
   // ponytail: room server is a separate process; proxy keeps one origin for tunnels

@@ -254,6 +254,7 @@ jobs:
       STS_PRESERVE_ON_SHUTDOWN: 'true'
       STS_HANDOFF_RECONNECT_MS: '3600000'
       EXPECTED_PROTOCOL_VERSION: '1'
+      MULTIPLAYER_TUNNEL_PROVIDER: ${{ vars.MULTIPLAYER_TUNNEL_PROVIDER }}
     runs-on: ubuntu-latest
     timeout-minutes: 355
     steps:
@@ -265,6 +266,17 @@ jobs:
           started_at_epoch=$(date --date="$started_at" +%s)
           echo "HANDOFF_DEADLINE=$(( started_at_epoch + 19200 ))" >> "$GITHUB_ENV"
           echo "VERIFY_DEADLINE=$(( started_at_epoch + 21000 ))" >> "$GITHUB_ENV"
+      - name: Select the tunnel provider
+        run: |
+          case "$MULTIPLAYER_TUNNEL_PROVIDER" in
+            ''|cloudflare) tunnel_provider=cloudflare ;;
+            pyjam) tunnel_provider=pyjam ;;
+            *)
+              echo '::error::Unknown MULTIPLAYER_TUNNEL_PROVIDER; expected empty, "cloudflare", or "pyjam".'
+              exit 2
+              ;;
+          esac
+          echo "TUNNEL_PROVIDER=$tunnel_provider" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_sha || github.sha }}
@@ -290,33 +302,72 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: VITE_SINGLE_PLAYER=false VITE_HOSTED_SESSION=true pnpm build
       - run: node scripts/check-single-player-build.mjs dist --multiplayer
-      - name: Prewarm the game frontend and redundant tunnels
+      - uses: actions/checkout@v4
+        if: env.TUNNEL_PROVIDER == 'pyjam'
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .multiplayer-workflow
+          sparse-checkout: |
+            scripts/multiplayer-tunnel.mjs
+            vite.config.ts
+          sparse-checkout-cone-mode: false
+      - name: Install WireGuard for the pyjam tunnel
+        if: env.TUNNEL_PROVIDER == 'pyjam'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends wireguard-tools
+      - name: Prewarm the game frontend and tunnels
         run: |
-          nohup pnpm preview --host 127.0.0.1 --port 5180 --strictPort > "$RUNNER_TEMP/game.log" 2>&1 &
-          curl --fail --location --silent --show-error \
-            https://github.com/cloudflare/cloudflared/releases/download/2026.8.3/cloudflared-linux-amd64 \
-            --output "$RUNNER_TEMP/cloudflared"
-          echo 'f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e  '"$RUNNER_TEMP/cloudflared" | sha256sum --check
-          chmod +x "$RUNNER_TEMP/cloudflared"
           tunnel_urls=()
-          for tunnel_number in 1 2; do
-            metrics_port=$(( 45677 + tunnel_number ))
-            tunnel_log="$RUNNER_TEMP/tunnel-$tunnel_number.log"
-            nohup "$RUNNER_TEMP/cloudflared" tunnel --no-autoupdate --metrics "127.0.0.1:$metrics_port" --url http://127.0.0.1:5180 \
-              > "$tunnel_log" 2>&1 &
-            tunnel_pid=$!
-            tunnel_url=
+          if [ "$TUNNEL_PROVIDER" = pyjam ]; then
+            nohup pnpm preview --config .multiplayer-workflow/vite.config.ts \
+              --host 0.0.0.0 --port 5180 --strictPort > "$RUNNER_TEMP/game.log" 2>&1 &
+            umask 077
+            remote_config=$(mktemp "$RUNNER_TEMP/pyjam-remote.XXXXXX")
+            trap 'rm -f "$remote_config"' EXIT
+            curl --fail --location --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 --max-filesize 16384 \
+              https://tunnel.pyjam.as/5180 --output "$remote_config"
+            tunnel_url=$(node .multiplayer-workflow/scripts/multiplayer-tunnel.mjs sanitize \
+              "$remote_config" "$RUNNER_TEMP/pyjam-tunnel.conf")
+            rm -f "$remote_config"
+            trap - EXIT
+            sudo wg-quick up "$RUNNER_TEMP/pyjam-tunnel.conf"
+            probe_file="tunnel-check-$(openssl rand -hex 16).txt"
+            probe_value=$(openssl rand -hex 32)
+            printf '%s' "$probe_value" > "dist/$probe_file"
+            probe_response=
             for attempt in {1..30}; do
-              kill -0 "$tunnel_pid"
-              tunnel_url=$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$tunnel_log" | head -1 || true)
-              [ -n "$tunnel_url" ] && curl --fail --silent "http://127.0.0.1:$metrics_port/ready" && break
+              probe_response=$(curl --fail --silent --max-time 10 "$tunnel_url/$probe_file" || true)
+              [ "$probe_response" = "$probe_value" ] && break
               sleep 2
             done
-            [ -n "$tunnel_url" ]
-            curl --fail --silent "http://127.0.0.1:$metrics_port/ready"
+            rm -f "dist/$probe_file"
+            [ "$probe_response" = "$probe_value" ]
             tunnel_urls+=("$tunnel_url")
-          done
-          [ "${tunnel_urls[0]}" != "${tunnel_urls[1]}" ]
+          else
+            nohup pnpm preview --host 127.0.0.1 --port 5180 --strictPort > "$RUNNER_TEMP/game.log" 2>&1 &
+            curl --fail --location --silent --show-error \
+              https://github.com/cloudflare/cloudflared/releases/download/2026.8.3/cloudflared-linux-amd64 \
+              --output "$RUNNER_TEMP/cloudflared"
+            echo 'f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e  '"$RUNNER_TEMP/cloudflared" | sha256sum --check
+            chmod +x "$RUNNER_TEMP/cloudflared"
+            for tunnel_number in 1 2; do
+              metrics_port=$(( 45677 + tunnel_number ))
+              tunnel_log="$RUNNER_TEMP/tunnel-$tunnel_number.log"
+              nohup "$RUNNER_TEMP/cloudflared" tunnel --no-autoupdate --metrics "127.0.0.1:$metrics_port" --url http://127.0.0.1:5180 \
+                > "$tunnel_log" 2>&1 &
+              tunnel_pid=$!
+              tunnel_url=
+              for attempt in {1..30}; do
+                kill -0 "$tunnel_pid"
+                tunnel_url=$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$tunnel_log" | head -1 || true)
+                [ -n "$tunnel_url" ] && curl --fail --silent "http://127.0.0.1:$metrics_port/ready" && break
+                sleep 2
+              done
+              [ -n "$tunnel_url" ]
+              curl --fail --silent "http://127.0.0.1:$metrics_port/ready"
+              tunnel_urls+=("$tunnel_url")
+            done
+            [ "${tunnel_urls[0]}" != "${tunnel_urls[1]}" ]
+          fi
           echo "TUNNEL_URL=${tunnel_urls[0]}" >> "$GITHUB_ENV"
           printf '%s\n' "${tunnel_urls[@]}" | jq -Rsc 'split("\n")[:-1]' | sed 's/^/TUNNEL_URLS=/' >> "$GITHUB_ENV"
       - name: Announce the prewarmed successor
@@ -946,3 +997,8 @@ jobs:
             sleep "$interval"
           done
           exit 1
+      - name: Stop the pyjam WireGuard tunnel
+        if: always() && env.TUNNEL_PROVIDER == 'pyjam'
+        run: |
+          sudo wg-quick down "$RUNNER_TEMP/pyjam-tunnel.conf" || true
+          rm -f "$RUNNER_TEMP/pyjam-tunnel.conf"

@@ -105,11 +105,15 @@ jobs:
             [ "$current_run" = "$desired_run" ] || \
               [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$current_run" --jq .status 2>/dev/null || true)" = completed ]
           fi
-          desired_origins=$(jq -r '([.origin] + (.origins // [])) | unique[]' pages/session.json)
-          [ -n "$desired_origins" ]
-          while IFS= read -r origin; do
-            [[ "$origin" =~ ^https://[-a-z0-9]+\.trycloudflare\.com$ ]]
-          done <<< "$desired_origins"
+          jq -e '
+            (.origin | type) == "string" and
+            ((.origins == null) or ((.origins | type) == "array")) and
+            (([.origin] + (.origins // [])) as $origins |
+              all($origins[];
+                type == "string" and
+                (test("^https://[-a-z0-9]+\\.trycloudflare\\.com\\z") or
+                 test("^https://[1-9a-km-z]{6}\\.tunnel\\.pyjam\\.as\\z"))))
+          ' pages/session.json >/dev/null
       - uses: actions/configure-pages@v5
       - name: Verify the room endpoint immediately before deployment
         env:
