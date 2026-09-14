@@ -170,11 +170,12 @@ try {
             const end = arrow?.getPointAtLength(arrow.getTotalLength())
             const arrowStyle = arrow && getComputedStyle(arrow)
             const cardStyle = getComputedStyle(element)
-            return { cardX: rect.x + rect.width / 2, arrowX: end?.x,
+            return { cardX: rect.x + rect.width / 2, cardWidth: rect.width, arrowX: end?.x,
               arrowStroke: arrowStyle?.stroke, arrowVisibility: arrowStyle?.visibility,
               cardFilter: cardStyle.filter, cardShadow: cardStyle.boxShadow }
           })
-          assert(Math.abs(dragGeometry.cardX - point.x) < 2 && dragGeometry.arrowX > point.x + 90 &&
+          assert(Math.abs(dragGeometry.cardX - point.x) < 2 && dragGeometry.cardWidth <= await card.evaluate(e => e.offsetWidth * 1.4) &&
+            dragGeometry.arrowX > point.x + 90 &&
             dragGeometry.arrowStroke !== 'none' && dragGeometry.arrowVisibility === 'visible' &&
             dragGeometry.cardFilter.includes('drop-shadow') && dragGeometry.cardShadow === 'none',
             `${engineName}: desktop card followed the cursor or lost its targeting arrow ${JSON.stringify(dragGeometry)}`)
@@ -256,6 +257,7 @@ try {
             const arrowStyle = arrow && getComputedStyle(arrow)
             return {
               cardX: rect.x + rect.width / 2,
+              cardWidth: rect.width,
               arrowX: end?.x,
               arrowAnimation: arrowStyle?.animationName ?? null,
               arrowFilter: arrowStyle?.filter ?? null,
@@ -266,7 +268,8 @@ try {
               cardShadow: style.boxShadow,
             }
           })
-          assert(Math.abs(dragVisual.cardX - point.x) < 2 && dragVisual.arrowX > point.x + 90 &&
+          assert(Math.abs(dragVisual.cardX - point.x) < 2 && dragVisual.cardWidth <= await card.evaluate(e => e.offsetWidth * 1.4) &&
+            dragVisual.arrowX > point.x + 90 &&
             dragVisual.arrowStroke !== 'none' && dragVisual.arrowVisibility === 'visible' && dragVisual.targetVisible,
             `${engineName}: phone card followed the cursor or lost its targeting arrow ${JSON.stringify(dragVisual)}`)
           assert.deepEqual({ animation: dragVisual.arrowAnimation, arrow: dragVisual.arrowFilter,
