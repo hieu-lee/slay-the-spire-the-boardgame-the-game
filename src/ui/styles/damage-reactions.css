@@ -148,12 +148,12 @@
   bottom: 0;
   z-index: 40;
   pointer-events: none;
-  --hand-recess: calc(var(--card-width) * var(--card-ratio) * .46);
+  --hand-card-width: calc(var(--card-width) * .6);
+  --hand-layout-card-width: var(--card-width);
   height: calc(var(--card-width) * var(--card-ratio) * .5 + 3rem);
   min-height: 0;
   margin: 0;
   padding: 0;
-  /* Keep the resting lower half off stage without creating a hidden Y scroller. */
   clip-path: inset(-100vh 0 0);
   overflow: visible;
   background: none;
@@ -177,9 +177,10 @@
 .hand-scroll {
   min-width: 0;
   position: absolute;
-  inset: auto 0 calc(-1 * var(--hand-recess));
+  inset: auto 0 0;
   height: calc(var(--card-width) * var(--card-ratio) * 1.8 + 5rem);
   padding-top: calc(var(--card-width) * var(--card-ratio) * .8 + 1rem);
+  padding-inline: 10rem;
   overflow: auto hidden;
   overscroll-behavior-inline: contain;
   scrollbar-width: none;
@@ -370,17 +371,16 @@
 }
 
 .hand {
+  --card-width: var(--hand-card-width);
   position: relative;
   z-index: 5;
   align-items: flex-end;
   /* Include the HUD gutters in the scroll range, even for an oversized hand. */
   width: max-content;
   min-width: 100%;
-  height: calc(var(--card-width) * var(--card-ratio) + 4rem);
+  height: calc(var(--hand-layout-card-width) * var(--card-ratio) + 4rem);
   min-height: 0;
-  /* The tilted outer corners need 2rem below them even while enlarged. A
-     smaller gutter makes WebKit scroll this hidden Y axis during hover. */
-  padding: 1rem 12rem 3rem 10rem;
+  padding: 1rem 12rem 1.5rem 10rem;
   /* `overflow-x: auto` from the base layout forces a declared visible Y axis
      to compute as auto too, clipping card crowns and hover lifts. Desktop hands
      overlap to fit, so both axes can stay visible. */
@@ -394,23 +394,23 @@
   transition: transform 150ms ease, filter 150ms ease;
 }
 
+.hand[data-count='1'] { padding-bottom: 0; }
+
 .hand .card:hover,
 .hand .card:focus,
 .hand .card--selected {
   z-index: 9;
-  /* Cancel the 3rem hand gutter, leaving .35rem below the revealed card. */
-  transform: translateY(calc(2.65rem - var(--hand-recess))) scale(1.1);
+  transform: scale(1.1);
   filter: drop-shadow(0 0.8rem 0.65rem rgb(0 0 0 / 0.82)) brightness(1.08);
 }
 
-/* Cover the resting lower edge and tilted corners as the card lifts upright. */
 .hand .card:hover::after {
   content: '';
   position: absolute;
   top: 85%;
-  left: -20%;
   right: -20%;
-  height: calc(15% + max(0px, var(--hand-recess) - 2.65rem));
+  height: 40%;
+  left: -20%;
 }
 
 .hand .card--selected {
@@ -447,8 +447,8 @@
 
   .hand {
     justify-content: flex-start;
-    height: calc(var(--card-width) * var(--card-ratio) + 4rem);
-    padding: 1rem 18rem 3rem 5.4rem;
+    height: calc(var(--hand-layout-card-width) * var(--card-ratio) + 4rem);
+    padding: 1rem 18rem 1rem 5.4rem;
   }
 
   .hand-area[data-has-chamber='true'] .hand {
@@ -456,13 +456,15 @@
   }
 
   .hand .card {
-    transform: none;
+    transform: rotate(var(--fan-angle, 0deg)) translateY(var(--fan-lift, 0px));
     margin-inline: -0.25rem;
   }
 
   .hand .card:is(:hover, :focus, .card--selected) {
-    transform: translateY(calc(2.65rem - var(--hand-recess))) scale(1.1);
+    transform: scale(1.1);
   }
+
+  .hand .card:hover::after { height: 60%; }
 
   .pip--energy {
     bottom: 4rem;

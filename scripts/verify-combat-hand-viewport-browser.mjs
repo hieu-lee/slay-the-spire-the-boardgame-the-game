@@ -39,12 +39,12 @@ try {
           const geometry = await page.evaluate(() => {
             const rect = e => e.getBoundingClientRect().toJSON()
             const hand = document.querySelector('.hand-scroll')
+            const handArea = document.querySelector('.hand-area')
             const shell = document.querySelector('.app-shell')
             const board = document.querySelector('.board')
-            return { shell: rect(shell), hand: rect(hand), board: rect(board), endTurn: rect(document.querySelector('.combat__end-turn')), scrollTop: hand.scrollTop,
+            return { shell: rect(shell), hand: rect(hand), handArea: rect(handArea), board: rect(board), endTurn: rect(document.querySelector('.combat__end-turn')), scrollTop: hand.scrollTop,
               orbs: [...board.querySelectorAll('.orbs')].map(rect),
               statuses: [...board.querySelectorAll('.seat__status-strip .token, .seat__status-strip .power, .seat__status-strip .power__counter, .enemy .tokens .token')].map(rect),
-              clientHeight: hand.clientHeight, scrollHeight: hand.scrollHeight,
               cards: [...document.querySelectorAll('.hand .card')].map(e => ({...rect(e), revealed: e.matches(':hover, :focus, .card--selected')})),
               heroes: [...document.querySelectorAll('.row__seat .bar')].map(rect).sort((a, b) => a.left - b.left),
               names: [...document.querySelectorAll('.enemy')].map(e => ({
@@ -53,17 +53,18 @@ try {
               })),
               enemies: [...document.querySelectorAll('.enemy .bar')].map(rect).sort((a, b) => a.left - b.left) }
           })
-          const floor = geometry.shell.bottom
-          assert(geometry.cards.every(card => card.top >= geometry.hand.top - 1 &&
-            (card.revealed ? card.bottom <= floor + 1 :
-              (floor - card.top) / card.height > .4 && (floor - card.top) / card.height < .85)),
-          `${label}: hand recess/reveal bounds ${JSON.stringify(geometry)}`)
+          assert(geometry.cards.every(card => card.revealed
+            ? card.top >= geometry.hand.top - 1 && card.bottom <= geometry.shell.bottom + 1
+            : card.top >= geometry.handArea.top - 1 && card.bottom <= geometry.handArea.bottom + 1),
+          `${label}: hand card leaves its reserved area ${JSON.stringify(geometry)}`)
+          assert([geometry.cards[0], geometry.cards.at(-1)].filter(card => !card.revealed)
+            .every(card => Math.abs(card.bottom - geometry.shell.bottom) <= 2),
+          `${label}: resting outer card does not touch the screen edge ${JSON.stringify(geometry)}`)
           assert(geometry.cards.filter(card => card.revealed).every(card =>
             card.right <= geometry.endTurn.left || card.left >= geometry.endTurn.right ||
             card.bottom <= geometry.endTurn.top || card.top >= geometry.endTurn.bottom),
           `${label}: End Turn obscures a revealed card ${JSON.stringify(geometry)}`)
-          assert(geometry.scrollHeight <= geometry.clientHeight + 1 && geometry.scrollTop === 0,
-            `${label}: hidden vertical hand overflow ${JSON.stringify(geometry)}`)
+          assert(geometry.scrollTop === 0, `${label}: vertical hand scroll ${JSON.stringify(geometry)}`)
           assert(geometry.orbs.every(orbs => orbs.top >= geometry.board.top - 1), `${label}: upper Orb controls clipped ${JSON.stringify(geometry)}`)
           assert(geometry.names.every(({ portrait, name, health }) =>
             portrait.bottom <= name.top + 1 && name.bottom <= health.top - 1), `${label}: enemy name overlaps art or HP ${JSON.stringify(geometry)}`)
@@ -122,6 +123,20 @@ try {
             await check(`party-${partySize}-resume`)
           }
         }
+        await page.evaluate(() => {
+          const run = structuredClone(window.__STS_DEBUG__.getRun())
+          const player = run.combat.players.find(p => p.character === 'ironclad')
+          window.__testHand = player.hand
+          player.hand = player.hand.slice(0, 1)
+          window.__STS_DEBUG__.setRun(run)
+        })
+        await check('single-card')
+        await page.evaluate(() => {
+          const run = structuredClone(window.__STS_DEBUG__.getRun())
+          run.combat.players.find(p => p.character === 'ironclad').hand = window.__testHand
+          window.__STS_DEBUG__.setRun(run)
+        })
+        await ready()
         const first = page.locator('.hand .card').first()
         const bounds = await first.boundingBox()
         if (phone) {
