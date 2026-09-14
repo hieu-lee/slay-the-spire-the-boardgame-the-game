@@ -27,6 +27,28 @@ silently tunneling another app when the port is occupied.
 Quick Tunnels are for development and testing, have no uptime SLA, and use a random URL.
 For a stable deployment, use a [remotely-managed Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/).
 
+## Experimental GitHub Actions tunnel provider
+
+The multiplayer host uses Cloudflare when the repository Actions variable
+`MULTIPLAYER_TUNNEL_PROVIDER` is missing, empty, or set to `cloudflare`. Repository
+maintainers can switch the next multiplayer runner to the experimental
+[tunnel.pyjam.as](https://tunnel.pyjam.as/) WireGuard provider without changing code:
+
+```bash
+gh variable set MULTIPLAYER_TUNNEL_PROVIDER --body pyjam
+```
+
+Switch back to Cloudflare with:
+
+```bash
+gh variable set MULTIPLAYER_TUNNEL_PROVIDER --body cloudflare
+```
+
+Changes apply to the next multiplayer runner or handoff; they do not replace a tunnel
+that is already running. The pyjam service is free and needs no account, token, domain,
+or DNS setup, but it is experimental and has no SLA. Any variable value other than
+empty, `cloudflare`, or `pyjam` causes the host workflow to stop with a clear error.
+
 ## Reliable voice across restrictive networks
 
 Without configuration, voice uses Cloudflare STUN and connects directly when the peers'
