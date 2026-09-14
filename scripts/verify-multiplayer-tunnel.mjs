@@ -100,7 +100,7 @@ const selectProvider = workflow.split('      - name: Select the tunnel provider\
   .split('      - uses: actions/checkout@v4')[0].split('        run: |\n')[1].replace(/^          /gm, '')
 const selectorDirectory = mkdtempSync(join(tmpdir(), 'sts-multiplayer-tunnel-selector-'))
 try {
-  for (const [value, expected] of [[undefined, 'cloudflare'], ['', 'cloudflare'], ['cloudflare', 'cloudflare'], ['pyjam', 'pyjam']]) {
+  for (const [value, expected] of [[undefined, 'pyjam'], ['', 'pyjam'], ['cloudflare', 'cloudflare'], ['pyjam', 'pyjam']]) {
     const envFile = join(selectorDirectory, `env-${value ?? 'missing'}`)
     const env = { ...process.env, GITHUB_ENV: envFile }
     delete env.MULTIPLAYER_TUNNEL_PROVIDER

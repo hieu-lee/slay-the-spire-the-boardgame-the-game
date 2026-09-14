@@ -269,8 +269,8 @@ jobs:
       - name: Select the tunnel provider
         run: |
           case "$MULTIPLAYER_TUNNEL_PROVIDER" in
-            ''|cloudflare) tunnel_provider=cloudflare ;;
-            pyjam) tunnel_provider=pyjam ;;
+            ''|pyjam) tunnel_provider=pyjam ;;
+            cloudflare) tunnel_provider=cloudflare ;;
             *)
               echo '::error::Unknown MULTIPLAYER_TUNNEL_PROVIDER; expected empty, "cloudflare", or "pyjam".'
               exit 2

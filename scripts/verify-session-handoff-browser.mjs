@@ -268,11 +268,21 @@ try {
   assert.equal(unreliableRequests, 1, 'room join did not fail over from a stalled primary')
   const guestCredentials = await guest.evaluate(() => JSON.parse(sessionStorage.getItem('sts-room-session')))
   const liveBeforeProbe = rooms.store.rooms.get(credentials.code)
+  let transientLivenessFailure = true
+  await host.route(`${secondaryRoomOrigin}/api/rooms/${credentials.code}`, async (route) => {
+    if (transientLivenessFailure) {
+      transientLivenessFailure = false
+      return route.abort('failed')
+    }
+    await route.continue()
+  })
   liveBeforeProbe.seats[0].name = 'Liveness Host'
   liveBeforeProbe.version += 1
   const socketsBeforeProbe = hostWebSockets.length
   await host.getByText('Liveness Host', { exact: true }).waitFor({ timeout: 15_000 })
   assert.equal(hostWebSockets.length, socketsBeforeProbe, 'HTTP liveness catch-up unnecessarily reconnected the socket')
+  assert.equal(transientLivenessFailure, false, 'the transient liveness failure was not exercised')
+  await host.unroute(`${secondaryRoomOrigin}/api/rooms/${credentials.code}`)
   roomOrigin = secondaryRoomOrigin
   roomOrigins = [secondaryRoomOrigin, tertiaryRoomOrigin]
   await host.route(`${tertiaryRoomOrigin}/api/health`, async (route) => {
@@ -297,11 +307,14 @@ try {
     }
     window.__holdNextRoomClose = true
   })
+  const socketsBeforeBlackhole = hostWebSockets.length
   await host.route(`${tertiaryRoomOrigin}/api/rooms/${credentials.code}`, async (route) => {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 6_000))
-    await route.abort('timedout')
+    await route.abort('timedout').catch(() => {})
   })
-  await host.locator('.connection--reconnecting').waitFor({ timeout: 20_000 })
+  for (let attempt = 0; attempt < 400 && hostWebSockets.length === socketsBeforeBlackhole; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 50))
+  }
   await host.locator('.connection--connected').waitFor({ timeout: 20_000 })
   await host.evaluate(() => {
     WebSocket.prototype.close = window.__roomClose
@@ -311,9 +324,25 @@ try {
   })
   assert(await host.evaluate(() => typeof window.__heldRoomClose === 'function'),
     'the stale WebSocket close was not held for the action race')
+  assert(hostWebSockets.length > socketsBeforeBlackhole, 'the blackholed socket did not reconnect')
   assert(hostWebSockets.at(-1).startsWith(healthyRoomOrigin.replace('http', 'ws')),
     'an established blackholed WebSocket did not fail over independently of close')
   await host.unroute(`${tertiaryRoomOrigin}/api/rooms/${credentials.code}`)
+  const socketsAfterBlackhole = hostWebSockets.length
+  let postReconnectLivenessFailure = true
+  await host.route(`${healthyRoomOrigin}/api/rooms/${credentials.code}`, async (route) => {
+    if (postReconnectLivenessFailure) {
+      postReconnectLivenessFailure = false
+      return route.abort('failed')
+    }
+    await route.continue()
+  })
+  liveBeforeProbe.seats[0].name = 'Reconnected Host'
+  liveBeforeProbe.version += 1
+  await host.getByText('Reconnected Host', { exact: true }).waitFor({ timeout: 15_000 })
+  assert.equal(postReconnectLivenessFailure, false, 'the post-reconnect liveness failure was not exercised')
+  assert.equal(hostWebSockets.length, socketsAfterBlackhole, 'one post-reconnect liveness failure replaced a healthy socket')
+  await host.unroute(`${healthyRoomOrigin}/api/rooms/${credentials.code}`)
   await host.getByRole('button', { name: 'Enter the Spire' }).click()
   await host.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await Promise.all([

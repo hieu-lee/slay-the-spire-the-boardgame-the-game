@@ -21,6 +21,8 @@ const RECOVERY_KEY = 'sts-room-recoveries'
 const ACTION_TIMEOUT_MS = 10_000
 const REFRESH_TIMEOUT_MS = 5_000
 const LIVENESS_INTERVAL_MS = 10_000
+const RECONNECT_MIN_DELAY_MS = 500
+const RECONNECT_MAX_DELAY_MS = 1_500
 
 export type PublicSeat = {
   playerId: string
@@ -431,8 +433,14 @@ export function useRoomSession() {
     if (!credentials) return undefined
     let active = true
     let retry: number | undefined
+    let retryDelay = RECONNECT_MIN_DELAY_MS
     let livenessTimer: number | undefined
+    let livenessFailures = 0
     const connectedGeneration = generation.current
+    const retryConnection = (callback: () => void) => {
+      retry = window.setTimeout(callback, retryDelay)
+      retryDelay = Math.min(retryDelay * 2, RECONNECT_MAX_DELAY_MS)
+    }
 
     const connect = async () => {
       connectionRef.current = connectionRef.current === 'connected' ? 'reconnecting' : 'connecting'
@@ -466,7 +474,7 @@ export function useRoomSession() {
           setConnection('reconnecting')
           resetRoomEndpoint(failedEndpoint)
           next.close(4000, 'Connection lost')
-          retry = window.setTimeout(connect, 1500)
+          retryConnection(connect)
         }
         const probe = async () => {
           livenessTimer = undefined
@@ -479,10 +487,16 @@ export function useRoomSession() {
             })) as RoomSnapshot
             if (!active || socket.current !== next) return
             if (!latest.you.connected) return reconnect(socketEndpoint.href)
+            livenessFailures = 0
             if (accept(latest)) setRestorationEpoch((current) => current + 1)
             livenessTimer = window.setTimeout(probe, LIVENESS_INTERVAL_MS)
           } catch (cause) {
             if (!active || socket.current !== next) return
+            if (livenessFailures++ === 0) {
+              resetRoomEndpoint()
+              livenessTimer = window.setTimeout(probe, RECONNECT_MIN_DELAY_MS)
+              return
+            }
             resetAfterFailure(cause, probeEndpoint)
             reconnect(socketEndpoint.href)
           }
@@ -504,6 +518,8 @@ export function useRoomSession() {
               connectionRef.current = 'connected'
               setConnection('connected')
               setError('')
+              retryDelay = RECONNECT_MIN_DELAY_MS
+              livenessFailures = 0
               const pending = socketActions.current.get(message.requestId)
               if (pending) {
                 clearTimeout(pending.timeout)
@@ -565,7 +581,7 @@ export function useRoomSession() {
         setError(cause instanceof Error ? cause.message : 'Could not connect')
         setConnection('reconnecting')
         resetAfterFailure(cause, endpoint)
-        retry = window.setTimeout(connect, 1500)
+        retryConnection(connect)
       }
     }
 
