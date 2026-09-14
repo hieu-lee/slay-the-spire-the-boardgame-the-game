@@ -1,76 +1,85 @@
 # Online co-op
 
-The room server owns the run. Each browser receives only its own hidden cards and can
-recover its seat after a refresh or closed tab. Voice is a browser-native WebRTC mesh;
-the room WebSocket carries signaling only, never audio.
+The room server owns every multiplayer run. Browsers receive only the hidden cards for
+their own seat and recover that seat after a refresh or closed tab. Voice is a browser-native
+WebRTC mesh; the room WebSocket carries signaling only, never audio.
 
-## Local party
+## Production host
 
-Start the game, room server, and public tunnel together:
+Production multiplayer runs on `DESKTOP-09UIMTJ` instead of an expiring GitHub-hosted
+runner or a third-party tunnel:
+
+- GitHub Pages serves the browser client.
+- A repository-scoped self-hosted Actions runner deploys server changes into WSL.
+- `sts-room-server.service` keeps the authoritative Node room process running and restarts
+  it after a failure.
+- Caddy runs on Windows, terminates public HTTPS and WebSocket traffic, and proxies it to
+  WSL on `127.0.0.1:8787`.
+- A small Windows task renews native Bbox IPv4 and IPv6 mappings every hour. IPv4
+  clients enter on TCP 18443 while IPv6 clients use a PCP firewall pinhole; both reach
+  Caddy on TCP 443.
+- `session.json` advertises the HTTPS origin stored in the repository variable
+  `MULTIPLAYER_SERVER_ORIGIN`.
+
+The current stable origin is
+`https://sts-94-239-51-8.2001-861-388c-4ee0-c3d5-2f30-1be7-2e79.sslip.io:18443`.
+Its first address label supplies the public IPv4 record and the second supplies the
+public IPv6 record. No Cloudflare or Pyjam data path is involved.
+
+## Local development
+
+Start Vite and the room server together:
 
 ```bash
 pnpm play
 ```
 
-Open the printed `https://…trycloudflare.com` URL, choose **Play online**, create a
-room, and share the same link plus its six-character code. A run starts only after
-every seat has a live connection. Press Ctrl-C once to stop all three processes.
+Open `http://localhost:5180`. Vite proxies `/api` and `/ws` to the authoritative room
+process on `127.0.0.1:8787`.
 
-## Share over Cloudflare Tunnel
+## Host bootstrap
 
-Install `cloudflared`, then run `pnpm play` as above. HTTPS is required for microphone
-access outside localhost. Only port 5180 is tunneled: Vite proxies `/api` and `/ws` to
-the room server on `127.0.0.1:8787`, so room tokens and voice signaling stay on one
-origin. The development server uses strict port 5180, so it fails visibly instead of
-silently tunneling another app when the port is occupied.
-
-Quick Tunnels are for development and testing, have no uptime SLA, and use a random URL.
-For a stable deployment, use a [remotely-managed Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/).
-
-## GitHub Actions tunnel provider
-
-The multiplayer host uses the account-free
-[tunnel.pyjam.as](https://tunnel.pyjam.as/) WireGuard provider when the repository
-Actions variable `MULTIPLAYER_TUNNEL_PROVIDER` is missing, empty, or set to `pyjam`.
-Repository maintainers can select it explicitly without changing code:
+From WSL, install the repository runner and persistent room service:
 
 ```bash
-gh variable set MULTIPLAYER_TUNNEL_PROVIDER --body pyjam
+bash infra/install-wsl-host.sh
 ```
 
-Roll back to Cloudflare with:
+From an elevated Windows PowerShell, install Caddy, its scoped inbound firewall rule,
+automatic router mapping, and the logon startup tasks:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+  "\\wsl.localhost\Ubuntu-26.04\home\hieul\slay-the-spire-the-boardgame-the-game\infra\windows\install-host.ps1"
+```
+
+The installer uses NAT-PMP and PCP exposed by the Bbox, so it does not require router
+administrator login or a manual port-forward. The mappings have a 24-hour lease and the
+`Slay the Spire router mapping` task renews them every hour.
+
+## Verification and recovery
+
+Check the two persistent WSL services:
 
 ```bash
-gh variable set MULTIPLAYER_TUNNEL_PROVIDER --body cloudflare
+systemctl --user status sts-actions-runner.service sts-room-server.service
+curl --fail http://127.0.0.1:8787/api/health
+curl --fail https://sts-94-239-51-8.2001-861-388c-4ee0-c3d5-2f30-1be7-2e79.sslip.io:18443/api/health
 ```
 
-Changes apply to the next multiplayer runner or handoff; they do not replace a tunnel
-that is already running. The pyjam service is free and needs no account, token, domain,
-or DNS setup, but it is experimental and has no SLA. Any variable value other than
-empty, `cloudflare`, or `pyjam` causes the host workflow to stop with a clear error.
+Room data lives outside the checkout at
+`~/.local/share/slay-the-spire-server/rooms.json`. Actions deployments update the `current`
+release symlink and restart the service without deleting that store.
+
+If the Bbox public IPv4 or delegated IPv6 prefix changes, the mapping task regenerates and
+reloads Caddy, verifies the replacement HTTPS origin, updates
+`MULTIPLAYER_SERVER_ORIGIN`, and dispatches a client-only Pages refresh. Failures stay in
+`router-pinhole.log` and retry on the next hourly renewal.
 
 ## Reliable voice across restrictive networks
 
-Without configuration, voice uses Cloudflare STUN and connects directly when the peers'
-networks allow it. Direct WebRTC can fail behind restrictive NATs or firewalls. For TURN
-relay fallback, create a Cloudflare Realtime TURN key and start the room server with its
-server-only credentials:
-
-```bash
-CLOUDFLARE_TURN_KEY_ID=… \
-CLOUDFLARE_TURN_API_TOKEN=… \
-pnpm play
-```
-
-The browser authenticates to `/api/rooms/:code/voice-ice`; the room server exchanges the
-long-term key for a six-hour credential and returns only that short-lived ICE configuration.
-Never put the TURN API token in Vite variables or browser code. See Cloudflare's
-[credential guidance](https://developers.cloudflare.com/realtime/turn/generate-credentials/)
-and [TURN service endpoints](https://developers.cloudflare.com/realtime/turn/).
-
-## Voice controls
-
-Each player clicks **Join voice** and grants microphone access. **Mute** disables the
-local audio track without leaving the mesh; **Leave voice** stops every local track and
-closes every peer connection. A `Voice 2/3` label means two of the three other seats are
-currently connected to this browser.
+Without configuration, voice uses public STUN and connects directly when the peers'
+networks permit it. Direct WebRTC can fail behind restrictive NATs or firewalls. The room
+server still supports server-only TURN credentials through `CLOUDFLARE_TURN_KEY_ID` and
+`CLOUDFLARE_TURN_API_TOKEN`; this affects optional voice relay only and is not used to
+host game traffic.

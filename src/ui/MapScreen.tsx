@@ -14,6 +14,7 @@ type MapScreenProps = {
   map: SpireMap
   choices: Room[]
   blocked?: boolean
+  disabled?: boolean
   /**
    * This act's boss, rolled at setup and public. Named on the boss node so a
    * party mid-act can see what it is building a deck against.
@@ -130,7 +131,7 @@ function jitter(id: string): { x: number; y: number } {
  * the only reliable source of a room's position is the DOM.
  */
 export function MapScreen({
-  map, choices, blocked = false, bossDefId, canRerollBoss = false, onRerollBoss, readOnly = false, onEnter,
+  map, choices, blocked = false, disabled = false, bossDefId, canRerollBoss = false, onRerollBoss, readOnly = false, onEnter,
   onSelectionChange,
 }: MapScreenProps) {
   const frameRef = useRef<HTMLDivElement | null>(null)
@@ -245,6 +246,18 @@ export function MapScreen({
     setEntering(null)
     onSelectionChange?.(false)
   }, [onSelectionChange])
+
+  useEffect(() => {
+    if (!disabled || !entering) return
+    if (enterTimer.current !== null) {
+      clearTimeout(enterTimer.current)
+      enterTimer.current = null
+      delete document.documentElement.dataset.mapTransition
+    }
+    visualSelectionDone.current = true
+    enterRequestPending.current = false
+    finishSelection()
+  }, [disabled, entering, finishSelection])
 
   const requestEnter = useCallback((roomId: string, waitForVisual: boolean) => {
     const request = onEnter(roomId)
@@ -363,7 +376,7 @@ export function MapScreen({
                 : 'Choose the next room.'}
       </p>
       {canRerollBoss && onRerollBoss ? (
-        <button type="button" disabled={Boolean(entering)} onClick={onRerollBoss}>
+        <button type="button" disabled={disabled || Boolean(entering)} onClick={onRerollBoss}>
           Reroll {bossDefId ? enemyDef(bossDefId, 0).name : 'boss'}
         </button>
       ) : null}
@@ -438,7 +451,7 @@ export function MapScreen({
                   // `aria-disabled` rather than `disabled`: a disabled button
                   // is not focusable, and with the captions gone the only way
                   // to learn what a room is would have been a mouse hover.
-                  aria-disabled={!canGo || Boolean(entering)}
+                  aria-disabled={!canGo || disabled || Boolean(entering)}
                   // Hover devices keep the one-click walk they have always had;
                   // the panel is already open under the pointer by the time the
                   // click lands, so a confirmation step there would be a tax on
@@ -456,7 +469,7 @@ export function MapScreen({
                   // next.
                   onPointerDown={() => { pointerActivatedAt.current = Date.now() }}
                   onClick={(event) => {
-                    if (entering) return
+                    if (disabled || entering) return
                     // Guessing wrong towards "pointer" costs one extra Enter;
                     // guessing wrong towards "keyboard" walks the party into a
                     // room they never got to read.

@@ -501,6 +501,9 @@
   }
 
   .hand-area .pile-group { right: calc(var(--compact-enemy-gutter) - 9rem); }
+  /* A Slime party reserves the middle-right bottom lane for End Turn. Keep
+     its piles at the outer HUD edge instead of moving them into that lane. */
+  .combat:has(.slime-party) .hand-area .pile-group { right: 0.6rem; }
 }
 
 @media (max-height: 23.75rem) {

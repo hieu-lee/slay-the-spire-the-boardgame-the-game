@@ -10,15 +10,9 @@ on:
       artifact_name:
         description: Prepared Pages artifact name
         required: true
-      discard_existing_rooms:
-        description: Replace the currently published room instead of inheriting it
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: multiplayer-pages-deployment
-  queue: max
   cancel-in-progress: false
 
 permissions:
@@ -34,129 +28,90 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      MULTIPLAYER_SERVER_ORIGIN: ${{ vars.MULTIPLAYER_SERVER_ORIGIN }}
+      PAGES_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      PAGES_URL: https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Download and validate the prepared site
         env:
           GH_TOKEN: ${{ github.token }}
-          PAGES_URL: https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           ARTIFACT_NAME: ${{ inputs.artifact_name }}
-          DISCARD_EXISTING_ROOMS: ${{ inputs.discard_existing_rooms }}
-          EXPECTED_PROTOCOL_VERSION: '1'
         run: |
           for attempt in 1 2; do
             download_dir="$RUNNER_TEMP/pages-$attempt"
             if timeout 300s gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-              --name "$ARTIFACT_NAME" --dir "$download_dir"; then
+                --name "$ARTIFACT_NAME" --dir "$download_dir"; then
               mv "$download_dir" pages
               break
             fi
             sleep 10
           done
           test -f pages/session.json
-          desired_run=$(jq -r '.runId // empty' pages/session.json)
-          desired_source=$(jq -r '.sourceRunId // empty' pages/session.json)
-          desired_sha=$(jq -r '.sha // empty' pages/session.json)
-          desired_protocol=$(jq -r '.protocolVersion // empty' pages/session.json)
-          [[ "$desired_run" =~ ^[0-9]+$ ]]
-          [[ "$desired_sha" =~ ^[0-9a-f]{40}$ ]]
-          [ "$desired_protocol" = "$EXPECTED_PROTOCOL_VERSION" ]
-          [ -z "$desired_source" ] || [[ "$desired_source" =~ ^[0-9]+$ ]]
-          current_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
-          current_config=$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 \
-            "$PAGES_URL/session.json?deploy=$GITHUB_RUN_ID")
-          current_run=$(jq -r '.runId // empty' <<< "$current_config")
-          current_source=$(jq -r '.sourceRunId // empty' <<< "$current_config")
-          if [ "$SOURCE_RUN_ID" != "$desired_run" ]; then
-            [ "$desired_sha" = "$current_sha" ]
-            if [ "$current_run" != "$desired_run" ]; then
-              [ "$current_source" = "$desired_run" ]
-              jq --arg sha "$current_sha" --argjson protocol "$EXPECTED_PROTOCOL_VERSION" \
-                '.sha = $sha | .protocolVersion = $protocol' <<< "$current_config" > pages/session.json
-              desired_run=$current_run
-              desired_source=$current_source
-            fi
-            [ "$current_run" = "$desired_run" ]
-          elif [ "$DISCARD_EXISTING_ROOMS" = true ]; then
-            [ "$desired_sha" = "$current_sha" ]
-            latest_fresh=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
-              --jq '[.workflow_runs[] | select(.event == "workflow_dispatch" and .status != "completed" and .display_title == "Multiplayer session") | .id] | max // empty')
-            [ "$desired_run" = "$latest_fresh" ]
-          elif [ -n "$desired_source" ]; then
-            if [ "$current_run" = "$desired_run" ]; then
-              [ "$desired_sha" = "$current_sha" ]
-            else
-              timeout 60s gh run download "$desired_source" --repo "$GITHUB_REPOSITORY" \
-                --name "handoff-selected-$desired_source" --dir selection
-              selected_run=$(sed -n '1p' selection/handoff-selected)
-              selected_sha=$(sed -n '2p' selection/handoff-selected)
-              [ "$desired_sha" = "$selected_sha" ]
-              [ "$current_run" = "$desired_source" ]
-              if [ "$selected_run" != "$desired_run" ]; then
-                [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_run" --jq .status 2>/dev/null || true)" = completed ]
-                replacement=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
-                  --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $desired_source\") | .id] | max // empty")
-                [ "$replacement" = "$desired_run" ]
-              fi
-              echo "HANDOFF_PREDECESSOR_RUN=$current_run" >> "$GITHUB_ENV"
-            fi
+          migration_source=$(node -e 'const c=require("./pages/session.json"); if(c.alwaysOn===true && c.sourceRunId) process.stdout.write(String(c.sourceRunId))')
+          if [ -n "$migration_source" ]; then
+            expected_sha=$(node -p 'require("./pages/session.json").sha')
           else
-            [ "$desired_sha" = "$current_sha" ]
-            [ "$current_run" = "$desired_run" ] || \
-              [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$current_run" --jq .status 2>/dev/null || true)" = completed ]
+            expected_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
           fi
-          jq -e '
-            (.origin | type) == "string" and
-            ((.origins == null) or ((.origins | type) == "array")) and
-            (([.origin] + (.origins // [])) as $origins |
-              all($origins[];
-                type == "string" and
-                (test("^https://[-a-z0-9]+\\.trycloudflare\\.com\\z") or
-                 test("^https://[1-9a-km-z]{6}\\.tunnel\\.pyjam\\.as\\z"))))
-          ' pages/session.json >/dev/null
+          node scripts/validate-session-config.mjs pages/session.json "$expected_sha" "$MULTIPLAYER_SERVER_ORIGIN"
       - uses: actions/configure-pages@v5
       - name: Verify the room endpoint immediately before deployment
         env:
           GH_TOKEN: ${{ github.token }}
-          PAGES_URL: https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          EXPECTED_PROTOCOL_VERSION: '1'
         run: |
-          desired_run=$(jq -r '.runId // empty' pages/session.json)
-          desired_source=$(jq -r '.sourceRunId // empty' pages/session.json)
-          desired_sha=$(jq -r '.sha // empty' pages/session.json)
-          current_sha=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
-          current_config=$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 \
-            "$PAGES_URL/session.json?final=$GITHUB_RUN_ID")
-          current_run=$(jq -r '.runId // empty' <<< "$current_config")
-          if [ -n "${HANDOFF_PREDECESSOR_RUN:-}" ]; then
-            [ "$current_run" = "$HANDOFF_PREDECESSOR_RUN" ]
-            selected_run=$(sed -n '1p' selection/handoff-selected)
-            selected_sha=$(sed -n '2p' selection/handoff-selected)
-            [ "$desired_sha" = "$selected_sha" ]
-            [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$desired_run" --jq .status 2>/dev/null || true)" = in_progress ]
-            if [ "$selected_run" != "$desired_run" ]; then
-              [ "$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_run" --jq .status 2>/dev/null || true)" = completed ]
-              replacement=$(timeout 30s gh api "repos/$GITHUB_REPOSITORY/actions/workflows/multiplayer-session.yml/runs?branch=master&per_page=100" \
-                --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Multiplayer handoff from $desired_source\") | .id] | max // empty")
-              [ "$replacement" = "$desired_run" ]
-            fi
-          elif [ "$SOURCE_RUN_ID" != "$desired_run" ] || [ -z "$desired_source" ] || [ "$current_run" != "$desired_source" ]; then
-            [ "$desired_sha" = "$current_sha" ]
-          fi
           healthy_origin=
           while IFS= read -r origin; do
             if curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-                "$origin/api/health" | jq -e --argjson version "$EXPECTED_PROTOCOL_VERSION" '.protocolVersion == $version' >/dev/null; then
+                "$origin/api/health" | jq -e '.protocolVersion == 1 and .profiles == true' >/dev/null; then
               healthy_origin=$origin
               break
             fi
-          done < <(jq -r '([.origin] + (.origins // [])) | unique[]' pages/session.json)
-          [ -n "$healthy_origin" ]
-          jq --arg origin "$healthy_origin" '.origin = $origin' pages/session.json > pages/session.next.json
-          mv pages/session.next.json pages/session.json
+          done < <(node -e 'const c=require("./pages/session.json"); console.log([...new Set([c.origin,...c.origins])].join("\n"))')
+          test -n "$healthy_origin"
+          migration_source=$(node -e 'const c=require("./pages/session.json"); if(c.alwaysOn===true && c.sourceRunId) process.stdout.write(String(c.sourceRunId))')
+          if [ -n "$migration_source" ]; then
+            case "$migration_source:$PAGES_SOURCE_RUN_ID" in *[!0-9:]*) exit 2;; esac
+            producer_status=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PAGES_SOURCE_RUN_ID" --jq .status)
+            producer_title=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PAGES_SOURCE_RUN_ID" --jq .display_title)
+            [ "$producer_status" = in_progress ]
+            [ "$producer_title" = "Multiplayer handoff from $migration_source" ]
+            [ "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$migration_source" --jq .status)" = in_progress ]
+            advertised=$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 \
+              "$PAGES_URL/session.json?lineage=$GITHUB_RUN_ID")
+            advertised_run=$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).runId ?? ""))' "$advertised")
+            [ "$advertised_run" = "$migration_source" ] || [ "$advertised_run" = "$PAGES_SOURCE_RUN_ID" ]
+            selection="$RUNNER_TEMP/pages-handoff-selection"
+            timeout 60s gh run download "$migration_source" --repo "$GITHUB_REPOSITORY" \
+              --name "handoff-selected-$migration_source" --dir "$selection"
+            selected_run=$(sed -n '1p' "$selection/handoff-selected")
+            selected_sha=$(sed -n '2p' "$selection/handoff-selected")
+            if [ "$selected_run" != "$PAGES_SOURCE_RUN_ID" ]; then
+              selected_state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_run" \
+                --jq '[.status, (.conclusion // "")] | join(" ")')
+              [ "${selected_state%% *}" = completed ]
+              case "${selected_state#* }" in failure|cancelled|timed_out|stale|action_required) ;; *) exit 1;; esac
+            fi
+            [ "$selected_sha" = "$(node -p 'require("./pages/session.json").sha')" ]
+            expected_sha=$selected_sha
+          else
+            expected_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
+          fi
+          node scripts/validate-session-config.mjs pages/session.json "$expected_sha" "$MULTIPLAYER_SERVER_ORIGIN" "$healthy_origin"
       - uses: actions/upload-pages-artifact@v4
         with:
           path: pages
+      - name: Verify the migration producer remains live
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          migration_source=$(node -e 'const c=require("./pages/session.json"); if(c.alwaysOn===true && c.sourceRunId) process.stdout.write(String(c.sourceRunId))')
+          if [ -n "$migration_source" ]; then
+            [ "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PAGES_SOURCE_RUN_ID" --jq .status)" = in_progress ]
+          fi
       - id: deployment
         uses: actions/deploy-pages@v4

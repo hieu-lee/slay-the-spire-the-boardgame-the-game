@@ -15,7 +15,7 @@ enemy turns, rewards, rooms, campaign progress, and Acts II–IV. Click a card a
 target to play it.
 
 For 2–4 friends, choose **Multiplayer**, share the room code, and play from one browser per
-person. For the authoritative room server, voice chat, and Cloudflare Tunnel setup, see
+person. For the always-on authoritative room server and voice chat setup, see
 [`docs/online-play.md`](docs/online-play.md).
 
 ## Assets

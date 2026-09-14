@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
@@ -8,17 +7,8 @@ import { createStore } from './lib/rooms.mjs'
 import { normalizeLeaderboardRun, addLeaderboardRun } from './lib/leaderboard.mjs'
 
 const workflow = readFileSync(new URL('../.github/workflows/multiplayer-session.yml', import.meta.url), 'utf8')
-const gates = [...workflow.matchAll(/'([^'\n]*\.protocolVersion == \$version[^'\n]*)'/g)].map((match) => match[1])
-assert.equal(gates.filter((gate) => gate.includes('.profiles == true')).length, 2)
-for (const gate of gates) {
-  for (const [health, expected] of [
-    [{ protocolVersion: 1 }, gate.includes('!= true')],
-    [{ protocolVersion: 1, profiles: true }, !gate.includes('!= true')],
-    [{ protocolVersion: 2, profiles: true }, false],
-  ]) {
-    assert.equal(spawnSync('jq', ['-e', '--argjson', 'version', '1', gate], { input: JSON.stringify(health) }).status === 0, expected)
-  }
-}
+assert.match(workflow, /\.protocolVersion == 1 and \.profiles == true and \.webSocketActionAcks == true/)
+assert.match(workflow, /VITE_HOSTED_SESSION=true/)
 
 const directory = mkdtempSync(join(tmpdir(), 'sts-profile-'))
 const file = join(directory, 'rooms.json')

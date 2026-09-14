@@ -805,6 +805,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       ) : null}
       {run.phase === 'map' ? <><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)}
         blocked={pendingAcquisition} bossDefId={run.actBossDefId}
+        disabled={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock}
         canRerollBoss={!pendingAcquisition && run.canRerollDownfallSelfBoss}
         onRerollBoss={() => room.act({ kind: 'rerollDownfallSelfBoss' })}
         onSelectionChange={setMapSelectionPending}

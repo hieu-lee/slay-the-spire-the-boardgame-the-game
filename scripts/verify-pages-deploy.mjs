@@ -1,77 +1,39 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { validateSessionConfig } from './validate-session-config.mjs'
 
 const workflow = readFileSync(new URL('../.github/workflows/pages-deploy.yml', import.meta.url), 'utf8')
-const step = workflow.split('      - name: Download and validate the prepared site\n')[1]
-  .split('          desired_run=')[0]
-  .split('        run: |\n')[1]
-  .replace(/^          /gm, '')
+assert.match(workflow, /actions\/checkout@v4\s+with:\s+persist-credentials: false/)
+assert.doesNotMatch(workflow, /timeout-minutes: 15\s+env:\s+GH_TOKEN:/)
+assert.match(workflow, /Verify the room endpoint immediately before deployment\s+env:\s+GH_TOKEN: \$\{\{ github\.token \}\}/)
+assert.match(workflow, /producer_title[\s\S]*Multiplayer handoff from \$migration_source[\s\S]*handoff-selected-\$migration_source/)
+assert.match(workflow, /expected_sha=\$selected_sha[\s\S]*else[\s\S]*expected_sha=\$\(gh api .*git\/ref\/heads\/master/)
+assert.match(workflow, /Verify the migration producer remains live[\s\S]*PAGES_SOURCE_RUN_ID[\s\S]*in_progress/)
+const stableOrigin = 'https://sts-94-239-51-8.2001-861-388c-4ee0-c3d5-2f30-1be7-2e79.sslip.io:18443'
+const sha = 'a'.repeat(40)
 
-for (const [failures, expected] of [[0, true], [1, true], [2, false]]) {
-  const directory = mkdtempSync(join(tmpdir(), 'sts-pages-deploy-'))
+for (const [config, accepted] of [
+  [{ protocolVersion: 1, sha, runId: '12', origin: stableOrigin, origins: [stableOrigin] }, true],
+  [{ protocolVersion: 1, sha, runId: '12', origin: 'https://abc123.tunnel.pyjam.as', origins: ['https://abc123.tunnel.pyjam.as'] }, true],
+  [{ protocolVersion: 1, sha, runId: '12', origin: 'https://old.trycloudflare.com', origins: ['https://old.trycloudflare.com'] }, true],
+  [{ protocolVersion: 1, sha, runId: '12', origin: `${stableOrigin}.evil`, origins: [] }, false],
+  [{ protocolVersion: 2, sha, runId: '12', origin: stableOrigin, origins: [] }, false],
+  [{ protocolVersion: 1, sha: 'b'.repeat(40), runId: '12', origin: stableOrigin, origins: [] }, false],
+  [{ protocolVersion: 1, sha, runId: 12, origin: stableOrigin, origins: [] }, false],
+  [{ protocolVersion: 1, sha, runId: '12', origin: stableOrigin, origins: [123] }, false],
+]) {
+  let valid = true
   try {
-    const result = spawnSync('bash', ['-e', '-c', `
-      timeout() { shift; "$@"; }
-      sleep() { :; }
-      gh() {
-        calls=$((calls + 1))
-        [ "$calls" -gt "$FAILURES" ] || return 1
-        while [ "$#" -gt 0 ]; do
-          if [ "$1" = --dir ]; then mkdir -p "$2"; printf '{}' > "$2/session.json"; return; fi
-          shift
-        done
-        return 1
-      }
-      calls=0
-      ${step}
-    `], { cwd: directory, env: { ...process.env, FAILURES: String(failures), RUNNER_TEMP: directory }, encoding: 'utf8' })
-    assert.equal(result.status === 0, expected, result.stderr)
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
+    validateSessionConfig(config, { sha, stableOrigin })
+  } catch {
+    valid = false
   }
+  assert.equal(valid, accepted, JSON.stringify(config))
 }
 
-assert.match(workflow, /timeout-minutes: 15/)
-assert.match(step, /timeout 300s gh run download/)
-assert(workflow.indexOf('actions/upload-pages-artifact@v4') > workflow.indexOf('Verify the room endpoint immediately before deployment'))
-assert.match(workflow, /jq --arg origin "\$healthy_origin" '\.origin = \$origin'/)
-const originValidation = `jq -e ${workflow.split('          jq -e ')[1]
-  .split('      - uses: actions/configure-pages@v5')[0].replace(/^          /gm, '')}`
-for (const [origins, accepted] of [
-  [['https://one.trycloudflare.com'], true],
-  [['https://abc123.tunnel.pyjam.as'], true],
-  [['https://one.trycloudflare.com', 'https://moo123.tunnel.pyjam.as'], true],
-  [['https://abc123.tunnel.pyjam.as.evil'], false],
-  [['https://abc123.tunnel.pyjam.as\nhttps://moo123.tunnel.pyjam.as'], false],
-  [['https://abc123.tunnel.pyjam.as\n'], false],
-  [['https://invalid.example.com'], false],
-]) {
-  const directory = mkdtempSync(join(tmpdir(), 'sts-pages-origins-'))
-  try {
-    mkdirSync(join(directory, 'pages'))
-    writeFileSync(join(directory, 'pages/session.json'), JSON.stringify({ origin: origins[0], origins }))
-    const result = spawnSync('bash', ['-e', '-c', originValidation], { cwd: directory, encoding: 'utf8' })
-    assert.equal(result.status === 0, accepted, result.stderr)
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
-  }
-}
-for (const config of [
-  { origin: 'https://abc123.tunnel.pyjam.as', origins: false },
-  { origin: 'https://abc123.tunnel.pyjam.as', origins: [123] },
-  { origin: null, origins: ['https://abc123.tunnel.pyjam.as'] },
-]) {
-  const directory = mkdtempSync(join(tmpdir(), 'sts-pages-origin-types-'))
-  try {
-    mkdirSync(join(directory, 'pages'))
-    writeFileSync(join(directory, 'pages/session.json'), JSON.stringify(config))
-    const result = spawnSync('bash', ['-e', '-c', originValidation], { cwd: directory, encoding: 'utf8' })
-    assert.notEqual(result.status, 0, JSON.stringify(config))
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
-  }
-}
-console.log('✓ Pages artifacts retry once and accept only supported tunnel origins')
+assert.match(workflow, /timeout 300s gh run download/)
+assert.match(workflow, /Verify the room endpoint immediately before deployment/)
+assert.match(workflow, /\.profiles == true/)
+assert.match(workflow, /validate-session-config\.mjs/)
+assert.match(workflow, /actions\/deploy-pages@v4/)
+console.log('✓ Pages accepts the stable host plus one-time legacy handoff origins')

@@ -1,119 +1,155 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { validateRoomStore } from '../infra/validate-room-store.mjs'
 
 const workflow = readFileSync(new URL('../.github/workflows/multiplayer-session.yml', import.meta.url), 'utf8')
-const run = (script, env = {}, cwd) => spawnSync('bash', ['-e', '-c', script], {
-  cwd, env: { ...process.env, ...env }, encoding: 'utf8', timeout: 5000,
-})
-const publish = workflow.split('      - name: Point the stable Pages URL at this session\n')[1]
-  .split('      - uses: actions/upload-artifact@v4')[0]
-  .split('        run: |\n')[1].replace(/^          /gm, '')
-const directory = mkdtempSync(join(tmpdir(), 'sts-multiplayer-reliability-'))
+const service = readFileSync(new URL('../infra/systemd/sts-room-server.service', import.meta.url), 'utf8')
+const runner = readFileSync(new URL('../infra/systemd/sts-actions-runner.service', import.meta.url), 'utf8')
+const deploy = readFileSync(new URL('../infra/deploy-local-server.sh', import.meta.url), 'utf8')
+const windowsInstall = readFileSync(new URL('../infra/windows/install-host.ps1', import.meta.url), 'utf8')
+const routerMapping = readFileSync(new URL('../infra/windows/renew-router-pinhole.ps1', import.meta.url), 'utf8')
+const caddy = readFileSync(new URL('../infra/windows/Caddyfile', import.meta.url), 'utf8')
+const wslInstall = readFileSync(new URL('../infra/install-wsl-host.sh', import.meta.url), 'utf8')
+const wslWatchdog = readFileSync(new URL('../infra/watchdog-wsl-host.sh', import.meta.url), 'utf8')
 
+const legacyStoreDirectory = mkdtempSync(join(tmpdir(), 'sts-legacy-store-'))
 try {
-  mkdirSync(join(directory, 'dist'))
-  const envFile = join(directory, 'github-env')
-  const result = run(publish, {
-      EXPECTED_PROTOCOL_VERSION: '1', GITHUB_ENV: envFile, GITHUB_RUN_ID: '222',
-      HANDOFF_AFTER_SECONDS: '600', HANDOFF_DEADLINE: '2000', SESSION_SHA: 'a'.repeat(40),
-      SOURCE_RUN_ID: '111', TUNNEL_URL: 'https://two.trycloudflare.com',
-      TUNNEL_URLS: '["https://one.trycloudflare.com","https://two.trycloudflare.com"]',
-    }, directory)
-  assert.equal(result.status, 0, result.stderr)
-  const session = JSON.parse(readFileSync(join(directory, 'pages/session.json'), 'utf8'))
-  assert.deepEqual(session.origins, ['https://one.trycloudflare.com', 'https://two.trycloudflare.com'])
-  assert.equal(session.origin, 'https://two.trycloudflare.com')
-  assert.equal(session.manualHandoff, true)
-
-  const publishedConfig = workflow.indexOf('$PAGES_URL/session.json?handoff=')
-  const bridge = workflow.indexOf('STS_HANDOFF_PROXY_TARGETS="$successors"')
-  const readBridge = workflow.indexOf('Bridge reads from the old endpoint to the restored successor')
-  assert(readBridge > workflow.indexOf('room-store-${{ github.run_id }}'))
-  assert(readBridge < workflow.indexOf('Start and verify the successor'))
-  assert(bridge > publishedConfig)
-  assert(bridge > workflow.indexOf('if [ "$successor_healthy" = true ]'))
-  assert.match(workflow, /for tunnel_number in 1 2/)
-  assert.match(workflow, /printf '%s\\n%s\\n%s\\n' "\$TUNNEL_URL" "\$SESSION_SHA" "\$TUNNEL_URLS"/)
-  assert.match(workflow, /STS_HANDOFF_PROXY_TARGETS="\$successors"/)
-  assert.match(workflow, /STS_HANDOFF_PROXY_WRITE_MARKER="\$RUNNER_TEMP\/handoff-proxy-writes"/)
-  assert.match(workflow, /bridge_targets=\$\(jq -c 'unique' <<< "\$SELECTED_ORIGINS"\)/)
-
-  const chooseSource = workflow.split('      - name: Choose the room source for this push\n')[1]
-    .split('      - uses: actions/checkout@v4')[0].split('        run: |\n')[1].replace(/^          /gm, '')
-  const stubs = `timeout() { shift; "$@"; }
-gh() { [[ "$*" == *git/ref/heads/master* ]] && echo ${'a'.repeat(40)} || echo in_progress; }
-curl() {
-  local url=\${!#}
-  [[ "$url" == *session.json* ]] && { printf '%s' "$CONFIG"; return; }
-  [[ "$url" == https://two.trycloudflare.com/api/health ]] && { printf '{"protocolVersion":1,"profiles":true}'; return; }
-  [[ "$url" == https://two.trycloudflare.com/ ]] && return
-  return 22
-}
-`
-  const config = JSON.stringify({ runId: '111', origin: 'https://one.trycloudflare.com', origins: ['https://one.trycloudflare.com', 'https://two.trycloudflare.com'] })
-  const chooseResult = run(`${stubs}\n${chooseSource}`, {
-    CONFIG: config, EXPECTED_PROTOCOL_VERSION: '1', GITHUB_ENV: envFile,
-    GITHUB_REPOSITORY: 'owner/game', GITHUB_RUN_ID: '222', PAGES_URL: 'https://pages.test',
-  })
-  assert.equal(chooseResult.status, 0, chooseResult.stderr)
-  assert.match(readFileSync(envFile, 'utf8'), /PUBLISH_CLIENT=true\nSOURCE_RUN=111/)
-
-  const waitForState = workflow.split('      - name: Wait for the frozen room state\n')[1]
-    .split('      - name: Restore rooms from the previous runner')[0].split('        run: |\n')[1].replace(/^          /gm, '')
-  const waitResult = run(`${stubs}
-sleep() { :; }
-gh() {
-  if [ "$1 $2" = 'run download' ]; then
-    while [ "$1" != --dir ]; do shift; done
-    mkdir -p "$2"
-    [[ "$2" == */selection ]] && printf '222\\n%s\\n' "$SESSION_SHA" > "$2/handoff-selected"
-    return 0
-  else echo 123; fi
-}
-${waitForState}`, {
-    CONFIG: config, EXPECTED_PROTOCOL_VERSION: '1', GITHUB_REPOSITORY: 'owner/game',
-    GITHUB_RUN_ID: '222', RUNNER_TEMP: directory, SESSION_SHA: 'a'.repeat(40),
-    SOURCE_RUN_ID: '111', SOURCE_WAIT_SECONDS: '60',
-    TUNNEL_URLS: '["https://one.trycloudflare.com","https://two.trycloudflare.com"]',
-  })
-  assert.equal(waitResult.status, 0, waitResult.stderr + waitResult.stdout)
-
-  const startServer = workflow.split('      - name: Start the room server\n')[1]
-    .split('      - name: Recheck the source archive before publishing')[0].split('        run: |\n')[1].replace(/^          /gm, '')
-  const startResult = run(`nohup() { :; }
-curl() {
-  local url=\${!#}
-  [[ "$url" == http://127.0.0.1:5180/api/health || "$url" == https://one.trycloudflare.com/api/health || "$url" == https://two.trycloudflare.com/api/health ]]
-}
-${startServer}`, {
-    GITHUB_ENV: envFile, RUNNER_TEMP: directory,
-    TUNNEL_URLS: '["https://one.trycloudflare.com","https://two.trycloudflare.com"]',
-  })
-  assert.equal(startResult.status, 0, startResult.stderr + startResult.stdout)
-  assert.match(readFileSync(envFile, 'utf8'), /TUNNEL_URL=https:\/\/one\.trycloudflare\.com/)
-  assert.match(startServer, /public_origins_ready=false/)
-
-  const verify = workflow.split('      - name: Start and verify the successor\n')[1]
-    .split('          exit 1')[0]
-  const grace = verify.indexOf('bridge_grace=720')
-  const bridgeStart = verify.indexOf('STS_HANDOFF_PROXY_TARGETS="$successors"')
-  const writesEnabled = verify.indexOf('touch "$RUNNER_TEMP/handoff-proxy-writes"')
-  assert(grace > verify.indexOf('successor_healthy" = true'))
-  assert(bridgeStart > verify.indexOf('successor_healthy" = true'))
-  assert(bridgeStart < grace)
-  assert(writesEnabled > bridgeStart)
-  assert(writesEnabled < grace)
-  assert(verify.indexOf('sleep 0.25') > verify.indexOf('successor_healthy" = true'))
-  assert(verify.indexOf('sleep 0.25') < bridgeStart)
-  assert(verify.indexOf('! kill -0 "$bridge_pid"', bridgeStart) > bridgeStart)
-  assert(verify.indexOf('sleep "$bridge_grace"', grace) > grace)
-  assert(verify.indexOf('kill "$bridge_pid"', bridgeStart) > bridgeStart)
-  assert(verify.indexOf('handoff-proxy.pid', grace) > grace)
-  assert(verify.indexOf('exit 0', grace) > grace)
-  console.log('✓ dead primaries fall back to a healthy secondary and the old bridge overlaps Pages propagation')
+  const legacyStore = join(legacyStoreDirectory, 'rooms.json')
+  writeFileSync(legacyStore, JSON.stringify({ version: 1, rooms: [], leaderboardRuns: [] }))
+  await validateRoomStore(legacyStore, new URL('./lib/rooms.mjs', import.meta.url).pathname)
 } finally {
-  rmSync(directory, { recursive: true, force: true })
+  rmSync(legacyStoreDirectory, { recursive: true, force: true })
 }
+const holdDecision = spawnSync('bash', ['-lc',
+  `. ${JSON.stringify(new URL('../infra/watchdog-wsl-host.sh', import.meta.url).pathname)}; ` +
+  'active_migration_hold 123 200 "" 100 "" && ! active_migration_hold 123 200 "" 100 completed'],
+{ encoding: 'utf8' })
+assert.equal(holdDecision.status, 0, holdDecision.stderr)
+
+assert.match(workflow, /runs-on: \[self-hosted, linux, x64, sts-server]/)
+for (const checkout of workflow.split('- uses: actions/checkout@v4').slice(1)) {
+  assert.match(checkout.split('\n      - ', 1)[0], /persist-credentials: false/)
+}
+assert.match(workflow, /MULTIPLAYER_SERVER_ORIGIN: \$\{\{ vars\.MULTIPLAYER_SERVER_ORIGIN }}/)
+assert.doesNotMatch(workflow, /cloudflared|tunnel\.pyjam\.as|MULTIPLAYER_TUNNEL_PROVIDER/)
+assert.match(workflow, /handoff-candidate-\$\{\{ inputs\.source_run_id }}/)
+assert.match(workflow, /handoff-ready-\$\{\{ inputs\.source_run_id }}/)
+assert.match(workflow, /format\('Multiplayer handoff from \{0}', inputs\.source_run_id\)/)
+assert(workflow.indexOf('Prepare an immutable server release') < workflow.indexOf('migration-hold'))
+assert(workflow.indexOf('Revalidate legacy ownership immediately before holding the API') < workflow.indexOf('migration-hold'))
+assert.match(workflow, /Revalidate legacy ownership immediately before holding the API\s+if: inputs\.source_run_id != ''\s+env:\s+GH_TOKEN: \$\{\{ github\.token \}\}/)
+assert.match(workflow, /advertised_always_on[\s\S]*\[ "\$advertised_always_on" = false \]/)
+assert(workflow.indexOf('systemctl --user stop sts-room-server.service') < workflow.indexOf('handoff-ready-${{ inputs.source_run_id }}'))
+assert(workflow.indexOf('Install, migrate, and verify the room server') > workflow.indexOf('handoff-ready-${{ inputs.source_run_id }}'))
+assert.match(workflow, /current_origin.*MULTIPLAYER_SERVER_ORIGIN/s)
+assert.match(workflow, /ADOPT_ORIGIN.*adopt_origin/s)
+assert.match(workflow, /client:[\s\S]*ADOPT_ORIGIN: \$\{\{ inputs\.adopt_origin }}/)
+assert.match(workflow, /alwaysOn:true/)
+assert.match(workflow, /Keep the one-time successor visible to the legacy source/)
+assert.match(workflow, /sleep 300/)
+assert.match(workflow, /sslip\\\.io:18443/)
+assert(workflow.indexOf('advertised_run') < workflow.indexOf('migration-hold'))
+assert.match(workflow, /\[ "\$advertised_run" = "\$SOURCE_RUN_ID" \][\s\S]*\[ "\$source_status" = in_progress \][\s\S]*\[ "\$source_path" = \.github\/workflows\/multiplayer-session\.yml \]/)
+
+assert.match(service, /Restart=always/)
+assert.match(service, /STS_ROOM_STORE=%h\/\.local\/share\/slay-the-spire-server\/rooms\.json/)
+assert.match(service, /STS_HANDOFF_RESTORE=true/)
+assert.match(service, /STS_HANDOFF_RECONNECT_MS=3600000/)
+assert.match(service, /ExecCondition=\/usr\/bin\/test ! -e %h\/\.local\/share\/slay-the-spire-server\/migration-hold/)
+assert.match(service, /WorkingDirectory=%h\/\.local\/share\/slay-the-spire-server\/current/)
+assert.match(runner, /Restart=always/)
+assert.match(runner, /DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1/)
+assert.match(wslInstall, /loginctl enable-linger "\$USER"/)
+assert.match(wslInstall, /if \[ ! -e "\$data_dir\/current" \]/)
+assert.match(wslInstall, /deploy-local-server\.sh" prepare/)
+assert.match(wslInstall, /is-active --quiet sts-actions-runner\.service[\s\S]*is-active --quiet sts-room-server\.service/)
+assert.match(wslInstall, /\[ "\$runner_online" = true \]/)
+assert.match(deploy, /room-store-\$source_run/)
+assert.match(deploy, /handoff-selected-\$source_run/)
+assert.match(deploy, /actions\/runs\/\$selected_run[\s\S]*\[ "\$selected_status" = completed \][\s\S]*failure\|cancelled\|timed_out\|stale\|action_required/)
+assert.match(deploy, /timeout 30s gh run download/)
+assert.match(deploy, /handoff-\$handoff_download_attempt[\s\S]*rooms\.json\.gpg/)
+assert.match(deploy, /selection-\$attempt[\s\S]*handoff-selected/)
+assert.match(deploy, /releases_dir="\$data_dir\/releases"/)
+assert.match(deploy, /git -C "\$root" archive HEAD -- package\.json scripts\/room-server\.mjs/)
+assert.match(deploy, /cp -aL "\$root\/node_modules\/ws"/)
+assert.doesNotMatch(deploy, /cp -a "\$root\/node_modules"/)
+assert.match(deploy, /ln -sfn "\$release"/)
+assert(deploy.includes("-regex '.*/[0-9a-f]{40}'"))
+assert.match(deploy, /"\$old_release" = "\$active_release"/)
+assert.match(deploy, /previous_release=.*readlink -f/)
+assert.match(deploy, /current\.rollback/)
+assert.match(deploy, /rooms\.next\.\$\{GITHUB_RUN_ID\}\.json/)
+assert.match(deploy, /recover_wait_failure\(\)/)
+assert.match(deploy, /source_deadline=\$\(\(SECONDS \+ source_wait\)\)/)
+assert(deploy.indexOf('mv "$next_store" "$store"') < deploy.lastIndexOf('systemctl --user restart sts-room-server.service'))
+assert.match(deploy, /webSocketActionAcks !== true/)
+assert.match(deploy, /validate-room-store\.mjs/)
+assert.match(deploy, /finish_deployment\(\)/)
+assert.match(deploy, /mv -f "\$store_backup" "\$store"/)
+assert.match(deploy, /mv -f "\$unit_backup" "\$unit_file"/)
+assert(deploy.indexOf('mv -f "$hold_backup" "$hold_file"') < deploy.indexOf('watchdog_state=$(bash'))
+assert(deploy.indexOf('mv "$next_store" "$store"') < deploy.lastIndexOf('rm -f -- "$hold_file"'))
+assert(deploy.lastIndexOf('rm -f -- "$hold_file"') < deploy.lastIndexOf('systemctl --user restart sts-room-server.service'))
+assert.match(workflow, /printf '%s %s\\n' "\$SOURCE_RUN_ID"[\s\S]*mv -f "\$hold_next" "\$hold"/)
+assert.match(workflow, /if: always\(\) && inputs\.source_run_id != ''[\s\S]*bash infra\/watchdog-wsl-host\.sh/)
+assert.match(workflow, /queued=false[\s\S]*timeout 30s gh workflow run pages-deploy\.yml[\s\S]*\[ "\$queued" = true \]/)
+assert(deploy.indexOf('systemctl --user stop sts-room-server.service') < deploy.indexOf('mv -f "$store_backup" "$store"'))
+assert.match(wslWatchdog, /\[ "\$status" != completed \]/)
+assert.match(wslWatchdog, /start sts-actions-runner\.service 2>\/dev\/null \|\| true/)
+assert.match(wslWatchdog, /active_migration_hold[\s\S]*systemctl --user stop sts-room-server\.service[\s\S]*! systemctl --user is-active --quiet sts-room-server\.service[\s\S]*echo held/)
+assert.match(wslWatchdog, /rm -f -- "\$hold_file"[\s\S]*systemctl --user start sts-room-server\.service/)
+assert.match(windowsInstall, /\$siteAddresses = \$publishedUri\.DnsSafeHost \+ ', ' \+ \$hostName/)
+
+assert.match(windowsInstall, /Slay the Spire TLS proxy/)
+assert.match(windowsInstall, /Slay the Spire router mapping/)
+assert.match(windowsInstall, /AllowStartIfOnBatteries/)
+assert.match(windowsInstall, /DontStopIfGoingOnBatteries/)
+assert.match(windowsInstall, /New-ScheduledTaskTrigger -AtStartup/)
+assert.match(windowsInstall, /LogonType S4U/)
+assert(windowsInstall.indexOf('validate --config $caddyCandidate') < windowsInstall.indexOf('Stop-ScheduledTask'))
+assert(windowsInstall.indexOf("Register-ScheduledTask -TaskName 'Slay the Spire WSL services'") < windowsInstall.indexOf('Stop-ScheduledTask'))
+assert.match(windowsInstall, /Caddyfile\.template/)
+assert.match(windowsInstall, /Caddyfile\.rollback[\s\S]*\$installationSucceeded = \$false[\s\S]*Copy-Item -LiteralPath \$caddyBackup -Destination \$caddyFile[\s\S]*Start-ScheduledTask -TaskName \$taskName/)
+assert.match(windowsInstall, /Export-ScheduledTask[\s\S]*Register-ScheduledTask -TaskName \$taskName -Xml \$taskBackups\[\$taskName\]/)
+assert.match(windowsInstall, /gh variable get[\s\S]*\$previousServerOriginExists[\s\S]*gh variable set MULTIPLAYER_SERVER_ORIGIN[\s\S]*--body \$previousServerOrigin/)
+assert.match(windowsInstall, /elseif \(Test-Path \$caddyFile\) \{ Remove-Item -LiteralPath \$caddyFile -Force \}/)
+assert.match(windowsInstall, /\$firewallRuleCreated = \$false[\s\S]*\$firewallRuleCreated = \$true[\s\S]*Remove-NetFirewallRule/)
+assert(windowsInstall.indexOf('Move-Item -LiteralPath $mappingCandidate -Destination $mappingScript') >
+  windowsInstall.indexOf("Stop-ScheduledTask -TaskName 'Slay the Spire router mapping'"))
+assert.match(routerMapping, /Invoke-NatPmpMapping \$ipv4Route\.NextHop 443 18443/)
+assert.match(routerMapping, /Invoke-PcpMapping \$sourceIpv6 \$scopedIpv6Gateway 443 18443/)
+assert.match(routerMapping, /Get-BigEndianUInt32 \$response 12/)
+assert.match(routerMapping, /Get-BigEndianUInt32 \$response 4/)
+assert.match(routerMapping, /renewAfterSeconds = \$renewAfterSeconds/)
+assert.match(routerMapping, /\[Math\]::Min\(3600, \[Math\]::Max\(60, \[Math\]::Floor\(\$minimumLease \/ 2\)\)\)/)
+assert.match(routerMapping, /pcp-nonces\.json/)
+assert.match(routerMapping, /pcp-nonces\.next\.json/)
+assert(routerMapping.indexOf('WriteAllText(\n    $nonceCandidate') <
+  routerMapping.indexOf('Move-Item -LiteralPath $nonceCandidate -Destination $noncePath -Force'))
+assert.match(routerMapping, /Get-PcpNonce 18443/)
+assert.match(routerMapping, /Publish-OriginChange \$state/)
+assert.match(routerMapping, /function Start-WslServices/)
+assert(routerMapping.indexOf('$state = Update-RouterMappings') < routerMapping.indexOf('if ($roomReady)'))
+assert.match(routerMapping, /Start-Sleep -Seconds 60/)
+assert.match(routerMapping, /\$caddyLoaded = \$false[\s\S]*\$attempt -lt 12/)
+assert.match(routerMapping, /gh variable set MULTIPLAYER_SERVER_ORIGIN/)
+assert(routerMapping.indexOf('$currentSession.alwaysOn -ne $true') <
+  routerMapping.indexOf('gh workflow run multiplayer-session.yml'))
+assert.match(routerMapping, /gh workflow run multiplayer-session\.yml/)
+assert.match(routerMapping, /Pages did not publish the replacement origin/)
+assert(routerMapping.indexOf("$siteAddresses = $publishedUri.DnsSafeHost + ', ' + $State.hostName") <
+  routerMapping.indexOf("$template.Replace('__SERVER_HOSTS__', $siteAddresses)"))
+assert.match(routerMapping, /\$leaseSeconds = 86400/)
+assert.match(routerMapping, /\$watchdogMinute -lt \$watchdogIterations/)
+assert.match(routerMapping, /Start-Sleep -Seconds \$retrySeconds/)
+assert.match(caddy, /__SERVER_HOSTS__/)
+assert.match(caddy, /handle \/ \{\s+respond .+ 200\s+\}/)
+assert.match(caddy, /reverse_proxy 127\.0\.0\.1:8787/)
+assert.match(caddy, /header_up Cf-Connecting-Ip \{remote_host\}/)
+assert.doesNotMatch(caddy, /\blog\s*\{/)
+
+console.log('✓ stable self-hosted deployment preserves legacy state and restarts durable services')

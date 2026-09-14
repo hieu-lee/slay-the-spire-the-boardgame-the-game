@@ -1,17 +1,10 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
-const tunneledServer = {
-  // Vite 7 rejects requests whose Host header it does not recognise, which
-  // blocks the whole point of a tunnel. Allow the tunnel domains explicitly.
-  allowedHosts: [
-    '.trycloudflare.com',
-    '.cfargotunnel.com',
-    ...(process.env.TUNNEL_PROVIDER === 'pyjam' ? ['.tunnel.pyjam.as'] : []),
-  ],
+const localServer = {
   // Let the room server answer the Pages origin's preflight through the proxy.
   cors: false,
-  // ponytail: room server is a separate process; proxy keeps one origin for tunnels
+  // The room server is a separate process; the proxy keeps local development on one origin.
   proxy: {
     '/api': { target: 'http://127.0.0.1:8787', changeOrigin: true },
     '/ws': { target: 'ws://127.0.0.1:8787', ws: true, changeOrigin: true },
@@ -24,7 +17,7 @@ export default defineConfig(({ mode }) => {
   return {
     base: singlePlayer || hostedSession ? './' : '/',
     plugins: [react()],
-    server: tunneledServer,
-    preview: tunneledServer,
+    server: localServer,
+    preview: localServer,
   }
 })

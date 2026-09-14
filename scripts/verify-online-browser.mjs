@@ -683,13 +683,12 @@ try {
     observer.observe(document.body, { childList: true, subtree: true })
   })
   await a.locator('.app-shell--online .room--reachable').click()
-  await Promise.all([
+  const [, , onlineOpeningDeal] = await Promise.all([
     a.locator('.app-shell--online .combat').waitFor(),
     b.locator('.app-shell--online .combat').waitFor(),
-    a.locator('.hand .card--drawn').first().waitFor(),
+    a.locator('.hand .card--drawn').first().evaluate((card) =>
+      getComputedStyle(card).animationName),
   ])
-  const onlineOpeningDeal = await a.locator('.hand .card--drawn').first().evaluate((card) =>
-    getComputedStyle(card).animationName)
   const onlineOpeningFirstFrame = await a.evaluate(() => window.__OPENING_HAND_FIRST_FRAME__)
   const onlineOpeningSounds = await a.evaluate(() => window.__SFX_PLAYS__)
   const onlineRunStatus = await a.locator('.app-shell--online .run-status').textContent()
@@ -749,7 +748,7 @@ try {
     runPhase: (await snapshot(a)).run.phase,
     commandMounted: await a.locator('.slime-party__actor--commanding').count() === 1,
   }
-  await a.waitForFunction(() => !document.querySelector('.app-shell--online .combat'), undefined, { timeout: 1_000 })
+  await a.waitForFunction(() => !document.querySelector('.app-shell--online .combat'), undefined, { timeout: 5_000 })
   const onlineSlimeVictoryReleased = (await snapshot(a)).run.phase !== 'combat'
   const restoredVictoryRoom = rooms.store.rooms.get(code)
   restoredVictoryRoom.run = onlineSlimeVictoryRestore

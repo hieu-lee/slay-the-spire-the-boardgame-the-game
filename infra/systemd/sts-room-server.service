@@ -1,0 +1,25 @@
+[Unit]
+Description=Slay the Spire multiplayer room server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/slay-the-spire-server/current
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=8787
+Environment=STS_ALLOWED_ORIGIN=https://hieu-lee.github.io
+Environment=STS_PRESERVE_ON_SHUTDOWN=true
+Environment=STS_ROOM_STORE=%h/.local/share/slay-the-spire-server/rooms.json
+Environment=STS_HANDOFF_RESTORE=true
+Environment=STS_HANDOFF_RECONNECT_MS=3600000
+ExecCondition=/usr/bin/test ! -e %h/.local/share/slay-the-spire-server/migration-hold
+ExecStart=/usr/local/bin/node scripts/room-server.mjs
+Restart=always
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

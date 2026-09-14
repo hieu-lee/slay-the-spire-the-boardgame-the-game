@@ -1,0 +1,19 @@
+{
+	admin localhost:2019
+}
+
+__SERVER_HOSTS__ {
+	encode zstd gzip
+	handle / {
+		respond "Slay the Spire multiplayer host is ready." 200
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8787 {
+			header_up Cf-Connecting-Ip {remote_host}
+		}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+	}
+}

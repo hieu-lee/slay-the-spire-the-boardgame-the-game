@@ -1,50 +1,36 @@
-# Manual server updates
+# Server updates
 
-After a host with `manualHandoff: true` in the live `session.json` has started,
-use **Actions → Request safe server update → Run workflow** on `master`.
-Enter the current `runId` from
-<https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/session.json>.
-With an authenticated repository maintainer account, the equivalent command is:
+Every push to `master` now uses the `sts-server` self-hosted runner on
+`DESKTOP-09UIMTJ`. The workflow installs dependencies, repoints the persistent release
+symlink, restarts the room service, verifies the local and public health endpoints, and
+then republishes the GitHub Pages client.
 
-```sh
-gh workflow run request-session-handoff.yml --ref master -f run_id=HOST_RUN_ID
+The room store is outside the Actions checkout and is flushed by the server before a
+normal restart. WebSockets reconnect to the same stable hostname, so an update creates a
+short reconnect rather than the multi-runner state transfer previously needed for
+expiring tunnel hosts.
+
+To republish only the client configuration:
+
+```bash
+gh workflow run multiplayer-session.yml --ref master -f refresh_only=true
 ```
 
-A successful request records an authenticated GitHub Actions signal for that host; it does not mean deployment has finished. Within its next polling cycle
-(about a minute), the host starts preparing the latest master version. Once a
-replacement is healthy, the existing handoff freezes writes, flushes and encrypts
-the complete store, and restores it on the replacement. Rooms, reconnect state,
-usernames, archived runs, and saved decks travel together.
+The legacy `Request safe server update` workflow remains only for the one-time transfer
+from the last hosted runner. It should not be used after `session.json` reports
+`"alwaysOn": true`.
 
-Verify that the live `session.json` switches to a new run with `sourceRunId`
-matching the requested host, and that the new endpoint is healthy. Check the
-host's Actions run if preparation or deployment fails. Do not cancel the source
-runner or dispatch a fresh session to accelerate the update: that bypasses the
-final export. Repeated requests for the same host are harmless; requests for an
-old host or a host without the capability fail validation.
+Before an update, verify that the runner is online:
 
-This control first becomes available after the scheduled handoff installs it.
-Publishing a newer static client alone does not upgrade a running host.
+```bash
+gh api repos/hieu-lee/slay-the-spire-the-boardgame-the-game/actions/runners \
+  --jq '.runners[] | {name,status,busy}'
+```
 
-## Reliability behavior
+After an update, verify the service and published routing:
 
-Each host publishes two independently generated tunnel origins. The client probes
-both and reconnects through whichever is healthy. During a planned handoff, the
-retiring runner bridges reads and reconnects as soon as the restored successor is
-healthy, enables mutations only after Pages publishes that exact successor, and
-keeps the old URL bridged for twelve more minutes. CDN delay therefore no longer
-leaves active rooms pointed at a dead server or risks acknowledging changes on an
-unpublished replacement.
-
-This removes the stale-URL/CDN part of a planned handoff and tolerates one failed
-tunnel. The exact-state transfer still restarts WebSockets, which the client
-reconnects automatically. GitHub limits hosted jobs to six hours, and Cloudflare
-explicitly provides no Quick Tunnel uptime guarantee. Eliminating those
-provider-level risks requires an always-on service with a stable hostname and
-replicated durable storage; a single attached disk still creates a restart or
-hardware-failure outage.
-
-- [GitHub Actions limits](https://docs.github.com/en/actions/reference/limits)
-- [Cloudflare Quick Tunnel limits](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)
-- [Fly volume redundancy](https://fly.io/docs/volumes/overview/)
-- [Render persistent-disk limitations](https://render.com/docs/disks)
+```bash
+systemctl --user status sts-room-server.service
+curl --fail https://sts-94-239-51-8.2001-861-388c-4ee0-c3d5-2f30-1be7-2e79.sslip.io:18443/api/health
+curl --fail https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/session.json
+```
