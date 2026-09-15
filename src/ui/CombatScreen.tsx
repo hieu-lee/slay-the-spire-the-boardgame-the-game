@@ -1635,7 +1635,9 @@ function CombatScreenView({
         : current.cardInHand
           ? !viewer.hand.some((card) => card.uid === current.card.uid)
           : state.pendingCardCopy?.playerId !== viewer.id || state.pendingCardCopy.card.uid !== current.card.uid) return null
-      const def = faceOf(cardDef(current.card.defId), current.card.upgraded)
+      const def = effectiveCombatCardDef(
+        faceOf(cardDef(current.card.defId), current.card.upgraded), current.corruptedShardMode ?? viewer.guardianMode,
+      )
       if (current.cardInHand && !cardPlayConditionMet(def, state, viewer, drawCount)) return null
       const recover = def.effects.find((effect) => effect.kind === 'recoverDiscard')
       const recoverExhaust = def.effects.find((effect) => effect.kind === 'recoverExhaust' ||
@@ -2974,10 +2976,10 @@ function CombatScreenView({
   const choiceSatisfied = handChoiceSatisfied && revealedChoiceSatisfied && variableChoiceSatisfied &&
     (!pending || downfallChoicesReady(pending)) &&
     modeSatisfied && corruptedShardModeSatisfied && energyChoiceSatisfied
-  const pendingNeedsCardEnemy = pendingDef
-    ? cardNeedsEnemy(pendingDef.modes && pending?.mode != null
-      ? { ...pendingDef, modes: undefined, effects: pendingDef.modes[pending.mode]?.effects ?? [] }
-      : pendingDef, viewer, false, pending?.effectEnergy ?? undefined,
+  const pendingNeedsCardEnemy = pendingEffectiveDef
+    ? cardNeedsEnemy(pendingEffectiveDef.modes && pending?.mode != null
+      ? { ...pendingEffectiveDef, modes: undefined, effects: pendingEffectiveDef.modes[pending.mode]?.effects ?? [] }
+      : pendingEffectiveDef, viewer, false, pending?.effectEnergy ?? undefined,
       false, pending?.card.attachedGemId, pending?.card.uid, undefined, pending?.card.hermitDeadOn === true)
     : false
   const pendingEvokeChoice = pendingDef && pending
@@ -3283,7 +3285,9 @@ function CombatScreenView({
   }
 
   function stageOrCommit(next: Pending) {
-    const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
+    const def = effectiveCombatCardDef(
+      faceOf(cardDef(next.card.defId), next.card.upgraded), next.corruptedShardMode ?? viewer!.guardianMode,
+    )
     const evokeProgress = evokeTargetProgress(
       def, state, viewer!, next.evokeSlots, next.evokeEnemyUids,
       next.mode ?? undefined, next.effectEnergy ?? 0,

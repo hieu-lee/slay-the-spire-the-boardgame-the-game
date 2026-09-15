@@ -39,13 +39,28 @@ try {
       await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
       await page.waitForTimeout(1200) // Let the previous card's presentation finish before capturing the next fixture.
     }
+    await load('guardian_prismatic_spray', false, 'guardian_pearl')
+    await page.locator('.hand .card').click()
+    await page.getByText(/whole row/).waitFor()
+    assert.equal(await page.locator('.enemy--targeted').count(), 2)
+    await page.screenshot({ path: `${out}/${name}-prismatic-spray-pearl.png` })
+    await page.locator('.enemy:not(.enemy--dead)').first().click()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+    assert.deepEqual(await page.evaluate(() => {
+      const combat = window.__STS_DEBUG__.getRun().combat
+      return {
+        energy: combat.players[0].energy,
+        freePowers: combat.players[0].freePowersThisTurn,
+        enemyHp: combat.enemies.map(enemy => enemy.hp),
+      }
+    }), { energy: 2, freePowers: 1, enemyHp: [39, 39] })
     for (const upgraded of [false, true]) {
       await load('guardian_stasis_field', upgraded)
       await page.getByRole('button', { name: /^Stasis Field\+?,/ }).click()
       const count = upgraded ? 5 : 4
       await page.getByText(`Choose Block recipient 1/${count}`, { exact: true }).waitFor()
       await page.screenshot({ path: `${out}/${name}-stasis${upgraded ? '-upgraded' : ''}.png` })
-      await page.locator('button.seat--viewer').click()
+      await page.locator('button.seat--viewer').click({ position: { x: 8, y: 8 } })
       for (let i = 1; i < count; i++) await page.locator('button.seat:not(.seat--viewer)').click()
       await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
       assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players.map(p => p.block)), [1, count - 1])
@@ -74,7 +89,7 @@ try {
     await page.close()
   }
   assert.deepEqual(errors, [])
-  console.log('Guardian browser audit passed: desktop and horizontal phone; Stasis Field, Prismatic Barrier, Refracted Beam and keywords.')
+  console.log('Guardian browser audit passed: desktop and horizontal phone; Stasis Field, Prismatic cards, Refracted Beam and keywords.')
 } finally {
   await browser.close()
   await server.close()
