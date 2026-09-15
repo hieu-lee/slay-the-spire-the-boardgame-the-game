@@ -6732,7 +6732,7 @@ check('Electrodynamics channels its printed Orbs and sends every Lightning effec
   ], enemies())
   const lightning = endTurnAbilities(endState).find((ability) => ability.id === 'p1/orb:0')
   assertDeepEqual(lightning.targets.map((target) => target.label), [
-    'Row Defect + boss', 'Row Ironclad + boss', 'Cultist (row 1, #3)',
+    'Row Defect + boss', 'Row Ironclad + boss',
   ])
   const ended = beginEndPlayerTurn(endState, endTurnAbilities(endState).map((ability) =>
     ability.id === lightning.id
@@ -6762,6 +6762,21 @@ check('Electrodynamics channels its printed Orbs and sends every Lightning effec
   assertEqual(playCard(evokeState, 'p1', dual.uid, {
     enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['front-a', 'back'],
   }), evokeState, 'Electrodynamics accepted single-enemy Lightning targets')
+  assertEqual(playCard(evokeState, 'p1', dual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['boss', lightningRowTarget(1)],
+  }), evokeState, 'Electrodynamics accepted a boss shared by multiple populated rows')
+
+  const oneRow = combat([makePlayer({
+    character: 'defect', powers: [instance('electrodynamics')], orbs: ['lightning', null, null],
+  })], [
+    makeEnemy({ uid: 'only-row', row: 0, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'only-row-boss', isBoss: true, hp: 20, maxHp: 20 }),
+  ])
+  const oneRowLightning = endTurnAbilities(oneRow).find((ability) => ability.id === 'p1/orb:0')
+  assert(oneRowLightning.targets.some((target) => target.uid === 'only-row-boss'))
+  const oneRowEnded = beginEndPlayerTurn(oneRow, [chooseEndTurnTarget(oneRowLightning.id, 'only-row-boss')])
+  assertDeepEqual(oneRowEnded.enemies.map((enemy) => enemy.hp), [19, 19],
+    'a boss with one populated row did not resolve to that row')
 
   const plainDual = instance('dual_cast')
   const plain = combat([makePlayer({
@@ -6816,7 +6831,7 @@ check('Electrodynamics publishes row choices for Start-of-Turn forced Lightning 
   const chooseOrb = [{ id: ability.id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: [] }]
   const targeted = startTurnAbilities(state, undefined, chooseOrb)[0]
   assertDeepEqual(targeted.evokeTargets.map((target) => target.label), [
-    'Row Defect + boss', 'Row 2 + boss', 'Cultist (row 1, #2)',
+    'Row Defect + boss', 'Row 2 + boss',
   ])
   const resolved = resolveStartPlayerTurn(state, [{
     ...chooseOrb[0], evokeEnemyUids: [lightningRowTarget(1)],

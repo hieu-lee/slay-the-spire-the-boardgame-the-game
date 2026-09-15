@@ -153,6 +153,7 @@ export {
   startPlayerTurn,
   startPlayerTurnWithChoices,
   startTurnAbilities,
+  startTurnChoicePending,
   startTurnDiscardPreview,
   startTurnScryAbilities,
   startTurnScryPreview,

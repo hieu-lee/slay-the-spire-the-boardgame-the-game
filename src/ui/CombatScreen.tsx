@@ -139,6 +139,7 @@ import {
   spendVigor,
   startPlayerTurnWithChoices,
   startTurnAbilities,
+  startTurnChoicePending,
   startTurnDiscardPreview,
   startTurnNeedsChoice,
   startTurnScryAbilities,
@@ -442,6 +443,11 @@ function CombatScreenView({
   const [startTurnPlayerTargets, setStartTurnPlayerTargets] = useState<Record<string, string | undefined>>({})
   const [startTurnExhaustUids, setStartTurnExhaustUids] = useState<Record<string, string | undefined>>({})
   const [startTurnModeShifts, setStartTurnModeShifts] = useState<Record<string, boolean | undefined>>({})
+  const [resolvingStartTurnMode, setResolvingStartTurnMode] = useState(false)
+  const [unknownStartTurnMode, setUnknownStartTurnMode] = useState<{
+    abilityId: string
+    refreshAttempt: number
+  } | null>(null)
   const [startTurnTargets, setStartTurnTargets] = useState<Record<string, (string | null | undefined)[]>>({})
   const [startTurnEvokeSlots, setStartTurnEvokeSlots] = useState<Record<string, number[]>>({})
   const [startTurnEvokeTargets, setStartTurnEvokeTargets] = useState<
@@ -1535,14 +1541,17 @@ function CombatScreenView({
   // A chosen Distilled Chaos card can still need a board target. Keeping the
   // reveal modal open makes the whole board inert and strands that card.
   const visibleDistilled = forcedCard || state.pendingCardCopy || pendingTrigger ? undefined : distilled
+  const gemFinderScryOpen = viewer?.powers.some((power) =>
+    power.uid === pendingPowerUid && power.defId === 'guardian_gem_finder') === true &&
+    Boolean(powerChoiceCards) && !powerScryConfirmed
   const itemModalOpen = ['liquid_memories', 'liquid_void', 'transforming_brew', 'purity_potion', 'entropic_brew'].includes(pendingPotion ?? '') ||
-    Boolean(relicScry) || Boolean(visibleDistilled)
+    gemFinderScryOpen || Boolean(relicScry) || Boolean(visibleDistilled)
   useEffect(() => {
     const dialog = itemDialogRef.current
     if (itemModalOpen) {
       if (dialog && !dialog.open) dialog.showModal()
     } else if (dialog?.open) dialog.close()
-  }, [itemModalOpen, pendingPotion, relicScry?.playerId, visibleDistilled?.playerId])
+  }, [itemModalOpen, pendingPotion, pendingPowerUid, relicScry?.playerId, visibleDistilled?.playerId])
 
   useEffect(() => {
     setStartTurnScryPicked([])
@@ -2057,8 +2066,6 @@ function CombatScreenView({
     : []
   const endTurnEffectPrompt = endTurnChoiceTargets.length > 0
     ? `Choose how to resolve ${endTurnEffect?.label}`
-    : endTurnEffect?.rowTiebreak
-    ? `Drag ${endTurnEffect.label} to a minion to choose its row`
     : endTurnEffect?.orbChoice
       ? <>
           <span className="end-turn-effects__desktop-orb-prompt">Drag a highlighted Orb to {endTurnEffect.label}</span>
@@ -2264,10 +2271,52 @@ function CombatScreenView({
     setStartTurnExhaustUids({ ...startTurnExhaustUids, [pendingStartExhaust.id]: cardUid })
   }
 
-  function chooseStartTurnModeShift(shift: boolean) {
-    if (!pendingStartModeShift || !canResolveStartTurn) return
-    setStartTurnModeShifts({ ...startTurnModeShifts, [pendingStartModeShift.id]: shift })
+  function chooseStartTurnMode(mode: 'attack' | 'defense') {
+    const currentMode = state.players.find((player) => player.id === pendingStartModeShift?.playerId)?.guardianMode
+    if (!pendingStartModeShift || !canResolveStartTurn || resolvingStartTurnMode ||
+      currentMode === null || currentMode === undefined) return
+    const shifts = { ...startTurnModeShifts, [pendingStartModeShift.id]: currentMode !== mode }
+    const drafts = startChoiceDrafts.map((choice) => choice.id === pendingStartModeShift.id
+      ? { ...choice, guardianModeShift: shifts[pendingStartModeShift.id] }
+      : choice)
+    const plan = startTurnAbilities(state, startIds, drafts)
+    const choices = new Map(drafts.map((choice) => [choice.id, choice]))
+    const relevant = onAction ? plan.filter((ability) => ability.playerId === pendingStartModeShift.playerId) : plan
+    const ready = plan.length === baseStartAbilities.length &&
+      relevant.every((ability) => !startTurnChoicePending(ability, choices.get(ability.id))) &&
+      !startTurnNeedsChoice(state, [], onAction ? pendingStartModeShift.playerId : undefined)
+    if (ready && onAction) {
+      setResolvingStartTurnMode(true)
+      void Promise.resolve(finishStartTurn(plan, shifts, true)).then((outcome) => {
+        if (!outcome || outcome.status === 'accepted') setStartTurnModeShifts(shifts)
+        else if (outcome.status === 'unknown') {
+          setStartTurnModeShifts(shifts)
+          setUnknownStartTurnMode({
+            abilityId: pendingStartModeShift.id,
+            refreshAttempt: outcome.refreshAttempt ?? refreshRef.current ?? -1,
+          })
+        } else setResolvingStartTurnMode(false)
+      }, () => setResolvingStartTurnMode(false))
+      return
+    }
+    setStartTurnModeShifts(shifts)
+    if (ready) finishStartTurn(plan, shifts, true)
   }
+
+  useEffect(() => {
+    const decided = startTurnDecidedPlayerIds?.includes(viewerId)
+    const missingAfterRefresh = unknownStartTurnMode !== null && authoritativeRefresh !== undefined &&
+      authoritativeRefresh > unknownStartTurnMode.refreshAttempt && !decided
+    if (resolvingStartTurnMode && (state.phase !== 'start' || decided || missingAfterRefresh)) {
+      setResolvingStartTurnMode(false)
+      if (missingAfterRefresh) setStartTurnModeShifts((current) => ({
+        ...current,
+        [unknownStartTurnMode.abilityId]: undefined,
+      }))
+      setUnknownStartTurnMode(null)
+    }
+  }, [authoritativeRefresh, resolvingStartTurnMode, startTurnDecidedPlayerIds, state.phase,
+    unknownStartTurnMode, viewerId])
 
   function chooseStartTurnShiv(enemyUid: string | null) {
     if (!pendingStartShiv || !canResolveStartTurn) return
@@ -2353,20 +2402,24 @@ function CombatScreenView({
     setResolvingStartTurnScry(false)
   }
 
-  function finishStartTurn() {
-    if (!startTurnReady || !canResolveStartTurn) return
-    const choices: StartTurnChoice[] = orderedStartAbilities.map((ability) => ({
+  function finishStartTurn(
+    abilities = orderedStartAbilities,
+    modeShifts = startTurnModeShifts,
+    ready = startTurnReady,
+  ) {
+    if (!ready || !canResolveStartTurn) return
+    const choices: StartTurnChoice[] = abilities.map((ability) => ({
       id: ability.id,
       enemyUid: startTurnEnemyTargets[ability.id],
       targetPlayerId: startTurnPlayerTargets[ability.id],
       exhaustUids: startTurnExhaustUids[ability.id] ? [startTurnExhaustUids[ability.id]!] : undefined,
-      guardianModeShift: startTurnModeShifts[ability.id],
+      guardianModeShift: modeShifts[ability.id],
       shivEnemyUids: (startTurnTargets[ability.id] ?? []).map((uid) => uid ?? null),
       evokeSlots: [...(startTurnEvokeSlots[ability.id] ?? [])],
       evokeEnemyUids: (startTurnEvokeTargets[ability.id] ?? []).map((uid) => uid ?? null),
     }))
-    if (onAction) onAction({ kind: 'resolveStartTurn', choices })
-    else onChange?.(resolveStartPlayerTurn(state, choices))
+    if (onAction) return onAction({ kind: 'resolveStartTurn', choices })
+    onChange?.(resolveStartPlayerTurn(state, choices))
   }
 
   // Resolve the engine's deterministic default plan; keep every meaningful
@@ -3515,10 +3568,11 @@ function CombatScreenView({
 
   function endTurnTargetForEnemy(enemy: Enemy, ability: EndTurnEffectDrag['ability'] | undefined = endTurnEffect): string | null {
     if (ability && 'orbChoice' in ability && ability.orbChoice) return null
-    if (state.endTurnProgress?.rowTiebreakFor && enemy.isBoss) return null
-    return ability?.targets?.find((target) => target.uid === enemy.uid || target.uid.endsWith(`:${enemy.uid}`))?.uid ??
-      ability?.targets?.find((target) =>
-        target.uid === lightningRowTarget(enemy.row) || target.uid.endsWith(`:${lightningRowTarget(enemy.row)}`))?.uid ?? null
+    const direct = ability?.targets?.find((target) =>
+      target.uid === enemy.uid || target.uid.endsWith(`:${enemy.uid}`))?.uid
+    if (direct || enemy.isBoss) return direct ?? null
+    return ability?.targets?.find((target) =>
+      target.uid === lightningRowTarget(enemy.row) || target.uid.endsWith(`:${lightningRowTarget(enemy.row)}`))?.uid ?? null
   }
 
   function endTurnTargetForRow(row: number): string | null {
@@ -3944,6 +3998,12 @@ function CombatScreenView({
       return
     }
     if (pendingStartEvokeTarget) {
+      if (enemy.isBoss) {
+        if (pendingStartEvokeTarget.ability.evokeTargets?.some((target) => target.uid === enemy.uid)) {
+          chooseStartTurnEvokeEnemy(enemy.uid)
+        }
+        return
+      }
       const rowTarget = pendingStartEvokeRows.find((target) => target.row === enemy.row)
       if (rowTarget) {
         chooseStartTurnEvokeEnemy(rowTarget.uid)
@@ -4055,8 +4115,9 @@ function CombatScreenView({
     if (pending && pendingEvokeTarget >= 0 && choiceSatisfied) {
       const targets = [...pending.evokeEnemyUids]
       if (pendingEvokeUsesRows) {
-        if (!pendingEvokeTargetUids.has(lightningRowTarget(enemy.row))) return
-        targets[pendingEvokeTarget] = lightningRowTarget(enemy.row)
+        const target = enemy.isBoss ? enemy.uid : lightningRowTarget(enemy.row)
+        if (!pendingEvokeTargetUids.has(target)) return
+        targets[pendingEvokeTarget] = target
       } else {
         if (!pendingEvokeTargetUids.has(enemy.uid)) return
         targets[pendingEvokeTarget] = enemy.uid
@@ -4112,11 +4173,13 @@ function CombatScreenView({
       pendingTrigger.rows?.some((target) => target.row === enemy.row)) {
       return true
     }
-    if (pendingStartEvokeTarget && pendingStartEvokeRows.some((target) => target.row === enemy.row)) return true
+    if (pendingStartEvokeTarget && (enemy.isBoss
+      ? pendingStartEvokeTarget.ability.evokeTargets?.some((target) => target.uid === enemy.uid)
+      : pendingStartEvokeRows.some((target) => target.row === enemy.row))) return true
     if (pendingPotion && pendingPotionDef?.target === 'row') return true
     if (pendingPowerUid && pendingPowerDef?.target === 'row') return true
     if (pending && pendingEvokeTarget >= 0 && pendingEvokeUsesRows && choiceSatisfied &&
-      pendingEvokeTargetUids.has(lightningRowTarget(enemy.row))) return true
+      pendingEvokeTargetUids.has(enemy.isBoss ? enemy.uid : lightningRowTarget(enemy.row))) return true
     return false
   }
 
@@ -4354,8 +4417,6 @@ function CombatScreenView({
     ? pendingStartModeShift : undefined
   const startTurnPrompt = pendingStartExhaust
     ? `${pendingStartExhaust.label} — choose a card to Exhaust`
-    : visibleStartModeShift
-      ? `${visibleStartModeShift.label} — choose whether to change Mode`
     : pendingStartShiv
       ? `${pendingStartShiv.ability.label} — choose overflow Shiv ${pendingStartShiv.index + 1}/${pendingStartShiv.ability.overflowShivs}, or skip`
       : pendingStartEnemy
@@ -4401,7 +4462,12 @@ function CombatScreenView({
     : null
   const prompt = dieRelicPrompt ?? plunderPrompt ?? triggerPrompt ?? forcedPrompt ?? beforeDrawPrompt ?? startTurnPrompt ?? (pendingPowerDef
     ? pendingPowerDef.id === 'guardian_gem_finder'
-      ? 'Gem Finder — choose cards to discard from the private Scry'
+      ? powerScryConfirmed
+        ? pendingPower?.attachedGemId === 'guardian_jasper' ? 'Jasper — Exhaust up to 3 cards'
+          : pendingPower?.attachedGemId === 'guardian_amethyst' ? 'Amethyst — choose whether to Mode Shift'
+            : pendingPowerNeedsAlly ? 'Gem Finder — Scry confirmed; choose a player'
+              : 'Gem Finder — Scry confirmed; choose an enemy'
+        : 'Gem Finder — choose cards to discard from the private Scry'
       : pendingPowerDef.id === 'guardian_revenge_protocol'
         ? 'Revenge Protocol — choose an Attack in hand'
       : pendingPowerDef.id === 'hermit_shadow_cloak'
@@ -4838,7 +4904,7 @@ function CombatScreenView({
                   Edit {trigger.label}
                 </button>
               ))}
-              <details className="start-turn-order">
+              {!visibleStartModeShift ? <details className="start-turn-order">
                 <summary>Start-of-turn order ({orderedStartAbilities.length})</summary>
                 <ol aria-label="Start-of-turn order" tabIndex={0}>
                   {orderedStartAbilities.map((ability, index) => {
@@ -4868,7 +4934,7 @@ function CombatScreenView({
                     )
                   })}
                 </ol>
-              </details>
+              </details> : null}
               {pendingStartExhaust?.exhaustCards ? (
                 <div className="combat__choice-cards" role="group"
                   aria-label={`${pendingStartExhaust.label} — choose a card to Exhaust`}>
@@ -4910,14 +4976,16 @@ function CombatScreenView({
                   Reset start choices
                 </button>
               ) : null}
-              <button type="button" className="combat__end-turn" onClick={finishStartTurn}
+              {!visibleStartModeShift && !resolvingStartTurnMode &&
+                !(onAction && startTurnDecidedPlayerIds?.includes(viewer.id))
+                ? <button type="button" className="combat__end-turn" onClick={() => finishStartTurn()}
                 disabled={!startTurnReady || !canResolveStartTurn}>
                 {canResolveStartTurn
                   ? partyStartTurnOrderPending && viewer.id === startTurnCoordinatorId ? 'Confirm start-of-turn order'
                     : startTurnChoiceId && viewer.id === fumesOwnerId ? 'Confirm Noxious Fumes target'
                       : startTurnCount ? `Resolve start turn ${startTurnCount}` : 'Resolve start of turn'
                   : startTurnCount ? `Resolve start turn ${startTurnCount}` : 'Waiting for start-turn order'}
-              </button>
+                </button> : null}
             </>
           ) : null}
         </span>
@@ -4932,12 +5000,6 @@ function CombatScreenView({
       {prompt ? (
         <div className="prompt">
           <span className="prompt__text" role="status">{prompt}</span>
-          {visibleStartModeShift ? (
-            <div className="prompt__modes" role="group" aria-label={`${visibleStartModeShift.label}?`}>
-              <button type="button" className="prompt__mode" onClick={() => chooseStartTurnModeShift(false)}>Stay in current Mode</button>
-              <button type="button" className="prompt__mode" onClick={() => chooseStartTurnModeShift(true)}>Mode Shift</button>
-            </div>
-          ) : null}
           {pendingPlunder?.playerId === viewerId ? (
             <>
               <button type="button" className="prompt__mode" onClick={() => submitPlunderRow(null)}>Stay</button>
@@ -4994,21 +5056,6 @@ function CombatScreenView({
                 Discard {cardDef(card.defId).name}
               </button>
             )) : null}
-          {pendingPowerDef?.id === 'guardian_gem_finder' && powerChoiceCards ? (
-            <span className="hermit-prompt__choice">
-              {powerChoiceCards.map((card) => {
-                const selected = powerScryDiscardUids.includes(card.uid)
-                return <button type="button" className="prompt__mode" key={card.uid} aria-pressed={selected}
-                  disabled={powerScryConfirmed}
-                  onClick={() => setPowerScryDiscardUids((current) => selected
-                    ? current.filter((uid) => uid !== card.uid) : [...current, card.uid])}>{cardDef(card.defId).name}</button>
-              })}
-              <button type="button" className="prompt__mode" aria-pressed={powerScryConfirmed}
-                onClick={confirmPowerScry}>
-                {powerScryConfirmed ? 'Scry confirmed' : 'Confirm Scry'}
-              </button>
-            </span>
-          ) : null}
           {pendingPower?.attachedGemId === 'guardian_jasper' ? (
             <span className="hermit-prompt__choice">
               {viewer.hand.map((card) => {
@@ -5549,6 +5596,21 @@ function CombatScreenView({
         </div>
       ) : null}
 
+      {gemFinderScryOpen && powerChoiceCards ? (
+        <dialog ref={itemDialogRef} className="distilled-choice" aria-labelledby="gem-finder-title"
+          onCancel={(event) => event.preventDefault()}>
+          <h2 id="gem-finder-title">Gem Finder — Scry {pendingPower?.upgraded ? 4 : 3}</h2>
+          <p>Select any revealed non-Gem cards to discard.</p>
+          <div className="distilled-choice__cards">{powerChoiceCards.map((card) => <Card key={card.uid} card={card}
+            playable={cardDef(card.defId).guardian?.printedType.startsWith('Gem') !== true}
+            selected={powerScryDiscardUids.includes(card.uid)} onClick={() => setPowerScryDiscardUids((current) =>
+              current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) : [...current, card.uid])} />)}</div>
+          <button type="button" className="prompt__mode" onClick={confirmPowerScry}>
+            {powerScryDiscardUids.length === 0 ? 'Keep all and continue' : `Discard ${powerScryDiscardUids.length} and continue`}
+          </button>
+        </dialog>
+      ) : null}
+
       {relicScry ? (
         <dialog ref={itemDialogRef} className="distilled-choice" aria-labelledby="golden-eye-title"
           onCancel={(event) => event.preventDefault()}>
@@ -5784,6 +5846,19 @@ function CombatScreenView({
               <img className="item-icon-image" src={relicIconPath(startTurnEffectRelicId)} alt="" />
             </button>
           ) : null}
+        </section>
+      ) : null}
+
+      {visibleStartModeShift ? (
+        <section className="guardian-mode-choice" role="group" aria-label="Choose Guardian form for this turn">
+          {(['attack', 'defense'] as const).map((mode) => (
+            <button type="button" className="end-turn-effect guardian-mode-choice__option" key={mode}
+              disabled={resolvingStartTurnMode}
+              aria-label={`Choose ${mode === 'attack' ? 'Attack' : 'Defense'} Mode`}
+              onClick={() => chooseStartTurnMode(mode)}>
+              <img src={assetPath(`combat/characters/guardian${mode === 'defense' ? '-defense' : ''}.webp`)} alt="" />
+            </button>
+          ))}
         </section>
       ) : null}
 

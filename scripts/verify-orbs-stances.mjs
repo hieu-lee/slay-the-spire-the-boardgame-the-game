@@ -467,7 +467,7 @@ check('Loop+ preserves two distinct Orb selections before resolving either copy'
   assertEqual(finished.enemies.find((enemy) => enemy.uid === 'first')?.hp, 19)
 })
 
-check('a boss target needs a row tiebreak only while distinct minion rows live', () => {
+check('an ambiguous boss target is unavailable while distinct minion rows live', () => {
   const omega = instance('omega')
   const watcher = player({ id: 'p2', name: 'Watcher', character: 'watcher', powers: [omega] })
   const staged = beginEndTurnResolution(combat([player(), watcher], [
@@ -476,14 +476,11 @@ check('a boss target needs a row tiebreak only while distinct minion rows live',
     enemy({ uid: 'boss', isBoss: true, hp: 20 }),
   ]))
   const omegaAbility = endTurnResolutionAbility(staged)
-  const narrowed = resolveEndTurnAbility(staged, `${omegaAbility.id}@boss`)
-  const tiebreak = endTurnResolutionAbility(narrowed)
-  assertEqual(tiebreak?.rowTiebreak, true, 'the boss alone cannot choose between two living rows')
-  assertDeepEqual(tiebreak?.targets?.map((target) => target.uid), ['row-one', 'row-two'],
-    'the second drag must name a minion row anchor')
-  assertDeepEqual(narrowed.enemies.map((enemy) => enemy.hp), [20, 20, 20], 'choosing the boss deals no damage yet')
-
-  const resolved = resolveEndTurnAbility(narrowed, `${tiebreak.id}@row-two`)
+  assertDeepEqual(omegaAbility?.targets?.map((target) => target.uid), ['row-one', 'row-two'],
+    'the boss cannot choose between two populated rows')
+  assertEqual(resolveEndTurnAbility(staged, `${omegaAbility.id}@boss`), staged,
+    'an unavailable boss target changed combat state')
+  const resolved = resolveEndTurnAbility(staged, `${omegaAbility.id}@row-two`)
   assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [20, 15, 15],
     'the chosen row and shared boss take the effect together')
 
@@ -500,7 +497,7 @@ check('a boss target needs a row tiebreak only while distinct minion rows live',
   assertEqual(onlyBoss.enemies[0].hp, 15, 'the sole boss target did not take Omega damage')
 })
 
-check('a copied Electrodynamics Lightning requires a minion row after a boss drop', () => {
+check('a copied Electrodynamics Lightning disables an ambiguous boss target', () => {
   const loop = instance('loop', true)
   const state = combat([player({
     powers: [instance('electrodynamics', true), loop],
@@ -518,13 +515,9 @@ check('a copied Electrodynamics Lightning requires a minion row after a boss dro
   const secondLoop = endTurnResolutionAbility(again)
   const queued = resolveEndTurnAbility(again, `${secondLoop.id}@orb:0`)
   const copied = endTurnResolutionAbility(queued)
-  assert(copied?.targets?.some((target) => target.uid === 'boss'), 'the copied Lightning exposes the shared boss')
-  const narrowed = resolveEndTurnAbility(queued, `${copied.id}@boss`)
-  const tiebreak = endTurnResolutionAbility(narrowed)
-  assertEqual(tiebreak?.rowTiebreak, true, 'the copied Lightning cannot use the boss to choose between rows')
-  assertDeepEqual(tiebreak?.targets?.map((target) => target.uid), ['row:0', 'row:1'],
-    'the second drag must use an actual minion-row anchor')
-  const resolved = resolveEndTurnAbility(narrowed, `${tiebreak.id}@row:1`)
+  assertDeepEqual(copied?.targets?.map((target) => target.uid), ['row:0', 'row:1'],
+    'the copied Lightning exposed a boss shared by multiple populated rows')
+  const resolved = resolveEndTurnAbility(queued, `${copied.id}@row:1`)
   assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [20, 19, 19],
     'the copied Lightning hits the selected row and shared boss once')
 })

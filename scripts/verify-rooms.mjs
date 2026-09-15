@@ -191,7 +191,6 @@ check('a persisted legacy Loop target auto-selects its only Orb before rebuildin
   const oldTarget = saved.run.combat.enemies[0].uid
   const oldChoice = `${a.playerId}/power:legacy-loop@0:${oldTarget}`
   saved.run.combat.endTurnProgress.order[0] = oldChoice
-  saved.run.combat.endTurnProgress.rowTiebreakFor = `${a.playerId}/power:legacy-loop`
   saved.endTurnAbilities[0] = {
     ...saved.endTurnAbilities[0],
     targets: [{ uid: `0:${oldTarget}`, label: 'Lightning Orb 1 → Cultist' }],
@@ -206,8 +205,6 @@ check('a persisted legacy Loop target auto-selects its only Orb before rebuildin
     const reconnectA = joinRoom(restored, { token: a.token })
     joinRoom(restored, { token: b.token })
     const choice = snapshotFor(restored, reconnectA.token).endTurnAbilities[0]
-    assertEqual(restored.run.combat.endTurnProgress.rowTiebreakFor, undefined,
-      'a legacy Loop row tiebreak was not cleared before rebuilding its Orb selection')
     assertEqual(choice.visual?.kind, 'orb', 'the only Loop Orb was not selected automatically')
     apply(restored, reconnectA.token, {
       kind: 'resolveEndTurnEffect', abilityId: choice.id, targetUid: choice.targets[0].uid,
@@ -2020,7 +2017,7 @@ check('Omega is a Watcher-owned card source and skips without a living target', 
     'the Watcher drag deals damage immediately')
 })
 
-check('an online boss target asks its owner to break a live row tie', () => {
+check('an online boss target is unavailable when multiple populated rows live', () => {
   const { room, a, b } = twoSeatRoom()
   const watcher = room.run.combat.players.find((player) => player.id === b.playerId)
   for (const player of room.run.combat.players) player.hand = []
@@ -2035,15 +2032,12 @@ check('an online boss target asks its owner to break a live row tie', () => {
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
   const omega = snapshotFor(room, b.token).endTurnAbilities[0]
-  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: omega.id, targetUid: 'row-boss' })
-  const tiebreak = snapshotFor(room, b.token).endTurnAbilities[0]
-  assertEqual(tiebreak.rowTiebreak, true, 'choosing the boss asks for a row anchor')
-  assert(tiebreak.targets.every((target) => target.uid !== 'row-boss'),
-    'the boss cannot be selected again while rows differ')
-  assert(tiebreak.targets.some((target) => target.uid === 'row-anchor-one') &&
-    tiebreak.targets.some((target) => target.uid === 'row-anchor-two'),
-  'each live minion row remains available as a tiebreak anchor')
-  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: tiebreak.id, targetUid: 'row-anchor-two' })
+  assert(omega.targets.every((target) => target.uid !== 'row-boss'),
+    'the boss remained selectable while shared by multiple populated rows')
+  assertThrows(() => apply(room, b.token, {
+    kind: 'resolveEndTurnEffect', abilityId: omega.id, targetUid: 'row-boss',
+  }), 'an unavailable boss target was accepted')
+  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: omega.id, targetUid: 'row-anchor-two' })
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'row-anchor-one').hp, 20)
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'row-anchor-two').hp, 15)
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'row-boss').hp, 15,
@@ -7808,6 +7802,8 @@ check('Electrodynamics row evokes stay server-authoritative and reconnect-visibl
   const [front, back] = room.run.combat.enemies
   Object.assign(front, { row: 0, hp: 20, maxHp: 20, block: 0, dead: false })
   Object.assign(back, { row: 1, hp: 20, maxHp: 20, block: 0, dead: false })
+  room.run.combat.enemies.push({ ...front, uid: 'room-electro-boss', isBoss: true })
+  const bossHpBefore = room.run.combat.enemies[2].hp
 
   const forged = structuredClone(room)
   let refused = null
@@ -7820,12 +7816,17 @@ check('Electrodynamics row evokes stay server-authoritative and reconnect-visibl
     refused = error
   }
   assertEqual(refused?.name, 'RoomError', 'the server accepted single-enemy Electrodynamics targets')
+  assertThrows(() => apply(structuredClone(room), a.token, {
+    kind: 'playCard', cardUid: dual.uid, evokeSlots: [0],
+    evokeEnemyUids: ['room-electro-boss', lightningRowTarget(1)], preflight: true,
+  }), 'the server accepted an ambiguous Electrodynamics boss target')
 
   apply(room, a.token, {
     kind: 'playCard', cardUid: dual.uid, evokeSlots: [0],
     evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)], preflight: true,
   })
   assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [18, 18])
+  assert(room.run.combat.enemies[2].hp < bossHpBefore, 'a chosen row did not include the shared boss')
   const rejoined = joinRoom(room, { token: a.token })
   const owner = snapshotFor(room, rejoined.token).run.combat.players
     .find((player) => player.id === a.playerId)

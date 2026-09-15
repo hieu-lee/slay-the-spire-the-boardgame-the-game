@@ -1671,8 +1671,10 @@ export function startTurnOrderChoicePlayerId(
 export function startTurnNeedsChoice(
   state: CombatState,
   knownAbilities?: readonly StartTurnAbility[],
+  playerId?: string,
 ): boolean {
-  if (hasPostRollStartTurnChoice(state)) return true
+  if (playerId === undefined ? hasPostRollStartTurnChoice(state) : state.players.some((player) =>
+    player.id === playerId && playerHasPostRollStartTurnChoice(state, player))) return true
   const abilities = knownAbilities ?? startTurnAbilities(state)
   // An ability that cannot be resolved without input, whatever else is queued.
   if (abilities.some((ability) => (ability.exhaustCards?.length ?? 0) > 1 || ability.overflowShivs > 0 ||
@@ -1682,6 +1684,15 @@ export function startTurnNeedsChoice(
   if (abilities.some((ability) => ability.id === 'enemy:darkling/regrow') &&
     abilities.some((ability) => (ability.targets?.length ?? 0) > 0)) return true
   return startTurnOrderChoicePlayerId(state, abilities) !== undefined
+}
+
+export function startTurnChoicePending(ability: StartTurnAbility, choice?: StartTurnChoice): boolean {
+  return Boolean(ability.targets && (!choice?.enemyUid || ability.enemyTargetStale)) ||
+    Boolean(ability.guardianModeShift && typeof choice?.guardianModeShift !== 'boolean') ||
+    Boolean(ability.players && !ability.players.some((player) => player.id === choice?.targetPlayerId)) ||
+    Boolean(ability.exhaustCards && (choice?.exhaustUids?.length !== 1 ||
+      !ability.exhaustCards.some((card) => card.uid === choice.exhaustUids![0]))) ||
+    ability.staleShivIndex !== undefined || ability.evokeTargetIndex !== undefined || Boolean(ability.evokeChoice)
 }
 
 /** Players who genuinely owe input before Start of Turn can finish. */

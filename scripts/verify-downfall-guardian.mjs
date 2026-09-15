@@ -122,6 +122,17 @@ check('all 83 definitions retain their physical manifest metadata', () => {
   assert.equal(Object.keys(GUARDIAN_CARDS_BY_ID).length, 83)
 })
 
+check('Gem subtypes keep both their combat type and Gem identity', () => {
+  const gemAttack = GUARDIAN_CARD_DEFS.guardian_multi_beam
+  const gemPower = GUARDIAN_CARD_DEFS.guardian_floating_orbs
+  assert.equal(gemAttack.type, 'attack')
+  assert.equal(gemAttack.guardian.printedType, 'Gem Attack')
+  assert.equal(gemPower.type, 'power')
+  assert.equal(gemPower.guardian.printedType, 'Gem Power')
+  assert(gemAttack.guardian.printedType.startsWith('Gem'))
+  assert(gemPower.guardian.printedType.startsWith('Gem'))
+})
+
 check('physical sheet copies total 10 starter, 62 reward, 16 rare, and 24 Gems', () => {
   const expected = { starter: 10, rewards: 62, rares: 16, gems: 24 }
   for (const [deck, count] of Object.entries(expected)) {
@@ -544,18 +555,26 @@ check('Guardian Powers execute their printed live combat rules', () => {
   assert.equal(refusedMinimumX, combat, 'Revenge Protocol must refuse to force a card whose X cannot legally be 0')
   assert.equal(refusedMinimumX.startTurnProgress, undefined)
 
+  player.powers = []
+  combat = createCombat({ seed: 996, calls: 0 }, [player], [enemy()], 'multi-beam-mode')
+  combat = playCard(combat, 'p1', 'beam', { enemyUid: 'e1', playerId: 'p1', energySpent: 1 })
+  assert.equal(combat.players[0].guardianMode, 'attack', 'Multi Beam changed Guardian Mode')
+  assert.equal(combat.players[0].attacksPlayedThisTurn, 1, 'Gem Attack did not count as an Attack')
+
   player = fresh()
   player.hand = []
   player.draw = [
-    { uid: 'gem', defId: 'guardian_crystal_edge', upgraded: false },
+    { uid: 'gem-attack', defId: 'guardian_crystal_edge', upgraded: false },
+    { uid: 'gem-power', defId: 'guardian_floating_orbs', upgraded: false },
     { uid: 'other', defId: 'guardian_defend', upgraded: false },
   ]
   player.discard = []
   player.powers = [{ uid: 'finder', defId: 'guardian_gem_finder', upgraded: false }]
   combat = createCombat({ seed: 421, calls: 0 }, [player], [enemy()], 'finder')
-  assert.deepEqual(previewPowerChoice(combat, 'p1', 'finder').cards.map((card) => card.uid), ['gem', 'other'])
+  assert.deepEqual(previewPowerChoice(combat, 'p1', 'finder').cards.map((card) => card.uid),
+    ['gem-attack', 'gem-power', 'other'])
   combat = activatePower(combat, 'p1', 'finder', { scryDiscardUids: ['other'] })
-  assert(combat.players[0].hand.some((card) => card.uid === 'gem'))
+  assert.deepEqual(combat.players[0].hand.map((card) => card.uid), ['gem-attack', 'gem-power'])
   assert(combat.players[0].discard.some((card) => card.uid === 'other'))
 
   player = fresh()
@@ -1132,11 +1151,10 @@ check('opaque Guardian turn Powers publish their actual semantic effect and targ
   ], 'guardian-laser-boss-row-choice')
   const bossStage = beginEndTurnResolution(combat)
   const bossLaser = endTurnResolutionAbility(bossStage)
-  const bossRowChoice = resolveEndTurnAbility(bossStage, chooseEndTurnTarget(bossLaser.id, 'boss-row'))
-  assert.deepEqual(bossRowChoice.enemies.map((target) => target.hp), [30, 30, 30],
-    'choosing a boss resolved upgraded Laser Turret before its row tiebreak')
-  assert.deepEqual(endTurnResolutionAbility(bossRowChoice)?.targets?.map((target) => target.uid),
-    ['boss-row-left', 'boss-row-right'], 'upgraded Laser Turret omitted the boss row tiebreak')
+  assert.deepEqual(bossLaser?.targets?.map((target) => target.uid), ['boss-row-left', 'boss-row-right'],
+    'upgraded Laser Turret exposed a boss shared by multiple populated rows')
+  assert.equal(resolveEndTurnAbility(bossStage, chooseEndTurnTarget(bossLaser.id, 'boss-row')), bossStage,
+    'an unavailable boss target changed combat state')
 
   player = fresh(43942)
   player.powers = [{ uid: 'laser-two-bosses', defId: 'guardian_laser_turret', upgraded: true }]

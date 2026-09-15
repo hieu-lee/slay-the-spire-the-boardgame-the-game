@@ -133,6 +133,7 @@ import {
   startPlayerTurnWithChoices,
   startPendingBoss,
   startTurnAbilities,
+  startTurnChoicePending,
   startTurnDiscardPreview,
   startTurnScryAbilities,
   startTurnScryPreview,
@@ -310,9 +311,6 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
               // Target ids are derived from the live board. Re-publish them
               // after loading so older saved Loop prompts cannot retain their
               // former Orb-and-enemy target encoding.
-              if (/@\d+:/.test(room.run.combat.endTurnProgress.order[0] ?? '')) {
-                delete room.run.combat.endTurnProgress.rowTiebreakFor
-              }
               room.endTurnAbilities = undefined
               room.endTurnPublicIds = undefined
               room.endTurnOrders = undefined
@@ -3118,15 +3116,6 @@ function startTurnAbilityNeedsChoice(ability, saved, stored = new Set()) {
     ability.guardianModeShift ||
     (ability.exhaustCards?.length ?? 0) > 1 || (ability.targets?.length ?? 0) > 1 ||
     (ability.players?.length ?? 0) > 1)
-}
-
-function startTurnChoicePending(ability, choice) {
-  return Boolean(ability.targets && (!choice?.enemyUid || ability.enemyTargetStale)) ||
-    Boolean(ability.guardianModeShift && typeof choice?.guardianModeShift !== 'boolean') ||
-    Boolean(ability.players && !ability.players.some((player) => player.id === choice?.targetPlayerId)) ||
-    Boolean(ability.exhaustCards && (choice?.exhaustUids?.length !== 1 ||
-      !ability.exhaustCards.some((card) => card.uid === choice.exhaustUids[0]))) ||
-    ability.staleShivIndex !== undefined || ability.evokeTargetIndex !== undefined || Boolean(ability.evokeChoice)
 }
 
 function validStartTurnChoice(ability, choice) {

@@ -633,19 +633,11 @@ export function endTurnResolutionAbility(state: CombatState): EndTurnAbility | u
   const choice = refreshEndTurnTargets(state, [progress.order[0]!])[0]!
   const ability = endTurnAbilities(state).find((candidate) => candidate.id === endTurnChoiceId(choice))
   if (!ability?.targets?.length) return undefined
-  if (progress.rowTiebreakFor !== ability.id) return ability
-  const targets = ability.targets.filter((target) => {
-    const loop = parseLoopOrbTarget(target.uid)
-    const choice = loop?.enemyUid ?? target.uid
-    const row = lightningRowFromTarget(choice)
-    return row !== null
-      ? livingEnemies(state).some((enemy) => !enemy.isBoss && enemy.row === row)
-      : state.enemies.some((enemy) => enemy.uid === choice && !enemy.dead && !enemy.isBoss)
-  })
-  return targets.length > 0 ? { ...ability, targets, rowTiebreak: true } : undefined
+  const targets = ability.targets.filter((target) => !ambiguousBossRowTarget(state, ability, target.uid))
+  return targets.length === ability.targets.length ? ability : targets.length > 0 ? { ...ability, targets } : undefined
 }
 
-function needsBossRowTiebreak(state: CombatState, ability: EndTurnAbility, targetUid: string): boolean {
+function ambiguousBossRowTarget(state: CombatState, ability: EndTurnAbility, targetUid: string): boolean {
   const loop = parseLoopOrbTarget(targetUid)
   const chosenUid = loop?.enemyUid ?? targetUid
   if (state.enemies.find((enemy) => enemy.uid === chosenUid)?.isBoss !== true) return false
@@ -724,10 +716,6 @@ function resolveEndTurnAbilityOnce(state: CombatState, choice: string): CombatSt
       ...((remaining > 1 || moreLoops) ? { loopRepeats: repeats } : {}),
     }
     return continueEndPlayerTurn(next, order, true)
-  }
-  if (needsBossRowTiebreak(next, ability, target)) {
-    next.endTurnProgress = { ...next.endTurnProgress!, rowTiebreakFor: ability.id }
-    return next
   }
   const order = next.endTurnProgress!.order
   return continueEndPlayerTurn(next, [choice, ...order.slice(1)], true, true)

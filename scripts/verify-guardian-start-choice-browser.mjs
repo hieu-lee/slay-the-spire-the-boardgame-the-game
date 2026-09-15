@@ -34,35 +34,49 @@ try {
       run.phase = 'combat'
       run.neow = null
       await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
-      await page.getByRole('button', { name: 'Stay in current Mode', exact: true }).waitFor()
+      await page.getByRole('group', { name: 'Choose Guardian form for this turn' }).waitFor()
       await page.locator('.card-morph').waitFor({ state: 'hidden' })
     }
-    for (const shift of [false, true]) {
+    for (const mode of ['attack', 'defense']) {
       await load()
-      const order = page.locator('.start-turn-order')
-      await order.locator('summary').click()
-      const stay = page.getByRole('button', { name: 'Stay in current Mode', exact: true })
-      const change = page.getByRole('button', { name: 'Mode Shift', exact: true })
-      const boxes = await Promise.all([stay.boundingBox(), change.boundingBox(), order.boundingBox(), order.locator('ol').boundingBox()])
-      for (const choice of boxes.slice(0, 2)) {
-        assert(choice && choice.x >= 0 && choice.y >= 0 && choice.x + choice.width <= width && choice.y + choice.height <= height)
-        for (const panel of boxes.slice(2)) assert(panel &&
-          (choice.x + choice.width <= panel.x || panel.x + panel.width <= choice.x ||
-           choice.y + choice.height <= panel.y || panel.y + panel.height <= choice.y), 'Mode choice overlaps start-of-turn order')
+      const choice = page.getByRole('button', { name: `Choose ${mode === 'attack' ? 'Attack' : 'Defense'} Mode` })
+      const boxes = await page.getByRole('group', { name: 'Choose Guardian form for this turn' })
+        .locator('button').evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().toJSON()))
+      for (const box of boxes) {
+        assert(box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height)
       }
-      await page.screenshot({ path: `${out}/${name}-${shift ? 'shift' : 'stay'}.png` })
+      assert.equal(await page.locator('.start-turn-order').count(), 0)
+      await page.screenshot({ path: `${out}/${name}-${mode}.png` })
       if (name === 'desktop') {
-        await (shift ? change : stay).focus()
+        await choice.focus()
         await page.keyboard.press('Enter')
-      } else await (shift ? change : stay).tap()
-      await page.getByRole('button', { name: /^Resolve start/ }).click()
+      } else await choice.tap()
       await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase === 'player')
-      assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].guardianMode), shift ? 'defense' : 'attack')
+      assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].guardianMode), mode)
     }
+    const party = createRun(909, [
+      { id: viewerId, name: 'Guardian One', character: 'guardian' },
+      { id: 'guardian-two', name: 'Guardian Two', character: 'guardian' },
+    ])
+    const partyCombat = createCombat({ seed: 909, calls: 0 }, party.players, [{
+      uid: 'party-enemy', defId: 'jaw_worm', row: 0, isBoss: false, hp: 40, maxHp: 40,
+      block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0, cardReward: null,
+      actionIndex: 0, abilityUsed: false, dead: false,
+    }], 'guardian-party-start-choice')
+    party.combat = startPlayerTurnWithChoices(partyCombat)
+    party.phase = 'combat'; party.neow = null
+    await page.evaluate(run => window.__STS_DEBUG__.setRun(run), party)
+    await page.getByRole('button', { name: 'Choose Defense Mode' }).click()
+    assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.phase), 'start')
+    await page.getByRole('button', { name: 'Choose Attack Mode' }).click()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase === 'player')
+    assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players.map(player => player.guardianMode)),
+      ['defense', 'attack'])
+    assert.equal(await page.getByRole('button', { name: /^Resolve start/ }).count(), 0)
     await page.close()
   }
   assert.deepEqual(errors, [])
-  console.log('Guardian start choice passed: no order overlap; keyboard and touch Stay/Shift on desktop and horizontal phone.')
+  console.log('Guardian start choice passed: asset-only choices resolve by keyboard, touch, and final party selection.')
 } finally {
   await browser.close()
   await server.close()

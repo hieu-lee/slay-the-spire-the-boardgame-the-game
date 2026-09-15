@@ -3283,12 +3283,12 @@ try {
   liveRoom.version += 1
   rooms.publishRoom(code)
   await a.getByRole('button', { name: 'Use Gem Finder with Ruby' }).click()
-  await a.getByRole('button', { name: 'Confirm Scry' }).waitFor()
-  await a.locator(`.enemy[data-enemy-id="${gemDying.uid}"]`).dispatchEvent('click')
-  const gemScryCard = a.locator('.prompt').getByRole('button', { name: 'Defend', exact: true })
+  const gemFinderScry = a.getByRole('dialog', { name: 'Gem Finder — Scry 3' })
+  await gemFinderScry.waitFor()
+  const gemScryCard = gemFinderScry.getByRole('button', { name: /^Defend,/ })
   await gemScryCard.click()
-  await a.waitForFunction(() => [...document.querySelectorAll('.prompt button')]
-    .some((button) => button.textContent?.trim() === 'Defend' && button.getAttribute('aria-pressed') === 'true'))
+  assertEqual(await gemScryCard.getAttribute('aria-pressed'), 'true')
+  await gemFinderScry.getByRole('button', { name: 'Discard 1 and continue' }).click()
   let releaseStaleGem
   let staleGemIntercepted
   let staleGemSettled
@@ -3315,7 +3315,7 @@ try {
     await route.abort('connectionreset')
     staleGemSettled()
   }, { times: 1 })
-  await a.getByRole('button', { name: 'Confirm Scry' }).evaluate((button) => button.click())
+  await a.locator(`.enemy[data-enemy-id="${gemDying.uid}"]`).dispatchEvent('click')
   await withTimeout(staleGemRequest, 5_000, 'the unknown Gem Finder request')
   await waitForRoomVersion(b, liveRoom.version)
   await b.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
@@ -3339,9 +3339,8 @@ try {
   }
   assertEqual(failedGemRefreshes, 3, 'the unknown Gem Finder did not exhaust immediate refreshes')
   await a.unroute(unknownGemRoomPattern)
-  await a.getByRole('button', { name: 'Scry confirmed' }).waitFor()
-  assertEqual(await gemScryCard.getAttribute('aria-pressed'), 'true',
-    'Gem Finder lost its selected private Scry card after unknown delivery')
+  const restoredGemFinder = a.getByText('Gem Finder — Scry confirmed; choose an enemy', { exact: true })
+  await restoredGemFinder.waitFor()
   await a.locator(`.enemy[data-enemy-id="${gemSurvivor.uid}"]`).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && !liveRoom.run.combat.players.find((player) => player.name === 'Ann')
     .discard.some((card) => card.uid === 'online-gem-race-defend'); attempt += 1) {
@@ -3361,7 +3360,7 @@ try {
   liveRoom.powerPreviews = undefined
   liveRoom.version += 1
   rooms.publishRoom(code)
-  await a.getByRole('button', { name: 'Scry confirmed' }).waitFor({ state: 'hidden' })
+  await restoredGemFinder.waitFor({ state: 'hidden' })
 
   const blackWindRestore = structuredClone(liveRoom.run.combat)
   const blackWindOwner = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
@@ -5044,13 +5043,12 @@ try {
   const foreignOmegaDisabled = await a.locator('.end-turn-effect--card').getAttribute('aria-disabled')
   const omegaArt = await omega.locator('.card__art').getAttribute('src')
   const omegaStage = await snapshot(b)
-  const omegaTarget = omegaStage.endTurnAbilities[0].targets.find((target) => target.uid === 'online-row-boss').uid
+  const omegaTargets = omegaStage.endTurnAbilities[0].targets
+  const omegaTarget = omegaTargets.find((target) => target.uid !== 'online-row-boss').uid
   await a.screenshot({ path: join(outDir, '03-owner-end-turn-effects.png'), fullPage: true })
+  assert(!omegaTargets.some((target) => target.uid === 'online-row-boss'),
+    'the boss remained an online target while shared by multiple populated rows')
   await dragEffect(b, omega, b.locator(`[data-enemy-id="${omegaTarget}"]`))
-  await b.waitForFunction(() => document.querySelector('.end-turn-effects__prompt')?.textContent?.includes('choose its row'))
-  const rowStage = await snapshot(b)
-  const rowTarget = rowStage.endTurnAbilities[0].targets.find((target) => target.uid !== 'online-row-boss').uid
-  await dragEffect(b, b.locator('.end-turn-effect--card'), b.locator(`[data-enemy-id="${rowTarget}"]`))
   await Promise.all([
     a.locator('.combat[data-phase="discard"]').waitFor(),
     b.locator('.combat[data-phase="discard"]').waitFor(),
@@ -5060,9 +5058,6 @@ try {
     assert(foreignOrbDisabled, 'the Watcher could drag the Defect Orb')
     assertEqual(foreignOmegaDisabled, 'true', 'the Defect could drag the Watcher Omega')
     assert(String(omegaArt).includes('omega'), `Omega did not render its card asset: ${omegaArt}`)
-    assertEqual(rowStage.endTurnAbilities[0].rowTiebreak, true, 'the boss did not request a row tiebreak')
-    assert(!rowStage.endTurnAbilities[0].targets.some((target) => target.uid === 'online-row-boss'),
-      'the boss was still a legal tiebreak target')
     assertEqual(obsoleteEndTurnPanel, 0, 'the obsolete end-turn order panel remained mounted')
   })
   const aDiscardTop = a.getByLabel('Top discard for Ann')

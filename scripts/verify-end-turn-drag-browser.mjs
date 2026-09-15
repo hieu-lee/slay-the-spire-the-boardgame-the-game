@@ -217,20 +217,23 @@ try {
   const omegaArt = await omega.locator('.card__art').getAttribute('src')
   await page.screenshot({ path: join(output, 'watcher-omega-drag.png'), fullPage: true })
   await drag(omega, page.locator('[data-enemy-id="omega-boss"]'))
-  await page.getByText('choose its row', { exact: false }).waitFor()
-  const rowPrompt = await page.locator('.end-turn-effects__prompt').innerText()
-  const rowOmega = page.locator('.end-turn-effect--card')
-  await drag(rowOmega, page.locator('[data-enemy-id="omega-boss"]'))
   await page.waitForTimeout(80)
-  assert(await page.locator('.end-turn-effects__prompt').isVisible(), 'the row tiebreak accepted a second boss drop')
-  await drag(rowOmega, page.locator('[data-enemy-id="omega-e2"]'))
+  await omega.click()
+  const bossWasTargeted = await page.locator('[data-enemy-id="omega-boss"]').evaluate((enemy) =>
+    enemy.classList.contains('enemy--targeted'))
+  const rowWasTargeted = await page.locator('[data-enemy-id="omega-e2"]').evaluate((enemy) =>
+    enemy.classList.contains('enemy--targeted'))
+  const rowPrompt = await page.locator('.end-turn-effects__prompt').innerText()
+  await drag(page.locator('.end-turn-effect--card'), page.locator('[data-enemy-id="omega-e2"]'))
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies
     .find((enemy) => enemy.uid === 'omega-e2')?.hp === 15)
   const bossHp = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies
     .find((enemy) => enemy.uid === 'omega-boss')?.hp)
   check('Omega uses its Power card as the draggable end-turn source', () => {
     assert(String(omegaArt).includes('omega'), `Omega did not render its card asset: ${omegaArt}`)
-    assert(rowPrompt.includes('choose its row'), `the boss did not request a row tiebreak: ${rowPrompt}`)
+    assert(!bossWasTargeted, 'the boss was highlighted despite belonging to multiple populated rows')
+    assert(rowWasTargeted, 'a populated row was not highlighted after the boss was disabled')
+    assert(!rowPrompt.includes('choose its row'), `the obsolete row prompt remained: ${rowPrompt}`)
     assert(bossHp === 15, `the chosen row did not include the boss: ${bossHp}`)
   })
 
@@ -314,13 +317,20 @@ try {
   const copiedLightning = page.locator('button.end-turn-effect--orb')
   await copiedLightning.waitFor()
   await drag(copiedLightning, page.locator('[data-enemy-id="loop-row-boss"]'))
-  await page.getByText('choose its row', { exact: false }).waitFor()
-  await drag(copiedLightning, page.locator('[data-enemy-id="loop-row-two"]'))
+  await page.waitForTimeout(80)
+  await copiedLightning.click()
+  const copiedBossWasTargeted = await page.locator('[data-enemy-id="loop-row-boss"]').evaluate((enemy) =>
+    enemy.classList.contains('enemy--targeted'))
+  const copiedRowWasTargeted = await page.locator('[data-enemy-id="loop-row-two"]').evaluate((enemy) =>
+    enemy.classList.contains('enemy--targeted'))
+  await drag(page.locator('button.end-turn-effect--orb'), page.locator('[data-enemy-id="loop-row-two"]'))
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies
     .find((enemy) => enemy.uid === 'loop-row-two')?.hp === 19)
   const loopBossHp = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies
     .find((enemy) => enemy.uid === 'loop-row-boss')?.hp)
-  check('Loop selects Orbs by dragging them up to its card, then copied Electrodynamics Lightning uses the required row tiebreak', () => {
+  check('Loop selects Orbs by dragging them up to its card, then copied Electrodynamics Lightning uses a minion row', () => {
+    assert(!copiedBossWasTargeted, 'copied Lightning highlighted an ambiguous boss target')
+    assert(copiedRowWasTargeted, 'copied Lightning did not highlight a populated row')
     assert(loopBossHp === 19, `the selected copied Lightning row did not include the boss: ${loopBossHp}`)
   })
 
