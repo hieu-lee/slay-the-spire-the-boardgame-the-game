@@ -145,6 +145,11 @@ import {
   nextFloat,
   currentQuickSetupStep,
 } from '../../src/game/state.ts'
+import {
+  hasPostRollStartTurnChoice,
+  isPostRollStartTurnPotionChoice,
+  isPostRollStartTurnRelicChoice,
+} from '../../src/game/combat.ts'
 import { previewTinyHouseRewardCard } from '../../src/game/run/relic-acquisition.ts'
 import { chosenDieRelicAbilities } from '../../src/game/relics.ts'
 import { reachesEnemy } from '../../src/game/combat/queries.ts'
@@ -152,6 +157,7 @@ import { discardNeedsChoice, discardTopNeedsChoice } from '../../src/game/combat
 import {
   continueStartTurn,
   playerHasPostRollStartTurnChoice,
+  stageStartTurnTriggerChoice,
   startTurnChoicePlayerIds,
   startTurnOrderChoicePlayerId,
 } from '../../src/game/combat/start-turn.ts'
@@ -473,6 +479,7 @@ export function joinRoom(room, { name, character, campaignProgress, token: exist
     // They may be the last answer the table was waiting on, or the first one
     // back to a decision that stalled while nobody was connected.
     if (settle && connectionChanged && !activeGiveUpVote(room)) {
+      deferStartTurnTriggersForPostRoll(room)
       settleMerchantReady(room)
       settleCampfire(room)
       if (room.run?.phase !== 'neow') settlePendingRelics(room)
@@ -601,6 +608,7 @@ export function markDisconnected(room, seatToken) {
   const voting = activeGiveUpVote(room)
   cancelImpossibleDisconnectedPledges(room, Boolean(voting))
   if (voting) return snapshotFor(room, seatToken)
+  deferStartTurnTriggersForPostRoll(room)
   settleMerchantReady(room)
   // The party may have been waiting on exactly this player. Dropping without
   // re-checking stranded the campfire: `leaveRoom` stays refused, and the room
@@ -614,6 +622,7 @@ export function markDisconnected(room, seatToken) {
   settleDisconnectedEndTurnEffects(room)
   settleDiscard(room)
   settleForcedCards(room)
+  settlePostRollNestedChoice(room)
   settleDisconnectedRunChoices(room)
   settleReward(room)
   return snapshotFor(room, seatToken)
@@ -1056,14 +1065,22 @@ function settleForcedCards(room, consumedPreviewPlayerId = null, suspendActiveCo
   }
 }
 
-function settleDisconnectedStartTurnChoices(room) {
+function settleDisconnectedStartTurnChoices(room, readyEnsured = false) {
   const combat = room.run?.combat
   if (combat?.phase !== 'start') return
   if (!room.seats.some((seat) => seat.connected)) return
   // Reopened private triggers must be defaulted first. Replaying the quorum
   // while one is queued can skip its source and clear the saved plan.
   if (combat.pendingTriggers.some((trigger) => trigger.startTurn)) return
-  const required = ensureStartTurnReady(room)
+  // A legacy copied/manual die-Relic payment can be the final item in the
+  // window. Even when no modifier remains to keep the room-level nested marker,
+  // its mandatory input must finish before downstream defaults may run.
+  if (mandatoryChoicePending(combat)) return
+  // A post-roll item can open an owner-private die Relic payment. The ordinary
+  // start-turn quorum must not advance while that nested choice is unresolved.
+  if (roomPostRollNestedChoicePending(room)) return
+  const previousRequired = [...(room.startTurnRequired ?? [])]
+  const required = readyEnsured ? room.startTurnRequired ?? [] : ensureStartTurnReady(room)
   if (required.length === 0 && !combat.startTurnProgress) {
     const next = resolveStartPlayerTurn(combat, defaultStartTurnChoices(combat))
     if (next !== combat) {
@@ -1072,9 +1089,22 @@ function settleDisconnectedStartTurnChoices(room) {
     }
     return
   }
-  const disconnected = new Set(room.startTurnRequired?.filter((playerId) =>
-    room.seats.find((seat) => seat.playerId === playerId)?.connected === false) ?? [])
-  const orderOwner = startTurnOrderChoicePlayerId(combat, plannedStartTurnAbilities(room))
+  const disconnected = new Set([...previousRequired, ...(room.startTurnRequired ?? [])].filter((playerId) =>
+    room.seats.find((seat) => seat.playerId === playerId)?.connected === false))
+  if (roomPostRollChoicePending(room)) {
+    for (const playerId of disconnected) markStartTurnReady(room, playerId)
+    if (room.startTurnRequired?.every((playerId) => room.startTurnReady?.[playerId])) {
+      finishPostRollChoiceWindow(room)
+      if (room.run?.combat?.phase === 'start') settleDisconnectedStartTurnChoices(room)
+    }
+    return
+  }
+  // A disconnected original order owner may already have been replaced in the
+  // public quorum, so `disconnected` alone cannot prove there is no fallback
+  // work.  Keep the common all-connected path cheap, then inspect the original
+  // owner whenever any seat is away.
+  if (room.seats.every((seat) => seat.connected)) return
+  const orderOwner = cachedStartTurnOrderChoicePlayerId(room)
   if (orderOwner && room.seats.find((seat) => seat.playerId === orderOwner)?.connected === false &&
     plannedStartTurnAbilities(room).some((ability) => ability.playerId === orderOwner &&
       startTurnAbilityNeedsManualChoice(ability))) {
@@ -1483,6 +1513,10 @@ export function apply(
     const result = applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspendedWork)
     if (result.changed) {
       assignPendingRelicIds(room.run)
+      // Some action handlers return early (notably interactive triggers and
+      // forced-card/copy continuations). Reassess a suspended post-roll item
+      // chain at the transaction boundary so none can strand or close it.
+      settlePostRollNestedChoice(room)
       return { ...result, snapshot: snapshotFor(room, seatToken) }
     }
     if (JSON.stringify(room) === checkpointJson) return result
@@ -1503,6 +1537,7 @@ export function restoreRoom(room, checkpoint) {
 function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspendedWork) {
   const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'run' || !room.run) fail('The run has not started')
+  deferStartTurnTriggersForPostRoll(room)
   const combat = room.run.combat
   const activeCopy = combat?.phase === 'copy' ? combat.pendingCardCopy : undefined
   const foreignCopy = activeCopy?.resumePhase === 'player' && activeCopy.playerId !== seat.playerId
@@ -2140,15 +2175,21 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
   if (action?.kind === 'resolveStartTurn') return resolveStartTurn(room, seat, action, seatToken)
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
   if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
+  if (roomPostRollChoiceDone(room) && isPostRollItemAction(room, seat, action)) {
+    fail('The post-roll item window is already closed')
+  }
   if (room.run.combat?.phase === 'start' && !(
     action?.kind === 'activateRelic' ||
     action?.kind === 'usePotion' ||
+    action?.kind === 'resolveDieRelicChoice' ||
     action?.kind === 'activatePower' ||
     action?.kind === 'previewPowerChoice' ||
     forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
     action.cardUid === forcedCard.cardUid
   )) fail('Finish the Start-of-Turn abilities')
 
+  const postRollWindowOpen = roomPostRollChoicePending(room)
+  const postRollItemAction = postRollWindowOpen && isPostRollItemAction(room, seat, action)
   const before = room.run
   const next = dispatch(before, seat, action, locked)
   if (next === before) return { changed: false, snapshot: snapshotFor(room, seatToken) }
@@ -2158,6 +2199,14 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
   }
   if (cancelsPendingCatchUp) room.seats = room.seats.filter((candidate) => !candidate.pendingCatchUp)
   room.run = next
+  // The engine stages private Start-of-Turn triggers as soon as Draw/Roll
+  // finish. Multiplayer holds them server-side until every die modifier has
+  // been used or declined, preserving the printed phase order.
+  deferStartTurnTriggersForPostRoll(room)
+  // Record nested work before settlement runs. Settlement itself consults the
+  // marker to avoid defaulting the ordinary start-turn queue underneath an
+  // owner-private payment opened by a post-roll item.
+  if (postRollWindowOpen) suspendPostRollNestedChoice(room)
   if (!suspendedWork) {
     restoreConcurrentChoice(room, 'pendingDistilled', 'concurrentDistilled')
     restoreConcurrentChoice(room, 'pendingRelicScry', 'concurrentRelicScries')
@@ -2166,7 +2215,14 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     restoreConcurrentCopy(room)
   }
   if (before.combat?.phase === 'start') refreshStartTurnPlan(room)
-  if (room.run.combat?.phase === 'start') {
+  if (postRollWindowOpen && !roomPostRollChoiceDone(room)) suspendPostRollNestedChoice(room)
+  if (postRollItemAction && room.run.combat?.phase === 'start') {
+    if (!roomPostRollNestedChoicePending(room) && !hasPostRollStartTurnChoice(room.run.combat)) {
+      finishPostRollChoiceWindow(room)
+    }
+  }
+  settlePostRollNestedChoice(room)
+  if (room.run.combat?.phase === 'start' && !roomPostRollNestedChoicePending(room)) {
     if (ensureStartTurnReady(room).length === 0) {
       const resolved = resolveStartPlayerTurn(room.run.combat, defaultStartTurnChoices(room.run.combat))
       if (resolved !== room.run.combat) {
@@ -2174,10 +2230,11 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
         clearStartTurnPlan(room)
       }
     } else {
-      settleDisconnectedStartTurnChoices(room)
+      settleDisconnectedStartTurnChoices(room, true)
     }
   }
   settleForcedCards(room, consumedPreviewPlayerId, true, suspendedWork)
+  settlePostRollNestedChoice(room)
   if (before.phase === 'combat' && room.run.phase !== 'combat') settlePendingRelics(room)
   const current = room.run
   if ((action?.kind === 'playCard' || action?.kind === 'playCardCopy' || action?.kind === 'playHermitChamberCard') &&
@@ -2903,6 +2960,166 @@ function plannedStartTurnAbilities(room) {
   })))
 }
 
+// Exact order dependency checks deliberately preserve normal-table semantics,
+// but a single room operation can ask the same question through settlement,
+// authorization, the actor response, and broadcast snapshots. Cache only an
+// identical serialized combat/plan so direct test mutations and every real
+// state change invalidate it without relying on object identity.
+const startTurnOrderOwnerCache = new WeakMap()
+
+function cachedStartTurnOrderChoicePlayerId(room, abilities = plannedStartTurnAbilities(room)) {
+  const combat = room.run?.combat
+  if (!combat || combat.phase !== 'start') return undefined
+  const signature = JSON.stringify([
+    combat,
+    room.startTurnCombatId,
+    room.startTurnOrder,
+    room.startTurnEnemyTargets,
+    room.startTurnChoices,
+    abilities,
+  ])
+  const cached = startTurnOrderOwnerCache.get(room)
+  if (cached?.signature === signature) return cached.playerId
+  const playerId = startTurnOrderChoicePlayerId(combat, abilities)
+  startTurnOrderOwnerCache.set(room, { signature, playerId })
+  return playerId
+}
+
+function roomPostRollChoiceDone(room) {
+  const combat = room.run?.combat
+  const lock = room.startTurnPostRollLock
+  return combat?.phase === 'start' && lock?.combatId === combat.combatId &&
+    lock.turn === combat.turn
+}
+
+function postRollNestedWorkPending(combat) {
+  return Boolean(combat && (
+    mandatoryChoicePending(combat) ||
+    (combat.pendingTriggers?.length ?? 0) > 0 ||
+    combat.pendingDistilled ||
+    combat.pendingRelicScry ||
+    combat.pendingCardCopy ||
+    combat.startTurnProgress?.forcedCard
+  ))
+}
+
+function roomPostRollNestedChoicePending(room) {
+  const combat = room.run?.combat
+  const nested = room.startTurnPostRollNested
+  return Boolean(combat && nested?.combatId === combat.combatId && nested.turn === combat.turn &&
+    postRollNestedWorkPending(combat))
+}
+
+function suspendPostRollNestedChoice(room) {
+  const combat = room.run?.combat
+  if (!combat || !postRollNestedWorkPending(combat)) return
+  room.startTurnPostRollNested = { combatId: combat.combatId, turn: combat.turn }
+}
+
+function isPostRollItemAction(room, seat, action) {
+  const combat = room.run?.combat
+  const player = combat?.players.find((candidate) => candidate.id === seat.playerId)
+  if (!combat || !player) return false
+  if (action?.kind === 'activateRelic' && Number.isInteger(action.relicIndex)) {
+    return isPostRollStartTurnRelicChoice(combat, player, action.relicIndex)
+  }
+  return action?.kind === 'usePotion' && typeof action.potionId === 'string' &&
+    isPostRollStartTurnPotionChoice(combat, player, action.potionId)
+}
+
+function roomPostRollChoicePending(room) {
+  const combat = room.run?.combat
+  return combat?.phase === 'start' && !roomPostRollChoiceDone(room) &&
+    (roomPostRollNestedChoicePending(room) || hasPostRollStartTurnChoice(combat))
+}
+
+function adoptLegacyPostRollNestedChoice(room) {
+  const combat = room.run?.combat
+  if (combat?.phase !== 'start' || roomPostRollChoiceDone(room) || room.startTurnPostRollNested ||
+    postRollDownstreamStarted(room, combat) || (combat.pendingDieRelicChoices?.length ?? 0) === 0) return false
+  // Saves written before the room-level marker can contain a copied/manual die
+  // Relic payment. Temporarily remove only that blocker to see whether another
+  // modifier is waiting behind it; if so, the payment owns the open window.
+  if (!hasPostRollStartTurnChoice({ ...combat, pendingDieRelicChoices: [] })) return false
+  room.startTurnPostRollNested = { combatId: combat.combatId, turn: combat.turn }
+  return true
+}
+
+function postRollDownstreamStarted(room, combat = room.run?.combat) {
+  return Boolean(combat && (combat.startTurnStage === 'facing' || combat.startTurnProgress ||
+    room.startTurnCombatId === combat.combatId && (Array.isArray(room.startTurnOrder) ||
+      (room.startTurnChoices?.length ?? 0) > 0 || (room.startTurnStagedTriggers?.length ?? 0) > 0)))
+}
+
+function deferStartTurnTriggersForPostRoll(room) {
+  const combat = room.run?.combat
+  adoptLegacyPostRollNestedChoice(room)
+  const deferred = room.startTurnPostRollDeferredTriggers
+  if (deferred && (!combat || combat.phase !== 'start' || deferred.combatId !== combat.combatId ||
+    deferred.turn !== combat.turn)) room.startTurnPostRollDeferredTriggers = undefined
+  if (combat?.phase !== 'start' || roomPostRollChoiceDone(room) || roomPostRollNestedChoicePending(room) ||
+    postRollDownstreamStarted(room, combat)) return false
+  const pending = combat.pendingTriggers ?? []
+  if (pending.length === 0 || pending.some((trigger) => trigger.startTurn !== true)) return false
+  const withoutTriggers = { ...combat, pendingTriggers: [] }
+  if (!hasPostRollStartTurnChoice(withoutTriggers)) return false
+  room.startTurnPostRollDeferredTriggers = {
+    combatId: combat.combatId,
+    turn: combat.turn,
+  }
+  room.run = { ...room.run, combat: withoutTriggers }
+  room.startTurnRequired = undefined
+  room.startTurnReady = undefined
+  return true
+}
+
+function restorePostRollDeferredTriggers(room) {
+  const combat = room.run?.combat
+  const deferred = room.startTurnPostRollDeferredTriggers
+  room.startTurnPostRollDeferredTriggers = undefined
+  if (!combat || combat.phase !== 'start' || deferred?.combatId !== combat.combatId || deferred.turn !== combat.turn) {
+    return false
+  }
+  // Rebuild private prompts from the final die/hand/board instead of replaying
+  // the pre-modifier queue. A modifier can change which printed sources fire,
+  // and a nested trigger may already have consumed one of those sources.
+  room.run = { ...room.run, combat: stageStartTurnTriggerChoice(combat) }
+  return true
+}
+
+function postRollChoiceWindowReady(combat) {
+  const progress = combat?.startTurnProgress
+  return combat?.phase === 'start' && Number.isInteger(combat.die) && combat.die >= 1 && combat.die <= 6 &&
+    !progress?.beforeDraw && !progress?.rollPending && !progress?.pauseAfterDraw && !progress?.discard
+}
+
+function closePostRollChoiceWindow(room) {
+  const combat = room.run?.combat
+  if (!combat || combat.phase !== 'start') return
+  room.startTurnPostRollNested = undefined
+  room.startTurnPostRollLock = { combatId: combat.combatId, turn: combat.turn }
+  room.startTurnRequired = undefined
+  room.startTurnReady = undefined
+}
+
+// Closure is a turn-level fact, not a property of the current die face or hand.
+// Record an empty window before downstream effects run: Mayhem, Writhing Mass,
+// and ordinary item actions can otherwise make a conditional modifier appear
+// later in the same turn and incorrectly reopen the decision.
+function ensurePostRollChoiceWindowClosed(room) {
+  const combat = room.run?.combat
+  if (!postRollChoiceWindowReady(combat) || roomPostRollChoiceDone(room) ||
+    roomPostRollNestedChoicePending(room)) return false
+  // Restored legacy rooms can already be partway through downstream effects
+  // without the lock introduced by this protocol. Those progress markers are
+  // authoritative: never reopen a modifier merely because it is legal now.
+  const downstreamStarted = postRollDownstreamStarted(room, combat)
+  if (!downstreamStarted && hasPostRollStartTurnChoice(combat)) return false
+  closePostRollChoiceWindow(room)
+  restorePostRollDeferredTriggers(room)
+  return true
+}
+
 function clearStartTurnPlan(room) {
   room.startTurnCombatId = undefined
   room.startTurnOrder = undefined
@@ -2942,17 +3159,34 @@ function roomStartTurnChoicePlayerIds(
   abilities = plannedStartTurnAbilities(room),
   orderCommitted = false,
   committedChoices = [],
+  knownOrderOwner = UNKNOWN_START_TURN_ORDER_OWNER,
 ) {
   const combat = room.run?.combat
   if (combat?.phase !== 'start') return []
+  // A copied die Relic can be waiting on private card input after every item
+  // temporarily becomes ineligible. Do not fall through and publish an empty
+  // downstream quorum while that nested payment owns the table.
+  if (roomPostRollNestedChoicePending(room)) return []
   const alive = new Set(combat.players.filter((player) => !player.dead).map((player) => player.id))
-  const required = startTurnChoicePlayerIds(combat, abilities, !orderCommitted, committedChoices)
-    .filter((playerId) => alive.has(playerId))
-
   // The engine nominates one affected owner for the shared order. If that owner
   // drops, their private choices use fallback while another connected owner
-  // receives the independent ordering responsibility.
-  const orderOwner = orderCommitted ? undefined : startTurnOrderChoicePlayerId(combat, abilities)
+  // receives the independent ordering responsibility. Calculate that owner
+  // once: the dependency simulation is intentionally thorough and can be the
+  // dominant cost of a large party's start-of-turn snapshot.
+  const postRollPending = roomPostRollChoicePending(room)
+  const orderOwner = orderCommitted || postRollPending ? undefined
+    : knownOrderOwner === UNKNOWN_START_TURN_ORDER_OWNER
+      ? cachedStartTurnOrderChoicePlayerId(room, abilities) : knownOrderOwner
+  const required = startTurnChoicePlayerIds(
+    combat, abilities, false, committedChoices, !roomPostRollChoiceDone(room),
+  )
+    .filter((playerId) => alive.has(playerId))
+  if (postRollPending) return required
+  if (orderOwner && alive.has(orderOwner)) {
+    const existing = required.indexOf(orderOwner)
+    if (existing >= 0) required.splice(existing, 1)
+    required.unshift(orderOwner)
+  }
   const orderOwnerIndex = orderOwner ? required.indexOf(orderOwner) : -1
   if (orderOwnerIndex >= 0 && !room.seats.some((seat) => seat.connected && seat.playerId === orderOwner)) {
     const replacement = abilities.find((ability) => alive.has(ability.playerId) &&
@@ -2968,20 +3202,67 @@ function roomStartTurnChoicePlayerIds(
 }
 
 function ensureStartTurnReady(room) {
+  deferStartTurnTriggersForPostRoll(room)
   const combat = room.run?.combat
   if (combat?.phase !== 'start') return []
+  ensurePostRollChoiceWindowClosed(room)
   const progress = combat.startTurnProgress
   if (!Array.isArray(room.startTurnRequired) && progress && (
     progress.beforeDraw || progress.rollPending || progress.pauseAfterDraw || progress.discard || progress.forcedCard
   )) return []
-  const derived = roomStartTurnChoicePlayerIds(room)
-  if (!Array.isArray(room.startTurnRequired) || room.startTurnRequired.some((playerId) =>
-    !derived.includes(playerId) && !room.seats.some((seat) => seat.connected && seat.playerId === playerId))) {
+  const orderCommitted = room.startTurnCombatId === combat.combatId && Array.isArray(room.startTurnOrder)
+  const derived = orderCommitted
+    ? roomStartTurnChoicePlayerIds(
+      room, plannedStartTurnAbilities(room), true, savedStartTurnChoices(room) ?? [],
+    )
+    : roomStartTurnChoicePlayerIds(room)
+  // Connectivity can transfer shared ordering authority without changing the
+  // combat state. Reconcile the persisted quorum in both directions so a
+  // returning original owner and the displayed coordinator cannot disagree
+  // about which seat is authorized to commit. Once an order is committed, its
+  // choice-aware quorum is authoritative and must not be replaced by a fresh
+  // default-order derivation.
+  if (!Array.isArray(room.startTurnRequired) || !orderCommitted && (
+    room.startTurnRequired.length !== derived.length ||
+    room.startTurnRequired.some((playerId, index) => playerId !== derived[index]))) {
     room.startTurnRequired = derived
   }
   room.startTurnReady = Object.fromEntries(room.startTurnRequired
     .map((playerId) => [playerId, room.startTurnReady?.[playerId] === true]))
   return room.startTurnRequired
+}
+
+function finishPostRollChoiceWindow(room) {
+  let combat = room.run?.combat
+  if (!combat || combat.phase !== 'start') return
+  closePostRollChoiceWindow(room)
+  restorePostRollDeferredTriggers(room)
+  combat = room.run?.combat
+  // Rebuilt private prompts may belong to a seat that disconnected while the
+  // modifier window was open. Default those choices now; waiting for another
+  // socket event would leave the connected party permanently blocked.
+  settleForcedCards(room)
+  combat = room.run?.combat
+  if (!combat || combat.phase !== 'start') return
+  if (ensureStartTurnReady(room).length > 0) return
+  const next = resolveStartPlayerTurn(combat, defaultStartTurnChoices(combat))
+  if (next === combat) return
+  room.run = { ...room.run, combat: next }
+  clearStartTurnPlan(room)
+  settleForcedCards(room)
+}
+
+function settlePostRollNestedChoice(room) {
+  const nested = room.startTurnPostRollNested
+  if (!nested) return
+  const combat = room.run?.combat
+  if (!combat || combat.phase !== 'start' || nested.combatId !== combat.combatId || nested.turn !== combat.turn) {
+    room.startTurnPostRollNested = undefined
+    return
+  }
+  if (roomPostRollNestedChoicePending(room)) return
+  room.startTurnPostRollNested = undefined
+  if (!hasPostRollStartTurnChoice(combat)) finishPostRollChoiceWindow(room)
 }
 
 function saveStartTurnOwnerChoices(room, playerId, choices) {
@@ -3167,13 +3448,21 @@ function connectedStartTurnPlayer(room, playerId) {
   return room.seats.find((seat) => seat.connected && seat.playerId === playerId)?.playerId ?? null
 }
 
-function startTurnOrderCoordinator(room) {
+const UNKNOWN_START_TURN_ORDER_OWNER = Symbol('unknown start-turn order owner')
+const UNKNOWN_START_TURN_ORDER_PENDING = Symbol('unknown start-turn order pending')
+
+function startTurnOrderCoordinator(
+  room,
+  abilities = plannedStartTurnAbilities(room),
+  knownOrderOwner = UNKNOWN_START_TURN_ORDER_OWNER,
+) {
   const combat = room.run?.combat
-  const abilities = plannedStartTurnAbilities(room)
+  if (!combat || roomPostRollChoicePending(room)) return null
   const saved = savedStartTurnEnemyTargets(room)
   const fumes = pendingNoxiousFumes(room)
   const fumesIds = noxiousFumesIds(combat)
-  const orderOwner = startTurnOrderChoicePlayerId(combat, abilities)
+  const orderOwner = knownOrderOwner === UNKNOWN_START_TURN_ORDER_OWNER
+    ? cachedStartTurnOrderChoicePlayerId(room, abilities) : knownOrderOwner
   if (orderOwner) return connectedStartTurnPlayer(room, orderOwner) ??
     abilities.find((ability) => connectedStartTurnPlayer(room, ability.playerId))?.playerId ?? null
   const owner =
@@ -3182,25 +3471,43 @@ function startTurnOrderCoordinator(room) {
   return connectedStartTurnPlayer(room, owner)
 }
 
-function startTurnOrderPending(room) {
+function startTurnOrderPending(
+  room,
+  abilities = plannedStartTurnAbilities(room),
+  knownOrderOwner = UNKNOWN_START_TURN_ORDER_OWNER,
+) {
   const combat = room.run?.combat
+  if (!combat || roomPostRollChoicePending(room)) return false
   const fumes = pendingNoxiousFumes(room)
-  const orderOwner = combat && startTurnOrderChoicePlayerId(combat, plannedStartTurnAbilities(room))
-  if (!combat || !fumes && !orderOwner ||
+  const orderOwner = knownOrderOwner === UNKNOWN_START_TURN_ORDER_OWNER
+    ? cachedStartTurnOrderChoicePlayerId(room, abilities) : knownOrderOwner
+  if (!fumes && !orderOwner ||
     room.startTurnCombatId === combat.combatId && Array.isArray(room.startTurnOrder)) {
     return false
   }
-  return Boolean(orderOwner) || startTurnOrderCoordinator(room) !== connectedStartTurnPlayer(room, fumes?.playerId)
+  return Boolean(orderOwner) ||
+    startTurnOrderCoordinator(room, abilities, orderOwner) !== connectedStartTurnPlayer(room, fumes?.playerId)
 }
 
-function startTurnCoordinator(room) {
+function startTurnCoordinator(
+  room,
+  abilities = plannedStartTurnAbilities(room),
+  knownOrderOwner = UNKNOWN_START_TURN_ORDER_OWNER,
+  knownOrderPending = UNKNOWN_START_TURN_ORDER_PENDING,
+  knownRequired = room.startTurnRequired,
+) {
   const combat = room.run?.combat
+  if (roomPostRollChoicePending(room)) {
+    return connectedStartTurnPlayer(room, knownRequired
+      ?.find((playerId) => room.startTurnReady?.[playerId] !== true))
+  }
   const firstScryOwner = combat && startTurnScryAbilities(combat)[0]?.playerId
   if (firstScryOwner) return connectedStartTurnPlayer(room, firstScryOwner) ??
     room.seats.find((seat) => seat.connected && combat.players
       .some((player) => player.id === seat.playerId && !player.dead))?.playerId ?? null
-  if (startTurnOrderPending(room)) return startTurnOrderCoordinator(room)
-  const abilities = plannedStartTurnAbilities(room)
+  const orderPending = knownOrderPending === UNKNOWN_START_TURN_ORDER_PENDING
+    ? startTurnOrderPending(room, abilities, knownOrderOwner) : knownOrderPending
+  if (orderPending) return startTurnOrderCoordinator(room, abilities, knownOrderOwner)
   const saved = savedStartTurnEnemyTargets(room)
   const stored = new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))
   const owner = pendingNoxiousFumes(room)?.playerId ??
@@ -3212,6 +3519,7 @@ function startTurnCoordinator(room) {
 function resolveStartTurn(room, seat, action, seatToken) {
   const combat = room.run?.combat
   if (!combat || combat.phase !== 'start') fail('The party is not resolving Start-of-Turn abilities')
+  if (roomPostRollNestedChoicePending(room)) fail('Finish the die Relic choice first')
   ensureStartTurnReady(room)
   if (!room.startTurnRequired.includes(seat.playerId)) fail('Only a Start-of-Turn effect owner may resolve it')
   const choices = action.choices
@@ -3240,6 +3548,15 @@ function resolveStartTurn(room, seat, action, seatToken) {
     evokeSlots: slotList(choice.evokeSlots),
     evokeEnemyUids: targetList(choice.evokeEnemyUids),
   }))
+  if (roomPostRollChoicePending(room)) {
+    markStartTurnReady(room, seat.playerId)
+    if (room.startTurnRequired.every((playerId) => room.startTurnReady[playerId])) {
+      finishPostRollChoiceWindow(room)
+      if (room.run?.combat?.phase === 'start') settleDisconnectedStartTurnChoices(room)
+    }
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
   const abilitiesById = new Map(plannedStartTurnAbilities(room).map((ability) => [ability.id, ability]))
   if (normalized.length !== abilitiesById.size || new Set(normalized.map((choice) => choice.id)).size !== abilitiesById.size ||
     normalized.some((choice) => !abilitiesById.has(choice.id))) {
@@ -4571,9 +4888,15 @@ function dispatch(run, seat, action, lockedPreview) {
  *    piles narrows down what someone is holding.
  *
  * Discard and exhaust piles stay public — they are face up on the table.
+ * `shared` must be fresh for one unchanged-room broadcast; it caches only
+ * viewer-independent start-turn planning, never redacted player data.
  */
-export function snapshotFor(room, seatToken) {
+export function snapshotFor(room, seatToken, shared = {}) {
   const seat = findSeat(room, seatToken)
+  deferStartTurnTriggersForPostRoll(room)
+  // Persist the empty post-roll decision before a broadcast derives the
+  // downstream quorum. This also normalizes rooms restored from older saves.
+  ensurePostRollChoiceWindowClosed(room)
   const viewerId = seat?.playerId ?? null
   const run = Array.isArray(room.run?.players) ? room.run : null
   const queuedCopy = room.concurrentCardCopies?.findLast((copy) => copy.playerId === viewerId)
@@ -4606,9 +4929,18 @@ export function snapshotFor(room, seatToken) {
   const pendingOwner = run?.players.find((player) => player.relics.some((relic) => relic.pending))
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
   const giveUpVote = activeGiveUpVote(room)
-  const privateStartAbilities = run?.combat?.phase === 'start' ? plannedStartTurnAbilities(room) : undefined
+  const postRollPending = run?.combat?.phase === 'start' && roomPostRollChoicePending(room)
+  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnAbilities')) {
+    shared.startTurnAbilities = plannedStartTurnAbilities(room)
+  }
+  const privateStartAbilities = run?.combat?.phase === 'start' ? shared.startTurnAbilities : undefined
+  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'savedStartTurnEnemyTargets')) {
+    shared.savedStartTurnEnemyTargets = savedStartTurnEnemyTargets(room)
+    shared.savedStartTurnChoiceIds = new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))
+    shared.pendingNoxiousFumes = pendingNoxiousFumes(room)
+  }
   const startAbilityOwners = new Map(privateStartAbilities?.map((ability) => [ability.id, ability.playerId]) ?? [])
-  const visibleStartAbilities = privateStartAbilities?.map((ability) => ({
+  const visibleStartAbilities = postRollPending ? [] : privateStartAbilities?.map((ability) => ({
     ...structuredClone(ability),
     exhaustCards: ability.playerId === viewerId ? structuredClone(ability.exhaustCards) : undefined,
   }))
@@ -4623,16 +4955,38 @@ export function snapshotFor(room, seatToken) {
     .some((trigger) => trigger.playerId === viewerId)
     ? room.startTurnStagedTriggers?.filter((trigger) => trigger.playerId === viewerId) ?? []
     : []
-  const pendingStartOwners = new Set(run?.combat?.phase === 'start'
-    ? [pendingNoxiousFumes(room)?.playerId, ...((privateStartAbilities ?? [])
-      .filter((ability) => startTurnAbilityNeedsChoice(ability, savedStartTurnEnemyTargets(room),
-        new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))))
-      .map((ability) => ability.playerId)), ...(run.combat.pendingTriggers ?? [])
-        .filter((trigger) => trigger.startTurn).map((trigger) => trigger.playerId)].filter(Boolean)
-    : [])
-  const startTurnRequired = run?.combat?.phase === 'start'
-    ? roomStartTurnChoicePlayerIds(room)
-    : undefined
+  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'pendingStartOwners')) {
+    shared.pendingStartOwners = new Set(!postRollPending
+      ? [shared.pendingNoxiousFumes?.playerId, ...((privateStartAbilities ?? [])
+        .filter((ability) => startTurnAbilityNeedsChoice(
+          ability, shared.savedStartTurnEnemyTargets, shared.savedStartTurnChoiceIds,
+        ))
+        .map((ability) => ability.playerId)), ...(run.combat.pendingTriggers ?? [])
+          .filter((trigger) => trigger.startTurn).map((trigger) => trigger.playerId)].filter(Boolean)
+      : [])
+  }
+  const pendingStartOwners = run?.combat?.phase === 'start' ? shared.pendingStartOwners : new Set()
+  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnOrderOwner')) {
+    shared.startTurnOrderOwner = postRollPending
+      ? undefined : cachedStartTurnOrderChoicePlayerId(room, privateStartAbilities)
+  }
+  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnRequired')) {
+    shared.startTurnRequired = roomStartTurnChoicePlayerIds(
+      room, privateStartAbilities, false, [], shared.startTurnOrderOwner,
+    )
+  }
+  const startTurnRequired = run?.combat?.phase === 'start' ? shared.startTurnRequired : undefined
+  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnOrderPending')) {
+    shared.startTurnOrderPending = startTurnOrderPending(
+      room, privateStartAbilities, shared.startTurnOrderOwner,
+    )
+  }
+  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnCoordinatorId')) {
+    shared.startTurnCoordinatorId = startTurnCoordinator(
+      room, privateStartAbilities, shared.startTurnOrderOwner, shared.startTurnOrderPending,
+      shared.startTurnRequired,
+    )
+  }
 
   return {
     code: room.code,
@@ -4674,8 +5028,9 @@ export function snapshotFor(room, seatToken) {
       ? Object.entries(room.startTurnReady ?? {})
         .filter(([playerId, ready]) => ready && !pendingStartOwners.has(playerId)).map(([playerId]) => playerId)
       : undefined,
-    startTurnChoiceId: run?.combat?.phase === 'start' ? pendingNoxiousFumes(room)?.id : undefined,
-    startTurnEnemyTargets: run?.combat?.phase === 'start' ? savedStartTurnEnemyTargets(room) : undefined,
+    startTurnChoiceId: run?.combat?.phase === 'start' && !postRollPending
+      ? shared.pendingNoxiousFumes?.id : undefined,
+    startTurnEnemyTargets: run?.combat?.phase === 'start' ? shared.savedStartTurnEnemyTargets : undefined,
     startTurnChoices: visibleStartChoices,
     stagedStartTurnTriggers: revisableStartTriggers.flatMap((trigger) => {
       const ability = pendingTriggerAbility({
@@ -4684,13 +5039,14 @@ export function snapshotFor(room, seatToken) {
       return ability?.playerId === viewerId ? [{ ...structuredClone(ability),
         choiceId: `${trigger.playerId}/${trigger.sourceId}` }] : []
     }),
-    startTurnOrderPending: run?.combat?.phase === 'start' ? startTurnOrderPending(room) : undefined,
+    startTurnPostRollLocked: run?.combat?.phase === 'start' ? roomPostRollChoiceDone(room) : undefined,
+    startTurnOrderPending: run?.combat?.phase === 'start' ? shared.startTurnOrderPending : undefined,
     startTurnOrderLocked: run?.combat?.phase === 'start' &&
       room.startTurnCombatId === run.combat.combatId && Array.isArray(room.startTurnOrder),
     startTurnScryAbilities: run?.combat?.phase === 'start'
       ? startTurnScryAbilities(run.combat)
       : undefined,
-    startTurnCoordinatorId: run?.combat?.phase === 'start' ? startTurnCoordinator(room) : undefined,
+    startTurnCoordinatorId: run?.combat?.phase === 'start' ? shared.startTurnCoordinatorId : undefined,
     startTurnScry: run?.combat ? (() => {
       const preview = startTurnScryPreview(run.combat)
       return preview ? {

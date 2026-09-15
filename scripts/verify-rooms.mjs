@@ -4157,8 +4157,11 @@ check('a legal start-phase die change rebuilds a staged Noxious Fumes plan', () 
   apply(room, a.token, { kind: 'startTurn' })
   room.run.combat.die = 2
   const initial = snapshotFor(room, a.token)
-  apply(room, a.token, { kind: 'resolveStartTurn', choices: choices(initial) })
-  assertEqual(snapshotFor(room, b.token).startTurnOrderLocked, true)
+  assertDeepEqual(initial.startTurnRequired, [a.playerId],
+    'downstream owners joined the die-modifier window')
+  assertEqual(initial.startTurnOrderLocked, false)
+  assertEqual(initial.startTurnChoiceId, undefined,
+    'Noxious Fumes was exposed before the die was locked')
 
   apply(room, a.token, { kind: 'activateRelic', relicIndex: 0 })
   const rebuilt = snapshotFor(room, a.token)
@@ -4336,7 +4339,7 @@ check('start-turn readiness is effect-owner-only and excludes an idle third play
   Object.assign(silent, {
     character: 'silent', relics: [
       { defId: 'oddly_smooth_stone', spent: false },
-      { defId: 'the_abacus', spent: false },
+      { defId: 'holy_water', spent: false, cubes: 2 },
     ], powers: [],
   })
   Object.assign(defect, {
@@ -6310,9 +6313,24 @@ check('private complex start choices wait for quorum without blocking another ow
     ...room.run.combat, phase: 'start', turn: 2, startTurnStage: 'effects',
     pendingTriggers: [], startTurnProgress: undefined,
   })
-  const pending = room.run.combat.pendingTriggers.find((trigger) => trigger.playerId === a.playerId)
-  const peerPending = room.run.combat.pendingTriggers.find((trigger) => trigger.playerId === b.playerId)
+  let pending = room.run.combat.pendingTriggers.find((trigger) => trigger.playerId === a.playerId)
+  let peerPending = room.run.combat.pendingTriggers.find((trigger) => trigger.playerId === b.playerId)
   assert(pending?.startTurn && peerPending?.startTurn)
+
+  const modifierView = snapshotFor(room, a.token)
+  assertDeepEqual(modifierView.startTurnRequired, [a.playerId],
+    'private downstream triggers displaced the earlier die modifier')
+  assertEqual(modifierView.run.combat.pendingTriggerAbility, null,
+    'a private downstream trigger was exposed before the die modifier closed')
+  confirmStartTurn(room, a)
+  assertEqual(snapshotFor(room, a.token).startTurnPostRollLocked, true,
+    'declining the modifier did not restore the deferred private triggers')
+  pending = room.run.combat.pendingTriggers.find((trigger) => trigger.playerId === a.playerId)
+  peerPending = room.run.combat.pendingTriggers.find((trigger) => trigger.playerId === b.playerId)
+  assert(pending?.startTurn && peerPending?.startTurn,
+    'closing the modifier window did not rebuild the private trigger queue')
+  assert(room.run.combat.pendingTriggers.some((trigger) => trigger.id === peerPending.id),
+    'closing the modifier window did not restore the peer private trigger')
   const beforeHp = target.hp
 
   apply(room, b.token, {
@@ -6326,6 +6344,8 @@ check('private complex start choices wait for quorum without blocking another ow
   assert(snapshotFor(room, b.token).startTurnDecided.includes(b.playerId),
     'a foreign private trigger blocked an unrelated owner from confirming')
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, beforeHp)
+  assert(room.run.combat.pendingTriggers.some((trigger) => trigger.id === pending.id),
+    'staging the peer choice discarded the other private trigger')
 
   apply(room, a.token, {
     kind: 'resolveTrigger', triggerId: pending.id, slimeEnemyUids: [target.uid], preflight: true,
@@ -6341,13 +6361,8 @@ check('private complex start choices wait for quorum without blocking another ow
     ?.some((trigger) => trigger.choiceId.includes('quorum-minion-master')),
     'a staged Slime editor leaked to another player')
 
-  apply(room, a.token, { kind: 'activateRelic', relicIndex: 0 })
-  assertDeepEqual(snapshotFor(room, a.token).startTurnChoices.find((choice) =>
-    choice.id.includes('quorum-minion-master')).trigger.slimeEnemyUids, [target.uid],
-  'a legal start-window action silently dropped a staged trigger choice')
-  assertDeepEqual(snapshotFor(room, b.token).startTurnDecided, [],
-    'a legal start-window action kept stale confirmations')
-  confirmStartTurn(room, b)
+  assert(snapshotFor(room, b.token).startTurnDecided.includes(b.playerId),
+    'resolving another private choice discarded a valid peer confirmation')
 
   const revisable = snapshotFor(room, a.token).stagedStartTurnTriggers
     .find((trigger) => trigger.choiceId.includes('quorum-minion-master'))
@@ -6588,6 +6603,40 @@ check('a disconnected shared-order coordinator transfers to a connected affected
   assertDeepEqual(transferred.startTurnRequired, [replacement.playerId])
   assertEqual(transferred.startTurnCoordinatorId, replacement.playerId,
     'the replacement quorum owner did not receive order authority')
+
+  const reconnectedRoom = structuredClone(room)
+  joinRoom(reconnectedRoom, { token: coordinator.token })
+  const returned = snapshotFor(reconnectedRoom, coordinator.token)
+  assertDeepEqual(returned.startTurnRequired, [coordinator.playerId],
+    'the returned original coordinator stayed outside the persisted quorum')
+  assertEqual(returned.startTurnCoordinatorId, coordinator.playerId,
+    'the returned coordinator disagreed with the authorized quorum owner')
+  const returnedOrder = [...returned.startTurnAbilities].reverse()
+  apply(reconnectedRoom, coordinator.token, { kind: 'resolveStartTurn', choices: returnedOrder.map((ability) => ({
+    id: ability.id,
+    enemyUid: ability.targets?.[0]?.uid,
+    targetPlayerId: ability.players?.[0]?.id,
+    exhaustUids: ability.exhaustCards?.slice(0, 1).map((card) => card.uid),
+    guardianModeShift: ability.guardianModeShift ? false : undefined,
+    shivEnemyUids: Array(ability.overflowShivs).fill(null),
+    evokeSlots: [], evokeEnemyUids: [],
+  })) })
+  const returnedAfterOrder = snapshotFor(reconnectedRoom, coordinator.token)
+  assertDeepEqual(returnedAfterOrder.startTurnRequired, [],
+    'the transferred replacement stayed in the quorum after the original owner committed')
+  assertEqual(returnedAfterOrder.startTurnCoordinatorId, null,
+    'the shared order coordinator remained stuck after the returned owner committed')
+  const returnedTrigger = returnedAfterOrder.run.combat.pendingTriggerAbility
+  assertEqual(returnedTrigger?.playerId, coordinator.playerId,
+    'the accepted order did not advance to the returned owner\'s legitimate trigger')
+  apply(reconnectedRoom, coordinator.token, {
+    kind: 'resolveTrigger', triggerId: returnedTrigger.id,
+    enemyRow: reconnectedRoom.run.combat.enemies.find((enemy) => !enemy.dead).row,
+    preflight: true,
+  })
+  assertEqual(reconnectedRoom.run.combat.phase, 'player',
+    'the returned original coordinator could not finish the transferred order')
+
   const reversed = [...transferred.startTurnAbilities].reverse()
   apply(room, replacement.token, { kind: 'resolveStartTurn', choices: reversed.map((ability) => ({
     id: ability.id,
@@ -10864,6 +10913,635 @@ check("online turns keep Gambler's Brew in the authoritative post-roll window", 
   assertEqual(room.run.combat.die, 6)
   assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).potions.length, 0)
   assertEqual(room.run.combat.phase, 'player', 'spending the last post-roll option left a redundant confirmation')
+})
+
+check('online die changes replace the start-turn quorum without disconnecting either seat', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  Object.assign(combat, {
+    phase: 'start', die: 4, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const teammate = combat.players.find((player) => player.id === b.playerId)
+  Object.assign(actor, { powers: [], potions: [], relics: [{ defId: 'the_abacus', spent: false }] })
+  Object.assign(teammate, { powers: [], potions: [], relics: [{ defId: 'stone_calendar', spent: false }] })
+  combat.enemies.push({ ...combat.enemies[0], uid: 'die-change-second-target', row: 1 })
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers',
+  ]) room[key] = undefined
+
+  const sharedSnapshot = {}
+  assertDeepEqual(snapshotFor(room, a.token, sharedSnapshot).startTurnRequired, [a.playerId],
+    'the server asked for a downstream target before the die modifier')
+  assertDeepEqual(snapshotFor(room, b.token, sharedSnapshot).startTurnRequired, [a.playerId],
+    'shared broadcast planning changed the peer quorum')
+  apply(room, a.token, { kind: 'activateRelic', relicIndex: 0 })
+
+  assertEqual(room.run.combat.die, 5)
+  assertEqual(room.run.combat.phase, 'player')
+  assert(room.seats.every((seat) => seat.connected), 'a die change disconnected a live multiplayer seat')
+  assertEqual(snapshotFor(room, b.token).run.combat.phase, 'player')
+})
+
+check('a fresh multiplayer turn defers private triggers until a die modifier is used', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const teammate = combat.players.find((player) => player.id === b.playerId)
+  Object.assign(actor, {
+    powers: [], potions: [], relics: [{ defId: 'the_abacus', spent: false }],
+  })
+  Object.assign(teammate, {
+    character: 'hermit', powers: [
+      { uid: 'fresh-post-roll-called-shot', defId: 'hermit_called_shot', upgraded: false },
+    ],
+    chamberSlots: 2,
+    chamber: [
+      { uid: 'fresh-post-roll-chamber-a', defId: 'defend_hermit', upgraded: false },
+      { uid: 'fresh-post-roll-chamber-b', defId: 'hermit_strike', upgraded: false },
+    ],
+    potions: [], relics: [],
+  })
+  Object.assign(combat, {
+    phase: 'roundEnd', turn: 1, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers', 'startTurnPostRollLock',
+    'startTurnPostRollNested', 'startTurnPostRollDeferredTriggers',
+  ]) room[key] = undefined
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const modifier = snapshotFor(room, a.token)
+  assertDeepEqual(modifier.startTurnRequired, [a.playerId],
+    'the fresh turn exposed a private trigger before the die modifier')
+  assertEqual(modifier.run.combat.pendingTriggerAbility, null,
+    'the fresh turn leaked the deferred private trigger')
+  apply(room, a.token, { kind: 'activateRelic', relicIndex: 0 })
+  const privateTrigger = snapshotFor(room, b.token)
+  assertEqual(privateTrigger.startTurnPostRollLocked, true,
+    'using the modifier did not close its turn-level window')
+  assertEqual(privateTrigger.run.combat.pendingTriggerAbility?.playerId, b.playerId,
+    'using the modifier did not rebuild the private trigger from the final board')
+  assert(room.seats.every((seat) => seat.connected),
+    'deferring the private trigger disconnected a multiplayer seat')
+})
+
+check('declining the last modifier settles a disconnected deferred trigger owner', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const teammate = combat.players.find((player) => player.id === b.playerId)
+  Object.assign(actor, { powers: [], potions: [], relics: [{ defId: 'the_abacus', spent: false }] })
+  Object.assign(teammate, {
+    character: 'hermit', powers: [
+      { uid: 'disconnect-deferred-called-shot', defId: 'hermit_called_shot', upgraded: false },
+    ],
+    chamberSlots: 2,
+    chamber: [
+      { uid: 'disconnect-deferred-chamber-a', defId: 'defend_hermit', upgraded: false },
+      { uid: 'disconnect-deferred-chamber-b', defId: 'hermit_strike', upgraded: false },
+    ],
+  })
+  Object.assign(combat, {
+    phase: 'roundEnd', turn: 1, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  apply(room, a.token, { kind: 'startTurn' })
+  assertDeepEqual(snapshotFor(room, a.token).startTurnRequired, [a.playerId])
+  markDisconnected(room, b.token)
+  confirmStartTurn(room, a)
+  assert(!room.run.combat?.pendingTriggers.some((trigger) => trigger.playerId === b.playerId),
+    'declining the modifier stranded the disconnected private trigger')
+  assert(!snapshotFor(room, a.token).startTurnRequired?.includes(b.playerId),
+    'the disconnected trigger owner remained in the downstream quorum')
+})
+
+check('closing after a nested modifier trigger settles a disconnected deferred owner', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const teammate = combat.players.find((player) => player.id === b.playerId)
+  const payment = { uid: 'disconnect-nested-charon-card', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, {
+    hand: [payment], exhaust: [], potions: [],
+    powers: [{ uid: 'disconnect-nested-berserk', defId: 'berserk', upgraded: false }],
+    relics: [{ defId: 'charons_ashes', spent: false }],
+  })
+  Object.assign(teammate, {
+    character: 'hermit', powers: [
+      { uid: 'disconnect-nested-called-shot', defId: 'hermit_called_shot', upgraded: false },
+    ],
+    chamberSlots: 2,
+    chamber: [
+      { uid: 'disconnect-nested-chamber-a', defId: 'defend_hermit', upgraded: false },
+      { uid: 'disconnect-nested-chamber-b', defId: 'hermit_strike', upgraded: false },
+    ],
+  })
+  room.run.combat = stageStartTurnTriggerChoice({
+    ...combat, phase: 'start', turn: 2, die: 1, startTurnStage: 'effects',
+    startTurnProgress: undefined, pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  assertDeepEqual(snapshotFor(room, a.token).startTurnRequired, [a.playerId])
+  markDisconnected(room, b.token)
+  apply(room, a.token, {
+    kind: 'activateRelic', relicIndex: 0, cardUids: [payment.uid], enemyUid: combat.enemies[0].uid,
+  })
+  const nested = snapshotFor(room, a.token).run.combat.pendingTriggerAbility
+  assertEqual(nested?.playerId, a.playerId, 'Charon\'s Ashes did not open its nested Berserk trigger')
+  apply(room, a.token, {
+    kind: 'resolveTrigger', triggerId: nested.id, enemyRow: room.run.combat.enemies[0].row,
+  })
+  assert(!room.run.combat?.pendingTriggers.some((trigger) => trigger.playerId === b.playerId),
+    'nested closure stranded the disconnected deferred trigger')
+  assert(!snapshotFor(room, a.token).startTurnRequired?.includes(b.playerId),
+    'nested closure left the disconnected owner in the downstream quorum')
+})
+
+check('an initially empty conditional modifier window locks before downstream work', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  Object.assign(combat, {
+    phase: 'start', die: 4, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const teammate = combat.players.find((player) => player.id === b.playerId)
+  Object.assign(actor, {
+    hand: [{ uid: 'initially-ineligible-charon-card', defId: 'defend_ironclad', upgraded: false }],
+    powers: [], potions: [], relics: [{ defId: 'charons_ashes', spent: false }],
+  })
+  Object.assign(teammate, {
+    powers: [{ uid: 'initially-empty-fumes', defId: 'noxious_fumes', upgraded: false }],
+    potions: [], relics: [],
+  })
+  combat.enemies.push({ ...combat.enemies[0], uid: 'initially-empty-second-target', row: 1 })
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers', 'startTurnPostRollLock',
+    'startTurnPostRollNested',
+  ]) room[key] = undefined
+
+  const downstream = snapshotFor(room, a.token)
+  assertEqual(downstream.startTurnPostRollLocked, true,
+    'the empty post-roll decision was not persisted before downstream planning')
+  assertDeepEqual(downstream.startTurnRequired, [b.playerId],
+    'an ineligible Charon\'s Ashes displaced the downstream target owner')
+
+  room.run.combat.die = 1
+  const laterEligible = snapshotFor(room, a.token)
+  assertEqual(laterEligible.startTurnPostRollLocked, true,
+    'a later die change reopened an initially empty modifier window')
+  assertDeepEqual(laterEligible.startTurnRequired, [b.playerId],
+    'a later die change replaced the already-published downstream quorum')
+  assertThrows(() => apply(room, a.token, {
+    kind: 'activateRelic', relicIndex: 0,
+    cardUids: ['initially-ineligible-charon-card'], enemyUid: room.run.combat.enemies[0].uid,
+  }), 'Charon\'s Ashes reopened after its turn-level window had closed')
+})
+
+check('an ordinary Relic that empties the modifier window locks it before downstream work', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  Object.assign(combat, {
+    phase: 'start', die: 1, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  const payment = { uid: 'blue-candle-charon-card', defId: 'defend_ironclad', upgraded: false }
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const teammate = combat.players.find((player) => player.id === b.playerId)
+  Object.assign(actor, {
+    hand: [payment], exhaust: [], powers: [], potions: [], relics: [
+      { defId: 'charons_ashes', spent: false },
+      { defId: 'blue_candle', spent: false },
+    ],
+  })
+  Object.assign(teammate, {
+    character: 'hermit',
+    powers: [{ uid: 'blue-candle-called-shot', defId: 'hermit_called_shot', upgraded: false }],
+    chamberSlots: 2,
+    chamber: [
+      { uid: 'blue-candle-chamber-a', defId: 'defend_hermit', upgraded: false },
+      { uid: 'blue-candle-chamber-b', defId: 'hermit_strike', upgraded: false },
+    ],
+    potions: [], relics: [],
+  })
+  room.run.combat = stageStartTurnTriggerChoice(combat)
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers', 'startTurnPostRollLock',
+    'startTurnPostRollNested',
+  ]) room[key] = undefined
+
+  assertDeepEqual(snapshotFor(room, a.token).startTurnRequired, [a.playerId],
+    'Charon\'s Ashes did not initially own the open modifier window')
+  assert(room.startTurnPostRollDeferredTriggers,
+    'the private trigger was not deferred behind Charon\'s Ashes')
+  apply(room, a.token, { kind: 'activateRelic', relicIndex: 1, cardUids: [payment.uid] })
+  const downstream = snapshotFor(room, b.token)
+  assertEqual(downstream.startTurnPostRollLocked, true,
+    'Blue Candle emptied the modifier window without closing it')
+  assertEqual(downstream.run.combat.pendingTriggerAbility?.playerId, b.playerId,
+    'Blue Candle closed the window without rebuilding the deferred private trigger')
+  assertDeepEqual(downstream.startTurnRequired, [b.playerId],
+    'Blue Candle skipped the deferred private trigger owner')
+
+  const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  currentActor.hand = [currentActor.exhaust.find((card) => card.uid === payment.uid)]
+  currentActor.exhaust = currentActor.exhaust.filter((card) => card.uid !== payment.uid)
+  assertThrows(() => apply(room, a.token, {
+    kind: 'activateRelic', relicIndex: 0,
+    cardUids: [payment.uid], enemyUid: room.run.combat.enemies[0].uid,
+  }), 'Charon\'s Ashes reopened after Blue Candle closed the turn-level window')
+})
+
+check('restored downstream start-turn progress cannot reopen die modifiers', () => {
+  for (const marker of ['facing', 'choices', 'staged']) {
+    const { room, a } = twoSeatRoom()
+    const combat = room.run.combat
+    Object.assign(combat, {
+      phase: 'start', die: 4, pendingTriggers: [], pendingDieRelicChoices: [],
+      startTurnStage: marker === 'facing' ? 'facing' : 'effects',
+      startTurnProgress: marker === 'choices' ? { choices: [] } : undefined,
+    })
+    const actor = combat.players.find((player) => player.id === a.playerId)
+    Object.assign(actor, {
+      powers: [], potions: [], relics: [{ defId: 'the_abacus', spent: false }],
+    })
+    for (const key of [
+      'startTurnRequired', 'startTurnReady', 'startTurnPostRollLock', 'startTurnPostRollNested',
+      'startTurnPostRollDeferredTriggers',
+    ]) room[key] = undefined
+    if (marker === 'staged') {
+      room.startTurnCombatId = combat.combatId
+      room.startTurnChoices = [{ id: `${a.playerId}/legacy-private-source`, shivEnemyUids: [] }]
+      room.startTurnStagedTriggers = [{
+        id: 909, playerId: a.playerId, sourceId: 'legacy-private-source', startTurn: true,
+      }]
+    }
+
+    const directory = mkdtempSync(join(tmpdir(), `sts-post-roll-${marker}-`))
+    const file = join(directory, 'rooms.json')
+    try {
+      writeFileSync(file, JSON.stringify({ rooms: [room] }))
+      const restored = createStore({ file }).rooms.get(room.code)
+      const view = snapshotFor(restored, a.token)
+      assertEqual(view.startTurnPostRollLocked, true,
+        `${marker} progress reopened the modifier after restore`)
+      assertThrows(() => apply(restored, a.token, { kind: 'activateRelic', relicIndex: 0 }),
+        `${marker} progress allowed a late die change after restore`)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }
+})
+
+check('a restored legacy die Relic payment resumes the remaining modifier window', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  Object.assign(combat, {
+    phase: 'start', die: 1, startTurnProgress: undefined, startTurnStage: 'effects',
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const teammate = combat.players.find((player) => player.id === b.playerId)
+  const payment = { uid: 'legacy-post-roll-payment', defId: 'defend_silent', upgraded: false }
+  Object.assign(actor, { powers: [], potions: [], relics: [
+    { defId: 'dollys_mirror', spent: false },
+    { defId: 'the_abacus', spent: false },
+  ] })
+  Object.assign(teammate, {
+    powers: [], potions: [], hand: [payment], exhaust: [],
+    relics: [{ defId: 'fuel_canister', spent: false }],
+  })
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers', 'startTurnPostRollLock',
+    'startTurnPostRollNested', 'startTurnPostRollDeferredTriggers',
+  ]) room[key] = undefined
+  apply(room, a.token, {
+    kind: 'activateRelic', relicIndex: 0,
+    targetRelicPlayerId: b.playerId, targetRelicIndex: 0, targetAbilityIndex: 0,
+  })
+  assertEqual(room.run.combat.pendingDieRelicChoices.length, 1,
+    'Dolly\'s Mirror did not create the legacy payment fixture')
+  room.startTurnPostRollNested = undefined
+
+  const directory = mkdtempSync(join(tmpdir(), 'sts-post-roll-legacy-payment-'))
+  const file = join(directory, 'rooms.json')
+  try {
+    writeFileSync(file, JSON.stringify({ rooms: [room] }))
+    const restored = createStore({ file }).rooms.get(room.code)
+    for (const seat of restored.seats) seat.connected = true
+    const waiting = snapshotFor(restored, a.token)
+    assertEqual(waiting.startTurnPostRollLocked, false,
+      'restoring the legacy payment prematurely locked the modifier window')
+    assertDeepEqual(waiting.startTurnRequired, [],
+      'downstream work surfaced during the restored private payment')
+    const pending = restored.run.combat.pendingDieRelicChoices[0]
+    apply(restored, b.token, {
+      kind: 'resolveDieRelicChoice', choiceId: pending.id, exhaustUids: [payment.uid],
+    })
+    const resumed = snapshotFor(restored, a.token)
+    assertEqual(resumed.startTurnPostRollLocked, false,
+      'finishing the restored payment locked the remaining modifier')
+    assertDeepEqual(resumed.startTurnRequired, [a.playerId],
+      'Abacus did not resume after the restored payment')
+    apply(restored, a.token, { kind: 'activateRelic', relicIndex: 1 })
+    assertEqual(restored.run.combat.die, 2,
+      'Abacus could not change the die after the restored payment')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+check('a restored final die Relic payment blocks downstream reconnect settlement', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  Object.assign(combat, {
+    phase: 'start', die: 1, startTurnProgress: undefined, startTurnStage: 'effects',
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const teammate = combat.players.find((player) => player.id === b.playerId)
+  const payment = { uid: 'legacy-final-payment', defId: 'defend_silent', upgraded: false }
+  const alternative = { uid: 'legacy-final-alternative', defId: 'strike_silent', upgraded: false }
+  Object.assign(actor, {
+    powers: [], potions: [], relics: [{ defId: 'dollys_mirror', spent: false }],
+  })
+  Object.assign(teammate, {
+    powers: [], potions: [], hand: [payment, alternative], exhaust: [],
+    relics: [{ defId: 'fuel_canister', spent: false }],
+  })
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers', 'startTurnPostRollLock',
+    'startTurnPostRollNested', 'startTurnPostRollDeferredTriggers',
+  ]) room[key] = undefined
+  apply(room, a.token, {
+    kind: 'activateRelic', relicIndex: 0,
+    targetRelicPlayerId: b.playerId, targetRelicIndex: 0, targetAbilityIndex: 0,
+  })
+  assertEqual(room.run.combat.pendingDieRelicChoices.length, 1,
+    'Dolly\'s Mirror did not create the final legacy payment fixture')
+  room.run.combat.players.find((player) => player.id === b.playerId).relics[0].spent = true
+  room.startTurnPostRollNested = undefined
+
+  const directory = mkdtempSync(join(tmpdir(), 'sts-post-roll-legacy-final-payment-'))
+  const file = join(directory, 'rooms.json')
+  try {
+    writeFileSync(file, JSON.stringify({ rooms: [room] }))
+    const restored = createStore({ file }).rooms.get(room.code)
+    joinRoom(restored, { token: a.token, settle: false })
+    joinRoom(restored, { token: b.token, settle: false })
+    const waiting = snapshotFor(restored, a.token)
+    assertEqual(waiting.startTurnPostRollLocked, true,
+      'the final legacy payment left an empty modifier window open')
+    markDisconnected(restored, a.token)
+    assertEqual(restored.run.combat.phase, 'start',
+      'reconnect settlement started downstream work before the final payment')
+    assertEqual(restored.run.combat.pendingDieRelicChoices.length, 1,
+      'reconnect settlement consumed a connected owner\'s final payment')
+    const pending = restored.run.combat.pendingDieRelicChoices[0]
+    apply(restored, b.token, {
+      kind: 'resolveDieRelicChoice', choiceId: pending.id, exhaustUids: [payment.uid],
+    })
+    assertEqual(restored.run.combat.pendingDieRelicChoices.length, 0,
+      'the final legacy payment could not resolve after reconnect settlement')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+check('a copied die Relic payment returns to the remaining post-roll modifiers', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  Object.assign(combat, {
+    phase: 'start', die: 1, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const teammate = combat.players.find((player) => player.id === b.playerId)
+  const payment = { uid: 'post-roll-fuel-payment', defId: 'defend_silent', upgraded: false }
+  Object.assign(actor, { powers: [], potions: [], relics: [
+    { defId: 'dollys_mirror', spent: false },
+    { defId: 'the_abacus', spent: false },
+  ] })
+  Object.assign(teammate, {
+    powers: [], potions: [], hand: [payment], exhaust: [],
+    relics: [{ defId: 'fuel_canister', spent: false }],
+  })
+  actor.powers = [{ uid: 'post-roll-nested-fumes', defId: 'noxious_fumes', upgraded: false }]
+  teammate.powers = [{ uid: 'post-roll-nested-berserk', defId: 'berserk', upgraded: false }]
+  combat.enemies.push({ ...combat.enemies[0], uid: 'post-roll-nested-target', row: 1 })
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers', 'startTurnPostRollLock',
+    'startTurnPostRollNested',
+  ]) room[key] = undefined
+
+  apply(room, a.token, {
+    kind: 'activateRelic', relicIndex: 0,
+    targetRelicPlayerId: b.playerId, targetRelicIndex: 0, targetAbilityIndex: 0,
+  })
+  const pending = room.run.combat.pendingDieRelicChoices[0]
+  assertEqual(pending?.playerId, b.playerId, 'Dolly\'s Mirror skipped Fuel Canister\'s private payment')
+  const nested = snapshotFor(room, a.token)
+  assertEqual(nested.startTurnPostRollLocked, false,
+    'opening the copied payment prematurely locked the modifier window')
+  assertDeepEqual(nested.startTurnAbilities, [],
+    'downstream start-turn work leaked while the copied payment was pending')
+  assertDeepEqual(nested.startTurnRequired, [],
+    'a downstream owner was nominated during the copied payment')
+  assertEqual(nested.startTurnCoordinatorId, null,
+    'a downstream coordinator was exposed during the copied payment')
+  assertThrows(() => apply(room, a.token, { kind: 'resolveStartTurn', choices: [] }),
+    'an empty downstream confirmation locked the die during the copied payment')
+  assertEqual(room.run.combat.pendingDieRelicChoices[0]?.id, pending.id,
+    'the refused confirmation consumed the copied payment')
+  assertEqual(snapshotFor(room, a.token).startTurnPostRollLocked, false,
+    'the refused confirmation locked the remaining modifier')
+
+  apply(room, b.token, {
+    kind: 'resolveDieRelicChoice', choiceId: pending.id, exhaustUids: [payment.uid],
+  })
+  const triggered = snapshotFor(room, b.token)
+  assertEqual(triggered.run.combat.pendingTriggerAbility?.playerId, b.playerId,
+    'Fuel Canister did not preserve its nested Berserk choice')
+  assertEqual(triggered.startTurnPostRollLocked, false,
+    'the modifier window locked before the nested trigger resolved')
+  assertDeepEqual(triggered.startTurnRequired, [],
+    'downstream start-turn work surfaced during the nested trigger')
+  apply(room, b.token, {
+    kind: 'resolveTrigger', triggerId: triggered.run.combat.pendingTriggerAbility.id,
+    enemyRow: room.run.combat.enemies[0].row,
+  })
+  const resumed = snapshotFor(room, a.token)
+  assertEqual(resumed.startTurnPostRollLocked, false,
+    'resolving the copied payment prematurely locked the remaining modifier')
+  assertDeepEqual(resumed.startTurnRequired, [a.playerId],
+    'the remaining Abacus did not regain post-roll authority')
+  apply(room, a.token, { kind: 'activateRelic', relicIndex: 1 })
+  assertEqual(room.run.combat.die, 2, 'the remaining Abacus could not change the die')
+  assert(room.seats.every((seat) => seat.connected), 'the nested modifier flow disconnected a live seat')
+})
+
+check('a direct post-roll trigger returns to the remaining die modifiers', () => {
+  const { room, a } = twoSeatRoom()
+  const combat = room.run.combat
+  Object.assign(combat, {
+    phase: 'start', die: 1, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const payment = { uid: 'post-roll-charon-payment', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, {
+    hand: [payment], exhaust: [], potions: [],
+    powers: [{ uid: 'post-roll-charon-berserk', defId: 'berserk', upgraded: false }],
+    relics: [
+      { defId: 'charons_ashes', spent: false },
+      { defId: 'the_abacus', spent: false },
+    ],
+  })
+  combat.enemies.push({ ...combat.enemies[0], uid: 'post-roll-charon-row', row: 1 })
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers', 'startTurnPostRollLock',
+    'startTurnPostRollNested',
+  ]) room[key] = undefined
+
+  apply(room, a.token, {
+    kind: 'activateRelic', relicIndex: 0, cardUids: [payment.uid], enemyUid: combat.enemies[0].uid,
+  })
+  const triggered = snapshotFor(room, a.token)
+  assertEqual(triggered.run.combat.pendingTriggerAbility?.playerId, a.playerId,
+    'Charon\'s Ashes did not preserve its direct Berserk trigger')
+  assertEqual(triggered.startTurnPostRollLocked, false,
+    'the modifier window locked before the direct trigger resolved')
+  assertDeepEqual(triggered.startTurnRequired, [],
+    'downstream start-turn work surfaced during the direct trigger')
+  apply(room, a.token, {
+    kind: 'resolveTrigger', triggerId: triggered.run.combat.pendingTriggerAbility.id,
+    enemyRow: room.run.combat.enemies[0].row,
+  })
+  const resumed = snapshotFor(room, a.token)
+  assertEqual(resumed.startTurnPostRollLocked, false,
+    'resolving the direct trigger locked the remaining modifier')
+  assertDeepEqual(resumed.startTurnRequired, [a.playerId],
+    'the remaining Abacus did not regain post-roll authority')
+  apply(room, a.token, { kind: 'activateRelic', relicIndex: 1 })
+  assertEqual(room.run.combat.die, 2, 'the remaining Abacus could not change the die')
+  assert(room.seats.every((seat) => seat.connected), 'the direct trigger flow disconnected a live seat')
+})
+
+check('an ordinary nested Relic returns to the open die-modifier window', () => {
+  const { room, a } = twoSeatRoom()
+  const combat = room.run.combat
+  Object.assign(combat, {
+    phase: 'start', die: 4, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingDieRelicChoices: [], pendingRelicScry: undefined,
+  })
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  Object.assign(actor, {
+    draw: [
+      { uid: 'post-roll-scry-a', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'post-roll-scry-b', defId: 'defend_ironclad', upgraded: false },
+    ],
+    potions: [], powers: [], relics: [
+      { defId: 'the_abacus', spent: false },
+      { defId: 'golden_eye', spent: false },
+    ],
+  })
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers', 'startTurnPostRollLock',
+    'startTurnPostRollNested',
+  ]) room[key] = undefined
+
+  assertDeepEqual(snapshotFor(room, a.token).startTurnRequired, [a.playerId])
+  apply(room, a.token, { kind: 'activateRelic', relicIndex: 1 })
+  const scrying = snapshotFor(room, a.token)
+  assertEqual(room.run.combat.phase, 'start', 'Golden Eye skipped the open die-modifier window')
+  assertEqual(scrying.run.combat.pendingRelicScry?.playerId, a.playerId,
+    'Golden Eye did not preserve its private Scry')
+  assertEqual(scrying.startTurnPostRollLocked, false,
+    'opening Scry locked the remaining modifier')
+  assertDeepEqual(scrying.startTurnRequired, [],
+    'downstream start-turn work surfaced during Scry')
+
+  apply(room, a.token, {
+    kind: 'activateRelic', relicIndex: 1,
+    relicScryId: scrying.run.combat.pendingRelicScry.id, scryDiscardUids: [],
+  })
+  const resumed = snapshotFor(room, a.token)
+  assertEqual(resumed.startTurnPostRollLocked, false,
+    'resolving Scry locked the remaining modifier')
+  assertDeepEqual(resumed.startTurnRequired, [a.playerId],
+    'Abacus did not regain authority after Scry')
+  apply(room, a.token, { kind: 'activateRelic', relicIndex: 0 })
+  assertEqual(room.run.combat.die, 5, 'Abacus could not change the die after Scry')
+  assert(room.seats.every((seat) => seat.connected), 'the Scry flow disconnected a live seat')
+})
+
+check('declining a die change opens downstream choices without defaulting a teammate target', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  Object.assign(combat, {
+    phase: 'start', die: 4, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  const actor = combat.players.find((player) => player.id === a.playerId)
+  const teammate = combat.players.find((player) => player.id === b.playerId)
+  Object.assign(actor, { powers: [], potions: [], relics: [
+    { defId: 'the_abacus', spent: false },
+    { defId: 'holy_water', spent: false, cubes: 2 },
+  ] })
+  Object.assign(teammate, {
+    powers: [{ uid: 'post-roll-fumes', defId: 'noxious_fumes', upgraded: false }],
+    potions: [], relics: [],
+  })
+  combat.enemies.push({ ...combat.enemies[0], uid: 'post-roll-fumes-second-target', row: 1 })
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers', 'startTurnPostRollLock',
+  ]) room[key] = undefined
+
+  const modifierView = snapshotFor(room, a.token)
+  assertDeepEqual(modifierView.startTurnRequired, [a.playerId])
+  assertDeepEqual(modifierView.startTurnAbilities, [],
+    'downstream ability details leaked into the die-modifier window')
+  assertEqual(modifierView.startTurnChoiceId, undefined,
+    'Noxious Fumes was exposed while the die could still change')
+  assertEqual(modifierView.startTurnCoordinatorId, a.playerId)
+  confirmStartTurn(room, a)
+
+  const targetView = snapshotFor(room, b.token)
+  assertEqual(room.run.combat.phase, 'start', 'declining the modifier defaulted a teammate target')
+  assertEqual(targetView.startTurnPostRollLocked, true,
+    'the client was not told that the die-modifier window had closed')
+  assertDeepEqual(targetView.startTurnRequired, [b.playerId])
+  assertEqual(targetView.startTurnChoiceId, 'p2/power:post-roll-fumes')
+  // A downstream effect such as Mayhem hitting Writhing Mass can reroll the
+  // die after the modifier decision. Closure belongs to the turn, not the
+  // mutable face, so that reroll must not offer Abacus a second time.
+  room.run.combat.die = 5
+  const downstreamReroll = snapshotFor(room, a.token)
+  assertEqual(downstreamReroll.startTurnPostRollLocked, true,
+    'a downstream die change reopened the closed modifier window')
+  assertDeepEqual(downstreamReroll.startTurnRequired, [b.playerId],
+    'a downstream die change replaced the pending target owner')
+  assertThrows(() => apply(room, a.token, { kind: 'activateRelic', relicIndex: 0 }),
+    'a declined die modifier reopened after the downstream target window began')
+  const energyBeforeWater = actor.energy
+  apply(room, a.token, { kind: 'activateRelic', relicIndex: 1 })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).energy, energyBeforeWater + 1,
+    'locking die modifiers blocked an unrelated legal Relic')
+  confirmStartTurn(room, b)
+  assertEqual(room.run.combat.phase, 'player')
+  assert(room.seats.every((seat) => seat.connected), 'the two-pass start turn disconnected a live seat')
 })
 
 check('room authority rejects a client-selected Gambling Chip face', () => {

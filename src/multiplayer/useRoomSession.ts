@@ -190,6 +190,7 @@ export type RoomSnapshot = {
   startTurnEnemyTargets?: Record<string, string>
   startTurnChoices?: StartTurnChoice[]
   stagedStartTurnTriggers?: (PendingTriggerAbility & { choiceId: string })[]
+  startTurnPostRollLocked?: boolean
   startTurnOrderPending?: boolean
   startTurnOrderLocked?: boolean
   startTurnScryAbilities?: StartTurnScryAbility[]

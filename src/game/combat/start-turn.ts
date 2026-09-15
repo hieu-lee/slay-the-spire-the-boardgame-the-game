@@ -1448,11 +1448,28 @@ export function startPlayerTurnWithChoices(state: CombatState): CombatState {
   return finishPreparedStartTurnWithChoices(prepared)
 }
 
+export function isPostRollStartTurnPotionChoice(
+  state: CombatState,
+  player: Player,
+  potionId: string,
+): boolean {
+  return canActivatePotion(state, player, potionId)
+}
+
+export function isPostRollStartTurnRelicChoice(
+  state: CombatState,
+  player: Player,
+  relicIndex: number,
+): boolean {
+  return Boolean(player.relics[relicIndex]) &&
+    START_TURN_RELIC_ACTIVATIONS.has(downfallRelicBaseId(player.relics[relicIndex]!.defId)) &&
+    canActivateRelic(state, player, relicIndex)
+}
+
 export function playerHasPostRollStartTurnChoice(state: CombatState, player: Player): boolean {
   return player.potions.some((potionId) =>
-    canActivatePotion(state, player, potionId)) || player.relics.some((_relic, relicIndex) =>
-    START_TURN_RELIC_ACTIVATIONS.has(downfallRelicBaseId(player.relics[relicIndex]!.defId)) &&
-    canActivateRelic(state, player, relicIndex))
+    isPostRollStartTurnPotionChoice(state, player, potionId)) || player.relics.some((_relic, relicIndex) =>
+    isPostRollStartTurnRelicChoice(state, player, relicIndex))
 }
 
 export function hasPostRollStartTurnChoice(state: CombatState): boolean {
@@ -1480,6 +1497,7 @@ export function startTurnOrderChoicePlayerId(
   const entriesById = new Map(entries.map((entry) => [entry.ability.id, entry]))
   const sources = new Map(entries.map((entry) => [entry.ability.id, entry.source]))
   const candidateIds = new Set<string>()
+  let definiteOrderOwner: string | undefined
   for (const entry of entries) if (!entry.source) candidateIds.add(entry.ability.id)
   const effectKinds = (effects: readonly Effect[]): string[] => effects.flatMap((effect): string[] => [
     effect.kind,
@@ -1583,14 +1601,16 @@ export function startTurnOrderChoicePlayerId(
     })
 
     const inGroup = (...group: string[]) => (kind: string) => group.includes(kind)
+    const strengthBeforeHit = distinct(inGroup('gainStrength', 'gainTemporaryStrength', 'doubleStrength'),
+      inGroup('hit', 'rowHit', 'hitChoices'))
+    if (strengthBeforeHit) definiteOrderOwner ??= player.id
     const possible = canDraw && kinds.some((set) => set.has('drawAndPlayFree')) && owned.length > 1 ||
       distinct(inGroup('advance', 'retract', 'branch'), inGroup('advance', 'retract', 'branch')) ||
       distinct(inGroup('load', 'discountChamber', 'discardChamber', 'playChamber'),
         inGroup('load', 'discountChamber', 'discardChamber', 'playChamber')) ||
       distinct(inGroup('growSlime', 'commandSlime', 'gainSlimeVigor', 'tapSlime', 'rainOfGoop'),
         inGroup('growSlime', 'commandSlime', 'gainSlimeVigor', 'tapSlime', 'rainOfGoop')) ||
-      distinct(inGroup('gainStrength', 'gainTemporaryStrength', 'doubleStrength'),
-        inGroup('hit', 'rowHit', 'hitChoices')) ||
+      strengthBeforeHit ||
       distinct(inGroup('channel'), inGroup('countdownExhaust')) ||
       distinct(inGroup('sequence'), inGroup('sequence')) ||
       canDraw && kinds.some((set) => [...set].some(draws)) &&
@@ -1635,8 +1655,58 @@ export function startTurnOrderChoicePlayerId(
   })
   if (sharedTokenSources.length > 1) for (const ability of sharedTokenSources) candidateIds.add(ability.id)
   if (candidateIds.size === 0) return undefined
+  // Strength changes alter every following printed hit. This is a definite
+  // dependency, not a hypothesis that needs whole-combat replay, and replaying
+  // consumable Powers can obscure which physical source supplied the hit.
+  if (definiteOrderOwner) return definiteOrderOwner
+  const sourceSignatures = abilities.map((ability): string | null => {
+    const source = sources.get(ability.id)
+    // Effects alone are not a complete definition of a trigger. Two sources
+    // can deal the same damage while aiming at different scopes (for example,
+    // Mercury Hourglass targets a row while The Boot targets one enemy). Such
+    // sources must still go through the dependency check because their legal
+    // targets and fallback behaviour can diverge as enemies die.
+    return source ? `${ability.playerId}:${JSON.stringify([
+      source.effects,
+      source.scope,
+      source.supportScope,
+      source.presentationSourceId,
+      source.oncePerTurn,
+      source.powerUid,
+    ])}` : null
+  })
+  if (sourceSignatures.every((signature) => signature !== null) && new Set(sourceSignatures).size === 1) {
+    return undefined
+  }
+  // Replaying a draw beside multiple aimed effects is especially expensive:
+  // each hypothetical order can reveal more trigger/target work. The safe
+  // answer is already known (the table must choose), so nominate an involved
+  // owner without proving which permutation differs.
+  if (abilities.length > 2 && drawing.length > 0 && enemyAffecting.length > 1) {
+    return abilities.find((ability) => candidateIds.has(ability.id))?.playerId
+  }
+  // Even one replay can become expensive when many queued sources recursively
+  // inspect and resolve the same start-turn state.  Above this small table-sized
+  // queue, skip proof-by-replay entirely and conservatively ask an involved
+  // owner to order the abilities.  This keeps the room server's event loop
+  // responsive even for modded or duplicate-heavy inventories.
+  const maxExactAbilities = 4
+  if (abilities.length > maxExactAbilities) {
+    return abilities.find((ability) => candidateIds.has(ability.id))?.playerId
+  }
   const order = abilities.map((ability) => ability.id)
+  // Exact dependency checks replay the whole start-turn queue. Keep that work
+  // bounded for large co-op inventories; conservatively asking an involved
+  // owner to choose is safer than blocking every socket while proving that a
+  // crowded queue commutes.
+  // Two-source queues stay small even when each source can aim at every enemy,
+  // and fully proving that pair commutes avoids inventing a redundant shared
+  // order step (for example two Noxious Fumes across four rows). Larger queues
+  // retain the hard budget because their pairwise target product grows fast.
+  const maxExactSimulations = abilities.length <= 2 ? Number.POSITIVE_INFINITY : 32
+  let simulations = 0
   const outcome = (ids: readonly string[], targets?: ReadonlyMap<string, string>) => {
+    simulations += 1
     const choicePlayers = new Set<string>()
     const resolved = resolveStartPlayerTurn(state,
       defaultStartTurnChoicesForOrder(state, ids, choicePlayers, targets))
@@ -1649,6 +1719,9 @@ export function startTurnOrderChoicePlayerId(
     const from = order.indexOf(id)
     for (let to = 0; to < order.length; to++) {
       if (to === from) continue
+      if (simulations >= maxExactSimulations) {
+        return abilities.find((ability) => candidateIds.has(ability.id))?.playerId
+      }
       const moved = order.filter((candidate) => candidate !== id)
       moved.splice(to, 0, id)
       if (outcome(moved) !== canonical) return abilities.find((ability) => ability.id === id)?.playerId
@@ -1659,6 +1732,7 @@ export function startTurnOrderChoicePlayerId(
       for (const other of enemyAffecting) {
         if (other.id === id || (focus.targets?.length ?? 0) < 2 && (other.targets?.length ?? 0) < 2) continue
         for (const left of focus.targets ?? []) for (const right of other.targets ?? []) {
+          if (simulations + 2 > maxExactSimulations) return focus.playerId
           const targets = new Map([[focus.id, left.uid], [other.id, right.uid]])
           if (outcome(moved, targets) !== outcome(order, targets)) return focus.playerId
         }
@@ -1701,6 +1775,7 @@ export function startTurnChoicePlayerIds(
   knownAbilities?: readonly StartTurnAbility[],
   includeOrderChoice = true,
   committedChoices: readonly StartTurnChoice[] = [],
+  includePostRollChoices = true,
 ): string[] {
   if (state.phase !== 'start') return []
   const players = new Set(state.players.map((player) => player.id))
@@ -1722,6 +1797,17 @@ export function startTurnChoicePlayerIds(
     }
   }
 
+  // Die-changing Relics and Potions are an earlier, exclusive decision
+  // window.  Do not make owners confirm abilities produced by a die result
+  // that can still change, and do not run the downstream order simulator for
+  // every multiplayer snapshot while this window is open.
+  if (includePostRollChoices) {
+    const postRollOwners = state.players
+      .filter((player) => !player.dead && playerHasPostRollStartTurnChoice(state, player))
+      .map((player) => player.id)
+    if (postRollOwners.length > 0) return postRollOwners
+  }
+
   const abilities = knownAbilities ?? startTurnAbilities(state)
   if (includeOrderChoice) add(startTurnOrderChoicePlayerId(state, abilities))
   // A choice in an earlier ability deliberately blocks simulation of later
@@ -1738,10 +1824,6 @@ export function startTurnChoicePlayerIds(
     (ability.exhaustCards?.length ?? 0) > 1 || ability.overflowShivs > 0 || ability.guardianModeShift ||
     (ability.targets?.length ?? 0) > 1 || (ability.players?.length ?? 0) > 1 || ability.evokeChoice
   ) add(ability.playerId)
-  for (const player of state.players) {
-    if (!player.dead && playerHasPostRollStartTurnChoice(state, player)) add(player.id)
-  }
-
   // If input exists only because aimed effects can invalidate one another, one
   // involved owner commits the shared order; deterministic owners do not vote.
   if (includeOrderChoice && required.size === 0 && startTurnNeedsChoice(state, abilities)) {

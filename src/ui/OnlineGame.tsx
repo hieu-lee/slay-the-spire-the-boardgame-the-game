@@ -782,6 +782,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           startTurnChoiceId={snapshot.startTurnChoiceId}
           savedStartTurnEnemyTargets={snapshot.startTurnEnemyTargets}
           savedStartTurnChoices={snapshot.startTurnChoices}
+          partyStartTurnPostRollLocked={snapshot.startTurnPostRollLocked}
           partyStartTurnOrderPending={snapshot.startTurnOrderPending}
           partyStartTurnOrderLocked={snapshot.startTurnOrderLocked}
           partyStartTurnScry={snapshot.startTurnScry}

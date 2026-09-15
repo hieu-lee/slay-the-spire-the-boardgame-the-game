@@ -141,6 +141,8 @@ import {
   startTurnAbilities,
   startTurnChoicePending,
   startTurnDiscardPreview,
+  isPostRollStartTurnPotionChoice,
+  isPostRollStartTurnRelicChoice,
   startTurnNeedsChoice,
   startTurnScryAbilities,
   startTurnScryPreview,
@@ -383,6 +385,7 @@ function CombatScreenView({
   startTurnChoiceId,
   savedStartTurnEnemyTargets,
   savedStartTurnChoices,
+  partyStartTurnPostRollLocked = false,
   partyStartTurnOrderPending = false,
   partyStartTurnOrderLocked = false,
   partyStartTurnScry,
@@ -551,6 +554,12 @@ function CombatScreenView({
   }
   const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
+  const canUsePotionNow = (potionId: string) => Boolean(viewer &&
+    canActivatePotion(state, viewer, potionId) && !(partyStartTurnPostRollLocked &&
+      isPostRollStartTurnPotionChoice(state, viewer, potionId)))
+  const canUseRelicNow = (relicIndex: number) => Boolean(viewer &&
+    canActivateRelic(state, viewer, relicIndex) && !(partyStartTurnPostRollLocked &&
+      isPostRollStartTurnRelicChoice(state, viewer, relicIndex)))
   useEffect(() => {
     if (reducedMotion || !viewer) return
     let cancel = warmSmokeTrails(viewer.character)
@@ -1506,6 +1515,9 @@ function CombatScreenView({
 
   useEffect(() => { setRelicCardUids([]) }, [relicScry?.id])
   useEffect(() => {
+    if (partyStartTurnPostRollLocked) setRelicCardUids([])
+  }, [partyStartTurnPostRollLocked])
+  useEffect(() => {
     const revealed = new Set(relicScry?.cards.map((card) => card.uid) ?? [])
     setRelicCardUids((current) => current.filter((uid) => revealed.has(uid)))
   }, [relicScry?.cards.map((card) => card.uid).join('\0')])
@@ -1595,10 +1607,11 @@ function CombatScreenView({
   // drop dead targets instead of submitting choices for an older board.
   useEffect(() => {
     if (!pendingPotion) return
-    if (!viewer?.potions.includes(pendingPotion)) {
+    if (!viewer?.potions.includes(pendingPotion) || !canUsePotionNow(pendingPotion)) {
       setPendingPotion(null)
       setPotionShivEnemyUids([])
       setPotionOverflowRequired(0)
+      setPotionCardUids([])
       return
     }
     if (pendingPotion === 'entropic_brew' && viewerHasSozu) {
@@ -1619,7 +1632,8 @@ function CombatScreenView({
       const valid = current.filter((uid) => alive.has(uid))
       return valid.length === current.length ? current : valid
     })
-  }, [state, viewer, viewerHasSozu, pendingPotion, potionOverflowRequired])
+  }, [state, viewer, viewerHasSozu, pendingPotion, potionOverflowRequired,
+    partyStartTurnPostRollLocked])
 
   // Card choices are made against a shared board too. Recompute overflow when
   // teammates take or spend cubes, and discard targets that died meanwhile.
@@ -2550,12 +2564,12 @@ function CombatScreenView({
     viewer.miracles > 0 && viewer.energy < CAPS.energy && (
       viewer.relics.some((relic) => relic.defId === 'ice_cream') ||
       viewer.hand.some((card) => canAfford(state, viewer, card, true, drawCount))) ||
-    viewer.potions.some((potionId) => canActivatePotion(state, viewer, potionId)) ||
+    viewer.potions.some((potionId) => canUsePotionNow(potionId)) ||
     viewer.powers.some((power) => {
       const def = faceOf(cardDef(power.defId), power.upgraded)
       return Boolean(def.activeAbility) && (!def.oncePerTurn || !powerAbilityUsed(state, viewer.id, power.uid))
     }) ||
-    viewer.relics.some((_, relicIndex) => canActivateRelic(state, viewer, relicIndex)) || courierAvailable)
+    viewer.relics.some((_, relicIndex) => canUseRelicNow(relicIndex)) || courierAvailable)
   useEffect(() => {
     if (onAction || !autoAdvance || state.players.length !== 1 || state.phase !== 'player' ||
       viewer.dead || viewerHasLegalAction || voluntaryActionsBlocked || forcedCard || distilled || pending || pendingTrigger ||
@@ -2578,7 +2592,7 @@ function CombatScreenView({
     context: PotionContext = {},
     overflow?: { expected: number; skip: boolean },
   ) {
-    if (potionActionPending.current) return
+    if (potionActionPending.current || !canUsePotionNow(potionId)) return
     // Preview the atomic action against the visible board. Separate overflow
     // attacks may kill a target selected again later; keep the potion staged
     // and restart its choices instead of clearing the UI for a refused action.
@@ -2659,6 +2673,7 @@ function CombatScreenView({
   }
 
   function useRelic(relicIndex: number, context: RelicContext = {}) {
+    if (!canUseRelicNow(relicIndex)) return
     const result = activateRelic(state, viewer!.id, relicIndex, context)
     if (result === state) return
     if (onAction) {
@@ -4680,7 +4695,7 @@ function CombatScreenView({
                 ><PowerGlyph def={def} /></button>]
               }) : null}
               {(state.phase === 'player' || state.phase === 'start') && !forcedCard && !distilled && !endTurnResolving && !pendingTrigger ? [...new Set(viewer.potions)].flatMap((potionId) => {
-                if (!canActivatePotion(state, viewer, potionId)) return []
+                if (!canUsePotionNow(potionId)) return []
                 const potion = potionDef(potionId)
                 const staged = pendingPotion === potionId
                 const count = viewer.potions.filter((held) => held === potionId).length
@@ -5511,7 +5526,7 @@ function CombatScreenView({
             </PotionTooltipAnchor>
             const heldId = held.defId.replace(/^downfall_/, '')
             const reroute = ['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(heldId)
-            if (!canActivateRelic(state, viewer, relicIndex)) return []
+            if (!canUseRelicNow(relicIndex)) return []
             if (held.defId === 'golden_eye') return [simpleAction]
             if (held.defId === 'gambling_chip') return [simpleAction]
             if (held.defId === 'fuel_canister') return [<details key={relicIndex}>

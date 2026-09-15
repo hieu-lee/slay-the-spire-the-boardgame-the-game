@@ -385,6 +385,49 @@ try {
     assertEqual(refusedMessage.snapshot.you.playerId, a.playerId)
   })
 
+  const dieRoom = service.store.rooms.get(code)
+  Object.assign(dieRoom.run.combat, {
+    phase: 'start', die: 3, startTurnProgress: undefined, startTurnStage: undefined,
+    pendingTriggers: [], pendingDieRelicChoices: [],
+  })
+  for (const player of dieRoom.run.combat.players) {
+    Object.assign(player, { powers: [], potions: [], relics: [] })
+  }
+  dieRoom.run.combat.players.find((player) => player.id === a.playerId)
+    .relics = [{ defId: 'the_abacus', spent: false }]
+  dieRoom.run.combat.players.find((player) => player.id === joined[0].playerId)
+    .relics = [{ defId: 'stone_calendar', spent: false }]
+  dieRoom.run.combat.enemies.push({
+    ...dieRoom.run.combat.enemies[0], uid: 'server-die-change-second-target', row: 1,
+  })
+  for (const key of [
+    'startTurnCombatId', 'startTurnOrder', 'startTurnEnemyTargets', 'startTurnChoices',
+    'startTurnRequired', 'startTurnReady', 'startTurnStagedTriggers',
+  ]) dieRoom[key] = undefined
+  service.publishRoom(code)
+
+  const dieRequestId = crypto.randomUUID()
+  const actorDieUpdate = nextMessage(aLive.socket, 'snapshot', (message) =>
+    message.requestId === dieRequestId && message.snapshot.run?.combat?.die === 4)
+  const peerDieUpdate = nextMessage(bLive.socket, 'snapshot', (message) =>
+    message.snapshot.run?.combat?.die === 4)
+  aLive.socket.send(JSON.stringify({
+    type: 'action', requestId: dieRequestId, action: { kind: 'activateRelic', relicIndex: 0 },
+  }))
+  const [actorAfterDie, peerAfterDie] = await Promise.all([actorDieUpdate, peerDieUpdate])
+  check('a die-changing Relic keeps both sockets synchronized into downstream choices', () => {
+    assertEqual(actorAfterDie.snapshot.run.combat.phase, 'start')
+    assertEqual(peerAfterDie.snapshot.run.combat.phase, 'start')
+    assertEqual(actorAfterDie.snapshot.startTurnPostRollLocked, true,
+      'spending the final die modifier did not close its window')
+    assertEqual(peerAfterDie.snapshot.startTurnPostRollLocked, true,
+      'the peer did not receive the closed modifier window')
+    assert(actorAfterDie.snapshot.startTurnRequired.includes(joined[0].playerId),
+      'the newly activated Stone Calendar owner was omitted')
+    assertEqual(aLive.socket.readyState, WebSocket.OPEN)
+    assertEqual(bLive.socket.readyState, WebSocket.OPEN)
+  })
+
   const voteStarted = await request(`/api/rooms/${code}/action`, {
     method: 'POST', token: a.token,
     body: { action: { kind: 'giveUpVote', vote: 'start' } },
@@ -452,6 +495,14 @@ try {
     endTurnOrders: undefined,
     endTurnOrder: undefined,
     endTurnReady: undefined,
+    startTurnCombatId: undefined,
+    startTurnOrder: undefined,
+    startTurnEnemyTargets: undefined,
+    startTurnChoices: undefined,
+    startTurnRequired: undefined,
+    startTurnReady: undefined,
+    startTurnStagedTriggers: undefined,
+    startTurnPostRollLock: undefined,
   })
   Object.assign(liveRoom.run.combat, {
     phase: 'roundEnd', turn: 1, log: [], endTurnProgress: undefined,

@@ -10763,6 +10763,96 @@ check('die-changing Relics are legal only in the post-roll start window', () => 
   assertEqual(activateRelic(starting, 'p1', 0).die, 4)
 })
 
+check('post-roll die changes finish before downstream Relic targets are planned', () => {
+  const starting = {
+    ...combat([
+      makePlayer({ relics: [{ defId: 'the_abacus', spent: false }] }),
+      makePlayer({
+        id: 'p2', name: 'Silent', character: 'silent', row: 1,
+        relics: [{ defId: 'stone_calendar', spent: false }],
+      }),
+    ], [makeEnemy(), makeEnemy({ uid: 'e2', row: 1 })]),
+    phase: 'start', die: 4,
+  }
+  const abilities = startTurnAbilities(starting)
+  assertEqual(abilities[0]?.playerId, 'p2', 'precondition: the shown roll activates Stone Calendar')
+  assertDeepEqual(startTurnChoicePlayerIds(starting, abilities), ['p1'],
+    'a downstream target owner joined the quorum before the die was locked')
+})
+
+check('crowded start-turn queues skip expensive dependency replays', () => {
+  const state = {
+    ...combat([makePlayer({
+      relics: Array.from({ length: 10 }, () => ({ defId: 'stone_calendar', spent: false })),
+    })], [makeEnemy()]),
+    phase: 'start', die: 4,
+  }
+  const abilities = startTurnAbilities(state)
+  assertEqual(abilities.length, 10, 'precondition: the crowded queue has ten abilities')
+  const startedAt = performance.now()
+  assertEqual(startTurnOrderChoicePlayerId(state, abilities), undefined,
+    'identical crowded sources created a redundant ordering owner')
+  assert(performance.now() - startedAt < 500,
+    'crowded order planning replayed the expensive start-turn queue')
+})
+
+check('crowded equal-damage sources preserve their different target scopes', () => {
+  const state = {
+    ...combat([makePlayer({ relics: [
+      { defId: 'mercury_hourglass', spent: false },
+      { defId: 'mercury_hourglass', spent: false },
+      { defId: 'mercury_hourglass', spent: false },
+      { defId: 'downfall_the_boot', spent: false },
+      { defId: 'downfall_the_boot', spent: false },
+    ] })], [makeEnemy(), makeEnemy({ uid: 'scope-right', row: 1 })]),
+    phase: 'start', die: 1,
+  }
+  assertEqual(startTurnOrderChoicePlayerId(state), 'p1',
+    'a crowded row-and-enemy queue was mistaken for identical sources')
+})
+
+check('duplicate consumable start-turn Powers preserve physical source identity', () => {
+  const state = {
+    ...combat([makePlayer({
+      character: 'slime_boss',
+      powers: [instance('slime_boss_prepare_crush'), instance('slime_boss_prepare_crush')],
+    })], [makeEnemy({ hp: 20, maxHp: 20 })]),
+    phase: 'start', die: 4,
+  }
+  assertEqual(startTurnOrderChoicePlayerId(state), 'p1',
+    'two consumable Powers with different physical identities were treated as identical')
+})
+
+check('two repeatable aimed Powers fully prove a multi-target queue commutes', () => {
+  const state = {
+    ...combat([makePlayer({
+      character: 'silent',
+      powers: [instance('noxious_fumes'), instance('noxious_fumes')],
+    })], [
+      makeEnemy({ uid: 'fumes-a', row: 0 }),
+      makeEnemy({ uid: 'fumes-b', row: 1 }),
+      makeEnemy({ uid: 'fumes-c', row: 2 }),
+      makeEnemy({ uid: 'fumes-d', row: 3 }),
+    ]),
+    phase: 'start', die: 4,
+  }
+  assertEqual(startTurnOrderChoicePlayerId(state), undefined,
+    'two commuting repeatable Powers created a redundant order step')
+})
+
+check('start-turn Strength changes do not modify direct effect damage', () => {
+  const state = {
+    ...combat([makePlayer({
+      character: 'slime_boss',
+      powers: [instance('slime_boss_prepare_crush')],
+      relics: [{ defId: 'mutagen', spent: false }],
+    })], [makeEnemy({ hp: 20, maxHp: 20 })]),
+    phase: 'start', die: 4, turn: 1,
+  }
+  assertEqual(startTurnOrderChoicePlayerId(state), undefined,
+    'Strength gain created an order step before direct effect damage')
+})
+
 check('the real table turn keeps the post-roll item window open', () => {
   const player = makePlayer({ potions: ['gamblers_brew'] })
   const starting = startPlayerTurnWithChoices({ ...combat([player], [makeEnemy()]), phase: 'roundEnd' })
@@ -11152,12 +11242,12 @@ check('the start of turn stops only for a sequence that can change something', (
     turn: 1,
   }
   const strengthHitChoices = defaultStartTurnChoices(strengthBeforeHit)
-  assertEqual(startTurnOrderChoicePlayerId(strengthBeforeHit), 'p1',
-    'Strength gain before a start-turn hit was treated as commuting')
+  assertEqual(startTurnOrderChoicePlayerId(strengthBeforeHit), undefined,
+    'Strength gain created an order step before direct effect damage')
   assertDeepEqual([
     resolveStartPlayerTurn(strengthBeforeHit, strengthHitChoices).enemies[0].hp,
     resolveStartPlayerTurn(strengthBeforeHit, [...strengthHitChoices].reverse()).enemies[0].hp,
-  ].sort(), [4, 5])
+  ].sort(), [5, 5])
 
   const lethalBeforeMutation = {
     ...startOf([makePlayer({

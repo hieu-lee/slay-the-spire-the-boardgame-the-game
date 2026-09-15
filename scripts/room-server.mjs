@@ -102,6 +102,8 @@ export function createRoomServer({
   saveDelayMs = STORE_SAVE_DELAY_MS,
   saveStoreImpl = saveStore,
   onSaveError = (error) => console.error('Room store save failed:', error),
+  onSlowOperation = ({ kind, roomCode, durationMs }) =>
+    console.warn(`Slow multiplayer ${kind} in room ${roomCode}: ${durationMs}ms`),
   allowedOrigin = process.env.STS_ALLOWED_ORIGIN,
   restartRecovery = process.env.STS_RESTART_RECOVERY === 'true',
   restartReconnectMs = Math.max(5 * 60_000, Number(process.env.STS_RESTART_RECONNECT_MS) || 0),
@@ -274,6 +276,8 @@ export function createRoomServer({
   }
 
   function publish(room, skipToken) {
+    const startedAt = Date.now()
+    const sharedSnapshot = {}
     for (const [socket, client] of sockets) {
       if (client.code !== room.code || socket.readyState !== 1) continue
       if (skipToken !== undefined && client.token === skipToken) continue
@@ -281,7 +285,11 @@ export function createRoomServer({
         socket.terminate()
         continue
       }
-      socket.send(JSON.stringify({ type: 'snapshot', snapshot: snapshotFor(room, client.token) }))
+      socket.send(JSON.stringify({ type: 'snapshot', snapshot: snapshotFor(room, client.token, sharedSnapshot) }))
+    }
+    const durationMs = Date.now() - startedAt
+    if (durationMs >= 1_000) {
+      try { onSlowOperation({ kind: 'broadcast', roomCode: room.code, durationMs }) } catch {}
     }
   }
 

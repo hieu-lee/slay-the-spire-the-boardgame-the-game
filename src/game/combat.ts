@@ -98,6 +98,8 @@ export {
   defaultStartTurnChoices,
   facingChoicesAreValid,
   hasPostRollStartTurnChoice,
+  isPostRollStartTurnPotionChoice,
+  isPostRollStartTurnRelicChoice,
   playerHasPostRollStartTurnChoice,
   orderStartTurnScries,
   preparePlayerTurn,

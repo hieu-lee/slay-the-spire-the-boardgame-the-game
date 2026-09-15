@@ -59,6 +59,7 @@ export type CombatScreenProps = {
   startTurnChoiceId?: string
   savedStartTurnEnemyTargets?: Record<string, string>
   savedStartTurnChoices?: StartTurnChoice[]
+  partyStartTurnPostRollLocked?: boolean
   partyStartTurnOrderPending?: boolean
   partyStartTurnOrderLocked?: boolean
   partyStartTurnScry?: Omit<StartTurnScryPreview, 'cards'> & { cards: CardInstance[] | null }
