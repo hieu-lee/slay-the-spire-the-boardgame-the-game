@@ -83,15 +83,15 @@ try {
     assertEqual(store.leaderboardRuns.length, 1)
     assertEqual(store.leaderboardRuns[0].floorsCleared, 27)
   })
-  check('a bounded public store cannot threaten room handoff persistence', () => {
+  check('a bounded public store cannot threaten room restart persistence', () => {
     const full = { leaderboardRuns: Array(MAX_LEADERBOARD_RUNS).fill(store.leaderboardRuns[0]) }
     assertThrows(() => addLeaderboardRun(full, run({ id: 'browser-1234:over-capacity' }), 12))
   })
   saveStore(store)
-  check('the complete leaderboard rides inside the encrypted handoff store', () => {
+  check('the complete leaderboard remains in the persistent room store', () => {
     const serialized = JSON.parse(readFileSync(file, 'utf8'))
     assertEqual(serialized.leaderboardRuns.length, 1)
-    const restored = createStore({ file, handoffRestore: true })
+    const restored = createStore({ file, restartRecovery: true })
     assertDeepEqual(restored.leaderboardRuns, store.leaderboardRuns)
   })
 

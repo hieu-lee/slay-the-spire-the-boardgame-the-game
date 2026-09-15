@@ -7,6 +7,19 @@ export function installScreenAudit(page) {
     if (options.fullPage) await page.locator('img[loading="lazy"]').evaluateAll((images) => {
       for (const image of images) image.loading = 'eager'
     })
+    await page.locator('img').evaluateAll((images) => {
+      for (const image of images) {
+        const style = getComputedStyle(image)
+        const box = image.getBoundingClientRect()
+        const visible = style.display !== 'none' && style.visibility !== 'hidden' &&
+          Number(style.opacity) > 0 && box.width > 0 && box.height > 0
+        if (!visible || !image.complete || image.naturalWidth > 0) continue
+        const source = image.currentSrc || image.src
+        const retry = new URL(source, location.href)
+        retry.searchParams.set('screen-audit-retry', String(Date.now()))
+        image.src = retry.href
+      }
+    })
     try {
       await page.waitForFunction(() => [...document.images].every((image) => {
         const style = getComputedStyle(image)

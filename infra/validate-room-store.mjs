@@ -5,15 +5,15 @@ import { pathToFileURL } from 'node:url'
 export async function validateRoomStore(storeFile, roomsModule) {
   const raw = JSON.parse(await readFile(storeFile, 'utf8'))
   if (raw?.version !== 1 || !Array.isArray(raw.rooms)) {
-    throw new Error('The migrated room store has an incompatible top-level schema.')
+    throw new Error('The room store has an incompatible top-level schema.')
   }
   if (raw.profiles !== undefined && !Array.isArray(raw.profiles)) {
-    throw new Error('The migrated profiles field must be an array when present.')
+    throw new Error('The profiles field must be an array when present.')
   }
   const { createStore } = await import(pathToFileURL(roomsModule))
-  const restored = createStore({ file: storeFile, handoffRestore: true, handoffReconnectMs: 3_600_000 })
+  const restored = createStore({ file: storeFile, restartRecovery: true, restartReconnectMs: 3_600_000 })
   if (restored.rooms.size !== raw.rooms.length) {
-    throw new Error('The production room loader rejected at least one migrated room.')
+    throw new Error('The production room loader rejected at least one stored room.')
   }
 }
 

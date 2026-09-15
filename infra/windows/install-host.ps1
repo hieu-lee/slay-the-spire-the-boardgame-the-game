@@ -86,7 +86,8 @@ $firewallRuleCreated = $false
 $installationSucceeded = $false
 try {
   $settings = New-ScheduledTaskSettingsSet -RestartCount 10 -RestartInterval (New-TimeSpan -Minutes 1) `
-    -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable -WakeToRun
   $taskPrincipal = New-ScheduledTaskPrincipal `
     -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType S4U -RunLevel Limited
   $hostTriggers = @(

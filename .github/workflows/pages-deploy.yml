@@ -1,25 +1,26 @@
-name: Deploy multiplayer Pages artifact
-run-name: Deploy Pages from run ${{ inputs.source_run_id }}
+name: Deploy GitHub Pages
 
 on:
+  workflow_call:
+    inputs:
+      deploy_sha:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
-      source_run_id:
-        description: Run containing the prepared Pages artifact
-        required: true
-      artifact_name:
-        description: Prepared Pages artifact name
-        required: true
-
-concurrency:
-  group: multiplayer-pages-deployment
-  cancel-in-progress: false
+      deploy_sha:
+        description: Commit to build after its server release is healthy (defaults to the selected ref)
+        required: false
+        type: string
 
 permissions:
-  actions: read
   contents: read
   pages: write
   id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -30,88 +31,41 @@ jobs:
     timeout-minutes: 15
     env:
       MULTIPLAYER_SERVER_ORIGIN: ${{ vars.MULTIPLAYER_SERVER_ORIGIN }}
-      PAGES_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-      PAGES_URL: https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/
+      DEPLOY_SHA: ${{ inputs.deploy_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.DEPLOY_SHA }}
+          fetch-depth: 0
           persist-credentials: false
-      - name: Download and validate the prepared site
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+      - name: Accept only commits merged to master
         run: |
-          for attempt in 1 2; do
-            download_dir="$RUNNER_TEMP/pages-$attempt"
-            if timeout 300s gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-                --name "$ARTIFACT_NAME" --dir "$download_dir"; then
-              mv "$download_dir" pages
-              break
-            fi
-            sleep 10
-          done
-          test -f pages/session.json
-          migration_source=$(node -e 'const c=require("./pages/session.json"); if(c.alwaysOn===true && c.sourceRunId) process.stdout.write(String(c.sourceRunId))')
-          if [ -n "$migration_source" ]; then
-            expected_sha=$(node -p 'require("./pages/session.json").sha')
-          else
-            expected_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
-          fi
-          node scripts/validate-session-config.mjs pages/session.json "$expected_sha" "$MULTIPLAYER_SERVER_ORIGIN"
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+          git fetch --no-tags origin master
+          git merge-base --is-ancestor "$DEPLOY_SHA" origin/master
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: VITE_SINGLE_PLAYER=false VITE_HOSTED_SESSION=true pnpm build
+      - run: node scripts/check-single-player-build.mjs dist --multiplayer
+      - name: Prepare the stable multiplayer client
+        run: |
+          [[ "$MULTIPLAYER_SERVER_ORIGIN" =~ ^https://sts-([0-9]{1,3}-){3}[0-9]{1,3}\.([0-9a-f]{1,4}-){7}[0-9a-f]{1,4}\.sslip\.io:18443$ ]]
+          curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 --max-time 30 \
+            "$MULTIPLAYER_SERVER_ORIGIN/api/health" | \
+            jq -e --arg sha "$DEPLOY_SHA" \
+              '.protocolVersion == 1 and .profiles == true and .webSocketActionAcks == true and .releaseSha == $sha' >/dev/null
+          cp -R dist pages
+          jq -n --arg origin "$MULTIPLAYER_SERVER_ORIGIN" --arg run "$GITHUB_RUN_ID" --arg sha "$DEPLOY_SHA" \
+            '{origin:$origin,runId:$run,sha:$sha,protocolVersion:1,alwaysOn:true}' > pages/session.json
+          node scripts/validate-session-config.mjs pages/session.json "$DEPLOY_SHA" "$MULTIPLAYER_SERVER_ORIGIN"
       - uses: actions/configure-pages@v5
-      - name: Verify the room endpoint immediately before deployment
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          healthy_origin=
-          while IFS= read -r origin; do
-            if curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --max-time 30 \
-                "$origin/api/health" | jq -e '.protocolVersion == 1 and .profiles == true' >/dev/null; then
-              healthy_origin=$origin
-              break
-            fi
-          done < <(node -e 'const c=require("./pages/session.json"); console.log([...new Set([c.origin,...c.origins])].join("\n"))')
-          test -n "$healthy_origin"
-          migration_source=$(node -e 'const c=require("./pages/session.json"); if(c.alwaysOn===true && c.sourceRunId) process.stdout.write(String(c.sourceRunId))')
-          if [ -n "$migration_source" ]; then
-            case "$migration_source:$PAGES_SOURCE_RUN_ID" in *[!0-9:]*) exit 2;; esac
-            producer_status=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PAGES_SOURCE_RUN_ID" --jq .status)
-            producer_title=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PAGES_SOURCE_RUN_ID" --jq .display_title)
-            [ "$producer_status" = in_progress ]
-            [ "$producer_title" = "Multiplayer handoff from $migration_source" ]
-            [ "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$migration_source" --jq .status)" = in_progress ]
-            advertised=$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --max-time 30 \
-              "$PAGES_URL/session.json?lineage=$GITHUB_RUN_ID")
-            advertised_run=$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).runId ?? ""))' "$advertised")
-            [ "$advertised_run" = "$migration_source" ] || [ "$advertised_run" = "$PAGES_SOURCE_RUN_ID" ]
-            selection="$RUNNER_TEMP/pages-handoff-selection"
-            timeout 60s gh run download "$migration_source" --repo "$GITHUB_REPOSITORY" \
-              --name "handoff-selected-$migration_source" --dir "$selection"
-            selected_run=$(sed -n '1p' "$selection/handoff-selected")
-            selected_sha=$(sed -n '2p' "$selection/handoff-selected")
-            if [ "$selected_run" != "$PAGES_SOURCE_RUN_ID" ]; then
-              selected_state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$selected_run" \
-                --jq '[.status, (.conclusion // "")] | join(" ")')
-              [ "${selected_state%% *}" = completed ]
-              case "${selected_state#* }" in failure|cancelled|timed_out|stale|action_required) ;; *) exit 1;; esac
-            fi
-            [ "$selected_sha" = "$(node -p 'require("./pages/session.json").sha')" ]
-            expected_sha=$selected_sha
-          else
-            expected_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
-          fi
-          node scripts/validate-session-config.mjs pages/session.json "$expected_sha" "$MULTIPLAYER_SERVER_ORIGIN" "$healthy_origin"
       - uses: actions/upload-pages-artifact@v4
         with:
           path: pages
-      - name: Verify the migration producer remains live
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          migration_source=$(node -e 'const c=require("./pages/session.json"); if(c.alwaysOn===true && c.sourceRunId) process.stdout.write(String(c.sourceRunId))')
-          if [ -n "$migration_source" ]; then
-            [ "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PAGES_SOURCE_RUN_ID" --jq .status)" = in_progress ]
-          fi
       - id: deployment
         uses: actions/deploy-pages@v4

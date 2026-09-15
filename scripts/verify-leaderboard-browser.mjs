@@ -86,7 +86,7 @@ try {
   const rowFor = (party) => page.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name: party, exact: true }) })
   await rowFor('Silent').waitFor()
   const legacyRow = await rowFor('Silent').innerText()
-  check('the new client renders an old-server snapshot throughout a rolling handoff', () => {
+  check('the new client renders an old-server snapshot throughout a rolling restart', () => {
     assert(legacyRow.includes('—'), legacyRow)
   })
   legacySnapshot = false
@@ -227,14 +227,14 @@ try {
     window.__STS_DEBUG__.setRun(run)
   })
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]').length === 1)
-  const queuedAcrossHandoff = await page.evaluate(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]'))
+  const queuedAcrossRestart = await page.evaluate(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]'))
   check('an old server acknowledgment keeps floor telemetry queued until the new server takes over', () => {
-    assertEqual(queuedAcrossHandoff[0].floorsCleared, 4)
+    assertEqual(queuedAcrossRestart[0].floorsCleared, 4)
   })
   await page.evaluate(() => { window.__LEADERBOARD_LEGACY__ = false; window.dispatchEvent(new Event('online')) })
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]').length === 0)
   await page.waitForTimeout(50)
-  check('a bad queued row cannot block a later solo result through a rolling handoff', () => {
+  check('a bad queued row cannot block a later solo result through a rolling restart', () => {
     assertEqual(rooms.store.leaderboardRuns.length, 5)
     const logged = rooms.store.leaderboardRuns.at(-1)
     assertEqual(logged.character, 'ironclad')

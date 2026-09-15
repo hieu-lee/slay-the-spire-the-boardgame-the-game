@@ -2,6 +2,7 @@
 import { claimProfile } from './lib/profiles.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { writeFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import { WebSocketServer } from 'ws'
 import { addLeaderboardRun, leaderboardSnapshot, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
 import {
@@ -34,19 +35,25 @@ const MAX_ROOMS = 100
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000
 const RESUMABLE_ROOM_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const HEARTBEAT_MS = 30_000
-const MAX_BUFFERED_BYTES = 256 * 1024
+const releaseDirectory = basename(process.cwd())
+const RELEASE_SHA = /^[0-9a-f]{40}$/.test(releaseDirectory) ? releaseDirectory : null
+const MAX_BUFFERED_BYTES = 2 * 1024 * 1024
 const MESSAGE_WINDOW_MS = 10_000
-const MAX_MESSAGES_PER_WINDOW = 60
-const MAX_VOICE_MESSAGES_PER_WINDOW = 180
+const MAX_MESSAGES_PER_WINDOW = 300
+const MAX_READS_PER_WINDOW = 600
+const MAX_VOICE_MESSAGES_PER_WINDOW = 600
+const MAX_ABUSIVE_MESSAGES_PER_WINDOW = 3_000
 const CREATE_WINDOW_MS = 60_000
+const MAX_PROFILE_CLAIMS_PER_WINDOW = 30
 const MAX_CREATES_PER_WINDOW = 10
 const MAX_JOINS_PER_WINDOW = 30
 const MAX_LEADERBOARD_WRITES_PER_WINDOW = 6
-const MAX_UPGRADES_PER_WINDOW = 30
+const MAX_UPGRADES_PER_WINDOW = 120
 const MAX_RATE_KEYS = 1024
 const MAX_ROOMS_PER_IP = 10
-const MAX_PENDING_AUTH = 32
-const MAX_PENDING_AUTH_PER_IP = 4
+export const MAX_CONNECTIONS = 50
+const MAX_PENDING_AUTH = MAX_CONNECTIONS
+const MAX_PENDING_AUTH_PER_IP = 8
 const STORE_SAVE_DELAY_MS = 1_000
 const CATCH_UP_RESERVATION_MS = 30_000
 const DEFAULT_ICE_SERVERS = [{ urls: 'stun:stun.cloudflare.com:3478' }]
@@ -90,25 +97,28 @@ export function createRoomServer({
   turnApiToken = process.env.CLOUDFLARE_TURN_API_TOKEN,
   fetchImpl = fetch,
   storeFile,
+  maxConnections = MAX_CONNECTIONS,
   maxUpgradesPerWindow = MAX_UPGRADES_PER_WINDOW,
   saveDelayMs = STORE_SAVE_DELAY_MS,
   saveStoreImpl = saveStore,
   onSaveError = (error) => console.error('Room store save failed:', error),
   allowedOrigin = process.env.STS_ALLOWED_ORIGIN,
-  handoffRestore = process.env.STS_HANDOFF_RESTORE === 'true',
-  handoffReconnectMs = Math.max(5 * 60_000, Number(process.env.STS_HANDOFF_RECONNECT_MS) || 0),
+  restartRecovery = process.env.STS_RESTART_RECOVERY === 'true',
+  restartReconnectMs = Math.max(5 * 60_000, Number(process.env.STS_RESTART_RECONNECT_MS) || 0),
 } = {}) {
-  const store = createStore({ file: storeFile, handoffRestore, handoffReconnectMs })
+  const store = createStore({ file: storeFile, restartRecovery, restartReconnectMs })
   const sockets = new Map()
   const roomActivity = new Map()
   const roomOwners = new Map()
+  const profileRates = new Map()
   const createRates = new Map()
   const joinRates = new Map()
   const entryRetryRates = new Map()
   const leaderboardRates = new Map()
   const upgradeRates = new Map()
   const invalidUpgradeRates = new Map()
-  const seatRates = new Map()
+  const actionRates = new Map()
+  const readRates = new Map()
   const voiceRates = new Map()
   const pendingAuth = new Map()
   const wss = new WebSocketServer({
@@ -178,8 +188,8 @@ export function createRoomServer({
     roomActivity.set(room.code, room.lastActivityAt)
   }
 
-  const reconnectingHandoff = (room) => store.reconnectQuorums.has(room.code)
-  const finishHandoffReconnect = (room, seat) => {
+  const recoveringRestart = (room) => store.reconnectQuorums.has(room.code)
+  const finishRestartRecovery = (room, seat) => {
     const quorum = store.reconnectQuorums.get(room.code)
     if (!quorum) return
     quorum.playerIds.delete(seat.playerId)
@@ -198,20 +208,25 @@ export function createRoomServer({
   }
 
   const mayAct = (room, token) => consume(
-    seatRates, `${room.code}:${token}`, MESSAGE_WINDOW_MS, MAX_MESSAGES_PER_WINDOW,
+    actionRates, `${room.code}:${token}`, MESSAGE_WINDOW_MS, MAX_MESSAGES_PER_WINDOW,
+  )
+  const mayRead = (room, token) => consume(
+    readRates, `${room.code}:${token}`, MESSAGE_WINDOW_MS, MAX_READS_PER_WINDOW,
   )
   const maySignalVoice = (room, token) => consume(
     voiceRates, `${room.code}:${token}`, MESSAGE_WINDOW_MS, MAX_VOICE_MESSAGES_PER_WINDOW,
   )
 
   function sweepRooms(now = Date.now()) {
+    for (const [key, rate] of profileRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) profileRates.delete(key)
     for (const [key, rate] of createRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) createRates.delete(key)
     for (const [key, rate] of joinRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) joinRates.delete(key)
     for (const [key, rate] of entryRetryRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) entryRetryRates.delete(key)
     for (const [key, rate] of leaderboardRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) leaderboardRates.delete(key)
     for (const [key, rate] of upgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) upgradeRates.delete(key)
     for (const [key, rate] of invalidUpgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) invalidUpgradeRates.delete(key)
-    for (const [key, rate] of seatRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) seatRates.delete(key)
+    for (const [key, rate] of actionRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) actionRates.delete(key)
+    for (const [key, rate] of readRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) readRates.delete(key)
     for (const [key, rate] of voiceRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) voiceRates.delete(key)
     for (const [code, quorum] of store.reconnectQuorums) {
       if (now < quorum.expiresAt) continue
@@ -327,12 +342,13 @@ export function createRoomServer({
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (request.method === 'GET' && url.pathname === '/api/health') {
         return send(response, 200, {
-          ok: true, rooms: store.rooms.size, protocolVersion: MULTIPLAYER_PROTOCOL_VERSION, profiles: true,
-          entryRequestIds: true, webSocketActionAcks: true,
+          ok: true, rooms: store.rooms.size, connections: sockets.size, connectionCapacity: maxConnections,
+          protocolVersion: MULTIPLAYER_PROTOCOL_VERSION, profiles: true,
+          entryRequestIds: true, webSocketActionAcks: true, releaseSha: RELEASE_SHA,
         })
       }
       if (request.method === 'POST' && url.pathname === '/api/profile') {
-        if (!consume(createRates, sourceOf(request), CREATE_WINDOW_MS, MAX_CREATES_PER_WINDOW)) {
+        if (!consume(profileRates, sourceOf(request), CREATE_WINDOW_MS, MAX_PROFILE_CLAIMS_PER_WINDOW)) {
           return send(response, 429, { error: 'Too many name requests. Please try again shortly.' })
         }
         const profile = claimProfile(store.profiles, await readJson(request))
@@ -406,13 +422,13 @@ export function createRoomServer({
         const token = tokenOf(request)
         const seat = findSeat(room, token)
         if (!seat) return send(response, 401, { error: 'Unknown seat' })
-        if (!mayAct(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
+        if (!mayRead(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
         return send(response, 200, snapshotFor(room, token))
       }
       if (request.method === 'GET' && operation === 'voice-ice') {
         const token = tokenOf(request)
         if (!findSeat(room, token)) return send(response, 401, { error: 'Unknown seat' })
-        if (!mayAct(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
+        if (!mayRead(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
         return send(response, 200, { iceServers: await voiceIceServers() })
       }
       if (request.method !== 'POST') return send(response, 405, { error: 'Method not allowed' })
@@ -431,20 +447,17 @@ export function createRoomServer({
         })
         if (!admitted) return send(response, 429, { error: 'Too many join attempts' })
         const token = body.token ?? tokenOf(request)
-        if (reconnectingHandoff(room) && !findSeat(room, token)) {
+        if (recoveringRestart(room) && !findSeat(room, token)) {
           return send(response, 409, { error: 'Waiting for every player to reconnect' })
         }
         const live = [...sockets.values()].some((client) => client.code === room.code && client.token === token)
-        if (findSeat(room, token) && !mayAct(room, token)) {
-          return send(response, 429, { error: 'Rate limit exceeded' })
-        }
         const beforeVersion = room.version
         const seat = joinRoom(room, {
           name: body.name, character: body.character, campaignProgress: body.campaignProgress,
-          token, connected: live, settle: !reconnectingHandoff(room),
+          token, connected: live, settle: !recoveringRestart(room),
         })
         if (requestId) seat.joinRequestId = requestId
-        if (live) finishHandoffReconnect(room, seat)
+        if (live) finishRestartRecovery(room, seat)
         touch(room)
         if (room.version !== beforeVersion) {
           queueSave()
@@ -458,7 +471,7 @@ export function createRoomServer({
         return send(response, 401, { error: 'Unknown seat' })
       }
       if (!mayAct(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
-      if (reconnectingHandoff(room)) return send(response, 409, { error: 'Waiting for every player to reconnect' })
+      if (recoveringRestart(room)) return send(response, 409, { error: 'Waiting for every player to reconnect' })
       const body = await readJson(request)
       if (store.rooms.get(room.code) !== room) return send(response, 404, { error: 'Room not found' })
       let changed = true
@@ -537,8 +550,8 @@ export function createRoomServer({
         socket.write(`HTTP/1.1 ${status} ${status === 401 ? 'Unauthorized' : 'Too Many Requests'}\r\nConnection: close\r\n\r\n`)
         return socket.destroy()
       }
-      const bridgedHandoff = handoffRestore
-      const sourceKey = bridgedHandoff ? `${source}:${code}` : source
+      const roomScopedSource = restartRecovery
+      const sourceKey = roomScopedSource ? `${source}:${code}` : source
       const tooManyPending = pendingAuth.size >= MAX_PENDING_AUTH
         || [...pendingAuth.values()].filter((pendingSource) => pendingSource === sourceKey).length >= MAX_PENDING_AUTH_PER_IP
       if (tooManyPending || !consume(upgradeRates, sourceKey, CREATE_WINDOW_MS, maxUpgradesPerWindow)) {
@@ -575,35 +588,48 @@ export function createRoomServer({
         }
         if (client) {
           room = roomOrThrow(client.code)
+          const now = Date.now()
+          if (!client.messageWindowStartedAt || now - client.messageWindowStartedAt >= MESSAGE_WINDOW_MS) {
+            client.messageWindowStartedAt = now
+            client.messageCount = 0
+          }
+          client.messageCount += 1
+          if (client.messageCount > MAX_ABUSIVE_MESSAGES_PER_WINDOW) {
+            return socket.close(4008, 'Abusive traffic limit exceeded')
+          }
           const allowed = message.type === 'voice'
             ? maySignalVoice(room, client.token)
             : mayAct(room, client.token)
           if (!allowed) {
-            if (message.type !== 'action' || client.rateLimited) return socket.close(4008, 'Rate limit exceeded')
-            let requestId
-            try { requestId = requestIdOf(message.requestId) } catch { return socket.close(4008, 'Rate limit exceeded') }
-            if (!requestId) return socket.close(4008, 'Rate limit exceeded')
-            client.rateLimited = true
             if (socket.bufferedAmount > MAX_BUFFERED_BYTES) return socket.terminate()
+            if (message.type !== 'action') {
+              return socket.send(JSON.stringify({ type: 'error', status: 429, error: 'Rate limit exceeded' }))
+            }
+            let requestId
+            try { requestId = requestIdOf(message.requestId) } catch {}
             return socket.send(JSON.stringify({
               type: 'error', requestId, status: 429, error: 'Rate limit exceeded',
               snapshot: snapshotFor(room, client.token),
             }))
           }
-          if (message.type === 'action') client.rateLimited = false
         }
         if (!client) {
           if (message.type !== 'authenticate' || typeof message.token !== 'string') {
             return socket.close(4003, 'Authentication required')
           }
           room = roomOrThrow(context.code)
-          if (!findSeat(room, message.token)) return socket.close(4003, 'Unknown seat')
-          if (!mayAct(room, message.token)) return socket.close(4008, 'Rate limit exceeded')
-          const seat = joinRoom(room, {
+          let seat = findSeat(room, message.token)
+          if (!seat) return socket.close(4003, 'Unknown seat')
+          const replacedSockets = [...sockets].filter(([, other]) =>
+            other.code === room.code && other.token === message.token)
+          if (replacedSockets.length === 0 && sockets.size >= maxConnections) {
+            return socket.close(4009, 'Server connection capacity reached')
+          }
+          seat = joinRoom(room, {
             token: message.token, campaignProgress: message.campaignProgress,
-            settle: !reconnectingHandoff(room),
+            settle: !recoveringRestart(room),
           })
-          finishHandoffReconnect(room, seat)
+          finishRestartRecovery(room, seat)
           client = {
             code: room.code,
             token: message.token,
@@ -612,10 +638,9 @@ export function createRoomServer({
           sockets.set(socket, client)
           pendingAuth.delete(socket)
           clearTimeout(authTimer)
-          for (const [otherSocket, other] of sockets) {
-            if (otherSocket !== socket && other.code === room.code && other.token === message.token) {
-              otherSocket.close(4001, 'Seat opened elsewhere')
-            }
+          for (const [otherSocket] of replacedSockets) {
+            sockets.delete(otherSocket)
+            otherSocket.close(4001, 'Seat opened elsewhere')
           }
           touch(room)
           queueSave()
@@ -626,7 +651,7 @@ export function createRoomServer({
           const requestId = requestIdOf(message.requestId)
           const versionBefore = room.version
           try {
-            if (reconnectingHandoff(room)) {
+            if (recoveringRestart(room)) {
               throw Object.assign(new Error('Waiting for every player to reconnect'), { status: 409 })
             }
             const result = applyAndRecord(room, client.token, message.action)

@@ -322,9 +322,7 @@ async function json(response: Response) {
   return body
 }
 
-const resetAfterFailure = (cause: unknown, failedUrl?: string) => resetRoomEndpoint(
-  (!(cause instanceof RequestError) || cause.status >= 500) ? failedUrl : undefined,
-)
+const resetAfterFailure = () => resetRoomEndpoint()
 
 export function useRoomSession() {
   const [credentials, setCredentials] = useState<Credentials | null>(savedCredentials)
@@ -411,7 +409,7 @@ export function useRoomSession() {
           if (refreshId > reconciliation.current.target) reconciliation.current.target = 0
           delay = 1_000
         } catch (cause) {
-          resetAfterFailure(cause, endpoint)
+          resetAfterFailure()
           delay = Math.min(delay * 2, 5_000)
         }
       }
@@ -458,13 +456,11 @@ export function useRoomSession() {
         if (accept(restored)) setRestorationEpoch((current) => current + 1)
         setRefreshEpoch((current) => Math.max(current, refreshId))
         const socketUrl = await roomWebSocketUrl(credentials.code)
-        const socketEndpoint = new URL(socketUrl)
-        socketEndpoint.protocol = socketEndpoint.protocol === 'wss:' ? 'https:' : 'http:'
         const next = new WebSocket(socketUrl)
         if (supportsWebSocketActionAcks()) acknowledgedSockets.current.add(next)
         socket.current = next
         let connectionTimeout: number | undefined
-        const reconnect = (failedEndpoint?: string) => {
+        const reconnect = () => {
           if (!active || generation.current !== connectedGeneration || socket.current !== next) return
           if (connectionTimeout) clearTimeout(connectionTimeout)
           if (livenessTimer) clearTimeout(livenessTimer)
@@ -473,7 +469,7 @@ export function useRoomSession() {
           socket.current = null
           connectionRef.current = 'reconnecting'
           setConnection('reconnecting')
-          resetRoomEndpoint(failedEndpoint)
+          resetRoomEndpoint()
           next.close(4000, 'Connection lost')
           retryConnection(connect)
         }
@@ -487,7 +483,7 @@ export function useRoomSession() {
               signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
             })) as RoomSnapshot
             if (!active || socket.current !== next) return
-            if (!latest.you.connected) return reconnect(socketEndpoint.href)
+            if (!latest.you.connected) return reconnect()
             livenessFailures = 0
             if (accept(latest)) setRestorationEpoch((current) => current + 1)
             livenessTimer = window.setTimeout(probe, LIVENESS_INTERVAL_MS)
@@ -498,11 +494,11 @@ export function useRoomSession() {
               livenessTimer = window.setTimeout(probe, RECONNECT_MIN_DELAY_MS)
               return
             }
-            resetAfterFailure(cause, probeEndpoint)
-            reconnect(socketEndpoint.href)
+            resetAfterFailure()
+            reconnect()
           }
         }
-        connectionTimeout = window.setTimeout(() => reconnect(socketEndpoint.href), ACTION_TIMEOUT_MS)
+        connectionTimeout = window.setTimeout(reconnect, ACTION_TIMEOUT_MS)
         next.addEventListener('open', () => {
           if (!active || socket.current !== next) return next.close()
           next.send(JSON.stringify({ type: 'authenticate', token: credentials.token, campaignProgress: savedCampaign() }))
@@ -565,7 +561,7 @@ export function useRoomSession() {
             if (event.code === 4003 || event.code === 4004) setRecoveries(retire(credentials))
             return
           }
-          reconnect(event.code < 4000 ? socketEndpoint.href : undefined)
+          reconnect()
         })
       } catch (cause) {
         if (!active || generation.current !== connectedGeneration) return
@@ -581,7 +577,7 @@ export function useRoomSession() {
         }
         setError(cause instanceof Error ? cause.message : 'Could not connect')
         setConnection('reconnecting')
-        resetAfterFailure(cause, endpoint)
+        resetAfterFailure()
         retryConnection(connect)
       }
     }
@@ -625,7 +621,7 @@ export function useRoomSession() {
           })) as { token: string; snapshot: RoomSnapshot }
           break
         } catch (cause) {
-          resetAfterFailure(cause, endpoint)
+          resetAfterFailure()
           if (cause instanceof RequestError && cause.status < 500) throw cause
           lastError = cause
           if (!retrySafe) break
@@ -712,7 +708,7 @@ export function useRoomSession() {
       if (cause instanceof RequestError && cause.status >= 400 && cause.status < 500 && cause.snapshot) {
         return { status: 'refused', snapshot: cause.snapshot } satisfies ActionOutcome
       }
-      resetAfterFailure(cause, endpoint)
+      resetAfterFailure()
       let refreshAttempt: number | undefined
       if (generation.current === actionGeneration) {
         for (const delay of [0, 150, 500]) {
@@ -736,7 +732,7 @@ export function useRoomSession() {
               snapshot: latest,
             } satisfies ActionOutcome
           } catch (refreshCause) {
-            resetAfterFailure(refreshCause, refreshEndpoint)
+            resetAfterFailure()
             // A 4xx mutation response proves refusal even if its refresh fails —
             // but a refusal can still have changed the room, and the server sends
             // that change to the other seats only, so keep reconciling in the
@@ -801,7 +797,7 @@ export function useRoomSession() {
       forget()
       return true
     } catch (cause) {
-      resetAfterFailure(cause, endpoint)
+      resetAfterFailure()
       if (cause instanceof RequestError && (cause.status === 401 || cause.status === 404)) {
         setRecoveries(retire(credentials))
         if (generation.current !== leaveGeneration) return departed.current
@@ -856,7 +852,7 @@ export function useRoomSession() {
       } catch (cause) {
         if (generation.current !== voiceGeneration) throw cause
         if (cause instanceof RequestError && cause.status < 500) throw cause
-        resetAfterFailure(cause, endpoint)
+        resetAfterFailure()
         lastError = cause
       }
     }

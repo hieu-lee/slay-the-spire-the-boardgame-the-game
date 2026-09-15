@@ -6,9 +6,11 @@ import { createRoomServer } from './room-server.mjs'
 import { createStore } from './lib/rooms.mjs'
 import { normalizeLeaderboardRun, addLeaderboardRun } from './lib/leaderboard.mjs'
 
-const workflow = readFileSync(new URL('../.github/workflows/multiplayer-session.yml', import.meta.url), 'utf8')
-assert.match(workflow, /\.protocolVersion == 1 and \.profiles == true and \.webSocketActionAcks == true/)
-assert.match(workflow, /VITE_HOSTED_SESSION=true/)
+const pagesWorkflow = readFileSync(new URL('../.github/workflows/pages-deploy.yml', import.meta.url), 'utf8')
+const serverWorkflow = readFileSync(new URL('../.github/workflows/server-deploy.yml', import.meta.url), 'utf8')
+assert.match(pagesWorkflow, /\.protocolVersion == 1 and \.profiles == true and \.webSocketActionAcks == true and \.releaseSha == \$sha/)
+assert.match(pagesWorkflow, /VITE_HOSTED_SESSION=true/)
+assert.match(serverWorkflow, /infra\/deploy-local-server\.sh/)
 
 const directory = mkdtempSync(join(tmpdir(), 'sts-profile-'))
 const file = join(directory, 'rooms.json')
@@ -22,13 +24,14 @@ try {
   assert.equal(health.profiles, true)
   assert.equal(health.entryRequestIds, true)
   assert.equal(health.webSocketActionAcks, true)
+  assert.equal(health.releaseSha, null)
   const token = crypto.randomUUID()
   const results = await Promise.all([post('profile', { token, username: 'North' }), post('profile', { token: crypto.randomUUID(), username: 'NORTH' })])
   assert.deepEqual(results.map((r) => r.status).sort(), [200, 409])
   const profile = server.store.profiles[0]
   assert.equal((await post('profile', profile)).status, 200)
   assert.equal(server.store.profiles.length, 1)
-  assert.deepEqual(createStore({ file, handoffRestore: true }).profiles, [profile])
+  assert.deepEqual(createStore({ file, restartRecovery: true }).profiles, [profile])
   assert.equal((await post('profile', { token: crypto.randomUUID(), username: '<script>' })).status, 400)
   const run = { id: 'test-run-123', character: 'ironclad', ascension: 0, mode: 'standard', startedAtAct: 1,
     highestBossActDefeated: 3, combatsFinished: 10, damageDealt: 30, damageTaken: 10, damageBlocked: 10,
@@ -48,7 +51,7 @@ try {
   assert.equal(addLeaderboardRun(store, run), false)
   await server.close()
   assert.deepEqual(createStore({ file }).leaderboardRuns[0].finalDeck, finalDeck)
-  console.log('✓ unique retry-safe profiles, durable handoff, trusted run names, winning decks and legacy enrichment')
+  console.log('✓ unique retry-safe profiles, durable restart recovery, trusted run names, winning decks and legacy enrichment')
 } finally {
   await server.close()
   rmSync(directory, { recursive: true, force: true })

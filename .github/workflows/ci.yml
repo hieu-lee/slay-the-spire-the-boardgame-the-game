@@ -1,0 +1,64 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      - name: Run checks affected by this push
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BASE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base=$PUSH_BASE
+          if [ "$EVENT_NAME" = pull_request ]; then base=$PR_BASE; fi
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]] || [[ "$base" =~ ^0+$ ]] ||
+              ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)
+          fi
+          node scripts/verify-all.mjs --changed="$base" --jobs=4 --heavy=2 --heavy-retries=2
+
+  deploy-server:
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: verify
+    permissions:
+      contents: read
+    uses: ./.github/workflows/server-deploy.yml
+    with:
+      deploy_sha: ${{ github.sha }}
+
+  deploy-pages:
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: deploy-server
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages-deploy.yml
+    with:
+      deploy_sha: ${{ github.sha }}

@@ -1,34 +1,28 @@
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
-const legacyOrigin = /^https:\/\/(?:[-a-z0-9]+\.trycloudflare\.com|[1-9a-km-z]{6}\.tunnel\.pyjam\.as)$/
+const SESSION_FIELDS = ['alwaysOn', 'origin', 'protocolVersion', 'runId', 'sha']
 
 export function validateSessionConfig(config, { sha, stableOrigin }) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Invalid session configuration.')
-  if (config.protocolVersion !== 1 || config.sha !== sha || typeof config.runId !== 'string') {
+  if (JSON.stringify(Object.keys(config).sort()) !== JSON.stringify(SESSION_FIELDS)) {
+    throw new Error('Session configuration contains unsupported fields.')
+  }
+  if (config.protocolVersion !== 1 || config.sha !== sha ||
+      typeof config.runId !== 'string' || !/^[0-9]+$/.test(config.runId)) {
     throw new Error('Session metadata does not match the deployment.')
   }
-  if (typeof config.origin !== 'string' || !Array.isArray(config.origins) ||
-      config.origins.some((origin) => typeof origin !== 'string')) {
-    throw new Error('Invalid session origins.')
-  }
-  for (const origin of [config.origin, ...config.origins]) {
-    if (origin !== stableOrigin && !legacyOrigin.test(origin)) throw new Error(`Unsupported room origin: ${origin}`)
+  if (config.alwaysOn !== true || config.origin !== stableOrigin) {
+    throw new Error('The always-on room origin does not match the deployment.')
   }
   return config
 }
 
-function main([file, sha, stableOrigin, selectedOrigin]) {
+function main([file, sha, stableOrigin]) {
   if (!file || !sha || !stableOrigin) {
-    throw new Error('Usage: validate-session-config.mjs <file> <sha> <stable-origin> [selected-origin]')
+    throw new Error('Usage: validate-session-config.mjs <file> <sha> <stable-origin>')
   }
-  const config = validateSessionConfig(JSON.parse(readFileSync(file, 'utf8')), { sha, stableOrigin })
-  if (selectedOrigin) {
-    if (![config.origin, ...config.origins].includes(selectedOrigin)) throw new Error('Selected origin is not configured.')
-    const next = `${file}.next`
-    writeFileSync(next, `${JSON.stringify({ ...config, origin: selectedOrigin })}\n`)
-    renameSync(next, file)
-  }
+  validateSessionConfig(JSON.parse(readFileSync(file, 'utf8')), { sha, stableOrigin })
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -1,11 +1,11 @@
 import WebSocket from 'ws'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
-import { createCampaignProgress } from '../src/game/state.ts'
+import { createCampaignProgress, defaultStartTurnChoices } from '../src/game/state.ts'
 
 suite('room server')
 
@@ -58,6 +58,13 @@ function nextMessage(socket, type, accept = () => true) {
   })
 }
 
+const capacityHealth = await request('/api/health')
+check('health publishes the intended fifty-connection capacity', () => {
+  assertEqual(capacityHealth.status, 200)
+  assertEqual(capacityHealth.body.connectionCapacity, 50)
+  assertEqual(capacityHealth.body.connections, 0)
+})
+
 async function connect(code, token, campaignProgress) {
   const socket = new WebSocket(`${wsOrigin}/ws?room=${code}`)
   const first = nextMessage(socket, 'snapshot')
@@ -78,6 +85,36 @@ try {
     assertEqual(invalid.status, 409)
     assertEqual(service.store.rooms.size, 0)
   })
+
+  const sharedSource = '198.51.100.250'
+  const profileStatuses = []
+  for (let index = 0; index < 10; index += 1) {
+    const response = await fetch(`${origin}/api/profile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'cf-connecting-ip': sharedSource },
+      body: JSON.stringify({ token: crypto.randomUUID(), username: `Friend ${index}` }),
+    })
+    profileStatuses.push(response.status)
+  }
+  const sharedRooms = []
+  for (let index = 0; index < 3; index += 1) {
+    const response = await fetch(`${origin}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'cf-connecting-ip': sharedSource },
+      body: JSON.stringify({ name: `Shared host ${index}`, character: 'ironclad' }),
+    })
+    sharedRooms.push({ status: response.status, ...(await response.json()) })
+  }
+  check('ten friends behind one NAT can claim profiles and create three rooms in one onboarding burst', () => {
+    assert(profileStatuses.every((status) => status === 200), `profile statuses: ${profileStatuses.join(',')}`)
+    assert(sharedRooms.every((room) => room.status === 201),
+      `room statuses: ${sharedRooms.map((room) => room.status).join(',')}`)
+  })
+  for (const room of sharedRooms) {
+    await request(`/api/rooms/${room.snapshot.code}/leave`, {
+      method: 'POST', token: room.token, body: {},
+    })
+  }
 
   const leavable = await request('/api/rooms', {
     method: 'POST', body: { name: 'Keeping', character: 'ironclad' },
@@ -167,7 +204,9 @@ try {
     assert(!JSON.stringify(created.body.snapshot).includes(a.token), 'the bearer token leaked into a snapshot')
   })
 
-  const pending = Array.from({ length: 4 }, () => new WebSocket(`${wsOrigin}/ws?room=${code}`))
+  // Four friends can each have an old and a replacement socket in flight
+  // without one household consuming the global pending-authentication pool.
+  const pending = Array.from({ length: 8 }, () => new WebSocket(`${wsOrigin}/ws?room=${code}`))
   await Promise.all(pending.map((socket) => new Promise((resolve, reject) => {
     socket.once('open', resolve)
     socket.once('error', reject)
@@ -403,6 +442,98 @@ try {
     assertEqual(secondResolve.status, 200)
   })
 
+  // Noxious Fumes has a private target choice. The shared order coordinator
+  // may stage the turn, but only the Power's owner may commit that target.
+  const ann = liveRoom.run.combat.players.find((player) => player.id === a.playerId)
+  const bo = liveRoom.run.combat.players.find((player) => player.id === joined[0].playerId)
+  Object.assign(liveRoom, {
+    endTurnAbilities: undefined,
+    endTurnPublicIds: undefined,
+    endTurnOrders: undefined,
+    endTurnOrder: undefined,
+    endTurnReady: undefined,
+  })
+  Object.assign(liveRoom.run.combat, {
+    phase: 'roundEnd', turn: 1, log: [], endTurnProgress: undefined,
+  })
+  for (const player of liveRoom.run.combat.players) {
+    Object.assign(player, { hand: [], relics: [], powers: [], shivs: 0 })
+  }
+  Object.assign(ann, {
+    shivs: 5,
+    powers: [{ uid: 'server-infinite', defId: 'infinite_blades', upgraded: false }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `server-ann-draw-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+  })
+  Object.assign(bo, {
+    powers: [{ uid: 'server-noxious', defId: 'noxious_fumes', upgraded: false }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `server-bo-private-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  const enemyTemplate = liveRoom.run.combat.enemies[0]
+  liveRoom.run.combat.enemies = [
+    { ...enemyTemplate, uid: 'server-noxious-left', defId: 'cultist', row: bo.row,
+      hp: 50, maxHp: 50, block: 0, poison: 0, dead: false, abilityUsed: true, isBoss: false },
+    { ...enemyTemplate, uid: 'server-noxious-right', defId: 'red_louse', row: bo.row,
+      hp: 40, maxHp: 50, block: 0, poison: 0, dead: false, abilityUsed: true, isBoss: false },
+  ]
+  const startedTurn = await request(`/api/rooms/${code}/action`, {
+    method: 'POST', token: a.token, body: { action: { kind: 'startTurn' } },
+  })
+  assertEqual(startedTurn.status, 200, `could not stage Noxious Fumes: ${JSON.stringify(startedTurn.body)}`)
+  const blankChoices = defaultStartTurnChoices(liveRoom.run.combat).map((choice) => ({
+    ...choice, shivEnemyUids: choice.shivEnemyUids.map(() => null),
+  }))
+  const stagedFumes = await request(`/api/rooms/${code}/action`, {
+    method: 'POST', token: a.token,
+    body: { action: { kind: 'resolveStartTurn', choices: blankChoices } },
+  })
+  assert(Array.isArray(liveRoom.startTurnOrder), `shared start-turn order was not committed: ${JSON.stringify({
+    status: stagedFumes.status,
+    body: stagedFumes.body,
+    choices: liveRoom.startTurnChoices,
+  })}`)
+  const fumesId = `${joined[0].playerId}/power:server-noxious`
+  const forgedChoices = blankChoices.map((choice) => choice.id === fumesId
+    ? { ...choice, enemyUid: 'server-noxious-left' }
+    : choice)
+  const forgedFumes = await request(`/api/rooms/${code}/action`, {
+    method: 'POST', token: a.token,
+    body: { action: { kind: 'resolveStartTurn', choices: forgedChoices } },
+  })
+  const ownerViewBefore = await request(`/api/rooms/${code}`, { token: joined[0].token })
+  const ownerChoices = blankChoices.map((choice) => choice.id === fumesId
+    ? { ...choice, enemyUid: 'server-noxious-right' }
+    : choice)
+  const resolvedFumes = await request(`/api/rooms/${code}/action`, {
+    method: 'POST', token: joined[0].token,
+    body: { action: { kind: 'resolveStartTurn', choices: ownerChoices } },
+  })
+  const hostView = await request(`/api/rooms/${code}`, { token: a.token })
+  check('only the Noxious Fumes owner can commit its private enemy target', () => {
+    assertEqual(stagedFumes.status, 200, JSON.stringify(stagedFumes.body))
+    assertEqual(stagedFumes.body.startTurnChoiceId, fumesId)
+    assertEqual(stagedFumes.body.startTurnCoordinatorId, joined[0].playerId)
+    assertEqual(forgedFumes.status, 200)
+    assertEqual(forgedFumes.body.run.combat.phase, 'start',
+      'the shared order coordinator resolved another seat\'s Noxious target')
+    assertEqual(forgedFumes.body.startTurnChoiceId, fumesId)
+    assertEqual(forgedFumes.body.startTurnCoordinatorId, joined[0].playerId)
+    assertEqual(forgedFumes.body.run.combat.enemies.reduce((sum, enemy) => sum + enemy.poison, 0), 0,
+      'the forged Noxious target changed authoritative enemy state')
+    assertEqual(ownerViewBefore.body.startTurnChoiceId, fumesId)
+    assertEqual(ownerViewBefore.body.startTurnAbilities.find((ability) => ability.id === fumesId)?.targets.length, 2)
+    assertEqual(resolvedFumes.status, 200, JSON.stringify(resolvedFumes.body))
+    assertEqual(resolvedFumes.body.run.combat.phase, 'player')
+    assertEqual(resolvedFumes.body.run.combat.enemies.find((enemy) => enemy.uid === 'server-noxious-left').poison, 0)
+    assertEqual(resolvedFumes.body.run.combat.enemies.find((enemy) => enemy.uid === 'server-noxious-right').poison, 1)
+    const hostViewOfBo = hostView.body.run.combat.players.find((player) => player.id === joined[0].playerId)
+    assertEqual(hostViewOfBo.hand, null, 'the owner-scoped choice exposed the Silent hand')
+    assert(!JSON.stringify(hostView.body).includes('server-bo-private-'), 'a private Silent draw UID leaked to the host')
+  })
+
   const invalidVoice = nextMessage(aLive.socket, 'error')
   aLive.socket.send(JSON.stringify({ type: 'voice', to: joined[0].playerId, signal: null }))
   const rejectedVoice = await invalidVoice
@@ -429,8 +560,8 @@ try {
   })
   const voiceSender = await connect(voiceLimited.body.snapshot.code, voiceLimited.body.token)
   const voiceReceiver = await connect(voiceLimited.body.snapshot.code, voiceJoined.body.token)
-  const lastVoice = nextMessage(voiceReceiver.socket, 'voice', (message) => message.signal.sequence === 179)
-  for (let sequence = 0; sequence < 180; sequence++) {
+  const lastVoice = nextMessage(voiceReceiver.socket, 'voice', (message) => message.signal.sequence === 599)
+  for (let sequence = 0; sequence < 600; sequence++) {
     voiceSender.socket.send(JSON.stringify({
       type: 'voice',
       to: voiceJoined.body.snapshot.you.playerId,
@@ -439,18 +570,20 @@ try {
   }
   await lastVoice
   const actionCapacity = await request(`/api/rooms/${voiceLimited.body.snapshot.code}`, { token: voiceLimited.body.token })
-  const voiceThrottled = new Promise((resolve) => voiceSender.socket.once('close', (closeCode) => resolve(closeCode)))
+  const voiceThrottled = nextMessage(voiceSender.socket, 'error', (message) => message.status === 429)
   voiceSender.socket.send(JSON.stringify({
     type: 'voice',
     to: voiceJoined.body.snapshot.you.playerId,
-    signal: { sequence: 180 },
+    signal: { sequence: 600 },
   }))
-  const voiceThrottleCode = await voiceThrottled
+  const voiceThrottleError = await voiceThrottled
   voiceReceiver.socket.close()
-  check('voice signaling is bounded without consuming authoritative capacity', () => {
+  check('a large four-player voice negotiation is bounded without disconnecting or consuming action capacity', () => {
     assertEqual(actionCapacity.status, 200)
-    assertEqual(voiceThrottleCode, 4008)
+    assertEqual(voiceThrottleError.status, 429)
+    assertEqual(voiceSender.socket.readyState, WebSocket.OPEN)
   })
+  voiceSender.socket.close()
 
   const malformedLive = await request('/api/rooms', {
     method: 'POST', body: { name: 'Malformed', character: 'ironclad' },
@@ -616,25 +749,31 @@ try {
   })
   const limitedCode = limited.body.snapshot.code
   const limitedLive = await connect(limitedCode, limited.body.token)
-  let limitedMessage
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 300; i++) {
     const requestId = crypto.randomUUID()
     const response = nextMessage(limitedLive.socket, 'error', (message) => message.requestId === requestId)
     limitedLive.socket.send(JSON.stringify({ type: 'action', requestId, action: null }))
-    limitedMessage = await response
+    const refused = await response
+    assertEqual(refused.status, 409, 'a normal action entered the soft rate-limit band early')
   }
-  check('correlated WebSocket actions report rate limits without reconnecting', () => {
+  const limitedRequestId = crypto.randomUUID()
+  const limitedResponse = nextMessage(limitedLive.socket, 'error', (message) => message.requestId === limitedRequestId)
+  limitedLive.socket.send(JSON.stringify({ type: 'action', requestId: limitedRequestId, action: null }))
+  const limitedMessage = await limitedResponse
+  check('a 30-action-per-second burst reports a soft limit without disconnecting', () => {
     assertEqual(limitedMessage.status, 429)
     assertEqual(limitedLive.socket.readyState, WebSocket.OPEN)
   })
   const postLimitVoice = nextMessage(limitedLive.socket, 'error')
   limitedLive.socket.send(JSON.stringify({ type: 'voice', to: 'missing', signal: { ready: true } }))
   await postLimitVoice
-  const repeatedRateClose = new Promise((resolve) => limitedLive.socket.once('close', resolve))
-  limitedLive.socket.send(JSON.stringify({ type: 'action', requestId: crypto.randomUUID(), action: null }))
-  const repeatedRateCode = await repeatedRateClose
-  check('voice traffic cannot reset the bounded over-limit WebSocket response', () => {
-    assertEqual(repeatedRateCode, 4008)
+  const repeatedRequestId = crypto.randomUUID()
+  const repeatedRateResponse = nextMessage(limitedLive.socket, 'error', (message) => message.requestId === repeatedRequestId)
+  limitedLive.socket.send(JSON.stringify({ type: 'action', requestId: repeatedRequestId, action: null }))
+  const repeatedRateError = await repeatedRateResponse
+  check('voice traffic cannot reset the bounded over-limit response or disconnect the game', () => {
+    assertEqual(repeatedRateError.status, 429)
+    assertEqual(limitedLive.socket.readyState, WebSocket.OPEN)
   })
   for (let i = 0; i < 2; i++) {
     await request(`/api/rooms/${limitedCode}/action`, {
@@ -646,20 +785,15 @@ try {
     headers: { 'x-room-token': limited.body.token, 'content-type': 'application/json' },
     body: '{',
   })
-  const throttled = await request(`/api/rooms/${limitedCode}`, { token: limited.body.token })
-  const reconnect = new WebSocket(`${wsOrigin}/ws?room=${limitedCode}`)
-  const reconnectClosed = new Promise((resolve) => reconnect.once('close', (closeCode) => resolve(closeCode)))
-  await new Promise((resolve, reject) => {
-    reconnect.once('open', resolve)
-    reconnect.once('error', reject)
-  })
-  reconnect.send(JSON.stringify({ type: 'authenticate', token: limited.body.token }))
-  const reconnectCode = await reconnectClosed
-  check('one seat rate limit spans HTTP reads, malformed bodies, and reconnects', () => {
+  const readable = await request(`/api/rooms/${limitedCode}`, { token: limited.body.token })
+  const reconnected = await connect(limitedCode, limited.body.token)
+  check('an action burst cannot starve room reads or reconnection', () => {
     assertEqual(malformedThrottled.status, 429, 'a throttled body was parsed before admission')
-    assertEqual(throttled.status, 429)
-    assertEqual(reconnectCode, 4008, 'reconnect reset the seat rate limit')
+    assertEqual(readable.status, 200)
+    assertEqual(reconnected.snapshot.you.playerId, limited.body.snapshot.you.playerId)
+    assertEqual(reconnected.socket.readyState, WebSocket.OPEN)
   })
+  reconnected.socket.close()
 
   aReturned.socket.close()
   bReturned.socket.close()
@@ -668,6 +802,117 @@ try {
 } finally {
   await service.close()
 }
+
+const capacityService = createRoomServer()
+const capacityAddress = await capacityService.listen(0)
+const capacityOrigin = `http://127.0.0.1:${capacityAddress.port}`
+const capacitySockets = []
+const capacityPlayers = []
+const capacityRooms = []
+const characters = ['ironclad', 'silent', 'defect', 'watcher']
+for (let roomIndex = 0; roomIndex < 13; roomIndex += 1) {
+  const source = `198.51.100.${roomIndex + 1}`
+  const seats = roomIndex < 12 ? 4 : 2
+  const created = await fetch(`${capacityOrigin}/api/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'cf-connecting-ip': source },
+    body: JSON.stringify({ name: `Capacity ${roomIndex}-0`, character: characters[0] }),
+  }).then((response) => response.json())
+  capacityRooms.push(created)
+  const tokens = [created.token]
+  for (let seatIndex = 1; seatIndex < seats; seatIndex += 1) {
+    const joined = await fetch(`${capacityOrigin}/api/rooms/${created.snapshot.code}/join`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'cf-connecting-ip': source },
+      body: JSON.stringify({ name: `Capacity ${roomIndex}-${seatIndex}`, character: characters[seatIndex] }),
+    }).then((response) => response.json())
+    tokens.push(joined.token)
+  }
+  for (const token of tokens) {
+    const socket = new WebSocket(
+      `ws://127.0.0.1:${capacityAddress.port}/ws?room=${created.snapshot.code}`,
+      { headers: { 'cf-connecting-ip': source } },
+    )
+    const authenticated = nextMessage(socket, 'snapshot')
+    await new Promise((resolve, reject) => {
+      socket.once('open', resolve)
+      socket.once('error', reject)
+    })
+    socket.send(JSON.stringify({ type: 'authenticate', token }))
+    const authenticatedSnapshot = (await authenticated).snapshot
+    capacitySockets.push(socket)
+    capacityPlayers.push({ socket, token, snapshot: authenticatedSnapshot, code: created.snapshot.code })
+  }
+}
+for (const player of capacityPlayers.slice(0, 10)) {
+  const peer = capacityPlayers.find((candidate) =>
+    candidate.code === player.code && candidate.token !== player.token)
+  const lastSignal = nextMessage(peer.socket, 'voice', (message) =>
+    message.from === player.snapshot.you.playerId && message.signal.sequence === 39)
+  for (let sequence = 0; sequence < 40; sequence += 1) {
+    player.socket.send(JSON.stringify({
+      type: 'voice', to: peer.snapshot.you.playerId, signal: { sequence },
+    }))
+  }
+  await lastSignal
+  for (let actionIndex = 0; actionIndex < 30; actionIndex += 1) {
+    const requestId = crypto.randomUUID()
+    const refused = nextMessage(player.socket, 'error', (message) => message.requestId === requestId)
+    player.socket.send(JSON.stringify({ type: 'action', requestId, action: null }))
+    assertEqual((await refused).status, 409)
+  }
+}
+check('ten daily players absorb repeated action and voice bursts without disconnecting', () => {
+  assert(capacityPlayers.slice(0, 10).every((player) => player.socket.readyState === WebSocket.OPEN))
+})
+const fullHealth = await fetch(`${capacityOrigin}/api/health`).then((response) => response.json())
+const replacedAtCapacity = new Promise((resolve) =>
+  capacitySockets[0].once('close', (code) => resolve(code)))
+const replacementAtCapacity = new WebSocket(
+  `ws://127.0.0.1:${capacityAddress.port}/ws?room=${capacityRooms[0].snapshot.code}`,
+  { headers: { 'cf-connecting-ip': '198.51.100.1' } },
+)
+const replacementSnapshot = nextMessage(replacementAtCapacity, 'snapshot')
+await new Promise((resolve, reject) => {
+  replacementAtCapacity.once('open', resolve)
+  replacementAtCapacity.once('error', reject)
+})
+replacementAtCapacity.send(JSON.stringify({ type: 'authenticate', token: capacityRooms[0].token }))
+await replacementSnapshot
+const replacedAtCapacityCode = await replacedAtCapacity
+capacitySockets[0] = replacementAtCapacity
+capacityPlayers[0].socket = replacementAtCapacity
+const extraSeat = await fetch(
+  `${capacityOrigin}/api/rooms/${capacityRooms.at(-1).snapshot.code}/join`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.13' },
+    body: JSON.stringify({ name: 'Capacity extra', character: 'defect' }),
+  },
+).then((response) => response.json())
+const overCapacity = new WebSocket(
+  `ws://127.0.0.1:${capacityAddress.port}/ws?room=${capacityRooms.at(-1).snapshot.code}`,
+  { headers: { 'cf-connecting-ip': '203.0.113.1' } },
+)
+const overCapacityClosed = new Promise((resolve) =>
+  overCapacity.once('close', (code) => resolve(code)))
+await new Promise((resolve, reject) => {
+  overCapacity.once('open', resolve)
+  overCapacity.once('error', reject)
+})
+overCapacity.send(JSON.stringify({ type: 'authenticate', token: extraSeat.token }))
+const overCapacityCode = await overCapacityClosed
+const healthAfterCapacityRefusal = await fetch(`${capacityOrigin}/api/health`).then((response) => response.json())
+check('fifty players stay connected, including a replacement, while a new fifty-first seat is refused cleanly', () => {
+  assertEqual(capacitySockets.length, 50)
+  assertEqual(fullHealth.connections, 50)
+  assertEqual(replacedAtCapacityCode, 4001)
+  assertEqual(healthAfterCapacityRefusal.connections, 50)
+  assert(capacitySockets.every((socket) => socket.readyState === WebSocket.OPEN),
+    'a player disconnected during the fifty-client load check')
+  assertEqual(overCapacityCode, 4009)
+})
+for (const socket of capacitySockets) socket.close()
+await capacityService.close()
 
 let burstSaves = 0
 const burstService = createRoomServer({
@@ -849,35 +1094,104 @@ check('shutdown awaits WebSocket disconnect settlement before its final persiste
   assertEqual(shutdownService.server.listening, false)
 })
 
-const handoffSaves = []
-const handoffMarker = join(tmpdir(), `sts-room-handoff-${process.pid}-${Date.now()}.ok`)
-const handoffService = createRoomServer({
-  storeFile: join(tmpdir(), `sts-room-handoff-${process.pid}-${Date.now()}.json`),
+const restartDirectory = mkdtempSync(join(tmpdir(), 'sts-room-restart-'))
+const restartStore = join(restartDirectory, 'rooms.json')
+const restartMarker = join(restartDirectory, 'flushed.ok')
+const restartService = createRoomServer({
+  storeFile: restartStore,
   saveDelayMs: 10_000,
-  saveStoreImpl: (store) => handoffSaves.push(structuredClone([...store.rooms.values()])),
 })
-const handoffAddress = await handoffService.listen(0)
-const handoffOrigin = `http://127.0.0.1:${handoffAddress.port}`
-const handoffCreated = await fetch(`${handoffOrigin}/api/rooms`, {
+const restartAddress = await restartService.listen(0)
+const restartOrigin = `http://127.0.0.1:${restartAddress.port}`
+const restartCreated = await fetch(`${restartOrigin}/api/rooms`, {
   method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ name: 'Handoff', character: 'ironclad' }),
+  body: JSON.stringify({ name: 'Restart', character: 'ironclad' }),
 }).then((response) => response.json())
-const handoffSocket = new WebSocket(`ws://127.0.0.1:${handoffAddress.port}/ws?room=${handoffCreated.snapshot.code}`)
-await new Promise((resolve, reject) => {
-  handoffSocket.once('open', resolve)
-  handoffSocket.once('error', reject)
+const restartJoined = await fetch(`${restartOrigin}/api/rooms/${restartCreated.snapshot.code}/join`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ name: 'Restart Guest', character: 'silent' }),
+}).then((response) => response.json())
+async function reconnectTo(port, code, token) {
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/ws?room=${code}`)
+  const authenticated = nextMessage(socket, 'snapshot')
+  await new Promise((resolve, reject) => {
+    socket.once('open', resolve)
+    socket.once('error', reject)
+  })
+  socket.send(JSON.stringify({ type: 'authenticate', token }))
+  return { socket, snapshot: (await authenticated).snapshot }
+}
+await reconnectTo(restartAddress.port, restartCreated.snapshot.code, restartCreated.token)
+await reconnectTo(restartAddress.port, restartCreated.snapshot.code, restartJoined.token)
+const restartStarted = await fetch(`${restartOrigin}/api/rooms/${restartCreated.snapshot.code}/start`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-room-token': restartCreated.token },
+  body: '{}',
 })
-const handoffAuthenticated = nextMessage(handoffSocket, 'snapshot')
-handoffSocket.send(JSON.stringify({ type: 'authenticate', token: handoffCreated.token }))
-await handoffAuthenticated
-const exactHandoffRoom = JSON.stringify(handoffService.store.rooms.get(handoffCreated.snapshot.code))
-await handoffService.close({ preserveRooms: true, markerFile: handoffMarker })
-check('a coordinated handoff flushes the exact room without disconnect settlement', () => {
-  assertEqual(JSON.stringify(handoffSaves.at(-1)?.[0]), exactHandoffRoom)
-  assert(existsSync(handoffMarker), 'a successful handoff omitted its flush marker')
+assertEqual(restartStarted.status, 200)
+const restartRoom = restartService.store.rooms.get(restartCreated.snapshot.code)
+const hiddenNeowDeck = structuredClone(restartRoom.run.neow.deck)
+const exactRestartRoom = JSON.stringify(restartService.store.rooms.get(restartCreated.snapshot.code))
+await restartService.close({ preserveRooms: true, markerFile: restartMarker })
+check('a coordinated restart flushes the exact room without disconnect settlement', () => {
+  const persisted = JSON.parse(readFileSync(restartStore, 'utf8')).rooms[0]
+  assertEqual(JSON.stringify(persisted), exactRestartRoom)
+  assert(existsSync(restartMarker), 'a successful restart omitted its flush marker')
 })
 
-const restoredService = createRoomServer({ handoffRestore: true })
+const recoveredService = createRoomServer({
+  storeFile: restartStore, restartRecovery: true, restartReconnectMs: 10 * 60_000,
+})
+const recoveredAddress = await recoveredService.listen(0)
+const recoveredOrigin = `http://127.0.0.1:${recoveredAddress.port}`
+const recoveredRoom = recoveredService.store.rooms.get(restartCreated.snapshot.code)
+const unknownJoin = await fetch(`${recoveredOrigin}/api/rooms/${restartCreated.snapshot.code}/join`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ name: 'Intruder', character: 'defect' }),
+})
+const blockedBeforeReconnect = await fetch(`${recoveredOrigin}/api/rooms/${restartCreated.snapshot.code}/action`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-room-token': restartCreated.token },
+  body: JSON.stringify({ action: { kind: 'give-up-vote', vote: true } }),
+})
+const recoveredHost = await reconnectTo(
+  recoveredAddress.port, restartCreated.snapshot.code, restartCreated.token,
+)
+const blockedAfterOneReconnect = await fetch(`${recoveredOrigin}/api/rooms/${restartCreated.snapshot.code}/action`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-room-token': restartCreated.token },
+  body: JSON.stringify({ action: { kind: 'give-up-vote', vote: true } }),
+})
+const recoveredGuest = await reconnectTo(
+  recoveredAddress.port, restartCreated.snapshot.code, restartJoined.token,
+)
+check('a persisted two-seat run blocks changes until the reconnect quorum restores without leaking hidden state', () => {
+  assertEqual(unknownJoin.status, 409)
+  assertEqual(blockedBeforeReconnect.status, 409)
+  assertEqual(blockedAfterOneReconnect.status, 409)
+  assertEqual(recoveredService.store.reconnectQuorums.has(restartCreated.snapshot.code), false)
+  assert(recoveredRoom.seats.every((seat) => seat.connected), 'the recovered seats did not reconnect')
+  assertEqual(JSON.stringify(recoveredRoom.run.neow.deck), JSON.stringify(hiddenNeowDeck))
+  assertEqual(Object.hasOwn(recoveredHost.snapshot.run.neow, 'deck'), false)
+  assertEqual(Object.hasOwn(recoveredGuest.snapshot.run.neow, 'deck'), false)
+  assertEqual(recoveredHost.snapshot.run.players[1].deck, null)
+  assertEqual(recoveredGuest.snapshot.run.players[0].deck, null)
+})
+await recoveredService.close({ preserveRooms: true })
+
+const consecutiveService = createRoomServer({
+  storeFile: restartStore, restartRecovery: true, restartReconnectMs: 10 * 60_000,
+})
+await consecutiveService.listen(0)
+check('a consecutive restart retains both the reconnect quorum and hidden run state', () => {
+  const consecutiveRoom = consecutiveService.store.rooms.get(restartCreated.snapshot.code)
+  assertEqual(consecutiveService.store.reconnectQuorums.get(restartCreated.snapshot.code)?.playerIds.size, 2)
+  assertEqual(JSON.stringify(consecutiveRoom.run.neow.deck), JSON.stringify(hiddenNeowDeck))
+})
+await consecutiveService.close({ preserveRooms: true })
+rmSync(restartDirectory, { recursive: true, force: true })
+
+const restoredService = createRoomServer()
 const restoredAddress = await restoredService.listen(0)
 const restoredOrigin = `http://127.0.0.1:${restoredAddress.port}`
 const restoredCreated = await fetch(`${restoredOrigin}/api/rooms`, {
@@ -893,7 +1207,7 @@ for (let index = 0; index < 1024; index += 1) {
     })
     invalid.once('error', reject)
   })
-  assertEqual(status, index < 30 ? 401 : 429)
+  assertEqual(status, index < 120 ? 401 : 429)
 }
 const restoredSocket = new WebSocket(`ws://127.0.0.1:${restoredAddress.port}/ws?room=${restoredCreated.snapshot.code}`)
 await new Promise((resolve, reject) => {
@@ -905,7 +1219,7 @@ await new Promise((resolve) => {
   restoredSocket.close()
 })
 await restoredService.close()
-check('invalid room upgrades cannot exhaust restored-room rate keys', () => {
+check('invalid room upgrades cannot exhaust room rate keys', () => {
   assertEqual(restoredSocket.readyState, WebSocket.CLOSED)
 })
 

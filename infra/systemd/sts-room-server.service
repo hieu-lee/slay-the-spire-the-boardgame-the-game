@@ -12,9 +12,8 @@ Environment=PORT=8787
 Environment=STS_ALLOWED_ORIGIN=https://hieu-lee.github.io
 Environment=STS_PRESERVE_ON_SHUTDOWN=true
 Environment=STS_ROOM_STORE=%h/.local/share/slay-the-spire-server/rooms.json
-Environment=STS_HANDOFF_RESTORE=true
-Environment=STS_HANDOFF_RECONNECT_MS=3600000
-ExecCondition=/usr/bin/test ! -e %h/.local/share/slay-the-spire-server/migration-hold
+Environment=STS_RESTART_RECOVERY=true
+Environment=STS_RESTART_RECONNECT_MS=3600000
 ExecStart=/usr/local/bin/node scripts/room-server.mjs
 Restart=always
 RestartSec=2

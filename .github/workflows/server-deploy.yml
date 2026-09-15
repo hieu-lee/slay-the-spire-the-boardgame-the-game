@@ -1,0 +1,44 @@
+name: Deploy multiplayer server
+
+on:
+  workflow_call:
+    inputs:
+      deploy_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multiplayer-server-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64, sts-server]
+    timeout-minutes: 30
+    env:
+      MULTIPLAYER_SERVER_ORIGIN: ${{ vars.MULTIPLAYER_SERVER_ORIGIN }}
+      SESSION_SHA: ${{ inputs.deploy_sha || github.sha }}
+    steps:
+      - name: Validate the stable server origin
+        run: |
+          [[ "$MULTIPLAYER_SERVER_ORIGIN" =~ ^https://sts-([0-9]{1,3}-){3}[0-9]{1,3}\.([0-9a-f]{1,4}-){7}[0-9a-f]{1,4}\.sslip\.io:18443$ ]]
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SESSION_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Accept only commits merged to master
+        run: |
+          [[ "$SESSION_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SESSION_SHA"
+          git fetch --no-tags origin master
+          test "$(git rev-parse origin/master)" = "$SESSION_SHA"
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare an immutable server release
+        run: bash infra/deploy-local-server.sh prepare
+      - name: Install and verify the room server
+        run: bash infra/deploy-local-server.sh

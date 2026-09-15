@@ -121,7 +121,6 @@ async function flush() {
     let submitted = false
     for (let attempt = 0; attempt < 2 && !submitted; attempt += 1) {
       let endpoint: string | undefined
-      let status: number | undefined
       try {
         endpoint = await roomUrl('/api/leaderboard')
         const response = await fetch(endpoint, {
@@ -130,7 +129,6 @@ async function flush() {
           body: JSON.stringify(run),
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
-        status = response.status
         if (response.status === 409 && run.profileToken !== undefined) {
           const { profileToken: _, ...anonymous } = run
           run = anonymous
@@ -149,7 +147,7 @@ async function flush() {
         if (run.floorsCleared !== undefined && acknowledged?.floorsClearedAccepted !== true ||
             run.finalDeck !== undefined && acknowledged?.finalDeckAccepted !== true ||
             run.profileToken !== undefined && acknowledged?.profileAccepted !== true) {
-          resetRoomEndpoint(endpoint)
+          resetRoomEndpoint()
           if (attempt === 1) return report
           continue
         }
@@ -157,7 +155,7 @@ async function flush() {
         writeOutbox(readOutbox().filter((entry) => entry.id !== run.id))
         report.recorded.push(run.id)
       } catch {
-        resetRoomEndpoint(status === undefined || status < 400 || status >= 500 ? endpoint : undefined)
+        resetRoomEndpoint()
         if (attempt === 1) return report
       }
     }
@@ -175,15 +173,13 @@ export async function loadLeaderboard(): Promise<LeaderboardSnapshot> {
   await flushLeaderboardOutbox(true)
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let endpoint: string | undefined
-    let status: number | undefined
     try {
       endpoint = await roomUrl('/api/leaderboard')
       const response = await fetch(endpoint, { cache: 'no-store', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-      status = response.status
       if (!response.ok) throw new Error('Leaderboard unavailable')
       return await response.json() as LeaderboardSnapshot
     } catch (error) {
-      resetRoomEndpoint(status === undefined || status < 400 || status >= 500 ? endpoint : undefined)
+      resetRoomEndpoint()
       if (attempt === 1) throw error
     }
   }
@@ -206,7 +202,6 @@ export type WinningDeckPage = { total: number; rows: WinningDeck[]; nextCursor: 
 export async function loadWinningDecks(params: URLSearchParams, signal: AbortSignal): Promise<WinningDeckPage> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let endpoint: string | undefined
-    let status: number | undefined
     const controller = new AbortController()
     const abort = () => controller.abort()
     if (signal.aborted) abort()
@@ -215,13 +210,12 @@ export async function loadWinningDecks(params: URLSearchParams, signal: AbortSig
     try {
       endpoint = await roomUrl(`/api/leaderboard/decks?${params}`)
       const response = await fetch(endpoint, { cache: 'no-store', signal: controller.signal })
-      status = response.status
       if (response.status === 404) throw new Error('Winning decks will be available after the archive server updates. Please try again shortly.')
       if (!response.ok) throw new Error('Could not load winning decks. Please try again.')
       return await response.json() as WinningDeckPage
     } catch (error) {
       if (signal.aborted) throw error
-      resetRoomEndpoint(status === undefined || status < 400 || status >= 500 ? endpoint : undefined)
+      resetRoomEndpoint()
       if (attempt === 1) throw error
     } finally {
       clearTimeout(timeout)

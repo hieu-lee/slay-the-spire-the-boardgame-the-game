@@ -11,7 +11,7 @@ unit_dir="$HOME/.config/systemd/user"
 data_dir="$HOME/.local/share/slay-the-spire-server"
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
-for command in apt-get curl cut dpkg-deb find gh git gpg loginctl mktemp node pnpm seq sha256sum sort systemctl tar timeout; do
+for command in apt-get curl cut dpkg-deb find gh git loginctl mktemp node pnpm seq sha256sum sort systemctl tar timeout; do
   command -v "$command" >/dev/null || { echo "Missing required command: $command" >&2; exit 1; }
 done
 [ "$(command -v node)" = /usr/local/bin/node ] || {

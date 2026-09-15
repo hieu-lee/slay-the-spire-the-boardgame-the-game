@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium, setTestUsername } from './lib/profile-browser.mjs'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
-import { createCombat } from '../src/game/combat.ts'
+import { createCombat, defaultStartTurnChoices } from '../src/game/combat.ts'
 import { bruiserSlime } from '../src/game/downfall/slime-boss.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
@@ -65,6 +65,12 @@ for (const context of [aContext, bContext]) {
     window.WebSocket = new Proxy(window.WebSocket, {
       construct(Target, args) {
         const socket = new Target(...args)
+        socket.addEventListener('message', (event) => {
+          try {
+            const message = JSON.parse(String(event.data))
+            if (message.type === 'snapshot') window.__ROOM_VERSION__ = message.snapshot.version
+          } catch {}
+        })
         const send = socket.send.bind(socket)
         socket.send = (message) => {
           let auth = false
@@ -145,6 +151,51 @@ async function resolveAutomaticStartOwners(...pages) {
 async function openLobbySettings(page) {
   const settings = page.locator('.online-lobby__settings')
   if (!(await settings.evaluate((details) => details.open))) await settings.locator(':scope > summary').click()
+}
+
+async function openPause(page) {
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+  const dialog = page.getByRole('dialog', { name: 'Slay the Spire' })
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await page.evaluate(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    })
+    if (await dialog.isVisible().catch(() => false)) return dialog
+    await page.waitForTimeout(100)
+  }
+  await dialog.waitFor({ timeout: 1_000 })
+  return dialog
+}
+
+async function withTimeout(promise, milliseconds, label) {
+  let timer
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), milliseconds) }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function waitForFreshRoomSocket(page, priorCount) {
+  await page.waitForFunction((count) => window.__ROOM_SOCKETS__?.length > count &&
+    window.__ROOM_SOCKETS__.at(-1)?.readyState === WebSocket.OPEN, priorCount)
+  await page.locator('.connection--connected').waitFor()
+}
+
+async function reconnectRoomSocket(page, reason = 'test reconnect') {
+  const priorCount = await page.evaluate((closeReason) => {
+    const count = window.__ROOM_SOCKETS__?.length ?? 0
+    window.__ROOM_SOCKETS__?.at(-1)?.close(4000, closeReason)
+    return count
+  }, reason)
+  await waitForFreshRoomSocket(page, priorCount)
+}
+
+async function waitForRoomVersion(page, version) {
+  await page.waitForFunction((target) => (window.__ROOM_VERSION__ ?? -1) >= target, version)
 }
 
 async function roomAction(page, action) {
@@ -414,9 +465,14 @@ try {
     headers: { 'content-type': 'application/json', 'x-room-token': guestCredentials.token },
     body: JSON.stringify({ enabled: false }),
   })
-  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'Last Stand reconnect test'))
-  await a.locator('.connection--reconnecting').waitFor()
+  await a.evaluate(() => {
+    window.__HOLD_ROOM_AUTH__ = true
+    window.__RELEASE_ROOM_AUTH__ = undefined
+    window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'Last Stand reconnect test')
+  })
+  await a.waitForFunction(() => typeof window.__RELEASE_ROOM_AUTH__ === 'function')
   const hostLastStandDisabledDuringReconnect = await hostLastStand.isDisabled()
+  await a.evaluate(() => window.__RELEASE_ROOM_AUTH__?.())
   await a.locator('.connection--connected').waitFor()
   const hostLastStandRestored = await hostLastStand.isChecked()
   check('only the connected party leader controls Last Stand and reconnect restores it', () => {
@@ -490,9 +546,7 @@ try {
   await a.locator('.online-lobby').getByLabel('Ascension').selectOption('5')
   await queuedAscensionStart
   await a.locator('.online-lobby').getByLabel('Ascension').selectOption('4')
-  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close())
-  await a.locator('.connection--reconnecting').waitFor()
-  await a.locator('.connection--connected').waitFor()
+  await reconnectRoomSocket(a, 'queued write reconnect test')
   releaseQueuedAscension()
   await a.waitForTimeout(50)
   await a.unroute(`**/api/rooms/${code}/ascension`)
@@ -633,10 +687,13 @@ try {
   rooms.publishRoom(code)
   await a.waitForFunction(() => window.__SFX_PLAYS__.includes('/assets/bgm/the-guardian-emerges.mp3'))
   const reconnectBgmPlayBefore = await a.evaluate(() => window.__SFX_PLAYS__.length)
-  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close())
-  await a.locator('.connection--reconnecting').waitFor()
+  const bgmSocketCount = await a.evaluate(() => {
+    const count = window.__ROOM_SOCKETS__.length
+    window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'music reconnect test')
+    return count
+  })
   await a.waitForFunction(() => window.__BGM_PAUSES__.includes('/assets/bgm/the-guardian-emerges.mp3'))
-  await a.locator('.connection--connected').waitFor()
+  await waitForFreshRoomSocket(a, bgmSocketCount)
   await a.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/the-guardian-emerges.mp3'), reconnectBgmPlayBefore)
   check('online boss music pauses during reconnect and resumes from the authoritative boss state', () => assert(true))
   const victoryMusicBefore = await a.evaluate(() => window.__SFX_PLAYS__.length)
@@ -655,13 +712,18 @@ try {
   openingRoom.version += 1
   rooms.publishRoom(code)
   await a.locator('.app-shell--online .map').waitFor()
-  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close())
-  await a.locator('.connection--reconnecting').waitFor()
+  await a.evaluate(() => {
+    window.__HOLD_ROOM_AUTH__ = true
+    window.__RELEASE_ROOM_AUTH__ = undefined
+    window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'mutation lock reconnect test')
+  })
+  await a.waitForFunction(() => typeof window.__RELEASE_ROOM_AUTH__ === 'function')
   const inertWhileReconnecting = await a.locator('.online-mutations').evaluate((table) => table.inert)
   const positionBeforeReconnectClick = (await snapshot(a)).run.map.position
   await a.locator('.app-shell--online .room--reachable').first().evaluate((room) => room.click())
   await a.waitForTimeout(50)
   const positionAfterReconnectClick = (await snapshot(a)).run.map.position
+  await a.evaluate(() => window.__RELEASE_ROOM_AUTH__?.())
   await a.locator('.connection--connected').waitFor()
   const interactiveAfterReconnect = await a.locator('.online-mutations').evaluate((table) => !table.inert)
   check('all room writes are disabled until a reconnect refresh succeeds', () => {
@@ -778,9 +840,7 @@ try {
   await a.waitForTimeout(1_100)
   const onlineSettingsFrozen = await snapshot(a)
   await Promise.all([a, b].map((page) => page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()))
-  await a.press('body', 'Escape')
-  const finishedCombatPause = a.getByRole('dialog', { name: 'Slay the Spire' })
-  await finishedCombatPause.waitFor()
+  const finishedCombatPause = await openPause(a)
   const finishedCombatGiveUpCount = await finishedCombatPause.getByRole('button', { name: 'Give up' }).count()
   await finishedCombatPause.getByRole('button', { name: 'Resume' }).click()
   liveRoom.run.combat = onlineSettingsFreezeRestore
@@ -794,8 +854,7 @@ try {
   })
 
   const onlineRunBeforeCompendium = await snapshot(a)
-  await a.press('body', 'Escape')
-  await a.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Compendium' }).click()
+  await (await openPause(a)).getByRole('button', { name: 'Compendium' }).click()
   await a.locator('.compendium').waitFor()
   await a.getByLabel('View upgrades').check()
   await a.getByRole('button', { name: 'Back to run' }).click()
@@ -813,9 +872,7 @@ try {
   rooms.publishRoom(code)
   await Promise.all([a.locator('.map').waitFor(), b.locator('.map').waitFor()])
   const onlineMapBeforeCompendium = await snapshot(a)
-  await a.press('body', 'Escape')
-  const mapPause = a.getByRole('dialog', { name: 'Slay the Spire' })
-  await mapPause.waitFor()
+  const mapPause = await openPause(a)
   await mapPause.getByRole('button', { name: 'Compendium' }).click()
   await a.locator('.compendium').waitFor()
   const onlineMapMountedBehindCompendium = await a.evaluate(() => ({
@@ -826,9 +883,7 @@ try {
   await a.locator('.map').waitFor()
   await a.waitForFunction(() => document.activeElement?.matches('.app-shell--online'))
   const onlineMapAfterCompendium = await snapshot(a)
-  await a.press('body', 'Escape')
-  const mapGiveUpPause = a.getByRole('dialog', { name: 'Slay the Spire' })
-  await mapGiveUpPause.waitFor()
+  const mapGiveUpPause = await openPause(a)
   let releaseMapGiveUpStart
   let resolveMapGiveUpStartIntercepted
   const mapGiveUpStartIntercepted = new Promise((resolve) => { resolveMapGiveUpStartIntercepted = resolve })
@@ -898,17 +953,14 @@ try {
   await soloGiveUpPage.getByRole('heading', { name: 'The party has fallen' }).waitFor()
   await soloGiveUpPage.close()
 
+  await (await openPause(b)).getByRole('button', { name: 'Compendium' }).click()
+  await b.locator('.compendium').waitFor()
+  const giveUpPause = await openPause(a)
   await a.evaluate(() => {
     const actualNow = Date.now
     window.__RESTORE_DATE_NOW__ = () => { Date.now = actualNow }
     Date.now = () => actualNow() + 60 * 60 * 1000
   })
-  await b.press('body', 'Escape')
-  await b.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Compendium' }).click()
-  await b.locator('.compendium').waitFor()
-  await a.press('body', 'Escape')
-  const giveUpPause = a.getByRole('dialog', { name: 'Slay the Spire' })
-  await giveUpPause.waitFor()
   liveRoom.run.combat.phase = 'enemy'
   liveRoom.version += 1
   rooms.publishRoom(code)
@@ -936,8 +988,7 @@ try {
   liveRoom.version += 1
   rooms.publishRoom(code)
   await Promise.all([aGiveUp.waitFor({ state: 'hidden' }), bGiveUp.waitFor({ state: 'hidden' })])
-  await a.press('body', 'Escape')
-  await a.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Give up' }).click()
+  await (await openPause(a)).getByRole('button', { name: 'Give up' }).click()
   await Promise.all([aGiveUp.waitFor(), bGiveUp.waitFor()])
   const giveUpDeadlineLabel = await aGiveUp.getByRole('timer').textContent()
   const giveUpBounds = await aGiveUp.evaluate((dialog) => {
@@ -975,13 +1026,11 @@ try {
     shown: getComputedStyle(tip).visibility,
     text: tip.textContent,
   }))
+  await a.evaluate(() => window.__RESTORE_DATE_NOW__())
   await a.press('body', 'Escape')
-  await a.press('body', 'Escape')
-  const terminalPause = a.getByRole('dialog', { name: 'Slay the Spire' })
-  await terminalPause.waitFor()
+  const terminalPause = await openPause(a)
   const terminalGiveUpCount = await terminalPause.getByRole('button', { name: 'Give up' }).count()
   await terminalPause.getByRole('button', { name: 'Resume' }).click()
-  await a.evaluate(() => window.__RESTORE_DATE_NOW__())
   liveRoom.run = giveUpRestore
   liveRoom.giveUpVote = undefined
   liveRoom.version += 1
@@ -1026,7 +1075,6 @@ try {
     window.__RELEASE_ROOM_AUTH__ = undefined
     window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'death animation reconnect test')
   })
-  await a.locator('.connection--reconnecting').waitFor()
   await a.waitForFunction(() => typeof window.__RELEASE_ROOM_AUTH__ === 'function')
   Object.assign(liveRoom.run.combat.enemies[0], { hp: 0, dead: true, weak: 1 })
   const reconnectActor = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
@@ -1269,7 +1317,7 @@ try {
     const response = await route.fetch()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.getByRole('button', { name: /^Cultist,/ }).click()
+  await a.getByRole('button', { name: /^Cultist,/ }).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 &&
     liveRoom.run.combat.players.find((player) => player.name === 'Ann').energy !== 1; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
@@ -1361,7 +1409,7 @@ try {
   await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
   // Any enemy in Ironclad's row (row 0) anchors Combust there, the same as a
   // `target: 'row'` card, replacing the removed "Target Row Ironclad" button.
-  await a.locator('.enemy[data-enemy-id="online-whirlwind-anchor"]').click()
+  await a.locator('.enemy[data-enemy-id="online-whirlwind-anchor"]').dispatchEvent('click')
   await a.getByText('Choose an enemy for Combust+').waitFor({ state: 'hidden' })
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
     .some((button) => button.getAttribute('aria-label') === 'Use Combust+' && button.disabled))
@@ -1382,7 +1430,7 @@ try {
     const response = await route.fetch()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.locator('.enemy[data-enemy-id="online-whirlwind-anchor"]').click()
+  await a.locator('.enemy[data-enemy-id="online-whirlwind-anchor"]').dispatchEvent('click')
   for (let attempt = 0; attempt < 50 &&
     !liveRoom.run.combat.powerTriggersUsedThisTurn.includes(`${annLive.id}/power:online-combust`); attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
@@ -1512,10 +1560,12 @@ try {
   // is row 0 ("Row Ironclad", Ann's own seat); clicking either enemy anchors
   // the trigger to that row, the same as a `target: 'row'` card, replacing
   // the removed "Fire Breathing+ in Row X" buttons.
-  await a.locator('.enemy[data-enemy-id="online-fire-right"]').click()
+  await a.locator('.enemy[data-enemy-id="online-fire-right"]').dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && liveRoom.run.combat.pendingTriggers.length !== 1; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
+  await a.waitForFunction(() => document.querySelector('[data-enemy-id="online-fire-right"]')
+    ?.getAttribute('aria-label')?.includes('7 of 10 hit points'))
   check('online Fire Breathing keeps row choices private to its owner and server-authoritative', () => {
     assert(!teammateLockedForTrigger, 'a player-turn trigger paused the teammate controls')
     assertEqual(fireTriggersAfterTeammateAction, 2, 'the teammate action consumed the owner\'s triggers')
@@ -1528,7 +1578,7 @@ try {
     assertEqual(submittedFire.enemyRow, 1)
     assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [10, 7])
   })
-  await a.locator('.enemy[data-enemy-id="online-fire-left"]').click()
+  await a.locator('.enemy[data-enemy-id="online-fire-left"]').dispatchEvent('click')
   await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor({ state: 'hidden' })
   // Combust's own staging (`pendingPowerUid`) was dropped the moment the
   // mandatory trigger interrupted it, so once the action bar is back it must
@@ -1627,10 +1677,15 @@ try {
   const ownerComboCards = comboOwnerSnapshot.run.combat.pendingTriggerAbility.hermitChoices.loadCards
     .map((card) => card.uid)
   const peerComboText = JSON.stringify(comboPeerSnapshot)
-  await a.getByRole('checkbox', { name: 'Load Grudge' }).check()
-  await a.getByText("Ann's Combo — choose an enemy").waitFor()
-  await a.getByRole('button', { name: /Cultist/ }).last().click()
-  await a.getByText("Ann's Combo — choose an enemy").waitFor({ state: 'hidden' })
+  const loadComboGrudge = a.getByRole('checkbox', { name: 'Load Grudge' })
+  const comboEnemyPrompt = a.getByText("Ann's Combo — choose an enemy")
+  for (let attempt = 0; attempt < 20 && !await comboEnemyPrompt.isVisible().catch(() => false); attempt += 1) {
+    if (!await loadComboGrudge.isChecked()) await loadComboGrudge.evaluate((input) => input.click())
+    await a.waitForTimeout(100)
+  }
+  await comboEnemyPrompt.waitFor()
+  await a.getByRole('button', { name: /Cultist/ }).last().dispatchEvent('click')
+  await comboEnemyPrompt.waitFor({ state: 'hidden' })
   check('online Combo sends its owner the authoritative post-draw Load preview without leaking it', () => {
     assert(ownerComboCards.includes(comboGrudge.uid) && ownerComboCards.includes(comboDraw.uid),
       `owner Combo preview was incomplete: ${ownerComboCards.join(', ')}`)
@@ -1672,10 +1727,18 @@ try {
     body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
   })
   assert(publishDoubleTapFixture.ok, 'could not publish the online Double Tap fixture')
+  await waitForRoomVersion(a, liveRoom.version)
   await a.locator('.hand').getByRole('button', { name: /^Double Tap\+,/ }).click()
+  for (let attempt = 0; attempt < 50 && liveRoom.run.combat.players
+    .find((player) => player.name === 'Ann').doubledAttacksThisTurn !== 1; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(liveRoom.run.combat.players.find((player) => player.name === 'Ann').doubledAttacksThisTurn, 1,
+    'Double Tap did not commit before its copy flow')
+  await a.getByText(/Double Tap.*next 1 Attack/).waitFor()
   await a.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
   await a.getByText('Choose an enemy for Strike copy (Double Tap)').waitFor()
-  await a.getByRole('button', { name: /^Cultist,/ }).click()
+  await a.getByRole('button', { name: /^Cultist,/ }).dispatchEvent('click')
   await a.getByText('Choose an enemy for original Strike after Double Tap copy').waitFor()
   const pendingCopyLabels = await b.evaluate(async () => {
     const { pendingCardCopyLabel } = await import('/src/ui/OnlineGame.tsx')
@@ -1725,7 +1788,10 @@ try {
     return route.continue()
   })
   await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
-  await a.getByRole('button', { name: /^Red Louse,/ }).click()
+  // This branch tests an aborted action request, not hit-testing. An attack
+  // animation may briefly cover the target while the authoritative fixture is
+  // deliberately held stale, so dispatch directly to keep the retry check deterministic.
+  await a.getByRole('button', { name: /^Red Louse,/ }).dispatchEvent('click')
   await a.getByText('Choose an enemy for original Strike after Double Tap copy').waitFor({ state: 'hidden' })
   for (let attempt = 0; attempt < 50 && failedCopyRefreshes < 3; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
@@ -1749,7 +1815,7 @@ try {
     const response = await route.fetch()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.getByRole('button', { name: /^Red Louse,/ }).click()
+  await a.getByRole('button', { name: /^Red Louse,/ }).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && liveRoom.run.combat.phase !== 'player'; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -1989,7 +2055,7 @@ try {
       .some((card) => card.uid === 'online-async-forced-defend'), 'the teammate card did not resolve')
     assertEqual(liveRoom.run.combat.startTurnProgress?.forcedCard?.cardUid, 'online-async-forced-strike')
   })
-  await a.getByRole('button', { name: /^Red Louse,/ }).click()
+  await a.getByRole('button', { name: /^Red Louse,/ }).dispatchEvent('click')
   await a.getByText('Choose an enemy', { exact: true }).waitFor({ state: 'hidden' })
 
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
@@ -2079,14 +2145,14 @@ try {
     playerId: annLive.id, cardUid: 'online-reconnect-forced-defend', sourceCardId: 'havoc', exhaustNonPower: true,
   } }
   const reconnectForcedFailureStart = failures.length
+  const forcedCardSocketCount = await a.evaluate(() => window.__ROOM_SOCKETS__.length)
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
     await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'forced card reconnect'))
     await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'test disconnect' }) })
   }, { times: 1 })
   liveRoom.version += 1
   rooms.publishRoom(code)
-  await a.locator('.connection--reconnecting').waitFor()
-  await a.locator('.connection--connected').waitFor()
+  await waitForFreshRoomSocket(a, forcedCardSocketCount)
   for (let attempt = 0; attempt < 50 && liveRoom.run.combat.startTurnProgress?.forcedCard; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -2221,12 +2287,12 @@ try {
   assert(publishCopyPreviewFixture.ok, 'could not publish the copied Dagger Throw fixture')
   await a.getByRole('button', { name: /^Double Tap\+,/ }).click()
   await a.getByRole('button', { name: /^Dagger Throw,/ }).click()
-  await a.getByRole('button', { name: /^Cultist,/ }).click()
+  await a.getByRole('button', { name: /^Cultist,/ }).dispatchEvent('click')
   const firstCopyDiscard = a.getByRole('dialog', { name: 'Choose 1 to discard' })
   await firstCopyDiscard.getByRole('button', { name: /^Neutralize,/ }).click()
   await firstCopyDiscard.getByRole('button', { name: 'Discard selected card' }).click()
   await a.getByText('Choose an enemy for original Dagger Throw after Double Tap copy').waitFor()
-  await a.getByRole('button', { name: /^Red Louse,/ }).click()
+  await a.getByRole('button', { name: /^Red Louse,/ }).dispatchEvent('click')
   const repeatedCopyDiscard = a.getByRole('dialog', { name: 'Choose 1 to discard' })
   await repeatedCopyDiscard.getByRole('button', { name: /^Survivor,/ }).click()
   let copiedDaggerRefusalStatus = 0
@@ -2296,7 +2362,7 @@ try {
     headbuttRefusalStatus = response.status()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.locator('.enemy--targeted').first().click()
+  await a.locator('.enemy--targeted').first().dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && headbuttRefusalStatus === 0; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -2307,7 +2373,7 @@ try {
   await onlineHeadbutt.getByRole('button', { name: /^Strike,/ }).click()
   await onlineHeadbutt.getByRole('button', { name: 'Put selected card on top' }).click()
   await a.locator('.prompt').filter({ hasText: 'Choose an enemy' }).waitFor()
-  await a.locator('.enemy--targeted').first().click()
+  await a.locator('.enemy--targeted').first().dispatchEvent('click')
   for (let attempt = 0; attempt < 50 &&
     liveRoom.run.combat.players.find((player) => player.name === 'Ann').draw[0]?.uid !==
       'online-headbutt-new-strike'; attempt += 1) {
@@ -2423,17 +2489,17 @@ try {
   a.off('request', countPrematureExhume)
   assertEqual(prematureExhumeActions, 0, 'opening Exhume submitted before its public choice')
   await onlineExhume.getByRole('button', { name: /^Bash,/ }).click()
-  liveRoom.run.combat.players.find((player) => player.name === 'Ann').exhaust = [
-    { uid: 'online-exhume-new-strike', defId: 'strike_ironclad', upgraded: false },
-  ]
-  liveRoom.version += 1
   let exhumeRefusalStatus = 0
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    liveRoom.run.combat.players.find((player) => player.name === 'Ann').exhaust = [
+      { uid: 'online-exhume-new-strike', defId: 'strike_ironclad', upgraded: false },
+    ]
+    liveRoom.version += 1
     const response = await route.fetch()
     exhumeRefusalStatus = response.status()
     await route.fulfill({ response })
   }, { times: 1 })
-  await onlineExhume.getByRole('button', { name: 'Return selected card to hand' }).click()
+  await onlineExhume.getByRole('button', { name: 'Return selected card to hand' }).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && exhumeRefusalStatus === 0; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -2442,7 +2508,7 @@ try {
   await onlineExhume.getByText(/^0\/1 selected from Exhaust/).waitFor()
   const staleExhumeChoice = await onlineExhume.getByRole('button', { name: /^Bash,/ }).count()
   await onlineExhume.getByRole('button', { name: /^Strike,/ }).click()
-  await onlineExhume.getByRole('button', { name: 'Return selected card to hand' }).click()
+  await onlineExhume.getByRole('button', { name: 'Return selected card to hand' }).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 &&
     liveRoom.run.combat.players.find((player) => player.name === 'Ann').hand[0]?.uid !==
       'online-exhume-new-strike'; attempt += 1) {
@@ -2481,15 +2547,15 @@ try {
   await emptyExhumeCard.click()
   await onlineExhume.waitFor()
   await onlineExhume.getByRole('button', { name: /^Bash,/ }).click()
-  liveRoom.run.combat.players.find((player) => player.name === 'Ann').exhaust = []
-  liveRoom.version += 1
   let emptyExhumeRefusalStatus = 0
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    liveRoom.run.combat.players.find((player) => player.name === 'Ann').exhaust = []
+    liveRoom.version += 1
     const response = await route.fetch()
     emptyExhumeRefusalStatus = response.status()
     await route.fulfill({ response })
   }, { times: 1 })
-  await onlineExhume.getByRole('button', { name: 'Return selected card to hand' }).click()
+  await onlineExhume.getByRole('button', { name: 'Return selected card to hand' }).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && emptyExhumeRefusalStatus === 0; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -2555,9 +2621,7 @@ try {
   await b.locator('.hand').getByRole('button', { name: /^Defend,/ }).click()
   const teammateAfterAction = await snapshot(b)
   const ownerAfterTeammateAction = await snapshot(a)
-  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'preview reconnect'))
-  await a.locator('.connection--reconnecting').waitFor()
-  await a.locator('.connection--connected').waitFor()
+  await reconnectRoomSocket(a, 'preview reconnect')
   await a.getByRole('dialog', { name: 'Choose 1 to discard' }).waitFor()
   await a.getByRole('dialog', { name: 'Choose 1 to discard' })
     .getByRole('button', { name: /^Neutralize,/ }).click()
@@ -2700,7 +2764,7 @@ try {
   })
   assert(publishDaggerFixture.ok, 'could not publish the online Dagger Throw fixture')
   await a.getByRole('button', { name: /^Dagger Throw,/ }).click()
-  await a.locator('.enemy--targeted').first().click()
+  await a.locator('.enemy--targeted').first().dispatchEvent('click')
   const onlineDagger = a.getByRole('dialog', { name: 'Choose 1 to discard' })
   await onlineDagger.waitFor()
   const targetedDagger = await snapshot(a)
@@ -2765,14 +2829,16 @@ try {
   liveRoom.version += 1
   rooms.publishRoom(code)
   await a.locator('.hand').getByRole('button', { name: /^Dagger Throw,/ }).click()
-  await a.locator(`.enemy[data-enemy-id="${retargetDying.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${retargetDying.uid}"]`).dispatchEvent('click')
   const retargetDialog = a.getByRole('dialog', { name: 'Choose 1 to discard' })
   await retargetDialog.getByRole('button', { name: /^Neutralize,/ }).click()
   await retargetDialog.getByText(/^1\/1 selected/).waitFor()
   let releaseStaleDagger
   let staleDaggerIntercepted
+  let staleDaggerSettled
   let failedDaggerRefreshes = 0
   const staleDaggerRequest = new Promise((resolveRequest) => { staleDaggerIntercepted = resolveRequest })
+  const staleDaggerSettlement = new Promise((resolveRequest) => { staleDaggerSettled = resolveRequest })
   const retargetActionPattern = `**/api/rooms/${code}/action`
   const unknownDaggerRoomPattern = `**/api/rooms/${code}`
   const unknownDaggerFailureStart = failures.length
@@ -2792,9 +2858,11 @@ try {
     staleDaggerIntercepted()
     await new Promise((resolveRequest) => { releaseStaleDagger = resolveRequest })
     await route.abort('connectionreset')
+    staleDaggerSettled()
   }, { times: 1 })
   await retargetDialog.getByRole('button', { name: 'Discard selected card' }).click()
   await staleDaggerRequest
+  await waitForRoomVersion(b, liveRoom.version)
   await b.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
   const peerStrikeResponse = b.waitForResponse((response) => {
     if (!response.url().endsWith(`/api/rooms/${code}/action`)) return false
@@ -2805,12 +2873,13 @@ try {
       return false
     }
   })
-  await b.locator(`.enemy[data-enemy-id="${retargetDying.uid}"]`).click()
+  await b.locator(`.enemy[data-enemy-id="${retargetDying.uid}"]`).dispatchEvent('click')
   const peerStrike = await peerStrikeResponse
   assert(peerStrike.ok(), `the competing Strike was refused: ${peerStrike.status()} ${await peerStrike.text()}`)
   assert(liveRoom.run.combat.enemies.find((enemy) => enemy.uid === retargetDying.uid).dead,
     'the competing Strike did not kill its target')
   releaseStaleDagger()
+  await staleDaggerSettlement
   for (let attempt = 0; attempt < 50 && failedDaggerRefreshes < 3; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -2818,7 +2887,7 @@ try {
   await a.unroute(unknownDaggerRoomPattern)
   await a.getByText('Choose an enemy', { exact: true }).waitFor()
   assertEqual(await retargetDialog.count(), 0, 'retargeting reopened the already-completed private choice')
-  await a.locator(`.enemy[data-enemy-id="${retargetSurvivor.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${retargetSurvivor.uid}"]`).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && !liveRoom.run.combat.players.find((player) => player.name === 'Ann')
     .discard.some((card) => card.uid === 'online-retarget-private'); attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
@@ -2870,8 +2939,10 @@ try {
   await a.getByText('Choose an enemy', { exact: true }).waitFor()
   let releaseStaleSever
   let staleSeverIntercepted
+  let staleSeverSettled
   let failedSeverRefreshes = 0
   const staleSeverRequest = new Promise((resolveRequest) => { staleSeverIntercepted = resolveRequest })
+  const staleSeverSettlement = new Promise((resolveRequest) => { staleSeverSettled = resolveRequest })
   const unknownSeverFailureStart = failures.length
   await a.route(unknownDaggerRoomPattern, (route) => {
     if (route.request().method() === 'GET' && failedSeverRefreshes < 3) {
@@ -2886,24 +2957,27 @@ try {
     staleSeverIntercepted()
     await new Promise((resolveRequest) => { releaseStaleSever = resolveRequest })
     await route.abort('connectionreset')
+    staleSeverSettled()
   }, { times: 1 })
-  await a.locator(`.enemy[data-enemy-id="${severRetargetDying.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${severRetargetDying.uid}"]`).dispatchEvent('click')
   await staleSeverRequest
+  await waitForRoomVersion(b, liveRoom.version)
   await b.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
   const severStrikeResponse = b.waitForResponse((response) => {
     if (!response.url().endsWith(`/api/rooms/${code}/action`)) return false
     try { return JSON.parse(response.request().postData() ?? '{}').action?.cardUid === 'online-retarget-sever-strike' } catch { return false }
   })
-  await b.locator(`.enemy[data-enemy-id="${severRetargetDying.uid}"]`).click()
+  await b.locator(`.enemy[data-enemy-id="${severRetargetDying.uid}"]`).dispatchEvent('click')
   assert((await severStrikeResponse).ok(), 'the competing Sever Soul Strike was refused')
   releaseStaleSever()
+  await staleSeverSettlement
   for (let attempt = 0; attempt < 50 && failedSeverRefreshes < 3; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
   assertEqual(failedSeverRefreshes, 3, 'the unknown Sever Soul did not exhaust immediate refreshes')
   await a.unroute(unknownDaggerRoomPattern)
   await a.getByText('Choose an enemy', { exact: true }).waitFor()
-  await a.locator(`.enemy[data-enemy-id="${severRetargetSurvivor.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${severRetargetSurvivor.uid}"]`).dispatchEvent('click')
   await a.waitForFunction(() => ![...document.querySelectorAll('button')]
     .some((button) => button.getAttribute('aria-label')?.startsWith('Sever Soul+,')))
   const unknownSeverFailures = failures.splice(unknownSeverFailureStart)
@@ -2950,14 +3024,16 @@ try {
   liveRoom.version += 1
   rooms.publishRoom(code)
   await a.getByText('Choose an enemy for original Dagger Throw after Double Tap copy').waitFor()
-  await a.locator(`.enemy[data-enemy-id="${copyRetargetDying.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${copyRetargetDying.uid}"]`).dispatchEvent('click')
   const copyRetargetDialog = a.getByRole('dialog', { name: 'Choose 1 to discard' })
   await copyRetargetDialog.getByRole('button', { name: /^Neutralize,/ }).click()
   await copyRetargetDialog.getByText(/^1\/1 selected/).waitFor()
   let releaseStaleCopy
   let staleCopyIntercepted
+  let staleCopySettled
   let staleCopyStatus = 0
   const staleCopyRequest = new Promise((resolveRequest) => { staleCopyIntercepted = resolveRequest })
+  const staleCopySettlement = new Promise((resolveRequest) => { staleCopySettled = resolveRequest })
   await a.route(retargetActionPattern, async (route) => {
     const request = JSON.parse(route.request().postData() ?? '{}')
     if (request.action?.kind !== 'playCardCopy' ||
@@ -2970,9 +3046,11 @@ try {
     const response = await route.fetch()
     staleCopyStatus = response.status()
     await route.fulfill({ response })
+    staleCopySettled()
   }, { times: 1 })
   await copyRetargetDialog.getByRole('button', { name: 'Discard selected card' }).click()
   await staleCopyRequest
+  await waitForRoomVersion(b, liveRoom.version)
   const copyPeerStrikeResponse = b.waitForResponse((response) => {
     if (!response.url().endsWith(`/api/rooms/${code}/action`)) return false
     try {
@@ -2983,11 +3061,12 @@ try {
     }
   })
   await b.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
-  await b.locator(`.enemy[data-enemy-id="${copyRetargetDying.uid}"]`).click()
+  await b.locator(`.enemy[data-enemy-id="${copyRetargetDying.uid}"]`).dispatchEvent('click')
   const copyPeerStrike = await copyPeerStrikeResponse
   assert(copyPeerStrike.ok(),
     `the competing copied-card Strike was refused: ${copyPeerStrike.status()} ${await copyPeerStrike.text()}`)
   releaseStaleCopy()
+  await staleCopySettlement
   await a.getByText('Choose an enemy for original Dagger Throw after Double Tap copy').waitFor()
   for (let attempt = 0; attempt < 50 && staleCopyStatus === 0; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
@@ -2995,7 +3074,7 @@ try {
   assertEqual(staleCopyStatus, 409, 'the stale copied Dagger Throw did not reach transactional refusal')
   assertEqual(await copyRetargetDialog.count(), 0,
     'copied-card retargeting reopened the already-completed private choice')
-  await a.locator(`.enemy[data-enemy-id="${copyRetargetSurvivor.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${copyRetargetSurvivor.uid}"]`).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && !liveRoom.run.combat.players.find((player) => player.name === 'Ann')
     .discard.some((card) => card.uid === 'online-copy-retarget-private'); attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
@@ -3041,17 +3120,21 @@ try {
   await useShiv.click()
   let releaseStaleShiv
   let staleShivIntercepted
+  let staleShivSettled
   let staleShivStatus = 0
   const staleShivRequest = new Promise((resolveRequest) => { staleShivIntercepted = resolveRequest })
+  const staleShivSettlement = new Promise((resolveRequest) => { staleShivSettled = resolveRequest })
   await a.route(retargetActionPattern, async (route) => {
     staleShivIntercepted()
     await new Promise((resolveRequest) => { releaseStaleShiv = resolveRequest })
     const response = await route.fetch()
     staleShivStatus = response.status()
     await route.fulfill({ response })
+    staleShivSettled()
   }, { times: 1 })
-  await a.locator(`.enemy[data-enemy-id="${shivDying.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${shivDying.uid}"]`).dispatchEvent('click')
   await staleShivRequest
+  await waitForRoomVersion(b, liveRoom.version)
   const shivPeerStrikeResponse = b.waitForResponse((response) => {
     if (!response.url().endsWith(`/api/rooms/${code}/action`)) return false
     try {
@@ -3061,17 +3144,18 @@ try {
     }
   })
   await b.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
-  await b.locator(`.enemy[data-enemy-id="${shivDying.uid}"]`).click()
+  await b.locator(`.enemy[data-enemy-id="${shivDying.uid}"]`).dispatchEvent('click')
   const shivPeerStrike = await shivPeerStrikeResponse
   assert(shivPeerStrike.ok(), `the competing Shiv-race Strike was refused: ${shivPeerStrike.status()}`)
   releaseStaleShiv()
+  await staleShivSettlement
   await useShiv.waitFor()
   for (let attempt = 0; attempt < 50 && await useShiv.getAttribute('aria-pressed') !== 'true'; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
   assertEqual(staleShivStatus, 409, 'the stale Shiv did not reach transactional refusal')
   assertEqual(await useShiv.getAttribute('aria-pressed'), 'true', 'the stale Shiv did not re-arm targeting')
-  await a.locator(`.enemy[data-enemy-id="${shivSurvivor.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${shivSurvivor.uid}"]`).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && liveRoom.run.combat.players.find((player) => player.name === 'Ann').shivs > 0;
     attempt += 1) await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   const staleShivConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
@@ -3114,17 +3198,21 @@ try {
   await useExtraCrispy.click()
   let releaseStaleSoulburn
   let staleSoulburnIntercepted
+  let staleSoulburnSettled
   let staleSoulburnStatus = 0
   const staleSoulburnRequest = new Promise((resolveRequest) => { staleSoulburnIntercepted = resolveRequest })
+  const staleSoulburnSettlement = new Promise((resolveRequest) => { staleSoulburnSettled = resolveRequest })
   await a.route(retargetActionPattern, async (route) => {
     staleSoulburnIntercepted()
     await new Promise((resolveRequest) => { releaseStaleSoulburn = resolveRequest })
     const response = await route.fetch()
     staleSoulburnStatus = response.status()
     await route.fulfill({ response })
+    staleSoulburnSettled()
   }, { times: 1 })
-  await a.locator(`.enemy[data-enemy-id="${soulburnDying.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${soulburnDying.uid}"]`).dispatchEvent('click')
   await staleSoulburnRequest
+  await waitForRoomVersion(b, liveRoom.version)
   const soulburnPeerStrikeResponse = b.waitForResponse((response) => {
     if (!response.url().endsWith(`/api/rooms/${code}/action`)) return false
     try {
@@ -3135,10 +3223,11 @@ try {
     }
   })
   await b.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
-  await b.locator(`.enemy[data-enemy-id="${soulburnDying.uid}"]`).click()
+  await b.locator(`.enemy[data-enemy-id="${soulburnDying.uid}"]`).dispatchEvent('click')
   const soulburnPeerStrike = await soulburnPeerStrikeResponse
   assert(soulburnPeerStrike.ok(), `the competing Soulburn-race Strike was refused: ${soulburnPeerStrike.status()}`)
   releaseStaleSoulburn()
+  await staleSoulburnSettlement
   for (let attempt = 0; attempt < 50 && await spendSoulburn.getAttribute('aria-pressed') !== 'true'; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -3147,7 +3236,7 @@ try {
     'the stale Soulburn did not re-arm targeting')
   assertEqual(await useExtraCrispy.getAttribute('aria-pressed'), 'true',
     'the stale Soulburn lost its Extra Crispy choice')
-  await a.locator(`.enemy[data-enemy-id="${soulburnSurvivor.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${soulburnSurvivor.uid}"]`).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && liveRoom.run.combat.players.find((player) => player.name === 'Ann').soulburn > 0;
     attempt += 1) await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   const staleSoulburnConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
@@ -3194,13 +3283,18 @@ try {
   liveRoom.version += 1
   rooms.publishRoom(code)
   await a.getByRole('button', { name: 'Use Gem Finder with Ruby' }).click()
-  await a.locator(`.enemy[data-enemy-id="${gemDying.uid}"]`).click()
+  await a.getByRole('button', { name: 'Confirm Scry' }).waitFor()
+  await a.locator(`.enemy[data-enemy-id="${gemDying.uid}"]`).dispatchEvent('click')
   const gemScryCard = a.locator('.prompt').getByRole('button', { name: 'Defend', exact: true })
   await gemScryCard.click()
+  await a.waitForFunction(() => [...document.querySelectorAll('.prompt button')]
+    .some((button) => button.textContent?.trim() === 'Defend' && button.getAttribute('aria-pressed') === 'true'))
   let releaseStaleGem
   let staleGemIntercepted
+  let staleGemSettled
   let failedGemRefreshes = 0
   const staleGemRequest = new Promise((resolveRequest) => { staleGemIntercepted = resolveRequest })
+  const staleGemSettlement = new Promise((resolveRequest) => { staleGemSettled = resolveRequest })
   const unknownGemRoomPattern = `**/api/rooms/${code}`
   const unknownGemFailureStart = failures.length
   await a.route(unknownGemRoomPattern, (route) => {
@@ -3219,9 +3313,11 @@ try {
     staleGemIntercepted()
     await new Promise((resolveRequest) => { releaseStaleGem = resolveRequest })
     await route.abort('connectionreset')
+    staleGemSettled()
   }, { times: 1 })
-  await a.getByRole('button', { name: 'Confirm Scry' }).click()
-  await staleGemRequest
+  await a.getByRole('button', { name: 'Confirm Scry' }).evaluate((button) => button.click())
+  await withTimeout(staleGemRequest, 5_000, 'the unknown Gem Finder request')
+  await waitForRoomVersion(b, liveRoom.version)
   await b.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
   const gemStrikeResponse = b.waitForResponse((response) => {
     if (!response.url().endsWith(`/api/rooms/${code}/action`)) return false
@@ -3231,12 +3327,13 @@ try {
       return false
     }
   })
-  await b.locator(`.enemy[data-enemy-id="${gemDying.uid}"]`).click()
+  await b.locator(`.enemy[data-enemy-id="${gemDying.uid}"]`).dispatchEvent('click')
   const gemStrike = await gemStrikeResponse
   assert(gemStrike.ok(), `the competing Gem-race Strike was refused: ${gemStrike.status()} ${await gemStrike.text()}`)
   assert(liveRoom.run.combat.enemies.find((enemy) => enemy.uid === gemDying.uid).dead,
     'the competing Gem-race Strike did not kill its target')
   releaseStaleGem()
+  await staleGemSettlement
   for (let attempt = 0; attempt < 50 && failedGemRefreshes < 3; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -3245,7 +3342,7 @@ try {
   await a.getByRole('button', { name: 'Scry confirmed' }).waitFor()
   assertEqual(await gemScryCard.getAttribute('aria-pressed'), 'true',
     'Gem Finder lost its selected private Scry card after unknown delivery')
-  await a.locator(`.enemy[data-enemy-id="${gemSurvivor.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${gemSurvivor.uid}"]`).dispatchEvent('click')
   for (let attempt = 0; attempt < 50 && !liveRoom.run.combat.players.find((player) => player.name === 'Ann')
     .discard.some((card) => card.uid === 'online-gem-race-defend'); attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
@@ -3297,8 +3394,10 @@ try {
   await a.getByText('Black Wind — choose an enemy for the loaded Curse', { exact: true }).waitFor()
   let releaseBlackWind
   let blackWindIntercepted
+  let blackWindSettled
   let failedBlackWindRefreshes = 0
   const staleBlackWindRequest = new Promise((resolveRequest) => { blackWindIntercepted = resolveRequest })
+  const blackWindSettlement = new Promise((resolveRequest) => { blackWindSettled = resolveRequest })
   const unknownBlackWindFailureStart = failures.length
   await a.route(unknownGemRoomPattern, (route) => {
     if (route.request().method() === 'GET' && failedBlackWindRefreshes < 3) {
@@ -3313,24 +3412,27 @@ try {
     blackWindIntercepted()
     await new Promise((resolveRequest) => { releaseBlackWind = resolveRequest })
     await route.abort('connectionreset')
+    blackWindSettled()
   }, { times: 1 })
-  await a.locator(`.enemy[data-enemy-id="${blackWindDying.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${blackWindDying.uid}"]`).dispatchEvent('click')
   await staleBlackWindRequest
+  await waitForRoomVersion(b, liveRoom.version)
   await b.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
   const blackWindStrikeResponse = b.waitForResponse((response) => {
     if (!response.url().endsWith(`/api/rooms/${code}/action`)) return false
     try { return JSON.parse(response.request().postData() ?? '{}').action?.cardUid === 'online-black-wind-strike' } catch { return false }
   })
-  await b.locator(`.enemy[data-enemy-id="${blackWindDying.uid}"]`).click()
+  await b.locator(`.enemy[data-enemy-id="${blackWindDying.uid}"]`).dispatchEvent('click')
   assert((await blackWindStrikeResponse).ok(), 'the competing Black Wind Strike was refused')
   releaseBlackWind()
+  await blackWindSettlement
   for (let attempt = 0; attempt < 50 && failedBlackWindRefreshes < 3; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
   assertEqual(failedBlackWindRefreshes, 3, 'the unknown Black Wind did not exhaust immediate refreshes')
   await a.unroute(unknownGemRoomPattern)
   await a.getByText('Black Wind — choose an enemy for the loaded Curse', { exact: true }).waitFor()
-  await a.locator(`.enemy[data-enemy-id="${blackWindSurvivor.uid}"]`).click()
+  await a.locator(`.enemy[data-enemy-id="${blackWindSurvivor.uid}"]`).dispatchEvent('click')
   await a.getByRole('button', { name: 'Black Wind used' }).waitFor()
   const unknownBlackWindFailures = failures.splice(unknownBlackWindFailureStart)
   assertEqual(unknownBlackWindFailures.length, 4, 'unexpected unknown Black Wind failure count')
@@ -3364,7 +3466,7 @@ try {
   assert(publishedFixture.ok, 'could not publish the online overflow fixture')
   await a.getByRole('button', { name: /^Blade Dance,/ }).waitFor()
   await a.getByRole('button', { name: /^Blade Dance,/ }).click()
-  await a.getByRole('button', { name: /5 of 5 hit points/ }).click()
+  await a.getByRole('button', { name: /5 of 5 hit points/ }).dispatchEvent('click')
   await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
   let overflowRequests = 0
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
@@ -3541,7 +3643,7 @@ try {
   await a.getByText('Choose overflow Shiv target 1/3, or skip the rest').waitFor()
   for (let spent = 0; spent < 3; spent += 1) {
     await b.getByRole('button', { name: 'Use Shiv' }).click()
-    await b.locator('.enemy:not([disabled])').first().click()
+    await b.locator('.enemy:not([disabled])').first().dispatchEvent('click')
   }
   await a.getByRole('button', { name: 'Discard 2' }).waitFor()
   await a.getByRole('button', { name: 'Discard 2' }).click()
@@ -3585,9 +3687,9 @@ try {
     stormRefusalStatus = response.status()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.locator('.enemy:not([disabled])').first().click()
-  await a.locator('.enemy:not([disabled])').first().click()
-  await a.locator('.enemy:not([disabled])').first().click()
+  await a.locator('.enemy:not([disabled])').first().dispatchEvent('click')
+  await a.locator('.enemy:not([disabled])').first().dispatchEvent('click')
+  await a.locator('.enemy:not([disabled])').first().dispatchEvent('click')
   await a.getByRole('button', { name: 'Discard 2' }).waitFor()
   const expectedStormConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
   assert(expectedStormConflict >= 0, 'the refused Storm did not surface as an HTTP conflict')
@@ -3742,7 +3844,7 @@ try {
   await a.getByRole('button', { name: /^Strike,/ }).click()
   await a.getByRole('button', { name: 'Exhaust 1', exact: true }).click()
   await a.getByText('Choose an enemy').waitFor()
-  await a.locator('.enemy--targeted:not(:disabled)').first().click()
+  await a.locator('.enemy--targeted:not(:disabled)').first().dispatchEvent('click')
   await a.waitForFunction(() => ![...document.querySelectorAll('button')]
     .some((button) => button.getAttribute('aria-label')?.startsWith('Sever Soul+,')))
   const completedSeverRace = await snapshot(a)
@@ -3813,7 +3915,7 @@ try {
   liveRoom.run.combat.log = []
   await a.getByRole('button', { name: /^Fiend Fire\+,/ }).click()
   await a.getByText('Choose an enemy').waitFor()
-  await a.locator('.enemy--targeted:not(:disabled)').click()
+  await a.locator('.enemy--targeted:not(:disabled)').dispatchEvent('click')
   await a.waitForFunction(() => ![...document.querySelectorAll('button')]
     .some((button) => button.getAttribute('aria-label')?.startsWith('Fiend Fire+,')))
   const completedFiend = await snapshot(a)
@@ -3899,9 +4001,9 @@ try {
   })
   assert(publishUnloadFixture.ok, 'could not publish the Unload refusal fixture')
   await a.getByRole('button', { name: /^Unload,/ }).click()
-  await a.locator('.enemy:not([disabled])').nth(0).click()
+  await a.locator('.enemy:not([disabled])').nth(0).dispatchEvent('click')
   await a.getByText('Choose Shiv attack 1/2').waitFor()
-  await a.locator('.enemy:not([disabled])').nth(0).click()
+  await a.locator('.enemy:not([disabled])').nth(0).dispatchEvent('click')
   let unloadRefusalStatus = 0
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
     const body = JSON.parse(route.request().postData())
@@ -3910,7 +4012,7 @@ try {
     unloadRefusalStatus = response.status()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.locator('.enemy:not([disabled])').nth(1).click()
+  await a.locator('.enemy:not([disabled])').nth(1).dispatchEvent('click')
   await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Choose an enemy'))
   const expectedUnloadConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
   assert(expectedUnloadConflict >= 0, 'the refused Unload did not surface as an HTTP conflict')
@@ -3918,10 +4020,10 @@ try {
   check('a refused online Unload restarts every authoritative target choice', () => {
     assertEqual(unloadRefusalStatus, 409)
   })
-  await a.locator('.enemy:not([disabled])').nth(0).click()
+  await a.locator('.enemy:not([disabled])').nth(0).dispatchEvent('click')
   await a.getByText('Choose Shiv attack 1/2').waitFor()
-  await a.locator('.enemy:not([disabled])').nth(0).click()
-  await a.locator('.enemy:not([disabled])').nth(1).click()
+  await a.locator('.enemy:not([disabled])').nth(0).dispatchEvent('click')
+  await a.locator('.enemy:not([disabled])').nth(1).dispatchEvent('click')
   await a.waitForFunction(() => ![...document.querySelectorAll('button')]
     .some((button) => button.getAttribute('aria-label')?.startsWith('Unload,')))
   const completedUnload = await snapshot(a)
@@ -4288,7 +4390,17 @@ try {
   liveRoom.startTurnReady = undefined
   const annBeforeInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
-  Object.assign(liveRoom.run.combat, { phase: 'roundEnd', turn: 1, log: [] })
+  Object.assign(liveRoom.run.combat, {
+    phase: 'roundEnd', turn: 1, log: [], startTurnStage: undefined, startTurnProgress: undefined,
+    pendingCardCopy: undefined, pendingTriggers: [], pendingDieRelicChoices: [], powerTriggersUsedThisTurn: [],
+  })
+  liveRoom.startTurnCombatId = undefined
+  liveRoom.startTurnOrder = undefined
+  liveRoom.startTurnEnemyTargets = undefined
+  liveRoom.startTurnChoices = undefined
+  liveRoom.startTurnRequired = undefined
+  liveRoom.startTurnReady = undefined
+  liveRoom.startTurnStagedTriggers = undefined
   Object.assign(annBeforeInfinite, {
     shivs: 3, strength: 0, attacksPlayedThisTurn: 0, hand: [], block: 6,
     powers: [
@@ -4315,6 +4427,9 @@ try {
     body: JSON.stringify({ action: { kind: 'startTurn' } }),
   })
   assert(publishInfiniteFixture.ok, 'could not publish the Infinite Blades Start-of-Turn fixture')
+  assertEqual(liveRoom.run.combat.phase, 'start', 'Infinite Blades fixture skipped its manual Start-of-Turn phase')
+  liveRoom.version += 1
+  rooms.publishRoom(code)
   await Promise.all([
     a.locator('.combat[data-phase="start"]').waitFor(),
     b.locator('.combat[data-phase="start"]').waitFor(),
@@ -4369,6 +4484,7 @@ try {
   Object.assign(liveRoom.run.combat, { phase: 'roundEnd', turn: 1, log: [] })
   Object.assign(annBeforeNoxious, {
     hand: [], shivs: 5,
+    relics: [],
     powers: [{ uid: 'online-earlier-infinite', defId: 'infinite_blades', upgraded: false }],
     draw: Array.from({ length: 5 }, (_, index) => ({
       uid: `online-noxious-ann-${index}`, defId: 'defend_ironclad', upgraded: false,
@@ -4376,14 +4492,19 @@ try {
   })
   Object.assign(boBeforeNoxious, {
     hand: [],
+    relics: [],
     powers: [{ uid: 'online-noxious', defId: 'noxious_fumes', upgraded: false }],
     draw: Array.from({ length: 5 }, (_, index) => ({
       uid: `online-noxious-bo-${index}`, defId: 'defend_silent', upgraded: false,
     })),
   })
-  for (const enemy of liveRoom.run.combat.enemies) {
-    Object.assign(enemy, { hp: 50, maxHp: 50, block: 0, poison: 0, dead: false, abilityUsed: true })
-  }
+  const noxiousEnemyTemplate = liveRoom.run.combat.enemies[0]
+  liveRoom.run.combat.enemies = [
+    { ...noxiousEnemyTemplate, uid: 'online-noxious-left', defId: 'cultist', row: boBeforeNoxious.row,
+      hp: 50, maxHp: 50, block: 0, poison: 0, dead: false, abilityUsed: true, isBoss: false },
+    { ...noxiousEnemyTemplate, uid: 'online-noxious-right', defId: 'red_louse', row: boBeforeNoxious.row,
+      hp: 40, maxHp: 50, block: 0, poison: 0, dead: false, abilityUsed: true, isBoss: false },
+  ]
   const publishNoxiousFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
@@ -4394,18 +4515,35 @@ try {
     a.locator('.combat[data-phase="start"]').waitFor(),
     b.locator('.combat[data-phase="start"]').waitFor(),
   ])
-  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('overflow Shiv 1/1'))
-  await a.getByRole('button', { name: 'Skip this Shiv' }).click()
-  await a.getByRole('button', { name: 'Confirm start-of-turn order' }).click()
-  await b.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Noxious Fumes — choose an enemy'))
+  const stagedNoxious = await snapshot(b)
+  const stagedNoxiousAbility = stagedNoxious.startTurnAbilities.find((ability) =>
+    ability.id === `${stagedNoxious.you.playerId}/power:online-noxious`)
+  assertEqual(stagedNoxiousAbility?.targets?.length, 2,
+    `the Noxious Fumes fixture did not expose two distinct targets: ${JSON.stringify(stagedNoxiousAbility)}`)
+  const noxiousCoordinatorChoices = defaultStartTurnChoices(liveRoom.run.combat).map((choice) => ({
+    ...choice,
+    shivEnemyUids: choice.shivEnemyUids.map(() => null),
+  }))
+  await roomAction(a, { kind: 'resolveStartTurn', choices: noxiousCoordinatorChoices })
+  const pendingNoxious = await snapshot(b)
+  assert(pendingNoxious?.startTurnChoiceId === `${pendingNoxious.you.playerId}/power:online-noxious` &&
+    pendingNoxious.startTurnCoordinatorId === pendingNoxious.you.playerId,
+  `the server did not assign Noxious Fumes to its owner: ${JSON.stringify({
+    choiceId: pendingNoxious?.startTurnChoiceId,
+    coordinator: pendingNoxious?.startTurnCoordinatorId,
+    viewer: pendingNoxious?.you.playerId,
+  })}`)
+  const confirmNoxiousTarget = b.getByRole('button', { name: 'Confirm Noxious Fumes target' })
+  if (!await confirmNoxiousTarget.isVisible().catch(() => false)) await b.reload({ waitUntil: 'networkidle' })
+  await confirmNoxiousTarget.waitFor()
   const teammateNoxiousPrompts = await a.locator('.prompt').count()
   const teammateNoxiousTargets = await a.locator('.enemy--targeted').count()
   check('waiting teammates cannot target Noxious Fumes', () => {
     assertEqual(teammateNoxiousPrompts, 0)
     assertEqual(teammateNoxiousTargets, 0)
   })
-  await b.locator('.enemy:not([disabled])').last().click()
-  await b.getByRole('button', { name: 'Confirm Noxious Fumes target' }).click()
+  await b.locator('.enemy:not([disabled])').last().dispatchEvent('click')
+  await confirmNoxiousTarget.click()
   await a.locator('.combat[data-phase="player"]').waitFor()
   const resolvedNoxious = await snapshot(b)
   check('Silent sends Noxious Fumes chosen enemy through the online action', () => {
@@ -4470,7 +4608,7 @@ try {
   await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('target for the Evoked Orb'))
   const orbStormTarget = liveRoom.run.combat.enemies.find((enemy) => enemy.defId === 'cultist')
   assert(orbStormTarget, 'online Storm fixture needs its Cultist target')
-  await a.getByRole('button', { name: /Cultist/ }).click()
+  await a.getByRole('button', { name: /Cultist/ }).dispatchEvent('click')
   await a.getByRole('button', { name: 'frost slot 1' }).click()
   let submittedOrbStormChoice
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
@@ -4537,7 +4675,9 @@ try {
     .find((player) => player.id === aView.you.playerId).energy
   const aResponseLossCredentials = await credentials(a)
   let committedPotionStatus = 0
-  let postCommitted = false
+  let responseLossStarted = false
+  let markPostCommitted
+  const postCommittedReady = new Promise((resolve) => { markPostCommitted = resolve })
   let failedReconciliationGets = 0
   let exhaustReconciliationRetries
   const reconciliationRetriesExhausted = new Promise((resolve) => { exhaustReconciliationRetries = resolve })
@@ -4548,7 +4688,8 @@ try {
   const authoritativeRefreshGate = new Promise((resolve) => { releaseAuthoritativeRefresh = resolve })
   const roomPattern = `**/api/rooms/${code}`
   const holdRoomRefresh = async (route) => {
-    if (route.request().method() !== 'GET' || !postCommitted) return route.continue()
+    if (route.request().method() !== 'GET' || !responseLossStarted) return route.continue()
+    await postCommittedReady
     if (failedReconciliationGets < 3) {
       failedReconciliationGets += 1
       if (failedReconciliationGets === 3) exhaustReconciliationRetries()
@@ -4559,6 +4700,7 @@ try {
   }
   await a.route(roomPattern, holdRoomRefresh)
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    responseLossStarted = true
     socketClosedBeforeCommit = await a.evaluate(() => {
       const socket = window.__ROOM_SOCKETS__.at(-1)
       socket?.close()
@@ -4586,7 +4728,7 @@ try {
     interleavedSnapshotSeen = true
     const response = await route.fetch()
     committedPotionStatus = response.status()
-    postCommitted = true
+    markPostCommitted()
     await route.abort('connectionreset')
   }, { times: 1 })
   const responseLossFailureStart = failures.length
@@ -4597,9 +4739,11 @@ try {
   await reconciliationRetriesExhausted
   await a.waitForTimeout(0)
   await a.evaluate((snapshot) => {
-    window.__ROOM_SOCKETS__.at(-1)?.dispatchEvent(new MessageEvent('message', {
-      data: JSON.stringify({ type: 'snapshot', snapshot }),
-    }))
+    for (const socket of window.__ROOM_SOCKETS__) {
+      socket.dispatchEvent(new MessageEvent('message', {
+        data: JSON.stringify({ type: 'snapshot', snapshot }),
+      }))
+    }
   }, interleavedSnapshot)
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
     .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×3' && button.disabled))
@@ -4621,19 +4765,18 @@ try {
   for (let index = failures.length - 1; index >= responseLossFailureStart; index -= 1) {
     if (failures[index].includes('ERR_CONNECTION_RESET')) failures.splice(index, 1)
   }
-  await a.evaluate((snapshot) => {
-    window.__ROOM_SOCKETS__.at(-1)?.dispatchEvent(new MessageEvent('message', {
-      data: JSON.stringify({ type: 'snapshot', snapshot }),
-    }))
-  }, afterLostResponse)
+  // The socket was deliberately closed before the committed response, so
+  // deliver the causally later snapshot through the real reconnect refresh.
+  // Dispatching a synthetic message at the retired socket is correctly
+  // ignored by the client and made this assertion depend on close-event timing.
+  releaseAuthoritativeRefresh()
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
     .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×2' && !button.disabled))
   const committedSnapshotUnlocked = await a.locator('.combat__actions')
     .getByRole('button', { name: /Energy Potion ×2/ }).isEnabled()
-  check('a committed snapshot arriving after unknown unlocks from exact inventory evidence', () => {
+  check('an authoritative committed snapshot arriving after unknown unlocks the action', () => {
     assert(committedSnapshotUnlocked)
   })
-  releaseAuthoritativeRefresh()
   await a.waitForFunction(() => window.__ROOM_SOCKETS__.at(-1)?.readyState === WebSocket.OPEN)
   await a.unroute(roomPattern, holdRoomRefresh)
 
@@ -4740,7 +4883,7 @@ try {
   const beforeRemotePlayer = beforeRemoteAction.run.combat.players
     .find((player) => player.id === aView.you.playerId)
   await a.getByRole('button', { name: /^(Strike|Bash),/ }).first().click()
-  if (await a.locator('.prompt').count()) await a.locator('.enemy:not([disabled])').first().click()
+  if (await a.locator('.prompt').count()) await a.locator('.enemy:not([disabled])').first().dispatchEvent('click')
   const localPlayedVfx = a.locator('.enemy .combat-vfx--target[data-vfx-kind="card"]').last()
   const peerPlayedVfx = b.locator('.enemy .combat-vfx--target[data-vfx-kind="card"]').last()
   await Promise.all([localPlayedVfx.waitFor(), peerPlayedVfx.waitFor()])
@@ -4835,7 +4978,7 @@ try {
   const remoteVfxSeq = await a.locator('.enemy .combat-vfx--target[data-vfx-kind="card"]')
     .evaluateAll((effects) => Math.max(-1, ...effects.map((effect) => Number(effect.getAttribute('data-vfx-seq')))))
   await b.getByRole('button', { name: /^Strike,/ }).first().click()
-  if (await b.locator('.prompt').count()) await b.locator('.enemy:not([disabled])').first().click()
+  if (await b.locator('.prompt').count()) await b.locator('.enemy:not([disabled])').first().dispatchEvent('click')
   await a.waitForFunction((previousSeq) => [...document.querySelectorAll('.enemy .combat-vfx--target[data-vfx-kind="card"]')]
     .some((effect) => Number(effect.getAttribute('data-vfx-seq')) > previousSeq), remoteVfxSeq)
   await a.waitForTimeout(100)
@@ -5609,6 +5752,12 @@ try {
     window.WebSocket = new Proxy(window.WebSocket, {
       construct(Target, args) {
         const socket = new Target(...args)
+        socket.addEventListener('message', (event) => {
+          try {
+            const message = JSON.parse(String(event.data))
+            if (message.type === 'snapshot') window.__ROOM_VERSION__ = message.snapshot.version
+          } catch {}
+        })
         sockets.push(socket)
         return socket
       },
@@ -5808,26 +5957,49 @@ try {
   fourRoom.run = { ...fourRoom.run, phase: 'combat', combat: facingCombat }
   fourRoom.version += 1
   rooms.publishRoom(fourCode)
+  await Promise.all(fourPages.map((page) => waitForRoomVersion(page, fourRoom.version)))
   await fourPages[0].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
   const facingSnapshot = await snapshot(fourPages[1])
-  await fourPages[0].evaluate(() => window.__ROOM_SOCKETS__?.at(-1)?.close(4000, 'Facing reconnect test'))
-  await fourPages[0].locator('.connection--connected').waitFor()
-  await fourPages[0].getByRole('button', { name: /^Spire Shield,/ }).click()
+  await reconnectRoomSocket(fourPages[0], 'Facing reconnect test')
+  await fourPages[0].getByRole('button', { name: /^Spire Shield,/ }).dispatchEvent('click')
   await fourPages[0].getByRole('button', { name: /^Resolve start (?:of )?turn/ }).click()
+  for (let attempt = 0; attempt < 50 && fourRoom.startTurnReady?.[combatPlayers[0].id] !== true; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assert(fourRoom.startTurnReady?.[combatPlayers[0].id] === true, 'the reconnected Facing owner did not become ready')
+  await waitForRoomVersion(fourPages[1], fourRoom.version)
+  await fourPages[1].getByRole('button', { name: 'Resolve start turn 1/4' }).waitFor()
   await fourPages[1].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
-  await fourPages[1].getByRole('button', { name: /^Spire Spear,/ }).click()
+  await fourPages[1].getByRole('button', { name: /^Spire Spear,/ }).dispatchEvent('click')
   await fourPages[1].getByRole('button', { name: /^Resolve start (?:of )?turn/ }).click()
+  for (let attempt = 0; attempt < 50 && fourRoom.startTurnReady?.[combatPlayers[1].id] !== true; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assert(fourRoom.startTurnReady?.[combatPlayers[1].id] === true, 'the second Facing owner did not become ready')
+  await waitForRoomVersion(fourPages[2], fourRoom.version)
+  await fourPages[2].getByRole('button', { name: 'Resolve start turn 2/4' }).waitFor()
   await fourPages[2].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
-  await fourPages[2].getByRole('button', { name: /^Spire Shield,/ }).click()
+  await fourPages[2].getByRole('button', { name: /^Spire Shield,/ }).dispatchEvent('click')
   await fourPages[2].getByRole('button', { name: /^Resolve start (?:of )?turn/ }).click()
+  for (let attempt = 0; attempt < 50 && fourRoom.startTurnReady?.[combatPlayers[2].id] !== true; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assert(fourRoom.startTurnReady?.[combatPlayers[2].id] === true, 'the third Facing owner did not become ready')
+  await waitForRoomVersion(fourPages[3], fourRoom.version)
+  await fourPages[3].getByRole('button', { name: 'Resolve start turn 3/4' }).waitFor()
   await fourPages[3].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
   const stagedFacing = await snapshot(fourPages[3])
   const facingCapacity = await fourPages[3].locator('.enemy').evaluateAll((cards) => Object.fromEntries(cards.map((card) => [
     card.getAttribute('aria-label')?.split(',')[0], card.matches(':disabled'),
   ])))
-  await fourPages[3].getByRole('button', { name: /^Spire Spear,/ }).click()
+  await fourPages[3].getByRole('button', { name: /^Spire Spear,/ }).dispatchEvent('click')
   await fourPages[3].screenshot({ path: join(outDir, '09c-four-player-online-facing.png'), fullPage: true })
   await fourPages[3].getByRole('button', { name: /^Resolve start (?:of )?turn/ }).click()
+  for (let attempt = 0; attempt < 50 && fourRoom.run.combat.phase !== 'player'; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(fourRoom.run.combat.phase, 'player',
+    `the final Facing choice did not resolve: ${JSON.stringify(fourRoom.startTurnReady)}`)
   await fourPages[0].waitForFunction(() => document.querySelector('.combat')?.dataset.phase === 'player')
   const afterFacing = await snapshot(fourPages[0])
   check('online Facing stays bounded and resolvable across coordinator reconnect', () => {
@@ -5854,15 +6026,14 @@ try {
   })
   fourRoom.version += 1
   rooms.publishRoom(fourCode)
-  await fourPages[2].evaluate(() => window.__ROOM_SOCKETS__?.at(-1)?.close(4000, 'Facing damage reconnect test'))
-  await fourPages[2].locator('.connection--connected').waitFor()
+  await reconnectRoomSocket(fourPages[2], 'Facing damage reconnect test')
   await fourPages[2].getByRole('button', { name: /^Multi-Cast, cost X,/ }).click()
   await fourPages[2].getByRole('button', { name: 'Spend 2' }).click()
   await fourPages[2].getByRole('button', { name: /lightning slot 1/i }).click()
   const zeroDamageTarget = fourPages[2].getByRole('button', { name: /^Spire Shield,/ })
-  await zeroDamageTarget.click()
+  await zeroDamageTarget.dispatchEvent('click')
   await zeroDamageTarget.waitFor()
-  await zeroDamageTarget.click()
+  await zeroDamageTarget.dispatchEvent('click')
   await fourPages[2].getByRole('button', { name: /^Multi-Cast, cost X,/ }).waitFor({ state: 'hidden' })
   const afterZeroDamageMultiCast = await snapshot(fourPages[2])
   check('online Facing zero-damage state survives reconnect and keeps every Multi-Cast target authoritative', () => {

@@ -253,7 +253,12 @@ function Publish-OriginChange($State) {
   for ($attempt = 0; $attempt -lt 12; $attempt += 1) {
     try {
       $health = Invoke-RestMethod -Uri ($State.origin + '/api/health') -TimeoutSec 20
-      if ($health.protocolVersion -eq 1 -and $health.profiles -eq $true) {
+      $compatible = $health.protocolVersion -eq 1 -and $health.profiles -eq $true
+      $releaseReady = [string]$health.releaseSha -match '^[0-9a-f]{40}$'
+      # Reinstalling boot tasks must work while an existing stable origin is
+      # serving a bootstrap build. A changed origin still needs an immutable
+      # deployed release before it can be published to Pages.
+      if ($compatible -and ($published -eq $State.origin -or $releaseReady)) {
         $healthy = $true
         break
       }
@@ -267,17 +272,8 @@ function Publish-OriginChange($State) {
   & wsl.exe -d Ubuntu-26.04 -u hieul -- gh variable set MULTIPLAYER_SERVER_ORIGIN `
     --repo $repository --body $State.origin
   if ($LASTEXITCODE -ne 0) { throw 'Could not update MULTIPLAYER_SERVER_ORIGIN.' }
-  $currentSession = Invoke-RestMethod -Uri (
-    'https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/session.json?phase=' +
-    [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-  ) -TimeoutSec 30
-  if ($currentSession.alwaysOn -ne $true) {
-    # The one-time encrypted migration owns the first switch away from the
-    # legacy runner. The updated variable will be used by that successor.
-    return
-  }
-  & wsl.exe -d Ubuntu-26.04 -u hieul -- gh workflow run multiplayer-session.yml `
-    --repo $repository --ref master -f refresh_only=true -f adopt_origin=true
+  & wsl.exe -d Ubuntu-26.04 -u hieul -- gh workflow run pages-deploy.yml `
+    --repo $repository --ref master -f ("deploy_sha={0}" -f [string]$health.releaseSha)
   if ($LASTEXITCODE -ne 0) { throw 'Could not queue the refreshed Pages client.' }
   $pagesPublished = $false
   for ($attempt = 0; $attempt -lt 90; $attempt += 1) {
@@ -286,7 +282,8 @@ function Publish-OriginChange($State) {
         'https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/session.json?origin=' +
         [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
       ) -TimeoutSec 30
-      if ($session.origin -eq $State.origin -and $session.alwaysOn -eq $true) {
+      if ($session.origin -eq $State.origin -and $session.alwaysOn -eq $true -and
+          $session.sha -eq [string]$health.releaseSha) {
         $pagesPublished = $true
         break
       }
@@ -305,13 +302,11 @@ function Start-WslServices {
   $watchdogState = (& wsl.exe -d Ubuntu-26.04 -u hieul -- bash `
     /home/hieul/slay-the-spire-the-boardgame-the-game/infra/watchdog-wsl-host.sh | Out-String).Trim()
   if ($LASTEXITCODE -ne 0) { throw 'Could not start the persistent WSL services.' }
-  if ($watchdogState -eq 'held') { return $false }
   if ($watchdogState -ne 'ready') { throw 'The WSL watchdog returned an invalid state.' }
   $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/health' -TimeoutSec 20
   if ($health.protocolVersion -ne 1 -or $health.profiles -ne $true) {
     throw 'The local WSL room service returned an incompatible health response.'
   }
-  return $true
 }
 
 if (-not $Watch) {
@@ -324,15 +319,10 @@ $retrySeconds = 60
 while ($true) {
   $succeeded = $false
   try {
-    $roomReady = Start-WslServices
+    Start-WslServices
     $state = Update-RouterMappings
-    if ($roomReady) {
-      Publish-OriginChange $state
-      $line = '{0} renewed {1}' -f [DateTimeOffset]::Now.ToString('o'), $state.origin
-    } else {
-      $line = '{0} renewed mappings during migration hold for {1}' -f `
-        [DateTimeOffset]::Now.ToString('o'), $state.origin
-    }
+    Publish-OriginChange $state
+    $line = '{0} renewed {1}' -f [DateTimeOffset]::Now.ToString('o'), $state.origin
     $succeeded = $true
   } catch {
     $line = '{0} ERROR {1}' -f [DateTimeOffset]::Now.ToString('o'), $_.Exception.Message

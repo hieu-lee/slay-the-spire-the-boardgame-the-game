@@ -35,7 +35,7 @@ export async function registerProfile(username: string): Promise<Profile> {
       return profile
     } catch (error) {
       const terminal = status !== undefined && status >= 400 && status < 500
-      resetRoomEndpoint(terminal ? undefined : endpoint)
+      resetRoomEndpoint()
       if (terminal) throw error
       lastError = error
     }

@@ -1,6 +1,7 @@
 import { SmokeTrail, warmSmokeTrails } from './combat-screen/SmokeTrail.tsx'
 import type { CSSProperties } from 'react'
 import { cardFlightPath } from './combat-screen/card-flight.ts'
+import { unknownPowerRefreshDecision } from './combat-screen/unknown-power.ts'
 // The combat screen: the board, the hand, and every prompt a fight puts up.
 //
 // One component, because the fight is one interaction — a card being dragged
@@ -155,7 +156,7 @@ import type {
 import { chosenDieRelicAbilities, potionDef, relicDef } from '../game/relics.ts'
 import { CAPS, DOWNFALL_CHARACTER_IDS } from '../game/types.ts'
 import type { CardInstance, DownfallCharacterId, Enemy, Player } from '../game/types.ts'
-import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
+import type { ActionOutcome, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import { Card, slimeCommandText } from './Card.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
@@ -1323,6 +1324,27 @@ function CombatScreenView({
     if (cardDragFrame.current !== null) cancelAnimationFrame(cardDragFrame.current)
   }, [])
 
+  function restoreUnknownPower(
+    power: UnknownPowerAction,
+    current: Player | VisiblePlayer,
+    canRestore = activePowerWindow(state) && !state.startTurnProgress?.forcedCard,
+    preview = powerPreview,
+  ) {
+    if (!canRestore || !current.powers.some((held) => held.uid === power.powerUid)) return
+    setPendingPowerUid(power.powerUid)
+    setPowerChamberUids((power.context.chamberUids ?? []).filter((uid) =>
+      current.chamber?.some((card) => card.uid === uid)))
+    setPowerLoadUids((power.context.loadUids ?? []).filter((uid) =>
+      current.hand?.some((card) => card.uid === uid)))
+    if (preview?.powerUid !== power.powerUid || preview.id !== power.powerPreviewId) return
+    const revealed = new Set(preview.cards.map((card) => card.uid))
+    setPowerChoiceCards(preview.cards)
+    setPowerScryDiscardUids((power.context.scryDiscardUids ?? []).filter((uid) => revealed.has(uid)))
+    setPowerExhaustUids(power.context.exhaustUids ?? [])
+    setPowerGemContext(power.context)
+    setPowerScryConfirmed(true)
+  }
+
   // Unknown delivery with the item still visible stays locked until a causally
   // later REST refresh. Exact inventory evidence can recognize a commit sooner.
   useEffect(() => {
@@ -1340,27 +1362,12 @@ function CombatScreenView({
     if (power && current) {
       const used = current.powers.some((held) => held.uid === power.powerUid) &&
         state.powerTriggersUsedThisTurn.includes(powerAbilityKey(viewerId, power.powerUid))
-      const refreshed = authoritativeRefresh !== undefined && authoritativeRefresh > power.refreshAttempt
-      if (used || refreshed) {
+      const decision = unknownPowerRefreshDecision(used, power.refreshAttempt, authoritativeRefresh)
+      if (decision === 'committed' || decision === 'restore') {
         unknownPowerAction.current = null
         powerActionPending.current = false
         setUsingPower(false)
-        if (!used && activePowerWindow(state) && !state.startTurnProgress?.forcedCard &&
-          current.powers.some((held) => held.uid === power.powerUid)) {
-          setPendingPowerUid(power.powerUid)
-          setPowerChamberUids((power.context.chamberUids ?? []).filter((uid) =>
-            current.chamber.some((card) => card.uid === uid)))
-          setPowerLoadUids((power.context.loadUids ?? []).filter((uid) =>
-            current.hand.some((card) => card.uid === uid)))
-          if (powerPreview?.powerUid === power.powerUid && powerPreview.id === power.powerPreviewId) {
-            const revealed = new Set(powerPreview.cards.map((card) => card.uid))
-            setPowerChoiceCards(powerPreview.cards)
-            setPowerScryDiscardUids((power.context.scryDiscardUids ?? []).filter((uid) => revealed.has(uid)))
-            setPowerExhaustUids(power.context.exhaustUids ?? [])
-            setPowerGemContext(power.context)
-            setPowerScryConfirmed(true)
-          }
-        }
+        if (decision === 'restore') restoreUnknownPower(power, current)
       }
     }
     const card = unknownCardAction.current
@@ -2651,11 +2658,23 @@ function CombatScreenView({
       setUsingPower(false)
     }
     const waitForRefresh = (refreshAttempt = refreshRef.current) => {
-      const current = stateRef.current
-      if (current.powerTriggersUsedThisTurn.includes(powerAbilityKey(viewer!.id, powerUid))) {
+      const combat = stateRef.current
+      const current = combat.players.find((player) => player.id === viewer!.id)
+      const decision = unknownPowerRefreshDecision(
+        combat.powerTriggersUsedThisTurn.includes(powerAbilityKey(viewer!.id, powerUid)),
+        refreshAttempt,
+        refreshRef.current,
+      )
+      if (decision === 'committed') {
         unlock()
-      } else if (refreshAttempt !== undefined) {
-        unknownPowerAction.current = { refreshAttempt, powerUid, powerPreviewId, context }
+      } else if (decision === 'restore') {
+        const unknown = { refreshAttempt: refreshAttempt!, powerUid, powerPreviewId, context }
+        unlock()
+        if (current) restoreUnknownPower(unknown, current,
+          activePowerWindow(combat) && !combat.startTurnProgress?.forcedCard)
+      } else if (decision === 'wait') {
+        const unknown = { refreshAttempt: refreshAttempt!, powerUid, powerPreviewId, context }
+        unknownPowerAction.current = unknown
       } else {
         unlock()
         setPendingPowerUid(powerUid)
@@ -2673,19 +2692,13 @@ function CombatScreenView({
         const held = authoritative?.player.powers.find((power) => power.uid === powerUid)
         if (held && !authoritative!.combat.startTurnProgress?.forcedCard &&
           !authoritative!.combat.powerTriggersUsedThisTurn.includes(powerAbilityKey(viewer!.id, powerUid))) {
-          setPendingPowerUid(powerUid)
-          setPowerChamberUids((context.chamberUids ?? []).filter((uid) =>
-            authoritative!.player.chamber?.some((card) => card.uid === uid)))
-          setPowerLoadUids((context.loadUids ?? []).filter((uid) =>
-            authoritative!.player.hand?.some((card) => card.uid === uid)))
-          const preview = outcome?.snapshot?.powerPreview
-          if (preview?.powerUid === powerUid && preview.id === powerPreviewId) {
-            const revealed = new Set(preview.cards.map((card) => card.uid))
-            setPowerChoiceCards(preview.cards)
-            setPowerScryDiscardUids((context.scryDiscardUids ?? []).filter((uid) => revealed.has(uid)))
-            setPowerExhaustUids(context.exhaustUids ?? [])
-            setPowerScryConfirmed(pendingPowerNeedsGemChoice)
-          }
+          restoreUnknownPower(
+            { refreshAttempt: outcome.refreshAttempt ?? -1, powerUid, powerPreviewId, context },
+            authoritative!.player,
+            true,
+            outcome?.snapshot?.powerPreview,
+          )
+          if (!pendingPowerNeedsGemChoice) setPowerScryConfirmed(false)
         }
       }
       unlock()

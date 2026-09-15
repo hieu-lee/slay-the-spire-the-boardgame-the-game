@@ -215,7 +215,7 @@ function assignPendingRelicIds(run) {
   run.nextPendingRelicId = next
 }
 
-export function createStore({ file, handoffRestore = false, handoffReconnectMs = 5 * 60_000 } = {}) {
+export function createStore({ file, restartRecovery = false, restartReconnectMs = 5 * 60_000 } = {}) {
   const store = { rooms: new Map(), leaderboardRuns: [], profiles: [], file, reconnectQuorums: new Map() }
   if (!file) return store
   try {
@@ -231,9 +231,9 @@ export function createStore({ file, handoffRestore = false, handoffReconnectMs =
         const savedQuorum = saved.reconnectQuorums?.[room.code]
         const unresolvedAtSave = Array.isArray(savedQuorum?.playerIds) && savedQuorum.expiresAt > Date.now()
           ? savedQuorum.playerIds.filter((playerId) => seatIds.has(playerId)) : []
-        const handoffSeats = new Set([...connectedAtSave, ...unresolvedAtSave])
-        if (handoffRestore && handoffSeats.size > 0) {
-          store.reconnectQuorums.set(room.code, { playerIds: handoffSeats, expiresAt: Date.now() + handoffReconnectMs })
+        const recoverySeats = new Set([...connectedAtSave, ...unresolvedAtSave])
+        if (restartRecovery && recoverySeats.size > 0) {
+          store.reconnectQuorums.set(room.code, { playerIds: recoverySeats, expiresAt: Date.now() + restartReconnectMs })
         }
         room.seats = room.seats.map((seat) => ({ ...seat, connected: false }))
         room.campaignProgress = parseCampaignProgress(room.campaignProgress)
@@ -3331,7 +3331,7 @@ function resolveStartTurn(room, seat, action, seatToken) {
     }
   }
   const pendingFumes = pendingNoxiousFumes(room)
-  if (pendingFumes) {
+  if (pendingFumes?.playerId === seat.playerId) {
     const order = normalized.map((choice) => choice.id)
     const prefixChoices = existingOrder
       ? savedStartTurnChoices(room) ?? []

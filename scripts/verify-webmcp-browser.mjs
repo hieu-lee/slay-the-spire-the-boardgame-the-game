@@ -1049,7 +1049,7 @@ check('returns visible gameplay context and drives every gameplay control kind',
     `native details disclosures are inspectable and operable: ${JSON.stringify(disclosure)}`)
 })
 
-check('records a finished run through WebMCP after a stale profile handoff', () => {
+check('records a finished run through WebMCP after a stale profile retry', () => {
   assertDeepEqual(leaderboardRecording.attempts, [true, true, false])
   assert(leaderboardRecording.announced, 'WebMCP did not return the leaderboard acknowledgment')
   assertDeepEqual(leaderboardRecording.queued, 0)

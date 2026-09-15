@@ -10,9 +10,11 @@ Production multiplayer runs on `DESKTOP-09UIMTJ` instead of an expiring GitHub-h
 runner or a third-party tunnel:
 
 - GitHub Pages serves the browser client.
-- A repository-scoped self-hosted Actions runner deploys server changes into WSL.
+- The `Deploy multiplayer server` workflow uses a repository-scoped self-hosted Actions
+  runner to install server releases into WSL.
 - `sts-room-server.service` keeps the authoritative Node room process running and restarts
-  it after a failure.
+  it after a failure. The game process is a local systemd user service and does not depend
+  on an Actions job staying alive.
 - Caddy runs on Windows, terminates public HTTPS and WebSocket traffic, and proxies it to
   WSL on `127.0.0.1:8787`.
 - A small Windows task renews native Bbox IPv4 and IPv6 mappings every hour. IPv4
@@ -20,6 +22,18 @@ runner or a third-party tunnel:
   Caddy on TCP 443.
 - `session.json` advertises the HTTPS origin stored in the repository variable
   `MULTIPLAYER_SERVER_ORIGIN`.
+
+The room server is tuned for 5–10 regular players spread across simultaneous four-player
+rooms and accepts up to 50 authenticated WebSocket connections. Gameplay, snapshot reads,
+reconnect authentication, and WebRTC signaling use separate budgets, so a four-player
+burst in one category cannot disconnect a seat or starve recovery in another.
+Normal over-limit traffic receives a retryable error while the socket stays open; only an
+abusive 300-messages-per-second connection is closed. Slow clients have a 2 MiB outbound
+buffer before the server drops them to protect the other games.
+
+GitHub Actions has three jobs only: affected build/tests on pushes and pull requests,
+GitHub Pages deployment, and server release deployment on the self-hosted runner. No hosted
+runner keeps the game alive and no room state travels through Actions artifacts.
 
 The current stable origin is
 `https://sts-94-239-51-8.2001-861-388c-4ee0-c3d5-2f30-1be7-2e79.sslip.io:18443`.
@@ -46,7 +60,7 @@ bash infra/install-wsl-host.sh
 ```
 
 From an elevated Windows PowerShell, install Caddy, its scoped inbound firewall rule,
-automatic router mapping, and the logon startup tasks:
+automatic router mapping, and the boot-and-logon startup tasks:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
@@ -69,7 +83,8 @@ curl --fail https://sts-94-239-51-8.2001-861-388c-4ee0-c3d5-2f30-1be7-2e79.sslip
 
 Room data lives outside the checkout at
 `~/.local/share/slay-the-spire-server/rooms.json`. Actions deployments update the `current`
-release symlink and restart the service without deleting that store.
+release symlink, validate the existing store, and restart the service without deleting it.
+Players connected during a restart retain their seats while the browsers reconnect.
 
 If the Bbox public IPv4 or delegated IPv6 prefix changes, the mapping task regenerates and
 reloads Caddy, verifies the replacement HTTPS origin, updates
