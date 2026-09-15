@@ -11,6 +11,7 @@ const AUTO_FLUSH = import.meta.env.PROD || import.meta.env.VITE_HOSTED_SESSION =
 
 export type LeaderboardRow = {
   character: CharacterId
+  characters?: CharacterId[]
   ascension: number
   runs: number
   act3Runs: number
@@ -29,6 +30,7 @@ type LeaderboardSubmission = {
   profileToken?: string
   finalDeck?: { defId: string; upgraded: boolean; attachedGemId?: string }[]
   character: CharacterId
+  characters?: CharacterId[]
   ascension: number
   mode: RunState['meta']['mode']
   damageStatsComplete: boolean
@@ -84,6 +86,7 @@ export function queueFinishedSoloRun(run: RunState) {
       })),
     } : {}),
     character: run.players[0]!.character,
+    characters: [run.players[0]!.character],
     ascension: run.ascension,
     mode: run.meta.mode,
     damageStatsComplete: run.combatsFinished !== undefined,
@@ -191,6 +194,7 @@ export type WinningDeckSort = 'character' | 'ascension' | 'cardCount' | 'usernam
 export type WinningDeck = {
   id: string
   character: CharacterId
+  characters?: CharacterId[]
   ascension: number
   cardCount: number
   username: string

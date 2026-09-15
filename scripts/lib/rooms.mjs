@@ -137,9 +137,9 @@ import {
   startTurnScryAbilities,
   startTurnScryPreview,
   visibleMap,
-  createCampaignProgress,
   parseCampaignProgress,
   allocateSharedMarks,
+  finishCampaign,
   normalizeModifierIds,
   nextFloat,
   currentQuickSetupStep,
@@ -237,6 +237,7 @@ export function createStore({ file, handoffRestore = false, handoffReconnectMs =
         }
         room.seats = room.seats.map((seat) => ({ ...seat, connected: false }))
         room.campaignProgress = parseCampaignProgress(room.campaignProgress)
+        room.campaignBaseProgress = parseCampaignProgress(room.campaignBaseProgress, room.campaignProgress)
         room.metaOptions = room.metaOptions && ['standard', 'daily', 'custom'].includes(room.metaOptions.mode)
           ? { mode: room.metaOptions.mode, modifiers: normalizeModifierIds(room.metaOptions.modifiers), quickStartAct: [1, 2, 3, 4].includes(room.metaOptions.quickStartAct) ? room.metaOptions.quickStartAct : 1 }
           : { mode: 'standard', modifiers: [], quickStartAct: 1 }
@@ -372,6 +373,7 @@ export function createRoom(store, options = {}) {
   const code = options.code ?? roomCode(options.random)
   // Silently replacing a live room would drop everyone seated in it.
   if (store.rooms.has(code)) fail(`Room ${code} already exists`)
+  const campaignProgress = parseCampaignProgress(options.campaignProgress)
   const room = {
     code,
     lastActivityAt: Date.now(),
@@ -382,7 +384,8 @@ export function createRoom(store, options = {}) {
     metaOptions: { mode: 'standard', modifiers: [], quickStartAct: 1 },
     seats: [],
     run: null,
-    campaignProgress: options.campaignProgress ?? createCampaignProgress(),
+    campaignBaseProgress: structuredClone(campaignProgress),
+    campaignProgress,
     /** Bumped on every accepted mutation so clients can drop stale frames. */
     version: 0,
   }
@@ -428,13 +431,35 @@ const fail = (message) => {
  * come back to the SAME seat, because their deck and HP live there. Without it
  * a flaky connection is a lost run.
  */
-export function joinRoom(room, { name, character, token: existing, random, connected = true, settle = true } = {}) {
+function campaignUnlocks(value) {
+  const progress = parseCampaignProgress(value)
+  return { colorless: progress.colorless, actIV: progress.actIV, highestAscension: progress.highestAscension }
+}
+
+function includeSeatUnlocks(room) {
+  const unlocks = room.seats.map((seat) => seat.campaignUnlocks).filter(Boolean)
+  const base = room.campaignBaseProgress ?? room.campaignProgress
+  room.campaignProgress = {
+    ...base,
+    colorless: Math.max(base.colorless, ...unlocks.map((value) => value.colorless)),
+    actIV: Math.max(base.actIV, ...unlocks.map((value) => value.actIV)),
+    highestAscension: Math.max(base.highestAscension, ...unlocks.map((value) => value.highestAscension)),
+  }
+  room.ascension = Math.min(room.ascension, room.campaignProgress.highestAscension)
+  if (room.metaOptions.quickStartAct === 4 && room.campaignProgress.actIV < 5) {
+    room.metaOptions = { ...room.metaOptions, quickStartAct: 1 }
+  }
+}
+
+export function joinRoom(room, { name, character, campaignProgress, token: existing, random, connected = true, settle = true } = {}) {
   const returning = findSeat(room, existing)
   if (returning) {
     const nextName = name ? String(name).slice(0, 24) : returning.name
+    const nextUnlocks = campaignProgress === undefined ? returning.campaignUnlocks : campaignUnlocks(campaignProgress)
     if (room.phase !== 'lobby' && nextName !== returning.name) fail('Names are locked once the run starts')
     const connectionChanged = returning.connected !== connected
-    if (!connectionChanged && nextName === returning.name) return returning
+    const unlocksChanged = JSON.stringify(nextUnlocks) !== JSON.stringify(returning.campaignUnlocks)
+    if (!connectionChanged && nextName === returning.name && !unlocksChanged) return returning
     if (returning.pendingCatchUp && connected) {
       const next = beginCatchUp(room.run, [{ id: returning.playerId, name: nextName, character: returning.character }])
       if (next === room.run) fail('That player cannot Catch Up now')
@@ -444,6 +469,8 @@ export function joinRoom(room, { name, character, token: existing, random, conne
     }
     returning.connected = connected
     returning.name = nextName
+    if (nextUnlocks) returning.campaignUnlocks = nextUnlocks
+    if (room.phase === 'lobby') includeSeatUnlocks(room)
     room.version += 1
     // They may be the last answer the table was waiting on, or the first one
     // back to a decision that stalled while nobody was connected.
@@ -477,11 +504,13 @@ export function joinRoom(room, { name, character, token: existing, random, conne
     playerId: ['p1', 'p2', 'p3', 'p4'].find((id) => !room.seats.some((other) => other.playerId === id)),
     name: String(name ?? `Player ${room.seats.length + 1}`).slice(0, 24),
     character: pick,
+    ...(campaignProgress === undefined ? {} : { campaignUnlocks: campaignUnlocks(campaignProgress) }),
     token: token(random),
     connected,
     ...(catchingUp && !connected ? { pendingCatchUp: true, reservedAt: Date.now() } : {}),
   }
   room.seats.push(seat)
+  if (room.phase === 'lobby') includeSeatUnlocks(room)
   if (catchingUp && connected) {
     const next = beginCatchUp(room.run, [{ id: seat.playerId, name: seat.name, character: seat.character }])
     if (next === room.run) {
@@ -558,6 +587,7 @@ export function removeSeat(room, seatToken) {
   const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'lobby' && !seat.pendingCatchUp) fail('A run seat must be preserved for reconnection')
   room.seats = room.seats.filter((candidate) => candidate !== seat)
+  if (room.phase === 'lobby') includeSeatUnlocks(room)
   if (room.seats.length < 2) {
     room.chooseYourRelic = false
     room.lastStand = false
@@ -1466,7 +1496,7 @@ export function apply(
   }
 }
 
-function restoreRoom(room, checkpoint) {
+export function restoreRoom(room, checkpoint) {
   for (const key of Object.keys(room)) if (!Object.hasOwn(checkpoint, key)) delete room[key]
   Object.assign(room, checkpoint)
 }
@@ -2561,8 +2591,30 @@ function eventSkip(room, seat, action, seatToken) {
 function finishCampaignRun(room, seatToken) {
   const next = finishRun(room.run)
   if (next === room.run) fail('This campaign run is not ready to finish')
-  room.run = next
-  room.campaignProgress = next.campaignProgress
+  const storedBase = room.campaignBaseProgress ?? room.campaignProgress
+  const base = { ...storedBase, nextRunNumber: Math.max(storedBase.nextRunNumber, room.run.campaignProgress.nextRunNumber) }
+  const borrowedAscension = room.run.ascension > base.highestAscension
+  const teamMaxAscension = room.run.campaignProgress.highestAscension
+  const campaignProgress = finishCampaign(
+    borrowedAscension ? { ...base, highestAscension: room.run.ascension } : base,
+    {
+      runId: room.run.campaign.runId,
+      characters: room.run.players.map((player) => player.character),
+      bossesDefeated: room.run.campaign.bossesDefeated,
+      joinedAfterBosses: room.run.campaign.joinedAfterBosses,
+      startedAtAct: room.run.campaign.startedAtAct,
+      highestBossActDefeated: room.run.campaign.highestBossActDefeated,
+      ascensionPlayed: room.run.ascension,
+    },
+  )
+  room.campaignBaseProgress = {
+    ...campaignProgress,
+    highestAscension: room.run.ascension === teamMaxAscension && campaignProgress.highestAscension > room.run.ascension
+      ? campaignProgress.highestAscension
+      : storedBase.highestAscension,
+  }
+  room.campaignProgress = room.campaignBaseProgress
+  room.run = { ...next, campaignProgress: room.campaignProgress }
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
@@ -2573,10 +2625,11 @@ function allocateCampaign(room, seat, action, seatToken) {
   if (action.expectedRunId !== room.run.campaign.runId || !Number.isInteger(action.expectedUnspentMarks) || action.expectedUnspentMarks !== room.campaignProgress.unspentMarks) fail('That campaign allocation is stale')
   if (action.colorless === 0 && action.actIV === 0) fail('Assign at least one campaign mark')
   try {
-    room.campaignProgress = allocateSharedMarks(room.campaignProgress, action.colorless, action.actIV)
+    room.campaignBaseProgress = allocateSharedMarks(room.campaignBaseProgress ?? room.campaignProgress, action.colorless, action.actIV)
   } catch (error) {
     fail(error instanceof Error ? error.message : 'That campaign allocation is not legal')
   }
+  room.campaignProgress = room.campaignBaseProgress
   room.run = { ...room.run, campaignProgress: room.campaignProgress }
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
@@ -2587,7 +2640,7 @@ function returnToLobby(room, seat, seatToken) {
   if (room.seats[0]?.playerId !== seat.playerId) fail('The journal keeper begins the next run')
   room.phase = 'lobby'
   room.run = null
-  room.ascension = Math.min(room.ascension, room.campaignProgress.highestAscension)
+  includeSeatUnlocks(room)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }

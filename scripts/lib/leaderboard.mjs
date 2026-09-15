@@ -1,4 +1,5 @@
 const CHARACTERS = new Set(['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'])
+const CHARACTER_ORDER = [...CHARACTERS]
 const MODES = new Set(['standard', 'daily', 'custom'])
 const compareNames = new Intl.Collator('en', { sensitivity: 'base' }).compare
 export const MAX_LEADERBOARD_RUNS = 20_000
@@ -20,16 +21,24 @@ function finalDeck(value) {
   })
 }
 
+function characters(value) {
+  const party = value.characters ?? [value.character]
+  if (!Array.isArray(party) || party.length < 1 || party.length > 4 ||
+      new Set(party).size !== party.length || party.some((character) => !CHARACTERS.has(character))) bad('Heroes are invalid')
+  return [...party].sort((left, right) => CHARACTER_ORDER.indexOf(left) - CHARACTER_ORDER.indexOf(right))
+}
+
 export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) bad('Leaderboard run must be an object')
   if (typeof value.id !== 'string' || !/^[a-zA-Z0-9:_-]{8,160}$/.test(value.id)) bad('Run id is invalid')
-  if (!CHARACTERS.has(value.character)) bad('Character is invalid')
   if (!MODES.has(value.mode)) bad('Run mode is invalid')
+  const party = characters(value)
   return {
     id: value.id,
     ...(typeof value.username === 'string' && value.username.length <= 24 ? { username: value.username } : {}),
     ...(value.highestBossActDefeated >= 3 && value.finalDeck !== undefined ? { finalDeck: finalDeck(value.finalDeck) } : {}),
-    character: value.character,
+    character: party[0],
+    characters: party,
     ascension: integer(value.ascension, 'Ascension', 0, 13),
     mode: value.mode,
     damageStatsComplete: value.damageStatsComplete === true,
@@ -80,9 +89,10 @@ export function addLeaderboardRun(store, value, recordedAt = Date.now()) {
 export function leaderboardSnapshot(runs) {
   const groups = new Map()
   for (const run of runs) {
-    const key = `${run.character}:${run.ascension}`
+    const key = `${run.characters.join(',')}:${run.ascension}`
     const row = groups.get(key) ?? {
       character: run.character,
+      characters: run.characters,
       ascension: run.ascension,
       runs: 0,
       act3Runs: 0,
@@ -115,6 +125,7 @@ export function leaderboardSnapshot(runs) {
   }
   const rows = [...groups.values()].map((row) => ({
     character: row.character,
+    characters: row.characters,
     ascension: row.ascension,
     runs: row.runs,
     act3Runs: row.act3Runs,
@@ -129,7 +140,7 @@ export function leaderboardSnapshot(runs) {
     (right.act3WinRate ?? -1) - (left.act3WinRate ?? -1) ||
     right.act4Wins - left.act4Wins ||
     (right.averageDamagePerFight ?? -1) - (left.averageDamagePerFight ?? -1) ||
-    right.runs - left.runs || left.character.localeCompare(right.character) || left.ascension - right.ascension)
+    right.runs - left.runs || left.characters.join(',').localeCompare(right.characters.join(',')) || left.ascension - right.ascension)
   return { totalRuns: runs.length, rows }
 }
 
@@ -137,19 +148,24 @@ export function leaderboardSnapshot(runs) {
 export function winningDecksPage(runs, params = new URLSearchParams()) {
   const sort = params.get('sort') ?? 'recordedAt'
   const direction = params.get('direction') ?? 'desc'
-  const character = params.get('character') ?? 'all'
+  const requestedCharacters = params.getAll('character')
+  const selectedCharacters = requestedCharacters.length === 0 || requestedCharacters.length === 1 && requestedCharacters[0] === 'all'
+    ? [] : requestedCharacters
   const ascension = params.get('ascension') ?? 'all'
   const cursor = params.get('cursor')
   if (!['character', 'ascension', 'cardCount', 'username', 'recordedAt'].includes(sort) ||
-      !['asc', 'desc'].includes(direction) || character !== 'all' && !CHARACTERS.has(character) ||
+      !['asc', 'desc'].includes(direction) || new Set(selectedCharacters).size !== selectedCharacters.length ||
+      selectedCharacters.some((character) => !CHARACTERS.has(character)) ||
       ascension !== 'all' && !/^(?:[0-9]|1[0-3])$/.test(ascension) ||
       cursor !== null && !/^(0|[1-9][0-9]{0,5})$/.test(cursor)) bad('Invalid winning deck query')
   const value = run => sort === 'cardCount' ? run.finalDeck.length
+    : sort === 'character' ? run.characters.join(',')
     : sort === 'username' ? run.username ?? 'Unknown' : run[sort]
   // The archive is capped at 20,000 runs; sort metadata before copying one page.
   const eligible = runs.map((run, index) => ({ run, index }))
     .filter(({ run }) => run.highestBossActDefeated >= 3 && Array.isArray(run.finalDeck) &&
-      (character === 'all' || run.character === character) && (ascension === 'all' || run.ascension === Number(ascension)))
+      selectedCharacters.every((character) => run.characters.includes(character)) &&
+      (ascension === 'all' || run.ascension === Number(ascension)))
     .sort((a, b) => {
       const left = value(a.run), right = value(b.run)
       const compared = typeof left === 'string' ? compareNames(left, right) : left - right
@@ -161,10 +177,34 @@ export function winningDecksPage(runs, params = new URLSearchParams()) {
   return {
     total: eligible.length,
     rows: page.map(({ run, index }) => ({
-      id: String(index), character: run.character, ascension: run.ascension,
+      id: String(index), character: run.character, characters: run.characters, ascension: run.ascension,
       cardCount: run.finalDeck.length, username: run.username ?? 'Unknown',
       recordedAt: run.recordedAt, cards: run.finalDeck,
     })),
     nextCursor: previous + 1 + page.length < eligible.length ? String(page.at(-1).index) : null,
+  }
+}
+
+export function roomLeaderboardRun(room) {
+  const run = room.run
+  const totals = run.players.reduce((sum, player) => ({
+    damageDealt: sum.damageDealt + Math.max(0, Math.floor((player.damageStats?.attack ?? 0) +
+      (player.damageStats?.poison ?? 0) + (player.damageStats?.special ?? 0))),
+    damageTaken: sum.damageTaken + Math.max(0, Math.floor(player.damageStats?.taken ?? 0)),
+    damageBlocked: sum.damageBlocked + Math.max(0, Math.floor(player.damageStats?.blocked ?? 0)),
+  }), { damageDealt: 0, damageTaken: 0, damageBlocked: 0 })
+  return {
+    id: `room:${room.code}:${run.campaign.runId}:${run.seed}`,
+    characters: run.players.map((player) => player.character),
+    ...(run.campaign.highestBossActDefeated >= 3 ? { finalDeck: run.players.flatMap((player) =>
+      player.deck.map(({ defId, upgraded, attachedGemId }) => ({ defId, upgraded, ...(attachedGemId ? { attachedGemId } : {}) }))) } : {}),
+    ascension: run.ascension,
+    mode: run.meta.mode,
+    damageStatsComplete: run.combatsFinished !== undefined,
+    startedAtAct: run.campaign.startedAtAct,
+    highestBossActDefeated: run.campaign.highestBossActDefeated,
+    combatsFinished: Math.max(0, Math.floor(run.combatsFinished ?? 0)),
+    ...totals,
+    ...(run.floorsCleared === undefined ? {} : { floorsCleared: Math.max(0, Math.floor(run.floorsCleared)) }),
   }
 }

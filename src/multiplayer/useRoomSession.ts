@@ -8,6 +8,7 @@ import type { CourierOffer, MerchantState, RelicRewardState } from '../game/nonc
 import type { CampaignProgress, SpireKeys } from '../game/campaign.ts'
 import type { NeowCard, NeowRewardOffer } from '../game/neow.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
+import { savedCampaign } from '../campaign-storage.ts'
 import {
   resetRoomEndpoint,
   roomUrl,
@@ -504,7 +505,7 @@ export function useRoomSession() {
         connectionTimeout = window.setTimeout(() => reconnect(socketEndpoint.href), ACTION_TIMEOUT_MS)
         next.addEventListener('open', () => {
           if (!active || socket.current !== next) return next.close()
-          next.send(JSON.stringify({ type: 'authenticate', token: credentials.token }))
+          next.send(JSON.stringify({ type: 'authenticate', token: credentials.token, campaignProgress: savedCampaign() }))
         })
         next.addEventListener('message', (event) => {
           if (!active || generation.current !== connectedGeneration || socket.current !== next) return
@@ -619,7 +620,7 @@ export function useRoomSession() {
           body = await json(await fetch(endpoint, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name, character, requestId }),
+            body: JSON.stringify({ name, character, requestId, campaignProgress: savedCampaign() }),
             signal: AbortSignal.timeout(ACTION_TIMEOUT_MS),
           })) as { token: string; snapshot: RoomSnapshot }
           break

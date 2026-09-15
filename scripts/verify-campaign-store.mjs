@@ -39,6 +39,25 @@ try {
     assertEqual(restored.run.lastStand, true)
   })
 
+  const borrowed = createRoom(store, { code: 'BORROW' })
+  borrowed.campaignBaseProgress = { ...borrowed.campaignBaseProgress,
+    characters: { ...borrowed.campaignBaseProgress.characters, ironclad: 8, silent: 8 } }
+  borrowed.campaignProgress = structuredClone(borrowed.campaignBaseProgress)
+  const borrowedLeader = joinRoom(borrowed, { character: 'ironclad', campaignProgress: { ...borrowed.campaignProgress, highestAscension: 2 } })
+  joinRoom(borrowed, { character: 'silent', campaignProgress: { ...borrowed.campaignProgress, colorless: 3, actIV: 5, highestAscension: 9 } })
+  startRun(borrowed, borrowedLeader.token, { seed: 7334 })
+  borrowed.run = { ...borrowed.run, phase: 'defeat' }
+  apply(borrowed, borrowedLeader.token, { kind: 'finishRun' })
+  saveStore(store)
+  const restoredBorrowed = createStore({ file }).rooms.get('BORROW')
+  check('restart preserves pending journal marks alongside borrowed team unlocks', () => {
+    assertEqual(restoredBorrowed.campaignProgress.unspentMarks, 2)
+    assertEqual(restoredBorrowed.campaignProgress.colorless, 0)
+    assertEqual(restoredBorrowed.campaignProgress.actIV, 0)
+    assertEqual(restoredBorrowed.seats[1].campaignUnlocks.colorless, 3)
+    assertEqual(restoredBorrowed.seats[1].campaignUnlocks.actIV, 5)
+  })
+
   const pending = createRoom(store, { code: 'PENDNG' })
   const pendingOwner = joinRoom(pending, { name: 'Owner', character: 'ironclad' })
   const pendingPeer = joinRoom(pending, { name: 'Peer', character: 'silent' })
@@ -134,12 +153,14 @@ try {
 
   const legacy = createRoom(store, { code: 'LEGACY' })
   legacy.campaignProgress = { ...legacy.campaignProgress, characters: { ...legacy.campaignProgress.characters, ironclad: 4 }, nextRunNumber: 7 }
+  delete legacy.campaignBaseProgress
   const legacySeat = joinRoom(legacy, { name: 'Lee', character: 'ironclad' })
   startRun(legacy, legacySeat.token, { seed: 7332 })
   delete legacy.run.campaignProgress
   legacy.run.combat = { potionLimit: undefined }
   const corrupt = createRoom(store, { code: 'CORRUP' })
   corrupt.campaignProgress = { ...corrupt.campaignProgress, characters: { ...corrupt.campaignProgress.characters, silent: 4 }, nextRunNumber: 11 }
+  delete corrupt.campaignBaseProgress
   const corruptSeat = joinRoom(corrupt, { name: 'Kai', character: 'silent' })
   startRun(corrupt, corruptSeat.token, { seed: 7333 })
   corrupt.run.campaignProgress = { version: 1 }
@@ -584,17 +605,24 @@ const activeSeat = joinRoom(active, { name: 'Ann', character: 'ironclad' })
 startRun(active, activeSeat.token, { seed: 99 })
 const journal = createRoom(expiring.store, { code: 'JOURNL' })
 journal.campaignProgress = { ...journal.campaignProgress, finishedRunIds: ['finished-1'] }
-for (const room of [empty, active, journal]) expiring.touch(room)
+const finalized = createRoom(expiring.store, { code: 'FINALZ' })
+const finalizedSeat = joinRoom(finalized, { name: 'Bo', character: 'silent' })
+startRun(finalized, finalizedSeat.token, { seed: 100 })
+finalized.run = { ...finalized.run, phase: 'defeat', campaign: { ...finalized.run.campaign, finalized: true } }
+for (const room of [empty, active, journal, finalized]) expiring.touch(room)
 expiring.sweepRooms(Date.now() + 7 * 60 * 60 * 1000)
 check('expiry removes abandoned lobbies but preserves resumable runs and campaign journals', () => {
   assertEqual(expiring.store.rooms.has(empty.code), false)
   assertEqual(expiring.store.rooms.has(active.code), true)
   assertEqual(expiring.store.rooms.has(journal.code), true)
+  assertEqual(expiring.store.rooms.has(finalized.code), true)
 })
 expiring.sweepRooms(Date.now() + 31 * 24 * 60 * 60 * 1000)
 check('resumable rooms expire after the bounded thirty-day recovery window', () => {
   assertEqual(expiring.store.rooms.has(active.code), false)
   assertEqual(expiring.store.rooms.has(journal.code), false)
+  assertEqual(expiring.store.rooms.has(finalized.code), false)
+  assertEqual(expiring.store.leaderboardRuns.some((run) => run.id.includes(':FINALZ:')), true)
 })
 await expiring.close()
 

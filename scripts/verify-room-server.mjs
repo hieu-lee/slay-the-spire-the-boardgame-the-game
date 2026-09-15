@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
+import { createCampaignProgress } from '../src/game/state.ts'
 
 suite('room server')
 
@@ -57,14 +58,14 @@ function nextMessage(socket, type, accept = () => true) {
   })
 }
 
-async function connect(code, token) {
+async function connect(code, token, campaignProgress) {
   const socket = new WebSocket(`${wsOrigin}/ws?room=${code}`)
   const first = nextMessage(socket, 'snapshot')
   await new Promise((resolve, reject) => {
     socket.once('open', resolve)
     socket.once('error', reject)
   })
-  socket.send(JSON.stringify({ type: 'authenticate', token }))
+  socket.send(JSON.stringify({ type: 'authenticate', token, campaignProgress }))
   return { socket, snapshot: (await first).snapshot }
 }
 
@@ -82,6 +83,14 @@ try {
     method: 'POST', body: { name: 'Keeping', character: 'ironclad' },
   })
   const leavableCode = leavable.body.snapshot.code
+  const unlocks = { ...createCampaignProgress(), colorless: 3, actIV: 5, highestAscension: 9 }
+  const legacySocket = await connect(leavableCode, leavable.body.token, unlocks)
+  check('WebSocket authentication adds local unlocks to restored lobby seats', () => {
+    assertEqual(legacySocket.snapshot.campaignProgress.highestAscension, 9)
+    assertEqual(legacySocket.snapshot.campaignProgress.colorless, 3)
+    assertEqual(legacySocket.snapshot.campaignProgress.actIV, 5)
+  })
+  legacySocket.socket.close()
   const departing = await request(`/api/rooms/${leavableCode}/join`, {
     method: 'POST', body: { name: 'Leaving', character: 'silent' },
   })

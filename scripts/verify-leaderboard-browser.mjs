@@ -41,6 +41,7 @@ try {
     sample({}),
     sample({ highestBossActDefeated: 2, combatsFinished: 5, damageDealt: 25, damageTaken: 50, damageBlocked: 0 }),
     sample({ character: 'silent', highestBossActDefeated: 4, combatsFinished: 12, damageDealt: 240, damageTaken: 20, damageBlocked: 80, floorsCleared: 27 }),
+    sample({ characters: ['silent', 'ironclad'], highestBossActDefeated: 2, combatsFinished: 4, damageDealt: 20, damageTaken: 10, damageBlocked: 10 }),
   ]) {
     const response = await fetch(`${roomOrigin}/api/leaderboard`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(run) })
     assert(response.ok, 'could not seed leaderboard')
@@ -82,30 +83,42 @@ try {
   check('a returning machine skips the welcome page', () => assertEqual(rooms.store.profiles.length, 1))
   await page.getByRole('button', { name: 'Leaderboard', exact: true }).click()
   await page.getByRole('heading', { name: 'All heroes' }).waitFor()
-  await page.getByRole('row', { name: /Silent Ascension 3/ }).waitFor()
-  const legacyRow = await page.getByRole('row', { name: /Silent Ascension 3/ }).innerText()
+  const rowFor = (party) => page.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name: party, exact: true }) })
+  await rowFor('Silent').waitFor()
+  const legacyRow = await rowFor('Silent').innerText()
   check('the new client renders an old-server snapshot throughout a rolling handoff', () => {
     assert(legacyRow.includes('—'), legacyRow)
   })
   legacySnapshot = false
   await page.getByRole('button', { name: 'Back to main menu' }).click()
   await page.getByRole('button', { name: 'Leaderboard', exact: true }).click()
-  await page.getByRole('row', { name: /Silent Ascension 3/ }).waitFor()
+  await rowFor('Silent').waitFor()
   const firstRow = await page.locator('tbody tr').first().innerText()
-  const ironcladRow = await page.getByRole('row', { name: /Ironclad Ascension 3/ }).innerText()
+  const ironcladRow = await rowFor('Ironclad').innerText()
   check('requested metrics are rendered and ranked from the live service', () => {
-    assert(firstRow.includes('Silent') && firstRow.includes('100%') && firstRow.includes('27.0') && firstRow.includes('20.0') && firstRow.includes('80%') && firstRow.endsWith('1'))
+    assert(firstRow.includes('100%') && firstRow.includes('27.0') && firstRow.includes('20.0') && firstRow.includes('80%') && firstRow.endsWith('1'))
     assert(ironcladRow.includes('50%') && ironcladRow.includes('1 / 2') && ironcladRow.includes('8.3') && ironcladRow.includes('47%'))
+    assert(!firstRow.includes('Silent'), 'hero names should be represented by assets only')
   })
   await waitForImages()
   await page.screenshot({ path: join(output, 'leaderboard-desktop.png'), fullPage: true })
 
   await page.getByRole('button', { name: 'Ironclad', exact: true }).click()
-  const filteredRows = await page.locator('tbody tr').count()
-  const filteredText = await page.locator('tbody tr').first().innerText()
-  check('character filters expose only their own ascension records', () => {
-    assertEqual(filteredRows, 1)
-    assert(filteredText.includes('Ironclad'))
+  const ironcladRows = await page.locator('tbody tr').count()
+  check('one hero filter includes solo and party records containing that hero', () => {
+    assertEqual(ironcladRows, 2)
+  })
+  await page.getByRole('button', { name: 'Silent', exact: true }).click()
+  const partyRows = await page.locator('tbody tr').count()
+  const matchingPartyRows = await rowFor('Ironclad, Silent').count()
+  check('multiple hero filters require every selected hero in the party', () => {
+    assertEqual(partyRows, 1)
+    assertEqual(matchingPartyRows, 1)
+  })
+  await page.getByRole('button', { name: 'Silent', exact: true }).click()
+  const toggledRows = await page.locator('tbody tr').count()
+  check('clicking a selected hero disables that filter', () => {
+    assertEqual(toggledRows, 2)
   })
   await page.getByLabel('Ascension').selectOption('2')
   const missingAscensionRows = await page.locator('tbody tr').count()
@@ -222,7 +235,7 @@ try {
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]').length === 0)
   await page.waitForTimeout(50)
   check('a bad queued row cannot block a later solo result through a rolling handoff', () => {
-    assertEqual(rooms.store.leaderboardRuns.length, 4)
+    assertEqual(rooms.store.leaderboardRuns.length, 5)
     const logged = rooms.store.leaderboardRuns.at(-1)
     assertEqual(logged.character, 'ironclad')
     assertEqual(logged.ascension, 5)

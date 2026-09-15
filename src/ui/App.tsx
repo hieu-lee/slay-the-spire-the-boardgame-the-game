@@ -61,8 +61,9 @@ import type { CharacterId } from '../game/types.ts'
 import { ROOM_LABEL } from '../game/run.ts'
 import { hasRoomSession } from '../multiplayer/useRoomSession.ts'
 import { isActIVUnlocked } from '../game/campaign.ts'
-import { allocateSharedMarks, canEnterActIV, createCampaignProgress, parseCampaignProgress } from '../game/campaign.ts'
+import { allocateSharedMarks, canEnterActIV } from '../game/campaign.ts'
 import type { CampaignProgress } from '../game/campaign.ts'
+import { CAMPAIGN_KEY, savedCampaign } from '../campaign-storage.ts'
 import { eventCanStartCombat } from '../game/events.ts'
 import { MapScreen } from './MapScreen.tsx'
 import { MapOverlay } from './MapOverlay.tsx'
@@ -118,7 +119,6 @@ const ROSTER: { character: CharacterId; name: string }[] = [
 ]
 const DEFAULT_CHARACTERS = ROSTER.map((entry) => entry.character)
 
-const CAMPAIGN_KEY = 'sts-physical-campaign'
 const SOLO_RUN_KEY = 'sts-solo-run'
 
 type BuiltRun = {
@@ -182,11 +182,6 @@ function savedSoloRun(): SoloRunSave | null {
   } catch {
     return null
   }
-}
-
-function savedCampaign(): CampaignProgress {
-  try { return parseCampaignProgress(JSON.parse(localStorage.getItem(CAMPAIGN_KEY) ?? '{}')) }
-  catch { return createCampaignProgress() }
 }
 
 function legalCharacters(selected: readonly CharacterId[]): CharacterId[] {

@@ -6,10 +6,11 @@ import { loadWinningDecks, type WinningDeck, type WinningDeckPage, type WinningD
 import { CardCollectionDialog } from './CardCollectionOverlay.tsx'
 import { CHARACTER_LABEL } from './run-summary-data.ts'
 
-const COLUMNS = [['character', 'Character'], ['ascension', 'Ascension'], ['cardCount', 'Card count'],
+const COLUMNS = [['character', 'Heroes'], ['ascension', 'Ascension'], ['cardCount', 'Card count'],
   ['username', 'Username'], ['recordedAt', 'Won at']] as const
+const partyOf = (run: WinningDeck) => run.characters ?? [run.character]
 
-export function WinningDecks({ character, ascension }: { character: CharacterId | 'all'; ascension: number | 'all' }) {
+export function WinningDecks({ characters, ascension }: { characters: CharacterId[]; ascension: number | 'all' }) {
   const [sort, setSort] = useState<WinningDeckSort>('recordedAt')
   const [direction, setDirection] = useState<'asc' | 'desc'>('desc')
   const section = useRef<HTMLElement>(null)
@@ -21,7 +22,7 @@ export function WinningDecks({ character, ascension }: { character: CharacterId 
     }
   }, [sort, direction])
   return <section ref={section} className="winning-decks" aria-label="Winning decks">
-    <WinningDeckRows key={`${character}:${ascension}:${sort}:${direction}`} {...{ character, ascension, sort, direction }}
+    <WinningDeckRows key={`${characters.join(',')}:${ascension}:${sort}:${direction}`} {...{ characters, ascension, sort, direction }}
       onSort={(column) => {
         sortFocus.current = column
         if (sort === column) setDirection(value => value === 'asc' ? 'desc' : 'asc')
@@ -30,8 +31,8 @@ export function WinningDecks({ character, ascension }: { character: CharacterId 
   </section>
 }
 
-function WinningDeckRows({ character, ascension, sort, direction, onSort }: {
-  character: CharacterId | 'all'; ascension: number | 'all'; sort: WinningDeckSort; direction: 'asc' | 'desc'
+function WinningDeckRows({ characters, ascension, sort, direction, onSort }: {
+  characters: CharacterId[]; ascension: number | 'all'; sort: WinningDeckSort; direction: 'asc' | 'desc'
   onSort: (sort: WinningDeckSort) => void
 }) {
   const [page, setPage] = useState<WinningDeckPage | null>(null)
@@ -49,17 +50,20 @@ function WinningDeckRows({ character, ascension, sort, direction, onSort }: {
     const controller = new AbortController()
     setLoading(true)
     setError('')
-    const params = new URLSearchParams({ character, ascension: String(ascension), sort, direction })
+    const params = new URLSearchParams({ ascension: String(ascension), sort, direction })
+    characters.forEach((character) => params.append('character', character))
     if (cursor !== null) params.set('cursor', cursor)
     loadWinningDecks(params, controller.signal).then(result => {
-      if (!controller.signal.aborted) setPage(previous => ({ ...result,
-        rows: [...(previous?.rows ?? []), ...result.rows.filter(row => !previous?.rows.some(old => old.id === row.id))],
+      const rows = result.rows.filter((row) => characters.every((character) => partyOf(row).includes(character)))
+      const page = rows.length === result.rows.length ? result : { ...result, rows, total: rows.length, nextCursor: null }
+      if (!controller.signal.aborted) setPage(previous => ({ ...page,
+        rows: [...(previous?.rows ?? []), ...page.rows.filter(row => !previous?.rows.some(old => old.id === row.id))],
       }))
     }).catch(reason => {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Could not load winning decks.')
     }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [character, ascension, sort, direction, cursor, retry])
+  }, [characters, ascension, sort, direction, cursor, retry])
 
   useEffect(() => {
     const button = more.current
@@ -87,8 +91,9 @@ function WinningDeckRows({ character, ascension, sort, direction, onSort }: {
           <button type="button" data-sort={key} onClick={() => onSort(key)}>{label} <span aria-hidden="true">{sort === key ? direction === 'asc' ? '↑' : '↓' : '↕'}</span></button>
         </th>)}</tr></thead>
         <tbody>{page?.rows.map(run => <tr key={run.id} onClick={event => openDeck(run, event.currentTarget.querySelector('button'))}>
-          <td><button type="button" className="winning-decks__open" aria-label={`View ${run.username}'s ${CHARACTER_LABEL[run.character]} winning deck`}>
-            <img src={assetPath(`menu/compendium-icons/${run.character}.webp`)} alt="" />{CHARACTER_LABEL[run.character]}
+          <td><button type="button" className="winning-decks__open" aria-label={`View ${run.username}'s ${partyOf(run).map((character) => CHARACTER_LABEL[character]).join(', ')} winning deck`}>
+            <span className="leaderboard__party-icons" aria-hidden="true">{partyOf(run).map((character) =>
+              <img key={character} src={assetPath(`menu/compendium-icons/${character}.webp`)} alt="" />)}</span>
           </button></td>
           <td>{run.ascension}</td><td>{run.cardCount}</td><td className="winning-decks__username">{run.username}</td>
           <td><time dateTime={Number.isNaN(new Date(run.recordedAt).getTime()) ? undefined : new Date(run.recordedAt).toISOString()}>{new Date(run.recordedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time></td>
@@ -102,7 +107,7 @@ function WinningDeckRows({ character, ascension, sort, direction, onSort }: {
       {page && page.total > 0 && <p className="winning-decks__status">{page.rows.length} of {page.total} winning decks</p>}
     </div>
     {deckError && <div className="leaderboard__message" role="alert"><span>{deckError}</span><button type="button" onClick={() => setDeckError('')}>Dismiss</button></div>}
-    {selected && <CardCollectionDialog label={`${selected.username} · ${CHARACTER_LABEL[selected.character]} · A${selected.ascension}`}
+    {selected && <CardCollectionDialog label={`${selected.username} · ${partyOf(selected).map((character) => CHARACTER_LABEL[character]).join(' + ')} · A${selected.ascension}`}
       cards={selected.cards.map((card, index) => ({ ...card, uid: `${selected.id}:${index}` }))}
       onClose={() => { setSelected(null); requestAnimationFrame(() => opener.current?.focus({ preventScroll: true })) }} />}
   </>

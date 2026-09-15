@@ -13,6 +13,7 @@ mkdirSync(output, { recursive: true })
 const rooms = createRoomServer()
 rooms.store.leaderboardRuns = Array.from({ length: 45 }, (_, index) => normalizeLeaderboardRun({
   id: `archive-browser-${index}`, character: index % 2 ? 'silent' : 'ironclad', ascension: index % 14,
+  ...(index === 44 ? { characters: ['defect', 'silent', 'ironclad'] } : {}),
   username: index === 44 ? 'A very long player name' : `Player${String(index).padStart(2, '0')}`,
   mode: 'standard', startedAtAct: 1, highestBossActDefeated: 3, combatsFinished: 1, damageDealt: 1, damageTaken: 1, damageBlocked: 1,
   finalDeck: Array.from({ length: 10 + index % 7 }, (_, card) => ({ defId: card % 2 ? 'defend_ironclad' : 'strike_ironclad', upgraded: card === 0 })),
@@ -57,7 +58,7 @@ try {
   await page.getByRole('button', { name: 'Load 20 more', exact: true }).scrollIntoViewIfNeeded()
   await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 45)
   assert.equal(requests.length, 3)
-  for (const [label, key] of [['Character', 'character'], ['Ascension', 'ascension'], ['Card count', 'cardCount'], ['Username', 'username'], ['Won at', 'recordedAt']]) {
+  for (const [label, key] of [['Heroes', 'character'], ['Ascension', 'ascension'], ['Card count', 'cardCount'], ['Username', 'username'], ['Won at', 'recordedAt']]) {
     await page.getByRole('columnheader').getByRole('button', { name: label }).focus()
     await page.keyboard.press('Enter')
     await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 20)
@@ -72,11 +73,19 @@ try {
   await page.getByRole('button', { name: 'Silent', exact: true }).click()
   await page.getByLabel('Ascension').selectOption('3')
   await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 3)
-  assert((await rows.allTextContents()).every(text => text.includes('Silent')))
-  await page.getByLabel('Ascension').selectOption('2')
+  assert((await rows.getByRole('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))))
+    .every((label) => label.includes('Silent')))
+  await page.getByLabel('Ascension').selectOption('4')
   await page.getByText('No winning decks yet.').waitFor()
   await page.getByRole('button', { name: 'All heroes', exact: true }).click()
   await page.getByLabel('Ascension').selectOption('all')
+  await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 20)
+  await page.getByRole('button', { name: 'Ironclad', exact: true }).click()
+  await page.getByRole('button', { name: 'Silent', exact: true }).click()
+  await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 1)
+  assert.equal(await rows.first().locator('.leaderboard__party-icons img').count(), 3)
+  assert.deepEqual(new URL(requests.at(-1)).searchParams.getAll('character'), ['ironclad', 'silent'])
+  await page.getByRole('button', { name: 'All heroes', exact: true }).click()
   await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 20)
   await page.setViewportSize({ width: 844, height: 390 })
   await screenshot('decks-horizontal-phone')

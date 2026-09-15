@@ -3,7 +3,7 @@ import { claimProfile } from './lib/profiles.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { writeFileSync } from 'node:fs'
 import { WebSocketServer } from 'ws'
-import { addLeaderboardRun, leaderboardSnapshot, winningDecksPage } from './lib/leaderboard.mjs'
+import { addLeaderboardRun, leaderboardSnapshot, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
 import {
   apply,
   chooseAscension,
@@ -17,6 +17,7 @@ import {
   joinRoom,
   markDisconnected,
   removeSeat,
+  restoreRoom,
   saveStore,
   snapshotFor,
   startRun,
@@ -118,6 +119,19 @@ export function createRoomServer({
   let saveTimer
   let preserveRoomsOnClose = false
   let saveError = null
+  const applyAndRecord = (room, token, action) => {
+    const finalized = room.run?.campaign.finalized === true
+    const checkpoint = !finalized && action?.kind === 'finishRun' ? structuredClone(room) : null
+    try {
+      if (finalized && addLeaderboardRun(store, roomLeaderboardRun(room))) queueSave()
+      const result = apply(room, token, action)
+      if (!finalized && room.run?.campaign.finalized === true) addLeaderboardRun(store, roomLeaderboardRun(room))
+      return result
+    } catch (error) {
+      if (checkpoint && room.run?.campaign.finalized) restoreRoom(room, checkpoint)
+      throw error
+    }
+  }
   const minimumRetryMs = Math.max(saveDelayMs, 100)
   let retryDelayMs = minimumRetryMs
   const attemptSave = () => {
@@ -149,6 +163,13 @@ export function createRoomServer({
     saveTimer = undefined
     if (!attemptSave()) throw saveError
   }
+
+  let restoredLeaderboardRuns = false
+  for (const room of store.rooms.values()) {
+    if (!room.run?.campaign.finalized) continue
+    try { restoredLeaderboardRuns = addLeaderboardRun(store, roomLeaderboardRun(room)) || restoredLeaderboardRuns } catch {}
+  }
+  if (restoredLeaderboardRuns) queueSave()
 
   for (const [code, room] of store.rooms) roomActivity.set(code, room.lastActivityAt ?? Date.now())
 
@@ -218,6 +239,9 @@ export function createRoomServer({
       }
       const ttl = room?.run || room?.campaignProgress?.finishedRunIds?.length > 0 ? RESUMABLE_ROOM_TTL_MS : ROOM_TTL_MS
       if (now - touchedAt >= ttl) {
+        if (room?.run?.campaign.finalized) {
+          try { addLeaderboardRun(store, roomLeaderboardRun(room)) } catch { continue }
+        }
         for (const [socket, client] of sockets) if (client.code === code) socket.close(4004, 'Room expired')
         store.rooms.delete(code)
         store.reconnectQuorums.delete(code)
@@ -361,7 +385,7 @@ export function createRoomServer({
         const room = createRoom(store)
         roomOwners.set(room.code, source)
         try {
-          const seat = joinRoom(room, { name: body.name, character: body.character, connected: false })
+          const seat = joinRoom(room, { name: body.name, character: body.character, campaignProgress: body.campaignProgress, connected: false })
           if (requestId) seat.joinRequestId = requestId
           touch(room)
           queueSave()
@@ -416,7 +440,8 @@ export function createRoomServer({
         }
         const beforeVersion = room.version
         const seat = joinRoom(room, {
-          name: body.name, character: body.character, token, connected: live, settle: !reconnectingHandoff(room),
+          name: body.name, character: body.character, campaignProgress: body.campaignProgress,
+          token, connected: live, settle: !reconnectingHandoff(room),
         })
         if (requestId) seat.joinRequestId = requestId
         if (live) finishHandoffReconnect(room, seat)
@@ -476,7 +501,7 @@ export function createRoomServer({
         snapshot = startRun(room, token, { campaign: body.campaign })
       }
       else if (operation === 'action') {
-        const result = apply(room, token, body.action)
+        const result = applyAndRecord(room, token, body.action)
         changed = result.changed
         snapshot = result.snapshot
       }
@@ -572,10 +597,12 @@ export function createRoomServer({
             return socket.close(4003, 'Authentication required')
           }
           room = roomOrThrow(context.code)
-          let seat = findSeat(room, message.token)
-          if (!seat) return socket.close(4003, 'Unknown seat')
+          if (!findSeat(room, message.token)) return socket.close(4003, 'Unknown seat')
           if (!mayAct(room, message.token)) return socket.close(4008, 'Rate limit exceeded')
-          if (!seat.connected) seat = joinRoom(room, { token: message.token, settle: !reconnectingHandoff(room) })
+          const seat = joinRoom(room, {
+            token: message.token, campaignProgress: message.campaignProgress,
+            settle: !reconnectingHandoff(room),
+          })
           finishHandoffReconnect(room, seat)
           client = {
             code: room.code,
@@ -602,7 +629,7 @@ export function createRoomServer({
             if (reconnectingHandoff(room)) {
               throw Object.assign(new Error('Waiting for every player to reconnect'), { status: 409 })
             }
-            const result = apply(room, client.token, message.action)
+            const result = applyAndRecord(room, client.token, message.action)
             if (result.changed) {
               touch(room)
               queueSave()

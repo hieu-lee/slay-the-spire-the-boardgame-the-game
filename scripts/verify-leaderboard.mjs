@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addLeaderboardRun, leaderboardSnapshot, MAX_LEADERBOARD_RUNS, normalizeLeaderboardRun } from './lib/leaderboard.mjs'
-import { createStore, saveStore } from './lib/rooms.mjs'
+import { createRoom, createStore, joinRoom, saveStore, startRun } from './lib/rooms.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { assert, assertDeepEqual, assertEqual, assertThrows, check, report, suite } from './lib/harness.mjs'
 
@@ -61,6 +61,17 @@ check('rows aggregate the requested per-character and ascension metrics', () => 
   assertEqual(row.act4Wins, 1)
 })
 
+check('rows aggregate by the complete hero set regardless of seat order', () => {
+  const snapshot = leaderboardSnapshot([
+    normalizeLeaderboardRun(run({ id: 'party-run-0001', characters: ['silent', 'ironclad'] }), 1),
+    normalizeLeaderboardRun(run({ id: 'party-run-0002', characters: ['ironclad', 'silent'] }), 2),
+    normalizeLeaderboardRun(run({ id: 'party-run-0003', characters: ['ironclad'] }), 3),
+  ])
+  assertEqual(snapshot.rows.length, 2)
+  assertDeepEqual(snapshot.rows.find((row) => row.characters.length === 2).characters, ['ironclad', 'silent'])
+  assertEqual(snapshot.rows.find((row) => row.characters.length === 2).runs, 2)
+})
+
 const directory = mkdtempSync(join(tmpdir(), 'sts-leaderboard-'))
 const file = join(directory, 'rooms.json')
 try {
@@ -84,6 +95,21 @@ try {
     assertDeepEqual(restored.leaderboardRuns, store.leaderboardRuns)
   })
 
+  const startupFile = join(directory, 'startup.json')
+  const startupStore = createStore({ file: startupFile })
+  const startupRoom = createRoom(startupStore, { code: 'LOGNEW' })
+  const startupLeader = joinRoom(startupRoom, { character: 'ironclad' })
+  startRun(startupRoom, startupLeader.token, { seed: 126 })
+  startupRoom.run = { ...startupRoom.run, phase: 'defeat', campaign: { ...startupRoom.run.campaign, finalized: true } }
+  saveStore(startupStore)
+  const startupService = createRoomServer({ storeFile: startupFile, saveDelayMs: 0 })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  check('server startup archives restored finalized rooms without waiting for an action', () => {
+    assertEqual(startupService.store.leaderboardRuns.length, 1)
+    assertEqual(JSON.parse(readFileSync(startupFile, 'utf8')).leaderboardRuns.length, 1)
+  })
+  await startupService.close({ preserveRooms: true })
+
   const service = createRoomServer({ storeFile: file, saveDelayMs: 10_000 })
   const address = await service.listen(0)
   const origin = `http://127.0.0.1:${address.port}`
@@ -104,6 +130,74 @@ try {
       assertEqual(response.totalRuns, 2)
       assert(response.rows.some((row) => row.character === 'silent' && row.act4Wins === 1))
     })
+
+    const room = createRoom(service.store, { code: 'LOGRUN' })
+    const leader = joinRoom(room, { name: 'Ann', character: 'silent' })
+    joinRoom(room, { name: 'Bo', character: 'ironclad' })
+    startRun(room, leader.token, { seed: 123 })
+    room.run = { ...room.run, phase: 'victory', act: 3, floorsCleared: 18, combatsFinished: 7,
+      campaign: { ...room.run.campaign, bossesDefeated: 3, highestBossActDefeated: 3 } }
+    const deck = room.run.players.flatMap((player) => player.deck.map(({ defId, upgraded }) => ({ defId, upgraded })))
+    const finished = await fetch(`${origin}/api/rooms/LOGRUN/action`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-room-token': leader.token },
+      body: JSON.stringify({ action: { kind: 'finishRun' } }),
+    })
+    const recorded = service.store.leaderboardRuns.at(-1)
+    check('the room authority records one party result with every winning deck', () => {
+      assertEqual(finished.status, 200)
+      assertDeepEqual(recorded.characters, ['ironclad', 'silent'])
+      assertDeepEqual(recorded.finalDeck, deck)
+      assertEqual(recorded.floorsCleared, 18)
+    })
+    service.store.leaderboardRuns.pop()
+    room.campaignProgress.unspentMarks = 0
+    room.run.campaignProgress = room.campaignProgress
+    const returned = await fetch(`${origin}/api/rooms/LOGRUN/action`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-room-token': leader.token },
+      body: JSON.stringify({ action: { kind: 'returnToLobby' } }),
+    })
+    check('a restored finalized room is archived before returning to the lobby', () => {
+      assertEqual(returned.status, 200)
+      assertEqual(room.phase, 'lobby')
+      assertEqual(service.store.leaderboardRuns.at(-1).id, recorded.id)
+    })
+
+    const fullRoom = createRoom(service.store, { code: 'LOGFUL' })
+    const fullLeader = joinRoom(fullRoom, { character: 'ironclad' })
+    startRun(fullRoom, fullLeader.token, { seed: 124 })
+    fullRoom.run = { ...fullRoom.run, phase: 'victory', act: 3,
+      campaign: { ...fullRoom.run.campaign, bossesDefeated: 3, highestBossActDefeated: 3 } }
+    const existingRuns = service.store.leaderboardRuns
+    service.store.leaderboardRuns = Array(MAX_LEADERBOARD_RUNS).fill(existingRuns[0])
+    const full = await fetch(`${origin}/api/rooms/LOGFUL/action`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-room-token': fullLeader.token },
+      body: JSON.stringify({ action: { kind: 'finishRun' } }),
+    })
+    check('leaderboard capacity refusal leaves a multiplayer run retryable', () => {
+      assertEqual(full.status, 503)
+      assertEqual(fullRoom.run.campaign.finalized, false)
+    })
+    service.store.leaderboardRuns = existingRuns
+
+    let saves = 0
+    const retryService = createRoomServer({ storeFile: join(directory, 'retry.json'), saveDelayMs: 0, saveStoreImpl: () => { saves += 1 } })
+    const retryAddress = await retryService.listen(0)
+    const retryRoom = createRoom(retryService.store, { code: 'LOGBAD' })
+    const retryLeader = joinRoom(retryRoom, { character: 'ironclad' })
+    startRun(retryRoom, retryLeader.token, { seed: 125 })
+    retryRoom.run = { ...retryRoom.run, phase: 'defeat', campaign: { ...retryRoom.run.campaign, finalized: true } }
+    retryRoom.campaignProgress = { ...retryRoom.campaignProgress, unspentMarks: 1 }
+    const rejected = await fetch(`http://127.0.0.1:${retryAddress.port}/api/rooms/LOGBAD/action`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-room-token': retryLeader.token },
+      body: JSON.stringify({ action: { kind: 'returnToLobby' } }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    check('a finalized-run backfill is saved even when the requested action is rejected', () => {
+      assertEqual(rejected.status, 409)
+      assertEqual(retryService.store.leaderboardRuns.length, 1)
+      assertEqual(saves, 1)
+    })
+    await retryService.close({ preserveRooms: true })
   } finally { await service.close({ preserveRooms: true }) }
 } finally { rmSync(directory, { recursive: true, force: true }) }
 

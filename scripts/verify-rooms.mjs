@@ -27,7 +27,7 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CAPS, CARDS, GOLDEN_TICKET, ROOM_LABEL, cardNeedsEnemy, currentQuickSetupStep, enteringRoom, lightningRowTarget, preparePlayerTurn, preparePlayerTurnThroughDraw, resumePlayerTurnAfterDraw, roomChoices, startPlayerTurnWithChoices } from '../src/game/state.ts'
+import { CAPS, CARDS, GOLDEN_TICKET, ROOM_LABEL, cardNeedsEnemy, createCampaignProgress, currentQuickSetupStep, enteringRoom, lightningRowTarget, preparePlayerTurn, preparePlayerTurnThroughDraw, resumePlayerTurnAfterDraw, roomChoices, startPlayerTurnWithChoices } from '../src/game/state.ts'
 import { createMerchant, createRelicReward } from '../src/game/noncombat.ts'
 import { createEventRoom } from '../src/game/event-room.ts'
 import { EVENT_DEFINITIONS } from '../src/game/events.ts'
@@ -1032,6 +1032,54 @@ check('starting a run always honors the lobby Ascension selection', () => {
   chooseAscension(room, seat.token, 13)
   startRun(room, seat.token, { seed: 906, ascension: 0 })
   assertEqual(room.run.ascension, 13)
+})
+
+check('a multiplayer room uses the highest shared unlocks contributed by its members', () => {
+  const room = createRoom(createStore(), { code: 'UNLOCK' })
+  const low = { ...createCampaignProgress(), highestAscension: 2 }
+  const high = { ...createCampaignProgress(), colorless: 3, actIV: 5, highestAscension: 9 }
+  const leader = joinRoom(room, { name: 'Ann', character: 'ironclad', campaignProgress: low })
+  joinRoom(room, { name: 'Bo', character: 'silent', campaignProgress: high })
+  assertEqual(room.campaignProgress.colorless, 3)
+  assertEqual(room.campaignProgress.actIV, 5)
+  assertEqual(room.campaignProgress.highestAscension, 9)
+  chooseAscension(room, leader.token, 9)
+  startRun(room, leader.token, { seed: 907 })
+  assert(room.run.itemDecks.colorless.length > 0, 'the unlocked colorless deck was not included')
+  assertEqual(room.run.campaignProgress.actIV, 5)
+})
+
+check('malformed client progress cannot claim multiplayer unlocks', () => {
+  const room = createRoom(createStore(), { code: 'LOCKED' })
+  joinRoom(room, { character: 'ironclad', campaignProgress: { highestAscension: 13, colorless: 3, actIV: 5 } })
+  assertEqual(room.campaignProgress.highestAscension, 0)
+  assertEqual(room.campaignProgress.colorless, 0)
+  assertEqual(room.campaignProgress.actIV, 0)
+})
+
+check('leaving a lobby removes unlocks no current member contributes', () => {
+  const room = createRoom(createStore(), { code: 'UNLEAV' })
+  const leader = joinRoom(room, { character: 'ironclad', campaignProgress: { ...createCampaignProgress(), highestAscension: 2 } })
+  const guest = joinRoom(room, { character: 'silent', campaignProgress: { ...createCampaignProgress(), colorless: 3, actIV: 5, highestAscension: 9 } })
+  chooseAscension(room, leader.token, 9)
+  chooseRunMeta(room, leader.token, { mode: 'standard', modifiers: [], quickStartAct: 4 })
+  removeSeat(room, guest.token)
+  assertEqual(room.campaignProgress.highestAscension, 2)
+  assertEqual(room.campaignProgress.colorless, 0)
+  assertEqual(room.campaignProgress.actIV, 0)
+  assertEqual(room.ascension, 2)
+  assertEqual(room.metaOptions.quickStartAct, 1)
+})
+
+check('rejoining with less progress clamps lobby settings immediately', () => {
+  const room = createRoom(createStore(), { code: 'UNREJN' })
+  const progress = { ...createCampaignProgress(), colorless: 3, actIV: 5, highestAscension: 9 }
+  const leader = joinRoom(room, { character: 'ironclad', campaignProgress: progress })
+  chooseAscension(room, leader.token, 9)
+  chooseRunMeta(room, leader.token, { mode: 'standard', modifiers: [], quickStartAct: 4 })
+  joinRoom(room, { token: leader.token, campaignProgress: createCampaignProgress() })
+  assertEqual(room.ascension, 0)
+  assertEqual(room.metaOptions.quickStartAct, 1)
 })
 
 check('a stranger cannot join a started run', () => {
@@ -11734,6 +11782,7 @@ check('an Event cannot strand a pending Relic on a disconnected recipient', () =
 check('campaign finish, shared allocation, and next run stay server-authoritative', () => {
   const { room, a, b } = twoSeatRoom()
   room.campaignProgress = { ...room.campaignProgress, characters: { ...room.campaignProgress.characters, ironclad: 8, silent: 8 } }
+  room.campaignBaseProgress = structuredClone(room.campaignProgress)
   room.run = { ...room.run, phase: 'defeat', campaignProgress: room.campaignProgress }
   apply(room, b.token, { kind: 'finishRun' })
   assertEqual(room.campaignProgress.unspentMarks, 2)
@@ -11767,6 +11816,71 @@ check('campaign finish, shared allocation, and next run stay server-authoritativ
   apply(room, a.token, { kind: 'returnToLobby' })
   assertEqual(room.phase, 'lobby')
   assertEqual(room.run, null)
+})
+
+check('finished runs retain earned marks without retaining a departed member unlocks', () => {
+  const progress = createCampaignProgress()
+  progress.characters = { ...progress.characters, ironclad: 8, silent: 8 }
+  const room = createRoom(createStore(), { code: 'UNFINI', campaignProgress: progress })
+  const leader = joinRoom(room, { character: 'ironclad', campaignProgress: { ...createCampaignProgress(), highestAscension: 2 } })
+  const donor = joinRoom(room, { character: 'silent', campaignProgress: { ...createCampaignProgress(), colorless: 3, actIV: 5, highestAscension: 9 } })
+  chooseAscension(room, leader.token, 9)
+  startRun(room, leader.token, { seed: 908 })
+  room.run = { ...room.run, phase: 'defeat' }
+  apply(room, leader.token, { kind: 'finishRun' })
+  assertEqual(room.campaignProgress.unspentMarks, 2)
+  assertEqual(room.campaignProgress.colorless, 0)
+  assertEqual(room.campaignProgress.actIV, 0)
+  apply(room, leader.token, { kind: 'allocateCampaign', colorless: 1, actIV: 1, expectedUnspentMarks: 2, expectedRunId: room.run.campaign.runId })
+  apply(room, leader.token, { kind: 'returnToLobby' })
+  assertEqual(room.campaignProgress.colorless, 3)
+  assertEqual(room.campaignProgress.actIV, 5)
+  assertEqual(room.campaignProgress.highestAscension, 9)
+  removeSeat(room, donor.token)
+  assertEqual(room.campaignProgress.colorless, 1)
+  assertEqual(room.campaignProgress.actIV, 1)
+  assertEqual(room.campaignProgress.highestAscension, 2)
+})
+
+check('a qualifying win at the team maximum unlocks the next Ascension', () => {
+  const room = createRoom(createStore(), { code: 'UNASCN' })
+  const leader = joinRoom(room, { character: 'ironclad', campaignProgress: { ...createCampaignProgress(), highestAscension: 2 } })
+  joinRoom(room, { character: 'silent', campaignProgress: { ...createCampaignProgress(), highestAscension: 9 } })
+  chooseAscension(room, leader.token, 9)
+  startRun(room, leader.token, { seed: 911 })
+  room.run = { ...room.run, phase: 'victory', act: 3,
+    campaign: { ...room.run.campaign, bossesDefeated: 3, highestBossActDefeated: 3 } }
+  apply(room, leader.token, { kind: 'finishRun' })
+  assertEqual(room.campaignBaseProgress.highestAscension, 10)
+  assertEqual(room.campaignProgress.highestAscension, 10)
+})
+
+check('a win below the team maximum does not advance Ascension', () => {
+  const progress = { ...createCampaignProgress(), highestAscension: 2 }
+  const room = createRoom(createStore(), { code: 'UNLOWR', campaignProgress: progress })
+  const leader = joinRoom(room, { character: 'ironclad', campaignProgress: progress })
+  joinRoom(room, { character: 'silent', campaignProgress: { ...createCampaignProgress(), highestAscension: 9 } })
+  chooseAscension(room, leader.token, 2)
+  startRun(room, leader.token, { seed: 912 })
+  room.run = { ...room.run, phase: 'victory', act: 3,
+    campaign: { ...room.run.campaign, bossesDefeated: 3, highestBossActDefeated: 3 } }
+  apply(room, leader.token, { kind: 'finishRun' })
+  assertEqual(room.campaignBaseProgress.highestAscension, 2)
+})
+
+check('consecutive multiplayer runs keep unique campaign ids and earn marks', () => {
+  const room = createRoom(createStore(), { code: 'UNNEXT' })
+  const leader = joinRoom(room, { character: 'ironclad' })
+  startRun(room, leader.token, { seed: 909 })
+  const firstRunId = room.run.campaign.runId
+  room.run = { ...room.run, phase: 'defeat' }
+  apply(room, leader.token, { kind: 'finishRun' })
+  apply(room, leader.token, { kind: 'returnToLobby' })
+  startRun(room, leader.token, { seed: 910 })
+  assert(room.run.campaign.runId !== firstRunId, 'the second run reused the first campaign id')
+  room.run = { ...room.run, phase: 'defeat' }
+  apply(room, leader.token, { kind: 'finishRun' })
+  assertEqual(room.campaignProgress.characters.ironclad, 2)
 })
 
 check('campaign marks cannot be claimed while a mandatory Relic choice is pending', () => {

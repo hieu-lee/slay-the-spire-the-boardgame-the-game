@@ -6,19 +6,19 @@ import { WinningDecks } from './WinningDecks.tsx'
 import { CHARACTER_LABEL } from './run-summary-data.ts'
 
 const HEROES = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'] as const
-type Filter = CharacterId | 'all'
 
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`
 const decimal = (value: number | null | undefined) => value == null ? '—' : value.toFixed(1)
+const partyOf = (row: { character: CharacterId; characters?: CharacterId[] }) => row.characters ?? [row.character]
 
 export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
   const [tab, setTab] = useState<'statistics' | 'decks'>('statistics')
-  const [filter, setFilter] = useState<Filter>('all')
+  const [filters, setFilters] = useState<CharacterId[]>([])
   const [ascension, setAscension] = useState<number | 'all'>('all')
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null)
   const [failed, setFailed] = useState(false)
   const [request, setRequest] = useState(0)
-  const hero = filter === 'all' ? 'ironclad' : filter
+  const hero = filters[0] ?? 'ironclad'
 
   useEffect(() => {
     let current = true
@@ -29,7 +29,9 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
   }, [request])
 
   const rows = useMemo(() => (snapshot?.rows ?? [])
-    .filter((row) => (filter === 'all' || row.character === filter) && (ascension === 'all' || row.ascension === ascension)), [ascension, filter, snapshot])
+    .filter((row) => filters.every((filter) => partyOf(row).includes(filter)) &&
+      (ascension === 'all' || row.ascension === ascension)), [ascension, filters, snapshot])
+  const filterTitle = filters.length === 0 ? 'All heroes' : `Parties with ${filters.map((filter) => CHARACTER_LABEL[filter]).join(' + ')}`
 
   return (
     <main className="leaderboard">
@@ -39,11 +41,12 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
         <p className="leaderboard__eyebrow">The Spire remembers</p>
         <h1>Leaderboard</h1>
         <div className="leaderboard__heroes" role="group" aria-label="Filter by character">
-          <button type="button" aria-label="All heroes" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
+          <button type="button" aria-label="All heroes" aria-pressed={filters.length === 0} onClick={() => setFilters([])}>
             <span aria-hidden="true">◆</span><small>All heroes</small>
           </button>
           {HEROES.map((character) => <button type="button" key={character} title={CHARACTER_LABEL[character]}
-            aria-label={CHARACTER_LABEL[character]} aria-pressed={filter === character} onClick={() => setFilter(character)}>
+            aria-label={CHARACTER_LABEL[character]} aria-pressed={filters.includes(character)} onClick={() => setFilters((current) =>
+              current.includes(character) ? current.filter((filter) => filter !== character) : [...current, character])}>
             <img src={assetPath(`menu/compendium-icons/${character}.webp`)} alt="" /><small>{CHARACTER_LABEL[character]}</small>
           </button>)}
         </div>
@@ -56,22 +59,24 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
           <button type="button" aria-pressed={tab === 'statistics'} onClick={() => setTab('statistics')}>Win rates</button>
           <button type="button" aria-pressed={tab === 'decks'} onClick={() => setTab('decks')}>Winning decks</button>
         </div>
-        <p className="leaderboard__count"><strong>{snapshot?.totalRuns ?? 0}</strong><span>solo run{snapshot?.totalRuns === 1 ? '' : 's'} chronicled</span></p>
+        <p className="leaderboard__count"><strong>{snapshot?.totalRuns ?? 0}</strong><span>run{snapshot?.totalRuns === 1 ? '' : 's'} chronicled</span></p>
       </aside>
 
       <section className="leaderboard__archive" aria-labelledby="leaderboard-title">
         <header>
-          <div><p>Hall of Ascension</p><h2 id="leaderboard-title">{filter === 'all' ? 'All heroes' : CHARACTER_LABEL[filter]}{ascension === 'all' ? '' : ` · A${ascension}`}</h2></div>
-          <span>Solo · all run modes</span>
+          <div><p>Hall of Ascension</p><h2 id="leaderboard-title">{filterTitle}{ascension === 'all' ? '' : ` · A${ascension}`}</h2></div>
+          <span>All run modes</span>
         </header>
-        {tab === 'decks' ? <WinningDecks character={filter} ascension={ascension} /> : failed ? <div className="leaderboard__message" role="alert"><strong>The archive is beyond reach.</strong><span>Your finished run remains safely queued.</span><button type="button" onClick={() => setRequest((value) => value + 1)}>Try again</button></div>
+        {tab === 'decks' ? <WinningDecks characters={filters} ascension={ascension} /> : failed ? <div className="leaderboard__message" role="alert"><strong>The archive is beyond reach.</strong><span>Your finished run remains safely queued.</span><button type="button" onClick={() => setRequest((value) => value + 1)}>Try again</button></div>
           : !snapshot ? <div className="leaderboard__message" aria-live="polite"><span className="leaderboard__spinner" aria-hidden="true"></span><strong>Opening the archive…</strong></div>
-          : rows.length === 0 ? <div className="leaderboard__message"><strong>No names are etched here yet.</strong><span>Finish a solo run to claim the first place.</span></div>
+          : rows.length === 0 ? <div className="leaderboard__message"><strong>No names are etched here yet.</strong><span>Finish a run to claim the first place.</span></div>
           : <div className="leaderboard__table-wrap"><table>
-            <thead><tr><th scope="col">Rank</th><th scope="col">Hero &amp; ascension</th><th scope="col">Runs</th><th scope="col">Act III win rate</th><th scope="col">Avg. floors</th><th scope="col">Damage / fight</th><th scope="col">Blocked</th><th scope="col">Act IV wins</th></tr></thead>
-            <tbody>{rows.map((row, index) => <tr key={`${row.character}:${row.ascension}`}>
+            <thead><tr><th scope="col">Rank</th><th scope="col">Heroes</th><th scope="col">Ascension</th><th scope="col">Runs</th><th scope="col">Act III win rate</th><th scope="col">Avg. floors</th><th scope="col">Damage / fight</th><th scope="col">Blocked</th><th scope="col">Act IV wins</th></tr></thead>
+            <tbody>{rows.map((row, index) => <tr key={`${partyOf(row).join(':')}:${row.ascension}`}>
               <td data-label="Rank"><span className="leaderboard__rank">{index + 1}</span></td>
-              <th scope="row"><img src={assetPath(`menu/compendium-icons/${row.character}.webp`)} alt="" /><span><strong>{CHARACTER_LABEL[row.character]}</strong><small>Ascension {row.ascension}</small></span></th>
+              <th scope="row" aria-label={partyOf(row).map((character) => CHARACTER_LABEL[character]).join(', ')}><span className="leaderboard__party-icons" aria-hidden="true">{partyOf(row).map((character) =>
+                <img key={character} src={assetPath(`menu/compendium-icons/${character}.webp`)} alt="" />)}</span></th>
+              <td data-label="Ascension">{row.ascension}</td>
               <td data-label="Runs">{row.runs}</td>
               <td data-label="Act III win rate"><strong>{percent(row.act3WinRate)}</strong><small>{row.act3Wins} / {row.act3Runs}</small></td>
               <td data-label="Floors cleared">{decimal(row.averageFloorsCleared)}</td>

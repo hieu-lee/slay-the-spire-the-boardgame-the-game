@@ -41,6 +41,11 @@ assert.equal(winningDecksPage(sameTime, query({ cursor: tiedFirst.nextCursor }))
 const extended = [...runs, { ...runs[44], id: 'new-installation:new-run', recordedAt: 1800000000000 }]
 assert.deepEqual(winningDecksPage(extended, query({ cursor: first.nextCursor })).rows, second.rows)
 assert.equal(winningDecksPage(runs, query({ character: 'silent', ascension: '3' })).total, 3)
+const partyRun = normalizeLeaderboardRun({ ...runs[0], id: 'party-winning-run', characters: ['ironclad', 'silent'] })
+const partyQuery = new URLSearchParams({ ascension: String(partyRun.ascension) })
+partyQuery.append('character', 'ironclad')
+partyQuery.append('character', 'silent')
+assert.deepEqual(winningDecksPage([...runs, partyRun], partyQuery).rows.map((row) => row.characters), [['ironclad', 'silent']])
 assert.equal(winningDecksPage([{ ...runs[0], finalDeck: undefined }, { ...runs[1], highestBossActDefeated: 2 }]).total, 0)
 assert.equal(winningDecksPage([{ ...runs[0], username: undefined }]).rows[0].username, 'Unknown')
 for (const params of [{ sort: 'id' }, { direction: 'bad' }, { ascension: '14' }, { character: 'bad' }, { cursor: '-1' }, { cursor: '1.1' }, { cursor: '99999' }]) {

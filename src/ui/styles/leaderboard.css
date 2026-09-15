@@ -172,9 +172,10 @@
 .leaderboard tbody tr:hover { background: rgb(60 49 34 / .72); }
 .leaderboard tbody th,
 .leaderboard tbody td { padding: .72rem .8rem; border-bottom: 1px solid rgb(112 88 48 / .38); text-align: center; }
-.leaderboard tbody th { display: flex; min-width: 11rem; align-items: center; gap: .65rem; text-align: left; }
-.leaderboard tbody th img { width: 2.65rem; height: 2.65rem; object-fit: contain; filter: drop-shadow(0 2px 2px #000); }
-.leaderboard tbody th span { display: grid; }
+.leaderboard tbody th { min-width: 8rem; text-align: left; }
+.leaderboard__party-icons { display: inline-flex; align-items: center; }
+.leaderboard__party-icons img { width: 2.65rem; height: 2.65rem; object-fit: contain; filter: drop-shadow(0 2px 2px #000); }
+.leaderboard__party-icons img + img { margin-left: -.65rem; }
 .leaderboard tbody th strong,
 .leaderboard tbody td > strong { color: #f0d371; font-size: 1.05rem; }
 .leaderboard tbody th small,
@@ -239,7 +240,7 @@
 .winning-decks__table tbody tr { cursor: pointer; }
 .winning-decks__table tbody tr:focus-within { background: #3c3122; }
 .winning-decks__open { display: flex; align-items: center; gap: .55rem; padding: 0; border: 0; color: #f0d371; background: transparent; font: inherit; text-align: left; }
-.winning-decks__open img { width: 2.65rem; height: 2.65rem; object-fit: contain; }
+.winning-decks__open .leaderboard__party-icons img { width: 2.65rem; height: 2.65rem; object-fit: contain; }
 .winning-decks__username { max-width: 12rem; overflow-wrap: anywhere; }
 .winning-decks__table time { font-size: .85rem; }
 .winning-decks__more { display: block; margin: 1rem auto; padding: .6rem 1.2rem; border: 1px solid #c49d45; color: #f8e5ac; background: #203b41; font: inherit; }
@@ -251,7 +252,7 @@
   .leaderboard__tabs button { padding: .35rem .15rem; font-size: .7rem; }
   .winning-decks__table thead button { padding: .5rem .25rem; }
   .winning-decks__open { gap: .25rem; font-size: .72rem; }
-  .winning-decks__open img { width: 1.7rem; height: 1.7rem; }
+  .winning-decks__open .leaderboard__party-icons img { width: 1.7rem; height: 1.7rem; }
   .winning-decks__table time { font-size: .67rem; }
   .winning-decks__username { max-width: 7rem; }
 }

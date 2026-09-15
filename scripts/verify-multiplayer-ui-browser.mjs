@@ -23,9 +23,13 @@ if (!address || typeof address === 'string') throw new Error('vite did not repor
 const origin = `http://127.0.0.1:${address.port}`
 const browser = await chromium.launch({ headless: true })
 
-async function openExpedition(page, name, character) {
+async function openExpedition(page, name, character, campaignProgress) {
   await page.goto(origin, { waitUntil: 'networkidle' })
   await setTestUsername(page, name)
+  if (campaignProgress) {
+    await page.evaluate((progress) => localStorage.setItem('sts-physical-campaign', JSON.stringify(progress)), campaignProgress)
+    await page.reload({ waitUntil: 'networkidle' })
+  }
   await page.getByRole('button', { name: 'Play online', exact: true }).click()
   const entry = page.locator('.online-entry')
   await entry.waitFor()
@@ -115,7 +119,11 @@ try {
     assert.notEqual(customBack.clip, 'none', `${viewport.name}: Custom Back lost its ribbon silhouette`)
     assert(customBack.red, `${viewport.name}: Custom Back retained its old brown treatment`)
 
-    const entryAgain = await openExpedition(page, `Room ${viewport.name}`, 'Ironclad')
+    const entryAgain = await openExpedition(page, `Room ${viewport.name}`, 'Ironclad', {
+      version: 1,
+      characters: { ironclad: 8, silent: 8, defect: 8, watcher: 8, slime_boss: 8, guardian: 8, hexaghost: 8, hermit: 8 },
+      colorless: 3, actIV: 5, unspentMarks: 0, highestAscension: 9, nextRunNumber: 0, finishedRunIds: [],
+    })
     await entryAgain.getByRole('button', { name: 'Create room', exact: true }).click()
     const lobby = page.locator('.online-lobby')
     await lobby.waitFor()
@@ -147,9 +155,17 @@ try {
     assert(lobbyChrome.withinViewport && !lobbyChrome.overflow, `${viewport.name}: lobby does not fit its viewport`)
     assert.equal(lobbyChrome.scrollTop, 0, `${viewport.name}: lobby retained stale form scroll`)
 
+    await lobby.getByText('Run settings', { exact: true }).click()
+    const createdRoom = [...rooms.store.rooms.values()].find((candidate) => candidate.seats.some((seat) => seat.name === `Room ${viewport.name}`))
+    assert.equal(await lobby.getByLabel('Ascension').locator('option').count(), 10,
+      `${viewport.name}: solo Ascension unlock was not shared with the room: ${JSON.stringify(createdRoom?.seats[0]?.campaignUnlocks)}`)
+    await lobby.getByText('Run mode · Standard', { exact: true }).click()
+    assert.equal(await lobby.getByLabel('Starting Act').locator('option[value="4"]').isDisabled(), false, `${viewport.name}: Act IV stayed locked in multiplayer`)
+
     await lobby.getByRole('button', { name: 'Enter the Spire', exact: true }).click()
     await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
     await page.getByRole('heading', { name: 'Neow’s Blessing', exact: true }).waitFor()
+    assert(createdRoom.run.itemDecks.colorless.length > 0, `${viewport.name}: unlocked colorless cards stayed absent from multiplayer`)
     await context.close()
     assert.deepEqual(browserErrors, [], `${viewport.name}: browser errors\n${browserErrors.join('\n')}`)
     console.log(`✓ multiplayer ${viewport.name}`)
