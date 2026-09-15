@@ -34,6 +34,7 @@ for (const checkout of workflow.split('- uses: actions/checkout@v4').slice(1)) {
   assert.match(checkout.split('\n      - ', 1)[0], /persist-credentials: false/)
 }
 assert.match(workflow, /MULTIPLAYER_SERVER_ORIGIN: \$\{\{ vars\.MULTIPLAYER_SERVER_ORIGIN }}/)
+assert.match(workflow, /if \[ -n "\$SOURCE_RUN_ID" \]; then\s+test -n "\$ROOM_STORE_KEY"/)
 assert.doesNotMatch(workflow, /cloudflared|tunnel\.pyjam\.as|MULTIPLAYER_TUNNEL_PROVIDER/)
 assert.match(workflow, /handoff-candidate-\$\{\{ inputs\.source_run_id }}/)
 assert.match(workflow, /handoff-ready-\$\{\{ inputs\.source_run_id }}/)

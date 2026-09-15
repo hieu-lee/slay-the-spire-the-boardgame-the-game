@@ -52,8 +52,8 @@ jobs:
           ROOM_STORE_KEY: ${{ secrets.ROOM_STORE_KEY }}
         run: |
           [[ "$MULTIPLAYER_SERVER_ORIGIN" =~ ^https://sts-([0-9]{1,3}-){3}[0-9]{1,3}\.([0-9a-f]{1,4}-){7}[0-9a-f]{1,4}\.sslip\.io:18443$ ]]
-          test -n "$ROOM_STORE_KEY"
           if [ -n "$SOURCE_RUN_ID" ]; then
+            test -n "$ROOM_STORE_KEY"
             case "$SOURCE_RUN_ID" in *[!0-9]*) exit 2;; esac
             advertised=$(curl --fail --silent --show-error --retry 5 --retry-all-errors \
               --retry-delay 2 --max-time 30 \
