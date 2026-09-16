@@ -33,7 +33,10 @@ assert.match(ci, /workflow_dispatch:/)
 assert.match(ci, /pnpm build/)
 assert.match(ci, /verify-all\.mjs --changed="\$base" --jobs=4 --heavy=1/)
 assert.match(ci, /playwright install --with-deps chromium webkit/)
-assert.match(ci, /apt-get install -y python3-numpy python3-pil webp/)
+assert.match(
+  ci,
+  /apt-get install -y(?=[^\n]*\bffmpeg\b)(?=[^\n]*\bpython3-numpy\b)(?=[^\n]*\bpython3-pil\b)(?=[^\n]*\bwebp\b)[^\n]*/,
+)
 assert.match(ci, /deploy-server:[\s\S]*needs: verify[\s\S]*uses: \.\/\.github\/workflows\/server-deploy\.yml/)
 assert.match(ci, /deploy-pages:[\s\S]*needs: deploy-server[\s\S]*uses: \.\/\.github\/workflows\/pages-deploy\.yml/)
 assert.match(ci, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/)

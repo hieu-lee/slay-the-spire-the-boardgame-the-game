@@ -4074,7 +4074,8 @@ check('The Wrathful uses its canonical ribbon-staff sweep without Watcher VFX', 
   })
 })
 await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = '' })
-await page.keyboard.press('Escape')
+await pauseMenu.getByRole('button', { name: 'Resume' }).click()
+await pauseMenu.waitFor({ state: 'hidden' })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 
 if (args.includes('--downfall-ui-only')) {
@@ -4518,6 +4519,13 @@ await Promise.all(downfallBossPreloads.map(async (pending) => (await pending).fi
 // frames let those microtasks store every Blob before the enemy phase reads it.
 await page.evaluate(() => new Promise((resolveFrame) => requestAnimationFrame(() =>
   requestAnimationFrame(resolveFrame))))
+// Earlier pointer-driven checks can leave a relic/card tooltip beneath the
+// stationary mouse. Escape dismisses that tooltip instead of opening the pause
+// dialog, so park the pointer away from combat and clear stale focus first.
+await page.mouse.move(0, 0)
+await page.evaluate(() => {
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+})
 await page.keyboard.press('Escape')
 await pauseMenu.waitFor()
 await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = 'hidden' })
@@ -4546,7 +4554,8 @@ check('four printed Downfall bosses render their own clean attack assets', () =>
     `a Downfall boss fell back from its preloaded attack art: ${JSON.stringify(downfallBossAttackImages)}`)
 })
 await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = '' })
-await page.keyboard.press('Escape')
+await pauseMenu.getByRole('button', { name: 'Resume' }).click()
+await pauseMenu.waitFor({ state: 'hidden' })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 await page.evaluate((count) => { window.__SFX_PLAYS__.length = count }, downfallBossSoundCount)
 

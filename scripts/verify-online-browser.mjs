@@ -4773,10 +4773,8 @@ try {
   // Dispatching a synthetic message at the retired socket is correctly
   // ignored by the client and made this assertion depend on close-event timing.
   releaseAuthoritativeRefresh()
-  await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
-    .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×2' && !button.disabled))
-  const committedSnapshotUnlocked = await a.locator('.combat__actions')
-    .getByRole('button', { name: /Energy Potion ×2/ }).isEnabled()
+  const committedSnapshotUnlocked = await (await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
+    .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×2' && !button.disabled))).jsonValue()
   check('an authoritative committed snapshot arriving after unknown unlocks the action', () => {
     assert(committedSnapshotUnlocked)
   })
