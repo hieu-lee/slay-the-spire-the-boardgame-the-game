@@ -72,6 +72,7 @@ import {
   resolveCampfire,
   resolveCardRewards,
   resolveCombat,
+  resolveGoldReward,
   roomChoices,
 } from '../src/game/run.ts'
 import { readFileSync } from 'node:fs'
@@ -241,14 +242,14 @@ check('accepted card and potion actions append bounded public presentation event
     'a card presentation event leaked a discard choice UID')
 
   let bounded = combat([
-    makePlayer({ potions: Array.from({ length: 13 }, () => 'weak_potion') }),
+    makePlayer({ potions: Array.from({ length: 25 }, () => 'weak_potion') }),
   ], [makeEnemy({ hp: 100, maxHp: 100 })])
-  for (let index = 0; index < 13; index++) {
+  for (let index = 0; index < 25; index++) {
     bounded = activatePotion(bounded, 'p1', 'weak_potion', { enemyUid: 'e1' })
   }
-  assertEqual(bounded.presentationEvents.length, 12)
+  assertEqual(bounded.presentationEvents.length, 24)
   assertEqual(bounded.presentationEvents[0].seq, 2)
-  assertEqual(bounded.presentationEvents.at(-1).seq, 13)
+  assertEqual(bounded.presentationEvents.at(-1).seq, 25)
 })
 
 check('presentation events resolve row, boss, and ally scopes', () => {
@@ -2376,10 +2377,11 @@ check('a room already occupied cannot be re-entered to farm it', () => {
       })),
     },
   })
-  const won = resolveCardRewards(
+  const cardsSettled = resolveCardRewards(
     rewarded,
     Object.fromEntries(rewarded.rewards.map((offer) => [offer.playerId, null])),
   )
+  const won = rewarded.rewards.reduce((next, offer) => resolveGoldReward(next, offer.playerId, false), cardsSettled)
   assertEqual(won.phase, 'map', 'precondition: back on the map with a position')
   assert(won.map.position !== null, 'precondition: the boot has moved')
   assert(enterRoom(won, won.map.position) === won, 'the room just cleared cannot be re-entered')

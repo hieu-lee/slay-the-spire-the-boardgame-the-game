@@ -68,10 +68,11 @@ function OfferChoice({ offer, player, players, ascension, enabled, status, title
     const potionId = offer.choices[0]
     const blocked = player.relics.some((relic) => relic.defId === 'sozu')
     const limit = potionLimit(ascension, player)
-    return <section className="reward-screen reward-screen--loot" aria-labelledby="blessing-title">
+    return <section className="neow-offer neow-offer--potion reward-screen reward-screen--loot" aria-labelledby="blessing-title">
       <h2 id="blessing-title" className="reward-screen__title">{title}</h2>
       <div className="reward-screen__players"><div className="reward-screen__player">
         {players.length > 1 ? <h3>{player.name}</h3> : null}
+        {status ? <p className="neow-offer__status" role="status">{status}</p> : null}
         {potionId ? <>
           <ItemLootChoice kind="potion" id={potionId} confirmLabel="claim this potion"
             disabled={!enabled || blocked || player.potions.length >= limit}
@@ -89,7 +90,6 @@ function OfferChoice({ offer, player, players, ascension, enabled, status, title
               Pass {potionDef(potionId).name} to {candidate.name}
             </ItemLootChoice>)}
         </> : <p>No Potion remains in the supply.</p>}
-        {status ? <p role="status">{status}</p> : null}
       </div></div>
       <button type="button" className="reward-screen__skip" disabled={!enabled}
         onClick={() => onResolve({ kind: 'skip' })}>Skip</button>
@@ -97,15 +97,15 @@ function OfferChoice({ offer, player, players, ascension, enabled, status, title
   }
 
   if (offer.kind === 'relic') {
-    return <section className="reward-screen reward-screen--loot" aria-labelledby="blessing-title">
+    return <section className="neow-offer reward-screen reward-screen--loot" aria-labelledby="blessing-title">
       <h2 id="blessing-title" className="reward-screen__title">{title}</h2>
       <div className="reward-screen__players"><div className="reward-screen__player">
         {players.length > 1 ? <h3>{player.name}</h3> : null}
+        {status ? <p className="neow-offer__status" role="status">{status}</p> : null}
         {offer.choices.length > 0 ? offer.choices.map((relicId, index) =>
           <ItemLootChoice key={`${relicId}-${index}`} kind="relic" id={relicId}
             confirmLabel="claim this relic" disabled={!enabled} onClick={() => onResolve(index)} />)
           : <p>No Relic remains in the supply.</p>}
-        {status ? <p role="status">{status}</p> : null}
       </div></div>
       <button type="button" className="reward-screen__skip" disabled={!enabled}
         onClick={() => onResolve(null)}>Skip</button>
@@ -154,6 +154,7 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
     : effect?.kind === 'gold' ? `${effect.amount} Gold`
       : effect ? `${effect.kind} ${effect.count} card${effect.count === 1 ? '' : 's'}` : ''
   const canAct = enabled && !submitting
+  const itemOffer = viewerParticipates && (currentOffer?.kind === 'potion' || currentOffer?.kind === 'relic')
   const submit = (action: () => void | Promise<unknown>) => {
     if (submittingRef.current) return
     submittingRef.current = true
@@ -163,12 +164,6 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
       setSubmitting(false)
     })
   }
-
-  if (viewerParticipates && (currentOffer?.kind === 'potion' || currentOffer?.kind === 'relic')) return <OfferChoice
-    key={`${viewer.id}:${currentOffer.kind}:${currentOffer.cardsDrawn.join(',')}`}
-    title={blessingWord} offer={currentOffer} player={viewer} players={players} ascension={ascension} enabled={canAct}
-    status={submitting ? 'Resolving choice…' : !enabled ? disabledMessage ?? `Reconnecting… your ${blessingWord} is preserved.` : undefined}
-    onResolve={(choice) => submit(() => onReward(viewer.id, choice, viewerProgress.redReward ? 'red' : 'reward'))} />
 
   return <section className={`neow-screen${heartsBoon ? ' neow-screen--heart' : ''}`} aria-labelledby="neow-title">
     <img className={`neow-screen__neow${heartsBoon ? ' neow-screen__neow--heart' : ''}`}
@@ -180,7 +175,7 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
       <span className="neow-screen__progress" role="status">{Object.values(progress).filter((seat) => seat?.done).length}/{participants.length} ready</span>
     </header>
 
-    <div className="neow-faces" aria-label={`Dealt ${blessingName} cards`}>
+    <div className="neow-faces" aria-label={`Dealt ${blessingName} cards`} inert={itemOffer}>
       {participants.map((player) => {
         const state = progress[player.id]
         const face = state?.card ?? (state?.cardId ? neowCard(state.cardId) : undefined)
@@ -199,10 +194,12 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
     {!viewerParticipates ? <section className="neow-action" aria-labelledby="neow-action-title">
       <h3 id="neow-action-title">Catch Up in progress</h3>
       <p className="neow-action__waiting" role="status">Waiting for the Catch Up players to finish {blessingName}.</p>
-    </section> : <section className={`neow-action${currentOffer ? ' neow-action--offer' : ''}`} aria-labelledby="neow-action-title">
-      <div className="neow-action__owner">
+    </section> : <section className={`neow-action${currentOffer ? ' neow-action--offer' : ''}`}
+      aria-labelledby={itemOffer ? undefined : 'neow-action-title'}
+      aria-label={itemOffer ? `${viewer.name} · ${offerTitle(currentOffer!)}` : undefined}>
+      {!itemOffer ? <div className="neow-action__owner">
         <span>{viewer.name}</span><h3 id="neow-action-title">{viewerProgress.done ? `${blessingWord} complete` : activeProgress.redGoldPending ? 'Take or skip 3 Gold' : currentOffer ? offerTitle(currentOffer) : effect ? `Resolve ${effectLabel}` : unrevealedStage ? `${unrevealedKind} is face down` : blueReady ? `Choose a ${blessingWord.toLowerCase()}` : `Resolving ${blessingWord.toLowerCase()}`}</h3>
-      </div>
+      </div> : null}
       {viewerProgress.done ? <p className="neow-action__waiting" role="status">Waiting for the rest of the party.</p> : null}
       {activeProgress.redGoldPending ? <div className="neow-unrevealed"><p><strong>3 Gold</strong><span>Gain or independently skip this reward.</span></p><div className="neow-offer__actions"><button type="button" disabled={!canAct} onClick={() => submit(() => onGold(viewer.id, true))}>Gain 3 Gold</button><button type="button" disabled={!canAct} onClick={() => submit(() => onGold(viewer.id, false))}>Skip 3 Gold</button></div></div> : null}
       {unrevealedStage ? <div className="neow-unrevealed">
@@ -225,6 +222,9 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
       </div> : null}
       {currentOffer ? <OfferChoice key={`${viewer.id}:${currentOffer.kind}:${currentOffer.cardsDrawn.join(',')}`}
         title={blessingWord} offer={currentOffer} player={viewer} players={players} ascension={ascension} enabled={canAct}
+        status={itemOffer
+          ? submitting ? 'Resolving choice…' : !enabled ? disabledMessage ?? `Reconnecting… your ${blessingWord} is preserved.` : undefined
+          : undefined}
         onResolve={(choice) => submit(() => onReward(viewer.id, choice, viewerProgress.redReward ? 'red' : 'reward'))} /> : null}
       {blueReady && card ? <div className="neow-options">
         {card.options.map((option, index) => <button type="button" key={option.label} disabled={!canAct}
@@ -257,8 +257,8 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
         backDisabled={!canAct}
         disabled={!canAct}
       />, document.body) : null}
-      {submitting ? <p className="neow-action__waiting" role="status">Resolving choice…</p> : null}
-      {!enabled && !viewerProgress.done ? <p className="neow-action__waiting" role="status">
+      {submitting && !itemOffer ? <p className="neow-action__waiting" role="status">Resolving choice…</p> : null}
+      {!enabled && !viewerProgress.done && !itemOffer ? <p className="neow-action__waiting" role="status">
         {disabledMessage ?? `Reconnecting… your ${blessingWord} is preserved.`}
       </p> : null}
     </section>}

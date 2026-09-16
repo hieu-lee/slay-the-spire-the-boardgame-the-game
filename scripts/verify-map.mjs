@@ -758,8 +758,8 @@ check('Treasure reveals one Relic per player and gain/skip preserves deck circul
   let reward = enterRoom({ ...base, map: { ...base.map, position: approach.id } }, treasure.id)
   assertEqual(reward.phase, 'room')
   assertDeepEqual(reward.relicDeck, reward.itemDecks.relics)
-  const top = reward.roomState.offers.p1
-  reward = chooseRelicReward(reward, 'p1', 'take')
+  const top = reward.roomState.sharedOffers[0]
+  reward = chooseRelicReward(reward, 'p1', 0)
   reward = chooseRelicReward(reward, 'p2', 'skip')
   assertEqual(reward.players[0].relics.at(-1).defId, top)
   assertEqual(reward.phase, 'map', 'every player resolves the physical Treasure room')

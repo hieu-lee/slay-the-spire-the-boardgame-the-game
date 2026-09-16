@@ -17,7 +17,9 @@ mkdirSync(outDir, { recursive: true })
 const rooms = createRoomServer({ maxUpgradesPerWindow: 100 })
 const roomAddress = await rooms.listen(0)
 const roomOrigin = `http://127.0.0.1:${roomAddress.port}`
-const server = await createServer({ root: repoRoot, logLevel: 'silent', server: { port: 0, proxy: {
+const server = await createServer({ root: repoRoot, logLevel: 'silent', server: { port: 0, watch: {
+  ignored: ['**/artifacts/**'],
+}, proxy: {
   '/api': { target: roomOrigin },
   '/ws': { target: roomOrigin, ws: true },
 } } })
@@ -350,12 +352,16 @@ await page.evaluate(() => {
   const run = structuredClone(debug.getRun())
   run.setup = { kind: 'catch-up', targetAct: 2, playerIds: ['p2'], rowIndex: 0, repeatIndex: 0, playerIndex: 0, die: null }
   run.neow.players = { p2: run.neow.players.p2 }
+  run.neow.players.p2.redGoldPending = false
+  run.neow.players.p2.redRewardPending = false
+  run.neow.players.p2.redReward = { kind: 'relic', choices: ['golden_idol'], cardsDrawn: ['golden_idol'] }
   debug.setViewer('p1')
   debug.setRun(run)
 })
+const catchUpItemFacesInert = await page.locator('.neow-faces').evaluate((faces) => faces.inert)
 await page.getByRole('button', { name: 'Resolve Silent' }).click()
 await page.getByRole('heading', { name: 'Catch Up in progress' }).waitFor({ state: 'detached' })
-const localSoloCatchUpSwitched = await page.locator('.neow-action__owner > span').textContent()
+const localSoloCatchUpSwitched = await page.locator('.reward-screen__player > h3').textContent()
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'noncombat-ui'))
 await page.waitForFunction(() => Object.keys(window.__STS_DEBUG__.getRun().neow.players).length === 4)
 await page.evaluate(() => {
@@ -367,20 +373,35 @@ await page.evaluate(() => {
   run.neow.players.p1.redReward = { kind: 'potion', choices: ['fire_potion'], cardsDrawn: ['fire_potion'] }
   debug.setRun(run)
 })
-await page.waitForFunction(() => [...document.querySelectorAll('.neow-offer--potion button .item-icon-image')]
-  .every((image) => image.naturalWidth > 0) && document.querySelectorAll('.neow-offer--potion button .item-icon-image').length === 3)
+await page.waitForFunction(() => {
+  const images = [...document.querySelectorAll('.neow-offer--potion button .item-icon-image')]
+  return images.length > 0 && images.every((image) => image.naturalWidth > 0)
+})
 const localNeowPotionLayout = await page.locator('.neow-offer--potion').evaluate((offer) => {
   const box = offer.getBoundingClientRect()
+  const sheet = offer.querySelector('.reward-screen__players')?.getBoundingClientRect()
   return {
-    width: Math.round(box.width), height: Math.round(box.height),
+    width: Math.round(sheet?.width ?? 0), height: Math.round(sheet?.height ?? 0),
+    contained: box.left >= 0 && box.top >= 0 && box.right <= innerWidth + 1 && box.bottom <= innerHeight + 1,
     icons: offer.querySelectorAll('.item-icon-image').length,
     cardFaces: offer.querySelectorAll('.item-card-image').length,
-    groupName: offer.querySelector('[role="group"]')?.getAttribute('aria-label'),
-    owner: document.querySelector('.neow-action__owner > span')?.textContent,
+    firstChoice: offer.querySelector('.loot-choice > strong')?.textContent,
+    owner: offer.querySelector('.reward-screen__player > h3')?.textContent,
+    leakedOwnerBanner: document.querySelectorAll('.neow-action__owner').length,
+    backgroundInert: document.querySelector('.neow-faces')?.inert,
     tallestButton: Math.max(...[...offer.querySelectorAll('button')].map((button) => button.getBoundingClientRect().height)),
   }
 })
 await page.screenshot({ path: join(outDir, 'neow-potion-reward-desktop.png'), fullPage: true })
+let densePotionChoicesReachable = true
+for (const choice of await page.locator('.neow-offer--potion .loot-choice:not(:disabled)').all()) {
+  await choice.scrollIntoViewIfNeeded()
+  densePotionChoicesReachable &&= await choice.evaluate((element) => {
+    const rect = element.getBoundingClientRect()
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    return Boolean(hit && (hit === element || element.contains(hit)))
+  })
+}
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   debug.setViewer('p1')
@@ -409,15 +430,22 @@ check('The Heart’s Boon shows the Heart and its printed dialogue on the right'
   assert(heartsBoonRareLabel, 'the Rare Card Reward option kept its raw icon token')
 })
 
-check('solo Catch Up dialogue remains clickable beside Neow', () => assertEqual(localSoloCatchUpSwitched, 'Silent'))
+check('solo Catch Up can switch into a participating player’s item offer', () => {
+  assertEqual(catchUpItemFacesInert, false)
+  assertEqual(localSoloCatchUpSwitched, 'Silent')
+})
 check('Neow Potion rewards use the compact icon reward sheet', () => {
-  assertEqual(localNeowPotionLayout.icons, 4)
+  assertEqual(localNeowPotionLayout.icons, 7)
   assertEqual(localNeowPotionLayout.cardFaces, 0)
-  assertEqual(localNeowPotionLayout.groupName, 'Fire Potion')
+  assert(localNeowPotionLayout.firstChoice?.startsWith('Fire Potion'))
   assertEqual(localNeowPotionLayout.owner, 'Ironclad')
+  assertEqual(localNeowPotionLayout.leakedOwnerBanner, 0, 'outer owner banner leaked through the item sheet')
+  assert(localNeowPotionLayout.backgroundInert, 'background Neow controls remain keyboard-accessible behind the item sheet')
+  assert(densePotionChoicesReachable, 'a dense Potion choice cannot be scrolled into a hittable position')
+  assert(localNeowPotionLayout.contained, 'Potion reward overlay escaped the viewport')
   assert(localNeowPotionLayout.width <= 640, `Potion sheet is ${localNeowPotionLayout.width}px wide`)
-  assert(localNeowPotionLayout.height <= 320, `Potion sheet is ${localNeowPotionLayout.height}px tall`)
-  assert(localNeowPotionLayout.tallestButton <= 60, `Potion action is ${localNeowPotionLayout.tallestButton}px tall`)
+  assert(localNeowPotionLayout.height <= 640, `Potion sheet is ${localNeowPotionLayout.height}px tall`)
+  assert(localNeowPotionLayout.tallestButton <= 72, `Potion action is ${localNeowPotionLayout.tallestButton}px tall`)
 })
 
 check('meta setup, achievements, and compact title layout survive real local navigation', () => {
@@ -977,7 +1005,7 @@ async function measureTouchShelf(width, height, holdsPotion) {
   }
 }
 
-const touchShelf = await measureTouchShelf(800, 1180, false)
+const touchShelfHorizontalPhone = await measureTouchShelf(844, 390, false)
 // Short, and holding a potion: the belt takes height from the stage exactly
 // where the prose-bearing tiles need it.
 const touchShelfShort = await measureTouchShelf(1024, 600, true)
@@ -1106,7 +1134,15 @@ function measureRug() {
   // override is worth nothing if the taller text then clips.
   const cardRules = [...board.querySelectorAll('.merchant-cards .card-face__rules')]
   const cardRulesFont = cardRules.length ? parseFloat(getComputedStyle(cardRules[0]).fontSize) : 0
-  const cardRulesClipped = cardRules.filter((panel) => panel.scrollHeight > panel.clientHeight + 1).length
+  const clippedCardRules = cardRules.filter((panel) => panel.scrollHeight > panel.clientHeight + 1)
+  const cardRulesClipped = clippedCardRules.length
+  const cardRulesClipDetails = clippedCardRules.map((panel) => ({
+    card: panel.closest('.card')?.getAttribute('aria-label'),
+    scrollHeight: panel.scrollHeight,
+    clientHeight: panel.clientHeight,
+    fontSize: getComputedStyle(panel).fontSize,
+    lineHeight: getComputedStyle(panel).lineHeight,
+  }))
   const cardFaceWidth = Math.round(board.querySelector('.merchant-cards .card')?.getBoundingClientRect().width ?? 0)
   // Both card rows draw at ONE size. The rug's three `auto` columns want more than
   // a capped board can give, so the Colorless pile — which lives in one column —
@@ -1149,7 +1185,7 @@ function measureRug() {
   return { buriedControls, buriedControlLabels, buriedPrices, buriedCards, leaveOwns, lastPriceBelow, clipped,
     rugIntoLeave, leaveReachable, stageOverflow, stageScrolls, stageHeight, shelfTileSpread,
     overlaps: overlapPairs.slice(0, 3), overlapCount: overlapPairs.length,
-    cardRulesFont, cardRulesClipped, cardFaceWidth, colorlessCardWidth, discountMarked,
+    cardRulesFont, cardRulesClipped, cardRulesClipDetails, cardFaceWidth, colorlessCardWidth, discountMarked,
     sideways: Math.round(board.scrollWidth - board.clientWidth) + Math.round(stage.scrollWidth - stage.clientWidth) }
 }
 
@@ -1629,7 +1665,7 @@ for (const shopCase of shopCases) {
     assert(shopCase.discountMarked,
       `${where}: the discounted relic's price is not distinguished from a full-price one`)
     assertEqual(shopCase.cardRulesClipped, 0,
-      `${where}: ${shopCase.cardRulesClipped} card face(s) clipped their own rules text`)
+      `${where}: ${shopCase.cardRulesClipped} card face(s) clipped their own rules text: ${JSON.stringify(shopCase.cardRulesClipDetails)}`)
     // Tied to the card's width rather than a flat pixel bar: a 76px card on a
     // cramped window cannot carry 10px type, but the RAMP must still be the
     // shop's own and not the 0.49rem-capped shared one.
@@ -1701,7 +1737,7 @@ check('a campfire tile with an open room interaction mounts exactly one screen',
     `the Relic resolver stayed capped at ${stackedRoomScreens.relicResolverWidth}px inside a ${stackedRoomScreens.shellWidth}px shell`)
 })
 check('a pointerless shopper reads shelf rules without hovering', () => {
-  for (const [label, shelf] of [['tall', touchShelf], ['short with a belt', touchShelfShort]]) {
+  for (const [label, shelf] of [['horizontal phone', touchShelfHorizontalPhone], ['short desktop with a belt', touchShelfShort]]) {
     assert(shelf.coarse, `touch context (${label}) still reports a hover-capable pointer`)
     assert(shelf.nameVisible, `touch shelf tile hides its item name (${label})`)
     assert(shelf.rulesVisible, `touch shelf tile hides its item rules (${label})`)
@@ -3621,12 +3657,12 @@ async function waitForAutomaticRetry(probe) {
 }
 liveRoom.run.players = liveRoom.run.players.map((player, index) => ({ ...player, gold: index === 0 ? 1 : 0 }))
 liveRoom.version += 1
-await ann.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 await openMerchantShop(ann)
 const insufficientMerchantDisabled = await ann.getByRole('button', { name: /Anchor/ }).isDisabled()
 liveRoom.run.players = liveRoom.run.players.map((player, index) => ({ ...player, gold: [1, 4, 12, 12][index] }))
 liveRoom.version += 1
-await ann.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 await openMerchantShop(ann)
 await ann.getByRole('button', { name: /Anchor/ }).click()
 await ann.getByRole('button', { name: 'Cancel relic purchase and return all contributions' }).waitFor()
@@ -3675,7 +3711,7 @@ check('four-seat shared funding is buyer-authorized, atomic, and reconnect-stabl
 liveRoom.run.players[2] = { ...liveRoom.run.players[2], gold: 5 }
 liveRoom.version += 1
 const cyMerchant = onlinePages[2]
-await ann.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 await openMerchantShop(ann)
 await ann.getByRole('button', { name: /Happy Flower/ }).click()
 await cyMerchant.reload({ waitUntil: 'networkidle' })
@@ -3699,7 +3735,7 @@ liveRoom.version += 1
 liveRoom.run.ascension = 4
 liveRoom.run.players[0] = { ...liveRoom.run.players[0], gold: 0, potions: ['swift_potion', 'blood_potion'] }
 liveRoom.version += 1
-await ann.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 await openMerchantShop(ann)
 await ann.setViewportSize({ width: 1280, height: 720 })
 await ann.getByRole('button', { name: /Fire Potion/ }).click()
@@ -4020,13 +4056,15 @@ liveRoom.run.roomState = {
   sharedOffers: ['happy_flower', 'akabeko', 'lantern', 'vajra'], decisions: {},
 }
 liveRoom.version += 1
-await ann.reload({ waitUntil: 'networkidle' })
-await bo.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
+await ann.getByRole('button', { name: 'Open treasure chest', exact: true }).click()
+const boTreasureChest = bo.getByRole('button', { name: 'Open treasure chest', exact: true })
+await boTreasureChest.focus()
+await boTreasureChest.press('Enter')
 await ann.getByRole('button', { name: /Happy Flower/ }).click()
-await bo.getByRole('button', { name: /Happy Flower/ }).waitFor({ state: 'visible' })
-await bo.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent?.includes('Happy Flower') && button.disabled))
-await bo.waitForFunction(() => document.activeElement?.textContent?.includes('Akabeko'))
-const nextSharedRelicFocused = await bo.evaluate(() => document.activeElement?.textContent ?? '')
+await bo.locator('[data-treasure-slot="0"][data-taken="true"]').waitFor({ state: 'visible' })
+await bo.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.includes('Akabeko'))
+const nextSharedRelicFocused = await bo.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '')
 const sharedSnapshot = await fetch(`${roomOrigin}/api/rooms/${create.snapshot.code}`, { headers: { 'x-room-token': onlineSeats[1].token } }).then((response) => response.json())
 check('online shared relic claims move focus to the next slot without exposing Sapphire intent', () => {
   assert(nextSharedRelicFocused.includes('Akabeko'))
@@ -4070,7 +4108,7 @@ liveRoom.run.roomState = {
   },
 }
 liveRoom.version += 1
-await ann.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 await ann.getByRole('button', { name: /\[Success\?\]/ }).click()
 const onlineSkullSources = ann.getByRole('group', { name: 'Prismatic Shard · Card Reward · choose 3 reward decks' })
 await onlineSkullSources.waitFor()
@@ -4139,7 +4177,7 @@ liveRoom.run.roomState = {
   ] }, decisions: {}, dieRolls: {},
 }
 liveRoom.version += 1
-await ann.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 const transformedUid = liveRoom.run.players[0].deck[0].uid
 await ann.getByRole('button', { name: /\[Pray\]/ }).click()
 const onlineTransformPicker = ann.getByRole('dialog', { name: 'Choose 1 card to transform' })
@@ -4168,7 +4206,7 @@ liveRoom.run.roomState = {
   ] }, decisions: {}, dieRolls: {},
 }
 liveRoom.version += 1
-await ann.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 await ann.getByRole('button', { name: /\[Exchange\]/ }).click()
 const onlineTradePicker = ann.getByRole('dialog', { name: 'Choose 1 card to trade' })
 await onlineTradePicker.waitFor()
@@ -4238,13 +4276,12 @@ onlineCourierRun.combat.players = onlineCourierRun.combat.players.map((player) =
 onlineCourierRun.players = onlineCourierRun.players.map((player) => ({ ...player, gold: player.id === onlineSeats[0].playerId ? 0 : player.id === onlineSeats[1].playerId ? 5 : player.id === onlineSeats[2].playerId ? 1 : 0, relics: player.id === onlineSeats[0].playerId ? [...player.relics, { defId: 'the_courier', spent: false }] : player.relics }))
 liveRoom.run = onlineCourierRun
 liveRoom.version += 1
-await ann.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 await bo.reload({ waitUntil: 'networkidle' })
 await ann.getByRole('complementary', { name: 'The Courier' }).waitFor()
 await ann.getByRole('button', { name: 'Look at Relic' }).click()
 const courierLocksCombat = await ann.waitForFunction(() => document.querySelector('.courier-combat-lock')?.hasAttribute('inert') === true).then((handle) => handle.jsonValue())
 await ann.getByRole('button', { name: /Buy \/ pledge ◉ 0/ }).click()
-await bo.reload({ waitUntil: 'networkidle' })
 await bo.locator('.connection--connected').waitFor()
 await bo.getByRole('complementary', { name: 'The Courier offer' }).waitFor()
 liveRoom.run.combat.players.find((player) => player.id === onlineSeats[1].playerId).dead = true
@@ -4259,7 +4296,6 @@ await bo.getByRole('button', { name: /Buy \/ pledge ◉ 5/ }).waitFor()
 await bo.getByRole('button', { name: /Buy \/ pledge ◉ 5/ }).click()
 await bo.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent?.includes('Buy / pledge') && button.disabled))
 const repeatCourierPledgeDisabled = await bo.getByRole('button', { name: /Buy \/ pledge/ }).isDisabled()
-await cy.reload({ waitUntil: 'networkidle' })
 await cy.getByRole('button', { name: /Buy \/ pledge ◉ 1/ }).click()
 await cy.getByRole('complementary', { name: 'The Courier offer' }).waitFor({ state: 'detached' })
 check('a zero-Gold Courier owner can authorize teammate funding online', () => {
@@ -4278,7 +4314,7 @@ sozuCourierRun.courier = { usedBy: [onlineSeats[0].playerId], offer: { playerId:
 liveRoom.run = sozuCourierRun
 liveRoom.courierPledge = undefined
 liveRoom.version += 1
-await bo.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 const sozuCourierPanel = bo.getByRole('complementary', { name: 'The Courier offer' })
 await sozuCourierPanel.getByText('Sozu prevents gaining Potions').waitFor()
 const onlineSozuCourierDisabled = await sozuCourierPanel.getByRole('button', { name: /Buy \/ pledge/ }).isDisabled()
@@ -4357,7 +4393,7 @@ liveRoom.run.roomState = {
   ] }, decisions: {}, dieRolls: {},
 }
 liveRoom.version += 1
-await ann.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 await ann.getByRole('heading', { name: 'Old Beggar' }).waitFor()
 const removedUid = liveRoom.run.players[0].deck[0].uid
 const deckSize = liveRoom.run.players[0].deck.length
@@ -4381,7 +4417,6 @@ await di.screenshot({ path: join(outDir, 'event-funded-4p-reconnect-compact-desk
 await di.getByRole('button', { name: /Contribute/ }).click()
 await di.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent?.includes('Contribute') && button.disabled))
 const repeatEventPledgeDisabled = await di.getByRole('button', { name: /Contribute/ }).isDisabled()
-await cy.reload({ waitUntil: 'networkidle' })
 await cy.getByRole('button', { name: /Contribute/ }).click()
 await ann.locator('.map').waitFor()
 await ann.waitForTimeout(100)
@@ -4399,7 +4434,7 @@ liveRoom.run.phase = 'victory'
 liveRoom.run.campaign = { ...liveRoom.run.campaign, finalized: true }
 liveRoom.campaignProgress = { ...liveRoom.campaignProgress, unspentMarks: 1 }
 liveRoom.version += 1
-await ann.reload({ waitUntil: 'networkidle' })
+rooms.publishRoom(create.snapshot.code)
 await ann.getByText('Campaign journal').waitFor()
 const staleVictoryPanel = await ann.getByRole('heading', { name: /Act .* complete/ }).count()
 check('finalized online runs replace the terminal panel with the campaign journal', () => assertEqual(staleVictoryPanel, 0))

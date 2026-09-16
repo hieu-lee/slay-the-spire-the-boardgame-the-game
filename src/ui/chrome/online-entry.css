@@ -33,6 +33,17 @@
   max-width: 34rem;
 }
 
+.sts-scope .neow-offer__status {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid rgb(157 192 192 / 0.48);
+  border-radius: 0.35rem;
+  background: rgb(7 20 24 / 0.96);
+}
+
 /* Potion rewards use the client's compact hanging reward sheet: icon, name,
    rules, then small decisions. Full physical card faces belong in card-choice
    screens; here they made one Potion fill nearly the entire Neow scene. */
@@ -55,6 +66,28 @@
     linear-gradient(180deg, #607579, #34484d);
   clip-path: polygon(2% 0, 98% 0, 100% 3%, 99% 96%, 88% 100%, 72% 97%, 55% 100%, 38% 97%, 20% 100%, 1% 96%);
   filter: drop-shadow(0 1rem 1.2rem rgb(0 0 0 / 0.65));
+}
+
+/* The item sheet can carry seven actions in a four-player party. Keep Skip in
+   its own grid row instead of floating it over the last pass/replace choice. */
+.sts-scope .neow-action--offer .neow-offer--potion.reward-screen--loot {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: stretch;
+}
+
+.sts-scope .neow-action--offer .neow-offer--potion .reward-screen__players {
+  min-height: 0;
+  max-height: 100%;
+}
+
+.sts-scope .neow-action--offer .neow-offer--potion > .reward-screen__skip {
+  position: static;
+  justify-self: end;
+  margin-top: 0.35rem;
+}
+
+.sts-scope .neow-action--offer .neow-offer--potion .reward-screen__title {
+  width: 100%;
 }
 
 .sts-scope .neow-offer--potion .reward-item {

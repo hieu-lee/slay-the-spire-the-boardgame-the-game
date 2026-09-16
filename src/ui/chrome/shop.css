@@ -159,9 +159,9 @@
    6.03px at 1440x900. The shop, the reward screen and the removal picker are the
    three places where a player must read a card face to decide, so they get their
    own ramp.
-   No row-height override goes with it: giving the rules row more of the card
-   (13/27/8 rather than the shared 13/35/8) turned out to change nothing —
-   measured across all 81 card ids, panel overflow is 0 either way. */
+   The compact merchant face gives four percent of its illustration row back to
+   the rules panel below. This keeps Dramatic Entrance's full rules visible at
+   the 76px floor used by short desktop and touch layouts. */
 /* Ramped off the CARD's own inline size, not off `--card-width`. Those two agree
    on the rug, where the module sizes the track — but the reward row and the
    removal picker size their tracks from the grid and leave `--card-width` a
@@ -172,6 +172,8 @@
 .sts-scope .merchant-cards .card,
 .sts-scope .reward-screen .card,
 .merchant-removal-dialog .card { container-type: inline-size; }
+
+.sts-scope .merchant-cards .card-face { grid-template-rows: 13% 31% 8% 1fr; }
 
 .sts-scope .merchant-cards .card-face__rules,
 .sts-scope .reward-screen .card-face__rules,
@@ -188,6 +190,11 @@
      small ones — the fix is height for the rug, not a bigger font here. */
   font-size: clamp(0.4rem, 7.2cqw, 0.7rem);
 }
+
+/* Floor-sized merchant cards have fewer vertical pixels than the same card in
+   reward and removal layouts. Give those pixels to the text instead of
+   shrinking its legibility floor or crowding its line spacing. */
+.sts-scope .merchant-cards .card-face__rules { padding-block: 0; }
 
 /* The title ramps with the rules, or it ends up the SMALLEST text on a card it
    is supposed to head: the shared cap is 0.68rem, just under the 0.70rem the

@@ -25,7 +25,8 @@ try {
         import('/src/ui/styles.css'),import('/src/ui/chrome.css'),
       ])
       const root=(D.createRoot??D.default.createRoot)(node), rng=createRng(47)
-      const players=[createPlayer(rng,'p1','Hero','ironclad',0),createPlayer(rng,'p2','Friend','silent',0)]
+      const players=[createPlayer(rng,'p1','Hero','ironclad',0),createPlayer(rng,'p2','Friend','silent',0),
+        createPlayer(rng,'p3','Ally','defect',0),createPlayer(rng,'p4','Companion','watcher',0)]
       const f=window.fixture={players,enabled:true,choices:[]}
       f.install=(heart=false,held=[],blocked=false,empty=false)=>{
         players[0].potions=held;players[0].relics=blocked?[{defId:'sozu'}]:[];players[1].potions=[]
@@ -56,6 +57,7 @@ try {
     for(const heart of [false,true]) {
       await page.evaluate(h=>window.fixture.install(h),heart)
       await loot.waitFor()
+      assert.equal(await page.locator('.neow-action__owner').count(),0,'outer owner banner leaked through the item sheet')
       await page.evaluate(()=>document.fonts.ready)
       await page.waitForTimeout(350)
       assert.equal(await page.locator('.reward-screen__title').textContent(),heart?'Boon':'Blessing')
@@ -65,7 +67,8 @@ try {
       const visible=await page.evaluate(()=>({width:innerWidth,height:innerHeight}))
       for(const selector of ['.reward-screen__title','.reward-screen__players','.reward-screen__skip']) {
         const rect=await page.locator(selector).boundingBox()
-        assert(rect.x>=0&&rect.y>=0&&rect.x+rect.width<=visible.width+1&&rect.y+rect.height<=visible.height+1,`${screen}: ${selector} clipped`)
+        assert(rect.x>=0&&rect.y>=0&&rect.x+rect.width<=visible.width+1&&rect.y+rect.height<=visible.height+1,
+          `${screen}: ${selector} clipped: ${JSON.stringify({rect,visible})}`)
       }
       await page.screenshot({path:resolve(out,`${screen}-${heart?'heart':'neow'}.png`)})
       await choose('Weak Potion',{kind:'gain'})
@@ -86,13 +89,38 @@ try {
       await choose('Golden Idol', 0)
       await choose('Skip', null)
       await page.evaluate(()=>{window.fixture.enabled=false;window.fixture.render()})
-      await page.getByRole('status').filter({hasText:'Reconnecting'}).waitFor()
+      const reconnectStatus=page.getByRole('status').filter({hasText:'Reconnecting'})
+      await reconnectStatus.waitFor()
+      assert.equal(await reconnectStatus.evaluate(element=>{
+        const rect=element.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)
+        return hit===element||element.contains(hit)
+      }),true,'relic reconnect status is covered by another layer')
+      await page.screenshot({path:resolve(out,`${screen}-${heart?'heart':'neow'}-relic-reconnecting.png`)})
       assert.equal(await loot.locator('button:enabled').count(),0)
     }
     await page.evaluate(()=>window.fixture.install(false,['fire_potion']))
     await choose('Weak Potion — replace Fire Potion',{kind:'replace',potionId:'fire_potion'})
     await page.evaluate(()=>{window.fixture.enabled=false;window.fixture.render()})
-    await page.getByRole('status').filter({hasText:'Reconnecting'}).waitFor()
+    const potionReconnectStatus=page.getByRole('status').filter({hasText:'Reconnecting'})
+    await potionReconnectStatus.waitFor()
+    assert.equal(await potionReconnectStatus.evaluate(element=>{
+      const rect=element.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)
+      return hit===element||element.contains(hit)
+    }),true,'potion reconnect status is covered by another layer')
+    await page.evaluate(()=>{
+      const f=window.fixture
+      f.install(false,['fire_potion','swift_potion','blood_potion'])
+      document.querySelector('.reward-screen__players').scrollTop=document.querySelector('.reward-screen__players').scrollHeight
+      f.enabled=false
+      f.render()
+    })
+    const denseReconnectStatus=page.getByRole('status').filter({hasText:'Reconnecting'})
+    await denseReconnectStatus.waitFor()
+    assert.equal(await denseReconnectStatus.evaluate(element=>{
+      const rect=element.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)
+      return rect.top>=0&&rect.bottom<=innerHeight&&Boolean(hit&&(hit===element||element.contains(hit)))
+    }),true,'dense four-player reconnect status is outside the visible sticky panel')
+    await page.screenshot({path:resolve(out,`${screen}-dense-potion-reconnecting.png`)})
     assert.equal(await loot.locator('button:enabled').count(),0)
     await page.evaluate(()=>window.fixture.install(false,[],true))
     assert(await page.getByRole('button',{name:'Weak Potion',exact:true}).isDisabled())
