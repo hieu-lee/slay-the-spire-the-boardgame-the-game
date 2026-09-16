@@ -1,5 +1,7 @@
 // Runs every scripts/verify-*.mjs (except this one) and reports a summary.
-// Usage: node scripts/verify-all.mjs [--changed[=ref]] [--jobs=N] [--heavy=N] [--heavy-retries=N] [filter...]
+// Usage: node scripts/verify-all.mjs [--changed[=ref]] [--lane=light|browser]
+//   [--shard=INDEX/TOTAL] [--skip-typecheck] [--jobs=N] [--heavy=N]
+//   [--heavy-retries=N] [filter...]
 //
 // The pool used to treat a pure-logic script and a full browser suite as equal
 // cost. A browser suite boots its own Vite AND its own Chromium, so several at
@@ -69,6 +71,23 @@ const jobs = count('--jobs', Math.max(1, Math.min(8, cpus().length - 1)))
 const filters = args.filter((a) => !a.startsWith('--'))
 const changedArg = args.find((a) => a === '--changed' || a.startsWith('--changed='))
 const listOnly = args.includes('--list')
+const skipTypecheck = args.includes('--skip-typecheck')
+const laneArg = args.find((a) => a.startsWith('--lane='))
+const selectedLane = laneArg?.slice('--lane='.length)
+if (laneArg && !['light', 'browser'].includes(selectedLane)) {
+  console.error(`--lane needs light or browser, got ${JSON.stringify(selectedLane)}`)
+  process.exit(2)
+}
+const shardArg = args.find((a) => a.startsWith('--shard='))
+let shard
+if (shardArg) {
+  const match = /^(\d+)\/(\d+)$/.exec(shardArg.slice('--shard='.length))
+  if (!match || Number(match[1]) < 1 || Number(match[2]) < 1 || Number(match[1]) > Number(match[2])) {
+    console.error(`--shard needs INDEX/TOTAL with 1 <= INDEX <= TOTAL, got ${JSON.stringify(shardArg.slice('--shard='.length))}`)
+    process.exit(2)
+  }
+  shard = { index: Number(match[1]), total: Number(match[2]) }
+}
 if (changedArg && filters.length) {
   console.error('--changed cannot be combined with script filters')
   process.exit(2)
@@ -104,6 +123,29 @@ if (changedArg) {
   console.log(changedFiles.length ? `changed: ${changedFiles.join(', ')}` : 'no changed files')
 }
 
+// Detected, not hard-coded, so a new browser suite is classified on its own.
+const isBrowser = (script) => {
+  try { return browserScript(script, join(scriptsDir, '..')) }
+  catch { return false }
+}
+
+// CI runs the light lane once and distributes the browser lane across isolated
+// hosted runners. Sharding happens after affected-check selection and lane
+// classification, so the union of shards is exactly the original selected set.
+// Each shard is still sorted and deterministic, making retries reproducible.
+if (selectedLane) scripts = scripts.filter((script) => isBrowser(script) === (selectedLane === 'browser'))
+if (shard) scripts = scripts.filter((_, index) => index % shard.total === shard.index - 1)
+
+// Type checking belongs to the light CI lane and must still run if a future
+// source change happens to select no light verifier. List mode remains a cheap
+// scheduling query, and browser shards explicitly opt out to avoid doing the
+// same repository-wide check four times.
+if (!listOnly && changedArg && needsTypecheck(changedFiles) && !skipTypecheck) {
+  const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+  const typecheck = spawnSync(command, ['typecheck'], { cwd: join(scriptsDir, '..'), stdio: 'inherit' })
+  if (typecheck.status !== 0) process.exit(typecheck.status ?? 1)
+}
+
 if (scripts.length === 0) {
   if (changedArg) process.exit(0)
   console.error('no verify scripts matched')
@@ -113,18 +155,6 @@ if (scripts.length === 0) {
 if (listOnly) {
   console.log(scripts.join('\n'))
   process.exit(0)
-}
-
-if (changedArg && needsTypecheck(changedFiles)) {
-  const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
-  const typecheck = spawnSync(command, ['typecheck'], { cwd: join(scriptsDir, '..'), stdio: 'inherit' })
-  if (typecheck.status !== 0) process.exit(typecheck.status ?? 1)
-}
-
-// Detected, not hard-coded, so a new browser suite is classified on its own.
-const isBrowser = (script) => {
-  try { return browserScript(script, join(scriptsDir, '..')) }
-  catch { return false }
 }
 
 function runOnce(script) {

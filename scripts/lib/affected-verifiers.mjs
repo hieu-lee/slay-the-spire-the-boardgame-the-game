@@ -147,7 +147,11 @@ export function affectedVerifiers(root, changedFiles, scripts) {
   for (const file of changed) {
     let covered = [...selected].some((script) => imports(join('scripts', script), root).has(resolve(root, file)))
     if (file === 'scripts/verify-all.mjs') {
-      for (const script of scripts) selected.add(script)
+      // Scheduler behavior is exercised with disposable light/browser fixtures
+      // by verify-pipeline. Running every product suite for a scheduler-only
+      // change both adds no coverage and can turn a CI orchestration repair
+      // into an hour-long visual-regression run.
+      selected.add('verify-pipeline.mjs')
       covered = true
     }
     else if (file.startsWith('scripts/verify-') && file.endsWith('.mjs')) {

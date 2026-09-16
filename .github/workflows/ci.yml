@@ -15,9 +15,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    # Broad engine changes can select all three owning browser flows. Keep
-    # enough headroom to run that lane serially instead of starving browsers.
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,11 +32,8 @@ jobs:
       # on a fresh hosted runner, so install the package explicitly alongside
       # the Python and WebP tooling used by the pixel audits.
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg python3-numpy python3-pil webp
-      # The browser matrix includes both engines. Installing only Chromium made
-      # every WebKit-backed verifier fail after its Chromium assertions passed.
-      - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm build
-      - name: Run checks affected by this push
+      - name: Run affected non-browser checks
         env:
           EVENT_NAME: ${{ github.event_name }}
           PUSH_BASE: ${{ github.event.before }}
@@ -50,14 +45,51 @@ jobs:
               ! git cat-file -e "$base^{commit}" 2>/dev/null; then
             base=$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)
           fi
-          # Browser screenshot/performance suites compete for the same hosted
-          # runner CPU. With the current matrix, two heavy children repeatedly
-          # starve one another and turn valid UI into timeouts and frame spikes.
-          node scripts/verify-all.mjs --changed="$base" --jobs=4 --heavy=1
+          node scripts/verify-all.mjs --changed="$base" --lane=light --jobs=4
+
+  verify-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Lightning screenshot verification uses Pillow; Playwright installs the
+      # system libraries for both browser engines used throughout the matrix.
+      - run: sudo apt-get update && sudo apt-get install -y python3-pil
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Run affected browser checks (shard ${{ matrix.shard }}/4)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BASE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base=$PUSH_BASE
+          if [ "$EVENT_NAME" = pull_request ]; then base=$PR_BASE; fi
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]] || [[ "$base" =~ ^0+$ ]] ||
+              ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)
+          fi
+          # A shard gets its own hosted runner and uses one browser process at
+          # a time. This keeps visual timings stable without making a broad CSS
+          # change serialize the repository's entire browser inventory.
+          node scripts/verify-all.mjs --changed="$base" --lane=browser \
+            --shard=${{ matrix.shard }}/4 --skip-typecheck --jobs=1
 
   deploy-server:
     if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: verify
+    needs: [verify, verify-browser]
     permissions:
       contents: read
     uses: ./.github/workflows/server-deploy.yml

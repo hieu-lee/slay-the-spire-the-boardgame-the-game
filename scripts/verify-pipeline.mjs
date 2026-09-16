@@ -118,7 +118,7 @@ check('assets and the selector itself keep focused checks', () => {
   assert(!affected('data/card-index.json').some((script) => script.includes('browser')))
   assert(!affected('scripts/room-server.mjs').includes('verify-browser.mjs'))
   assertDeepEqual(affected('scripts/lib/affected-verifiers.mjs'), ['verify-pipeline.mjs'])
-  assertDeepEqual(affected('scripts/verify-all.mjs'), scripts)
+  assertDeepEqual(affected('scripts/verify-all.mjs'), ['verify-pipeline.mjs'])
   assertDeepEqual(affected('scripts/verify-deleted.mjs'), scripts)
   assertDeepEqual(affected('scripts/lib/browser-screen-audit.mjs').filter((script) => script.includes('browser')), [
     'verify-browser.mjs', 'verify-hover-overflow-browser.mjs', 'verify-neow-viewport-browser.mjs',
@@ -217,6 +217,30 @@ const withHeavyLaneFixture = (buildFixtures, run) => {
     rmSync(projectRoot, { recursive: true, force: true })
   }
 }
+check('lane filtering and sharding partition browser checks without overlap', () => {
+  withHeavyLaneFixture(() => ({
+    'verify-a-browser.mjs': "console.log('a')\n",
+    'verify-b-browser.mjs': "console.log('b')\n",
+    'verify-c-browser.mjs': "console.log('c')\n",
+    'verify-d-browser.mjs': "console.log('d')\n",
+    'verify-light-one.mjs': "console.log('one')\n",
+    'verify-light-two.mjs': "console.log('two')\n",
+  }), (runVerifyAll) => {
+    const lines = (...args) => runVerifyAll(...args, '--list').stdout.trim().split('\n').filter(Boolean)
+    const browser = lines('--lane=browser')
+    const shard1 = lines('--lane=browser', '--shard=1/2')
+    const shard2 = lines('--lane=browser', '--shard=2/2')
+    assertDeepEqual(browser, [
+      'verify-a-browser.mjs', 'verify-b-browser.mjs', 'verify-c-browser.mjs', 'verify-d-browser.mjs',
+    ])
+    assertDeepEqual([...shard1, ...shard2].sort(), browser)
+    assert(!shard1.some((script) => shard2.includes(script)), 'browser shards overlap')
+    assertDeepEqual(lines('--lane=light'), ['verify-light-one.mjs', 'verify-light-two.mjs'])
+    const invalid = runVerifyAll('--lane=browser', '--shard=0/2', '--list')
+    assertEqual(invalid.status, 2)
+    assert(invalid.stderr.includes('--shard needs INDEX/TOTAL'))
+  })
+})
 // Fails on its first invocation, then passes on every one after — simulates a
 // suite that lost to contention once but would pass standalone, via a counter
 // file since each retry is a brand-new child process with no shared memory.
