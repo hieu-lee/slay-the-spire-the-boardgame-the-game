@@ -17,6 +17,9 @@ const routerMapping = readFileSync(new URL('../infra/windows/renew-router-pinhol
 const caddy = readFileSync(new URL('../infra/windows/Caddyfile', import.meta.url), 'utf8')
 const wslInstall = readFileSync(new URL('../infra/install-wsl-host.sh', import.meta.url), 'utf8')
 const wslWatchdog = readFileSync(new URL('../infra/watchdog-wsl-host.sh', import.meta.url), 'utf8')
+const checkoutAction = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'
+const pnpmAction = 'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0'
+const setupNodeAction = 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0'
 
 const storeDirectory = mkdtempSync(join(tmpdir(), 'sts-store-'))
 try {
@@ -51,7 +54,9 @@ assert.match(pages, /MULTIPLAYER_SERVER_ORIGIN: \$\{\{ vars\.MULTIPLAYER_SERVER_
 assert.match(pages, /protocolVersion:1,alwaysOn:true/)
 assert.match(pages, /\.releaseSha == \$sha/)
 assert.match(pages, /validate-session-config\.mjs/)
-assert.match(pages, /actions\/deploy-pages@v4/)
+assert.match(pages, /actions\/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6\.0\.0/)
+assert.match(pages, /actions\/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5\.0\.0/)
+assert.match(pages, /actions\/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5\.0\.1/)
 assert.match(pages, /git merge-base --is-ancestor "\$DEPLOY_SHA" origin\/master/)
 assert.doesNotMatch(pages, /push:\s+branches:/)
 
@@ -64,11 +69,15 @@ assert.match(server, /bash infra\/deploy-local-server\.sh/)
 assert.doesNotMatch(server, /push:\s+branches:/)
 assert.doesNotMatch(server, /actions: write|ROOM_STORE_KEY|GH_TOKEN/)
 for (const workflow of [ci, pages, server]) {
-  for (const checkout of workflow.split('- uses: actions/checkout@v4').slice(1)) {
+  assert(workflow.includes(checkoutAction))
+  assert(workflow.includes(pnpmAction))
+  for (const checkout of workflow.split(`- uses: ${checkoutAction}`).slice(1)) {
     assert.match(checkout.split('\n      - ', 1)[0], /persist-credentials: false/)
   }
 }
+for (const workflow of [ci, pages]) assert(workflow.includes(setupNodeAction))
 const actions = `${ci}\n${pages}\n${server}`
+assert.doesNotMatch(actions, /(?:checkout|setup-node|configure-pages|upload-pages-artifact|deploy-pages|action-setup)@v\d+/)
 assert.doesNotMatch(actions, /handoff|keepalive|cloudflared|tunnel\.pyjam\.as|MULTIPLAYER_TUNNEL_PROVIDER|source_run_id|manualHandoff/i)
 
 assert.match(service, /Restart=always/)

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { validateSessionConfig } from './validate-session-config.mjs'
 
 const workflow = readFileSync(new URL('../.github/workflows/pages-deploy.yml', import.meta.url), 'utf8')
-assert.match(workflow, /actions\/checkout@v4[\s\S]*?with:[\s\S]*?persist-credentials: false/)
+assert.match(workflow, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\.0\.1[\s\S]*?with:[\s\S]*?persist-credentials: false/)
 assert.match(workflow, /workflow_call:/)
 assert.match(workflow, /workflow_dispatch:/)
 assert.match(workflow, /VITE_HOSTED_SESSION=true pnpm build/)
@@ -11,7 +11,9 @@ assert.match(workflow, /MULTIPLAYER_SERVER_ORIGIN\/api\/health/)
 assert.match(workflow, /\.webSocketActionAcks == true/)
 assert.match(workflow, /\.releaseSha == \$sha/)
 assert.match(workflow, /validate-session-config\.mjs/)
-assert.match(workflow, /actions\/deploy-pages@v4/)
+assert.match(workflow, /actions\/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6\.0\.0/)
+assert.match(workflow, /actions\/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5\.0\.0/)
+assert.match(workflow, /actions\/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5\.0\.1/)
 assert.doesNotMatch(workflow, /push:\s+branches:/)
 assert.doesNotMatch(workflow, /artifact_name|source_run_id|handoff|trycloudflare|pyjam/i)
 
