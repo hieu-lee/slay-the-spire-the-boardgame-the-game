@@ -141,6 +141,8 @@
   background: none !important;
 }
 
+.board:has(.enemy--targeted, .row__lane-target) > .row { z-index: auto; }
+
 .row__seat {
   position: relative;
   z-index: 3;

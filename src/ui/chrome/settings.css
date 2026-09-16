@@ -129,6 +129,16 @@ html[data-reduced-motion='true'] *::after {
   transition-duration: 0.001ms !important;
 }
 
+html[data-reduced-motion='true'] .combat-vfx,
+html[data-reduced-motion='true'] .combat-vfx::before,
+html[data-reduced-motion='true'] .combat-vfx::after {
+  animation: none !important;
+  transform: none;
+}
+html[data-reduced-motion='true'] .combat-vfx { opacity: 0.55; }
+html[data-reduced-motion='true'] .combat-vfx::before,
+html[data-reduced-motion='true'] .combat-vfx::after { opacity: 0.45; }
+
 html[data-high-contrast='true'] { --cream: #fff9e8; --ink-dim: #d8cdb7; --trim-dim: #d2aa55; }
 html[data-high-contrast='true'] .start-menu::before { background: rgb(0 0 0 / 0.72); }
 html[data-high-contrast='true'] .start-menu__nav button { color: #fff; }

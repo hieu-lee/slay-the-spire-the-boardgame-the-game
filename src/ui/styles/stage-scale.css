@@ -101,6 +101,7 @@
    scales with the stage the same way every other actor does. */
 .row__lane-target {
   position: absolute;
+  z-index: 101;
   left: calc(34% + var(--stage-row) * var(--stage-gap));
   bottom: calc(1.1rem * var(--stage-scale) + 2.75rem);
   width: var(--stage-actor-width);

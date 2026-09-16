@@ -4473,7 +4473,8 @@ function CombatScreenView({
         triggerSlimeEnemyUids.length < triggerSlimeEnemyAmount
           ? `${triggerSlimeEnemyLabels[triggerSlimeEnemyUids.length] ?? 'Slime'} Command target ${triggerSlimeEnemyUids.length + 1}/${triggerSlimeEnemyAmount}` :
         pendingTrigger.targets ? 'an enemy' : pendingTrigger.players ? 'a player' :
-        pendingTrigger.hermitChoices ? 'Hermit card choices' : pendingTrigger.slimeChoice ? 'Slime or self' : 'a row'}`
+        pendingTrigger.hermitChoices ? 'Hermit card choices' : pendingTrigger.slimeChoice ? 'Slime or self' :
+          `an enemy — its whole row is hit${rowHitSuffix}`}`
       : `Waiting for ${state.players.find((player) => player.id === pendingTrigger.playerId)?.name ?? 'another player'} to resolve ${pendingTrigger.label}`
     : null
   const beforeDrawPrompt = activeStartTurnScry && activeStartTurnScry.playerId !== viewer.id
@@ -5999,7 +6000,7 @@ function CombatScreenView({
                   Boolean(pending && (pending.slimeEnemyUids.length < slimeEnemyChoicesRequired(pending) ||
                     pending.hermitEnemyUids.length < loadedTargetCount(pending) ||
                     pending.soulburnEnemyUids.length < pending.soulburnChoices)) || (
-                  ((pendingEvokeTarget < 0 && pending?.needsEnemy === true && !enemyChoicesDone) ||
+                  ((pendingEvokeTarget < 0 && (pending?.needsEnemy === true && !enemyChoicesDone || independentEnemyPending)) ||
                     (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows && pendingEvokeTargetUids.has(enemy.uid))) && choiceSatisfied
                 ))) && !enemy.dead}
                 onClick={onEnemyClick}
@@ -6496,7 +6497,7 @@ function CombatScreenView({
                         Boolean(pending && (pending.slimeEnemyUids.length < slimeEnemyChoicesRequired(pending) ||
                           pending.hermitEnemyUids.length < loadedTargetCount(pending) ||
                           pending.soulburnEnemyUids.length < pending.soulburnChoices)) || (
-                        ((pendingEvokeTarget < 0 && pending?.needsEnemy === true && !enemyChoicesDone) ||
+                        ((pendingEvokeTarget < 0 && (pending?.needsEnemy === true && !enemyChoicesDone || independentEnemyPending)) ||
                           (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows && pendingEvokeTargetUids.has(enemy.uid))) && choiceSatisfied
                       ))) && !enemy.dead}
                       onClick={onEnemyClick}

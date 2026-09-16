@@ -6,6 +6,7 @@ const workflow = readFileSync(new URL('../.github/workflows/pages-deploy.yml', i
 assert.match(workflow, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\.0\.1[\s\S]*?with:[\s\S]*?persist-credentials: false/)
 assert.match(workflow, /workflow_call:/)
 assert.match(workflow, /workflow_dispatch:/)
+assert.match(workflow, /node-version: 24/)
 assert.match(workflow, /VITE_HOSTED_SESSION=true pnpm build/)
 assert.match(workflow, /MULTIPLAYER_SERVER_ORIGIN\/api\/health/)
 assert.match(workflow, /\.webSocketActionAcks == true/)

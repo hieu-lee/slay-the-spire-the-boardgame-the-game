@@ -422,18 +422,20 @@ export function usePresentationEvents(
 
     const unseen = events.filter((event) => event.seq > baseline.current!)
     baseline.current = Math.max(baseline.current, latest)
-    if (reducedEffects) {
-      setReducedSoundEvents(unseen)
-      return
+    if (reducedEffects) setReducedSoundEvents(unseen)
+    else setReducedSoundEvents((current) => current.length === 0 ? current : [])
+    const visualEvents = reducedEffects ? unseen.filter((event) => event.kind !== 'slime' &&
+      !(event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime')) : unseen
+    if (visualEvents.length === 0) return
+    const delays = reducedEffects ? new Map<number, number>()
+      : updateTargetContactDeadlines(state, visualEvents, slimeQueueEnd.current, contactDeadlines.current)
+    if (!reducedEffects) {
+      setTargetContactDeadlines(new Map(contactDeadlines.current))
+      setSlimeCommands((current) => [...current, ...visualEvents.filter((event) => event.kind === 'slime')])
     }
-    setReducedSoundEvents((current) => current.length === 0 ? current : [])
-    if (unseen.length === 0) return
-    const delays = updateTargetContactDeadlines(state, unseen, slimeQueueEnd.current, contactDeadlines.current)
-    setTargetContactDeadlines(new Map(contactDeadlines.current))
-    setSlimeCommands((current) => [...current, ...unseen.filter((event) => event.kind === 'slime')])
-    const immediate = unseen.filter((event) => event.kind !== 'slime' && (delays.get(event.seq) ?? 0) === 0)
+    const immediate = visualEvents.filter((event) => event.kind !== 'slime' && (delays.get(event.seq) ?? 0) === 0)
     setActive((current) => [
-      ...current.filter((event) => !unseen.some((next) => next.seq === event.seq)),
+      ...current.filter((event) => !visualEvents.some((next) => next.seq === event.seq)),
       ...immediate,
     ])
     // Multiple end-of-turn orbs can arrive in this same batch (the engine
@@ -444,10 +446,10 @@ export function usePresentationEvents(
     // schedule: a third orb reveal starting at +760ms has nothing left to show
     // by the unstaggered ~900ms cutoff. Each orb-end-turn event's lifetime is
     // extended by its own position among its same-batch siblings.
-    const orbEndTurnOrder = unseen
+    const orbEndTurnOrder = visualEvents
       .filter((event) => event.kind === 'orb' && event.sourceId === 'orb-end-turn')
       .sort((a, b) => a.seq - b.seq)
-    for (const event of unseen) {
+    for (const event of visualEvents) {
       // Slime commands release their per-actor queue on CSS animationend,
       // after returning home, rather than racing a wall-clock removal timer.
       if (event.kind === 'slime') continue
@@ -457,7 +459,7 @@ export function usePresentationEvents(
       const staggerIndex = event.kind === 'orb' && event.sourceId === 'orb-end-turn'
         ? orbEndTurnOrder.findIndex((candidate) => candidate.seq === event.seq)
         : 0
-      const attackContact = lastTarget
+      const attackContact = !reducedEffects && lastTarget
         // Contact is followed by a 500–600ms impact and a 500–600ms recovery.
         // Leave one frame-budget margin so a busy mobile renderer cannot
         // unmount the last pose before it paints.

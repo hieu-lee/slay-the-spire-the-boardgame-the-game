@@ -1526,7 +1526,7 @@ try {
     } }),
   })
   assert(competingFireDraw.ok, 'could not publish the same-seat Fire Breathing draw')
-  await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor()
+  await a.getByText("Ann's Fire Breathing+ — choose an enemy").waitFor()
   // The whole action bar, including Combust's own button, steps aside while
   // the mandatory trigger has the floor — Combust's OWN staging is verified
   // to have actually been dropped (not just hidden) further below, once the
@@ -1583,7 +1583,7 @@ try {
     assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [10, 7])
   })
   await a.locator('.enemy[data-enemy-id="online-fire-left"]').dispatchEvent('click')
-  await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor({ state: 'hidden' })
+  await a.getByText("Ann's Fire Breathing+ — choose an enemy").waitFor({ state: 'hidden' })
   // Combust's own staging (`pendingPowerUid`) was dropped the moment the
   // mandatory trigger interrupted it, so once the action bar is back it must
   // come back fresh, not pre-staged mid-row-choice from before the trigger.
@@ -1636,7 +1636,7 @@ try {
   // choice this produces reflects the engine's own `combatRows`, not a
   // hand-authored one.
   await a.getByRole('button', { name: /^Battle Trance,/ }).click()
-  await a.getByText("Ann's Fire Breathing — choose a row").waitFor()
+  await a.getByText("Ann's Fire Breathing — choose an enemy").waitFor()
   await a.locator('.row__lane-target').waitFor()
   const laneFireLabel = await a.locator('.row__lane-target').textContent()
   assertEqual(await b.getByText('Waiting for Ann to resolve a triggered ability…').count(), 0,
@@ -4774,11 +4774,11 @@ try {
   // ignored by the client and made this assertion depend on close-event timing.
   releaseAuthoritativeRefresh()
   const committedSnapshotUnlocked = await (await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
-    .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×2' && !button.disabled))).jsonValue()
+    .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×2' &&
+      !button.disabled && !button.closest('[inert]')))).jsonValue()
   check('an authoritative committed snapshot arriving after unknown unlocks the action', () => {
     assert(committedSnapshotUnlocked)
   })
-  await a.waitForFunction(() => window.__ROOM_SOCKETS__.at(-1)?.readyState === WebSocket.OPEN)
   await a.unroute(roomPattern, holdRoomRefresh)
 
   const energyBeforePotion = annAfterLostResponse.energy
