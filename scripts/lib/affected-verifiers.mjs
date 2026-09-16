@@ -15,10 +15,30 @@ const localRoots = [
   'RewardScreen', 'StartMenu',
 ].map((name) => `src/ui/${name}.tsx`)
 const onlineUi = /^(src\/multiplayer\/|src\/ui\/Online)/
+// Focused browser suites often enter through the public run barrel, which is
+// too broad for dependency inference. Keep the few domain owners explicit so
+// an engine helper change does not launch the entire visual matrix.
+const focusedEngineOwners = new Map([
+  ['src/game/guardian-gems.ts', ['verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs']],
+  ['src/game/run/guardian-gems.ts', ['verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs']],
+  ['src/game/run/merchant.ts', ['verify-merchant-overflow-browser.mjs']],
+  ['src/game/run/neow.ts', [
+    'verify-blessing-potions-browser.mjs', 'verify-boon-socket-browser.mjs', 'verify-neow-viewport-browser.mjs',
+  ]],
+  ['src/game/run/quick-setup.ts', [
+    'verify-guardian-online-start-choice-browser.mjs', 'verify-guardian-start-choice-browser.mjs',
+  ]],
+  ['src/game/run/relic-acquisition.ts', ['verify-tiny-house-browser.mjs']],
+  ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
+])
 const sourceExtensions = ['', '.ts', '.tsx', '.mjs', '.js']
 // src/game/combat/*.ts and src/game/run/*.ts are the insides of combat.ts and
 // run.ts; everything outside the engine imports them only through those barrels.
-const engineModuleOf = (file) => cleanPath(file).replace(/^src\/game\/(combat|run)\/[\w.-]+\.ts$/, 'src/game/$1.ts')
+const engineModuleOf = (file) => {
+  const clean = cleanPath(file)
+  if (clean === 'src/game/guardian-gems.ts') return 'src/game/run.ts'
+  return clean.replace(/^src\/game\/(combat|run)\/[\w.-]+\.ts$/, 'src/game/$1.ts')
+}
 const directImportCache = new Map()
 const sourceCache = new Map()
 const cleanPath = (file) => file.replaceAll('\\', '/')
@@ -101,9 +121,12 @@ export function affectedVerifiers(root, changedFiles, scripts) {
   const changed = new Set(changedFiles.map(cleanPath))
   const selected = new Set()
   const browser = scripts.filter((script) => browserScript(script, root))
-  const extraBrowser = browser.filter((script) => ![
+  // Broad suites own engine flows. Focused suites often load the application
+  // dynamically, so UI and asset changes must select them explicitly below.
+  const coreBrowser = browser.filter((script) => [
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
   ].includes(script))
+  const focusedBrowser = browser.filter((script) => !coreBrowser.includes(script))
   const externalReferences = [...changed].filter((file) => !file.startsWith('src/')).flatMap((file) => {
     const directory = file.split('/').slice(0, -1).join('/')
     return [file, basename(file), ...(directory.includes('/') ? [directory] : [])]
@@ -146,9 +169,9 @@ export function affectedVerifiers(root, changedFiles, scripts) {
     if (file.startsWith('public/assets/')) {
       selected.add('verify-assets.mjs')
       const owners = file.startsWith('public/assets/noncombat/')
-        ? ['verify-noncombat-browser.mjs', 'verify-online-browser.mjs', ...extraBrowser]
+        ? ['verify-noncombat-browser.mjs', 'verify-online-browser.mjs', ...focusedBrowser]
         : /public\/assets\/(combat|enemies)\//.test(file)
-          ? ['verify-browser.mjs', 'verify-online-browser.mjs', ...extraBrowser]
+          ? ['verify-browser.mjs', 'verify-online-browser.mjs', ...focusedBrowser]
           : browser
       for (const script of owners) selected.add(script)
       covered = true
@@ -163,22 +186,25 @@ export function affectedVerifiers(root, changedFiles, scripts) {
       for (const script of browser) selected.add(script)
       covered = true
     }
+    // Shared chrome/style partials can affect every rendered surface. Most of
+    // the focused visual verifiers load the application dynamically, so their
+    // dependency graph cannot identify the stylesheet they own.
     if (sharedUi.test(file)) { for (const script of browser) selected.add(script); covered = true }
     else if (onlineUi.test(file)) {
       selected.add('verify-online-browser.mjs')
-      for (const script of extraBrowser) selected.add(script)
+      for (const script of focusedBrowser) selected.add(script)
       covered = true
     }
     else if (file.startsWith('src/ui/')) {
       selected.add('verify-browser.mjs')
-      for (const script of extraBrowser) selected.add(script)
+      for (const script of focusedBrowser) selected.add(script)
       const absolute = resolve(root, file)
       if (noncombatRoots.some((entry) => imports(entry, root).has(absolute))) selected.add('verify-noncombat-browser.mjs')
       if (imports('src/ui/OnlineGame.tsx', root).has(absolute)) selected.add('verify-online-browser.mjs')
       covered = true
     }
     else if (file === 'src/game/run.ts') {
-      for (const script of browser) selected.add(script)
+      for (const script of coreBrowser) selected.add(script)
       covered = true
     }
     else if (file.startsWith('src/')) {
@@ -191,8 +217,9 @@ export function affectedVerifiers(root, changedFiles, scripts) {
       if (localRoots.some((entry) => directImports(entry, root).includes(absolute))) owners.push('verify-browser.mjs')
       if (noncombatRoots.some((entry) => directImports(entry, root).includes(absolute))) owners.push('verify-noncombat-browser.mjs')
       if (directImports('src/ui/OnlineGame.tsx', root).includes(absolute)) owners.push('verify-online-browser.mjs')
+      owners.push(...(focusedEngineOwners.get(cleanPath(file)) ?? []))
       if (owners.length) {
-        for (const script of [...owners, ...extraBrowser]) selected.add(script)
+        for (const script of owners) selected.add(script)
         // Answering for the barrel must not also answer for the file: a module
         // nothing imports yet is still uncovered, and has to keep the
         // run-everything fallback below. A module that IS imported already had

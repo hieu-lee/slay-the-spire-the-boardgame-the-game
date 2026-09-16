@@ -334,7 +334,6 @@ try {
   await enterOnline(a, 'Ann', 'ironclad', undefined, 'kept-local-run', true)
   const code = await a.locator('.online-lobby h1').textContent()
   assert(code, 'creator did not receive a room code')
-  rooms.store.rooms.get(code).campaignProgress.highestAscension = 13
   const healthAfterDoubleCreate = await fetch(`${roomOrigin}/api/health`).then((response) => response.json())
   await enterOnline(b, 'Bo', 'silent', code)
   await a.locator('.online-seat', { hasText: 'Bo' }).waitFor()
@@ -353,6 +352,11 @@ try {
   c.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
   await enterOnline(c, 'Cy', 'defect', code)
   await a.locator('.online-seat', { hasText: 'Cy' }).waitFor()
+  const lobbyRoom = rooms.store.rooms.get(code)
+  lobbyRoom.campaignBaseProgress.highestAscension = 13
+  lobbyRoom.campaignProgress.highestAscension = 13
+  lobbyRoom.version += 1
+  rooms.publishRoom(code)
   await a.getByRole('button', { name: 'Join voice' }).click()
   await b.getByRole('button', { name: 'Join voice' }).click()
   await c.getByRole('button', { name: 'Join voice' }).click()
@@ -5765,11 +5769,15 @@ try {
   })
   await enterOnline(fourPages[0], 'Iris', 'ironclad')
   const fourCode = await fourPages[0].locator('.online-lobby h1').textContent()
-  rooms.store.rooms.get(fourCode).campaignProgress.highestAscension = 13
   for (const [index, character] of ['silent', 'defect', 'watcher'].entries()) {
     await enterOnline(fourPages[index + 1], ['Sable', 'Cobalt', 'Violet'][index], character, fourCode)
   }
   await fourPages[0].locator('.online-seat[aria-label*="online"]').nth(3).waitFor()
+  const fourLobbyRoom = rooms.store.rooms.get(fourCode)
+  fourLobbyRoom.campaignBaseProgress.highestAscension = 13
+  fourLobbyRoom.campaignProgress.highestAscension = 13
+  fourLobbyRoom.version += 1
+  rooms.publishRoom(fourCode)
   for (const page of fourPages) await page.getByRole('button', { name: 'Join voice' }).click()
   await Promise.all(fourPages.map((page) => page.locator('.voice__status', { hasText: '3/3' }).waitFor()))
   await Promise.all(fourPages.map((page) => page.waitForFunction(() => [...document.querySelectorAll('audio')]
@@ -5950,6 +5958,15 @@ try {
   facingCombat.enemies.find((candidate) => candidate.uid === 'shield').actionIndex = 2
   Object.assign(facingCombat, { phase: 'start', turn: 1, startTurnStage: 'facing' })
   fourRoom.run = { ...fourRoom.run, phase: 'combat', combat: facingCombat }
+  Object.assign(fourRoom, {
+    startTurnCombatId: undefined,
+    startTurnOrder: undefined,
+    startTurnEnemyTargets: undefined,
+    startTurnChoices: undefined,
+    startTurnRequired: undefined,
+    startTurnReady: undefined,
+    startTurnStagedTriggers: undefined,
+  })
   fourRoom.version += 1
   rooms.publishRoom(fourCode)
   await Promise.all(fourPages.map((page) => waitForRoomVersion(page, fourRoom.version)))

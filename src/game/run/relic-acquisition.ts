@@ -21,7 +21,7 @@ import type { PendingRelicPreview, RunState } from './types.ts'
 import { acquisitionCardType, addCard, bottomCardChoices, drawCardChoices, removeCard } from '../acquisition.ts'
 import { CARDS, isStarterStrikeOrDefend } from '../cards.ts'
 import type { CardInstance, Player } from '../types.ts'
-import { bottomGuardianGems, cardHasGuardianSocket, queueGuardianSocket, queueNewGuardianSockets } from './guardian-gems.ts'
+import { bottomGuardianGems, cardHasGuardianSocket, queueGuardianSocket, queueNewGuardianSockets } from '../guardian-gems.ts'
 
 /** Stable picker identity for Tiny House's claimed card before acquisition commits. */
 export const TINY_HOUSE_REWARD_CARD_UID = 'tiny-house-reward-card'

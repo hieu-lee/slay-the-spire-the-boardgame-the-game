@@ -13,6 +13,10 @@ const scripts = readdirSync(resolve(root, 'scripts'))
   .filter((file) => file.startsWith('verify-') && file.endsWith('.mjs') && file !== 'verify-all.mjs')
   .sort()
 const affected = (...files) => affectedVerifiers(root, files, scripts)
+const affectedBrowser = (...files) => affected(...files).filter((script) => script.includes('browser'))
+const includesEvery = (actual, expected, context) => {
+  for (const script of expected) assert(actual.includes(script), `${context}: missing ${script}`)
+}
 
 suite('verification pipeline')
 check('logic changes select dependent logic checks and direct browser consumers', () => {
@@ -23,37 +27,68 @@ check('logic changes select dependent logic checks and direct browser consumers'
   assert(!selected.includes('verify-noncombat-browser.mjs'))
 })
 check('shared engine changes select every browser flow that imports them', () => {
-  assertDeepEqual(affected('src/game/run.ts').filter((script) => script.includes('browser')), [
-    'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
-  ])
-  assertDeepEqual(affected('src/game/achievements.ts').filter((script) => script.includes('browser')), [
-    'verify-noncombat-browser.mjs',
-  ])
+  const run = affectedBrowser('src/game/run.ts')
+  includesEvery(run, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'run barrel')
+  assert(!run.includes('verify-animation-browser.mjs'), 'run barrel selected an unrelated animation fixture')
+  const achievements = affectedBrowser('src/game/achievements.ts')
+  assert(achievements.includes('verify-noncombat-browser.mjs'))
+  assert(!achievements.includes('verify-browser.mjs'))
+  assert(!achievements.includes('verify-online-browser.mjs'))
   assert(affected('src/game/damage.ts').includes('verify-browser.mjs'))
 })
 check('frontend surfaces select only their owning browser suite', () => {
-  assertDeepEqual(affected('src/ui/CombatScreen.tsx').filter((script) => script.includes('browser')), [
-    'verify-browser.mjs', 'verify-online-browser.mjs',
-  ])
-  assertDeepEqual(affected('src/ui/RoomScreen.tsx').filter((script) => script.includes('browser')), [
-    'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
-  ])
-  assertDeepEqual(affected('src/ui/OnlineGame.tsx').filter((script) => script.includes('browser')), ['verify-online-browser.mjs'])
-  assertDeepEqual(affected('src\\ui\\OnlineGame.tsx').filter((script) => script.includes('browser')), ['verify-online-browser.mjs'])
+  const combat = affectedBrowser('src/ui/CombatScreen.tsx')
+  includesEvery(combat, ['verify-browser.mjs', 'verify-online-browser.mjs'], 'combat screen')
+  assert(!combat.includes('verify-noncombat-browser.mjs'))
+  const room = affectedBrowser('src/ui/RoomScreen.tsx')
+  includesEvery(room, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'room screen')
+  const online = affectedBrowser('src/ui/OnlineGame.tsx')
+  assert(online.includes('verify-online-browser.mjs'))
+  assert(!online.includes('verify-browser.mjs'))
+  assert(!online.includes('verify-noncombat-browser.mjs'))
+  assertDeepEqual(affectedBrowser('src\\ui\\OnlineGame.tsx'), online)
   assert(affected('src/ui/icons.ts').includes('verify-noncombat-browser.mjs'))
   assert(affected('src/ui/run-summary-data.ts').includes('verify-noncombat-browser.mjs'))
   assert(affected('src/ui/RewardScreen.tsx').includes('verify-browser.mjs'))
   assert(affected('src/ui/RunSummary.tsx').includes('verify-browser.mjs'))
-  assertDeepEqual(affected('src/ui/StartMenu.tsx').filter((script) => script.includes('browser')), [
+  includesEvery(affectedBrowser('src/ui/StartMenu.tsx'), [
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
-  ])
+  ], 'start menu')
 })
 check('an engine submodule selects what its barrel selects', () => {
   // combat.ts is a barrel over src/game/combat/. Nothing outside the engine
-  // imports those files directly, so without this the browser suites stop
-  // running for any engine change made inside them.
-  assertDeepEqual(affected('src/game/combat/effects.ts'), affected('src/game/combat.ts'))
-  assertDeepEqual(affected('src/game/run/events.ts'), affected('src/game/run.ts'))
+  // imports those files directly, so the broad owning browser suites must
+  // still run for changes inside them. Specialized fixtures that import the
+  // whole barrel are intentionally not treated as owners of every submodule.
+  const combatModule = affected('src/game/combat/effects.ts')
+  const combatBarrel = affected('src/game/combat.ts')
+  assertDeepEqual(combatModule.filter((script) => !script.includes('browser')),
+    combatBarrel.filter((script) => !script.includes('browser')))
+  includesEvery(combatModule, ['verify-browser.mjs', 'verify-online-browser.mjs'], 'combat submodule')
+  const runModule = affected('src/game/run/events.ts')
+  const runBarrel = affected('src/game/run.ts')
+  assertDeepEqual(runModule.filter((script) => !script.includes('browser')),
+    runBarrel.filter((script) => !script.includes('browser')))
+  includesEvery(runModule, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'run submodule')
+  assertEqual(runModule.filter((script) => script.includes('browser')).length, 3,
+    'a run submodule selected unrelated focused browser suites')
+  const guardianGems = affectedBrowser('src/game/guardian-gems.ts')
+  includesEvery(guardianGems, [
+    'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
+    'verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs',
+  ], 'shared Guardian gem state')
+  assertEqual(guardianGems.length, 5, 'Guardian gem state selected unrelated focused browser suites')
+  includesEvery(affectedBrowser('src/game/run/merchant.ts'), [
+    'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
+    'verify-merchant-overflow-browser.mjs',
+  ], 'merchant engine')
+  const guardianSocketResolution = affectedBrowser('src/game/run/guardian-gems.ts')
+  includesEvery(guardianSocketResolution, [
+    'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
+    'verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs',
+  ], 'Guardian socket resolution')
+  assertEqual(guardianSocketResolution.length, 5,
+    'Guardian socket resolution selected unrelated focused browser suites')
   // Answering for the barrel must not make an unimported new module look
   // covered: a file no script reaches still runs everything.
   assertDeepEqual(affected('src/game/combat/not-imported-yet.ts'), scripts)
@@ -61,8 +96,10 @@ check('an engine submodule selects what its barrel selects', () => {
 })
 check('shared frontend and toolchain changes stay conservative', () => {
   for (const sheet of ['src/ui/chrome.css', 'src/ui/chrome/keys.css', 'src/ui/styles/hand.css']) {
-    assertDeepEqual(affected(sheet).filter((script) => script.includes('browser')), [
+    includesEvery(affectedBrowser(sheet), [
       'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
+      'verify-combat-hand-viewport-browser.mjs', 'verify-enemy-layout-browser.mjs',
+      'verify-hover-overflow-browser.mjs',
     ], sheet)
   }
   assertDeepEqual(affected('package.json'), scripts)
@@ -84,7 +121,8 @@ check('assets and the selector itself keep focused checks', () => {
   assertDeepEqual(affected('scripts/verify-all.mjs'), scripts)
   assertDeepEqual(affected('scripts/verify-deleted.mjs'), scripts)
   assertDeepEqual(affected('scripts/lib/browser-screen-audit.mjs').filter((script) => script.includes('browser')), [
-    'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
+    'verify-browser.mjs', 'verify-hover-overflow-browser.mjs', 'verify-neow-viewport-browser.mjs',
+    'verify-noncombat-browser.mjs', 'verify-online-browser.mjs', 'verify-viewport-browser.mjs',
   ])
   assertDeepEqual(affected('src/game/new-system.ts'), scripts)
   assertDeepEqual(affected('src/ui/CombatScreen.tsx', 'src/game/new-system.ts'), scripts)

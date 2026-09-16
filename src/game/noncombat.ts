@@ -17,7 +17,7 @@ import type { ItemDecks, RewardDraw } from './acquisition.ts'
 import { potionDef, relicDef } from './relics.ts'
 import type { Player } from './types.ts'
 import { mayBuyGuardianSocketCard } from './downfall/guardian.ts'
-import { cardHasGuardianSocket, drawGuardianGemChoices } from './run/guardian-gems.ts'
+import { cardHasGuardianSocket, drawGuardianGemChoices } from './guardian-gems.ts'
 import { rulesetForCharacters } from './meta.ts'
 import type { RuleSet } from './meta.ts'
 

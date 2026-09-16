@@ -7,7 +7,7 @@ import { cardIsCurse } from '../cards.ts'
 import { availableTransformRewards, healingCapFor, removeCard, transformCard } from '../acquisition.ts'
 import { isActIVUnlocked } from '../campaign.ts'
 import { currentRoom } from '../map.ts'
-import { queueNewGuardianSockets } from './guardian-gems.ts'
+import { queueNewGuardianSockets } from '../guardian-gems.ts'
 
 type CampfirePlayer = {
   dead?: boolean

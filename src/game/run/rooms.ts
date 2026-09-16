@@ -16,7 +16,7 @@ import {
   victoryIsTerminal,
 } from './rules.ts'
 import { enteringRoom } from './setup.ts'
-import { queueNewGuardianSockets } from './guardian-gems.ts'
+import { queueNewGuardianSockets } from '../guardian-gems.ts'
 import { merchantItemDecks, mirrorItemSupplies } from './supplies.ts'
 import type { CardRewardOffer, RunPhase, RunState } from './types.ts'
 import { healingCapFor, transformCard } from '../acquisition.ts'

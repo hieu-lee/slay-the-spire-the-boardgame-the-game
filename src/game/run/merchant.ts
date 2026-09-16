@@ -6,7 +6,7 @@ import { drawItems } from '../acquisition.ts'
 import { currentQuickSetupStep } from '../meta.ts'
 import { buyFromMerchant, closeMerchant, removeAtMerchant, resolveCourierOffer } from '../noncombat.ts'
 import type { CourierOffer, MerchantPurchase } from '../noncombat.ts'
-import { cardHasGuardianSocket, queueGuardianSocket } from './guardian-gems.ts'
+import { cardHasGuardianSocket, queueGuardianSocket } from '../guardian-gems.ts'
 import { hasPendingRelicAcquisition } from './rules.ts'
 
 export function purchaseAtMerchant(state: RunState, purchase: MerchantPurchase): RunState {

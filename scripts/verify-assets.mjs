@@ -5,10 +5,11 @@
 // Publisher card scans and reference crops remain optional local syncs.
 // Runtime icons, illustrations, and combat cutouts are committed and required
 // by the unconditional inventories below.
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import '../src/game/downfall/slime-boss.ts'
@@ -593,9 +594,20 @@ check('every Downfall enemy asset maps to an official source', () => {
     '-quiet', '-lossless', '-crop', '15', '15', '66', '66', '-resize', '512', '512',
     join(repoRoot, 'public/assets/icons/shiv.png'), '-o', '-',
   ])
-  assert(exactReuse.status === 0 && exactReuse.stdout.equals(
-    readFileSync(join(combatEnemyRoot, 'downfall_shiv.webp')),
-  ), 'Downfall Shiv is not the deterministic lossless conversion of the existing base-game Shiv asset')
+  const temporary = mkdtempSync(join(tmpdir(), 'sts-shiv-'))
+  try {
+    const generated = join(temporary, 'downfall_shiv.webp')
+    writeFileSync(generated, exactReuse.stdout)
+    const decodedGenerated = spawnSync('dwebp', ['-quiet', '-pam', generated, '-o', '-'])
+    const decodedCommitted = spawnSync('dwebp', [
+      '-quiet', '-pam', join(combatEnemyRoot, 'downfall_shiv.webp'), '-o', '-',
+    ])
+    assert(exactReuse.status === 0 && decodedGenerated.status === 0 && decodedCommitted.status === 0 &&
+      decodedGenerated.stdout.equals(decodedCommitted.stdout),
+    'Downfall Shiv pixels are not the lossless conversion of the existing base-game Shiv asset')
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
+  }
 })
 
 check('every enemy resolves to the continuous rig inventory', () => {

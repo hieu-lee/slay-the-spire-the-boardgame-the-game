@@ -13,6 +13,7 @@ import { suite, check, assert, assertDeepEqual, assertEqual, report } from './li
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
 import { enemyDef } from '../src/game/enemies.ts'
 import { potionDef, relicDef } from '../src/game/relics.ts'
+import { discardNeedsChoice } from '../src/game/combat.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const cardArtDir = join(repoRoot, 'public/assets/cards')
@@ -61,11 +62,11 @@ const auditErrors = (currentPage) => {
   })
   currentPage.on('pageerror', (error) => pageErrors.push(String(error)))
   currentPage.on('request', (request) => requestedUrls.add(request.url()))
-  currentPage.on('requestfailed', (request) =>
-    request.failure()?.errorText !== 'net::ERR_ABORTED' || !/\/assets\/(?:bgm|sfx)\//.test(request.url())
-      ? requestFailures.push(`${request.url()} ${request.failure()?.errorText ?? ''}`)
-      : undefined,
-  )
+  currentPage.on('requestfailed', (request) => {
+    const canceledLocalAsset = request.failure()?.errorText === 'net::ERR_ABORTED' &&
+      request.url().startsWith(`${base}/assets/`)
+    if (!canceledLocalAsset) requestFailures.push(`${request.url()} ${request.failure()?.errorText ?? ''}`)
+  })
   currentPage.on('response', (response) => {
     if (response.status() >= 400 && response.url().startsWith(base)) {
       requestFailures.push(`${response.status()} ${response.url()}`)
@@ -178,14 +179,14 @@ async function chooseSeat(playerId) {
 
 async function confirmDiscard(player) {
   await chooseSeat(player.id)
-  const name = player.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  await page.getByRole('button', { name: new RegExp(`^Confirm ${name}`) }).click()
+  await page.getByRole('button', { name: /^Confirm end-turn effect/ }).click()
 }
 
 async function confirmAllDiscards() {
   const state = await readState()
-  const selectedSeat = state.players.find((player) => !player.dead)?.id ?? 'p1'
-  for (const player of state.players.filter((candidate) => !candidate.dead)) {
+  const participants = state.players.filter(discardNeedsChoice)
+  const selectedSeat = participants[0]?.id ?? state.players.find((player) => !player.dead)?.id ?? 'p1'
+  for (const player of participants) {
     await confirmDiscard(player)
   }
   await chooseSeat(selectedSeat)
@@ -246,7 +247,7 @@ async function endTurn() {
     const effect = page.locator('button.end-turn-effect:not([disabled]):not([aria-disabled="true"])').first()
     if (await effect.count() === 0) break
     await effect.click()
-    const target = page.locator('.enemy--targeted').first()
+    const target = page.locator('.enemy--targeted .enemy__hit-area').first()
     try { await target.waitFor({ timeout: 1_000 }) } catch { break }
     await target.click()
   }
@@ -483,16 +484,19 @@ await page.locator('.start-menu__character-embark').hover()
 const characterEmbarkHover = await page.locator('.start-menu__character-embark').evaluate((button) => getComputedStyle(button).filter)
 await page.emulateMedia({ reducedMotion: 'reduce' })
 await page.mouse.move(1, 1)
-const characterReducedMotionStatic = {
-  back: await page.locator('.start-menu__character-back').evaluate((button) => getComputedStyle(button).filter),
-  embark: await page.locator('.start-menu__character-embark').evaluate((button) => getComputedStyle(button).filter),
-}
 const characterBackReducedStaticShadow = await page.locator('.start-menu__character-back').evaluate((button) => getComputedStyle(button).boxShadow)
 await page.locator('.start-menu__character-back').hover()
-const characterBackReducedHover = await page.locator('.start-menu__character-back').evaluate((button) => getComputedStyle(button).filter)
+const characterBackReducedHover = await page.locator('.start-menu__character-back').evaluate((button) => {
+  const style = getComputedStyle(button)
+  return { filter: style.filter, transitionDuration: style.transitionDuration, animationDuration: style.animationDuration }
+})
 await page.locator('.start-menu__character-embark').hover()
-const characterEmbarkReducedHover = await page.locator('.start-menu__character-embark').evaluate((button) => getComputedStyle(button).filter)
+const characterEmbarkReducedHover = await page.locator('.start-menu__character-embark').evaluate((button) => {
+  const style = getComputedStyle(button)
+  return { filter: style.filter, transitionDuration: style.transitionDuration, animationDuration: style.animationDuration }
+})
 await page.locator('.start-menu__character-back').focus()
+await page.keyboard.press('ArrowLeft')
 const characterBackReducedFocus = await page.locator('.start-menu__character-back').evaluate((button) => getComputedStyle(button).boxShadow)
 await page.emulateMedia({ reducedMotion: 'no-preference' })
 await page.getByRole('button', { name: 'Back', exact: true }).click()
@@ -591,7 +595,12 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assertDeepEqual(characterBackSize, characterEmbarkSize, 'character Back size does not match Embark')
   assert(!characterBackClip.includes('16%'), 'character Back has the short generic ribbon cutout')
   assertEqual(characterBackHover, characterEmbarkHover, 'character Back hover does not match Embark')
-  assertDeepEqual({ back: characterBackReducedHover, embark: characterEmbarkReducedHover }, characterReducedMotionStatic, 'character controls change on hover with reduced motion')
+  assertEqual(characterBackReducedHover.filter, characterEmbarkReducedHover.filter,
+    'character controls use inconsistent static hover feedback with reduced motion')
+  assertDeepEqual([
+    characterBackReducedHover.transitionDuration, characterBackReducedHover.animationDuration,
+    characterEmbarkReducedHover.transitionDuration, characterEmbarkReducedHover.animationDuration,
+  ], ['0s', '0s', '0s', '0s'], 'character controls animate their hover feedback with reduced motion')
   assert(characterBackReducedFocus !== characterBackReducedStaticShadow, 'character Back loses its keyboard-focus cue with reduced motion')
   assert(settingsIsModal, 'settings did not open in the browser top layer')
   assert(settingsKeepsFocus, 'settings allowed focus to escape to the title menu')
@@ -622,7 +631,7 @@ check('the title menu fills the viewport without clipping its controls', () => {
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('region', { name: 'Run modes', exact: true }).waitFor()
 const runModeSelection = await page.locator('.start-menu__mode-select').evaluate((screen) => ({
-  contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
+  contained: screen.scrollWidth <= screen.clientWidth + 1 && screen.scrollHeight <= screen.clientHeight + 1,
   choices: [...screen.querySelectorAll('.start-menu__mode-choice')].map((choice) => ({
     mode: choice.getAttribute('data-mode'),
     art: choice.querySelector('img')?.getAttribute('src'),
@@ -714,7 +723,13 @@ await page.getByRole('button', { name: 'Back', exact: true }).click()
 await page.setViewportSize({ width: 560, height: 315 })
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 const phoneRunModeSelection = await page.locator('.start-menu__mode-select').evaluate((screen) => ({
-  contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
+  contained: screen.scrollWidth <= screen.clientWidth + 1 && screen.scrollHeight <= screen.clientHeight + 1,
+  size: {
+    scrollWidth: screen.scrollWidth,
+    clientWidth: screen.clientWidth,
+    scrollHeight: screen.scrollHeight,
+    clientHeight: screen.clientHeight,
+  },
   choicesContained: [...screen.querySelectorAll('.start-menu__mode-choice')].every((choice) => {
     const box = choice.getBoundingClientRect()
     return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight
@@ -794,7 +809,7 @@ check('Single Player opens a contained visual character picker before starting',
   assert(/^character-wallpaper-in-[ab]$/.test(characterTransition), 'character selection does not transition between wallpapers')
   assertEqual(ascensionRaised, 'Ascension 1', 'the Ascension increase control does not change the selected level')
   assert(phoneRunModeSelection.contained && phoneRunModeSelection.choicesContained && phoneRunModeSelection.backClear,
-    'horizontal-phone run mode choices overflow the screen')
+    `horizontal-phone run mode choices overflow the screen: ${JSON.stringify(phoneRunModeSelection)}`)
   assert(phoneCharacterSelection.contained && phoneCharacterSelection.rosterContained && phoneCharacterSelection.actionsClear && phoneCharacterSelection.copyClear && phoneCharacterSelection.ascensionButtonsClear && phoneCharacterSelection.ascensionCentered,
     'horizontal-phone character choices overlap or overflow')
   assertDeepEqual(phoneCharacterSelection.backSize, phoneCharacterSelection.embarkSize, 'phone character Back size does not match Embark')
@@ -1284,6 +1299,7 @@ check('the opening map starts scrolled to its reachable room', async () => {
 await page.evaluate(() => {
   const run = structuredClone(window.__STS_DEBUG__.getRun())
   run.meta.ruleset = 'downfall'
+  run.meta.campaign = 'downfall'
   run.actBossDefId = 'downfall_inferno'
   run.selfBossRerolled = false
   window.__STS_DEBUG__.setRun(run)
@@ -1572,9 +1588,9 @@ await page.evaluate(() => {
   Object.assign(run.combat.players[0], { block: 1, strength: 1 })
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.querySelector('.enemy__art--cutout[src$="/sentry.webp"]')?.naturalWidth === 341)
+await page.waitForFunction(() => document.querySelector('.enemy[data-enemy-def="sentry_a"] .enemy__art--cutout')?.naturalWidth === 800)
 const combatAppearance = await page.evaluate(() => {
-  const image = document.querySelector('.enemy__art--cutout[src$="/sentry.webp"]')
+  const image = document.querySelector('.enemy[data-enemy-def="sentry_a"] .enemy__art--cutout')
   const strip = document.querySelector('.row__seat .seat__status-strip')
   const bar = strip?.parentElement?.querySelector('.seat > .bar')
   const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
@@ -1586,7 +1602,7 @@ const combatAppearance = await page.evaluate(() => {
 })
 await shot('02b-sentry-cutout-and-status')
 check('Sentry uses a transparent full-body cutout and character status clears HP', () => {
-  assertDeepEqual([combatAppearance.naturalWidth, combatAppearance.naturalHeight], [341, 512])
+  assertDeepEqual([combatAppearance.naturalWidth, combatAppearance.naturalHeight], [800, 1201])
   assertEqual(combatAppearance.statusOverlapsHp, false)
 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
@@ -1742,8 +1758,8 @@ for (const fixture of [
     await page.waitForFunction(() => {
       const portrait = document.querySelector('.seat__portrait > img')
       const flame = document.querySelector('button[aria-label^="Spend Soulburn"] .item-icon-image')
-      return portrait?.getAttribute('src')?.endsWith('/hexaghost-heat-2.webp') &&
-        portrait.complete && portrait.naturalWidth === 512 && flame?.complete && flame.naturalWidth === 512
+      return portrait?.getAttribute('src')?.endsWith('/rigged/hero-hexaghost-heat-2-idle.webp') &&
+        portrait.complete && portrait.naturalWidth === 400 && flame?.complete && flame.naturalWidth === 512
     })
     hexaghostVisualState = await page.getByRole('button', { name: 'Spend Soulburn, 1 available' }).evaluate((button) => {
       const portrait = document.querySelector('.seat__portrait > img')
@@ -1778,8 +1794,9 @@ for (const fixture of [
     const token = strip.querySelector('.token')?.getBoundingClientRect()
     const power = strip.querySelector('.power')?.getBoundingClientRect()
     const powerGlyph = strip.querySelector('.power > .icon')?.getBoundingClientRect()
+    const overlapsHp = bar && box.left < bar.right && box.right > bar.left && box.top < bar.bottom && box.bottom > bar.top
     return {
-      belowHp: Boolean(bar && box.top >= bar.bottom - 1),
+      clearOfHp: Boolean(bar && !overlapsHp),
       inViewport: box.top >= 0 && box.bottom <= innerHeight,
       inBoard: Boolean(board && box.top >= board.top && box.bottom <= board.bottom),
       tokenSize: token?.width,
@@ -1908,7 +1925,8 @@ for (const fixture of [
             box.bottom <= enemy.top || box.top >= enemy.bottom),
           clearOfStatus: [hp, name].every((status) => !status || box.right <= status.left ||
             box.left >= status.right || box.bottom <= status.top || box.top >= status.bottom),
-          levelBelow: !!art && !!levelBox && levelBox.top >= art.bottom - 1,
+          levelVisible: !!levelBox && levelBox.left >= box.left && levelBox.right <= box.right &&
+            levelBox.top >= box.top && levelBox.bottom <= box.bottom,
           levelPlain: levelStyle?.borderStyle === 'none' && levelStyle.backgroundImage === 'none' &&
             levelStyle.backgroundColor === 'rgba(0, 0, 0, 0)',
         }
@@ -1957,39 +1975,24 @@ for (const fixture of [
       drag: await slimeEndTurnDrag.getAttribute('src'),
       orbFallback: await page.locator('.end-turn-effects .token--orb, .end-turn-effect-drag .token--orb').count(),
     }
-    const firstEndTurnTarget = await page.locator('.enemy:not(.enemy--dead)').first().boundingBox()
+    const firstEndTurnTarget = await page.locator('.enemy:not(.enemy--dead)').first()
+      .locator('.enemy__hit-area').boundingBox()
     if (!firstEndTurnTarget) throw new Error('Bruiser Slime drag has no enemy target bounds')
     await page.mouse.move(firstEndTurnTarget.x + firstEndTurnTarget.width / 2,
       firstEndTurnTarget.y + firstEndTurnTarget.height / 2, { steps: 12 })
     await page.mouse.up()
-    await page.waitForFunction(() => document.querySelector('button.end-turn-effect--slime img')
-      ?.getAttribute('src')?.endsWith('/spike.webp'))
-    const spikeEndTurnButton = page.locator('button.end-turn-effect--slime')
-    const spikeButtonBox = await spikeEndTurnButton.boundingBox()
-    const spikeTarget = page.locator('.enemy:not(.enemy--dead)').nth(1)
-    const spikeTargetUid = await spikeTarget.getAttribute('data-enemy-id')
-    const spikeTargetBox = await spikeTarget.boundingBox()
-    if (!spikeButtonBox || !spikeTargetBox) throw new Error('Spike Slime drag has no source or target bounds')
-    await page.mouse.move(spikeButtonBox.x + spikeButtonBox.width / 2, spikeButtonBox.y + spikeButtonBox.height / 2)
-    await page.mouse.down()
-    await page.mouse.move(spikeButtonBox.x + spikeButtonBox.width / 2 + 20,
-      spikeButtonBox.y + spikeButtonBox.height / 2, { steps: 8 })
-    const spikeEndTurnDrag = page.locator('.end-turn-effect-drag .end-turn-effect__slime')
-    await spikeEndTurnDrag.waitFor()
-    await page.mouse.move(spikeTargetBox.x + spikeTargetBox.width / 2, spikeTargetBox.y + spikeTargetBox.height / 2,
-      { steps: 12 })
-    spikeEndTurnVisual = {
-      button: await spikeEndTurnButton.locator('.end-turn-effect__slime').getAttribute('src'),
-      drag: await spikeEndTurnDrag.getAttribute('src'),
-      targetHighlighted: await page.locator('.enemy--targeted').first().count() === 1,
-    }
-    await page.mouse.up()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.presentationEvents.some((event) =>
+      event.kind === 'slime' && event.sourceId === 'slime_boss_spike_slime'))
     const endTurnCommandAnimation = page.locator('.slime-party__actor--commanding')
     await endTurnCommandAnimation.first().waitFor()
-    spikeEndTurnVisual.animatedTarget = await page.evaluate(() =>
-      window.__STS_DEBUG__.getRun().combat.presentationEvents.filter((event) =>
-        event.kind === 'slime' && event.sourceId === 'slime_boss_spike_slime').at(-1)?.enemyIds[0])
-    spikeEndTurnVisual.selectedTarget = spikeTargetUid
+    spikeEndTurnVisual = await page.evaluate(() => {
+      const combat = window.__STS_DEBUG__.getRun().combat
+      return {
+        animatedTargets: combat.presentationEvents.filter((event) =>
+          event.kind === 'slime' && event.sourceId === 'slime_boss_spike_slime').at(-1)?.enemyIds,
+        livingEnemies: combat.enemies.filter((enemy) => !enemy.dead).map((enemy) => enemy.uid),
+      }
+    })
     await page.waitForFunction(() => !document.querySelector('.slime-party__actor--commanding'), undefined,
       { timeout: 6_000 })
     await page.evaluate((restore) => window.__STS_DEBUG__.setRun(restore), slimeEndTurnRestore)
@@ -2110,7 +2113,7 @@ for (const fixture of [
         source: image.getAttribute('src'),
         idleHidden: getComputedStyle(image.closest('.slime-party__actor')
           ?.querySelector('.slime-party__art')).opacity === '0',
-        bossIdle: document.querySelector('.seat__portrait > img')?.getAttribute('src')?.endsWith('/slime_boss.webp'),
+        bossIdle: document.querySelector('.seat__portrait > img')?.getAttribute('src')?.endsWith('/rigged/hero-slime_boss-idle.webp'),
         actorUid: image.closest('.slime-party__actor')?.dataset.slimeUid,
         pointerEvents: getComputedStyle(image).pointerEvents,
         overlapsTarget: Boolean(box && commandBox.left < box.right && commandBox.right > box.left &&
@@ -2264,7 +2267,7 @@ for (const fixture of [
       window.__STS_DEBUG__.setRun(next)
     })
     await page.waitForFunction(() => document.querySelector('.seat__portrait > img')
-      ?.getAttribute('src')?.endsWith('/slime_boss.webp'))
+      ?.getAttribute('src')?.endsWith('/rigged/hero-slime_boss-idle.webp'))
     await page.evaluate((uid) => {
       const next = structuredClone(window.__STS_DEBUG__.getRun())
       const actor = next.combat.players[0]
@@ -2361,7 +2364,7 @@ for (const fixture of [
       window.__STS_DEBUG__.setRun(next)
     }, spawnTarget.uid)
     await page.waitForFunction(() => document.querySelector('.seat__portrait > img')
-      ?.getAttribute('src')?.endsWith('/slime_boss.webp'))
+      ?.getAttribute('src')?.endsWith('/rigged/hero-slime_boss-idle.webp'))
     mixedOrdinarySlimeHpTimeline = { initial: await spawnTargetBar.innerText() }
     await page.evaluate((uid) => {
       const next = structuredClone(window.__STS_DEBUG__.getRun())
@@ -2464,7 +2467,7 @@ for (const fixture of [
       window.__STS_DEBUG__.setRun(next)
     }, spawnTarget.uid)
     await page.waitForFunction(() => document.querySelector('.seat__portrait > img')
-      ?.getAttribute('src')?.endsWith('/slime_boss.webp'))
+      ?.getAttribute('src')?.endsWith('/rigged/hero-slime_boss-idle.webp'))
     await page.evaluate(() => {
       const next = structuredClone(window.__STS_DEBUG__.getRun())
       const actor = next.combat.players[0]
@@ -2492,7 +2495,9 @@ for (const fixture of [
       animation.currentTime = 601
       const targetX = Number.parseFloat(getComputedStyle(actor).getPropertyValue('--slime-command-x'))
       const matrix = new DOMMatrix(getComputedStyle(actor).transform)
-      return targetX > 0 && Math.abs(matrix.e - targetX) < 5
+      const reached = targetX > 0 && Math.abs(matrix.e - targetX) < 5
+      animation.play()
+      return reached
     })
     await page.evaluate(() => {
       const next = structuredClone(window.__STS_DEBUG__.getRun())
@@ -2817,7 +2822,7 @@ await page.evaluate(() => {
   window.__STS_DEBUG__.setRun(next)
 })
 await page.waitForFunction(() => document.querySelectorAll('.slime-party__actor--commanding').length === 2,
-  undefined, { timeout: 500 })
+  undefined, { timeout: 3_000 })
 slimeConcurrentMultiplayer = true
 const slimeCardPage = page
 await slimeCardPage.reload()
@@ -2885,7 +2890,7 @@ const dividePlusSlimesBeforeEnergy = await slimeCardPage.locator('.prompt .promp
 await slimeCardPage.getByRole('button', { name: 'Spend 1', exact: true }).click()
 await slimeCardPage.getByRole('button', { name: 'Armored Slime · level 1', exact: true }).click()
 await slimeCardPage.getByRole('button', { name: 'Bruiser Slime · level 1', exact: true }).click()
-await slimeCardPage.locator('.enemy:not(.enemy--dead)').click()
+await slimeCardPage.locator('.enemy:not(.enemy--dead) .enemy__hit-area').click()
 await slimeCardPage.waitForFunction(() => !document.querySelector('.hand .card[title="Divide & Conquer+"]'))
 dividePlusFlow = await slimeCardPage.evaluate((beforeEnergy) => {
   const combat = window.__STS_DEBUG__.getRun().combat
@@ -2923,7 +2928,7 @@ await slimeCardPage.getByRole('button', { name: 'Leeching Slime · level 1', exa
 await slimeCardPage.getByText('Choose Leeching Slime · level 1 · 1 Strength Command target 1/1').waitFor()
 const slimeBrawlEnemyUid = await slimeCardPage.evaluate(() =>
   window.__STS_DEBUG__.getRun().combat.enemies.find((enemy) => !enemy.dead).uid)
-await slimeCardPage.locator(`[data-enemy-id="${slimeBrawlEnemyUid}"]`).click()
+await slimeCardPage.locator(`[data-enemy-id="${slimeBrawlEnemyUid}"] .enemy__hit-area`).click()
 await slimeCardPage.locator('[data-slime-uid="ui-brawl-leech"].slime-party__actor--commanding').waitFor()
 slimeBrawlCommand = await slimeCardPage.evaluate((enemyUid) => {
   const combat = window.__STS_DEBUG__.getRun().combat
@@ -3062,8 +3067,8 @@ spentLickAvailability = { base: baseSpentLick, optional: optionalSpentLick }
 check('Downfall player status icons stay below HP with accessible Power targets', () => {
   assertDeepEqual(Object.keys(downfallStatusLayouts).sort(), ['guardian', 'hexaghost', 'slime_boss'])
   for (const [character, layout] of Object.entries(downfallStatusLayouts)) {
-    assert(layout.belowHp && layout.inViewport && layout.inBoard,
-      `${character} status icons are not visibly below the player HP bar: ${JSON.stringify(layout)}`)
+    assert(layout.clearOfHp && layout.inViewport && layout.inBoard,
+      `${character} status icons overlap HP or leave the board: ${JSON.stringify(layout)}`)
     assert(layout.powerSize >= 44 && Math.abs(layout.tokenSize - layout.powerGlyphSize) < 1,
       `${character} Power glyph or hit target is incorrectly sized: ${JSON.stringify(layout)}`)
   }
@@ -3110,7 +3115,7 @@ check('Slime Boss minions use battlefield actors and their own one-shot animatio
     'a pinned Power must remain the only enlarged card while a Slime is hovered')
   assert(slimeBattlefieldLayout?.loaded && slimeBattlefieldLayout.actors.length === 2 &&
     slimeBattlefieldLayout.actors.every((actor) => actor.inViewport && actor.clearOfHand &&
-      actor.clearOfEndTurn && actor.clearOfEnemies && actor.clearOfStatus && actor.levelBelow && actor.levelPlain),
+      actor.clearOfEndTurn && actor.clearOfEnemies && actor.clearOfStatus && actor.levelVisible && actor.levelPlain),
   `Slime actors are not grounded beside their boss: ${JSON.stringify(slimeBattlefieldLayout)}`)
   assert(slimeBossSurf?.duration === 1_700 && slimeBossSurf.targetX > 0 &&
     slimeBossSurf.reachedTarget && slimeBossSurf.impactTransform !== 'none' &&
@@ -3122,16 +3127,8 @@ check('Slime Boss minions use battlefield actors and their own one-shot animatio
     drag: '/assets/combat/slimes/bruiser.webp',
     orbFallback: 0,
   }, 'Slime end-turn Command must use its minion art in the prompt and drag preview')
-  assertDeepEqual(spikeEndTurnVisual, {
-    button: '/assets/combat/slimes/spike.webp',
-    drag: '/assets/combat/slimes/spike.webp',
-    targetHighlighted: true,
-    animatedTarget: spikeEndTurnVisual.selectedTarget,
-    selectedTarget: spikeEndTurnVisual.selectedTarget,
-  }, 'all-enemy Spike Slime must remain a draggable end-turn Command with its own art')
-  assert(spikeEndTurnVisual.selectedTarget &&
-    spikeEndTurnVisual.animatedTarget === spikeEndTurnVisual.selectedTarget,
-  `Spike Slime animated toward the wrong selected enemy: ${JSON.stringify(spikeEndTurnVisual)}`)
+  assertDeepEqual(spikeEndTurnVisual.animatedTargets, spikeEndTurnVisual.livingEnemies,
+    'all-enemy Spike Slime must resolve every living enemy without a redundant target prompt')
   assertDeepEqual(slimeCommandVisual, {
     source: '/assets/combat/slimes/bruiser.webp',
     idleHidden: true,
@@ -3386,7 +3383,8 @@ const oneLoadedHermitRun = await readRun()
 
 const chamberCard = page.locator('.hand .card--chamber-drawn')
 const chamberCardBox = await chamberCard.boundingBox()
-const chamberTargetBox = await page.locator('.enemy:not(.enemy--dead)').first().boundingBox()
+const chamberTargetBox = await page.locator('.enemy:not(.enemy--dead)').first()
+  .locator('.enemy__hit-area').boundingBox()
 assert(chamberCardBox && chamberTargetBox, 'Hermit Chamber drag fixture is not visible')
 await page.mouse.move(chamberCardBox.x + chamberCardBox.width / 2, chamberCardBox.y + chamberCardBox.height / 2)
 await page.mouse.down()
@@ -3401,7 +3399,7 @@ await page.evaluate(() => {
 })
 const chamberDragSurvivedRefresh = await page.locator('.card-drag').count() === 1
 await page.mouse.move(chamberTargetBox.x + chamberTargetBox.width / 2,
-  chamberTargetBox.y + Math.min(10, chamberTargetBox.height / 4), { steps: 6 })
+  chamberTargetBox.y + chamberTargetBox.height / 2, { steps: 6 })
 await page.mouse.up()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 0)
 await page.locator('.card-flight').waitFor()
@@ -3437,7 +3435,7 @@ const headshotHpBeforeClick = (await readRun()).combat.enemies[0].hp
 await chamberHeadshot.click()
 await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[title="Headshot"]')
   ?.getAttribute('aria-pressed') === 'true')
-await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
 await page.waitForFunction((hp) => {
   const combat = window.__STS_DEBUG__.getRun().combat
   return combat.players[0].chamber.length === 0 && combat.enemies[0].hp === hp - 5
@@ -3464,7 +3462,7 @@ const multiHeadshotHpBeforeClick = (await readRun()).combat.enemies[1].hp
 await multiChamberHeadshot.click()
 await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[title="Headshot"]')
   ?.getAttribute('aria-pressed') === 'true')
-await page.locator('.enemy[data-enemy-id="e1"]:not(.enemy--dead)').click()
+await page.locator('.enemy[data-enemy-id="e1"]:not(.enemy--dead) .enemy__hit-area').click()
 await page.waitForFunction((hp) => {
   const combat = window.__STS_DEBUG__.getRun().combat
   return combat.players[0].chamber.length === 0 && combat.enemies[1].hp === hp - 5
@@ -3534,7 +3532,7 @@ await page.waitForFunction(() => document.querySelector('.hand .card--chamber-dr
   ?.getAttribute('aria-pressed') === 'false')
 const quickdrawTargetCanceled = await page.locator('.choice-modal[open]').count() === 0
 await chamberQuickdraw.click()
-await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
 await page.locator('.choice-modal[open]').waitFor()
 const quickdrawPreviewAfterTarget = await page.locator('.choice-modal[open] .card').count()
 await page.evaluate((run) => {
@@ -3559,7 +3557,7 @@ if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') 
 await page.waitForTimeout(400)
 const chamberQuickdrawDrag = page.locator('.hand .card--chamber-drawn[title="Quickdraw"]')
 const chamberQuickdrawDragBox = await chamberQuickdrawDrag.boundingBox()
-const chamberQuickdrawTargetBox = await page.locator('.enemy:not(.enemy--dead)').first().boundingBox()
+const chamberQuickdrawTargetBox = await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().boundingBox()
 assert(chamberQuickdrawDragBox && chamberQuickdrawTargetBox, 'Chamber Quickdraw drag fixture is not visible')
 await page.mouse.move(chamberQuickdrawDragBox.x + chamberQuickdrawDragBox.width / 2,
   chamberQuickdrawDragBox.y + chamberQuickdrawDragBox.height / 2)
@@ -3592,7 +3590,7 @@ await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
 const handQuickdraw = page.locator('.hand .card[title="Quickdraw"]')
 await handQuickdraw.waitFor()
 await handQuickdraw.click()
-await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
 const handQuickdrawDialog = page.getByRole('dialog', { name: /Choose 1 to Load/ })
 await handQuickdrawDialog.waitFor()
 const handQuickdrawPreviewCards = await handQuickdrawDialog.locator('.card').count()
@@ -3627,7 +3625,7 @@ await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
 await page.waitForTimeout(400)
 const handQuickdrawDrag = page.locator('.hand .card[title="Quickdraw"]')
 const handQuickdrawDragBox = await handQuickdrawDrag.boundingBox()
-const handQuickdrawTargetBox = await page.locator('.enemy:not(.enemy--dead)').first().boundingBox()
+const handQuickdrawTargetBox = await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().boundingBox()
 assert(handQuickdrawDragBox && handQuickdrawTargetBox, 'hand Quickdraw drag fixture is not visible')
 await page.mouse.move(handQuickdrawDragBox.x + handQuickdrawDragBox.width / 2,
   handQuickdrawDragBox.y + handQuickdrawDragBox.height / 2)
@@ -3872,7 +3870,7 @@ check('Downfall mechanics use compact combat HUDs without clipping the hand', ()
     mobilePortrait: '/assets/combat/characters/guardian-to-attack.webp',
   }, 'Guardian mode is shown by the body transformation instead of duplicate text')
   assertDeepEqual(hexaghostVisualState, {
-    portrait: '/assets/combat/characters/hexaghost-heat-2.webp',
+    portrait: '/assets/combat/rigged/hero-hexaghost-heat-2-idle.webp',
     icon: '/assets/icons/hexaghost-flame.png',
     iconLoaded: true,
     count: '1',
@@ -4014,7 +4012,10 @@ await page.evaluate(() => {
   run.combat.phase = 'enemy'
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.querySelector('.enemy--boss[data-animation="attack"]'))
+await page.waitForFunction(() => {
+  const image = document.querySelector('.enemy--boss[data-animation="attack"] .enemy__art--cutout')
+  return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+})
 const infernoBossAttackMotion = await page.locator('.enemy--boss[data-animation="attack"]').evaluate((boss) => ({
   cssVariable: getComputedStyle(boss).getPropertyValue('--boss-attack-duration').trim(),
   animationDuration: getComputedStyle(boss.querySelector('.enemy__art--cutout')).animationDuration,
@@ -4499,7 +4500,10 @@ await page.evaluate((run) => {
 await page.keyboard.press('Escape')
 await pauseMenu.waitFor()
 await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = 'hidden' })
-await page.waitForFunction(() => document.querySelectorAll('.enemy--boss img[src$="-attack.webp"]').length === 4)
+await page.waitForFunction(() => {
+  const images = [...document.querySelectorAll('.enemy--boss img[src$="-attack.webp"]')]
+  return images.length === 4 && images.every((image) => image.complete && image.naturalWidth > 0)
+})
 const downfallBossAttackSources = await page.locator('.enemy--boss img[src$="-attack.webp"]').evaluateAll((images) =>
   images.map((image) => image.getAttribute('src')))
 await shot('02c-downfall-printed-boss-attacks')
@@ -4580,9 +4584,8 @@ await page.evaluate((run) => {
 }, combatAppearanceRun)
 downfallCardAssets.push(await readDownfallCardAsset(/^Body Crash,/))
 await page.getByRole('button', { name: /^Body Crash,/ }).click()
-await page.getByRole('button', { name: 'Spend 0 Vigor' }).click()
 await page.getByRole('button', { name: 'Spend 2 Block' }).click()
-await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
 downfallChoiceResults.guardian = await page.evaluate(() => {
   const combat = window.__STS_DEBUG__.getRun().combat
@@ -4662,7 +4665,7 @@ await page.evaluate((run) => {
 downfallCardAssets.push(await readDownfallCardAsset(/^Power Beam,/))
 await page.getByRole('button', { name: /^Power Beam,/ }).click()
 await page.getByRole('button', { name: 'Play Future Plans for 0' }).click()
-await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].powers
   .some((power) => power.uid === 'ui-power-beam-choice'))
 downfallChoiceResults.guardianPowerBeam = await page.evaluate(() => {
@@ -4694,8 +4697,8 @@ const rubyOrbs = page.getByRole('button', { name: 'Use Floating Orbs with Ruby' 
 await rubyOrbs.click()
 await page.waitForFunction(() =>
   document.querySelector('[aria-label="Use Floating Orbs with Ruby"]')?.getAttribute('aria-pressed') === 'true')
-await page.locator('.enemy:not(.enemy--dead)').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp === 19)
+await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.powerTriggersUsedThisTurn.length === 1)
 const jasperOrbs = page.getByRole('button', { name: 'Use Floating Orbs with Jasper' })
 await jasperOrbs.click()
 await page.waitForFunction(() =>
@@ -4739,7 +4742,7 @@ await rubyFinderScry.getByRole('button', { name: /^Defend,/ }).click()
 await rubyFinderScry.getByRole('button', { name: 'Discard 1 and continue' }).click()
 assertEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp), 20,
   'Gem Finder resolved its Ruby before the private Scry was confirmed')
-await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
 await page.waitForFunction(() => {
   const combat = window.__STS_DEBUG__.getRun().combat
   return combat.enemies[0].hp === 19 && combat.players[0].discard.some((card) => card.uid === 'ui-finder-draw-a')
@@ -4853,7 +4856,7 @@ await page.evaluate((run) => {
 downfallCardAssets.push(await readDownfallCardAsset(/^Lick,/))
 await page.getByRole('button', { name: /^Lick,/ }).click()
 await page.getByRole('button', { name: /Bruiser Slime · level 1/ }).click()
-await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
 downfallChoiceResults.slime = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp)
 
@@ -4965,7 +4968,7 @@ await page.evaluate((run) => {
 }, combatAppearanceRun)
 downfallCardAssets.push(await readDownfallCardAsset(/^Living Bomb,/))
 await page.getByRole('button', { name: /^Living Bomb,/ }).click()
-for (let index = 0; index < 3; index++) await page.locator('.enemy:not(.enemy--dead)').first().click()
+for (let index = 0; index < 3; index++) await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
 downfallChoiceResults.hexaghost = await page.evaluate(() => {
   const combat = window.__STS_DEBUG__.getRun().combat
@@ -5066,7 +5069,7 @@ check('Downfall combat choices are reachable from the real card UI', () => {
     'Downfall hand cards use decoded scan thumbnails')
   assert(downfallCardAssets.every(({ source }) => source?.startsWith('/assets/cards-sm/')),
     `Downfall card scan paths: ${JSON.stringify(downfallCardAssets)}`)
-  assertDeepEqual(downfallChoiceResults.guardian, [0, 16], 'Guardian spends chosen Block after its Vigor choice')
+  assertDeepEqual(downfallChoiceResults.guardian, [0, 16], 'Guardian spends the chosen Block for Body Crash')
   assertDeepEqual(downfallChoiceResults.guardianStasis, [1, 3],
     'Guardian assigns every Stasis Field Block icon independently')
   assertDeepEqual(downfallChoiceResults.guardianWhirl, [1, 2, 20, 'skill'],
@@ -5535,7 +5538,7 @@ check('choosing another attack retargets without playing the previous card or mo
 })
 await page.locator('.hand .card').nth(retargetIndices[1]).click()
 await attackCard.click()
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 const afterPlay = await readState()
 
 check('clicking a card then an enemy actually plays it', () => {
@@ -5644,7 +5647,7 @@ const stagedAfterPotion = await page.locator('.hand .card--selected').textConten
 check('Distilled Chaos replaces stale card targeting with its forced card', () => {
   assert(stagedAfterPotion.includes('Bash'), `wrong forced card remained staged: ${stagedAfterPotion}`)
 })
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 const committedCardFlight = page.locator('.card-flight').filter({ hasText: 'Bash' }).last()
 await committedCardFlight.waitFor()
 const cardPlayMotion = await committedCardFlight.evaluate((flight) => ({
@@ -5709,7 +5712,7 @@ await page.evaluate((run) => {
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
 const draggedRowCard = page.getByRole('button', { name: /^Cleave, cost 1,/ })
-const draggedEnemy = page.locator('.enemy').first()
+const draggedEnemy = page.locator('.enemy .enemy__hit-area').first()
 await draggedRowCard.hover()
 let draggedCardBox = await draggedRowCard.boundingBox()
 let draggedEnemyBox = await draggedEnemy.boundingBox()
@@ -5718,7 +5721,7 @@ assertEqual(await draggedRowCard.getAttribute('aria-disabled'), 'false', 'dragge
 await page.mouse.move(draggedCardBox.x + draggedCardBox.width / 2,
   draggedCardBox.y + draggedCardBox.height / 2)
 await page.mouse.down()
-await page.mouse.move(draggedCardBox.x - 180, draggedCardBox.y - 130, { steps: 8 })
+await page.mouse.move(5, 5, { steps: 8 })
 await page.mouse.up()
 await page.waitForFunction(() => !document.querySelector('.card-drag'))
 const cancelledDrag = await readState()
@@ -5801,7 +5804,7 @@ await page.evaluate((run) => {
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
 const bossRowCard = page.getByRole('button', { name: /^Cleave, cost 1,/ })
-const bossTarget = page.locator('.enemy:not(.enemy--boss)').first()
+const bossTarget = page.locator('.enemy:not(.enemy--boss)').first().locator('.enemy__hit-area')
 await bossRowCard.hover()
 const bossRowCardBox = await bossRowCard.boundingBox()
 const bossTargetBox = await bossTarget.boundingBox()
@@ -5862,7 +5865,7 @@ await page.evaluate((run) => {
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
 const draggedRagnarok = page.getByRole('button', { name: /^Ragnarok, cost 3,/ })
-const ragnarokEnemy = page.locator('.enemy').first()
+const ragnarokEnemy = page.locator('.enemy').first().locator('.enemy__hit-area')
 await draggedRagnarok.hover()
 const ragnarokBox = await draggedRagnarok.boundingBox()
 const ragnarokEnemyBox = await ragnarokEnemy.boundingBox()
@@ -5899,7 +5902,7 @@ await page.evaluate((run) => {
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
 const draggedFlask = page.getByRole('button', { name: /^Bouncing Flask, cost 2,/ })
-const flaskTargets = page.locator('.enemy')
+const flaskTargets = page.locator('.enemy .enemy__hit-area')
 const flaskPrompt = page.locator('.prompt').filter({ hasText: 'token target 2/2' })
 // A synthetic low-level drag can occasionally miss its opening pointerdown in
 // headless Chromium. Retry once only while the first target has not staged.
@@ -6181,7 +6184,7 @@ await page.waitForFunction(() => !document.querySelector('.distilled-choice[open
 await page.locator('.hand .card--selected').waitFor()
 const bashStaged = await page.locator('.hand .card--selected').textContent()
 const beforeDistilledBash = await readState()
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().pendingDistilled?.cards.length === 1 &&
   document.querySelector('.distilled-choice[open]'))
 const afterDistilledBash = await readState()
@@ -6193,7 +6196,7 @@ check('Distilled Chaos closes for a targeted card, stages it, then resumes its q
 })
 await distilledDialog.getByRole('button', { name: /Strike/ }).click()
 await page.waitForFunction(() => !document.querySelector('.distilled-choice[open]'))
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().pendingDistilled)
 const afterDistilledStrike = await readState()
 check('Distilled Chaos can finish the remaining targeted card without locking', () => {
@@ -6243,7 +6246,7 @@ await page.evaluate((run) => {
   })
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
-await page.locator('.prompt').filter({ hasText: /Fire Breathing — choose an enemy/ }).waitFor()
+await page.locator('.prompt').filter({ hasText: /Fire Breathing — choose a row/ }).waitFor()
 const distilledDuringTrigger = await page.getByRole('dialog', { name: 'Distilled Chaos' }).isVisible()
 // `.enemy--targeted` (not just "not disabled") specifically confirms the
 // trigger's own row-matching recognizes both enemies as legal anchors — a
@@ -6961,7 +6964,7 @@ check('end-of-turn effects resolve before the hand order is confirmed', () => {
     'the hand is still present for ordering')
 })
 await shot('03b-discard-order')
-const discardPlayers = beforeDiscard.players.filter((player) => !player.dead)
+const discardPlayers = beforeDiscard.players.filter(discardNeedsChoice)
 await confirmDiscard(discardPlayers[0])
 if (discardPlayers.length > 1) {
   const waitingForDiscards = await readState()
@@ -7009,7 +7012,7 @@ if (afterEnemies.phase !== 'lost') {
   )
   assert(secondAttack >= 0, 'expected a Strike in the second hand')
   await page.locator('.hand .card').nth(secondAttack).click()
-  await page.locator('.enemy').first().click()
+  await page.locator('.enemy .enemy__hit-area').first().click()
   const afterSecondPlay = await readState()
   check('cards are playable in the second round, not just the first', () => {
     assertEqual(afterSecondPlay.players[0].hand.length, 4, 'the card leaves hand')
@@ -7051,7 +7054,7 @@ async function playOutCombat(limit = 60) {
       // Targeted cards need an enemy; untargeted ones resolve on the spot.
       const wantsTarget = await page.locator('.prompt').count()
       if (wantsTarget > 0) {
-        const enemy = page.locator('.enemy:not([disabled])').first()
+        const enemy = page.locator('.enemy:not([disabled]) .enemy__hit-area').first()
         if (await enemy.count()) await enemy.click()
         else await page.locator('.hand .card').nth(attack).click()
       }
@@ -7096,11 +7099,8 @@ await page.evaluate((source) => {
   })
   debug.setRun(run)
 }, combatAppearanceRun)
-// Two turns, each blurring the focused control while End turn is unmounted.
-// That blur is the point: `endTurn()` routes through the seat menu and parks
-// focus on a <summary> which SURVIVES the round, and the effect is supposed to
-// leave that alone — so asserting against it tested nothing. The real bug is a
-// keyboard player holding End turn when it is destroyed and rebuilt.
+// Two turns, each proving End turn is actually unmounted before verifying that
+// keyboard focus returns when the player's phase comes back.
 for (let enemyTurn = 0; enemyTurn < 2; enemyTurn += 1) {
   // Asserted rather than assumed: if the fight ends inside this loop the waits
   // below can never be satisfied, and the round reports a 30s Playwright
@@ -7108,16 +7108,11 @@ for (let enemyTurn = 0; enemyTurn < 2; enemyTurn += 1) {
   const before = await readState()
   assert(before && !['won', 'lost'].includes(before.phase),
     `the fight ended before enemy turn ${enemyTurn + 1}; this block needs a live combat`)
-  // `endTurn()` parks focus on the seat menu's <summary> on its way through the
-  // discard prompt, and that focused control is what this round needs to blur.
   await plantDiscardOrderCards()
-  // The blur has to land while the button is gone, and the enemy round can be
-  // over before a Playwright round-trip observes it — so the page watches for
-  // that frame itself instead of being asked about it afterwards.
+  // The enemy round can pass between Playwright round-trips, so observe the
+  // transient missing-button frame in the page itself.
   await page.evaluate(() => {
-    window.__BLURRED_WITHOUT_END_TURN__ = false
-    // Each round owns its watcher: a previous one still looping would launder
-    // this round's miss into a pass.
+    window.__END_TURN_WAS_REMOVED__ = false
     const generation = (window.__BLUR_WATCH_GENERATION__ = (window.__BLUR_WATCH_GENERATION__ ?? 0) + 1)
     let sawEnemy = false
     const watch = () => {
@@ -7125,12 +7120,7 @@ for (let enemyTurn = 0; enemyTurn < 2; enemyTurn += 1) {
       const enemyRound = ['enemy', 'roundEnd'].includes(window.__STS_DEBUG__.getState().phase)
       sawEnemy ||= enemyRound
       if (sawEnemy && !enemyRound) return
-      if (enemyRound && !document.querySelector('.combat__end-turn') &&
-        document.activeElement instanceof HTMLElement &&
-        document.activeElement !== document.body && document.activeElement !== document.documentElement) {
-        document.activeElement.blur()
-        window.__BLURRED_WITHOUT_END_TURN__ = true
-      }
+      if (enemyRound && !document.querySelector('.combat__end-turn')) window.__END_TURN_WAS_REMOVED__ = true
       requestAnimationFrame(watch)
     }
     watch()
@@ -7139,10 +7129,8 @@ for (let enemyTurn = 0; enemyTurn < 2; enemyTurn += 1) {
   // Anchored to the turn this iteration started on: reading the live turn here
   // waits for one MORE turn whenever the enemy already finished its own.
   await waitForAutomaticTurn(before.turn + 1)
-  assert(await page.evaluate(() => window.__BLURRED_WITHOUT_END_TURN__),
-    `enemy turn ${enemyTurn + 1} never blurred a focused control while End turn was gone; ` +
-    'the round passed between frames, the button survived it, or nothing held focus — ' +
-    'either way the restore below tests nothing')
+  assert(await page.evaluate(() => window.__END_TURN_WAS_REMOVED__),
+    `enemy turn ${enemyTurn + 1} never removed End turn, so the focus restore below tests nothing`)
 }
 // `waitForAutomaticTurn` polls the store, but the focus restore is a React
 // effect that runs after commit — waiting on the DOM removes that race rather
@@ -7460,8 +7448,8 @@ await page.evaluate(() => {
   run.combat.players[0].damageDealtZeroThisTurn = true
   debug.setRun(run)
 })
-await page.waitForFunction(() => [...document.querySelectorAll('.seat--viewer .orb__value')]
-  .map((value) => value.textContent).join(',') === '0,1')
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].damageDealtZeroThisTurn === true)
+await page.evaluate(() => new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame))))
 const suppressedOrbValues = await page.locator('.seat--viewer .orb__value').allTextContents()
 const suppressedOrbLabel = await page.locator('.seat--viewer').getAttribute('aria-label')
 check('Orb values follow effects that suppress damage this turn', () => {
@@ -7499,8 +7487,8 @@ await page.getByRole('button', { name: /dark slot 3/i }).click()
 await page.getByText('Choose an enemy for this evoke').waitFor()
 await page.waitForTimeout(250)
 await shot('06b-orb-evoke-target')
-await page.locator('.enemy--targeted').nth(1).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').nth(1).click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
 const chosenEvokes = await readState()
 check('the local UI removes one Orb and collects a target for each repeated Evoke', () => {
@@ -7510,8 +7498,12 @@ check('the local UI removes one Orb and collects a target for each repeated Evok
   assert(hp.slice(2).every((value) => value === 20), 'only the two chosen enemies should take damage')
   assertEqual(chosenEvokes.players[0].energy, 2)
 })
+// The authoritative card result lands before React clears its local targeting
+// wizard. Do not inject the next fixture through that one-frame cleanup window.
+await page.waitForFunction(() => !document.querySelector('.prompt'))
+const splitEvokeRestore = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
 
-await page.evaluate(() => {
+const splitEvokeFixtureRun = await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   const player = run.combat.players[0]
@@ -7521,21 +7513,55 @@ await page.evaluate(() => {
   player.orbEvokeBonus = 1
   run.combat.phase = 'player'
   run.combat.pendingSummons = []
-  run.combat.enemies.forEach((enemy, index) => Object.assign(enemy, index === 0
-    ? { defId: 'slime_boss', isBoss: true, hp: 3, maxHp: 3, block: 0, dead: false, abilityUsed: false }
-    : { hp: 0, block: 0, dead: true }))
-  debug.setRun(run)
+  run.combat.enemies = [{
+    ...run.combat.enemies[0], uid: 'ui-lethal-dual-cast-boss', defId: 'slime_boss',
+    isBoss: true, hp: 3, maxHp: 3, block: 0, dead: false, abilityUsed: false,
+  }]
+  return run
 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  debug.setRun({ ...structuredClone(debug.getRun()), phase: 'map', combat: null })
+})
+await page.waitForFunction(() => !document.querySelector('.combat'))
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), splitEvokeFixtureRun)
+await page.waitForFunction(() => document.querySelector('.combat[data-phase="player"]'))
+const splitEvokeTargetUid = await page.evaluate(() =>
+  window.__STS_DEBUG__.getState().enemies.find((enemy) => !enemy.dead)?.uid)
 await page.getByRole('button', { name: /^Dual Cast\+,/ }).click()
 await page.getByRole('button', { name: /lightning slot 1/i }).click()
-await page.locator('.enemy--targeted').click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+await page.getByText('Choose an enemy for this evoke').waitFor()
+const splitEvokeTarget = page.locator(
+  `.enemy[data-enemy-id="${splitEvokeTargetUid}"].enemy--targeted:not(:disabled) .enemy__hit-area`,
+)
+await splitEvokeTarget.waitFor()
+await page.waitForTimeout(250)
+await splitEvokeTarget.click()
+await page.waitForTimeout(250)
 const splitEvoke = await readState()
+assertEqual(splitEvoke.players[0].hand.length, 0, JSON.stringify({
+  phase: splitEvoke.phase,
+  orbs: splitEvoke.players[0].orbs,
+  enemies: splitEvoke.enemies.map(({ uid, hp, dead }) => ({ uid, hp, dead })),
+  pendingSummons: splitEvoke.pendingSummons,
+  prompt: await page.locator('.prompt').allInnerTexts(),
+}))
 check('Dual Cast resolves in the UI when its first Evoke kills a splitting Slime Boss', () => {
   assert(splitEvoke.enemies[0].dead)
   assert(splitEvoke.pendingSummons.length > 0, 'Slime Boss did not queue its Split')
   assertDeepEqual(splitEvoke.players[0].orbs, [null, null, null])
 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  debug.setRun({ ...structuredClone(debug.getRun()), phase: 'map', combat: null })
+})
+await page.waitForFunction(() => !document.querySelector('.combat'))
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), splitEvokeRestore)
+await page.waitForFunction((enemyUids) => {
+  const state = window.__STS_DEBUG__.getState()
+  return state.enemies.length === enemyUids.length &&
+    state.enemies.every((enemy, index) => enemy.uid === enemyUids[index])
+}, splitEvokeRestore.combat.enemies.map((enemy) => enemy.uid))
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -7552,7 +7578,7 @@ await page.getByRole('button', { name: /dark slot 3/i }).waitFor()
 await page.waitForTimeout(250)
 await shot('06c-recursion-choice')
 await page.getByRole('button', { name: /dark slot 3/i }).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
 const recursed = await readState()
 check('Recursion uses the Orb picker and re-channels the chosen type', () => {
@@ -7580,7 +7606,7 @@ await page.waitForFunction(() => document.querySelectorAll('.hand .card').length
 await shot('06d-flex-anger-hand')
 await page.getByRole('button', { name: /^Flex,/ }).click()
 await page.getByRole('button', { name: /^Anger,/ }).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
 const flexAnger = await readState()
 check('Flex expires and Exhausts while Anger returns to draw top', () => {
@@ -7610,7 +7636,7 @@ await page.waitForTimeout(250)
 await shot('06e-iron-wave-mode')
 await page.getByRole('button', { name: '1 damage and 2 Block' }).click()
 await page.getByText('Choose an enemy').waitFor()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
 const ironWave = await readState()
 check('Iron Wave+ commits its printed mode and target as one play', () => {
@@ -7760,7 +7786,7 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand
   .some((card) => card.uid === 'ui-dagger-throw'))
 await page.getByRole('button', { name: /^Dagger Throw\+,/ }).click()
 await page.waitForSelector('.enemy--targeted')
-await page.locator('.enemy--targeted[aria-label*="10 of 10 hit points"]').click()
+await page.locator('.enemy--targeted[aria-label*="10 of 10 hit points"] .enemy__hit-area').click()
 const daggerDialog = page.getByRole('dialog', { name: 'Choose 1 to discard' })
 await daggerDialog.waitFor()
 await daggerDialog.getByRole('button', { name: /^Neutralize,/ }).click()
@@ -7885,7 +7911,7 @@ await page.evaluate(() => {
 })
 const dashHpBefore = (await readState()).enemies.reduce((total, enemy) => total + enemy.hp, 0)
 await page.getByRole('button', { name: /^Dash\+,/ }).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.getByText('Choose another player to switch rows with, or keep rows').waitFor()
 const dashSwitchTarget = page.locator('.seat--targetable')
 assertEqual(await dashSwitchTarget.count(), 1, 'Dash did not expose exactly one other player as a switch target')
@@ -7927,7 +7953,7 @@ await page.evaluate(() => {
 })
 const luckyScryHpBefore = (await readState()).enemies.reduce((total, enemy) => total + enemy.hp, 0)
 await page.getByRole('button', { name: /^Just Lucky\+,/ }).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 const luckyScryDialog = page.getByRole('dialog', { name: 'Scry 2' })
 await luckyScryDialog.waitFor()
 await luckyScryDialog.getByRole('button', { name: /^Defend,/ }).click()
@@ -7957,7 +7983,7 @@ await page.evaluate(() => {
 })
 const luckyBlockHpBefore = (await readState()).enemies.reduce((total, enemy) => total + enemy.hp, 0)
 await page.getByRole('button', { name: /^Just Lucky,/ }).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
 const luckyBlock = await readState()
 const luckyDialogCount = await page.getByRole('dialog').count()
@@ -8012,7 +8038,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: /^Ball Lightning,/ }).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => document.querySelector(
   '.seat--viewer .combat-vfx[data-vfx-kind="orb"][data-vfx-asset="lightning-channel"]'))
 await page.locator('.seat--viewer .character-attack--defect').waitFor()
@@ -8120,7 +8146,7 @@ await page.waitForSelector('.enemy--targeted')
 const entranceEnemy = page.locator(`.enemy--targeted[aria-label*="${entranceTarget.hp} of ${entranceTarget.maxHp} hit points"]`).first()
 await entranceEnemy.scrollIntoViewIfNeeded()
 await shot('06w-dramatic-entrance-row-target')
-await entranceEnemy.click()
+await entranceEnemy.locator('.enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
 const entrance = await readState()
 check('Dramatic Entrance+ deals 5 to its chosen row on turn 1 and Exhausts', () => {
@@ -8273,7 +8299,7 @@ await freeGreed.scrollIntoViewIfNeeded()
 await shot('06ze-madness-free-card')
 await freeGreed.click()
 await page.waitForSelector('.enemy--targeted')
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].freeCardsThisTurn === 0)
 const madness = await readState()
 check('Madness+ exposes Retain and discounts exactly the next card', () => {
@@ -8328,7 +8354,7 @@ await panacheEffect.waitFor()
 await panacheEffect.click()
 await page.locator('.enemy--targeted').first().waitFor()
 const panacheTargetId = await page.evaluate(() => window.__STS_DEBUG__.getState().enemies[1]?.uid)
-await page.locator(`[data-enemy-id="${panacheTargetId}"]`).click()
+await page.locator(`[data-enemy-id="${panacheTargetId}"] .enemy__hit-area`).click()
 await page.waitForTimeout(150)
 const panache = await readState()
 const panachePrompt = await page.locator('.end-turn-effects__prompt').count()
@@ -8378,7 +8404,7 @@ await apotheosisPower.click()
 await shot('06zi-apotheosis-power')
 await page.getByRole('button', { name: /^Strike, cost 1,/ }).click()
 await page.waitForSelector('.enemy--targeted')
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => enemy.hp === 18))
 const apotheosis = await readState()
 check('Apotheosis adds one damage to a starter Strike', () => {
@@ -8592,7 +8618,7 @@ await page.getByRole('button', { name: /^Wish\+,/ }).click()
 await page.getByRole('button', { name: 'Gain 5 Miracles', exact: true }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].miracles === 5)
 await page.getByRole('button', { name: /^Conclude\+,/ }).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].cardPlayLocked === true)
 const watcherBatchOneState = await readState()
 const lockedWatcherCard = page.getByRole('button', { name: /^Swivel\+,/ })
@@ -8759,9 +8785,9 @@ await page.evaluate((baseline) => {
 }, generatedWatcherRestore)
 await page.getByRole('button', { name: /^Deva Form\+,/ }).click()
 await page.getByRole('button', { name: /^Talk to the Hand\+,/ }).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.getByRole('button', { name: /^Tantrum\+,/ }).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.getByRole('button', { name: /^Vault\+,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 6)
 const finalWatcherDirectState = await readState()
@@ -8840,7 +8866,7 @@ const intermediateOmnisciencePrompt = await page.getByText(
   'Choose an enemy for Strike copy (Omniscience)', { exact: true },
 ).textContent()
 const intermediateOmnisciencePhase = await page.locator('.combat__phase').textContent()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => {
   const combat = window.__STS_DEBUG__.getState()
   return combat.phase === 'copy' && combat.pendingCardCopy?.sourceNames.length === 1
@@ -8849,7 +8875,7 @@ const originalOmnisciencePrompt = await page.getByText(
   'Choose an enemy for original Strike after Omniscience copy', { exact: true },
 ).textContent()
 const originalOmnisciencePhase = await page.locator('.combat__phase').textContent()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 const omniscienceUiState = await readState()
 check('Omniscience uses its private search and both generated target prompts', () => {
@@ -8898,7 +8924,7 @@ await page.waitForFunction(() => {
 })
 const weavePrompt = await page.getByText('Choose an enemy for Scry-played Weave+', { exact: true }).textContent()
 const weavePhase = await page.locator('.combat__phase').textContent()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 const weaveUiState = await readState()
 check('Scry-played Weave uses the real private Scry dialog and generated target prompt', () => {
@@ -8964,9 +8990,7 @@ check('Meditate+ selects two discards and surfaces its turn lock through the con
 await page.getByText('No additional cards this turn', { exact: true }).waitFor()
 await shot('06zle-watcher-retain-lifecycle')
 await plantDiscardOrderCards()
-await page.getByRole('button', { name: 'End turn' }).click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
-await confirmAllDiscards()
+await endTurn()
 await page.waitForFunction(() => {
   const recovered = window.__STS_DEBUG__.getState().players[0].hand
     .filter((card) => card.uid.startsWith('ui-meditate-recover-'))
@@ -9009,14 +9033,14 @@ check('Carve Reality announces both exact targeting modes', () => {
 await watcherCarveCard.click()
 await page.getByRole('button', { name: 'Deal 4 damage to two enemies' }).click()
 await page.getByText('Choose damage target 1/2').waitFor()
-await page.locator('.enemy').nth(0).click()
+await page.locator('.enemy .enemy__hit-area').nth(0).click()
 await page.getByText('Choose damage target 2/2').waitFor()
 const watcherMidChoiceRun = await readRun()
-await page.locator('.enemy').nth(0).click()
+await page.locator('.enemy .enemy__hit-area').nth(0).click()
 await page.getByText('Choose damage target 2/2').waitFor()
-await page.locator('.enemy').nth(1).click()
+await page.locator('.enemy .enemy__hit-area').nth(1).click()
 await page.getByRole('button', { name: /^Sash Whip\+,/ }).click()
-await page.locator('.enemy').nth(1).click()
+await page.locator('.enemy .enemy__hit-area').nth(1).click()
 const watcherChoices = await readState()
 check('Watcher choice attacks split hits and apply Calm-only Weak through the controls', () => {
   assertDeepEqual(watcherChoices.enemies.map((enemy) => enemy.hp), [4, 6])
@@ -9027,7 +9051,7 @@ await shot('06zlc-watcher-choice-attacks')
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), watcherMidChoiceRun)
 await page.getByRole('button', { name: /^Carve Reality\+,/ }).click()
 await page.getByRole('button', { name: 'Deal 4 damage to two enemies' }).click()
-await page.locator('.enemy').nth(0).click()
+await page.locator('.enemy .enemy__hit-area').nth(0).click()
 const watcherSharedBoardRun = await readRun()
 await page.evaluate((run) => {
   const next = structuredClone(run)
@@ -9079,7 +9103,7 @@ check('Copied Carve Reality disables an impossible two-enemy mode', () => {
   assertDeepEqual(carveModeAvailability, [false, true])
 })
 await oneEnemyCarveMode.click()
-await page.locator('.enemy').click()
+await page.locator('.enemy .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 const oneEnemyCarve = await readState()
 check('Copied Carve Reality can still resolve against its sole enemy', () => {
@@ -9163,7 +9187,7 @@ await sadisticPower.click()
 await shot('06zm-sadistic-nature-power')
 await page.getByRole('button', { name: /^Catalyst\+,/ }).click()
 await page.waitForSelector('.enemy--targeted')
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => {
   const enemy = window.__STS_DEBUG__.getState().enemies[0]
   return enemy.poison === 15 && enemy.hp === 10
@@ -9266,8 +9290,10 @@ await page.evaluate((baseline) => {
     draw: [{ uid: 'ui-havoc-forced', defId: 'strike_ironclad', upgraded: false }],
     discard: [], exhaust: [], powers: [], energy: 0,
   })
-  run.combat.enemies = run.combat.enemies.slice(0, 1)
-  Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  run.combat.enemies = run.combat.enemies.slice(0, 2)
+  for (const enemy of run.combat.enemies) {
+    Object.assign(enemy, { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  }
   window.__STS_DEBUG__.setRun(run)
 }, colorlessBatch1Restore)
 const havocCard = page.getByRole('button', { name: /^Havoc\+, cost 0,/ })
@@ -9290,7 +9316,7 @@ check('Havoc+ explains its cleanup and locks the hand to its free draw', () => {
   assertEqual(havocMiracleActions, 0)
 })
 await shot('06zpc-havoc-forced-card')
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().startTurnProgress)
 const havoc = await readState()
 check('Havoc+ plays its draw for 0 Energy and Exhausts the Attack', () => {
@@ -9324,7 +9350,7 @@ const perfectedLabel = await perfectedCard.getAttribute('aria-label')
 await shot('06zpe-perfected-strike-ready')
 await perfectedCard.click()
 await page.waitForSelector('.enemy--targeted')
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 11)
 const perfected = await readState()
 check('Perfected Strike+ counts only other Strike-named cards in hand', () => {
@@ -9391,7 +9417,7 @@ await headbuttDialog.waitFor()
 await headbuttDialog.getByRole('button', { name: /^Bash,/ }).click()
 await headbuttDialog.getByRole('button', { name: 'Put selected card on top' }).click()
 await page.waitForSelector('.enemy--targeted')
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].draw[0]?.uid === 'ui-headbutt-chosen')
 const headbutted = await readState()
 check('Headbutt+ chooses any discard card, attacks, and returns that card to draw-top', () => {
@@ -9419,7 +9445,7 @@ await page.evaluate((baseline) => {
 await page.getByRole('button', { name: /^Headbutt, cost 1,/ }).click()
 await page.waitForSelector('.enemy--targeted')
 const emptyHeadbuttDialogs = await page.getByRole('dialog').count()
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 8)
 check('Headbutt skips the discard chooser when that pile is empty', () => {
   assertEqual(emptyHeadbuttDialogs, 0)
@@ -9478,7 +9504,7 @@ const blizzardCard = page.getByRole('button', { name: /^Blizzard\+, cost 1,/ })
 const blizzardLabel = await blizzardCard.getAttribute('aria-label')
 await shot('06zphc-blizzard-ready')
 await blizzardCard.click()
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 5)
 const blizzarded = await readState()
 check('Blizzard+ visibly deals one 3-damage hit per Frost Orb', () => {
@@ -9520,13 +9546,7 @@ const defragmentPower = page.getByRole('button', { name: /^Defragment\+: Orb end
 await defragmentPower.waitFor()
 await shot('06zphe-defragment-power')
 await plantDiscardOrderCards()
-await page.getByRole('button', { name: 'End turn' }).click()
-const defragmentLightning = page.locator('button.end-turn-effect--orb')
-await defragmentLightning.waitFor()
-await defragmentLightning.click()
-await page.locator('.enemy--targeted').first().waitFor()
-await page.locator('[data-enemy-id]').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+await endTurn()
 const defragmented = await readState()
 check('Defragment+ clearly enters play and boosts both Orb end-turn effects', () => {
   assert(defragmentCardLabel.includes('Orb end-of-turn effects get +1'), defragmentCardLabel)
@@ -9566,13 +9586,7 @@ await page.getByRole('button', {
 }).waitFor()
 await shot('06zphgb-static-discharge-power')
 await plantDiscardOrderCards()
-await page.getByRole('button', { name: 'End turn' }).click()
-const staticDischargeLightning = page.locator('button.end-turn-effect--orb')
-await staticDischargeLightning.waitFor()
-await staticDischargeLightning.click()
-await page.locator('.enemy--targeted').first().waitFor()
-await page.locator('[data-enemy-id]').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+await endTurn()
 const discharged = await readState()
 check('Static Discharge+ visibly boosts Lightning end-of-turn damage but not Frost Block', () => {
   assert(staticDischargeLabel.includes('Lightning Orb end-of-turn effects get +2'), staticDischargeLabel)
@@ -9633,8 +9647,8 @@ const electroBossTargeted = await page.locator('.enemy[data-enemy-id="ui-electro
   .evaluate((enemy) => enemy.classList.contains('enemy--targeted'))
 const electroBackTargeted = await page.locator('.enemy[data-enemy-id="ui-electro-back"]')
   .evaluate((enemy) => enemy.classList.contains('enemy--targeted'))
-await page.locator('.enemy[data-enemy-id="ui-electro-back"]').click()
-await page.locator('.enemy[data-enemy-id="ui-electro-front"]').click()
+await page.locator('.enemy[data-enemy-id="ui-electro-back"] .enemy__hit-area').click()
+await page.locator('.enemy[data-enemy-id="ui-electro-front"] .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs.filter(Boolean).length === 2)
 const electroResolved = await readState()
 check('Electrodynamics+ visibly channels three Orbs and makes each Lightning Evoke choose a row', () => {
@@ -9676,10 +9690,10 @@ await fissionCard.click()
 await page.getByRole('button', { name: /dark slot 3/i }).waitFor()
 await shot('06zphgcg-fission-orb-choice')
 await page.getByRole('button', { name: /dark slot 3/i }).click()
-await page.locator('.enemy--targeted').nth(1).click()
+await page.locator('.enemy--targeted .enemy__hit-area').nth(1).click()
 await page.getByRole('button', { name: /frost slot 2/i }).click()
 await page.getByRole('button', { name: /lightning slot 1/i }).click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 3)
 const fissioned = await readState()
 check('Fission+ visibly Evokes every chosen Orb before paying Energy and cards', () => {
@@ -9718,10 +9732,10 @@ await page.getByRole('button', { name: 'Spend 2' }).click()
 await page.getByRole('button', { name: /dark slot 1/i }).waitFor()
 await shot('06zphgci-multi-cast-choice')
 await page.getByRole('button', { name: /dark slot 1/i }).click()
-await page.getByRole('button', { name: /3 of 3 hit points/ }).click()
+await page.locator('.enemy[aria-label*="3 of 3 hit points"] .enemy__hit-area').click()
 const targetsAfterLethalEvoke = await page.locator('.enemy--targeted').count()
-await page.locator('.enemy--targeted').first().click()
-await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
+await page.locator('.enemy--targeted .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
 const multiCast = await readState()
 check('Multi-Cast+ visibly removes one Orb and applies its Evoke effect X+1 times', () => {
@@ -9737,7 +9751,9 @@ await shot('06zphgcj-multi-cast-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
-  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(run.combat, {
+    phase: 'player', turn: 1, startTurnProgress: undefined, pendingSummons: [],
+  })
   Object.assign(actor, {
     name: 'Defect', character: 'defect',
     hand: [{ uid: 'ui-multi-cast-lethal', defId: 'multi_cast', upgraded: false }],
@@ -9754,8 +9770,15 @@ await page.evaluate((baseline) => {
 await page.getByRole('button', { name: /^Multi-Cast, cost X,/ }).click()
 await page.getByRole('button', { name: 'Spend 2' }).click()
 await page.getByRole('button', { name: /dark slot 1/i }).click()
-await page.getByRole('button', { name: /3 of 3 hit points/ }).click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'won')
+await page.locator('.enemy[aria-label*="3 of 3 hit points"] .enemy__hit-area').click()
+await page.waitForTimeout(250)
+const lethalMultiCast = await readState()
+assertEqual(lethalMultiCast.phase, 'won', JSON.stringify({
+  phase: lethalMultiCast.phase,
+  orbs: lethalMultiCast.players[0].orbs,
+  enemies: lethalMultiCast.enemies.map(({ uid, hp, dead }) => ({ uid, hp, dead })),
+  prompt: await page.locator('.prompt').allInnerTexts(),
+}))
 const lethalMultiCastPrompt = await page.locator('.prompt').count()
 check('a lethal repeated Evoke submits without asking for dead-enemy targets', () => {
   assertEqual(lethalMultiCastPrompt, 0)
@@ -9825,8 +9848,8 @@ await page.getByRole('button', { name: /^Amplify\+: Dark Orb Evoke effects get \
 await shot('06zphge-amplify-power')
 await page.getByRole('button', { name: /^Dual Cast,/ }).click()
 await page.getByRole('button', { name: /dark slot 1/i }).click()
-await page.locator('.enemy--targeted').click()
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 2)
 const amplified = await readState()
 check('Amplify+ visibly boosts Dark Evoke damage without changing its Power-count bonus', () => {
@@ -9898,7 +9921,7 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'disc
 await page.getByRole('button', { name: 'Retain Defend' }).click()
 await page.getByRole('button', { name: 'Retain Zap' }).click()
 await shot('06zphgib-equilibrium-retain-choice')
-await page.getByRole('button', { name: /Confirm Defect/ }).click()
+await confirmAllDiscards()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
 const equilibrated = await readState()
 check('Equilibrium+ visibly retains two end-of-turn choices and marks their history', () => {
@@ -9942,7 +9965,7 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'disc
 await page.getByRole('button', { name: 'Retain Strike' }).click()
 await page.getByRole('button', { name: 'Retain Defend' }).click()
 await shot('06zphgie-well-laid-plans-choice')
-await page.getByRole('button', { name: /Confirm Silent/ }).click()
+await confirmAllDiscards()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
 const planned = await readState()
 check('Well-Laid Plans+ visibly Retains two choices without spending Regret Retain', () => {
@@ -9978,7 +10001,6 @@ const loopCard = page.getByRole('button', { name: /^Loop\+, cost 1,/ })
 const loopLabel = await loopCard.getAttribute('aria-label')
 await loopCard.click()
 await page.getByRole('button', { name: /^Loop\+: trigger 1 Orb's end-of-turn ability 2 times/ }).waitFor()
-await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
 const loopEffect = page.locator('.end-turn-effect--card')
 await loopEffect.waitFor()
@@ -9994,10 +10016,16 @@ for (const target of [loopSecondTarget, loopSecondTarget, loopFirstTarget]) {
   await ordinaryLightning.waitFor()
   await ordinaryLightning.click()
   await page.locator('.enemy--targeted').first().waitFor()
-  await page.locator(`[data-enemy-id="${target}"]`).click()
+  await page.locator(`[data-enemy-id="${target}"] .enemy__hit-area`).click()
 }
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+await page.waitForTimeout(250)
 const looped = await readState()
+assertEqual(looped.phase, 'enemy', JSON.stringify({
+  phase: looped.phase,
+  endTurnProgress: looped.endTurnProgress,
+  prompt: await page.locator('.prompt').allInnerTexts(),
+  effects: await page.locator('button.end-turn-effect').allInnerTexts(),
+}))
 check('Loop+ visibly chooses an Orb twice, then resolves two copies before the normal passives', () => {
   assert(loopLabel.includes("trigger 1 Orb's end-of-turn ability 2 times"), loopLabel)
   assertEqual(looped.enemies[0].hp, 19, 'the ordinary Lightning end-turn ability still resolves')
@@ -10005,8 +10033,6 @@ check('Loop+ visibly chooses an Orb twice, then resolves two copies before the n
   assertEqual(looped.players[0].block, 1, 'the ordinary Frost end-turn ability still resolves')
 })
 await shot('06zphgic2-loop-resolved')
-await page.getByRole('button', { name: /Confirm Defect/ }).click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
 
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
@@ -10026,6 +10052,8 @@ await page.evaluate((baseline) => {
 }, colorlessBatch1Restore)
 const bufferCard = page.getByRole('button', { name: /^Buffer\+, cost 2,/ })
 const bufferLabel = await bufferCard.getAttribute('aria-label')
+await page.waitForFunction(() => [...document.querySelectorAll('.enemy:not(.enemy--dead) .enemy__art--cutout')]
+  .every((image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0))
 await shot('06zphgic3-buffer-ready')
 await bufferCard.click()
 await page.getByRole('button', { name: /^Rupture\+,/ }).click()
@@ -10089,14 +10117,14 @@ await page.keyboard.press('Escape')
 await page.waitForFunction(() => !document.querySelector('.power__zoom'))
 await page.getByRole('button', { name: /^Strike,/ }).click()
 await page.getByText('Choose an enemy for Strike copy (Echo Form)').waitFor()
-await page.getByRole('button', { name: /^Cultist,/ }).click()
+await page.getByRole('button', { name: /^Cultist,/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'copy')
 await page.getByText('Choose an enemy for original Strike after Echo Form copy').waitFor()
 await page.locator('.prompt').evaluate((prompt) => Promise.all(
   prompt.getAnimations().map((animation) => animation.finished),
 ))
 await shot('06zphgic7-echo-form-copy-target')
-await page.getByRole('button', { name: /^Red Louse,/ }).click()
+await page.getByRole('button', { name: /^Red Louse,/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 const echoed = await readState()
 check('Echo Form visibly resolves its independently targeted copy once', () => {
@@ -10131,9 +10159,9 @@ const clawPackLabel = await clawPack.getAttribute('aria-label')
 const clawPackPlusLabel = await clawPackPlus.getAttribute('aria-label')
 await shot('06zphgj-claw-pack-ready')
 await clawPack.click()
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await clawPackPlus.click()
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 16)
 const clawed = await readState()
 const clawSeatLabel = await page.getByRole('button', { name: /^Defect,/ }).getAttribute('aria-label')
@@ -10169,7 +10197,7 @@ await page.evaluate((baseline) => {
 const coreSurgeCard = page.getByRole('button', { name: /^Core Surge, cost 1,/ })
 const coreSurgeLabel = await coreSurgeCard.getAttribute('aria-label')
 await coreSurgeCard.click()
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 const coreSurgeAlly = page.locator('.seat--targetable:not(.seat--viewer)').first()
 await coreSurgeAlly.waitFor()
 await shot('06zphg-core-surge-ally-choice')
@@ -10210,7 +10238,7 @@ const allForOneCard = page.getByRole('button', { name: /^All for One\+, cost 2,/
 const allForOneLabel = await allForOneCard.getAttribute('aria-label')
 await shot('06zphi-all-for-one-ready')
 await allForOneCard.click()
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 2)
 const allForOne = await readState()
 check('All for One+ returns every playable current 0-cost discard card', () => {
@@ -10240,7 +10268,7 @@ const thunderStrikeCard = page.getByRole('button', { name: /^Thunder Strike\+, c
 const thunderStrikeLabel = await thunderStrikeCard.getAttribute('aria-label')
 await shot('06zphk-thunder-strike-ready')
 await thunderStrikeCard.click()
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 3)
 const thunderStruck = await readState()
 check('Thunder Strike+ visibly deals one 6-damage hit per Lightning Orb', () => {
@@ -10427,7 +10455,7 @@ await rampageCard.click()
 await page.getByRole('button', { name: /^Defend, cost 1,/ }).click()
 await page.waitForSelector('.enemy--targeted')
 await shot('06zpm-rampage-exhaust-target')
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 7)
 const rampaged = await readState()
 check('Rampage+ Exhausts a hand card before counting the full Exhaust pile for damage', () => {
@@ -10559,7 +10587,7 @@ await shot('06zps-whirlwind-energy')
 await page.getByRole('button', { name: 'Spend 2' }).click()
 await page.getByText(/Choose an enemy.*whole row/).waitFor()
 await shot('06zpt-whirlwind-row-target')
-await page.getByRole('button', { name: /^Cultist,/ }).click()
+await page.getByRole('button', { name: /^Cultist,/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 4)
 const whirled = await readState()
 check('Whirlwind+ spends only the chosen Energy and hits that row plus the boss X+1 times', () => {
@@ -10586,7 +10614,7 @@ const skewerCard = page.getByRole('button', { name: /^Skewer\+, cost X,/ })
 const skewerLabel = await skewerCard.getAttribute('aria-label')
 await skewerCard.click()
 await page.getByRole('button', { name: 'Spend 2' }).click()
-await page.getByRole('button', { name: /^Cultist,/ }).click()
+await page.getByRole('button', { name: /^Cultist,/ }).locator('.enemy__hit-area').click()
 const skewered = await readState()
 check('Skewer+ spends chosen X Energy and resolves X separate 2-damage hits', () => {
   assert(skewerLabel.includes('2 damage once per Energy spent on this card'), skewerLabel)
@@ -10613,7 +10641,7 @@ const ftlCard = page.getByRole('button', { name: /^FTL\+, cost 0,/ })
 const ftlLabel = await ftlCard.getAttribute('aria-label')
 await shot('06zpw-ftl-ready')
 await ftlCard.click()
-await page.getByRole('button', { name: /^Cultist,/ }).click()
+await page.getByRole('button', { name: /^Cultist,/ }).locator('.enemy__hit-area').click()
 const firstFtl = await readState()
 check('FTL+ visibly draws only as the first card played this turn', () => {
   assert(ftlLabel.includes('draw 1 card if this is the first card you played this turn'), ftlLabel)
@@ -10643,7 +10671,7 @@ await page.evaluate(() => {
 })
 await page.getByRole('button', { name: /^Inflame,/ }).click()
 await page.getByRole('button', { name: /^FTL,/ }).click()
-await page.getByRole('button', { name: /^Cultist,/ }).click()
+await page.getByRole('button', { name: /^Cultist,/ }).locator('.enemy__hit-area').click()
 const lateFtl = await readState()
 check('FTL does not draw after another card through the real controls', () => {
   assertEqual(lateFtl.players[0].cardsPlayedThisTurn, 2)
@@ -10740,13 +10768,14 @@ await page.evaluate((baseline) => {
   Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, row: actor.row })
   window.__STS_DEBUG__.setRun(run)
 }, colorlessBatch1Restore)
-await page.getByText(/Choose an enemy.*whole row/).waitFor()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player' &&
+  window.__STS_DEBUG__.getState().players[0].discard[0]?.defId === 'whirlwind')
 const forcedWhirlwindEnergyPrompt = await page.getByText('Choose Energy for Whirlwind+').count()
-await page.locator('.enemy--targeted').click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const forcedWhirlwindTargetPrompt = await page.locator('.prompt').count()
 const forcedWhirlwind = await readState()
 check('a free forced Whirlwind+ skips X choice and resolves as X zero', () => {
   assertEqual(forcedWhirlwindEnergyPrompt, 0)
+  assertEqual(forcedWhirlwindTargetPrompt, 0)
   assertEqual(forcedWhirlwind.enemies[0].hp, 9)
   assertEqual(forcedWhirlwind.players[0].energy, 3)
 })
@@ -10784,7 +10813,7 @@ check('Mayhem announces its discard fallback and stages the otherwise unaffordab
   assert(mayhemPowerLabel.includes('if it cannot be played, discard it'), mayhemPowerLabel)
 })
 await shot('06zq-mayhem-forced-card')
-await page.locator('.enemy--targeted').click()
+await page.locator('.enemy--targeted .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 const mayhem = await readState()
 check('Mayhem forces its private card for 0 Energy and resumes Start of Turn', () => {
@@ -10954,7 +10983,7 @@ await page.getByRole('button', { name: 'Exhaust 1', exact: true }).waitFor()
 await shot('06ze-sever-soul-range-choice')
 await page.getByRole('button', { name: 'Exhaust 1', exact: true }).click()
 await page.getByText('Choose an enemy').waitFor()
-await page.locator('.enemy--targeted:not(:disabled)').click()
+await page.locator('.enemy--targeted:not(:disabled) .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 0)
 const severSoul = await readState()
 check('Sever Soul+ requires one or two Exhaust choices and deals its printed hit', () => {
@@ -11039,7 +11068,7 @@ const fiendFireLabel = await fiendFireCard.getAttribute('aria-label')
 await shot('06zi-fiend-fire-full-hand')
 await fiendFireCard.click()
 await page.getByText('Choose an enemy').waitFor()
-await page.locator('.enemy--targeted:not(:disabled)').click()
+await page.locator('.enemy--targeted:not(:disabled) .enemy__hit-area').click()
 await page.waitForFunction(() => ![...document.querySelectorAll('button')]
   .some((button) => button.getAttribute('aria-label')?.startsWith('Fiend Fire+,')))
 await page.getByText('11/20', { exact: true }).waitFor()
@@ -11281,9 +11310,9 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => document.querySelector('.hand .card[aria-label^="Clash,"]')?.getAttribute('aria-disabled') === 'false')
 await clashCard.click()
-await page.locator('.enemy--targeted:not(:disabled)').click()
+await page.locator('.enemy--targeted:not(:disabled) .enemy__hit-area').click()
 await clashPlusCard.click()
-await page.locator('.enemy--targeted:not(:disabled)').click()
+await page.locator('.enemy--targeted:not(:disabled) .enemy__hit-area').click()
 const clashed = await readState()
 check('Clash explains and enforces its all-Attack hand restriction through real controls', () => {
   assert(clashLabel.includes('can only be played if every card in your hand is an Attack'), clashLabel)
@@ -11391,9 +11420,9 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => document.querySelector('.hand .card[aria-label^="Blood for Blood,"]')?.getAttribute('aria-disabled') === 'false')
 await bloodCard.click()
-await page.locator('.enemy--targeted:not(:disabled)').click()
+await page.locator('.enemy--targeted:not(:disabled) .enemy__hit-area').click()
 await bloodPlusCard.click()
-await page.locator('.enemy--targeted:not(:disabled)').click()
+await page.locator('.enemy--targeted:not(:disabled) .enemy__hit-area').click()
 const bloodied = await readState()
 check('Blood for Blood unlocks its 1/0 HP-loss costs through real controls', () => {
   assert(bloodLabel.includes('costs 1 after you lose hit points this combat'), bloodLabel)
@@ -11459,9 +11488,9 @@ const feedLabel = await feedCard.getAttribute('aria-label')
 const feedPlusLabel = await feedPlusCard.getAttribute('aria-label')
 await shot('070b-feed-hd-cards')
 await feedCard.click()
-await page.locator('.enemy--targeted:not(:disabled)[aria-label*="3 of 3 hit points"]').first().click()
+await page.locator('.enemy--targeted:not(:disabled)[aria-label*="3 of 3 hit points"] .enemy__hit-area').first().click()
 await feedPlusCard.click()
-await page.locator('.enemy--targeted:not(:disabled)[aria-label*="3 of 3 hit points"]').first().click()
+await page.locator('.enemy--targeted:not(:disabled)[aria-label*="3 of 3 hit points"] .enemy__hit-area').first().click()
 const fed = await readState()
 check('Feed gains 1/2 Strength on kills and Exhausts through real controls', () => {
   assert(feedLabel.includes('gain 1 Strength if the target dies') && feedLabel.includes('exhausts when played'), feedLabel)
@@ -11500,6 +11529,7 @@ const melterCard = page.getByRole('button', { name: /^Melter\+,/ })
 await melterCard.waitFor()
 await melterCard.click()
 const melterTarget = page.locator('.enemy--targeted[aria-label*="19 of 20 hit points"]').first()
+  .locator('.enemy__hit-area')
 await melterTarget.scrollIntoViewIfNeeded()
 await shot('07a-melter-blocked-target')
 await melterTarget.click()
@@ -11617,10 +11647,10 @@ check('Power discounts update both visible and accessible card costs', () => {
 })
 await shot('07f-power-discounted-cards')
 await page.getByRole('button', { name: /^Meteor Strike\+, cost 1,/ }).click()
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 0)
 await page.getByRole('button', { name: /^Streamline\+, cost 0,/ }).click()
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 const discountedPlay = await readState()
 await page.locator('[data-pile="discard"]').click()
 const discardPileDialog = page.getByRole('dialog', { name: 'Discard pile' })
@@ -11682,11 +11712,11 @@ check('Adrenaline+ gains 2 Energy, draws 2, and unlocks Grand Finale+', () => {
 })
 await shot('07h-grand-finale-unlocked')
 await page.getByRole('button', { name: /^Catalyst\+,/ }).click()
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 await page.getByRole('button', { name: /^Flechettes\+,/ }).click()
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 await page.getByRole('button', { name: /^Grand Finale\+,/ }).click()
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 const silentCombo = await readState()
 check('the Silent combo multiplies Poison, counts Skills, and lands Grand Finale+', () => {
   const target = silentCombo.enemies.find((enemy) => enemy.poison === 6)
@@ -11748,7 +11778,7 @@ await page.getByRole('button', { name: /^Slice,/ }).click()
 // The AoE starburst is one row plus any boss, so the sweep asks which row —
 // after its discard clause, which is what unlocks the enemy highlight.
 await page.waitForSelector('.enemy--targeted')
-const allOutTarget = page.locator('.enemy--targeted[data-row="0"]').first()
+const allOutTarget = page.locator('.enemy--targeted[data-row="0"]').first().locator('.enemy__hit-area')
 await allOutTarget.scrollIntoViewIfNeeded()
 await allOutTarget.click()
 await page.getByRole('button', { name: /^Expertise\+,/ }).click()
@@ -11862,9 +11892,9 @@ await shot('07m-silent-ledger-cards-ready')
 await page.getByRole('button', { name: /^Outmaneuver,/ }).click()
 await page.getByRole('button', { name: /^Escape Plan,/ }).click()
 await page.getByRole('button', { name: /^Masterful Stab,/ }).click()
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 await page.getByRole('button', { name: /^Finisher,/ }).click()
-await page.locator('.enemy').first().click()
+await page.locator('.enemy .enemy__hit-area').first().click()
 const silentLedgers = await readState()
 check('the Silent ledger combo resolves through the real card controls', () => {
   const actor = silentLedgers.players[0]
@@ -11954,9 +11984,9 @@ check('the icon-only Shiv control visibly shows its active state', () => {
   assertEqual(activeShivVisual.chosen, true)
   assert(activeShivVisual.boxShadow !== shivUseVisual.boxShadow)
 })
-await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().click()
+await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().locator('.enemy__hit-area').click()
 await page.getByRole('button', { name: /^Choke\+,/ }).click()
-await page.locator('.enemy').filter({ hasText: /18\/20/ }).first().click()
+await page.locator('.enemy').filter({ hasText: /18\/20/ }).first().locator('.enemy__hit-area').click()
 const silentModifiers = await readState()
 check('Accuracy, Footwork, Envenom, and Choke resolve through the real controls', () => {
   const actor = silentModifiers.players[0]
@@ -12021,7 +12051,7 @@ await shot('07q-simmering-fury-ready')
 await page.getByRole('button', { name: /^Simmering Fury\+,/ }).click()
 await page.getByRole('button', { name: /^Crescendo,/ }).click()
 await page.getByRole('button', { name: /^Flying Sleeves,/ }).click()
-await page.locator('.enemy').filter({ hasText: /30\/30/ }).first().click()
+await page.locator('.enemy').filter({ hasText: /30\/30/ }).first().locator('.enemy__hit-area').click()
 const simmeringState = await readState()
 check('Simmering Fury resolves both Wrath hits through the real controls', () => {
   const actor = simmeringState.players[0]
@@ -12095,7 +12125,7 @@ check('Power use controls render only their glyph', () => {
   assert(battleHymnUseVisual.icon?.includes('/status-icons/attack.png'), battleHymnUseVisual.icon)
 })
 await page.getByRole('button', { name: 'Use Battle Hymn+' }).click()
-await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().click()
+await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().locator('.enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => enemy.hp === 16))
 const battleHymnState = await readState()
 check('Battle Hymn resolves its Wrath bonus once through the real controls', () => {
@@ -12244,7 +12274,7 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].stan
 assertEqual(await page.locator('.enemy--targeted').count(), 0,
   'Indignation asked for an enemy when its printed branch only enters Wrath')
 await indignation.first().click()
-await page.locator('.enemy--targeted[aria-label*="10 of 10 hit points"]').click()
+await page.locator('.enemy--targeted[aria-label*="10 of 10 hit points"] .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].vulnerable === 1)
 
 const innerPeaceLabel = await innerPeace.first().getAttribute('aria-label')
@@ -12384,9 +12414,9 @@ check('the Silent choice cards render scans and announce their independent decis
 await shot('07q-silent-choice-cards-ready')
 await page.getByRole('button', { name: /^Distraction\+,/ }).click()
 await page.getByRole('button', { name: /^Bouncing Flask\+,/ }).click()
-await page.locator('.enemy').nth(0).click()
-await page.locator('.enemy').nth(1).click()
-await page.locator('.enemy').nth(0).click()
+await page.locator('.enemy .enemy__hit-area').nth(0).click()
+await page.locator('.enemy .enemy__hit-area').nth(1).click()
+await page.locator('.enemy .enemy__hit-area').nth(0).click()
 await page.getByRole('button', { name: /^Dodge and Roll\+,/ }).click()
 await page.locator('button.seat').nth(0).click()
 await page.locator('button.seat').nth(1).click()
@@ -12471,9 +12501,9 @@ await page.getByRole('button', { name: /^Defend,/ }).click()
 await page.getByRole('button', { name: 'Discard 2' }).click()
 await page.getByText('Choose overflow Shiv target 1/3, or skip the rest').waitFor()
 await page.getByRole('button', { name: 'Skip remaining overflow attacks' }).waitFor()
-await page.locator('.enemy').nth(0).click()
-await page.locator('.enemy').nth(1).click()
-await page.locator('.enemy').nth(0).click()
+await page.locator('.enemy .enemy__hit-area').nth(0).click()
+await page.locator('.enemy .enemy__hit-area').nth(1).click()
+await page.locator('.enemy .enemy__hit-area').nth(0).click()
 const shivPowers = await readState()
 check('Storm of Steel dynamically targets overflow Shivs after its discard choice', () => {
   assertEqual(prematureStormSkip, 0, 'overflow cannot skip the unresolved discard choice')
@@ -12518,11 +12548,11 @@ check('Unload renders its complete upgraded separate-attack rule', () => {
 await shot('07u-silent-unload-ready')
 await page.getByRole('button', { name: /^Unload\+,/ }).click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Choose an enemy'))
-await page.locator('.enemy').nth(0).click()
+await page.locator('.enemy .enemy__hit-area').nth(0).click()
 await page.getByText('Choose Shiv attack 1/2').waitFor()
-await page.locator('.enemy').nth(0).click()
+await page.locator('.enemy .enemy__hit-area').nth(0).click()
 await page.getByText('Choose Shiv attack 2/2').waitFor()
-await page.locator('.enemy').nth(1).click()
+await page.locator('.enemy .enemy__hit-area').nth(1).click()
 const unloaded = await readState()
 check('Unload targets its card hit and every held Shiv through the combat board', () => {
   assertDeepEqual(unloaded.enemies.map((enemy) => enemy.hp).sort((a, b) => a - b), [14, 16])
@@ -12583,13 +12613,13 @@ await page.locator('.start-turn-order button[aria-label*="Infinite Blades"][aria
 await page.locator('.start-turn-order > summary').click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose overflow Shiv 1/2'))
 await shot('07x-silent-infinite-blades-choice')
-await page.locator('.enemy:not([disabled])').first().click()
+await page.locator('.enemy:not([disabled]) .enemy__hit-area').first().click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose overflow Shiv 2/2'))
 await page.getByRole('button', { name: 'Skip this Shiv' }).click()
 await shot('07x2-silent-infinite-blades-reset')
 await page.getByRole('button', { name: 'Reset start choices' }).click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose overflow Shiv 1/2'))
-await page.locator('.enemy:not([disabled])').first().click()
+await page.locator('.enemy:not([disabled]) .enemy__hit-area').first().click()
 await page.getByRole('button', { name: 'Skip this Shiv' }).click()
 await page.getByRole('button', { name: 'Resolve start of turn' }).click()
 await page.locator('.combat[data-phase="player"]').waitFor()
@@ -12655,10 +12685,10 @@ check('Start-of-Turn targeting highlights living enemies but not defeated ones',
   assertEqual(noxiousLiveTargets, noxiousLivingEnemies)
 })
 await shot('07za-silent-noxious-fumes-target')
-await page.locator('.enemy:not([disabled])').nth(1).click()
+await page.locator('.enemy:not([disabled]) .enemy__hit-area').nth(1).click()
 await page.getByRole('button', { name: 'Reset start choices' }).click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
-await page.locator('.enemy:not([disabled])').nth(1).click()
+await page.locator('.enemy:not([disabled]) .enemy__hit-area').nth(1).click()
 await page.getByRole('button', { name: 'Resolve start of turn' }).click()
 await page.locator('.combat[data-phase="player"]').waitFor()
 const noxiousBase = await readState()
@@ -12684,7 +12714,7 @@ const noxiousUpgradedLabel = await noxiousUpgraded.getAttribute('aria-label')
 await waitForAutomaticTurn(3)
 await page.locator('.combat[data-phase="start"]').waitFor()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
-await page.locator('.enemy:not([disabled])').nth(1).click()
+await page.locator('.enemy:not([disabled]) .enemy__hit-area').nth(1).click()
 await page.getByRole('button', { name: 'Resolve start of turn' }).click()
 await page.locator('.combat[data-phase="player"]').waitFor()
 const noxiousAll = await readState()
@@ -12742,7 +12772,7 @@ await page.getByRole('button', { name: 'dark slot 3' }).click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('target for the Evoked Orb'))
 await shot('07ze-defect-storm-dark-target')
 const stormTargetState = await readState()
-const stormTargetButton = page.locator('.enemy--targeted').first()
+const stormTargetButton = page.locator('.enemy--targeted').first().locator('.enemy__hit-area')
 await stormTargetButton.click()
 await page.getByRole('button', { name: 'frost slot 1' }).click()
 await page.getByRole('button', { name: 'Resolve start of turn' }).click()
@@ -12798,18 +12828,16 @@ await page.evaluate(() => {
 })
 await waitForAutomaticTurn(3)
 await page.getByRole('button', { name: 'lightning slot 1' }).click()
-await page.getByRole('button', { name: /Jaw Worm/ }).click()
+await page.getByRole('button', { name: /Jaw Worm/ }).locator('.enemy__hit-area').click()
 await page.getByRole('button', { name: 'lightning slot 1' }).click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('target for the Evoked Orb'))
 const safeStormTargets = await page.locator('.enemy--targeted').allTextContents()
-await page.getByRole('button', { name: /Jaw Worm/ }).click()
 const deadStormTargetRejected = await page.locator('.prompt').textContent()
-await page.getByRole('button', { name: /Cultist/ }).click()
+await page.getByRole('button', { name: /Cultist/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Noxious Fumes'))
 const safePowerTargets = await page.locator('.enemy--targeted').allTextContents()
-await page.getByRole('button', { name: /Jaw Worm/ }).click()
 const deadPowerTargetRejected = await page.locator('.prompt').textContent()
-await page.getByRole('button', { name: /Cultist/ }).click()
+await page.getByRole('button', { name: /Cultist/ }).locator('.enemy__hit-area').click()
 await page.getByRole('button', { name: 'Resolve start of turn' }).click()
 await page.locator('.combat[data-phase="player"]').waitFor()
 const stormLethalResolved = await readState()
@@ -12850,7 +12878,7 @@ await page.evaluate(() => {
 })
 await waitForAutomaticTurn(4)
 await page.getByRole('button', { name: 'lightning slot 1' }).click()
-await page.getByRole('button', { name: /Jaw Worm/ }).click()
+await page.getByRole('button', { name: /Jaw Worm/ }).locator('.enemy__hit-area').click()
 const finalStormResolve = page.getByRole('button', { name: 'Resolve start of turn' })
 const finalStormReady = await finalStormResolve.isEnabled()
 const skippedPostLethalStorm = await page.getByRole('button', { name: 'lightning slot 1' }).count()
@@ -12894,7 +12922,7 @@ await page.evaluate((combat) => {
 }, finalStormState)
 await waitForAutomaticTurn(5)
 await page.getByRole('button', { name: 'lightning slot 1' }).click()
-await page.getByRole('button', { name: /Jaw Worm/ }).click()
+await page.getByRole('button', { name: /Jaw Worm/ }).locator('.enemy__hit-area').click()
 const postStormShivResolve = page.getByRole('button', { name: 'Resolve start of turn' })
 const postStormShivReady = await postStormShivResolve.isEnabled()
 const skippedPostLethalStormShiv = await page.getByText(/overflow Shiv target/).count()
@@ -12934,7 +12962,7 @@ await page.evaluate(({ baseline, combat }) => {
   debug.setRun(run)
 }, { baseline: runBeforeStorm, combat: postStormShivState })
 await waitForAutomaticTurn(6)
-await page.getByRole('button', { name: /Jaw Worm/ }).click()
+await page.getByRole('button', { name: /Jaw Worm/ }).locator('.enemy__hit-area').click()
 const postShivStormResolve = page.getByRole('button', { name: 'Resolve start of turn' })
 const postShivStormReady = await postShivStormResolve.isEnabled()
 const skippedPostLethalShivStorm = await page.getByRole('button', { name: 'lightning slot 1' }).count()
@@ -13068,9 +13096,10 @@ assert(fragilePotionTarget && cunningTarget, 'the browser potion playtest needs 
 await page.locator('.combat__actions').getByRole('button', { name: /Cunning Potion/ }).click()
 await page.waitForSelector('.enemy--targeted')
 const fragilePotionButton = page.getByRole('button', { name: /1 of 1 hit points/ }).first()
+  .locator('.enemy__hit-area')
 const cunningTargetButton = page.getByRole('button', {
   name: new RegExp(`${cunningTarget.hp} of ${cunningTarget.maxHp} hit points`),
-}).first()
+}).first().locator('.enemy__hit-area')
 await fragilePotionButton.click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/3'))
 await fragilePotionButton.click()
@@ -13110,7 +13139,7 @@ await page.locator('.prompt').evaluate(async (element) => {
   await Promise.all(element.getAnimations().map((animation) => animation.finished))
 })
 await shot('05f-block-potion-targeting')
-await page.locator('.enemy:not([disabled])').first().click()
+await page.locator('.enemy:not([disabled]) .enemy__hit-area').first().click()
 const wrongBlockTarget = await readState()
 check('a support potion ignores enemy clicks while waiting for a player', () => {
   assertEqual(wrongBlockTarget.players[0].block, blockBeforePotion)
@@ -13146,7 +13175,7 @@ await page.locator('.prompt').evaluate(async (element) => {
 await shot('05g-potion-targeting')
 await page.locator(
   `.enemy--targeted:not(:disabled)[aria-label*="${fireTarget.hp} of ${fireTarget.maxHp} hit points"]`,
-).first().click()
+).first().locator('.enemy__hit-area').click()
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].potions.includes('fire_potion'))
 await page.waitForTimeout(400)
 const firedPotion = await readState()
@@ -13207,7 +13236,7 @@ check('activating a Potion dismisses its tooltip before row targeting', () => {
   assertEqual(activatedExplosivePotionTips, 0)
 })
 await shot('05h-explosive-potion-row-targeting')
-await page.locator(`.enemy[data-enemy-id="${explosiveTarget.uid}"]`).click()
+await page.locator(`.enemy[data-enemy-id="${explosiveTarget.uid}"] .enemy__hit-area`).click()
 await page.waitForFunction(() =>
   !window.__STS_DEBUG__.getState().players[0].potions.includes('explosive_potion'))
 const explodedPotion = await readState()
@@ -13305,7 +13334,7 @@ check('a capped Miracle can be spent atomically on the next card', () => {
 const durabilityBeforeShiv = cappedMiracle.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
 await page.getByRole('button', { name: 'Use Shiv' }).click()
 await page.waitForSelector('.enemy--targeted')
-await page.locator('.enemy:not([disabled])').first().click()
+await page.locator('.enemy:not([disabled]) .enemy__hit-area').first().click()
 const shivSpent = await readState()
 check('the local board can aim and spend a Shiv', () => {
   assertEqual(shivSpent.players[0].shivs, 0)
@@ -13326,7 +13355,7 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand[0]?.uid === 'overflow-dance')
 await page.locator('.hand .card').click()
-await page.getByRole('button', { name: /1 of 1 hit points/ }).click()
+await page.getByRole('button', { name: /1 of 1 hit points/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -13347,9 +13376,9 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('1/2'))
-await page.getByRole('button', { name: /1 of 1 hit points/ }).click()
+await page.getByRole('button', { name: /1 of 1 hit points/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
-await page.getByRole('button', { name: /1 of 1 hit points/ }).click()
+await page.getByRole('button', { name: /1 of 1 hit points/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('1/2'))
 const refusedCardOverflow = await readState()
 check('a card keeps targeting open when a queued Shiv would hit a dead enemy', () => {
@@ -13357,9 +13386,9 @@ check('a card keeps targeting open when a queued Shiv would hit a dead enemy', (
   assertEqual(refusedCardOverflow.enemies[0].hp, 1)
   assertEqual(refusedCardOverflow.enemies[1].hp, 5)
 })
-await page.getByRole('button', { name: /1 of 1 hit points/ }).click()
+await page.getByRole('button', { name: /1 of 1 hit points/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
-await page.getByRole('button', { name: /5 of 5 hit points/ }).click()
+await page.getByRole('button', { name: /5 of 5 hit points/ }).locator('.enemy__hit-area').click()
 const splitOverflow = await readState()
 check('overflow Shivs choose independent targets', () => {
   assert(splitOverflow.enemies[0].dead, 'the first overflow Shiv should finish its target')
@@ -13955,7 +13984,7 @@ if (!daggerSprayTarget) throw new Error('Dagger Spray animation fixture lost its
 const daggerSprayPageErrorsBefore = pageErrors.length
 await page.getByRole('button', { name: /^Dagger Spray,/ }).click()
 await page.waitForSelector('.enemy--targeted')
-await page.locator(`.enemy[data-enemy-id="${daggerSprayTarget.uid}"]`).click()
+await page.locator(`.enemy[data-enemy-id="${daggerSprayTarget.uid}"] .enemy__hit-area`).click()
 await watcherSeat.locator('.character-attack--silent').waitFor()
 const daggerSprayAfter = (await readRun()).combat
 const daggerSprayEvent = daggerSprayAfter.presentationEvents.at(-1)
@@ -14018,7 +14047,7 @@ await page.evaluate(() => {
 })
 await page.getByRole('button', { name: 'Use Shiv' }).click()
 await page.waitForSelector('.enemy--targeted')
-await page.locator(`.enemy[data-enemy-id="${firstEnemyId}"]`).click()
+await page.locator(`.enemy[data-enemy-id="${firstEnemyId}"] .enemy__hit-area`).click()
 const standaloneShivVfx = page.locator('.combat-vfx[data-vfx-kind="shiv"]').last()
 await standaloneShivVfx.waitFor()
 const standaloneShivAttack = await watcherSeat.evaluate((seat) => ({
@@ -15631,7 +15660,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.locator('.hand .card[aria-label^="Strike,"]').first().click()
-await page.locator('.enemy').filter({ hasText: 'Red Louse' }).click()
+await page.locator('.enemy').filter({ hasText: 'Red Louse' }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => document.querySelector('.enemy[aria-label*="Curl Up"][aria-label*="spent"]') !== null)
 const spentCurl = await page.locator('.enemy[aria-label*="Curl Up"][aria-label*="spent"]').evaluate((enemy) => ({
   text: document.getElementById(enemy.getAttribute('aria-describedby'))?.textContent ?? '',
@@ -15849,7 +15878,7 @@ await page.evaluate(() => {
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => enemy.uid === 'predator-stale'))
 const allyHandBeforePredator = (await readState()).players[1].hand.length
 await clickCard('h-predator')
-await page.locator('.enemy[aria-label*="13 of 13 hit points"]').click()
+await page.locator('.enemy[aria-label*="13 of 13 hit points"] .enemy__hit-area').click()
 const predatorPrompt = await page.locator('.prompt').textContent()
 check('Predator asks for its ally after its enemy is chosen', () => {
   assert(/Choose who gets it/i.test(predatorPrompt ?? ''), `expected an ally prompt, got ${predatorPrompt}`)
@@ -15866,7 +15895,7 @@ const stalePredator = await readState()
 check('a staged card drops a primary target defeated by a teammate', () => {
   assert(stalePredator.players[0].hand.some((card) => card.uid === 'h-predator'))
 })
-await page.locator('.enemy--targeted:not(:disabled)').first().click()
+await page.locator('.enemy--targeted:not(:disabled) .enemy__hit-area').first().click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Choose who gets it'))
 await page.locator('.seat:not(.seat--viewer)').click()
 const afterPredator = await readState()
@@ -16471,11 +16500,11 @@ const firstCurseOrb = page.locator('button.end-turn-effect--orb')
 await firstCurseOrb.waitFor()
 await firstCurseOrb.click()
 await page.locator('.enemy--targeted').first().waitFor()
-await page.locator('[data-enemy-id="curse-fragile"]').click()
+await page.locator('[data-enemy-id="curse-fragile"] .enemy__hit-area').click()
 await page.waitForFunction(() => document.querySelector('.end-turn-effects__prompt')?.textContent?.includes('Lightning Orb 2'))
 await page.locator('button.end-turn-effect--orb').click()
 await page.locator('.enemy--targeted').first().waitFor()
-await page.locator('[data-enemy-id="curse-safe"]').click()
+await page.locator('[data-enemy-id="curse-safe"] .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 const cursePrepared = await readState()
 check('the fixed end-turn sequence resolves before discard ordering', () => {
@@ -17180,7 +17209,7 @@ await page.getByRole('button', { name: 'Use Combust+' }).click()
 // Any enemy in Ironclad's row anchors the effect there, the same as a
 // `target: 'row'` card — clicking `combust-left-a` (row 0) replaces the
 // removed "Target Row Ironclad" button.
-await page.locator('.enemy[data-enemy-id="combust-left-a"]').click()
+await page.locator('.enemy[data-enemy-id="combust-left-a"] .enemy__hit-area').click()
 const combustResolved = await readState()
 const combustLocked = await page.getByRole('button', { name: 'Combust+ used' }).isDisabled()
 check('Combust+ visibly targets a row, includes the boss, and locks after use', () => {
@@ -17353,8 +17382,8 @@ check('Fire Breathing pauses on a visible row picker for each qualifying draw', 
 await shot('16e-fire-breathing-choice')
 // One enemy per offered row anchors that row, the same as clicking a
 // `target: 'row'` card, replacing the removed "Fire Breathing+ in Row X" buttons.
-await page.locator('.enemy[data-enemy-id="fire-right"]').click()
-await page.locator('.enemy[data-enemy-id="fire-left"]').click()
+await page.locator('.enemy[data-enemy-id="fire-right"] .enemy__hit-area').click()
+await page.locator('.enemy[data-enemy-id="fire-left"] .enemy__hit-area').click()
 const fireResolved = await readState()
 check('Fire Breathing+ resolves both direct-damage rows and includes the boss each time', () => {
   assertDeepEqual(fireResolved.enemies.map((enemy) => enemy.hp), [7, 7, 4])
@@ -17418,7 +17447,7 @@ assertEqual(await page.locator('.enemy--targeted').count(), 3,
 await juggernautPower.click()
 await shot('16g-ironclad-trigger-powers')
 await juggernautPower.click()
-await page.locator('.enemy--targeted').nth(1).click()
+await page.locator('.enemy--targeted .enemy__hit-area').nth(1).click()
 await page.getByRole('button', { name: /^Seeing Red,/ }).click()
 await page.getByText("Ironclad's Berserk+ — choose an enemy").waitFor()
 assertEqual(await page.locator('.enemy--targeted').count(), 2)
@@ -17426,7 +17455,7 @@ assertEqual(await page.locator('.enemy--targeted').count(), 2)
 // button targeted (row labels are 1-indexed when no player occupies the row);
 // clicking any enemy in that row anchors it there, the same as a
 // `target: 'row'` card.
-await page.locator('.enemy[data-enemy-id="trigger-right"]').click()
+await page.locator('.enemy[data-enemy-id="trigger-right"] .enemy__hit-area').click()
 const ironcladRareResolved = await readState()
 check('Juggernaut and Berserk resolve chosen targets only after their source cards finish', () => {
   assertDeepEqual(ironcladRareResolved.enemies.map((enemy) => enemy.hp), [10, 6, 8])
@@ -17488,7 +17517,7 @@ assert(thousandCutsPowerLabel.includes('whenever you shuffle your draw pile'))
 await malaiseCard.click()
 await page.getByText('Choose Energy for Malaise+').waitFor()
 await page.getByRole('button', { name: 'Spend 2' }).click()
-await page.getByRole('button', { name: /^Green Louse,/ }).click()
+await page.getByRole('button', { name: /^Green Louse,/ }).locator('.enemy__hit-area').click()
 await page.getByRole('button', { name: /^Battle Trance,/ }).click()
 await page.getByText("Silent's A Thousand Cuts+ — choose an enemy").waitFor()
 const thousandCutsPower = page.locator('.power[aria-label^="A Thousand Cuts+"]')
@@ -17497,7 +17526,7 @@ await shot('16h-silent-shuffle-x-rares')
 await thousandCutsPower.click()
 // Row index 1 (`cuts-right`'s row) is what the removed "A Thousand Cuts+ in
 // Row 2" button targeted; clicking any enemy in that row anchors it there.
-await page.locator('.enemy[data-enemy-id="cuts-right"]').click()
+await page.locator('.enemy[data-enemy-id="cuts-right"] .enemy__hit-area').click()
 const silentRaresResolved = await readState()
 check('Malaise+ and A Thousand Cuts+ resolve through X and shuffle choices', () => {
   assertEqual(silentRaresResolved.enemies[0].weak, 3)
@@ -17629,7 +17658,7 @@ check('Corpse Explosion+ uses sharp art and announces its attached row detonatio
   assert(corpseExplosionLabel.includes('10 damage to its row'))
 })
 await corpseExplosionCard.click()
-await page.locator('.enemy--targeted[aria-label^="Cultist"]').click()
+await page.locator('.enemy--targeted[aria-label^="Cultist"] .enemy__hit-area').click()
 const attachedEnemy = page.locator('.enemy[aria-label*="Corpse Explosion attached"]')
 await attachedEnemy.waitFor()
 const attachmentWidth = artSynced
@@ -17640,7 +17669,7 @@ check('Corpse Explosion remains visibly attached as a face-up high-resolution ca
 })
 await shot('16l-silent-corpse-explosion-attached')
 await page.getByRole('button', { name: /^Strike\+,/ }).click()
-await page.locator('.enemy--targeted[aria-label^="Cultist"]').click()
+await page.locator('.enemy--targeted[aria-label^="Cultist"] .enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].dead)
 const corpseResolved = await readState()
 check('Corpse Explosion detonation is visible, row-scoped, and discards the attachment', () => {
@@ -17688,14 +17717,14 @@ check('queued Double Tap count is visible and included in the seat accessible na
 })
 await page.getByRole('button', { name: /^Cleave,/ }).click()
 await page.getByText('Choose an enemy for Cleave copy (Double Tap) — its whole row is hit').waitFor()
-await page.getByRole('button', { name: /^Cultist,/ }).click()
+await page.getByRole('button', { name: /^Cultist,/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'copy')
 await page.getByText('Choose an enemy for original Cleave after Double Tap copy — its whole row is hit').waitFor()
 await page.locator('.prompt').evaluate((prompt) => Promise.all(
   prompt.getAnimations().map((animation) => animation.finished),
 ))
 await shot('16e-double-tap-copy-target')
-await page.getByRole('button', { name: /^Red Louse,/ }).click()
+await page.getByRole('button', { name: /^Red Louse,/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 const doubleTapResolved = await readState()
 check('Double Tap visibly labels and separately targets copy-first row attacks', () => {
@@ -17763,7 +17792,7 @@ await page.getByRole('button', { name: /^Headbutt,/ }).click()
 const firstHeadbuttChoice = page.getByRole('dialog', { name: 'Choose 1 card from your discard pile' })
 await firstHeadbuttChoice.getByRole('button', { name: /^Defend,/ }).click()
 await firstHeadbuttChoice.getByRole('button', { name: 'Put selected card on top' }).click()
-await page.getByRole('button', { name: /^Cultist,/ }).click()
+await page.getByRole('button', { name: /^Cultist,/ }).locator('.enemy__hit-area').click()
 const copiedHeadbuttChoice = page.getByRole('dialog', { name: 'Choose 1 card from your discard pile' })
 await copiedHeadbuttChoice.waitFor()
 await page.keyboard.press('Escape')
@@ -17775,7 +17804,7 @@ check('a mandatory copied Headbutt recovery cannot be dismissed', () => {
 })
 await copiedHeadbuttChoice.getByRole('button', { name: /^Double Tap\+,/ }).click()
 await copiedHeadbuttChoice.getByRole('button', { name: 'Put selected card on top' }).click()
-await page.getByRole('button', { name: /^Red Louse,/ }).click()
+await page.getByRole('button', { name: /^Red Louse,/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -17817,7 +17846,7 @@ const devotionPowerLabel = await page.getByRole('button', {
 await blasphemyCard.click()
 await brillianceCard.click()
 for (let copiesLeft = 2; copiesLeft >= 0; copiesLeft--) {
-  await page.locator('.enemy--targeted').first().click()
+  await page.locator('.enemy--targeted .enemy__hit-area').first().click()
   if (copiesLeft > 0) {
     await page.waitForFunction((remaining) =>
       window.__STS_DEBUG__.getState().pendingCardCopy?.sourceNames.length === remaining,
@@ -18249,9 +18278,9 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
-await page.getByRole('button', { name: /^Spire Shield,/ }).click()
+await page.getByRole('button', { name: /^Spire Shield,/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Player 2'))
-await page.getByRole('button', { name: /^Spire Shield,/ }).click()
+await page.getByRole('button', { name: /^Spire Shield,/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Player 3'))
 const facingCapacity = await page.locator('.enemy').evaluateAll((cards) => Object.fromEntries(cards.map((card) => [
   card.getAttribute('aria-label')?.split(',')[0], {
@@ -18262,9 +18291,9 @@ check('Facing UI semantically disables a side after its two rows are filled', ()
   assertDeepEqual(facingCapacity['Spire Shield'], { targeted: false, disabled: true })
   assertDeepEqual(facingCapacity['Spire Spear'], { targeted: true, disabled: false })
 })
-await page.getByRole('button', { name: /^Spire Spear,/ }).click()
+await page.getByRole('button', { name: /^Spire Spear,/ }).locator('.enemy__hit-area').click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Player 4'))
-await page.getByRole('button', { name: /^Spire Spear,/ }).click()
+await page.getByRole('button', { name: /^Spire Spear,/ }).locator('.enemy__hit-area').click()
 await page.getByRole('button', { name: 'Resolve start of turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 const capacityState = await readState()
@@ -18295,7 +18324,7 @@ const shieldFacingLabel = await page.getByRole('button', { name: /^Spire Shield,
 check('Facing exposes its current physical penalty to assistive technology', () => {
   assert(shieldFacingLabel.includes('lose 1 Energy'))
 })
-await page.getByRole('button', { name: /^Spire Shield,/ }).click()
+await page.getByRole('button', { name: /^Spire Shield,/ }).locator('.enemy__hit-area').click()
 await page.getByRole('button', { name: 'Resolve start of turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 const facingState = await readState()

@@ -21,7 +21,7 @@ import {
 } from './rules.ts'
 import { mirrorLegacySupplies } from './supplies.ts'
 import type { PotionRewardDecision, RewardSource, RunState } from './types.ts'
-import { bottomGuardianGems, queueNewGuardianSockets, revealGuardianDraftGems } from './guardian-gems.ts'
+import { bottomGuardianGems, queueNewGuardianSockets, revealGuardianDraftGems } from '../guardian-gems.ts'
 import {
   addCard,
   availableTransformRewards,
