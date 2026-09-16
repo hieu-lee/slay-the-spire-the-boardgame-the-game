@@ -29,7 +29,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: sudo apt-get update && sudo apt-get install -y python3-numpy python3-pil webp
+      # Asset verification probes Ogg audio with ffprobe and batch-decodes the
+      # committed PNG/WebP inventory with ffmpeg. Neither binary is guaranteed
+      # on a fresh hosted runner, so install the package explicitly alongside
+      # the Python and WebP tooling used by the pixel audits.
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg python3-numpy python3-pil webp
       # The browser matrix includes both engines. Installing only Chromium made
       # every WebKit-backed verifier fail after its Chromium assertions passed.
       - run: pnpm exec playwright install --with-deps chromium webkit

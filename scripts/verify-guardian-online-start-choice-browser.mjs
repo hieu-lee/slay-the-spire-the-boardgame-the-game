@@ -3,7 +3,7 @@ import { createServer as createViteServer } from 'vite'
 import { chromium, setTestUsername } from './lib/profile-browser.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { startRun } from './lib/rooms.mjs'
-import { createCombat } from '../src/game/combat.ts'
+import { createCombat, startPlayerTurnWithChoices } from '../src/game/combat.ts'
 import { createRng } from '../src/game/rng.ts'
 
 const rooms = createRoomServer()
@@ -48,16 +48,6 @@ async function snapshot(page) {
   return response.json()
 }
 
-async function roomAction(page, action) {
-  const saved = await credentials(page)
-  const response = await fetch(`${roomOrigin}/api/rooms/${saved.code}/action`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-room-token': saved.token },
-    body: JSON.stringify({ action }),
-  })
-  assert(response.ok, await response.text())
-}
-
 try {
   const desktopContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const phoneContext = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true })
@@ -90,18 +80,26 @@ try {
     block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0, cardReward: null,
     actionIndex: 0, abilityUsed: false, dead: false }
   run.combat = createCombat(createRng(914), run.players, [enemy], 'guardian-online-form-choice')
-  run.combat.players.find(player => player.id === phonePlayerId).relics
-    .push({ defId: 'gambling_chip', spent: false })
   run.combat.phase = 'roundEnd'
+  run.combat = startPlayerTurnWithChoices(run.combat)
+  assert.equal(run.combat.phase, 'start')
   run.phase = 'combat'
   run.neow = null
+  Object.assign(room, {
+    startTurnCombatId: undefined,
+    startTurnOrder: undefined,
+    startTurnEnemyTargets: undefined,
+    startTurnChoices: undefined,
+    startTurnRequired: undefined,
+    startTurnReady: undefined,
+    startTurnStagedTriggers: undefined,
+  })
+  // Publish the already-started fixture atomically. Exposing roundEnd lets the
+  // clients race to advance it and can skip the coordinator-first form prompt.
   room.version += 1
   rooms.publishRoom(code)
-  await Promise.all([desktop, phone].map(page => page.locator('.combat[data-phase="roundEnd"]').waitFor()))
-
-  await roomAction(desktop, { kind: 'startTurn' })
   const form = page => page.getByRole('group', { name: 'Choose Guardian form for this turn' })
-  await Promise.all([form(desktop).waitFor(), form(phone).waitFor()])
+  await form(desktop).waitFor()
   const actionPattern = '**/api/rooms/**/action'
   const roomPattern = `**/api/rooms/${code}`
   let failedRefreshes = 0
@@ -143,19 +141,20 @@ try {
   let staged
   for (let attempt = 0; attempt < 40; attempt += 1) {
     staged = await snapshot(desktop)
-    if (staged.startTurnDecided.includes(desktopPlayerId)) break
+    if (staged.startTurnDecided?.includes(desktopPlayerId)) break
     await desktop.waitForTimeout(50)
   }
   assert.equal(staged.run.combat.phase, 'start')
-  assert(staged.startTurnDecided.includes(desktopPlayerId))
-  assert(!staged.startTurnDecided.includes(phonePlayerId),
-    'the player with Gambling Chip was incorrectly resolved')
+  assert(staged.startTurnDecided?.includes(desktopPlayerId), 'the Guardian form choice did not commit')
+  assert(!staged.startTurnDecided?.includes(phonePlayerId),
+    'the other Guardian form choice was incorrectly resolved')
+  await form(phone).waitFor()
   assert.equal(await desktop.getByRole('button', { name: /^Resolve start turn/ }).count(), 0)
   for (let index = errors.length - 1; index >= 0; index -= 1) {
     if (errors[index].includes('ERR_CONNECTION_RESET')) errors.splice(index, 1)
   }
   assert.deepEqual(errors, [])
-  console.log('Online Guardian form choice passed: pending assets lock and another owner\'s post-roll choice does not block submission.')
+  console.log('Online Guardian form choice passed: pending assets lock and another owner\'s form choice does not block submission.')
 } finally {
   await browser.close()
   await vite.close()

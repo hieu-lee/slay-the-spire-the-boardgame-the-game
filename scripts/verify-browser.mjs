@@ -4474,10 +4474,22 @@ if (args.includes('--downfall-ui-only')) {
 }
 
 const downfallBossSoundCount = await page.evaluate(() => window.__SFX_PLAYS__.length)
+const downfallBossAttackSourcesExpected = [
+  '/assets/combat/rigged/downfall_inferno-attack.webp',
+  '/assets/combat/rigged/downfall_witch-attack.webp',
+  '/assets/combat/rigged/downfall_orb_master-attack.webp',
+  '/assets/combat/rigged/downfall_wrathful-attack.webp',
+]
+const downfallBossPreloads = downfallBossAttackSourcesExpected.map((asset) => page.waitForResponse((response) =>
+  new URL(response.url()).pathname === asset && response.ok()))
 await page.evaluate((run) => {
   const next = structuredClone(run)
   const template = next.combat.enemies[0]
-  next.combat.phase = 'enemy'
+  // Mount the four real boss cards before starting their turn. EnemyCard
+  // preloads each one-shot attack as a Blob so every animation starts at its
+  // first frame; entering the enemy phase in this same update races that
+  // preload on slower CI machines and intentionally falls back to idle art.
+  next.combat.phase = 'player'
   next.combat.enemies = [
     ['downfall_inferno', 0],
     ['downfall_witch', 1],
@@ -4497,23 +4509,41 @@ await page.evaluate((run) => {
   }))
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
+await page.waitForFunction(() => {
+  const images = [...document.querySelectorAll('.enemy--boss[data-animation="idle"] .enemy__art--cutout')]
+  return images.length === 4 && images.every((image) => image.complete && image.naturalWidth > 0)
+})
+await Promise.all(downfallBossPreloads.map(async (pending) => (await pending).finished()))
+// Response completion precedes EnemyCard's response.blob() continuation. Two
+// frames let those microtasks store every Blob before the enemy phase reads it.
+await page.evaluate(() => new Promise((resolveFrame) => requestAnimationFrame(() =>
+  requestAnimationFrame(resolveFrame))))
 await page.keyboard.press('Escape')
 await pauseMenu.waitFor()
 await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = 'hidden' })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.phase = 'enemy'
+  debug.setRun(run)
+})
 await page.waitForFunction(() => {
-  const images = [...document.querySelectorAll('.enemy--boss img[src$="-attack.webp"]')]
+  const images = [...document.querySelectorAll(
+    '.enemy--boss[data-animation="attack"] img[data-animation-asset$="-attack.webp"]',
+  )]
   return images.length === 4 && images.every((image) => image.complete && image.naturalWidth > 0)
 })
-const downfallBossAttackSources = await page.locator('.enemy--boss img[src$="-attack.webp"]').evaluateAll((images) =>
-  images.map((image) => image.getAttribute('src')))
+const downfallBossAttackImages = await page.locator(
+  '.enemy--boss[data-animation="attack"] img[data-animation-asset$="-attack.webp"]',
+).evaluateAll((images) => images.map((image) => ({
+  asset: image.getAttribute('data-animation-asset'),
+  source: image.getAttribute('src'),
+})))
 await shot('02c-downfall-printed-boss-attacks')
 check('four printed Downfall bosses render their own clean attack assets', () => {
-  assertDeepEqual(downfallBossAttackSources, [
-    '/assets/combat/enemies/animations/downfall_inferno-attack.webp',
-    '/assets/combat/enemies/animations/downfall_witch-attack.webp',
-    '/assets/combat/enemies/animations/downfall_orb_master-attack.webp',
-    '/assets/combat/enemies/animations/downfall_wrathful-attack.webp',
-  ])
+  assertDeepEqual(downfallBossAttackImages.map(({ asset }) => asset), downfallBossAttackSourcesExpected)
+  assert(downfallBossAttackImages.every(({ source }) => source?.startsWith('blob:')),
+    `a Downfall boss fell back from its preloaded attack art: ${JSON.stringify(downfallBossAttackImages)}`)
 })
 await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = '' })
 await page.keyboard.press('Escape')
