@@ -18173,20 +18173,16 @@ check('short boss stages keep every intent above its portrait and inside the boa
 })
 await page.setViewportSize({ width: 1440, height: 900 })
 
-await page.waitForFunction(() => [...document.querySelectorAll('.enemy--boss')].every((card) => {
+const bossAttackSources = await page.locator('.enemy--boss').evaluateAll((cards) => cards.map((card) => {
   const idle = card.querySelector('.enemy__art--cutout')?.getAttribute('src')
-  const attack = idle?.replace('-idle.webp', '-attack.webp')
-  return attack && [...document.querySelectorAll('link[data-boss-attack-preload]')]
-    .some((link) => link.href === new URL(attack, location.href).href)
+  return idle?.replace('-idle.webp', '-attack.webp')
 }))
-const bossAttackPreloads = await page.locator('.enemy--boss').evaluateAll((cards) => cards.map((card) => {
-  const idle = card.querySelector('.enemy__art--cutout')?.getAttribute('src')
-  const attack = idle?.replace('-idle.webp', '-attack.webp')
-  return Boolean(attack && [...document.querySelectorAll('link[data-boss-attack-preload]')]
-    .some((link) => link.href === new URL(attack, location.href).href))
-}))
+await page.waitForFunction((assets) => assets.every((asset) => asset && performance
+  .getEntriesByName(new URL(asset, location.href).href)
+  .some((entry) => entry.responseEnd > 0)), bossAttackSources)
+await settlePaint()
 check('boss attacks preload before the enemy phase', () => {
-  assert(bossAttackPreloads.every(Boolean))
+  assert(bossAttackSources.every((asset) => asset && requestedUrls.has(new URL(asset, base).href)))
 })
 
 const actStages = []
