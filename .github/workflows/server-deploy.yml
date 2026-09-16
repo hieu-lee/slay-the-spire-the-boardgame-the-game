@@ -6,6 +6,12 @@ on:
       deploy_sha:
         required: true
         type: string
+  workflow_dispatch:
+    inputs:
+      deploy_sha:
+        description: Commit to deploy (defaults to the selected ref)
+        required: false
+        type: string
 
 permissions:
   contents: read
