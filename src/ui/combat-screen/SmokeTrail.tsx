@@ -114,6 +114,8 @@ export function SmokeTrail({ path, bounds }: { path: string; bounds: Bounds }) {
 /** Prepare the three public pile routes before the player plays their first card. */
 export function warmSmokeTrails(character: string) {
   let cancelled = false
+  let resolveReady!: () => void
+  const ready = new Promise<void>((resolve) => { resolveReady = resolve })
   const probe = document.createElement('div')
   probe.hidden = true
   probe.className = `card-flight--${character}`
@@ -135,10 +137,12 @@ export function warmSmokeTrails(character: string) {
     const { trailPath, trailBounds } = cardFlightPath(destination)
     return smokeTexture(trailPath, color, trailBounds).ready.catch(() => {})
   }))
-  schedule(() => { if (!cancelled) void prepare() })
-  return () => {
+  schedule(() => { if (!cancelled) void prepare().then(() => resolveReady()) })
+  const cancel = () => {
     cancelled = true
     window.clearTimeout(timer)
     idleWindow.cancelIdleCallback?.(idle)
+    resolveReady()
   }
+  return Object.assign(cancel, { ready })
 }

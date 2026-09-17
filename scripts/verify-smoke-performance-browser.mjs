@@ -23,7 +23,7 @@ try {
       const pile = document.createElement('div'); pile.dataset.pile = destination; pile.style.cssText = `position:fixed;right:${right}px;bottom:20px;width:60px;height:80px`; document.body.append(pile)
     }
     window.smokeRoutes = Object.fromEntries(['discard', 'draw', 'exhaust'].map(destination => [destination, cardFlightPath(destination)]))
-    warmSmokeTrails('defect')
+    await warmSmokeTrails('defect').ready
     const root = createRoot(host)
     new MutationObserver(() => {
       if (window.smokeReadyMs === undefined && host.querySelector('[data-texture-ready="true"]')) window.smokeReadyMs = performance.now() - window.smokeStarted
@@ -46,11 +46,10 @@ try {
       path: `M 0 ${index} L ${100 + index} 100`, bounds: { x: 0, y: 0, width: 120, height: 120 }, key: index,
     })))
    })
-   await page.waitForTimeout(400)
    results[name] = []
    for (const destination of ['discard', 'draw', 'exhaust']) {
     await page.evaluate(destination => window.mountSmoke(destination, destination), destination)
-    await page.locator('.card-flight-trail').waitFor()
+    await page.waitForFunction(() => window.smokeReadyMs !== undefined)
     const metrics = await page.evaluate(() => new Promise(resolve => {
      const trail = document.querySelector('.card-flight-trail')
      const reveal = trail.querySelector('path')
