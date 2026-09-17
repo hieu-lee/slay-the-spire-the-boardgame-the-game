@@ -1211,6 +1211,9 @@ export function applyEffect(
           const flying = abilities.find((ability) => ability.kind === 'flying')
           let amount = each + (slow?.kind === 'slow' ? slow.damagePerHit : 0)
           amount = hitDamage(amount, mods, { vulnerable: ignoresHitModifiers ? 0 : vulnerableAtStart })
+          // Golden Bullet replaces Vulnerable's double with quadruple after all bonuses.
+          if (!ignoresHitModifiers && context.sourceCardId === 'hermit_golden_bullet' &&
+            context.sourceHermitDeadOn && vulnerableAtStart > 0 && mods.weak === 0) amount *= 2
           if (actor.damageDealtZeroThisTurn) amount = 0
           if (flying?.kind === 'flying') amount = Math.min(amount, flying.maxDamagePerHit)
           const result = damageEnemy(state, target, amount, !slimeCommand && context.sourceCardType !== undefined)
@@ -2849,8 +2852,12 @@ export function applyEffect(
     case 'goldenBullet': {
       const target = resolveEnemyTargets(state, 'enemy', context.enemyUid)[0]
       if (!target) return
-      const amount = context.sourceHermitDeadOn && target.vulnerable > 0 ? effect.amount * 2 : effect.amount
-      return applyEffect(state, actor, { kind: 'hit', amount }, 'enemy', supportScope, context, source)
+      const deadOn = context.sourceHermitDeadOn && target.vulnerable > 0
+      applyEffect(state, actor, { kind: 'hit', amount: effect.amount }, 'enemy', supportScope, context, source)
+      if (deadOn && !combatIsOver(state)) {
+        applyEffect(state, actor, { kind: 'deadOnEffects', effects: [] }, 'enemy', supportScope, context, source)
+      }
+      return
     }
     case 'roulette':
       for (const nested of effect.byRoll[state.die] ?? []) {
@@ -3137,6 +3144,11 @@ export function resolveEnraged(state: CombatState, actor: Player): void {
 /** Records one played Attack and resolves Hermit's once-per-turn threshold. */
 export function recordAttackPlayed(state: CombatState, actor: Player): void {
   actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+  resolveOverwhelmingPower(state, actor)
+}
+
+/** Check the threshold both when an Attack resolves and when the Power enters play. */
+export function resolveOverwhelmingPower(state: CombatState, actor: Player): void {
   const power = actor.powers.find((held) => held.defId === 'hermit_overwhelming_power')
   const key = power && `power:${power.uid}`
   if (!power || actor.attacksPlayedThisTurn < 2 || state.powerTriggersUsedThisTurn.includes(key!)) return

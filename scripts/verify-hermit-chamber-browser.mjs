@@ -31,6 +31,7 @@ try {
       run.combat = createCombat({ seed: 908, calls: 0 }, run.players,
         Array.from({ length: enemyCount }, (_, i) => ({ ...enemy, uid: `e${i}` })), 'audit')
       run.combat.pendingHermitSetupLoads = []
+      run.combat.die = 1
       Object.assign(run.combat.players[0], { hand: [], chamber: [{ uid: 'card', defId, upgraded: false }],
         energy: 3 })
       run.phase = 'combat'
@@ -54,7 +55,7 @@ try {
       const chamber = page.getByRole('button', { name: /^Chamber,/ })
       if (await chamber.getAttribute('aria-expanded') !== 'true') await chamber.click()
     }
-    for (const [defId, damage] of [['hermit_strike', 1], ['hermit_headshot', 5]]) {
+    for (const [defId, damage] of [['hermit_strike', 1], ['hermit_headshot', 5], ['hermit_golden_bullet', 2], ['hermit_roulette', 1]]) {
       await load(1, defId)
       const card = page.locator('.hand .card--chamber-drawn')
       await card.click()

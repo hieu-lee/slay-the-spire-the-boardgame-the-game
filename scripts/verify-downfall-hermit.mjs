@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { addCard, characterRewardDeck, merchantCardCost, removeCard, transformCard } from '../src/game/acquisition.ts'
-import { cardIsCurse } from '../src/game/cards.ts'
+import { cardIsCurse, faceOf } from '../src/game/cards.ts'
 import {
   createCombat,
   enemyTurn,
@@ -281,6 +281,232 @@ const player = (over = {}) => ({
 const enemy = (over = {}) => ({
   uid: 'e1', defId: 'cultist', row: 0, isBoss: false, hp: 20, maxHp: 20, block: 0,
   strength: 0, vulnerable: 0, weak: 0, poison: 0, actionIndex: 0, abilityUsed: false, dead: false, ...over,
+})
+
+check('every Hermit face exposes the enemy targeting printed on its card', () => {
+  const enemyCards = new Set([
+    'strike', 'snapshot', 'flash_powder', 'pistol_whip', 'misfire', 'quickdraw', 'tracking_shots',
+    'high_caliber', 'headshot', 'itchy_trigger', 'fan_the_hammer', 'enervate', 'wide_open',
+    'desperado', 'cursed_weapon', 'trick_shot', 'short_fuse', 'deadeye', 'brawl', 'midnight',
+    'cheat', 'magnum', 'roundhouse_kick', 'purgatory', 'golden_bullet', 'roulette', 'dead_or_alive',
+  ])
+  for (const [id, definition] of Object.entries(HERMIT_CARD_DEFS)) {
+    for (const upgraded of [false, true]) for (const deadOn of [false, true]) {
+      const def = faceOf(definition, upgraded)
+      const expected = enemyCards.has(id.replace('hermit_', '')) && (id !== 'hermit_headshot' || deadOn)
+      assert.equal(cardNeedsEnemy(def, player(), true, 3, false, undefined, undefined, 3, deadOn),
+        expected, id + (upgraded ? '+' : '') + ' Dead On=' + deadOn)
+    }
+  }
+})
+
+check('Hermit attack faces resolve their printed damage and Rapid Fire against a selected enemy', () => {
+  const attacks = {
+    strike: [1, 2], snapshot: [2, 3], pistol_whip: [2, 3], misfire: [1, 2],
+    quickdraw: [1, 1], tracking_shots: [3, 4], high_caliber: [2, 4], headshot: [0, 0],
+    itchy_trigger: [2, 3], fan_the_hammer: [2, 4], enervate: [6, 8], wide_open: [2, 3],
+    desperado: [2, 3], cursed_weapon: [2, 2], trick_shot: [2, 2], short_fuse: [2, 4],
+    deadeye: [2, 4], brawl: [3, 4], cheat: [2, 2], magnum: [2, 3],
+    roundhouse_kick: [3, 5], purgatory: [7, 9], golden_bullet: [2, 3], roulette: [1, 1],
+  }
+  for (const [name, damage] of Object.entries(attacks)) for (const upgraded of [false, true]) {
+    const held = instance('audit-' + name, 'hermit_' + name, upgraded)
+    let combat = createCombat(createRng(701), [player({ hand: [held], energy: 6 })], [
+      enemy({ uid: 'untouched', hp: 100, maxHp: 100 }), enemy({ uid: 'chosen', row: 1, hp: 100, maxHp: 100 }),
+    ])
+    combat.pendingHermitSetupLoads = []
+    combat.die = 1
+    combat = playCard(combat, 'p1', held.uid, { enemyUid: 'chosen', ...(name === 'enervate' ? { energySpent: 3 } : {}) })
+    let copies = 0
+    while (combat.pendingCardCopy && copies++ < 10) combat = playCardCopy(combat, 'p1', { enemyUid: 'chosen' })
+    assert.equal(combat.pendingCardCopy, undefined, name)
+    assert.equal(combat.players[0].hand.length, 0, name)
+    assert.deepEqual(combat.enemies.map(({ hp }) => hp), [100, 100 - damage[Number(upgraded)]], name)
+  }
+})
+
+check('Golden Bullet multiplies bonuses after Dead On, preserves Weak cancellation, and spends one token', () => {
+  for (const upgraded of [false, true]) for (const chamber of [false, true]) {
+    for (const weak of [0, 1]) for (const vulnerable of [0, 2]) {
+      const bullet = instance('golden', 'hermit_golden_bullet', upgraded)
+      let combat = createCombat(createRng(702), [player({
+        [chamber ? 'chamber' : 'hand']: [bullet], strength: 1, weak,
+      })], [enemy({ uid: 'untouched' }), enemy({ uid: 'chosen', row: 1, hp: 100, maxHp: 100, vulnerable, block: 1 })])
+      combat.pendingHermitSetupLoads = []
+      const play = chamber ? playLiveHermitChamberCard : playCard
+      assert.equal(play(combat, 'p1', bullet.uid, { enemyUid: null }), combat)
+      combat = play(combat, 'p1', bullet.uid, { enemyUid: 'chosen' })
+      const boosted = (upgraded ? 3 : 2) + 1
+      const damage = weak ? boosted - Number(vulnerable === 0) : boosted * (vulnerable ? chamber ? 4 : 2 : 1)
+      assert.equal(combat.enemies[1].hp, 100 - damage + 1)
+      assert.equal(combat.enemies[1].vulnerable, Math.max(0, vulnerable - 1))
+      assert.equal(combat.players[0].weak, 0)
+      assert.deepEqual(combat.presentationEvents.at(-1)?.enemyIds, ['chosen'])
+    }
+  }
+})
+
+check('Roulette resolves all six printed rolls, including row impacts, from hand, Chamber, and copies', () => {
+  for (const upgraded of [false, true]) for (const chamber of [false, true]) for (let die = 1; die <= 6; die++) {
+    const roulette = instance('roulette', 'hermit_roulette', upgraded)
+    let combat = createCombat(createRng(703), [player({ [chamber ? 'chamber' : 'hand']: [roulette] })], [
+      enemy({ uid: 'untouched', hp: 100, maxHp: 100 }),
+      enemy({ uid: 'chosen', row: 1, hp: 100, maxHp: 100 }),
+      enemy({ uid: 'row-mate', row: 1, hp: 100, maxHp: 100 }),
+      enemy({ uid: 'boss', row: 2, hp: 100, maxHp: 100, isBoss: true }),
+    ])
+    combat.pendingHermitSetupLoads = []
+    combat.die = die
+    combat.players[0].doubledAttacksThisTurn = 1
+    const play = chamber ? playLiveHermitChamberCard : playCard
+    assert.equal(play(combat, 'p1', roulette.uid, { enemyUid: null }), combat)
+    combat = play(combat, 'p1', roulette.uid, { enemyUid: 'chosen' })
+    const damage = die === 1 ? 1 : die === 6 ? upgraded ? 9 : 6 : upgraded ? 3 : 2
+    const affected = die === 4 ? ['chosen', 'row-mate', 'boss'] : ['chosen']
+    assert.deepEqual(combat.enemies.map(({ uid, hp }) => hp), combat.enemies.map(({ uid }) => 100 - (affected.includes(uid) ? damage : 0)))
+    assert.deepEqual(combat.presentationEvents.at(-1)?.enemyIds, affected)
+    assert.equal(combat.players[0].block, die === 3 ? upgraded ? 3 : 2 : 0)
+    assert.equal(combat.enemies[1].weak, Number(die === 5))
+    assert.equal(combat.enemies[1].vulnerable, Number(die === 2))
+    assert.equal(playCardCopy(combat, 'p1', { enemyUid: null }), combat)
+    combat = playCardCopy(combat, 'p1', { enemyUid: 'chosen' })
+    assert.deepEqual(combat.presentationEvents.at(-1)?.enemyIds, affected)
+    assert.equal(combat.enemies[1].hp, 100 - damage * (die === 2 ? 3 : 2))
+  }
+})
+
+check('Body Armor and Golden Bullet activate Combo only when their Dead On bonus activates', () => {
+  for (const name of ['body_armor', 'golden_bullet']) for (const chamber of [false, true]) {
+    for (const vulnerable of [0, 1]) {
+      const held = instance('combo-card', 'hermit_' + name)
+      const combo = instance('combo', 'hermit_combo')
+      let combat = createCombat(createRng(704), [player({
+        [chamber ? 'chamber' : 'hand']: [held], powers: [combo],
+      })], [enemy({ vulnerable })])
+      combat.pendingHermitSetupLoads = []
+      combat = (chamber ? playLiveHermitChamberCard : playCard)(combat, 'p1', held.uid, { enemyUid: 'e1' })
+      assert.equal(combat.players[0].energy, name === 'body_armor' && chamber ? 3 : 2)
+      const expected = chamber && (name === 'body_armor' || vulnerable > 0)
+      assert.equal(combat.pendingTriggers.some(({ sourceId }) => sourceId === 'power:combo'), expected, name)
+    }
+  }
+})
+
+check('Hermit skill faces grant their printed Block, statuses, draw, and Exhaust', () => {
+  const skills = {
+    defend: [1, 2], dive: [2, 3], take_cover: [1, 2], body_armor: [2, 3],
+    low_profile: [1, 1], manifest: [3, 4], ghostly_presence: [2, 3], gestalt: [2, 3],
+    flash_powder: [2, 4], specter: [1, 2],
+  }
+  for (const [name, blocks] of Object.entries(skills)) for (const upgraded of [false, true]) {
+    const held = instance('skill', 'hermit_' + name, upgraded)
+    let combat = createCombat(createRng(705), [player({ hand: [held] })], [enemy()])
+    combat.pendingHermitSetupLoads = []
+    combat = playCard(combat, 'p1', held.uid, { enemyUid: 'e1', playerId: 'p1' })
+    let copies = 0
+    while (combat.pendingCardCopy && copies++ < 10) combat = playCardCopy(combat, 'p1', { enemyUid: 'e1', playerId: 'p1' })
+    assert.equal(combat.players[0].hand.length, 0, name)
+    assert.equal(combat.players[0].block, blocks[Number(upgraded)], name)
+    assert.equal(combat.players[0].strength, Number(name === 'take_cover'), name)
+    assert.equal(combat.players[0].strengthLossAtEndOfTurn, Number(name === 'take_cover'), name)
+    assert.equal(combat.enemies[0].weak, name === 'flash_powder' ? 2 : 0)
+    assert.equal(combat.players[0].exhaust.length, Number(name === 'low_profile' && !upgraded), name)
+  }
+  for (const [name, draws] of Object.entries({ feint: [2, 3], quickdraw: [1, 2], coalescence: [2, 3], virtue: [3, 4] })) {
+    for (const upgraded of [false, true]) {
+      const held = instance('draw-skill', 'hermit_' + name, upgraded)
+      const cards = Array.from({ length: 5 }, (_, i) => instance('draw-' + i, 'hermit_defend'))
+      let combat = createCombat(createRng(706), [player({ hand: [held], draw: [...cards] })], [enemy()])
+      combat.pendingHermitSetupLoads = []
+      combat.players[0].hand = [held]
+      combat.players[0].draw = cards
+      const loads = ['feint', 'quickdraw'].includes(name) ? 1 : 0
+      combat = playCard(combat, 'p1', held.uid, { enemyUid: 'e1', playerId: 'p1', loadUids: loads ? ['draw-0'] : [] })
+      assert.equal(combat.players[0].hand.length, draws[Number(upgraded)] - loads, name)
+      assert.equal(combat.players[0].chamber.length, loads, name)
+      assert.equal(combat.players[0].exhaust.length, Number(name === 'coalescence'), name)
+    }
+  }
+})
+
+check('Hermit conditional damage, discounts, and Dead On clauses follow the card faces', () => {
+  for (const upgraded of [false, true]) {
+    for (const [name, expected] of Object.entries({
+      misfire: upgraded ? 3 : 2, cursed_weapon: upgraded ? 10 : 8, desperado: upgraded ? 6 : 4,
+      wide_open: upgraded ? 3 : 2, deadeye: upgraded ? 4 : 2, headshot: upgraded ? 7 : 5,
+    })) {
+      const held = instance('conditional', 'hermit_' + name, upgraded)
+      const deadOn = ['wide_open', 'deadeye', 'headshot'].includes(name)
+      let combat = createCombat(createRng(707), [player({
+        hand: [instance('hand-curse', 'hermit_scorn'), ...(!deadOn ? [held] : [])],
+        chamber: [instance('chamber-curse', 'hermit_scorn'), ...(deadOn ? [held] : [])],
+      })], [enemy({ hp: 100, maxHp: 100 })])
+      combat.pendingHermitSetupLoads = []
+      combat = (deadOn ? playLiveHermitChamberCard : playCard)(combat, 'p1', held.uid, { enemyUid: 'e1' })
+      let copies = 0
+      while (combat.pendingCardCopy && copies++ < 10) combat = playCardCopy(combat, 'p1', { enemyUid: 'e1' })
+      assert.equal(combat.enemies[0].hp, 100 - expected, name)
+      assert.equal(combat.enemies[0].vulnerable, Number(name === 'wide_open'))
+      assert.equal(combat.players[0].strength, Number(name === 'deadeye'))
+    }
+    const snipe = instance('snipe', 'hermit_snipe', upgraded)
+    let combat = createCombat(createRng(708), [player({
+      powers: [snipe], chamber: [instance('dead-on', 'hermit_headshot')],
+    })], [enemy({ uid: 'untouched' }), enemy({ uid: 'chosen', row: 1 })])
+    combat.pendingHermitSetupLoads = []
+    assert.equal(activatePower(combat, 'p1', snipe.uid), combat)
+    combat = activatePower(combat, 'p1', snipe.uid, { enemyUid: 'chosen' })
+    assert.deepEqual(combat.enemies.map(({ vulnerable }) => vulnerable), [0, 1])
+    assert.equal(activatePower(combat, 'p1', snipe.uid, { enemyUid: 'chosen' }), combat)
+  }
+})
+
+check('Hermit passive powers modify starter attacks, Rapid Fire, and Curse loads', () => {
+  for (const upgraded of [false, true]) {
+    const strike = instance('maintained', 'hermit_strike')
+    let combat = createCombat(createRng(709), [player({
+      hand: [strike], energy: 0, powers: [
+        instance('maintenance', 'hermit_maintenance', upgraded),
+        instance('high-noon', 'hermit_high_noon', upgraded),
+        instance('showdown', 'hermit_showdown', upgraded),
+        instance('no-holds', 'hermit_no_holds_barred', upgraded),
+      ],
+    })], [enemy({ hp: 100, maxHp: 100 })])
+    combat.pendingHermitSetupLoads = []
+    combat = playCard(combat, 'p1', strike.uid, { enemyUid: 'e1' })
+    assert.equal(combat.pendingCardCopy?.sourceNames.length, 2)
+    while (combat.pendingCardCopy) combat = playCardCopy(combat, 'p1', { enemyUid: 'e1' })
+    assert.equal(combat.enemies[0].hp, 100 - 3 * (upgraded ? 3 : 2))
+    assert.equal(combat.players[0].energy, 0)
+
+    const covet = instance('covet', 'hermit_covet', true)
+    const curse = instance('scorn', 'hermit_scorn')
+    const shot = instance('snapshot', 'hermit_snapshot')
+    combat = createCombat(createRng(710), [player({
+      hand: [covet, curse, shot], powers: [
+        instance('determination', 'hermit_determination', upgraded),
+        instance('lone-wolf', 'hermit_lone_wolf', upgraded),
+      ],
+    })], [enemy()])
+    combat.pendingHermitSetupLoads = []
+    combat = playCard(combat, 'p1', covet.uid, { loadUids: [curse.uid, shot.uid] })
+    assert.equal(combat.players[0].block, 3 + (upgraded ? 2 : 1))
+    assert.equal(combat.players[0].strength, 1)
+  }
+})
+
+check('playing Overwhelming Power after two attacks grants its once-per-turn draw immediately', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('late-power', 'hermit_overwhelming_power', upgraded)
+    const cards = Array.from({ length: 4 }, (_, i) => instance('threshold-' + i, 'hermit_defend'))
+    let combat = createCombat(createRng(711), [player({ hand: [power] })], [enemy()])
+    combat.pendingHermitSetupLoads = []
+    combat.players[0].draw = cards
+    combat.players[0].attacksPlayedThisTurn = 2
+    combat = playCard(combat, 'p1', power.uid, {})
+    assert.equal(combat.players[0].hand.length, 2)
+    assert(combat.powerTriggersUsedThisTurn.includes('power:' + power.uid))
+  }
 })
 
 check('presentation records per-card HP loss after Block without changing prior state', () => {

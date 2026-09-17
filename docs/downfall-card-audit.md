@@ -160,10 +160,20 @@ This is a visual definition audit plus focused runtime regressions and existing 
 
 ## Hermit — 67 definitions, 133 faces
 
+Re-audited all 133 bundled Hermit card faces on 17 September 2026 against the live definitions and shared effect/targeting code. Printed costs, numbers, keywords, and upgrade text match the art; runtime corrections are recorded below. The expanded Hermit verifier checks target requirements for every face, all Attack faces, representative skill/conditional/power effects, and every Roulette die result. Existing tests cover Load choices, Curse reactions, triggered powers, forced plays, copies, acquisition, and bounty rewards. This does not claim every possible cross-character combination.
+
+Confirmed runtime corrections:
+- Golden Bullet and Roulette now require a selected living enemy in hand, Chamber, copies, and shared forced-play validation.
+- Golden Bullet's Dead On quadruples damage after bonuses, respects normal Weak/Vulnerable cancellation, and consumes one Vulnerable token.
+- Body Armor and Golden Bullet activate Combo when their Dead On bonuses activate.
+- Roulette's roll 4 presents every enemy in the chosen row plus bosses, matching its actual damage.
+- Overwhelming Power checks its already-met two-Attack threshold when entering play.
+- Dead Or Alive's earlier target-selection/copy correction remains covered.
+
 | Card | Faces | Result |
 | --- | --- | --- |
 | Black Wind | Base + upgrade | Printed definition matches. |
-| Body Armor | Base + upgrade | Printed definition matches. |
+| Body Armor | Base + upgrade | Printed definition matches; fixed its Dead On Combo trigger. |
 | Brawl | Base + upgrade | Printed definition matches. |
 | Called Shot | Base + upgrade | Printed definition matches. |
 | Cheat | Base + upgrade | Printed definition matches. |
@@ -187,7 +197,7 @@ This is a visual definition audit plus focused runtime regressions and existing 
 | Fully Loaded | Base + upgrade | Printed definition matches. |
 | Gestalt | Base + upgrade | Printed definition matches. |
 | Ghostly Presence | Base + upgrade | Printed definition matches. |
-| Golden Bullet | Base + upgrade | Printed definition matches. |
+| Golden Bullet | Base + upgrade | Printed definition matches; fixed targeting, bonus multiplication, and Combo trigger. |
 | Golden Ticket | Base only | Printed definition matches. |
 | Grudge | Base + upgrade | Printed definition matches. |
 | Headshot | Base + upgrade | Printed definition matches. |
@@ -205,11 +215,11 @@ This is a visual definition audit plus focused runtime regressions and existing 
 | Midnight | Base + upgrade | Printed definition matches. |
 | Misfire | Base + upgrade | Printed definition matches. |
 | No Holds Barred | Base + upgrade | Printed definition matches. |
-| Overwhelming Power | Base + upgrade | Printed definition matches. |
+| Overwhelming Power | Base + upgrade | Printed definition matches; fixed draw when played after two Attacks. |
 | Pistol Whip | Base + upgrade | Printed definition matches. |
 | Purgatory | Base + upgrade | Printed definition matches. |
 | Quickdraw | Base + upgrade | Printed definition matches. |
-| Roulette | Base + upgrade | Printed definition matches. |
+| Roulette | Base + upgrade | Printed definition matches; fixed targeting and roll-4 row presentation. |
 | Roundhouse Kick | Base + upgrade | Printed definition matches. |
 | Rummage | Base + upgrade | Printed definition matches. |
 | Scorn | Base + upgrade | Printed definition matches. |

@@ -28,6 +28,7 @@ import {
   growSlimeWithTriggers,
   releasePendingTriggers,
   recordAttackPlayed,
+  resolveOverwhelmingPower,
   resolveDiscardReactions,
   resolveEnraged,
   resolveExhaustReaction,
@@ -103,6 +104,7 @@ function skillExhausts(state: CombatState, actor: Player, def: CardDef): boolean
 }
 
 function presentationEnemyScope(
+  state: CombatState,
   def: CardDef,
   effects: readonly Effect[],
   actor: Player,
@@ -116,7 +118,8 @@ function presentationEnemyScope(
   const active = def.modes ? { ...def, modes: undefined, effects: [...effects] } : def
   if (!cardNeedsEnemy(active, actor, includeEvokes, energySpent, false,
     attachedGemId, sourceCardUid, energyCharged, sourceDeadOn)) return 'self'
-  if (def.id === 'guardian_prismatic_barrier') return 'row'
+  if (def.id === 'guardian_prismatic_barrier' || effects.some((effect) =>
+    effect.kind === 'roulette' && effect.byRoll[state.die]?.some((nested) => nested.kind === 'rowHit'))) return 'row'
   return def.target ?? 'enemy'
 }
 
@@ -439,6 +442,7 @@ function cleanupPlayedCard(
     }
   } else if (def.type === 'power') {
     actor.powers = [...actor.powers, played]
+    if (def.id === 'hermit_overwhelming_power') resolveOverwhelmingPower(state, actor)
   } else if (def.toDrawTop) {
     actor.draw = addToDrawTop(actor, [played]).draw
   } else {
@@ -601,7 +605,7 @@ export function playCard(
     resolvedType: def.type,
     ...(context.mode === undefined ? {} : { mode: context.mode }),
     ...presentationTargets(next, actor.id,
-      presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids, effectEnergy,
+      presentationEnemyScope(next, def, effects, actor, !context.evokeEnemyUids, effectEnergy,
         attachedGemId, held.uid, cost, held.hermitDeadOn === true),
       guardianCardNeedsAlly(def, actor, attachedGemId) ? 'anyPlayer' : def.supportTarget ?? 'self',
       presentationCardContext(def, effects, context)),
@@ -1087,7 +1091,7 @@ export function playCardCopy(
     resolvedType: def.type,
     ...(context.mode === undefined ? {} : { mode: context.mode }),
     ...presentationTargets(next, actor.id,
-      presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids,
+      presentationEnemyScope(next, def, effects, actor, !context.evokeEnemyUids,
         pending.energySpent, attachedGemId, copy.card.uid, pending.energySpent, copy.card.hermitDeadOn === true),
       guardianCardNeedsAlly(def, actor, attachedGemId) ? 'anyPlayer' : def.supportTarget ?? 'self',
       presentationCardContext(def, effects, context)),
