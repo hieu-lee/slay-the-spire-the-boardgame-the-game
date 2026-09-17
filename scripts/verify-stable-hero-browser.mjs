@@ -25,6 +25,10 @@ page.on('console', (message) => { if (message.type() === 'error') errors.push(me
 page.on('pageerror', (error) => errors.push(String(error)))
 suite('stable combat hero')
 
+const settleStage = () => page.waitForFunction(() => !document.querySelector('.combat')
+  ?.getAnimations({ subtree: true }).some((animation) => animation instanceof CSSTransition &&
+    animation.transitionProperty.startsWith('--stage-') && animation.playState === 'running'))
+
 await page.goto(`http://localhost:${address.port}`, { waitUntil: 'networkidle' })
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('button', { name: 'Standard', exact: true }).click()
@@ -49,7 +53,7 @@ const installCombat = async (enemyCount, suffix) => {
     debug.setRun(run)
   }, { source: fixture, enemyCount, suffix })
   await page.locator('.combat').waitFor()
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))))
+  await settleStage()
 }
 
 const heroGeometry = () => page.locator('.seat[data-player-id="p1"]').evaluate((seat) => {
@@ -151,7 +155,7 @@ const killFirstEnemy = async () => {
     debug.setRun(run)
   }, enemyId)
   await page.locator(`.enemy[data-enemy-id="${enemyId}"]`).waitFor({ state: 'detached', timeout: 3_000 })
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))))
+  await settleStage()
 }
 await killFirstEnemy()
 const desktopAfterDeath = await heroGeometry()
@@ -167,7 +171,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.locator('.enemy[data-enemy-id="stable-enemy-summoned"]').waitFor()
-await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))))
+await settleStage()
 const desktopAfterSummon = await heroGeometry()
 check('an enemy appearing does not move the desktop hero', () => {
   assert(sameGeometry(desktopAfterDeath, desktopAfterSummon),

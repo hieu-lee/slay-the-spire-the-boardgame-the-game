@@ -837,13 +837,13 @@ function resolveGuardianCard(
     case 'guardian_twin_slam': hit(2); if (attack) hit(upgraded ? 3 : 1); break
     case 'guardian_orb_support': hit(attack ? (upgraded ? 4 : 3) : 1); block(defense ? (upgraded ? 4 : 3) : 1); break
     case 'guardian_resilient_plate': block(upgraded ? 4 : 3); if (defense) block(powers); break
-    case 'guardian_overload': draw(upgraded ? 5 : 4); modeShift(); break
+    case 'guardian_overload': draw(upgraded ? 5 : 4); doEffect({ kind: 'addDaze', amount: 1, pile: 'draw' }); break
     case 'guardian_prismatic_barrier': block(upgraded ? 2 : 1, true, 'anyPlayer'); break
     case 'guardian_prismatic_spray': hit(upgraded ? 2 : 1, undefined, 'row'); break
     case 'guardian_tune_up': block(upgraded ? 3 : 2); if (attack) doEffect({ kind: 'discountNextAttack' }); break
     case 'guardian_stasis_field': doEffect({ kind: 'blockChoices', amount: 1, targets: upgraded ? 5 : 4 }, scope, 'anyPlayer'); break
     case 'guardian_strike_for_strike': hit(upgraded ? 2 : 1); if (attack) doEffect({ kind: 'gainBlockFromLastHit' }); break
-    case 'guardian_sentry_beam': hit(upgraded ? 4 : 3, undefined, 'row'); if (attack) { vigor(); modeShift() } break
+    case 'guardian_sentry_beam': hit(upgraded ? 4 : 3, undefined, 'row'); if (attack) { vigor(); doEffect({ kind: 'addDaze', amount: 1, pile: 'draw' }) } break
     case 'guardian_disrupt': block(upgraded ? 2 : 1); doEffect({ kind: 'applyVulnerable', amount: 1 }); break
     case 'guardian_charge_core': vigor(); break
     case 'guardian_crystal_edge': hit(upgraded ? 2 : 1); draw(1); break
@@ -923,7 +923,7 @@ function resolveGuardianCard(
     case 'guardian_future_plans': break
     case 'guardian_preprogram': draw(upgraded ? 3 : 2); if (actor.vigorSpentThisTurn > 0) vigor(); break
     case 'guardian_brilliant_scales': if (context.sourcePowerUid) block(1); break
-    case 'guardian_repulsor': if (context.sourcePowerUid) doEffect({ kind: 'gainEnergy', amount: 1 }); else modeShift(); break
+    case 'guardian_repulsor': if (context.sourcePowerUid) doEffect({ kind: 'gainEnergy', amount: 1 }); else doEffect({ kind: 'addDaze', amount: 1, pile: 'draw' }); break
     case 'guardian_ancient_construct': if (context.sourcePowerUid && actor.block >= 4) vigor(); break
     case 'guardian_shield_charger': break
     case 'guardian_time_sifter': {
@@ -1048,7 +1048,7 @@ function resolveGuardianGem(
   switch (id) {
     case 'guardian_amethyst': if (context.guardianModeShift) shiftGuardianModeLive(state, actor); break
     case 'guardian_emerald': doEffect({ kind: 'applyWeak', amount: 1 }); break
-    case 'guardian_garnet': doEffect({ kind: 'applyVulnerable', amount: 1 }); shiftGuardianModeLive(state, actor); break
+    case 'guardian_garnet': doEffect({ kind: 'applyVulnerable', amount: 1 }); doEffect({ kind: 'addDaze', amount: 1, pile: 'draw' }); break
     case 'guardian_opal': if (actor.guardianMode === 'defense') doEffect({ kind: 'draw', amount: 2 }); break
     case 'guardian_ruby': doEffect({ kind: 'hit', amount: 1 }); break
     case 'guardian_sapphire': doEffect({ kind: 'block', amount: 1 }); break
@@ -1210,7 +1210,7 @@ export function applyEffect(
           const slow = abilities.find((ability) => ability.kind === 'slow')
           const flying = abilities.find((ability) => ability.kind === 'flying')
           let amount = each + (slow?.kind === 'slow' ? slow.damagePerHit : 0)
-          amount = hitDamage(amount, mods, { vulnerable: slimeCommand ? 0 : vulnerableAtStart })
+          amount = hitDamage(amount, mods, { vulnerable: ignoresHitModifiers ? 0 : vulnerableAtStart })
           if (actor.damageDealtZeroThisTurn) amount = 0
           if (flying?.kind === 'flying') amount = Math.min(amount, flying.maxDamagePerHit)
           const result = damageEnemy(state, target, amount, !slimeCommand && context.sourceCardType !== undefined)
@@ -1234,7 +1234,7 @@ export function applyEffect(
             if (gained > 0) poisonEvents += 1
           }
         }
-        if (!slimeCommand && !deferVulnerableSpend && vulnerableAtStart > 0) {
+        if (!ignoresHitModifiers && !deferVulnerableSpend && vulnerableAtStart > 0) {
           target.vulnerable = vulnerableAtStart - 1
         }
         // One line for the whole attack, not one per swing: a five-hit card

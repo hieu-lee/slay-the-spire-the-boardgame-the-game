@@ -16,10 +16,12 @@ export function installScreenAudit(page) {
         if (!visible || !image.complete || image.naturalWidth > 0) continue
         const source = image.currentSrc || image.src
         const retry = new URL(source, location.href)
+        if (retry.protocol === 'blob:') continue
         retry.searchParams.set('screen-audit-retry', String(Date.now()))
         image.src = retry.href
       }
     })
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     try {
       await page.waitForFunction(() => [...document.images].every((image) => {
         const style = getComputedStyle(image)
@@ -37,7 +39,6 @@ export function installScreenAudit(page) {
         .map((image) => image.currentSrc || image.src))
       throw new Error(`${label}: visible images did not load: ${pending.join(', ')}`, { cause: error })
     }
-    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const issues = await page.evaluate(() => {
       const visible = (element) => {
         const style = getComputedStyle(element)

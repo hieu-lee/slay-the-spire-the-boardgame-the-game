@@ -401,7 +401,7 @@ const CARD_KEYWORD_TIPS = [
   ['Strength', /\bstrength\b|__strength__/i, 'Adds 1 damage to every hit for each Strength. Maximum 8.', 'strength'],
   ['Poison', /\bpoison(?:ed)?\b|__poison__/i, 'At end of turn, the enemy loses 1 HP per Poison. Block does not stop it.', 'poison'],
   ['Block', /\bblock(?:ed|ing)?\b|__block__/i, 'Prevents 1 damage per Block. Player Block is capped at 20.', 'block'],
-  ['Daze', /\bdaze\b/i, 'A Daze is Ethereal and Unplayable.', 'daze'],
+  ['Daze', /\bdazed?\b/i, 'A Daze is Ethereal and Unplayable.', 'daze'],
   ['Burn', /\bburn\b/i, 'If Burn remains in your hand at end of turn, take its damage.', 'burn'],
   ['Shiv', /\bshivs?\b/i, 'Spend a Shiv to deal 1 damage as a separate hit. Shivs are not cards.', 'shiv'],
   ['Miracle', /\bmiracles?\b/i, 'Spend a Miracle at any time to gain 1 Energy.', 'miracle'],
@@ -504,7 +504,7 @@ export function cardPlayText(def: CardDef, cost = def.cost): string {
 export function cardRuleDescription(def: CardDef): string {
   const tokens: Readonly<Record<string, string>> = {
     damage: 'damage', block: 'Block', copy: 'copy', vigor: 'Vigor', energy: 'Energy', strength: 'Strength',
-    'mode-shift': 'Mode Shift', debuff: 'Vulnerable', weak: 'Weak', aoe: 'area effect', hp: 'HP', remove: 'remove',
+    'mode-shift': 'Mode Shift', dazed: 'Dazed', debuff: 'Vulnerable', weak: 'Weak', aoe: 'area effect', hp: 'HP', remove: 'remove',
     vulnerable: 'Vulnerable',
   }
   return cardRulesText(def).replace(/\[([a-z-]+)\]/gi, (token, name: string) => tokens[name.toLowerCase()] ?? token)

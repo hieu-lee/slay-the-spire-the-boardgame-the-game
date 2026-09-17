@@ -2299,19 +2299,16 @@ try {
   await a.getByRole('button', { name: /^Red Louse,/ }).dispatchEvent('click')
   const repeatedCopyDiscard = a.getByRole('dialog', { name: 'Choose 1 to discard' })
   await repeatedCopyDiscard.getByRole('button', { name: /^Survivor,/ }).click()
-  let copiedDaggerRefusalStatus = 0
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
     const body = route.request().postDataJSON()
     body.action.discardUids = ['not-in-the-copy-preview']
     const response = await route.fetch({ postData: JSON.stringify(body) })
-    copiedDaggerRefusalStatus = response.status()
     await route.fulfill({ response })
   }, { times: 1 })
+  const copiedDaggerRefusal = a.waitForResponse((response) =>
+    response.url().endsWith(`/api/rooms/${code}/action`) && response.status() === 409)
   await repeatedCopyDiscard.getByRole('button', { name: 'Discard selected card' }).click()
-  for (let attempt = 0; attempt < 50 && copiedDaggerRefusalStatus === 0; attempt += 1) {
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
-  }
-  assertEqual(copiedDaggerRefusalStatus, 409, 'the forged copied Dagger Throw did not reach refusal')
+  await (await copiedDaggerRefusal).finished()
   await repeatedCopyDiscard.getByText(/^1\/1 selected/).waitFor()
   const recoveredCopyPreview = await snapshot(a)
   await repeatedCopyDiscard.getByRole('button', { name: 'Discard selected card' }).click()
@@ -2979,7 +2976,11 @@ try {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
   assertEqual(failedSeverRefreshes, 3, 'the unknown Sever Soul did not exhaust immediate refreshes')
+  const severReconciliation = a.waitForResponse((response) =>
+    response.request().method() === 'GET' &&
+    new URL(response.url()).pathname === `/api/rooms/${code}` && response.ok())
   await a.unroute(unknownDaggerRoomPattern)
+  await severReconciliation
   await a.getByText('Choose an enemy', { exact: true }).waitFor()
   await a.locator(`.enemy[data-enemy-id="${severRetargetSurvivor.uid}"]`).dispatchEvent('click')
   await a.waitForFunction(() => ![...document.querySelectorAll('button')]
@@ -5027,6 +5028,8 @@ try {
   const firstStage = await snapshot(a)
   const firstTarget = firstStage.endTurnAbilities[0].targets.find((target) => target.uid !== 'online-row-boss').uid
   const dragEffect = async (page, source, target) => {
+    await target.scrollIntoViewIfNeeded()
+    await source.scrollIntoViewIfNeeded()
     const from = await source.boundingBox()
     const to = await target.boundingBox()
     assert(from && to, 'end-turn drag endpoints must be visible')
@@ -6058,10 +6061,15 @@ try {
   rewardIris.potions = ['weak_potion']
   rewardIris.cardRewards = ['golden_ticket', 'anger', 'shrug_it_off']
   rewardIris.rareRewards = ['bludgeon']
+  const rewardSable = fourRoom.run.players.find((player) => player.name === 'Sable')
   fourRoom.run = {
     ...fourRoom.run, phase: 'reward', combat: null, rewardDestination: 'map',
-    rewards: [{ playerId: rewardIris.id, cardReward: true, choices: null, upgraded: false,
-      gold: false, potion: 'fire_potion', relic: 'astrolabe', bossRelics: false }],
+    rewards: [
+      { playerId: rewardIris.id, cardReward: true, choices: null, upgraded: false,
+        gold: false, potion: 'fire_potion', relic: 'astrolabe', bossRelics: false },
+      { playerId: rewardSable.id, cardReward: false, choices: null, upgraded: false,
+        gold: 8, potion: false, relic: false, bossRelics: false },
+    ],
   }
   fourRoom.version += 1
   rooms.publishRoom(fourCode)
@@ -6095,12 +6103,36 @@ try {
     assert(enabledCardLoot, 'card reward was disabled by unrelated item loot')
     assertEqual(individualPotionSkips, 0, 'the loot table still has an individual Potion skip button')
   })
+  const rewardSocketHost = rewardIris.deck.find((card) => card.defId === 'strike_ironclad')
+  fourRoom.run.pendingGuardianSockets = [{ playerId: rewardIris.id, cardUid: rewardSocketHost.uid,
+    gemIds: ['guardian_ruby'], source: 'gain' }]
+  fourRoom.version += 1
+  rooms.publishRoom(fourCode)
+  const waitingForSocketSkip = fourPages[1].getByRole('button', { name: 'Waiting for teammate' })
+  await waitingForSocketSkip.waitFor()
+  const waitingForSocketSkipDisabled = await waitingForSocketSkip.isDisabled()
+  const socketTeammateRewardEnabled = await fourPages[1].getByRole('button', { name: '8 Gold' }).isEnabled()
+  check('Skip waits for a teammate to finish a private Guardian Socket', () => {
+    assertEqual(waitingForSocketSkipDisabled, true)
+    assertEqual(socketTeammateRewardEnabled, true)
+  })
+  fourRoom.run.pendingGuardianSockets = []
+  fourRoom.version += 1
+  rooms.publishRoom(fourCode)
+  await fourPages[1].getByRole('button', { name: 'Skip' }).waitFor()
   await fourPages[0].getByRole('button', { name: 'Astrolabe' }).scrollIntoViewIfNeeded()
   await fourPages[0].screenshot({ path: join(outDir, '09-four-player-compact-desktop-loot.png'), fullPage: true })
   await fourPages[0].locator('.reward-screen').screenshot({ path: join(outDir, '09-four-player-compact-desktop-items.png') })
   await roomAction(fourPages[0], { kind: 'relicReward', choice: 'gain' })
   await fourPages[0].getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
-  await fourPages[1].getByRole('status').filter({ hasText: 'Waiting for Iris to resolve Astrolabe' }).waitFor()
+  const waitingForRelicSkip = fourPages[1].getByRole('button', { name: 'Waiting for teammate' })
+  await waitingForRelicSkip.waitFor()
+  const waitingForRelicSkipDisabled = await waitingForRelicSkip.isDisabled()
+  const teammateRewardEnabled = await fourPages[1].getByRole('button', { name: '8 Gold' }).isEnabled()
+  check('Skip waits for a teammate to finish resolving an immediate Relic', () => {
+    assertEqual(waitingForRelicSkipDisabled, true)
+    assertEqual(teammateRewardEnabled, true)
+  })
   await fourPages[0].screenshot({ path: join(outDir, '09b-four-player-compact-desktop-pending-relic.png'), fullPage: true })
   await fourPages[0].evaluate(() => window.__ROOM_SOCKETS__?.at(-1)?.close(4000, 'item reconnect test'))
   await fourPages[1].getByRole('button', { name: 'Settings' }).click()
@@ -6114,6 +6146,17 @@ try {
     assertEqual(fourSeatCount, 4)
     assertEqual(teammatePotionControls, 0)
     assertEqual(pendingAfterFourReconnect, null, 'disconnect did not settle the private Relic deterministically')
+  })
+  fourRoom.run = { ...fourRoom.run, phase: 'victory', combat: null, act: 1,
+    campaign: { ...fourRoom.run.campaign, finalized: false },
+    players: fourRoom.run.players.map((player) => player.id === iris.id ? { ...player,
+      relics: [...player.relics, { defId: 'astrolabe', spent: false, pending: true }] } : player) }
+  fourRoom.version += 1
+  rooms.publishRoom(fourCode)
+  await fourPages[1].getByRole('status').filter({ hasText: 'Waiting for Iris to resolve Astrolabe' }).waitFor()
+  const pendingAstrolabeAdvance = await fourPages[1].getByRole('button', { name: 'Climb to Act 2' }).count()
+  check('a teammate cannot advance the Act while Astrolabe is unresolved', () => {
+    assertEqual(pendingAstrolabeAdvance, 0)
   })
   fourRoom.run = { ...fourRoom.run, phase: 'betweenCombat', combat: null, act: 3, ascension: 13,
     pendingBossDefId: 'time_eater', rewards: [], rewardDestination: null,

@@ -215,7 +215,7 @@ check('Socket and source-uncertainty metadata are preserved without inference', 
 
 check('printed icon and mode metadata is derived from both faces', () => {
   const sentry = GUARDIAN_CARDS_BY_ID.guardian_sentry_beam
-  assert.deepEqual(sentry.base.iconCounts, { '[damage]': 1, '[vigor]': 1, '[mode-shift]': 1, '[aoe]': 1 })
+  assert.deepEqual(sentry.base.iconCounts, { '[damage]': 1, '[vigor]': 1, '[dazed]': 1, '[aoe]': 1 })
   assert.deepEqual(sentry.base.modeEffects, ['attack'])
   assert.equal(sentry.base.vigorReference, 'gain')
   assert.deepEqual(GUARDIAN_CARDS_BY_ID.guardian_guardian_whirl.upgraded.modeEffects, ['attack', 'defense'])
@@ -243,6 +243,31 @@ check('Mode Shift and the four-token Vigor supply follow the rulebook', () => {
   assert.deepEqual(reclaimSpentGuardianVigor({ available: 1, spent: 3 }), { available: 4, spent: 0 })
   assert.throws(() => spendGuardianVigor({ available: 1, spent: 0 }, 2), /Cannot spend/)
   assert.throws(() => gainGuardianVigor({ available: 0, spent: 0 }, 0.5), /non-negative integer/)
+})
+
+check('pink spiral Guardian icons add Daze without Mode Shifting', () => {
+  const foe = { uid: 'e1', defId: 'jaw_worm', row: 0, isBoss: false, hp: 30, maxHp: 30,
+    block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0,
+    cardReward: null, actionIndex: 0, abilityUsed: false, dead: false }
+  const play = (card, context = { enemyUid: 'e1', playerId: 'p1' }, dazed = true) => {
+    const owner = createRun(431, [{ id: 'p1', name: 'Guardian', character: 'guardian' }]).players[0]
+    owner.energy = 6
+    owner.hand = [card]
+    const combat = playCard(createCombat({ seed: 431, calls: 0 }, [owner], [foe]), 'p1', card.uid, context)
+    assert.equal(combat.players[0].guardianMode, 'attack')
+    assert.equal(combat.players[0].draw[0]?.defId === 'daze', dazed)
+    return combat
+  }
+
+  play({ uid: 'overload-daze', defId: 'guardian_overload', upgraded: false }, { enemyUid: null, playerId: 'p1' })
+  const sentry = play({ uid: 'sentry-daze', defId: 'guardian_sentry_beam', upgraded: false })
+  assert.equal(sentry.players[0].vigor, 1)
+  const crystal = play({ uid: 'crystal-tourmaline', defId: 'guardian_crystal_edge', upgraded: false,
+    attachedGemId: 'guardian_tourmaline' }, undefined, false)
+  assert.equal(crystal.players[0].vigorSpentThisTurn, 1)
+  const walker = play({ uid: 'walker-garnet', defId: 'guardian_walker_claw', upgraded: false,
+    attachedGemId: 'guardian_garnet' })
+  assert.equal(walker.enemies[0].vulnerable, 1)
 })
 
 check('spent Vigor adds once per hit or Block icon only to Attacks and Skills', () => {
@@ -726,7 +751,7 @@ check('Blitz can be ordered before a free-Power effect', () => {
   assert.equal(playCost(faceOf(CARDS.guardian_floating_orbs, false), player), 0)
 })
 
-check('Ruby and Peridot Gem Powers double attack damage and spend Vulnerable', () => {
+check('Ruby and Peridot Gem Powers ignore and preserve hit modifiers', () => {
   for (const upgraded of [false, true]) for (const [gem, base] of [['guardian_ruby', 1], ['guardian_peridot', 2]]) {
     const player = createRun(814, [{ id: 'p1', name: 'Guardian', character: 'guardian' }]).players[0]
     player.strength = 3
@@ -740,9 +765,10 @@ check('Ruby and Peridot Gem Powers double attack damage and spend Vulnerable', (
       let combat = createCombat({ seed: 814, calls: 0 }, [player], [{ ...enemy, block }], 'gem-power-vulnerable')
       combat.players[0].vigorSpentThisTurn = 2
       combat = activatePower(combat, 'p1', 'orbs', { enemyUid: 'e1' })
-      assert.equal(combat.enemies[0].hp, 20 - Math.max(0, base * 2 - block))
-      assert.equal(combat.enemies[0].block, Math.max(0, block - base * 2))
-      assert.equal(combat.enemies[0].vulnerable, 1)
+      const damage = base
+      assert.equal(combat.enemies[0].hp, 20 - Math.max(0, damage - block))
+      assert.equal(combat.enemies[0].block, Math.max(0, block - damage))
+      assert.equal(combat.enemies[0].vulnerable, 2)
       assert.equal(combat.players[0].weak, 2)
       assert.equal(combat.players[0].vigorSpentThisTurn, 2)
       assert.equal(activatePower(combat, 'p1', 'orbs', { enemyUid: 'e1' }), combat)
@@ -787,13 +813,14 @@ check('reviewed Guardian Power timing, selection, and Retain rules resolve exact
   let combat = createCombat({ seed: 434, calls: 0 }, [player], [enemy()], 'guardian-live-timing')
   combat.enemies[0].vulnerable = 2
   combat = playCard(combat, 'p1', 'repulsor')
-  assert.equal(combat.players[0].guardianMode, 'defense', 'Repulsor did not Mode Shift when played')
+  assert.equal(combat.players[0].guardianMode, 'attack', 'Repulsor incorrectly Mode Shifted when played')
+  assert.equal(combat.players[0].draw[0]?.defId, 'daze', 'Repulsor did not put Daze on top of the draw pile')
   combat = playCard(combat, 'p1', 'crystallize', { enemyUid: 'e1', playerId: 'p1' })
   combat.players[0].guardianMode = 'attack'
   combat.players[0].vigorSpentThisTurn = 1
   combat = playCard(combat, 'p1', 'strike', { enemyUid: 'e1', playerId: 'p1' })
-  assert.deepEqual([combat.enemies[0].hp, combat.players[0].weak, combat.enemies[0].vulnerable], [23, 1, 0],
-    'Crystallize Ruby must use Vulnerable while ignoring owner Strength, Weak, and Vigor')
+  assert.deepEqual([combat.enemies[0].hp, combat.players[0].weak, combat.enemies[0].vulnerable], [24, 1, 1],
+    'Crystallize Ruby must ignore and preserve Strength, Weak, Vulnerable, and Vigor')
   combat = endPlayerTurn(combat)
   combat = startPlayerTurn(enemyTurn(combat))
   assert.equal(combat.players[0].energy, 4,

@@ -73,12 +73,12 @@ try {
           const card = cards.nth(index)
           const point = await card.evaluate(node => {
             const r = node.getBoundingClientRect()
-            const y = innerHeight - 3
-            for (let x = Math.ceil(r.left + 3); x < r.right - 3; x++)
-              if (document.elementFromPoint(x, y)?.closest('.card') === node) return { x, y }
+            for (let y = Math.min(innerHeight - 3, Math.floor(r.bottom - 3)); y >= Math.max(3, r.top + 3); y--)
+              for (let x = Math.ceil(r.left + 3); x < r.right - 3; x++)
+                if (document.elementFromPoint(x, y)?.closest('.card') === node) return { x, y }
             return null
           })
-          assert(point, `${screen}: card ${index} has no resting bottom hit area`)
+          assert(point, `${screen}: card ${index} has no resting hit area`)
           await page.mouse.move(point.x, point.y)
           await page.waitForTimeout(250)
           const samples = await card.evaluate(async node => {
@@ -86,13 +86,16 @@ try {
             for (let i = 0; i < 30; i++) {
               await new Promise(requestAnimationFrame)
               const r = node.getBoundingClientRect()
-              result.push({ hover: node.matches(':hover'), bottom: r.bottom, width: r.width, scroll: node.closest('.hand-scroll').scrollTop })
+              result.push({ hover: node.matches(':hover'), bottom: r.bottom, width: r.width,
+                padding: parseFloat(getComputedStyle(node.parentElement).paddingBottom),
+                scroll: node.closest('.hand-scroll').scrollTop })
             }
             return result
           })
           assert(samples.every(s => s.hover && s.scroll === 0), `${engineName}/${screen} card ${index} at ${JSON.stringify(point)}: ${JSON.stringify(samples)}`)
           assert(Math.max(...samples.map(s => s.width)) - Math.min(...samples.map(s => s.width)) < .5, 'card oscillates')
-          assert(samples.every(s => viewport.height - s.bottom >= 0 && viewport.height - s.bottom < 12), 'hover lifts higher than needed')
+          assert(samples.every(s => viewport.height - s.bottom >= 0 && viewport.height - s.bottom <= s.padding + 1),
+            `hover lifts beyond the hand's reserved bottom space: ${JSON.stringify(samples)}`)
         }
         await center.hover()
         assert.equal(await tip.count(), 0, 'card help remains Shift-only')

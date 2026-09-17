@@ -36,6 +36,7 @@ try {
         await page.waitForTimeout(1500)
         const card = page.locator('.hand .card').first()
         const resting = await card.boundingBox()
+        const restingTransform = await card.evaluate((element) => getComputedStyle(element).transform)
         const before = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun().combat))
         await card.hover()
         await card.click()
@@ -45,8 +46,8 @@ try {
         await page.waitForTimeout(250)
         assert.equal(await card.getAttribute('aria-pressed'), 'false', 'blank click must cancel targeting')
         assert(await card.evaluate(e => !e.matches(':hover, :focus, .card--selected')), 'cancelled card must lose its raised state')
-        const cancelled = await card.boundingBox()
-        assert(Math.abs(cancelled.y - resting.y) < 1, 'cancelled card must return to its resting position')
+        assert.equal(await card.evaluate((element) => getComputedStyle(element).transform), restingTransform,
+          'cancelled card must return to its resting fan transform')
         assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat), before, 'cancellation must not play a card')
         await page.screenshot({ path: resolve(out, `${engineName}-${screen}-cancelled.png`) })
         await card.hover()

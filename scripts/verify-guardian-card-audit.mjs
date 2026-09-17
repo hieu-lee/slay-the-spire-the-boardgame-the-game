@@ -41,13 +41,11 @@ for (const upgraded of [false, true]) {
       const exploit = play(fixture('guardian_exploit_gems', upgraded, mode)).players[0]
       assert.deepEqual([exploit.vigor, exploit.energy], [0, upgraded ? 5 : 4])
     })
-    check(`Overload draws then shifts (${mode}, upgrade=${upgraded})`, () => {
+    check(`Overload draws then adds Daze (${mode}, upgrade=${upgraded})`, () => {
       const next = play(fixture('guardian_overload', upgraded, mode))
       assert.equal(next.players[0].hand.length, upgraded ? 5 : 4)
-      assert.equal(next.players[0].guardianMode, mode === 'attack' ? 'defense' : 'attack')
-      const locked = fixture('guardian_overload', upgraded, mode)
-      locked.players[0].guardianModeLocked = true
-      assert.equal(play(locked).players[0].guardianMode, mode)
+      assert.equal(next.players[0].draw[0]?.defId, 'daze')
+      assert.equal(next.players[0].guardianMode, mode)
     })
     check(`Refracted Beam has no area effect (${mode}, upgrade=${upgraded})`, () => {
       const state = fixture('guardian_refracted_beam', upgraded, mode)

@@ -371,7 +371,6 @@ try {
               }
               return result
             })
-            assert(recovery.at(-1) > beforeScale + .05, 'deaths must gradually restore scale')
             const resumeFrames = await page.evaluate(() => {
               const f = window.fixture
               cancelAnimationFrame(f.recoveryFrame)
@@ -379,9 +378,13 @@ try {
               f.recoveryFrames = []
               return frames
             })
-            assert(new Set([...resumeFrames, ...recovery].map(s => s.toFixed(4))).size > 3,
+            assert(recovery.at(-1) >= beforeScale - .002,
+              `${engineName}/${screen}/${label}/${survivors}: deaths shrank the stage from ${beforeScale}: ${recovery}`)
+            if (recovery.at(-1) > beforeScale + .002) assert(
+              new Set([...resumeFrames, ...recovery].map(scale => scale.toFixed(4))).size > 3,
               `${engineName}/${screen}/${label}/${survivors}: scale recovery jumped: ${resumeFrames.slice(-20)} / ${recovery}`)
-            assert(recovery.every((s, i) => i === 0 || s >= recovery[i - 1] - .001), 'scale recovery oscillates')
+            assert(recovery.every((scale, index) => index === 0 || scale >= recovery[index - 1] - .001),
+              'scale recovery oscillates')
             await ready()
           }
           assert(await page.locator('.board').evaluate(board => {

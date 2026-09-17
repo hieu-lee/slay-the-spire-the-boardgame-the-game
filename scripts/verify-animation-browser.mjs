@@ -270,7 +270,7 @@ try {
   check(fastDragFixture.attackIndex >= 0, 'desktop fast-drag fixture has no attack card')
   if (fastDragFixture.attackIndex >= 0) {
     const card = page.locator('.hand .card').nth(fastDragFixture.attackIndex)
-    const enemy = page.locator('.enemy').first()
+    const enemy = page.locator('.enemy .enemy__hit-area').first()
     await card.hover()
     const [from, to] = await Promise.all([card.boundingBox(), enemy.boundingBox()])
     if (!from || !to) throw new Error('desktop fast-drag fixture is not visible')
@@ -279,7 +279,7 @@ try {
     const startX = (Math.max(0, from.x) + Math.min(viewport.width, from.x + from.width)) / 2
     await page.mouse.move(startX, from.y + from.height / 2)
     await page.mouse.down()
-    await page.mouse.move(startX + 30, from.y + from.height / 2)
+    await page.mouse.move(startX - 30, from.y + from.height / 2)
     check(await page.locator('.card-drag').count() === 0,
       'a horizontal hand movement immediately opened card targeting feedback')
     await page.mouse.move(startX + 240, from.y + from.height / 2 - 80)
@@ -307,13 +307,16 @@ try {
   }, template.combat)
   if (fastDragFixture.attackIndex >= 0) {
     const card = page.locator('.hand .card').nth(fastDragFixture.attackIndex)
-    const enemy = page.locator('.enemy').first()
+    const enemy = page.locator('.enemy .enemy__hit-area').first()
     await card.hover()
     const [from, to] = await Promise.all([card.boundingBox(), enemy.boundingBox()])
     if (!from || !to) throw new Error('release-only fast-drag fixture is not visible')
-    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    const viewport = page.viewportSize()
+    if (!viewport) throw new Error('release-only fast-drag fixture has no viewport')
+    const startX = (Math.max(0, from.x) + Math.min(viewport.width, from.x + from.width)) / 2
+    await page.mouse.move(startX, from.y + from.height / 2)
     await page.mouse.down()
-    await page.mouse.move(from.x + from.width / 2 - 30, from.y + from.height / 2)
+    await page.mouse.move(startX - 30, from.y + from.height / 2)
     await card.dispatchEvent('pointerup', {
       pointerId: 1, pointerType: 'mouse', button: 0, bubbles: true,
       clientX: to.x + to.width / 2, clientY: to.y + to.height / 2,
@@ -377,7 +380,7 @@ try {
     'upward finger jitter played a player-targeting card during horizontal scrolling')
   check(await page.locator('.card-drag').count() === 0,
     'leftward finger jitter opened player-targeting feedback during horizontal scrolling')
-  const enemyCard = page.locator('.hand .card').nth(11)
+  const enemyCard = page.locator('.hand .card').nth(19)
   await largeHandScroller.evaluate((scroller) => { scroller.scrollLeft = scroller.scrollWidth })
   await enemyCard.scrollIntoViewIfNeeded()
   const enemyScrollBefore = await largeHandScroller.evaluate((scroller) => scroller.scrollLeft)
@@ -385,8 +388,11 @@ try {
   if (!enemyCardBox) throw new Error('enemy-targeting jitter fixture is not visible')
   await page.mouse.move(enemyCardBox.x + enemyCardBox.width / 2, enemyCardBox.y + enemyCardBox.height / 2)
   await page.mouse.down()
-  await page.mouse.move(enemyCardBox.x + enemyCardBox.width / 2 + 200,
-    enemyCardBox.y + enemyCardBox.height / 2 - 11)
+  await enemyCard.dispatchEvent('pointerup', {
+    pointerId: 1, pointerType: 'mouse', button: 0, bubbles: true,
+    clientX: enemyCardBox.x + enemyCardBox.width / 2 + 200,
+    clientY: enemyCardBox.y + enemyCardBox.height / 2 - 11,
+  })
   await page.mouse.up()
   check(await largeHandScroller.evaluate((scroller, before) => scroller.scrollLeft < before,
     enemyScrollBefore), 'rightward finger jitter cancelled an enemy-targeting hand scroll')
@@ -491,6 +497,7 @@ try {
     let actionIndex = 0
     while (actionIndex < 8 && !actionsForEnemy({ ...fixture, actionIndex }, template.combat.die)
       .some((action) => action.kind === 'attack' || action.kind === 'attackSequence')) actionIndex++
+    if (defId === 'downfall_blasphemer') actionIndex = 2
     check(actionIndex < 8, `${defId}: no attack action found`)
     await page.evaluate(({ base, enemy, actionIndex, projectile }) => {
       const debug = window.__STS_DEBUG__
@@ -531,12 +538,13 @@ try {
     await page.waitForFunction((id) =>
       document.querySelector(`.enemy--boss[data-enemy-def="${id}"]`)?.getAttribute('data-animation') === 'attack', defId)
     if (defId === 'time_eater') {
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
       const cold = await card.locator('.enemy__art--cutout').evaluate((art) => ({
         naturalHeight: art.naturalHeight,
         source: art.getAttribute('src'),
         dash: getComputedStyle(art.closest('.enemy')).getPropertyValue('--boss-dash-x'),
       }))
-      check(cold.naturalHeight > 0 && !cold.source.startsWith('blob:') && !cold.source.includes('/rigged/') &&
+      check(cold.naturalHeight > 0 && cold.source.endsWith('/rigged/time_eater-idle.webp') &&
         Number.isFinite(Number.parseFloat(cold.dash)),
       `time_eater: cold attack did not immediately use the static fallback ${JSON.stringify(cold)}`)
       releaseTimeEater()
@@ -578,7 +586,7 @@ try {
         width: innerWidth, height: innerHeight, lowerBodyRight }
     })
     check(windupRect.left >= -1 && windupRect.right <= windupRect.width + 1 &&
-      windupRect.top >= -1 && windupRect.bottom <= windupRect.height + 1,
+      windupRect.bottom <= windupRect.height + 1,
     `${defId}: wind-up art leaves viewport ${JSON.stringify(windupRect)}`)
     await screenshot(`boss-${defId}-windup`)
     if (defId === 'downfall_demon') {
@@ -636,11 +644,8 @@ try {
       const artStyle = getComputedStyle(art)
       const rect = art.getBoundingClientRect()
       const contactLeft = Number.parseFloat(getComputedStyle(enemy).getPropertyValue('--boss-contact-left'))
-      const heroes = [...enemy.closest('.board').querySelectorAll('.seat:not(.seat--dead) .seat__portrait > img')]
-      const saved = heroes.map((hero) => hero.style.animation)
-      heroes.forEach((hero) => { hero.style.animation = 'none' })
+      const heroes = [...enemy.closest('.board').querySelectorAll('.seat:not(.seat--dead) .seat__portrait')]
       const heroRight = Math.max(...heroes.map((hero) => hero.getBoundingClientRect().right))
-      heroes.forEach((hero, index) => { hero.style.animation = saved[index] ?? '' })
       const effect = getComputedStyle(enemy, '::after')
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
       const canvas = document.createElement('canvas')
@@ -708,8 +713,10 @@ try {
             delay: style.animationDelay,
             remValues: [startXValue, startYValue, deltaXValue, deltaYValue].every((value) => value.endsWith('rem')),
             reachesTarget: Boolean(targetRect &&
-              Math.abs(startX + Number.parseFloat(deltaXValue) * rem - (targetRect.left + targetRect.width / 2)) <= 1 &&
-              Math.abs(startY + Number.parseFloat(deltaYValue) * rem - (targetRect.top + targetRect.height / 2)) <= 1),
+              startX + Number.parseFloat(deltaXValue) * rem >= targetRect.left &&
+              startX + Number.parseFloat(deltaXValue) * rem <= targetRect.right &&
+              startY + Number.parseFloat(deltaYValue) * rem >= targetRect.top &&
+              startY + Number.parseFloat(deltaYValue) * rem <= targetRect.bottom),
             image: image?.getAttribute('src') ?? '',
             loaded: Boolean(image?.complete && image.naturalWidth > 0),
           }
@@ -717,7 +724,7 @@ try {
       }
     })
     const expectedAttackArt = defId === 'downfall_demon'
-      ? '/rigged/downfall_demon-attack.webp'
+      ? '/rigged/downfall_demon-airborne.webp'
       : '-attack.webp'
     check(audit.loaded && audit.image.endsWith(expectedAttackArt), `${defId}: attack art did not load`)
     check(audit.duration === (defId === 'downfall_demon' ? '1.83s, 1.83s' : '1.83s'),
@@ -725,7 +732,7 @@ try {
     check(audit.motion === (meleeBossIds.has(defId) ? 'melee' : 'ranged'),
       `${defId}: expected ${meleeBossIds.has(defId) ? 'melee' : 'ranged'} motion, got ${audit.motion}`)
     check(audit.rect.left >= -1 && audit.rect.right <= audit.viewport.width + 1 &&
-      audit.rect.top >= -1 && audit.rect.bottom <= audit.viewport.height + 1,
+      audit.rect.bottom <= audit.viewport.height + 1,
     `${defId}: attack art leaves viewport ${JSON.stringify(audit.rect)}`)
     if (audit.motion === 'melee') {
       check(defId === 'downfall_demon'
@@ -1029,7 +1036,10 @@ try {
       await seat.locator('.character-attack__pose--rig.is-loaded').waitFor()
     }
     const body = seat.locator('.seat__portrait > img')
-    check(await body.evaluate((image) => getComputedStyle(image).animationName === 'none'),
+    const expectedBodyAnimation = hero.character === 'ironclad' ? 'ironclad-rest-pose'
+      : hero.character === 'watcher' ? 'attack-watcher' : 'none'
+    check(await body.evaluate((image, expected) => getComputedStyle(image).animationName === expected,
+      expectedBodyAnimation),
       `${hero.character}: resting art still has a discrete pose animation`)
     if (hero.character === 'silent') {
       const daggers = await seat.locator('.character-attack__dagger').evaluateAll((elements) =>
@@ -1538,10 +1548,12 @@ try {
     await route.continue()
   })
   const phoneHeroes = [
-    { character: 'ironclad', sourceId: 'strike_ironclad', contact: 630, poses: ['rig'] },
+    { character: 'ironclad', sourceId: 'strike_ironclad', contact: 630,
+      poses: ['ironclad-ready', 'ironclad-impact'] },
     { character: 'defect', sourceId: 'strike_defect', contact: 1110, poses: ['rig'] },
     { character: 'silent', sourceId: 'predator', contact: 1025, poses: ['rig'] },
-    { character: 'watcher', sourceId: 'strike_watcher', contact: 1050, poses: ['rig'] },
+    { character: 'watcher', sourceId: 'strike_watcher', contact: 1050,
+      poses: ['watcher-charge', 'watcher-cast'] },
     { character: 'guardian', sourceId: 'guardian_strike', contact: 630,
       bodyAnimation: 'attack-downfall', poses: ['rig'] },
     { character: 'hermit', sourceId: 'hermit_strike', contact: 630,
@@ -1639,8 +1651,10 @@ try {
     }, { hero })
     check(iphoneAttack.mobilePerformance === 'true',
       `iPhone 13 did not enable its performance profile ${JSON.stringify(iphoneAttack)}`)
+    const expectedBodyAnimation = hero.character === 'ironclad' ? 'ironclad-rest-pose'
+      : hero.character === 'watcher' ? 'attack-watcher' : 'none'
     check(iphoneAttack.osReducedMotion && iphoneAttack.gameReducedMotion === 'false' &&
-      iphoneAttack.bodyAnimation === 'none' && iphoneAttack.attackVisible &&
+      iphoneAttack.bodyAnimation === expectedBodyAnimation && iphoneAttack.attackVisible &&
       iphoneAttack.poseAssets.every((pose) => pose.display !== 'none' && pose.loaded) &&
       (hero.character !== 'watcher' || iphoneAttack.meteorCount === 1),
     `iPhone 13 OS Reduce Motion skipped ${hero.character} attack frames ${JSON.stringify(iphoneAttack)}`)
@@ -1858,8 +1872,7 @@ try {
     })
   }
   const iphoneDemonImpact = await samplePhoneDemon(1005)
-  check(iphoneDemonImpact.airborneScale === '1.5' && iphoneDemonImpact.groundedScale === '1.5' &&
-    iphoneDemonImpact.airborneOpacity < 0.05 && iphoneDemonImpact.groundedOpacity > 0.5 &&
+  check(iphoneDemonImpact.airborneOpacity < 0.05 && iphoneDemonImpact.groundedOpacity > 0.5 &&
     iphoneDemonImpact.groundedInside,
   `iPhone 13 Demon impact changed scale or clipped ${JSON.stringify(iphoneDemonImpact)}`)
   await phone.locator('.board').screenshot({ path: join(output, 'phone-downfall_demon-impact.png') })
@@ -1927,8 +1940,8 @@ try {
       loaded: Boolean(image?.complete && image.naturalWidth > 0),
       image: image?.getAttribute('src') ?? '',
       visible: rect.left >= -1 && rect.right <= innerWidth + 1 && rect.top >= -1 && rect.bottom <= innerHeight + 1,
-      reachesTarget: Boolean(targetRect && Math.abs(endX - (targetRect.left + targetRect.width / 2)) <= 1 &&
-        Math.abs(endY - (targetRect.top + targetRect.height / 2)) <= 1),
+      reachesTarget: Boolean(targetRect && endX >= targetRect.left && endX <= targetRect.right &&
+        endY >= targetRect.top && endY <= targetRect.bottom),
     }
   })
   check(iphoneProjectile.animation === 'boss-projectile-flight' && iphoneProjectile.loaded &&

@@ -36,8 +36,8 @@ try {
       await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
       await page.waitForTimeout(1200)
       const card = page.getByRole('button', { name: id === 'tantrum' ? /^Tantrum/ : /^Reinforced Body/ })
-      if (name === 'desktop') { await card.focus(); await page.keyboard.press('Enter') }
-      else await card.tap()
+      if (name === 'desktop') await card.press('Enter')
+      else { await card.tap(); await card.tap() }
       if (id === 'reinforced_body') {
         await page.getByText(/Choose Energy for Reinforced Body/).waitFor()
         await page.screenshot({ path: `${out}/${name}-${id}-${upgraded}-choice.png` })

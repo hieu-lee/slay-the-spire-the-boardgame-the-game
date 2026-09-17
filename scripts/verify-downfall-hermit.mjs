@@ -740,6 +740,18 @@ check('High-Caliber plus one external copy resolves four independently targeted 
   assert.equal(combat.players[0].block, 4)
 })
 
+check('playing High Noon gives starter Strikes Rapid Fire', () => {
+  const highNoon = instance('high-noon', 'hermit_high_noon')
+  const strike = instance('high-noon-strike', 'hermit_strike')
+  let combat = createCombat(createRng(491), [player({ hand: [highNoon, strike] })], [enemy()])
+  combat.pendingHermitSetupLoads = []
+  combat = playCard(combat, 'p1', highNoon.uid, { enemyUid: null, playerId: null })
+  combat = playCard(combat, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assert.deepEqual(combat.pendingCardCopy?.sourceNames, ['Rapid Fire'])
+  combat = playCardCopy(combat, 'p1', { enemyUid: 'e1', playerId: null })
+  assert.equal(combat.enemies[0].hp, 18)
+})
+
 check('externally queued Hermit cards retain printed, dynamic, and Vantage Rapid Fire', () => {
   const omniscience = instance('omni', 'omniscience')
   const itchy = instance('itchy', 'hermit_itchy_trigger')

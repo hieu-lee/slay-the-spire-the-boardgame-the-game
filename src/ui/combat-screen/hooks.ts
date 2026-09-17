@@ -424,7 +424,8 @@ export function usePresentationEvents(
     baseline.current = Math.max(baseline.current, latest)
     if (reducedEffects) setReducedSoundEvents(unseen)
     else setReducedSoundEvents((current) => current.length === 0 ? current : [])
-    const visualEvents = reducedEffects ? unseen.filter((event) => event.kind !== 'slime' &&
+    const visualEvents = reducedEffects ? unseen.filter((event) => event.kind !== 'orb' &&
+      event.kind !== 'slime' &&
       !(event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime')) : unseen
     if (visualEvents.length === 0) return
     const delays = reducedEffects ? new Map<number, number>()

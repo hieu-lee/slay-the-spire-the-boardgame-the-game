@@ -21,7 +21,7 @@ try {
     const page = await context.newPage()
     const errors = []
     page.on('pageerror', (error) => errors.push(String(error)))
-    await page.goto(`http://127.0.0.1:${server.httpServer.address().port}`)
+    await page.goto(`http://localhost:${server.httpServer.address().port}`)
     await page.evaluate(async () => {
       document.querySelector('#root').style.display = 'none'
       const host = document.createElement('div')

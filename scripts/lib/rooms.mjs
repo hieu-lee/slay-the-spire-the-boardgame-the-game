@@ -5108,6 +5108,8 @@ export function snapshotFor(room, seatToken, shared = {}) {
     pendingRelicStatus: pendingOwner && pendingRelic ? {
       playerId: pendingOwner.id, playerName: pendingOwner.name, relicId: pendingRelic.defId,
     } : null,
+    pendingTeammateAcquisitionPlayerId: run?.players.find((player) =>
+      player.id !== viewerId && hasPendingRelicAcquisition(run, player.id))?.id ?? null,
     run: visibleRun ? redactRun(visibleRun, viewerId, room) : null,
   }
 }

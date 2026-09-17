@@ -177,6 +177,7 @@ try {
     ]
     await setRun(combat)
     await capture('combat', '.combat')
+    await page.waitForTimeout(950)
     const survivor = page.locator('[data-enemy-id="left"]')
     const before = await survivor.boundingBox()
     const scrollBefore = await page.locator('.board').evaluate(board => ({ left: board.scrollLeft, width: board.scrollWidth, viewport: board.clientWidth }))
@@ -186,8 +187,10 @@ try {
       window.__STS_DEBUG__.setRun(run)
     })
     await page.locator('[data-enemy-id="right"]').waitFor({ state: 'detached' })
+    await page.waitForTimeout(950)
     const after = await survivor.boundingBox()
-    assert(after.x > before.x + 1, 'the survivor should still move into the cleared slot')
+    assert(after.x > before.x + 1,
+      `the survivor should still move into the cleared slot: ${JSON.stringify({ before, after })}`)
     const scrollAfter = await page.locator('.board').evaluate(board => ({ left: board.scrollLeft, width: board.scrollWidth, viewport: board.clientWidth }))
     assert.equal(scrollAfter.left, scrollBefore.left)
     assert(scrollAfter.width <= scrollBefore.width + 1, `enemy death created horizontal overflow: ${JSON.stringify({ scrollBefore, scrollAfter })}`)

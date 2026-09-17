@@ -275,6 +275,7 @@ try {
     run.neow = null
     run.roomState = null
     run.map.position = Object.entries(run.map.rooms).find(([, room]) => room.kind === 'campfire')?.[0]
+    run.players = run.players.map((player) => ({ ...player, hp: Math.max(1, player.hp - 1) }))
     debug.setRun(run)
   })
   await page.setViewportSize({ width: 844, height: 390 })

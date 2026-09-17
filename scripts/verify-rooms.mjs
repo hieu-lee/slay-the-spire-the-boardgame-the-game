@@ -892,8 +892,9 @@ check('another seat cannot bypass a pending Relic to start a boss or Act', () =>
   room.run.combat = null
   room.run.pendingBossDefId = 'time_eater'
   room.run.players.find((player) => player.id === a.playerId).relics.push({
-    defId: 'orrery', spent: false, pending: true,
+    defId: 'astrolabe', spent: false, pending: true,
   })
+  assertEqual(snapshotFor(room, b.token).pendingRelicStatus?.relicId, 'astrolabe')
   let blocked = null
   try { apply(room, b.token, { kind: 'startPendingBoss' }) } catch (error) { blocked = error }
   assertEqual(blocked?.name, 'RoomError')
@@ -7170,6 +7171,8 @@ check('Guardian Socket choices are visible, owner-authorized, and not blocked by
     ['guardian_ruby', 'guardian_onyx'])
   const peer = snapshotFor(room, b.token).run.pendingGuardianSockets[0]
   assertDeepEqual(peer, { playerId: a.playerId })
+  assertEqual(snapshotFor(room, b.token).pendingTeammateAcquisitionPlayerId, a.playerId)
+  assertEqual(snapshotFor(room, a.token).pendingTeammateAcquisitionPlayerId, null)
   assert(!allStrings(snapshotFor(room, b.token)).includes(host.uid), 'a Guardian Socket leaked its private host card')
   assert(!allStrings(snapshotFor(room, b.token)).includes('guardian_ruby'), 'a Guardian Socket leaked its private Gems')
   assertThrows(() => apply(room, b.token, {

@@ -1396,7 +1396,7 @@ function CombatScreenView({
       unknownCardAction.current = null
       cardActionPending.current = false
       setUsingCard(false)
-      if (!cardCommitted && current) restoreUnknownCard(card.pending, current, card.usingMiracle)
+      if (!cardCommitted && current) restoreUnknownCard(card.pending, current, card.usingMiracle, state)
     }
   }, [authoritativeRefresh, powerPreview, state, viewerId])
 
@@ -1867,7 +1867,11 @@ function CombatScreenView({
   const visibleEnemies = displayedEnemies(state.enemies, prefersReducedMotion ? new Set() : falling)
   const bosses = visibleEnemies.filter((enemy) => enemy.isBoss)
   const stageEnemies = visibleEnemies.filter((enemy) => !enemy.isBoss)
-  const stageEnemyCount = visibleEnemies.length
+  const initialStageEnemySlots = useRef({ combatId: state.combatId, count: visibleEnemies.length })
+  if (initialStageEnemySlots.current.combatId !== state.combatId) {
+    initialStageEnemySlots.current = { combatId: state.combatId, count: visibleEnemies.length }
+  }
+  const stageEnemyCount = Math.max(initialStageEnemySlots.current.count, visibleEnemies.length)
   const stageScaleActors = state.players.length + stageEnemyCount
   // EnemyCard can briefly retain its previous visual during restoration.
   // Fit from encounter data so new tall enemies start at the correct scale.
@@ -2775,8 +2779,9 @@ function CombatScreenView({
     }, () => waitForRefresh())
   }
 
-  function restoreUnknownCard(submitted: Pending, current: Player, usingMiracle: boolean) {
-    const alive = new Set(stateRef.current.enemies.filter((enemy) => !enemy.dead).map((enemy) => enemy.uid))
+  function restoreUnknownCard(submitted: Pending, current: Player, usingMiracle: boolean,
+    authoritative = stateRef.current) {
+    const alive = new Set(authoritative.enemies.filter((enemy) => !enemy.dead).map((enemy) => enemy.uid))
     const enemyUid = submitted.enemyUid && alive.has(submitted.enemyUid) ? submitted.enemyUid : null
     const enemyUids = submitted.enemyUids.filter((uid) => alive.has(uid))
     const slimeEnemyUids = submitted.slimeEnemyUids.filter((uid) => alive.has(uid))

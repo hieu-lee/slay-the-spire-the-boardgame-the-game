@@ -11,10 +11,11 @@ import { ItemLootChoice, LootChoice, PotionLootChoices } from './RewardScreen.ts
 type Props = {
   run: VisibleRun
   viewerId: string
+  waitingForTeammate?: boolean
   onAction: (action: object) => Promise<ActionOutcome>
 }
 
-export function OnlineRewardScreen({ run, viewerId, onAction }: Props) {
+export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, onAction }: Props) {
   const [activeCard, setActiveCard] = useState(false)
   const [cardChoicePending, setCardChoicePending] = useState(false)
   const cardChoicePendingRef = useRef(false)
@@ -115,11 +116,13 @@ export function OnlineRewardScreen({ run, viewerId, onAction }: Props) {
           : current.filter((candidate) => candidate !== source))} /> {rewardSourceLabel(source)}</label>)}
       <button type="button" disabled={sources.length !== 3 || revealPending} onClick={() => revealCards(sources)}>{revealPending ? 'Revealing…' : 'Reveal cards'}</button>
     </fieldset> : <p className="muted" role="status">Revealing cards…</p>}
-    <button className="reward-screen__skip" type="button" onClick={() => pickCard(null)}>Skip</button>
+    <button className="reward-screen__skip" type="button" disabled={waitingForTeammate}
+      onClick={() => pickCard(null)}>{waitingForTeammate ? 'Waiting for teammate' : 'Skip'}</button>
   </section>
 
   if (activeCard && offer.cardReward && offer.choices !== null) return <CardRewardPicker
     choices={offer.choices} upgraded={offer.upgraded} uidPrefix={`reward-${viewerId}`} style={backdrop}
+    skipDisabled={waitingForTeammate} skipLabel={waitingForTeammate ? 'Waiting for teammate' : 'Skip'}
     onChoose={pickCard} onSkip={() => pickCard(null)} />
 
   return <section className="reward-screen reward-screen--loot" style={backdrop}>
@@ -145,6 +148,7 @@ export function OnlineRewardScreen({ run, viewerId, onAction }: Props) {
       </div> : null}
       {!hasLootChoice ? <p className="muted" role="status">Waiting for teammates…</p> : null}
     </div></div>
-    {hasLootChoice ? <button className="reward-screen__skip" type="button" disabled={lootPending} onClick={skipLoot}>Skip</button> : null}
+    {hasLootChoice ? <button className="reward-screen__skip" type="button" disabled={lootPending || waitingForTeammate}
+      onClick={skipLoot}>{waitingForTeammate ? 'Waiting for teammate' : 'Skip'}</button> : null}
   </section>
 }

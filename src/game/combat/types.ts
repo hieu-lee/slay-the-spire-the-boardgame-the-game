@@ -545,7 +545,7 @@ export type PlayContext = {
   chooseLoadSelf?: boolean
   /** A Slime Command hit ignores its owner's combat modifiers and enemy Vulnerable. */
   slimeCommand?: boolean
-  /** Gem Power damage ignores owner modifiers; enemy Vulnerable still applies. */
+  /** Gem Power damage ignores and preserves Strength, Weak, Vulnerable, and Vigor. */
   guardianGemPowerDamage?: boolean
   /** Internal authorization set only by playHermitChamberCard. */
   hermitChamberPlay?: boolean

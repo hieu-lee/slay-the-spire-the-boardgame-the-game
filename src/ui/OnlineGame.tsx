@@ -594,9 +594,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const pendingSocket = run.pendingGuardianSockets?.find((pending) =>
     run.phase !== 'reward' || pending.playerId === snapshot.you.playerId)
   const pendingSocketOwner = run.players.find((player) => player.id === pendingSocket?.playerId)
-  const pendingAcquisition = hasPendingRelicAcquisition(
-    run, run.phase === 'reward' ? snapshot.you.playerId : undefined,
-  )
+  const pendingAcquisition = run.phase === 'reward'
+    ? hasPendingRelicAcquisition(run, snapshot.you.playerId)
+    : Boolean(snapshot.pendingTeammateAcquisitionPlayerId) || hasPendingRelicAcquisition(run)
   const viewerRewardPending = run.phase === 'reward' && run.rewards.some((offer) =>
     offer.playerId === snapshot.you.playerId && (offer.cardReward || offer.transformReward || offer.gold ||
       offer.potion !== false || (offer.relic ?? false) !== false || (offer.bossRelics ?? false) !== false))
@@ -895,6 +895,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         <OnlineRewardScreen
           run={run}
           viewerId={snapshot.you.playerId}
+          waitingForTeammate={Boolean(snapshot.pendingTeammateAcquisitionPlayerId)}
           onAction={room.act}
         />
       ) : null}

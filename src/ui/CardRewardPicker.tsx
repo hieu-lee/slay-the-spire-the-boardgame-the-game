@@ -9,6 +9,8 @@ type Props = {
   uidPrefix?: string
   title?: string
   description?: string
+  skipDisabled?: boolean
+  skipLabel?: string
   style?: CSSProperties
   onChoose: (index: number) => void
   onSkip?: () => void
@@ -17,7 +19,7 @@ type Props = {
 /** The shared full-screen choice surface for Card Rewards and mandatory Guardian Gems. */
 export function CardRewardPicker({
   choices, upgraded = false, disabled = false, uidPrefix = 'card-reward',
-  title = 'Choose a Card', description, style, onChoose, onSkip,
+  title = 'Choose a Card', description, skipDisabled = false, skipLabel = 'Skip', style, onChoose, onSkip,
 }: Props) {
   const picker = useRef<HTMLElement>(null)
   const rewardKey = `${uidPrefix}:${upgraded}:${choices.join(',')}`
@@ -49,7 +51,7 @@ export function CardRewardPicker({
         tabIndex={disabled ? -1 : undefined}
         onClick={() => !disabled && onChoose(index)} />)}
     </div>
-    {onSkip ? <button className="reward-screen__skip" type="button" disabled={disabled} onClick={onSkip}>Skip</button> : null}
+    {onSkip ? <button className="reward-screen__skip" type="button" disabled={disabled || skipDisabled} onClick={onSkip}>{skipLabel}</button> : null}
   </section>
 }
 

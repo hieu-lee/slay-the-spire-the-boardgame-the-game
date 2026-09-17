@@ -174,6 +174,7 @@ export type RoomSnapshot = {
   seats: PublicSeat[]
   pendingRelic?: PendingRelicPreview | null
   pendingRelicStatus?: { playerId: string; playerName: string; relicId: string } | null
+  pendingTeammateAcquisitionPlayerId?: string | null
   campfireChoice?: { choice: CampfireChoice; cardUid?: string }
   campfireTransformAvailable?: boolean
   quickSetupTransformAvailable?: boolean
