@@ -201,7 +201,7 @@ import json, sys
 image = Image.open(sys.argv[1]).convert('RGB')
 g = json.loads(sys.argv[2]); scale = image.width / g['viewportWidth']
 box = [g['left'], g['top'] + g['height'] * .04,
-       g['left'] + g['width'], g['top'] + g['height'] * .12]
+       g['left'] + g['width'], g['top'] + g['height'] * .50]
 band = image.crop(tuple(round(v * scale) for v in box))
 assert sum(r > 220 and b > 200 and g > 210 for r, g, b in band.getdata()) >= 4, 'upper bolt is clipped'
 `, screenshot, JSON.stringify(geometry)], { encoding: 'utf8' })
