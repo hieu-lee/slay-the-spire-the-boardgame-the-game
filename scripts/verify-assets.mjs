@@ -187,8 +187,11 @@ check('sound effects are complete, compact, and decodable', () => {
   const expected = [
     'attack.ogg', 'block.ogg', 'card.ogg', 'defeat.ogg', 'draw.ogg', 'enemy-hit.ogg',
     'heal.ogg', 'magic.ogg', 'player-hit.ogg', 'ui.ogg', 'victory.ogg', 'weak.ogg',
-  ]
-  assertDeepEqual(listing(sfxRoot, '.ogg').sort(), expected)
+    'gunshot.mp3', 'bullet-impact.mp3', 'meteor-fall.mp3', 'meteor-impact.mp3',
+    'sword-swing.mp3', 'sword-clash.mp3', 'lightning-burst.mp3', 'dark-beam.mp3',
+    'frost-bloom.mp3', 'flame-burst.mp3', 'slime-splat.mp3', 'poison-hiss.mp3',
+  ].sort()
+  assertDeepEqual([...listing(sfxRoot, '.ogg'), ...listing(sfxRoot, '.mp3')].sort(), expected)
   const files = expected.map((file) => join(sfxRoot, file))
   for (const file of files) {
     const result = spawnSync('ffprobe', [
@@ -196,8 +199,8 @@ check('sound effects are complete, compact, and decodable', () => {
     ], { encoding: 'utf8' })
     assert(result.status === 0 && Number(result.stdout) > 0, result.stderr || `${file} did not decode`)
   }
-  assert(files.reduce((bytes, file) => bytes + statSync(file).size, 0) < 320 * 1024,
-    'sound effects exceed 320 KiB')
+  assert(files.reduce((bytes, file) => bytes + statSync(file).size, 0) < 512 * 1024,
+    'sound effects exceed 512 KiB')
 })
 
 check('every character card has exactly one committed illustration', () => {

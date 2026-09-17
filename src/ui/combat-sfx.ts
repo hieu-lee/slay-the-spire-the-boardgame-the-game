@@ -4,7 +4,15 @@ import { CARDS } from '../game/cards.ts'
 import { POTIONS } from '../game/relics.ts'
 import { cardVfxRecipe, potionVfxRecipe, type VfxFamily, type VfxRecipe } from './combat-vfx.ts'
 
+export const ANIMATION_SOUND_VOLUMES = {
+  gunshot: .24, 'bullet-impact': .10, 'meteor-fall': .22, 'meteor-impact': .28,
+  'sword-swing': .18, 'sword-clash': .20, 'lightning-burst': .22, 'dark-beam': .24,
+  'frost-bloom': .20, 'flame-burst': .22, 'slime-splat': .20, 'poison-hiss': .16,
+} as const
+export type AnimationSound = keyof typeof ANIMATION_SOUND_VOLUMES
+
 export type CombatSound =
+  | AnimationSound
   | 'ui' | 'card' | 'draw' | 'attack' | 'magic' | 'enemy' | 'block' | 'heal' | 'weak'
 
 export type CombatSfxLayer = Readonly<{
@@ -128,7 +136,10 @@ export function cardSfxRecipe(
   const slot = CHARACTERS.indexOf(character) * CARD_IDS.length + CARD_IDS.indexOf(baseId)
   return tunedRecipe(
     `card:${character}:${baseId}:${mode ?? 'base'}`,
-    [...layersForCard(visual), identityLayer(slot)],
+    [...layersForCard(visual).map(layer => ({ ...layer,
+      // Animation cues supply the weapon/element detail; keep the original bed quieter.
+      volume: layer.volume * (visual.actorMotion === 'none' ? 1 : .55),
+    })), identityLayer(slot)],
     CHARACTER_RATE[character],
   )
 }
@@ -147,4 +158,10 @@ export function potionSfxRecipe(potionId: string): CombatSfxRecipe {
     [semantic, identityLayer(slot)],
     rate,
   )
+}
+
+/** A single cue at a visible animation beat, mixed below the main combat audio. */
+export function animationSfxRecipe(sound: AnimationSound, voices = 1): CombatSfxRecipe {
+  return { cue: `animation:${sound}`, layers: [{ sound, rate: .99,
+    volume: ANIMATION_SOUND_VOLUMES[sound] / Math.sqrt(Math.max(1, voices)), delayMs: 0 }] }
 }

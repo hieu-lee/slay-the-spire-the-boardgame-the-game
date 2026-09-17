@@ -33,6 +33,18 @@ try {
     const page = await context.newPage()
     page.on('pageerror', e => errors.push(String(e)))
     page.on('response', r => { if (r.status()>=400 && /\/assets\/combat\/rigged\//.test(r.url())) errors.push(`${r.status()} ${r.url()}`) })
+    if (process.argv.includes('--sfx-only')) await page.addInitScript(() => {
+      window.audioPlays = []; window.audioBeats = []; window.audioPauses = []
+      HTMLMediaElement.prototype.play = function () {
+        window.audioPlays.push({ cue: this.dataset.combatSfx, path: new URL(this.src).pathname,
+          time: performance.now(), volume: this.volume, rate: this.playbackRate })
+        return Promise.resolve()
+      }
+      HTMLMediaElement.prototype.pause = function () { window.audioPauses.push(this.dataset.combatSfx) }
+      document.addEventListener('animationstart', event => {
+        window.audioBeats.push({ name: event.animationName, time: performance.now() })
+      })
+    })
     await page.goto(`http://localhost:${server.httpServer.address().port}`)
     await page.evaluate(async () => {
       document.querySelector('#root').style.display='none'
@@ -49,7 +61,7 @@ try {
       const f=window.fixture={seq:1000,restoration:0}
       f.render=()=>reactRoot.render((R.createElement??R.default.createElement)(CombatScreen,{
         state:structuredClone(f.state),act:1,viewerId:'p1',autoAdvance:false,
-        authoritativeRestoration:f.restoration,onAction:()=>{},
+        authoritativeRestoration:f.restoration,authoritativeConnected:f.connected,onAction:()=>{},
       }))
       f.install=(character,defId='guardian_attack',isBoss=true,count=1)=>{
         const rng=createRng(47);const player=createPlayer(rng,'p1',character,character==='guardian-defense'?'guardian':character,0)
@@ -75,6 +87,131 @@ try {
       }
       f.install('ironclad')
     })
+    if (process.argv.includes('--sfx-only')) {
+      await page.evaluate(async () => {
+        const [R, D, { useGameSettings }, { installSoundEffects }] = await Promise.all([import('/@id/react'), import('/@id/react-dom/client'), import('/src/ui/game-settings.ts'), import('/src/ui/sfx.ts')])
+        const controls = document.createElement('div'); document.body.append(controls)
+        function SettingsControl() {
+          const [settings, setSettings] = useGameSettings()
+          ;(R.useEffect ?? R.default.useEffect)(() => settings.sfxVolume > 0 ? installSoundEffects() : undefined, [settings.sfxVolume])
+          window.fixture.setVolume = value => setSettings({ ...settings, sfxVolume: value })
+          return null
+        }
+        ;(D.createRoot ?? D.default.createRoot)(controls).render((R.createElement ?? R.default.createElement)(SettingsControl))
+      })
+      await page.evaluate(async () => {
+        const { ANIMATION_SOUND_VOLUMES } = await import('/src/ui/combat-sfx.ts')
+        const context = new AudioContext()
+        try {
+          for (const sound of Object.keys(ANIMATION_SOUND_VOLUMES)) {
+            const response = await fetch(`/assets/sfx/${sound}.mp3`)
+            if (!response.ok) throw Error(`${sound}: missing audio`)
+            const buffer = await context.decodeAudioData(await response.arrayBuffer())
+            const samples = buffer.getChannelData(0)
+            const peak = samples.reduce((peak, sample) => Math.max(peak, Math.abs(sample)), 0)
+            const rms = Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length)
+            if (buffer.duration < .1 || buffer.duration > 1 || peak > 1 || rms < .01) throw Error(`${sound}: invalid audio levels/duration`)
+          }
+        } finally { await context.close() }
+      })
+      const sounds = () => page.evaluate(() => window.audioPlays.filter(play => play.cue?.startsWith('animation:')))
+      const clear = () => page.evaluate(() => { window.audioPlays = []; window.audioBeats = []; window.audioPauses = [] })
+      for (const [hero, card, expected] of [
+        ['hermit', 'hermit_strike', { gunshot: 5, 'bullet-impact': 5 }],
+        ['watcher', 'strike_watcher', { 'meteor-fall': 3, 'meteor-impact': 3 }],
+        ['ironclad', 'strike_ironclad', { 'sword-swing': 1, 'sword-clash': 1 }],
+        ['hexaghost', 'strike_hexaghost', { 'flame-burst': 1 }],
+        ['guardian', 'guardian_strike', { 'sword-clash': 1 }],
+        ['silent', 'predator', { 'sword-swing': 3 }],
+        ['silent', 'deadly_poison', { 'poison-hiss': 1 }],
+        ['slime_boss', 'slime_boss_strike', { 'slime-splat': 1 }],
+      ]) {
+        await page.evaluate(hero => window.fixture.install(hero, 'jaw_worm', false, 3), hero)
+        await page.waitForFunction(hero => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= (hero === 'hermit' ? 3 : hero === 'hexaghost' ? 7 : ['watcher', 'ironclad', 'guardian'].includes(hero) ? 2 : 1), hero)
+        await clear()
+        await page.evaluate(card => window.fixture.attack(card), card)
+        await page.waitForTimeout(1900)
+        const plays = await sounds()
+        for (const [sound, count] of Object.entries(expected)) {
+          assert.equal(plays.filter(play => play.cue === `animation:${sound}`).length, count, `${hero}: ${sound} beat count`)
+        }
+        const beats = await page.evaluate(() => window.audioBeats)
+        const names = { gunshot: 'hermit-bullet-flight', 'bullet-impact': 'hermit-bullet-impact',
+          'meteor-fall': 'watcher-meteor-fall', 'meteor-impact': 'watcher-meteor-impact', 'sword-swing': 'attack-swing' }
+        for (const play of plays) {
+          const name = hero === 'silent' && play.cue === 'animation:sword-swing' ? 'attack-dagger-round-trip' : names[play.cue.slice(10)]
+          if (name) assert(beats.some(beat => beat.name === name && Math.abs(beat.time - play.time) < 50), `${hero}: sound missed its animation`)
+          assert(play.volume > 0 && play.volume <= .3, 'mix must stay bounded')
+        }
+      }
+      await page.evaluate(() => window.fixture.install('defect', 'jaw_worm', false, 3))
+      await page.waitForTimeout(250)
+      for (const [orb, sound] of [['lightning', 'lightning-burst'], ['dark', 'dark-beam'], ['frost', 'frost-bloom']]) {
+        await clear()
+        await page.evaluate(orb => {
+          const f = window.fixture
+          f.state.presentationEvents = [{ kind: 'orb', orb, seq: ++f.seq, actorId: 'p1', sourceId: 'orb-evoke',
+            enemyIds: orb === 'frost' ? [] : f.state.enemies.map(enemy => enemy.uid), playerIds: [] }]
+          f.render()
+        }, orb)
+        await page.waitForTimeout(900)
+        assert.equal((await sounds()).filter(play => play.cue === `animation:${sound}`).length, 1, `${orb}: evoke must not multiply audio by target count`)
+      }
+      await clear()
+      await page.evaluate(() => {
+        const f = window.fixture
+        f.state.presentationEvents = ['lightning', 'frost', 'lightning'].map(orb => ({ kind: 'orb', orb,
+          seq: ++f.seq, actorId: 'p1', sourceId: 'orb-end-turn',
+          enemyIds: orb === 'frost' ? [] : ['enemy-0'], playerIds: orb === 'frost' ? ['p1'] : [] }))
+        f.render()
+      })
+      await page.waitForTimeout(1200)
+      const passive = await sounds()
+      assert.deepEqual(passive.map(play => play.cue), ['animation:lightning-burst', 'animation:frost-bloom', 'animation:lightning-burst'])
+      assert(passive[1].time - passive[0].time > 200 && passive[2].time - passive[1].time > 300, 'passive orb sounds lost their stagger')
+      for (const stop of ['restore', 'disconnect', 'mute', 'reduced']) {
+        await page.evaluate(() => window.fixture.install('hermit', 'jaw_worm', false))
+        await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= 3)
+        await clear()
+        await page.evaluate(() => window.fixture.attack('hermit_strike'))
+        await page.waitForFunction(() => window.audioPlays.some(play => play.cue === 'animation:gunshot'))
+        const before = (await sounds()).length
+        await page.evaluate(stop => {
+          if (stop === 'restore') window.fixture.restoration++
+          if (stop === 'disconnect') window.fixture.connected = false
+          if (stop === 'mute') window.fixture.setVolume(0)
+          if (stop === 'reduced') document.documentElement.dataset.reducedMotion = 'true'
+          window.fixture.render()
+        }, stop)
+        await page.waitForTimeout(1000)
+        assert.equal((await sounds()).length, before, `${stop}: later gunshots leaked`)
+        assert((await page.evaluate(() => window.audioPauses)).includes('animation:gunshot'), `${stop}: active audio was not stopped`)
+        await page.evaluate(() => { window.fixture.setVolume(100); window.fixture.connected = true; document.documentElement.dataset.reducedMotion = 'false'; window.fixture.render() })
+      }
+      await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true'; window.fixture.render() })
+      await page.waitForTimeout(100)
+      await clear()
+      await page.evaluate(() => {
+        const f = window.fixture
+        f.state.presentationEvents = ['lightning', 'frost', 'dark'].map(orb => ({ kind: 'orb', orb,
+          seq: ++f.seq, actorId: 'p1', sourceId: 'orb-end-turn', enemyIds: ['enemy-0'], playerIds: ['p1'] }))
+        f.render()
+      })
+      // The authoritative sound stream still releases passive orbs 380ms apart.
+      await page.waitForTimeout(1000)
+      assert.deepEqual((await sounds()).map(play => play.cue), ['animation:lightning-burst', 'animation:frost-bloom', 'animation:dark-beam'], 'reduced motion must retain orb audio feedback')
+      await page.evaluate(async () => {
+        const [{ playCombatSound }, { animationSfxRecipe }] = await Promise.all([import('/src/ui/sfx.ts'), import('/src/ui/combat-sfx.ts')])
+        const before = window.audioPauses.length
+        const stops = Array.from({ length: 32 }, () => playCombatSound(animationSfxRecipe('frost-bloom')))
+        if (window.audioPauses.length - before < 8) throw Error('simultaneous effect voices were not bounded')
+        stops.forEach(stop => stop())
+      })
+      assert.deepEqual(errors, [])
+      console.log(`PASS ${screen}: animation-synchronized SFX, AoE mixing, orb stagger, mute and restoration`)
+      await context.close()
+      continue
+    }
     for (const [character,source] of (bossesOnly||normalsOnly||elitesOnly?[]:Object.entries(heroes))
       .filter(([id])=>!process.argv.some(a=>a.startsWith('--hero='))||process.argv.includes(`--hero=${id}`))) {
       await page.evaluate(c=>window.fixture.install(c),character)

@@ -12,7 +12,7 @@ import { characterAttackContactMs, isHermitAttack, HERMIT_VOLLEYS, HERMIT_ATTACK
 import { cardDef } from '../../game/cards.ts'
 import type { CombatPresentationEvent, CombatState } from '../../game/combat.ts'
 import { drawnCardUids } from '../board-signals.ts'
-import { cardSfxRecipe, potionSfxRecipe, shivSfxRecipe } from '../combat-sfx.ts'
+import { animationSfxRecipe, type AnimationSound, cardSfxRecipe, potionSfxRecipe, shivSfxRecipe } from '../combat-sfx.ts'
 import { playCombatSound, playSoundEffect } from '../sfx.ts'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
@@ -525,12 +525,13 @@ export function usePersonalCombatSoundEffects(
   const combatId = useRef(state.combatId)
   const played = useRef(new Set<number>())
   const pending = useRef(new Map<number, () => void>())
+  const animationAudio = useRef(new Map<number, Map<string, () => void>>())
   const impactDue = useRef(new Map<number, number>())
   const previousReducedMotion = useRef(reducedMotion)
   const previousRestoration = useRef(authoritativeRestoration)
   const previousConnected = useRef(authoritativeConnected)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const motionCollapsed = !previousReducedMotion.current && reducedMotion
     previousReducedMotion.current = reducedMotion
     const reset = combatId.current !== state.combatId ||
@@ -539,6 +540,10 @@ export function usePersonalCombatSoundEffects(
     combatId.current = state.combatId
     previousRestoration.current = authoritativeRestoration
     previousConnected.current = authoritativeConnected
+    if (reset || motionCollapsed) {
+      for (const cues of animationAudio.current.values()) for (const cancel of cues.values()) cancel()
+      animationAudio.current.clear()
+    }
     if (reset) {
       for (const cancel of pending.current.values()) cancel()
       pending.current.clear()
@@ -547,6 +552,11 @@ export function usePersonalCombatSoundEffects(
       return
     }
     const active = new Set(events.map((event) => event.seq))
+    for (const [seq, cues] of animationAudio.current) {
+      if (active.has(seq)) continue
+      for (const cancel of cues.values()) cancel()
+      animationAudio.current.delete(seq)
+    }
     for (const [seq, cancel] of pending.current) {
       if (active.has(seq)) continue
       cancel()
@@ -585,6 +595,11 @@ export function usePersonalCombatSoundEffects(
       }
       if (event.kind === 'orb') {
         played.current.add(event.seq)
+        if (reducedMotion) {
+          const sound = event.orb === 'lightning' ? 'lightning-burst' : event.orb === 'frost' ? 'frost-bloom'
+            : event.orb === 'dark' ? 'dark-beam' : undefined
+          if (sound) pending.current.set(event.seq, playCombatSound(animationSfxRecipe(sound)))
+        }
         continue
       }
       if (event.kind === 'slime') {
@@ -609,9 +624,80 @@ export function usePersonalCombatSoundEffects(
     }
   }, [authoritativeConnected, authoritativeRestoration, events, reducedMotion, state.combatId, state.players])
 
+  useLayoutEffect(() => {
+    if (reducedMotion || authoritativeConnected === false) return
+    const onAnimation = (animation: AnimationEvent) => {
+      if (!(animation.target instanceof HTMLElement || animation.target instanceof SVGElement)) return
+      const element = animation.target
+      const source = element.closest<HTMLElement>('[data-hermit-impact-seq], [data-hermit-seq], [data-attack-seq], [data-evoke-seq], [data-vfx-seq]')
+      const seq = Number(source?.dataset.hermitImpactSeq ?? source?.dataset.hermitSeq ?? source?.dataset.attackSeq ?? source?.dataset.evokeSeq ?? source?.dataset.vfxSeq)
+      const event = events.find(event => event.seq === seq)
+      if (!event || !played.current.has(seq)) return
+      const actor = state.players.find(player => player.id === event.actorId)
+      let sound: AnimationSound | undefined
+      let beat = ''
+      let voices = 1
+      switch (animation.animationName) {
+        case 'hermit-bullet-flight':
+          sound = 'gunshot'
+          beat = element.parentElement?.dataset.shot?.split('-')[0] ?? ''
+          break
+        case 'hermit-bullet-impact':
+          sound = 'bullet-impact'
+          beat = (element as HTMLElement).dataset.shot?.split('-')[0] ?? ''
+          break
+        case 'watcher-meteor-fall': sound = 'meteor-fall'; break
+        case 'watcher-meteor-impact': sound = 'meteor-impact'; break
+        case 'attack-swing': sound = 'sword-swing'; break
+        case 'attack-dagger-round-trip': sound = 'sword-swing'; break
+        case 'defect-evoke-beam': sound = event.kind === 'orb' && event.orb === 'dark' ? 'dark-beam' : 'lightning-burst'; break
+        case 'defect-evoke-frost': sound = 'frost-bloom'; break
+        case 'orb-lightning-strike': sound = 'lightning-burst'; break
+        case 'combat-vfx-reveal':
+        case 'combat-vfx-frost':
+        case 'combat-vfx-dark':
+          if (animation.pseudoElement) break
+          if (event.kind === 'orb') {
+            // Evokes own their beam/frost cue; passive/channel reveals use this path.
+            if (event.sourceId === 'orb-evoke' && actor?.character === 'defect') break
+            if (event.orb === 'lightning' && event.sourceId === 'orb-end-turn') break
+            sound = event.orb === 'lightning' ? 'lightning-burst' : event.orb === 'frost' ? 'frost-bloom'
+              : event.orb === 'dark' ? 'dark-beam' : undefined
+          } else if (element.classList.contains('combat-vfx--target') && event.enemyIds.length > 0) {
+            sound = element.classList.contains('combat-vfx--poison') ? 'poison-hiss'
+              : event.kind === 'potion' ? 'flame-burst'
+              : event.kind === 'slime' ? 'slime-splat'
+              : !['slash', 'blunt', 'projectile', 'shiv', 'lightning', 'dark'].some(family => element.classList.contains(`combat-vfx--${family}`)) ? undefined
+              : actor?.character === 'ironclad' || actor?.character === 'guardian' ? 'sword-clash'
+              : actor?.character === 'hexaghost' ? 'flame-burst'
+              : actor?.character === 'slime_boss' ? 'slime-splat'
+              : actor?.character === 'defect' ? 'lightning-burst'
+              : undefined
+          }
+          break
+      }
+      if (!sound) return
+      const projectile = element.closest<HTMLElement>('[data-attack-target-id]')
+      if (projectile) {
+        beat = projectile.dataset.attackTargetId ?? ''
+        voices = event.enemyIds.length
+      }
+      // Both guns and AoE targets can emit the same beat; thrown projectiles have separate staggered beats.
+      const key = `${sound}:${beat}`
+      const cues = animationAudio.current.get(seq) ?? new Map<string, () => void>()
+      if (cues.has(key)) return
+      cues.set(key, playCombatSound(animationSfxRecipe(sound, voices)))
+      animationAudio.current.set(seq, cues)
+    }
+    document.addEventListener('animationstart', onAnimation)
+    return () => document.removeEventListener('animationstart', onAnimation)
+  }, [authoritativeConnected, events, reducedMotion, state.players])
+
   useEffect(() => () => {
     for (const cancel of pending.current.values()) cancel()
     pending.current.clear()
     impactDue.current.clear()
+    for (const cues of animationAudio.current.values()) for (const cancel of cues.values()) cancel()
+    animationAudio.current.clear()
   }, [])
 }

@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { assetPath } from '../game/assets.ts'
 import { enemyDef } from '../game/enemies.ts'
-import type { CombatSfxRecipe } from './combat-sfx.ts'
+import { ANIMATION_SOUND_VOLUMES, type AnimationSound, type CombatSfxRecipe } from './combat-sfx.ts'
 import { combatOutcomeAnimationActive } from './combat-screen/vfx.tsx'
 import { currentSfxVolume, SFX_STORAGE_KEY } from './game-settings.ts'
 
 export { SFX_STORAGE_KEY }
 
 const SOUNDS = {
+  ...Object.fromEntries(Object.keys(ANIMATION_SOUND_VOLUMES).map(sound => [sound, assetPath(`sfx/${sound}.mp3`)])) as Record<AnimationSound, string>,
   ui: assetPath('sfx/ui.ogg'),
   card: assetPath('sfx/card.ogg'),
   draw: assetPath('sfx/draw.ogg'),
@@ -23,6 +24,7 @@ const SOUNDS = {
 } as const
 
 type Sound = keyof typeof SOUNDS
+const activeEffects = new Set<HTMLAudioElement>()
 
 const BOSS_TRACKS = {
   1: assetPath('bgm/the-guardian-emerges.mp3'),
@@ -148,6 +150,13 @@ export function useRunOutcomeSound(
 }
 
 export function installSoundEffects() {
+  // Warm short effect files before the first attack; playback still requires an interaction.
+  const preload = Object.values(SOUNDS).map(source => {
+    const audio = new Audio(source)
+    audio.preload = 'auto'
+    audio.load()
+    return audio
+  })
   function play(event: Event) {
     const target = event.target instanceof Element ? event.target : null
     const control = event.type === 'change'
@@ -164,6 +173,9 @@ export function installSoundEffects() {
   return () => {
     document.removeEventListener('click', play)
     document.removeEventListener('change', play)
+    for (const audio of activeEffects) audio.pause()
+    activeEffects.clear()
+    preload.forEach(audio => { audio.removeAttribute('src'); audio.load() })
   }
 }
 
@@ -177,26 +189,39 @@ const IMPACT_SOUNDS = new Set(['attack', 'enemy', 'block', 'weak'])
 export function playCombatSound(recipe: CombatSfxRecipe, impactDelayMs = 0, impactsOnly = false): () => void {
   if (currentSfxVolume() === 0) return () => {}
   const timers: number[] = []
+  const playing: HTMLAudioElement[] = []
   recipe.layers.forEach((layer) => {
     if (impactsOnly && (layer.delayMs > 0 || !IMPACT_SOUNDS.has(layer.sound))) return
     const delayMs = layer.delayMs || !IMPACT_SOUNDS.has(layer.sound) ? layer.delayMs : impactDelayMs
     const play = () => {
       if (currentSfxVolume() > 0) {
-        playSound(layer.sound, layer.volume, layer.rate, recipe.cue, delayMs)
+        playing.push(playSound(layer.sound, layer.volume, layer.rate, recipe.cue, delayMs))
       }
     }
     if (delayMs > 0) timers.push(window.setTimeout(play, delayMs))
     else play()
   })
-  return () => timers.forEach((timer) => window.clearTimeout(timer))
+  return () => {
+    timers.forEach(timer => window.clearTimeout(timer))
+    playing.forEach(audio => { audio.pause(); activeEffects.delete(audio) })
+  }
 }
 
 function playSound(sound: Sound, volume = 0.35, rate = 1, cue?: string, delayMs = 0) {
+  // Bound a busy multiplayer mix; discard the oldest tail before adding another voice.
+  if (activeEffects.size >= 24) {
+    const oldest = activeEffects.values().next().value!
+    oldest.pause()
+    activeEffects.delete(oldest)
+  }
   const audio = new Audio(SOUNDS[sound])
+  activeEffects.add(audio)
+  audio.addEventListener('ended', () => activeEffects.delete(audio), { once: true })
   audio.volume = volume * currentSfxVolume()
   audio.playbackRate = rate
   audio.preservesPitch = false
   if (cue) audio.dataset.combatSfx = cue
   if (delayMs) audio.dataset.combatSfxDelay = String(delayMs)
-  void audio.play().catch(() => {})
+  void audio.play().catch(() => activeEffects.delete(audio))
+  return audio
 }
