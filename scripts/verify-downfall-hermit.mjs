@@ -642,6 +642,43 @@ check('Combo previews a drawn targeted Curse and requires its enemy choice', () 
   assert.equal(combat.players[0].chamber[0]?.uid, grudge.uid)
 })
 
+check('Dead or Alive requires an enemy and applies its printed Vulnerable from hand or Chamber', () => {
+  for (const upgraded of [false, true]) for (const chamber of [false, true]) {
+    const bounty = instance('targeted-bounty', 'hermit_dead_or_alive', upgraded)
+    const zone = chamber ? 'chamber' : 'hand'
+    let combat = createCombat(createRng(501), [player({ [zone]: [bounty], energy: 2 })], [
+      enemy({ uid: 'untouched' }), enemy({ uid: 'chosen', row: 1 }),
+    ])
+    combat.pendingHermitSetupLoads = []
+    const play = chamber ? playLiveHermitChamberCard : playCard
+    assert.equal(cardNeedsEnemy(HERMIT_CARD_DEFS.hermit_dead_or_alive, combat.players[0]), true)
+    for (const enemyUid of [null, 'missing']) {
+      assert.equal(play(combat, 'p1', bounty.uid, { enemyUid }), combat)
+    }
+    combat = play(combat, 'p1', bounty.uid, { enemyUid: 'chosen' })
+    assert.deepEqual(combat.enemies.map(({ vulnerable }) => vulnerable), [0, upgraded ? 3 : 2])
+    assert.deepEqual(combat.enemies[1].hermitBounties, [{ playerId: 'p1', card: bounty }])
+    assert.equal(combat.players[0][zone].length, 0)
+    assert.equal(combat.players[0].discard.length, 0)
+    assert.equal(combat.players[0].energy, 0)
+    assert.deepEqual(combat.presentationEvents.at(-1)?.enemyIds, ['chosen'])
+  }
+})
+
+check('copied Dead or Alive applies Vulnerable without duplicating its physical bounty', () => {
+  const bounty = instance('copied-bounty', 'hermit_dead_or_alive')
+  let combat = createCombat(createRng(503), [player({ hand: [bounty], energy: 2 })], [
+    enemy({ uid: 'original' }), enemy({ uid: 'copy-target', row: 1 }),
+  ])
+  combat.pendingHermitSetupLoads = []
+  combat.players[0].doubledSkillsThisTurn = 1
+  combat = playCard(combat, 'p1', bounty.uid, { enemyUid: 'original' })
+  assert.equal(playCardCopy(combat, 'p1', { enemyUid: null }), combat)
+  combat = playCardCopy(combat, 'p1', { enemyUid: 'copy-target' })
+  assert.deepEqual(combat.enemies.map(({ vulnerable }) => vulnerable), [2, 2])
+  assert.equal(combat.enemies.flatMap(({ hermitBounties }) => hermitBounties ?? []).length, 1)
+})
+
 check('an end-turn bounty kill blocks the Enemy Turn until its Strength choice resolves', () => {
   const bounty = instance('end-turn-bounty', 'hermit_dead_or_alive')
   let combat = createCombat(createRng(102), [

@@ -603,7 +603,7 @@ export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?
  */
 const ENEMY_EFFECTS = [
   'hit', 'rowHit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'multiplyPoison',
-  'evoke', 'recurseOrb', 'fission', 'clearTargetBlock', 'hitPerExhaust', 'execute',
+  'evoke', 'recurseOrb', 'fission', 'clearTargetBlock', 'hitPerExhaust', 'execute', 'attachBounty',
 ]
 
 /**

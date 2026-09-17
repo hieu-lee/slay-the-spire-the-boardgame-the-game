@@ -2860,8 +2860,9 @@ export function applyEffect(
       return
     case 'attachBounty': {
       const target = resolveEnemyTargets(state, 'enemy', context.enemyUid)[0]
-      if (!target || context.sourceIsCopy || !context.sourceCardUid) return
+      if (!target) return
       applyEffect(state, actor, { kind: 'applyVulnerable', amount: effect.vulnerable }, 'enemy', supportScope, context, source)
+      if (context.sourceIsCopy || !context.sourceCardUid) return
       target.hermitBounties = [...(target.hermitBounties ?? []), {
         card: { uid: context.sourceCardUid, defId: context.sourceCardId!, upgraded: context.sourceCardUpgraded === true },
         playerId: actor.id,
