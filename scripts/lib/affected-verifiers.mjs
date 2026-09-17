@@ -31,7 +31,18 @@ const focusedEngineOwners = new Map([
   ['src/game/run/relic-acquisition.ts', ['verify-tiny-house-browser.mjs']],
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
+const focusedUiOwners = new Map([
+  ['src/ui/combat-screen/vfx.tsx', ['verify-lightning-act2-browser.mjs']],
+  ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
+])
 const sourceExtensions = ['', '.ts', '.tsx', '.mjs', '.js']
+const sharedBrowserOwners = ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs']
+const stylesheetBrowserOwners = (file) => file === 'src/ui/styles/hand.css'
+  ? ['verify-card-cancel-browser.mjs', 'verify-combat-hand-viewport-browser.mjs',
+    'verify-combat-player-clipping-browser.mjs', 'verify-end-turn-drag-browser.mjs']
+  : file === 'src/ui/chrome.css' || file.startsWith('src/ui/chrome/')
+    ? ['verify-hover-overflow-browser.mjs']
+    : []
 // src/game/combat/*.ts and src/game/run/*.ts are the insides of combat.ts and
 // run.ts; everything outside the engine imports them only through those barrels.
 const engineModuleOf = (file) => {
@@ -90,10 +101,10 @@ function directImports(file, root) {
   if (!existsSync(absolute)) return []
   if (!directImportCache.has(absolute)) {
     const source = sourceOf(absolute)
-    const pattern = /\bfrom\s*['"]((?:\.\.?\/|\/src\/)[^'"]+)['"]|\bimport\s*(?:\(\s*)?['"]((?:\.\.?\/|\/src\/)[^'"]+)['"]\s*\)?/g
+    const pattern = /\bfrom\s*['"]((?:\.\.?\/|\/src\/)[^'"]+)['"]|\bimport\s*(?:\(\s*)?['"]((?:\.\.?\/|\/src\/)[^'"]+)['"]\s*\)?|@import\s+(?:url\(\s*)?['"]((?:\.\.?\/|\/src\/)[^'"]+)['"]/g
     const dependencies = []
     for (const match of source.matchAll(pattern)) {
-      const specifier = match[1] ?? match[2]
+      const specifier = match[1] ?? match[2] ?? match[3]
       const target = specifier.startsWith('/') ? resolve(root, `.${specifier}`) : resolve(dirname(absolute), specifier)
       const dependency = sourceExtensions.map((extension) => `${target}${extension}`).find(existsSync)
       if (dependency) dependencies.push(dependency)
@@ -126,7 +137,21 @@ export function affectedVerifiers(root, changedFiles, scripts) {
   const coreBrowser = browser.filter((script) => [
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
   ].includes(script))
-  const focusedBrowser = browser.filter((script) => !coreBrowser.includes(script))
+  const browserMentioning = (files) => browser.filter((script) =>
+    [...imports(join('scripts', script), root)].some((dependency) => {
+      const source = sourceOf(dependency)
+      return files.some((file) => source.includes(`/${cleanPath(file)}`))
+    }))
+  const stylesheetRootsFor = (file) => ['src/ui/styles.css', 'src/ui/chrome.css'].filter((entry) =>
+    imports(entry, root).has(resolve(root, file)))
+  const uiOwners = (file) => {
+    const absolute = resolve(root, file)
+    const owners = []
+    if (localRoots.some((entry) => imports(entry, root).has(absolute))) owners.push('verify-browser.mjs')
+    if (noncombatRoots.some((entry) => imports(entry, root).has(absolute))) owners.push('verify-noncombat-browser.mjs')
+    if (imports('src/ui/OnlineGame.tsx', root).has(absolute)) owners.push('verify-online-browser.mjs')
+    return owners
+  }
   const externalReferences = [...changed].filter((file) => !file.startsWith('src/')).flatMap((file) => {
     const directory = file.split('/').slice(0, -1).join('/')
     return [file, basename(file), ...(directory.includes('/') ? [directory] : [])]
@@ -173,11 +198,12 @@ export function affectedVerifiers(root, changedFiles, scripts) {
     if (file.startsWith('public/assets/')) {
       selected.add('verify-assets.mjs')
       const owners = file.startsWith('public/assets/noncombat/')
-        ? ['verify-noncombat-browser.mjs', 'verify-online-browser.mjs', ...focusedBrowser]
+        ? ['verify-noncombat-browser.mjs', 'verify-online-browser.mjs']
         : /public\/assets\/(combat|enemies)\//.test(file)
-          ? ['verify-browser.mjs', 'verify-online-browser.mjs', ...focusedBrowser]
-          : browser
+          ? ['verify-browser.mjs', 'verify-online-browser.mjs']
+          : sharedBrowserOwners
       for (const script of owners) selected.add(script)
+      for (const script of browserMentioning([file])) selected.add(script)
       covered = true
     }
     if (file.startsWith('data/')) {
@@ -190,21 +216,25 @@ export function affectedVerifiers(root, changedFiles, scripts) {
       for (const script of browser) selected.add(script)
       covered = true
     }
-    // Shared chrome/style partials can affect every rendered surface. Most of
-    // the focused visual verifiers load the application dynamically, so their
-    // dependency graph cannot identify the stylesheet they own.
-    if (sharedUi.test(file)) { for (const script of browser) selected.add(script); covered = true }
+    // Keep one representative browser flow per surface. Focused verifiers are
+    // added only when they name the changed source (or a stylesheet importing
+    // it), rather than making every UI edit run the whole visual matrix.
+    if (sharedUi.test(file)) {
+      for (const script of sharedBrowserOwners) selected.add(script)
+      for (const script of stylesheetBrowserOwners(file)) selected.add(script)
+      for (const script of focusedUiOwners.get(file) ?? []) selected.add(script)
+      for (const script of browserMentioning([file, ...stylesheetRootsFor(file)])) selected.add(script)
+      covered = true
+    }
     else if (onlineUi.test(file)) {
       selected.add('verify-online-browser.mjs')
-      for (const script of focusedBrowser) selected.add(script)
       covered = true
     }
     else if (file.startsWith('src/ui/')) {
-      selected.add('verify-browser.mjs')
-      for (const script of focusedBrowser) selected.add(script)
-      const absolute = resolve(root, file)
-      if (noncombatRoots.some((entry) => imports(entry, root).has(absolute))) selected.add('verify-noncombat-browser.mjs')
-      if (imports('src/ui/OnlineGame.tsx', root).has(absolute)) selected.add('verify-online-browser.mjs')
+      const owners = [...uiOwners(file), ...(focusedUiOwners.get(file) ?? []),
+        ...browserMentioning([file, ...stylesheetRootsFor(file)])]
+      for (const script of owners) selected.add(script)
+      if (owners.length === 0) selected.add('verify-browser.mjs')
       covered = true
     }
     else if (file === 'src/game/run.ts') {

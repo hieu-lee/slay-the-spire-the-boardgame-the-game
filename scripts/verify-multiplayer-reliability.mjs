@@ -37,6 +37,8 @@ assert.match(ci, /pnpm build/)
 assert.equal((ci.match(/node-version: 24/g) ?? []).length, 2)
 assert.match(ci, /verify-all\.mjs --changed="\$base" --lane=light --jobs=4/)
 assert.match(ci, /verify-browser:[\s\S]*shard: \[1, 2, 3, 4][\s\S]*verify-all\.mjs --changed="\$base" --lane=browser[\s\S]*--shard=\$\{\{ matrix\.shard \}\}\/4 --skip-typecheck --jobs=1/)
+assert.match(ci, /jobs:\s+verify:\s+runs-on: ubuntu-latest/)
+assert.match(ci, /verify-browser:\s+runs-on: ubuntu-latest/)
 assert.match(ci, /playwright install --with-deps chromium webkit/)
 assert.match(
   ci,
@@ -44,6 +46,7 @@ assert.match(
 )
 assert.match(ci, /deploy-server:[\s\S]*needs: \[verify, verify-browser][\s\S]*uses: \.\/\.github\/workflows\/server-deploy\.yml/)
 assert.match(ci, /deploy-pages:[\s\S]*needs: deploy-server[\s\S]*uses: \.\/\.github\/workflows\/pages-deploy\.yml/)
+assert.doesNotMatch(ci, /always\(\)/)
 assert.match(ci, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/)
 assert.match(ci, /github\.ref == 'refs\/heads\/master'/)
 

@@ -36,17 +36,23 @@ check('shared engine changes select every browser flow that imports them', () =>
   assert(!achievements.includes('verify-online-browser.mjs'))
   assert(affected('src/game/damage.ts').includes('verify-browser.mjs'))
 })
-check('frontend surfaces select only their owning browser suite', () => {
+check('frontend surfaces select their cores and named focused browser checks', () => {
   const combat = affectedBrowser('src/ui/CombatScreen.tsx')
   includesEvery(combat, ['verify-browser.mjs', 'verify-online-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
+  assertEqual(combat.length, 8, 'combat screen selected an unrelated browser suite')
   const room = affectedBrowser('src/ui/RoomScreen.tsx')
   includesEvery(room, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'room screen')
   const online = affectedBrowser('src/ui/OnlineGame.tsx')
   assert(online.includes('verify-online-browser.mjs'))
   assert(!online.includes('verify-browser.mjs'))
   assert(!online.includes('verify-noncombat-browser.mjs'))
+  assertEqual(online.length, 1, 'online screen selected an unrelated browser suite')
   assertDeepEqual(affectedBrowser('src\\ui\\OnlineGame.tsx'), online)
+  assertDeepEqual(affectedBrowser('src/ui/WelcomeScreen.tsx'), ['verify-browser.mjs'])
+  includesEvery(affectedBrowser('src/ui/combat-screen/vfx.tsx'), [
+    'verify-browser.mjs', 'verify-online-browser.mjs', 'verify-lightning-act2-browser.mjs',
+  ], 'combat VFX')
   assert(affected('src/ui/icons.ts').includes('verify-noncombat-browser.mjs'))
   assert(affected('src/ui/run-summary-data.ts').includes('verify-noncombat-browser.mjs'))
   assert(affected('src/ui/RewardScreen.tsx').includes('verify-browser.mjs'))
@@ -94,14 +100,26 @@ check('an engine submodule selects what its barrel selects', () => {
   assertDeepEqual(affected('src/game/combat/not-imported-yet.ts'), scripts)
   assertDeepEqual(affected('src/game/run/not-imported-yet.ts'), scripts)
 })
-check('shared frontend and toolchain changes stay conservative', () => {
-  for (const sheet of ['src/ui/chrome.css', 'src/ui/chrome/keys.css', 'src/ui/styles/hand.css']) {
+check('shared frontend changes use cores plus named visual owners', () => {
+  for (const sheet of ['src/ui/chrome.css', 'src/ui/chrome/keys.css']) {
     includesEvery(affectedBrowser(sheet), [
       'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
-      'verify-combat-hand-viewport-browser.mjs', 'verify-enemy-layout-browser.mjs',
-      'verify-hover-overflow-browser.mjs',
+      'verify-enemy-layout-browser.mjs', 'verify-hover-overflow-browser.mjs',
     ], sheet)
+    assertEqual(affectedBrowser(sheet).length, 12, `${sheet} selected an unrelated browser suite`)
   }
+  const hand = affectedBrowser('src/ui/styles/hand.css')
+  includesEvery(hand, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
+    'verify-card-cancel-browser.mjs', 'verify-combat-hand-viewport-browser.mjs',
+    'verify-combat-player-clipping-browser.mjs', 'verify-end-turn-drag-browser.mjs',
+    'verify-enemy-layout-browser.mjs'], 'hand stylesheet')
+  assertEqual(hand.length, 15, 'hand stylesheet selected an unrelated browser suite')
+  includesEvery(affectedBrowser('src/ui/styles/presentation-overlays.css'), [
+    'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
+    'verify-lightning-act2-browser.mjs',
+  ], 'presentation overlays')
+})
+check('toolchain changes stay conservative', () => {
   assertDeepEqual(affected('package.json'), scripts)
   assertDeepEqual(affected('pnpm-workspace.yaml'), scripts)
 })

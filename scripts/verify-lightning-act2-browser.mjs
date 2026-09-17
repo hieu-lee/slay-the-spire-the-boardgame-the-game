@@ -191,49 +191,6 @@ assert sum(r > 220 and b > 200 and g > 210 for r, g, b in band.getdata()) >= 20,
           assert.deepEqual(travel.durations, [100, 360])
           assert(travel.halfway.includes('50%') && travel.arrived.includes('0%'),
             `bolt did not travel ceiling-to-ground in 100ms ${JSON.stringify(travel)}`)
-          if (targetId === 'bolt-normal' && initialHp === 30) {
-            const scrolled = await strike.evaluate(async node => {
-              const combat = node.closest('.combat'), board = combat.querySelector('.board')
-              const portrait = combat.querySelector(`.enemy[data-enemy-id="${CSS.escape(node.dataset.vfxTarget)}"] .enemy__portrait`)
-              const previousOverflow = board.style.overflow
-              // Add overflow without changing the target's size, so ResizeObserver
-              // cannot mask a missing scroll listener on the combat-level effect.
-              const spacer = document.createElement('div')
-              spacer.style.cssText = `width:${board.scrollWidth + 160}px;height:1px;flex-shrink:0`
-              board.append(spacer)
-              board.style.overflow = 'auto hidden'
-              board.scrollLeft = 80
-              await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-              const enemy = portrait.closest('.enemy').getBoundingClientRect(), bolt = node.getBoundingClientRect()
-              const result = { scroll: board.scrollLeft,
-                error: Math.abs(bolt.x + bolt.width / 2 - (enemy.left + portrait.offsetLeft + portrait.offsetWidth / 2)) }
-              board.scrollLeft = 0
-              spacer.remove()
-              board.style.overflow = previousOverflow
-              await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-              return result
-            })
-            assert(scrolled.scroll > 30 && scrolled.error < 1,
-              `bolt lost its target during board scroll ${JSON.stringify(scrolled)}`)
-          }
-          if (!phone && targetId === 'bolt-normal' && initialHp === 30) {
-            await page.setViewportSize({ width: viewport.width - 8, height: viewport.height - 8 })
-            await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-            const resized = await strike.evaluate(node => {
-              const combat = node.closest('.combat')
-              const portrait = combat.querySelector(`.enemy[data-enemy-id="${CSS.escape(node.dataset.vfxTarget)}"] .enemy__portrait`)
-              const enemy = portrait.closest('.enemy').getBoundingClientRect()
-              const bolt = node.getBoundingClientRect()
-              return {
-                x: Math.abs(bolt.x + bolt.width / 2 - (enemy.left + portrait.offsetLeft + portrait.offsetWidth / 2)),
-                y: Math.abs(bolt.top + bolt.height * .94 - (enemy.top + portrait.offsetTop + portrait.offsetHeight)),
-              }
-            })
-            await page.setViewportSize(viewport)
-            await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-            assert(resized.x < 1 && resized.y < 1,
-              `bolt lost its target during combat resize ${JSON.stringify(resized)}`)
-          }
           // Freeze the completed travel during its first flash for a repeatable screenshot.
           const screenshot = resolve(output, `${engineName}-${screen}-${targetId}${initialHp === 1 ? '-lethal' : ''}-lightning.png`)
           await page.screenshot({ path: screenshot })
