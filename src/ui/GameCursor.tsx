@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { assetPath } from '../game/assets.ts'
 
 /** Native image cursors fall back near viewport edges in Chromium. */
 export function GameCursor() {
@@ -9,8 +10,8 @@ export function GameCursor() {
     layer.setAttribute('aria-hidden', 'true')
     const normal = new Image()
     const pressed = new Image()
-    normal.src = '/assets/ui/cursor.png'
-    pressed.src = '/assets/ui/cursor-click.png'
+    normal.src = assetPath('ui/cursor.png')
+    pressed.src = assetPath('ui/cursor-click.png')
     layer.append(normal, pressed)
     document.body.append(layer)
     let ready = false

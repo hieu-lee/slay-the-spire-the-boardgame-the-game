@@ -7,7 +7,7 @@ import { chromium, webkit } from './lib/profile-browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const output = `${root}artifacts/cursor`
 mkdirSync(output, { recursive: true })
-const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
+const server = await createServer({ root, base: '/cursor-check/', logLevel: 'silent', server: { port: 0 } })
 await server.listen()
 try {
   for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
@@ -18,7 +18,7 @@ try {
         const page = await context.newPage()
         const errors = []
         page.on('pageerror', error => errors.push(String(error)))
-        await page.goto(`http://localhost:${server.httpServer.address().port}`, { waitUntil: 'networkidle' })
+        await page.goto(`http://localhost:${server.httpServer.address().port}/cursor-check/`, { waitUntil: 'networkidle' })
         const check = async (target) => {
           await target.hover()
           const normal = await target.evaluate(el => getComputedStyle(el).cursor)
@@ -71,7 +71,7 @@ try {
         await page.evaluate(() => document.getElementById('cursor-test-dialog').remove())
         await page.getByRole('button', { name: 'Compendium', exact: true }).click()
         await check(page.getByRole('button').first())
-        await page.goto(`http://localhost:${server.httpServer.address().port}`, { waitUntil: 'networkidle' })
+        await page.goto(`http://localhost:${server.httpServer.address().port}/cursor-check/`, { waitUntil: 'networkidle' })
         for (const label of ['Single Player', 'Standard', 'Embark', 'Start standard campaign']) {
           if (label === 'Embark') {
             await page.mouse.move(24, height - 24)
