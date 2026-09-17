@@ -5031,11 +5031,17 @@ try {
     await target.scrollIntoViewIfNeeded()
     await source.scrollIntoViewIfNeeded()
     const from = await source.boundingBox()
-    const to = await target.boundingBox()
+    const to = await target.evaluate((element) => {
+      const surface = element.querySelector('.enemy__hit-area, .seat__portrait') ?? element
+      const rect = surface.getBoundingClientRect()
+      const point = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+      const hit = document.elementFromPoint(point.x, point.y)
+      return hit && (hit === element || element.contains(hit)) ? point : null
+    })
     assert(from && to, 'end-turn drag endpoints must be visible')
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
     await page.mouse.down()
-    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 })
+    await page.mouse.move(to.x, to.y, { steps: 8 })
     await page.mouse.up()
   }
   await dragEffect(a, firstOrb, a.locator(`[data-enemy-id="${firstTarget}"]`))
