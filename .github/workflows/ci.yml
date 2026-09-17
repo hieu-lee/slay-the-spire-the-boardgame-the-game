@@ -100,7 +100,8 @@ jobs:
       deploy_sha: ${{ github.sha }}
 
   deploy-pages:
-    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: always() && needs.deploy-server.result == 'success' && github.ref == 'refs/heads/master' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: deploy-server
     permissions:
       contents: read
