@@ -30,6 +30,7 @@
 .combat {
   --combat-bar-height: 4rem;
   --card-width: clamp(4rem, 22vh, 11.5rem);
+  --hand-card-width: calc(var(--card-width) * .759);
   position: relative;
   isolation: isolate;
   overflow: clip;
