@@ -129,12 +129,24 @@ try {
           // The VFX renderer removes this node on its own timer. Retain this strike,
           // rather than making a later Locator lookup race that cleanup.
           const strikeElement = await strike.elementHandle()
-          const geometry = await strikeElement.evaluate(node => {
+          const geometry = await strikeElement.evaluate((node, frozen) => {
             const combat = node.closest('.combat'), combatRect = combat.getBoundingClientRect()
             const portrait = combat.querySelector(`.enemy[data-enemy-id="${CSS.escape(node.dataset.vfxTarget)}"] .enemy__portrait`)
             const r = node.getBoundingClientRect()
             const enemy = portrait.closest('.enemy').getBoundingClientRect()
             const board = combat.querySelector('.board').getBoundingClientRect(), s = getComputedStyle(node)
+            let travel
+            if (frozen) {
+              const animations = node.getAnimations()
+              animations.forEach(animation => animation.pause())
+              animations.forEach(animation => { animation.currentTime = 50 })
+              const halfway = getComputedStyle(node).clipPath
+              animations.forEach(animation => { animation.currentTime = 100 })
+              const arrived = getComputedStyle(node).clipPath
+              animations.forEach(animation => { animation.currentTime = 170 })
+              travel = { halfway, arrived,
+                durations: animations.map(animation => animation.effect?.getTiming().duration).sort() }
+            }
             return { x: r.x + r.width / 2, footX: enemy.left + portrait.offsetLeft + portrait.offsetWidth / 2,
               left: r.left, width: r.width, height: r.height, viewportWidth: innerWidth,
               ground: r.top + .94 * r.height,
@@ -142,8 +154,8 @@ try {
               top: r.top,
               combatTop: combatRect.top, boardTop: board.top,
               filter: s.filter, pointerEvents: s.pointerEvents, image: s.backgroundImage,
-              before: getComputedStyle(node, '::before').content }
-          })
+              before: getComputedStyle(node, '::before').content, travel }
+          }, !liveFirstUse)
           assert(Math.abs(geometry.x - geometry.footX) < 1 && Math.abs(geometry.ground - geometry.footY) < 1,
             `bolt misses feet: ${JSON.stringify(geometry)}`)
           assert(Math.abs(geometry.top - geometry.combatTop) < 1 && geometry.boardTop - geometry.top > 20,
@@ -174,17 +186,7 @@ assert sum(r > 220 and b > 200 and g > 210 for r, g, b in band.getdata()) >= 20,
               `visual target differs from damage target ${JSON.stringify(hp)}`)
             return
           }
-          const travel = await strikeElement.evaluate(node => {
-            const animations = node.getAnimations()
-            animations.forEach(animation => animation.pause())
-            animations.forEach(animation => { animation.currentTime = 50 })
-            const halfway = getComputedStyle(node).clipPath
-            animations.forEach(animation => { animation.currentTime = 100 })
-            const arrived = getComputedStyle(node).clipPath
-            animations.forEach(animation => { animation.currentTime = 170 })
-            return { halfway, arrived,
-              durations: animations.map(animation => animation.effect?.getTiming().duration).sort() }
-          })
+          const { travel } = geometry
           assert.deepEqual(travel.durations, [100, 360])
           assert(travel.halfway.includes('50%') && travel.arrived.includes('0%'),
             `bolt did not travel ceiling-to-ground in 100ms ${JSON.stringify(travel)}`)
