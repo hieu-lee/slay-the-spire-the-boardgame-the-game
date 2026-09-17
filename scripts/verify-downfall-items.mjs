@@ -53,7 +53,7 @@ import { merchantItemDecks } from '../src/game/run/supplies.ts'
 import { pendingRelicPreview, resolvePendingRelic } from '../src/game/run/relic-acquisition.ts'
 import { apply, createRoom, createStore, joinRoom, snapshotFor, startRun } from './lib/rooms.mjs'
 
-const EXPECTED_MANIFEST_SHA256 = 'ebfb62e5342126e94d2cac87ffc1a498dd35718995c9605ce18829829c3116e1'
+const EXPECTED_MANIFEST_SHA256 = 'a3982b6e151c9cf681a683b2821aa33d1780dc4f29d9a6e5259c34c5a001432b'
 const manifestHash = createHash('sha256')
   .update(JSON.stringify(DOWNFALL_ITEMS_MANIFEST))
   .digest('hex')
@@ -341,8 +341,8 @@ assert.match(integration.neow.players.base.cardId, /^neow_/)
 assert.match(integration.neow.players.downfall.cardId, /^heart_boon_/)
 assert.equal(integration.neow.players.base.redGoldPending, true)
 assert.equal(integration.neow.players.base.redRewardsRemaining, 1)
-assert.equal(integration.neow.players.downfall.redGoldPending, false)
-assert.equal(integration.neow.players.downfall.redRewardsRemaining, 3)
+assert.equal(integration.neow.players.downfall.redGoldPending, true)
+assert.equal(integration.neow.players.downfall.redRewardsRemaining, 1)
 const beforePain = integration.players[0]
 integration = acquireRelic(integration, 'base', 'mark_of_pain')
 const afterPain = integration.players[0]
@@ -884,7 +884,9 @@ const publicRun = snapshotFor(room, downfall.token).run
 assert.equal('deck' in publicRun.neow, false, 'base Blessing deck leaked to a reconnect snapshot')
 assert.equal('heartDeck' in publicRun.neow, false, "Heart's Boon deck leaked to a reconnect snapshot")
 assert.equal(publicRun.neow.players[downfall.playerId].card.source, 'heart')
-for (let remaining = 3; remaining > 0; remaining--) {
+apply(room, downfall.token, { kind: 'neow', stage: 'redGold', gain: true })
+assert.equal(room.run.players.find(({ id }) => id === downfall.playerId).gold, 3)
+for (let remaining = 1; remaining > 0; remaining--) {
   apply(room, downfall.token, { kind: 'neow', stage: 'red', choice: null })
   assert.equal(room.run.neow.players[downfall.playerId].redRewardsRemaining, remaining - 1)
   assert.equal(room.run.neow.players[downfall.playerId].redRewardPending, remaining > 1)

@@ -17,7 +17,8 @@ import { damageEnemy } from '../src/game/combat/pieces.ts'
 import { preparePlayerTurn, resolveDueSummons } from '../src/game/combat/start-turn.ts'
 import { createSummonSupply, enemyAttackBonus, enemyDef, startingHp } from '../src/game/enemies.ts'
 import { buildEncounter, createEnemyDecks, rollActBoss } from '../src/game/run/encounters.ts'
-import { canRerollDownfallSelfBoss, rerollDownfallSelfBoss } from '../src/game/run/rooms.ts'
+import { canRerollDownfallSelfBoss, enterRoom, rerollDownfallSelfBoss } from '../src/game/run/rooms.ts'
+import { generateMap } from '../src/game/map.ts'
 import { createPlayer, createRun } from '../src/game/run/setup.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
 import { createRng } from '../src/game/rng.ts'
@@ -166,6 +167,74 @@ const makeCombat = (defIds, ascension = 0, players = [makePlayer()]) => {
   return createCombat(rng, players, defIds.map((id, index) =>
     makeEnemy(id, `enemy-${index}`, Math.min(index, players.length - 1), ascension, players.length)),
   'downfall-test', [], 3, createSummonSupply(rng, 'downfall', 1))
+}
+
+// Map entry must carry campaign-specific summons all the way into combat.
+for (const playerCount of [1, 4]) {
+  const members = ['ironclad', 'silent', 'defect', 'watcher'].slice(0, playerCount)
+    .map((character, index) => ({ id: `p${index}`, name: character, character }))
+  const run = createRun(147, members, 0, createCampaignProgress(), false, false, { campaign: 'downfall' })
+  const seen = new Set()
+  for (const [actString, bosses] of Object.entries(DOWNFALL_BOSSES)) for (const defId of bosses) {
+    const act = Number(actString)
+    const map = generateMap(createRng(147), act)
+    const bossRoom = Object.values(map.rooms).find((room) => room.kind === 'boss')
+    map.position = Object.values(map.rooms).find((room) => room.exits.includes(bossRoom.id)).id
+    const entered = enterRoom({ ...run, act, phase: 'map', neow: null, map, actBossDefId: defId,
+      enemyDecks: createEnemyDecks(createRng(147), act, 0) }, bossRoom.id)
+    assert.equal(entered.phase, 'combat')
+    assert(entered.combat.enemies.some((enemy) => enemy.defId === defId), `${defId}: map boss missing`)
+    let combat = entered.combat
+    if (defId === 'downfall_dark_core' || defId === 'downfall_wraith') {
+      combat = enemyTurn({ ...combat, phase: 'enemy' })
+      combat.turn++
+      resolveDueSummons(combat, 'startOfTurn')
+      const summonId = defId === 'downfall_dark_core' ? 'downfall_dark_orb' : 'downfall_shiv'
+      assert.equal(combat.enemies.filter((enemy) => enemy.defId === summonId).length,
+        playerCount * (defId === 'downfall_dark_core' ? 1 : 3))
+    }
+    if (defId === 'downfall_neow') {
+      assert.equal(combat.enemies.filter((enemy) => enemy.defId.endsWith('_slayer')).length, playerCount)
+      assert.equal(combat.enemies.filter((enemy) => enemy.defId === 'downfall_loot_chest').length, playerCount)
+    }
+    for (const enemy of combat.enemies) seen.add(enemy.defId)
+  }
+  for (const id of ['downfall_dark_orb', 'downfall_shiv', 'downfall_flame_barrier', 'downfall_doppelganger', 'downfall_loot_chest']) {
+    assert(seen.has(id), `${id}: unreachable from Downfall map`)
+  }
+  for (const [act, eliteId] of [[2, 'gremlin_leader'], [3, 'reptomancer']]) {
+    const map = generateMap(createRng(148), act)
+    const room = Object.values(map.rooms).find((room) => room.kind === 'elite')
+    map.position = Object.values(map.rooms).find((candidate) => candidate.exits.includes(room.id)).id
+    const decks = createEnemyDecks(createRng(148), act, 0)
+    decks.elite.sort((a, b) => Number(b.defId === eliteId) - Number(a.defId === eliteId))
+    let combat = enterRoom({ ...run, act, phase: 'map', neow: null, map, enemyDecks: decks }, room.id).combat
+    const elite = combat.enemies.find((enemy) => enemy.defId === eliteId)
+    if (eliteId === 'gremlin_leader') {
+      const summons = combat.enemies.filter((enemy) => enemy !== elite)
+      assert.equal(summons.length, playerCount * 2)
+      assert(summons.every((enemy) => enemy.defId.startsWith('downfall_')))
+      for (const enemy of summons) { enemy.dead = true; enemy.hp = 0 }
+      applyEnemyAction(combat, elite, { kind: 'reviveAll', group: 'gremlin' })
+      assert(summons.every((enemy) => !enemy.dead && enemy.hp === enemy.maxHp))
+    } else {
+      combat = enemyTurn({ ...combat, phase: 'enemy' })
+      combat.turn++
+      resolveDueSummons(combat, 'startOfTurn')
+      const daggers = combat.enemies.filter((enemy) => enemy.defId === 'downfall_dagger')
+      assert.equal(daggers.length, playerCount * 2)
+      const leader = combat.enemies.find((enemy) => enemy.defId === eliteId)
+      applyEnemyAction(combat, leader, { kind: 'summonUntil', defId: 'dagger', perPlayer: 2 })
+      assert.equal(combat.pendingSummons.length, 0, 'living Downfall Daggers count toward the summon cap')
+      // Isolate Rally from the Daggers' own death action and lethal damage.
+      for (const enemy of daggers) enemy.actionIndex = 0
+      for (const player of combat.players) player.hp = 100
+      leader.actionIndex = 1
+      combat = enemyTurn({ ...combat, phase: 'enemy' })
+      assert.equal(combat.enemies.find((enemy) => enemy.defId === eliteId).actionIndex, 2,
+        'Rally must recognize living Downfall Daggers')
+    }
+  }
 }
 
 // Registry, selection, encounter setup, physical summon replacement, and optional own-boss reroll.

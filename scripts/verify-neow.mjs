@@ -1,6 +1,8 @@
 import { CARDS } from '../src/game/cards.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
 import { HEARTS_BOON_CARDS, NEOW_CARDS, formatHeartBoonLabel } from '../src/game/neow.ts'
+import { HEARTS_BOONS } from '../src/game/downfall/items.ts'
+import { beginCatchUp } from '../src/game/run/setup.ts'
 import {
   abandonGuardianSocket,
   resolveGuardianSocket,
@@ -42,6 +44,7 @@ const forceCard = (run, cardId) => ({
 
 const beginHeart = (seed, cardId) => {
   let run = createRun(seed, [{ id: 'p1', name: 'Guardian', character: 'guardian' }])
+  run = resolveNeowGold(run, 'p1', false)
   while (run.neow.players.p1.redRewardPending) run = resolveNeowReward(run, 'p1', null)
   return forceCard(run, cardId)
 }
@@ -134,6 +137,80 @@ check("Heart's Boon labels name every printed reward icon and pluralize counted 
   assertEqual(formatHeartBoonLabel('Gain 1 [potion].'), 'Gain 1 Potion.')
   assertEqual(formatHeartBoonLabel('Gain 3 [potion].'), 'Gain 3 Potions.')
   assert(HEARTS_BOON_CARDS.every((card) => card.options.every((option) => !/\[[a-z-]+\]/.test(option.label))))
+})
+
+check('all 20 Heart faces grant 3 Gold and exactly one independently skippable Card Reward', () => {
+  for (const card of HEARTS_BOON_CARDS) for (const gainGold of [false, true]) for (const gainCard of [false, true]) {
+    let run = createRun(147, [
+      { id: 'p1', name: 'Hermit', character: 'hermit' },
+      { id: 'p2', name: 'Guardian', character: 'guardian' },
+    ])
+    run = forceCard(run, card.id)
+    const before = structuredClone(run.players[0])
+    assertEqual(revealNeowReward(run, 'p1'), run, 'Gold must be resolved first')
+    run = resolveNeowGold(run, 'p1', gainGold)
+    assertEqual(run.players[0].gold, before.gold + (gainGold ? 3 : 0))
+    assertEqual(resolveNeowGold(run, 'p1', true), run, 'Gold cannot be claimed twice')
+    if (gainCard) run = revealNeowReward(run, 'p1')
+    run = resolveNeowReward(JSON.parse(JSON.stringify(run)), 'p1', gainCard ? 0 : null)
+    assertEqual(run.players[0].deck.length, before.deck.length + (gainCard ? 1 : 0))
+    assertEqual(run.neow.players.p1.redRewardPending, false)
+    assertEqual(revealNeowReward(run, 'p1'), run, 'there is no second opening reward')
+    assertEqual(neowPreview(run, 'p1').blueOption, null)
+  }
+  assert(HEARTS_BOONS.every((boon) => boon.commonText === 'Gain 3 gold and [card-reward]. Then choose an option below...'))
+  let run = createRun(148, [{ id: 'p1', name: 'Hermit', character: 'hermit' }])
+  run = { ...run, phase: 'map', neow: null, act: 2 }
+  run = beginCatchUp(run, [{ id: 'p2', name: 'Guardian', character: 'guardian' }])
+  run = beginCatchUp(run, [{ id: 'p3', name: 'Hexaghost', character: 'hexaghost' }])
+  for (const id of ['p2', 'p3']) {
+    assertEqual(run.neow.players[id].redGoldPending, true)
+    assertEqual(run.neow.players[id].redRewardsRemaining, 1)
+  }
+})
+
+check('Heart blue rewards distinguish numbered Gold coins from adjacent Potion, Relic and Card icons', () => {
+  // Independently transcribed from public TTS sheet 4384, zero-based card/option indexes.
+  const cases = [
+    [0, 1, 2, 2, 0, 0, 0, 'Gain 2 Gold and 2 Potions.'],
+    [2, 1, 0, 0, 1, 0, 1, 'Gain a Relic. Lose 1 max HP.'],
+    [3, 1, 2, 2, 0, 0, 0, 'Gain 2 Gold and 2 Potions.'],
+    [6, 0, 2, 2, 0, 0, 0, 'Gain 2 Gold and 2 Potions.'],
+    [13, 0, 3, 1, 0, 0, 0, 'Gain 3 Gold and a Potion.'],
+    [17, 2, 3, 0, 0, 1, 1, 'Gain 3 Gold and a Card Reward. Lose 1 max HP.'],
+    [18, 0, 0, 3, 0, 0, 0, 'Gain 3 Potions.'],
+    [19, 0, 3, 1, 0, 0, 0, 'Gain 3 Gold and a Potion.'],
+  ]
+  for (const [index, option, gold, potions, relics, cards, maxHpLoss, label] of cases) {
+    let run = createRun(147, [
+      { id: 'p1', name: 'Hermit', character: 'hermit' },
+      { id: 'p2', name: 'Guardian', character: 'guardian' },
+    ])
+    run = resolveNeowReward(resolveNeowGold(run, 'p1', false), 'p1', null)
+    run = forceCard(run, HEARTS_BOON_CARDS[index].id)
+    run.players[0].potions = []
+    run.relicDeck = ['anchor', ...run.relicDeck.filter((id) => id !== 'anchor')]
+    run.itemDecks.relics = [...run.relicDeck]
+    const before = structuredClone(run.players[0])
+    assertEqual(neowPreview(run, 'p1').card.options[option].label, label)
+    run = chooseNeow(run, 'p1', option)
+    for (let step = 0; !run.neow.players.p1.done && step < 12; step++) {
+      if (run.neow.players.p1.pendingEffect) run = resolveNeowEffect(run, 'p1', true)
+      else {
+        run = revealNeowReward(run, 'p1')
+        const reward = run.neow.players.p1.reward
+        run = resolveNeowReward(run, 'p1', reward.kind === 'potion' ? { kind: 'gain' } : 0)
+      }
+      run = JSON.parse(JSON.stringify(run))
+    }
+    assertEqual(run.neow.players.p1.done, true)
+    const after = run.players[0]
+    assertEqual(after.gold - before.gold, gold)
+    assertEqual(after.potions.length, potions)
+    assertEqual(after.relics.length - before.relics.length, relics)
+    assertEqual(after.deck.length - before.deck.length, cards)
+    assertEqual(before.maxHp - after.maxHp, maxHpLoss)
+  }
 })
 
 check('the exact 14 base and six Colorless-unlocked faces are transcribed', () => {

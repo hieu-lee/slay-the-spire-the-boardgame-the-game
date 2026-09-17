@@ -21,6 +21,12 @@ const CURSE_CARDS = Object.values(CARDS)
   .filter((card) => card.owner === 'curse' && card.id !== 'ascenders_bane')
   .flatMap((card) => Array(['clumsy', 'injury', 'parasite', 'regret'].includes(card.id) ? 2 : 1).fill(card.id))
 
+function matchesSummon(defId: string, summonId: string): boolean {
+  const id = defId.replace(/^downfall_/, '')
+  const group = summonId.replace(/^downfall_/, '')
+  return id === group || id.startsWith(`${group}_`)
+}
+
 /**
  * The Enemy Turn (p.13): clear enemy Block, act from the highest row downward
  * (left to right within a row, bosses last), then advance every cube.
@@ -64,7 +70,7 @@ export function enemyTurn(state: CombatState): CombatState {
     const def = enemyDef(enemy.defId, enemy.ascension)
     const rally = enemyAbilities(def).find((ability) => ability.kind === 'rally')
     const noSummons = rally?.kind === 'rally' && !next.enemies.some((candidate) => !candidate.dead &&
-      (candidate.defId === rally.summonDefId || candidate.defId.startsWith(`${rally.summonDefId}_`)))
+      matchesSummon(candidate.defId, rally.summonDefId))
     if (def.pattern.kind === 'cube' && def.pattern.slots[enemy.actionIndex]?.once) {
       enemy.spentOnceSlots = [...new Set([...(enemy.spentOnceSlots ?? []), enemy.actionIndex])]
     }
@@ -361,7 +367,7 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
       let count = 0
       const rows = [...new Set(state.players.filter((player) => !player.dead).map((player) => player.row))].map((row) => {
         const present = state.enemies.filter((candidate) => !candidate.dead && candidate.row === row &&
-          (candidate.defId === action.defId || candidate.defId.startsWith(`${action.defId}_`))).length
+          matchesSummon(candidate.defId, action.defId)).length
         const queued = state.pendingSummons.filter((summon) => summon.row === row).reduce((total, summon) =>
           total + summon.defIds.filter((id) => id === action.defId).length, 0)
         return { row, count: present + queued, defIds: [] as string[] }

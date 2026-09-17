@@ -18,7 +18,7 @@ export type NeowEffect =
   | { kind: 'randomRare'; upgraded?: boolean }
   | { kind: 'randomCards'; source: 'card' | 'colorless'; count: 1 | 2; upgraded?: boolean }
   | { kind: 'relic'; choices?: 1 | 3 }
-  | { kind: 'potions'; count: 2 | 3 }
+  | { kind: 'potions'; count: 1 | 2 | 3 }
   | { kind: 'curse' }
 
 export type NeowImmediateReward = Extract<NeowEffect,
@@ -51,7 +51,7 @@ export type NeowPlayerState = {
   cardId: string
   redGoldPending: boolean
   redRewardPending: boolean
-  /** Heart's Boon gives three independent opening Card Rewards. */
+  /** One opening Card Reward; retained for older saves with queued rewards. */
   redRewardsRemaining?: number
   redReward: NeowRewardOffer | null
   blueOption: number | null
@@ -91,26 +91,26 @@ const potions = (): NeowEffect => ({ kind: 'potions', count: 3 })
 const curse = (): NeowEffect => ({ kind: 'curse' })
 
 const boonEffects: readonly (readonly [NeowEffect[], NeowEffect[], NeowEffect[]])[] = [
-  [[{ kind: 'reward', reward: 'colorless', count: 1 }], [{ kind: 'potions', count: 2 }], [{ kind: 'upgrade', count: 1, starter: 'strike' }, { kind: 'upgrade', count: 1, starter: 'defend' }, { kind: 'loseMaxHp', amount: 1 }]],
+  [[{ kind: 'reward', reward: 'colorless', count: 1 }], [{ kind: 'gold', amount: 2 }, { kind: 'potions', count: 2 }], [{ kind: 'upgrade', count: 1, starter: 'strike' }, { kind: 'upgrade', count: 1, starter: 'defend' }, { kind: 'loseMaxHp', amount: 1 }]],
   [[{ kind: 'reward', reward: 'card', count: 1 }], [{ kind: 'gold', amount: 8 }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'upgrade', count: 1, starter: 'strike' }, { kind: 'upgrade', count: 1, starter: 'defend' }, { kind: 'loseGold', amount: 3 }]],
-  [[{ kind: 'remove', count: 1 }], [{ kind: 'gold', amount: 8 }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'transform', count: 1, upgrade: true }, { kind: 'loseHp', amount: 2 }]],
-  [[{ kind: 'upgrade', count: 2, starter: 'strike' }, { kind: 'loseHp', amount: 1 }], [{ kind: 'potions', count: 2 }], [{ kind: 'reward', reward: 'colorless', count: 1, upgraded: true }, { kind: 'loseHp', amount: 3 }]],
+  [[{ kind: 'remove', count: 1 }], [{ kind: 'relic' }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'transform', count: 1, upgrade: true }, { kind: 'loseHp', amount: 2 }]],
+  [[{ kind: 'upgrade', count: 2, starter: 'strike' }, { kind: 'loseHp', amount: 1 }], [{ kind: 'gold', amount: 2 }, { kind: 'potions', count: 2 }], [{ kind: 'reward', reward: 'colorless', count: 1, upgraded: true }, { kind: 'loseHp', amount: 3 }]],
   [[{ kind: 'transform', count: 1 }], [{ kind: 'randomRare' }], [{ kind: 'reward', reward: 'card', count: 1, upgraded: true }, { kind: 'loseMaxHp', amount: 2 }]],
   [[{ kind: 'reward', reward: 'card', count: 1 }], [{ kind: 'relic' }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'remove', count: 2 }, { kind: 'loseGold', amount: 3 }]],
-  [[{ kind: 'potions', count: 2 }], [{ kind: 'upgrade', count: 2, starter: 'strike' }, { kind: 'loseHp', amount: 1 }], [{ kind: 'remove', count: 2 }, { kind: 'loseMaxHp', amount: 2 }]],
+  [[{ kind: 'gold', amount: 2 }, { kind: 'potions', count: 2 }], [{ kind: 'upgrade', count: 2, starter: 'strike' }, { kind: 'loseHp', amount: 1 }], [{ kind: 'remove', count: 2 }, { kind: 'loseMaxHp', amount: 2 }]],
   [[{ kind: 'transform', count: 1 }], [{ kind: 'upgrade', count: 2, starter: 'strike' }, { kind: 'loseHp', amount: 1 }], [{ kind: 'reward', reward: 'rare', count: 1 }, { kind: 'curse' }]],
   [[{ kind: 'upgrade', count: 1 }], [{ kind: 'transform', count: 1 }], [{ kind: 'reward', reward: 'rare', count: 1 }, { kind: 'loseMaxHp', amount: 2 }]],
   [[{ kind: 'upgrade', count: 1 }], [{ kind: 'relic' }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'gold', amount: 11 }, { kind: 'loseMaxHp', amount: 2 }]],
   [[{ kind: 'remove', count: 2, starter: 'defend' }], [{ kind: 'upgrade', count: 1 }], [{ kind: 'transform', count: 1, upgrade: true }, { kind: 'loseMaxHp', amount: 1 }]],
   [[{ kind: 'gold', amount: 8 }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'remove', count: 1 }], [{ kind: 'transform', count: 1, upgrade: true }, { kind: 'loseGold', amount: 3 }]],
   [[{ kind: 'upgrade', count: 1 }], [{ kind: 'randomRare' }], [{ kind: 'relic', choices: 3 }, { kind: 'curse' }]],
-  [[{ kind: 'potions', count: 3 }], [{ kind: 'gold', amount: 11 }, { kind: 'loseMaxHp', amount: 2 }], [{ kind: 'reward', reward: 'card', count: 1, upgraded: true }, { kind: 'curse' }]],
+  [[{ kind: 'gold', amount: 3 }, { kind: 'potions', count: 1 }], [{ kind: 'gold', amount: 11 }, { kind: 'loseMaxHp', amount: 2 }], [{ kind: 'reward', reward: 'card', count: 1, upgraded: true }, { kind: 'curse' }]],
   [[{ kind: 'remove', count: 1 }], [{ kind: 'randomCards', source: 'colorless', count: 2 }], [{ kind: 'relic', choices: 3 }, { kind: 'loseMaxHp', amount: 2 }]],
   [[{ kind: 'reward', reward: 'colorless', count: 1 }], [{ kind: 'gold', amount: 8 }, { kind: 'loseMaxHp', amount: 1 }], [{ kind: 'randomCards', source: 'card', count: 2 }]],
   [[{ kind: 'randomRare' }], [{ kind: 'relic' }, { kind: 'loseGold', amount: 3 }], [{ kind: 'randomCards', source: 'colorless', count: 1, upgraded: true }, { kind: 'loseHp', amount: 1 }]],
-  [[{ kind: 'gold', amount: 5 }], [{ kind: 'reward', reward: 'colorless', count: 1 }], [{ kind: 'reward', reward: 'card', count: 3 }, { kind: 'loseMaxHp', amount: 1 }]],
+  [[{ kind: 'gold', amount: 5 }], [{ kind: 'reward', reward: 'colorless', count: 1 }], [{ kind: 'gold', amount: 3 }, { kind: 'reward', reward: 'card', count: 1 }, { kind: 'loseMaxHp', amount: 1 }]],
   [[{ kind: 'potions', count: 3 }], [{ kind: 'upgrade', count: 1 }], [{ kind: 'reward', reward: 'card', count: 1, upgraded: true }, { kind: 'loseHp', amount: 3 }]],
-  [[{ kind: 'potions', count: 3 }], [{ kind: 'remove', count: 2, starter: 'defend' }], [{ kind: 'reward', reward: 'card', count: 1, look: 5 }, { kind: 'loseGold', amount: 1 }, { kind: 'loseHp', amount: 1 }]],
+  [[{ kind: 'gold', amount: 3 }, { kind: 'potions', count: 1 }], [{ kind: 'remove', count: 2, starter: 'defend' }], [{ kind: 'reward', reward: 'card', count: 1, look: 5 }, { kind: 'loseGold', amount: 1 }, { kind: 'loseHp', amount: 1 }]],
 ]
 
 export function formatHeartBoonLabel(label: string): string {

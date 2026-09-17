@@ -1486,9 +1486,9 @@ export function createSummonSupply(
     const sentryCards = DOWNFALL_SUMMON_CARDS.downfall_sentry ?? []
     const aliases: Record<string, string> = act === 1 ? {
       acid_slime: 'downfall_acid_slime', spike_slime: 'downfall_spike_slime',
-      large_slime: 'downfall_large_slime', fungi_beast: 'downfall_fungi_beast', gremlin: 'downfall_gremlin',
+      large_slime: 'downfall_large_slime', fungi_beast: 'downfall_fungi_beast',
     } : act === 2 ? {
-      byrd: 'downfall_byrd', cultist: 'downfall_cultist_act2', bronze_orb: 'downfall_bronze_orb',
+      byrd: 'downfall_byrd', cultist: 'downfall_cultist_act2', bronze_orb: 'downfall_bronze_orb', torch_head: 'downfall_torch_head',
       mugger: 'downfall_mugger', mystic: 'downfall_mystic', blue_slaver: 'downfall_blue_slaver',
       red_slaver: 'downfall_red_slaver', fungi_beast_a7: 'downfall_fungi_beast_a7',
     } : {
@@ -1496,6 +1496,8 @@ export function createSummonSupply(
       repulsor: 'downfall_repulsor', exploder: 'downfall_exploder', spiker: 'downfall_spiker',
       spheric_guardian: 'downfall_spheric_guardian_a7', darkling: 'downfall_darkling', dagger: 'downfall_dagger',
     }
+    // Gremlin Leader uses the Act I Gremlins in Act II as well.
+    aliases.gremlin = 'downfall_gremlin'
     for (const [name, source] of Object.entries(aliases)) supply[name] = shuffle(rng, [...(DOWNFALL_SUMMON_CARDS[source] ?? [])])
     supply.green_louse = shuffle(rng, louseCards
       .filter((id) => DOWNFALL_ENEMIES[id]?.name === 'Green Louse'))

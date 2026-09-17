@@ -303,7 +303,7 @@ const heartsBoonNeowLayout = await page.evaluate(() => {
     rightOfHero: !!heartBox && !!heroBox && heartBox.left > heroBox.right,
   }
 })
-const heartsBoonPotionLabel = await page.getByRole('button', { name: 'Gain 2 Potions.' }).isVisible()
+const heartsBoonPotionLabel = await page.getByRole('button', { name: 'Gain 2 Gold and 2 Potions.' }).isVisible()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

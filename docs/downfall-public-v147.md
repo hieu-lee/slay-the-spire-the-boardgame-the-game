@@ -16,6 +16,34 @@ The `v1.47` prototype rulebook instead inventories 365 player cards, 89 Summons,
 
 The executable implementation therefore follows the exact public `v1.47` faces, rules, GUIDs, CardIDs, sheet positions, and deck objects. Verification separately records the campaign-page counts and fails if a public prototype object is silently dropped. It does not invent unpublished final card text to force the two inventories to agree.
 
+## Heart's Boon and summon audit (2026-09-18)
+
+All 20 Heart's Boon faces on [the official sheet](https://steamusercontent-a.akamaihd.net/ugc/15019999112916723016/2D61D4FAAD6C8EC543DDAF4753E4CE2D58D00526/) show **3 Gold plus one Card Reward** in the red banner. A number inside a Gold coin is not a count for the adjacent reward icon. The same distinction corrects these blue options (zero-based sheet indexes):
+
+| Card / option | Printed reward |
+| --- | --- |
+| 0 / 1, 3 / 1, 6 / 0 | 2 Gold and 2 Potions |
+| 2 / 1 | 1 Relic; lose 1 max HP |
+| 13 / 0, 19 / 0 | 3 Gold and 1 Potion |
+| 17 / 2 | 3 Gold and 1 Card Reward; lose 1 max HP |
+
+Card 18 / option 0 really does show three separate Potion icons, with no Gold. All remaining blue options were also checked against their faces.
+
+The advertisement's **24 Summons** is a physical-card count, separate from its **26 Boss Cards (29 including unlocks)**. It is not the 23-entry illustration inventory in `downfall-enemy-asset-provenance.json`, which includes bosses and the reused Spire Shield. Neither illustration counts nor the prototype's repeated cards establish a complete 24-card manufactured-box checklist.
+
+In the implemented public playtest, the distinctive summons enter through these fights:
+
+| Fight | Summons / companion cards |
+| --- | --- |
+| Act I Dark Core | Dark Orbs after its opening Enemy Turn |
+| Act II Orb Master | Lightning, Frost, and Dark Orbs at combat setup |
+| Act II Inferno / Trickster | Flame Barrier / Doppelganger at combat setup |
+| Act III Wraith | Shivs after its opening Enemy Turn |
+| Act III Demon | Corrupted through its death reaction |
+| Act IV Neow | Slayers and Loot Chests at combat setup |
+
+Normal encounters and elites continue to use the base encounter cards, drawing the corresponding Downfall Summons variants where present. Those familiar variants reuse base enemy illustrations. Gremlin Leader must also draw the Downfall Gremlins in Act II; its revival and Reptomancer's summon limit / Rally must recognize their Downfall IDs.
+
 ## Character visuals
 
 The Slime Boss, Guardian, Hexaghost, and Hermit silhouettes were checked against the public PC Downfall mod character art. Image-generation produced higher-resolution idle, ready, impact, rear campfire, and standing merchant poses in the existing game's cutout style. Hexaghost combat now uses seven countable Heat cutouts (0–6 flames), matching attack animations, and a generated green-flame Soulburn button instead of a duplicate text chip. `scripts/prepare-transparent-asset.py` removes baked neutral backgrounds, resizes in premultiplied alpha, and rejects outputs without a real transparent background.

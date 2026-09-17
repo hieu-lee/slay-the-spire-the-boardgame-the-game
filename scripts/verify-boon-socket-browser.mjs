@@ -4,9 +4,10 @@ import { createServer } from 'vite'
 import { chromium } from './lib/profile-browser.mjs'
 import { CARDS } from '../src/game/cards.ts'
 import { HEARTS_BOON_CARDS } from '../src/game/neow.ts'
-import { createRun, chooseNeow, resolveNeowReward, revealNeowReward } from '../src/game/run.ts'
+import { createRun, chooseNeow, resolveNeowGold, resolveNeowReward, revealNeowReward } from '../src/game/run.ts'
 
 let run = createRun(8123, [{ id: 'p1', name: 'Guardian', character: 'guardian' }])
+run = resolveNeowGold(run, 'p1', false)
 while (run.neow.players.p1.redRewardPending) run = resolveNeowReward(run, 'p1', null)
 const boon = HEARTS_BOON_CARDS.find(card => card.options.some(option => option.effects.some(effect => effect.look === 5)))
 run.neow.players.p1.cardId = boon.id

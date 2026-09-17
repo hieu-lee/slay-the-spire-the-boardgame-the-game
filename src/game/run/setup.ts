@@ -20,7 +20,7 @@ import { addBurningElite, generateMap } from '../map.ts'
 import type { RoomKind } from '../map.ts'
 import { normalizeModifierIds, rollDailyModifiers, rulesetForCharacters } from '../meta.ts'
 import type { DailyModifierId, QuickSetupState, RunMetaOptions } from '../meta.ts'
-import { dealBlessings, neowCard, NEOW_CARDS } from '../neow.ts'
+import { dealBlessings, NEOW_CARDS } from '../neow.ts'
 import type { NeowState } from '../neow.ts'
 import { STARTING_RELIC, createRelicDecks, createRelicInstance } from '../relics.ts'
 import { createRng, shuffle } from '../rng.ts'
@@ -209,9 +209,9 @@ export function createRun(
     players: Object.fromEntries(players.map((player) => {
       return [player.id, {
         cardId: dealt.dealt[player.id]!,
-        redGoldPending: neowCard(dealt.dealt[player.id]!)?.source !== 'heart',
+        redGoldPending: true,
         redRewardPending: true,
-        redRewardsRemaining: neowCard(dealt.dealt[player.id]!)?.source === 'heart' ? 3 : 1,
+        redRewardsRemaining: 1,
         redReward: null,
         blueOption: null,
         pendingEffect: null,
@@ -374,7 +374,7 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
       const downfall = DOWNFALL_CHARACTER_IDS.some((id) => id === player.character)
       const cardId = downfall ? heartDeck.shift() : deck.shift()
       return [player.id, {
-        cardId: cardId!, redGoldPending: !downfall, redRewardPending: true, redRewardsRemaining: downfall ? 3 : 1,
+        cardId: cardId!, redGoldPending: true, redRewardPending: true, redRewardsRemaining: 1,
         redReward: null, blueOption: null, pendingEffect: null, rewardKind: null,
         reward: null, rewardQueue: [], done: false,
       }]
@@ -405,8 +405,8 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
       deck: dealt.deck,
       heartDeck: dealt.heartDeck,
       players: Object.fromEntries(newPlayers.map((player) => [player.id, {
-        cardId: dealt.dealt[player.id]!, redGoldPending: neowCard(dealt.dealt[player.id]!)?.source !== 'heart', redRewardPending: true,
-        redRewardsRemaining: neowCard(dealt.dealt[player.id]!)?.source === 'heart' ? 3 : 1,
+        cardId: dealt.dealt[player.id]!, redGoldPending: true, redRewardPending: true,
+        redRewardsRemaining: 1,
         redReward: null, blueOption: null, pendingEffect: null, rewardKind: null,
         reward: null, rewardQueue: [], done: false,
       }])),

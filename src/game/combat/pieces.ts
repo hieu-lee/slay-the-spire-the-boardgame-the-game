@@ -142,9 +142,10 @@ export function recordPoisonDamage(state: CombatState, target: Enemy, amount: nu
 }
 
 function enemyInGroup(enemy: Enemy, group: 'gremlin' | 'darkling'): boolean {
+  const defId = enemy.defId.replace(/^downfall_/, '')
   return group === 'darkling'
-    ? enemy.defId.startsWith('darkling') || enemy.defId.startsWith('downfall_darkling_')
-    : ['mad_gremlin', 'sneaky_gremlin', 'gremlin_wizard', 'fat_gremlin'].includes(enemy.defId)
+    ? defId.startsWith('darkling')
+    : ['mad_gremlin', 'sneaky_gremlin', 'gremlin_wizard', 'fat_gremlin'].includes(defId)
 }
 
 export function reviveAll(state: CombatState, group: 'gremlin' | 'darkling'): number {

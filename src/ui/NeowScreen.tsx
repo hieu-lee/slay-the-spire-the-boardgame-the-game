@@ -182,9 +182,7 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
         return <article key={player.id} className={`neow-face${participants.length === 1 ? ' neow-face--solo' : ''}${player.id === viewerId ? ' neow-face--active' : ''}${state?.done ? ' neow-face--done' : ''}`}>
           <div className="neow-face__owner"><strong>{player.name}</strong><span>{state?.done ? 'Ready' : state?.redGoldPending || state?.redRewardPending || state?.redReward ? 'Red reward' : state?.blueOption !== null ? 'Resolving' : 'Choosing'}</span></div>
           <blockquote>“{face?.text ?? '…'}”</blockquote>
-          <div className="neow-face__red">{face?.source === 'heart'
-            ? '3 Card Rewards'
-            : <><IconValue name="gold" value={3} size={18} /> + Card Reward</>}</div>
+          <div className="neow-face__red"><IconValue name="gold" value={3} size={18} /> + Card Reward</div>
           <ol>{face?.options.map((option, index) => <li key={option.label} data-picked={state?.blueOption === index || undefined}>{option.label}</li>)}</ol>
           {onViewer && player.id !== viewerId && !state?.done ? <button type="button" onClick={() => onViewer(player.id)}>Resolve {player.name}</button> : null}
         </article>

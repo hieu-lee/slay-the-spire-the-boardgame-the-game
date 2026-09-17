@@ -2161,10 +2161,10 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "PROVE your worth...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Gain [card-reward] from the colorless rewards.",
-        "Gain 2 [potion].",
+        "Gain 2 gold and 2 [potion].",
         "Upgrade a starter Strike and Defend. Lose 1 max HP."
       ],
       "multiplicity": 1
@@ -2177,7 +2177,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Arise... Servant...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Gain [card-reward].",
         "Gain 8 gold. Lose 1 max HP.",
@@ -2193,10 +2193,10 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Arise... Servant...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Remove a card.",
-        "Gain 8 gold. Lose 1 max HP.",
+        "Gain [relic]. Lose 1 max HP.",
         "Transform a card, then upgrade it. Lose 2 HP."
       ],
       "multiplicity": 1
@@ -2209,10 +2209,10 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Sacrifice... For power...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Upgrade 2 starter Strikes. Lose 1 HP.",
-        "Gain 2 [potion].",
+        "Gain 2 gold and 2 [potion].",
         "Gain [up-arrow-card-reward] from the colorless rewards. Lose 3 HP."
       ],
       "multiplicity": 1
@@ -2225,7 +2225,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "I brought you back...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Transform a card.",
         "Add a random rare card to your deck.",
@@ -2241,7 +2241,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "I brought you back...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Gain [card-reward].",
         "Gain [relic]. Lose 1 max HP.",
@@ -2257,9 +2257,9 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Slay... Intruders...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
-        "Gain 2 [potion].",
+        "Gain 2 gold and 2 [potion].",
         "Upgrade 2 starter Strikes. Lose 1 HP.",
         "Remove 2 cards. Lose 2 max HP."
       ],
@@ -2273,7 +2273,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Slay... Intruders...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Transform a card.",
         "Upgrade 2 starter Strikes. Lose 1 HP.",
@@ -2289,7 +2289,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Slay... Intruders...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Upgrade a card.",
         "Transform a card.",
@@ -2305,7 +2305,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Slay... Intruders...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Upgrade a card.",
         "Gain [relic]. Lose 1 max HP.",
@@ -2321,7 +2321,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Descend... Into madness...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Remove 2 starter Defends.",
         "Upgrade a card.",
@@ -2337,7 +2337,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Descend... Into madness...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Gain 8 gold. Lose 1 max HP.",
         "Remove a card.",
@@ -2353,7 +2353,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Sacrifice... For power...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Upgrade a card.",
         "Add a random rare card to your deck.",
@@ -2369,9 +2369,9 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "PROVE your worth...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
-        "Gain 3 [potion].",
+        "Gain 3 gold and [potion].",
         "Gain 11 gold. Lose 2 max HP.",
         "Gain [up-arrow-card-reward]. Gain a Curse."
       ],
@@ -2385,7 +2385,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Sacrifice... For power...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Remove a card.",
         "Add 2 random colorless cards to your deck.",
@@ -2401,7 +2401,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Sacrifice... For power...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Gain [card-reward] from the colorless rewards.",
         "Gain 8 gold. Lose 1 max HP.",
@@ -2417,7 +2417,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "Sacrifice... For power...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Add a random rare card to your deck.",
         "Gain [relic]. Lose 3 gold.",
@@ -2433,11 +2433,11 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "I brought you back...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Gain 5 gold.",
         "Gain [card-reward] from the colorless rewards.",
-        "Gain 3 [card-reward]. Lose 1 max HP."
+        "Gain 3 gold and [card-reward]. Lose 1 max HP."
       ],
       "multiplicity": 1
     },
@@ -2449,7 +2449,7 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "I brought you back...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
         "Gain 3 [potion].",
         "Upgrade a card.",
@@ -2465,9 +2465,9 @@ export const DOWNFALL_ITEMS_MANIFEST = {
       "type": "boon",
       "pool": "heart-boon",
       "speech": "I brought you back...",
-      "commonText": "Gain 3 [card-reward]. Then choose an option below...",
+      "commonText": "Gain 3 gold and [card-reward]. Then choose an option below...",
       "options": [
-        "Gain 3 [potion].",
+        "Gain 3 gold and [potion].",
         "Remove 2 starter Defends.",
         "Gain [card-reward]. Look at 5 cards instead of 3. Lose 1 gold and 1 HP."
       ],
