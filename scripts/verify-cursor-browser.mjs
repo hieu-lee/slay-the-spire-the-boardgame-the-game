@@ -22,10 +22,10 @@ try {
         const check = async (target) => {
           await target.hover()
           const normal = await target.evaluate(el => getComputedStyle(el).cursor)
-          assert(normal.includes('image-set(') && normal.includes('/cursor@2x.png') && normal.includes('14 12'), normal)
+          assert(normal.includes('/cursor.png') && !normal.includes('image-set(') && normal.includes('14 12'), normal)
           await page.mouse.down()
           const pressed = await target.evaluate(el => getComputedStyle(el).cursor)
-          assert(pressed.includes('/cursor-click@2x.png') && pressed.includes('14 12'), pressed)
+          assert(pressed.includes('/cursor-click.png') && !pressed.includes('image-set(') && pressed.includes('14 12'), pressed)
           // Release away from the control so testing a cursor does not activate it.
           await page.mouse.move(1, 1)
           await page.mouse.up()
@@ -43,26 +43,10 @@ try {
         if (screen === 'horizontal-phone') await page.locator('.room--reachable').first().click()
         await page.locator('.combat').waitFor()
         await check(page.locator('.combat__bar'))
-        await page.evaluate(async () => {
-          const gallery = document.createElement('div')
-          gallery.style.cssText = 'position:fixed;z-index:99999;left:20px;top:150px;padding:20px;background:#b49b70;display:flex;gap:24px;color:#21190b'
-          for (const [label, file] of [['Normal', 'cursor'], ['Pressed', 'cursor-click']]) {
-            const cell = document.createElement('div')
-            cell.textContent = label
-            const image = new Image(64, 64)
-            image.src = `/assets/ui/${file}.png`
-            image.srcset = `/assets/ui/${file}.png 1x, /assets/ui/${file}@2x.png 2x`
-            image.style.display = 'block'
-            cell.append(image); gallery.append(cell)
-            await image.decode()
-            if (devicePixelRatio === 2 && !image.currentSrc.includes('@2x.png')) throw new Error('Retina asset not selected')
-          }
-          document.body.append(gallery)
-        })
         await page.screenshot({ path: `${output}/${name}-${screen}.png` })
         assert.deepEqual(errors, [])
         await context.close()
-        console.log(`✓ ${name} ${screen}: normal/pressed/release, shared hotspot, title/Compendium/gameplay, density assets`)
+        console.log(`✓ ${name} ${screen}: stable normal/pressed cursor, shared hotspot, title/Compendium/gameplay`)
       }
     } finally { await browser.close() }
   }

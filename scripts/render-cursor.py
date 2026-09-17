@@ -1,4 +1,4 @@
-"""Blender: render the reference gold pointer at native and Retina resolution.
+"""Blender: render the stable 64px reference gold pointer.
 
 Run: blender -b --python scripts/render-cursor.py
 """
@@ -26,14 +26,14 @@ def linear(channel):
     return value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4
 
 
-def render(pressed, scale):
+def render(pressed):
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
     scene.cycles.samples = 32
     scene.render.film_transparent = True
-    scene.render.resolution_x = scene.render.resolution_y = 64 * scale
+    scene.render.resolution_x = scene.render.resolution_y = 64
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = 'PNG'
     scene.render.image_settings.color_mode = 'RGBA'
@@ -68,10 +68,9 @@ def render(pressed, scale):
     scene.camera.data.type = 'ORTHO'
     scene.camera.data.ortho_scale = 64
     name = 'cursor-click' if pressed else 'cursor'
-    scene.render.filepath = str(OUT / f'{name}{"@2x" if scale == 2 else ""}.png')
+    scene.render.filepath = str(OUT / f'{name}.png')
     bpy.ops.render.render(write_still=True)
 
 
 for pressed in (False, True):
-    for scale in (1, 2):
-        render(pressed, scale)
+    render(pressed)
