@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   verify:
+    if: github.event_name != 'push' || github.ref != 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -48,6 +49,7 @@ jobs:
           node scripts/verify-all.mjs --changed="$base" --lane=light --jobs=4
 
   verify-browser:
+    if: github.event_name != 'push' || github.ref != 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -88,7 +90,8 @@ jobs:
             --shard=${{ matrix.shard }}/4 --skip-typecheck --jobs=1
 
   deploy-server:
-    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: always() && github.ref == 'refs/heads/master' && (github.event_name == 'push' ||
+      needs.verify.result == 'success' && needs.verify-browser.result == 'success')
     needs: [verify, verify-browser]
     permissions:
       contents: read
