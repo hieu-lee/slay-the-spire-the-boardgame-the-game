@@ -70,6 +70,8 @@ try {
         assert(rect.x>=0&&rect.y>=0&&rect.x+rect.width<=visible.width+1&&rect.y+rect.height<=visible.height+1,
           `${screen}: ${selector} clipped: ${JSON.stringify({rect,visible})}`)
       }
+      const sheet = await loot.boundingBox()
+      assert(Math.abs(sheet.x + sheet.width / 2 - visible.width / 2) < 2, `${screen}: blessing sheet is not centered`)
       await page.screenshot({path:resolve(out,`${screen}-${heart?'heart':'neow'}.png`)})
       await choose('Weak Potion',{kind:'gain'})
       await choose('Pass Weak Potion to Friend',{kind:'pass',playerId:'p2'})

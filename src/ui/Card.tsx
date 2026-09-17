@@ -709,8 +709,8 @@ export function Card({
         // little so the row reads as an arc rather than a shelf.
         // The spread grows with the hand: a fixed angle made five cards look
         // merely crooked and only became a fan at eight or more.
-        '--fan-angle': `${fan * 11}deg`,
-        '--fan-lift': `${Math.abs(fan) * 14}px`,
+        '--fan-angle': `${fan * 4}deg`,
+        '--fan-lift': `${Math.abs(fan) * 5}px`,
       } as React.CSSProperties}
       aria-disabled={!playable}
       onPointerDown={(event) => {

@@ -71,6 +71,7 @@
 /* The item sheet can carry seven actions in a four-player party. Keep Skip in
    its own grid row instead of floating it over the last pass/replace choice. */
 .sts-scope .neow-action--offer .neow-offer--potion.reward-screen--loot {
+  margin-inline: auto;
   grid-template-rows: auto minmax(0, 1fr) auto;
   align-content: stretch;
 }

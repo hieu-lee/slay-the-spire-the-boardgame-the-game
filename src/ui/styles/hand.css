@@ -281,3 +281,8 @@
 .card-keyword-tips[data-open][data-overlaps-card]:not([data-pinned]) {
   pointer-events: none;
 }
+
+/* Small hands have room to show each complete card face. */
+.hand:is([data-count='1'], [data-count='2'], [data-count='3'], [data-count='4'], [data-count='5']) .card {
+  margin-inline: 0;
+}
