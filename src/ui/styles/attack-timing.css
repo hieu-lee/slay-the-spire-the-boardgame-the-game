@@ -595,3 +595,18 @@
   12% { opacity: 1; }
   to { opacity: 0; transform: translate(-50%, -50%) scale(1.25); }
 }
+
+.hermit-damage-number {
+  position: absolute;
+  z-index: 21;
+  pointer-events: none;
+  color: #fff1c7;
+  font: bold 1.15rem Georgia, 'Times New Roman', serif;
+  text-shadow: 0 2px 0 #641817, 0 0 5px #000;
+  animation: hermit-damage-float 600ms ease-out both;
+}
+@keyframes hermit-damage-float {
+  from { opacity: 1; transform: translate(calc(-50% + var(--damage-x)), -50%) scale(.85); }
+  25% { opacity: 1; }
+  to { opacity: 0; transform: translate(calc(-50% + var(--damage-x)), -6rem) scale(1.1); }
+}

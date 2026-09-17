@@ -54,6 +54,7 @@ import {
   CombatVfx,
   DefectEvokeVfx,
   HermitBullets,
+  isHermitAttack,
   characterAttackContactMs,
   isCharacterAttack,
   latestTargetPresentationEvent,
@@ -314,7 +315,7 @@ function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, att
       data-attack-seq={attackSeq}
     >
       <img src={src} alt="" style={firing ? undefined : { visibility: 'hidden' }} onLoad={() => setLoaded(true)} />
-      {loaded && replayAsset && hermitEvent ? <HermitBullets event={hermitEvent} firing={firing} /> : null}
+      {loaded && replayAsset && hermitEvent ? <HermitBullets event={hermitEvent} /> : null}
     </span>
   )
 }
@@ -1193,7 +1194,7 @@ function CombatScreenView({
         const targetRect = targetElement.querySelector<HTMLElement>('.enemy__portrait')!.getBoundingClientRect()
         return [{
           active,
-          interrupted: active.event.seq <= latestNonAttackSeq,
+          interrupted: player.character !== 'hermit' && active.event.seq <= latestNonAttackSeq,
           targetId: target.id,
           x: Math.max(0, targetRect.left - actorRect.right + actorRect.width * 0.22),
           y: targetRect.bottom - actorRect.bottom,
@@ -5992,6 +5993,9 @@ function CombatScreenView({
                 visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
                 visualResetKey={visualResetKey}
                 stageVisualDamage={!prefersReducedMotion}
+                hermitEvents={(state.presentationEvents ?? []).filter(event =>
+                  event.enemyIds.includes(enemy.uid) && isHermitAttack(state, event)).map(event => ({ seq: event.seq,
+                    damage: event.enemyHpLoss ? event.enemyHpLoss[enemy.uid] ?? 0 : undefined }))}
                 hitBeats={hits.get(enemy.uid)}
                 vfx={enemyVfxFor(enemy)}
                 rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
@@ -6492,6 +6496,9 @@ function CombatScreenView({
                       visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
                       visualResetKey={visualResetKey}
                       stageVisualDamage={!prefersReducedMotion}
+                      hermitEvents={(state.presentationEvents ?? []).filter(event =>
+                        event.enemyIds.includes(enemy.uid) && isHermitAttack(state, event)).map(event => ({ seq: event.seq,
+                          damage: event.enemyHpLoss ? event.enemyHpLoss[enemy.uid] ?? 0 : undefined }))}
                       hitBeats={hits.get(enemy.uid)}
                       vfx={enemyVfxFor(enemy)}
                       rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}

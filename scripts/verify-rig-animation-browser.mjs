@@ -233,6 +233,53 @@ try {
       }
     }
     if (process.argv.includes('--hero=hermit')) {
+      // Real impact events, rather than wall-clock sleeps, must drive HP and numbers.
+      for (const lethal of [false, true]) {
+        await page.evaluate(lethal => {
+          const f = window.fixture
+          f.install('hermit', 'jaw_worm', false, lethal ? 1 : 3)
+          if (lethal) { f.state.enemies[0].hp = 3; f.render() }
+          window.hermitImpactSamples = []
+          const board = document.querySelector('.board')
+          if (window.hermitDamageListener) board.removeEventListener('hermit-impact', window.hermitDamageListener)
+          window.hermitDamageListener = event => {
+            const card = event.target.closest('.enemy')
+            queueMicrotask(() => window.hermitImpactSamples.push({
+              seq: event.detail.seq, target: card.dataset.enemyId, hp: Number(card.querySelector('.bar__label').textContent.split('/')[0]),
+              dead: card.classList.contains('enemy--dead'),
+            }))
+          }
+          board.addEventListener('hermit-impact', window.hermitDamageListener)
+        }, lethal)
+        await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= 3)
+        await page.waitForFunction(expected => Number(document.querySelector('.enemy .bar__label').textContent.split('/')[0]) === expected, lethal ? 3 : 999)
+        await page.evaluate(lethal => {
+          const f = window.fixture
+          f.state.enemies.forEach((enemy, index) => { enemy.hp -= [3, 7, 0][index]; enemy.dead = enemy.hp === 0 })
+          f.attack('hermit_strike')
+        }, lethal)
+        await page.locator('.hermit-shot').last().waitFor({ state: 'attached' })
+        assert.equal(await page.locator('.enemy .hit-vfx').count(), 0, 'Hermit still shows the old lump damage burst')
+        await page.waitForFunction(count => window.hermitImpactSamples.length >= count, lethal ? 10 : 30)
+        const result = await page.locator('.enemy').evaluateAll(cards => cards.map(card => ({
+          id: card.dataset.enemyId, hp: Number(card.querySelector('.bar__label').textContent.split('/')[0]),
+          dead: card.classList.contains('enemy--dead'),
+          numbers: [...card.querySelectorAll('.hermit-damage-number')].map(number => Number(number.dataset.damage)),
+        })))
+        for (const [index, target] of result.entries()) {
+          const total = [3, 7, 0][index]
+          assert.equal(target.hp, (lethal ? 3 : 999) - total, 'final displayed HP differs from authoritative HP')
+          assert.equal(target.numbers.length, total ? 10 : 0, 'expected one damage number per damaging bullet impact')
+          assert(target.numbers.every(amount => Math.abs(amount - total / 10) < 1e-8), 'damage was not divided equally over impacts')
+        }
+        const samples = await page.evaluate(() => window.hermitImpactSamples)
+        assert(samples.some(sample => sample.target === 'enemy-0' && sample.hp === (lethal ? 2.4 : 998.4) && !sample.dead),
+          `first volley did not step HP down by exactly two impacts: ${JSON.stringify(samples)}`)
+        if (lethal) assert(result[0].dead, 'lethal target did not fall after the final impact')
+        await page.locator('.board').screenshot({ path: resolve(output, `${screen}-hermit-damage-${lethal ? 'lethal' : 'aoe'}.png`) })
+      }
+    }
+    if (process.argv.includes('--hero=hermit')) {
       for (const count of [1, 3]) {
         await page.evaluate(count => window.fixture.install('hermit', 'jaw_worm', false, count), count)
         await page.waitForFunction(()=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=3)
@@ -290,10 +337,96 @@ try {
       }
     }
     if (process.argv.includes('--hero=hermit')) {
+      for (const interruptMs of [100, 850]) {
+        await page.evaluate(() => {
+          const f = window.fixture
+          f.install('hermit', 'jaw_worm', false)
+          window.hermitNumberTotal = 0
+          window.hermitNumberObserver?.disconnect()
+          window.hermitNumberObserver = new MutationObserver(records => {
+            for (const record of records) for (const node of record.addedNodes) {
+              if (node instanceof HTMLElement && node.matches('.hermit-damage-number')) window.hermitNumberTotal += Number(node.dataset.damage)
+            }
+          })
+          window.hermitNumberObserver.observe(document.querySelector('.board'), { childList: true, subtree: true })
+        })
+        await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= 3)
+        await page.evaluate(() => { const f=window.fixture; f.state.enemies[0].hp -= 3; f.attack('hermit_strike') })
+        await page.locator('.hermit-shot').last().waitFor({ state: 'attached' })
+        await page.waitForTimeout(interruptMs)
+        await page.evaluate(() => { const f=window.fixture; f.state.enemies[0].hp -= 7; f.attack('hermit_strike') })
+        await page.waitForFunction(() => document.querySelector('.enemy .bar__label')?.textContent.trim() === '989/999')
+        assert(Math.abs(await page.evaluate(() => window.hermitNumberTotal) - 10) < 1e-8,
+          `interrupted attack lost or duplicated displayed damage at ${interruptMs}ms`)
+      }
+      // A single network update may include another character's damage as well.
+      await page.evaluate(() => {
+        const f = window.fixture
+        f.install('hermit', 'jaw_worm', false)
+        f.state.players.push({ ...structuredClone(f.state.players[0]), id: 'p2', name: 'Ironclad', character: 'ironclad', row: 1 })
+        f.render()
+      })
+      await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= 5)
+      await page.evaluate(() => {
+        const f = window.fixture
+        f.state.enemies[0].hp -= 10
+        f.state.presentationEvents.push(
+          { seq: ++f.seq, kind: 'card', actorId: 'p1', sourceId: 'hermit_strike', enemyIds: ['enemy-0'],
+            enemyHpLoss: { 'enemy-0': 3 }, playerIds: [], upgraded: false, copied: false, energy: 1 },
+          { seq: ++f.seq, kind: 'card', actorId: 'p2', sourceId: 'strike_ironclad', enemyIds: ['enemy-0'],
+            enemyHpLoss: { 'enemy-0': 7 }, playerIds: [], upgraded: false, copied: false, energy: 1 },
+        )
+        f.render()
+      })
+      await page.waitForFunction(() => document.querySelectorAll('.hermit-damage-number').length === 10)
+      assert((await page.locator('.hermit-damage-number').evaluateAll(nodes => nodes.map(node => Number(node.dataset.damage))))
+        .every(amount => Math.abs(amount - .3) < 1e-8), 'Hermit absorbed another character’s damage from a batched update')
+      assert.equal(await page.locator('.enemy .hit-vfx strong').textContent(), '7', 'another character lost their damage number')
+      assert.equal((await page.locator('.enemy .bar__label').textContent()).trim(), '989/999')
+      // A same-update heal can restore the exact original HP despite real card damage.
+      await page.evaluate(() => {
+        const f = window.fixture
+        f.install('hermit', 'jaw_worm', false)
+        f.state.enemies[0].hp = 3
+        f.render()
+        window.hermitImpactSamples = []
+      })
+      await page.waitForFunction(() => document.querySelector('.enemy .bar__label')?.textContent.trim() === '3/999')
+      await page.evaluate(() => {
+        const f = window.fixture
+        f.state.enemies[0].hp = 3
+        f.state.presentationEvents.push({ seq: ++f.seq, kind: 'card', actorId: 'p1', sourceId: 'hermit_strike',
+          enemyIds: ['enemy-0'], enemyHpLoss: { 'enemy-0': 3 }, playerIds: [], upgraded: false, copied: false, energy: 1 })
+        f.render()
+      })
+      await page.waitForFunction(() => window.hermitImpactSamples.length === 10)
+      assert((await page.evaluate(() => window.hermitImpactSamples)).some(sample => sample.hp === 2.4),
+        'same-update recovery erased the visible HP loss')
+      assert.equal((await page.locator('.enemy .bar__label').textContent()).trim(), '3/999')
+      assert((await page.locator('.hermit-damage-number').evaluateAll(nodes => nodes.map(node => Number(node.dataset.damage))))
+        .every(amount => Math.abs(amount - .3) < 1e-8), 'revival lost actual damage attribution')
+      for (const reset of ['restore', 'reduced']) {
+        await page.evaluate(() => window.fixture.install('hermit', 'jaw_worm', false))
+        await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= 3)
+        await page.evaluate(() => { const f=window.fixture; f.state.enemies[0].hp -= 3; f.attack('hermit_strike') })
+        await page.locator('.hermit-shot').last().waitFor({ state: 'attached' })
+        await page.evaluate(reset => {
+          if (reset === 'restore') window.fixture.restoration++
+          else document.documentElement.dataset.reducedMotion = 'true'
+          window.fixture.render()
+        }, reset)
+        await page.waitForFunction(() => document.querySelector('.enemy .bar__label')?.textContent.trim() === '996/999')
+        await page.waitForTimeout(1400)
+        assert.equal(await page.locator('.hermit-damage-number').count(), 0, `${reset} replayed bullet damage`)
+        assert.equal((await page.locator('.enemy .bar__label').textContent()).trim(), '996/999', `${reset} changed authoritative HP`)
+        await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'false'; window.fixture.render() })
+      }
+    }
+    if (process.argv.includes('--hero=hermit')) {
       await page.evaluate(()=>window.fixture.install('hermit','jaw_worm',false))
       await page.waitForFunction(()=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=3)
       for (const followup of ['hermit_strike', 'hermit_defend']) {
-        const first = await page.evaluate(()=>window.fixture.attack('hermit_strike'))
+        const first = await page.evaluate(()=>{ window.hermitImpactSamples=[]; return window.fixture.attack('hermit_strike') })
         const oldShots = page.locator(`[data-hermit-seq="${first}"] .hermit-shot`)
         await oldShots.last().waitFor({state:'attached'})
         await page.waitForTimeout(650)
@@ -304,17 +437,14 @@ try {
             enemyIds:[],playerIds:['p1'],upgraded:false,copied:false,energy:1})
           f.render(); return f.seq
         }, followup)
-        if (followup === 'hermit_strike') await page.locator(`[data-hermit-seq="${second}"] .hermit-shot`).last().waitFor({state:'attached'})
-        else {
+        assert.equal(await oldShots.count(), 10, 'a new card interrupted the committed ten-round burst')
+        if (followup === 'hermit_defend') {
           await page.waitForTimeout(30)
           assert.equal(await page.locator('.seat').evaluate(e=>getComputedStyle(e).filter), 'none',
             'WebKit clips block VFX to the seat filter surface')
         }
-        assert(await oldShots.count() >= 2, 'new attack removed already-fired bullets')
-        assert(await oldShots.count() < 10, 'hidden old pose continues firing')
-        assert.equal(await page.locator(`[data-attack-seq="${first}"] .character-attack__pose > img`).evaluate(i=>getComputedStyle(i).visibility),'hidden','old Hermit pose duplicates character')
-        await page.waitForTimeout(170)
-        assert(await page.locator(`[data-hermit-impact-seq="${first}"]`).count() >= 2, 'new attack removed pending impacts')
+        await page.waitForFunction(seq => window.hermitImpactSamples.filter(sample => sample.seq === seq).length === 10, first)
+        if (followup === 'hermit_strike') await page.locator(`[data-hermit-seq="${second}"] .hermit-shot`).last().waitFor({state:'attached'})
         await page.locator('.board').screenshot({path:resolve(output,`${screen}-hermit-overlap-${followup}.png`)})
         await page.evaluate(()=>{window.fixture.restoration++;window.fixture.render()})
         await page.waitForTimeout(100)

@@ -179,6 +179,8 @@ export type PresentationTargets = {
   actorId: string
   sourceId: string
   enemyIds: string[]
+  /** Actual HP removed by this presentation, after Block and damage prevention. */
+  enemyHpLoss?: Record<string, number>
   playerIds: string[]
   enemyRow?: number
 }

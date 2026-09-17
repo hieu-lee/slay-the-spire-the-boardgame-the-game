@@ -5,6 +5,7 @@
 // including the enemy's own reflex when a component moves — Curl Up's Block,
 // Angry's Strength, a Shift. What made the component move is printed on a card
 // or a Relic, and that lives a layer up, in the resolver.
+import { recordPresentationHpLoss } from './presentation.ts'
 import { enemyLabel, playersInRowOf } from './board.ts'
 import type { CombatState } from './types.ts'
 import { applyDamage, applyHpLoss, gainBlock, gainPoison, gainStrength, recordDamageDealt, totalPoisonInPlay } from '../damage.ts'
@@ -81,6 +82,7 @@ export function damageEnemy(
   const outcome = applyDamage(enemy.block, enemy.hp, damage)
   enemy.block = outcome.block
   enemy.hp = enemyHpAfterLoss(state, enemy, outcome.hp)
+  recordPresentationHpLoss(state, enemy.uid, hpBefore - enemy.hp)
   if (enemy.hp === 0) enemy.dead = true
   const ability = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
     .find((candidate) => candidate.kind === 'curlUp')

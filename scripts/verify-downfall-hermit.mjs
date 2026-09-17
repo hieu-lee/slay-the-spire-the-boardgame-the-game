@@ -283,6 +283,20 @@ const enemy = (over = {}) => ({
   strength: 0, vulnerable: 0, weak: 0, poison: 0, actionIndex: 0, abilityUsed: false, dead: false, ...over,
 })
 
+check('presentation records per-card HP loss after Block without changing prior state', () => {
+  const strike = instance('shot', 'hermit_strike')
+  let combat = createCombat(createRng(47), [player({ hand: [strike] })], [enemy({ block: 1 })])
+  combat.pendingHermitSetupLoads = []
+  combat.phase = 'player'
+  const before = structuredClone(combat)
+  const next = playCard(combat, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assert.notEqual(next, combat)
+  const event = next.presentationEvents.find(event => event.sourceId === 'hermit_strike')
+  assert(event)
+  assert.equal(event.enemyHpLoss.e1 ?? 0, before.enemies[0].hp - next.enemies[0].hp)
+  assert.deepEqual(combat, before, 'presentation accounting mutated the prior multiplayer snapshot')
+})
+
 check('live start-of-combat Load is serialized, owner-authoritative, and preserves the private card', () => {
   const deck = Array.from({ length: 6 }, (_, index) => instance(`setup-${index}`, 'hermit_defend'))
   const [drawn] = deck

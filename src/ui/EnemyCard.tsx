@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { Icon, IconValue } from './Icon.tsx'
 import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
+import { HERMIT_IMPACT_COUNT } from './combat-screen/vfx.tsx'
 import { healthBand } from './board-signals.ts'
 import { CardKeywordHelp, revealDecodedImage } from './Card.tsx'
 import {
@@ -38,6 +39,7 @@ type EnemyCardProps = {
   deferBossAttack?: boolean
   targeted?: boolean
   disabled?: boolean
+  hermitEvents?: { seq: number; damage?: number }[]
   hitBeats?: { beat: number; damage: number; delayMs: number }[]
   /** Just crossed from alive to dead: play the one-shot defeat animation. */
   falling?: boolean
@@ -270,6 +272,7 @@ export function EnemyCard({
   targeted = false,
   disabled = false,
   hitBeats = [],
+  hermitEvents = [],
   falling = false,
   visualContactMs = 0,
   visualEventSeq = -1,
@@ -285,7 +288,15 @@ export function EnemyCard({
   const cardRef = useRef<HTMLButtonElement>(null)
   const [visibleEnemy, setVisibleEnemy] = useState(enemy)
   const displayTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
-  const pendingVisuals = useRef(new Map<number, { eventSeq: number; enemy: Enemy }>())
+  const pendingVisuals = useRef(new Map<number, {
+    eventSeq: number; enemy: Enemy; damage: number; recovery: number; hermitSeqs: number[]; impacts: Set<string>
+  }>())
+  const splitHpActive = useRef(false)
+  const latestEnemy = useRef(enemy)
+  latestEnemy.current = enemy
+  const numberTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const nextNumber = useRef(0)
+  const [bulletNumbers, setBulletNumbers] = useState<{ id: number; damage: number; x: number; y: number }[]>([])
   const attackPreload = useRef<{ source: string; blob: Blob } | null>(null)
   const bossAttackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [presentedBossAttack, setPresentedBossAttack] = useState<{
@@ -298,20 +309,84 @@ export function EnemyCard({
   const displayedEventSeq = useRef(visualEventSeq)
   const visualSignature = JSON.stringify(enemy)
   const priorActual = useRef({
-    signature: visualSignature, eventSeq: visualEventSeq, resetKey: visualResetKey,
+    signature: visualSignature, eventSeq: visualEventSeq, resetKey: visualResetKey, hp: enemy.hp,
   })
   const resetVisuals = !stageVisualDamage || visualResetKey !== priorActual.current.resetKey
-  useEffect(() => {
-    const changed = visualSignature !== priorActual.current.signature
+  // HP is the authoritative endpoint plus damage whose visual impacts are still pending.
+  // Additive debt keeps overlapping attacks from restoring an older HP snapshot.
+  const publishVisual = (snapshot?: Enemy, eventSeq = -1) => {
+    const applySnapshot = snapshot && eventSeq >= displayedEventSeq.current
+    if (applySnapshot) displayedEventSeq.current = eventSeq
+    if (!splitHpActive.current) {
+      if (applySnapshot) setVisibleEnemy(snapshot)
+      return
+    }
+    const hp = Math.round(Math.max(0, Math.min(latestEnemy.current.maxHp,
+      latestEnemy.current.hp + [...pendingVisuals.current.values()]
+        .reduce((total, pending) => total + pending.damage - pending.recovery, 0))) * 1e9) / 1e9
+    setVisibleEnemy(previous => ({ ...(applySnapshot ? snapshot : previous), hp,
+      dead: hp > 0 ? false : latestEnemy.current.dead }))
+    if (pendingVisuals.current.size === 0) splitHpActive.current = false
+  }
+  const showBulletNumber = (damage: number, x: number, y: number) => {
+    if (damage <= 0) return
+    const id = ++nextNumber.current
+    setBulletNumbers(numbers => [...numbers, { id, damage, x, y }])
+    numberTimers.current.set(id, setTimeout(() => {
+      numberTimers.current.delete(id)
+      setBulletNumbers(numbers => numbers.filter(number => number.id !== id))
+    }, 600))
+  }
+  const finishVisual = (beat: number) => {
+    const pending = pendingVisuals.current.get(beat)
+    if (!pending) return
+    clearTimeout(displayTimers.current.get(beat))
+    displayTimers.current.delete(beat)
+    pendingVisuals.current.delete(beat)
+    publishVisual(pending.enemy, pending.eventSeq)
+  }
+  useLayoutEffect(() => {
+    const card = cardRef.current
+    if (!card) return
+    const impact = (event: Event) => {
+      const detail = (event as CustomEvent<{ seq: number; shot: string; x: number; y: number }>).detail
+      const entry = [...pendingVisuals.current.entries()].find(([, pending]) => pending.hermitSeqs.includes(detail.seq))
+      if (!entry) return
+      const [beat, pending] = entry
+      const key = `${detail.seq}:${detail.shot}`
+      if (pending.impacts.has(key)) return
+      const remaining = pending.hermitSeqs.length * HERMIT_IMPACT_COUNT - pending.impacts.size
+      const damage = pending.damage / Math.max(1, remaining)
+      pending.impacts.add(key)
+      pending.damage = Math.max(0, pending.damage - damage)
+      showBulletNumber(damage, detail.x, detail.y)
+      if (remaining <= 1) finishVisual(beat)
+      else publishVisual()
+    }
+    card.addEventListener('hermit-impact', impact)
+    return () => {
+      card.removeEventListener('hermit-impact', impact)
+    }
+  }, [])
+  useLayoutEffect(() => {
+    const newHermitEvents = hermitEvents.filter(event => event.seq > priorActual.current.eventSeq)
+    const changed = visualSignature !== priorActual.current.signature ||
+      newHermitEvents.some(event => (event.damage ?? 0) > 0)
     const newEvent = visualEventSeq > priorActual.current.eventSeq
     if (!resetVisuals && changed && newEvent && visualContactMs < 0) return
+    const beforeHp = priorActual.current.hp
+    const damage = Math.max(0, beforeHp - enemy.hp)
     priorActual.current = {
-      signature: visualSignature, eventSeq: visualEventSeq, resetKey: visualResetKey,
+      signature: visualSignature, eventSeq: visualEventSeq, resetKey: visualResetKey, hp: enemy.hp,
     }
     if (resetVisuals) {
       for (const timer of displayTimers.current.values()) clearTimeout(timer)
       displayTimers.current.clear()
       pendingVisuals.current.clear()
+      splitHpActive.current = false
+      for (const timer of numberTimers.current.values()) clearTimeout(timer)
+      numberTimers.current.clear()
+      setBulletNumbers(numbers => numbers.length ? [] : numbers)
       if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
       bossAttackTimer.current = null
       setPresentedBossAttack(null)
@@ -323,35 +398,48 @@ export function EnemyCard({
     if (!changed) return
     const delay = newEvent ? visualContactMs : 0
     if (delay <= 0) {
+      if (splitHpActive.current && newEvent) {
+        publishVisual(enemy, visualEventSeq)
+        return
+      }
       const pendingBeat = [...pendingVisuals.current.keys()].at(-1)
       if (pendingBeat !== undefined) {
         const pending = pendingVisuals.current.get(pendingBeat)!
-        pendingVisuals.current.set(pendingBeat, {
-          eventSeq: Math.max(pending.eventSeq, visualEventSeq),
-          enemy,
-        })
+        pending.eventSeq = Math.max(pending.eventSeq, visualEventSeq)
+        pending.enemy = enemy
+        pending.damage += damage
+        pending.recovery += Math.max(0, enemy.hp - beforeHp)
+        publishVisual()
         return
       }
-      for (const timer of displayTimers.current.values()) clearTimeout(timer)
-      displayTimers.current.clear()
-      pendingVisuals.current.clear()
       displayedEventSeq.current = visualEventSeq
       setVisibleEnemy(enemy)
       return
     }
-    const beat = ++displayBeat.current
-    pendingVisuals.current.set(beat, { eventSeq: visualEventSeq, enemy })
-    displayTimers.current.set(beat, setTimeout(() => {
-      displayTimers.current.delete(beat)
-      const pending = pendingVisuals.current.get(beat)
-      pendingVisuals.current.delete(beat)
-      if (!pending || pending.eventSeq < displayedEventSeq.current) return
-      displayedEventSeq.current = pending.eventSeq
-      setVisibleEnemy(pending.enemy)
-    }, delay))
+    const known = newHermitEvents.every(event => event.damage !== undefined)
+    const hermitDamage = known ? newHermitEvents.reduce((sum, event) => sum + event.damage!, 0) : damage
+    const plans = newHermitEvents.length ? newHermitEvents.map(event => ({
+      seq: event.seq, hermit: true,
+      damage: known ? event.damage! : damage / newHermitEvents.length,
+    })) : [{ seq: visualEventSeq, hermit: false, damage }]
+    if (newHermitEvents.length && damage > hermitDamage) plans.push({ seq: visualEventSeq, hermit: false, damage: damage - hermitDamage })
+    if (newHermitEvents.length) splitHpActive.current = true
+    // A defeated phase may revive in the same authoritative update. Reveal that
+    // recovery only after its final impact, instead of erasing the damage numbers.
+    const recovery = Math.max(0, enemy.hp - beforeHp + plans.reduce((sum, plan) => sum + plan.damage, 0))
+    for (const plan of plans) {
+      const beat = ++displayBeat.current
+      pendingVisuals.current.set(beat, { eventSeq: plan.seq, enemy, damage: plan.damage,
+        recovery: plan.seq === newHermitEvents.at(-1)?.seq && plan.hermit ? recovery : 0,
+        hermitSeqs: plan.hermit ? [plan.seq] : [], impacts: new Set() })
+      // Actual impacts drive Hermit; retain a bounded settle for missing/cold art.
+      displayTimers.current.set(beat, setTimeout(() => finishVisual(beat), delay + (plan.hermit ? 1_200 : 0)))
+    }
+    publishVisual()
   }, [acting, enemy, resetVisuals, visualContactMs, visualEventSeq, visualResetKey, visualSignature])
   useEffect(() => () => {
     for (const timer of displayTimers.current.values()) clearTimeout(timer)
+    for (const timer of numberTimers.current.values()) clearTimeout(timer)
     pendingVisuals.current.clear()
   }, [])
   const def = enemyDef(visibleEnemy.defId, visibleEnemy.ascension)
@@ -730,6 +818,13 @@ export function EnemyCard({
           <Icon name={visibleEnemy.isBoss ? 'boss' : 'monster'} size={16} />
           <span className="enemy__name">{def.name}</span>
         </span>
+        {bulletNumbers.map(number => (
+          <span key={number.id} className="hermit-damage-number" aria-hidden="true"
+            data-damage={number.damage} style={{ left: number.x, top: number.y,
+              '--damage-x': `${number.id % 2 ? -1.2 : 1.2}rem` } as CSSProperties}>
+            {Number(number.damage.toFixed(3))}
+          </span>
+        ))}
         {hitBeats.map((hit) => (
           <span
             className="hit-vfx"
@@ -749,7 +844,7 @@ export function EnemyCard({
           style={{ width: `${Math.round(hpFraction * 100)}%` }}
         />
         <span className="bar__label">
-          {visibleEnemy.hp}/{visibleEnemy.maxHp}
+          {Number(visibleEnemy.hp.toFixed(3))}/{visibleEnemy.maxHp}
         </span>
       </span>
 

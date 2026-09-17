@@ -6,7 +6,7 @@
 // derived state the screen renders from or plays the sound the change calls for.
 // What they watch arrives as arguments or from the browser; none of them reaches
 // into the component that calls it.
-import { characterAttackContactMs, ORB_END_TURN_STAGGER_MS,
+import { characterAttackContactMs, isHermitAttack, HERMIT_VOLLEYS, HERMIT_ATTACK_MS, ORB_END_TURN_STAGGER_MS,
   SLIME_COMMAND_ANIMATION_MS, SLIME_COMMAND_CONTACT_MS,
   SLIME_SPAWN_ANIMATION_MS, SLIME_SPAWN_CONTACT_MS } from './vfx.tsx'
 import { cardDef } from '../../game/cards.ts'
@@ -21,6 +21,7 @@ export const ACTOR_DEFEAT_MS = 1_800
 export type TargetContactDeadline = { at: number; throughSeq: number }
 
 function slimeAnimationDelays(
+  state: CombatState,
   events: readonly CombatPresentationEvent[],
   queueEnd: Map<string, number>,
 ): Map<number, number> {
@@ -34,13 +35,14 @@ function slimeAnimationDelays(
       queueEnd.set(key, start + SLIME_COMMAND_ANIMATION_MS)
       continue
     }
-    const key = event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
+    const hermit = isHermitAttack(state, event)
+    const key = hermit ? `hermit:${event.actorId}` : event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
       ? `spawn:${event.actorId}`
       : undefined
     if (!key) continue
     const start = Math.max(now, queueEnd.get(key) ?? now)
     delays.set(event.seq, start - now)
-    queueEnd.set(key, start + SLIME_SPAWN_ANIMATION_MS)
+    queueEnd.set(key, start + (hermit ? HERMIT_ATTACK_MS : SLIME_SPAWN_ANIMATION_MS))
   }
   return delays
 }
@@ -51,7 +53,7 @@ function updateTargetContactDeadlines(
   queueEnd: Map<string, number>,
   deadlines: Map<string, TargetContactDeadline>,
 ): Map<number, number> {
-  const delays = slimeAnimationDelays(events, queueEnd)
+  const delays = slimeAnimationDelays(state, events, queueEnd)
   const now = performance.now()
   for (const [target, deadline] of deadlines) {
     if (deadline.at <= now) deadlines.set(target, { ...deadline, at: 0 })
@@ -63,7 +65,7 @@ function updateTargetContactDeadlines(
       const slimeSpawn = event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
       const contact = slimeCommand || slimeSpawn
         ? (slimeCommand ? SLIME_COMMAND_CONTACT_MS : SLIME_SPAWN_CONTACT_MS) + (delays.get(event.seq) ?? 0)
-        : characterAttackContactMs(state, target, event)
+        : characterAttackContactMs(state, target, event) + (delays.get(event.seq) ?? 0)
       deadlines.set(target, {
         at: contact > 0 ? Math.max(existing?.at ?? now, now + contact) : existing?.at ?? 0,
         throughSeq: Math.max(existing?.throughSeq ?? -1, event.seq),
@@ -183,7 +185,14 @@ export function useStruck(
 
     // Each actor owns its contact, beat and expiry so concurrent damage numbers
     // do not cancel one another.
-    for (const [id, amount] of hurt) {
+    for (const [id, totalAmount] of hurt) {
+      const targetEvents = newPresentations.filter(event => event.enemyIds.includes(id))
+      const hermitEvents = targetEvents.filter(event => isHermitAttack(state, event))
+      const attributed = hermitEvents.reduce((sum, event) => sum + (event.enemyHpLoss?.[id] ?? 0), 0)
+      const legacyHermit = hermitEvents.length > 0 && hermitEvents.length === targetEvents.length &&
+        hermitEvents.some(event => event.enemyHpLoss === undefined)
+      const amount = reducedEffects ? totalAmount : Math.max(0, totalAmount - (legacyHermit ? totalAmount : attributed))
+      if (amount === 0) continue
       const beat = (nextBeats.current.get(id) ?? 0) + 1
       const token = `${id}:${beat}`
       nextBeats.current.set(id, beat)
@@ -321,7 +330,9 @@ export function useFalling(
       now.set(id, entity.dead)
       if (refreshed || reducedEffects) continue
       if (previous.current.get(id) !== false || !entity.dead) continue
-      const delay = remainingTargetContactMs(contactDeadlines.current, id)
+      const hermit = newPresentations.some(event => event.enemyIds.includes(id) && isHermitAttack(state, event))
+      const delay = remainingTargetContactMs(contactDeadlines.current, id) +
+        (hermit ? HERMIT_VOLLEYS.at(-1)!.ms - HERMIT_VOLLEYS[0].ms : 0)
       setFalling((current) => new Set(current).add(id))
       const prior = timers.current.get(id)
       if (prior) clearTimeout(prior)
@@ -468,7 +479,7 @@ export function usePresentationEvents(
         : 0
       const slimeAnimation = event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
       const delay = delays.get(event.seq) ?? 0
-      const localAttackContact = Math.max(0, attackContact - delay)
+      const localAttackContact = isHermitAttack(state, event) ? attackContact : Math.max(0, attackContact - delay)
       const slimeBossAttack = state.players.some((player) =>
         player.id === event.actorId && player.character === 'slime_boss') && attackContact > 0
       const lifetime = (localAttackContact > 0

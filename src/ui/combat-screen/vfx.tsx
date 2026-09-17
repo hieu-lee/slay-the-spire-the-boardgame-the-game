@@ -4,7 +4,7 @@
 // this turns that into the overlay both the actor and the target render, and
 // works out when a weapon is supposed to make contact.
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { assetPath } from '../../game/assets.ts'
 import { combatBodyPoint } from '../combat-geometry.ts'
 import type { ActiveCombatVfx } from './types.ts'
@@ -49,6 +49,14 @@ export const isCharacterAttack = ({ event, recipe }: ActiveCombatVfx): boolean =
     event.kind === 'card' && cardDef(event.sourceId).cardKind !== 'slime' &&
       ((event.resolvedType ?? cardDef(event.sourceId).type) === 'attack' ||
         OFFENSIVE_VFX_FAMILIES.has(recipe.family)))
+
+export function isHermitAttack(state: CombatState, event?: CombatPresentationEvent): boolean {
+  if (!event || (event.kind !== 'card' && event.kind !== 'shiv') ||
+    !state.players.some(p => p.id === event.actorId && p.character === 'hermit')) return false
+  return isCharacterAttack({ event, recipe: event.kind === 'shiv' ? shivVfxRecipe()
+    : cardVfxRecipe('hermit', event.sourceId, event.kind === 'card' ? event.mode : undefined,
+      event.kind === 'card' ? event.upgraded : undefined, event.kind === 'card' ? event.resolvedType : undefined) })
+}
 
 export function characterAttackContactMs(
   state: CombatState,
@@ -252,14 +260,12 @@ export const HERMIT_VOLLEYS = [
   { ms: 978, muzzles: [[303, 218], [226, 244]] },
   { ms: 1100, muzzles: [[313, 218], [243, 244]] },
 ] as const
+export const HERMIT_ATTACK_MS = 1_650
 export const HERMIT_FLIGHT_MS = 180
+export const HERMIT_IMPACT_COUNT = HERMIT_VOLLEYS.reduce((count, volley) => count + volley.muzzles.length, 0)
 
 /** Mounted with the decoded one-shot pose, so every flash shares its clock. */
-export function HermitBullets({ event, firing }: { event: CombatPresentationEvent; firing: boolean }) {
-  const [startedAt] = useState(() => performance.now())
-  const [stoppedAt, setStoppedAt] = useState<number | null>(null)
-  // A newer attack replaces the pose. Stop future volleys, but let fired rounds land.
-  if (!firing && stoppedAt === null) setStoppedAt(performance.now() - startedAt)
+export function HermitBullets({ event }: { event: CombatPresentationEvent }) {
   const anchor = useRef<HTMLSpanElement>(null)
   const [shots, setShots] = useState<{ id: string; ms: number; x: number; y: number; dx: number; dy: number; target: HTMLElement; impactX: number; impactY: number }[]>([])
   useLayoutEffect(() => {
@@ -297,7 +303,7 @@ export function HermitBullets({ event, firing }: { event: CombatPresentationEven
     return () => { resize.disconnect(); board.removeEventListener('load', onLoad, true) }
   }, [event])
   return <span ref={anchor} className="hermit-shots" aria-hidden="true" data-hermit-seq={event.seq}>
-    {shots.filter(shot => stoppedAt === null || shot.ms <= stoppedAt).map(shot => <span key={shot.id} className="hermit-shot" data-shot={shot.id}
+    {shots.map(shot => <span key={shot.id} className="hermit-shot" data-shot={shot.id}
       style={{ left: shot.x, top: shot.y, '--shot-dx': `${shot.dx}px`, '--shot-dy': `${shot.dy}px`,
         '--shot-angle': `${Math.atan2(shot.dy, shot.dx)}rad`, '--shot-delay': `${shot.ms}ms`,
         '--shot-flight': `${HERMIT_FLIGHT_MS}ms` } as CSSProperties}>
@@ -305,6 +311,12 @@ export function HermitBullets({ event, firing }: { event: CombatPresentationEven
         <img src={assetPath('combat/vfx/actions/hermit-bullet.webp')} alt="" />
       </span></span>
       {createPortal(<span className="hermit-shot__impact" data-hermit-impact-seq={event.seq} data-shot={shot.id}
+        onAnimationStart={animation => {
+          if (animation.animationName !== 'hermit-bullet-impact') return
+          // Animation events are not discrete React input: commit HP before this impact paints.
+          flushSync(() => shot.target.dispatchEvent(new CustomEvent('hermit-impact', { bubbles: true,
+            detail: { seq: event.seq, shot: shot.id, x: shot.impactX, y: shot.impactY } })))
+        }}
         style={{ left: shot.impactX, top: shot.impactY, '--shot-delay': `${shot.ms}ms`,
           '--shot-flight': `${HERMIT_FLIGHT_MS}ms`,
           backgroundImage: `url("${assetPath('combat/vfx/actions/hermit-impact.webp')}")` } as CSSProperties}

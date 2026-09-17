@@ -64,6 +64,16 @@ export function addPresentationEvent(
   const added = {
     seq: (events.at(-1)?.seq ?? 0) + 1,
     ...event,
+    ...((event.kind === 'card' || event.kind === 'shiv') &&
+      state.players.some(player => player.id === event.actorId && player.character === 'hermit')
+      ? { enemyHpLoss: {} } : {}),
   } as CombatPresentationEvent
   state.presentationEvents = [...events, added].slice(-PRESENTATION_EVENT_LIMIT)
+}
+
+/** Attribute public HP loss while the resolver still knows which action is running. */
+export function recordPresentationHpLoss(state: CombatState, enemyId: string, damage: number): void {
+  const event = state.presentationEvents?.at(-1)
+  if (damage <= 0 || !event?.enemyHpLoss || !event.enemyIds.includes(enemyId)) return
+  event.enemyHpLoss = { ...event.enemyHpLoss, [enemyId]: (event.enemyHpLoss?.[enemyId] ?? 0) + damage }
 }
