@@ -48,13 +48,13 @@ try {
     const visible = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
     assert(bounds.every(rect => rect.left >= 0 && rect.right <= visible.width && rect.top >= 0 && rect.bottom <= visible.height), `${screen}: card faces clipped ${JSON.stringify(bounds)}`)
     await page.screenshot({ path: resolve(out, `${screen}.png`) })
-    await page.addStyleTag({ content: '.hand-area { --hand-card-width: calc(var(--card-width) * .6); }' })
+    await page.addStyleTag({ content: '.hand-area { --hand-card-width: calc(var(--card-width) * .66); }' })
     const original = await dimensions()
     enlarged.forEach((size, index) => {
-      assert(Math.abs(size.width / original[index].width - 1.1) < .002, 'hand width must increase by 10%')
-      assert(Math.abs(size.height / original[index].height - 1.1) < .002, 'hand height must increase by 10%')
+      assert(Math.abs(size.width / original[index].width - 1.15) < .002, 'hand width must increase by 15%')
+      assert(Math.abs(size.height / original[index].height - 1.15) < .002, 'hand height must increase by 15%')
     })
-    console.log(`PASS ${screen}: original faces, 10% larger cards, no clipping`)
+    console.log(`PASS ${screen}: original faces, 15% larger cards, no clipping`)
     await page.close()
   }
 } finally {

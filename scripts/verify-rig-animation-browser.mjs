@@ -260,7 +260,7 @@ try {
         }, lethal)
         await page.locator('.hermit-shot').last().waitFor({ state: 'attached' })
         assert.equal(await page.locator('.enemy .hit-vfx').count(), 0, 'Hermit still shows the old lump damage burst')
-        await page.waitForFunction(count => window.hermitImpactSamples.length >= count, lethal ? 10 : 30)
+        await page.waitForFunction(count => window.hermitImpactSamples.length >= count, lethal ? 5 : 15)
         const result = await page.locator('.enemy').evaluateAll(cards => cards.map(card => ({
           id: card.dataset.enemyId, hp: Number(card.querySelector('.bar__label').textContent.split('/')[0]),
           dead: card.classList.contains('enemy--dead'),
@@ -269,12 +269,19 @@ try {
         for (const [index, target] of result.entries()) {
           const total = [3, 7, 0][index]
           assert.equal(target.hp, (lethal ? 3 : 999) - total, 'final displayed HP differs from authoritative HP')
-          assert.equal(target.numbers.length, total ? 10 : 0, 'expected one damage number per damaging bullet impact')
-          assert(target.numbers.every(amount => Math.abs(amount - total / 10) < 1e-8), 'damage was not divided equally over impacts')
+          assert.equal(target.numbers.length, total ? 5 : 0, 'expected one damage number per damaging volley impact')
+          assert(target.numbers.every(amount => Math.abs(amount - total / 5) < 1e-8), 'damage was not divided equally over impacts')
         }
         const samples = await page.evaluate(() => window.hermitImpactSamples)
-        assert(samples.some(sample => sample.target === 'enemy-0' && sample.hp === (lethal ? 2.4 : 998.4) && !sample.dead),
-          `first volley did not step HP down by exactly two impacts: ${JSON.stringify(samples)}`)
+        for (const [index, target] of result.entries()) {
+          const targetSamples = samples.filter(sample => sample.target === target.id)
+          assert.equal(targetSamples.length, 5, 'expected exactly five impact events per target')
+          targetSamples.forEach((sample, volley) => {
+            const expected = (lethal ? 3 : 999) - [3, 7, 0][index] * (volley + 1) / 5
+            assert(Math.abs(sample.hp - expected) < 1e-8, `volley ${volley + 1} HP did not match its damage share`)
+            if (lethal && volley < 4) assert(!sample.dead, 'target died before the final volley')
+          })
+        }
         if (lethal) assert(result[0].dead, 'lethal target did not fall after the final impact')
         await page.locator('.board').screenshot({ path: resolve(output, `${screen}-hermit-damage-${lethal ? 'lethal' : 'aoe'}.png`) })
       }
@@ -287,6 +294,7 @@ try {
         const shots = page.locator(`[data-hermit-seq="${seq}"] .hermit-shot`)
         await shots.last().waitFor({state:'attached'})
         assert.equal(await shots.count(), count * 10, 'each flash must fire at every authoritative target')
+        assert.equal(await page.locator(`[data-hermit-impact-seq="${seq}"]`).count(), count * 5, 'each target must receive one impact per two-barrel volley')
         assert.equal(await page.locator(`.combat-vfx--target[data-vfx-seq="${seq}"]`).count(), 0, 'old impact still renders')
         await page.waitForTimeout(680)
         await page.locator('.board').screenshot({path:resolve(output,`${screen}-hermit-live-${count}.png`)})
@@ -299,7 +307,7 @@ try {
           const rect = target.getBoundingClientRect()
           const fit = Math.min(rect.width / target.naturalWidth, rect.height / target.naturalHeight)
           const flight = node.querySelector('.hermit-shot__flight').getAnimations()[0]
-          const impact = document.querySelector(`[data-hermit-impact-seq="${node.closest('[data-hermit-seq]').dataset.hermitSeq}"][data-shot="${node.dataset.shot}"]`).getAnimations()[0]
+          const impact = document.querySelector(`[data-hermit-impact-seq="${node.closest('[data-hermit-seq]').dataset.hermitSeq}"][data-volley="${node.dataset.volley}"]`).getAnimations()[0]
           impact.pause(); impact.currentTime = impact.effect.getTiming().delay + 80
           const impactRect = impact.effect.target.getBoundingClientRect()
           flight.pause(); flight.currentTime = 0
@@ -378,10 +386,12 @@ try {
         )
         f.render()
       })
-      await page.waitForFunction(() => document.querySelectorAll('.hermit-damage-number').length === 10)
-      assert((await page.locator('.hermit-damage-number').evaluateAll(nodes => nodes.map(node => Number(node.dataset.damage))))
-        .every(amount => Math.abs(amount - .3) < 1e-8), 'Hermit absorbed another character’s damage from a batched update')
+      // Read the other character's short-lived number while it is on screen,
+      // before waiting for Hermit's last volley.
       assert.equal(await page.locator('.enemy .hit-vfx strong').textContent(), '7', 'another character lost their damage number')
+      await page.waitForFunction(() => document.querySelectorAll('.hermit-damage-number').length === 5)
+      assert((await page.locator('.hermit-damage-number').evaluateAll(nodes => nodes.map(node => Number(node.dataset.damage))))
+        .every(amount => Math.abs(amount - .6) < 1e-8), 'Hermit absorbed another character’s damage from a batched update')
       assert.equal((await page.locator('.enemy .bar__label').textContent()).trim(), '989/999')
       // A same-update heal can restore the exact original HP despite real card damage.
       await page.evaluate(() => {
@@ -399,12 +409,12 @@ try {
           enemyIds: ['enemy-0'], enemyHpLoss: { 'enemy-0': 3 }, playerIds: [], upgraded: false, copied: false, energy: 1 })
         f.render()
       })
-      await page.waitForFunction(() => window.hermitImpactSamples.length === 10)
+      await page.waitForFunction(() => window.hermitImpactSamples.length === 5)
       assert((await page.evaluate(() => window.hermitImpactSamples)).some(sample => sample.hp === 2.4),
         'same-update recovery erased the visible HP loss')
       assert.equal((await page.locator('.enemy .bar__label').textContent()).trim(), '3/999')
       assert((await page.locator('.hermit-damage-number').evaluateAll(nodes => nodes.map(node => Number(node.dataset.damage))))
-        .every(amount => Math.abs(amount - .3) < 1e-8), 'revival lost actual damage attribution')
+        .every(amount => Math.abs(amount - .6) < 1e-8), 'revival lost actual damage attribution')
       for (const reset of ['restore', 'reduced']) {
         await page.evaluate(() => window.fixture.install('hermit', 'jaw_worm', false))
         await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= 3)
@@ -443,7 +453,7 @@ try {
           assert.equal(await page.locator('.seat').evaluate(e=>getComputedStyle(e).filter), 'none',
             'WebKit clips block VFX to the seat filter surface')
         }
-        await page.waitForFunction(seq => window.hermitImpactSamples.filter(sample => sample.seq === seq).length === 10, first)
+        await page.waitForFunction(seq => window.hermitImpactSamples.filter(sample => sample.seq === seq).length === 5, first)
         if (followup === 'hermit_strike') await page.locator(`[data-hermit-seq="${second}"] .hermit-shot`).last().waitFor({state:'attached'})
         await page.locator('.board').screenshot({path:resolve(output,`${screen}-hermit-overlap-${followup}.png`)})
         await page.evaluate(()=>{window.fixture.restoration++;window.fixture.render()})

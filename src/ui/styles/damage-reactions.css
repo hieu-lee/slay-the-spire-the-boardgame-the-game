@@ -148,7 +148,7 @@
   bottom: 0;
   z-index: 40;
   pointer-events: none;
-  --hand-card-width: calc(var(--card-width) * .66);
+  --hand-card-width: calc(var(--card-width) * .759);
   --hand-layout-card-width: var(--card-width);
   height: calc(var(--card-width) * var(--card-ratio) * .5 + 3rem);
   min-height: 0;

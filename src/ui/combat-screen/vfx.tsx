@@ -262,12 +262,13 @@ export const HERMIT_VOLLEYS = [
 ] as const
 export const HERMIT_ATTACK_MS = 1_650
 export const HERMIT_FLIGHT_MS = 180
-export const HERMIT_IMPACT_COUNT = HERMIT_VOLLEYS.reduce((count, volley) => count + volley.muzzles.length, 0)
+// Both barrels arrive together: one impact and damage step per volley/target.
+export const HERMIT_IMPACT_COUNT = HERMIT_VOLLEYS.length
 
 /** Mounted with the decoded one-shot pose, so every flash shares its clock. */
 export function HermitBullets({ event }: { event: CombatPresentationEvent }) {
   const anchor = useRef<HTMLSpanElement>(null)
-  const [shots, setShots] = useState<{ id: string; ms: number; x: number; y: number; dx: number; dy: number; target: HTMLElement; impactX: number; impactY: number }[]>([])
+  const [shots, setShots] = useState<{ id: string; volley: string; impact: boolean; ms: number; x: number; y: number; dx: number; dy: number; target: HTMLElement; impactX: number; impactY: number }[]>([])
   useLayoutEffect(() => {
     const source = anchor.current
     const pose = source?.parentElement
@@ -286,7 +287,7 @@ export function HermitBullets({ event }: { event: CombatPresentationEvent }) {
           const target = board.querySelector<HTMLElement>(`.enemy[data-enemy-id="${CSS.escape(id)}"] .enemy__portrait`)
           if (!target) return []
           const body = combatBodyPoint(target)
-          return [{ id: `${i}-${gun}-${id}`, ms: volley.ms, x: x - parent.left, y: y - parent.top,
+          return [{ id: `${i}-${gun}-${id}`, volley: `${i}-${id}`, impact: gun === 0, ms: volley.ms, x: x - parent.left, y: y - parent.top,
             dx: body.x - x, dy: body.y - y, target,
             impactX: body.x - target.getBoundingClientRect().left, impactY: body.y - target.getBoundingClientRect().top }]
         })
@@ -303,14 +304,14 @@ export function HermitBullets({ event }: { event: CombatPresentationEvent }) {
     return () => { resize.disconnect(); board.removeEventListener('load', onLoad, true) }
   }, [event])
   return <span ref={anchor} className="hermit-shots" aria-hidden="true" data-hermit-seq={event.seq}>
-    {shots.map(shot => <span key={shot.id} className="hermit-shot" data-shot={shot.id}
+    {shots.map(shot => <span key={shot.id} className="hermit-shot" data-shot={shot.id} data-volley={shot.volley}
       style={{ left: shot.x, top: shot.y, '--shot-dx': `${shot.dx}px`, '--shot-dy': `${shot.dy}px`,
         '--shot-angle': `${Math.atan2(shot.dy, shot.dx)}rad`, '--shot-delay': `${shot.ms}ms`,
         '--shot-flight': `${HERMIT_FLIGHT_MS}ms` } as CSSProperties}>
       <span className="hermit-shot__flight"><span className="hermit-shot__bullet">
         <img src={assetPath('combat/vfx/actions/hermit-bullet.webp')} alt="" />
       </span></span>
-      {createPortal(<span className="hermit-shot__impact" data-hermit-impact-seq={event.seq} data-shot={shot.id}
+      {shot.impact && createPortal(<span className="hermit-shot__impact" data-hermit-impact-seq={event.seq} data-shot={shot.id} data-volley={shot.volley}
         onAnimationStart={animation => {
           if (animation.animationName !== 'hermit-bullet-impact') return
           // Animation events are not discrete React input: commit HP before this impact paints.
