@@ -123,6 +123,7 @@ try {
             await page.mouse.up()
           } else {
             await activate(orb)
+            await page.locator(`[data-enemy-id="${targetId}"].enemy--targeted`).waitFor()
             await activate(targetHitArea)
           }
           await strike.waitFor({ state: 'attached' })

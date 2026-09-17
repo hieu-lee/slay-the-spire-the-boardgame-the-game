@@ -256,18 +256,17 @@ try {
             f.render()
           }, defs)
           if (boss) {
-            const samples = await page.locator('.combat').evaluate(async e => {
-              const samples = []
-              for (let i = 0; i < 12; i++) {
-                samples.push(+getComputedStyle(e).getPropertyValue('--stage-scale'))
-                await new Promise(r => setTimeout(r, 90))
-              }
-              return samples
+            const transition = await page.locator('.combat').evaluate(e => {
+              const style = getComputedStyle(e)
+              const properties = style.transitionProperty.split(',').map(value => value.trim())
+              return style.transitionDuration.split(',').map(value => value.trim())[properties.indexOf('--stage-scale')]
             })
-            assert(samples.at(-1) < scaleBefore - .1, 'crowd should shrink both sides')
-            assert(new Set(samples.map(s => s.toFixed(3))).size > 3, 'crowd scale must interpolate smoothly')
+            assert.equal(transition, '0.9s', 'crowd scale must use the native 900ms transition')
+            await ready()
+            const scaleAfter = await page.locator('.combat').evaluate(e => +getComputedStyle(e).getPropertyValue('--stage-scale'))
+            assert(scaleAfter < scaleBefore - .1, 'crowd should shrink both sides')
           }
-          await ready()
+          if (!boss) await ready()
           assert(await page.locator('.enemy__head').evaluateAll(heads => heads.every(head =>
             getComputedStyle(head).backgroundImage === 'none' && getComputedStyle(head).backgroundColor === 'rgba(0, 0, 0, 0)')),
           'enemy names must not have dark background boxes')

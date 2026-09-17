@@ -16540,6 +16540,10 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   const player = run.combat.players[0]
+  Object.assign(run.combat, {
+    phase: 'player', pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined,
+    endTurnProgress: undefined, presentationEvents: [],
+  })
   player.hp = 8
   player.block = 1
   player.orbs = ['lightning', 'lightning', null]
