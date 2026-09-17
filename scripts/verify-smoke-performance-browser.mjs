@@ -30,7 +30,8 @@ try {
     }).observe(host, { childList: true, subtree: true, attributes: true })
     let previousFrame
     function monitor(time) {
-      if (previousFrame !== undefined && window.smokeStarted && time - window.smokeStarted < 650) window.startupGaps.push(time - previousFrame)
+      const firstAfterMount = window.smokeStarted && (previousFrame ?? 0) < window.smokeStarted
+      if (firstAfterMount || window.smokeStarted && time - window.smokeStarted < 650) window.startupGaps.push(time - Math.max(previousFrame ?? window.smokeStarted, window.smokeStarted))
       previousFrame = time
       requestAnimationFrame(monitor)
     }
