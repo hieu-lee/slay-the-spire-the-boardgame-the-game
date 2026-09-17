@@ -126,8 +126,10 @@ try {
             await page.locator(`[data-enemy-id="${targetId}"].enemy--targeted`).waitFor()
             await activate(targetHitArea)
           }
-          await strike.waitFor({ state: 'attached' })
-          const geometry = await strike.evaluate(node => {
+          // The VFX renderer removes this node on its own timer. Retain this strike,
+          // rather than making a later Locator lookup race that cleanup.
+          const strikeElement = await strike.elementHandle()
+          const geometry = await strikeElement.evaluate(node => {
             const combat = node.closest('.combat'), combatRect = combat.getBoundingClientRect()
             const portrait = combat.querySelector(`.enemy[data-enemy-id="${CSS.escape(node.dataset.vfxTarget)}"] .enemy__portrait`)
             const r = node.getBoundingClientRect()
@@ -172,7 +174,7 @@ assert sum(r > 220 and b > 200 and g > 210 for r, g, b in band.getdata()) >= 20,
               `visual target differs from damage target ${JSON.stringify(hp)}`)
             return
           }
-          const travel = await strike.evaluate(node => {
+          const travel = await strikeElement.evaluate(node => {
             const animations = node.getAnimations()
             animations.forEach(animation => animation.pause())
             animations.forEach(animation => { animation.currentTime = 50 })

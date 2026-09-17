@@ -44,11 +44,12 @@ check('frontend surfaces select their cores and named focused browser checks', (
   const room = affectedBrowser('src/ui/RoomScreen.tsx')
   includesEvery(room, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'room screen')
   const online = affectedBrowser('src/ui/OnlineGame.tsx')
-  assert(online.includes('verify-online-browser.mjs'))
+  includesEvery(online, ['verify-online-browser.mjs', 'verify-hosted-multiplayer-browser.mjs'], 'online screen')
   assert(!online.includes('verify-browser.mjs'))
   assert(!online.includes('verify-noncombat-browser.mjs'))
-  assertEqual(online.length, 1, 'online screen selected an unrelated browser suite')
+  assertEqual(online.length, 2, 'online screen selected an unrelated browser suite')
   assertDeepEqual(affectedBrowser('src\\ui\\OnlineGame.tsx'), online)
+  assertDeepEqual(affectedBrowser('src/multiplayer/useRoomSession.ts'), online)
   assertDeepEqual(affectedBrowser('src/ui/WelcomeScreen.tsx'), ['verify-browser.mjs'])
   includesEvery(affectedBrowser('src/ui/combat-screen/vfx.tsx'), [
     'verify-browser.mjs', 'verify-online-browser.mjs', 'verify-lightning-act2-browser.mjs',

@@ -37,6 +37,7 @@ const focusedUiOwners = new Map([
 ])
 const sourceExtensions = ['', '.ts', '.tsx', '.mjs', '.js']
 const sharedBrowserOwners = ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs']
+const onlineBrowserOwners = ['verify-online-browser.mjs', 'verify-hosted-multiplayer-browser.mjs']
 const stylesheetBrowserOwners = (file) => file === 'src/ui/styles/hand.css'
   ? ['verify-card-cancel-browser.mjs', 'verify-combat-hand-viewport-browser.mjs',
     'verify-combat-player-clipping-browser.mjs', 'verify-end-turn-drag-browser.mjs']
@@ -227,7 +228,7 @@ export function affectedVerifiers(root, changedFiles, scripts) {
       covered = true
     }
     else if (onlineUi.test(file)) {
-      selected.add('verify-online-browser.mjs')
+      for (const script of onlineBrowserOwners) selected.add(script)
       covered = true
     }
     else if (file.startsWith('src/ui/')) {
