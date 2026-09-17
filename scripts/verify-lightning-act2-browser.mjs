@@ -45,6 +45,7 @@ try {
         }
         page.on('pageerror', error => { errors.push(String(error)); console.error(error) })
         await page.goto(`http://localhost:${server.httpServer.address().port}`)
+        await page.addStyleTag({ content: 'html[data-freeze-lightning] [data-lightning-strike] { animation-play-state: paused !important; }' })
         await page.getByRole('button', { name: 'Single Player', exact: true }).click()
         await page.getByRole('button', { name: 'Standard', exact: true }).click()
         await page.getByRole('button', { name: 'Embark' }).click()
@@ -108,6 +109,7 @@ try {
 
         const strike = page.locator('[data-lightning-strike]')
         const fire = async (targetId, initialHp = 30, liveFirstUse = false, drag = false) => {
+          if (!liveFirstUse) await page.evaluate(() => { document.documentElement.dataset.freezeLightning = 'true' })
           // Trigger through the real End turn -> Orb -> enemy click path.
           await activate(page.getByRole('button', { name: 'End turn', exact: true }))
           const orb = page.locator('button.end-turn-effect--orb')
@@ -247,6 +249,7 @@ band = image.crop(tuple(round(v * scale) for v in box))
 assert sum(r > 220 and b > 200 and g > 210 for r, g, b in band.getdata()) >= 4, 'upper bolt is clipped'
 `, screenshot, JSON.stringify(geometry)], { encoding: 'utf8' })
           assert.equal(pixels.status, 0, pixels.stderr)
+          if (!liveFirstUse) await page.evaluate(() => { delete document.documentElement.dataset.freezeLightning })
           await page.waitForFunction(() => !document.querySelector('[data-lightning-strike]'))
           const hp = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies.map(e => ({ uid: e.uid, hp: e.hp })))
           assert(hp.every(enemy => enemy.hp === initialHp - Number(enemy.uid === targetId)),

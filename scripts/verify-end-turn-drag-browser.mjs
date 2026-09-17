@@ -18,13 +18,14 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
 const pageErrors = []
 page.on('pageerror', (error) => pageErrors.push(String(error)))
 let activeFixture = null
+let combatTemplate = null
 
 async function waitForActiveFixture() {
   if (!activeFixture) return
   await page.waitForFunction(({ combatId, turn }) => {
     const run = window.__STS_DEBUG__.getRun()
     const combat = run.combat
-    return run.phase !== 'combat' || !combat || combat.combatId !== combatId || combat.phase === 'won' ||
+    return run.phase !== 'combat' || !combat || combat.combatId !== combatId ||
       combat.phase === 'player' && combat.turn > turn
   }, activeFixture)
   activeFixture = null
@@ -48,9 +49,10 @@ async function drag(source, target) {
 
 async function fixture({ character, powers = [], orbs = [null, null, null], enemies }) {
   await waitForActiveFixture()
-  await page.evaluate(({ character, powers, orbs, enemies }) => {
+  await page.evaluate(({ character, powers, orbs, enemies, combatTemplate }) => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())
+    run.combat ??= structuredClone(combatTemplate)
     const baseEnemy = run.combat.enemies[0]
     const player = run.combat.players[0]
     run.phase = 'combat'
@@ -85,7 +87,7 @@ async function fixture({ character, powers = [], orbs = [null, null, null], enem
     run.combat.powerTriggersUsedThisTurn = []
     run.combat.presentationEvents = []
     debug.setRun(run)
-  }, { character, powers, orbs, enemies })
+  }, { character, powers, orbs, enemies, combatTemplate })
   await page.waitForFunction(({ combatId, enemyUids }) => {
     const combat = window.__STS_DEBUG__.getRun().combat
     return combat?.combatId === combatId &&
@@ -142,6 +144,7 @@ try {
   await page.locator('.room--reachable').first().click()
   await page.locator('.combat').waitFor()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat?.phase === 'player')
+  combatTemplate = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun().combat))
 
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__

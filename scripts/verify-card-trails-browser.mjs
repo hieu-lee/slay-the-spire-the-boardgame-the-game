@@ -119,6 +119,18 @@ try {
             console.log(await page.evaluate(() => ({ phase: window.__STS_DEBUG__.getState().phase, prompt: document.querySelector('.prompt')?.textContent, hand: window.__STS_DEBUG__.getState().players[0].hand.map(c => c.defId) })))
             throw error
           })
+          await flight.evaluate((element) => {
+            const effect = element.closest('.card-flight-effect')
+            window.__trailAfterLanding = new Promise((resolve) => {
+              const observer = new MutationObserver(() => {
+                if (effect.querySelector('.card-flight')) return
+                const trail = effect.querySelector('.card-flight-trail__reveal')
+                observer.disconnect()
+                resolve({ count: Number(Boolean(trail)), opacity: Number(trail && getComputedStyle(trail).opacity) })
+              })
+              observer.observe(effect, { childList: true, subtree: true })
+            })
+          })
           assert.equal(await flight.evaluate(el => getComputedStyle(el).getPropertyValue('--flight-trace').trim()), colors[character])
           await page.locator('.card-flight-trail[data-texture-ready="true"]').waitFor()
           assert.equal(await page.locator('.card-flight-effect filter').count(), 0, 'No live noise filter during playback')
@@ -137,9 +149,10 @@ try {
           await page.waitForTimeout(700)
           if (!recording) await page.screenshot({ path: `${out}/${engineName}-${screen}-${character}-${destination}.png` })
           await flight.waitFor({ state: 'detached' })
+          const linger = await page.evaluate(() => window.__trailAfterLanding)
           const trail = page.locator('.card-flight-trail__reveal')
-          assert.equal(await trail.count(), 1, 'Trail should linger after card lands')
-          assert(Number(await trail.evaluate(el => getComputedStyle(el).opacity)) > 0, 'Lingering trail is visible')
+          assert.equal(linger.count, 1, 'Trail should linger after card lands')
+          assert(linger.opacity > 0, 'Lingering trail is visible')
           await trail.waitFor({ state: 'detached' })
         }
         await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true'; const run = window.__STS_DEBUG__.getRun(); run.combat.players[0].hand = [{ uid: 'quiet', defId: 'defend_silent', upgraded: false }]; window.__STS_DEBUG__.setRun({ ...run }) })

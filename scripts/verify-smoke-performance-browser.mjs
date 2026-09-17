@@ -58,9 +58,9 @@ try {
       start ??= time
       if (previous !== undefined && time-start<1100) gaps.push(time-previous)
       previous=time
-      progress.push(1-parseFloat(getComputedStyle(reveal).strokeDashoffset))
+      progress.push({ time, value: 1-parseFloat(getComputedStyle(reveal).strokeDashoffset) })
       if (time-start<1800) requestAnimationFrame(sample)
-      else { const sorted=[...gaps].sort((a,b)=>a-b); resolve({ readyAt: window.smokeReadyMs, startupMax: Math.max(...window.startupGaps), p95: sorted[Math.floor(sorted.length*.95)], max:Math.max(...gaps), maxRevealStep:Math.max(...progress.slice(1).map((p,i)=>p-progress[i])) }) }
+      else { const sorted=[...gaps].sort((a,b)=>a-b); const steps=progress.slice(1).map((p,i)=>({ step:p.value-progress[i].value, elapsed:p.time-progress[i].time })); resolve({ readyAt: window.smokeReadyMs, startupMax: Math.max(...window.startupGaps), p95: sorted[Math.floor(sorted.length*.95)], max:Math.max(...gaps), maxRevealStep:Math.max(...steps.map(p=>p.step)), maxRevealRate:Math.max(...steps.map(p=>p.step/p.elapsed)) }) }
      }
      requestAnimationFrame(sample)
     }))
@@ -68,7 +68,7 @@ try {
     assert(metrics.readyAt < 30, `${name} ${destination}: texture was not predecoded ${JSON.stringify(metrics)}`)
     assert(metrics.startupMax < 60, `${name} ${destination}: first-render stall ${JSON.stringify(metrics)}`)
     assert(metrics.p95 < 50, `${name} ${destination}: dropped frames ${JSON.stringify(metrics)}`)
-    assert(metrics.maxRevealStep < .3, `${name} ${destination}: trail jumped ${JSON.stringify(metrics)}`)
+    assert(metrics.maxRevealRate < .006, `${name} ${destination}: trail jumped ${JSON.stringify(metrics)}`)
     results[name].push(metrics)
    }
    await page.evaluate(() => window.mountSmokeBatch())
