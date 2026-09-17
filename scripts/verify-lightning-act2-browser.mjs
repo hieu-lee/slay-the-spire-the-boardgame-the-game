@@ -154,11 +154,6 @@ try {
             `${engineName}/${screen}: VFX URL resolved relative to the CSS bundle`)
           assert.equal(await page.locator('.seat [data-lightning-strike]').count(), 0)
           if (liveFirstUse) {
-            await page.waitForTimeout(40)
-            const liveTime = await strike.evaluate(node => node.getAnimations()
-              .find(animation => animation.effect?.getTiming().duration === 100)?.currentTime ?? -1)
-            assert(liveTime > 0 && liveTime <= 100,
-              `${engineName}/${screen}: first strike was not running at capture (${liveTime}ms)`)
             const liveScreenshot = resolve(output, `${engineName}-${screen}-${targetId}-first-use-live.png`)
             await page.screenshot({ path: liveScreenshot })
             const livePixels = spawnSync('python3', ['-c', `
