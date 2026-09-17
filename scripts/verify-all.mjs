@@ -3,9 +3,8 @@
 //   [--shard=INDEX/TOTAL] [--skip-typecheck] [--jobs=N] [--heavy=N]
 //   [filter...]
 //
-// Browser suites share one local lane because multiple Vite/browser processes
-// on one machine create false timeouts. CI gets parallelism from --shard on
-// isolated runners instead: every verifier runs exactly once and failures are hard.
+// Browser suites share one lane because multiple Vite/browser processes on one
+// machine create false timeouts. Optional sharding splits a selected set across callers.
 import { readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -107,17 +106,15 @@ function assignedShard(selected, { index, total }) {
   return buckets[index - 1].scripts.sort()
 }
 
-// CI runs the light lane once and distributes the browser lane across isolated
-// hosted runners. Sharding happens after affected-check selection and lane
-// classification, so the union of shards is exactly the original selected set.
-// Each shard is still sorted and deterministic, making failures reproducible.
+// Sharding happens after affected-check selection and lane classification, so
+// the union of shards is exactly the original selected set. Each shard remains
+// sorted and deterministic, making failures reproducible.
 if (selectedLane) scripts = scripts.filter((script) => isBrowser(script) === (selectedLane === 'browser'))
 if (shard) scripts = assignedShard(scripts, shard)
 
-// Type checking belongs to the light CI lane and must still run if a future
-// source change happens to select no light verifier. List mode remains a cheap
-// scheduling query, and browser shards explicitly opt out to avoid doing the
-// same repository-wide check four times.
+// Type checking belongs to the light lane and must still run if a future source
+// change happens to select no light verifier. List mode remains a cheap query;
+// callers may skip duplicate typechecks when scheduling multiple lanes.
 if (!listOnly && changedArg && needsTypecheck(changedFiles) && !skipTypecheck) {
   const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
   const typecheck = spawnSync(command, ['typecheck'], { cwd: join(scriptsDir, '..'), stdio: 'inherit' })

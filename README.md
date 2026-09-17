@@ -77,8 +77,8 @@ bridge, not against pixels. Screenshots land in `artifacts/browser/` for review,
 run fails on any console error, page error or failed request.
 
 `verify-all.mjs` runs browser suites one at a time locally because each boots its own Vite
-and browser. CI splits affected browser checks across four isolated runners; every verifier
-runs once, and every failure is hard.
+and browser. Browser checks are opt-in local tools; CI runs the production build and affected
+non-browser checks.
 
 There is no test framework. Each check is a plain Node program that imports the engine
 directly (Node 24 strips TypeScript types on import) and exits non-zero on failure. This

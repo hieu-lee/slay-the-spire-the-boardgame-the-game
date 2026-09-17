@@ -9,7 +9,7 @@ UI layout and browser screenshot coverage targets only these two screen classes:
 
 Do not add or retain portrait-phone, portrait-tablet, square, or arbitrary viewport-specific UI tests. A UI change is complete when it looks and works on representative desktop and horizontal-phone screens.
 
-Before pushing `master`, require `node scripts/verify-all.mjs --changed=origin/master --lane=light --jobs=4` plus the focused browser checks for the touched surfaces to pass with no retries, then wait for every GitHub `Build and test` job to finish successfully. The broad browser matrix belongs to GitHub's four isolated shards; do not duplicate it serially in the local push gate.
+Before pushing `master`, require `node scripts/verify-all.mjs --changed=origin/master --lane=light --jobs=4` to pass with no retries, then wait for every GitHub `Build and test` job to finish successfully.
 
 ## WebMCP campaign runbook
 

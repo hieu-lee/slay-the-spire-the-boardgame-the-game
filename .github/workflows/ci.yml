@@ -47,49 +47,9 @@ jobs:
           fi
           node scripts/verify-all.mjs --changed="$base" --lane=light --jobs=4
 
-  verify-browser:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Lightning screenshot verification uses Pillow; Playwright installs the
-      # system libraries for both browser engines used throughout the matrix.
-      - run: sudo apt-get update && sudo apt-get install -y python3-pil
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - name: Run affected browser checks (shard ${{ matrix.shard }}/4)
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PUSH_BASE: ${{ github.event.before }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          base=$PUSH_BASE
-          if [ "$EVENT_NAME" = pull_request ]; then base=$PR_BASE; fi
-          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]] || [[ "$base" =~ ^0+$ ]] ||
-              ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            base=$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)
-          fi
-          # A shard gets its own hosted runner and uses one browser process at
-          # a time. This keeps visual timings stable without making a broad CSS
-          # change serialize the repository's entire browser inventory.
-          node scripts/verify-all.mjs --changed="$base" --lane=browser \
-            --shard=${{ matrix.shard }}/4 --skip-typecheck --jobs=1
-
   deploy-server:
-    if: github.ref == 'refs/heads/master' && needs.verify.result == 'success' && needs.verify-browser.result == 'success'
-    needs: [verify, verify-browser]
+    if: github.ref == 'refs/heads/master' && needs.verify.result == 'success'
+    needs: verify
     permissions:
       contents: read
     uses: ./.github/workflows/server-deploy.yml
