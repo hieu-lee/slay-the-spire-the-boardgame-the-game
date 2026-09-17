@@ -244,9 +244,11 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.mapTransition === undefined)
   await page.evaluate((run) => {
     document.documentElement.dataset.reducedMotion = 'true'
-    window.__MAP_REDUCED_SELECTION_STARTED_AT__ = performance.now()
     window.__STS_DEBUG__.setRun(run)
   }, mapRun)
+  await page.locator('.room--reachable').first().evaluate(room => room.addEventListener('click', () => {
+    window.__MAP_REDUCED_SELECTION_STARTED_AT__ = performance.now()
+  }, { once: true, capture: true }))
   await page.locator('.room--reachable').first().click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
   const reducedSelection = await page.evaluate(() => ({
@@ -340,6 +342,7 @@ try {
   const largeHandScroller = page.locator('.hand-scroll')
   const middleCard = page.locator('.hand .card').nth(10)
   await middleCard.hover()
+  await middleCard.hover() // Wait for the hover transform before reading geometry.
   const largeHandScrollBefore = await largeHandScroller.evaluate((scroller) => scroller.scrollLeft)
   const middleCardBox = await middleCard.boundingBox()
   if (!middleCardBox) throw new Error('large-hand scroll fixture is not visible')
@@ -363,6 +366,7 @@ try {
   await page.waitForFunction(() => !document.querySelector('.hand .card--unplayable'))
   await largeHandScroller.evaluate((scroller) => { scroller.scrollLeft = 0 })
   await middleCard.hover()
+  await middleCard.hover() // Wait for the hover transform before reading geometry.
   const jitterScrollBefore = await largeHandScroller.evaluate((scroller) => scroller.scrollLeft)
   const jitterCardBox = await middleCard.boundingBox()
   if (!jitterCardBox) throw new Error('large-hand jitter fixture is not visible')
@@ -373,9 +377,10 @@ try {
     clientX: jitterCardBox.x + jitterCardBox.width / 2 - 200,
     clientY: jitterCardBox.y + jitterCardBox.height / 2 - 11,
   })
+  await page.mouse.move(0, 0) // Synthetic release already finished; avoid a second native card click.
   await page.mouse.up()
   check(await largeHandScroller.evaluate((scroller, before) => scroller.scrollLeft > before,
-    jitterScrollBefore), 'upward finger jitter cancelled a horizontal hand scroll')
+    jitterScrollBefore), `upward finger jitter cancelled a horizontal hand scroll: before=${jitterScrollBefore}, after=${await largeHandScroller.evaluate(el => el.scrollLeft)}, box=${JSON.stringify(jitterCardBox)}`)
   check(await page.locator('.hand .card').count() === 20,
     'upward finger jitter played a player-targeting card during horizontal scrolling')
   check(await page.locator('.card-drag').count() === 0,
@@ -393,6 +398,7 @@ try {
     clientX: enemyCardBox.x + enemyCardBox.width / 2 + 200,
     clientY: enemyCardBox.y + enemyCardBox.height / 2 - 11,
   })
+  await page.mouse.move(0, 0) // Synthetic release already finished; avoid a second native card click.
   await page.mouse.up()
   check(await largeHandScroller.evaluate((scroller, before) => scroller.scrollLeft < before,
     enemyScrollBefore), 'rightward finger jitter cancelled an enemy-targeting hand scroll')
@@ -400,6 +406,7 @@ try {
     'rightward finger jitter opened enemy-targeting feedback during horizontal scrolling')
   await largeHandScroller.evaluate((scroller) => { scroller.scrollLeft = 0 })
   await middleCard.hover()
+  await middleCard.hover() // Wait for the hover transform before reading geometry.
   const armedScrollBefore = await largeHandScroller.evaluate((scroller) => scroller.scrollLeft)
   const armedCardBox = await middleCard.boundingBox()
   if (!armedCardBox) throw new Error('armed horizontal-release fixture is not visible')
@@ -407,15 +414,20 @@ try {
   await page.mouse.down()
   await page.mouse.move(armedCardBox.x + armedCardBox.width / 2, armedCardBox.y + armedCardBox.height / 2 - 20)
   await page.locator('.card-drag').waitFor()
-  await page.mouse.move(armedCardBox.x + armedCardBox.width / 2 - 200,
-    armedCardBox.y + armedCardBox.height / 2 - 11)
+  await middleCard.dispatchEvent('pointerup', {
+    pointerId: 1, pointerType: 'mouse', button: 0, bubbles: true,
+    clientX: armedCardBox.x + armedCardBox.width / 2 - 200,
+    clientY: armedCardBox.y + armedCardBox.height / 2 - 11,
+  })
+  await page.mouse.move(0, 0) // Synthetic release already finished; avoid a second native card click.
   await page.mouse.up()
   check(await largeHandScroller.evaluate((scroller, before) => scroller.scrollLeft > before,
-    armedScrollBefore), 'a final horizontal release did not override an earlier card-drag frame')
+    armedScrollBefore), `a final horizontal release did not override an earlier card-drag frame: before=${armedScrollBefore}, after=${await largeHandScroller.evaluate(el => el.scrollLeft)}, box=${JSON.stringify(armedCardBox)}`)
   check(await page.locator('.hand .card').count() === 20,
     'a final horizontal release played a targetless card armed by an earlier pointer move')
   await largeHandScroller.evaluate((scroller) => { scroller.scrollLeft = 0 })
   await middleCard.hover()
+  await middleCard.hover() // Wait for the hover transform before reading geometry.
   const returnCardBox = await middleCard.boundingBox()
   if (!returnCardBox) throw new Error('out-and-back scroll fixture is not visible')
   await page.mouse.move(returnCardBox.x + returnCardBox.width / 2, returnCardBox.y + returnCardBox.height / 2)
@@ -492,6 +504,17 @@ try {
     'downfall_neow', 'downfall_orb_master', 'downfall_witch', 'downfall_wraith',
   ])
 
+  // Snapshot collection can outlast the one-shot latch on a busy machine.
+  // Hold only the gallery's teardown timer; the timing checks below use the real clock.
+  await page.evaluate(() => {
+    window.__snapshotSetTimeout = window.setTimeout
+    window.__snapshotTimers = []
+    window.setTimeout = (callback, delay, ...args) => {
+      const id = window.__snapshotSetTimeout(callback, delay === 1830 ? 60_000 : delay, ...args)
+      if (delay === 1830) window.__snapshotTimers.push({ id, callback, args })
+      return id
+    }
+  })
   for (const defId of bossIds) {
     const fixture = { ...template.enemy, uid: 'animation-boss', defId, isBoss: true, hp: 999, maxHp: 999, dead: false }
     let actionIndex = 0
@@ -816,6 +839,11 @@ try {
     }
     await screenshot(`boss-${defId}-recovery`)
     if (defId === 'downfall_demon') await page.locator('.dead-target-fixture').evaluate((fixture) => fixture.remove())
+    await page.evaluate(() => {
+      for (const timer of window.__snapshotTimers.splice(0)) {
+        clearTimeout(timer.id); timer.callback(...timer.args)
+      }
+    })
     if (defId === bossIds[0]) {
       const moteHints = async () => card.locator('.enemy__portrait').evaluate((portrait) => {
         const style = getComputedStyle(portrait, '::before')
@@ -837,6 +865,8 @@ try {
       `enemy motes still move between actions ${JSON.stringify({ reduced, mobile })}`)
     }
   }
+
+  await page.evaluate(() => { window.setTimeout = window.__snapshotSetTimeout; delete window.__snapshotSetTimeout; delete window.__snapshotTimers })
 
   const timingBoss = { ...template.enemy, uid: 'timing-boss', defId: 'awakened_one_phase_1', isBoss: true,
     hp: 999, maxHp: 999, dead: false }
@@ -994,7 +1024,7 @@ try {
     { character: 'watcher', sourceId: 'strike_watcher', duration: '1.65s', contact: 1050, samples: [270, 825, 1375] },
     { character: 'silent', sourceId: 'predator', duration: '2.04s', contact: 1025, samples: [170, 1025, 2039] },
     { character: 'guardian', sourceId: 'guardian_strike', duration: '1.65s', contact: 630, samples: [270, 825, 1375] },
-    { character: 'hermit', sourceId: 'hermit_strike', duration: '1.65s', contact: 630, samples: [270, 825, 1375] },
+    { character: 'hermit', sourceId: 'hermit_strike', duration: '1.65s', contact: 791, samples: [270, 825, 1375] },
     { character: 'slime_boss', sourceId: 'slime_boss_strike', duration: '1.7s', contact: 850, samples: [270, 850, 1375] },
     { character: 'hexaghost', sourceId: 'strike_hexaghost', duration: '2s', contact: 1450,
       samples: [270, 1000, 1725, 2100] },
@@ -1556,7 +1586,7 @@ try {
       poses: ['watcher-charge', 'watcher-cast'] },
     { character: 'guardian', sourceId: 'guardian_strike', contact: 630,
       bodyAnimation: 'attack-downfall', poses: ['rig'] },
-    { character: 'hermit', sourceId: 'hermit_strike', contact: 630,
+    { character: 'hermit', sourceId: 'hermit_strike', contact: 791,
       bodyAnimation: 'attack-downfall', poses: ['rig'] },
     { character: 'slime_boss', sourceId: 'slime_boss_strike', contact: 850,
       bodyAnimation: 'attack-slime-boss-idle', poses: ['rig'] },
@@ -1567,6 +1597,7 @@ try {
     await phone.evaluate(({ base, hero, index }) => {
       const debug = window.__STS_DEBUG__
       const run = structuredClone(debug.getRun())
+      run.phase = 'combat'
       run.combat = structuredClone(base)
       run.combat.combatId = `${run.combat.combatId}-iphone-${hero.character}-${index}`
       run.combat.phase = 'player'
@@ -1578,6 +1609,11 @@ try {
         hp: 999, maxHp: 999, dead: false }]
       debug.setRun(run)
     }, { base: phoneFixture, hero, index })
+    await phone.waitForFunction(character => {
+      const art = document.querySelector('.seat__portrait > img')
+      return art?.complete && art.naturalWidth > 0 && art.src.includes(character) &&
+        (character === 'hexaghost' || Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) > 0)
+    }, hero.character)
     await phone.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     if (hero.character === 'hexaghost') {
       check(phoneHexPreloadRequests > 0 && await phone.locator('.character-attack--hexaghost').count() === 0,
@@ -1598,7 +1634,7 @@ try {
     }, { hero, index })
     const attack = phone.locator(`.character-attack--${hero.character}`)
     await attack.waitFor()
-    if (hero.character === 'hexaghost') {
+    if (hero.character === 'hexaghost' || hero.character === 'hermit') {
       await phone.locator('.character-attack__pose--rig.is-loaded').waitFor()
     }
     await phone.locator('.enemy .hit-vfx').waitFor()
@@ -1632,7 +1668,7 @@ try {
           : null,
         meteorCount: attack?.querySelectorAll('.character-attack__meteor').length ?? 0,
         projectileCount: attack?.querySelectorAll(
-          '.character-attack__dagger, .character-attack__bolt, .character-attack__hexaghost-flame',
+          '.character-attack__dagger, .character-attack__bolt, .character-attack__hexaghost-flame, .hermit-shot',
         ).length ?? 0,
         hitDelay: Number.parseFloat(hit ? getComputedStyle(hit).getPropertyValue('--hit-delay') : '0'),
         hitAnimation: hit ? getComputedStyle(hit).animationName : 'none',
@@ -1661,10 +1697,13 @@ try {
     check(!iphoneAttack.speedTrail || iphoneAttack.speedTrail.animation === 'attack-speed-trail' &&
       iphoneAttack.speedTrail.filter !== 'none',
     `iPhone 13 lost Ironclad's PC speed trail ${JSON.stringify(iphoneAttack)}`)
-    check(['silent', 'defect', 'hexaghost'].includes(hero.character) === (iphoneAttack.projectileCount > 0),
+    check(['silent', 'defect', 'hexaghost', 'hermit'].includes(hero.character) === (iphoneAttack.projectileCount > 0),
       `iPhone 13 changed ${hero.character}'s projectile content ${JSON.stringify(iphoneAttack)}`)
     check(iphoneAttack.hitDelay > 0, `iPhone 13 damage landed before ${hero.character} contact ${JSON.stringify(iphoneAttack)}`)
-    check(iphoneAttack.hitAnimation === 'impact-bloom' && iphoneAttack.targetVfx.display !== 'none' &&
+    if (hero.character === 'hermit') {
+      check(iphoneAttack.projectileCount === 10 && iphoneAttack.targetVfx.display === 'none', 'Hermit must use only per-bullet impacts')
+      check(await phone.locator('.hermit-shot__impact').count() === 10, 'Hermit lost bullet impact layers')
+    } else check(iphoneAttack.hitAnimation === 'impact-bloom' && iphoneAttack.targetVfx.display !== 'none' &&
       iphoneAttack.targetVfx.image !== 'none' && iphoneAttack.targetVfx.blend === 'screen' &&
       iphoneAttack.targetVfx.animation === 'combat-vfx-reveal' &&
       iphoneAttack.targetVfx.beforeDisplay !== 'none' && iphoneAttack.targetVfx.beforeAnimation === 'combat-vfx-ring' &&

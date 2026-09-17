@@ -89,15 +89,15 @@ try {
       const pose=page.locator(`[data-attack-seq="${seq}"] ${poseSelector}`)
       await pose.waitFor()
       if(character==='ironclad') {
-        assert((await pose.locator('img').getAttribute('src')).endsWith('/ironclad-ready.webp'))
+        assert((await pose.locator(':scope > img').getAttribute('src')).endsWith('/ironclad-ready.webp'))
         const impact=page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--ironclad-impact img`)
         assert((await impact.getAttribute('src')).endsWith('/ironclad-impact.webp'))
         assert.equal(await page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig`).count(),0)
       } else if(character==='watcher') {
-        assert((await pose.locator('img').getAttribute('src')).endsWith('/watcher-ready.webp'))
+        assert((await pose.locator(':scope > img').getAttribute('src')).endsWith('/watcher-ready.webp'))
         assert.equal(await pose.evaluate(e=>getComputedStyle(e).opacity),'1','Watcher must raise her staff before casting')
         assert.equal(await page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig`).count(),0)
-      } else assert.equal(await pose.locator('img').evaluate(i=>i.naturalWidth),400,character)
+      } else assert.equal(await pose.locator(':scope > img').evaluate(i=>i.naturalWidth),400,character)
       await page.waitForTimeout(character==='hexaghost'?1400:character==='ironclad'?850:600)
       if(character==='watcher') {
         const cast=page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--watcher-cast`)
@@ -230,6 +230,94 @@ try {
         await page.evaluate(()=>{window.fixture.restoration++;window.fixture.render()})
         await page.waitForTimeout(100)
         assert.equal(await page.locator('.defect-evoke').count(),0,'reconnect replayed old evokes')
+      }
+    }
+    if (process.argv.includes('--hero=hermit')) {
+      for (const count of [1, 3]) {
+        await page.evaluate(count => window.fixture.install('hermit', 'jaw_worm', false, count), count)
+        await page.waitForFunction(()=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=3)
+        const seq = await page.evaluate(()=>window.fixture.attack('hermit_strike'))
+        const shots = page.locator(`[data-hermit-seq="${seq}"] .hermit-shot`)
+        await shots.last().waitFor({state:'attached'})
+        assert.equal(await shots.count(), count * 10, 'each flash must fire at every authoritative target')
+        assert.equal(await page.locator(`.combat-vfx--target[data-vfx-seq="${seq}"]`).count(), 0, 'old impact still renders')
+        await page.waitForTimeout(680)
+        await page.locator('.board').screenshot({path:resolve(output,`${screen}-hermit-live-${count}.png`)})
+        const geometry = await shots.evaluateAll(nodes => nodes.map(node => {
+          const origin = node.getBoundingClientRect()
+          const dx = parseFloat(node.style.getPropertyValue('--shot-dx'))
+          const dy = parseFloat(node.style.getPropertyValue('--shot-dy'))
+          const targetId = node.dataset.shot.split('-').slice(2).join('-')
+          const target = document.querySelector(`.enemy[data-enemy-id="${targetId}"] .enemy__portrait > img`)
+          const rect = target.getBoundingClientRect()
+          const fit = Math.min(rect.width / target.naturalWidth, rect.height / target.naturalHeight)
+          const flight = node.querySelector('.hermit-shot__flight').getAnimations()[0]
+          const impact = document.querySelector(`[data-hermit-impact-seq="${node.closest('[data-hermit-seq]').dataset.hermitSeq}"][data-shot="${node.dataset.shot}"]`).getAnimations()[0]
+          impact.pause(); impact.currentTime = impact.effect.getTiming().delay + 80
+          const impactRect = impact.effect.target.getBoundingClientRect()
+          flight.pause(); flight.currentTime = 0
+          const before = getComputedStyle(flight.effect.target).opacity
+          flight.currentTime = flight.effect.getTiming().delay + 90
+          return { x: origin.x + dx, y: origin.y + dy,
+            targetX: rect.left + (rect.width - target.naturalWidth * fit) / 2 + 170.3 * fit,
+            targetY: rect.bottom - (target.naturalHeight - 181) * fit,
+            before, during: getComputedStyle(flight.effect.target).opacity,
+            delay: flight.effect.getTiming().delay, duration: flight.effect.getTiming().duration,
+            impactDelay: impact.effect.getTiming().delay,
+            impactX: impactRect.left + impactRect.width / 2, impactY: impactRect.top + impactRect.height / 2,
+            impactOnTarget: impact.effect.target.parentElement === target.parentElement,
+            impactAboveArt: Number(getComputedStyle(impact.effect.target).zIndex) > Number(getComputedStyle(target).zIndex),
+            trail: getComputedStyle(node.querySelector('.hermit-shot__bullet'), '::before').backgroundImage }
+        }))
+        for (const shot of geometry) {
+          assert(Math.abs(shot.x-shot.targetX)<3 && Math.abs(shot.y-shot.targetY)<3, 'bullet misses torso')
+          assert.equal(shot.before, '0', 'bullet visible before muzzle flash')
+          assert.equal(shot.during, '1', 'bullet invisible in flight')
+          assert([611,733,856,978,1100].includes(shot.delay), 'flash clock mismatch')
+          assert(Math.abs(shot.impactDelay - shot.delay - shot.duration)<.01, 'impact precedes arrival')
+          assert(shot.trail.includes('linear-gradient'), 'missing tracer')
+          assert(shot.impactOnTarget && shot.impactAboveArt, 'impact is behind target artwork')
+          assert(Math.abs(shot.impactX-shot.targetX)<3 && Math.abs(shot.impactY-shot.targetY)<3, `impact misses torso: ${JSON.stringify(shot)}`)
+        }
+        await page.locator('.board').screenshot({path:resolve(output,`${screen}-hermit-bullets-${count}.png`)})
+        await page.evaluate(()=>{window.fixture.restoration++;window.fixture.render()})
+        await page.waitForTimeout(100)
+        assert.equal(await page.locator('.hermit-shots').count(),0,'reconnect replayed gunfire')
+        await page.evaluate(()=>{document.documentElement.dataset.reducedMotion='true';window.fixture.attack('hermit_strike')})
+        await page.waitForTimeout(100)
+        assert.equal(await page.locator('.hermit-shots').count(),0,'reduced motion renders gunfire')
+        await page.evaluate(()=>{document.documentElement.dataset.reducedMotion='false';window.fixture.render()})
+      }
+    }
+    if (process.argv.includes('--hero=hermit')) {
+      await page.evaluate(()=>window.fixture.install('hermit','jaw_worm',false))
+      await page.waitForFunction(()=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=3)
+      for (const followup of ['hermit_strike', 'hermit_defend']) {
+        const first = await page.evaluate(()=>window.fixture.attack('hermit_strike'))
+        const oldShots = page.locator(`[data-hermit-seq="${first}"] .hermit-shot`)
+        await oldShots.last().waitFor({state:'attached'})
+        await page.waitForTimeout(650)
+        const second = await page.evaluate(source=> {
+          const f = window.fixture
+          if (source !== 'hermit_defend') return f.attack(source)
+          f.state.presentationEvents.push({seq:++f.seq,kind:'card',actorId:'p1',sourceId:source,
+            enemyIds:[],playerIds:['p1'],upgraded:false,copied:false,energy:1})
+          f.render(); return f.seq
+        }, followup)
+        if (followup === 'hermit_strike') await page.locator(`[data-hermit-seq="${second}"] .hermit-shot`).last().waitFor({state:'attached'})
+        else {
+          await page.waitForTimeout(30)
+          assert.equal(await page.locator('.seat').evaluate(e=>getComputedStyle(e).filter), 'none',
+            'WebKit clips block VFX to the seat filter surface')
+        }
+        assert(await oldShots.count() >= 2, 'new attack removed already-fired bullets')
+        assert(await oldShots.count() < 10, 'hidden old pose continues firing')
+        assert.equal(await page.locator(`[data-attack-seq="${first}"] .character-attack__pose > img`).evaluate(i=>getComputedStyle(i).visibility),'hidden','old Hermit pose duplicates character')
+        await page.waitForTimeout(170)
+        assert(await page.locator(`[data-hermit-impact-seq="${first}"]`).count() >= 2, 'new attack removed pending impacts')
+        await page.locator('.board').screenshot({path:resolve(output,`${screen}-hermit-overlap-${followup}.png`)})
+        await page.evaluate(()=>{window.fixture.restoration++;window.fixture.render()})
+        await page.waitForTimeout(100)
       }
     }
     if (process.argv.includes('--hero=hexaghost')) {

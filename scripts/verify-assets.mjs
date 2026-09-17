@@ -908,7 +908,7 @@ check('combat animation effects are complete, transparent, and compact', () => {
   const expectedActions = [
     'awakened-blue-fire.webp', 'awakened-claw-scratch.webp', 'dark-channel.webp',
     'defect-face-orb.webp', 'downfall-demon-ground-splat.webp',
-    'frost-channel.webp', 'guard-bloom.webp', 'hexaghost-flame-impact.webp',
+    'frost-channel.webp', 'guard-bloom.webp', 'hermit-bullet.webp', 'hermit-impact.webp', 'hexaghost-flame-impact.webp',
     'hexaghost-flame.webp',
     'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp', 'magic-burst.webp',
     'potion-burst.webp', 'silent-knife.webp', 'silent-poison.webp', 'silent-shiv.webp',
@@ -924,7 +924,7 @@ check('combat animation effects are complete, transparent, and compact', () => {
   assertDeepEqual(combatVfxFiles.sort(), expected, 'combat VFX inventory')
   assertDeepEqual(combatActionVfxFiles.sort(), [...expectedActions, ...expectedTurnEffects].sort(), 'personal combat VFX inventory')
   const entryHtml = readFileSync(join(repoRoot, 'index.html'), 'utf8')
-  for (const file of expectedActions.filter((file) => file !== 'downfall-demon-ground-splat.webp')) {
+  for (const file of expectedActions.filter((file) => file !== 'downfall-demon-ground-splat.webp' && !file.startsWith('hermit-'))) {
     assert(entryHtml.includes(`/assets/combat/vfx/actions/${file}`), `${file} is not preloaded for first use`)
   }
   assert(!entryHtml.includes('/assets/combat/vfx/actions/downfall-demon-ground-splat.webp'),
@@ -932,6 +932,8 @@ check('combat animation effects are complete, transparent, and compact', () => {
   assert(readFileSync(join(repoRoot, 'src/ui/EnemyCard.tsx'), 'utf8')
     .includes("'combat/vfx/actions/downfall-demon-ground-splat.webp'"),
   'Demon splat is not conditionally preloaded with the rendered boss')
+  assert(readFileSync(join(repoRoot, 'src/ui/CombatScreen.tsx'), 'utf8')
+    .includes("['hermit-bullet', 'hermit-impact']"), 'Hermit assets are not conditionally preloaded')
   const files = [
     ...expected.map((file) => join(combatVfxRoot, file)),
     ...[...expectedActions, ...expectedTurnEffects].map((file) => join(combatActionVfxRoot, file)),
@@ -943,7 +945,10 @@ check('combat animation effects are complete, transparent, and compact', () => {
   for (const block of inspected) {
     const file = block.slice(0, block.indexOf('\n')).split('/').pop()
     const dimensions = file === 'turn-lightning-strike.webp'
-      ? /  Width: 384[\s\S]*  Height: 768/ : /  Width: 512[\s\S]*  Height: 512/
+      ? /  Width: 384[\s\S]*  Height: 768/
+      : file === 'hermit-bullet.webp' ? /  Width: 256[\s\S]*  Height: 64/
+      : file === 'hermit-impact.webp' ? /  Width: 256[\s\S]*  Height: 256/
+      : /  Width: 512[\s\S]*  Height: 512/
     assert(dimensions.test(block), `${file} has incorrect dimensions`)
     assert(/Alpha:\s+1/.test(block), `${file} has no alpha channel`)
   }

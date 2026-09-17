@@ -96,6 +96,7 @@ def render(name, spec, output):
         flash = Image.open(ROOT / spec['drawnSheet']).convert('RGBA').crop((728,296,782,353))
         muzzles = {8:(675,362),10:(1195,357),12:(165,610),14:(668,611),16:(1173,609)}
         drawings[2] = drawings[1]  # Reject the isolated premature gun-lowering pose.
+        drawings[20] = drawings[21]  # Recovery drawing 20 has an extra left hand; use the adjacent holstered pose.
     for index, (drawing, box) in enumerate(drawings):
         x, y = round(center-foot(drawing)*scale), ground-round(drawing.getbbox()[3]*scale)
         drawing = drawing.resize((round(drawing.width*scale), round(drawing.height*scale)), Image.Resampling.LANCZOS)

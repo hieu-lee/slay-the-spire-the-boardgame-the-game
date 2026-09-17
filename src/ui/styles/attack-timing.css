@@ -498,9 +498,9 @@
   66.67% { transform: translateY(0) rotate(0); }
 }
 
-/* WebKit clips a long beam to the seat's filter surface. The sprite already
-   has its own shadow; keep the beam free to reach across the board. */
-.board .seat:has(.defect-evoke) { filter: none; }
+/* WebKit clips overflowing VFX to the seat's filter surface. Each effect
+   has its own glow; keep beams and block auras outside that surface. */
+.board .seat:not(.seat--dead):has(.defect-evoke, .combat-vfx) { filter: none; }
 
 /* A beam stays connected to its source and target; it never flies as an orb. */
 .defect-evoke {
@@ -549,4 +549,49 @@
   0% { opacity: 0; scale: .6; }
   20%, 45% { opacity: .95; }
   100% { opacity: 0; scale: 1.15; }
+}
+
+.hermit-shots { position: absolute; inset: 0; pointer-events: none; }
+.hermit-shot { position: absolute; width: 0; height: 0; }
+.hermit-shot__flight {
+  position: absolute;
+  opacity: 0;
+  animation: hermit-bullet-flight var(--shot-flight) var(--shot-delay) linear forwards;
+}
+.hermit-shot__bullet {
+  position: absolute;
+  width: 1.6rem;
+  height: .4rem;
+  transform: translate(-50%, -50%) rotate(var(--shot-angle));
+}
+.hermit-shot__bullet img { width: 100%; height: 100%; }
+.hermit-shot__bullet::before {
+  content: '';
+  position: absolute;
+  right: 60%;
+  top: 35%;
+  width: 3rem;
+  height: 30%;
+  background: linear-gradient(90deg, transparent, #e49b3666 35%, #fff0ba);
+  border-radius: 50%;
+}
+.hermit-shot__impact {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  width: 3.4rem;
+  height: 3.4rem;
+  background-size: contain;
+  background-repeat: no-repeat;
+  animation: hermit-bullet-impact 220ms calc(var(--shot-delay) + var(--shot-flight)) ease-out both;
+}
+@keyframes hermit-bullet-flight {
+  from { opacity: 1; transform: translate(0, 0); }
+  99% { opacity: 1; }
+  to { opacity: 0; transform: translate(var(--shot-dx), var(--shot-dy)); }
+}
+@keyframes hermit-bullet-impact {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(.25); }
+  12% { opacity: 1; }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(1.25); }
 }

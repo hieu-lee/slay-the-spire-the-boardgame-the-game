@@ -4,6 +4,7 @@
 // this turns that into the overlay both the actor and the target render, and
 // works out when a weapon is supposed to make contact.
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { assetPath } from '../../game/assets.ts'
 import { combatBodyPoint } from '../combat-geometry.ts'
 import type { ActiveCombatVfx } from './types.ts'
@@ -71,6 +72,7 @@ export function characterAttackContactMs(
   }
   if (!isCharacterAttack(active)) return 0
   const targetIndex = Math.max(0, event.enemyIds.indexOf(targetId))
+  if (actor.character === 'hermit') return HERMIT_VOLLEYS[0].ms + HERMIT_FLIGHT_MS
   if (actor.character === 'silent') return 1_025 + targetIndex * 70
   if (actor.character === 'defect') return 1_110 + targetIndex * 70
   if (actor.character === 'watcher') return 1_050 + targetIndex * 70
@@ -238,5 +240,75 @@ export function DefectEvokeVfx({ event }: { event: Extract<CombatPresentationEve
         </svg>
       </span>
     ))}
+  </span>
+}
+
+// Flash onsets and the two barrel tips in the shipped 400x400 Hermit rig.
+// Keep in sync with drawn.py's poses 8, 10, 12, 14, 16 (including its sway).
+export const HERMIT_VOLLEYS = [
+  { ms: 611, muzzles: [[328, 218], [272, 253]] },
+  { ms: 733, muzzles: [[337, 218], [275, 246]] },
+  { ms: 856, muzzles: [[295, 218], [226, 246]] },
+  { ms: 978, muzzles: [[303, 218], [226, 244]] },
+  { ms: 1100, muzzles: [[313, 218], [243, 244]] },
+] as const
+export const HERMIT_FLIGHT_MS = 180
+
+/** Mounted with the decoded one-shot pose, so every flash shares its clock. */
+export function HermitBullets({ event, firing }: { event: CombatPresentationEvent; firing: boolean }) {
+  const [startedAt] = useState(() => performance.now())
+  const [stoppedAt, setStoppedAt] = useState<number | null>(null)
+  // A newer attack replaces the pose. Stop future volleys, but let fired rounds land.
+  if (!firing && stoppedAt === null) setStoppedAt(performance.now() - startedAt)
+  const anchor = useRef<HTMLSpanElement>(null)
+  const [shots, setShots] = useState<{ id: string; ms: number; x: number; y: number; dx: number; dy: number; target: HTMLElement; impactX: number; impactY: number }[]>([])
+  useLayoutEffect(() => {
+    const source = anchor.current
+    const pose = source?.parentElement
+    const art = pose?.querySelector<HTMLImageElement>(':scope > img')
+    const board = source?.closest('.board')
+    if (!source || !pose || !art || !board) return
+    const measure = () => {
+      const rect = art.getBoundingClientRect()
+      const parent = source.getBoundingClientRect()
+      const fit = Math.min(rect.width / art.naturalWidth, rect.height / art.naturalHeight)
+      if (!Number.isFinite(fit)) return
+      setShots(HERMIT_VOLLEYS.flatMap((volley, i) => volley.muzzles.flatMap(([mx, my], gun) => {
+        const x = rect.left + (rect.width - art.naturalWidth * fit) / 2 + mx * fit
+        const y = rect.bottom - (art.naturalHeight - my) * fit
+        return event.enemyIds.flatMap(id => {
+          const target = board.querySelector<HTMLElement>(`.enemy[data-enemy-id="${CSS.escape(id)}"] .enemy__portrait`)
+          if (!target) return []
+          const body = combatBodyPoint(target)
+          return [{ id: `${i}-${gun}-${id}`, ms: volley.ms, x: x - parent.left, y: y - parent.top,
+            dx: body.x - x, dy: body.y - y, target,
+            impactX: body.x - target.getBoundingClientRect().left, impactY: body.y - target.getBoundingClientRect().top }]
+        })
+      })))
+    }
+    measure()
+    const resize = new ResizeObserver(measure)
+    resize.observe(board)
+    resize.observe(pose)
+    const onLoad = ({ target }: Event) => {
+      if (target instanceof HTMLImageElement && target.classList.contains('enemy__art--cutout')) measure()
+    }
+    board.addEventListener('load', onLoad, true)
+    return () => { resize.disconnect(); board.removeEventListener('load', onLoad, true) }
+  }, [event])
+  return <span ref={anchor} className="hermit-shots" aria-hidden="true" data-hermit-seq={event.seq}>
+    {shots.filter(shot => stoppedAt === null || shot.ms <= stoppedAt).map(shot => <span key={shot.id} className="hermit-shot" data-shot={shot.id}
+      style={{ left: shot.x, top: shot.y, '--shot-dx': `${shot.dx}px`, '--shot-dy': `${shot.dy}px`,
+        '--shot-angle': `${Math.atan2(shot.dy, shot.dx)}rad`, '--shot-delay': `${shot.ms}ms`,
+        '--shot-flight': `${HERMIT_FLIGHT_MS}ms` } as CSSProperties}>
+      <span className="hermit-shot__flight"><span className="hermit-shot__bullet">
+        <img src={assetPath('combat/vfx/actions/hermit-bullet.webp')} alt="" />
+      </span></span>
+      {createPortal(<span className="hermit-shot__impact" data-hermit-impact-seq={event.seq} data-shot={shot.id}
+        style={{ left: shot.impactX, top: shot.impactY, '--shot-delay': `${shot.ms}ms`,
+          '--shot-flight': `${HERMIT_FLIGHT_MS}ms`,
+          backgroundImage: `url("${assetPath('combat/vfx/actions/hermit-impact.webp')}")` } as CSSProperties}
+        aria-hidden="true" />, shot.target)}
+    </span>)}
   </span>
 }

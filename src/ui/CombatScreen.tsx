@@ -53,6 +53,7 @@ import type {
 import {
   CombatVfx,
   DefectEvokeVfx,
+  HermitBullets,
   characterAttackContactMs,
   isCharacterAttack,
   latestTargetPresentationEvent,
@@ -287,11 +288,13 @@ function paintedLeft(image: HTMLImageElement): number {
   return left / canvas.width
 }
 
-function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, attackSeq }: {
+function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, attackSeq, hermitEvent, firing = true }: {
   asset?: Blob
   assetPath: string
   fallbackAsset: string
   attackSeq: number
+  hermitEvent?: ActiveCombatVfx['event']
+  firing?: boolean
 }) {
   const [replayAsset] = useState(asset)
   const [src, setSrc] = useState<string | undefined>(() => replayAsset ? undefined : fallbackAsset)
@@ -310,7 +313,8 @@ function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, att
       data-attack-asset={sourceAsset}
       data-attack-seq={attackSeq}
     >
-      <img src={src} alt="" onLoad={() => setLoaded(true)} />
+      <img src={src} alt="" style={firing ? undefined : { visibility: 'hidden' }} onLoad={() => setLoaded(true)} />
+      {loaded && replayAsset && hermitEvent ? <HermitBullets event={hermitEvent} firing={firing} /> : null}
     </span>
   )
 }
@@ -576,7 +580,8 @@ function CombatScreenView({
         : player.character === 'watcher' || player.character === 'ironclad'
           ? ['ready', player.character === 'watcher' ? 'thrust' : 'impact']
             .map((pose) => assetPath(`combat/characters/${player.character}-${pose}.webp`))
-          : [assetPath(`combat/rigged/hero-${player.character}-attack.webp`)]))].sort().join('|')
+          : [assetPath(`combat/rigged/hero-${player.character}-attack.webp`),
+            ...(player.character === 'hermit' ? ['hermit-bullet', 'hermit-impact'].map(name => assetPath(`combat/vfx/actions/${name}.webp`)) : [])]))].sort().join('|')
   useEffect(() => {
     const controller = new AbortController()
     const assets = characterAttackAssets.split('|').filter(Boolean)
@@ -1039,7 +1044,8 @@ function CombatScreenView({
     (event.kind === 'turn' || !['slash', 'blunt', 'projectile', 'poison', 'shiv', 'lightning', 'dark', 'debuff']
       .includes(recipe.family)))
   const enemyVfxFor = (enemy: Enemy) => activeVfx
-    .filter(({ event }) => event.enemyIds.includes(enemy.uid) && !isEndTurnLightning(event))
+    .filter((active) => active.event.enemyIds.includes(enemy.uid) && !isEndTurnLightning(active.event) &&
+      !(state.players.some(p => p.id === active.event.actorId && p.character === 'hermit') && isCharacterAttack(active)))
     .map((active) => <CombatVfx
       key={`${active.event.seq}-${active.recipe.asset}`}
       active={active}
@@ -1145,8 +1151,9 @@ function CombatScreenView({
       }, -1)
       const latestAttackIsActive = actorEvents.some((active) =>
         active.event.seq === latestAttackSeq && isCharacterAttack(active))
-      const attacks = latestAttackIsActive ? actorEvents.filter((active) =>
-        active.event.seq > latestNonAttackSeq && isCharacterAttack(active)) : []
+      // Hermit rounds already in flight survive the render before a new event becomes active.
+      const attacks = latestAttackIsActive || player.character === 'hermit' ? actorEvents.filter((active) =>
+        (player.character === 'hermit' || active.event.seq > latestNonAttackSeq) && isCharacterAttack(active)) : []
       if (attacks.length === 0) continue
       const actor = board.querySelector<HTMLElement>(`.seat[data-player-id="${player.id}"] .seat__portrait`)
       if (!actor) continue
@@ -1186,6 +1193,7 @@ function CombatScreenView({
         const targetRect = targetElement.querySelector<HTMLElement>('.enemy__portrait')!.getBoundingClientRect()
         return [{
           active,
+          interrupted: active.event.seq <= latestNonAttackSeq,
           targetId: target.id,
           x: Math.max(0, targetRect.left - actorRect.right + actorRect.width * 0.22),
           y: targetRect.bottom - actorRect.bottom,
@@ -6021,7 +6029,7 @@ function CombatScreenView({
           const actorVfx = actorEvents.filter(({ event }) => event.enemyIds.length === 0 &&
             !(occupant?.character === 'defect' && event.kind === 'orb' && event.sourceId === 'orb-evoke'))
           const characterAttackMotions = occupant ? characterAttacks[occupant.id] ?? [] : []
-          const characterAttack = characterAttackMotions.at(-1)
+          const characterAttack = characterAttackMotions.filter(attack => !attack.interrupted).at(-1)
           const latestCharacterAttackSeq = characterAttack?.active.event.seq
           const slimeSpawnEvent = !prefersReducedMotion && occupant?.character === 'slime_boss'
             ? livePresentationEvents.filter((event) => event.kind === 'card' &&
@@ -6139,7 +6147,7 @@ function CombatScreenView({
                               '--attack-y': `${characterAttack.y}px`,
                             } as React.CSSProperties}
                           >
-                            {characterAttack.active.event.seq === latestCharacterAttackSeq ? (
+                            {characterAttack.active.event.seq === latestCharacterAttackSeq || occupant.character === 'hermit' ? (
                               occupant.character === 'ironclad' ? <>
                                 <span className="character-attack__pose character-attack__pose--ironclad-ready">
                                   <img src={assetPath('combat/characters/ironclad-ready.webp')} alt="" />
@@ -6157,6 +6165,8 @@ function CombatScreenView({
                               </> : <CharacterAttackPose
                                 key={characterAttack.active.event.seq}
                                 attackSeq={characterAttack.active.event.seq}
+                                hermitEvent={occupant.character === 'hermit' ? characterAttack.active.event : undefined}
+                                firing={characterAttack.active.event.seq === latestCharacterAttackSeq}
                                 assetPath={characterAttackAsset}
                                 fallbackAsset={characterIdleAsset}
                                 asset={characterAttackBlobs.get(characterAttackAsset)}

@@ -162,6 +162,7 @@ export type MotionSnapshot = {
 export type ActiveCombatVfx = { event: CombatPresentationEvent; recipe: VfxRecipe }
 
 export type CharacterAttackMotion = {
+  interrupted: boolean
   active: ActiveCombatVfx
   targetId: string
   x: number
