@@ -2,6 +2,7 @@ import { WelcomeScreen } from './ui/WelcomeScreen.tsx'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './ui/App.tsx'
+import { GameCursor } from './ui/GameCursor.tsx'
 import './ui/styles.css'
 // The frame around the board. Loaded second so its plain-selector rules win
 // ties against the board stylesheet on purpose; see the header of chrome.css.
@@ -13,6 +14,7 @@ if (!container) throw new Error('#root element is missing from index.html')
 
 createRoot(container).render(
   <StrictMode>
+    <GameCursor />
     <WelcomeScreen><App /></WelcomeScreen>
   </StrictMode>,
 )
