@@ -86,52 +86,24 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* One cursor applies to every screen, including the title and Compendium which
+/* Keep cursor images at 32px: Chromium rejects larger cursors near viewport edges.
+   One cursor applies to every screen, including the title and Compendium which
    are not inside the gameplay shell. The pressed asset supplies click feedback. */
 html,
-html * {
-  cursor: url('/assets/ui/cursor.png') 14 12, auto !important;
+html *,
+html *::before,
+html *::after,
+html *::backdrop {
+  cursor: url('/assets/ui/cursor.png') 7 6, auto !important;
 }
 
 :active,
-:active * {
-  cursor: url('/assets/ui/cursor-click.png') 14 12, auto !important;
+:active *,
+:active *::before,
+:active *::after,
+:active *::backdrop {
+  cursor: url('/assets/ui/cursor-click.png') 7 6, auto !important;
 }
-
-html.game-cursor-active,
-html.game-cursor-active *,
-html.game-cursor-active *::before,
-html.game-cursor-active *::after,
-html.game-cursor-active *::backdrop {
-  cursor: none !important;
-}
-
-.game-cursor {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  max-height: none;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  overflow: hidden;
-  background: transparent;
-  pointer-events: none;
-}
-.game-cursor::backdrop { background: transparent; pointer-events: none; }
-.game-cursor img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 64px;
-  height: 64px;
-  transform: translate(var(--cursor-x), var(--cursor-y));
-}
-.game-cursor img + img { visibility: hidden; }
-.game-cursor--pressed img:first-child { visibility: hidden; }
-.game-cursor--pressed img + img { visibility: visible; }
 
 button {
   font: inherit;

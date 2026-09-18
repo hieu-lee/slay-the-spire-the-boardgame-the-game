@@ -1,4 +1,4 @@
-"""Blender: render the stable 64px reference gold pointer.
+"""Blender: render the native 32px reference gold pointer.
 
 Run: blender -b --python scripts/render-cursor.py
 """
@@ -33,7 +33,7 @@ def render(pressed):
     scene.render.engine = 'CYCLES'
     scene.cycles.samples = 32
     scene.render.film_transparent = True
-    scene.render.resolution_x = scene.render.resolution_y = 64
+    scene.render.resolution_x = scene.render.resolution_y = 32
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = 'PNG'
     scene.render.image_settings.color_mode = 'RGBA'
