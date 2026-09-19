@@ -38,6 +38,25 @@ const reconstructsCurrentRun = () => page.evaluate(async () => {
   }
   return { ok: stableRunJson(run) === stableRunJson(window.__STS_DEBUG__.getRun()) }
 })
+const persistedVod = (runId) => page.evaluate(async (runId) => {
+  const db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('sts-run-vod-v2')
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  const request = (value) => new Promise((resolve, reject) => {
+    value.onsuccess = () => resolve(value.result)
+    value.onerror = () => reject(value.error)
+  })
+  try {
+    const transaction = db.transaction(['runs', 'events'], 'readonly')
+    return {
+      log: localStorage.getItem('sts-run-vod'),
+      run: await request(transaction.objectStore('runs').get(runId)),
+      events: await request(transaction.objectStore('events').getAll(IDBKeyRange.bound([runId, 0], [runId, Number.MAX_SAFE_INTEGER]))),
+    }
+  } finally { db.close() }
+}, runId)
 
 try {
   suite('run VOD browser')
@@ -725,12 +744,16 @@ try {
     assertDeepEqual(await page.locator('.run-vod-player video').evaluate(video => [video.videoWidth, video.videoHeight]), [1920, 1080])
     await page.getByRole('button', { name: 'Close video', exact: true }).click()
     const downloadPath = await download.path()
-    const afterExtract = await page.evaluate(async () => ({
-      finalized: window.__STS_DEBUG__.getRun().campaign.finalized,
-      buttons: [...document.querySelectorAll('.room-screen__actions button')].map((button) => button.textContent),
-      log: localStorage.getItem('sts-run-vod'),
-      persisted: await (await import('/src/ui/run-vod.ts')).readRunVod(window.__STS_DEBUG__.getRun().campaign.runId),
-    }))
+    const afterExtract = await page.evaluate(async () => {
+      const runId = window.__STS_DEBUG__.getRun().campaign.runId
+      return {
+        finalized: window.__STS_DEBUG__.getRun().campaign.finalized,
+        buttons: [...document.querySelectorAll('.room-screen__actions button')].map((button) => button.textContent),
+      }
+    })
+    const retainedVod = await persistedVod(await page.evaluate(() => window.__STS_DEBUG__.getRun().campaign.runId))
+    afterExtract.log = retainedVod.log
+    afterExtract.persisted = { version: retainedVod.run?.version, runId: retainedVod.run?.runId, events: retainedVod.events.length }
     const probe = downloadPath && spawnSync('ffprobe', [
       '-v', 'error', '-count_frames', '-show_entries',
       'stream=index,codec_type,width,height,avg_frame_rate,r_frame_rate,nb_read_frames,duration:packet=stream_index,pts_time:format=duration', '-of', 'json', downloadPath,
@@ -778,20 +801,58 @@ try {
       assert(afterExtract.buttons.includes('Stop and record result'), 'the independent result action disappeared')
       assert(afterExtract.buttons.includes('Prepare next run →'), 'extract-only did not expose the independent next-run action')
       assert(!afterExtract.buttons.some((label) => label?.startsWith('Climb to Act')), 'an extracted interim run could still climb without a VOD log')
-      assert(!afterExtract.buttons.includes('Extract run VOD'), 'the completed extraction action remained')
-      assertEqual(afterExtract.log, null, 'the consumed event log was not discarded')
-      assertEqual(afterExtract.persisted, null, 'the consumed IndexedDB event log was not committed as discarded')
+      assert(afterExtract.buttons.includes('Extract run VOD again'), 'the retained log cannot be extracted again')
+      assert(afterExtract.log, 'the completed run log was not retained')
+      assertDeepEqual(afterExtract.persisted, { version: 2, runId: afterExtract.log, events: exportedEventCount },
+        'the completed run log was not retained in IndexedDB')
     })
+    const repeatDownload = page.waitForEvent('download', { timeout: 90_000 })
+    await page.getByRole('button', { name: 'Extract run VOD again', exact: true }).click()
+    await replayFrame.waitFor({ state: 'detached', timeout: 90_000 })
+    await repeatDownload
+    await page.getByRole('dialog', { name: 'Your completed Run VOD', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Close video', exact: true }).click()
   }
 
+  const terminalRunId = await page.evaluate(() => window.__STS_DEBUG__.getRun().campaign.runId)
   await page.getByRole('button', { name: 'Stop and record result', exact: true }).click()
   await page.getByRole('button', { name: 'Prepare next run →', exact: true }).waitFor()
   const finalButtons = await page.locator('.campaign-end button').allTextContents()
   check('recording independently changes the result action to Prepare next run', () => {
     assert(!finalButtons.includes('Record campaign result'))
-    assertEqual(finalButtons.includes('Extract run VOD'), !verifyExports)
+    assert(finalButtons.includes(verifyExports ? 'Extract run VOD again' : 'Extract run VOD'))
     assert(finalButtons.includes('Prepare next run →'))
   })
+  await page.getByRole('button', { name: 'Prepare next run →', exact: true }).click()
+  await page.waitForFunction(async (runId) => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('sts-run-vod-v2')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const request = (value) => new Promise((resolve, reject) => {
+      value.onsuccess = () => resolve(value.result)
+      value.onerror = () => reject(value.error)
+    })
+    try {
+      const transaction = db.transaction(['runs', 'events'], 'readonly')
+      const run = await request(transaction.objectStore('runs').get(runId))
+      const events = await request(transaction.objectStore('events').getAll(IDBKeyRange.bound([runId, 0], [runId, Number.MAX_SAFE_INTEGER])))
+      return localStorage.getItem('sts-run-vod') === null && localStorage.getItem('sts-solo-run') === null && !run && events.length === 0
+    } finally { db.close() }
+  }, terminalRunId)
+  const discardedVod = await persistedVod(terminalRunId)
+  check('Prepare next run clears the retained terminal replay from localStorage and IndexedDB', () => {
+    assertEqual(discardedVod.log, null)
+    assertEqual(discardedVod.run, undefined)
+    assertDeepEqual(discardedVod.events, [])
+  })
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+  await page.getByRole('button', { name: 'Standard', exact: true }).click()
+  await page.getByRole('button', { name: 'Embark', exact: true }).click()
+  await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__?.getRun()?.phase === 'neow')
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.evaluate(async initial => {
     const { createMerchant } = await import('/src/game/noncombat.ts')

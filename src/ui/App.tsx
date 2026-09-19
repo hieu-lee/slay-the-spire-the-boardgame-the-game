@@ -698,8 +698,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       await renderRunVod(log, terminal)
       terminalRun.current = terminal
       setVodExtractedRunId(terminal.campaign.runId)
-      setVodMessage('Run VOD downloaded.')
-      if (terminal.phase === 'defeat' || victoryIsTerminal(terminal, terminal.campaignProgress)) discardVod()
+      setVodMessage('Run VOD downloaded. Replay log retained.')
       setRun(returnRun)
     } catch (error) {
       setRun(returnRun)
@@ -1190,8 +1189,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
             </button> : null}
             <button type="button" disabled={pendingAcquisition || extractingVod}
               onClick={recordRunResult} data-run-vod-control>Stop and record result</button>
-            {!vodExtracted ? <button type="button" onClick={() => void extractRunVod()} disabled={!vodAvailable || extractingVod}
-              data-run-vod-control>Extract run VOD</button> : null}
+            <button type="button" onClick={() => void extractRunVod()} disabled={!vodAvailable || extractingVod}
+              data-run-vod-control>{vodExtracted ? 'Extract run VOD again' : 'Extract run VOD'}</button>
             {vodExtracted ? <button type="button" onClick={prepareNextRun} disabled={extractingVod} data-run-vod-control>Prepare next run →</button> : null}
           </div>
           {vodMessage ? <p aria-live="polite">{vodMessage}</p> : null}
@@ -1205,14 +1204,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
             ascension={run.ascension} seats={run.players.map(summarySeat)} />
           {!run.campaign.finalized ? <><div className="room-screen__actions">
             <button type="button" onClick={recordRunResult} disabled={extractingVod} data-run-vod-control>Record campaign result</button>
-            {!vodExtracted ? <button type="button" onClick={() => void extractRunVod()} disabled={!vodAvailable || extractingVod}
-              data-run-vod-control>Extract run VOD</button> : null}
+            <button type="button" onClick={() => void extractRunVod()} disabled={!vodAvailable || extractingVod}
+              data-run-vod-control>{vodExtracted ? 'Extract run VOD again' : 'Extract run VOD'}</button>
             {vodExtracted ? <button type="button" onClick={prepareNextRun} disabled={extractingVod} data-run-vod-control>Prepare next run →</button> : null}
           </div>{vodMessage ? <p aria-live="polite">{vodMessage}</p> : null}</> : null}
         </section>
       ) : null}
 
-      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p>{run.campaign.finalized && leaderboardStatus ? <p key={leaderboardStatus} aria-live="polite" data-webmcp-transient-status data-webmcp-pending={leaderboardStatus === 'pending' ? 'true' : undefined}>{leaderboardStatus === 'pending' ? 'Recording run on the leaderboard…' : leaderboardStatus === 'recorded' ? 'Run recorded on the leaderboard.' : leaderboardStatus === 'queued' ? 'Leaderboard unavailable — run saved for automatic retry.' : 'Leaderboard rejected this run.'}</p> : null}{vodMessage ? <p aria-live="polite">{vodMessage}</p> : null}<div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && !resultRecorded ? <button type="button" onClick={recordRunResult} disabled={extractingVod} data-run-vod-control>Record campaign result</button> : null}{run.campaign.finalized && !vodExtracted ? <button type="button" onClick={() => void extractRunVod()} disabled={!vodAvailable || extractingVod} data-run-vod-control>Extract run VOD</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" disabled={extractingVod} onClick={() => { discardVod(); discardSoloRun(); setSeedText(crypto.randomUUID()); setChoosingNextCharacter(true); onClose() }}>Prepare next run →</button> : null}</div></section> : null}
+      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p>{run.campaign.finalized && leaderboardStatus ? <p key={leaderboardStatus} aria-live="polite" data-webmcp-transient-status data-webmcp-pending={leaderboardStatus === 'pending' ? 'true' : undefined}>{leaderboardStatus === 'pending' ? 'Recording run on the leaderboard…' : leaderboardStatus === 'recorded' ? 'Run recorded on the leaderboard.' : leaderboardStatus === 'queued' ? 'Leaderboard unavailable — run saved for automatic retry.' : 'Leaderboard rejected this run.'}</p> : null}{vodMessage ? <p aria-live="polite">{vodMessage}</p> : null}<div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && !resultRecorded ? <button type="button" onClick={recordRunResult} disabled={extractingVod} data-run-vod-control>Record campaign result</button> : null}{run.campaign.finalized ? <button type="button" onClick={() => void extractRunVod()} disabled={!vodAvailable || extractingVod} data-run-vod-control>{vodExtracted ? 'Extract run VOD again' : 'Extract run VOD'}</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" disabled={extractingVod} onClick={() => { discardVod(); discardSoloRun(); setSeedText(crypto.randomUUID()); setChoosingNextCharacter(true); onClose() }}>Prepare next run →</button> : null}</div></section> : null}
       <TreasureEffects room={run.roomState?.kind === 'treasure' ? run.roomState : null}
         players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
