@@ -8050,6 +8050,13 @@ check('Masterful Stab changes cost only after HP is actually lost this combat', 
   const fresh = createCombat(createRng(7), [carried], [makeEnemy()])
   assertEqual(fresh.players[0].lostHpThisCombat, false, 'a new combat clears the HP-loss ledger')
   assertEqual(fresh.players[0].attacksPlayedThisTurn, 0, 'a new combat clears the attack ledger')
+
+  const setupCard = instance('defend_hermit')
+  const hermit = makePlayer({ character: 'hermit', hand: [], draw: [setupCard] })
+  const hermitCombat = createCombat(createRng(8), [hermit], [makeEnemy()])
+  assertEqual(hermit.draw[0]?.uid, setupCard.uid, 'combat setup mutated the run player draw pile')
+  assertEqual(hermit.hand.length, 0, 'combat setup mutated the run player hand')
+  assertEqual(hermitCombat.players[0].hand[0]?.uid, setupCard.uid, 'Hermit setup did not draw in combat')
 })
 
 check('Outmaneuver pays only after that card was Retained last turn', () => {

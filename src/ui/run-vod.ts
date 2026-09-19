@@ -156,6 +156,11 @@ function statePatch(before: unknown, after: unknown, path: (string | number)[] =
     return result
   }
   if (Array.isArray(before) && Array.isArray(after)) {
+    if (['deck', 'draw', 'hand', 'discard', 'exhaust'].includes(String(path.at(-1)))) {
+      if (JSON.stringify(before) === JSON.stringify(after)) return result
+      result.push({ path, value: structuredClone(after) })
+      return result
+    }
     for (let index = 0; index < Math.min(before.length, after.length); index += 1) {
       statePatch(before[index], after[index], [...path, index], result)
     }
@@ -224,26 +229,31 @@ function gameplayControl(target: EventTarget | null): HTMLElement | null {
 
 export function useRunVod(run: RunState, active: boolean, viewerId: string, expected: RunState = run) {
   const log = useRef<RunVodLog | null>(null)
-  const previous = useRef(run)
+  const previous = useRef<RunState | null>(null)
   const pendingChoice = useRef<RunVodChoice | null>(null)
+  const queuedEvents = useRef<RunVodEvent[]>([])
+  const hydrationRun = useRef<string | null>(null)
+  const hydrationGeneration = useRef(0)
   const [available, setAvailable] = useState(false)
   const [logReady, setLogReady] = useState(false)
 
   useLayoutEffect(() => {
     if (!active) return
-    let cancelled = false
-    previous.current = run
-    pendingChoice.current = null
-    setLogReady(false)
     const runId = run.campaign.runId
+    if (hydrationRun.current === runId) return
+    hydrationRun.current = runId
+    const generation = ++hydrationGeneration.current
+    previous.current = structuredClone(run)
+    pendingChoice.current = null
+    queuedEvents.current = []
+    setLogReady(false)
     void persistedLog(runId).then((current) => {
-      if (cancelled) return
+      if (hydrationGeneration.current !== generation || hydrationRun.current !== runId) return
       log.current = current?.runId === runId ? current : null
       const restored = log.current?.events.reduce(applyRunVodEvent, structuredClone(log.current.initial))
       setAvailable(Boolean(restored && stableRunJson(restored) === stableRunJson(expected)))
       setLogReady(true)
     })
-    return () => { cancelled = true }
   }, [active, run.campaign.runId])
 
   useLayoutEffect(() => {
@@ -253,18 +263,31 @@ export function useRunVod(run: RunState, active: boolean, viewerId: string, expe
   }, [active, expected, run])
 
   useLayoutEffect(() => {
-    if (previous.current.campaign.runId !== run.campaign.runId) {
-      previous.current = run
+    const before = previous.current ?? structuredClone(run)
+    if (before.campaign.runId !== run.campaign.runId) {
+      previous.current = structuredClone(run)
       pendingChoice.current = null
       return
     }
-    if (!active || run.campaign.finalized) {
-      previous.current = run
+    if (!active) {
+      previous.current = structuredClone(run)
       return
     }
-    const patch = statePatch(previous.current, run)
-    if (!logReady || !log.current || log.current.runId !== run.campaign.runId) return
-    previous.current = run
+    if (logReady && log.current?.runId === run.campaign.runId && queuedEvents.current.length > 0) {
+      for (const event of queuedEvents.current.splice(0)) {
+        const index = log.current.events.push(event) - 1
+        persistence = persistence.then(() => persistEvent(run.campaign.runId, index, event))
+          .catch(() => setAvailable(false))
+      }
+      const restored = log.current.events.reduce(applyRunVodEvent, structuredClone(log.current.initial))
+      setAvailable(stableRunJson(restored) === stableRunJson(expected))
+    }
+    if (run.campaign.finalized) {
+      previous.current = structuredClone(run)
+      return
+    }
+    const patch = statePatch(before, run)
+    previous.current = structuredClone(run)
     if (patch.length === 0) return
     const staged = pendingChoice.current
     const lastStep = staged?.steps?.at(-1)
@@ -272,8 +295,13 @@ export function useRunVod(run: RunState, active: boolean, viewerId: string, expe
       ? { ...staged, steps: staged.steps?.slice(0, -1), target: lastStep }
       : staged
     const event = { patch, ...(choice ? { choice } : {}), viewerId }
-    const index = log.current.events.push(event) - 1
     pendingChoice.current = null
+    if (!logReady || !log.current || log.current.runId !== run.campaign.runId) {
+      queuedEvents.current.push(event)
+      setAvailable(false)
+      return
+    }
+    const index = log.current.events.push(event) - 1
     setAvailable(expected === run || stableRunJson(run) === stableRunJson(expected))
     persistence = persistence.then(() => persistEvent(run.campaign.runId, index, event))
       .catch(() => setAvailable(false))
@@ -639,15 +667,24 @@ async function prepareGeometry(event: RunVodEvent, doc: Document, store: Snapsho
     return { actions: [], motion: [] }
   }
   const actions: VodActionGeometry[] = []
-  const refs = [event.choice.source, ...(event.choice.steps ?? [])]
+  const missedRoomId = !queryControl(doc, event.choice.source) && doc.querySelector('.map')
+    ? event.patch.find((change) => change.path.length === 2 && change.path[0] === 'map' &&
+      change.path[1] === 'position' && typeof change.value === 'string')?.value as string | undefined
+    : undefined
+  const refs = [
+    ...(missedRoomId ? [{ selector: `[data-room="${CSS.escape(missedRoomId)}"]` }] : []),
+    event.choice.source,
+    ...(event.choice.steps ?? []),
+  ]
+  const choiceIndex = missedRoomId ? 1 : 0
   for (let index = 0; index < refs.length; index += 1) {
     const ref = refs[index]!
     const source = await waitForControl(ref, doc)
     if (!source) throw new Error(`Replay stopped at event ${eventIndex + 1}; chosen control ${ref.name ?? ref.selector} did not appear.`)
     const frame = index === 0 ? undefined : `choice-${eventIndex}-${index}`
-    const target = index === 0 && event.choice.target && !event.choice.steps?.length
+    const target = index === choiceIndex && event.choice.target && !event.choice.steps?.length
       ? await waitForControl(event.choice.target, doc) : null
-    if (index === 0 && event.choice.target && !event.choice.steps?.length && !target) {
+    if (index === choiceIndex && event.choice.target && !event.choice.steps?.length && !target) {
       throw new Error(`Replay stopped at event ${eventIndex + 1}; its chosen target did not appear.`)
     }
     await store.write(frame ?? eventIndex, await raster(doc))

@@ -30,7 +30,7 @@ export function createCombat(
     turn: 0,
     die: 1,
     phase: 'player',
-    players: players.map((player) => ({
+    players: structuredClone(players).map((player) => ({
       ...player,
       lostHpThisCombat: false,
       shuffledThisCombat: false,

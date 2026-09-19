@@ -41,6 +41,25 @@ try {
   suite('run VOD browser')
   await page.addInitScript(() => {
     if (navigator.mediaDevices) navigator.mediaDevices.getDisplayMedia = () => { throw new Error('screen capture must not be used') }
+    const delayedReads = new WeakSet()
+    const getAll = IDBObjectStore.prototype.getAll
+    IDBObjectStore.prototype.getAll = function (...args) {
+      const request = getAll.apply(this, args)
+      if (this.name === 'events' && sessionStorage.getItem('delay-run-vod-read') === '1') delayedReads.add(request)
+      return request
+    }
+    const addEventListener = IDBRequest.prototype.addEventListener
+    IDBRequest.prototype.addEventListener = function (type, listener, options) {
+      if (type !== 'success' || !delayedReads.has(this) || !listener) {
+        return addEventListener.call(this, type, listener, options)
+      }
+      return addEventListener.call(this, type, function (event) {
+        window.setTimeout(() => {
+          if (typeof listener === 'function') listener.call(this, event)
+          else listener.handleEvent(event)
+        }, 5_000)
+      }, options)
+    }
   })
   await page.goto(`http://localhost:${address.port}`, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
@@ -48,6 +67,12 @@ try {
   await page.getByRole('button', { name: 'Embark', exact: true }).click()
   await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__?.getRun()?.phase === 'neow')
+  await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'run-vod-first-room'))
+  await page.waitForFunction(async () => {
+    const run = window.__STS_DEBUG__?.getRun()
+    const log = run && await (await import('/src/ui/run-vod.ts')).readRunVod(run.campaign.runId)
+    return log?.events.length === 0 && log.initial.phase === 'neow'
+  })
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const controlledCheckbox = page.locator('.settings-dialog input[type="checkbox"]').first()
@@ -95,15 +120,11 @@ try {
   check('append-only VOD events survive a reload without rewriting the full log', () =>
     assert(persistedReconstruction.ok, JSON.stringify(persistedReconstruction)))
 
-  await page.evaluate(() => {
-    const debug = window.__STS_DEBUG__
-    const run = structuredClone(debug.getRun())
-    run.phase = 'map'
-    run.neow = null
-    run.rewards = []
-    run.rewardDestination = null
-    debug.setRun(run)
-  })
+  await page.getByRole('button', { name: 'Skip', exact: true }).click()
+  await page.locator('.neow-options').waitFor()
+  await page.getByRole('button', { name: /Gain 1 random Rare card/ }).click()
+  await page.getByRole('button', { name: 'Gain reward', exact: true }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
   const canonicalMapRun = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
   const canonicalPage = await browser.newPage({ viewport: { width: 1920, height: 1080 }, hasTouch: true })
   await canonicalPage.goto(`http://localhost:${address.port}/?run-vod=1`, { waitUntil: 'networkidle' })
@@ -115,8 +136,13 @@ try {
   await canonicalPage.close()
   check('touch-capable replay still uses the canonical desktop one-click map interaction', () =>
     assertDeepEqual(canonicalViewport, [1920, 1080]))
+  await eventCount()
+  await page.evaluate(() => sessionStorage.setItem('delay-run-vod-read', '1'))
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: 'Resume', exact: true }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'map')
   await page.setViewportSize({ width: 844, height: 390 })
-  const beforeMapChoice = await eventCount()
   const reachableRoom = page.locator('.room--reachable').first()
   await reachableRoom.click()
   await reachableRoom.waitFor({ state: 'visible' })
@@ -124,16 +150,110 @@ try {
   await reachableRoom.click()
   await page.locator('.combat').waitFor()
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.waitForFunction(async (before) => (await (await import('/src/ui/run-vod.ts')).readRunVod(
-    window.__STS_DEBUG__.getRun().campaign.runId)).events.length > before, beforeMapChoice)
-  const mapChoice = (await readLog()).events.at(-1).choice
-  check('phone read-then-enter taps collapse to one canonical desktop map action', () => {
-    const selectors = [mapChoice?.source, ...(mapChoice?.steps ?? [])].map((ref) => ref?.selector)
-    assertEqual(selectors.length, 1, JSON.stringify(mapChoice))
-  })
   const startTurn = page.getByRole('button', { name: /Resolve start/ }).first()
   if (await startTurn.count()) await startTurn.click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getState()?.phase === 'player')
+  const defend = await page.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand
+    .findIndex((card) => card.defId.startsWith('defend')))
+  assert(defend >= 0, 'the first combat has no Defend for the hydration-race regression')
+  const handBeforeDefend = await page.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand.length)
+  await page.locator('.hand .card').nth(defend).click()
+  await page.waitForFunction((before) => window.__STS_DEBUG__.getState().players[0].hand.length < before, handBeforeDefend)
+  const continuedRun = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog', { name: 'Slay the Spire' })
+    .getByRole('button', { name: 'Return to main menu', exact: true }).click()
+  await page.getByRole('button', { name: 'Resume', exact: true }).click()
+  await page.locator('.combat').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Give up', exact: true }).click()
+  await page.getByRole('button', { name: 'Yes, give up', exact: true }).click()
+  await page.getByRole('heading', { name: 'The party has fallen', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Record campaign result', exact: true }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().campaign.finalized)
+  await page.waitForTimeout(5_500)
+  await page.evaluate(() => sessionStorage.removeItem('delay-run-vod-read'))
+  let resumedEvents = []
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    resumedEvents = (await readLog()).events
+    if (resumedEvents.some((event) => event.choice?.source?.name?.includes('Defend'))) break
+    await page.waitForTimeout(250)
+  }
+  const roomEvent = resumedEvents.findIndex((event) => event.choice?.source.selector.startsWith('[data-room='))
+  const defendEvent = resumedEvents.findIndex((event) => event.choice?.source?.name?.includes('Defend'))
+  const mapChoice = resumedEvents[roomEvent]?.choice
+  const extractEnabledAfterRecord = await page.getByRole('button', { name: 'Extract run VOD', exact: true }).isEnabled()
+  const recordedReconstruction = await page.evaluate(async () => {
+    const { applyRunVodEvent, readRunVod, stableRunJson } = await import('/src/ui/run-vod.ts')
+    const saved = JSON.parse(localStorage.getItem('sts-solo-run'))
+    const log = await readRunVod(saved.run.campaign.runId)
+    let restored = structuredClone(log.initial)
+    for (const event of log.events) {
+      restored = applyRunVodEvent(restored, event)
+    }
+    const difference = (left, right, path = 'run') => {
+      if (Object.is(left, right)) return ''
+      if (!left || !right || typeof left !== 'object' || typeof right !== 'object') {
+        return `${path}: ${JSON.stringify(left)} != ${JSON.stringify(right)}`
+      }
+      for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
+        const found = difference(left[key], right[key], `${path}.${key}`)
+        if (found) return found
+      }
+      return ''
+    }
+    return {
+      matches: stableRunJson(restored) === stableRunJson(saved.terminalRun),
+      difference: difference(restored, saved.terminalRun),
+    }
+  })
+  check('a fast resumed room entry survives main-menu resume and finalization without merging the first card play', () => {
+    const selectors = [mapChoice?.source, ...(mapChoice?.steps ?? [])].map((ref) => ref?.selector)
+    assertEqual(selectors.length, 1, JSON.stringify(mapChoice))
+    assert(roomEvent >= 0 && defendEvent > roomEvent, JSON.stringify(resumedEvents))
+    assert(recordedReconstruction.matches, recordedReconstruction.difference)
+    assert(extractEnabledAfterRecord, `recording before hydration disabled VOD extraction: ${JSON.stringify(recordedReconstruction)}`)
+  })
+  const roomId = mapChoice?.source.selector.match(/\[data-room="([^"]+)"\]/)?.[1]
+  assert(roomId && defendEvent >= 0, 'the compatibility replay fixture is incomplete')
+  const compatibilityDownload = page.waitForEvent('download')
+  const compatibilityResult = page.evaluate(async ({ initial, terminal, event, roomId }) => {
+    const { extractRunVod } = await import('/src/ui/run-vod.ts')
+    const result = await extractRunVod({
+      version: 2,
+      runId: `${initial.campaign.runId}-merged-room-card`,
+      initial,
+      events: [{
+        ...event,
+        patch: [
+          { path: ['map', 'position'], value: roomId },
+          { path: [], value: terminal },
+        ],
+      }],
+    }, terminal)
+    return { filename: result.filename, size: result.video.size }
+  }, { initial: canonicalMapRun, terminal: continuedRun, event: resumedEvents[defendEvent], roomId })
+  const compatibility = await compatibilityResult
+  const compatibilityFile = await compatibilityDownload
+  await compatibilityFile.delete()
+  check('legacy merged room and card events synthesize the missing room entry before replaying the card', () => {
+    assert(/slay-the-spire-run-.+\.(webm|mp4)$/.test(compatibility.filename), compatibility.filename)
+    assert(compatibility.size > 0, 'the compatibility replay produced an empty video')
+  })
+  await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'run-vod-continued'))
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
+  await page.evaluate(async (run) => {
+    run.campaign.runId += '-continued'
+    await (await import('/src/ui/run-vod.ts')).startRunVod(run)
+    window.__STS_DEBUG__.setRun(run)
+  }, continuedRun)
+  await page.waitForFunction(async () => {
+    const run = window.__STS_DEBUG__.getRun()
+    return run.campaign.runId.endsWith('-continued') &&
+      (await (await import('/src/ui/run-vod.ts')).readRunVod(run.campaign.runId))?.events.length === 0
+  })
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.waitForTimeout(300)
   const combatTemplate = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun().combat))
 
   const beforeInspections = await eventCount()
@@ -152,8 +272,9 @@ try {
   }
   await page.waitForTimeout(250)
   const afterInspections = await eventCount()
+  const inspectionEvents = (await readLog()).events.slice(beforeInspections)
   check('map, deck, draw, discard, and exhaust inspection does not create a VOD event', () =>
-    assertEqual(afterInspections, beforeInspections))
+    assertEqual(afterInspections, beforeInspections, JSON.stringify(inspectionEvents)))
 
   const inspectedCard = await page.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand
     .findIndex((card) => card.defId.startsWith('strike')))
