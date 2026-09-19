@@ -25,6 +25,72 @@ const SOUNDS = {
 
 type Sound = keyof typeof SOUNDS
 const activeEffects = new Set<HTMLAudioElement>()
+const vodAudio = new Set<HTMLAudioElement>()
+const vodAudioNodes = new Map<HTMLAudioElement, MediaElementAudioSourceNode>()
+let vodAudioContext: AudioContext | null = null
+let vodAudioDestination: MediaStreamAudioDestinationNode | null = null
+let vodAudioClock: OscillatorNode | null = null
+let vodAudioMuted = false
+
+function audioElement(source: string) {
+  const audio = new Audio(source)
+  audio.muted = vodAudioMuted
+  vodAudio.add(audio)
+  const forget = () => {
+    vodAudio.delete(audio)
+    vodAudioNodes.get(audio)?.disconnect()
+    vodAudioNodes.delete(audio)
+  }
+  audio.addEventListener('ended', forget, { once: true })
+  audio.addEventListener('error', forget, { once: true })
+  if (vodAudioContext && vodAudioDestination) {
+    const node = vodAudioContext.createMediaElementSource(audio)
+    node.connect(vodAudioContext.destination)
+    node.connect(vodAudioDestination)
+    vodAudioNodes.set(audio, node)
+  }
+  return audio
+}
+
+function releaseAudio(audio: HTMLAudioElement) {
+  audio.pause()
+  activeEffects.delete(audio)
+  vodAudio.delete(audio)
+  vodAudioNodes.get(audio)?.disconnect()
+  vodAudioNodes.delete(audio)
+}
+
+export function startRunVodAudio() {
+  vodAudioClock?.stop()
+  vodAudioContext?.close().catch(() => {})
+  vodAudioContext = new AudioContext()
+  vodAudioDestination = vodAudioContext.createMediaStreamDestination()
+  const clock = vodAudioContext.createOscillator()
+  const silence = vodAudioContext.createGain()
+  silence.gain.value = 0
+  clock.connect(silence).connect(vodAudioDestination)
+  clock.start()
+  vodAudioClock = clock
+  void vodAudioContext.resume()
+  return vodAudioDestination.stream
+}
+
+export function setRunVodAudioMuted(muted: boolean) {
+  vodAudioMuted = muted
+  vodAudio.forEach((audio) => { audio.muted = muted })
+}
+
+export function stopRunVodAudio() {
+  vodAudio.forEach(releaseAudio)
+  vodAudio.clear()
+  vodAudioNodes.clear()
+  vodAudioClock?.stop()
+  vodAudioClock = null
+  vodAudioDestination = null
+  const context = vodAudioContext
+  vodAudioContext = null
+  void context?.close()
+}
 
 const BOSS_TRACKS = {
   1: assetPath('bgm/the-guardian-emerges.mp3'),
@@ -73,13 +139,13 @@ export function useCombatMusic(run?: MusicRun | null, enabled = true, volume = 2
 
   useEffect(() => {
     if (!track) return
-    const next = new Audio(track)
+    const next = audioElement(track)
     audio.current = next
     next.loop = true
     next.volume = volume / 100
     void next.play().catch(() => {})
     return () => {
-      next.pause()
+      releaseAudio(next)
       if (audio.current === next) audio.current = null
     }
   }, [track])
@@ -95,12 +161,12 @@ export function useVictoryMusic(active = false, enabled = true, volume = 20) {
 
   useEffect(() => {
     if (!active || !enabled) return
-    const next = new Audio(VICTORY_TRACK)
+    const next = audioElement(VICTORY_TRACK)
     audio.current = next
     next.volume = volume / 100
     void next.play().catch(() => {})
     return () => {
-      next.pause()
+      releaseAudio(next)
       if (audio.current === next) audio.current = null
     }
   }, [active, enabled])
@@ -152,7 +218,7 @@ export function useRunOutcomeSound(
 export function installSoundEffects() {
   // Warm short effect files before the first attack; playback still requires an interaction.
   const preload = Object.values(SOUNDS).map(source => {
-    const audio = new Audio(source)
+    const audio = audioElement(source)
     audio.preload = 'auto'
     audio.load()
     return audio
@@ -173,9 +239,9 @@ export function installSoundEffects() {
   return () => {
     document.removeEventListener('click', play)
     document.removeEventListener('change', play)
-    for (const audio of activeEffects) audio.pause()
+    for (const audio of activeEffects) releaseAudio(audio)
     activeEffects.clear()
-    preload.forEach(audio => { audio.removeAttribute('src'); audio.load() })
+    preload.forEach(audio => { releaseAudio(audio); audio.removeAttribute('src'); audio.load() })
   }
 }
 
@@ -203,7 +269,7 @@ export function playCombatSound(recipe: CombatSfxRecipe, impactDelayMs = 0, impa
   })
   return () => {
     timers.forEach(timer => window.clearTimeout(timer))
-    playing.forEach(audio => { audio.pause(); activeEffects.delete(audio) })
+    playing.forEach(releaseAudio)
   }
 }
 
@@ -211,10 +277,9 @@ function playSound(sound: Sound, volume = 0.35, rate = 1, cue?: string, delayMs 
   // Bound a busy multiplayer mix; discard the oldest tail before adding another voice.
   if (activeEffects.size >= 24) {
     const oldest = activeEffects.values().next().value!
-    oldest.pause()
-    activeEffects.delete(oldest)
+    releaseAudio(oldest)
   }
-  const audio = new Audio(SOUNDS[sound])
+  const audio = audioElement(SOUNDS[sound])
   activeEffects.add(audio)
   audio.addEventListener('ended', () => activeEffects.delete(audio), { once: true })
   audio.volume = volume * currentSfxVolume()
@@ -222,6 +287,6 @@ function playSound(sound: Sound, volume = 0.35, rate = 1, cue?: string, delayMs 
   audio.preservesPitch = false
   if (cue) audio.dataset.combatSfx = cue
   if (delayMs) audio.dataset.combatSfxDelay = String(delayMs)
-  void audio.play().catch(() => activeEffects.delete(audio))
+  void audio.play().catch(() => releaseAudio(audio))
   return audio
 }

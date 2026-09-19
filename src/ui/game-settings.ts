@@ -41,23 +41,25 @@ export function loadGameSettings(): GameSettings {
   }
 }
 
-export function useGameSettings() {
+export function useGameSettings(overrides?: Partial<GameSettings>) {
   const [settings, setSettings] = useState(() => {
-    const loaded = loadGameSettings()
+    const loaded = { ...loadGameSettings(), ...overrides }
     sfxVolume = loaded.sfxVolume / 100
     return loaded
   })
   useEffect(() => {
     sfxVolume = settings.sfxVolume / 100
-    try {
-      localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(settings))
-      localStorage.setItem(SFX_STORAGE_KEY, settings.sfxVolume === 0 ? 'off' : 'on')
-    } catch {
-      // Private browsing and storage policies should not stop the game.
+    if (!overrides) {
+      try {
+        localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(settings))
+        localStorage.setItem(SFX_STORAGE_KEY, settings.sfxVolume === 0 ? 'off' : 'on')
+      } catch {
+        // Private browsing and storage policies should not stop the game.
+      }
     }
     document.documentElement.dataset.reducedMotion = String(settings.reducedMotion)
     document.documentElement.dataset.highContrast = String(settings.highContrast)
-  }, [settings])
+  }, [overrides, settings])
   return [settings, setSettings] as const
 }
 

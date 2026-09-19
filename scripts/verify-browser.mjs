@@ -16151,48 +16151,10 @@ check('the Power glyph paints at the center of its tile', () => {
   )
 })
 
-// The enlarge has to escape the board's scroll container. It previously did
-// not, and this suite missed it by hovering ONE tile at ONE viewport where the
-// popover happened to fit inside the board's box. Every tile, two sizes.
-const hoverProbes = []
-for (const size of [
-  { width: 1440, height: 900 },
-  { width: 900, height: 620 },
-]) {
-  await page.setViewportSize(size)
-  const tiles = await page.locator('.row__seat .power').count()
-  for (let i = 0; i < tiles; i++) {
-    await page.locator('.row__seat .power').nth(i).hover()
-    await waitForPowerZoom()
-    hoverProbes.push(
-      await page.evaluate(
-        (label) => {
-          const img = document.querySelector('.power__zoom')
-          if (!img) return { label, missing: true }
-          const box = img.getBoundingClientRect()
-          return {
-            label,
-            missing: false,
-            width: Math.round(box.width),
-            height: Math.round(box.height),
-            left: Math.round(box.left),
-            top: Math.round(box.top),
-            right: Math.round(box.right),
-            bottom: Math.round(box.bottom),
-            viewport: { w: window.innerWidth, h: window.innerHeight },
-            // The card is `pointer-events: none` so that moving onto it does
-            // not end the hover, which means elementFromPoint looks straight
-            // through it. Whether it is actually PAINTED is checked below by
-            // screenshotting the region instead.
-            visible: getComputedStyle(img).visibility === 'visible',
-          }
-        },
-        `${size.width}x${size.height} tile ${i}`,
-      ),
-    )
-  }
-}
+// Multi-viewport Power hover coverage lives in the focused, fast
+// verify-power-hover-browser.mjs suite.
 await page.setViewportSize({ width: 1440, height: 900 })
+await page.mouse.move(0, 0)
 
 // Re-hover after the resize. Changing the viewport re-renders and drops the
 // zoom, so reading it straight afterwards found `null` roughly one run in
@@ -16284,19 +16246,6 @@ check('an enlarged card near the right edge is pulled back on screen', () => {
     clampProbe.zoomRight <= clampProbe.viewportWidth,
     `and fully on screen, got right edge ${clampProbe.zoomRight}`,
   )
-})
-
-check('every Power enlarges into full view at every size', () => {
-  assert(hoverProbes.length >= 4, `expected several probes, got ${hoverProbes.length}`)
-  for (const probe of hoverProbes) {
-    assert(!probe.missing, `${probe.label}: no enlarged card appeared`)
-    assert(probe.width > 150 && probe.height > 200, `${probe.label}: not enlarged (${probe.width}x${probe.height})`)
-    assert(probe.left >= 0, `${probe.label}: clipped off the left (${probe.left})`)
-    assert(probe.top >= 0, `${probe.label}: clipped off the top (${probe.top})`)
-    assert(probe.right <= probe.viewport.w, `${probe.label}: off the right (${probe.right} > ${probe.viewport.w})`)
-    assert(probe.bottom <= probe.viewport.h, `${probe.label}: off the bottom (${probe.bottom} > ${probe.viewport.h})`)
-    assert(probe.visible, `${probe.label}: the enlarged card is not visible`)
-  }
 })
 
 // Geometry alone cannot tell "on screen" from "painted behind the board", so
@@ -17202,7 +17151,7 @@ await page.evaluate(() => {
 await page.waitForFunction((before) =>
   window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/defeat.ogg'), eventDefeatSoundBefore)
 await page.getByRole('button', { name: 'Record campaign result' }).click()
-await page.getByRole('button', { name: 'Begin next run →' }).click()
+await page.getByRole('button', { name: 'Prepare next run →' }).click()
 await page.getByRole('heading', { name: 'Ironclad', exact: true }).waitFor()
 const runBeforeEmbark = await readRun()
 await page.getByRole('button', { name: 'Back', exact: true }).click()
@@ -17218,7 +17167,7 @@ await page.getByRole('button', { name: 'Start standard campaign', exact: true })
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
 const ascensionRetry = await readRun()
 check('the campaign journal returns to character select and preserves every Ascension setup modifier', () => {
-  assertEqual(runBeforeEmbark.campaign.finalized, true, 'Begin next run started before choosing a character')
+  assertEqual(runBeforeEmbark.campaign.finalized, true, 'Prepare next run started before choosing a character')
   assertEqual(nextRunPickerAfterRemount, 0, 'backing out of a next run reopened character select after a menu remount')
   assert(ascensionRetry.seed !== runBeforeEmbark.seed, 'the next run reused the previous seed')
   assertEqual(ascensionRetry.ascension, 9)

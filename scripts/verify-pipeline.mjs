@@ -54,6 +54,14 @@ check('frontend surfaces select their cores and named focused browser checks', (
   includesEvery(affectedBrowser('src/ui/combat-screen/vfx.tsx'), [
     'verify-browser.mjs', 'verify-online-browser.mjs', 'verify-lightning-act2-browser.mjs',
   ], 'combat VFX')
+  assertDeepEqual(affectedBrowser('src/ui/PowerRow.tsx'), ['verify-power-hover-browser.mjs'])
+  assertDeepEqual(affectedBrowser('src/ui/run-vod.ts'), ['verify-run-vod-browser.mjs'])
+  for (const file of ['src/ui/App.tsx', 'src/ui/CardMorph.tsx', 'src/ui/combat-screen/hooks.ts',
+    'src/ui/game-settings.ts', 'src/ui/sfx.ts', 'src/ui/touch-input.ts']) {
+    const owners = affectedBrowser(file)
+    assert(owners.includes('verify-run-vod-browser.mjs'), `${file} omitted focused VOD coverage`)
+    assert(owners.some((owner) => owner !== 'verify-run-vod-browser.mjs'), `${file} lost its shared browser owners`)
+  }
   assert(affected('src/ui/icons.ts').includes('verify-noncombat-browser.mjs'))
   assert(affected('src/ui/run-summary-data.ts').includes('verify-noncombat-browser.mjs'))
   assert(affected('src/ui/RewardScreen.tsx').includes('verify-browser.mjs'))
@@ -119,10 +127,13 @@ check('shared frontend changes use cores plus named visual owners', () => {
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
     'verify-lightning-act2-browser.mjs',
   ], 'presentation overlays')
+  assertDeepEqual(affectedBrowser('src/ui/styles/powers-in-play.css'), ['verify-power-hover-browser.mjs'])
+  assertDeepEqual(affectedBrowser('src/ui/styles/run-vod.css'), ['verify-run-vod-browser.mjs'])
 })
-check('toolchain changes stay conservative', () => {
-  assertDeepEqual(affected('package.json'), scripts)
-  assertDeepEqual(affected('pnpm-workspace.yaml'), scripts)
+check('toolchain changes select their focused owners', () => {
+  for (const file of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.app.json', 'vite.config.ts']) {
+    assertDeepEqual(affected(file), ['verify-build.mjs', 'verify-pipeline.mjs'])
+  }
 })
 check('assets and the selector itself keep focused checks', () => {
   const merchant = affected('public/assets/noncombat/merchant/test.webp')

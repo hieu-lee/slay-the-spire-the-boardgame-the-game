@@ -11,6 +11,13 @@ Do not add or retain portrait-phone, portrait-tablet, square, or arbitrary viewp
 
 Before pushing `master`, require `node scripts/verify-all.mjs --changed=origin/master --lane=light --jobs=4` to pass with no retries, then wait for every GitHub `Build and test` job to finish successfully.
 
+## Fast local verification
+
+- Do not run `scripts/verify-browser.mjs` or the whole browser lane during normal implementation or review. That file is a legacy umbrella and is opt-in only when the user explicitly requests it.
+- Start with `node scripts/verify-all.mjs --changed=HEAD --lane=light --list` and `node scripts/verify-all.mjs --changed=HEAD --lane=browser --list`, then run the light lane plus only the focused browser verifiers that own the changed behavior.
+- If a regression is covered only by the legacy umbrella, extract it into a focused `verify-*-browser.mjs` script before relying on it. Focused local validation should finish in about a minute, not block iteration for 10-15 minutes.
+- A baseline failure is maintenance debt: fix the product or the test, and leave a focused regression check. Do not waive it as pre-existing and do not rerun the entire umbrella merely to classify it.
+
 ## WebMCP campaign runbook
 
 - Start WebMCP campaigns from an explicitly attached built-in-browser game tab and use GPT-5.6 Sol or Terra; Luna has Site tools disabled. If discovery is unavailable on a supported model, stop and report the missing prerequisite instead of injecting a bridge or probing browser processes and ports.

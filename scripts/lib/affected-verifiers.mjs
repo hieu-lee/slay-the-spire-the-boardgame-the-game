@@ -32,8 +32,20 @@ const focusedEngineOwners = new Map([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = new Map([
+  ['src/ui/App.tsx', ['verify-run-vod-browser.mjs']],
+  ['src/ui/CardMorph.tsx', ['verify-run-vod-browser.mjs']],
+  ['src/ui/combat-screen/hooks.ts', ['verify-run-vod-browser.mjs']],
+  ['src/ui/game-settings.ts', ['verify-run-vod-browser.mjs']],
+  ['src/ui/sfx.ts', ['verify-run-vod-browser.mjs']],
+  ['src/ui/touch-input.ts', ['verify-run-vod-browser.mjs']],
   ['src/ui/combat-screen/vfx.tsx', ['verify-lightning-act2-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
+])
+const focusedOnlyUiOwners = new Map([
+  ['src/ui/PowerRow.tsx', ['verify-power-hover-browser.mjs']],
+  ['src/ui/run-vod.ts', ['verify-run-vod-browser.mjs']],
+  ['src/ui/styles/powers-in-play.css', ['verify-power-hover-browser.mjs']],
+  ['src/ui/styles/run-vod.css', ['verify-run-vod-browser.mjs']],
 ])
 const sourceExtensions = ['', '.ts', '.tsx', '.mjs', '.js']
 const sharedBrowserOwners = ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs']
@@ -163,7 +175,10 @@ export function affectedVerifiers(root, changedFiles, scripts) {
     const source = sourceOf(resolve(root, 'scripts', script))
     const mentions = externalReferences.some((reference) => source.includes(reference))
     const directBrowserDependency = browser.includes(script)
-      && directImports(join('scripts', script), root).some((file) => changed.has(cleanPath(relative(root, file))))
+      && directImports(join('scripts', script), root).some((file) => {
+        const changedFile = cleanPath(relative(root, file))
+        return changed.has(changedFile) && !focusedOnlyUiOwners.has(changedFile)
+      })
     if ((!browser.includes(script) && [...dependencies].some((file) => changed.has(cleanPath(relative(root, file)))))
       || directBrowserDependency || mentions) {
       selected.add(script)
@@ -220,7 +235,13 @@ export function affectedVerifiers(root, changedFiles, scripts) {
     // Keep one representative browser flow per surface. Focused verifiers are
     // added only when they name the changed source (or a stylesheet importing
     // it), rather than making every UI edit run the whole visual matrix.
-    if (sharedUi.test(file)) {
+    for (const script of focusedUiOwners.get(file) ?? []) selected.add(script)
+    const focusedOwners = focusedOnlyUiOwners.get(file)
+    if (focusedOwners) {
+      for (const script of focusedOwners) selected.add(script)
+      covered = true
+    }
+    else if (sharedUi.test(file)) {
       for (const script of sharedBrowserOwners) selected.add(script)
       for (const script of stylesheetBrowserOwners(file)) selected.add(script)
       for (const script of focusedUiOwners.get(file) ?? []) selected.add(script)
@@ -263,8 +284,12 @@ export function affectedVerifiers(root, changedFiles, scripts) {
       }
     }
 
-    if (/^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig|vite\.config)/.test(file)) {
-      for (const script of scripts) selected.add(script)
+    if (/^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig)/.test(file)) {
+      selected.add('verify-build.mjs')
+      covered = true
+    }
+    if (/^vite\.config/.test(file)) {
+      selected.add('verify-build.mjs')
       covered = true
     }
     if ((file.startsWith('src/') || file.startsWith('scripts/')) && !covered && extname(file)) {
