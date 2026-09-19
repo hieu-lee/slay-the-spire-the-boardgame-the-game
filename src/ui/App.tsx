@@ -566,7 +566,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [extractingVod, setExtractingVod] = useState(false)
   const terminalRun = useRef<RunState | null>(null)
   const { available: vodAvailable, discard: discardVod, load: loadVod } = useRunVod(
-    run, active && open && !replay, viewerId, terminalRun.current ?? run,
+    run, active && open && !replay, viewerId,
   )
   const [achievements, setAchievements] = useState(false)
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])

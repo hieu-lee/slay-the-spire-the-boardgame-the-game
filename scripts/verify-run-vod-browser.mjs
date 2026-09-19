@@ -216,23 +216,17 @@ try {
   })
   const roomId = mapChoice?.source.selector.match(/\[data-room="([^"]+)"\]/)?.[1]
   assert(roomId && defendEvent >= 0, 'the compatibility replay fixture is incomplete')
-  const visitedOnlyCompatibility = await page.evaluate(async ({ run, roomId }) => {
-    const { replayableRunMatches, soleReachableRoom } = await import('/src/ui/run-vod.ts')
-    const expected = structuredClone(run)
-    expected.map.rooms[roomId].visited = true
-    const extraVisit = structuredClone(expected)
-    extraVisit.map.rooms[roomId].visited = false
+  const roomRecovery = await page.evaluate(async () => {
+    const { soleReachableRoom } = await import('/src/ui/run-vod.ts')
     const fixture = document.createElement('div')
     fixture.innerHTML = '<button class="room--reachable"></button>'
     const uniqueAccepted = Boolean(soleReachableRoom(fixture))
     fixture.innerHTML += '<button class="room--reachable"></button>'
     return {
-      missingAccepted: replayableRunMatches(run, expected),
-      extraRejected: !replayableRunMatches(expected, extraVisit),
       uniqueAccepted,
       ambiguousRejected: soleReachableRoom(fixture) === null,
     }
-  }, { run: canonicalMapRun, roomId })
+  })
   const compatibilityDownload = page.waitForEvent('download')
   const compatibilityResult = page.evaluate(async ({ initial, terminal, event }) => {
     const { extractRunVod } = await import('/src/ui/run-vod.ts')
@@ -249,14 +243,19 @@ try {
   }, { initial: canonicalMapRun, terminal: continuedRun, event: resumedEvents[defendEvent] })
   const compatibility = await compatibilityResult
   const compatibilityFile = await compatibilityDownload
+  const compatibilityPath = await compatibilityFile.path()
+  const compatibilityAudio = compatibilityPath && spawnSync('ffmpeg', [
+    '-hide_banner', '-i', compatibilityPath, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-',
+  ], { encoding: 'utf8' })
+  const compatibilityMaxVolume = Number(compatibilityAudio?.stderr.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1])
   await compatibilityFile.delete()
   check('legacy merged room and card events synthesize the missing room entry before replaying the card', () => {
-    assert(visitedOnlyCompatibility.missingAccepted, 'a legacy missing visited flag disabled an otherwise exact VOD')
-    assert(visitedOnlyCompatibility.extraRejected, 'an unexpected extra visited room was accepted')
-    assert(visitedOnlyCompatibility.uniqueAccepted, 'a unique legacy room could not be recovered')
-    assert(visitedOnlyCompatibility.ambiguousRejected, 'an ambiguous room branch would be guessed')
+    assert(roomRecovery.uniqueAccepted, 'a unique legacy room could not be recovered')
+    assert(roomRecovery.ambiguousRejected, 'an ambiguous room branch would be guessed')
     assert(/slay-the-spire-run-.+\.(webm|mp4)$/.test(compatibility.filename), compatibility.filename)
     assert(compatibility.size > 0, 'the compatibility replay produced an empty video')
+    assert(compatibilityAudio?.status === 0 && Number.isFinite(compatibilityMaxVolume) && compatibilityMaxVolume > -60,
+      `the recovered replay audio is silent (${compatibilityAudio?.stderr ?? 'ffmpeg failed'})`)
   })
   await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'run-vod-continued'))
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')

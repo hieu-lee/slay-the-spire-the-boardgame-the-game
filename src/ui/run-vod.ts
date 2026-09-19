@@ -227,7 +227,7 @@ function gameplayControl(target: EventTarget | null): HTMLElement | null {
   return element
 }
 
-export function useRunVod(run: RunState, active: boolean, viewerId: string, expected: RunState = run) {
+export function useRunVod(run: RunState, active: boolean, viewerId: string) {
   const log = useRef<RunVodLog | null>(null)
   const previous = useRef<RunState | null>(null)
   const pendingChoice = useRef<RunVodChoice | null>(null)
@@ -250,17 +250,10 @@ export function useRunVod(run: RunState, active: boolean, viewerId: string, expe
     void persistedLog(runId).then((current) => {
       if (hydrationGeneration.current !== generation || hydrationRun.current !== runId) return
       log.current = current?.runId === runId ? current : null
-      const restored = log.current?.events.reduce(applyRunVodEvent, structuredClone(log.current.initial))
-      setAvailable(Boolean(restored && replayableRunMatches(restored, expected)))
+      setAvailable(Boolean(log.current?.events.length))
       setLogReady(true)
     })
   }, [active, run.campaign.runId])
-
-  useLayoutEffect(() => {
-    if (expected === run) return
-    const restored = log.current?.events.reduce(applyRunVodEvent, structuredClone(log.current.initial))
-    setAvailable(Boolean(active && restored && replayableRunMatches(restored, expected)))
-  }, [active, expected, run])
 
   useLayoutEffect(() => {
     const before = previous.current ?? structuredClone(run)
@@ -279,8 +272,7 @@ export function useRunVod(run: RunState, active: boolean, viewerId: string, expe
         persistence = persistence.then(() => persistEvent(run.campaign.runId, index, event))
           .catch(() => setAvailable(false))
       }
-      const restored = log.current.events.reduce(applyRunVodEvent, structuredClone(log.current.initial))
-      setAvailable(replayableRunMatches(restored, expected))
+      setAvailable(log.current.events.length > 0)
     }
     if (run.campaign.finalized) {
       previous.current = structuredClone(run)
@@ -302,10 +294,10 @@ export function useRunVod(run: RunState, active: boolean, viewerId: string, expe
       return
     }
     const index = log.current.events.push(event) - 1
-    setAvailable(expected === run || stableRunJson(run) === stableRunJson(expected))
+    setAvailable(true)
     persistence = persistence.then(() => persistEvent(run.campaign.runId, index, event))
       .catch(() => setAvailable(false))
-  }, [active, expected, logReady, run, viewerId])
+  }, [active, logReady, run, viewerId])
 
   useLayoutEffect(() => {
     if (!active || run.campaign.finalized) return
@@ -415,16 +407,6 @@ export const stableRunJson = (run: RunState) => JSON.stringify(run, (_key, value
   value && typeof value === 'object' && !Array.isArray(value)
     ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)))
     : value)
-
-export function replayableRunMatches(restored: RunState, expected: RunState) {
-  const compatible = structuredClone(restored)
-  for (const [roomId, room] of Object.entries(expected.map.rooms)) {
-    if (room.visited && compatible.map.rooms[roomId] && !compatible.map.rooms[roomId].visited) {
-      compatible.map.rooms[roomId].visited = true
-    }
-  }
-  return stableRunJson(compatible) === stableRunJson(expected)
-}
 
 function firstDifference(left: unknown, right: unknown, path = 'run'): string {
   if (Object.is(left, right)) return ''
@@ -860,6 +842,7 @@ export async function extractRunVod(log: RunVodLog, expected: RunState) {
     bridge.setVodAudioMuted(true)
     bridge.setRun(structuredClone(log.initial))
     const geometries: VodGeometry[] = []
+    const recoveredStates = new Map<number, RunState>()
     let replayState = structuredClone(log.initial)
     for (let index = 0; index < log.events.length; index += 1) {
       ui.status.textContent = `Preparing Run VOD · event ${index + 1} of ${log.events.length}`
@@ -869,9 +852,10 @@ export async function extractRunVod(log: RunVodLog, expected: RunState) {
       const shape = await prepareGeometry(event, doc, store, index)
       geometries.push(shape)
       const patched = applyRunVodEvent(replayState, event)
-      replayState = shape.recoveredRoom || patched.phase === 'combat' && !patched.combat
-        ? structuredClone(liveBridge().getRun())
-        : patched
+      if (shape.recoveredRoom || patched.phase === 'combat' && !patched.combat) {
+        replayState = structuredClone(liveBridge().getRun())
+        recoveredStates.set(index, structuredClone(replayState))
+      } else replayState = patched
       bridge.setRun(structuredClone(replayState))
       shape.motion = await captureMotion(doc, store, index)
     }
@@ -954,7 +938,9 @@ export async function extractRunVod(log: RunVodLog, expected: RunState) {
           if (sprite !== current) sprite.close()
         }
       }
-      replayState = applyRunVodEvent(replayState, event)
+      replayState = recoveredStates.has(index)
+        ? structuredClone(recoveredStates.get(index)!)
+        : applyRunVodEvent(replayState, event)
       bridge.setRun(structuredClone(replayState))
       let motionAt = 0
       for (const frame of shape.motion) {
@@ -995,7 +981,7 @@ export async function extractRunVod(log: RunVodLog, expected: RunState) {
     }
     await animate(1_500, () => paint(ctx, current, position))
     current.close()
-    if (!replayableRunMatches(liveBridge().getRun(), expected)) {
+    if (stableRunJson(liveBridge().getRun()) !== stableRunJson(expected)) {
       throw new Error('The recorded replay diverged from the finished run, so no misleading VOD was saved.')
     }
     const extension = recording.extension
