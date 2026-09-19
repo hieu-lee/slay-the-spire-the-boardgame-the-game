@@ -216,8 +216,25 @@ try {
   })
   const roomId = mapChoice?.source.selector.match(/\[data-room="([^"]+)"\]/)?.[1]
   assert(roomId && defendEvent >= 0, 'the compatibility replay fixture is incomplete')
+  const visitedOnlyCompatibility = await page.evaluate(async ({ run, roomId }) => {
+    const { replayableRunMatches, soleReachableRoom } = await import('/src/ui/run-vod.ts')
+    const expected = structuredClone(run)
+    expected.map.rooms[roomId].visited = true
+    const extraVisit = structuredClone(expected)
+    extraVisit.map.rooms[roomId].visited = false
+    const fixture = document.createElement('div')
+    fixture.innerHTML = '<button class="room--reachable"></button>'
+    const uniqueAccepted = Boolean(soleReachableRoom(fixture))
+    fixture.innerHTML += '<button class="room--reachable"></button>'
+    return {
+      missingAccepted: replayableRunMatches(run, expected),
+      extraRejected: !replayableRunMatches(expected, extraVisit),
+      uniqueAccepted,
+      ambiguousRejected: soleReachableRoom(fixture) === null,
+    }
+  }, { run: canonicalMapRun, roomId })
   const compatibilityDownload = page.waitForEvent('download')
-  const compatibilityResult = page.evaluate(async ({ initial, terminal, event, roomId }) => {
+  const compatibilityResult = page.evaluate(async ({ initial, terminal, event }) => {
     const { extractRunVod } = await import('/src/ui/run-vod.ts')
     const result = await extractRunVod({
       version: 2,
@@ -225,18 +242,19 @@ try {
       initial,
       events: [{
         ...event,
-        patch: [
-          { path: ['map', 'position'], value: roomId },
-          { path: [], value: terminal },
-        ],
+        patch: [{ path: [], value: terminal }],
       }],
     }, terminal)
     return { filename: result.filename, size: result.video.size }
-  }, { initial: canonicalMapRun, terminal: continuedRun, event: resumedEvents[defendEvent], roomId })
+  }, { initial: canonicalMapRun, terminal: continuedRun, event: resumedEvents[defendEvent] })
   const compatibility = await compatibilityResult
   const compatibilityFile = await compatibilityDownload
   await compatibilityFile.delete()
   check('legacy merged room and card events synthesize the missing room entry before replaying the card', () => {
+    assert(visitedOnlyCompatibility.missingAccepted, 'a legacy missing visited flag disabled an otherwise exact VOD')
+    assert(visitedOnlyCompatibility.extraRejected, 'an unexpected extra visited room was accepted')
+    assert(visitedOnlyCompatibility.uniqueAccepted, 'a unique legacy room could not be recovered')
+    assert(visitedOnlyCompatibility.ambiguousRejected, 'an ambiguous room branch would be guessed')
     assert(/slay-the-spire-run-.+\.(webm|mp4)$/.test(compatibility.filename), compatibility.filename)
     assert(compatibility.size > 0, 'the compatibility replay produced an empty video')
   })

@@ -251,7 +251,7 @@ export function useRunVod(run: RunState, active: boolean, viewerId: string, expe
       if (hydrationGeneration.current !== generation || hydrationRun.current !== runId) return
       log.current = current?.runId === runId ? current : null
       const restored = log.current?.events.reduce(applyRunVodEvent, structuredClone(log.current.initial))
-      setAvailable(Boolean(restored && stableRunJson(restored) === stableRunJson(expected)))
+      setAvailable(Boolean(restored && replayableRunMatches(restored, expected)))
       setLogReady(true)
     })
   }, [active, run.campaign.runId])
@@ -259,7 +259,7 @@ export function useRunVod(run: RunState, active: boolean, viewerId: string, expe
   useLayoutEffect(() => {
     if (expected === run) return
     const restored = log.current?.events.reduce(applyRunVodEvent, structuredClone(log.current.initial))
-    setAvailable(Boolean(active && restored && stableRunJson(restored) === stableRunJson(expected)))
+    setAvailable(Boolean(active && restored && replayableRunMatches(restored, expected)))
   }, [active, expected, run])
 
   useLayoutEffect(() => {
@@ -280,7 +280,7 @@ export function useRunVod(run: RunState, active: boolean, viewerId: string, expe
           .catch(() => setAvailable(false))
       }
       const restored = log.current.events.reduce(applyRunVodEvent, structuredClone(log.current.initial))
-      setAvailable(stableRunJson(restored) === stableRunJson(expected))
+      setAvailable(replayableRunMatches(restored, expected))
     }
     if (run.campaign.finalized) {
       previous.current = structuredClone(run)
@@ -416,6 +416,16 @@ export const stableRunJson = (run: RunState) => JSON.stringify(run, (_key, value
     ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)))
     : value)
 
+export function replayableRunMatches(restored: RunState, expected: RunState) {
+  const compatible = structuredClone(restored)
+  for (const [roomId, room] of Object.entries(expected.map.rooms)) {
+    if (room.visited && compatible.map.rooms[roomId] && !compatible.map.rooms[roomId].visited) {
+      compatible.map.rooms[roomId].visited = true
+    }
+  }
+  return stableRunJson(compatible) === stableRunJson(expected)
+}
+
 function firstDifference(left: unknown, right: unknown, path = 'run'): string {
   if (Object.is(left, right)) return ''
   if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return `${path}: ${JSON.stringify(left)} != ${JSON.stringify(right)}`
@@ -450,6 +460,11 @@ function queryControl(doc: Document, ref: ControlRef): HTMLElement | null {
     visible(element) && (element.getAttribute('aria-label')?.trim() === ref.name || element.textContent?.trim() === ref.name)) ?? null
 }
 
+export function soleReachableRoom(root: ParentNode) {
+  const rooms = root.querySelectorAll<HTMLElement>('.room--reachable')
+  return rooms.length === 1 ? rooms[0]! : null
+}
+
 type VodActionGeometry = {
   frame?: string
   background?: string
@@ -463,6 +478,7 @@ type VodActionGeometry = {
 type VodGeometry = {
   actions: VodActionGeometry[]
   motion: { key: string; at: number }[]
+  recoveredRoom?: true
 }
 
 type SnapshotStore = {
@@ -667,16 +683,20 @@ async function prepareGeometry(event: RunVodEvent, doc: Document, store: Snapsho
     return { actions: [], motion: [] }
   }
   const actions: VodActionGeometry[] = []
-  const missedRoomId = !queryControl(doc, event.choice.source) && doc.querySelector('.map')
-    ? event.patch.find((change) => change.path.length === 2 && change.path[0] === 'map' &&
-      change.path[1] === 'position' && typeof change.value === 'string')?.value as string | undefined
-    : undefined
+  const missedRoom = !queryControl(doc, event.choice.source) && doc.querySelector('.map')
+    ? (() => {
+        const roomId = event.patch.find((change) => change.path.length === 2 && change.path[0] === 'map' &&
+          change.path[1] === 'position' && typeof change.value === 'string')?.value as string | undefined
+        return roomId ? doc.querySelector<HTMLElement>(`[data-room="${CSS.escape(roomId)}"]`)
+          : soleReachableRoom(doc)
+      })()
+    : null
   const refs = [
-    ...(missedRoomId ? [{ selector: `[data-room="${CSS.escape(missedRoomId)}"]` }] : []),
+    ...(missedRoom ? [controlRef(missedRoom)] : []),
     event.choice.source,
     ...(event.choice.steps ?? []),
   ]
-  const choiceIndex = missedRoomId ? 1 : 0
+  const choiceIndex = missedRoom ? 1 : 0
   for (let index = 0; index < refs.length; index += 1) {
     const ref = refs[index]!
     const source = await waitForControl(ref, doc)
@@ -711,7 +731,7 @@ async function prepareGeometry(event: RunVodEvent, doc: Document, store: Snapsho
     await activateControl(target, event.choice.target)
   }
   await mediaReady(doc)
-  return { actions, motion: [] }
+  return { actions, motion: [], ...(missedRoom ? { recoveredRoom: true } : {}) }
 }
 
 const ease = (value: number) => value < .5 ? 2 * value * value : 1 - (-2 * value + 2) ** 2 / 2
@@ -848,7 +868,10 @@ export async function extractRunVod(log: RunVodLog, expected: RunState) {
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
       const shape = await prepareGeometry(event, doc, store, index)
       geometries.push(shape)
-      replayState = applyRunVodEvent(replayState, event)
+      const patched = applyRunVodEvent(replayState, event)
+      replayState = shape.recoveredRoom || patched.phase === 'combat' && !patched.combat
+        ? structuredClone(liveBridge().getRun())
+        : patched
       bridge.setRun(structuredClone(replayState))
       shape.motion = await captureMotion(doc, store, index)
     }
@@ -972,7 +995,7 @@ export async function extractRunVod(log: RunVodLog, expected: RunState) {
     }
     await animate(1_500, () => paint(ctx, current, position))
     current.close()
-    if (stableRunJson(liveBridge().getRun()) !== stableRunJson(expected)) {
+    if (!replayableRunMatches(liveBridge().getRun(), expected)) {
       throw new Error('The recorded replay diverged from the finished run, so no misleading VOD was saved.')
     }
     const extension = recording.extension
