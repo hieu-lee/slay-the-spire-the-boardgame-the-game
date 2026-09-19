@@ -54,6 +54,7 @@ type RasterCache = {
   scroll: string
   dirty: boolean
   restyle: Set<Element>
+  serialized: string
   mutations: (records: MutationRecord[]) => void
 }
 const snapshots = new Map<Document, RasterCache>()
@@ -227,6 +228,18 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
   // These properties change painting, not sibling layout. Layout animations
   // still take a fresh snapshot so reflow remains faithful to the live page.
   const paintOnly = /^(offset|easing|composite|computedOffset|transform|translate|rotate|scale|opacity|filter|clipPath|boxShadow|textShadow|backgroundColor|backgroundPositionX|backgroundPositionY|strokeDashoffset|offsetDistance)$/
+  const animationProperties = new Map<Element, Map<string, Set<string>>>()
+  for (const effect of animations) {
+    if (!(effect.target instanceof view.Element)) continue
+    const pseudo = effect.pseudoElement ?? ''
+    let byPseudo = animationProperties.get(effect.target)
+    if (!byPseudo) { byPseudo = new Map(); animationProperties.set(effect.target, byPseudo) }
+    let properties = byPseudo.get(pseudo)
+    if (!properties) { properties = new Set(); byPseudo.set(pseudo, properties) }
+    for (const frame of effect.getKeyframes()) for (const property of Object.keys(frame)) {
+      if (paintOnly.test(property) && !/^(offset|easing|composite|computedOffset)$/.test(property)) properties.add(property)
+    }
+  }
   let cached = element === doc.body && at !== undefined ? snapshots.get(doc) : undefined
   cached?.mutations(cached.observer.takeRecords())
   if (cached && (cached.dirty || cached.viewport !== viewport || cached.scroll !== scroll ||
@@ -319,6 +332,10 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
     return clone
   }
   const content = cached?.content ?? cloneNode(element) as HTMLElement
+  const animationMarker = '/*run-vod-animation*/'
+  if (!cached && element === doc.body && at !== undefined) {
+    nodes.forEach((node, index) => node.clone.setAttribute('data-run-vod-node', String(index)))
+  }
   for (const { source, clone } of modals) {
     const backdrop = doc.createElement('div')
     copyStyle(view.getComputedStyle(source, '::backdrop'), backdrop)
@@ -329,11 +346,26 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
       transform: 'none', translate: 'none', zIndex: '2147483647' })
     content.append(backdrop, clone)
   }
+  let animationCss = ''
+  let serializedDirty = false
   if (cached) {
-    const targets = new Set(animations.map((effect) => effect.target))
-    for (const node of cached.nodes) {
-      if (!targets.has(node.source) && ![...cached.restyle].some(source => source === node.source || source.contains(node.source))) continue
-      copyStyle(view.getComputedStyle(node.source, node.pseudo), node.clone, node.pseudo ? undefined : node.source)
+    const restyled = cached.restyle
+    for (const [index, node] of cached.nodes.entries()) {
+      const properties = animationProperties.get(node.source)?.get(node.pseudo ?? '')
+      const restyle = [...restyled].some(source => source === node.source || source.contains(node.source))
+      if (!properties && !restyle) continue
+      const style = view.getComputedStyle(node.source, node.pseudo)
+      if (restyle) {
+        copyStyle(style, node.clone, node.pseudo ? undefined : node.source)
+        serializedDirty = true
+      }
+      if (properties) {
+        const declarations = [...properties].map((property) => {
+          const cssProperty = property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
+          return `${cssProperty}:${style.getPropertyValue(cssProperty)}!important;`
+        })
+        animationCss += `[data-run-vod-node="${index}"]{${declarations.join('')}}`
+      }
       if (node.pseudo) node.clone.style.content = 'normal'
       else if (node.source.scrollLeft || node.source.scrollTop) node.clone.style.overflow = 'hidden'
       const parent = node.pseudo ? node.source : node.source.parentElement
@@ -345,7 +377,12 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
     cached.restyle.clear()
     for (const { source, clone } of cached.images) {
       const src = source.currentSrc || source.src
-      if (src) pending.push(imageAt(source, src, at!).then((value) => clone.setAttribute('src', value)))
+      if (src) pending.push(imageAt(source, src, at!).then((value) => {
+        if (clone.getAttribute('src') !== value) {
+          clone.setAttribute('src', value)
+          serializedDirty = true
+        }
+      }))
     }
   }
   if (element !== doc.body) {
@@ -356,17 +393,29 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
   content.classList.add('run-vod-snapshot')
   if (!cached) {
     const style = doc.createElement('style')
+    const animation = doc.createElement('style')
+    animation.textContent = animationMarker
     // A per-node `all` shorthand expands into hundreds of declarations when
     // resource URLs are assigned. One scoped rule avoids megabytes per frame.
     style.textContent = `.run-vod-snapshot,.run-vod-snapshot :not(style){all:initial}\n${await fontCss(doc)}`
-    content.prepend(style)
+    content.prepend(style, animation)
   }
   await Promise.all(pending)
+  let snapshot: RasterCache | undefined
   if (!cached && element === doc.body && at !== undefined) {
     snapshots.get(doc)?.observer.disconnect()
     const mutations = (records: MutationRecord[]) => {
       for (const record of records) {
         const source = record.target
+        if (source instanceof view.Element) {
+          const closedDialog = source.closest('dialog:not([open])')
+          // The card-collection controls remain mounted in closed dialogs.
+          // Their React bookkeeping cannot affect a frame until the dialog opens.
+          if (closedDialog && !(source === closedDialog && record.attributeName === 'open')) continue
+          // The cloned image omits this loading hint; it is not painted and
+          // must not rebuild an otherwise unchanged scene.
+          if (source instanceof view.HTMLImageElement && record.attributeName === 'loading') continue
+        }
         if (record.type === 'attributes' && source instanceof view.Element) {
           if (record.oldValue === source.getAttribute(record.attributeName!)) continue
           // These absolute overlays move without affecting sibling layout.
@@ -378,20 +427,26 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
             const after = (source as HTMLElement).style
             const changed = new Set([...before, ...after].filter(property => before.getPropertyValue(property) !== after.getPropertyValue(property)))
             if ([...changed].every(property => /^(left|top|width|height|--vfx-center-[xy]|--lightning-(center-x|ground-y|height))$/.test(property))) {
-              snapshot.restyle.add(source)
+              snapshot!.restyle.add(source)
               continue
             }
           }
         }
-        snapshot.dirty = true
+        snapshot!.dirty = true
       }
     }
     const observer = new MutationObserver(mutations)
-    const snapshot: RasterCache = { content, nodes, images, observer, viewport, scroll, dirty: false, restyle: new Set(), mutations }
+    snapshot = { content, nodes, images, observer, viewport, scroll, dirty: false, restyle: new Set(), serialized: '', mutations }
     observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeOldValue: true, characterData: true })
     snapshots.set(doc, snapshot)
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%">${new XMLSerializer().serializeToString(content)}</foreignObject></svg>`
+  const template = cached?.serialized && !serializedDirty
+    ? cached.serialized
+    : new XMLSerializer().serializeToString(content)
+  if (snapshot) snapshot.serialized = template
+  else if (cached && serializedDirty) cached.serialized = template
+  const serialized = template.replace(animationMarker, animationCss)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%">${serialized}</foreignObject></svg>`
   const image = new Image()
   image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
   prepared?.()

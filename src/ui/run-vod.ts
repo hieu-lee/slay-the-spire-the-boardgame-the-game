@@ -811,7 +811,6 @@ async function mediaReady(doc: Document) {
 }
 
 async function raster(doc: Document, prepared?: () => void, readback = false) {
-  await mediaReady(doc)
   return rasterRunVod(doc.body, RUN_VOD_WIDTH, RUN_VOD_HEIGHT, replayClocks.get(doc)?.now, prepared, readback)
 }
 
@@ -824,6 +823,7 @@ async function captureMotion(doc: Document, store: SnapshotStore, eventIndex: nu
   stream?: VodStream) {
   const clock = replayClocks.get(doc)
   if (clock) {
+    await mediaReady(doc)
     const frames: MotionFrame[] = []
     const pending: Promise<void>[] = []
     const save = (key: string, canvas: HTMLCanvasElement) => {
@@ -1326,6 +1326,7 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     const ctx = canvas.getContext('2d', { alpha: false })
     if (!ctx) throw new Error('The Run VOD canvas could not be created.')
     await loadCursorImages()
+    await mediaReady(doc)
     let current = await createImageBitmap(await raster(doc))
     releaseFrame = () => current.close()
     let position: Point = { x: .5, y: .5 }
@@ -1341,6 +1342,7 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     let preparedState = structuredClone(log.initial)
     const prepare = async (index: number) => {
       checkCancelled()
+      await mediaReady(doc)
       const previousState = preparedState
       ui.update(`Rendering · ${index + 1} / ${log.events.length}`, (offline ? .99 : .8) * index / log.events.length)
       const logged = log.events[index]!

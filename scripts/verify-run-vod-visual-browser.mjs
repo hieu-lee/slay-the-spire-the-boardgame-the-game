@@ -41,6 +41,28 @@ try {
   })
   writeFileSync(`${output}/raster-before.png`, Buffer.from(frame.png.split(',')[1], 'base64'))
   console.log(`Native raster ${Math.round(frame.ms)}ms`)
+  const assetPixels = await page.evaluate(async () => {
+    const { rasterRunVod } = await import('/src/ui/run-vod-raster.ts')
+    const host = document.createElement('div')
+    host.style.cssText = 'display:block;width:32px;height:32px;line-height:0'
+    const source = new Image(32, 32)
+    source.src = '/assets/ui/cursor.png'
+    source.style.cssText = 'display:block;width:32px;height:32px'
+    host.append(source); document.body.append(host)
+    try {
+      await source.decode()
+      const expected = document.createElement('canvas')
+      expected.width = expected.height = 32
+      expected.getContext('2d').drawImage(source, 0, 0)
+      const actual = await rasterRunVod(host, 32, 32, 0)
+      const left = new Uint32Array(expected.getContext('2d').getImageData(0, 0, 32, 32).data.buffer)
+      const right = new Uint32Array(actual.getContext('2d').getImageData(0, 0, 32, 32).data.buffer)
+      const mismatch = left.reduce((count, pixel, index) => count + Number(pixel !== right[index]), 0)
+      expected.width = expected.height = actual.width = actual.height = 0
+      return mismatch
+    } finally { host.remove() }
+  })
+  assert.equal(assetPixels, 0, 'same-origin artwork must be embedded in a VOD raster')
   for (const [name, width, height] of [['desktop', 1920, 1080], ['phone', 844, 390]]) {
     await page.setViewportSize({ width, height })
     await page.waitForTimeout(150)
@@ -78,6 +100,21 @@ try {
     }, at)
     writeFileSync(`${output}/attack-${at}.png`, Buffer.from(shot.png.split(',')[1], 'base64'))
     console.log(`Attack sample ${at}ms: ${Math.round(performance.now() - began)}ms`)
+    if (at === 2400) {
+      const mismatch = await page.evaluate(async () => {
+        const { rasterRunVod, releaseRunVodRaster } = await import('/src/ui/run-vod-raster.ts')
+        const cached = await rasterRunVod(document.body, 1920, 1080, window.__vodClock.now)
+        await releaseRunVodRaster(document)
+        const fresh = await rasterRunVod(document.body, 1920, 1080, window.__vodClock.now)
+        const left = new Uint32Array(cached.getContext('2d').getImageData(0, 0, 1920, 1080).data.buffer)
+        const right = new Uint32Array(fresh.getContext('2d').getImageData(0, 0, 1920, 1080).data.buffer)
+        let count = 0
+        for (let index = 0; index < left.length; index++) if (left[index] !== right[index]) count++
+        cached.width = cached.height = fresh.width = fresh.height = 0
+        return count
+      })
+      assert.equal(mismatch, 0, 'cached animated frames must match a fresh raster exactly')
+    }
     if (at === 0 && process.argv.includes('--benchmark')) {
       console.log(await page.evaluate(async () => {
         const { rasterRunVod } = await import('/src/ui/run-vod-raster.ts')
@@ -144,6 +181,74 @@ try {
   assert.deepEqual(clockAndCache.fired, ['timeout', 'interval', 'interval', 'interval'])
   assert.deepEqual(clockAndCache.events, ['start', 'end'], 'virtual CSS animations must deliver game completion events')
   assert.deepEqual(clockAndCache.pixels, [[255, 0, 0, 255], [0, 0, 255, 255], [0, 0, 255, 255]])
+  const closedDialogCache = await page.evaluate(async () => {
+    const { rasterRunVod, releaseRunVodRaster } = await import('/src/ui/run-vod-raster.ts')
+    await releaseRunVodRaster()
+    const dialog = document.createElement('dialog')
+    dialog.innerHTML = '<input type="checkbox" aria-label="Hidden upgrade preview">'
+    document.body.append(dialog)
+    const native = XMLSerializer.prototype.serializeToString
+    let serializations = 0
+    XMLSerializer.prototype.serializeToString = function (...args) { serializations++; return native.apply(this, args) }
+    try {
+      await rasterRunVod(document.body, 1920, 1080, 0)
+      const initial = serializations
+      dialog.querySelector('input').name = 'hidden-preview'
+      await rasterRunVod(document.body, 1920, 1080, 0)
+      const cached = serializations
+      dialog.showModal()
+      await rasterRunVod(document.body, 1920, 1080, 0)
+      return { reused: cached === initial, opened: serializations > cached }
+    } finally {
+      XMLSerializer.prototype.serializeToString = native
+      dialog.close(); dialog.remove(); await releaseRunVodRaster()
+    }
+  })
+  assert.deepEqual(closedDialogCache, { reused: true, opened: true },
+    'closed-dialog form bookkeeping must keep the cached frame, while opening it must refresh the frame')
+  const restyledAnimationPixels = await page.evaluate(async () => {
+    const { rasterRunVod, releaseRunVodRaster } = await import('/src/ui/run-vod-raster.ts')
+    const { createRunVodClock } = await import('/src/ui/run-vod-clock.ts')
+    const frame = document.createElement('iframe')
+    frame.style.cssText = 'position:fixed;left:-1920px;top:0;width:1920px;height:1080px;border:0'
+    const loaded = new Promise(resolve => frame.addEventListener('load', resolve, { once: true }))
+    frame.srcdoc = '<!doctype html><html><head></head><body></body></html>'
+    document.body.append(frame); await loaded
+    const fixtureDoc = frame.contentDocument
+    const style = fixtureDoc.createElement('style')
+    style.textContent = '@keyframes vod-restyle-test{from{opacity:0}to{opacity:1}}'
+    const host = fixtureDoc.createElement('div')
+    host.style.cssText = 'position:fixed;left:0;top:0;width:96px;height:96px;z-index:999999'
+    host.innerHTML = '<div class="enemy__hit-area" style="position:absolute;left:0;top:0;width:24px;height:24px;background:rgb(0,0,255)"></div><div style="position:absolute;left:32px;top:0;width:24px;height:24px;background:rgb(255,0,0);animation:vod-restyle-test 1000ms linear both"></div>'
+    fixtureDoc.head.append(style); fixtureDoc.body.append(host)
+    const animation = host.getAnimations({ subtree: true })[0]
+    animation.pause(); await animation.ready; animation.currentTime = 0
+    const clock = createRunVodClock(fixtureDoc, callback => callback())
+    try {
+      await clock.advance(0)
+      const initial = await rasterRunVod(fixtureDoc.body, 1920, 1080, clock.now)
+      initial.width = initial.height = 0
+      await clock.advance(500)
+      host.querySelector('.enemy__hit-area').style.left = '12px'
+      const cached = await rasterRunVod(fixtureDoc.body, 1920, 1080, clock.now)
+      await releaseRunVodRaster(fixtureDoc)
+      const fresh = await rasterRunVod(fixtureDoc.body, 1920, 1080, clock.now)
+      const left = new Uint32Array(cached.getContext('2d').getImageData(0, 0, 1920, 1080).data.buffer)
+      const right = new Uint32Array(fresh.getContext('2d').getImageData(0, 0, 1920, 1080).data.buffer)
+      let mismatch = 0, minX = 1920, minY = 1080, maxX = -1, maxY = -1
+      for (let index = 0; index < left.length; index++) if (left[index] !== right[index]) {
+        mismatch++
+        const x = index % 1920, y = Math.floor(index / 1920)
+        minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
+      }
+      cached.width = cached.height = fresh.width = fresh.height = 0
+      return { mismatch, bounds: [minX, minY, maxX, maxY] }
+    } finally {
+      clock.restore(); frame.remove(); await releaseRunVodRaster(fixtureDoc)
+    }
+  })
+  assert.equal(restyledAnimationPixels.mismatch, 0,
+    'an allowed overlay restyle must preserve concurrent CSS animation pixels')
   await page.evaluate(() => {
     const host = document.createElement('div')
     host.id = 'vod-choice-fixture'
