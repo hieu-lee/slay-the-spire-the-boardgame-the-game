@@ -214,7 +214,7 @@ function fontCss(doc: Document) {
   return value
 }
 
-export async function rasterRunVod(element: HTMLElement, width: number, height: number, at?: number, prepared?: () => void) {
+export async function rasterRunVod(element: HTMLElement, width: number, height: number, at?: number, prepared?: () => void, readback = false) {
   const doc = element.ownerDocument
   const view = doc.defaultView!
   await doc.fonts.ready
@@ -400,7 +400,7 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
     const canvas = doc.createElement('canvas')
     canvas.width = width
     canvas.height = height
-    canvas.getContext('2d', { willReadFrequently: at !== undefined })!.drawImage(image, 0, 0)
+    canvas.getContext('2d', { willReadFrequently: readback })!.drawImage(image, 0, 0)
     return canvas
   } finally { image.removeAttribute('src') }
 }

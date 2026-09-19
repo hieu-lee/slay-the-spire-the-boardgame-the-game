@@ -2,6 +2,8 @@ import { AudioBufferSource, CanvasSource, Output, StreamTarget, Mp4OutputFormat,
   canEncodeAudio, canEncodeVideo, Input, BlobSource, MP4, EncodedPacketSink, EncodedVideoPacketSource } from 'mediabunny'
 import type { RunVodAudioCue } from './sfx.ts'
 
+const AUDIO_CHUNK_SECONDS = 10
+
 export function runVodMemoryFile() {
   const size = 1024 * 1024
   const blocks = new Map<number, Uint8Array<ArrayBuffer>>()
@@ -65,7 +67,7 @@ export async function createOfflineRunVod(canvas: HTMLCanvasElement, fps: number
       frames++
     },
     async audio() {
-      if (!videoOnly && frames / fps - mixedUntil >= .5) {
+      if (!videoOnly && frames / fps - mixedUntil >= AUDIO_CHUNK_SECONDS) {
         mixedUntil = frames / fps
         await mix(mixedUntil)
       }
@@ -128,7 +130,7 @@ function runVodAudioMixer(audio: AudioBufferSource, cues: RunVodAudioCue[], chec
   }
   return async (seconds: number) => {
     const end = Math.round(seconds * 48_000)
-    while (audioSamples < end) await mix(Math.min(end, audioSamples + 24_000))
+    while (audioSamples < end) await mix(Math.min(end, audioSamples + AUDIO_CHUNK_SECONDS * 48_000))
   }
 }
 

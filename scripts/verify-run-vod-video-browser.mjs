@@ -42,12 +42,15 @@ try {
     for (let i = 0; i < 48_000; i++) view.setInt16(44 + i * 2, Math.sin(i / 48_000 * Math.PI * 2 * 440) * 16000, true)
     const source = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }))
     const store = { video: async () => null, videoFile: async () => null }
-    const cues = [{ source, at: .25, end: .75, volume: .5, rate: 1, loop: true }]
+    const cues = [
+      { source, at: .25, end: .75, volume: .5, rate: 1, loop: true },
+      { source, at: 10.25, end: 10.75, volume: .5, rate: 1, loop: true },
+    ]
     const encoder = await createOfflineRunVod(canvas, 120, cues, store, () => {})
     if (!encoder) throw new Error('The test browser has no offline encoder')
     const started = performance.now()
     try {
-      for (let frame = 0; frame < 240; frame++) {
+      for (let frame = 0; frame < 1440; frame++) {
         ctx.fillStyle = frame < 120 ? '#f00' : '#00f'
         ctx.fillRect(0, 0, 1920, 1080)
         await encoder.frame()
@@ -120,14 +123,15 @@ try {
   assert.equal(video.width, 1920); assert.equal(video.height, 1080)
   const [numerator, denominator] = video.r_frame_rate.split('/').map(Number)
   assert.equal(numerator / denominator, 120)
-  assert(Math.abs(Number(metadata.format.duration) - 2) < .1, 'offline timestamps changed the movie duration')
-  const decoded = spawnSync('ffmpeg', ['-v', 'error', '-i', path, '-map', '0:a:0', '-ac', '1', '-ar', '48000', '-f', 'f32le', '-'], { maxBuffer: 2_000_000 })
+  assert(Math.abs(Number(metadata.format.duration) - 12) < .1, 'offline timestamps changed the movie duration')
+  const decoded = spawnSync('ffmpeg', ['-v', 'error', '-i', path, '-map', '0:a:0', '-ac', '1', '-ar', '48000', '-f', 'f32le', '-'], { maxBuffer: 3_000_000 })
   assert.equal(decoded.status, 0, decoded.stderr.toString())
   const samples = new Float32Array(decoded.stdout.buffer, decoded.stdout.byteOffset, decoded.stdout.byteLength / 4)
   const rms = (start, end) => Math.sqrt(samples.slice(start * 48000, end * 48000).reduce((sum, value) => sum + value * value, 0) / ((end - start) * 48000))
   assert(rms(.35, .6) > .1, 'the scheduled cue is silent')
   assert(rms(1, 1.5) < .001, 'the stopped cue leaked into the next segment')
-  console.log(`Offline VOD: 1080p/120fps, exact duration, timed audio, parallel clip packet joins and cancellation passed; 2s encoded in ${Math.round(result.encodedMs)}ms`)
+  assert(rms(10.35, 10.6) > .1, 'the scheduled cue is silent after the 10-second mixer boundary')
+  console.log(`Offline VOD: 1080p/120fps, exact duration, timed audio, parallel clip packet joins and cancellation passed; 12s encoded in ${Math.round(result.encodedMs)}ms`)
 } finally {
   await browser.close(); await server.close()
   rmSync(directory, { recursive: true, force: true })

@@ -810,9 +810,9 @@ async function mediaReady(doc: Document) {
   }))
 }
 
-async function raster(doc: Document, prepared?: () => void) {
+async function raster(doc: Document, prepared?: () => void, readback = false) {
   await mediaReady(doc)
-  return rasterRunVod(doc.body, RUN_VOD_WIDTH, RUN_VOD_HEIGHT, replayClocks.get(doc)?.now, prepared)
+  return rasterRunVod(doc.body, RUN_VOD_WIDTH, RUN_VOD_HEIGHT, replayClocks.get(doc)?.now, prepared, readback)
 }
 
 async function rasterElement(element: HTMLElement) {
@@ -865,7 +865,7 @@ async function captureMotion(doc: Document, store: SnapshotStore, eventIndex: nu
       progress(clock.now - start, 'rendering')
       let prepared!: () => void
       const ready = new Promise<void>((resolve) => { prepared = resolve })
-      const canvas = raster(doc, prepared)
+      const canvas = raster(doc, prepared, !stream)
       // Once the SVG is self-contained, its decode/paint can overlap the
       // next virtual frame's DOM work. Two jobs cap memory and preserve order.
       await Promise.race([ready, canvas.then(() => {})])
