@@ -523,8 +523,8 @@ function firstDifference(left: unknown, right: unknown, path = 'run'): string {
 export function queryControl(doc: Document, ref: ControlRef): HTMLElement | null {
   const name = ref.selector.startsWith('[data-room=') ? ref.name?.replace(/, Activate again to enter$/, '') : ref.name
   const nameMatches = (element: HTMLElement) => !name || controlName(element) === name || controlName(element)?.startsWith(`${name} `)
-  const visible = (element: HTMLElement | null) => {
-    if (!element || !nameMatches(element)) return null
+  const visible = (element: HTMLElement | null, requireName = true) => {
+    if (!element || (requireName && !nameMatches(element))) return null
     const view = element.ownerDocument.defaultView
     let box = element.getBoundingClientRect()
     if (box.width <= 0 || box.height <= 0 || view?.getComputedStyle(element).visibility === 'hidden') return null
@@ -545,7 +545,8 @@ export function queryControl(doc: Document, ref: ControlRef): HTMLElement | null
       ? element : null
   }
   try {
-    const exact = visible(doc.querySelector<HTMLElement>(ref.selector))
+    const exact = [...doc.querySelectorAll<HTMLElement>(ref.selector)].find((element) => element.matches(CONTROL) &&
+      visible(element, !/^\[data-(?:enemy-id|player-id|room|event-option)=/.test(ref.selector)))
     if (exact) return exact
   } catch { /* Fall through to the semantic name. */ }
   if (!ref.name) return null

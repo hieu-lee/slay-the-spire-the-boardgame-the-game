@@ -195,11 +195,34 @@ try {
   })
   await canonicalPage.locator('.room--reachable').first().click()
   await canonicalPage.locator('.combat').waitFor({ timeout: 5_000 })
-  const canonicalViewport = await canonicalPage.evaluate(() => [innerWidth, innerHeight])
+  const canonicalReplay = await canonicalPage.evaluate(async () => {
+    const enemy = document.querySelector('[data-enemy-id]')
+    const queryControl = (await import('/src/ui/run-vod.ts')).queryControl
+    const probe = document.createElement('div')
+    probe.style.cssText = 'position:fixed;inset:0;z-index:100'
+    probe.innerHTML = '<div data-player-id="vod-player"><button data-player-id="vod-player" aria-label="current player"></button></div><span role="button" data-orb-slot="99" aria-label="current orb" style="display:inline-block;width:10px;height:10px"></span>'
+    document.body.append(probe)
+    const player = probe.querySelector('button')
+    return {
+      viewport: [innerWidth, innerHeight],
+      staleTarget: queryControl(document, {
+        selector: `[data-enemy-id="${CSS.escape(enemy.dataset.enemyId)}"]`, name: 'stale combat label', target: true,
+      }) === enemy,
+      stalePlayer: queryControl(document, {
+        selector: '[data-player-id="vod-player"]', name: 'stale player label', target: true,
+      }) === player,
+      staleOrbRejected: queryControl(document, {
+        selector: '[data-orb-slot="99"]', name: 'stale orb label', target: true,
+      }) === null,
+    }
+  })
   await canonicalPage.close()
   check('touch-capable replay uses one desktop map action and resolves old phone-only hint labels', () => {
-    assertDeepEqual(canonicalViewport, [1920, 1080])
+    assertDeepEqual(canonicalReplay.viewport, [1920, 1080])
     assert(legacyPhoneRoom, 'the phone inspection hint prevented canonical desktop room lookup')
+    assert(canonicalReplay.staleTarget, 'a stable enemy id was rejected because its combat label changed')
+    assert(canonicalReplay.stalePlayer, 'a stable player id resolved to its non-clickable wrapper')
+    assert(canonicalReplay.staleOrbRejected, 'a positional Orb slot ignored its semantic label')
   })
   await eventCount()
   await page.evaluate(() => sessionStorage.setItem('delay-run-vod-read', '1'))
