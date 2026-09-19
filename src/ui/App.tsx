@@ -1,6 +1,7 @@
 import { TreasureEffects } from "./TreasureEffects.tsx"
 import { PlayerTitle } from './PlayerTitle.tsx'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { orderStartTurnScries, resolveHermitSetupLoad, resolveStartTurnScry, type CombatState } from '../game/combat.ts'
 import { assetPath, preloadImages, releasePreloadedImages } from '../game/assets.ts'
 import {
@@ -93,7 +94,7 @@ import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
 import {
-  installSoundEffects, playSoundEffect, setRunVodAudioMuted, startRunVodAudio, stopRunVodAudio,
+  captureRunVodAudio, setRunVodAudioSegment, installSoundEffects, playSoundEffect, setRunVodAudioMuted, startRunVodAudio, stopRunVodAudio,
   useCombatMusic, useRunOutcomeSound, useVictoryMusic,
 } from './sfx.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
@@ -716,15 +717,18 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   // A debug bridge for the Playwright suite: drive real clicks, assert real
   // state. Screenshots are for review; assertions read from here.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const bridge = {
       getRun: () => run,
       /** The combat state, or null outside a fight. */
       getState: () => run.combat,
-      setRun: (next: RunState) => setRun(next),
+      setRun: (next: RunState) => flushSync(() => setRun(next)),
+      flushVod: (callback: () => void) => flushSync(callback),
       reset: (count: number, seed: string, nextAscension = 0) => restart(count, seed, nextAscension, chooseYourRelic, lastStand, DEFAULT_CHARACTERS),
-      setViewer: (id: string) => setViewerId(id),
+      setViewer: (id: string) => flushSync(() => setViewerId(id)),
       startVodAudio: startRunVodAudio,
+      captureVodAudio: captureRunVodAudio,
+      setVodAudioSegment: setRunVodAudioSegment,
       setVodAudioMuted: setRunVodAudioMuted,
       stopVodAudio: stopRunVodAudio,
       playVodUiSound: () => playSoundEffect('ui'),
@@ -781,7 +785,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   // A finished combat folds back into the run on its own; the player should not
   // have to click through a screen that only says "you won".
   useEffect(() => {
-    if (open && !compendium && !pauseOpen && !settingsOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
+    if (!replay && open && !compendium && !pauseOpen && !settingsOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
       let timer: number
       const resolveWhenAnimationsFinish = () => {
         if (combatOutcomeAnimationActive()) {
@@ -796,7 +800,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       return () => clearTimeout(timer)
     }
     return undefined
-  }, [compendium, open, pauseOpen, prefersReducedMotion, run.combat, settings.reducedMotion, settingsOpen])
+  }, [compendium, open, pauseOpen, prefersReducedMotion, replay, run.combat, settings.reducedMotion, settingsOpen])
 
   const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
   // Fires wherever a card changed — campfire, event, reward, Neow, a relic —
@@ -988,7 +992,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           state={run.combat}
           act={run.act}
           viewerId={viewerId}
-          autoAdvance={!compendium && !pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
+          autoAdvance={!replay && !compendium && !pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
           courierAvailable={!run.courier.usedBy.includes(viewerId) &&
             run.combat.players.some((player) => player.id === viewerId && player.relics.some((relic) => relic.defId === 'the_courier'))}
           mutationsEnabled={!run.courier.offer}

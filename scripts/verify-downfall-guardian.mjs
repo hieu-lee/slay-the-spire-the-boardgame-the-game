@@ -84,7 +84,23 @@ check('source metadata matches the audited official manifest', () => {
   assert.equal(GUARDIAN_SOURCE_SAVE, manifest.source_save)
   assert.equal(GUARDIAN_VERIFICATION, manifest.verification)
   assert.deepEqual(GUARDIAN_SHEET_GUIDS, manifest.sheet_guids)
-  assert.deepEqual(GUARDIAN_ICON_LEGEND, manifest.icon_legend)
+})
+
+check('Guardian icon legend retains the audited Dazed correction', () => {
+  // The optional local OCR manifest predates docs/guardian-card-audit.md.
+  // Assert the corrected legend in every checkout, including clean clones.
+  assert.deepEqual(GUARDIAN_ICON_LEGEND, {
+    '[damage]': 'red sword damage symbol',
+    '[block]': 'blue shield block symbol',
+    '[vigor]': 'orange flame symbol',
+    '[energy]': 'blue energy-pip symbol',
+    '[dazed]': 'pink spiral Dazed symbol',
+    '[debuff]': 'broken pink heart symbol',
+    '[weak]': 'crossed pale-green weapons symbol',
+    '[aoe]': 'red burst symbol',
+    '[hp]': 'heart symbol',
+    '[remove]': 'red crossed/removal symbol',
+  })
 })
 
 check('Guardian Whirl is neither an Egg nor Whetstone target outside combat', () => {

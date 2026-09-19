@@ -44,7 +44,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.row__seat .power').length === 8)
 
   const probes = []
-  let compactStatusBottom = 0
+  let compactStatus = null
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 900, height: 620 },
@@ -52,8 +52,9 @@ try {
   ]) {
     await page.setViewportSize(viewport)
     await page.mouse.move(0, 0)
-    if (viewport.height === 390) compactStatusBottom = await page.locator('.row--viewer .seat__status-strip')
-      .evaluate((strip) => Number.parseFloat(getComputedStyle(strip).bottom))
+    if (viewport.height === 390) compactStatus = await page.locator('.row--viewer .seat__status-strip')
+      .evaluate((strip) => ({ status: strip.getBoundingClientRect().toJSON(),
+        hp: strip.closest('.row__seat').querySelector('.bar').getBoundingClientRect().toJSON() }))
     for (const power of await page.locator('.row__seat .power').all()) {
       await power.scrollIntoViewIfNeeded()
       const hit = await power.evaluate((tile) => {
@@ -86,8 +87,9 @@ try {
         `Power zoom left the viewport: ${JSON.stringify(probe)}`)
     }
   })
-  check('the horizontal-phone status strip stays above the compact hand and Energy orb', () => {
-    assert(compactStatusBottom >= 99, `viewer status strip fell to ${compactStatusBottom}px`)
+  check('the horizontal-phone status strip clears HP and stays inside the viewport', () => {
+    assert(compactStatus.status.top >= compactStatus.hp.bottom + 1, `statuses overlap HP: ${JSON.stringify(compactStatus)}`)
+    assert(compactStatus.status.bottom <= 390, `statuses leave the viewport: ${JSON.stringify(compactStatus)}`)
   })
   check('Power hover flow has no browser errors', () => assertDeepEqual(errors, []))
   report('Power hover browser')

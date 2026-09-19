@@ -112,10 +112,3 @@
   opacity: 0;
   pointer-events: none;
 }
-
-/* Keep permanent effects clickable above the viewer's held cards. */
-.row--viewer .seat__status-strip { bottom: -1rem; }
-
-@media (orientation: landscape) and (max-height: 26.25rem) {
-  .row--viewer .seat__status-strip { bottom: 6.25rem; }
-}

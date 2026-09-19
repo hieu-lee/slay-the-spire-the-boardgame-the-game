@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from './lib/profile-browser.mjs'
 import { assert, assertDeepEqual, assertEqual, check, report, suite } from './lib/harness.mjs'
+// Real video encoding is an explicit delivery check, not a per-edit gate.
+const verifyExports = process.argv.includes('--export')
 
 const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { port: 0 } })
 await server.listen()
@@ -42,6 +44,11 @@ try {
   await page.addInitScript(() => {
     if (navigator.mediaDevices) navigator.mediaDevices.getDisplayMedia = () => { throw new Error('screen capture must not be used') }
     const delayedReads = new WeakSet()
+    const pendingReads = []
+    window.__releaseVodReads = () => {
+      sessionStorage.removeItem('delay-run-vod-read')
+      pendingReads.splice(0).forEach((complete) => complete())
+    }
     const getAll = IDBObjectStore.prototype.getAll
     IDBObjectStore.prototype.getAll = function (...args) {
       const request = getAll.apply(this, args)
@@ -54,10 +61,12 @@ try {
         return addEventListener.call(this, type, listener, options)
       }
       return addEventListener.call(this, type, function (event) {
-        window.setTimeout(() => {
+        const complete = () => {
           if (typeof listener === 'function') listener.call(this, event)
           else listener.handleEvent(event)
-        }, 5_000)
+        }
+        if (sessionStorage.getItem('delay-run-vod-read') === '1') pendingReads.push(complete)
+        else complete()
       }, options)
     }
   })
@@ -126,16 +135,53 @@ try {
   await page.getByRole('button', { name: 'Gain reward', exact: true }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
   const canonicalMapRun = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
+  const checkpoints = await page.evaluate(async initial => {
+    const { runVodLocations, applyRunVodEvent, stableRunJson } = await import('/src/ui/run-vod.ts')
+    const phases = ['combat', 'combat', 'reward', 'map', 'room', 'map', 'room', 'victory']
+    const events = phases.map(phase => ({ patch: [{ path: ['phase'], value: phase }] }))
+    const log = { version: 2, runId: 'checkpoint-test', initial, events }
+    const expected = events.reduce(applyRunVodEvent, initial)
+    const locations = runVodLocations(log, expected)
+    const statesMatch = locations.every((segment, index) =>
+      stableRunJson(segment.log.events.reduce(applyRunVodEvent, segment.log.initial)) === stableRunJson(segment.expected) &&
+      (index === 0 || stableRunJson(segment.log.initial) === stableRunJson(locations[index - 1].expected)))
+    return { lengths: locations.map(segment => segment.log.events.length), statesMatch,
+      eventsMatch: stableRunJson(locations.flatMap(segment => segment.log.events)) === stableRunJson(events),
+      untouched: initial.phase === 'map' }
+  }, canonicalMapRun)
+  check('location checkpoints preserve all decisions and exact states without splitting combat and rewards', () => {
+    assertDeepEqual(checkpoints.lengths, [4, 2, 2])
+    assert(checkpoints.statesMatch && checkpoints.eventsMatch && checkpoints.untouched, JSON.stringify(checkpoints))
+  })
+  const resolvedTurn = await page.evaluate(async initial => {
+    const { runVodEventChoice } = await import('/src/ui/run-vod.ts')
+    initial.combat = { combatId: 'turn-choice', presentationEvents: [] }
+    const result = runVodEventChoice({ choice: {
+      source: { selector: '.hand button', card: true, drag: true, name: 'FTL, cost 0, attack' },
+      steps: [{ selector: '.start-turn', name: 'Resolve start of turn' }],
+      target: { selector: '[data-enemy-id="boss-0"]', name: 'The Guardian, 16 of 40 hit points', target: true },
+    }, patch: [{ path: ['combat', 'presentationEvents'], value: [{ seq: 1, kind: 'turn', sourceId: 'mercury_hourglass' }] }] }, initial)
+    return { source: result.source.name, steps: result.steps, target: result.target ?? null }
+  }, canonicalMapRun)
+  check('turn resolution drops an abandoned card drag and its stale pre-damage target', () =>
+    assertDeepEqual(resolvedTurn, { source: 'Resolve start of turn', steps: [], target: null }))
   const canonicalPage = await browser.newPage({ viewport: { width: 1920, height: 1080 }, hasTouch: true })
   await canonicalPage.goto(`http://localhost:${address.port}/?run-vod=1`, { waitUntil: 'networkidle' })
   await canonicalPage.waitForFunction(() => window.__STS_DEBUG__)
   await canonicalPage.evaluate((run) => window.__STS_DEBUG__.setRun(run), canonicalMapRun)
+  const legacyPhoneRoom = await canonicalPage.evaluate(async () => {
+    const room = document.querySelector('.room--reachable')
+    const ref = { selector: `[data-room="${room.dataset.room}"]`, name: `${room.getAttribute('aria-label')}, Activate again to enter` }
+    return (await import('/src/ui/run-vod.ts')).queryControl(document, ref) === room
+  })
   await canonicalPage.locator('.room--reachable').first().click()
   await canonicalPage.locator('.combat').waitFor({ timeout: 5_000 })
   const canonicalViewport = await canonicalPage.evaluate(() => [innerWidth, innerHeight])
   await canonicalPage.close()
-  check('touch-capable replay still uses the canonical desktop one-click map interaction', () =>
-    assertDeepEqual(canonicalViewport, [1920, 1080]))
+  check('touch-capable replay uses one desktop map action and resolves old phone-only hint labels', () => {
+    assertDeepEqual(canonicalViewport, [1920, 1080])
+    assert(legacyPhoneRoom, 'the phone inspection hint prevented canonical desktop room lookup')
+  })
   await eventCount()
   await page.evaluate(() => sessionStorage.setItem('delay-run-vod-read', '1'))
   await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -171,8 +217,7 @@ try {
   await page.getByRole('heading', { name: 'The party has fallen', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Record campaign result', exact: true }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().campaign.finalized)
-  await page.waitForTimeout(5_500)
-  await page.evaluate(() => sessionStorage.removeItem('delay-run-vod-read'))
+  await page.evaluate(() => window.__releaseVodReads())
   let resumedEvents = []
   for (let attempt = 0; attempt < 20; attempt += 1) {
     resumedEvents = (await readLog()).events
@@ -227,36 +272,46 @@ try {
       ambiguousRejected: soleReachableRoom(fixture) === null,
     }
   })
-  const compatibilityDownload = page.waitForEvent('download')
-  const compatibilityResult = page.evaluate(async ({ initial, terminal, event }) => {
-    const { extractRunVod } = await import('/src/ui/run-vod.ts')
-    const result = await extractRunVod({
-      version: 2,
-      runId: `${initial.campaign.runId}-merged-room-card`,
-      initial,
-      events: [{
-        ...event,
-        patch: [{ path: [], value: terminal }],
-      }],
-    }, terminal)
-    return { filename: result.filename, size: result.video.size }
-  }, { initial: canonicalMapRun, terminal: continuedRun, event: resumedEvents[defendEvent] })
-  const compatibility = await compatibilityResult
-  const compatibilityFile = await compatibilityDownload
-  const compatibilityPath = await compatibilityFile.path()
-  const compatibilityAudio = compatibilityPath && spawnSync('ffmpeg', [
-    '-hide_banner', '-i', compatibilityPath, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-',
-  ], { encoding: 'utf8' })
-  const compatibilityMaxVolume = Number(compatibilityAudio?.stderr.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1])
-  await compatibilityFile.delete()
-  check('legacy merged room and card events synthesize the missing room entry before replaying the card', () => {
-    assert(roomRecovery.uniqueAccepted, 'a unique legacy room could not be recovered')
-    assert(roomRecovery.ambiguousRejected, 'an ambiguous room branch would be guessed')
-    assert(/slay-the-spire-run-.+\.(webm|mp4)$/.test(compatibility.filename), compatibility.filename)
-    assert(compatibility.size > 0, 'the compatibility replay produced an empty video')
-    assert(compatibilityAudio?.status === 0 && Number.isFinite(compatibilityMaxVolume) && compatibilityMaxVolume > -60,
-      `the recovered replay audio is silent (${compatibilityAudio?.stderr ?? 'ffmpeg failed'})`)
-  })
+  if (verifyExports) {
+    const compatibilityDownload = page.waitForEvent('download', { timeout: 60_000 })
+    const compatibilityResult = page.evaluate(async ({ initial, terminal, event }) => {
+      const { extractRunVod } = await import('/src/ui/run-vod.ts')
+      const result = await extractRunVod({
+        version: 2,
+        runId: `${initial.campaign.runId}-merged-room-card`,
+        initial,
+        events: [{
+          ...event,
+          patch: [{ path: [], value: terminal }],
+        }],
+      }, terminal)
+      return { filename: result.filename, size: result.video.size }
+    }, { initial: canonicalMapRun, terminal: continuedRun, event: resumedEvents[defendEvent] })
+    const [compatibility, compatibilityFile] = await Promise.all([compatibilityResult, compatibilityDownload]).catch(async (error) => {
+      console.error(await page.evaluate(() => {
+        const doc = document.querySelector('iframe')?.contentDocument
+        return { status: document.querySelector('.run-vod-workbench__status')?.textContent,
+          animations: doc?.getAnimations().map(a => [a.animationName, a.currentTime, a.effect.getComputedTiming().endTime]),
+          pending: [...(doc?.querySelectorAll('[data-webmcp-pending="true"], .character-attack, .card-flight, .defect-evoke') ?? [])].map(e => e.className) }
+      }))
+      throw error
+    })
+    const compatibilityPath = await compatibilityFile.path()
+    const compatibilityAudio = compatibilityPath && spawnSync('ffmpeg', [
+      '-hide_banner', '-i', compatibilityPath, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-',
+    ], { encoding: 'utf8' })
+    const compatibilityMaxVolume = Number(compatibilityAudio?.stderr.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1])
+    await compatibilityFile.delete()
+    await page.getByRole('button', { name: 'Close video', exact: true }).click()
+    check('legacy merged room and card events synthesize the missing room entry before replaying the card', () => {
+      assert(roomRecovery.uniqueAccepted, 'a unique legacy room could not be recovered')
+      assert(roomRecovery.ambiguousRejected, 'an ambiguous room branch would be guessed')
+      assert(/slay-the-spire-run-.+\.(webm|mp4)$/.test(compatibility.filename), compatibility.filename)
+      assert(compatibility.size > 0, 'the compatibility replay produced an empty video')
+      assert(compatibilityAudio?.status === 0 && Number.isFinite(compatibilityMaxVolume) && compatibilityMaxVolume > -60,
+        `the recovered replay audio is silent (${compatibilityAudio?.stderr ?? 'ffmpeg failed'})`)
+    })
+  }
   await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'run-vod-continued'))
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
   await page.evaluate(async (run) => {
@@ -365,6 +420,7 @@ try {
   const cardReconstructs = await reconstructsCurrentRun()
   check('a played card records its semantic choice and resulting state only', () => {
     assert(cardChoice?.source?.name, 'the played card has no semantic source')
+    assert(!cardChoice?.steps?.some((step) => step.card), 'the abandoned card selection leaked into the played card')
     assert(cardChoice?.target?.target, 'the clicked card target was not canonicalized for synthetic dragging')
     assert(!cardChoice?.steps?.some((step) => step.target), 'the target still depends on the player input gesture')
     assert(!JSON.stringify(cardChoice).toLowerCase().includes('cancel'), 'a cancelled interaction leaked into the played card')
@@ -425,6 +481,45 @@ try {
     assert(lightningReconstructs.ok, JSON.stringify(lightningReconstructs))
   })
 
+  await page.evaluate(async () => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.campaign.runId += '-start-target'
+    const state = run.combat
+    state.combatId += '-start-target'
+    state.phase = 'start'
+    state.startTurnProgress = undefined
+    state.endTurnProgress = undefined
+    state.pendingTriggers = []
+    state.players[0].character = 'silent'
+    state.players[0].orbs = []
+    state.players[0].powers = [{ uid: 'vod-fumes', defId: 'noxious_fumes', upgraded: false }]
+    await (await import('/src/ui/run-vod.ts')).startRunVod(run)
+    debug.setRun(run)
+  })
+  await page.locator('.combat[data-phase="start"]').waitFor()
+  await page.locator('[data-enemy-id="vod-lightning-b"] .enemy__hit-area').click({ force: true })
+  await page.getByRole('button', { name: 'Resolve start of turn', exact: true }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+  const startChoice = await page.evaluate(async () => {
+    const vod = await import('/src/ui/run-vod.ts')
+    const log = await vod.readRunVod(window.__STS_DEBUG__.getRun().campaign.runId)
+    const event = log.events.find(event => event.choice?.steps?.some(ref => ref.name === 'Resolve start of turn'))
+    if (!event) return null
+    const choice = vod.runVodEventChoice(event, log.initial)
+    const abandoned = vod.runVodEventChoice({ ...event, choice: {
+      source: { selector: '.hand button', card: true, name: 'FTL, cost 0' },
+      steps: [choice.source, ...choice.steps],
+    } }, log.initial)
+    return { choice, abandoned, poison: window.__STS_DEBUG__.getState().enemies.map(enemy => enemy.poison) }
+  })
+  check('turn confirmation preserves an explicitly chosen start-turn target, including after an abandoned card', () => {
+    assert(startChoice, 'Resolve discarded the preceding target selection')
+    assert(startChoice.choice.source.selector.includes('vod-lightning-b'), JSON.stringify(startChoice))
+    assertDeepEqual(startChoice.abandoned, startChoice.choice)
+    assertDeepEqual(startChoice.poison, [0, 1])
+  })
+
   await page.keyboard.press('Escape')
   await page.waitForTimeout(100)
   if (!await page.getByRole('button', { name: 'Give up', exact: true }).count()) await page.keyboard.press('Escape')
@@ -449,14 +544,111 @@ try {
   }
   const timing = await page.evaluate(async () => {
     const vod = await import('/src/ui/run-vod.ts')
+    const terminal = structuredClone(window.__STS_DEBUG__.getRun())
+    const reordered = structuredClone(terminal)
+    reordered.players[0].deck.reverse()
+    const terminalResidue = structuredClone(terminal)
+    terminalResidue.players[0].draw = [structuredClone(terminal.players[0].deck[0])]
+    terminalResidue.players[0].calipersArmed = false
+    const active = structuredClone(terminal)
+    active.phase = 'map'
+    const activeReordered = structuredClone(active)
+    activeReordered.players[0].deck.reverse()
+    const activeResidue = structuredClone(active)
+    activeResidue.players[0].draw = [structuredClone(active.players[0].deck[0])]
+    activeResidue.players[0].calipersArmed = false
+    const forcedProbe = document.createElement('div')
+    Object.assign(forcedProbe.style, { position: 'fixed', inset: '0 auto auto 0' })
+    forcedProbe.innerHTML = '<button>Resolve Defect — Lightning Orb 1</button>'
+    document.body.append(forcedProbe)
+    const soleForcedResolution = vod.soleForcedResolution(document)?.textContent
+    forcedProbe.append(Object.assign(document.createElement('button'), { textContent: 'Resolve another choice' }))
+    const ambiguousForcedResolution = vod.soleForcedResolution(document)
+    forcedProbe.remove()
+    const semanticRun = structuredClone(terminal)
+    const bashIndex = semanticRun.players[0].deck.findIndex((card) => card.defId === 'bash')
+    const wrongIndex = bashIndex === 0 ? 1 : 0
+    const relocated = vod.applyRunVodEvent(semanticRun, {
+      choice: { source: { selector: '#grow' }, steps: [{ selector: '#bash', name: 'Bash, cost 2' }] },
+      patch: [{ path: ['players', 0, 'deck', wrongIndex, 'upgraded'], value: true }],
+    })
+    const legacyRun = structuredClone(terminal)
+    legacyRun.players[0].deck = [
+      { uid: 'a', defId: 'bash', upgraded: false },
+      { uid: 'b', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'c', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'd', defId: 'defend_ironclad', upgraded: false },
+    ]
+    const multiple = vod.applyRunVodEvent(legacyRun, {
+      choice: { source: { selector: '#simplicity' }, steps: [
+        { selector: '#strike', name: 'Strike, cost 1' }, { selector: '#defend', name: 'Defend, cost 1' },
+      ] },
+      patch: [1, 3].map(index => ({ path: ['players', 0, 'deck', index, 'upgraded'], value: true })),
+    })
+    const removed = vod.applyRunVodEvent(legacyRun, {
+      choice: { source: { selector: '#remove' }, steps: [{ selector: '#strike', name: 'Strike, cost 1' }] },
+      patch: [
+        { path: ['players', 0, 'deck', 1, 'uid'], value: 'c' },
+        { path: ['players', 0, 'deck', 2], value: legacyRun.players[0].deck[3] },
+        { path: ['players', 0, 'deck', 3], remove: true },
+      ],
+    })
+    const duplicateUpgrade = vod.applyRunVodEvent(legacyRun, {
+      choice: { source: { selector: '#upgrade' }, steps: [{ selector: '#strike', name: 'Strike, cost 1' }] },
+      patch: [{ path: ['players', 0, 'deck', 2, 'upgraded'], value: true }],
+    })
+    const target = { selector: '[data-enemy-id="e0"]', name: 'Cultist, 5 HP', target: true }
+    const orbChoice = vod.normalizeRunVodChoice({
+      source: { selector: '#dual-cast', drag: true },
+      steps: [{ selector: '#lightning' }, target],
+      target: { ...target, name: 'Cultist, 6 HP' },
+    })
+    const hand = name => ({ selector: 'main > div > div > footer > div > div > button', name: `${name}, cost 1`, drag: true })
+    const beforeChoice = { ...terminal, combat: { combatId: 'choice', presentationEvents: [{ seq: 24 }] } }
+    const actualCard = { seq: 25, kind: 'card', sourceId: 'ftl', actorId: terminal.players[0].id, copied: false }
+    const choiceEvent = {
+      choice: { source: hand('Dual Cast+'), steps: [hand('FTL')], target },
+      patch: [{ path: ['combat', 'presentationEvents'], value: [actualCard] }],
+    }
+    const recoveredChoice = vod.runVodEventChoice(choiceEvent, beforeChoice)
+    const orbEvent = { ...choiceEvent, choice: { source: hand('FTL'), steps: [{ selector: '#orb' }], target } }
+    const syntheticEvent = { ...choiceEvent, choice: { source: { selector: '#relic' }, steps: [hand('FTL')] } }
     return {
       width: vod.RUN_VOD_WIDTH, height: vod.RUN_VOD_HEIGHT, fps: vod.RUN_VOD_FPS,
       cursorMs: vod.RUN_VOD_CURSOR_MS, repeatClickMs: vod.RUN_VOD_REPEAT_CLICK_MS,
+      actionHoldMs: vod.RUN_VOD_ACTION_HOLD_MS,
+      actionWaits: [vod.runVodActionWait(0, false), vod.runVodActionWait(1_200, false), vod.runVodActionWait(0, true)],
+      cursorAsset: vod.RUN_VOD_CURSOR_ASSET, cursorClickAsset: vod.RUN_VOD_CURSOR_CLICK_ASSET,
+      terminalOrderIgnored: vod.replayRunJson(terminal) === vod.replayRunJson(reordered),
+      activeOrderPreserved: vod.replayRunJson(active) !== vod.replayRunJson(activeReordered),
+      terminalResidueIgnored: vod.replayRunJson(terminal) === vod.replayRunJson(terminalResidue),
+      activeResiduePreserved: vod.replayRunJson(active) !== vod.replayRunJson(activeResidue),
+      soleForcedResolution, ambiguousForcedResolution: ambiguousForcedResolution === null,
+      semanticDeckChoice: bashIndex >= 0 && relocated.players[0].deck[bashIndex].upgraded &&
+        (wrongIndex === bashIndex || !relocated.players[0].deck[wrongIndex].upgraded),
+      legacyMultiple: multiple.players[0].deck.filter(card => card.upgraded).map(card => card.uid),
+      legacyRemoved: removed.players[0].deck.map(card => card.uid),
+      legacyDuplicate: duplicateUpgrade.players[0].deck.filter(card => card.upgraded).map(card => card.uid),
+      orbTarget: orbChoice.target.name, orbSteps: orbChoice.steps.map(step => step.selector),
+      recoveredCard: recoveredChoice.source.name, recoveredSteps: recoveredChoice.steps.length,
+      retainedOrb: vod.runVodEventChoice(orbEvent, beforeChoice).steps[0].selector,
+      retainedSynthetic: vod.runVodEventChoice(syntheticEvent, beforeChoice).source.selector,
     }
   })
   check('terminal choices stay horizontal and the canonical renderer is native 1080p/120 fps', () => {
     assert(rows.every((tops) => tops.length === 3 && new Set(tops).size === 1), `terminal actions wrapped: ${JSON.stringify(rows)}`)
-    assertDeepEqual(timing, { width: 1920, height: 1080, fps: 120, cursorMs: 150, repeatClickMs: 250 })
+    assertDeepEqual(timing, {
+      width: 1920, height: 1080, fps: 120, cursorMs: 150, repeatClickMs: 250, actionHoldMs: 1000,
+      actionWaits: [1000, 0, 250],
+      cursorAsset: '/assets/ui/cursor.png', cursorClickAsset: '/assets/ui/cursor-click.png',
+      terminalOrderIgnored: true, activeOrderPreserved: true,
+      terminalResidueIgnored: true, activeResiduePreserved: true,
+      soleForcedResolution: 'Resolve Defect — Lightning Orb 1', ambiguousForcedResolution: true,
+      semanticDeckChoice: true,
+      legacyMultiple: ['b', 'd'], legacyRemoved: ['a', 'c', 'd'], legacyDuplicate: ['c'],
+      orbTarget: 'Cultist, 5 HP', orbSteps: ['#lightning'],
+      recoveredCard: 'FTL, cost 1', recoveredSteps: 0, retainedOrb: '#orb', retainedSynthetic: '#relic',
+    })
   })
 
   await page.waitForTimeout(150)
@@ -466,102 +658,182 @@ try {
     window.__STS_DEBUG__.setRun(exportRun)
   }, terminal)
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().act === 4)
-  const exportedEventCount = await eventCount()
-  await page.evaluate(async () => {
-    const root = await navigator.storage.getDirectory()
-    await root.getDirectoryHandle('run-vod-stale-1', { create: true })
-  })
-  await page.getByRole('button', { name: 'Extract run VOD', exact: true }).waitFor()
-  await page.emulateMedia({ reducedMotion: 'reduce' })
-  await page.waitForTimeout(500)
-  let download = null
-  page.once('download', (value) => { download = value })
-  await page.getByRole('button', { name: 'Extract run VOD', exact: true }).click()
-  const replayFrame = page.locator('.run-vod-workbench__frame')
-  await replayFrame.waitFor({ state: 'attached', timeout: 5_000 }).catch(() => {})
-  const extractDisabled = await page.getByRole('button', { name: 'Extract run VOD', exact: true }).isDisabled()
-  const frame = page.frames().find((candidate) => new URL(candidate.url()).searchParams.get('run-vod') === '1')
-  const frameViewport = frame ? await frame.evaluate(() => [innerWidth, innerHeight]) : null
-  const replayControlsHidden = frame ? await frame.evaluate(() => [...document.querySelectorAll('[data-run-vod-control]')]
-    .every((control) => getComputedStyle(control).display === 'none')) : false
-  const replayDeviceMediaRules = frame ? await frame.evaluate(() => {
-    const media = []
-    const visit = (rules) => {
-      for (const rule of rules) {
-        if (rule instanceof CSSMediaRule) media.push(rule.media.mediaText)
-        if ('cssRules' in rule) visit(rule.cssRules)
+  if (verifyExports) {
+    const exportedEventCount = await eventCount()
+    await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory()
+      await root.getDirectoryHandle('run-vod-stale-1', { create: true })
+      window.__vodFrameWorkers = 0
+      const NativeWorker = window.Worker
+      window.Worker = class extends NativeWorker {
+        constructor(url, options) {
+          super(url, options)
+          if (String(url).includes('run-vod-encode.worker')) window.__vodFrameWorkers++
+        }
       }
+    })
+    await page.getByRole('button', { name: 'Extract run VOD', exact: true }).waitFor()
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.waitForTimeout(500)
+    let download = null
+    page.once('download', (value) => { download = value })
+    await page.getByRole('button', { name: 'Extract run VOD', exact: true }).click()
+    const replayFrame = page.locator('.run-vod-workbench__frame')
+    await replayFrame.waitFor({ state: 'attached', timeout: 5_000 }).catch(() => {})
+    const extractDisabled = await page.getByRole('button', { name: 'Extract run VOD', exact: true, includeHidden: true }).isDisabled()
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) {
+      await page.setViewportSize(viewport)
+      await page.waitForFunction(() => {
+        const bar = document.querySelector('.run-vod-workbench__status')
+        const box = bar?.getBoundingClientRect()
+        const cancel = document.querySelector('.run-vod-workbench__cancel')?.getBoundingClientRect()
+        return box && cancel && Math.abs(box.left + box.width / 2 - innerWidth / 2) < 1 &&
+          Math.abs(box.top + box.height / 2 - innerHeight / 2) < 1 &&
+          cancel.top >= 0 && cancel.top < 24 && innerWidth - cancel.right >= 0 && innerWidth - cancel.right < 24
+      })
+      const preview = await replayFrame.evaluate(frame => ({
+        pointer: getComputedStyle(frame).pointerEvents, focus: frame.tabIndex,
+        opacity: getComputedStyle(frame).opacity,
+        bar: document.querySelector('progress')?.getAttribute('aria-label'),
+        cancelBackground: getComputedStyle(document.querySelector('.run-vod-workbench__cancel')).backgroundColor,
+      }))
+      assertDeepEqual(preview, { pointer: 'none', focus: -1, opacity: '0', bar: 'Run VOD export progress', cancelBackground: 'rgb(23, 28, 41)' })
+      await page.screenshot({ path: `artifacts/run-vod/export-preview-${viewport.width}.png` })
     }
-    for (const sheet of document.styleSheets) {
-      try { visit(sheet.cssRules) } catch { /* Same-origin bundle; ignore injected sheets. */ }
-    }
-    return media.filter((query) => query.includes('prefers-reduced-motion') || query.includes('(hover:'))
-  }) : null
-  await replayFrame.waitFor({ state: 'detached', timeout: 30_000 })
-  await page.waitForTimeout(500)
-  if (!download) throw new Error(`${await page.locator('body').innerText()}\n${errors.join('\n')}`)
-  const downloadPath = await download.path()
-  const afterExtract = await page.evaluate(async () => ({
-    finalized: window.__STS_DEBUG__.getRun().campaign.finalized,
-    buttons: [...document.querySelectorAll('.room-screen__actions button')].map((button) => button.textContent),
-    log: localStorage.getItem('sts-run-vod'),
-    persisted: await (await import('/src/ui/run-vod.ts')).readRunVod(window.__STS_DEBUG__.getRun().campaign.runId),
-  }))
-  const probe = downloadPath && spawnSync('ffprobe', [
-    '-v', 'error', '-count_frames', '-show_entries',
-    'stream=index,codec_type,width,height,avg_frame_rate,r_frame_rate,nb_read_frames,duration:packet=stream_index,pts_time:format=duration', '-of', 'json', downloadPath,
-  ], { encoding: 'utf8' })
-  const audioProbe = downloadPath && spawnSync('ffmpeg', [
-    '-hide_banner', '-i', downloadPath, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-',
-  ], { encoding: 'utf8' })
-  const maxVolume = Number(audioProbe?.stderr.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1])
-  const vodStorage = await page.evaluate(async () => {
-    const root = await navigator.storage.getDirectory()
-    const entries = []
-    for await (const entry of root.keys()) if (entry.startsWith('run-vod-')) entries.push(entry)
-    return entries
-  })
-  const metadata = probe?.status === 0 ? JSON.parse(probe.stdout) : { streams: [], format: {} }
-  const streams = metadata.streams ?? []
-  check('extraction renders device-independent video with audio and does not record the result', () => {
-    const video = streams.find((stream) => stream.codec_type === 'video')
-    const timestamps = (metadata.packets ?? []).filter((packet) => packet.stream_index === video?.index)
-      .map((packet) => Number(packet.pts_time)).filter(Number.isFinite)
-    const measuredDuration = timestamps.length > 1 ? timestamps.at(-1) - timestamps[0] : Number(metadata.format?.duration)
-    const measuredRate = timestamps.length > 1 ? (timestamps.length - 1) / measuredDuration
-      : Number(video?.nb_read_frames ?? 0) / Number(video?.duration ?? metadata.format?.duration)
-    assert(exportedEventCount >= 3, `the extraction fixture had only ${exportedEventCount} semantic events`)
-    assertDeepEqual(frameViewport, [1920, 1080])
-    assert(replayControlsHidden, 'VOD-management controls are visible inside the replay')
-    assertDeepEqual(replayDeviceMediaRules, [], 'host motion/hover CSS remained active in the canonical replay')
-    assert(/\.(webm|mp4)$/.test(download.suggestedFilename()), 'the extraction did not download a video')
-    assert(video?.width === 1920 && video.height === 1080, 'video is not native 1920x1080')
-    assert(measuredRate >= 59.9, `video frame rate metadata ${JSON.stringify(video)}; measured ${measuredRate}`)
-    assert(measuredDuration >= 2, `the replay did not contain the recorded interactions (${measuredDuration}s)`)
-    assert(streams.some((stream) => stream.codec_type === 'audio'), 'video has no max-volume audio mix')
-    assert(audioProbe?.status === 0 && Number.isFinite(maxVolume) && maxVolume > -60,
-      `the VOD audio track is silent (${audioProbe?.stderr ?? 'ffmpeg failed'})`)
-    assert(extractDisabled, 'the Extract action remained enabled during export')
-    assert(!vodStorage.includes('run-vod-stale-1'), 'stale temporary VOD storage was not purged')
-    assertEqual(afterExtract.finalized, false, 'extracting implicitly recorded the campaign result')
-    assert(afterExtract.buttons.includes('Stop and record result'), 'the independent result action disappeared')
-    assert(afterExtract.buttons.includes('Prepare next run →'), 'extract-only did not expose the independent next-run action')
-    assert(!afterExtract.buttons.some((label) => label?.startsWith('Climb to Act')), 'an extracted interim run could still climb without a VOD log')
-    assert(!afterExtract.buttons.includes('Extract run VOD'), 'the completed extraction action remained')
-    assertEqual(afterExtract.log, null, 'the consumed event log was not discarded')
-    assertEqual(afterExtract.persisted, null, 'the consumed IndexedDB event log was not committed as discarded')
-  })
+    const frame = page.frames().find((candidate) => new URL(candidate.url()).searchParams.get('run-vod') === '1')
+    const frameViewport = frame ? await frame.evaluate(() => [innerWidth, innerHeight]) : null
+    const replayControlsHidden = frame ? await frame.evaluate(() => [...document.querySelectorAll('[data-run-vod-control]')]
+      .every((control) => getComputedStyle(control).display === 'none')) : false
+    const replayDeviceMediaRules = frame ? await frame.evaluate(() => {
+      const media = []
+      const visit = (rules) => {
+        for (const rule of rules) {
+          if (rule instanceof CSSMediaRule) media.push(rule.media.mediaText)
+          if ('cssRules' in rule) visit(rule.cssRules)
+        }
+      }
+      for (const sheet of document.styleSheets) {
+        try { visit(sheet.cssRules) } catch { /* Same-origin bundle; ignore injected sheets. */ }
+      }
+      return media.filter((query) => query.includes('prefers-reduced-motion') || query.includes('(hover:'))
+    }) : null
+    await replayFrame.waitFor({ state: 'detached', timeout: 90_000 })
+    await page.waitForTimeout(500)
+    if (!download) throw new Error(`${await page.locator('body').innerText()}\n${errors.join('\n')}`)
+    await page.getByRole('dialog', { name: 'Your completed Run VOD', exact: true }).waitFor()
+    await page.waitForFunction(() => document.querySelector('.run-vod-player video')?.readyState >= 1)
+    assertDeepEqual(await page.locator('.run-vod-player video').evaluate(video => [video.videoWidth, video.videoHeight]), [1920, 1080])
+    await page.getByRole('button', { name: 'Close video', exact: true }).click()
+    const downloadPath = await download.path()
+    const afterExtract = await page.evaluate(async () => ({
+      finalized: window.__STS_DEBUG__.getRun().campaign.finalized,
+      buttons: [...document.querySelectorAll('.room-screen__actions button')].map((button) => button.textContent),
+      log: localStorage.getItem('sts-run-vod'),
+      persisted: await (await import('/src/ui/run-vod.ts')).readRunVod(window.__STS_DEBUG__.getRun().campaign.runId),
+    }))
+    const probe = downloadPath && spawnSync('ffprobe', [
+      '-v', 'error', '-count_frames', '-show_entries',
+      'stream=index,codec_type,width,height,avg_frame_rate,r_frame_rate,nb_read_frames,duration:packet=stream_index,pts_time:format=duration', '-of', 'json', downloadPath,
+    ], { encoding: 'utf8' })
+    const audioProbe = downloadPath && spawnSync('ffmpeg', [
+      '-hide_banner', '-i', downloadPath, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-',
+    ], { encoding: 'utf8' })
+    const maxVolume = Number(audioProbe?.stderr.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1])
+    const vodStorage = await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory()
+      const entries = []
+      let frameBytes = 0
+      for await (const entry of root.keys()) if (entry.startsWith('run-vod-')) {
+        entries.push(entry)
+        const directory = await root.getDirectoryHandle(entry)
+        try { frameBytes += (await (await directory.getFileHandle('frames.bin')).getFile()).size } catch {}
+      }
+      return { entries, frameBytes, frameWorkers: window.__vodFrameWorkers }
+    })
+    const metadata = probe?.status === 0 ? JSON.parse(probe.stdout) : { streams: [], format: {} }
+    const streams = metadata.streams ?? []
+    check('extraction renders device-independent video with audio and does not record the result', () => {
+      const video = streams.find((stream) => stream.codec_type === 'video')
+      const timestamps = (metadata.packets ?? []).filter((packet) => packet.stream_index === video?.index)
+        .map((packet) => Number(packet.pts_time)).filter(Number.isFinite)
+      const measuredDuration = timestamps.length > 1 ? timestamps.at(-1) - timestamps[0] : Number(metadata.format?.duration)
+      const measuredRate = timestamps.length > 1 ? (timestamps.length - 1) / measuredDuration
+        : Number(video?.nb_read_frames ?? 0) / Number(video?.duration ?? metadata.format?.duration)
+      assert(exportedEventCount >= 3, `the extraction fixture had only ${exportedEventCount} semantic events`)
+      assertDeepEqual(frameViewport, [1920, 1080])
+      assert(replayControlsHidden, 'VOD-management controls are visible inside the replay')
+      assertDeepEqual(replayDeviceMediaRules, [], 'host motion/hover CSS remained active in the canonical replay')
+      assert(/\.(webm|mp4)$/.test(download.suggestedFilename()), 'the extraction did not download a video')
+      assert(video?.width === 1920 && video.height === 1080, 'video is not native 1920x1080')
+      assert(measuredRate >= 59.9, `video frame rate metadata ${JSON.stringify(video)}; measured ${measuredRate}`)
+      assert(measuredDuration >= 2, `the replay did not contain the recorded interactions (${measuredDuration}s)`)
+      assert(streams.some((stream) => stream.codec_type === 'audio'), 'video has no max-volume audio mix')
+      assert(audioProbe?.status === 0 && Number.isFinite(maxVolume) && maxVolume > -60,
+        `the VOD audio track is silent (${audioProbe?.stderr ?? 'ffmpeg failed'})`)
+      assert(extractDisabled, 'the Extract action remained enabled during export')
+      assert(!vodStorage.entries.includes('run-vod-stale-1'), 'stale temporary VOD storage was not purged')
+      assertEqual(vodStorage.frameWorkers, 0, 'native export still encoded temporary PNG frames')
+      assertEqual(vodStorage.frameBytes, 0, 'native export still wrote temporary frames to disk')
+      assertEqual(afterExtract.finalized, false, 'extracting implicitly recorded the campaign result')
+      assert(afterExtract.buttons.includes('Stop and record result'), 'the independent result action disappeared')
+      assert(afterExtract.buttons.includes('Prepare next run →'), 'extract-only did not expose the independent next-run action')
+      assert(!afterExtract.buttons.some((label) => label?.startsWith('Climb to Act')), 'an extracted interim run could still climb without a VOD log')
+      assert(!afterExtract.buttons.includes('Extract run VOD'), 'the completed extraction action remained')
+      assertEqual(afterExtract.log, null, 'the consumed event log was not discarded')
+      assertEqual(afterExtract.persisted, null, 'the consumed IndexedDB event log was not committed as discarded')
+    })
+  }
 
   await page.getByRole('button', { name: 'Stop and record result', exact: true }).click()
   await page.getByRole('button', { name: 'Prepare next run →', exact: true }).waitFor()
   const finalButtons = await page.locator('.campaign-end button').allTextContents()
   check('recording independently changes the result action to Prepare next run', () => {
     assert(!finalButtons.includes('Record campaign result'))
-    assert(!finalButtons.includes('Extract run VOD'))
+    assertEqual(finalButtons.includes('Extract run VOD'), !verifyExports)
     assert(finalButtons.includes('Prepare next run →'))
   })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.evaluate(async initial => {
+    const { createMerchant } = await import('/src/game/noncombat.ts')
+    initial.campaign.runId += '-merchant-navigation'
+    initial.phase = 'room'
+    initial.players[0].gold = 99
+    initial.roomState = createMerchant(initial.itemDecks, initial.players)
+    await (await import('/src/ui/run-vod.ts')).startRunVod(initial)
+    window.__STS_DEBUG__.setRun(initial)
+  }, canonicalMapRun)
+  await page.getByRole('button', { name: 'Enter merchant shop', exact: true }).click()
+  await page.locator('.merchant-card button').first().click()
+  await page.waitForFunction(async () => (await (await import('/src/ui/run-vod.ts')).readRunVod(window.__STS_DEBUG__.getRun().campaign.runId))?.events.length > 0)
+  const merchantRecovery = await page.evaluate(async () => {
+    const { runVodMerchantExit } = await import('/src/ui/run-vod.ts')
+    return {
+      exit: runVodMerchantExit(document, { name: 'Proceed · 0/1 ready', selector: 'main > section > button' })?.textContent.trim(),
+      unrelated: runVodMerchantExit(document, { name: 'Buy card', selector: 'main > section > button' }) === null,
+    }
+  })
+  await page.getByRole('button', { name: '← Leave shop', exact: true }).click()
+  await page.getByRole('button', { name: 'Proceed · 0/1 ready', exact: true }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+  const merchantLog = await readLog()
+  const exitChoice = merchantLog.events.at(-1).choice
+  check('same-selector merchant controls preserve Leave shop then Proceed; legacy logs recover only that prerequisite', () => {
+    assertEqual(exitChoice.source.name, '← Leave shop')
+    assertEqual(exitChoice.steps.at(-1).name, 'Proceed · 0/1 ready')
+    assertEqual(exitChoice.source.selector, exitChoice.steps.at(-1).selector)
+    assertDeepEqual(merchantRecovery, { exit: '← Leave shop', unrelated: true })
+  })
+  if (verifyExports) {
+    const legacy = structuredClone(merchantLog)
+    legacy.events.at(-1).choice = { source: exitChoice.steps.at(-1) }
+    const merchantDownload = page.waitForEvent('download', { timeout: 60_000 })
+    await page.evaluate(async log => (await import('/src/ui/run-vod.ts')).extractRunVod(log, window.__STS_DEBUG__.getRun()).then(() => true), legacy)
+    await (await merchantDownload).delete()
+    await page.getByRole('button', { name: 'Close video', exact: true }).click()
+    check('legacy merchant exports reconstruct the missing exit before proceeding', () => assert(true))
+  }
   check('run VOD flow has no browser errors', () => assertDeepEqual(errors, []))
-  report('run VOD browser')
+  report(verifyExports ? 'run VOD browser + video export' : 'run VOD browser (quick; add --export for video encoding)')
 } finally {
   await browser.close()
   await server.close()

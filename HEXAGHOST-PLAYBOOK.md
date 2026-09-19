@@ -276,3 +276,16 @@ The live Hexaghost filter showed these cards:
 - Result: the always-on production host accepted a two-character room (`AMRMYP`) with Ironclad and Silent, synchronized both Neow resolutions, entered the first encounter, and reflected one attack from each browser in the shared combat state. The party then unanimously gave up, the defeat screen showed both characters' damage, and `Record campaign result` completed before the room returned to its next-run lobby.
 - Server verification: the run used the WebMCP tools exposed by the deployed GitHub Pages client against the new sslip.io origin. Both seats remained connected through room creation, character selection, campaign start, Neow, map travel, combat, the give-up vote, and campaign recording.
 - Leaderboard note: this two-character result correctly did not change the solo leaderboard. `queueFinishedSoloRun` intentionally accepts only finalized one-player runs, so a co-op campaign cannot appear there; no subsequent campaign was started.
+
+### Run 15 — Defect VOD verification, Fallen in Act 1
+
+- Result: `campaign-6` finished after four rooms with 0/9 HP, 7 gold, and 13 cards. The damage chart recorded 23 dealt (8 attack, 15 special), 1 unblocked damage taken, and 5 blocked. The result was recorded locally; no subsequent campaign was started.
+- Replay coverage: the saved 52-event run includes blessings, card choices, map travel, card targeting, and Lightning orb selection/targeting through Dual Cast+. Its full event sequence passes replay-state validation.
+- Regression found: a cancelled/staged choice left a duplicate target with stale enemy HP in the old log. Replay now canonicalizes the final chosen target, and new hand-card choices clear abandoned selections.
+
+### VOD audit — user's Defect Act 1 victory
+
+- Audited the user's existing `campaign-7`, not a newly played campaign: 13 rooms, 6/9 HP, 4 gold, 13 cards. The campaign result was not recorded by this audit, and no subsequent run was started.
+- The actual in-app export replayed all 145 events with four peak concurrent location renderers and matched every checkpoint. Output: 1920×1080 H.264 at 120 fps, stereo 48 kHz AAC, 272.448 seconds, 219,768,531 bytes. Extraction took 1,179.8 seconds; four concurrent documents are not four renderer processes or a demonstrated fourfold speedup.
+- Animation audit found 35 unique card flights without duplicates; the remaining eight of 43 card plays were Dual Cast's separate orb-choice interactions. Reviewed full-run contact sheets, detailed orb/merchant/upgrade/Guardian/ending frames, and normal desktop/horizontal-phone screenshots. Audio signal checks confirmed combat music/effects; this was not a listening review.
+- Compatibility fixes preserve old merchant exit/proceed choices, normalize phone map inspection labels, and remove abandoned hand-card staging without discarding meaningful start-turn targets. The focused regression explicitly selects Noxious Fumes' second enemy before confirming the turn.

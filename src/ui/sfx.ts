@@ -31,6 +31,27 @@ let vodAudioContext: AudioContext | null = null
 let vodAudioDestination: MediaStreamAudioDestinationNode | null = null
 let vodAudioClock: OscillatorNode | null = null
 let vodAudioMuted = false
+export type RunVodAudioCue = { source: string; at: number; end?: number; volume: number; rate: number; loop: boolean; segment?: string; endSegment?: string }
+let vodAudioCapture: { started: number; segment: string; cues: RunVodAudioCue[]; playing: Map<HTMLAudioElement, RunVodAudioCue> } | null = null
+
+export function captureRunVodAudio() {
+  vodAudio.forEach(releaseAudio)
+  vodAudioCapture = { started: performance.now(), segment: 'initial', cues: [], playing: new Map() }
+  return vodAudioCapture.cues
+}
+
+export function setRunVodAudioSegment(segment: string) {
+  if (vodAudioCapture) { vodAudioCapture.segment = segment; vodAudioCapture.started = performance.now() }
+}
+
+function playAudio(audio: HTMLAudioElement) {
+  if (!vodAudioCapture) return audio.play()
+  const cue: RunVodAudioCue = { source: audio.src, at: (performance.now() - vodAudioCapture.started) / 1000,
+    volume: audio.volume, rate: audio.playbackRate, loop: audio.loop, segment: vodAudioCapture.segment }
+  vodAudioCapture.cues.push(cue)
+  vodAudioCapture.playing.set(audio, cue)
+  return Promise.resolve()
+}
 
 function audioElement(source: string) {
   const audio = new Audio(source)
@@ -53,6 +74,12 @@ function audioElement(source: string) {
 }
 
 function releaseAudio(audio: HTMLAudioElement) {
+  const cue = vodAudioCapture?.playing.get(audio)
+  if (cue) {
+    cue.end = (performance.now() - vodAudioCapture!.started) / 1000
+    cue.endSegment = vodAudioCapture!.segment
+  }
+  vodAudioCapture?.playing.delete(audio)
   audio.pause()
   activeEffects.delete(audio)
   vodAudio.delete(audio)
@@ -81,6 +108,7 @@ export function setRunVodAudioMuted(muted: boolean) {
 }
 
 export function stopRunVodAudio() {
+  vodAudioCapture = null
   vodAudio.forEach(releaseAudio)
   vodAudio.clear()
   vodAudioNodes.clear()
@@ -122,10 +150,10 @@ function hallwayTrack(act: number, combatId: string) {
 function combatTrack(run?: MusicRun | null) {
   const combat = run?.combat
   if (!combat || combat.phase === 'won' || combat.phase === 'lost') return
-  const boss = combat.enemies.find((enemy) => enemy.isBoss)
+  const boss = combat.enemies.find((enemy) => enemy?.isBoss)
   const act = boss && enemyDef(boss.defId, boss.ascension).bossAct
   if (act) return BOSS_TRACKS[act]
-  const lagavulin = combat.enemies.find((enemy) => enemy.defId === 'lagavulin')
+  const lagavulin = combat.enemies.find((enemy) => enemy?.defId === 'lagavulin')
   const lagavulinDef = lagavulin && enemyDef(lagavulin.defId, lagavulin.ascension)
   const sleeping = lagavulinDef?.pattern.kind === 'cube' &&
     lagavulinDef.pattern.slots[lagavulin!.actionIndex ?? 0]?.actions.some((action) => action.kind === 'idle')
@@ -143,7 +171,7 @@ export function useCombatMusic(run?: MusicRun | null, enabled = true, volume = 2
     audio.current = next
     next.loop = true
     next.volume = volume / 100
-    void next.play().catch(() => {})
+    void playAudio(next).catch(() => {})
     return () => {
       releaseAudio(next)
       if (audio.current === next) audio.current = null
@@ -164,7 +192,7 @@ export function useVictoryMusic(active = false, enabled = true, volume = 20) {
     const next = audioElement(VICTORY_TRACK)
     audio.current = next
     next.volume = volume / 100
-    void next.play().catch(() => {})
+    void playAudio(next).catch(() => {})
     return () => {
       releaseAudio(next)
       if (audio.current === next) audio.current = null
@@ -280,13 +308,13 @@ function playSound(sound: Sound, volume = 0.35, rate = 1, cue?: string, delayMs 
     releaseAudio(oldest)
   }
   const audio = audioElement(SOUNDS[sound])
-  activeEffects.add(audio)
+  if (!vodAudioCapture) activeEffects.add(audio)
   audio.addEventListener('ended', () => activeEffects.delete(audio), { once: true })
   audio.volume = volume * currentSfxVolume()
   audio.playbackRate = rate
   audio.preservesPitch = false
   if (cue) audio.dataset.combatSfx = cue
   if (delayMs) audio.dataset.combatSfxDelay = String(delayMs)
-  void audio.play().catch(() => releaseAudio(audio))
+  void playAudio(audio).catch(() => releaseAudio(audio))
   return audio
 }

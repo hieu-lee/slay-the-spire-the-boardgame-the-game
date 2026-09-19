@@ -354,7 +354,7 @@
   .board .enemy .tokens { bottom: 3.7rem; }
   .seat__status-strip {
     /* The compact hand and Energy orb occupy the space below HP. */
-    bottom: 6.25rem;
+    bottom: 2rem;
     justify-content: flex-start;
   }
 
