@@ -274,7 +274,7 @@ try {
     }
   })
   check('motion slices stop at exact frame boundaries and carry delayed audio into the resumed slice', () =>
-    assertDeepEqual(motionBoundary, { active: false, sliceFrames: 10, boundary: true, boundaryCapped: true, resuming: true, resumingCapped: false,
+    assertDeepEqual(motionBoundary, { active: false, sliceFrames: 12, boundary: true, boundaryCapped: true, resuming: true, resumingCapped: false,
       firstSliceCue: 'future', resumedCue: .025, pastCue: 'past', continuingLoop: 0,
       endBoundary: 'future', nextBoundary: 0 }))
   const resolvedTurn = await page.evaluate(async initial => {

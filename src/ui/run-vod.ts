@@ -17,7 +17,7 @@ export const RUN_VOD_RETURN_PARAM = 'run-vod-return'
 const RUN_VOD_CLEANUP_KEY = 'sts-run-vod-cleanup'
 const RUN_VOD_STALE_MS = 60 * 60 * 1_000
 const RUN_VOD_EXPORT_EVENTS = 1
-export const runVodExportMotionFrames = (_event: RunVodEvent) => 10
+export const runVodExportMotionFrames = (_event: RunVodEvent) => 12
 const CONTROL = 'button, input, select, textarea, summary, [role="button"]'
 const READ_ONLY = '.map-peek, .map-peek__open, .card-collection, .compendium, .deck-peek__open, .game-settings, .settings-dialog, [data-pile], .room:not(.room--reachable)'
 export const RUN_VOD_WIDTH = 1920
