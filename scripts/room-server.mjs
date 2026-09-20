@@ -358,11 +358,11 @@ export function createRoomServer({
           addEventListener('message', async ({ data }) => {
             if (!data?.runVodRaster) return
             try {
-              const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(data.svg)
+              const url = 'data:image/svg+xml;charset=utf-8,' + encodeURI(data.svg).replaceAll('#', '%23')
               const image = new Image(); image.src = url
               await image.decode()
               const canvas = new OffscreenCanvas(data.width, data.height)
-              canvas.getContext('2d').drawImage(image, 0, 0)
+              canvas.getContext('2d', { alpha: !data.opaque }).drawImage(image, 0, 0)
               image.removeAttribute('src')
               const bitmap = canvas.transferToImageBitmap()
               parent.postMessage({ runVodRaster: data.runVodRaster, bitmap }, '*', [bitmap])

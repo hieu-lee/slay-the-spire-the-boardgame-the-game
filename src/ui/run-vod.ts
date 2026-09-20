@@ -17,7 +17,7 @@ export const RUN_VOD_RETURN_PARAM = 'run-vod-return'
 const RUN_VOD_CLEANUP_KEY = 'sts-run-vod-cleanup'
 const RUN_VOD_STALE_MS = 60 * 60 * 1_000
 const RUN_VOD_EXPORT_EVENTS = 1
-export const runVodExportMotionFrames = (event: RunVodEvent) => event.choice ? 4 : 8
+export const runVodExportMotionFrames = (_event: RunVodEvent) => 10
 const CONTROL = 'button, input, select, textarea, summary, [role="button"]'
 const READ_ONLY = '.map-peek, .map-peek__open, .card-collection, .compendium, .deck-peek__open, .game-settings, .settings-dialog, [data-pile], .room:not(.room--reachable)'
 export const RUN_VOD_WIDTH = 1920
@@ -1039,7 +1039,6 @@ async function captureMotion(doc: Document, store: SnapshotStore, eventIndex: nu
       let prepared!: () => void
       const ready = new Promise<void>((resolve) => { prepared = resolve })
       const regions = stream ? runVodRasterRegions(doc.body, clock.now) ?? [] : []
-      const combined = mergeRunVodRasterRegions([...regions, ...previousRegions])
       if (stream && composite && !regions.length && !previousRegions.length) {
         for (const shot of shots.splice(0)) await consume(shot)
         await stream.motion(composite, 1_000 / 60)
@@ -1048,8 +1047,7 @@ async function captureMotion(doc: Document, store: SnapshotStore, eventIndex: nu
         if (!clock.active()) break
         continue
       }
-      // Repaint up to four local islands. Keeping empty space between distant
-      // VFX out of the SVG decode is both faster and the export's memory bound.
+      const combined = mergeRunVodRasterRegions([...regions, ...previousRegions], 1)
       const crops = composite && combined.length && combined.every(region => region.safe) &&
         combined.reduce((area, region) => area + region.width * region.height, 0) < RUN_VOD_WIDTH * RUN_VOD_HEIGHT * .9
         ? combined : undefined

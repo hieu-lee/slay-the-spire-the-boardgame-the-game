@@ -255,7 +255,7 @@ try {
     assert(checkpoints.statesMatch && checkpoints.eventsMatch && checkpoints.untouched, JSON.stringify(checkpoints))
   })
   const motionBoundary = await page.evaluate(async () => {
-    const { runVodAudioCueTime, runVodMotionSliceSkipped } = await import('/src/ui/run-vod.ts')
+    const { runVodAudioCueTime, runVodExportMotionFrames, runVodMotionSliceSkipped } = await import('/src/ui/run-vod.ts')
     const active = { skip: 0, remaining: 1, capped: false }
     const boundary = { skip: 0, remaining: 0, capped: false }
     const resuming = { skip: 1, remaining: 0, capped: false }
@@ -265,6 +265,7 @@ try {
     }
     return {
       active: runVodMotionSliceSkipped(active),
+      sliceFrames: runVodExportMotionFrames({ patch: [] }),
       boundary: runVodMotionSliceSkipped(boundary), boundaryCapped: boundary.capped,
       resuming: runVodMotionSliceSkipped(resuming), resumingCapped: resuming.capped,
       firstSliceCue: cue(0, 5.5 / 60, 4 / 60), resumedCue: cue(-4 / 60, 5.5 / 60, 2 / 60),
@@ -273,7 +274,7 @@ try {
     }
   })
   check('motion slices stop at exact frame boundaries and carry delayed audio into the resumed slice', () =>
-    assertDeepEqual(motionBoundary, { active: false, boundary: true, boundaryCapped: true, resuming: true, resumingCapped: false,
+    assertDeepEqual(motionBoundary, { active: false, sliceFrames: 10, boundary: true, boundaryCapped: true, resuming: true, resumingCapped: false,
       firstSliceCue: 'future', resumedCue: .025, pastCue: 'past', continuingLoop: 0,
       endBoundary: 'future', nextBoundary: 0 }))
   const resolvedTurn = await page.evaluate(async initial => {
@@ -957,6 +958,7 @@ try {
       total + Math.max(0, rss - (baselineBrowserRss.get(pid) ?? 0)), 0)
     let peakBrowserRssKb = sampleBrowserRss()
     memoryTimer = setInterval(() => { peakBrowserRssKb = Math.max(peakBrowserRssKb, sampleBrowserRss()) }, 50)
+    const exportStarted = Date.now()
     const downloadPromise = waitForDownload(180_000)
     await page.getByRole('button', { name: 'Extract run VOD', exact: true }).click()
     const replayFrame = page.locator('.run-vod-workbench__frame')
@@ -993,6 +995,7 @@ try {
     })
     clearInterval(memoryTimer); memoryTimer = undefined
     peakBrowserRssKb = Math.max(peakBrowserRssKb, sampleBrowserRss())
+    console.log(`VOD export benchmark: ${exportedEventCount} events in ${((Date.now() - exportStarted) / 1000).toFixed(3)}s; peak growth ${Math.round(peakBrowserRssKb / 1024)} MB`)
     await page.getByRole('dialog', { name: 'Your completed Run VOD', exact: true }).waitFor()
     await page.waitForFunction(() => document.querySelector('.run-vod-player video')?.readyState >= 1)
     assertDeepEqual(await page.locator('.run-vod-player video').evaluate(video => [video.videoWidth, video.videoHeight]), [1920, 1080])

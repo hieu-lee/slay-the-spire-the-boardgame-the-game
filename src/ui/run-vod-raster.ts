@@ -135,11 +135,11 @@ function rasterDecoder(doc: Document) {
     addEventListener('message', async ({ data }) => {
       if (!data?.runVodRaster) return
       try {
-        const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(data.svg)
+        const url = 'data:image/svg+xml;charset=utf-8,' + encodeURI(data.svg).replaceAll('#', '%23')
         const image = new Image(); image.src = url
         await image.decode()
         const canvas = new OffscreenCanvas(data.width, data.height)
-        canvas.getContext('2d').drawImage(image, 0, 0)
+        canvas.getContext('2d', { alpha: !data.opaque }).drawImage(image, 0, 0)
         image.removeAttribute('src')
         const bitmap = canvas.transferToImageBitmap()
         parent.postMessage({ runVodRaster: data.runVodRaster, bitmap }, '*', [bitmap])
@@ -172,12 +172,12 @@ function rasterDecoder(doc: Document) {
   return decoder
 }
 
-async function decodeRaster(doc: Document, svg: string, width: number, height: number) {
+async function decodeRaster(doc: Document, svg: string, width: number, height: number, opaque: boolean) {
   const decoder = rasterDecoder(doc)
   await decoder.ready
   const id = ++decoder.next
   const result = new Promise<ImageBitmap>((resolve, reject) => decoder.pending.set(id, { resolve, reject }))
-  decoder.frame.contentWindow!.postMessage({ runVodRaster: id, svg, width, height }, '*')
+  decoder.frame.contentWindow!.postMessage({ runVodRaster: id, svg, width, height, opaque }, '*')
   return result
 }
 
@@ -221,10 +221,13 @@ function activeRasterTargets(doc: Document) {
   return doc.getAnimations().flatMap((animation) => {
     const effect = animation.effect
     if (!(effect instanceof view.KeyframeEffect) || !(effect.target instanceof view.Element)) return []
+    const currentTime = Number(animation.currentTime ?? 0)
+    const delay = Math.max(0, Number(effect.getTiming().delay))
+    if (currentTime > 0 && currentTime < delay) return []
     const endTime = Number(effect.getComputedTiming().endTime)
     // The replay clock pauses completed CSS animations so their last style
     // remains visible. They no longer change a frame.
-    if (Number.isFinite(endTime) && Number(animation.currentTime ?? 0) >= endTime) return []
+    if (Number.isFinite(endTime) && currentTime >= endTime) return []
     return [{ effect, target: effect.target as HTMLElement | SVGElement }]
   })
 }
@@ -241,8 +244,12 @@ function paintOverflow(style: CSSStyleDeclaration) {
   return Math.max(shadows(style.boxShadow), shadows(style.textShadow), blur + drops)
 }
 
-function paintOnlyAnimationProperty(property: string) {
-  return paintOnly.test(property)
+function paintOnlyAnimationProperty(property: string, target?: Element) {
+  if (paintOnly.test(property)) return true
+  if (property !== 'width' || !target?.matches('.bar__fill')) return false
+  const view = target.ownerDocument.defaultView!
+  return view.getComputedStyle(target).position === 'absolute' &&
+    view.getComputedStyle(target.parentElement!).overflow === 'hidden'
 }
 
 function animationEscapes(target: Element, root: HTMLElement, view: Window) {
@@ -293,7 +300,7 @@ export function runVodRasterRegions(element: HTMLElement, at?: number): RunVodRa
       return content !== 'none' && content !== 'normal'
     })) safe = false
     if ([...effect.getKeyframes()].some((frame) => Object.keys(frame).some((key) =>
-      !paintOnlyAnimationProperty(key)))) safe = false
+      !paintOnlyAnimationProperty(key, target)))) safe = false
     if (animationEscapes(target, element, view)) safe = false
     include(target)
   }
@@ -431,10 +438,9 @@ async function imageAt(image: HTMLImageElement, src: string, now: number) {
 export async function pruneRunVodRaster(doc: Document) {
   const active = new Set([...doc.images].map(image => image.currentSrc || image.src))
   const decoders = documentDecoders.get(doc)
-  if (!decoders) return
-  for (const [src, decoder] of decoders) if (!active.has(src)) {
+  for (const [src, decoder] of decoders ?? []) if (!active.has(src)) {
     ;(await decoder)?.close()
-    decoders.delete(src)
+    decoders?.delete(src)
   }
   const allActive = new Set([...snapshots.keys()].flatMap(document => [...document.images].map(image => image.currentSrc || image.src)))
   for (const src of resources.keys()) if (src.startsWith('blob:') && !allActive.has(src)) {
@@ -549,7 +555,7 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
     let properties = byPseudo.get(pseudo)
     if (!properties) { properties = new Set(); byPseudo.set(pseudo, properties) }
     for (const frame of effect.getKeyframes()) for (const property of Object.keys(frame)) {
-      if (paintOnlyAnimationProperty(property) && !/^(offset|easing|composite|computedOffset)$/.test(property)) properties.add(property)
+      if (paintOnlyAnimationProperty(property, effect.target) && !/^(offset|easing|composite|computedOffset)$/.test(property)) properties.add(property)
     }
   }
   let cached = element === doc.body && at !== undefined ? snapshots.get(doc) : undefined
@@ -557,7 +563,7 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
   if (cached && (cached.dirty || cached.viewport !== viewport || cached.scroll !== scroll ||
     [...cached.animations].some((effect) => !animations.includes(effect)) ||
     animations.some((effect) => effect.target instanceof view.Element && effect.getKeyframes().some((frame) =>
-      Object.keys(frame).some((key) => !paintOnlyAnimationProperty(key)))))) {
+      Object.keys(frame).some((key) => !paintOnlyAnimationProperty(key, effect.target as Element)))))) {
     cached.observer.disconnect()
     snapshots.delete(doc)
     cached = undefined
@@ -617,6 +623,10 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
     const style = view.getComputedStyle(source)
     if (style.display === 'none') return null
     const clone = source.cloneNode(false) as HTMLElement | SVGElement
+    if (source instanceof view.HTMLElement) {
+      clone.removeAttribute('class')
+      clone.removeAttribute('id')
+    }
     nodes.push({ source, clone, paintOverflow: paintOverflow(style) })
     copyStyle(style, clone, source)
     if (source instanceof view.SVGElement && source.tagName === 'image') {
@@ -784,7 +794,7 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
   const serialized = template.replace(animationMarker, animationCss)
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${region?.width ?? width}" height="${region?.height ?? height}"><foreignObject x="${region ? -region.x : 0}" y="${region ? -region.y : 0}" width="${width}" height="${height}">${serialized}</foreignObject></svg>`
   prepared?.()
-  const image = await decodeRaster(doc, svg, region?.width ?? width, region?.height ?? height)
+  const image = await decodeRaster(doc, svg, region?.width ?? width, region?.height ?? height, element === doc.body)
   try {
     const canvas = doc.createElement('canvas')
     canvas.width = region?.width ?? width
