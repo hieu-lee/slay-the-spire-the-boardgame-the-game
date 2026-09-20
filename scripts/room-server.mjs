@@ -348,6 +348,43 @@ export function createRoomServer({
         return send(response, 403, { error: 'Origin not allowed' })
       }
       const url = new URL(request.url ?? '/', 'http://localhost')
+      if (request.method === 'GET' && url.pathname === '/run-vod-raster') {
+        response.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+        })
+        return response.end(`<script>
+          parent.postMessage({ runVodRasterReady: true }, '*')
+          addEventListener('message', async ({ data }) => {
+            if (!data?.runVodRaster) return
+            try {
+              const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(data.svg)
+              const image = new Image(); image.src = url
+              await image.decode()
+              const canvas = new OffscreenCanvas(data.width, data.height)
+              canvas.getContext('2d').drawImage(image, 0, 0)
+              image.removeAttribute('src')
+              const bitmap = canvas.transferToImageBitmap()
+              parent.postMessage({ runVodRaster: data.runVodRaster, bitmap }, '*', [bitmap])
+            } catch (error) {
+              parent.postMessage({ runVodRaster: data.runVodRaster, error: String(error?.stack || error?.message || error) }, '*')
+            }
+          })
+        <\/script>`)
+      }
+      if (request.method === 'GET' && url.pathname === '/run-vod-reset') {
+        let target
+        try { target = new URL(url.searchParams.get('return') ?? '') }
+        catch { return send(response, 403, { error: 'Origin not allowed' }) }
+        if (!allowedOrigin || target.origin !== allowedOrigin) return send(response, 403, { error: 'Origin not allowed' })
+        response.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+          'cross-origin-opener-policy': 'same-origin',
+        })
+        const delay = url.searchParams.get('delay') === '2000' ? 2_000 : 0
+        return response.end(`<script>setTimeout(() => location.replace(${JSON.stringify(target.href)}), ${delay})</script>`)
+      }
       if (request.method === 'GET' && url.pathname === '/api/health') {
         return send(response, 200, {
           ok: true, rooms: store.rooms.size, connections: sockets.size, connectionCapacity: maxConnections,

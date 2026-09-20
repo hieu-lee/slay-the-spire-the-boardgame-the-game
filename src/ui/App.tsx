@@ -106,8 +106,10 @@ import { flushLeaderboardOutbox, queueFinishedSoloRun } from '../leaderboard.ts'
 import './styles/run-vod.css'
 import {
   discardRunVod,
-  extractRunVod as renderRunVod,
+  cleanupDeferredRunVod,
   RUN_VOD_REPLAY,
+  RUN_VOD_RETURN_PARAM,
+  startRunVodExport,
   startRunVod,
   useRunVod,
 } from './run-vod.ts'
@@ -245,7 +247,8 @@ export function App() {
   const [online, setOnline] = useState(() => !RUN_VOD_REPLAY && !SINGLE_PLAYER_ONLY && hasRoomSession())
   const [localOpen, setLocalOpen] = useState(RUN_VOD_REPLAY)
   const [settings, setSettings] = useGameSettings(RUN_VOD_REPLAY ? RUN_VOD_SETTINGS : undefined)
-  useEffect(() => settings.sfxVolume > 0 ? installSoundEffects() : undefined, [settings.sfxVolume])
+  useEffect(() => { if (!RUN_VOD_REPLAY) void cleanupDeferredRunVod() }, [])
+  useEffect(() => settings.sfxVolume > 0 ? installSoundEffects(!RUN_VOD_REPLAY) : undefined, [settings.sfxVolume])
   useLayoutEffect(() => {
     if (!RUN_VOD_REPLAY) return
     document.title = 'Slay the Spire Run VOD — 1920×1080'
@@ -603,6 +606,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     onOpen()
   }
 
+  useEffect(() => {
+    const url = new URL(location.href)
+    if (url.searchParams.get(RUN_VOD_RETURN_PARAM) !== resume?.run.campaign.runId) return
+    url.searchParams.delete(RUN_VOD_RETURN_PARAM)
+    history.replaceState(history.state, '', url)
+    resumeSoloRun()
+  }, [])
+
   const flushQueuedRun = () => void flushLeaderboardOutbox().then(({ recorded, rejected }) => {
     const id = leaderboardSubmission.current
     if (!id) return
@@ -694,12 +705,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       const terminal = terminalRun.current?.campaign.runId === run.campaign.runId
         ? structuredClone(terminalRun.current)
         : structuredClone(run)
+      const saved: SoloRunSave = {
+        version: 1, run: returnRun, built,
+        terminalRun: terminalRun.current?.campaign.runId === run.campaign.runId ? structuredClone(terminalRun.current) : null,
+        recordRunId,
+        vodExtractedRunId,
+      }
       setVodMessage('Preparing the native 1080p replay…')
-      await renderRunVod(log, terminal)
-      terminalRun.current = terminal
-      setVodExtractedRunId(terminal.campaign.runId)
-      setVodMessage('Run VOD downloaded. Replay log retained.')
-      setRun(returnRun)
+      await startRunVodExport(log, terminal, saved)
     } catch (error) {
       setRun(returnRun)
       setVodMessage(error instanceof Error ? error.message : 'Run VOD extraction failed.')

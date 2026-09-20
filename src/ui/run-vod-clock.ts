@@ -100,7 +100,7 @@ export function createRunVodClock(doc: Document, commit: (callback: () => void) 
       return [...animations].some(([animation, { started }]) => {
         const timing = animation.effect?.getComputedTiming()
         return Number.isFinite(Number(timing?.endTime)) && Number(timing?.endTime) > now - started
-      }) || Boolean(doc.querySelector('[data-webmcp-pending="true"], .character-attack, .card-flight, .defect-evoke'))
+      }) || Boolean(doc.querySelector('[data-webmcp-pending="true"], .character-attack, .card-flight'))
     },
     restore() {
       Object.assign(view, {

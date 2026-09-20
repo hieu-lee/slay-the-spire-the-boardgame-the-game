@@ -15,7 +15,7 @@ try {
   await page.route('**/__video-test', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html>' }))
   await page.goto(`http://localhost:${server.httpServer.address().port}/__video-test`)
   const result = await page.evaluate(async () => {
-    const { createOfflineRunVod, createRunVodJoiner, runVodMemoryFile } = await import('/src/ui/run-vod-video.ts')
+    const { createOfflineRunVod, createRunVodJoiner, runVodMemoryFile, runVodVideoCodec } = await import('/src/ui/run-vod-video.ts')
     const memory = runVodMemoryFile()
     const block = new Uint8Array(1024 * 1024 + 500).fill(7)
     memory.write({ position: 0, data: block })
@@ -57,6 +57,8 @@ try {
         await encoder.audio()
       }
       const blob = await encoder.finish()
+      const codec = await runVodVideoCodec(blob)
+      const invalidCodec = await runVodVideoCodec(new Blob())
       const encodedMs = performance.now() - started
       const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()))
       const clips = await Promise.all(['#f00', '#f00', '#00f', '#00f'].map(async color => {
@@ -97,11 +99,13 @@ try {
       await abortedJoiner.append(clips[0]); stopJoin = true
       const joinCancelled = await abortedJoiner.append(clips[1]).then(() => false, error => error.message === 'join cancellation')
       await abortedJoiner.abort()
-      return { bytes, joinedBytes, extension: encoder.extension, encodedMs, rejectsCancelled, joinCancelled }
+      return { bytes, joinedBytes, extension: encoder.extension, codec, invalidCodec, encodedMs, rejectsCancelled, joinCancelled }
     } finally { await encoder.abort(); URL.revokeObjectURL(source) }
   })
   assert(result.rejectsCancelled, 'cancellation must stop encoding')
   assert(result.joinCancelled, 'cancellation must stop the packet joiner')
+  assert.match(result.codec, /^avc[13]\./, 'a valid clip did not expose its AVC decoder configuration')
+  assert.equal(result.invalidCodec, null, 'an invalid clip passed codec validation')
   const joinedPath = join(directory, 'joined.mp4')
   writeFileSync(joinedPath, Buffer.from(result.joinedBytes))
   for (const [time, channel] of [[.9, 0], [1.1, 2]]) {

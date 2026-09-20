@@ -2,27 +2,109 @@
 import { spawnSync } from 'node:child_process'
 import { createServer } from 'vite'
 import { chromium } from './lib/profile-browser.mjs'
+import { createRoomServer } from './room-server.mjs'
 import { assert, assertDeepEqual, assertEqual, check, report, suite } from './lib/harness.mjs'
 // Real video encoding is an explicit delivery check, not a per-edit gate.
 const verifyExports = process.argv.includes('--export')
+if (verifyExports) process.env.VITE_HOSTED_SESSION = 'true'
 
-const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { port: 0 } })
+function browserRss() {
+  const rows = spawnSync('ps', ['-axo', 'pid=,ppid=,rss=,command='], { encoding: 'utf8' }).stdout.trim().split('\n').map(line => {
+    const [pid, ppid, rss, ...command] = line.trim().split(/\s+/)
+    return [Number(pid), Number(ppid), Number(rss), command.join(' ')]
+  })
+  const descendants = new Set([process.pid])
+  for (let changed = true; changed;) {
+    changed = false
+    for (const [pid, ppid] of rows) if (descendants.has(ppid) && !descendants.has(pid)) { descendants.add(pid); changed = true }
+  }
+  return rows.filter(([pid, , , command]) => descendants.has(pid) && /chrome|chromium|headless_shell/i.test(command))
+    .map(([pid, , rss]) => [pid, rss])
+}
+
+let roomOrigin = ''
+const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { port: 0 }, plugins: verifyExports ? [{
+  name: 'run-vod-reset-service',
+  configureServer(vite) {
+    vite.middlewares.use('/session.json', (_request, response) => {
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({ origin: roomOrigin, protocolVersion: 1 }))
+    })
+  },
+}] : [] })
 await server.listen()
 const address = server.httpServer?.address()
 if (!address || typeof address === 'string') throw new Error('Vite did not report a port')
+const roomService = verifyExports ? createRoomServer({ allowedOrigin: `http://localhost:${address.port}` }) : null
+if (roomService) {
+  const roomAddress = await roomService.listen(0, '::')
+  roomOrigin = `http://[::1]:${roomAddress.port}`
+  const profile = await fetch(`${roomOrigin}/api/profile`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'TestPlayer', token: '00000000-0000-4000-8000-000000000001' }),
+  })
+  if (!profile.ok) throw new Error(`Could not seed the hosted VOD profile (${profile.status}).`)
+}
 
 const browser = await chromium.launch({ headless: true })
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, hasTouch: true, acceptDownloads: true })
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: true, acceptDownloads: true })
+let memoryTimer
+let frameWorkers = 0
 const errors = []
-page.on('console', (message) => {
-  if (message.type() === 'error' && message.text() !== 'Failed to load resource: net::ERR_FILE_NOT_FOUND') errors.push(message.text())
-})
-page.on('pageerror', (error) => errors.push(String(error)))
-page.on('requestfailed', (request) => {
-  if (request.failure()?.errorText !== 'net::ERR_ABORTED' &&
-    !(request.url().startsWith('blob:') && request.failure()?.errorText === 'net::ERR_FILE_NOT_FOUND')) {
-    errors.push(`${request.url()}: ${request.failure()?.errorText ?? 'request failed'}`)
+let page
+const attach = (next) => {
+  page = next
+  next.on('worker', worker => { if (worker.url().includes('run-vod-encode.worker')) frameWorkers++ })
+  next.on('console', (message) => {
+    if (message.type() === 'error' && message.text() !== 'Failed to load resource: net::ERR_FILE_NOT_FOUND') {
+      errors.push(`${message.text()} (${message.location().url})`)
+    }
+  })
+  next.on('pageerror', (error) => errors.push(String(error)))
+  next.on('requestfailed', (request) => {
+    if (request.failure()?.errorText !== 'net::ERR_ABORTED' &&
+      !(request.url().startsWith('blob:') && request.failure()?.errorText === 'net::ERR_FILE_NOT_FOUND')) {
+      errors.push(`${request.url()}: ${request.failure()?.errorText ?? 'request failed'}`)
+    }
+  })
+}
+attach(await context.newPage())
+context.on('page', attach)
+const waitForDownload = (timeout) => new Promise((resolve, reject) => {
+  const receive = (download) => { cleanup(); resolve(download) }
+  const added = (next) => next.on('download', receive)
+  const timer = setTimeout(() => { cleanup(); reject(new Error(`Download timed out after ${timeout}ms`)) }, timeout)
+  const cleanup = () => {
+    clearTimeout(timer); context.off('page', added)
+    for (const current of context.pages()) current.off('download', receive)
   }
+  context.on('page', added)
+  for (const current of context.pages()) current.on('download', receive)
+})
+const usePageWithButton = async (name) => {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    for (const current of [...context.pages()].reverse()) {
+      try {
+        if (await current.getByRole('button', { name, exact: true }).count()) { page = current; return }
+      } catch {}
+    }
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  throw new Error(`The VOD export did not return to the ${name} page.`)
+}
+const releaseJoinedCleanup = (target = page) => target.evaluate(async () => {
+  const root = await navigator.storage.getDirectory()
+  const entries = []
+  for await (const entry of root.keys()) if (/-joined-/.test(entry)) entries.push(entry)
+  const saved = JSON.parse(localStorage.getItem('sts-run-vod-cleanup') ?? '[]')
+  const deferred = Array.isArray(saved) ? saved.filter(entry => entry && typeof entry === 'object') : []
+  const delays = deferred.filter(entry => entries.includes(entry.name)).map(entry => entry.after - Date.now())
+  for (const entry of entries) await root.removeEntry(entry, { recursive: true })
+  const remaining = deferred.filter(entry => !entries.includes(entry.name))
+  if (remaining.length) localStorage.setItem('sts-run-vod-cleanup', JSON.stringify(remaining))
+  else localStorage.removeItem('sts-run-vod-cleanup')
+  return { entries, delays }
 })
 
 const readLog = () => page.evaluate(async () =>
@@ -172,6 +254,28 @@ try {
     assertDeepEqual(checkpoints.lengths, [4, 2, 2])
     assert(checkpoints.statesMatch && checkpoints.eventsMatch && checkpoints.untouched, JSON.stringify(checkpoints))
   })
+  const motionBoundary = await page.evaluate(async () => {
+    const { runVodAudioCueTime, runVodMotionSliceSkipped } = await import('/src/ui/run-vod.ts')
+    const active = { skip: 0, remaining: 1, capped: false }
+    const boundary = { skip: 0, remaining: 0, capped: false }
+    const resuming = { skip: 1, remaining: 0, capped: false }
+    const cue = (begin, at, until, loop = false) => {
+      const value = runVodAudioCueTime(begin, { at, loop }, until)
+      return value === undefined ? 'future' : value === null ? 'past' : Math.round(value * 1e6) / 1e6
+    }
+    return {
+      active: runVodMotionSliceSkipped(active),
+      boundary: runVodMotionSliceSkipped(boundary), boundaryCapped: boundary.capped,
+      resuming: runVodMotionSliceSkipped(resuming), resumingCapped: resuming.capped,
+      firstSliceCue: cue(0, 5.5 / 60, 4 / 60), resumedCue: cue(-4 / 60, 5.5 / 60, 2 / 60),
+      pastCue: cue(-4 / 60, 2 / 60, 2 / 60), continuingLoop: cue(-4 / 60, 2 / 60, 2 / 60, true),
+      endBoundary: cue(0, 4 / 60, 4 / 60), nextBoundary: cue(-4 / 60, 4 / 60, 1 / 60),
+    }
+  })
+  check('motion slices stop at exact frame boundaries and carry delayed audio into the resumed slice', () =>
+    assertDeepEqual(motionBoundary, { active: false, boundary: true, boundaryCapped: true, resuming: true, resumingCapped: false,
+      firstSliceCue: 'future', resumedCue: .025, pastCue: 'past', continuingLoop: 0,
+      endBoundary: 'future', nextBoundary: 0 }))
   const resolvedTurn = await page.evaluate(async initial => {
     const { runVodEventChoice } = await import('/src/ui/run-vod.ts')
     initial.combat = { combatId: 'turn-choice', presentationEvents: [] }
@@ -315,7 +419,7 @@ try {
     }
   })
   if (verifyExports) {
-    const compatibilityDownload = page.waitForEvent('download', { timeout: 60_000 })
+    const compatibilityDownload = waitForDownload(60_000)
     const compatibilityResult = page.evaluate(async ({ initial, terminal, event }) => {
       const { extractRunVod } = await import('/src/ui/run-vod.ts')
       const result = await extractRunVod({
@@ -345,6 +449,7 @@ try {
     const compatibilityMaxVolume = Number(compatibilityAudio?.stderr.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1])
     await compatibilityFile.delete()
     await page.getByRole('button', { name: 'Close video', exact: true }).click()
+    await releaseJoinedCleanup()
     check('legacy merged room and card events synthesize the missing room entry before replaying the card', () => {
       assert(roomRecovery.uniqueAccepted, 'a unique legacy room could not be recovered')
       assert(roomRecovery.ambiguousRejected, 'an ambiguous room branch would be guessed')
@@ -732,43 +837,140 @@ try {
     await page.evaluate(async () => {
       const root = await navigator.storage.getDirectory()
       await root.getDirectoryHandle('run-vod-stale-1', { create: true })
-      window.__vodFrameWorkers = 0
-      const NativeWorker = window.Worker
-      window.Worker = class extends NativeWorker {
-        constructor(url, options) {
-          super(url, options)
-          if (String(url).includes('run-vod-encode.worker')) window.__vodFrameWorkers++
-        }
-      }
+      await root.getDirectoryHandle('sts-run-vod-export-abandoned', { create: true })
+      await root.getDirectoryHandle('sts-run-vod-export-active', { create: true })
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('sts-run-vod-export-v1')
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+      })
+      const transaction = db.transaction('exports', 'readwrite')
+      transaction.objectStore('exports').put({ runId: 'abandoned' })
+      transaction.objectStore('exports').put({ runId: 'active', updatedAt: Date.now() })
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error)
+      })
+      db.close()
     })
     await page.getByRole('button', { name: 'Extract run VOD', exact: true }).waitFor()
+    const cancelledRunId = await page.evaluate(() => window.__STS_DEBUG__.getRun().campaign.runId)
+    await page.evaluate(() => {
+      const native = Storage.prototype.setItem
+      window.__restoreVodStorage = () => { Storage.prototype.setItem = native; delete window.__restoreVodStorage }
+      Storage.prototype.setItem = function (key, value) {
+        if (key === 'sts-solo-run') throw new DOMException('Full', 'QuotaExceededError')
+        return native.call(this, key, value)
+      }
+    })
+    await page.getByRole('button', { name: 'Extract run VOD', exact: true }).click()
+    await page.waitForFunction(() => document.body.textContent.includes('could not preserve your run before VOD export'))
+    const refusedUnsafeExport = await page.evaluate(runId => ({
+      runId: window.__STS_DEBUG__.getRun().campaign.runId,
+      exporting: new URL(location.href).searchParams.has('run-vod-export'),
+      restore: (window.__restoreVodStorage(), true),
+    }), cancelledRunId)
+    check('export refuses to navigate when the resumable run checkpoint cannot be saved', () => {
+      assertDeepEqual(refusedUnsafeExport, { runId: cancelledRunId, exporting: false, restore: true })
+    })
+    await page.getByRole('button', { name: 'Extract run VOD', exact: true }).click()
+    await usePageWithButton('Cancel VOD export')
+    await page.getByRole('button', { name: 'Cancel VOD export', exact: true }).click()
+    await usePageWithButton('Extract run VOD')
+    await page.waitForFunction(async () => {
+      for await (const entry of (await navigator.storage.getDirectory()).keys()) {
+        if (entry === 'sts-run-vod-export-abandoned') return false
+      }
+      return true
+    })
+    const cancelledStorage = await page.evaluate(async runId => {
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('sts-run-vod-export-v1')
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+      })
+      const transaction = db.transaction('exports', 'readonly')
+      const get = key => new Promise((resolve, reject) => {
+        const request = transaction.objectStore('exports').get(key)
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+      })
+      const [record, abandoned, active] = await Promise.all([get(runId), get('abandoned'), get('active')])
+      db.close()
+      const entries = []
+      for await (const entry of (await navigator.storage.getDirectory()).keys()) entries.push(entry)
+      return { record, directory: entries.includes(`sts-run-vod-export-${runId}`), abandoned,
+        abandonedDirectory: entries.includes('sts-run-vod-export-abandoned'), active: active?.runId,
+        activeDirectory: entries.includes('sts-run-vod-export-active') }
+    }, cancelledRunId)
+    check('cancelling export returns to the run and removes its checkpoint and clips', () =>
+      assertDeepEqual(cancelledStorage, { record: undefined, directory: false, abandoned: undefined,
+        abandonedDirectory: false, active: 'active', activeDirectory: true }))
+    await page.evaluate(async () => {
+      const request = indexedDB.open('sts-run-vod-export-v1')
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+      })
+      const transaction = db.transaction('exports', 'readwrite')
+      transaction.objectStore('exports').delete('active')
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error)
+      })
+      db.close()
+      await (await navigator.storage.getDirectory()).removeEntry('sts-run-vod-export-active', { recursive: true })
+    })
+    for (const stale of context.pages()) if (stale !== page) await stale.close()
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.waitForTimeout(500)
-    let download = null
-    page.once('download', (value) => { download = value })
+    await page.evaluate(() => {
+      const workbench = document.createElement('div')
+      workbench.id = 'run-vod-preview-fixture'
+      workbench.className = 'run-vod-workbench'
+      const status = document.createElement('div')
+      status.className = 'run-vod-workbench__status'
+      const label = document.createElement('span')
+      label.textContent = 'Rendering events 4–4 of location 2 · 9 / 50'
+      const progress = document.createElement('progress')
+      progress.max = 1; progress.value = .18; progress.setAttribute('aria-label', 'Run VOD export progress')
+      status.append(label, progress)
+      const cancel = document.createElement('button')
+      cancel.className = 'run-vod-workbench__cancel'; cancel.textContent = 'Cancel VOD export'
+      const frame = document.createElement('iframe')
+      frame.className = 'run-vod-workbench__frame'; frame.tabIndex = -1
+      workbench.append(status, cancel, frame)
+      document.body.append(workbench)
+    })
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) {
+      await page.setViewportSize(viewport)
+      const preview = await page.locator('#run-vod-preview-fixture').evaluate(frame => ({
+        box: document.querySelector('.run-vod-workbench__status')?.getBoundingClientRect().toJSON(),
+        cancel: document.querySelector('.run-vod-workbench__cancel')?.getBoundingClientRect().toJSON(),
+        pointer: getComputedStyle(frame.querySelector('.run-vod-workbench__frame')).pointerEvents,
+        opacity: getComputedStyle(frame.querySelector('.run-vod-workbench__frame')).opacity,
+      }))
+      assert(Math.abs(preview.box.x + preview.box.width / 2 - viewport.width / 2) < 1, 'export status is not centered')
+      assert(preview.cancel.top >= 0 && preview.cancel.top < 24 && viewport.width - preview.cancel.right < 24,
+        'export cancel action is outside the viewport')
+      assertDeepEqual({ pointer: preview.pointer, opacity: preview.opacity }, { pointer: 'none', opacity: '0' })
+      const screenshot = await page.screenshot({ path: `artifacts/run-vod/export-preview-${viewport.width}.png` })
+      assert(screenshot.length > viewport.width * viewport.height / 100, 'export preview screenshot is blank')
+    }
+    await page.locator('#run-vod-preview-fixture').evaluate(element => element.remove())
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const baselineBrowserRss = new Map(browserRss())
+    const sampleBrowserRss = () => browserRss().reduce((total, [pid, rss]) =>
+      total + Math.max(0, rss - (baselineBrowserRss.get(pid) ?? 0)), 0)
+    let peakBrowserRssKb = sampleBrowserRss()
+    memoryTimer = setInterval(() => { peakBrowserRssKb = Math.max(peakBrowserRssKb, sampleBrowserRss()) }, 50)
+    const downloadPromise = waitForDownload(180_000)
     await page.getByRole('button', { name: 'Extract run VOD', exact: true }).click()
     const replayFrame = page.locator('.run-vod-workbench__frame')
     await replayFrame.waitFor({ state: 'attached', timeout: 5_000 }).catch(() => {})
-    const extractDisabled = await page.getByRole('button', { name: 'Extract run VOD', exact: true, includeHidden: true }).isDisabled()
-    for (const viewport of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) {
-      await page.setViewportSize(viewport)
-      await page.waitForFunction(() => {
-        const bar = document.querySelector('.run-vod-workbench__status')
-        const box = bar?.getBoundingClientRect()
-        const cancel = document.querySelector('.run-vod-workbench__cancel')?.getBoundingClientRect()
-        return box && cancel && Math.abs(box.left + box.width / 2 - innerWidth / 2) < 1 &&
-          Math.abs(box.top + box.height / 2 - innerHeight / 2) < 1 &&
-          cancel.top >= 0 && cancel.top < 24 && innerWidth - cancel.right >= 0 && innerWidth - cancel.right < 24
-      })
-      const preview = await replayFrame.evaluate(frame => ({
-        pointer: getComputedStyle(frame).pointerEvents, focus: frame.tabIndex,
-        opacity: getComputedStyle(frame).opacity,
-        bar: document.querySelector('progress')?.getAttribute('aria-label'),
-        cancelBackground: getComputedStyle(document.querySelector('.run-vod-workbench__cancel')).backgroundColor,
-      }))
-      assertDeepEqual(preview, { pointer: 'none', focus: -1, opacity: '0', bar: 'Run VOD export progress', cancelBackground: 'rgb(23, 28, 41)' })
-      await page.screenshot({ path: `artifacts/run-vod/export-preview-${viewport.width}.png` })
-    }
+    await page.waitForFunction(() => document.querySelector('.run-vod-workbench__status progress')?.getAttribute('aria-label') === 'Run VOD export progress')
+    const preview = await replayFrame.evaluate(frame => ({
+      pointer: getComputedStyle(frame).pointerEvents, focus: frame.tabIndex, opacity: getComputedStyle(frame).opacity,
+    }))
+    assertDeepEqual(preview, { pointer: 'none', focus: -1, opacity: '0' })
+    const cancelVisible = await page.getByRole('button', { name: 'Cancel VOD export', exact: true }).evaluate(button => {
+      const bounds = button.getBoundingClientRect()
+      return document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2) === button
+    })
+    assert(cancelVisible, 'the renderer host covered the export progress and cancel controls')
     const frame = page.frames().find((candidate) => new URL(candidate.url()).searchParams.get('run-vod') === '1')
     const frameViewport = frame ? await frame.evaluate(() => [innerWidth, innerHeight]) : null
     const replayControlsHidden = frame ? await frame.evaluate(() => [...document.querySelectorAll('[data-run-vod-control]')]
@@ -786,13 +988,17 @@ try {
       }
       return media.filter((query) => query.includes('prefers-reduced-motion') || query.includes('(hover:'))
     }) : null
-    await replayFrame.waitFor({ state: 'detached', timeout: 90_000 })
-    await page.waitForTimeout(500)
-    if (!download) throw new Error(`${await page.locator('body').innerText()}\n${errors.join('\n')}`)
+    const download = await downloadPromise.catch(async () => {
+      throw new Error(`${await page.locator('body').innerText()}\n${errors.join('\n')}`)
+    })
+    clearInterval(memoryTimer); memoryTimer = undefined
+    peakBrowserRssKb = Math.max(peakBrowserRssKb, sampleBrowserRss())
     await page.getByRole('dialog', { name: 'Your completed Run VOD', exact: true }).waitFor()
     await page.waitForFunction(() => document.querySelector('.run-vod-player video')?.readyState >= 1)
     assertDeepEqual(await page.locator('.run-vod-player video').evaluate(video => [video.videoWidth, video.videoHeight]), [1920, 1080])
     await page.getByRole('button', { name: 'Close video', exact: true }).click()
+    await usePageWithButton('Extract run VOD again')
+    for (const stale of context.pages()) if (stale !== page) await stale.close()
     const downloadPath = await download.path()
     const afterExtract = await page.evaluate(async () => {
       const runId = window.__STS_DEBUG__.getRun().campaign.runId
@@ -811,7 +1017,12 @@ try {
     const audioProbe = downloadPath && spawnSync('ffmpeg', [
       '-hide_banner', '-i', downloadPath, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-',
     ], { encoding: 'utf8' })
+    const tailAudioProbe = downloadPath && spawnSync('ffmpeg', [
+      '-hide_banner', '-sseof', '-1', '-i', downloadPath, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-',
+    ], { encoding: 'utf8' })
     const maxVolume = Number(audioProbe?.stderr.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1])
+    const tailMaxVolume = Number(tailAudioProbe?.stderr.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1])
+    const joinedGrace = await releaseJoinedCleanup()
     const vodStorage = await page.evaluate(async () => {
       const root = await navigator.storage.getDirectory()
       const entries = []
@@ -821,7 +1032,8 @@ try {
         const directory = await root.getDirectoryHandle(entry)
         try { frameBytes += (await (await directory.getFileHandle('frames.bin')).getFile()).size } catch {}
       }
-      return { entries, frameBytes, frameWorkers: window.__vodFrameWorkers }
+      return { entries, frameBytes,
+        joined: entries.filter(entry => /-joined-/.test(entry)) }
     })
     const metadata = probe?.status === 0 ? JSON.parse(probe.stdout) : { streams: [], format: {} }
     const streams = metadata.streams ?? []
@@ -833,20 +1045,25 @@ try {
       const measuredRate = timestamps.length > 1 ? (timestamps.length - 1) / measuredDuration
         : Number(video?.nb_read_frames ?? 0) / Number(video?.duration ?? metadata.format?.duration)
       assert(exportedEventCount >= 3, `the extraction fixture had only ${exportedEventCount} semantic events`)
+      assert(peakBrowserRssKb < 1.5 * 1024 * 1024, `VOD export browser growth exceeded 1.5 GB (${peakBrowserRssKb} KiB)`)
       assertDeepEqual(frameViewport, [1920, 1080])
       assert(replayControlsHidden, 'VOD-management controls are visible inside the replay')
       assertDeepEqual(replayDeviceMediaRules, [], 'host motion/hover CSS remained active in the canonical replay')
       assert(/\.(webm|mp4)$/.test(download.suggestedFilename()), 'the extraction did not download a video')
       assert(video?.width === 1920 && video.height === 1080, 'video is not native 1920x1080')
-      assert(measuredRate >= 59.9, `video frame rate metadata ${JSON.stringify(video)}; measured ${measuredRate}`)
+      assert(Math.abs(measuredRate - 120) < .1, `video frame rate metadata ${JSON.stringify(video)}; measured ${measuredRate}`)
       assert(measuredDuration >= 2, `the replay did not contain the recorded interactions (${measuredDuration}s)`)
       assert(streams.some((stream) => stream.codec_type === 'audio'), 'video has no max-volume audio mix')
       assert(audioProbe?.status === 0 && Number.isFinite(maxVolume) && maxVolume > -60,
         `the VOD audio track is silent (${audioProbe?.stderr ?? 'ffmpeg failed'})`)
-      assert(extractDisabled, 'the Extract action remained enabled during export')
+      assert(tailAudioProbe?.status === 0 && Number.isFinite(tailMaxVolume) && tailMaxVolume > -60,
+        `resumed clips lost their continuing audio (${tailAudioProbe?.stderr ?? 'ffmpeg failed'})`)
       assert(!vodStorage.entries.includes('run-vod-stale-1'), 'stale temporary VOD storage was not purged')
-      assertEqual(vodStorage.frameWorkers, 0, 'native export still encoded temporary PNG frames')
+      assertDeepEqual(vodStorage.joined, [], 'joined VOD storage survived return navigation')
+      assert(joinedGrace.entries.length === 1 && joinedGrace.delays.every(delay => delay > 45_000 && delay <= 60_000),
+        `joined VOD download did not retain its 60-second cleanup grace (${JSON.stringify(joinedGrace)})`)
       assertEqual(vodStorage.frameBytes, 0, 'native export still wrote temporary frames to disk')
+      assertEqual(frameWorkers, 0, 'native export still created temporary PNG workers')
       assertEqual(afterExtract.finalized, false, 'extracting implicitly recorded the campaign result')
       assert(afterExtract.buttons.includes('Stop and record result'), 'the independent result action disappeared')
       assert(afterExtract.buttons.includes('Prepare next run →'), 'extract-only did not expose the independent next-run action')
@@ -856,12 +1073,14 @@ try {
       assertDeepEqual(afterExtract.persisted, { version: 2, runId: afterExtract.log, events: exportedEventCount },
         'the completed run log was not retained in IndexedDB')
     })
-    const repeatDownload = page.waitForEvent('download', { timeout: 90_000 })
+    const repeatDownload = waitForDownload(90_000)
     await page.getByRole('button', { name: 'Extract run VOD again', exact: true }).click()
-    await replayFrame.waitFor({ state: 'detached', timeout: 90_000 })
     await repeatDownload
     await page.getByRole('dialog', { name: 'Your completed Run VOD', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Close video', exact: true }).click()
+    await usePageWithButton('Extract run VOD again')
+    await releaseJoinedCleanup()
+    for (const stale of context.pages()) if (stale !== page) await stale.close()
   }
 
   const terminalRunId = await page.evaluate(() => window.__STS_DEBUG__.getRun().campaign.runId)
@@ -945,15 +1164,18 @@ try {
   if (verifyExports) {
     const legacy = structuredClone(merchantLog)
     legacy.events.at(-1).choice = { source: exitChoice.steps.at(-1) }
-    const merchantDownload = page.waitForEvent('download', { timeout: 60_000 })
+    const merchantDownload = waitForDownload(60_000)
     await page.evaluate(async log => (await import('/src/ui/run-vod.ts')).extractRunVod(log, window.__STS_DEBUG__.getRun()).then(() => true), legacy)
     await (await merchantDownload).delete()
     await page.getByRole('button', { name: 'Close video', exact: true }).click()
+    await releaseJoinedCleanup()
     check('legacy merchant exports reconstruct the missing exit before proceeding', () => assert(true))
   }
   check('run VOD flow has no browser errors', () => assertDeepEqual(errors, []))
   report(verifyExports ? 'run VOD browser + video export' : 'run VOD browser (quick; add --export for video encoding)')
 } finally {
+  clearInterval(memoryTimer)
   await browser.close()
+  await roomService?.close()
   await server.close()
 }

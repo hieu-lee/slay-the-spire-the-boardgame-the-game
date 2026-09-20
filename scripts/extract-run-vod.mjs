@@ -37,38 +37,46 @@ try {
       (await import('/src/ui/run-vod.ts')).runVodLocations(log, expected).map(location => location.log.events.length),
     { log, expected })
   } finally { await probe.browser.close() }
-  const chunks = lengths.flatMap((length, location) => Array.from({ length: Math.ceil(length / 8) }, (_, index) => ({
-    location, from: index * 8, to: Math.min(length, (index + 1) * 8),
+  const chunks = lengths.flatMap((length, location) => Array.from({ length }, (_, index) => ({
+    location, from: index, to: index + 1,
   })))
   const metadata = []
   let playback
-  for (const [chunkIndex, chunk] of chunks.entries()) {
-    const key = String(chunkIndex).padStart(4, '0')
-    const worker = await page()
-    try {
+  for (const [eventIndex, chunk] of chunks.entries()) {
+    let motionSkip = 0
+    do {
+      const key = String(metadata.length).padStart(4, '0')
+      const worker = await page()
+      try {
       const download = worker.page.waitForEvent('download', { timeout: 1_800_000 })
-      const result = await worker.page.evaluate(async ({ log, expected, chunk, first, last, continuation, playback, key }) => {
+      const result = await worker.page.evaluate(async ({ log, expected, chunk, first, last, continuation, playback, key, motionSkip }) => {
         const vod = await import('/src/ui/run-vod.ts')
         const location = vod.runVodLocations(log, expected)[chunk.location]
         let initial = structuredClone(location.log.initial)
         for (const event of location.log.events.slice(0, chunk.from)) initial = vod.applyRunVodEvent(initial, event)
         const events = location.log.events.slice(chunk.from, chunk.to)
+        const motionFrames = vod.runVodExportMotionFrames(events[0])
         let slicedExpected = structuredClone(initial)
         for (const event of events) slicedExpected = vod.applyRunVodEvent(slicedExpected, event)
         const clip = await vod.renderRunVodLocation({ ...location.log, initial, events }, slicedExpected, first, last,
-          { resume: chunk.from > 0, continuation, playback })
+          { resume: !first || motionSkip > 0, continuation, playback,
+          motionSkip, motionLimit: motionFrames })
         const url = URL.createObjectURL(clip.video)
         Object.assign(document.createElement('a'), { href: url, download: `${key}.mp4` }).click()
         window.__runVodCleanup = async () => { URL.revokeObjectURL(url); await clip.cleanup() }
-        return { key, duration: clip.duration, cues: clip.cues, playback: clip.playback }
-      }, { log, expected, chunk, first: chunkIndex === 0, last: chunkIndex === chunks.length - 1,
-        continuation: chunk.to < lengths[chunk.location], playback: chunk.from > 0 ? playback : undefined, key })
+        return { key, duration: clip.duration, cues: clip.cues, playback: clip.playback,
+          motionCapped: clip.motionCapped, motionFrames }
+      }, { log, expected, chunk, first: metadata.length === 0, last: eventIndex === chunks.length - 1,
+        continuation: chunk.to < lengths[chunk.location], playback: metadata.length > 0 || motionSkip > 0 ? playback : undefined,
+        key, motionSkip })
       await (await download).saveAs(join(directory, `${key}.mp4`))
       await worker.page.evaluate(() => window.__runVodCleanup())
       metadata.push(result)
       playback = result.playback
-      console.log(`Rendered ${chunkIndex + 1}/${chunks.length} · ${chunk.to - chunk.from} events`)
-    } finally { await worker.browser.close() }
+      motionSkip = result.motionCapped ? motionSkip + result.motionFrames : 0
+      console.log(`Rendered event ${eventIndex + 1}/${chunks.length}${result.motionCapped ? ' · continuing motion' : ''}`)
+      } finally { await worker.browser.close() }
+    } while (motionSkip > 0)
   }
 
   const cues = []

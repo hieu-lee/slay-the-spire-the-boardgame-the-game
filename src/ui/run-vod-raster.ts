@@ -41,10 +41,67 @@ type FrameDecoder = {
 }
 type ImageDecoderConstructor = new (options: { data: ArrayBuffer; type: string }) => FrameDecoder
 const documentDecoders = new Map<Document, Map<string, Promise<FrameDecoder | null>>>()
+type RasterDecoder = {
+  frame: HTMLIFrameElement
+  ready: Promise<void>
+  next: number
+  pending: Map<number, { resolve: (bitmap: ImageBitmap) => void; reject: (error: Error) => void }>
+  message: (event: MessageEvent) => void
+}
+const rasterDecoders = new Map<Document, RasterDecoder>()
+let rasterDecoderUrl = ''
+export const setRunVodRasterDecoderUrl = (url = '') => { rasterDecoderUrl = url }
 const imageStarts = new WeakMap<HTMLImageElement, { src: string; at: number }>()
+const animatedImageSources = new WeakMap<HTMLImageElement, { src: string; nextAt: number }>()
+const seededImagePhases = new WeakMap<Document, Record<string, number>>()
 const decodedFrames = new WeakMap<FrameDecoder, { index: number; start: number; end: number; url: string }>()
 const imageDurations = new WeakMap<FrameDecoder, number>()
-type StyledClone = { source: Element; clone: HTMLElement | SVGElement; pseudo?: '::before' | '::after' }
+
+const imagePhaseIdentity = (image: HTMLImageElement, src: string) =>
+  image.dataset.animationAsset || image.closest<HTMLElement>('[data-attack-asset]')?.dataset.attackAsset || src
+
+const imagePhaseKey = (image: HTMLImageElement, src: string) => {
+  const identity = imagePhaseIdentity(image, src)
+  let ordinal = 0
+  for (const candidate of image.ownerDocument.images) {
+    if (candidate === image) break
+    const candidateSrc = candidate.currentSrc || candidate.src
+    if (imagePhaseIdentity(candidate, candidateSrc) === identity) ordinal++
+  }
+  return `${identity}\n${ordinal}`
+}
+
+export function seedRunVodImagePhases(doc: Document, phases?: Record<string, number>) {
+  if (phases) seededImagePhases.set(doc, phases)
+  else seededImagePhases.delete(doc)
+}
+
+function runVodImageStart(image: HTMLImageElement, src: string, now: number) {
+  let start = imageStarts.get(image)
+  if (!start || start.src !== src) {
+    start = { src, at: now - (seededImagePhases.get(image.ownerDocument)?.[imagePhaseKey(image, src)] ?? 0) }
+    imageStarts.set(image, start)
+  }
+  return start
+}
+
+export function trackRunVodImagePhases(doc: Document, now: number) {
+  for (const image of doc.images) {
+    const src = image.currentSrc || image.src
+    if (src) runVodImageStart(image, src, now)
+  }
+}
+
+export function runVodImagePhases(doc: Document, now: number) {
+  const phases: Record<string, number> = {}
+  for (const image of doc.images) {
+    const src = image.currentSrc || image.src
+    const start = imageStarts.get(image)
+    if (start?.src === src) phases[imagePhaseKey(image, src)] = Math.max(0, now - start.at)
+  }
+  return phases
+}
+type StyledClone = { source: Element; clone: HTMLElement | SVGElement; pseudo?: '::before' | '::after'; paintOverflow: number }
 type RasterCache = {
   content: HTMLElement
   nodes: StyledClone[]
@@ -56,9 +113,242 @@ type RasterCache = {
   animations: Set<KeyframeEffect>
   restyle: Set<Element>
   serialized: string
+  baseCss: string
+  styles: string[]
+  layoutStyles: string[]
   mutations: (records: MutationRecord[]) => void
 }
 const snapshots = new Map<Document, RasterCache>()
+const paintOnly = /^(offset|easing|composite|computedOffset|transform|translate|rotate|scale|opacity|filter|clipPath|boxShadow|textShadow|backgroundColor|backgroundPositionX|backgroundPositionY|border(?:Top|Right|Bottom|Left)?Color|strokeDashoffset|offsetDistance)$/
+const artworkProperties = ['background-image', 'border-image-source', 'mask-image', '-webkit-mask-image', 'list-style-image']
+const RASTER_REGION_PADDING = 96
+
+function rasterDecoder(doc: Document) {
+  let decoder = rasterDecoders.get(doc)
+  if (decoder) return decoder
+  const frame = doc.createElement('iframe')
+  frame.hidden = true
+  frame.dataset.runVodRasterDecoder = ''
+  frame.sandbox.add('allow-scripts')
+  const source = `<script>
+    parent.postMessage({ runVodRasterReady: true }, '*')
+    addEventListener('message', async ({ data }) => {
+      if (!data?.runVodRaster) return
+      try {
+        const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(data.svg)
+        const image = new Image(); image.src = url
+        await image.decode()
+        const canvas = new OffscreenCanvas(data.width, data.height)
+        canvas.getContext('2d').drawImage(image, 0, 0)
+        image.removeAttribute('src')
+        const bitmap = canvas.transferToImageBitmap()
+        parent.postMessage({ runVodRaster: data.runVodRaster, bitmap }, '*', [bitmap])
+      } catch (error) {
+        parent.postMessage({ runVodRaster: data.runVodRaster, error: String(error?.stack || error?.message || error) }, '*')
+      }
+    })
+  <\/script>`
+  if (rasterDecoderUrl) frame.src = rasterDecoderUrl
+  else frame.srcdoc = source
+  let opened!: () => void
+  const ready = new Promise<void>((resolve, reject) => {
+    const timeout = doc.defaultView!.setTimeout(() => reject(new Error('The isolated VOD raster decoder did not start.')), 10_000)
+    opened = () => { doc.defaultView!.clearTimeout(timeout); resolve() }
+  })
+  const pending: RasterDecoder['pending'] = new Map()
+  const message = (event: MessageEvent) => {
+    if (event.source !== frame.contentWindow) return
+    if (event.data?.runVodRasterReady) { opened(); return }
+    const request = pending.get(Number(event.data?.runVodRaster))
+    if (!request) return
+    pending.delete(Number(event.data.runVodRaster))
+    if (event.data.bitmap) request.resolve(event.data.bitmap)
+    else request.reject(new Error(event.data.error || 'The isolated VOD raster decoder failed.'))
+  }
+  doc.defaultView!.addEventListener('message', message)
+  doc.body.append(frame)
+  decoder = { frame, ready, next: 0, pending, message }
+  rasterDecoders.set(doc, decoder)
+  return decoder
+}
+
+async function decodeRaster(doc: Document, svg: string, width: number, height: number) {
+  const decoder = rasterDecoder(doc)
+  await decoder.ready
+  const id = ++decoder.next
+  const result = new Promise<ImageBitmap>((resolve, reject) => decoder.pending.set(id, { resolve, reject }))
+  decoder.frame.contentWindow!.postMessage({ runVodRaster: id, svg, width, height }, '*')
+  return result
+}
+
+export type RunVodRasterRegion = { x: number; y: number; width: number; height: number; safe: boolean }
+
+export function mergeRunVodRasterRegions(values: RunVodRasterRegion[], limit = 8) {
+  const regions = values.map(region => ({ ...region }))
+  const join = (i: number, j: number) => {
+    const a = regions[i]!, b = regions[j]!
+    regions[i] = {
+      x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+      width: Math.max(a.x + a.width, b.x + b.width) - Math.min(a.x, b.x),
+      height: Math.max(a.y + a.height, b.y + b.height) - Math.min(a.y, b.y),
+      safe: a.safe && b.safe,
+    }
+    regions.splice(j, 1)
+  }
+  for (let i = 0; i < regions.length; i++) for (let j = regions.length - 1; j > i; j--) {
+    const a = regions[i]!, b = regions[j]!
+    if (a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height) join(i, j)
+  }
+  while (regions.length > limit) {
+    let bestI = 0, bestJ = 1, bestWaste = Infinity
+    for (let i = 0; i < regions.length; i++) for (let j = i + 1; j < regions.length; j++) {
+      const a = regions[i]!, b = regions[j]!
+      const width = Math.max(a.x + a.width, b.x + b.width) - Math.min(a.x, b.x)
+      const height = Math.max(a.y + a.height, b.y + b.height) - Math.min(a.y, b.y)
+      const waste = width * height - a.width * a.height - b.width * b.height
+      if (waste < bestWaste) { bestI = i; bestJ = j; bestWaste = waste }
+    }
+    join(bestI, bestJ)
+  }
+  return regions
+}
+
+const scrollState = (element: HTMLElement) => [element, ...element.querySelectorAll('*')]
+  .map((node, index) => node.scrollTop || node.scrollLeft ? `${index}:${node.scrollLeft}:${node.scrollTop}` : '').filter(Boolean).join(';')
+
+function activeRasterTargets(doc: Document) {
+  const view = doc.defaultView!
+  return doc.getAnimations().flatMap((animation) => {
+    const effect = animation.effect
+    if (!(effect instanceof view.KeyframeEffect) || !(effect.target instanceof view.Element)) return []
+    const endTime = Number(effect.getComputedTiming().endTime)
+    // The replay clock pauses completed CSS animations so their last style
+    // remains visible. They no longer change a frame.
+    if (Number.isFinite(endTime) && Number(animation.currentTime ?? 0) >= endTime) return []
+    return [{ effect, target: effect.target as HTMLElement | SVGElement }]
+  })
+}
+
+function paintOverflow(style: CSSStyleDeclaration) {
+  const shadows = (value: string) => Math.max(0, ...value.replace(/rgba?\([^)]*\)/g, '').split(',').map((shadow) => {
+    if (/\binset\b/.test(shadow)) return 0
+    const lengths = [...shadow.matchAll(/-?\d*\.?\d+px/g)].map(match => Number.parseFloat(match[0]))
+    return Math.max(Math.abs(lengths[0] ?? 0), Math.abs(lengths[1] ?? 0)) + 1.5 * (lengths[2] ?? 0) + Math.abs(lengths[3] ?? 0)
+  }))
+  const filter = style.filter.replace(/rgba?\([^)]*\)/g, '')
+  const blur = [...filter.matchAll(/blur\((-?\d*\.?\d+)px\)/g)].reduce((sum, match) => sum + 1.5 * Math.abs(Number(match[1])), 0)
+  const drops = [...filter.matchAll(/drop-shadow\(([^)]*)\)/g)].reduce((sum, match) => sum + shadows(match[1]!), 0)
+  return Math.max(shadows(style.boxShadow), shadows(style.textShadow), blur + drops)
+}
+
+function paintOnlyAnimationProperty(property: string) {
+  return paintOnly.test(property)
+}
+
+function animationEscapes(target: Element, root: HTMLElement, view: Window) {
+  const nodes = new Set<Element>([target, ...target.querySelectorAll('*')])
+  for (let node = target.parentElement; node && root.contains(node); node = node.parentElement) nodes.add(node)
+  return [...nodes].some((node) => ['', '::before', '::after'].some((pseudo) => {
+    const style = view.getComputedStyle(node, pseudo)
+    return paintOverflow(style) > RASTER_REGION_PADDING
+  }))
+}
+
+// A full-frame cache remains the authority. This only offers a crop when every
+// running effect repaints in place; callers fall back on any layout mutation.
+export function runVodRasterRegions(element: HTMLElement, at?: number): RunVodRasterRegion[] | null {
+  const doc = element.ownerDocument
+  const view = doc.defaultView!
+  const cached = snapshots.get(doc)
+  cached?.mutations(cached.observer.takeRecords())
+  const regions: RunVodRasterRegion[] = []
+  const included = new Set<Element>()
+  const include = (source: Element) => {
+    if (included.has(source)) return
+    included.add(source)
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+    for (const node of [source, ...source.querySelectorAll('*')]) {
+      const box = node.getBoundingClientRect()
+      if (!box.width || !box.height) continue
+      left = Math.min(left, box.left - RASTER_REGION_PADDING)
+      top = Math.min(top, box.top - RASTER_REGION_PADDING)
+      right = Math.max(right, box.right + RASTER_REGION_PADDING)
+      bottom = Math.max(bottom, box.bottom + RASTER_REGION_PADDING)
+    }
+    left = Math.max(0, Math.floor(left)); top = Math.max(0, Math.floor(top))
+    right = Math.min(view.innerWidth, Math.ceil(right)); bottom = Math.min(view.innerHeight, Math.ceil(bottom))
+    if (right > left && bottom > top) regions.push({ x: left, y: top, width: right - left, height: bottom - top, safe: true })
+  }
+  let safe = Boolean(cached && !cached.dirty && cached.restyle.size === 0 && cached.scroll === scrollState(element))
+  for (const image of doc.images) {
+    const animated = animatedImageSources.get(image)
+    if (animated?.src === (image.currentSrc || image.src) && (at === undefined || animated.nextAt <= at)) include(image)
+  }
+  for (const { effect, target } of activeRasterTargets(doc)) {
+    // Combat VFX pseudo layers are contained by the same bounded overlay as
+    // their host; the 96px crop padding exceeds their largest keyframe scale.
+    if (effect.pseudoElement && !target.matches('.combat-vfx')) safe = false
+    if (!target.matches('.combat-vfx') && ['::before', '::after'].some(pseudo => {
+      const content = view.getComputedStyle(target, pseudo).content
+      return content !== 'none' && content !== 'normal'
+    })) safe = false
+    if ([...effect.getKeyframes()].some((frame) => Object.keys(frame).some((key) =>
+      !paintOnlyAnimationProperty(key)))) safe = false
+    if (animationEscapes(target, element, view)) safe = false
+    include(target)
+  }
+  if (!regions.length) return safe ? null : [{ x: 0, y: 0, width: view.innerWidth, height: view.innerHeight, safe }]
+  return mergeRunVodRasterRegions(regions).map(region => ({ ...region, safe }))
+}
+
+export function runVodRasterRegion(element: HTMLElement, at?: number): RunVodRasterRegion | null {
+  const regions = runVodRasterRegions(element, at)
+  if (!regions?.length) return null
+  const x = Math.min(...regions.map(region => region.x)), y = Math.min(...regions.map(region => region.y))
+  return {
+    x, y,
+    width: Math.max(...regions.map(region => region.x + region.width)) - x,
+    height: Math.max(...regions.map(region => region.y + region.height)) - y,
+    safe: regions.every(region => region.safe),
+  }
+}
+
+function croppedContent(cache: RasterCache, element: HTMLElement, crop: RunVodRasterRegion) {
+  const keep = new Set<Element>()
+  for (const { source, paintOverflow } of cache.nodes) {
+    const box = source.getBoundingClientRect()
+    if (box.right + paintOverflow <= crop.x || box.bottom + paintOverflow <= crop.y ||
+      box.left - paintOverflow >= crop.x + crop.width || box.top - paintOverflow >= crop.y + crop.height) continue
+    for (let node: Element | null = source; node && element.contains(node); node = node.parentElement) keep.add(node)
+  }
+  const content = cache.content.cloneNode(true) as HTMLElement
+  const fullStyles = new Set<number>()
+  const layoutStyles = new Set<number>()
+  for (const clone of content.querySelectorAll<HTMLElement | SVGElement>('[data-run-vod-style]:not([data-run-vod-node])')) {
+    fullStyles.add(Number(clone.getAttribute('data-run-vod-style')))
+  }
+  for (const clone of [content, ...content.querySelectorAll<HTMLElement | SVGElement>('[data-run-vod-node]')]) {
+    const node = cache.nodes[Number(clone.getAttribute('data-run-vod-node'))]
+    if (!node) continue
+    const style = Number(clone.getAttribute('data-run-vod-style'))
+    if (node.pseudo || keep.has(node.source)) { fullStyles.add(style); continue }
+    layoutStyles.add(style)
+    clone.removeAttribute('data-run-vod-style')
+    clone.setAttribute('data-run-vod-layout-style', String(style))
+    // Retain layout but omit embedded artwork that cannot reach this crop.
+    for (const property of artworkProperties) {
+      clone.style.setProperty(property, 'none', 'important')
+    }
+    if (clone.tagName === 'IMG' || clone.tagName === 'image') {
+      clone.removeAttribute('src')
+      clone.removeAttribute('href')
+    }
+  }
+  const rules = (indices: Set<number>, styles: string[], attribute: string) => [...indices].map(index =>
+    `.run-vod-snapshot[${attribute}="${index}"],.run-vod-snapshot [${attribute}="${index}"]{${styles[index]}}`).join('\n')
+  content.querySelector('style')!.textContent = `${cache.baseCss}\n${rules(fullStyles, cache.styles, 'data-run-vod-style')}\n${rules(layoutStyles, cache.layoutStyles, 'data-run-vod-layout-style')}`
+  return content
+}
 
 async function imageAt(image: HTMLImageElement, src: string, now: number) {
   const Decoder = (window as unknown as { ImageDecoder?: ImageDecoderConstructor }).ImageDecoder
@@ -86,23 +376,37 @@ async function imageAt(image: HTMLImageElement, src: string, now: number) {
   }
   const decoded = await decoder
   if (!decoded || decoded.tracks.selectedTrack.frameCount <= 1) return staticImage(image, src)
-  let start = imageStarts.get(image)
-  if (!start || start.src !== src) {
-    start = { src, at: now }
-    imageStarts.set(image, start)
-  }
-  let elapsed = Math.max(0, now - start.at) * 1_000
+  const start = runVodImageStart(image, src, now)
+  const elapsedSinceStart = Math.max(0, now - start.at) * 1_000
+  const repetitions = decoded.tracks.selectedTrack.repetitionCount
+  let elapsed = elapsedSinceStart
   const duration = imageDurations.get(decoded)
-  if (duration && decoded.tracks.selectedTrack.repetitionCount > 0) elapsed %= duration
+  const finished = Boolean(duration && Number.isFinite(repetitions) && elapsedSinceStart >= duration * (repetitions + 1))
+  if (duration && repetitions > 0 && !finished) elapsed %= duration
   let last = decodedFrames.get(decoded)
-  if (last && elapsed < last.end && elapsed >= last.start) return last.url
+  const track = (frame: NonNullable<typeof last>) => {
+    const total = imageDurations.get(decoded)
+    if (total && Number.isFinite(repetitions) && elapsedSinceStart >= total * (repetitions + 1)) {
+      animatedImageSources.delete(image)
+      return
+    }
+    const cycles = total && repetitions > 0 ? Math.floor(elapsedSinceStart / total) : 0
+    animatedImageSources.set(image, { src, nextAt: start!.at + (cycles * (total ?? 0) + frame.end) / 1_000 })
+  }
+  if (last && elapsed < last.end && elapsed >= last.start) { track(last); return last.url }
   let index = last && elapsed >= last.end ? last.index + 1 : 0
   let end = index > 0 ? last!.end : 0
   while (index < decoded.tracks.selectedTrack.frameCount) {
     const { image: frame } = await decoded.decode({ frameIndex: index })
     const began = end
     end += frame.duration ?? 33_333
-    if (index === decoded.tracks.selectedTrack.frameCount - 1) imageDurations.set(decoded, end)
+    if (index === decoded.tracks.selectedTrack.frameCount - 1) {
+      imageDurations.set(decoded, end)
+      if (!duration && repetitions > 0 && elapsedSinceStart < end * (repetitions + 1) && elapsedSinceStart >= end) {
+        frame.close()
+        return imageAt(image, src, now)
+      }
+    }
     if (end > elapsed || index === decoded.tracks.selectedTrack.frameCount - 1) {
       const canvas = document.createElement('canvas')
       canvas.width = frame.displayWidth
@@ -112,11 +416,13 @@ async function imageAt(image: HTMLImageElement, src: string, now: number) {
       last = { index, start: began, end, url: canvas.toDataURL() }
       canvas.width = canvas.height = 0
       decodedFrames.set(decoded, last)
+      track(last)
       return last.url
     }
     frame.close()
     index++
   }
+  track(last!)
   return last!.url
 }
 
@@ -137,13 +443,20 @@ export async function pruneRunVodRaster(doc: Document) {
 }
 
 export async function releaseRunVodRaster(doc?: Document) {
-  for (const document of doc ? [doc] : new Set([...snapshots.keys(), ...documentDecoders.keys()])) {
+  for (const document of doc ? [doc] : new Set([...snapshots.keys(), ...documentDecoders.keys(), ...rasterDecoders.keys()])) {
     snapshots.get(document)?.observer.disconnect()
     snapshots.delete(document)
     for (const decoder of documentDecoders.get(document)?.values() ?? []) {
       try { (await decoder)?.close() } catch { /* Preserve the original artwork error. */ }
     }
     documentDecoders.delete(document)
+    const raster = rasterDecoders.get(document)
+    if (raster) {
+      document.defaultView?.removeEventListener('message', raster.message)
+      raster.pending.forEach(({ reject }) => reject(new Error('The VOD raster decoder was released.')))
+      raster.frame.remove()
+      rasterDecoders.delete(document)
+    }
   }
   if (!snapshots.size) { resources.clear(); sizedImages.clear() }
 }
@@ -216,19 +529,17 @@ function fontCss(doc: Document) {
   return value
 }
 
-export async function rasterRunVod(element: HTMLElement, width: number, height: number, at?: number, prepared?: () => void, readback = false) {
+export async function rasterRunVod(element: HTMLElement, width: number, height: number, at?: number, prepared?: () => void, readback = false,
+  crop?: RunVodRasterRegion) {
   const doc = element.ownerDocument
+  rasterDecoder(doc)
   const view = doc.defaultView!
   await doc.fonts.ready
   const defaults = initialStyle(doc)
   const viewport = `${view.innerWidth}:${view.innerHeight}`
-  const scroll = [element, ...element.querySelectorAll('*')]
-    .map((node, index) => node.scrollTop || node.scrollLeft ? `${index}:${node.scrollLeft}:${node.scrollTop}` : '').filter(Boolean).join(';')
+  const scroll = scrollState(element)
   const animations = doc.getAnimations().map((animation) => animation.effect).filter((effect): effect is KeyframeEffect =>
     effect instanceof view.KeyframeEffect)
-  // These properties change painting, not sibling layout. Layout animations
-  // still take a fresh snapshot so reflow remains faithful to the live page.
-  const paintOnly = /^(offset|easing|composite|computedOffset|transform|translate|rotate|scale|opacity|filter|clipPath|boxShadow|textShadow|backgroundColor|backgroundPositionX|backgroundPositionY|strokeDashoffset|offsetDistance)$/
   const animationProperties = new Map<Element, Map<string, Set<string>>>()
   for (const effect of animations) {
     if (!(effect.target instanceof view.Element)) continue
@@ -238,14 +549,15 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
     let properties = byPseudo.get(pseudo)
     if (!properties) { properties = new Set(); byPseudo.set(pseudo, properties) }
     for (const frame of effect.getKeyframes()) for (const property of Object.keys(frame)) {
-      if (paintOnly.test(property) && !/^(offset|easing|composite|computedOffset)$/.test(property)) properties.add(property)
+      if (paintOnlyAnimationProperty(property) && !/^(offset|easing|composite|computedOffset)$/.test(property)) properties.add(property)
     }
   }
   let cached = element === doc.body && at !== undefined ? snapshots.get(doc) : undefined
   cached?.mutations(cached.observer.takeRecords())
   if (cached && (cached.dirty || cached.viewport !== viewport || cached.scroll !== scroll ||
     [...cached.animations].some((effect) => !animations.includes(effect)) ||
-    animations.some((effect) => effect.getKeyframes().some((frame) => Object.keys(frame).some((key) => !paintOnly.test(key)))))) {
+    animations.some((effect) => effect.target instanceof view.Element && effect.getKeyframes().some((frame) =>
+      Object.keys(frame).some((key) => !paintOnlyAnimationProperty(key)))))) {
     cached.observer.disconnect()
     snapshots.delete(doc)
     cached = undefined
@@ -255,6 +567,13 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
   const images: RasterCache['images'] = []
   const pending: Promise<unknown>[] = []
   const modals: { source: Element; clone: HTMLElement | SVGElement }[] = []
+  const styleClasses = new Map<string, number>()
+  const layoutStyle = (css: string) => {
+    const value = doc.createElement('span').style
+    value.cssText = css
+    for (const property of artworkProperties) value.removeProperty(property)
+    return value.cssText
+  }
   const copyStyle = (style: CSSStyleDeclaration, clone: HTMLElement | SVGElement, source?: Element) => {
     const declarations: string[] = []
     for (const property of style) {
@@ -264,7 +583,13 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
       declarations.push(`${property}:${value};`)
       if (value.includes('url(')) pending.push(inlineUrls(value, doc.baseURI).then((result) => clone.style.setProperty(property, result)))
     }
-    clone.style.cssText = `${declarations.join('')}animation:none!important;transition:none!important;`
+    const css = `${declarations.join('')}animation:none!important;transition:none!important;`
+    if (cached) clone.style.cssText = css
+    else {
+      let index = styleClasses.get(css)
+      if (index === undefined) { index = styleClasses.size; styleClasses.set(css, index) }
+      clone.setAttribute('data-run-vod-style', String(index))
+    }
     // Chromium resolves a grid container's auto margins to 0px in CSSOM,
     // even while they center it. Preserve the computed keyword when available.
     const computed = (source as Element & { computedStyleMap?: () => Map<string, { toString(): string }> } | undefined)?.computedStyleMap?.()
@@ -277,7 +602,7 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
     const style = view.getComputedStyle(source, kind)
     if (style.content === 'none' || style.content === 'normal' || style.display === 'none') return null
     const clone = doc.createElement('span')
-    nodes.push({ source, clone, pseudo: kind })
+    nodes.push({ source, clone, pseudo: kind, paintOverflow: paintOverflow(style) })
     copyStyle(style, clone)
     clone.style.content = 'normal'
     const text = style.content.match(/^"(?:[^"\\]|\\.)*"/)?.[0]
@@ -292,7 +617,7 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
     const style = view.getComputedStyle(source)
     if (style.display === 'none') return null
     const clone = source.cloneNode(false) as HTMLElement | SVGElement
-    nodes.push({ source, clone })
+    nodes.push({ source, clone, paintOverflow: paintOverflow(style) })
     copyStyle(style, clone, source)
     if (source instanceof view.SVGElement && source.tagName === 'image') {
       const href = source.getAttribute('href')
@@ -394,13 +719,17 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
   }
   content.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml')
   content.classList.add('run-vod-snapshot')
+  let baseCss = cached?.baseCss ?? ''
   if (!cached) {
     const style = doc.createElement('style')
     const animation = doc.createElement('style')
     animation.textContent = animationMarker
     // A per-node `all` shorthand expands into hundreds of declarations when
     // resource URLs are assigned. One scoped rule avoids megabytes per frame.
-    style.textContent = `.run-vod-snapshot,.run-vod-snapshot :not(style){all:initial}\n${await fontCss(doc)}`
+    const rules = [...styleClasses].map(([css, index]) =>
+      `.run-vod-snapshot[data-run-vod-style="${index}"],.run-vod-snapshot [data-run-vod-style="${index}"]{${css}}`).join('\n')
+    baseCss = `.run-vod-snapshot,.run-vod-snapshot :not(style){all:initial}\n${await fontCss(doc)}`
+    style.textContent = `${baseCss}\n${rules}`
     content.prepend(style, animation)
   }
   await Promise.all(pending)
@@ -439,27 +768,28 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
       }
     }
     const observer = new MutationObserver(mutations)
+    const styles = [...styleClasses.keys()]
     snapshot = { content, nodes, images, observer, viewport, scroll, dirty: false, animations: new Set(animations),
-      restyle: new Set(), serialized: '', mutations }
+      restyle: new Set(), serialized: '', baseCss, styles, layoutStyles: styles.map(layoutStyle), mutations }
     observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeOldValue: true, characterData: true })
     snapshots.set(doc, snapshot)
   }
-  const template = cached?.serialized && !serializedDirty
+  const region = crop && element === doc.body ? crop : undefined
+  const serializable = region && (cached ?? snapshot) ? croppedContent((cached ?? snapshot)!, element, region) : content
+  const template = !region && cached?.serialized && !serializedDirty
     ? cached.serialized
-    : new XMLSerializer().serializeToString(content)
-  if (snapshot) snapshot.serialized = template
-  else if (cached && serializedDirty) cached.serialized = template
+    : new XMLSerializer().serializeToString(serializable)
+  if (snapshot && !region) snapshot.serialized = template
+  else if (cached && serializedDirty) cached.serialized = region ? '' : template
   const serialized = template.replace(animationMarker, animationCss)
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%">${serialized}</foreignObject></svg>`
-  const image = new Image()
-  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${region?.width ?? width}" height="${region?.height ?? height}"><foreignObject x="${region ? -region.x : 0}" y="${region ? -region.y : 0}" width="${width}" height="${height}">${serialized}</foreignObject></svg>`
   prepared?.()
+  const image = await decodeRaster(doc, svg, region?.width ?? width, region?.height ?? height)
   try {
-    await image.decode()
     const canvas = doc.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
+    canvas.width = region?.width ?? width
+    canvas.height = region?.height ?? height
     canvas.getContext('2d', { willReadFrequently: readback })!.drawImage(image, 0, 0)
     return canvas
-  } finally { image.removeAttribute('src') }
+  } finally { image.close() }
 }

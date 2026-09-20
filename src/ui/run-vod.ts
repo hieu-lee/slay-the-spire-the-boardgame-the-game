@@ -3,13 +3,21 @@ import { assetPath } from '../game/assets.ts'
 import { cardDef } from '../game/cards.ts'
 import { currentRoom } from '../game/map.ts'
 import type { RunState } from '../game/run.ts'
-import { rasterRunVod, pruneRunVodRaster, releaseRunVodRaster } from './run-vod-raster.ts'
+import { mergeRunVodRasterRegions, rasterRunVod, pruneRunVodRaster, releaseRunVodRaster, runVodImagePhases, runVodRasterRegions, seedRunVodImagePhases, setRunVodRasterDecoderUrl, trackRunVodImagePhases, type RunVodRasterRegion } from './run-vod-raster.ts'
 import { createRunVodClock, type RunVodClock } from './run-vod-clock.ts'
 import { createRunVodEncoder } from './run-vod-encoder.ts'
 import type { RunVodAudioCue } from './sfx.ts'
+import { roomUrl } from '../multiplayer/room-endpoint.ts'
 
 const RUN_VOD_KEY = 'sts-run-vod'
 const RUN_VOD_DATABASE = 'sts-run-vod-v2'
+const RUN_VOD_EXPORT_DATABASE = 'sts-run-vod-export-v1'
+const RUN_VOD_EXPORT_PARAM = 'run-vod-export'
+export const RUN_VOD_RETURN_PARAM = 'run-vod-return'
+const RUN_VOD_CLEANUP_KEY = 'sts-run-vod-cleanup'
+const RUN_VOD_STALE_MS = 60 * 60 * 1_000
+const RUN_VOD_EXPORT_EVENTS = 1
+export const runVodExportMotionFrames = (event: RunVodEvent) => event.choice ? 4 : 8
 const CONTROL = 'button, input, select, textarea, summary, [role="button"]'
 const READ_ONLY = '.map-peek, .map-peek__open, .card-collection, .compendium, .deck-peek__open, .game-settings, .settings-dialog, [data-pile], .room:not(.room--reachable)'
 export const RUN_VOD_WIDTH = 1920
@@ -161,6 +169,8 @@ function controlRef(element: HTMLElement): ControlRef {
 let memoryLog: RunVodLog | null = null
 let persistence = Promise.resolve()
 let database: Promise<IDBDatabase | null> | null = null
+let exportDatabase: Promise<IDBDatabase | null> | null = null
+let deferredCleanup: Promise<void> | null = null
 
 const requested = <T,>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
   request.addEventListener('success', () => resolve(request.result), { once: true })
@@ -181,10 +191,27 @@ function runVodDatabase() {
       request.result.createObjectStore('runs', { keyPath: 'runId' })
       request.result.createObjectStore('events', { keyPath: ['runId', 'index'] })
     }, { once: true })
-    request.addEventListener('success', () => resolve(request.result), { once: true })
+    request.addEventListener('success', () => {
+      request.result.addEventListener('versionchange', () => request.result.close())
+      resolve(request.result)
+    }, { once: true })
     request.addEventListener('error', () => resolve(null), { once: true })
   })
   return database
+}
+
+function runVodExportDatabase() {
+  if (exportDatabase) return exportDatabase
+  exportDatabase = new Promise((resolve) => {
+    const request = indexedDB.open(RUN_VOD_EXPORT_DATABASE, 1)
+    request.addEventListener('upgradeneeded', () => request.result.createObjectStore('exports', { keyPath: 'runId' }), { once: true })
+    request.addEventListener('success', () => {
+      request.result.addEventListener('versionchange', () => request.result.close())
+      resolve(request.result)
+    }, { once: true })
+    request.addEventListener('error', () => resolve(null), { once: true })
+  })
+  return exportDatabase
 }
 
 const eventRange = (runId: string) => IDBKeyRange.bound([runId, 0], [runId, Number.MAX_SAFE_INTEGER])
@@ -630,6 +657,19 @@ type VodStream = {
   motion: (frame: HTMLCanvasElement, milliseconds: number) => Promise<void>
   still: (frame: HTMLCanvasElement, milliseconds: number) => Promise<void>
 }
+type VodMotionBudget = { skip: number; remaining: number; capped: boolean }
+
+export function runVodMotionSliceSkipped(budget?: VodMotionBudget) {
+  if (budget && !budget.skip && budget.remaining <= 0) budget.capped = true
+  return Boolean(budget?.skip || budget?.capped)
+}
+
+export function runVodAudioCueTime(begin: number, cue: Pick<RunVodAudioCue, 'at' | 'loop'>, until: number) {
+  const at = begin + cue.at
+  if (at < -1e-6) return cue.loop ? 0 : null
+  const clamped = Math.max(0, at)
+  return clamped < until - 1e-6 ? clamped : undefined
+}
 
 // Distant effects must not duplicate the unchanged battlefield between them.
 // Pack only changed 128px tiles into one lossless PNG per movie frame.
@@ -668,6 +708,79 @@ type SnapshotStore = {
   video: (extension: string) => Promise<FileSystemWritableFileStream | null>
   videoFile: (extension: string) => Promise<File | null>
   cleanup: () => Promise<void>
+  deferCleanup: (delay?: number) => void
+}
+
+type DeferredRunVod = { name: string; after: number }
+const deferredRunVodEntries = (): DeferredRunVod[] => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(RUN_VOD_CLEANUP_KEY) ?? '[]')
+    return Array.isArray(saved) ? saved.map(value => typeof value === 'string' ? { name: value, after: 0 } : value)
+      .filter(value => value && typeof value.name === 'string' && /^run-vod-[a-z0-9-]+-\d+$/i.test(value.name) && Number.isFinite(value.after)) : []
+  } catch { return [] }
+}
+const saveDeferredRunVod = (entries: DeferredRunVod[]) => {
+  try {
+    if (entries.length) localStorage.setItem(RUN_VOD_CLEANUP_KEY, JSON.stringify(entries))
+    else localStorage.removeItem(RUN_VOD_CLEANUP_KEY)
+  } catch {}
+}
+
+export function cleanupDeferredRunVod() {
+  if (new URLSearchParams(location.search).has(RUN_VOD_EXPORT_PARAM)) return
+  return deferredCleanup ??= cleanupDeferredRunVodStorage()
+}
+
+async function cleanupDeferredRunVodStorage() {
+  const now = Date.now()
+  let nextCleanup = Number.POSITIVE_INFINITY
+  const deferred = deferredRunVodEntries()
+  const deferredNames = new Set(deferred.map(entry => entry.name))
+  const pending = deferred.filter(entry => entry.after > now)
+  const names = deferred.filter(entry => entry.after <= now).map(entry => entry.name)
+  for (const entry of pending) nextCleanup = Math.min(nextCleanup, entry.after - now)
+  const activeExports = new Set<string>()
+  let exportsKnown = false
+  const db = await runVodExportDatabase()
+  if (db) try {
+    const transaction = db.transaction('exports', 'readwrite')
+    const store = transaction.objectStore('exports')
+    const records = await requested(store.getAll()) as VodExport[]
+    for (const record of records) {
+      const age = now - (record.updatedAt ?? 0)
+      if (age < RUN_VOD_STALE_MS) {
+        activeExports.add(record.runId)
+        nextCleanup = Math.min(nextCleanup, RUN_VOD_STALE_MS - age)
+      } else store.delete(record.runId)
+    }
+    await committed(transaction)
+    exportsKnown = true
+  } catch {}
+  const remaining: string[] = []
+  try {
+    const root = await navigator.storage.getDirectory()
+    for (const name of names) {
+      try { await root.removeEntry(name, { recursive: true }) }
+        catch (error) { if (!(error instanceof DOMException) || error.name !== 'NotFoundError') remaining.push(name) }
+    }
+    for await (const name of (root as FileSystemDirectoryHandle & { keys(): AsyncIterableIterator<string> }).keys()) {
+      if (deferredNames.has(name)) continue
+      if (name.startsWith('sts-run-vod-export-')) {
+        if (exportsKnown && !activeExports.has(name.slice('sts-run-vod-export-'.length))) {
+          try { await root.removeEntry(name, { recursive: true }) } catch {}
+        }
+        continue
+      }
+      const timestamp = Number(name.match(/^run-vod-.*-(\d+)$/)?.[1])
+      if (!timestamp) continue
+      const age = now - timestamp
+      if (age >= RUN_VOD_STALE_MS) try { await root.removeEntry(name, { recursive: true }) } catch {}
+      else nextCleanup = Math.min(nextCleanup, RUN_VOD_STALE_MS - age)
+    }
+  } catch { remaining.push(...names) }
+  saveDeferredRunVod([...pending, ...remaining.map(name => ({ name, after: 0 }))])
+  const delay = remaining.length ? 1_000 : nextCleanup
+  if (Number.isFinite(delay)) window.setTimeout(() => { deferredCleanup = null; void cleanupDeferredRunVod() }, Math.max(1_000, delay))
 }
 
 export async function snapshotStore(runId: string): Promise<SnapshotStore> {
@@ -687,13 +800,6 @@ export async function snapshotStore(runId: string): Promise<SnapshotStore> {
     // available quota still belongs to the browser, not to the game.
     void navigator.storage.persist?.().catch(() => {})
     const storage = await navigator.storage.getDirectory()
-    const entries = (storage as FileSystemDirectoryHandle & { keys(): AsyncIterableIterator<string> }).keys()
-    for await (const entry of entries) {
-      const timestamp = Number(entry.match(/^run-vod-.*-(\d+)$/)?.[1])
-      if (timestamp && Date.now() - timestamp > 60 * 60 * 1_000) {
-        try { await storage.removeEntry(entry, { recursive: true }) } catch {}
-      }
-    }
     root = await storage.getDirectoryHandle(name, { create: true })
     frames = await root.getFileHandle('frames.bin', { create: true })
     writer = await frames.createWritable()
@@ -747,15 +853,23 @@ export async function snapshotStore(runId: string): Promise<SnapshotStore> {
         openVideo = null
       }
       if (!root) return
-      try { await (await navigator.storage.getDirectory()).removeEntry(name, { recursive: true }) } catch {}
+      let cleaned = false
+      try { await (await navigator.storage.getDirectory()).removeEntry(name, { recursive: true }); cleaned = true }
+      catch (error) { cleaned = error instanceof DOMException && error.name === 'NotFoundError' }
+      if (cleaned) saveDeferredRunVod(deferredRunVodEntries().filter(entry => entry.name !== name))
+    },
+    deferCleanup(delay = 0) {
+      saveDeferredRunVod([...deferredRunVodEntries().filter(entry => entry.name !== name), { name, after: Date.now() + delay }])
     },
   }
 }
 
-function replayFrame(parent?: HTMLDialogElement) {
+function replayFrame(parent?: HTMLElement) {
   const workbench = parent ?? document.createElement('dialog')
-  workbench.className = 'run-vod-workbench'
-  workbench.dataset.runVodControl = ''
+  if (!parent) {
+    workbench.className = 'run-vod-workbench'
+    workbench.dataset.runVodControl = ''
+  }
   const status = document.createElement('div')
   status.className = 'run-vod-workbench__status'
   const label = document.createElement('span')
@@ -773,6 +887,7 @@ function replayFrame(parent?: HTMLDialogElement) {
   iframe.tabIndex = -1
   iframe.setAttribute('aria-hidden', 'true')
   const url = new URL(location.href)
+  url.searchParams.delete(RUN_VOD_EXPORT_PARAM)
   url.searchParams.set('run-vod', '1')
   url.hash = ''
   iframe.src = url.href
@@ -780,7 +895,7 @@ function replayFrame(parent?: HTMLDialogElement) {
   if (!parent) {
     workbench.append(status)
     document.body.append(workbench)
-    workbench.showModal()
+    ;(workbench as HTMLDialogElement).showModal()
   }
   return { workbench, iframe, status,
     update(text: string, value: number) {
@@ -841,8 +956,8 @@ async function mediaReady(doc: Document) {
   }))
 }
 
-async function raster(doc: Document, prepared?: () => void, readback = false) {
-  return rasterRunVod(doc.body, RUN_VOD_WIDTH, RUN_VOD_HEIGHT, replayClocks.get(doc)?.now, prepared, readback)
+async function raster(doc: Document, prepared?: () => void, readback = false, crop?: RunVodRasterRegion) {
+  return rasterRunVod(doc.body, RUN_VOD_WIDTH, RUN_VOD_HEIGHT, replayClocks.get(doc)?.now, prepared, readback, crop)
 }
 
 async function rasterElement(element: HTMLElement) {
@@ -851,7 +966,7 @@ async function rasterElement(element: HTMLElement) {
 }
 
 async function captureMotion(doc: Document, store: SnapshotStore, eventIndex: number, progress: (milliseconds: number, stage?: string) => void,
-  stream?: VodStream) {
+  stream?: VodStream, budget?: VodMotionBudget) {
   const clock = replayClocks.get(doc)
   if (clock) {
     await mediaReady(doc)
@@ -866,15 +981,28 @@ async function captureMotion(doc: Document, store: SnapshotStore, eventIndex: nu
     const start = clock.now
     await clock.advance(0)
     if (!clock.active()) return frames
-    const shots: { key: string; at: number; canvas: Promise<HTMLCanvasElement> }[] = []
+    const shots: { key: string; at: number; canvases: Promise<HTMLCanvasElement>[]; crops?: RunVodRasterRegion[] }[] = []
+    let composite: HTMLCanvasElement | undefined
+    let previousRegions: RunVodRasterRegion[] = []
     const consume = async (shot: typeof shots[number]) => {
       const { key, at } = shot
-      const canvas = await shot.canvas
+      const canvases = await Promise.all(shot.canvases)
       if (stream) {
-        try { await stream.motion(canvas, 1_000 / 60) }
-        finally { canvas.width = canvas.height = 0 }
+        if (shot.crops && composite) {
+          const context = composite.getContext('2d')!
+          for (const [index, canvas] of canvases.entries()) {
+            const crop = shot.crops[index]!
+            context.drawImage(canvas, crop.x, crop.y)
+            canvas.width = canvas.height = 0
+          }
+        } else {
+          if (composite) composite.width = composite.height = 0
+          composite = canvases[0]
+        }
+        await stream.motion(composite!, 1_000 / 60)
         return
       }
+      const canvas = canvases[0]!
       const context = canvas.getContext('2d', { willReadFrequently: true })!
       const pixels = new Uint32Array(context.getImageData(0, 0, canvas.width, canvas.height).data.buffer)
       progress(clock.now - start, 'saving')
@@ -894,26 +1022,59 @@ async function captureMotion(doc: Document, store: SnapshotStore, eventIndex: nu
     }
     for (let index = 0; index < 60 * 15; index++) {
       progress(clock.now - start, 'rendering')
+      if (stream && budget?.skip) {
+        budget.skip--
+        trackRunVodImagePhases(doc, clock.now)
+        await clock.advance(1_000 / 60)
+        if (!clock.active()) break
+        continue
+      }
+      if (stream && budget && budget.remaining <= 0) {
+        budget.capped = true
+        await clock.advance(1_000 / 60)
+        if (!clock.active()) break
+        continue
+      }
+      if (stream && budget) budget.remaining--
       let prepared!: () => void
       const ready = new Promise<void>((resolve) => { prepared = resolve })
-      const canvas = raster(doc, prepared, !stream)
+      const regions = stream ? runVodRasterRegions(doc.body, clock.now) ?? [] : []
+      const combined = mergeRunVodRasterRegions([...regions, ...previousRegions])
+      if (stream && composite && !regions.length && !previousRegions.length) {
+        for (const shot of shots.splice(0)) await consume(shot)
+        await stream.motion(composite, 1_000 / 60)
+        progress(clock.now - start, 'advancing')
+        await clock.advance(1_000 / 60)
+        if (!clock.active()) break
+        continue
+      }
+      // Repaint up to four local islands. Keeping empty space between distant
+      // VFX out of the SVG decode is both faster and the export's memory bound.
+      const crops = composite && combined.length && combined.every(region => region.safe) &&
+        combined.reduce((area, region) => area + region.width * region.height, 0) < RUN_VOD_WIDTH * RUN_VOD_HEIGHT * .9
+        ? combined : undefined
+      let remaining = crops?.length ?? 1
+      const markPrepared = () => { if (--remaining === 0) prepared() }
+      const canvases = crops?.map(crop => raster(doc, markPrepared, false, crop)) ?? [raster(doc, markPrepared, !stream)]
       // Once the SVG is self-contained, its decode/paint can overlap the
       // next virtual frame's DOM work. Two jobs cap memory and preserve order.
-      await Promise.race([ready, canvas.then(() => {})])
-      void canvas.catch(() => {}) // Consumed below, including failures.
-      shots.push({ key: `motion-${eventIndex}-${index}`, at: clock.now - start, canvas })
+      await Promise.race([ready, Promise.all(canvases).then(() => {})])
+      for (const canvas of canvases) void canvas.catch(() => {}) // Consumed below, including failures.
+      shots.push({ key: `motion-${eventIndex}-${index}`, at: clock.now - start, canvases, crops })
+      previousRegions = regions
       progress(clock.now - start, 'advancing')
       await clock.advance(1_000 / 60)
       if (shots.length >= 2) await consume(shots.shift()!)
       if (!clock.active()) break
       if (index === 60 * 15 - 1) {
-        const blockers = [...doc.querySelectorAll('[data-webmcp-pending="true"], .character-attack, .card-flight, .defect-evoke')]
+        const blockers = [...doc.querySelectorAll('[data-webmcp-pending="true"], .character-attack, .card-flight')]
           .map(element => `${element.tagName}.${element.className}`).join(', ')
         throw new Error(`A replay animation did not finish${blockers ? ` (${blockers})` : ''}.`)
       }
     }
     for (const shot of shots) await consume(shot)
     await Promise.all(pending)
+    if (stream && composite) composite.width = composite.height = 0
     // A duplicate final reference preserves the duration of unchanged frames.
     if (frames.length) frames.push({ ...frames.at(-1)!, at: clock.now - start })
     return frames
@@ -947,7 +1108,8 @@ export async function activateControl(element: HTMLElement, ref: ControlRef) {
 }
 
 async function prepareGeometry(event: RunVodEvent, doc: Document, store: SnapshotStore, eventIndex: number,
-  progress: (milliseconds: number, stage?: string) => void, stream?: VodStream): Promise<VodGeometry> {
+  progress: (milliseconds: number, stage?: string) => void, stream?: VodStream,
+  budget?: VodMotionBudget): Promise<VodGeometry> {
   event = { ...event, choice: normalizeRunVodChoice(event.choice) ?? undefined }
   if (!event.choice) {
     if (!stream) await store.write(eventIndex, await raster(doc))
@@ -992,11 +1154,12 @@ async function prepareGeometry(event: RunVodEvent, doc: Document, store: Snapsho
     if (index === choiceIndex && event.choice.target && !event.choice.steps?.length && !target) {
       throw new Error(`Replay stopped at event ${eventIndex + 1}; its chosen target did not appear.`)
     }
-    const scene = await raster(doc)
-    if (!stream) await store.write(frame ?? eventIndex, scene)
+    const skipping = Boolean(stream && runVodMotionSliceSkipped(budget))
+    const scene = skipping ? undefined : await raster(doc)
+    if (!stream) await store.write(frame ?? eventIndex, scene!)
     const action = actionGeometry(source, target, frame)
     let sprite: HTMLCanvasElement | undefined, background: HTMLCanvasElement | undefined
-    if (action.drag) {
+    if (action.drag && !skipping) {
       action.sprite = `sprite-${eventIndex}-${index}`
       action.background = `background-${eventIndex}-${index}`
       sprite = await rasterElement(source)
@@ -1009,7 +1172,7 @@ async function prepareGeometry(event: RunVodEvent, doc: Document, store: Snapsho
       }
       finally { source.style.visibility = visibility }
     }
-    if (stream) await stream.action(action, scene, sprite, background)
+    if (stream && scene) await stream.action(action, scene, sprite, background)
     actions.push(action)
     action.audioSegment = `action-${eventIndex}-${index}`
     ;(doc.defaultView as Window & { __STS_DEBUG__?: RunVodBridge }).__STS_DEBUG__!.setVodAudioSegment(action.audioSegment)
@@ -1017,22 +1180,23 @@ async function prepareGeometry(event: RunVodEvent, doc: Document, store: Snapsho
     const recordedDeckCommit = semanticDeckMutation(event) && index === refs.length - 1 && /^Confirm\b/.test(ref.name ?? '')
     if (!recordedDeckCommit) await activateControl(source, ref)
     if (target && event.choice.target) await activateControl(target, event.choice.target)
-    action.motion = await captureMotion(doc, store, eventIndex * 100 + index + 100_000, progress, stream)
+    action.motion = await captureMotion(doc, store, eventIndex * 100 + index + 100_000, progress, stream, budget)
   }
   if (event.choice.target && event.choice.steps?.length) {
     const target = await waitForControl(event.choice.target, doc)
     if (!target) throw new Error(`Replay stopped at event ${eventIndex + 1}; its chosen target did not appear.`)
     const frame = `target-${eventIndex}`
-    const scene = await raster(doc)
-    if (!stream) await store.write(frame, scene)
+    const skipping = Boolean(stream && runVodMotionSliceSkipped(budget))
+    const scene = skipping ? undefined : await raster(doc)
+    if (!stream) await store.write(frame, scene!)
     const action = actionGeometry(target, null, frame)
     actions.push(action)
-    if (stream) await stream.action(action, scene)
+    if (stream && scene) await stream.action(action, scene)
     action.audioSegment = `target-${eventIndex}`
     ;(doc.defaultView as Window & { __STS_DEBUG__?: RunVodBridge }).__STS_DEBUG__!.setVodAudioSegment(action.audioSegment)
     stream?.segment(action.audioSegment)
     await activateControl(target, event.choice.target)
-    action.motion = await captureMotion(doc, store, eventIndex * 100 + 99 + 100_000, progress, stream)
+    action.motion = await captureMotion(doc, store, eventIndex * 100 + 99 + 100_000, progress, stream, budget)
   }
   await mediaReady(doc)
   return { actions, motion: [], ...(missedRoom ? { recoveredRoom: true } : {}),
@@ -1191,10 +1355,12 @@ async function recorderFor(canvas: HTMLCanvasElement, audio: MediaStream, store:
   }
 }
 
-type VodPlayback = { position: Point; pulse: boolean; elapsedSinceAction: number; lastClick: Point | null }
-type VodClip = { video: Blob; filename: string; duration: number; cues: RunVodAudioCue[]; playback: VodPlayback; cleanup: () => Promise<void> }
+type VodPlayback = { position: Point; pulse: boolean; elapsedSinceAction: number; lastClick: Point | null; imagePhases?: Record<string, number> }
+type VodClip = { video: Blob; filename: string; duration: number; cues: RunVodAudioCue[]; playback: VodPlayback; motionCapped?: true; cleanup: () => Promise<void> }
+type VodExportClip = Pick<VodClip, 'filename' | 'duration' | 'cues' | 'playback'> & { key: string }
+type VodExport = { runId: string; expected: RunState; index: number; motionSkip: number; clips: VodExportClip[]; retries?: number; updatedAt?: number }
 type VodJob = {
-  parent: HTMLDialogElement
+  parent: HTMLElement
   checkCancelled: () => void
   progress: (value: number) => void
   first: boolean
@@ -1202,6 +1368,8 @@ type VodJob = {
   resume?: boolean
   continuation?: boolean
   playback?: VodPlayback
+  motionSkip?: number
+  motionLimit?: number
 }
 
 // Checkpoints are complete logged states. Keep combat, rewards and their map
@@ -1222,6 +1390,252 @@ export function runVodLocations(log: RunVodLog, expected: RunState) {
   }
   segments.push({ log: { ...log, initial, events: log.events.slice(start) }, expected })
   return segments
+}
+
+async function exportRecord(runId: string) {
+  const db = await runVodExportDatabase()
+  if (!db) return null
+  const transaction = db.transaction('exports', 'readonly')
+  return await requested(transaction.objectStore('exports').get(runId)) as VodExport | undefined ?? null
+}
+
+async function putExport(record: VodExport) {
+  const db = await runVodExportDatabase()
+  if (!db) throw new Error('Browser storage is required for a bounded-memory VOD export.')
+  if (!db.objectStoreNames.contains('exports')) throw new Error(`VOD export storage is missing (${[...db.objectStoreNames].join(', ')}).`)
+  record.updatedAt = Date.now()
+  const transaction = db.transaction('exports', 'readwrite')
+  try { await requested(transaction.objectStore('exports').put(record)) }
+  catch (error) { throw new Error(`Could not save the VOD export checkpoint (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`) }
+  await committed(transaction)
+}
+
+async function deleteExport(runId: string) {
+  const db = await runVodExportDatabase()
+  if (db) {
+    const transaction = db.transaction('exports', 'readwrite')
+    transaction.objectStore('exports').delete(runId)
+    await committed(transaction)
+  }
+  try { await (await navigator.storage.getDirectory()).removeEntry(`sts-run-vod-export-${runId}`, { recursive: true }) } catch {}
+}
+
+async function exportDirectory(runId: string) {
+  return (await navigator.storage.getDirectory()).getDirectoryHandle(`sts-run-vod-export-${runId}`, { create: true })
+}
+
+function exportUrl(runId: string) {
+  const url = new URL(location.href)
+  url.searchParams.set(RUN_VOD_EXPORT_PARAM, runId)
+  url.hash = ''
+  return url
+}
+
+function returnUrl(runId: string) {
+  const url = new URL(location.href)
+  url.searchParams.delete(RUN_VOD_EXPORT_PARAM)
+  url.searchParams.set(RUN_VOD_RETURN_PARAM, runId)
+  return url
+}
+
+async function returnFromRunVodExport(runId: string) {
+  const target = returnUrl(runId)
+  try { location.replace((await resetUrl(runId, target)).href) }
+  catch { location.replace(target.href) }
+}
+
+async function resetUrl(runId: string, target = exportUrl(runId), delay = false) {
+  const reset = new URL(await roomUrl('/run-vod-reset'), location.href)
+  if (reset.origin === location.origin) throw new Error('Bounded-memory VOD export requires the hosted renderer reset service.')
+  reset.searchParams.set('return', target.href)
+  if (delay) reset.searchParams.set('delay', '2000')
+  return reset
+}
+
+export async function startRunVodExport(log: RunVodLog, expected: RunState, resume: { run: RunState } & Record<string, unknown>) {
+  await cleanupDeferredRunVod()
+  try {
+    localStorage.setItem('sts-solo-run', JSON.stringify(resume))
+    const saved = JSON.parse(localStorage.getItem('sts-solo-run') ?? 'null')
+    if (saved?.run?.campaign?.runId !== log.runId) throw new Error('checkpoint mismatch')
+  } catch {
+    throw new Error('The browser could not preserve your run before VOD export. Free browser storage and try again.')
+  }
+  const reset = await resetUrl(log.runId)
+  const [resetService, rasterService] = await Promise.all([fetch(reset), fetch(await roomUrl('/run-vod-raster'))])
+  if (!resetService.ok || !rasterService.ok) throw new Error('The hosted VOD export service is unavailable. Try again after the server updates.')
+  await deleteExport(log.runId)
+  await putExport({ runId: log.runId, expected, index: 0, motionSkip: 0, clips: [] })
+  location.replace(reset.href)
+}
+
+function exportChunks(log: RunVodLog, expected: RunState) {
+  return runVodLocations(log, expected).flatMap((location, locationIndex) =>
+    Array.from({ length: Math.ceil(location.log.events.length / RUN_VOD_EXPORT_EVENTS) }, (_, index) => ({
+      location, locationIndex, from: index * RUN_VOD_EXPORT_EVENTS,
+      to: Math.min(location.log.events.length, (index + 1) * RUN_VOD_EXPORT_EVENTS),
+    })))
+}
+
+export async function runVodExportWorker() {
+  const runId = new URLSearchParams(location.search).get(RUN_VOD_EXPORT_PARAM)
+  if (!runId) return
+  document.body.textContent = ''
+  const workbench = document.createElement('div')
+  workbench.className = 'run-vod-workbench'
+  const status = document.createElement('div')
+  status.className = 'run-vod-workbench__status'
+  const label = document.createElement('span')
+  label.textContent = 'Preparing bounded-memory VOD export…'
+  const progress = document.createElement('progress')
+  progress.max = 1
+  progress.setAttribute('aria-label', 'Run VOD export progress')
+  status.append(label, progress)
+  const cancel = document.createElement('button')
+  cancel.className = 'run-vod-workbench__cancel'
+  cancel.textContent = 'Cancel VOD export'
+  let cancelled = false
+  cancel.onclick = () => { cancelled = true; cancel.disabled = true; cancel.textContent = 'Cancelling…' }
+  const checkCancelled = () => { if (cancelled) throw new Error('VOD export cancelled.') }
+  workbench.append(status, cancel)
+  document.body.append(workbench)
+  const report = (message: string) => {
+    label.textContent = message
+  }
+  let stage = 'loading export state'
+  let store: SnapshotStore | undefined
+  let joiner: Awaited<ReturnType<typeof import('./run-vod-video.ts').createRunVodJoiner>> = null
+  try {
+    setRunVodRasterDecoderUrl(await roomUrl('/run-vod-raster'))
+    let record = await exportRecord(runId)
+    for (let retries = 0; !record && retries < 300; retries++) {
+      await new Promise(resolve => window.setTimeout(resolve, 100))
+      record = await exportRecord(runId)
+    }
+    if (!record) throw new Error('The VOD export did not receive its replay log. Allow popups and try again.')
+    const log = await readRunVod(runId)
+    if (!log) throw new Error('The recorded run could not be loaded for export.')
+    const chunks = exportChunks(log, record.expected)
+    progress.value = record.index / chunks.length
+    while (record.index < chunks.length) {
+      checkCancelled()
+      const chunk = chunks[record.index]!
+      stage = 'rendering event'
+      report(`Rendering events ${chunk.from + 1}–${chunk.to} of location ${chunk.locationIndex + 1} · ${record.index + 1} / ${chunks.length}`)
+      let initial = structuredClone(chunk.location.log.initial)
+      for (const event of chunk.location.log.events.slice(0, chunk.from)) initial = applyRunVodEvent(initial, event)
+      const events = chunk.location.log.events.slice(chunk.from, chunk.to)
+      const motionFrames = runVodExportMotionFrames(events[0]!)
+      let expected = structuredClone(initial)
+      for (const event of events) expected = applyRunVodEvent(expected, event)
+      const resumed = record.clips.length > 0 || record.motionSkip > 0
+      const clip = await renderRunVodLocation({ ...chunk.location.log, initial, events }, expected,
+        record.index === 0 && record.motionSkip === 0, record.index === chunks.length - 1, {
+          resume: resumed,
+          continuation: chunk.to < chunk.location.log.events.length,
+          playback: resumed ? record.clips.at(-1)?.playback : undefined,
+          motionSkip: record.motionSkip,
+          motionLimit: motionFrames,
+          checkCancelled,
+        })
+      const key: string = `${String(record.clips.length).padStart(4, '0')}.mp4`
+      let reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>> | undefined
+      let writer: FileSystemWritableFileStream | undefined
+      try {
+        stage = 'opening export clip'
+        const directory = await exportDirectory(runId)
+        const file = await directory.getFileHandle(key, { create: true })
+        writer = await file.createWritable()
+        stage = 'saving export clip'
+        const { runVodVideoCodec } = await import('./run-vod-video.ts')
+        reader = clip.video.stream().getReader()
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          await writer.write(value)
+        }
+        reader.releaseLock(); reader = undefined
+        await writer.close(); writer = undefined
+        let saved = await file.getFile()
+        let codec = await runVodVideoCodec(saved)
+        for (let retries = 0; !codec && retries < 20; retries++) {
+          await new Promise(resolve => window.setTimeout(resolve, 50))
+          saved = await file.getFile()
+          codec = await runVodVideoCodec(saved)
+        }
+        if (!codec || !/^avc[13]\./.test(codec)) {
+          await directory.removeEntry(key)
+          const retries = (record.retries ?? 0) + 1
+          if (retries > 2) throw new Error(`The video encoder repeatedly produced an invalid clip (${codec ?? 'missing codec'}, ${saved.size} bytes).`)
+          record = { ...record, retries }
+          await putExport(record)
+          location.replace((await resetUrl(runId)).href)
+          return
+        }
+      } finally {
+        try { await reader?.cancel() } catch {}
+        try { await writer?.abort() } catch {}
+        await clip.cleanup()
+      }
+      record = { ...record, index: clip.motionCapped ? record.index : record.index + 1,
+        motionSkip: clip.motionCapped ? record.motionSkip + motionFrames : 0,
+        clips: [...record.clips, { key, filename: clip.filename, duration: clip.duration, cues: clip.cues, playback: clip.playback }], retries: 0 }
+      stage = 'saving export checkpoint'
+      await putExport(record)
+      progress.value = record.index / chunks.length
+      if (record.index < chunks.length) {
+        location.replace((await resetUrl(runId)).href)
+        return
+      }
+    }
+    checkCancelled()
+    stage = 'joining export clips'
+    report('Joining video and mixing audio…')
+    store = await snapshotStore(`${runId}-joined`)
+    const { createRunVodJoiner } = await import('./run-vod-video.ts')
+    joiner = await createRunVodJoiner(RUN_VOD_FPS, store, checkCancelled)
+    if (!joiner) throw new Error('This browser cannot join the VOD clips.')
+    const directory = await exportDirectory(runId)
+    for (const clip of record.clips) {
+      let video: File
+      try { video = await (await directory.getFileHandle(clip.key)).getFile() }
+      catch (error) {
+        const files: string[] = []
+        for await (const name of (directory as FileSystemDirectoryHandle & { keys(): AsyncIterableIterator<string> }).keys()) files.push(name)
+        throw new Error(`Saved VOD clip ${clip.key} is missing (${files.join(', ') || 'empty directory'}; ${error instanceof Error ? error.message : String(error)}).`)
+      }
+      await joiner.append({ video, duration: clip.duration, cues: clip.cues })
+    }
+    checkCancelled()
+    const video = await joiner.finish()
+    const filename = `slay-the-spire-run-${record.expected.campaign.runId}.mp4`
+    await deleteExport(runId)
+    try {
+      const saved = JSON.parse(localStorage.getItem('sts-solo-run') ?? 'null')
+      if (saved?.run?.campaign?.runId === runId) localStorage.setItem('sts-solo-run', JSON.stringify({ ...saved, vodExtractedRunId: runId }))
+    } catch { /* The download remains available when solo-resume storage is unavailable. */ }
+    workbench.remove()
+    const reset = await resetUrl(runId, returnUrl(runId), true)
+    presentRunVod(video, filename, store, () => location.replace(reset.href))
+  } catch (error) {
+    await joiner?.abort()
+    await store?.cleanup()
+    if (cancelled) {
+      await deleteExport(runId)
+      await returnFromRunVodExport(runId)
+      return
+    }
+    console.error(stage, error)
+    const message = error instanceof Error ? `${stage}: ${error.message}` : 'Run VOD extraction failed.'
+    status.textContent = message
+    cancel.disabled = false
+    cancel.textContent = 'Return to game'
+    cancel.onclick = async () => {
+      cancel.disabled = true
+      await deleteExport(runId)
+      await returnFromRunVodExport(runId)
+    }
+  }
 }
 
 export async function extractRunVod(log: RunVodLog, expected: RunState) {
@@ -1305,8 +1719,8 @@ export async function extractRunVod(log: RunVodLog, expected: RunState) {
 }
 
 export async function renderRunVodLocation(log: RunVodLog, expected: RunState, first: boolean, last: boolean,
-  options: Pick<VodJob, 'resume' | 'continuation' | 'playback'> = {}) {
-  const parent = document.createElement('dialog')
+  options: Pick<VodJob, 'resume' | 'continuation' | 'playback' | 'motionSkip' | 'motionLimit'> & Partial<Pick<VodJob, 'checkCancelled'>> = {}) {
+  const parent = document.createElement('div')
   document.body.append(parent)
   try {
     return await renderRunVod(log, expected, { parent, checkCancelled() {}, progress() {}, first, last, ...options })
@@ -1386,7 +1800,17 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     if (!ctx) throw new Error('The Run VOD canvas could not be created.')
     await loadCursorImages()
     await mediaReady(doc)
-    let current = await createImageBitmap(await raster(doc))
+    const motionBudget = job?.motionLimit ? {
+      skip: job.motionSkip ?? 0, remaining: job.motionLimit, capped: false,
+    } : undefined
+    const initialImagePhases = job?.playback?.imagePhases ?? {}
+    seedRunVodImagePhases(doc, initialImagePhases)
+    // Prime animated image clocks in every fresh reset document before skipped
+    // motion advances; otherwise the first captured frame restarts their art.
+    let initialFrame: HTMLCanvasElement
+    try { initialFrame = await raster(doc) } finally { seedRunVodImagePhases(doc) }
+    let current = await createImageBitmap(initialFrame)
+    initialFrame.width = initialFrame.height = 0
     releaseFrame = () => current.close()
     let position: Point = job?.playback?.position ?? { x: .5, y: .5 }
     paint(ctx, current, position)
@@ -1397,6 +1821,7 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     if (offline) recording = offline
     const geometries: VodGeometry[] = []
     let stream: VodStream | undefined
+    let finalImagePhases = initialImagePhases
     const replayPatches = new Map<number, RunVodPatch[]>()
     let preparedState = structuredClone(log.initial)
     const prepare = async (index: number) => {
@@ -1412,7 +1837,7 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
         checkCancelled()
         ui.update(`Rendering · ${index + 1} / ${log.events.length}`, (offline ? .99 : .8) * index / log.events.length)
       }
-      const shape = await prepareGeometry(event, doc, store, index, progress, stream)
+      const shape = await prepareGeometry(event, doc, store, index, progress, stream, motionBudget)
       const patched = applyRunVodEvent(preparedState, event)
       const incompleteCombat = patched.phase === 'combat' && !patched.combat
       if (shape.recoveredRoom || shape.recoveryBase || incompleteCombat) {
@@ -1441,13 +1866,15 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
       bridge!.setVodAudioSegment(`state-${index}`)
       stream?.segment(`state-${index}`)
       await setReplayRun(preparedState)
-      shape.motion = await captureMotion(doc, store, index, progress, stream)
+      shape.motion = await captureMotion(doc, store, index, progress, stream, motionBudget)
       await clock!.advance(0)
       preparedState = structuredClone(liveBridge().getRun())
       replayPatches.set(index, statePatch(previousState, preparedState))
-      const finalFrame = await raster(doc)
-      if (stream) await stream.still(finalFrame, shape.actions.length === 0 ? RUN_VOD_CURSOR_MS : 0)
-      else await store.write(index + 1, finalFrame)
+      if (!motionBudget?.capped) {
+        const finalFrame = await raster(doc)
+        if (stream) await stream.still(finalFrame, shape.actions.length === 0 ? RUN_VOD_CURSOR_MS : 0)
+        else await store.write(index + 1, finalFrame)
+      }
       await pruneRunVodRaster(doc)
       return shape
     }
@@ -1458,6 +1885,7 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
         )}), so no misleading VOD was saved.`)
       }
       bridge!.stopVodAudio()
+      if (!motionBudget?.capped) finalImagePhases = runVodImagePhases(doc, clock!.now)
       clock!.restore()
       replayClocks.delete(doc)
       clock = null
@@ -1480,11 +1908,16 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     const syncAudio = () => {
       if (!offline) return
       for (const cue of capturedAudio.splice(0)) {
+        if (job?.resume && cue.segment === 'initial' && !cue.loop) continue
         const begin = audioStarts.get(cue.segment ?? 'initial')
         if (begin !== undefined) {
-          const copy = { ...cue, at: begin + cue.at, end: undefined }
-          audioCopies.set(cue, copy)
-          cues.push(copy)
+          const at = runVodAudioCueTime(begin, cue, offline.time)
+          if (at === undefined) capturedAudio.push(cue)
+          else if (at !== null) {
+            const copy = { ...cue, at, end: undefined }
+            audioCopies.set(cue, copy)
+            cues.push(copy)
+          }
         } else capturedAudio.push(cue)
       }
       for (const [cue, copy] of audioCopies) {
@@ -1496,8 +1929,8 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
         else if (!cues.includes(copy)) audioCopies.delete(cue)
       }
     }
-    const startAudioSegment = (segment: string) => {
-      if (offline) audioStarts.set(segment, offline.time)
+    const startAudioSegment = (segment: string, at = offline?.time ?? 0) => {
+      if (offline) audioStarts.set(segment, at)
       syncAudio()
     }
     startAudioSegment('initial')
@@ -1547,7 +1980,9 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
       lastClick = action.drag ? null : action.from
     }
     if (offline) stream = {
-      segment: startAudioSegment,
+      segment(name) {
+        if (!motionBudget?.capped) startAudioSegment(name, offline.time - (motionBudget?.skip ?? 0) / 60)
+      },
       async still(frame, milliseconds) {
         try {
           current.close()
@@ -1563,6 +1998,7 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
       },
       async action(action, frame, sprite, background) {
         try {
+          if (motionBudget?.skip || motionBudget?.capped) return
           current.close()
           current = await createImageBitmap(frame)
           await playAction(action, sprite, background)
@@ -1667,8 +2103,8 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     }
     if (offline) finishPreparation()
     if (!offline) await setReplayRun(replayState)
-    if (!job || job.last) await animate(1_500, () => paint(ctx, current, position))
-    else if (!job.continuation) {
+    if (!motionBudget?.capped && (!job || job.last)) await animate(1_500, () => paint(ctx, current, position))
+    else if (!motionBudget?.capped && !job!.continuation) {
       await animate(runVodActionWait(elapsedSinceAction, false), () => paint(ctx, current, position))
       const origin = position
       await animate(RUN_VOD_CURSOR_MS, progress => {
@@ -1694,8 +2130,8 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     const filename = `slay-the-spire-run-${expected.campaign.runId}.${extension}`
     job?.progress(1)
     if (!job) presentRunVod(video, filename, store)
-    return { video, filename, duration, cues,
-      playback: { position, pulse, elapsedSinceAction, lastClick }, cleanup: () => store.cleanup() }
+    return { video, filename, duration, cues, ...(motionBudget?.capped ? { motionCapped: true as const } : {}),
+      playback: { position, pulse, elapsedSinceAction, lastClick, imagePhases: finalImagePhases }, cleanup: () => store.cleanup() }
   } catch (error) {
     await recording?.abort()
     bridge?.setVodAudioMuted(true)
@@ -1714,7 +2150,8 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
   }
 }
 
-function presentRunVod(video: Blob, filename: string, store: SnapshotStore) {
+function presentRunVod(video: Blob, filename: string, store: Pick<SnapshotStore, 'cleanup' | 'deferCleanup'>, onClose?: () => void) {
+    store.deferCleanup(RUN_VOD_STALE_MS)
     const url = URL.createObjectURL(video)
     Object.assign(document.createElement('a'), { href: url, download: filename }).click()
     const player = document.createElement('dialog')
@@ -1736,8 +2173,9 @@ function presentRunVod(video: Blob, filename: string, store: SnapshotStore) {
       movie.load()
       URL.revokeObjectURL(url)
       player.remove()
-      // Allow an already-started browser download to finish reading the file.
+      store.deferCleanup(60_000)
       window.setTimeout(() => { void store.cleanup() }, 60_000)
+      onClose?.()
     }, { once: true })
     player.append(movie, close)
     document.body.append(player)

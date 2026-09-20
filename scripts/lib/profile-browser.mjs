@@ -5,9 +5,11 @@ export { devices } from 'playwright'
 
 async function seed(context) {
   await context.addInitScript(() => {
-    if (!localStorage.getItem('sts-profile')) localStorage.setItem('sts-profile', JSON.stringify({
-      username: 'TestPlayer', token: '00000000-0000-4000-8000-000000000001',
-    }))
+    try {
+      if (!localStorage.getItem('sts-profile')) localStorage.setItem('sts-profile', JSON.stringify({
+        username: 'TestPlayer', token: '00000000-0000-4000-8000-000000000001',
+      }))
+    } catch { /* Sandboxed raster frames intentionally have no storage origin. */ }
   })
 }
 

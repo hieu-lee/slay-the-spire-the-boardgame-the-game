@@ -11,8 +11,16 @@ import './ui/styles/welcome.css'
 const container = document.getElementById('root')
 if (!container) throw new Error('#root element is missing from index.html')
 
-createRoot(container).render(
-  <StrictMode>
-    <WelcomeScreen><App /></WelcomeScreen>
-  </StrictMode>,
-)
+const query = new URLSearchParams(location.search)
+if (query.has('run-vod') || query.has('run-vod-export')) {
+  document.querySelectorAll('link[rel="preload"][as="image"]').forEach(link => link.remove())
+}
+if (query.has('run-vod-export')) {
+  void import('./ui/run-vod.ts').then(({ runVodExportWorker }) => runVodExportWorker())
+} else {
+  createRoot(container).render(
+    <StrictMode>
+      <WelcomeScreen><App /></WelcomeScreen>
+    </StrictMode>,
+  )
+}

@@ -1291,6 +1291,12 @@ try {
     headers: { origin: 'https://example.com', 'content-type': 'text/plain' },
     body: JSON.stringify({ name: 'Cross-site', character: 'ironclad' }),
   })
+  const resetTarget = `${pagesOrigin}/slay-the-spire-the-boardgam/?run-vod-export=run-1`
+  const reset = await fetch(`${corsOrigin}/run-vod-reset?return=${encodeURIComponent(resetTarget)}`)
+  const resetBody = await reset.text()
+  const raster = await fetch(`${corsOrigin}/run-vod-raster`)
+  const rasterBody = await raster.text()
+  const refusedReset = await fetch(`${corsOrigin}/run-vod-reset?return=${encodeURIComponent('https://example.com/')}`)
   const refusedSocketStatus = await new Promise((resolve, reject) => {
     const socket = new WebSocket(`ws://127.0.0.1:${corsAddress.port}/ws?room=ABCDEF`, { origin: 'https://example.com' })
     socket.once('unexpected-response', (_request, response) => resolve(response.statusCode))
@@ -1304,6 +1310,12 @@ try {
     assertEqual(refused.status, 403)
     assertEqual(refused.headers.get('access-control-allow-origin'), null)
     assertEqual(refusedPost.status, 403)
+    assertEqual(reset.status, 200)
+    assertEqual(reset.headers.get('cross-origin-opener-policy'), 'same-origin')
+    assert(resetBody.includes(JSON.stringify(resetTarget)))
+    assertEqual(raster.status, 200)
+    assert(rasterBody.includes('transferToImageBitmap'))
+    assertEqual(refusedReset.status, 403)
     assertEqual(refusedSocketStatus, 401)
     assertEqual(corsService.store.rooms.size, 0)
   })

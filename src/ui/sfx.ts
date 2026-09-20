@@ -243,14 +243,14 @@ export function useRunOutcomeSound(
   }, [combatWinDelayMs, connected, outcome, restoration, run?.combat?.phase])
 }
 
-export function installSoundEffects() {
+export function installSoundEffects(warm = true) {
   // Warm short effect files before the first attack; playback still requires an interaction.
-  const preload = Object.values(SOUNDS).map(source => {
+  const preload = warm ? Object.values(SOUNDS).map(source => {
     const audio = audioElement(source)
     audio.preload = 'auto'
     audio.load()
     return audio
-  })
+  }) : []
   function play(event: Event) {
     const target = event.target instanceof Element ? event.target : null
     const control = event.type === 'change'

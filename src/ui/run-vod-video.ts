@@ -30,6 +30,13 @@ export function runVodMemoryFile() {
   }
 }
 
+export async function runVodVideoCodec(video: Blob) {
+  const input = new Input({ source: new BlobSource(video), formats: [MP4] })
+  try { return (await (await input.getPrimaryVideoTrack())?.getDecoderConfig())?.codec ?? null }
+  catch { return null }
+  finally { input.dispose() }
+}
+
 // WebCodecs timestamps describe movie time, never wall time. Native encoders
 // run off the UI thread; the muxer streams to disk with bounded backpressure.
 export async function createOfflineRunVod(canvas: HTMLCanvasElement, fps: number, cues: RunVodAudioCue[],
@@ -175,9 +182,11 @@ export async function createRunVodJoiner(fps: number,
       const input = new Input({ source: new BlobSource(clip.video), formats: [MP4] })
       try {
         const track = await input.getPrimaryVideoTrack()
-        if (!track || await track.getCodec() !== 'avc') throw new Error('A VOD location produced an incompatible video track.')
+        if (!track) throw new Error('A VOD location produced no video track.')
         const config = await track.getDecoderConfig()
-        if (!config) throw new Error('A VOD location is missing its video decoder configuration.')
+        if (!config || !/^avc[13]\./.test(config.codec)) {
+          throw new Error(`A VOD location produced an incompatible video track (${config?.codec ?? 'missing codec'}).`)
+        }
         let first = true
         for await (const packet of new EncodedPacketSink(track).packets()) {
           checkCancelled()
