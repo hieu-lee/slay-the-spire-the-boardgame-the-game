@@ -653,6 +653,26 @@ try {
       patch: [{ path: ['combat', 'presentationEvents'], value: [actualCard] }],
     }
     const recoveredChoice = vod.runVodEventChoice(choiceEvent, beforeChoice)
+    const campfire = structuredClone(terminal)
+    const campfireRoomId = campfire.map.position ?? Object.keys(campfire.map.rooms)[0]
+    campfire.phase = 'room'
+    campfire.roomState = null
+    campfire.map.position = campfireRoomId
+    campfire.map.rooms[campfireRoomId] = { ...campfire.map.rooms[campfireRoomId], kind: 'campfire' }
+    const upgradeEvent = {
+      choice: { source: { selector: '#recursion', name: 'Recursion, cost 1, skill' }, steps: [{ selector: '#confirm', name: 'Confirm' }] },
+      patch: [{ path: ['players', 0, 'deck'], value: terminal.players[0].deck.map((card, index) =>
+        index === 0 ? { ...card, upgraded: true } : card) }],
+    }
+    const recoveredSmith = vod.runVodEventChoice(upgradeEvent, campfire)
+    const retainedSetupUpgrade = vod.runVodEventChoice(upgradeEvent, { ...campfire, phase: 'setup' })
+    const restChoice = { source: { selector: '#rest', name: 'Rest' },
+      steps: [{ selector: '#card', name: 'Recursion, cost 1, skill' }, { selector: '#confirm', name: 'Confirm' }] }
+    const retainedRemoval = vod.runVodEventChoice({ choice: restChoice,
+      patch: [{ path: ['players', 0, 'deck'], value: terminal.players[0].deck.slice(1) }] }, campfire)
+    const retainedTransform = vod.runVodEventChoice({ choice: restChoice,
+      patch: [{ path: ['players', 0, 'deck'], value: terminal.players[0].deck.map((card, index) =>
+        index === 0 ? { ...card, uid: 'transformed', defId: 'claw' } : card) }] }, campfire)
     const orbEvent = { ...choiceEvent, choice: { source: hand('FTL'), steps: [{ selector: '#orb' }], target } }
     const syntheticEvent = { ...choiceEvent, choice: { source: { selector: '#relic' }, steps: [hand('FTL')] } }
     return {
@@ -673,6 +693,9 @@ try {
       legacyDuplicate: duplicateUpgrade.players[0].deck.filter(card => card.upgraded).map(card => card.uid),
       orbTarget: orbChoice.target.name, orbSteps: orbChoice.steps.map(step => step.selector),
       recoveredCard: recoveredChoice.source.name, recoveredSteps: recoveredChoice.steps.length,
+      recoveredSmith: [recoveredSmith.source.name, ...recoveredSmith.steps.map(step => step.name)],
+      retainedSetupUpgrade: retainedSetupUpgrade.source.name,
+      retainedRest: [retainedRemoval.source.name, retainedTransform.source.name],
       retainedOrb: vod.runVodEventChoice(orbEvent, beforeChoice).steps[0].selector,
       retainedSynthetic: vod.runVodEventChoice(syntheticEvent, beforeChoice).source.selector,
     }
@@ -689,7 +712,11 @@ try {
       semanticDeckChoice: true,
       legacyMultiple: ['b', 'd'], legacyRemoved: ['a', 'c', 'd'], legacyDuplicate: ['c'],
       orbTarget: 'Cultist, 5 HP', orbSteps: ['#lightning'],
-      recoveredCard: 'FTL, cost 1', recoveredSteps: 0, retainedOrb: '#orb', retainedSynthetic: '#relic',
+      recoveredCard: 'FTL, cost 1', recoveredSteps: 0,
+      recoveredSmith: ['Smith upgrade', 'Recursion, cost 1, skill', 'Confirm'],
+      retainedSetupUpgrade: 'Recursion, cost 1, skill',
+      retainedRest: ['Rest', 'Rest'],
+      retainedOrb: '#orb', retainedSynthetic: '#relic',
     })
   })
 
@@ -886,6 +913,13 @@ try {
     await (await import('/src/ui/run-vod.ts')).startRunVod(initial)
     window.__STS_DEBUG__.setRun(initial)
   }, canonicalMapRun)
+  const merchantEntryRecovery = await page.evaluate(async () => {
+    const { runVodMerchantEntry } = await import('/src/ui/run-vod.ts')
+    return {
+      entry: runVodMerchantEntry(document, { selector: 'missing', name: 'War Paint' })?.getAttribute('aria-label'),
+      alreadyEntry: runVodMerchantEntry(document, { selector: 'missing', name: 'Enter merchant shop' }) === null,
+    }
+  })
   await page.getByRole('button', { name: 'Enter merchant shop', exact: true }).click()
   await page.locator('.merchant-card button').first().click()
   await page.waitForFunction(async () => (await (await import('/src/ui/run-vod.ts')).readRunVod(window.__STS_DEBUG__.getRun().campaign.runId))?.events.length > 0)
@@ -905,6 +939,7 @@ try {
     assertEqual(exitChoice.source.name, '← Leave shop')
     assertEqual(exitChoice.steps.at(-1).name, 'Proceed · 0/1 ready')
     assertEqual(exitChoice.source.selector, exitChoice.steps.at(-1).selector)
+    assertDeepEqual(merchantEntryRecovery, { entry: 'Enter merchant shop', alreadyEntry: true })
     assertDeepEqual(merchantRecovery, { exit: '← Leave shop', unrelated: true })
   })
   if (verifyExports) {

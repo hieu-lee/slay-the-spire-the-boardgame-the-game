@@ -27,8 +27,14 @@ for (let index = 0; index < 512; index++) {
 await assert.rejects(store.write(512, {}), /temporary disk storage/)
 await store.cleanup()
 
+const resumeStart = source.indexOf('doc.documentElement.dataset.runVodResume = String')
+const resumeEnd = source.indexOf("doc.documentElement.dataset.runVodResume = 'false'", resumeStart)
+const firstCanvas = source.indexOf("const canvas = document.createElement('canvas')", resumeStart)
+assert(resumeStart >= 0 && resumeEnd > resumeStart && resumeEnd < firstCanvas,
+  'resumed playback must stop suppressing opening-hand animations immediately after initial hydration')
+
 // Exercise the real location coordinator without browser startup or pixels.
-const coordinator = source.slice(source.indexOf('export async function extractRunVod('), source.indexOf('async function renderRunVod('))
+const coordinator = source.slice(source.indexOf('export async function extractRunVod('), source.indexOf('export async function renderRunVodLocation('))
   .replace('export ', '').replace("await import('./run-vod-video.ts')", 'joinModule')
 const coordinateJs = ts.transpile(coordinator, { target: ts.ScriptTarget.ES2022 })
 for (const mode of ['complete', 'cancel', 'startup-cancel', 'fallback-cancel', 'finish-cancel', 'failure', 'late-failure']) {

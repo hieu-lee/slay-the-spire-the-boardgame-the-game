@@ -991,6 +991,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           state={run.combat}
           act={run.act}
           viewerId={viewerId}
+          animateOpeningHand={document.documentElement.dataset.runVodResume !== 'true'}
           autoAdvance={!replay && !compendium && !pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
           courierAvailable={!run.courier.usedBy.includes(viewerId) &&
             run.combat.players.some((player) => player.id === viewerId && player.relics.some((relic) => relic.defId === 'the_courier'))}

@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { assetPath } from '../game/assets.ts'
 import { cardDef } from '../game/cards.ts'
+import { currentRoom } from '../game/map.ts'
 import type { RunState } from '../game/run.ts'
 import { rasterRunVod, pruneRunVodRaster, releaseRunVodRaster } from './run-vod-raster.ts'
 import { createRunVodClock, type RunVodClock } from './run-vod-clock.ts'
@@ -34,6 +35,24 @@ const TURN_CONTROL = /^(End turn|Resolve (?:start|end)(?: of turn| turn \d+))$/
 const semanticDeckMutation = (event: RunVodEvent) => Boolean(event.choice?.steps?.length && event.patch.some((change) =>
   change.path[0] === 'players' && change.path[2] === 'deck'))
 
+const semanticDeckUpgrade = (event: RunVodEvent, before: RunState) => {
+  if (!semanticDeckMutation(event)) return false
+  const after = applyRunVodEvent(before, event)
+  let upgrades = 0
+  return before.players.length === after.players.length && before.players.every((player, playerIndex) => {
+    const next = after.players[playerIndex]!
+    return player.deck.length === next.deck.length && player.deck.every((card, cardIndex) => {
+      const changed = next.deck[cardIndex]!
+      if (JSON.stringify(card) === JSON.stringify(changed)) return true
+      if (!card.upgraded && changed.upgraded && JSON.stringify({ ...card, upgraded: true }) === JSON.stringify(changed)) {
+        upgrades += 1
+        return true
+      }
+      return false
+    })
+  }) && upgrades === 1
+}
+
 export function normalizeRunVodChoice(choice: RunVodChoice | null | undefined) {
   const last = choice?.steps?.at(-1)
   return choice?.source.drag && last?.target
@@ -43,6 +62,10 @@ export function normalizeRunVodChoice(choice: RunVodChoice | null | undefined) {
 
 export function runVodEventChoice(event: RunVodEvent, before: RunState): RunVodChoice | undefined {
   let choice = event.choice
+  if (choice && choice.source.name !== 'Smith upgrade' && choice.steps?.at(-1)?.name === 'Confirm' &&
+    before.phase === 'room' && !before.roomState && currentRoom(before.map)?.kind === 'campfire' && semanticDeckUpgrade(event, before)) {
+    choice = { source: { selector: '.campfire__choices button', name: 'Smith upgrade' }, steps: [choice.source, ...choice.steps] }
+  }
   const handCard = (ref: ControlRef) => Boolean(ref.card || ref.drag && / > footer > .* > button/.test(ref.selector) && /, cost /.test(ref.name ?? ''))
   if (choice?.steps?.length && handCard(choice.source) && before.combat) {
     const after = applyRunVodEvent(before, event)
@@ -357,7 +380,9 @@ export function useRunVod(run: RunState, active: boolean, viewerId: string) {
     previous.current = structuredClone(run)
     if (patch.length === 0) return
     const choice = normalizeRunVodChoice(pendingChoice.current)
-    const event = { patch, ...(choice ? { choice } : {}), viewerId }
+    const rawEvent = { patch, ...(choice ? { choice } : {}), viewerId }
+    const recordedChoice = runVodEventChoice(rawEvent, before)
+    const event = { patch, ...(recordedChoice ? { choice: recordedChoice } : {}), viewerId }
     pendingChoice.current = null
     if (!logReady || !log.current || log.current.runId !== run.campaign.runId) {
       queuedEvents.current.push(event)
@@ -570,6 +595,11 @@ export function soleForcedResolution(doc: Document) {
 export function runVodMerchantExit(doc: Document, ref: ControlRef) {
   if (!/^Proceed · \d+\/\d+ ready$/.test(ref.name ?? '')) return null
   return queryControl(doc, { selector: '.merchant-shop-stage > .room-proceed', name: '← Leave shop' })
+}
+
+export function runVodMerchantEntry(doc: Document, ref: ControlRef) {
+  if (ref.name === 'Enter merchant shop') return null
+  return queryControl(doc, { selector: '.merchant-arrival__merchant', name: 'Enter merchant shop' })
 }
 
 type VodActionGeometry = {
@@ -876,7 +906,11 @@ async function captureMotion(doc: Document, store: SnapshotStore, eventIndex: nu
       await clock.advance(1_000 / 60)
       if (shots.length >= 2) await consume(shots.shift()!)
       if (!clock.active()) break
-      if (index === 60 * 15 - 1) throw new Error('A replay animation did not finish.')
+      if (index === 60 * 15 - 1) {
+        const blockers = [...doc.querySelectorAll('[data-webmcp-pending="true"], .character-attack, .card-flight, .defect-evoke')]
+          .map(element => `${element.tagName}.${element.className}`).join(', ')
+        throw new Error(`A replay animation did not finish${blockers ? ` (${blockers})` : ''}.`)
+      }
     }
     for (const shot of shots) await consume(shot)
     await Promise.all(pending)
@@ -930,17 +964,20 @@ async function prepareGeometry(event: RunVodEvent, doc: Document, store: Snapsho
     : null
   const forcedResolution = !missedRoom && !queryControl(doc, event.choice.source)
     ? soleForcedResolution(doc) : null
+  const merchantEntry = !missedRoom && !forcedResolution && !queryControl(doc, event.choice.source)
+    ? runVodMerchantEntry(doc, event.choice.source) : null
   // Legacy logs collapsed Leave shop and Proceed because both controls used
   // the same DOM selector. Restore that UI-only step without changing state.
-  const merchantExit = !queryControl(doc, event.choice.source) ? runVodMerchantExit(doc, event.choice.source) : null
+  const merchantExit = !merchantEntry && !queryControl(doc, event.choice.source) ? runVodMerchantExit(doc, event.choice.source) : null
   const refs = [
     ...(missedRoom ? [{ ref: controlRef(missedRoom), element: missedRoom }] : []),
     ...(forcedResolution ? [{ ref: controlRef(forcedResolution), element: forcedResolution }] : []),
+    ...(merchantEntry ? [{ ref: controlRef(merchantEntry), element: merchantEntry }] : []),
     ...(merchantExit ? [{ ref: controlRef(merchantExit), element: merchantExit }] : []),
     { ref: event.choice.source },
     ...(event.choice.steps ?? []).map((ref) => ({ ref })),
   ]
-  const choiceIndex = Number(Boolean(missedRoom)) + Number(Boolean(forcedResolution)) + Number(Boolean(merchantExit))
+  const choiceIndex = Number(Boolean(missedRoom)) + Number(Boolean(forcedResolution)) + Number(Boolean(merchantEntry)) + Number(Boolean(merchantExit))
   let recoveryBase: RunState | undefined
   for (let index = 0; index < refs.length; index += 1) {
     const { ref, element } = refs[index]!
@@ -1154,13 +1191,17 @@ async function recorderFor(canvas: HTMLCanvasElement, audio: MediaStream, store:
   }
 }
 
-type VodClip = { video: Blob; filename: string; duration: number; cues: RunVodAudioCue[]; cleanup: () => Promise<void> }
+type VodPlayback = { position: Point; pulse: boolean; elapsedSinceAction: number; lastClick: Point | null }
+type VodClip = { video: Blob; filename: string; duration: number; cues: RunVodAudioCue[]; playback: VodPlayback; cleanup: () => Promise<void> }
 type VodJob = {
   parent: HTMLDialogElement
   checkCancelled: () => void
   progress: (value: number) => void
   first: boolean
   last: boolean
+  resume?: boolean
+  continuation?: boolean
+  playback?: VodPlayback
 }
 
 // Checkpoints are complete logged states. Keep combat, rewards and their map
@@ -1263,6 +1304,15 @@ export async function extractRunVod(log: RunVodLog, expected: RunState) {
   } finally { ui.remove() }
 }
 
+export async function renderRunVodLocation(log: RunVodLog, expected: RunState, first: boolean, last: boolean,
+  options: Pick<VodJob, 'resume' | 'continuation' | 'playback'> = {}) {
+  const parent = document.createElement('dialog')
+  document.body.append(parent)
+  try {
+    return await renderRunVod(log, expected, { parent, checkCancelled() {}, progress() {}, first, last, ...options })
+  } finally { parent.remove() }
+}
+
 async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): Promise<VodClip> {
   const ui = replayFrame(job?.parent)
   if (job) ui.update = (_text, value) => job.progress(value)
@@ -1312,12 +1362,20 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     replayDoc = doc
     if (!doc) throw new Error('The canonical Run VOD renderer is unavailable.')
     doc.documentElement.dataset.runVodPrepass = 'true'
+    doc.documentElement.dataset.runVodResume = String(Boolean(job?.resume))
     bridge.setVodAudioMuted(true)
     clock = createRunVodClock(doc, bridge.flushVod)
     replayClocks.set(doc, clock)
     const capturedAudio = bridge.captureVodAudio()
     await setReplayRun(log.initial)
     await clock.advance(0)
+    if (job?.resume) {
+      doc.getAnimations().forEach(animation => animation.cancel())
+      await clock.advance(0)
+    }
+    // Only the hydrated baseline is historical. A combat entered later in
+    // this chunk must still animate its real opening hand.
+    doc.documentElement.dataset.runVodResume = 'false'
     const canvas = document.createElement('canvas')
     outputCanvas = canvas
     canvas.className = 'run-vod-workbench__canvas'
@@ -1330,7 +1388,7 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     await mediaReady(doc)
     let current = await createImageBitmap(await raster(doc))
     releaseFrame = () => current.close()
-    let position: Point = { x: .5, y: .5 }
+    let position: Point = job?.playback?.position ?? { x: .5, y: .5 }
     paint(ctx, current, position)
     const cues: RunVodAudioCue[] = []
     const { createOfflineRunVod } = await import('./run-vod-video.ts')
@@ -1404,6 +1462,7 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
       replayClocks.delete(doc)
       clock = null
       doc.documentElement.dataset.runVodPrepass = 'false'
+      doc.documentElement.dataset.runVodResume = 'false'
     }
     if (!offline) {
       for (let index = 0; index < log.events.length; index++) geometries.push(await prepare(index))
@@ -1456,9 +1515,9 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     if (!offline) ui.update(`Encoding · 1080p / ${RUN_VOD_FPS} fps`, .8)
     if (!job || job.first) await animate(800, () => paint(ctx, current, position))
     let replayState = structuredClone(log.initial)
-    let pulse = false
-    let elapsedSinceAction = job && !job.first ? RUN_VOD_ACTION_HOLD_MS : Number.POSITIVE_INFINITY
-    let lastClick: Point | null = null
+    let pulse = job?.playback?.pulse ?? false
+    let elapsedSinceAction = job?.playback?.elapsedSinceAction ?? (job && !job.first ? RUN_VOD_ACTION_HOLD_MS : Number.POSITIVE_INFINITY)
+    let lastClick: Point | null = job?.playback?.lastClick ?? null
     const playAction = async (action: VodActionGeometry, sprite: CanvasImageSource = current, background: CanvasImageSource = current) => {
       const samePlace = Boolean(lastClick && !action.drag && Math.hypot(
         lastClick.x - action.from.x, lastClick.y - action.from.y,
@@ -1609,7 +1668,7 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     if (offline) finishPreparation()
     if (!offline) await setReplayRun(replayState)
     if (!job || job.last) await animate(1_500, () => paint(ctx, current, position))
-    else {
+    else if (!job.continuation) {
       await animate(runVodActionWait(elapsedSinceAction, false), () => paint(ctx, current, position))
       const origin = position
       await animate(RUN_VOD_CURSOR_MS, progress => {
@@ -1635,7 +1694,8 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
     const filename = `slay-the-spire-run-${expected.campaign.runId}.${extension}`
     job?.progress(1)
     if (!job) presentRunVod(video, filename, store)
-    return { video, filename, duration, cues, cleanup: () => store.cleanup() }
+    return { video, filename, duration, cues,
+      playback: { position, pulse, elapsedSinceAction, lastClick }, cleanup: () => store.cleanup() }
   } catch (error) {
     await recording?.abort()
     bridge?.setVodAudioMuted(true)
