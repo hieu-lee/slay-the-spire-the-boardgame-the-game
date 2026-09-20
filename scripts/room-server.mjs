@@ -383,7 +383,7 @@ export function createRoomServer({
           'cross-origin-opener-policy': 'same-origin',
         })
         const delay = url.searchParams.get('delay') === '2000' ? 2_000 : 0
-        return response.end(`<script>setTimeout(() => location.replace(${JSON.stringify(target.href)}), ${delay})</script>`)
+        return response.end(`<meta name="color-scheme" content="dark"><style>html{background:#05070c}</style><script>setTimeout(() => location.replace(${JSON.stringify(target.href)}), ${delay})</script>`)
       }
       if (request.method === 'GET' && url.pathname === '/api/health') {
         return send(response, 200, {

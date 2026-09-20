@@ -26,6 +26,12 @@ export const RUN_VOD_FPS = 120
 export const RUN_VOD_CURSOR_MS = 150
 export const RUN_VOD_REPEAT_CLICK_MS = 250
 export const RUN_VOD_ACTION_HOLD_MS = 1_000
+export function runVodRenderDeadline<T>(render: Promise<T>, milliseconds = 60_000): Promise<T> {
+  let timer = 0
+  return Promise.race([render, new Promise<never>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error('VOD render slice timed out.')), milliseconds)
+  })]).finally(() => window.clearTimeout(timer))
+}
 export const RUN_VOD_CURSOR_ASSET = assetPath('ui/cursor.png')
 export const RUN_VOD_CURSOR_CLICK_ASSET = assetPath('ui/cursor-click.png')
 export const RUN_VOD_REPLAY = new URLSearchParams(location.search).get('run-vod') === '1'
@@ -1467,7 +1473,7 @@ export async function startRunVodExport(log: RunVodLog, expected: RunState, resu
   location.replace(reset.href)
 }
 
-function exportChunks(log: RunVodLog, expected: RunState) {
+function exportChunks(log: RunVodLog, expected: RunState): { location: { log: RunVodLog; expected: RunState }; locationIndex: number; from: number; to: number }[] {
   return runVodLocations(log, expected).flatMap((location, locationIndex) =>
     Array.from({ length: Math.ceil(location.log.events.length / RUN_VOD_EXPORT_EVENTS) }, (_, index) => ({
       location, locationIndex, from: index * RUN_VOD_EXPORT_EVENTS,
@@ -1527,7 +1533,7 @@ export async function runVodExportWorker() {
       let expected = structuredClone(initial)
       for (const event of events) expected = applyRunVodEvent(expected, event)
       const resumed = record.clips.length > 0 || record.motionSkip > 0
-      const clip = await renderRunVodLocation({ ...chunk.location.log, initial, events }, expected,
+      const clip: VodClip = await runVodRenderDeadline(renderRunVodLocation({ ...chunk.location.log, initial, events }, expected,
         record.index === 0 && record.motionSkip === 0, record.index === chunks.length - 1, {
           resume: resumed,
           continuation: chunk.to < chunk.location.log.events.length,
@@ -1535,7 +1541,7 @@ export async function runVodExportWorker() {
           motionSkip: record.motionSkip,
           motionLimit: motionFrames,
           checkCancelled,
-        })
+        }))
       const key: string = `${String(record.clips.length).padStart(4, '0')}.mp4`
       let reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>> | undefined
       let writer: FileSystemWritableFileStream | undefined
@@ -1621,6 +1627,13 @@ export async function runVodExportWorker() {
     if (cancelled) {
       await deleteExport(runId)
       await returnFromRunVodExport(runId)
+      return
+    }
+    const failed = await exportRecord(runId)
+    const retries = (failed?.retries ?? 0) + 1
+    if (failed && retries <= 2) {
+      await putExport({ ...failed, retries })
+      location.replace((await resetUrl(runId)).href)
       return
     }
     console.error(stage, error)
@@ -1717,7 +1730,7 @@ export async function extractRunVod(log: RunVodLog, expected: RunState) {
 }
 
 export async function renderRunVodLocation(log: RunVodLog, expected: RunState, first: boolean, last: boolean,
-  options: Pick<VodJob, 'resume' | 'continuation' | 'playback' | 'motionSkip' | 'motionLimit'> & Partial<Pick<VodJob, 'checkCancelled'>> = {}) {
+  options: Pick<VodJob, 'resume' | 'continuation' | 'playback' | 'motionSkip' | 'motionLimit'> & Partial<Pick<VodJob, 'checkCancelled'>> = {}): Promise<VodClip> {
   const parent = document.createElement('div')
   document.body.append(parent)
   try {

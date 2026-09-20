@@ -1313,6 +1313,7 @@ try {
     assertEqual(reset.status, 200)
     assertEqual(reset.headers.get('cross-origin-opener-policy'), 'same-origin')
     assert(resetBody.includes(JSON.stringify(resetTarget)))
+    assert(resetBody.includes('html{background:#05070c}'))
     assertEqual(raster.status, 200)
     assert(rasterBody.includes('transferToImageBitmap'))
     assertEqual(refusedReset.status, 403)

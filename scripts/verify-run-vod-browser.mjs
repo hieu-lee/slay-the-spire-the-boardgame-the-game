@@ -277,6 +277,13 @@ try {
     assertDeepEqual(motionBoundary, { active: false, sliceFrames: 12, boundary: true, boundaryCapped: true, resuming: true, resumingCapped: false,
       firstSliceCue: 'future', resumedCue: .025, pastCue: 'past', continuingLoop: 0,
       endBoundary: 'future', nextBoundary: 0 }))
+  const renderTimeout = await page.evaluate(async () => {
+    const { runVodRenderDeadline } = await import('/src/ui/run-vod.ts')
+    try { await runVodRenderDeadline(new Promise(() => {}), 1) }
+    catch (error) { return error instanceof Error ? error.message : String(error) }
+  })
+  check('a hung render slice fails fast so the checkpoint worker can resume it', () =>
+    assertEqual(renderTimeout, 'VOD render slice timed out.'))
   const resolvedTurn = await page.evaluate(async initial => {
     const { runVodEventChoice } = await import('/src/ui/run-vod.ts')
     initial.combat = { combatId: 'turn-choice', presentationEvents: [] }
