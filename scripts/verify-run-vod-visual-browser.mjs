@@ -154,10 +154,14 @@ try {
     const { createRunVodClock } = await import('/src/ui/run-vod-clock.ts')
     const fixture = document.createElement('div')
     fixture.style.cssText = 'position:fixed;right:0;top:0;width:40px;height:40px;background:rgb(255,0,0);z-index:999999;animation:vod-clock-test 100ms linear both'
+    const stale = document.createElement('div')
+    stale.style.cssText = 'position:fixed;right:50px;top:0;width:40px;height:40px;background:rgb(0,255,0);z-index:999999'
     const sheet = document.createElement('style')
     sheet.textContent = '@keyframes vod-clock-test {from{opacity:.5}to{opacity:1}}'
     document.head.append(sheet)
-    document.body.append(fixture)
+    document.body.append(fixture, stale)
+    const staleAnimation = stale.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000, fill: 'both' })
+    staleAnimation.pause(); await staleAnimation.ready; staleAnimation.currentTime = 0
     const events = []
     fixture.addEventListener('animationstart', () => events.push('start'))
     fixture.addEventListener('animationend', () => events.push('end'))
@@ -165,6 +169,13 @@ try {
     const fired = []
     setTimeout(() => fired.push('timeout'), 25)
     const interval = setInterval(() => fired.push('interval'), 50)
+    await clock.advance(0)
+    const seed = await rasterRunVod(document.body, 1920, 1080, clock.now)
+    seed.width = seed.height = 0
+    staleAnimation.cancel()
+    const overlap = await rasterRunVod(document.body, 1920, 1080, clock.now)
+    const overlapPixel = [...overlap.getContext('2d').getImageData(1860, 10, 1, 1).data]
+    overlap.width = overlap.height = 0
     await clock.advance(150)
     clearInterval(interval)
     const first = await rasterRunVod(document.body, 1920, 1080, clock.now)
@@ -172,14 +183,15 @@ try {
     const second = await rasterRunVod(document.body, 1920, 1080, clock.now)
     const cached = await rasterRunVod(document.body, 1920, 1080, clock.now)
     const pixel = (canvas) => [...canvas.getContext('2d').getImageData(1910, 10, 1, 1).data]
-    const result = { events, fired, pixels: [pixel(first), pixel(second), pixel(cached)] }
+    const result = { events, fired, overlapPixel, pixels: [pixel(first), pixel(second), pixel(cached)] }
     clock.restore()
-    fixture.remove(); sheet.remove()
+    fixture.remove(); stale.remove(); sheet.remove()
     await releaseRunVodRaster()
     return result
   })
   assert.deepEqual(clockAndCache.fired, ['timeout', 'interval', 'interval', 'interval'])
   assert.deepEqual(clockAndCache.events, ['start', 'end'], 'virtual CSS animations must deliver game completion events')
+  assert.deepEqual(clockAndCache.overlapPixel, [0, 255, 0, 255], 'a finished animation must refresh its cached final style while another animation remains active')
   assert.deepEqual(clockAndCache.pixels, [[255, 0, 0, 255], [0, 0, 255, 255], [0, 0, 255, 255]])
   const closedDialogCache = await page.evaluate(async () => {
     const { rasterRunVod, releaseRunVodRaster } = await import('/src/ui/run-vod-raster.ts')

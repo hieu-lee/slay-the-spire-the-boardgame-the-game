@@ -53,6 +53,7 @@ type RasterCache = {
   viewport: string
   scroll: string
   dirty: boolean
+  animations: Set<KeyframeEffect>
   restyle: Set<Element>
   serialized: string
   mutations: (records: MutationRecord[]) => void
@@ -243,11 +244,13 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
   let cached = element === doc.body && at !== undefined ? snapshots.get(doc) : undefined
   cached?.mutations(cached.observer.takeRecords())
   if (cached && (cached.dirty || cached.viewport !== viewport || cached.scroll !== scroll ||
+    [...cached.animations].some((effect) => !animations.includes(effect)) ||
     animations.some((effect) => effect.getKeyframes().some((frame) => Object.keys(frame).some((key) => !paintOnly.test(key)))))) {
     cached.observer.disconnect()
     snapshots.delete(doc)
     cached = undefined
   }
+  if (cached) for (const effect of animations) cached.animations.add(effect)
   const nodes: StyledClone[] = []
   const images: RasterCache['images'] = []
   const pending: Promise<unknown>[] = []
@@ -436,7 +439,8 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
       }
     }
     const observer = new MutationObserver(mutations)
-    snapshot = { content, nodes, images, observer, viewport, scroll, dirty: false, restyle: new Set(), serialized: '', mutations }
+    snapshot = { content, nodes, images, observer, viewport, scroll, dirty: false, animations: new Set(animations),
+      restyle: new Set(), serialized: '', mutations }
     observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeOldValue: true, characterData: true })
     snapshots.set(doc, snapshot)
   }
