@@ -284,6 +284,60 @@ try {
   })
   check('a hung render slice fails fast so the checkpoint worker can resume it', () =>
     assertEqual(renderTimeout, 'VOD render slice timed out.'))
+  const adaptiveChunks = await page.evaluate(async initial => {
+    const { applyRunVodEvent, runVodExportChunks } = await import('/src/ui/run-vod.ts')
+    const events = Array.from({ length: 9 }, () => ({ patch: [] }))
+    const log = { version: 2, runId: 'adaptive-chunks', initial, events }
+    const expected = events.reduce(applyRunVodEvent, initial)
+    const chunks = size => runVodExportChunks(log, expected, size).map(({ locationIndex, from, to }) => [locationIndex, from, to])
+    const four = chunks(4), two = chunks(2), one = chunks(1)
+    const timedOut = four[1]
+    return { four, two, one,
+      retryTwo: two.findIndex(([location, from]) => location === timedOut[0] && from === timedOut[1]),
+      retryOne: one.findIndex(([location, from]) => location === timedOut[0] && from === timedOut[1]) }
+  }, canonicalMapRun)
+  check('timed-out native chunks retry from the same checkpoint with smaller slices', () =>
+    assertDeepEqual(adaptiveChunks, {
+      four: [[0, 0, 4], [0, 4, 8], [0, 8, 9]],
+      two: [[0, 0, 2], [0, 2, 4], [0, 4, 6], [0, 6, 8], [0, 8, 9]],
+      one: Array.from({ length: 9 }, (_, index) => [0, index, index + 1]),
+      retryTwo: 2, retryOne: 4,
+    }))
+  const adaptiveTimeout = await page.evaluate(async initial => {
+    const { applyRunVodEvent, runVodExportChunks, runVodRenderSlice } = await import('/src/ui/run-vod.ts')
+    const events = Array.from({ length: 9 }, () => ({ patch: [] }))
+    const log = { version: 2, runId: 'adaptive-timeout', initial, events }
+    const expected = events.reduce(applyRunVodEvent, initial)
+    let record = { runId: log.runId, expected, index: 1, motionSkip: 24,
+      clips: [{ key: '0000.mp4' }, { key: '0001.mp4' }, { key: '0002.mp4' }], chunkClipStart: 1, chunkSize: 4, retries: 2 }
+    const saved = []
+    for (const size of [4, 2]) {
+      const chunks = runVodExportChunks(log, expected, size)
+      await runVodRenderSlice(new Promise(() => {}), size, chunks.find(chunk => chunk.from === 4), record,
+        next => runVodExportChunks(log, expected, next), async next => { saved.push(next); record = next }, () => {}, 1)
+    }
+    let single = ''
+    try {
+      const chunks = runVodExportChunks(log, expected, 1)
+      await runVodRenderSlice(new Promise(() => {}), 1, chunks[4], record,
+        next => runVodExportChunks(log, expected, next), async () => {}, () => {}, 1)
+    } catch (error) { single = error.message }
+    let cancelledSave = false, cancelled = ''
+    try {
+      const chunks = runVodExportChunks(log, expected, 4)
+      await runVodRenderSlice(new Promise(() => {}), 4, chunks[1], record,
+        next => runVodExportChunks(log, expected, next), async () => { cancelledSave = true },
+        () => { throw new Error('cancelled') }, 1)
+    } catch (error) { cancelled = error.message }
+    return { saved: saved.map(({ index, chunkSize, chunkClipStart, retries, motionSkip, clips }) =>
+      ({ index, chunkSize, chunkClipStart: chunkClipStart ?? null, retries, motionSkip, clips: clips.map(clip => clip.key) })),
+      single, cancelled, cancelledSave }
+  }, canonicalMapRun)
+  check('the timeout branch persists 4→2→1 fallback without losing completed work', () =>
+    assertDeepEqual(adaptiveTimeout, { saved: [
+      { index: 2, chunkSize: 2, chunkClipStart: null, retries: 0, motionSkip: 0, clips: ['0000.mp4'] },
+      { index: 4, chunkSize: 1, chunkClipStart: null, retries: 0, motionSkip: 0, clips: ['0000.mp4'] },
+    ], single: 'VOD render slice timed out.', cancelled: 'cancelled', cancelledSave: false }))
   const resolvedTurn = await page.evaluate(async initial => {
     const { runVodEventChoice } = await import('/src/ui/run-vod.ts')
     initial.combat = { combatId: 'turn-choice', presentationEvents: [] }
