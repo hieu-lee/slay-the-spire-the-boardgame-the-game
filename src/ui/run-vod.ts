@@ -14,6 +14,13 @@ const RUN_VOD_DATABASE = 'sts-run-vod-v2'
 const RUN_VOD_EXPORT_DATABASE = 'sts-run-vod-export-v1'
 const RUN_VOD_EXPORT_PARAM = 'run-vod-export'
 export const RUN_VOD_RETURN_PARAM = 'run-vod-return'
+const RUN_VOD_POPUP_PARAM = 'run-vod-popup'
+const RUN_VOD_OWNER_PARAM = 'run-vod-owner'
+const RUN_VOD_ACTIVE_KEY = 'sts-run-vod-active'
+const RUN_VOD_COMPLETED_KEY = 'sts-run-vod-completed'
+const RUN_VOD_LOCK = 'sts-run-vod-export-start'
+const RUN_VOD_HEARTBEAT_MS = 2_000
+const RUN_VOD_LEASE_MS = 15_000
 const RUN_VOD_CLEANUP_KEY = 'sts-run-vod-cleanup'
 const RUN_VOD_STALE_MS = 60 * 60 * 1_000
 const RUN_VOD_EXPORT_EVENTS = 1
@@ -784,8 +791,10 @@ const saveDeferredRunVod = (entries: DeferredRunVod[]) => {
   } catch {}
 }
 
-export function cleanupDeferredRunVod() {
+export async function cleanupDeferredRunVod(force = false) {
   if (new URLSearchParams(location.search).has(RUN_VOD_EXPORT_PARAM)) return
+  if (force && deferredCleanup) await deferredCleanup
+  if (force) deferredCleanup = null
   return deferredCleanup ??= cleanupDeferredRunVodStorage()
 }
 
@@ -807,7 +816,7 @@ async function cleanupDeferredRunVodStorage() {
     for (const record of records) {
       const age = now - (record.updatedAt ?? 0)
       if (age < RUN_VOD_STALE_MS) {
-        activeExports.add(record.runId)
+        activeExports.add(`sts-run-vod-export-${record.runId}${record.owner ? `-${record.owner}` : ''}`)
         nextCleanup = Math.min(nextCleanup, RUN_VOD_STALE_MS - age)
       } else store.delete(record.runId)
     }
@@ -824,7 +833,7 @@ async function cleanupDeferredRunVodStorage() {
     for await (const name of (root as FileSystemDirectoryHandle & { keys(): AsyncIterableIterator<string> }).keys()) {
       if (deferredNames.has(name)) continue
       if (name.startsWith('sts-run-vod-export-')) {
-        if (exportsKnown && !activeExports.has(name.slice('sts-run-vod-export-'.length))) {
+        if (exportsKnown && !activeExports.has(name)) {
           try { await root.removeEntry(name, { recursive: true }) } catch {}
         }
         continue
@@ -1406,7 +1415,7 @@ async function recorderFor(canvas: HTMLCanvasElement, audio: MediaStream, store:
 type VodPlayback = { position: Point; pulse: boolean; elapsedSinceAction: number; lastClick: Point | null; imagePhases?: Record<string, number> }
 type VodClip = { video: Blob; filename: string; duration: number; cues: RunVodAudioCue[]; playback: VodPlayback; motionCapped?: true; cleanup: () => Promise<void> }
 type VodExportClip = Pick<VodClip, 'filename' | 'duration' | 'cues' | 'playback'> & { key: string }
-type VodExport = { runId: string; expected: RunState; index: number; motionSkip: number; clips: VodExportClip[]; chunkSize?: number; motionLimit?: number; chunkClipStart?: number; retries?: number; updatedAt?: number }
+type VodExport = { runId: string; owner?: string; expected: RunState; index: number; motionSkip: number; clips: VodExportClip[]; chunkSize?: number; motionLimit?: number; chunkClipStart?: number; retries?: number; updatedAt?: number }
 type VodExportChunk = { location: { log: RunVodLog; expected: RunState }; locationIndex: number; from: number; to: number }
 type VodJob = {
   parent: HTMLElement
@@ -1448,29 +1457,55 @@ async function exportRecord(runId: string) {
   return await requested(transaction.objectStore('exports').get(runId)) as VodExport | undefined ?? null
 }
 
+const withRunVodOwner = <T>(owner: string, action: () => T | Promise<T>) =>
+  navigator.locks.request(RUN_VOD_LOCK, async () => {
+    if (activeRunVodExport()?.owner !== owner) throw new Error('The VOD export ownership was lost.')
+    return await action()
+  })
+
 async function putExport(record: VodExport) {
-  const db = await runVodExportDatabase()
-  if (!db) throw new Error('Browser storage is required for a bounded-memory VOD export.')
-  if (!db.objectStoreNames.contains('exports')) throw new Error(`VOD export storage is missing (${[...db.objectStoreNames].join(', ')}).`)
-  record.updatedAt = Date.now()
-  const transaction = db.transaction('exports', 'readwrite')
-  try { await requested(transaction.objectStore('exports').put(record)) }
-  catch (error) { throw new Error(`Could not save the VOD export checkpoint (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`) }
-  await committed(transaction)
+  const write = async () => {
+    const db = await runVodExportDatabase()
+    if (!db) throw new Error('Browser storage is required for a bounded-memory VOD export.')
+    if (!db.objectStoreNames.contains('exports')) throw new Error(`VOD export storage is missing (${[...db.objectStoreNames].join(', ')}).`)
+    record.updatedAt = Date.now()
+    const transaction = db.transaction('exports', 'readwrite')
+    try { await requested(transaction.objectStore('exports').put(record)) }
+    catch (error) { throw new Error(`Could not save the VOD export checkpoint (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}).`) }
+    await committed(transaction)
+  }
+  if (!record.owner) return write()
+  await withRunVodOwner(record.owner, write)
 }
 
-async function deleteExport(runId: string) {
+const exportDirectoryName = (runId: string, owner?: string) =>
+  `sts-run-vod-export-${runId}${owner ? `-${owner}` : ''}`
+
+async function deleteExportNow(runId: string) {
+  let record: VodExport | null = null
   const db = await runVodExportDatabase()
   if (db) {
     const transaction = db.transaction('exports', 'readwrite')
+    record = await requested(transaction.objectStore('exports').get(runId)) as VodExport | undefined ?? null
     transaction.objectStore('exports').delete(runId)
     await committed(transaction)
   }
-  try { await (await navigator.storage.getDirectory()).removeEntry(`sts-run-vod-export-${runId}`, { recursive: true }) } catch {}
+  try {
+    const root = await navigator.storage.getDirectory()
+    for (const name of new Set([exportDirectoryName(runId), exportDirectoryName(runId, record?.owner)])) {
+      try { await root.removeEntry(name, { recursive: true }) } catch {}
+    }
+  } catch {}
 }
 
-async function exportDirectory(runId: string) {
-  return (await navigator.storage.getDirectory()).getDirectoryHandle(`sts-run-vod-export-${runId}`, { create: true })
+async function deleteExport(runId: string, owner?: string) {
+  if (!owner) return deleteExportNow(runId)
+  await withRunVodOwner(owner, () => deleteExportNow(runId))
+}
+
+async function exportDirectory(runId: string, owner: string) {
+  return withRunVodOwner(owner, async () =>
+    (await navigator.storage.getDirectory()).getDirectoryHandle(exportDirectoryName(runId, owner), { create: true }))
 }
 
 function exportUrl(runId: string) {
@@ -1489,11 +1524,66 @@ function returnUrl(runId: string) {
 
 async function returnFromRunVodExport(runId: string) {
   const target = returnUrl(runId)
-  try { location.replace((await resetUrl(runId, target)).href) }
+  try { location.replace((await resetUrl(target)).href) }
   catch { location.replace(target.href) }
 }
 
-async function resetUrl(runId: string, target = exportUrl(runId), delay = false) {
+async function leaveRunVodExport(runId: string) {
+  if (window.opener || new URLSearchParams(location.search).has(RUN_VOD_POPUP_PARAM)) {
+    window.close()
+    if (window.closed) return
+  }
+  await returnFromRunVodExport(runId)
+}
+
+type ActiveRunVodExport = { owner: string; runId: string; at: number }
+
+const activeRunVodExport = (): ActiveRunVodExport | null => {
+  try {
+    const value = JSON.parse(localStorage.getItem(RUN_VOD_ACTIVE_KEY) ?? 'null')
+    return value && typeof value.owner === 'string' && typeof value.runId === 'string' && Number.isFinite(value.at) ? value : null
+  } catch { return null }
+}
+
+const touchRunVodExport = (owner: string, runId: string) => navigator.locks.request(RUN_VOD_LOCK, () => {
+  const active = activeRunVodExport()
+  if (!active || active.owner !== owner || active.runId !== runId) return false
+  try { localStorage.setItem(RUN_VOD_ACTIVE_KEY, JSON.stringify({ owner, runId, at: Date.now() })) }
+  catch { return false }
+  return activeRunVodExport()?.owner === owner
+})
+
+const finishRunVodExport = (owner: string) => navigator.locks.request(RUN_VOD_LOCK, () => {
+  try { if (activeRunVodExport()?.owner === owner) localStorage.removeItem(RUN_VOD_ACTIVE_KEY) } catch {}
+})
+
+async function claimRunVodExport(owner: string, runId: string) {
+  if (!navigator.locks) throw new Error('This browser cannot safely coordinate a VOD export window.')
+  let claimed = false
+  await navigator.locks.request(RUN_VOD_LOCK, { ifAvailable: true }, lock => {
+    if (!lock) return
+    const active = activeRunVodExport()
+    if (active && Date.now() - active.at <= RUN_VOD_LEASE_MS) return
+    try { localStorage.setItem(RUN_VOD_ACTIVE_KEY, JSON.stringify({ owner, runId, at: Date.now() })) } catch { return }
+    claimed = activeRunVodExport()?.owner === owner
+  })
+  if (!claimed) throw new Error('Another Run VOD export is already active.')
+}
+
+async function cleanupRunVodExport(owner: string, runId: string) {
+  let complete = false
+  await navigator.locks.request(RUN_VOD_LOCK, async () => {
+    const active = activeRunVodExport()
+    if (active && active.owner !== owner) { complete = true; return }
+    if (active && Date.now() - active.at <= RUN_VOD_LEASE_MS) return
+    try { if (activeRunVodExport()?.owner === owner) localStorage.removeItem(RUN_VOD_ACTIVE_KEY) } catch {}
+    await deleteExport(runId)
+    complete = true
+  })
+  return complete
+}
+
+async function resetUrl(target = new URL(location.href), delay = false) {
   const reset = new URL(await roomUrl('/run-vod-reset'), location.href)
   if (reset.origin === location.origin) throw new Error('Bounded-memory VOD export requires the hosted renderer reset service.')
   reset.searchParams.set('return', target.href)
@@ -1501,22 +1591,73 @@ async function resetUrl(runId: string, target = exportUrl(runId), delay = false)
   return reset
 }
 
-export async function startRunVodExport(log: RunVodLog, expected: RunState, resume: { run: RunState } & Record<string, unknown>) {
-  await cleanupDeferredRunVod()
+export async function startRunVodExport(log: RunVodLog, expected: RunState, resume: { run: RunState } & Record<string, unknown>,
+  exportWindow: Window | null = null) {
+  const owner = crypto.randomUUID()
+  let navigatingExportWindow = false
+  exportWindow?.addEventListener('pagehide', () => {
+    if (!navigatingExportWindow) void finishRunVodExport(owner)
+  }, { once: true })
+  await cleanupDeferredRunVod(true)
+  await claimRunVodExport(owner, log.runId)
   try {
-    localStorage.setItem('sts-solo-run', JSON.stringify(resume))
-    const saved = JSON.parse(localStorage.getItem('sts-solo-run') ?? 'null')
-    if (saved?.run?.campaign?.runId !== log.runId) throw new Error('checkpoint mismatch')
-  } catch {
-    throw new Error('The browser could not preserve your run before VOD export. Free browser storage and try again.')
+    try {
+      localStorage.setItem('sts-solo-run', JSON.stringify(resume))
+      const saved = JSON.parse(localStorage.getItem('sts-solo-run') ?? 'null')
+      if (saved?.run?.campaign?.runId !== log.runId) throw new Error('checkpoint mismatch')
+    } catch {
+      throw new Error('The browser could not preserve your run before VOD export. Free browser storage and try again.')
+    }
+    const exportTarget = exportUrl(log.runId)
+    if (exportWindow) exportTarget.searchParams.set(RUN_VOD_POPUP_PARAM, '1')
+    exportTarget.searchParams.set(RUN_VOD_OWNER_PARAM, owner)
+    const reset = await resetUrl(exportTarget)
+    const [resetService, rasterService] = await Promise.all([fetch(reset), fetch(await roomUrl('/run-vod-raster'))])
+    if (!resetService.ok || !rasterService.ok) throw new Error('The hosted VOD export service is unavailable. Try again after the server updates.')
+    const target = exportWindow ?? window
+    if (exportWindow?.closed) throw new Error('The VOD export window was closed before rendering started.')
+    await deleteExport(log.runId, owner)
+    await putExport({ runId: log.runId, owner, expected, index: 0, motionSkip: 0, clips: [],
+      chunkSize: hasNativeRunVodRaster() ? 4 : RUN_VOD_EXPORT_EVENTS })
+    if (!(await touchRunVodExport(owner, log.runId))) throw new Error('The VOD export ownership was lost.')
+    navigatingExportWindow = true
+    target.location.replace(reset.href)
   }
-  const reset = await resetUrl(log.runId)
-  const [resetService, rasterService] = await Promise.all([fetch(reset), fetch(await roomUrl('/run-vod-raster'))])
-  if (!resetService.ok || !rasterService.ok) throw new Error('The hosted VOD export service is unavailable. Try again after the server updates.')
-  await deleteExport(log.runId)
-  await putExport({ runId: log.runId, expected, index: 0, motionSkip: 0, clips: [],
-    chunkSize: hasNativeRunVodRaster() ? 4 : RUN_VOD_EXPORT_EVENTS })
-  location.replace(reset.href)
+  catch (error) {
+    try { await deleteExport(log.runId, owner) } catch {}
+    await finishRunVodExport(owner)
+    throw error
+  }
+  if (!exportWindow) return false
+  await new Promise<void>((resolve) => {
+    let checking = false
+    const check = () => {
+      const active = activeRunVodExport()
+      if (active && active.owner !== owner) { finish(); return }
+      if (active && Date.now() - active.at <= RUN_VOD_LEASE_MS) return
+      if (checking) return
+      checking = true
+      void cleanupRunVodExport(owner, log.runId).then(complete => {
+        checking = false
+        if (complete) finish()
+      }, () => { checking = false })
+    }
+    const finish = () => {
+      window.clearInterval(timer)
+      window.removeEventListener('storage', changed)
+      resolve()
+    }
+    const changed = (event: StorageEvent) => { if (event.key === RUN_VOD_ACTIVE_KEY) check() }
+    const timer = window.setInterval(check, 1_000)
+    window.addEventListener('storage', changed)
+    check()
+  })
+  try {
+    const completed = JSON.parse(localStorage.getItem(RUN_VOD_COMPLETED_KEY) ?? 'null')?.owner === owner
+    if (completed) localStorage.removeItem(RUN_VOD_COMPLETED_KEY)
+    return completed
+  }
+  catch { return false }
 }
 
 export function runVodExportChunks(log: RunVodLog, expected: RunState, chunkSize = hasNativeRunVodRaster() ? 4 : RUN_VOD_EXPORT_EVENTS): VodExportChunk[] {
@@ -1547,8 +1688,34 @@ export async function runVodRenderSlice<T>(render: Promise<T>, chunkSize: number
 }
 
 export async function runVodExportWorker() {
-  const runId = new URLSearchParams(location.search).get(RUN_VOD_EXPORT_PARAM)
+  const parameters = new URLSearchParams(location.search)
+  const runId = parameters.get(RUN_VOD_EXPORT_PARAM)
+  const owner = parameters.get(RUN_VOD_OWNER_PARAM)
   if (!runId) return
+  if (!owner) { await returnFromRunVodExport(runId); return }
+  let ownershipLost = !(await touchRunVodExport(owner, runId))
+  if (ownershipLost) { await leaveRunVodExport(runId); return }
+  let heartbeatBusy = false
+  const heartbeat = window.setInterval(() => {
+    if (heartbeatBusy) return
+    heartbeatBusy = true
+    void touchRunVodExport(owner, runId).then(active => { if (!active) ownershipLost = true }, () => { ownershipLost = true })
+      .finally(() => { heartbeatBusy = false })
+  }, RUN_VOD_HEARTBEAT_MS)
+  const stopHeartbeat = () => window.clearInterval(heartbeat)
+  let resetting = false
+  const restart = async (url: string) => {
+    if (!(await touchRunVodExport(owner, runId))) {
+      ownershipLost = true
+      throw new Error('The VOD export ownership was lost.')
+    }
+    resetting = true
+    location.replace(url)
+  }
+  window.addEventListener('pagehide', () => {
+    stopHeartbeat()
+    if (!resetting) void finishRunVodExport(owner)
+  }, { once: true })
   document.body.textContent = ''
   const workbench = document.createElement('div')
   workbench.className = 'run-vod-workbench'
@@ -1565,7 +1732,10 @@ export async function runVodExportWorker() {
   cancel.textContent = 'Cancel VOD export'
   let cancelled = false
   cancel.onclick = () => { cancelled = true; cancel.disabled = true; cancel.textContent = 'Cancelling…' }
-  const checkCancelled = () => { if (cancelled) throw new Error('VOD export cancelled.') }
+  const checkCancelled = () => {
+    if (cancelled) throw new Error('VOD export cancelled.')
+    if (ownershipLost) throw new Error('The VOD export ownership was lost.')
+  }
   workbench.append(status, cancel)
   document.body.append(workbench)
   const report = (message: string) => {
@@ -1582,6 +1752,10 @@ export async function runVodExportWorker() {
       record = await exportRecord(runId)
     }
     if (!record) throw new Error('The VOD export did not receive its replay log. Allow popups and try again.')
+    if (record.owner !== owner) {
+      ownershipLost = true
+      throw new Error('The VOD export ownership was lost.')
+    }
     const log = await readRunVod(runId)
     if (!log) throw new Error('The recorded run could not be loaded for export.')
     const chunkSize = record.chunkSize ?? (hasNativeRunVodRaster() ? 4 : RUN_VOD_EXPORT_EVENTS)
@@ -1614,7 +1788,7 @@ export async function runVodExportWorker() {
             checkCancelled,
           }), chunkSize, motionLimit, chunk, retryRecord, size => runVodExportChunks(log, exportExpected, size), putExport, checkCancelled)
       if (!clip) {
-        location.replace((await resetUrl(runId)).href)
+        await restart((await resetUrl()).href)
         return
       }
       const key: string = `${String(record.clips.length).padStart(4, '0')}.mp4`
@@ -1622,19 +1796,19 @@ export async function runVodExportWorker() {
       let writer: FileSystemWritableFileStream | undefined
       try {
         stage = 'opening export clip'
-        const directory = await exportDirectory(runId)
-        const file = await directory.getFileHandle(key, { create: true })
-        writer = await file.createWritable()
+        const directory = await exportDirectory(runId, owner)
+        const file = await withRunVodOwner(owner, () => directory.getFileHandle(key, { create: true }))
+        writer = await withRunVodOwner(owner, () => file.createWritable())
         stage = 'saving export clip'
         const { runVodVideoCodec } = await import('./run-vod-video.ts')
         reader = clip.video.stream().getReader()
         for (;;) {
           const { done, value } = await reader.read()
           if (done) break
-          await writer.write(value)
+          await withRunVodOwner(owner, () => writer!.write(value))
         }
         reader.releaseLock(); reader = undefined
-        await writer.close(); writer = undefined
+        await withRunVodOwner(owner, () => writer!.close()); writer = undefined
         let saved = await file.getFile()
         let codec = await runVodVideoCodec(saved)
         for (let retries = 0; !codec && retries < 20; retries++) {
@@ -1643,17 +1817,17 @@ export async function runVodExportWorker() {
           codec = await runVodVideoCodec(saved)
         }
         if (!codec || !/^avc[13]\./.test(codec)) {
-          await directory.removeEntry(key)
+          await withRunVodOwner(owner, () => directory.removeEntry(key))
           const retries = (record.retries ?? 0) + 1
           if (retries > 2) throw new Error(`The video encoder repeatedly produced an invalid clip (${codec ?? 'missing codec'}, ${saved.size} bytes).`)
           record = { ...record, retries }
           await putExport(record)
-          location.replace((await resetUrl(runId)).href)
+          await restart((await resetUrl()).href)
           return
         }
       } finally {
         try { await reader?.cancel() } catch {}
-        try { await writer?.abort() } catch {}
+        try { if (writer) await withRunVodOwner(owner, () => writer!.abort()) } catch {}
         await clip.cleanup()
       }
       record = { ...record, index: clip.motionCapped ? record.index : record.index + 1,
@@ -1665,7 +1839,7 @@ export async function runVodExportWorker() {
       await putExport(record)
       progress.value = record.index / chunks.length
       if (record.index < chunks.length) {
-        location.replace((await resetUrl(runId)).href)
+        await restart((await resetUrl()).href)
         return
       }
     }
@@ -1676,8 +1850,9 @@ export async function runVodExportWorker() {
     const { createRunVodJoiner } = await import('./run-vod-video.ts')
     joiner = await createRunVodJoiner(RUN_VOD_FPS, store, checkCancelled)
     if (!joiner) throw new Error('This browser cannot join the VOD clips.')
-    const directory = await exportDirectory(runId)
+    const directory = await exportDirectory(runId, owner)
     for (const clip of record.clips) {
+      checkCancelled()
       let video: File
       try { video = await (await directory.getFileHandle(clip.key)).getFile() }
       catch (error) {
@@ -1690,38 +1865,73 @@ export async function runVodExportWorker() {
     checkCancelled()
     const video = await joiner.finish()
     const filename = `slay-the-spire-run-${record.expected.campaign.runId}.mp4`
-    await deleteExport(runId)
+    await deleteExport(runId, owner)
     try {
       const saved = JSON.parse(localStorage.getItem('sts-solo-run') ?? 'null')
-      if (saved?.run?.campaign?.runId === runId) localStorage.setItem('sts-solo-run', JSON.stringify({ ...saved, vodExtractedRunId: runId }))
+      if (saved?.run?.campaign?.runId === runId) {
+        localStorage.setItem('sts-solo-run', JSON.stringify({ ...saved, vodExtractedRunId: runId }))
+        localStorage.setItem(RUN_VOD_COMPLETED_KEY, JSON.stringify({ owner, runId }))
+      }
     } catch { /* The download remains available when solo-resume storage is unavailable. */ }
     workbench.remove()
-    const reset = await resetUrl(runId, returnUrl(runId), true)
-    presentRunVod(video, filename, store, () => location.replace(reset.href))
+    const reset = await resetUrl(returnUrl(runId), true)
+    presentRunVod(video, filename, store, () => {
+      if (window.opener || new URLSearchParams(location.search).has(RUN_VOD_POPUP_PARAM)) void leaveRunVodExport(runId)
+      else location.replace(reset.href)
+    })
+    stopHeartbeat()
+    await finishRunVodExport(owner)
   } catch (error) {
+    let failure = error
+    if (activeRunVodExport()?.owner !== owner) ownershipLost = true
     await joiner?.abort()
     await store?.cleanup()
+    if (ownershipLost) {
+      stopHeartbeat()
+      await leaveRunVodExport(runId)
+      return
+    }
     if (cancelled) {
-      await deleteExport(runId)
-      await returnFromRunVodExport(runId)
+      await deleteExport(runId, owner)
+      stopHeartbeat()
+      await finishRunVodExport(owner)
+      await leaveRunVodExport(runId)
       return
     }
     const failed = await exportRecord(runId)
-    const retries = (failed?.retries ?? 0) + 1
-    if (failed && retries <= 2) {
-      await putExport({ ...failed, retries })
-      location.replace((await resetUrl(runId)).href)
+    if (failed && failed.owner !== owner) {
+      ownershipLost = true
+      stopHeartbeat()
+      await leaveRunVodExport(runId)
       return
     }
-    console.error(stage, error)
-    const message = error instanceof Error ? `${stage}: ${error.message}` : 'Run VOD extraction failed.'
+    const retries = (failed?.retries ?? 0) + 1
+    if (failed && retries <= 2) {
+      try {
+        await putExport({ ...failed, retries })
+        await restart((await resetUrl()).href)
+        return
+      } catch (retryError) {
+        if (activeRunVodExport()?.owner !== owner) ownershipLost = true
+        if (ownershipLost) {
+          stopHeartbeat()
+          await leaveRunVodExport(runId)
+          return
+        }
+        failure = retryError
+      }
+    }
+    console.error(stage, failure)
+    const message = failure instanceof Error ? `${stage}: ${failure.message}` : 'Run VOD extraction failed.'
     status.textContent = message
     cancel.disabled = false
     cancel.textContent = 'Return to game'
     cancel.onclick = async () => {
       cancel.disabled = true
-      await deleteExport(runId)
-      await returnFromRunVodExport(runId)
+      try { await deleteExport(runId, owner) } catch {}
+      stopHeartbeat()
+      await finishRunVodExport(owner)
+      await leaveRunVodExport(runId)
     }
   }
 }

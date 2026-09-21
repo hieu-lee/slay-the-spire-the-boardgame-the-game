@@ -614,6 +614,18 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     resumeSoloRun()
   }, [])
 
+  useEffect(() => {
+    const syncVodExport = (event: StorageEvent) => {
+      if (event.key !== SOLO_RUN_KEY || !event.newValue) return
+      try {
+        const extractedRunId = (JSON.parse(event.newValue) as SoloRunSave).vodExtractedRunId
+        if (extractedRunId) setVodExtractedRunId(extractedRunId)
+      } catch { /* Ignore another tab's incomplete storage write. */ }
+    }
+    window.addEventListener('storage', syncVodExport)
+    return () => window.removeEventListener('storage', syncVodExport)
+  }, [])
+
   const flushQueuedRun = () => void flushLeaderboardOutbox().then(({ recorded, rejected }) => {
     const id = leaderboardSubmission.current
     if (!id) return
@@ -694,11 +706,19 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   const extractRunVod = async () => {
     if (extractingVod) return
+    const exportWindow = window.open('', '_blank', 'popup,width=1440,height=900')
+    if (exportWindow) {
+      exportWindow.document.title = 'Run VOD export'
+      exportWindow.document.documentElement.style.cssText = 'color-scheme:dark;background:#080b12'
+      exportWindow.document.body.style.cssText = 'margin:0;padding:24px;background:#080b12;color:#f4f1e8;font:16px system-ui'
+      exportWindow.document.body.textContent = 'Preparing native 1080p Run VOD export…'
+    }
     setExtractingVod(true)
     const returnRun = structuredClone(run)
     try {
       const log = await loadVod()
       if (!log) {
+        exportWindow?.close()
         setVodMessage('This run could not be loaded for replay.')
         return
       }
@@ -711,9 +731,16 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         recordRunId,
         vodExtractedRunId,
       }
-      setVodMessage('Preparing the native 1080p replay…')
-      await startRunVodExport(log, terminal, saved)
+      setVodMessage(exportWindow
+        ? 'VOD export opened in a separate window. You can switch tabs while it renders.'
+        : 'Preparing the native 1080p replay…')
+      const completed = await startRunVodExport(log, terminal, saved, exportWindow)
+      if (completed) {
+        setVodExtractedRunId(log.runId)
+        setVodMessage('Run VOD downloaded.')
+      } else if (exportWindow) setVodMessage('VOD export window closed. Your run is still available to export.')
     } catch (error) {
+      exportWindow?.close()
       setRun(returnRun)
       setVodMessage(error instanceof Error ? error.message : 'Run VOD extraction failed.')
     } finally { setExtractingVod(false) }

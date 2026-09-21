@@ -75,6 +75,22 @@ try {
     } finally { await releaseRunVodRaster(doc); frame.remove() }
   })
   assert.equal(assetPixels, 0, 'same-origin artwork must be embedded in a VOD raster')
+  const concurrentNativePixels = await page.evaluate(async () => {
+    const { rasterRunVod, releaseRunVodRaster } = await import('/src/ui/run-vod-raster.ts')
+    await releaseRunVodRaster(document)
+    const fixture = document.createElement('div')
+    fixture.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgb(255,0,0)'
+    document.querySelector('#root').append(fixture)
+    try {
+      const canvases = await Promise.all([
+        rasterRunVod(document.body, 1920, 1080, 0),
+        rasterRunVod(document.body, 1920, 1080, 0),
+      ])
+      return canvases.map(canvas => [...canvas.getContext('2d').getImageData(10, 10, 1, 1).data])
+    } finally { fixture.remove(); await releaseRunVodRaster(document) }
+  })
+  assert.deepEqual(concurrentNativePixels, [[255, 0, 0, 255], [255, 0, 0, 255]],
+    'overlapping native motion rasters must not clear their shared canvas')
   for (const [name, width, height] of [['desktop', 1920, 1080], ['phone', 844, 390]]) {
     await page.setViewportSize({ width, height })
     await page.waitForTimeout(150)

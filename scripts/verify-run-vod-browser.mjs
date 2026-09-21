@@ -53,7 +53,7 @@ let frameWorkers = 0
 const errors = []
 let page
 const attach = (next) => {
-  page = next
+  page ??= next
   next.on('worker', worker => { if (worker.url().includes('run-vod-encode.worker')) frameWorkers++ })
   next.on('console', (message) => {
     if (message.type() === 'error' && message.text() !== 'Failed to load resource: net::ERR_FILE_NOT_FOUND') {
@@ -965,6 +965,24 @@ try {
   }, terminal)
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().act === 4)
   if (verifyExports) {
+    const gamePage = page
+    await page.evaluate(async () => {
+      const runId = window.__STS_DEBUG__.getRun().campaign.runId
+      const log = await (await import('/src/ui/run-vod.ts')).readRunVod(runId)
+      const additions = Array.from({ length: Math.max(0, 6 - log.events.length) }, () => ({ patch: [] }))
+      if (!additions.length) return
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('sts-run-vod-v2')
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+      })
+      const transaction = db.transaction('events', 'readwrite')
+      additions.forEach((event, offset) => transaction.objectStore('events').put({ runId, index: log.events.length + offset, event }))
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error)
+      })
+      db.close()
+      log.events.push(...additions)
+    })
     const exportedEventCount = await eventCount()
     await page.evaluate(async () => {
       const root = await navigator.storage.getDirectory()
@@ -1005,7 +1023,17 @@ try {
     })
     await page.getByRole('button', { name: 'Extract run VOD', exact: true }).click()
     await usePageWithButton('Cancel VOD export')
+    const cancelledExportPage = page
+    await gamePage.bringToFront()
+    assertEqual(await cancelledExportPage.evaluate(() => document.hidden), false,
+      'the dedicated exporter was hidden when the game tab regained focus')
+    assert(await gamePage.getByRole('button', { name: 'Extract run VOD', exact: true }).count(),
+      'the original game tab was replaced by the exporter')
+    assert(await gamePage.getByRole('button', { name: 'Extract run VOD', exact: true }).isDisabled(),
+      'the original game tab allowed a second export while the first was active')
+    const cancelledExportClosed = cancelledExportPage.waitForEvent('close')
     await page.getByRole('button', { name: 'Cancel VOD export', exact: true }).click()
+    await cancelledExportClosed
     await usePageWithButton('Extract run VOD')
     await page.waitForFunction(async () => {
       for await (const entry of (await navigator.storage.getDirectory()).keys()) {
@@ -1034,6 +1062,32 @@ try {
     check('cancelling export returns to the run and removes its checkpoint and clips', () =>
       assertDeepEqual(cancelledStorage, { record: undefined, directory: false, abandoned: undefined,
         abandonedDirectory: false, active: 'active', activeDirectory: true }))
+    await page.getByRole('button', { name: 'Extract run VOD', exact: true }).click()
+    await usePageWithButton('Cancel VOD export')
+    const manuallyClosedExportPage = page
+    assert(await gamePage.getByRole('button', { name: 'Extract run VOD', exact: true }).isDisabled(),
+      'the original game tab released the lock before manual popup close')
+    await manuallyClosedExportPage.close()
+    await gamePage.bringToFront()
+    await usePageWithButton('Extract run VOD')
+    await gamePage.waitForFunction(async runId => {
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('sts-run-vod-export-v1')
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+      })
+      const transaction = db.transaction('exports', 'readonly')
+      const record = await new Promise((resolve, reject) => {
+        const request = transaction.objectStore('exports').get(runId)
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+      })
+      db.close()
+      return !record
+    }, cancelledRunId)
+    await gamePage.waitForFunction(() => [...document.querySelectorAll('button')]
+      .some(button => button.textContent?.trim() === 'Extract run VOD' && !button.disabled))
+    const manualCloseUnlocked = await gamePage.getByRole('button', { name: 'Extract run VOD', exact: true }).isEnabled()
+    check('closing the dedicated export window releases the lock and removes its checkpoint', () =>
+      assert(manualCloseUnlocked, 'the original game tab stayed locked after manual popup close'))
     await page.evaluate(async () => {
       const request = indexedDB.open('sts-run-vod-export-v1')
       const db = await new Promise((resolve, reject) => {
@@ -1092,6 +1146,8 @@ try {
     const exportStarted = Date.now()
     const downloadPromise = waitForDownload(180_000)
     await page.getByRole('button', { name: 'Extract run VOD', exact: true }).click()
+    await usePageWithButton('Cancel VOD export')
+    const exportPage = page
     const replayFrame = page.locator('.run-vod-workbench__frame')
     await replayFrame.waitFor({ state: 'attached', timeout: 5_000 }).catch(() => {})
     await page.waitForFunction(() => document.querySelector('.run-vod-workbench__status progress')?.getAttribute('aria-label') === 'Run VOD export progress')
@@ -1121,6 +1177,11 @@ try {
       }
       return media.filter((query) => query.includes('prefers-reduced-motion') || query.includes('(hover:'))
     }) : null
+    await gamePage.bringToFront()
+    assertEqual(await exportPage.evaluate(() => document.hidden), false,
+      'switching back to the game hid the dedicated exporter')
+    assert(await gamePage.getByRole('button', { name: 'Extract run VOD', exact: true }).isDisabled(),
+      'switching tabs released the active-export lock')
     const download = await downloadPromise.catch(async () => {
       throw new Error(`${await page.locator('body').innerText()}\n${errors.join('\n')}`)
     })
@@ -1131,7 +1192,13 @@ try {
     await page.waitForFunction(() => document.querySelector('.run-vod-player video')?.readyState >= 1)
     assertDeepEqual(await page.locator('.run-vod-player video').evaluate(video => [video.videoWidth, video.videoHeight]), [1920, 1080])
     await page.getByRole('button', { name: 'Close video', exact: true }).click()
+    await gamePage.bringToFront()
     await usePageWithButton('Extract run VOD again')
+    await gamePage.waitForFunction(() => document.body.textContent?.includes('Run VOD downloaded.'))
+    await gamePage.waitForFunction(() => {
+      const entries = JSON.parse(localStorage.getItem('sts-run-vod-cleanup') ?? '[]')
+      return entries.some(entry => /-joined-/.test(entry.name) && entry.after - Date.now() <= 60_000)
+    })
     for (const stale of context.pages()) if (stale !== page) await stale.close()
     const downloadPath = await download.path()
     const afterExtract = await page.evaluate(async () => {
@@ -1154,6 +1221,20 @@ try {
     const tailAudioProbe = downloadPath && spawnSync('ffmpeg', [
       '-hide_banner', '-sseof', '-1', '-i', downloadPath, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-',
     ], { encoding: 'utf8' })
+    const pixelProbe = downloadPath && spawnSync('ffmpeg', [
+      '-v', 'error', '-i', downloadPath, '-vf', 'fps=1,scale=64:36:flags=area',
+      '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1',
+    ], { maxBuffer: 64 * 1024 * 1024 })
+    const pixelFrameBytes = 64 * 36 * 3
+    const pixelFrames = Math.floor((pixelProbe?.stdout.length ?? 0) / pixelFrameBytes)
+    let visiblePixelFrames = 0
+    for (let frame = 0; frame < pixelFrames; frame++) {
+      let bright = 0
+      for (let offset = frame * pixelFrameBytes; offset < (frame + 1) * pixelFrameBytes; offset += 3) {
+        if (Math.max(pixelProbe.stdout[offset], pixelProbe.stdout[offset + 1], pixelProbe.stdout[offset + 2]) > 20) bright++
+      }
+      if (bright > 64 * 36 * .05) visiblePixelFrames++
+    }
     const maxVolume = Number(audioProbe?.stderr.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1])
     const tailMaxVolume = Number(tailAudioProbe?.stderr.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1])
     const joinedGrace = await releaseJoinedCleanup()
@@ -1178,13 +1259,15 @@ try {
       const measuredDuration = timestamps.length > 1 ? timestamps.at(-1) - timestamps[0] : Number(metadata.format?.duration)
       const measuredRate = timestamps.length > 1 ? (timestamps.length - 1) / measuredDuration
         : Number(video?.nb_read_frames ?? 0) / Number(video?.duration ?? metadata.format?.duration)
-      assert(exportedEventCount >= 3, `the extraction fixture had only ${exportedEventCount} semantic events`)
+      assert(exportedEventCount > 4, `the extraction fixture did not cross an export reset (${exportedEventCount} events)`)
       assert(peakBrowserRssKb < 1.5 * 1024 * 1024, `VOD export browser growth exceeded 1.5 GB (${peakBrowserRssKb} KiB)`)
       assertDeepEqual(frameViewport, [1920, 1080])
       assert(replayControlsHidden, 'VOD-management controls are visible inside the replay')
       assertDeepEqual(replayDeviceMediaRules, [], 'host motion/hover CSS remained active in the canonical replay')
       assert(/\.(webm|mp4)$/.test(download.suggestedFilename()), 'the extraction did not download a video')
       assert(video?.width === 1920 && video.height === 1080, 'video is not native 1920x1080')
+      assert(pixelProbe?.status === 0 && pixelFrames >= 2 && visiblePixelFrames / pixelFrames > .5,
+        `most encoded frames are blank (${visiblePixelFrames}/${pixelFrames} visible)`)
       assert(Math.abs(measuredRate - 120) < .1, `video frame rate metadata ${JSON.stringify(video)}; measured ${measuredRate}`)
       assert(measuredDuration >= 2, `the replay did not contain the recorded interactions (${measuredDuration}s)`)
       assert(streams.some((stream) => stream.codec_type === 'audio'), 'video has no max-volume audio mix')
@@ -1207,13 +1290,25 @@ try {
       assertDeepEqual(afterExtract.persisted, { version: 2, runId: afterExtract.log, events: exportedEventCount },
         'the completed run log was not retained in IndexedDB')
     })
+    await page.getByRole('button', { name: 'Extract run VOD again', exact: true }).click()
+    await usePageWithButton('Cancel VOD export')
+    const repeatCancelPage = page
+    const repeatCancelClosed = repeatCancelPage.waitForEvent('close')
+    await repeatCancelPage.getByRole('button', { name: 'Cancel VOD export', exact: true }).click()
+    await repeatCancelClosed
+    await gamePage.bringToFront()
+    await usePageWithButton('Extract run VOD again')
+    await gamePage.waitForFunction(() => document.body.textContent?.includes('VOD export window closed. Your run is still available to export.'))
+    assert(!(await gamePage.locator('body').innerText()).includes('Run VOD downloaded.'),
+      'cancelling a repeat export reused the previous attempt success state')
     const repeatDownload = waitForDownload(90_000)
     await page.getByRole('button', { name: 'Extract run VOD again', exact: true }).click()
     await repeatDownload
+    await usePageWithButton('Close video')
     await page.getByRole('dialog', { name: 'Your completed Run VOD', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Close video', exact: true }).click()
+    await gamePage.bringToFront()
     await usePageWithButton('Extract run VOD again')
-    await releaseJoinedCleanup()
     for (const stale of context.pages()) if (stale !== page) await stale.close()
   }
 

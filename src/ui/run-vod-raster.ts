@@ -196,6 +196,7 @@ const nativeRasters = new Map<Document, { canvas: NativeRasterCanvas; root: HTML
   opacity: string; cover: HTMLElement | null; context: NativeRasterContext; observer: MutationObserver; dirty: boolean;
   content: HTMLElement | null; sources: Element[]; copies: Element[]; animationStyle: HTMLStyleElement | null;
   overrides: { target: HTMLElement | SVGElement; property: string; value: string; priority: string }[] }>()
+const nativeRasterQueues = new WeakMap<Document, { tail: Promise<void> }>()
 
 function releaseNativeRaster(doc: Document) {
   const native = nativeRasters.get(doc)
@@ -208,6 +209,18 @@ function releaseNativeRaster(doc: Document) {
 }
 
 async function nativeRaster(doc: Document, width: number, height: number, at: number | undefined,
+  readback: boolean, crop?: RunVodRasterRegion) {
+  const queue = nativeRasterQueues.get(doc) ?? { tail: Promise.resolve() }
+  const previous = queue.tail
+  let release!: () => void
+  queue.tail = new Promise(resolve => { release = resolve })
+  nativeRasterQueues.set(doc, queue)
+  await previous
+  try { return await nativeRasterNow(doc, width, height, at, readback, crop) }
+  finally { release() }
+}
+
+async function nativeRasterNow(doc: Document, width: number, height: number, at: number | undefined,
   readback: boolean, crop?: RunVodRasterRegion) {
   let raster = nativeRasters.get(doc)
   if (!raster) {
