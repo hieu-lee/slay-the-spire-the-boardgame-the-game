@@ -1377,7 +1377,7 @@ async function recorderFor(canvas: HTMLCanvasElement, audio: MediaStream, store:
 type VodPlayback = { position: Point; pulse: boolean; elapsedSinceAction: number; lastClick: Point | null; imagePhases?: Record<string, number> }
 type VodClip = { video: Blob; filename: string; duration: number; cues: RunVodAudioCue[]; playback: VodPlayback; motionCapped?: true; cleanup: () => Promise<void> }
 type VodExportClip = Pick<VodClip, 'filename' | 'duration' | 'cues' | 'playback'> & { key: string }
-type VodExport = { runId: string; expected: RunState; index: number; motionSkip: number; clips: VodExportClip[]; chunkSize?: number; chunkClipStart?: number; retries?: number; updatedAt?: number }
+type VodExport = { runId: string; expected: RunState; index: number; motionSkip: number; clips: VodExportClip[]; chunkSize?: number; motionLimit?: number; chunkClipStart?: number; retries?: number; updatedAt?: number }
 type VodExportChunk = { location: { log: RunVodLog; expected: RunState }; locationIndex: number; from: number; to: number }
 type VodJob = {
   parent: HTMLElement
@@ -1498,18 +1498,20 @@ export function runVodExportChunks(log: RunVodLog, expected: RunState, chunkSize
     })))
 }
 
-export async function runVodRenderSlice<T>(render: Promise<T>, chunkSize: number, chunk: VodExportChunk,
+export async function runVodRenderSlice<T>(render: Promise<T>, chunkSize: number, motionLimit: number, chunk: VodExportChunk,
   record: VodExport, chunks: (size: number) => VodExportChunk[], save: (next: VodExport) => Promise<void>,
   checkCancelled = () => {}, milliseconds = 60_000) {
   try { return await runVodRenderDeadline(render, milliseconds) }
   catch (error) {
-    if (!(error instanceof Error) || error.message !== 'VOD render slice timed out.' || chunkSize <= 1) throw error
+    if (!(error instanceof Error) || error.message !== 'VOD render slice timed out.' || (motionLimit <= 1 && chunkSize <= 1)) throw error
     checkCancelled()
-    const smaller = Math.max(1, Math.floor(chunkSize / 2))
-    const index = chunks(smaller).findIndex(candidate =>
+    const smallerMotion = motionLimit > 1 ? Math.max(1, Math.floor(motionLimit / 2)) : motionLimit
+    const smallerChunk = motionLimit > 1 ? chunkSize : Math.max(1, Math.floor(chunkSize / 2))
+    const index = chunks(smallerChunk).findIndex(candidate =>
       candidate.locationIndex === chunk.locationIndex && candidate.from === chunk.from)
     if (index < 0) throw error
-    await save({ ...record, index, chunkSize: smaller, chunkClipStart: undefined, retries: 0, motionSkip: 0,
+    await save({ ...record, index, chunkSize: smallerChunk, motionLimit: smallerMotion,
+      chunkClipStart: undefined, retries: 0, motionSkip: 0,
       clips: record.clips.slice(0, record.chunkClipStart ?? record.clips.length) })
     return null
   }
@@ -1566,11 +1568,12 @@ export async function runVodExportWorker() {
       for (const event of chunk.location.log.events.slice(0, chunk.from)) initial = applyRunVodEvent(initial, event)
       const events = chunk.location.log.events.slice(chunk.from, chunk.to)
       const motionFrames = runVodExportMotionFrames(events[0]!)
+      const motionLimit: number = record.motionLimit ?? motionFrames
       let expected = structuredClone(initial)
       for (const event of events) expected = applyRunVodEvent(expected, event)
       const resumed: boolean = record.clips.length > 0 || record.motionSkip > 0
       const retryRecord: VodExport = record.chunkClipStart === undefined && record.motionSkip > 0
-        ? { ...record, chunkClipStart: Math.max(0, record.clips.length - Math.ceil(record.motionSkip / motionFrames)) }
+        ? { ...record, chunkClipStart: Math.max(0, record.clips.length - Math.ceil(record.motionSkip / motionLimit)) }
         : record
       const clip: VodClip | null = await runVodRenderSlice(renderRunVodLocation({ ...chunk.location.log, initial, events }, expected,
           record.index === 0 && record.motionSkip === 0, record.index === chunks.length - 1, {
@@ -1578,9 +1581,9 @@ export async function runVodExportWorker() {
             continuation: chunk.to < chunk.location.log.events.length,
             playback: resumed ? record.clips.at(-1)?.playback : undefined,
             motionSkip: record.motionSkip,
-            motionLimit: motionFrames,
+            motionLimit,
             checkCancelled,
-          }), chunkSize, chunk, retryRecord, size => runVodExportChunks(log, exportExpected, size), putExport, checkCancelled)
+          }), chunkSize, motionLimit, chunk, retryRecord, size => runVodExportChunks(log, exportExpected, size), putExport, checkCancelled)
       if (!clip) {
         location.replace((await resetUrl(runId)).href)
         return
@@ -1626,7 +1629,8 @@ export async function runVodExportWorker() {
       }
       record = { ...record, index: clip.motionCapped ? record.index : record.index + 1,
         chunkClipStart: clip.motionCapped ? (record.chunkClipStart ?? record.clips.length) : undefined,
-        motionSkip: clip.motionCapped ? record.motionSkip + motionFrames : 0,
+        motionLimit: clip.motionCapped ? motionLimit : undefined,
+        motionSkip: clip.motionCapped ? record.motionSkip + motionLimit : 0,
         clips: [...record.clips, { key, filename: clip.filename, duration: clip.duration, cues: clip.cues, playback: clip.playback }], retries: 0 }
       stage = 'saving export checkpoint'
       await putExport(record)

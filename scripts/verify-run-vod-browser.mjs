@@ -311,32 +311,35 @@ try {
     let record = { runId: log.runId, expected, index: 1, motionSkip: 24,
       clips: [{ key: '0000.mp4' }, { key: '0001.mp4' }, { key: '0002.mp4' }], chunkClipStart: 1, chunkSize: 4, retries: 2 }
     const saved = []
-    for (const size of [4, 2]) {
+    for (const [size, motion] of [[4, 12], [4, 6], [4, 3], [4, 1], [2, 1]]) {
       const chunks = runVodExportChunks(log, expected, size)
-      await runVodRenderSlice(new Promise(() => {}), size, chunks.find(chunk => chunk.from === 4), record,
+      await runVodRenderSlice(new Promise(() => {}), size, motion, chunks.find(chunk => chunk.from === 4), record,
         next => runVodExportChunks(log, expected, next), async next => { saved.push(next); record = next }, () => {}, 1)
     }
     let single = ''
     try {
       const chunks = runVodExportChunks(log, expected, 1)
-      await runVodRenderSlice(new Promise(() => {}), 1, chunks[4], record,
+      await runVodRenderSlice(new Promise(() => {}), 1, 1, chunks[4], record,
         next => runVodExportChunks(log, expected, next), async () => {}, () => {}, 1)
     } catch (error) { single = error.message }
     let cancelledSave = false, cancelled = ''
     try {
       const chunks = runVodExportChunks(log, expected, 4)
-      await runVodRenderSlice(new Promise(() => {}), 4, chunks[1], record,
+      await runVodRenderSlice(new Promise(() => {}), 4, 12, chunks[1], record,
         next => runVodExportChunks(log, expected, next), async () => { cancelledSave = true },
         () => { throw new Error('cancelled') }, 1)
     } catch (error) { cancelled = error.message }
-    return { saved: saved.map(({ index, chunkSize, chunkClipStart, retries, motionSkip, clips }) =>
-      ({ index, chunkSize, chunkClipStart: chunkClipStart ?? null, retries, motionSkip, clips: clips.map(clip => clip.key) })),
+    return { saved: saved.map(({ index, chunkSize, motionLimit, chunkClipStart, retries, motionSkip, clips }) =>
+      ({ index, chunkSize, motionLimit, chunkClipStart: chunkClipStart ?? null, retries, motionSkip, clips: clips.map(clip => clip.key) })),
       single, cancelled, cancelledSave }
   }, canonicalMapRun)
-  check('the timeout branch persists 4→2→1 fallback without losing completed work', () =>
+  check('the timeout branch shrinks motion before events without losing completed work', () =>
     assertDeepEqual(adaptiveTimeout, { saved: [
-      { index: 2, chunkSize: 2, chunkClipStart: null, retries: 0, motionSkip: 0, clips: ['0000.mp4'] },
-      { index: 4, chunkSize: 1, chunkClipStart: null, retries: 0, motionSkip: 0, clips: ['0000.mp4'] },
+      { index: 1, chunkSize: 4, motionLimit: 6, chunkClipStart: null, retries: 0, motionSkip: 0, clips: ['0000.mp4'] },
+      { index: 1, chunkSize: 4, motionLimit: 3, chunkClipStart: null, retries: 0, motionSkip: 0, clips: ['0000.mp4'] },
+      { index: 1, chunkSize: 4, motionLimit: 1, chunkClipStart: null, retries: 0, motionSkip: 0, clips: ['0000.mp4'] },
+      { index: 2, chunkSize: 2, motionLimit: 1, chunkClipStart: null, retries: 0, motionSkip: 0, clips: ['0000.mp4'] },
+      { index: 4, chunkSize: 1, motionLimit: 1, chunkClipStart: null, retries: 0, motionSkip: 0, clips: ['0000.mp4'] },
     ], single: 'VOD render slice timed out.', cancelled: 'cancelled', cancelledSave: false }))
   const resolvedTurn = await page.evaluate(async initial => {
     const { runVodEventChoice } = await import('/src/ui/run-vod.ts')
