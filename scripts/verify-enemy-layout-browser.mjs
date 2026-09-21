@@ -24,7 +24,9 @@ try {
           recordVideo: { dir: output, size: viewport } })
         const page = await context.newPage()
         page.on('pageerror', e => { errors.push(String(e)); console.log('PAGE ERROR', String(e)) })
-        await page.goto(`http://localhost:${server.httpServer.address().port}`)
+        // Native video behavior has its own focused matrix; this verifier owns
+        // deterministic layout and alpha geometry across engines.
+        await page.goto(`http://localhost:${server.httpServer.address().port}${engineName === 'webkit' ? '?combat-webp=1' : ''}`)
         await page.evaluate(async () => {
           document.querySelector('#root').style.display = 'none'
           document.documentElement.dataset.mobilePerformance = String(matchMedia('(pointer: coarse)').matches)

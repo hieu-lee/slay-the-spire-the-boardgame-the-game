@@ -109,8 +109,8 @@
   height: calc(14rem * var(--stage-scale));
 }
 
-.board[data-rows='3'] .enemy__portrait:has(> img),
-.board[data-rows='4'] .enemy__portrait:has(> img) {
+.board[data-rows='3'] .enemy__portrait:has(> :is(img, video)),
+.board[data-rows='4'] .enemy__portrait:has(> :is(img, video)) {
   aspect-ratio: 1.35;
 }
 
@@ -418,7 +418,7 @@ html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
 
 /* Transparent rig overscan must not steal taps or drags from adjacent enemies. */
 .board button.enemy { pointer-events: none; }
-.board .enemy__portrait > img { pointer-events: none; }
+.board .enemy__portrait > :is(img, video) { pointer-events: none; }
 .board .enemy :is(.enemy__hit-area, .enemy__head, .enemy__intent, .enemy__attachment, .bar, .tokens) {
   pointer-events: auto;
 }

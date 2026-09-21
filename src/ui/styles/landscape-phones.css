@@ -2,7 +2,7 @@
    memory only while an actor is idle; active attack classes keep their short,
    compositor-promoted layers from attack-timing.css. */
 html[data-mobile-performance='true']
-  .seat:not([class*='seat--attack-']) .seat__portrait > img,
+  .seat:not([class*='seat--attack-']) .seat__portrait > :is(img, video),
 html[data-mobile-performance='true']
   .enemy:not(.enemy--acting):not(.enemy--falling) .enemy__portrait > .enemy__art--cutout {
   will-change: auto;
@@ -57,7 +57,7 @@ html[data-mobile-performance='true'] .seat--targetable {
   html:not([data-mobile-performance='true']) .chamber-return-flight { display: none; }
 
   html:not([data-mobile-performance='true']) :is(
-    .seat__portrait > img,
+    .seat__portrait > :is(img, video),
     .enemy__portrait > .enemy__art--cutout,
     .hit-vfx,
     .hit-vfx strong
@@ -69,7 +69,7 @@ html[data-mobile-performance='true'] .seat--targetable {
     .enemy__portrait:has(> .enemy__art--cutout)::before { animation: none; }
 
   html:not([data-mobile-performance='true']) :is(
-    .seat__portrait > img,
+    .seat__portrait > :is(img, video),
     .enemy__portrait > .enemy__art--cutout,
     .stance-aura,
     .combat-vfx,
@@ -86,7 +86,7 @@ html[data-mobile-performance='true'] .seat--targetable {
   html:not([data-mobile-performance='true']) :is(
     .stance-aura,
     .combat-vfx,
-    .seat[class*='seat--attack-'] .seat__portrait > img,
+    .seat[class*='seat--attack-'] .seat__portrait > :is(img, video),
     .seat--attack-ironclad .character-attack--ironclad,
     .seat--attack-watcher .character-attack--watcher
   ) {

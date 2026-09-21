@@ -7,6 +7,7 @@ import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { assetPath } from '../../game/assets.ts'
 import { combatBodyPoint } from '../combat-geometry.ts'
+import { combatArtReady, combatArtSize, onCombatArtReady, type CombatArtElement } from '../CombatAnimation.tsx'
 import type { ActiveCombatVfx } from './types.ts'
 import { cardDef } from '../../game/cards.ts'
 import type { CombatPresentationEvent, CombatState } from '../../game/combat.ts'
@@ -129,7 +130,7 @@ export function CombatVfx({
       ? combat?.querySelector<HTMLElement>(`.enemy[data-enemy-id="${CSS.escape(targetEnemyId)}"] .enemy__portrait`)
       : source?.closest<HTMLElement>('.seat__portrait, .enemy__portrait')
     if (!source || !portrait || role !== 'target') return
-    const art = portrait.querySelector<HTMLImageElement>(':scope > img')
+    const art = portrait.querySelector<CombatArtElement>(':scope > :is(img, video)')
     const measure = () => {
       const rect = portrait.getBoundingClientRect()
       if (lightningStrike && combat) {
@@ -149,14 +150,18 @@ export function CombatVfx({
       }
     }
     measure()
-    art?.addEventListener('load', measure)
+    const removeReady = art ? onCombatArtReady(art, measure) : () => undefined
+    portrait.addEventListener('load', measure, true)
+    portrait.addEventListener('loadeddata', measure, true)
     const resize = new ResizeObserver(measure)
     resize.observe(portrait)
     if (lightningStrike && combat) resize.observe(combat)
     if (lightningStrike) combat?.addEventListener('scroll', measure, { capture: true, passive: true })
     return () => {
       resize.disconnect()
-      art?.removeEventListener('load', measure)
+      removeReady()
+      portrait.removeEventListener('load', measure, true)
+      portrait.removeEventListener('loadeddata', measure, true)
       if (lightningStrike) combat?.removeEventListener('scroll', measure, true)
     }
   }, [event.seq, role, lightningStrike, targetEnemyId])
@@ -201,17 +206,18 @@ export function DefectEvokeVfx({ event }: { event: Extract<CombatPresentationEve
     const measure = () => {
       // Finishing an attack replaces the keyed idle image while evokes can
       // still be playing. Never measure the detached image from an earlier render.
-      const art = portrait.querySelector<HTMLImageElement>(':scope > img')
-      if (!art?.complete || !art.naturalWidth || !art.naturalHeight) return
+      const art = portrait.querySelector<CombatArtElement>(':scope > :is(img, video)')
+      if (!art || !combatArtReady(art)) return
+      const { width: naturalWidth, height: naturalHeight } = combatArtSize(art)
       const image = art.getBoundingClientRect()
       const parent = portrait.getBoundingClientRect()
-      const fit = Math.min(image.width / art.naturalWidth, image.height / art.naturalHeight)
+      const fit = Math.min(image.width / naturalWidth, image.height / naturalHeight)
       // Mouth registration in the 400 x 266 idle rig, including its transparent
       // overscan. The rendered image rect already includes the character scale.
       const body = combatBodyPoint(portrait)
-      const sourceScale = art.naturalWidth / 400
-      source.style.left = `${(event.orb === 'frost' ? body.x : image.left + (image.width - art.naturalWidth * fit) / 2 + 222 * sourceScale * fit) - parent.left}px`
-      source.style.top = `${(event.orb === 'frost' ? body.y : image.bottom - (art.naturalHeight - 89 * sourceScale) * fit) - parent.top}px`
+      const sourceScale = naturalWidth / 400
+      source.style.left = `${(event.orb === 'frost' ? body.x : image.left + (image.width - naturalWidth * fit) / 2 + 222 * sourceScale * fit) - parent.left}px`
+      source.style.top = `${(event.orb === 'frost' ? body.y : image.bottom - (naturalHeight - 89 * sourceScale) * fit) - parent.top}px`
       if (event.orb === 'frost') return
       const origin = source.getBoundingClientRect()
       setBeams(event.enemyIds.flatMap(id => {
@@ -225,10 +231,15 @@ export function DefectEvokeVfx({ event }: { event: Extract<CombatPresentationEve
     }
     measure()
     board.addEventListener('load', measure, true)
+    board.addEventListener('loadeddata', measure, true)
     const resize = new ResizeObserver(measure)
     resize.observe(board)
     resize.observe(portrait)
-    return () => { resize.disconnect(); board.removeEventListener('load', measure, true) }
+    return () => {
+      resize.disconnect()
+      board.removeEventListener('load', measure, true)
+      board.removeEventListener('loadeddata', measure, true)
+    }
   }, [event.seq, event.orb, targets])
   return <span ref={anchor} className={`defect-evoke defect-evoke--${event.orb}`}
     data-evoke-seq={event.seq} aria-hidden="true">
@@ -273,18 +284,19 @@ export function HermitBullets({ event }: { event: CombatPresentationEvent }) {
   useLayoutEffect(() => {
     const source = anchor.current
     const pose = source?.parentElement
-    const art = pose?.querySelector<HTMLImageElement>(':scope > img')
+    const art = pose?.querySelector<CombatArtElement>(':scope > :is(img, video)')
     const board = source?.closest('.board')
     if (!source || !pose || !art || !board) return
     const measure = () => {
       const rect = art.getBoundingClientRect()
       const parent = source.getBoundingClientRect()
-      const fit = Math.min(rect.width / art.naturalWidth, rect.height / art.naturalHeight)
+      const { width: naturalWidth, height: naturalHeight } = combatArtSize(art)
+      const fit = Math.min(rect.width / naturalWidth, rect.height / naturalHeight)
       if (!Number.isFinite(fit)) return
-      const sourceScale = art.naturalWidth / 400
+      const sourceScale = naturalWidth / 400
       setShots(HERMIT_VOLLEYS.flatMap((volley, i) => volley.muzzles.flatMap(([mx, my], gun) => {
-        const x = rect.left + (rect.width - art.naturalWidth * fit) / 2 + mx * sourceScale * fit
-        const y = rect.bottom - (art.naturalHeight - my * sourceScale) * fit
+        const x = rect.left + (rect.width - naturalWidth * fit) / 2 + mx * sourceScale * fit
+        const y = rect.bottom - (naturalHeight - my * sourceScale) * fit
         return event.enemyIds.flatMap(id => {
           const target = board.querySelector<HTMLElement>(`.enemy[data-enemy-id="${CSS.escape(id)}"] .enemy__portrait`)
           if (!target) return []
@@ -300,10 +312,15 @@ export function HermitBullets({ event }: { event: CombatPresentationEvent }) {
     resize.observe(board)
     resize.observe(pose)
     const onLoad = ({ target }: Event) => {
-      if (target instanceof HTMLImageElement && target.classList.contains('enemy__art--cutout')) measure()
+      if (target instanceof HTMLElement && target.classList.contains('enemy__art--cutout')) measure()
     }
     board.addEventListener('load', onLoad, true)
-    return () => { resize.disconnect(); board.removeEventListener('load', onLoad, true) }
+    board.addEventListener('loadeddata', onLoad, true)
+    return () => {
+      resize.disconnect()
+      board.removeEventListener('load', onLoad, true)
+      board.removeEventListener('loadeddata', onLoad, true)
+    }
   }, [event])
   return <span ref={anchor} className="hermit-shots" aria-hidden="true" data-hermit-seq={event.seq}>
     {shots.map(shot => <span key={shot.id} className="hermit-shot" data-shot={shot.id} data-volley={shot.volley}

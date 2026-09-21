@@ -70,18 +70,27 @@ async function waitForImage(page, selector) {
   await page.locator(selector).first().waitFor()
   await page.waitForFunction((selector) => {
     const image = document.querySelector(selector)
-    return image?.complete && image.naturalWidth > 0
+    return image instanceof HTMLVideoElement ? image.readyState >= 1 && image.videoWidth > 0
+      : image?.complete && image.naturalWidth > 0
   }, selector)
 }
 
 async function waitForIdle(page) {
-  await waitForImage(page, '.seat__portrait > img')
-  await page.waitForFunction(() => !document.querySelector('.seat__portrait > img[data-guardian-transition]'))
+  await waitForImage(page, '.seat__portrait > :is(img, video)')
+  await page.waitForFunction(() => !document.querySelector('.seat__portrait > [data-guardian-transition]'))
+}
+
+async function retainsHighResolution(page, selector) {
+  return page.locator(selector).first().evaluate(async (element) => {
+    if (!(element instanceof HTMLVideoElement)) return element.naturalWidth >= 800
+    const source = new Image(); source.src = element.src.replace(/\.mov(?=\?|$)/, '.webp'); await source.decode()
+    return source.naturalWidth >= 800
+  })
 }
 
 async function checkTransition(page, mode, label) {
   const direction = mode === 'defense' ? 'to-defense' : 'to-attack'
-  const selector = `.seat__portrait > img[data-guardian-transition="${direction}"]`
+  const selector = `.seat__portrait > [data-guardian-transition="${direction}"]`
   await page.locator(selector).waitFor()
   await waitForImage(page, selector)
   await setSize(page, 1)
@@ -93,9 +102,9 @@ async function checkTransition(page, mode, label) {
 
 async function checkHero(page, character, sourceId, heat, screen, browserName) {
   const renderCharacter = character === 'guardian-defense' ? 'guardian' : character
-  const idleSelector = '.seat__portrait > img'
+  const idleSelector = '.seat__portrait > :is(img, video)'
   const attackSelector = `.character-attack--${renderCharacter}[data-attack-seq="`
-  const readyCount = character === 'hexaghost' ? 7
+  const readyCount = character === 'hexaghost' ? 1
     : character === 'guardian' || character === 'guardian-defense' || character === 'ironclad' || character === 'watcher' ? 2 : 1
 
   await page.evaluate(({ character, heat }) => {
@@ -106,9 +115,14 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
   await waitForIdle(page)
   await setSize(page, screen === 'desktop' ? 2.5 : 1.25)
   await page.locator('.board').screenshot({ path: resolve(output, `${browserName}-${screen}-${character}-${heat}-resolution.png`) })
+  if (character !== 'watcher') {
+    const media = await page.locator(idleSelector).evaluate(element => ({ tag: element.tagName, src: element.src }))
+    assert.equal(media.tag, browserName === 'webkit' ? 'VIDEO' : 'IMG', `${screen}/${character}: preferred media element`)
+    assert(media.src.endsWith(browserName === 'webkit' ? '.mov' : '.webp'), `${screen}/${character}: preferred media source ${media.src}`)
+  }
   await setSize(page, 1)
   const idleBase = await measure(page, idleSelector)
-  assert(await page.locator(idleSelector).evaluate(image => image.naturalWidth >= 800),
+  assert(await retainsHighResolution(page, idleSelector),
     `${screen}/${character}: idle art must retain high-resolution detail`)
   if (character === 'guardian' || character === 'guardian-defense') {
     const initialMode = character === 'guardian-defense' ? 'defense' : 'attack'
@@ -122,8 +136,8 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
       window.fixture.state.players[0].guardianMode = mode
       window.fixture.render()
     }, initialMode)
-    await page.locator(`.seat__portrait > img[data-guardian-mode="${initialMode}"]`).waitFor()
-    await page.waitForFunction(() => !document.querySelector('.seat__portrait > img[data-guardian-transition]'))
+    await page.locator(`.seat__portrait > [data-guardian-mode="${initialMode}"]`).waitFor()
+    await page.waitForFunction(() => !document.querySelector('.seat__portrait > [data-guardian-transition]'))
     await setSize(page, 1)
   }
   await setSize(page, 1.25)
@@ -144,7 +158,7 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
     await page.locator(eagerAttack).waitFor()
     const fallback = page.locator(`${eagerAttack} .character-attack__pose--rig.is-fallback`)
     if (await fallback.count()) {
-      assert.equal(await fallback.locator('img').getAttribute('src'), await page.locator(idleSelector).getAttribute('src'),
+      assert.equal(await fallback.locator(':is(img, video)').getAttribute('src'), await page.locator(idleSelector).getAttribute('src'),
         `${screen}/${character}: attack fallback must use idle art`)
     }
     await page.evaluate(({ character, heat }) => window.fixture.install(character, heat), { character, heat })
@@ -152,12 +166,19 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
     await setSize(page, 1)
   }
 
-  await page.waitForFunction((readyCount) => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= readyCount, readyCount)
+  if (browserName !== 'webkit' || character !== 'defect') {
+    await page.waitForFunction((readyCount) => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= readyCount, readyCount)
+  }
   const seq = await page.evaluate((sourceId) => window.fixture.attack(sourceId), sourceId)
   const attackRoot = `${attackSelector}${seq}"]`
   await page.locator(attackRoot).waitFor()
-  const poseSelector = `${attackRoot} .character-attack__pose > img`
+  const poseSelector = `${attackRoot} .character-attack__pose > :is(img, video)`
   await waitForImage(page, poseSelector)
+  if (browserName === 'webkit' && character === 'defect') {
+    const media = await page.locator(poseSelector).evaluate(element => ({ tag: element.tagName, src: element.src }))
+    assert.equal(media.tag, 'IMG', `${screen}/${character}: failed MOV preload must fall back to WebP`)
+    assert(media.src.endsWith('/hero-defect-attack.webp'), `${screen}/${character}: wrong attack fallback ${media.src}`)
+  }
   if (!['ironclad', 'watcher'].includes(character)) {
     assert.equal(await page.locator(`${attackRoot} .character-attack__pose--rig.is-fallback`).count(), 0,
       `${screen}/${character}: measured attack must use its decoded pose`)
@@ -165,7 +186,7 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
   await setSize(page, 1)
   const attackBase = await measure(page, poseSelector)
   if (!['ironclad', 'watcher'].includes(character)) {
-    assert(await page.locator(poseSelector).first().evaluate(image => image.naturalWidth >= 800),
+    assert(await retainsHighResolution(page, poseSelector),
       `${screen}/${character}: baked attacks must retain high-resolution detail`)
   }
   await setSize(page, 1.25)
@@ -185,8 +206,10 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
   }, { character, heat })
   await page.waitForTimeout(100)
   await page.waitForFunction(() => {
-    const image = document.querySelector('.seat__portrait > img')
-    return image?.complete && image.naturalWidth > 0 && !document.querySelector('.character-attack')
+    const image = document.querySelector('.seat__portrait > :is(img, video)')
+    const loaded = image instanceof HTMLVideoElement ? image.readyState >= 1 && image.videoWidth > 0
+      : image?.complete && image.naturalWidth > 0
+    return loaded && !document.querySelector('.character-attack')
   })
   await setSize(page, 1)
   const reducedBase = await measure(page, idleSelector)
@@ -207,6 +230,7 @@ try {
         })
         try {
           const page = await context.newPage()
+          if (browserName === 'webkit') await page.route('**/hero-defect-attack.mov', route => route.abort())
           page.on('pageerror', (error) => errors.push(`${browserName}/${screen}: ${error}`))
           page.on('response', (response) => {
             if (response.status() >= 400 && /\/assets\/combat\/(characters|rigged)\//.test(response.url())) {

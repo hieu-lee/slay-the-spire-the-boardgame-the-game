@@ -13,6 +13,7 @@ await server.listen()
 const errors = []
 try {
   for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+    if (process.argv.includes('--webkit-only') && engineName !== 'webkit') continue
     const browser = await engine.launch({ headless: true })
     try {
       for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }],
@@ -64,9 +65,24 @@ try {
           }
           // Independent full-resolution alpha bounds, used to click visible bodies,
           // not the DOM hit areas that this test is meant to verify.
+          f.size = image => image instanceof HTMLVideoElement
+            ? { width: image.videoWidth, height: image.videoHeight }
+            : { width: image.naturalWidth, height: image.naturalHeight }
+          f.frame = async image => {
+            if (!(image instanceof HTMLVideoElement)) return
+            if (image.paused) await image.play()
+            await Promise.race([
+              new Promise(resolve => image.requestVideoFrameCallback(resolve)),
+              new Promise(resolve => setTimeout(resolve, 1000)),
+            ])
+          }
           f.bounds = image => {
             const canvas = document.createElement('canvas')
-            canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+            const size = f.size(image)
+            if (!size.width || !size.height) {
+              return (image.closest('.enemy__portrait')?.querySelector('.enemy__hit-area') ?? image).getBoundingClientRect()
+            }
+            canvas.width = size.width; canvas.height = size.height
             const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0)
             const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
             let left = canvas.width, right = 0, top = canvas.height, bottom = 0
@@ -83,8 +99,17 @@ try {
         })
         const ready = async () => {
           await page.waitForTimeout(100)
-          await page.waitForFunction(() => document.querySelector('.enemy') &&
-            [...document.querySelectorAll('.enemy__art--cutout,.seat__portrait > img')].every(i => i.complete && i.naturalWidth))
+          await page.waitForFunction(async () => {
+            const media = [...document.querySelectorAll('.enemy__art--cutout,.seat__portrait > :is(img, video)')]
+            const loaded = i => i instanceof HTMLVideoElement ? i.readyState >= 2 && i.videoWidth : i.complete && i.naturalWidth
+            if (!document.querySelector('.enemy') || !media.length || !media.every(loaded)) return false
+            await Promise.all(media.filter(i => i instanceof HTMLVideoElement).map(async video => {
+              if (video.paused) await video.play()
+              await new Promise(resolve => video.requestVideoFrameCallback(resolve))
+            }))
+            await new Promise(resolve => requestAnimationFrame(resolve))
+            return media.every(i => i.isConnected && loaded(i))
+          })
           await page.waitForTimeout(120)
           await page.waitForFunction(() => !document.querySelector('.combat').getAnimations().some(a => a.playState === 'running'))
         }
@@ -97,18 +122,25 @@ try {
           }, engineName === 'webkit')
           await page.touchscreen.tap(point.x, point.y)
         }
-        const bodyPoint = async id => page.evaluate(id => {
-          const b = window.fixture.bounds(document.querySelector(`[data-enemy-id="${id}"] .enemy__art--cutout`))
+        const bodyPoint = async id => page.evaluate(async id => {
+          const image = document.querySelector(`[data-enemy-id="${id}"] .enemy__art--cutout`)
+          await window.fixture.frame(image)
+          const b = window.fixture.bounds(image)
           return { x: b.left + b.width / 2, y: b.top + b.height * .6 }
         }, id)
         if (!smallPhone) for (const defs of [['deca', 'donu'], ['donu', 'deca'], ['taskmaster', 'red_slaver', 'blue_slaver'], ['sentry_a', 'sentry_b', 'sentry_a']]) {
           await page.evaluate(defs => window.fixture.install(defs), defs)
           await ready()
+          await page.waitForTimeout(320)
           assert(await page.locator('.enemy').evaluateAll(enemies => enemies.every(e => getComputedStyle(e).pointerEvents === 'none')), 'empty button rectangles must not intercept neighbours')
           for (let i = 0; i < defs.length; i++) {
             const id = `enemy-${i}`, p = await bodyPoint(id)
-            assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('.enemy')?.dataset.enemyId, p), id,
-              `${engineName}/${screen}: ${defs[i]} body targets its neighbour`)
+            const target = await page.evaluate(({ x, y, id }) => {
+              const element = document.elementFromPoint(x, y)
+              return { id: element?.closest('.enemy')?.dataset.enemyId, tag: element?.className, x, y,
+                hit: document.querySelector(`[data-enemy-id="${id}"] .enemy__hit-area`)?.getBoundingClientRect().toJSON() }
+            }, { ...p, id })
+            assert.equal(target.id, id, `${engineName}/${screen}: ${defs[i]} body targets its neighbour ${JSON.stringify(target)}`)
             for (const selector of ['.enemy__head', '.bar']) {
               const hud = page.locator(`[data-enemy-id="${id}"] ${selector}`)
               assert.equal(await hud.evaluate(e => { const r = e.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('.enemy')?.dataset.enemyId }), id)
@@ -220,10 +252,14 @@ try {
         // changes in the artwork's height when a desktop window is resized.
         await page.evaluate(() => window.fixture.install(['deca', 'donu']))
         await ready()
-        assert(await page.evaluate(() => {
-          const f = window.fixture, hero = f.bounds(document.querySelector('.seat__portrait > img'))
-          return [...document.querySelectorAll('.enemy__art--cutout')].every(i => f.bounds(i).height > hero.height * 1.35)
-        }), 'bosses should remain larger than Defect')
+        const bossRatios = await page.evaluate(async () => {
+          const f = window.fixture, heroArt = document.querySelector('.seat__portrait > :is(img, video)')
+          const bosses = [...document.querySelectorAll('.enemy__art--cutout')]
+          await Promise.all([heroArt, ...bosses].map(f.frame))
+          const hero = f.bounds(heroArt)
+          return bosses.map(i => f.bounds(i).height / hero.height)
+        })
+        assert(bossRatios.every(ratio => ratio > 1.35), `bosses should remain larger than Defect: ${bossRatios}`)
         if (!phone) {
           await page.setViewportSize({ width: 844, height: 390 })
           await ready()
@@ -278,9 +314,11 @@ try {
           window.fixture.render()
         })
         await ready()
-        assert(await page.evaluate(() => {
+        assert(await page.evaluate(async () => {
           const seat = document.querySelector('.seat__interactive[data-character="hermit"]')
-          const head = window.fixture.bounds(seat.querySelector('.seat__portrait > img')).top
+          const image = seat.querySelector('.seat__portrait > :is(img, video)')
+          await window.fixture.frame(image)
+          const head = window.fixture.bounds(image).top
           const orbs = [...seat.querySelectorAll('.token--orb')]
           return orbs.length === 3 && orbs.every(orb => orb.getBoundingClientRect().bottom < head)
         }), `${engineName}/${screen}: borrowed Orbs overlap Hermit's head`)
@@ -290,9 +328,10 @@ try {
           await page.evaluate(({ orb, partySize }) => window.fixture.install(['jaw_worm'], orb, partySize), { orb, partySize })
           await ready()
           await page.locator('.seat__interactive[data-character="defect"] > .orbs').waitFor()
-          const orbGap = await page.evaluate(() => {
-            const seat = document.querySelector('.seat__interactive:has(> .orbs)')
-            const image = seat.querySelector('.seat__portrait > img')
+          const orbGap = await page.evaluate(async () => {
+            const seat = document.querySelector('.seat__interactive[data-character="defect"]')
+            const image = seat.querySelector('.seat__portrait > :is(img, video)')
+            await window.fixture.frame(image)
             const paintedTop = window.fixture.bounds(image).top
             const lowestOrb = Math.max(...[...seat.querySelectorAll('.token--orb')].map(el => el.getBoundingClientRect().bottom))
             return (paintedTop - lowestOrb) / parseFloat(getComputedStyle(document.documentElement).fontSize)
@@ -323,11 +362,15 @@ try {
           await page.waitForFunction(() => document.querySelectorAll('.defect-evoke__beam').length === 2)
           const events = await page.evaluate(() => window.fixture.state.presentationEvents.filter(e => e.sourceId === 'orb-evoke').map(e => e.orb))
           assert.deepEqual(events, [orb, orb])
-          let sampledAfterRemount = false
-          for (let sample = 0; sample < 8; sample++) {
-            const beams = await page.evaluate(() => [...document.querySelectorAll('.defect-evoke')].map(e => {
-              const art = e.closest('.seat__portrait').querySelector(':scope > img'), r = art.getBoundingClientRect()
-              const fit = Math.min(r.width / art.naturalWidth, r.height / art.naturalHeight)
+          const geometry = await page.waitForFunction(() => {
+            const seat = document.querySelector('.seat:has(.defect-evoke)')
+            if (!seat || document.querySelector('.character-attack') || document.querySelectorAll('.defect-evoke__beam').length !== 2) return false
+            const beams = [...document.querySelectorAll('.defect-evoke')].map(e => {
+              const art = e.closest('.seat__portrait').querySelector(':scope > :is(img, video)'), r = art.getBoundingClientRect()
+              const size = window.fixture.size(art)
+              if (!size.width || !size.height) return null
+              const fit = Math.min(r.width / size.width, r.height / size.height)
+              const sourceScale = size.width / 400
               const svg = e.querySelector('svg'), matrix = svg.getScreenCTM()
               const start = new DOMPoint(0, 20).matrixTransform(matrix)
               // WebKit's SVG screen matrix includes the mobile visual viewport
@@ -337,42 +380,52 @@ try {
               start.x = box.left + (start.x - Math.min(...xs)) * box.width / (Math.max(...xs) - Math.min(...xs))
               start.y = box.top + (start.y - Math.min(...ys)) * box.height / (Math.max(...ys) - Math.min(...ys))
               return { start: { x: start.x, y: start.y },
-                mouth: { x: r.left + (r.width - art.naturalWidth * fit) / 2 + 222 * fit, y: r.bottom - (art.naturalHeight - 89) * fit },
-                recovered: !document.querySelector('.character-attack') }
-            }))
-            assert.equal(beams.length, 2)
-            for (const beam of beams) {
-              assert(Math.hypot(beam.start.x - beam.mouth.x, beam.start.y - beam.mouth.y) < 1,
-                `${engineName}/${screen}/party${partySize}/${orb}: rendered beam left Defect's mouth: ${JSON.stringify(beam)}`)
-              sampledAfterRemount ||= beam.recovered
-            }
-            if (sample === 5) {
-              await page.evaluate(() => document.querySelectorAll('.defect-evoke__beam').forEach(svg =>
-                svg.getAnimations().forEach(a => { a.pause(); a.currentTime = 300 })))
-              const shot = await page.locator('.board').screenshot({ path: resolve(output, `${engineName}-${screen}-storm-${orb}-party${partySize}.png`) })
-              // Geometry can be correct while WebKit clips the painted beam at
-              // an ancestor's filter. Check actual pixels halfway to the enemy.
-              const painted = await page.evaluate(async ({ png, orb }) => {
-                const image = new Image(); image.src = `data:image/png;base64,${png}`; await image.decode()
-                const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height
-                const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0)
-                const board = document.querySelector('.board').getBoundingClientRect()
-                const ray = document.querySelector('.defect-evoke__ray').getBoundingClientRect()
-                const x = Math.round((ray.left + ray.width / 2 - board.left) * image.width / board.width)
-                const y = Math.round((ray.top + ray.height / 2 - board.top) * image.height / board.height)
-                const pixels = ctx.getImageData(x - 8, y - 24, 16, 48).data
-                let matches = 0
-                for (let i = 0; i < pixels.length; i += 4) {
-                  const [r, g, b] = pixels.slice(i, i + 3)
-                  if (orb === 'dark' ? r > 130 && b > 140 && b > g * 1.2 : r > 200 && g > 185 && b > 120) matches++
-                }
-                return matches
-              }, { png: shot.toString('base64'), orb })
-              assert(painted > 10, `${engineName}/${screen}/party${partySize}/${orb}: beam is clipped before reaching the enemy`)
-            }
-            await page.waitForTimeout(70)
+                mouth: { x: r.left + (r.width - size.width * fit) / 2 + 222 * sourceScale * fit,
+                  y: r.bottom - (size.height - 89 * sourceScale) * fit } }
+            })
+            if (beams.some(beam => !beam)) return false
+            document.querySelectorAll('.defect-evoke--test-clone').forEach(clone => clone.remove())
+            document.querySelectorAll('.defect-evoke').forEach(effect => {
+              const rect = effect.getBoundingClientRect(), clone = effect.cloneNode(true)
+              clone.classList.add('defect-evoke--test-clone')
+              Object.assign(clone.style, { position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`, zIndex: 999 })
+              clone.querySelectorAll('.defect-evoke__beam').forEach(svg => {
+                svg.style.animation = 'none'; svg.style.opacity = '1'; svg.style.scale = '1 1'
+              })
+              document.body.append(clone)
+            })
+            return { beams,
+              ray: document.querySelector('.defect-evoke--test-clone .defect-evoke__ray').getBoundingClientRect().toJSON(),
+              seatFilter: getComputedStyle(seat).filter }
+          })
+          const { beams, ray, seatFilter } = await geometry.jsonValue()
+          await geometry.dispose()
+          assert.equal(beams.length, 2)
+          for (const beam of beams) {
+            assert(beam && Math.hypot(beam.start.x - beam.mouth.x, beam.start.y - beam.mouth.y) < 1,
+              `${engineName}/${screen}/party${partySize}/${orb}: rendered beam left Defect's mouth: ${JSON.stringify(beam)}`)
           }
-          assert(sampledAfterRemount, 'test must sample a beam after the idle image remounts')
+          assert.equal(seatFilter, 'none', `${engineName}/${screen}: seat filter clips overflowing beams`)
+          const shot = await page.locator('.board').screenshot({ path: resolve(output, `${engineName}-${screen}-storm-${orb}-party${partySize}.png`) })
+          // Geometry can be correct while WebKit clips the painted beam at
+          // an ancestor's filter. Check actual pixels halfway to the enemy.
+          const painted = await page.evaluate(async ({ png, orb, ray }) => {
+            const image = new Image(); image.src = `data:image/png;base64,${png}`; await image.decode()
+            const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height
+            const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0)
+            const board = document.querySelector('.board').getBoundingClientRect()
+            const x = Math.round((ray.x + ray.width / 2 - board.left) * image.width / board.width)
+            const y = Math.round((ray.y + ray.height / 2 - board.top) * image.height / board.height)
+            const pixels = ctx.getImageData(x - 8, y - 24, 16, 48).data
+            let matches = 0
+            for (let i = 0; i < pixels.length; i += 4) {
+              const [r, g, b] = pixels.slice(i, i + 3)
+              if (orb === 'dark' ? r > 130 && b > 140 && b > g * 1.2 : r > 200 && g > 185 && b > 120) matches++
+            }
+            return matches
+          }, { png: shot.toString('base64'), orb, ray })
+          await page.locator('.defect-evoke--test-clone').evaluateAll(clones => clones.forEach(clone => clone.remove()))
+          assert(painted > 10, `${engineName}/${screen}/party${partySize}/${orb}: beam is clipped before reaching the enemy`)
           await page.evaluate(() => { window.fixture.restoration++; window.fixture.render() })
           await page.waitForFunction(() => !document.querySelector('.defect-evoke'))
         }

@@ -1,0 +1,992 @@
+{
+  "public/assets/combat/rigged/acid_slime-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "808352587080b62ddd75577814c87a624d62423dc01554d0838ce38409b0e732",
+    "video": "ea02f025422595047e47c5417aa7cbd4977e1230f104744d401fbe8215aea961"
+  },
+  "public/assets/combat/rigged/acid_slime-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "12b2807712dd22a8e9fdb7988f88c049bf5b9726a1d4832af38c27d7a6bcf266",
+    "video": "18b748b5578d88162f5e8376c8062c3598fdb6c9b37545a408a3fabbc44b1410"
+  },
+  "public/assets/combat/rigged/awakened_one_phase_1-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "a79b5774a0a20c302d9340587781b2e8cd8004218e488365ba6dbdf63d962ed6",
+    "video": "d2df1b48355991545ad1a2f3a242770774f9d638d577d36bf5b7cff6f0fec49a"
+  },
+  "public/assets/combat/rigged/awakened_one_phase_1-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "5660e448b90dd8d89a1034dc3c8edd649747f36008c51ace5cda637c2af5ae6f",
+    "video": "eea8b9a125019ea33a8f64f9f853fd810b97227a94322cf86b8141b36393e43f"
+  },
+  "public/assets/combat/rigged/awakened_one_phase_2-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "60e785d7b441a2d17d9a058c9325e0428c0bf8c52ad53256fd235e47bc8e3e15",
+    "video": "93cee6d6e93fb00dd5f6fcd639f503c18c1186e50d1662850567b249d53b6564"
+  },
+  "public/assets/combat/rigged/awakened_one_phase_2-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "54e3a541ea04deeb61acd968eb6f1d5bdd77287808412419eaa83789189e278e",
+    "video": "0c15930621d85e7be2eb7c4ed07a0167776692d1b35d78f1930e5e63dc48594b"
+  },
+  "public/assets/combat/rigged/blue_slaver-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "eed402f39e44846bf2afb05b2e2f61e27f044bc76f02c84fec4c423c21ce136e",
+    "video": "95f7c47f22bacfeee8e2951e78370cf6ca5adf186b8ca9988aec5fdf32669bc9"
+  },
+  "public/assets/combat/rigged/blue_slaver-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "28e9787dbe7cc7abff3c5d662177acdf572dc4d46be96a9a29699ceea4611b70",
+    "video": "f9b888a9850408626265a47db387f5b26545eaf99188a4b1f78c392aa9aff8b6"
+  },
+  "public/assets/combat/rigged/book_of_stabbing-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "60924040218551894325b54caf4f753ed4f8b9e0a56bf26a192be228f218e8e4",
+    "video": "9c3e33f4082c4da85286f18430aa6f9a9fd77805361b2a0a61816096981cc046"
+  },
+  "public/assets/combat/rigged/book_of_stabbing-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "42a4cf8e73a8a01eae940dee7511386e672e0995c789f9c69137090089c1ca42",
+    "video": "8908ab5c90cdc05f122081fc3f47c23c87511d0076e7600d2641633a97ea8b2d"
+  },
+  "public/assets/combat/rigged/bronze_automaton-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "48df8d82301d7ff219ba1037d87b381638d4d6a6d431bc49b478b4d75a543e44",
+    "video": "a828aec10c6502b2830218c064bf09063af749be321944f66e041f3efeebc111"
+  },
+  "public/assets/combat/rigged/bronze_automaton-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "67a0f42b735096d141f67b54b565241725735ab8b9075abf4bb18b0df22639c7",
+    "video": "57e821d15b9f77c29d22ef00f2858123e20a11da678ab5aa5b987d7818e7ec0e"
+  },
+  "public/assets/combat/rigged/bronze_orb-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "6f9a80cac931104c96f6e0799a6862ccac137fa56354607032239ce7e14e70ac",
+    "video": "bdecea363380e9e2107a657582349062eeb932d3abd87b5da970fdc3156bccc4"
+  },
+  "public/assets/combat/rigged/bronze_orb-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "e99005081347096875c737b8af896905dd9f88ea3418543e668aadf7a798baee",
+    "video": "78a1d11f4de714b5ae643e6ea5401af50f0baa2f8ef20dd1f56fdee3700a92b2"
+  },
+  "public/assets/combat/rigged/byrd-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "8c3e62f3a2a1e3277d08beea0989e93762fbf991e73c63cc7943f53aafa6f0f5",
+    "video": "e73f64ab4b7c31dbd8a722a125a1c4982af12cced13976b01f63e22822da4fc7"
+  },
+  "public/assets/combat/rigged/byrd-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d922852574f6efca0e1bf534459ec1651813f4730670ebfea9d4cef8c62dc30c",
+    "video": "4b4847ba2ded16e8f249e502bb4d5ae2ae39ca6fe0d5f68cc06d9b84e54f4996"
+  },
+  "public/assets/combat/rigged/centurion-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "fd3d43c37846c89630c1043cc50d82f07acf5d0075fa824a5e61f479a8584baf",
+    "video": "86eb0df8a4f6cd2d7b348d7f3719a551b3a71d3b7061b6d698fcc1dcc8b22896"
+  },
+  "public/assets/combat/rigged/centurion-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "3233e5628e9d031489f30d6fe42efaacf6a891012f767e314a284da491b38b1e",
+    "video": "c92d0b0477b6d5cb486c11862cea1ceee6639db98478b7553aa9d6d27e723a99"
+  },
+  "public/assets/combat/rigged/chosen-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "36c4c455589069935960bca08d49b28aa81d5c5ddd6880895b0a1b9f697fa74d",
+    "video": "2597c38df6c21debd3b24629b9a56ec8ab6e04bc0d582c358f0396e0887fac24"
+  },
+  "public/assets/combat/rigged/chosen-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "032f4ee8c129ca1404db37bbf7a22915730e39033efc5cd51e2c4cc3a989e288",
+    "video": "1333cf4e7bea468138095df2c29437f3c22a8a2c7ff682f4d72fd318856c380a"
+  },
+  "public/assets/combat/rigged/corrupt_heart-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "b2a37c0d61dc7997226642dbd0934a78ad8f4a4f2875e6f72b3052d7ca9fa7c6",
+    "video": "d7a7a89e8ff6bf88cb637d6ebd027572efaec6019696139c20f2753db339c130"
+  },
+  "public/assets/combat/rigged/corrupt_heart-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "e2bc18b44c488feb4719207b571667ec9308feb18ab94d6b6bc68cf7e72f9f21",
+    "video": "c91b7d2fd4fde1d6ffdb33d56f2a423009f531a0358180b2381517b1c334cc4b"
+  },
+  "public/assets/combat/rigged/cultist-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "8b30bb35092ea4478b71d13d7fba9257b7f73af106a6538ab70132116809c9c8",
+    "video": "e34d29d0b766291f046f8c179b75c0b17202218926d5bed65e4598ddcbe28890"
+  },
+  "public/assets/combat/rigged/cultist-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "b29d364a32d21669f9cd840531b6cb1094f60c72df22cc404cf596b8966d1f9b",
+    "video": "d74191038a9125dc5ac46f6ebb8417085c2a63e1112d6981e33709f0f21ccb72"
+  },
+  "public/assets/combat/rigged/dagger-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "6d1c7b942b15e0e871c5b9a6a7803852e1d9efb501dd76c59c368735bd47472b",
+    "video": "2b686eaa4bd40bb7bc31fe34cd7e403aef0027ef19250a7b5310399c24b08210"
+  },
+  "public/assets/combat/rigged/dagger-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "73129967b1727f462d78d8ffb32fd4dc519960ed6fc5eea450a91d33cdc38c28",
+    "video": "98b61d2a529da9ebe055c2416de08b3b45c7a5219f667627da5260cff76522c6"
+  },
+  "public/assets/combat/rigged/darkling-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "a94b7f37ee011a9ddf490a14e101166887f9dafe010dc8d29ec8e3c2a4077781",
+    "video": "09b014d710b1ab9e7e59e6d6e1a7a8ba3238c9f070486435f15efb5f36bea149"
+  },
+  "public/assets/combat/rigged/darkling-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "bbb0bd52861aa330935ff68253a189fa6a58dfe23533e04b3068624673f0c194",
+    "video": "89dedca35e92d7a8e0713485ed21c84223fbf0cd5dcdcbecfdea54b87995666e"
+  },
+  "public/assets/combat/rigged/deca-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "58e9ea9aef15e78f437d7c476f9300bc58a27d175dc0134408ab6c92ea2048e8",
+    "video": "35a31bebafe33cbae94e412a9aec2b9145eb725be779fcb61de854eef7cd36da"
+  },
+  "public/assets/combat/rigged/deca-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "15900c575d072a2db0f5256297190b69d18942babebd0bf9b256049a5a1deca3",
+    "video": "6eb90ec108a5f7716150936f80c99d32c9552c19ccdea64c96ca742430a3e01b"
+  },
+  "public/assets/combat/rigged/donu-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "08d4372e73229ceb7df10a0df4bce1a43208f9861ca6e2b41860bbe195fdcd86",
+    "video": "cff64dcfafdecb322e160f08a1d7e4e4892c68e7598917ac7f33af968e5765b8"
+  },
+  "public/assets/combat/rigged/donu-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "768b051ec5e8ccb7baf7ce8552c5c4354b928ac677e467a56823b3ed0255b4a1",
+    "video": "4b54ac04dc5fb21253a38ce5888f2a424a88441e865db87962e3e6a235a4a812"
+  },
+  "public/assets/combat/rigged/downfall_blasphemer-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "1725d67486f101e44b03af26a706bb56cbb52cc099c35638700c048904bc1b4e",
+    "video": "a89cdb9bc9b868ee70cd2043051c85a91f3fe60829bdd8f7062bdf559feacc9d"
+  },
+  "public/assets/combat/rigged/downfall_blasphemer-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "2b0a8557e3d5353f74c730b1be5838a779308f07830cfc309f0fee6509b53e1f",
+    "video": "cf3e6aa60c5569da01fb322be5ee582589dcdde8009d5b106afc84aa8fbabf4f"
+  },
+  "public/assets/combat/rigged/downfall_corrupted-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "ba309786b17a4a108a1e966904d20f34e12f1bad14032dc1cc0149aea94b5265",
+    "video": "d4aaa526d9d4ffff726fd9338f403c0ba545f49fe44654fc5df784965b6ebe97"
+  },
+  "public/assets/combat/rigged/downfall_corrupted-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "e26111258faf542f87e3dacf031fb829fe5335829fd7a6f98265cdb1928443c8",
+    "video": "808b8bcc4d7b74a16659fe4c941f9547a5e6e3c4f1a7328efcf874674e0c39ca"
+  },
+  "public/assets/combat/rigged/downfall_dark_core-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "be019872f582dd05de29068b0ecf8e7126a6cb4ace66cc8a0352247e35c38de7",
+    "video": "0df7afddda444d63d26632ebd2ebc36c1c1e914d6f5e4f0a5a272a607f3a1381"
+  },
+  "public/assets/combat/rigged/downfall_dark_core-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "25e80c14bea92f73ee56b582f363fac60c25cdada3bd13775e23c758f16fa9c3",
+    "video": "375e9fcca07c283af219623078359cad975d09ad5db997d3970282c17277471e"
+  },
+  "public/assets/combat/rigged/downfall_dark_orb-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "47b720d8be90f123accdd60a6ee60b3d147e654b461afd475a3353f0da375b6d",
+    "video": "79ae9e163745233da9d7daf28abd74a9891fccc3c85ff858f81d4aa79dc0c8ee"
+  },
+  "public/assets/combat/rigged/downfall_dark_orb-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "06855069b457e8de444afffc0e093d0dc4d084b273f7efe9572dd891d561c5a7",
+    "video": "78395e44447594e4ea5ee2badfb011031a4e997300be51cfe25060c93f37607a"
+  },
+  "public/assets/combat/rigged/downfall_demon-airborne.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "4a71a78c3633c478a316247bd41be617a87ec545197d87fcd2358282c807be8e",
+    "video": "0477b5223d6e0688043abd84f0901cb0485fd94542ae28b8c708eb4e25c0d674"
+  },
+  "public/assets/combat/rigged/downfall_demon-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "337181bd9293df7b19bbabf55f7ca160d92e273aedf3af653f60aff33202c368",
+    "video": "f350525de603febdc805db65cc0665673cda479a4cff161604d796bab51d2a30"
+  },
+  "public/assets/combat/rigged/downfall_demon-ground-slam.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "94cd1e83a56ecd249ebc21b4759e8d78eaba2c6c886a25296b43b2f3f12e8d33",
+    "video": "5eba41dfbf91dc0abed098ec3deb7ea10191e3f622b3679ffba25de9348126b9"
+  },
+  "public/assets/combat/rigged/downfall_demon-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d0ee165c0c7085efc278dc4c2033b86aa29121688051985274babef05aa27f65",
+    "video": "eb89cbdf0a1e32862f4e13a951db2bffe35f47cf425322402b524093b5a4637d"
+  },
+  "public/assets/combat/rigged/downfall_doppelganger-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "c2dd41132ea695608e17ac687e6dc74c806891027e45fec2b69a33012df966f2",
+    "video": "64d97b500c7575209c034b2817e76eeaf095c0d31c9278d1ed2c74adb86b2d3e"
+  },
+  "public/assets/combat/rigged/downfall_doppelganger-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "0087d50cf54f3a0e79f9c3cdc332e54c33a085604753d5d30711af45ec460b8d",
+    "video": "9b71bc0221dfcdbfe9633768effa6baaf0100f30bd0fd2e67e2db086ed261103"
+  },
+  "public/assets/combat/rigged/downfall_flame_barrier-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "4f8ca53a16beccef7b128d0baa6ef8b92aa5eae2f3d403624b6f820a4cfa8318",
+    "video": "5f4e4bbae7336a7ac2dfaf853c763cd6769a1ad644cd2c36c495c257f164932a"
+  },
+  "public/assets/combat/rigged/downfall_flame_barrier-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "b1fa763cb80b8b24dbef87e1cfb1ac30fa7f39cde8d6e6e79e85174b8b91a182",
+    "video": "223ac40381ee935d9cf0b9b21bb5892440ee8bbf1eaa324ac857d560d6cd7b54"
+  },
+  "public/assets/combat/rigged/downfall_frost_orb-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "579ba7309b7e1a5df21d19a688a17a58fbcd1fb0266165b09dd75167eff681d8",
+    "video": "fceac5dd7831679da27db082661f6e3589afd4ef2ae96ba70bbd99a856ed6cba"
+  },
+  "public/assets/combat/rigged/downfall_frost_orb-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "b8413d9e637cc821ca09dc15324b0126e09521d6fb841bbec3354113f6b5d5e7",
+    "video": "0cd2bdafefff5f7ac6b5690a3b499c0738d919b02ed544715dbc50c81d21847b"
+  },
+  "public/assets/combat/rigged/downfall_inferno-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "af86b8a0307a66604a4ae67cd8cc9ca321516cb0fda5e9121580a55a9ed8808f",
+    "video": "62c55816716b0aa01d3d8ffd552795cdf97efcab8b0cf98279d66b8b034a3177"
+  },
+  "public/assets/combat/rigged/downfall_inferno-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "3e0e03281c8b007381d11ede38b6549a03aace9b2a2d75ea48b5f79421a40d6f",
+    "video": "fcb1202ba2a4f47194118198ceae1ba17cf73dc077eb1facba1225da3f38da68"
+  },
+  "public/assets/combat/rigged/downfall_lightning_orb-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "e47851f1da9ea0ff5705d386b6a9e16001b70528b16933881f7b0879e205a173",
+    "video": "978dbb93f7fcf554945e9645db8855ff4d14e7cc50d375021447a20d468cecdd"
+  },
+  "public/assets/combat/rigged/downfall_lightning_orb-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d6cb6cf53ba139bc1c4e3b15b453c43428ddee0306de78ee50374afbdce0b3a2",
+    "video": "20858b339e5b26d7fddc78515d2bedc419255c965ba79a8b4ce3d21a52583509"
+  },
+  "public/assets/combat/rigged/downfall_loot_chest-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "47e524433960de6406cd8737de0d69411985f4999fe001a2ec96b33c981f17d5",
+    "video": "40045bda38fd9367594b18e3d2e5ba5d8e4aaaeebe3628817fd951fdb5fc6831"
+  },
+  "public/assets/combat/rigged/downfall_loot_chest-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "5581653260b9e677d4604ccb4fd5bfb4fec22f5438c7b8840cb845ee8b5f08c3",
+    "video": "cd8d885db2a0e6ab67b31d21b4efee14a3f139f9a70e08c1486b9dc308db6539"
+  },
+  "public/assets/combat/rigged/downfall_neow-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "c995e952a44116e498ec860b1c2c3e33d31dea248608b1ea6d9b74d16bfaf148",
+    "video": "a5aac1afa507917389a297e8227d7be316432c6459ab9332337c0b71361212f1"
+  },
+  "public/assets/combat/rigged/downfall_neow-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "c7517de211c7a416ee20691c88d81dbaa19c6b7faedd3c157808cde62f8a3506",
+    "video": "c90baa90f444b593fa1ce34bb8b3540d9f4256775139286e8ba20d4917a7c4bf"
+  },
+  "public/assets/combat/rigged/downfall_orb_master-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "ff4ccb4e277970c6511df912a6a25e463c1373a40e53556581b9718265c9d724",
+    "video": "413e666ff7f5413ea75d568e1b376517bace83cffe14140e6619758cd6a43f41"
+  },
+  "public/assets/combat/rigged/downfall_orb_master-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "f5206be5d2c2547c8c65c4ffa7c4baa61a817871f28a585d10bcd8857c3ed8c8",
+    "video": "62b7bd23c8e402ee6cb4d2c85845fc40fd85c5b4316e5a6fafb9fe5d10d483dc"
+  },
+  "public/assets/combat/rigged/downfall_pc_defect-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "a026fb4052815fe7ae9da3c4b479ab54517d88ac7a4320fd9144a8f5135e784f",
+    "video": "512508391e4b0a70a6659ae5f5164251dde9428828f2ba7359f7c3a1c63537c8"
+  },
+  "public/assets/combat/rigged/downfall_pc_defect-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "a2a94333a5187a55a9e038ecd3a77e69f809a3e8582a4504e9c3b910eb553d46",
+    "video": "701702c7b598da147c5309d53e14be420f4215ca09466c0368f8c64398647063"
+  },
+  "public/assets/combat/rigged/downfall_pc_ironclad-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "f0189a885f9c9709c20f2404ab4a30731b5716f809a472c5fa140057855f16da",
+    "video": "ed81ce65c3d742e94c1f5146b2301ada98a81a34866cacb98095f0cfac2402f0"
+  },
+  "public/assets/combat/rigged/downfall_pc_ironclad-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "11f3878f09f1e178165950c05b55b91fe2778aa52b9f5d0a73b9887ac45a78f6",
+    "video": "ba36d63f59582391d8a80edafa80ddc8a41237169ba58f7675c1ec5af757875d"
+  },
+  "public/assets/combat/rigged/downfall_pc_silent-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "a9cbd2ff1daf0c2e165ab4a10e52f57cf492ebc4ed6c369c2400d7be66208afe",
+    "video": "206af9c11cda6bd90fb260cf3f1e3d9baf41fd11371d40774738a2c7c7825fa4"
+  },
+  "public/assets/combat/rigged/downfall_pc_silent-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "a9a1283738a3cb735fd4654a8c1dc815a96d56309f9f8c100ee9c032d7157387",
+    "video": "142e4984ff534602f8da577454c1dbcfd7e369ab5ad3bc124a941ee82e8058bc"
+  },
+  "public/assets/combat/rigged/downfall_pc_watcher-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "343e2f6f111665e6744594de5226937b96592f1f12e493ba3f1dba4f90f2571a",
+    "video": "5a921cd19c77f4d89a2755cf2141d899ad1f0aa20b21b17887c75c4c864abc7a"
+  },
+  "public/assets/combat/rigged/downfall_pc_watcher-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "80798bd6adb2a43cfcd86947c0f33e932c765fd4e391bcc01d211ba53d4fa099",
+    "video": "cd10185db24be41a371c09f4afccc0c73afb4c6daf7d7226d74549d4119f9a3f"
+  },
+  "public/assets/combat/rigged/downfall_shiv-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "62bcba98b419d2d81addeb25430cc035eef20ca85013160b82830b2697ee3dea",
+    "video": "babace00f3179509f13ffa3efe626965a240a54d04bed578ef29643e4bf411cf"
+  },
+  "public/assets/combat/rigged/downfall_shiv-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "1c84a01291a998ebeb04e142cbfa22144855743f1f7c27458b08c997830df610",
+    "video": "cba658c7bfb96ee1b656dae6e90972ca1e43f8bf9eff1d40cff3f7c00a887772"
+  },
+  "public/assets/combat/rigged/downfall_trickster-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "02db375aebe37fcbd2a436065275b071c899dc45012be57b3d58549875b08b46",
+    "video": "f5e5d2216b7fa8f7865d0baabb5261a9a438bfbc64f6b4b8b49564e3ed12a8ac"
+  },
+  "public/assets/combat/rigged/downfall_trickster-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "62504de7dacb523b435d6324b604583a4bbbb4443c4093456e327bc472f6261e",
+    "video": "1c7e2de9baa8a5950129693574009701af6a925d4c59f8c4db671352b80b650a"
+  },
+  "public/assets/combat/rigged/downfall_witch-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "ce2dc4c4311172501f2227330fef4bf3cbdd47957e2158a02a2b81b4c90345bf",
+    "video": "1a20cb541ddefcd1b102fe4a6e3ac2e306d7e7a28768cd215c49a2cb915b2f3f"
+  },
+  "public/assets/combat/rigged/downfall_witch-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "9894cfcb1690abd9aa66c0c6688c5c30ec63242c652783c6fd32e8d2bd4ecbf8",
+    "video": "e4394902d3ebda75f6a3644f7e198b576dab823f1b5538ede2a496f5575d77d3"
+  },
+  "public/assets/combat/rigged/downfall_wraith-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "e68ecb3c9730785136d0da23a202aa23cd3ed546864e8e20649eff69398584a9",
+    "video": "4072993a22a8e203879bc4490d060e046e339000f400723756c0425533c62674"
+  },
+  "public/assets/combat/rigged/downfall_wraith-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "7de6850fce3657c5aa6de07a0c12d86dfa2e1f459e55177ddcc114675bc20d91",
+    "video": "7092c47172d2d86cd6f23005c50f99d60177617df12fb799b02cb616db970eb3"
+  },
+  "public/assets/combat/rigged/downfall_wrathful-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "72015e878e9a94cf9be4b9143c14d1ab1c1f091a4cca3aeac42b757470552a47",
+    "video": "100c621ba227a433984be1474b1bb9d8134a92fe29e24900aedf6af784a624b1"
+  },
+  "public/assets/combat/rigged/downfall_wrathful-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "00cadf0d44ea0edb7dc58375bf79a1b4a6950af57d6c4873c59f4658460cccc8",
+    "video": "f4f203f15f4dd55abee63fa1cdd81c896e3f46b4c67d260c91469b8abd1a001f"
+  },
+  "public/assets/combat/rigged/exploder-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "2ce7d09caf7b6964046bb87b945c869b2748d3a901207efb3b5829c4046460c4",
+    "video": "2db90986e13e77934a4bda9e9eab3873e0252e45f4e491acd0d07ab256827996"
+  },
+  "public/assets/combat/rigged/exploder-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "3ab0e3ee222705b3612744f377329aa863a65f64e59d713741f01f9de6ca47cb",
+    "video": "1f06d55b92c3d5489bfc6624dc531219b0ce62215dbc6a7b8bb968abd47f6360"
+  },
+  "public/assets/combat/rigged/fat_gremlin-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "099dae74490cb3cb60b34e6b32ece596f0045c0a8221cec5d99a3ca33fe21fff",
+    "video": "a54d3575f7966be5aca1f2298b9290f85328105a1d0e52a14d4c0af2c911cfc5"
+  },
+  "public/assets/combat/rigged/fat_gremlin-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "b9254ebe18e8fbea3daeacae3d74d17f0c27086630f76e5157760320f135f2b2",
+    "video": "273cc0a53b3c1ab1f5dfcb0d73d7466de65be8470c1f20ff6d75223cde222450"
+  },
+  "public/assets/combat/rigged/fungi_beast-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "26b12c28ee05eded60daa5b21afd5df624b145365ec3741e493f3a4fdf3d7b4a",
+    "video": "f536fcdff776be4df25c8421bb36356819f376a66637f66fbcb9694fb50eab7d"
+  },
+  "public/assets/combat/rigged/fungi_beast-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "dd4ca32ea4c2791bd1237fbe16169207ee4565777adb87a974c9a13a9faf8c5b",
+    "video": "9defe18fa65941302b43c86bd9598a4ec793b973c80738c5958362acb8c2413a"
+  },
+  "public/assets/combat/rigged/giant_head-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "f1bf7cd6c0c3f209d9ec8a3fbc903594d6728f4234ee159cee049146bbf81367",
+    "video": "1c383df26b76af5b5ba1e9d15cc707eb630e85e594cb930c09cd9611ccbc9b88"
+  },
+  "public/assets/combat/rigged/giant_head-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "90b038ae0ca5213e981a7cb356baad19daea85c26cfa76b168e460f67ee13d97",
+    "video": "74993f783ce0728dac02c25bf3e3b460b097f1d3d2170a3bff7de9bb71ec37ea"
+  },
+  "public/assets/combat/rigged/green_louse-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "3c2d980f0e767c2443d7ef34366e4fcf7ee8ea15ef3437adf80dceb4c9e44cf8",
+    "video": "07c1b4294a105bd64a9ded11b605f737635f7c5af034b974e03dbb4e6509f564"
+  },
+  "public/assets/combat/rigged/green_louse-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "6a61bd14e8dc36347618d1469ea6e5a70c54562be5c519f29441dfdef4db486e",
+    "video": "af26d3a2d8c0b0fe2770b73e1d920f72898ef7684e5ed2bbf49d28833083fc38"
+  },
+  "public/assets/combat/rigged/gremlin_leader-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "80a435039430277314412c3db7dd4117836e1a2cf7aab8701a023abba47cf378",
+    "video": "7f8b493ac035ace51165ebd0309fff105f1943a66f350567f4d5c5f1b6253c5a"
+  },
+  "public/assets/combat/rigged/gremlin_leader-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "6631a3dd776e72e98c81ea0cb825d0ee1ba7cc142f1bb4d66bced1e6c2f58a6d",
+    "video": "96bd94d8d31176d35e9c7d4d233ee4305c3db8693a42ba48e4d77e819c4afeb7"
+  },
+  "public/assets/combat/rigged/gremlin_nob-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "afaaaa33f903f382ba90a15802a5844b0cf4fea7b45dc0d122b4a81c79ba8a45",
+    "video": "7c5f3fb90a4f83586f7c8086862049b231292c21e240c460609e04c431177830"
+  },
+  "public/assets/combat/rigged/gremlin_nob-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "a0343451d57fd77cd38f067e575ff235475a07677558064cd5a3e5954cf26c6e",
+    "video": "b0b293caca1f74d14b6dd45f6a9d439e71d67740ff0118878bffdc725aefc2e0"
+  },
+  "public/assets/combat/rigged/gremlin_wizard-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "7153110bcaf110e4f149e985a54926a109fcbe6ac3b5c8c84cddba6d59494568",
+    "video": "5f38523cfb640e17c996e372475ae68a147b86c07e5fd4b4fdb153c40800daed"
+  },
+  "public/assets/combat/rigged/gremlin_wizard-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "5d881ed3e0600de6165da46635c681645952c5ebfb227f657c4801b9acbe8ef6",
+    "video": "e09c11dbceeb7eb6dcc322c6c8332c45cb9ac1f6720d27a9c42559caa27e5682"
+  },
+  "public/assets/combat/rigged/guardian_attack-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "3ca9d1c5a3339b84ee585bb051e6ed3a43841501a5212c259bd42bc040808a40",
+    "video": "666690a4f23b32016219eb0c30f0167cdb6b552449f9fac31e210fee31849f40"
+  },
+  "public/assets/combat/rigged/guardian_attack-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "3d8a5d44a241d873b638a8613837081ef1d31a189df3a7a0939677af77688450",
+    "video": "60b16133cee3179551f5838b46cdde2ea5dac9ed1e7bfa9cfab0d629fcdc7cd9"
+  },
+  "public/assets/combat/rigged/guardian_defensive-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "265a0fca47b6a5ce02eee8e06d3fd07dbdf586ad47ff4e1e3d5a731ea7a7e43c",
+    "video": "4eb43f0c742186b8977f4d8358ea45561e1c5f88894d01bcd64e3af884dd4a7c"
+  },
+  "public/assets/combat/rigged/guardian_defensive-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d40f8b544a22ecfa58f9d6b06f52d4fe205e2b3177494e47b0710f51c6d972d4",
+    "video": "8af4ca19bdac701a3166c86e6283250a232c2d81ccb5ee0a5a791195bdaf5a68"
+  },
+  "public/assets/combat/rigged/hero-defect-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "f82e86f685ae7f44052b4ace64d25683cf8fc7b1159a7fce1d7525ee13010798",
+    "video": "c35ab06d6d8e54dcb40fff4601dbb37ed47d8b77197250fce99c508860bea413"
+  },
+  "public/assets/combat/rigged/hero-defect-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "093570b0d6dbdd826c7267272de31a999dc225ff27812bd2f9174e24eb6d5816",
+    "video": "c33ccf086a15884c341df9fe9f3809ffcc9629a15879371aaeadb4ed7c9c81e7"
+  },
+  "public/assets/combat/rigged/hero-guardian-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "6d3c337cbbcf34cd18caa83181243f83d6482af6ddd0015693317e6fb3447c04",
+    "video": "b519bb26ecef058c0029477067b055302e188413f7921cd75f31d76c8a2d465e"
+  },
+  "public/assets/combat/rigged/hero-guardian-defense-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d1c2238e379ec43cd74937f33137e2f0328682e092945803bec8100ba426b0da",
+    "video": "21e6d696da9fa245443006fd680779258432fa281f55338418073e7a3160e93f"
+  },
+  "public/assets/combat/rigged/hero-guardian-defense-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "3bc8f215cb8a5a94f4ab0c23180f4177833e72e7f2686125ac8147cda83b9dd4",
+    "video": "7dc9b72f921fd124cd07a5f53b03bb349b74297fb3ec9d2f08139cd24c515add"
+  },
+  "public/assets/combat/rigged/hero-guardian-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "9481f4f5464e98fa0110620aaf45a8bfbf116ebd3f951c4b9a965130f96ad8df",
+    "video": "d6366c4cd0aa67f3d3ca46b9a72c711bd31cf2adaaf29496919498cd2b03a8aa"
+  },
+  "public/assets/combat/rigged/hero-hermit-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "4ed968fcdcc5c259d1d39f0c92c2499a650a1c4674a8751e95e448e2485231be",
+    "video": "5ef23fb3e96f45071159a4022a97010f23d62e3f03ac89ec5f720e89bb5a11bf"
+  },
+  "public/assets/combat/rigged/hero-hermit-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "2f5662ed0faddc23032d718275f03a2bdd2145758988c2a4b4135a6c36b131d2",
+    "video": "ecf35bb1039d519d95dadcf3e06b2e32258a8c7a50e2aba2dd91e69de0092f0f"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-0-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "3c4906ee8d0f47f7ceb0573b741b38a34e2430ef23f43e9f0311ed1d1d66cf30",
+    "video": "d3111dab3822fbd544fb45ded2b81da59e9a34d5706de08eaa7df507c7b7dc83"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-0-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d68509582d66aed9fd41fe41832d3434493a2462dda13e30ac49ac42e96c50d7",
+    "video": "ab7c2e08755852cdf7dc6e0303087c99fa8bd72bba3326764d18c0ba467d7fa5"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-1-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "2047dc69869ef3737ce343daa400bc668cbdb9befc7eb0659e87536a4385fa8a",
+    "video": "dadbc758094e6c0b89ff40180ffd95f1c77bc87b81930b2f805c69eac7c27376"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-1-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "1a0263ee9b0379311827a3d4c96823f91b99375b87c020835d4d0e410aecb3d2",
+    "video": "1c317f141fc4a2a6fd4790b2c59806a08f0b6e0efdae4a68bea2ebd114dfb639"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-2-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d269bdbec2051cb1bcf00c4aa1a1e29149a81f7a9e67107b4faf451d13c40253",
+    "video": "632c90396aa9381ef53396205559afe165fe9c2a37657931af620ee41871832b"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-2-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "4ae644c26a7c13640a571dd48b64953b5a17555fa9b5964aef2c29a12ffa183f",
+    "video": "3a9f182dcc13e370e5bece66e824b48a6da2c9009a029418f83e016b5072cfe8"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-3-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "961b78ec4536ef2e6df5f41fa86c3a398563f42ddd01c65ac39947e36fb16505",
+    "video": "43817cb17f5b964e2cc7d0882e7d05b5dc783eb0226f61c2956d5a0e458b9b3b"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-3-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "f41e2dc1429278a3fc111c632ddb3732ed70c4033633db41821139bcc1bf8b48",
+    "video": "1a3f21b45ed54ca51847336e8296932b90d7caffa92b9429bebbc82e2a8162f9"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-4-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d1777c128de99ef5d9f8ebc6394ceb662b4cfab98433f1d24740a1aba88db74c",
+    "video": "45b7ce38f41f9ab5e6e00220b487b434a35135baa94389303b4f3152ffd0a326"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-4-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "72b3bffcdcdbee2d0835b15815b9ed82e723f1e5f239e176ec7aebb3b56fc8ab",
+    "video": "6cc4feb6ce3213761c2a702ceb289a4e9968112c264582821df71930edc2821b"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-5-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "72fd3591e303f405abb76fcc8edb6875295fe5bcc4cd59307f99478928053d39",
+    "video": "464f2432bf3b92b7b1f33a75240e322acaf4e1d0c97370003336d35b77fe8e42"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-5-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "41bfc3acadd0051e1799b297efb79cf52ac214179774e068fd182c9954e738e9",
+    "video": "ed8b6667eb4aace7b2e81e637b371c0af4a49a97594ea6bab4669d9c13421dd6"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-6-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "2859f0a3b56a9608483b35fbb2425c15695f3df67897ddc0b37c48fa3bc6f21e",
+    "video": "9560d309dc24abfdc99c39b7ad126f1c6d39ae5d566d5bb773e549efbb63aff9"
+  },
+  "public/assets/combat/rigged/hero-hexaghost-heat-6-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "cb19107f86dbbc2d57dfe3589947e6e0d00e1717515638e26ad9a05af662ed3c",
+    "video": "28b84144c145a9bd1bceb1e258444470f4c44a4cfdd179c1ac4c0a4d64717950"
+  },
+  "public/assets/combat/rigged/hero-ironclad-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "480b026dad0955b6c5116e838b37c5fd34d3aad095aa71c7503c4bd541878d50",
+    "video": "66f17f14a56cad6d49b92abde615bd958460f3194b264f376651150f57f31c43"
+  },
+  "public/assets/combat/rigged/hero-ironclad-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "aa76019a4dcf48eaa35f3be3cab2852c3e57ac55f0064f477d3fba7fef19951d",
+    "video": "a136f6b83759273becf338f11eb61b065570ea8c8c25699c4476c988d44f159c"
+  },
+  "public/assets/combat/rigged/hero-silent-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "818a57d3ef49d48c4456f229a8d0e1d569e78a3b0dad16f1d94cc35251ed98b7",
+    "video": "8c443e5e43bca9c5153015e877bf778e9ec0a1ac6cb516f6044ee40a1e5c0a81"
+  },
+  "public/assets/combat/rigged/hero-silent-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "c72d577693bd320b6c15d96f39a43ce885b34b88aeaed148bb6753d02d210db6",
+    "video": "2ac9b1116d431bd738e1032734e68e3a14142f833ee68527cf5112591429899f"
+  },
+  "public/assets/combat/rigged/hero-slime_boss-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "8725fe72832a9ca2c76e053749e3ab492cdb985ad136fef09678ef2aae1af6cf",
+    "video": "0b83244c80764d29eff956d840f87d700a5d3fe5594f34fc8e7d0b8f54dee176"
+  },
+  "public/assets/combat/rigged/hero-slime_boss-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "b11f13f339ad8d3242c69ef7d098af94d53d1cc4e52d509f0f936eda14601cc6",
+    "video": "d19aed71b3514f4101d12072e2b138785dfe6cb380c810171cf43699826fe29a"
+  },
+  "public/assets/combat/rigged/hero-watcher-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "29a0a7d5897d51452872ec9b6a7308e85ebb1092d3d5ecc1f382b081848d0bef",
+    "video": "9c7324c58dae6bcac12efedea9e96d1adb18b3bebf44c1087cf2bf2a70392a86"
+  },
+  "public/assets/combat/rigged/hero-watcher-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "32a70e844fc2665a233f52c2c67fb0621f45fc1b972c8b22844e657bf33ee90b",
+    "video": "697349faca523cec9016e4a03666f67c62b29d36952f5c16be1e6ed46ec26700"
+  },
+  "public/assets/combat/rigged/hexaghost-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "49af5a2ea7308288dd31bbaddc534190da77bba15e34348b821cb437e2e1c43f",
+    "video": "cf522d0a9de00f1f762c8d1fb33b873ad4c0298bde2da3768009794136da144e"
+  },
+  "public/assets/combat/rigged/hexaghost-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "74d4444596cf1ea27dd54d37edd5787d8b933f755bb68a770e70099cf4943f67",
+    "video": "f981d864d559685f37bca5a537882af3b5f7b67736214eadbf319cbb10f3313b"
+  },
+  "public/assets/combat/rigged/jaw_worm-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "7b5cfbd7de6b3e00e920bffd106f2be184bcde85e68af60dc88a581e55f62cdf",
+    "video": "ea9ede096bab065339465b1087b00b49f31e3af2ef497fd4c48bab2b4136d398"
+  },
+  "public/assets/combat/rigged/jaw_worm-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "294c38b1cf7a05bd12b21888b7d2c9197be98726fc3a12539edc0ee42ee5b556",
+    "video": "4e7b6d7c755d3ac9b9af9ec643988eb8cba69c0082a5267486c4f969c5c394fc"
+  },
+  "public/assets/combat/rigged/lagavulin-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "eed3662a9c30445bca4d14cbe920e29bc54e67a760b3de76c506a5276a153a6b",
+    "video": "6e4543bbc94f0263b2e48fe44b107eb6937c87bce57f72c95cf3d45fc9a47966"
+  },
+  "public/assets/combat/rigged/lagavulin-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "bf7a8916d4747126d1f941acf139ab115cdd56b2c588d99d4df9fcd402cb20d8",
+    "video": "4a8897cd4d22e11384c86c0ed5d59f76137da5568efd0680fe64a3ff8ad7ac38"
+  },
+  "public/assets/combat/rigged/large_slime-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "f1747c545a6323c716a861af588cff26848af3432208265b2c6fd6118a81c641",
+    "video": "e88672643c39d22c0ba88725d54059416b1b8e9b6c19f4392f80caadc0c2afce"
+  },
+  "public/assets/combat/rigged/large_slime-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "2b200c772edbcb2568d1f2024c29990e50fe3f7880628ca4e49b4afe13928f38",
+    "video": "22bd2f1b0960ecf7f0fae977f73fbfadad59c19377bcdb9c7480c3b648a17017"
+  },
+  "public/assets/combat/rigged/looter-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "57667c584e456d844f75195f3df2f8e1bda424e86e48af1d6c5bdd2b961961b0",
+    "video": "ae55e01adf2cd06dae5aae800f0770c48631a7826d8803906abdc23b34dc3534"
+  },
+  "public/assets/combat/rigged/looter-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "861b5ac57c8c627343e354982a8afa9f90bba5b15a6aebc5f3f3887ea34a5201",
+    "video": "8e8ec76ebb564c79eaa439b9e1266e689a60c9675e0ae55d0c4dc7fda738e75e"
+  },
+  "public/assets/combat/rigged/mad_gremlin-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "4b699265d47488acfe75fd166499b2eb5a53c6506797737cbeb433255b7fc338",
+    "video": "7ca013bca7c7bb269317aec3eb4fd6cf4071535249a337225c068e3db9d692f6"
+  },
+  "public/assets/combat/rigged/mad_gremlin-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "da6b32748b983fed1b775b953b9f83f110849af6ba38e33beda653b7f93d7b9a",
+    "video": "7558a69240eda0429fff782ffcd4edea6161f924030f7e2cd3059b49b7ee5739"
+  },
+  "public/assets/combat/rigged/maw-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "150df24634627e347f9a641dd6beaa34da6d419068b1e1b605693a3201bf0191",
+    "video": "a7ce4ceb640d42404ac68eda6c8d31789a1d419af621e133b6e2465d1c3b48b1"
+  },
+  "public/assets/combat/rigged/maw-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "5b9e96ae5224c848cc9b0c62eecdb5fc738947042d59812598f36e2f6ffe7972",
+    "video": "2209a21bf3c8b00a1e985d5b4cdc3c5d903ce56a150126fa4867ad99d56daae7"
+  },
+  "public/assets/combat/rigged/mugger-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "b85a537bf073e82d389304587ad3dc8623c7823dc9f3b456bc510b59d2ce9f92",
+    "video": "0061a22c194ddccff795ad20f68343bfa7bd63e513da8f403513e5e2b7218bab"
+  },
+  "public/assets/combat/rigged/mugger-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "8fdd85e3e7bc12ef318138f82a97e024c10b7b0b55b3405ec0232b8b6855352f",
+    "video": "7a0a8fe0fdb9b70a829e6b8c96a7672098bd58ddb6c3a20b6105207850c54c08"
+  },
+  "public/assets/combat/rigged/mystic-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "9681a87e0661e3d59b3c823c014c83abdb94a96642f9c099b57883f98d72f72a",
+    "video": "20b3db4515e5217c0dc02223418f57c5bdd3f772bb00b472783d2dc81a555169"
+  },
+  "public/assets/combat/rigged/mystic-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d2c5a464a71916c9b8b30a6b41ec73e3073e055cece7e235f94da898a06dc96e",
+    "video": "abc9847ee47a9a2ca44c01e671d9b76d1fc554c1c82101657fa087a7690806a7"
+  },
+  "public/assets/combat/rigged/nemesis-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "98ef43478be7a86033b284612603f36d78a410d07a75c250926d53a61668b793",
+    "video": "03585c21c209cfdbac6c7bf10f6f6c4495cf1b250d19dce01942c06b20022ff3"
+  },
+  "public/assets/combat/rigged/nemesis-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "1c5fbe715114781c1421174219cd6f9848bf4da5f1c76634de00ccf57da43b68",
+    "video": "c46a25f0c917ac77781aa72b4b260d38c1a7ede249e1ce15080570e1e0744f34"
+  },
+  "public/assets/combat/rigged/orb_walker-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "2006974805749989570da3416497a2e2a9f10c478a47c87e4602544f8bd55601",
+    "video": "65e8246f70d714bd2d5d31e4e7a5b119dd2438f16cba634a6785796ca7147a16"
+  },
+  "public/assets/combat/rigged/orb_walker-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "551eb2cede44e2de78406af4eabca7ce6f5696fcbdca75dc2ef729668a6ec0a5",
+    "video": "82eb64ba498b93426abf2b053e2c030fa43b7b3fcfe40b48d47011b738042eba"
+  },
+  "public/assets/combat/rigged/red_louse-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "43eecdd2e01f7f19bd254e92bcb8adc34451a8981175e0edf38f2776a4a8083c",
+    "video": "41e3839c3b0a35f5f6116f9e6126742fa589f0ced5736e05c88bc6c8fe4e48fc"
+  },
+  "public/assets/combat/rigged/red_louse-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "4e044ae6fd941e66f6da00a391a02e64ec955ce493b94f867df7cceca7744f56",
+    "video": "3d384b70bd6581d52e05d1d5fd3bbd0ff53fd5d47d8c5e33cb2f0bf630c27b69"
+  },
+  "public/assets/combat/rigged/red_slaver-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "f55d96ef8343210175bf8765333c69f57457f4ebf411faecb5d0160a58c35c26",
+    "video": "3349fb76eecfe54a127c088edb32f778de60abc24e0886ffd2cd249343c66eab"
+  },
+  "public/assets/combat/rigged/red_slaver-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "e5931336e484178ca40046a4b381fa0e3d93d68046e725420c777671e7ef1239",
+    "video": "a31ea98136235b5764f0492f256bbc01f9105dbd4129329afde25703d23c8739"
+  },
+  "public/assets/combat/rigged/reptomancer-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "ac9ea8830e9b90ea1b92a69502e1249e2ed1cf65e6c2236d02eef4fe3fd1245f",
+    "video": "80b6d59c2e2d109802a14e66e9c2571f9b6c3404a7bba8ab664ab6f2e71e0e07"
+  },
+  "public/assets/combat/rigged/reptomancer-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "a3707e05aa52936afcfabc300da0fde57bea43e938d296295d2021e65e193ce7",
+    "video": "89765622776d271c3be227f9a2c9df9f515d65827921d97855a2cb7c068ce645"
+  },
+  "public/assets/combat/rigged/repulsor-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "bb2ab4395ce55ae790d968cb90f74e56a0de0927d990632b625ca1c2b20d58f2",
+    "video": "f1813487d393c13fb9a37de55f242dc65e78508b1318b90a35525bdca0adba14"
+  },
+  "public/assets/combat/rigged/repulsor-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "e29b0111774d99a94c1472737c103f84236e25037bde597991957c5236bba2a2",
+    "video": "2da61c79c0d482c4d6ce19b77f767cfb17864d6280ceb97244eefc7bd080c53d"
+  },
+  "public/assets/combat/rigged/sentry-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d82f055234a623f88f458895ede51338c6b77827d45e63b80d1503326ea55a08",
+    "video": "0adc5a4a83519abd4135a640476f23a7a3355c73f57cfb417739abb4a1ada048"
+  },
+  "public/assets/combat/rigged/sentry-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "1e3ef5f0873faeb490996e3e5de627a651b9119c71bfd7953a36d5cbbcb9db38",
+    "video": "dc6b875aa2a1008a6a7e10d37e0dd3c639e408f46632b3bffea856cd774557ac"
+  },
+  "public/assets/combat/rigged/shelled_parasite-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "42edb79f35ed2398ee0d3dc96395c0981f0f674a343a8939e9565aec86361959",
+    "video": "c6408675861f58ce4070e4196ac5a9914f9ec2a4d31e414591f108d6b7f35c67"
+  },
+  "public/assets/combat/rigged/shelled_parasite-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "af92b69086e662f6fa99dcad462d542e65d7d39dc160f8627845954b16841760",
+    "video": "bbb59e04a970f9a4a8ff004c9390b6a1e70f765e606445e33bc8d5203aab444b"
+  },
+  "public/assets/combat/rigged/slime_boss-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "19ef85fe855f93e6e5319334db96e14bbbb7a79d44ba3652d43004b877c26221",
+    "video": "9748d50d90f4e6dde218be448ee63bf19b19e9df6233f3ae39ad6176ba850be4"
+  },
+  "public/assets/combat/rigged/slime_boss-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "0ebfa425086564fc1d22b5c876c791e8a26b08854ddbe082324d2027dea70dc2",
+    "video": "e8539132870bf150c5799e8b074464a4b1c310f5e916304e046250269bf9bfb4"
+  },
+  "public/assets/combat/rigged/small_slime-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "8269be04903e39ce7b66889aa745ec4755207d141c2576e997375340e879d172",
+    "video": "e9ec45ebf55a61d9168320c19352c23ba4776578d820cd4fb01eda539b33b99b"
+  },
+  "public/assets/combat/rigged/small_slime-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "3c9ba8ac755bfd0c55bf4f9e0b8c243bc0a746797f3f7bc7a1fdef820530ada6",
+    "video": "60b88124832e6ec7d7b097a89c436f9cf97bc7839a8f5381a21c5b082353d1f0"
+  },
+  "public/assets/combat/rigged/snake_plant-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "eeeff6bca3b564e56b7be6283801fd3c55138e4b544bed5b88c5a1b9dc6c0531",
+    "video": "9cf2fd049819170616cd437dd3039bfa7a6437bbc93b6797c47c525af4b994dd"
+  },
+  "public/assets/combat/rigged/snake_plant-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "c030eb3794e14b468b9fe5dd651a355918a963d08ec2ea53f044fbfaefc41310",
+    "video": "7520adaa51d4ddc959f6e07e7d82e5d11911a8ca88207332c1663754682a820c"
+  },
+  "public/assets/combat/rigged/sneaky_gremlin-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "0d98d1d04240c5bff15a9b61c9c2db31793762a82716e8590bbde8f32575dba4",
+    "video": "df16a8412460ded39827bb29505dd771122b7acd3b16613b89a9cf8b10fdbe14"
+  },
+  "public/assets/combat/rigged/sneaky_gremlin-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "6d56290c8ca3c839960c93a4ce6c7875ce458966c79b4c031be8ffc1d00e1a40",
+    "video": "a623ba7c18094386dc739e8678515a7a5253a476a6e9a9a68361b0590a3f736a"
+  },
+  "public/assets/combat/rigged/snecko-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "f9bd80f325cdab8a3b6261621fa8d0e2b9145d7cf52f3edf10c3caa6df6a56d1",
+    "video": "541a67346fda1da4de7ef2e7b3e8ee39217e80f51416445f50729d628fa94b1d"
+  },
+  "public/assets/combat/rigged/snecko-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "9e97cf346f89d7659d4667cb067a67d33d53cc36e47231e96629ae68ab055466",
+    "video": "d0b3ca4655665d36bd4e03bac29c01585280a013a1f30139e7e25abc8fe6b314"
+  },
+  "public/assets/combat/rigged/spheric_guardian-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "d062236521be914d8ee27d1e947a0d45be869c75a3ad842772ebe2b8e8db5f79",
+    "video": "cd4c88a1abf963406a0fa3538b70dcf8b8f927897874289c551061ac0efad895"
+  },
+  "public/assets/combat/rigged/spheric_guardian-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "f6971c9027677caa0de5f84e9e528df16bb217acdccb7af3507ebae6d9f01178",
+    "video": "5728cbeea703bdf19dc545283227a1169e831677b21ef26d16671fcb3b38f0b9"
+  },
+  "public/assets/combat/rigged/spike_slime-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "9daa2846f90273475ad623c83ed6a7960083c97450821977d23bdf6f96a12837",
+    "video": "29edd77e68f94a80239e9d9e6d46ec3dcf8271e0afb4780fbc8b65230de1ec01"
+  },
+  "public/assets/combat/rigged/spike_slime-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "376b5fb9ffdfe93c3a773265ee0cfa7c0bcb473cf5314a53f1bf8b95a5ab88d3",
+    "video": "e0c63189a356b5de4164bbd9308344aec23ef3356730bf3ae1beca4de2a5e953"
+  },
+  "public/assets/combat/rigged/spiker-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "ccf9f75bd8dfcfa46ba72620f637432109075680b9c2c6472d5f3f980f4b1a2c",
+    "video": "4dd0d40fc70f3039e987779c4da277af95f4923bfa073742df32f86ada5d0334"
+  },
+  "public/assets/combat/rigged/spiker-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "945af67ea2b0ca1131182d44205140a1ba6d6c30d2fd01deceacdb8cc9ec0b38",
+    "video": "58556b9faeab0e3bf9eacbcf5ff21ddb2161558d877f98f30cb428431fd0cc7f"
+  },
+  "public/assets/combat/rigged/spire_growth-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "c94301f603d476b117a9e9884f49e436148d036a0c2983760ab6801c7f5720a8",
+    "video": "dbab73dc1709548cc00c5cb00ab39884b0be607457c5b4ce6b972716d8302f63"
+  },
+  "public/assets/combat/rigged/spire_growth-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "8b6457f7d3b22aca5f2d953635cb925a71788d77312b53078ebbd4e5b7af4997",
+    "video": "ab03e7f1fcaee5d8f968aa2b62db4757c1df2660318aa6b79ed35a4f9e4be70d"
+  },
+  "public/assets/combat/rigged/spire_shield-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "deb3d7a50b6f6c4ddf6677da44f7ba129da79306a0ead5ea0f9d91497f3f6812",
+    "video": "dd0127f0d81a470a78a7d830180ff597b8e957173377b799327c57736764be30"
+  },
+  "public/assets/combat/rigged/spire_shield-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "47a34ed7d95efbe018531b9bb9d6b18e74a4fd8d856aa1bb893786a4d9a9440a",
+    "video": "21ca7c02cb00f6ecd62076ea35e48ec014fa2d2fa112a1e101ffd4e17d10b762"
+  },
+  "public/assets/combat/rigged/spire_spear-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "3a0b1732bbda8126cb5bdc906caebe261abe7856e03e7de823c855768ff8bfc9",
+    "video": "dbebb336640888b8a377392f28db68e9cac9f2ca1e360a560d0fc6feed6ba139"
+  },
+  "public/assets/combat/rigged/spire_spear-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "4aa3c39f794d3f9f07afeb83111efdd3d6fd8619367294f6b27b2a7c62490651",
+    "video": "641a5bb02177b525637099bb3340dd10e126736d59fa9df5228e98a0e99a887c"
+  },
+  "public/assets/combat/rigged/taskmaster-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "396db3203f94e866932808a02055ddba35c9fc05ef208bee1b56cc4da1ba4af8",
+    "video": "f6a2c3406ac17069c5b3f13afadc1e36f96a96ee6d6ad59965ad106a412141e9"
+  },
+  "public/assets/combat/rigged/taskmaster-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "dd7b0ae755b3a6d235ae15247733130f3b36f1b04c87e32331eab817d345dd6a",
+    "video": "70180a5ebb827f3da666b2330715b7167b72cb4c963db0cecdc7b53b514d96d7"
+  },
+  "public/assets/combat/rigged/the_champ-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "78fc1bba045e95168094c9854dd7ba098fe56481e6127621bfd25b2c4e5994a7",
+    "video": "ec76aee2467f8ba4afddaa2c7c638e8037157cc45303d4dc6b70ed0df818ce65"
+  },
+  "public/assets/combat/rigged/the_champ-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "f27622c06d6dc325c0bafdc3ee98162e589cd276578da75965292bb01633642f",
+    "video": "bfb3705795a5d124ff00f4d22ccb82ed309c6b99e86aae3900c1caf19451fd81"
+  },
+  "public/assets/combat/rigged/the_collector-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "1b92a8d0584a5be4490912ec2fc111e18a00ce10f84f9a1565ec016326825d49",
+    "video": "ae85fb8a8cf800e8e89abd88ca8966b2a050b39dbd7b2792d04a166b93d381aa"
+  },
+  "public/assets/combat/rigged/the_collector-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "8c5b75b10e823f55fbc398560096885b552967c759aa070e4d920487d315f228",
+    "video": "a86c97be08820a6479c368659d34c0067507513bdc4d60e2ad0d093a9082ce42"
+  },
+  "public/assets/combat/rigged/time_eater-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "611d9fc0564d4c97671de81f5ead30134b11c76a8b82fc57847f2fce67307ee0",
+    "video": "11b6fbacdb26bcdb337823bc4d3dec1636cead186e02ef478372ecfc173bda59"
+  },
+  "public/assets/combat/rigged/time_eater-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "6ae8cb3cb38e5b249b8d72ac982474dc8c558b205dc5990a1e056289d641b481",
+    "video": "db22990dc1f1d3b42457589d0fa070d3626d9ae54ceee4edffb3ca8706616171"
+  },
+  "public/assets/combat/rigged/torch_head-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "1a83ae5f1559f5f15d07585b9cf01aec154a379475fa51596a86442b9f932e98",
+    "video": "38c56318cf785393d4f8ee338e9cd91ef860a5c4723586045b2169f887261205"
+  },
+  "public/assets/combat/rigged/torch_head-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "18ba63e53bacd0ad15c9de67f187c53bad84a837ff3958e581009198911d36fa",
+    "video": "9ecb2f68cd30b2f2cba9711404e2f2b2334db1d17570355fc1340bdec6f1d8e4"
+  },
+  "public/assets/combat/rigged/transient-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "4c33d47dae29ea40fc5612ac1e6cff39c79b1d3487d65eec45607d1470913a5a",
+    "video": "c6e57c19879977610ab889cbae48256266370b6726357b037c1fb32f89e33148"
+  },
+  "public/assets/combat/rigged/transient-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "cfe93a2ac897e1e414d0eca14edd547a2200f9b9e583aa77175ec6a4747f18a1",
+    "video": "7524725d443af5511e6c188d3d872ef797f8984f798373bbf4f2f639f10895ef"
+  },
+  "public/assets/combat/rigged/writhing_mass-attack.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "cc64aba85127cd82136e8d7797dd9d753084b6f71aab5ae5c5ad8f7840d214e8",
+    "video": "582f3c1bcda3945fc1b769e7672d570fd6e2c809848791cd13a2f34da941b9ba"
+  },
+  "public/assets/combat/rigged/writhing_mass-idle.webp": {
+    "encoder": "hevc-alpha-vfr-q100-v1",
+    "source": "296dc966842c3d1e3057b376babbd8b02692ec94fe74498ea3f6d1cea2050296",
+    "video": "e7e915bdf3ed64b77e06cead03589bfd0f950f50bee7c5400827bb627994f8e5"
+  }
+}

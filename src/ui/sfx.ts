@@ -54,7 +54,9 @@ function playAudio(audio: HTMLAudioElement) {
 }
 
 function audioElement(source: string) {
-  const audio = new Audio(source)
+  const audio = new Audio()
+  if (new URL(source, location.href).origin !== location.origin) audio.crossOrigin = 'anonymous'
+  audio.src = source
   audio.muted = vodAudioMuted
   vodAudio.add(audio)
   const forget = () => {

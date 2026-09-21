@@ -222,7 +222,7 @@
   pointer-events: none;
 }
 
-.seat__portrait > img {
+.seat__portrait > :is(img, video) {
   position: relative;
   z-index: 1;
   width: 100%;
@@ -539,8 +539,8 @@
   background: none;
 }
 
-.enemy__portrait > img,
-.enemy--boss .enemy__portrait > img {
+.enemy__portrait > :is(img, video),
+.enemy--boss .enemy__portrait > :is(img, video) {
   position: absolute;
   inset: 0;
   object-fit: cover;
@@ -904,7 +904,8 @@
 .enemy[data-animation]:not([data-animation='static']) .enemy__art--cutout {
   scale: var(--animation-art-scale, 1);
 }
-.seat__portrait > img:not([data-static-art]):not([data-guardian-transition]), .character-attack__pose--rig > img {
+.seat__portrait > :is(img, video):not([data-static-art]):not([data-guardian-transition]),
+.character-attack__pose--rig > :is(img, video) {
   scale: var(--character-art-scale, 1);
   transform-origin: center bottom;
 }
@@ -913,7 +914,7 @@
   .row__seat:has(.slime-party) { bottom: calc(4.1rem * var(--stage-scale) + 1.5rem); }
 }
 
-.seat__interactive:has(.slime-party) .seat__portrait > img { min-height: 0; min-width: 0; }
+.seat__interactive:has(.slime-party) .seat__portrait > :is(img, video) { min-height: 0; min-width: 0; }
 
 /* Normal enemies share the established limb/contact clock without elite sizing. */
 .enemy[data-attack-choreography].enemy--acting { z-index: 9; filter: none; }

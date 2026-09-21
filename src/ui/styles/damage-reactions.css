@@ -18,7 +18,7 @@
   animation: actor-defeat 860ms cubic-bezier(0.2, 0.8, 0.25, 1) both;
 }
 
-.seat--dead .seat__portrait > img,
+.seat--dead .seat__portrait > :is(img, video),
 .enemy--dead .enemy__portrait > .enemy__art--cutout {
   animation: none;
 }

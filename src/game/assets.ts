@@ -8,8 +8,12 @@ import type { EnemyDef } from './enemies.ts'
 import type { PotionDef, RelicDef } from './relics.ts'
 import { CHARACTER_IDS, type CharacterId } from './types.ts'
 
+const assetCdnOrigin = import.meta.env?.VITE_ASSET_CDN_ORIGIN?.replace(/\/$/, '')
+
 /** Public asset URL under Vite's current deployment base. */
-export const assetPath = (path: string): string => `${import.meta.env?.BASE_URL ?? '/'}assets/${path}`
+export const assetPath = (path: string): string => assetCdnOrigin && path.startsWith('bgm/')
+  ? `${assetCdnOrigin}/${path}`
+  : `${import.meta.env?.BASE_URL ?? '/'}assets/${path}`
 
 type PreloadedImage = {
   image: HTMLImageElement

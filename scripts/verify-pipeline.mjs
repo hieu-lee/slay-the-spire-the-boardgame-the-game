@@ -38,9 +38,10 @@ check('shared engine changes select every browser flow that imports them', () =>
 })
 check('frontend surfaces select their cores and named focused browser checks', () => {
   const combat = affectedBrowser('src/ui/CombatScreen.tsx')
-  includesEvery(combat, ['verify-browser.mjs', 'verify-online-browser.mjs'], 'combat screen')
+  includesEvery(combat, ['verify-browser.mjs', 'verify-online-browser.mjs',
+    'verify-safari-combat-animation-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 8, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 9, 'combat screen selected an unrelated browser suite')
   const room = affectedBrowser('src/ui/RoomScreen.tsx')
   includesEvery(room, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'room screen')
   const online = affectedBrowser('src/ui/OnlineGame.tsx')
@@ -120,14 +121,14 @@ check('shared frontend changes use cores plus named visual owners', () => {
       'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
       'verify-enemy-layout-browser.mjs', 'verify-hover-overflow-browser.mjs',
     ], sheet)
-    assertEqual(affectedBrowser(sheet).length, 13, `${sheet} selected an unrelated browser suite`)
+    assertEqual(affectedBrowser(sheet).length, 14, `${sheet} selected an unrelated browser suite`)
   }
   const hand = affectedBrowser('src/ui/styles/hand.css')
   includesEvery(hand, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
     'verify-card-cancel-browser.mjs', 'verify-combat-hand-viewport-browser.mjs',
     'verify-combat-player-clipping-browser.mjs', 'verify-end-turn-drag-browser.mjs',
     'verify-enemy-layout-browser.mjs'], 'hand stylesheet')
-  assertEqual(hand.length, 16, 'hand stylesheet selected an unrelated browser suite')
+  assertEqual(hand.length, 17, 'hand stylesheet selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/styles/presentation-overlays.css'), [
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
     'verify-lightning-act2-browser.mjs',

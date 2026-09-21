@@ -25,6 +25,16 @@ import {
 import { combatArtBounds, combatBodyPoint } from './combat-geometry.ts'
 import enemyArtSizes from './enemy-art-size.json'
 import enemyFootAnchors from './enemy-foot-anchors.json'
+import {
+  CombatAnimation,
+  combatArtReady,
+  combatArtSize,
+  combatVideoPath,
+  onCombatArtReady,
+  preloadCombatVideo,
+  useSafariCombatVideo,
+  type CombatArtElement,
+} from './CombatAnimation.tsx'
 
 type EnemyCardProps = {
   enemy: Enemy
@@ -297,12 +307,13 @@ export function EnemyCard({
   const numberTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
   const nextNumber = useRef(0)
   const [bulletNumbers, setBulletNumbers] = useState<{ id: number; damage: number; x: number; y: number }[]>([])
-  const attackPreload = useRef<{ source: string; blob: Blob } | null>(null)
+  const attackPreload = useRef<{ source: string; blob?: Blob } | null>(null)
   const bossAttackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [presentedBossAttack, setPresentedBossAttack] = useState<{
     art: string
     artId: string
     source: string
+    forceWebp?: boolean
   } | null>(null)
   const [awaitingNextEnemyPhase, setAwaitingNextEnemyPhase] = useState(acting)
   const displayBeat = useRef(0)
@@ -453,27 +464,31 @@ export function EnemyCard({
     ? assetPath('combat/rigged/downfall_demon-airborne.webp')
     : enemyAnimationImagePath(def, 'attack')
   const currentIdleArt = enemyAnimationImagePath(def, 'idle')
+  const currentFallbackArt = enemyImagePath(def)
   const currentBossProjectileArt = bossProjectileImagePath(currentBossArtId)
   const currentProjectileImpact = enemyProjectileImpactPath(currentBossArtId)
   const bossAttackRequested = Boolean(animatedEnemy && acting && bossHasAttackAction)
+  const [bossAttackReady, setBossAttackReady] = useState(false)
   useLayoutEffect(() => {
     if (!acting) setAwaitingNextEnemyPhase(false)
   }, [acting])
   const bossAttackTriggered = bossAttackRequested && !deferBossAttack &&
     !resetVisuals && !awaitingNextEnemyPhase
   const bossAttacking = Boolean(animatedEnemy && presentedBossAttack)
+  const bossAttackPlaying = bossAttacking && bossAttackReady
   useEffect(() => {
     if (!bossAttackTriggered) return
     const cached = attackPreload.current
     // Each one-shot WebP needs its own URL; a decoded preload shares an ended timeline.
-    const art = cached?.source === currentBossAttackArt
+    const art = !useSafariCombatVideo && cached?.source === currentBossAttackArt && cached.blob
       ? URL.createObjectURL(cached.blob) : currentIdleArt
-    setPresentedBossAttack({ art, artId: currentBossArtId, source: currentBossAttackArt })
+    const safariVideoReady = useSafariCombatVideo && cached?.source === currentBossAttackArt
+    const presentedArt = useSafariCombatVideo ? currentBossAttackArt : art
+    setPresentedBossAttack({ art: presentedArt, artId: currentBossArtId, source: currentBossAttackArt,
+      forceWebp: useSafariCombatVideo && !safariVideoReady })
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
-    bossAttackTimer.current = setTimeout(() => {
-      setPresentedBossAttack(null)
-      bossAttackTimer.current = null
-    }, bossAttackDurationFor(currentBossArtId))
+    bossAttackTimer.current = null
+    setBossAttackReady(false)
   }, [bossAttackTriggered, currentBossArtId, currentBossAttackArt, currentIdleArt])
   useEffect(() => () => {
     if (presentedBossAttack?.art.startsWith('blob:')) URL.revokeObjectURL(presentedBossAttack.art)
@@ -490,17 +505,20 @@ export function EnemyCard({
   useLayoutEffect(() => {
     const portrait = cardRef.current?.querySelector<HTMLElement>('.enemy__portrait')
     const hit = portrait?.querySelector<HTMLElement>('.enemy__hit-area')
-    const image = portrait?.querySelector<HTMLImageElement>(':scope > img')
-    if (!portrait || !hit || !image) return
+    const initialImage = portrait?.querySelector<CombatArtElement>(':scope > :is(img, video)')
+    if (!portrait || !hit || !initialImage) return
     const measure = () => {
+      const image = portrait.querySelector<CombatArtElement>(':scope > :is(img, video)')
+      if (!image) return
       // Reviewed normalized X anchors: [animated resting pose, static fallback].
       // Feet/body bases belong over HP; keep this anchor throughout the attack.
       const feet = (enemyFootAnchors as Record<string, number[]>)[bossArtId]
-      if (feet && image.naturalWidth && image.naturalHeight) {
+      const { width: naturalWidth, height: naturalHeight } = combatArtSize(image)
+      if (feet && naturalWidth && naturalHeight) {
         const staticArt = !animatedEnemy || image.dataset.fallback === 'true'
-        const fit = Math.min(image.clientWidth / image.naturalWidth, image.clientHeight / image.naturalHeight)
+        const fit = Math.min(image.clientWidth / naturalWidth, image.clientHeight / naturalHeight)
         const scale = staticArt ? 1 : enemyArtScaleFor(bossArtId)
-        image.style.marginLeft = `${(.5 - feet[staticArt ? 1 : 0]!) * image.naturalWidth * fit * scale}px`
+        image.style.marginLeft = `${(.5 - feet[staticArt ? 1 : 0]!) * naturalWidth * fit * scale}px`
       }
       const bounds = combatArtBounds(portrait)
       const parent = portrait.getBoundingClientRect()
@@ -510,15 +528,30 @@ export function EnemyCard({
       })
     }
     measure()
-    portrait.addEventListener('load', measure, true)
+    const removeReady = onCombatArtReady(initialImage, measure)
     const resize = new ResizeObserver(measure)
     resize.observe(portrait)
-    resize.observe(image)
-    return () => { resize.disconnect(); portrait.removeEventListener('load', measure, true) }
+    resize.observe(initialImage)
+    portrait.addEventListener('load', measure, true)
+    portrait.addEventListener('loadeddata', measure, true)
+    return () => {
+      resize.disconnect(); removeReady()
+      portrait.removeEventListener('load', measure, true)
+      portrait.removeEventListener('loadeddata', measure, true)
+    }
   }, [art, animatedEnemy, bossArtId])
   const bossAttackArt = animatedEnemy ? currentBossAttackArt : undefined
   useEffect(() => {
     if (!bossAttackArt) return
+    if (useSafariCombatVideo) {
+      const cancel = preloadCombatVideo(combatVideoPath(bossAttackArt), () => {
+        attackPreload.current = { source: bossAttackArt }
+      })
+      return () => {
+        cancel()
+        attackPreload.current = null
+      }
+    }
     const controller = new AbortController()
     void fetch(bossAttackArt, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) return
@@ -547,7 +580,7 @@ export function EnemyCard({
       void preload.decode?.().catch(() => undefined)
     }
   }, [currentBossProjectileArt, currentProjectileImpact])
-  const demonAttacking = bossAttacking && bossArtId === 'downfall_demon'
+  const demonAttacking = bossAttackPlaying && bossArtId === 'downfall_demon'
   const bossAttackMotion = animatedEnemy ? bossAttackMotionFor(bossArtId) : 'ranged'
   const bossAttackContactLeft = bossAttackContactLeftFor(bossArtId)
   const bossProjectileArt = bossAttackMotion === 'ranged' ? bossProjectileImagePath(bossArtId) : undefined
@@ -556,11 +589,14 @@ export function EnemyCard({
   useLayoutEffect(() => {
     const card = cardRef.current
     if (!card || !bossAttacking || bossAttackMotion !== 'melee') return
-    const boss = card.querySelector<HTMLImageElement>('.enemy__art--cutout')
+    const initialBoss = card.querySelector<CombatArtElement>('.enemy__art--cutout')
     const heroes = [...(card.closest('.board')?.querySelectorAll<HTMLElement>('.seat:not(.seat--dead) .seat__portrait') ?? [])]
-    if (!boss || heroes.length === 0) return
+    if (!initialBoss || heroes.length === 0) return
     const measure = () => {
-      if (boss.naturalHeight === 0) return
+      const boss = card.querySelector<CombatArtElement>('.enemy__art--cutout')
+      if (!boss) return
+      if (!combatArtReady(boss)) return
+      const { width: naturalWidth, height: naturalHeight } = combatArtSize(boss)
       // The image includes scaled transparent overscan; the stable portrait
       // lane still describes the target's physical position.
       const heroRects = heroes.map((hero) => hero.getBoundingClientRect())
@@ -568,8 +604,8 @@ export function EnemyCard({
       const animation = boss.style.animation
       boss.style.animation = 'none'
       const bossRect = boss.getBoundingClientRect()
-      const imageScale = Math.min(bossRect.width / boss.naturalWidth, bossRect.height / boss.naturalHeight)
-      const imageInset = (bossRect.width - boss.naturalWidth * imageScale) / 2
+      const imageScale = Math.min(bossRect.width / naturalWidth, bossRect.height / naturalHeight)
+      const imageInset = (bossRect.width - naturalWidth * imageScale) / 2
       const visibleBossLeft = bossRect.left + imageInset + bossAttackContactLeft * imageScale
       boss.style.animation = animation
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
@@ -590,10 +626,14 @@ export function EnemyCard({
         card.style.setProperty('--boss-launch-y', `${launchY / rem}rem`)
       }
     }
-    if (boss.complete && boss.naturalHeight > 0) measure()
-    else boss.addEventListener('load', measure, { once: true })
+    measure()
+    const removeReady = onCombatArtReady(initialBoss, measure)
+    card.addEventListener('load', measure, true)
+    card.addEventListener('loadeddata', measure, true)
     return () => {
-      boss.removeEventListener('load', measure)
+      removeReady()
+      card.removeEventListener('load', measure, true)
+      card.removeEventListener('loadeddata', measure, true)
       card.style.removeProperty('--boss-dash-x')
       card.style.removeProperty('--boss-dash-y')
       card.style.removeProperty('--boss-launch-x')
@@ -603,23 +643,26 @@ export function EnemyCard({
   useLayoutEffect(() => {
     const card = cardRef.current
     if (!card || !bossAttacking || !bossProjectileArt) return
-    const boss = card.querySelector<HTMLImageElement>('.enemy__art--cutout')
+    const initialBoss = card.querySelector<CombatArtElement>('.enemy__art--cutout')
     const board = card.closest('.board')
-    if (!boss || !board) return
+    if (!initialBoss || !board) return
     const measure = () => {
-      if (!boss.naturalWidth || !boss.naturalHeight) return
+      const boss = card.querySelector<CombatArtElement>('.enemy__art--cutout')
+      if (!boss) return
+      if (!combatArtReady(boss)) return
+      const { width: naturalWidth, height: naturalHeight } = combatArtSize(boss)
       const cardRect = card.getBoundingClientRect()
       const bossRect = boss.getBoundingClientRect()
       // Overscan enlarges transparent padding, not the body. Anchor to the
       // physical portrait before applying the original attachment fractions.
       const scale = enemyArtScaleFor(bossArtId)
-      const fit = Math.min(bossRect.width / boss.naturalWidth, bossRect.height / boss.naturalHeight)
-      const bodyWidth = boss.naturalWidth * fit / scale
-      const bodyHeight = boss.naturalHeight * fit / scale
+      const fit = Math.min(bossRect.width / naturalWidth, bossRect.height / naturalHeight)
+      const bodyWidth = naturalWidth * fit / scale
+      const bodyHeight = naturalHeight * fit / scale
       const origin = enemyProjectileOriginFor(bossArtId)
-      const startX = origin ? bossRect.left + (bossRect.width - boss.naturalWidth * fit) / 2 + origin[0] * fit
+      const startX = origin ? bossRect.left + (bossRect.width - naturalWidth * fit) / 2 + origin[0] * fit
         : bossRect.left + bossRect.width / 2 - bodyWidth * .16
-      const startY = origin ? bossRect.bottom - boss.naturalHeight * fit + origin[1] * fit
+      const startY = origin ? bossRect.bottom - naturalHeight * fit + origin[1] * fit
         : bossRect.bottom - bodyHeight * .52
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
       const groundImpact = projectileImpact?.endsWith('/turn-poison-impact.webp')
@@ -640,15 +683,17 @@ export function EnemyCard({
     measure()
     // Measure this image at the target, after its portrait's capture handler
     // aligns it. Other board images can still update the projectile's target.
-    const onLoad = (event: Event) => { if (event.target !== boss) measure() }
+    const onLoad = () => measure()
     board.addEventListener('load', onLoad, true)
-    boss.addEventListener('load', measure)
+    board.addEventListener('loadeddata', onLoad, true)
+    const removeReady = onCombatArtReady(initialBoss, measure)
     const resize = new ResizeObserver(measure)
     resize.observe(board)
     return () => {
       resize.disconnect()
       board.removeEventListener('load', onLoad, true)
-      boss.removeEventListener('load', measure)
+      board.removeEventListener('loadeddata', onLoad, true)
+      removeReady()
     }
   }, [art, bossArtId, bossAttacking, bossProjectileArt, projectileImpact, rangedTargetKey])
   const abilities = enemyAbilities(def)
@@ -679,7 +724,7 @@ export function EnemyCard({
     targeted ? 'enemy--targeted' : '',
     visibleEnemy.isBoss ? 'enemy--boss' : '',
     def.elite || (def.artId ?? def.id) === 'sentry' ? 'enemy--elite' : '',
-    bossAttacking ? 'enemy--acting' : '',
+    bossAttackPlaying ? 'enemy--acting' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -749,16 +794,16 @@ export function EnemyCard({
           ))
         )}
       </span>
-      {bossAttacking && ['sentry', 'giant_head', 'reptomancer'].includes(bossArtId) ? (
+      {bossAttackPlaying && ['sentry', 'giant_head', 'reptomancer'].includes(bossArtId) ? (
         <span className="elite-attack-effect" aria-hidden="true" />
       ) : null}
-      {bossAttacking && bossProjectileArt ? rangedTargetPlayerIds.map((playerId) => (
+      {bossAttackPlaying && bossProjectileArt ? rangedTargetPlayerIds.map((playerId) => (
         <span className="boss-projectile" data-target-player={playerId} key={playerId} aria-hidden="true">
           <img src={bossProjectileArt} alt="" />
         </span>
       )) : null}
 
-      {bossAttacking && projectileImpact ? rangedTargetPlayerIds.map(playerId => (
+      {bossAttackPlaying && projectileImpact ? rangedTargetPlayerIds.map(playerId => (
         <span className="enemy-projectile-impact" data-target-player={playerId} key={playerId} aria-hidden="true"
           data-impact-anchor={projectileImpact.endsWith('/turn-poison-impact.webp') ? 'feet' : undefined}>
           <img src={projectileImpact} alt="" />
@@ -780,27 +825,45 @@ export function EnemyCard({
           <span className="boss-demon-ground-splat boss-demon-ground-splat--origin" aria-hidden="true" />
           <span className="boss-demon-ground-splat boss-demon-ground-splat--target" aria-hidden="true" />
         </> : null}
-        <img
+        {animatedEnemy ? <CombatAnimation
           key={`${def.artId ?? def.id}-${bossAttacking ? 'attack' : 'idle'}`}
           className="enemy__art--cutout"
           src={art}
+          posterSrc={bossAttacking ? currentFallbackArt : undefined}
+          forceWebp={presentedBossAttack?.forceWebp}
+          loop={!bossAttacking}
           data-animation-asset={bossAttacking ? presentedBossAttack?.source : art}
+          loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
+          onReady={() => {
+            if (!bossAttacking || bossAttackTimer.current) return
+            setBossAttackReady(true)
+            bossAttackTimer.current = setTimeout(() => {
+              setBossAttackReady(false)
+              setPresentedBossAttack(null)
+              bossAttackTimer.current = null
+            }, bossAttackDurationFor(bossArtId))
+          }}
+          onError={(image) => {
+            // Keep combat usable if both bundled animation formats fail.
+            if (image.dataset.fallback !== 'true') {
+              image.dataset.fallback = 'true'
+              image.style.scale = '1'
+              if (normalSize) {
+                image.style.width = `calc(var(--stage-actor-width) * ${normalSize[2]})`
+                image.style.height = `calc(var(--stage-actor-width) * ${normalSize[3]})`
+                image.style.left = `calc(50% - var(--stage-actor-width) * ${normalSize[2]} / 2)`
+              }
+              image.src = enemyImagePath(def)
+            } else image.style.display = 'none'
+          }}
+        /> : <img
+          key={`${def.artId ?? def.id}-static`}
+          className="enemy__art--cutout"
+          src={art}
           alt=""
           loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
-          onError={(event) => {
-            // Keep combat usable if a bundled image fails to load.
-            if (event.currentTarget.dataset.fallback !== 'true') {
-              event.currentTarget.dataset.fallback = 'true'
-              event.currentTarget.style.scale = '1'
-              if (normalSize) {
-                event.currentTarget.style.width = `calc(var(--stage-actor-width) * ${normalSize[2]})`
-                event.currentTarget.style.height = `calc(var(--stage-actor-width) * ${normalSize[3]})`
-                event.currentTarget.style.left = `calc(50% - var(--stage-actor-width) * ${normalSize[2]} / 2)`
-              }
-              event.currentTarget.src = enemyImagePath(def)
-            } else event.currentTarget.style.display = 'none'
-          }}
-        />
+          onError={(event) => { event.currentTarget.style.display = 'none' }}
+        />}
         {demonAttacking ? <img
           className="boss-demon-grounded"
           src={assetPath('combat/rigged/downfall_demon-ground-slam.webp')}

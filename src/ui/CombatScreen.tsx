@@ -62,6 +62,7 @@ import {
   isEndTurnLightning,
 } from './combat-screen/vfx.tsx'
 import { assetPath, potionIconPath, relicIconPath } from '../game/assets.ts'
+import { CombatAnimation, combatVideoPath, preloadCombatVideo, useSafariCombatVideo } from './CombatAnimation.tsx'
 import { cardCost, cardDef, cardIsCurse, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import {
@@ -290,7 +291,7 @@ function paintedLeft(image: HTMLImageElement): number {
 }
 
 function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, attackSeq, hermitEvent, firing = true }: {
-  asset?: Blob
+  asset?: Blob | true
   assetPath: string
   fallbackAsset: string
   attackSeq: number
@@ -298,24 +299,34 @@ function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, att
   firing?: boolean
 }) {
   const [replayAsset] = useState(asset)
-  const [src, setSrc] = useState<string | undefined>(() => replayAsset ? undefined : fallbackAsset)
+  const sourceFallback = useSafariCombatVideo && !replayAsset
+  const [src, setSrc] = useState<string | undefined>(() => replayAsset === true || sourceFallback
+    ? sourceAsset : replayAsset ? undefined : fallbackAsset)
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
-    if (!replayAsset) return
+    if (!(replayAsset instanceof Blob)) return
     const url = URL.createObjectURL(replayAsset)
     setSrc(url)
     return () => URL.revokeObjectURL(url)
   }, [replayAsset])
   if (!src) return null
+  const logicalSrc = replayAsset ? sourceAsset : fallbackAsset
   return (
     <span
       className={['character-attack__pose', 'character-attack__pose--rig',
-        replayAsset ? '' : 'is-fallback', loaded ? 'is-loaded' : ''].filter(Boolean).join(' ')}
+        replayAsset || sourceFallback ? '' : 'is-fallback', loaded ? 'is-loaded' : ''].filter(Boolean).join(' ')}
       data-attack-asset={sourceAsset}
       data-attack-seq={attackSeq}
     >
-      <img src={src} alt="" style={firing ? undefined : { visibility: 'hidden' }} onLoad={() => setLoaded(true)} />
-      {loaded && replayAsset && hermitEvent ? <HermitBullets event={hermitEvent} /> : null}
+      <CombatAnimation
+        src={sourceFallback ? sourceAsset : logicalSrc}
+        mediaSrc={replayAsset instanceof Blob ? src : undefined}
+        forceWebp={sourceFallback}
+        loop={!replayAsset}
+        hidden={!firing}
+        onReady={() => setLoaded(true)}
+      />
+      {loaded && (replayAsset || sourceFallback) && hermitEvent ? <HermitBullets event={hermitEvent} /> : null}
     </span>
   )
 }
@@ -350,21 +361,29 @@ function GuardianPortrait({ mode, animate, restartKey }: {
   const file = transition
     ? `guardian-${transition}.webp`
     : mode === 'defense' ? 'guardian-defense.webp' : 'guardian-hero.webp'
-  return <img
-    key={`${transition ?? mode}-${restartKey}`}
-    src={assetPath(animate && !transition
-      ? `combat/rigged/hero-${mode === 'defense' ? 'guardian-defense' : 'guardian'}-idle.webp`
-      : `combat/characters/${file}`)}
-    data-guardian-mode={mode}
-    data-guardian-transition={transition ?? undefined}
-    data-vfx-seq={typeof restartKey === 'number' ? restartKey : undefined}
-    alt=""
-    onLoad={() => {
-      if (!transition) return
-      transitionTimer.current = setTimeout(() => setTransition(null), 600)
-    }}
-    onError={(event) => { event.currentTarget.style.display = 'none' }}
-  />
+  const data = {
+    'data-guardian-mode': mode,
+    'data-guardian-transition': transition ?? undefined,
+    'data-vfx-seq': typeof restartKey === 'number' ? restartKey : undefined,
+  } as const
+  return animate && !transition
+    ? <CombatAnimation
+        {...data}
+        key={mode}
+        src={assetPath(`combat/rigged/hero-${mode === 'defense' ? 'guardian-defense' : 'guardian'}-idle.webp`)}
+        onError={(image) => { image.style.display = 'none' }}
+      />
+    : <img
+        {...data}
+        key={transition ?? mode}
+        src={assetPath(`combat/characters/${file}`)}
+        alt=""
+        onLoad={() => {
+          if (!transition) return
+          transitionTimer.current = setTimeout(() => setTransition(null), 600)
+        }}
+        onError={(event) => { event.currentTarget.style.display = 'none' }}
+      />
 }
 
 function CombatScreenView({
@@ -572,10 +591,10 @@ function CombatScreenView({
     window.addEventListener('resize', resize)
     return () => { cancel(); window.removeEventListener('resize', resize) }
   }, [viewer?.character, reducedMotion])
-  const [characterAttackBlobs, setCharacterAttackBlobs] = useState<Map<string, Blob>>(() => new Map())
+  const [characterAttackBlobs, setCharacterAttackBlobs] = useState<Map<string, Blob | true>>(() => new Map())
   const characterAttackAssets = prefersReducedMotion ? '' : [...new Set(state.players.filter((player) => !player.dead).flatMap((player) =>
     player.character === 'hexaghost'
-      ? Array.from({ length: 7 }, (_, heat) => assetPath(`combat/rigged/hero-hexaghost-heat-${heat}-attack.webp`))
+      ? [assetPath(`combat/rigged/hero-hexaghost-heat-${Math.max(0, Math.min(6, player.heat))}-attack.webp`)]
       : player.character === 'guardian'
         ? ['guardian', 'guardian-defense'].map((id) => assetPath(`combat/rigged/hero-${id}-attack.webp`))
         : player.character === 'watcher' || player.character === 'ironclad'
@@ -586,6 +605,24 @@ function CombatScreenView({
   useEffect(() => {
     const controller = new AbortController()
     const assets = characterAttackAssets.split('|').filter(Boolean)
+    if (useSafariCombatVideo) {
+      setCharacterAttackBlobs((current) => new Map(assets
+        .filter((src) => current.has(src))
+        .map((src) => [src, current.get(src)!])))
+      const cancels = assets.filter((src) => !characterAttackBlobs.has(src)).map((src) => {
+        const video = combatVideoPath(src)
+        if (video !== src) return preloadCombatVideo(video, () => {
+          if (!controller.signal.aborted) setCharacterAttackBlobs((current) => new Map(current).set(src, true))
+        })
+        const image = new Image()
+        image.src = src
+        void image.decode().then(() => {
+          if (!controller.signal.aborted) setCharacterAttackBlobs((current) => new Map(current).set(src, true))
+        }, () => undefined)
+        return () => { image.src = '' }
+      })
+      return () => { controller.abort(); cancels.forEach(cancel => cancel()) }
+    }
     setCharacterAttackBlobs((current) => new Map(assets
       .filter((src) => current.has(src))
       .map((src) => [src, current.get(src)!])))
@@ -6119,11 +6156,18 @@ function CombatScreenView({
                             animate={!prefersReducedMotion && !occupant.dead}
                             restartKey={characterAttack?.active.event.seq ?? 'idle'}
                           />
+                        ) : !prefersReducedMotion && !occupant.dead && !slimeSpawnEvent ? (
+                          <CombatAnimation
+                            key={`${occupant.character}-${occupantHeat}`}
+                            src={characterIdleAsset}
+                            data-vfx-seq={characterAttack?.active.event.seq}
+                            onError={(image) => { image.style.display = 'none' }}
+                          />
                         ) : (
                           <img
                             key={`${occupant.character}-${occupantHeat}-${slimeSpawnEvent?.seq ?? characterAttack?.active.event.seq ?? 'idle'}`}
                             data-static-art={Boolean(slimeSpawnEvent) || undefined}
-                            src={!prefersReducedMotion && !occupant.dead && !slimeSpawnEvent ? characterIdleAsset : assetPath(occupant.character === 'hexaghost'
+                            src={assetPath(occupant.character === 'hexaghost'
                               ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
                               : occupant.character === 'slime_boss' && slimeSpawnEvent
                                 ? 'combat/characters/slime_boss-spawn.webp'
@@ -6131,8 +6175,7 @@ function CombatScreenView({
                             data-vfx-seq={characterAttack?.active.event.seq}
                             alt=""
                             onError={(event) => {
-                              if (occupant.character === 'slime_boss' && slimeSpawnEvent &&
-                                event.currentTarget.dataset.fallback !== 'true') {
+                              if (occupant.character === 'slime_boss' && slimeSpawnEvent && event.currentTarget.dataset.fallback !== 'true') {
                                 event.currentTarget.dataset.fallback = 'true'
                                 event.currentTarget.src = assetPath('combat/characters/slime_boss.webp')
                               } else event.currentTarget.style.display = 'none'

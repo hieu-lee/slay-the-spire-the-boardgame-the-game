@@ -50,6 +50,7 @@ const cardArtRoot = join(publicRoot, 'assets/card-art')
 const iconRoot = join(publicRoot, 'assets/icons')
 const enemyRoot = join(publicRoot, 'assets/enemies')
 const combatEnemyRoot = join(publicRoot, 'assets/combat/enemies')
+const combatRiggedRoot = join(publicRoot, 'assets/combat/rigged')
 const bossAnimationRoot = join(combatEnemyRoot, 'animations')
 const bossProjectileRoot = join(combatEnemyRoot, 'projectiles')
 const combatCharacterRoot = join(publicRoot, 'assets/combat/characters')
@@ -79,6 +80,8 @@ const cardArtFiles = CARD_ART_OWNERS.flatMap((owner) =>
 const iconFiles = listing(iconRoot, '.png')
 const enemyFiles = listing(enemyRoot, '.webp')
 const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
+const combatRiggedFiles = listing(combatRiggedRoot, '.webp')
+const combatRiggedVideoFiles = listing(combatRiggedRoot, '.mov')
 const bossAnimationFiles = listing(bossAnimationRoot, '.webp')
 const bossProjectileFiles = listing(bossProjectileRoot, '.webp')
 const combatCharacterFiles = listing(combatCharacterRoot, '.webp')
@@ -151,6 +154,24 @@ const REQUIRED_ICONS = [
 ]
 
 suite('assets')
+
+check('every rigged animation has a current Safari hardware-video companion', () => {
+  const manifestPath = join(repoRoot, 'scripts/animation/safari-video-sources.json')
+  assert(existsSync(manifestPath), 'missing Safari animation manifest; run pnpm sync:combat-video')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const expected = combatRiggedFiles.map((file) => `public/assets/combat/rigged/${file}`).sort()
+  assertDeepEqual(Object.keys(manifest).sort(), expected, 'Safari animation source inventory')
+  assertDeepEqual(combatRiggedVideoFiles.sort(), combatRiggedFiles.map((file) => file.replace(/\.webp$/, '.mov')).sort(),
+    'Safari animation video inventory')
+  const hash = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
+  for (const relative of expected) {
+    const source = join(repoRoot, relative)
+    const video = source.replace(/\.webp$/, '.mov')
+    assertEqual(manifest[relative].encoder, 'hevc-alpha-vfr-q100-v1', `${relative} Safari encoder`)
+    assertEqual(manifest[relative].source, hash(source), `${relative} Safari source hash`)
+    assertEqual(manifest[relative].video, hash(video), `${relative} Safari video hash`)
+  }
+})
 
 check('every campfire party resolves to one complete wide scene', () => {
   const characters = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit']

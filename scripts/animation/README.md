@@ -55,6 +55,16 @@ python3 scripts/animation/review-rigs.py --write-metadata
 node scripts/verify-rig-animation-browser.mjs
 ```
 
+The rig renderer also refreshes same-resolution HEVC-alpha `.mov` companions for
+Safari. To refresh companions after replacing committed WebPs directly, run
+`python3 scripts/animation/encode-safari.py`; runtime paths and the source-hash
+manifest are derived automatically, so new art never needs a code mapping. The
+encoder preserves each source frame's millisecond boundary at maximum quality
+and rejects timing, alpha or decoded-pixel drift before updating the manifest.
+Hosted builds load the companions and background music from the exact deployed
+commit through jsDelivr and omit them from the Pages artifact, which remains
+comfortably below 1 GB.
+
 Use `--only hero-ironclad,gremlin_nob` for individual characters. Contact metadata
 is sampled by elapsed milliseconds, not frame index. WebP frames must last at
 least 20ms: browsers may stretch shorter frames and desynchronize the image from

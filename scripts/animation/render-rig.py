@@ -7,6 +7,8 @@ and inverse-skinned texture keep the original drawing and body proportions.
 import argparse
 import json
 import math
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -181,3 +183,7 @@ if __name__ == '__main__':
                 render_authored(name, spec, output)
             else:
                 render(spec, pose, output, size=spec.get('size', 400))
+    encode = [sys.executable, str(ROOT / 'scripts/animation/encode-safari.py')]
+    if args.only:
+        encode += ['--rigs', args.only]
+    subprocess.run(encode, check=True)

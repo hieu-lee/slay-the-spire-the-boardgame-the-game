@@ -1,20 +1,23 @@
+import { combatArtReady, combatArtSize, type CombatArtElement } from './CombatAnimation.tsx'
+
 // Cache painted mass and bounds per mounted sprite; transparent overscan is not its body.
-const paintedArt = new WeakMap<HTMLImageElement, {
+const paintedArt = new WeakMap<CombatArtElement, {
   src: string; x: number; y: number; left: number; top: number; right: number; bottom: number
 }>()
 
 export function combatArtBounds(portrait: HTMLElement) {
-  const image = portrait.querySelector<HTMLImageElement>(':scope > img')
+  const image = portrait.querySelector<CombatArtElement>(':scope > :is(img, video)')
   const rect = portrait.getBoundingClientRect()
   const fallback = { x: rect.left + rect.width / 2, y: rect.top + rect.height * .7,
     left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-  if (!image?.complete || !image.naturalWidth || !image.naturalHeight || !image.offsetWidth || !image.offsetHeight) return fallback
+  if (!image || !combatArtReady(image) || !image.offsetWidth || !image.offsetHeight) return fallback
+  const { width: naturalWidth, height: naturalHeight } = combatArtSize(image)
   let center = paintedArt.get(image)
   if (!center || center.src !== image.src) {
     const canvas = document.createElement('canvas')
-    const scale = Math.min(1, 128 / Math.max(image.naturalWidth, image.naturalHeight))
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+    const scale = Math.min(1, 128 / Math.max(naturalWidth, naturalHeight))
+    canvas.width = Math.max(1, Math.round(naturalWidth * scale))
+    canvas.height = Math.max(1, Math.round(naturalHeight * scale))
     const context = canvas.getContext('2d')
     if (!context) return fallback
     context.drawImage(image, 0, 0, canvas.width, canvas.height)
@@ -43,14 +46,14 @@ export function combatArtBounds(portrait: HTMLElement) {
   const left = parseFloat(style.paddingLeft) * scaleX, right = parseFloat(style.paddingRight) * scaleX
   const top = parseFloat(style.paddingTop) * scaleY, bottom = parseFloat(style.paddingBottom) * scaleY
   const width = art.width - left - right, height = art.height - top - bottom
-  const fit = Math.min(width / image.naturalWidth, height / image.naturalHeight)
+  const fit = Math.min(width / naturalWidth, height / naturalHeight)
   return {
-    left: art.left + left + (width - image.naturalWidth * fit) / 2 + center.left * image.naturalWidth * fit,
-    top: art.bottom - bottom - (1 - center.top) * image.naturalHeight * fit,
-    width: (center.right - center.left) * image.naturalWidth * fit,
-    height: (center.bottom - center.top) * image.naturalHeight * fit,
-    x: art.left + left + (width - image.naturalWidth * fit) / 2 + center.x * image.naturalWidth * fit,
-    y: art.bottom - bottom - (1 - center.y) * image.naturalHeight * fit,
+    left: art.left + left + (width - naturalWidth * fit) / 2 + center.left * naturalWidth * fit,
+    top: art.bottom - bottom - (1 - center.top) * naturalHeight * fit,
+    width: (center.right - center.left) * naturalWidth * fit,
+    height: (center.bottom - center.top) * naturalHeight * fit,
+    x: art.left + left + (width - naturalWidth * fit) / 2 + center.x * naturalWidth * fit,
+    y: art.bottom - bottom - (1 - center.y) * naturalHeight * fit,
   }
 }
 

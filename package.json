@@ -30,6 +30,7 @@
     "sync:downfall-cards": "node scripts/sync-downfall-card-assets.mjs",
     "sync:icons": "node scripts/sync-icons.mjs",
     "sync:enemy-art": "node scripts/sync-enemy-art.mjs",
+    "sync:combat-video": "python3 scripts/animation/encode-safari.py",
     "typecheck": "tsc -b"
   },
   "dependencies": {

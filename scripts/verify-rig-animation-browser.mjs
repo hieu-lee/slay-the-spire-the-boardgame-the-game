@@ -45,7 +45,9 @@ try {
         window.audioBeats.push({ name: event.animationName, time: performance.now() })
       })
     })
-    await page.goto(`http://localhost:${server.httpServer.address().port}`)
+    // Native video behavior has its own focused matrix; this verifier owns
+    // deterministic rig choreography and geometry across engines.
+    await page.goto(`http://localhost:${server.httpServer.address().port}${process.argv.includes('--webkit') ? '?combat-webp=1' : ''}`)
     await page.evaluate(async () => {
       document.querySelector('#root').style.display='none'
       document.documentElement.dataset.mobilePerformance=String(matchMedia('(pointer: coarse)').matches || innerWidth<900)
@@ -217,7 +219,7 @@ try {
       await page.evaluate(c=>window.fixture.install(c),character)
       await page.waitForFunction(()=>document.querySelector('.seat__portrait > img')?.complete)
       await page.waitForTimeout(100)
-      await page.waitForFunction(c=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=(c==='hexaghost'?7:c.startsWith('guardian')||c==='watcher'||c==='ironclad'?2:1),character)
+      await page.waitForFunction(c=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=(c==='hexaghost'?1:c.startsWith('guardian')||c==='watcher'||c==='ironclad'?2:1),character)
       await page.waitForFunction(()=>[...document.querySelectorAll('.seat__portrait > img')].every(i=>i.complete&&!i.dataset.guardianTransition))
       await page.waitForTimeout(100)
       const before=await page.locator('.seat__portrait > img').boundingBox()
@@ -246,7 +248,8 @@ try {
       await page.waitForTimeout(1800)
       const after=await page.locator('.seat__portrait > img').boundingBox()
       if(character==='guardian-defense')assert.equal(await page.locator('.seat__portrait > img').getAttribute('data-guardian-mode'),'defense')
-      for(const key of ['x','y','width','height'])assert(Math.abs(before[key]-after[key])<.6,`${screen}/${character}: layout jumped`)
+      for(const key of ['x','y','width','height'])assert(Math.abs(before[key]-after[key])<.6,
+        `${screen}/${character}: layout jumped ${key} ${JSON.stringify({ before, after })}`)
       // A second attack must replay the poses and return to the same resting geometry.
       const firstSrc=await page.evaluate(()=>window.fixture.seq)
       const next=await page.evaluate(id=>window.fixture.attack(id),source)

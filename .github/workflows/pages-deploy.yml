@@ -50,7 +50,18 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: VITE_SINGLE_PLAYER=false VITE_HOSTED_SESSION=true pnpm build
+      - run: VITE_ASSET_CDN_ORIGIN="https://cdn.jsdelivr.net/gh/$GITHUB_REPOSITORY@$DEPLOY_SHA/public/assets" VITE_SINGLE_PLAYER=false VITE_HOSTED_SESSION=true pnpm build
+      - name: Keep large media outside the Pages size limit
+        run: |
+          curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 --max-time 30 --head \
+            "https://cdn.jsdelivr.net/gh/$GITHUB_REPOSITORY@$DEPLOY_SHA/public/assets/combat/rigged/hero-defect-idle.mov" | grep -qi '^content-type: video/quicktime'
+          curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 --max-time 30 --head \
+            "https://cdn.jsdelivr.net/gh/$GITHUB_REPOSITORY@$DEPLOY_SHA/public/assets/bgm/exordium.mp3" | grep -qi '^content-type: audio/mpeg'
+          find dist/assets/combat/rigged -type f -name '*.mov' -delete
+          find dist/assets/bgm -type f -delete
+          test "$(find dist -type f -name '*.mov' -print -quit)" = ''
+          test "$(find dist/assets/bgm -type f -print -quit)" = ''
+          test "$(du -sb dist | cut -f1)" -lt 1000000000
       - run: node scripts/check-single-player-build.mjs dist --multiplayer
       - name: Prepare the stable multiplayer client
         run: |
