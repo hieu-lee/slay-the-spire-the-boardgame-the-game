@@ -26,11 +26,48 @@ export const RUN_VOD_FPS = 120
 export const RUN_VOD_CURSOR_MS = 150
 export const RUN_VOD_REPEAT_CLICK_MS = 250
 export const RUN_VOD_ACTION_HOLD_MS = 1_000
+let runVodVisibleMs = 0
+let runVodVisibleSince = document.hidden ? 0 : performance.now()
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (runVodVisibleSince) runVodVisibleMs += performance.now() - runVodVisibleSince
+    runVodVisibleSince = 0
+  } else runVodVisibleSince = performance.now()
+})
+const runVodActiveNow = () => runVodVisibleMs + (document.hidden ? 0 : performance.now() - runVodVisibleSince)
+export async function runVodWaitUntil(predicate: () => boolean, milliseconds: number, interval: number,
+  wait = (delay: number) => new Promise<void>((resolve) => window.setTimeout(resolve, delay))) {
+  const deadline = runVodActiveNow() + milliseconds
+  let ready = predicate()
+  while (!ready && runVodActiveNow() < deadline) {
+    await wait(interval)
+    ready = predicate()
+  }
+  return ready
+}
 export function runVodRenderDeadline<T>(render: Promise<T>, milliseconds = 60_000): Promise<T> {
   let timer = 0
-  return Promise.race([render, new Promise<never>((_, reject) => {
-    timer = window.setTimeout(() => reject(new Error('VOD render slice timed out.')), milliseconds)
-  })]).finally(() => window.clearTimeout(timer))
+  let remaining = milliseconds
+  let started = 0
+  let rejectTimeout: (error: Error) => void
+  const arm = () => {
+    if (document.hidden) return
+    started = performance.now()
+    timer = window.setTimeout(() => rejectTimeout(new Error('VOD render slice timed out.')), remaining)
+  }
+  const visibility = () => {
+    if (document.hidden) {
+      window.clearTimeout(timer)
+      timer = 0
+      remaining -= performance.now() - started
+    } else arm()
+  }
+  const deadline = new Promise<never>((_, reject) => { rejectTimeout = reject; arm() })
+  document.addEventListener('visibilitychange', visibility)
+  return Promise.race([render, deadline]).finally(() => {
+    window.clearTimeout(timer)
+    document.removeEventListener('visibilitychange', visibility)
+  })
 }
 export const RUN_VOD_CURSOR_ASSET = assetPath('ui/cursor.png')
 export const RUN_VOD_CURSOR_CLICK_ASSET = assetPath('ui/cursor-click.png')
@@ -929,25 +966,17 @@ function replayFrame(parent?: HTMLElement) {
 }
 
 async function bridgeFor(iframe: HTMLIFrameElement): Promise<RunVodBridge> {
-  const deadline = performance.now() + 20_000
-  while (performance.now() < deadline) {
-    const bridge = (iframe.contentWindow as Window & { __STS_DEBUG__?: RunVodBridge } | null)?.__STS_DEBUG__
-    if (bridge) return bridge
-    await new Promise((resolve) => window.setTimeout(resolve, 50))
-  }
+  let bridge: RunVodBridge | undefined
+  if (await runVodWaitUntil(() => Boolean(bridge = (iframe.contentWindow as Window & { __STS_DEBUG__?: RunVodBridge } | null)?.__STS_DEBUG__), 20_000, 50)) return bridge!
   throw new Error('The canonical Run VOD renderer did not finish loading.')
 }
 
 async function waitForControl(ref: ControlRef, doc: Document) {
-  const deadline = performance.now() + 15_000
   let source = queryControl(doc, ref)
   if (!source && ref.name === 'Give up') {
     doc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   }
-  while (!source && performance.now() < deadline) {
-    await replayWait(doc, 50)
-    source = queryControl(doc, ref)
-  }
+  await runVodWaitUntil(() => Boolean(source = queryControl(doc, ref)), 15_000, 50, delay => replayWait(doc, delay))
   return source
 }
 
@@ -1824,14 +1853,13 @@ async function renderRunVod(log: RunVodLog, expected: RunState, job?: VodJob): P
       const previous = liveBridge().getRun()
       if (stableRunJson(previous) === stableRunJson(run)) return
       liveBridge().setRun(structuredClone(run))
-      const deadline = performance.now() + 15_000
       // Lazy room screens can suspend even a synchronous React update. Wait
       // for its actual commit before sampling animations or reading state.
-      while (liveBridge().getRun() === previous) {
+      const ready = await runVodWaitUntil(() => liveBridge().getRun() !== previous, 15_000, 10, async delay => {
         checkCancelled()
-        if (performance.now() > deadline) throw new Error('The replay screen did not finish loading.')
-        await new Promise((resolve) => window.setTimeout(resolve, 10))
-      }
+        await new Promise((resolve) => window.setTimeout(resolve, delay))
+      })
+      if (!ready) throw new Error('The replay screen did not finish loading.')
     }
     const doc = ui.iframe.contentDocument
     replayDoc = doc

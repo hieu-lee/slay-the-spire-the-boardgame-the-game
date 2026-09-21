@@ -284,6 +284,37 @@ try {
   })
   check('a hung render slice fails fast so the checkpoint worker can resume it', () =>
     assertEqual(renderTimeout, 'VOD render slice timed out.'))
+  const backgroundDeadline = await page.evaluate(async () => {
+    const { runVodRenderDeadline, runVodWaitUntil } = await import('/src/ui/run-vod.ts')
+    const originalHidden = Object.getOwnPropertyDescriptor(document, 'hidden')
+    let hidden = false
+    let result = 'pending'
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+    try {
+      const deadline = runVodRenderDeadline(new Promise(() => {}), 50).catch(error => {
+        result = error instanceof Error ? error.message : String(error)
+      })
+      let waitResult = 'pending'
+      const replayWait = runVodWaitUntil(() => false, 50, 10).then(value => { waitResult = String(value) })
+      await new Promise(resolve => setTimeout(resolve, 20))
+      hidden = true
+      document.dispatchEvent(new Event('visibilitychange'))
+      await new Promise(resolve => setTimeout(resolve, 100))
+      const whileHidden = { deadline: result, replayWait: waitResult }
+      hidden = false
+      document.dispatchEvent(new Event('visibilitychange'))
+      await Promise.all([deadline, replayWait])
+      return { whileHidden, afterVisible: { deadline: result, replayWait: waitResult } }
+    } finally {
+      if (originalHidden) Object.defineProperty(document, 'hidden', originalHidden)
+      else delete document.hidden
+    }
+  })
+  check('backgrounding the export pauses its render and replay deadlines until movie rendering can resume', () =>
+    assertDeepEqual(backgroundDeadline, {
+      whileHidden: { deadline: 'pending', replayWait: 'pending' },
+      afterVisible: { deadline: 'VOD render slice timed out.', replayWait: 'false' },
+    }))
   const adaptiveChunks = await page.evaluate(async initial => {
     const { applyRunVodEvent, runVodExportChunks } = await import('/src/ui/run-vod.ts')
     const events = Array.from({ length: 9 }, () => ({ patch: [] }))
