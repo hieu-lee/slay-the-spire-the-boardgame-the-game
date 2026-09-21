@@ -1,0 +1,4942 @@
+{
+  "model": "gpt-image-2.5-sunburst",
+  "workflow": "imagegen bundled CLI edit; high quality; native transparent cutouts/sheets and opaque scenes; registered to original canvas and painted bounds; scenes retain original aspect ratio and mean exposure",
+  "exceptions": "Silent and Defect idle sources reuse existing high-resolution originals. Living Wall retains its original scene after an image-service safety rejection. Printed cards retain authentic scans to preserve all rules and numbers. Existing adequately sized icons, VFX and cutouts remain unchanged.",
+  "assets": [
+    {
+      "path": "public/assets/combat/enemies/small_slime.webp",
+      "size": [
+        1024,
+        820
+      ],
+      "originalSize": [
+        512,
+        410
+      ],
+      "originalSha256": "cd9afe4f12683506a9e87c0b4d03c36389f6fc73e1f9abcca9e832092abd6d3c",
+      "kind": "cutout",
+      "bounds": [
+        62,
+        66,
+        962,
+        742
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/acid_slime.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "041ee437ed1e9b0e5bf059436300f9d79b6f4b9a50ed3c41e87ce5e304d2e91a",
+      "kind": "cutout",
+      "bounds": [
+        32,
+        272,
+        986,
+        770
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/large_slime.webp",
+      "size": [
+        1024,
+        576
+      ],
+      "originalSize": [
+        512,
+        288
+      ],
+      "originalSha256": "dc1dede49fe51c18b7f834d5d8931bd3caa170510674a39513968ee4be623bf8",
+      "kind": "cutout",
+      "bounds": [
+        36,
+        94,
+        1006,
+        502
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/spike_slime.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "ec7a81b360d5121c89c121fa2208d5b8a2e963adf3af47d95ea17e9d2948d102",
+      "kind": "cutout",
+      "bounds": [
+        18,
+        274,
+        1006,
+        770
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/cultist.webp",
+      "size": [
+        874,
+        1024
+      ],
+      "originalSize": [
+        437,
+        512
+      ],
+      "originalSha256": "7dfe26c95e95c7f7665316f1d6c66a4df5c245a9c34ba3fbabdb9c814b935fbf",
+      "kind": "cutout",
+      "bounds": [
+        22,
+        46,
+        860,
+        856
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/jaw_worm.webp",
+      "size": [
+        1024,
+        640
+      ],
+      "originalSize": [
+        512,
+        320
+      ],
+      "originalSha256": "3b5e03d985fc52d7b2edf02f662ea9188dd3fdc41310ac8f07854b29c24f8b78",
+      "kind": "cutout",
+      "bounds": [
+        72,
+        74,
+        1000,
+        558
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/green_louse.webp",
+      "size": [
+        1024,
+        640
+      ],
+      "originalSize": [
+        512,
+        320
+      ],
+      "originalSha256": "9726470f7bb5622ecc459495684494342bf62d2c8389633500c0499a4e6c87a4",
+      "kind": "cutout",
+      "bounds": [
+        186,
+        168,
+        866,
+        526
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/red_louse.webp",
+      "size": [
+        1024,
+        640
+      ],
+      "originalSize": [
+        512,
+        320
+      ],
+      "originalSha256": "5681495dc64717131fbd1c347b25da2dc4157a1c8cf987a757a20b2d111aa484",
+      "kind": "cutout",
+      "bounds": [
+        172,
+        118,
+        852,
+        514
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/fungi_beast.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "b3a6bd62b789807787609c23c1a97cac766cb0f2f45dabab9180ec6ba1b60a60",
+      "kind": "cutout",
+      "bounds": [
+        90,
+        52,
+        974,
+        658
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/looter.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "62da1faaec57ca5e754b6ffa42cfc30df0b6604d4c53d349880c75b9dddf5d76",
+      "kind": "cutout",
+      "bounds": [
+        126,
+        12,
+        954,
+        994
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/mugger.webp",
+      "size": [
+        996,
+        1024
+      ],
+      "originalSize": [
+        498,
+        512
+      ],
+      "originalSha256": "b0e1b30712f8a57cca035c1200ecdeaf657e90e752167ce5a30f365d579ad5bb",
+      "kind": "cutout",
+      "bounds": [
+        36,
+        24,
+        952,
+        1000
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/mad_gremlin.webp",
+      "size": [
+        976,
+        1024
+      ],
+      "originalSize": [
+        488,
+        512
+      ],
+      "originalSha256": "042a795337b219b172281d6fa6438a15572f80376a0f6de36892151ce5591ef0",
+      "kind": "cutout",
+      "bounds": [
+        84,
+        14,
+        878,
+        1010
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/sneaky_gremlin.webp",
+      "size": [
+        752,
+        1024
+      ],
+      "originalSize": [
+        376,
+        512
+      ],
+      "originalSha256": "a212b59b977317b7a978674e2b56a2ecd7a746bb7ae0ef750a0a82efb55751d0",
+      "kind": "cutout",
+      "bounds": [
+        24,
+        162,
+        718,
+        874
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/gremlin_wizard.webp",
+      "size": [
+        938,
+        1024
+      ],
+      "originalSize": [
+        469,
+        512
+      ],
+      "originalSha256": "30a380bd87c2560d84b1c688e4b87e5e361dc4570c5f0b2d792467febb9a5907",
+      "kind": "cutout",
+      "bounds": [
+        30,
+        26,
+        910,
+        988
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/fat_gremlin.webp",
+      "size": [
+        768,
+        1024
+      ],
+      "originalSize": [
+        384,
+        512
+      ],
+      "originalSha256": "edf954f04d9188a070db2484afa0fa02f7e95a2f3a2f8b08308f8f462e91b27b",
+      "kind": "cutout",
+      "bounds": [
+        102,
+        8,
+        606,
+        978
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/chosen.webp",
+      "size": [
+        682,
+        1024
+      ],
+      "originalSize": [
+        341,
+        512
+      ],
+      "originalSha256": "d2cc82153737ae45beb93f6697c6805e389040c6858f1ced5f34ede4ecf2b627",
+      "kind": "cutout",
+      "bounds": [
+        34,
+        28,
+        656,
+        998
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/centurion.webp",
+      "size": [
+        682,
+        1024
+      ],
+      "originalSize": [
+        341,
+        512
+      ],
+      "originalSha256": "564b11d5a2f830ec951976934ca7a5a6d11a07d73183f39bd3a264eecfc2bd14",
+      "kind": "cutout",
+      "bounds": [
+        20,
+        16,
+        656,
+        1012
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/mystic.webp",
+      "size": [
+        972,
+        1024
+      ],
+      "originalSize": [
+        486,
+        512
+      ],
+      "originalSha256": "7919855154409bbed90b3456b2e82a468f1914c80747478f4756f4ffa2b9589f",
+      "kind": "cutout",
+      "bounds": [
+        54,
+        42,
+        836,
+        978
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/byrd.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "780ad978469b116a898db86884524231be5490e77f21e9b61bd03c7b4b505031",
+      "kind": "cutout",
+      "bounds": [
+        16,
+        20,
+        1018,
+        660
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/snake_plant.webp",
+      "size": [
+        992,
+        1024
+      ],
+      "originalSize": [
+        496,
+        512
+      ],
+      "originalSha256": "9e01a521dfad4b8d6205cd0daca513459588b3049dc99dbd5f7e72323ed05dc0",
+      "kind": "cutout",
+      "bounds": [
+        28,
+        14,
+        976,
+        974
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/shelled_parasite.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "e1f529e56906c943108bf139a0d3d5050b512ee9d9817b704738559d46e35ce7",
+      "kind": "cutout",
+      "bounds": [
+        114,
+        6,
+        1004,
+        656
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/snecko.webp",
+      "size": [
+        1024,
+        774
+      ],
+      "originalSize": [
+        512,
+        387
+      ],
+      "originalSha256": "38c8346b7bfb2088c66e4192053bc570ca3df958479025b2056effe6a7d8c5b7",
+      "kind": "cutout",
+      "bounds": [
+        62,
+        10,
+        966,
+        768
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/spheric_guardian.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "273758764dfbd7fd951d8bf945d12eec3a9a5a0ca839937a5a2801652cbffd16",
+      "kind": "cutout",
+      "bounds": [
+        64,
+        16,
+        988,
+        662
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/spire_growth.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "2d5d9669664ca240ddb29da52e8b583df50d6f047a23f772a3ffe14572c06513",
+      "kind": "cutout",
+      "bounds": [
+        126,
+        44,
+        950,
+        874
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/repulsor.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "90d123620e6bbe42a6fc522bbe978b548920ec51f11c96b3e752237e004b3c56",
+      "kind": "cutout",
+      "bounds": [
+        154,
+        10,
+        912,
+        672
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/exploder.webp",
+      "size": [
+        1024,
+        800
+      ],
+      "originalSize": [
+        512,
+        400
+      ],
+      "originalSha256": "b24f2afeab9a9f587d2ee247f2b378b8c0afc2b9e8adabfaa4a96e555453646a",
+      "kind": "cutout",
+      "bounds": [
+        154,
+        38,
+        874,
+        744
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/orb_walker.webp",
+      "size": [
+        1024,
+        900
+      ],
+      "originalSize": [
+        512,
+        450
+      ],
+      "originalSha256": "fa7ff3f3b2d67d8ab7dc1ade46de43e1be2f9800a36a13b6d65a85b9d5138bf3",
+      "kind": "cutout",
+      "bounds": [
+        98,
+        74,
+        912,
+        772
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/maw.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "66485d39d4b6c3e7b418f9bbb751dc108a31956f9cc784201245d327be44617f",
+      "kind": "cutout",
+      "bounds": [
+        156,
+        8,
+        944,
+        672
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/writhing_mass.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "ed7ff1271cfce58972494b614466a0b97f611bffb887e665a20def4def92c4d9",
+      "kind": "cutout",
+      "bounds": [
+        14,
+        36,
+        1012,
+        648
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/darkling.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "f22afb78833e6e6105e01ffd49469628fc8a11534b583e95797b9d1a5cdd2a7c",
+      "kind": "cutout",
+      "bounds": [
+        24,
+        44,
+        1002,
+        644
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/spiker.webp",
+      "size": [
+        1024,
+        958
+      ],
+      "originalSize": [
+        512,
+        479
+      ],
+      "originalSha256": "e2a277a6d4e7c05ff80c6bbe084fc88a1e32392a7f5bbd82f9a92732411fa043",
+      "kind": "cutout",
+      "bounds": [
+        124,
+        50,
+        904,
+        890
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/dagger.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "10886d19723e60cfd4f2be4f5c5be3fe63795402b1be11ff69b74459518e23c5",
+      "kind": "cutout",
+      "bounds": [
+        60,
+        94,
+        968,
+        956
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/torch_head.webp",
+      "size": [
+        682,
+        1024
+      ],
+      "originalSize": [
+        341,
+        512
+      ],
+      "originalSha256": "7b624dbcd4181e63a63af7c4322920d1ab3e3b2a430c65b297a1d46a719258b1",
+      "kind": "cutout",
+      "bounds": [
+        8,
+        4,
+        646,
+        964
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/bronze_orb.webp",
+      "size": [
+        682,
+        1024
+      ],
+      "originalSize": [
+        341,
+        512
+      ],
+      "originalSha256": "1e0a8b1e31832fcf9214df76e65eddd4cc6d930af11a015c2f33cb4de0ca6a45",
+      "kind": "cutout",
+      "bounds": [
+        180,
+        10,
+        482,
+        982
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_dark_orb.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "24efbd9a817e3bc557ff102d28a3bdf790bb18eac183f15ad068dff4fa6a34e2",
+      "kind": "cutout",
+      "bounds": [
+        106,
+        82,
+        938,
+        938
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_lightning_orb.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "5feace259617aa706edbcadf76bf0d2231adfa3eab20399bddd146e023b82837",
+      "kind": "cutout",
+      "bounds": [
+        24,
+        116,
+        1008,
+        840
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_frost_orb.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "547263e9c70fc183f42dd0b041f348e322be251a1c4e0e2210674c9f4c7e0522",
+      "kind": "cutout",
+      "bounds": [
+        92,
+        144,
+        946,
+        886
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_shiv.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "7a4084bb766f897b637701804d36f04ee63fcfa4373c5f13f2eb787d948357cf",
+      "kind": "cutout",
+      "bounds": [
+        98,
+        128,
+        910,
+        896
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_pc_ironclad.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "97401ad04a081430b155a4ced6d679a8485972eae326d935fa00775dd3e862d9",
+      "kind": "cutout",
+      "bounds": [
+        50,
+        216,
+        974,
+        974
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_pc_silent.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "c360503b99156300e6f5aac01c32317225d0155590ee488ecd871c4e3df80499",
+      "kind": "cutout",
+      "bounds": [
+        50,
+        58,
+        974,
+        974
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_pc_defect.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "3a69e8eefedd52ded106b7efaa31ce45a1994be6606680693de180a7c377b828",
+      "kind": "cutout",
+      "bounds": [
+        50,
+        58,
+        974,
+        974
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_pc_watcher.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "57bd58a0138b02b108f88f3d130df2d09d597f52e512d2d0b7d9f7d02457b8ee",
+      "kind": "cutout",
+      "bounds": [
+        52,
+        354,
+        964,
+        1000
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_loot_chest.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "735b3e0ac6e417175deb097e4d287ef8a6141a9c4a4939dec227de35e92161f1",
+      "kind": "cutout",
+      "bounds": [
+        6,
+        58,
+        1002,
+        912
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/transient.webp",
+      "size": [
+        1024,
+        820
+      ],
+      "originalSize": [
+        512,
+        410
+      ],
+      "originalSha256": "d17c0fc932849be20f35653356f2b966952d3394832ce5f84ba70140d91ebccd",
+      "kind": "cutout",
+      "bounds": [
+        178,
+        2,
+        888,
+        770
+      ]
+    },
+    {
+      "path": "public/assets/backgrounds/boss-act-1.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "63cde170c6f9283db75f7f307e245a8d1780d296e63150cd193b1f4e32fceca2",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/backgrounds/boss-act-2.webp",
+      "size": [
+        3840,
+        1920
+      ],
+      "originalSize": [
+        2048,
+        1024
+      ],
+      "originalSha256": "4a746595fdf0e117ceade3cb1b7bf00e156601bc8ad1e6a36a1185309e46234c",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/backgrounds/boss-act-3.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "776b3dfa5089d9a429031e224bac03ad18397711330f1ec995e0c70bf2b33304",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/backgrounds/boss-act-4.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "7d1437a432a027e1f2dbf8d2705d40a782d5d1ee43d0b217a8c409b7ab28d87e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/menu/character-select/character-defect-wallpaper.webp",
+      "size": [
+        3840,
+        2160
+      ],
+      "originalSize": [
+        2048,
+        1152
+      ],
+      "originalSha256": "5cb67fe4fb9d4adb0da19a9f1e3e418dae8093aaf7fe750663650c158211f96d",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/menu/character-select/character-guardian-wallpaper.webp",
+      "size": [
+        3840,
+        2160
+      ],
+      "originalSize": [
+        2048,
+        1152
+      ],
+      "originalSha256": "772f014c90decac79fd55301c653003228a509290b28d0679170dbd05297154f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/menu/character-select/character-hermit-wallpaper.webp",
+      "size": [
+        3840,
+        2160
+      ],
+      "originalSize": [
+        2048,
+        1152
+      ],
+      "originalSha256": "973a81878b6139bfb3d195438d37bcfb25496735311c887b0384d5978669b415",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/menu/character-select/character-hexaghost-wallpaper.webp",
+      "size": [
+        3840,
+        2160
+      ],
+      "originalSize": [
+        2048,
+        1152
+      ],
+      "originalSha256": "335f10513dce761f9093c4f0819df9eab71dd22b6e044f52141f34b92495f88a",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/menu/character-select/character-ironclad-wallpaper.webp",
+      "size": [
+        3840,
+        2160
+      ],
+      "originalSize": [
+        2048,
+        1152
+      ],
+      "originalSha256": "0d0ed22aa0c94c39b28e868128558d46a49cdfe90c899b5738d65dd9ba5891ff",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/menu/character-select/character-silent-wallpaper.webp",
+      "size": [
+        3840,
+        2160
+      ],
+      "originalSize": [
+        2048,
+        1152
+      ],
+      "originalSha256": "521ca85c43fba7d3add814be63d0d08853206cf0965721065397f623687e3d0f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/menu/character-select/character-slime_boss-wallpaper.webp",
+      "size": [
+        3840,
+        2160
+      ],
+      "originalSize": [
+        2048,
+        1152
+      ],
+      "originalSha256": "c6893e98d1feab9a257357c271ff2a67f85748554a7a9848608c9c76bdeeca27",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/menu/character-select/character-watcher-wallpaper.webp",
+      "size": [
+        3840,
+        2160
+      ],
+      "originalSize": [
+        2048,
+        1152
+      ],
+      "originalSha256": "6e59bf20ddb63b8b7aa29ef15e8c8ea3c4f62fd23160dbae29ab61b080f7a709",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/menu/compendium-archive.webp",
+      "size": [
+        3840,
+        2160
+      ],
+      "originalSize": [
+        1920,
+        1080
+      ],
+      "originalSha256": "47626e3b6cabd98b662a2ece9c7478f15382e5e54234491a8a361d4cf0459bec",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/menu/welcome-wallpaper.webp",
+      "size": [
+        3840,
+        2160
+      ],
+      "originalSize": [
+        1920,
+        1080
+      ],
+      "originalSha256": "0d7214e537ccfc0cd6451054428ce9b76181ca10e54828cf8d2e16262c489600",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "0e28f9d26b216d94743007d426b4f6bad867cdee58bd340bd49515bfbf4bede8",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "465ae108100add3fbab452c60839f02e02bc49f21b5ba5661753eafffcf3c267",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "f72dd355ec0de8f1e26ecee08560dec41b058706ded22515ca2e5b3cd322b0dd",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_guardian_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "ea3ea9ad3e05aa64592113b342530baa6e4814974d697b9646170096cd57e6c8",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "4d2c1a950257b5ca14c601ff628b08ed739cc09dcd4cef5827eba4e03592c7f7",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "4cbdc7410f0c2c4335ae86f03c2bd1ce78ebeb4212b1e0d908e94149dc1f669f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "e164b4d4c31493b483a8fabe9be7025d4e78fe95fab9c29bb4465401b9c288e9",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "141091bf2828c75287241ce8c7b08329f8ec30c50aa6e2ebfc08bdb401f2df0e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "77fa2f7f01cfe806df497132e9096e013e2761098b549693a9fd4f910d86e9ea",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_slime_boss_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "663ec1bb456b55376d0389742103edeb1b7b35202f0872b1684cd5fce69a0051",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_slime_boss_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "7197453d2ed778184fd9a8ef6c0186eb928101d249bcefd4583ff48c7441c5f5",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "47ddbb6dce927ca96cc085eac4f3293c469c8f23d659507d3c87d1f56cdc4827",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "3ec8ce74e96642342fd8e0b5428d94c3b46f6a4106dcc9678f233f8288fdce9e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_slime_boss_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "2dea3933d756725f3e683b90c3c2ab91b2b7886b9d491a08b746544c3cf411c7",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "86c21dacc3fbe7945fd6cfa61fcf46ed0e4171a0de3465095e9cc585db42adcc",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "3cb373dfec0e0dfb12f080b4b9ec395b154f631d35bb7e3f6f68b951fbfb2b8b",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "d913ad88f56fbb4604bd05a253f521101e899afb2287330def3e0ea1c80c3b55",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "daca420555075509611c5c7696279143150ca0a5a0774ed04cf6a45be2e04ba8",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "9ea492e65f74530a27479b1f7d6a1f87ca54fbedef6432a4b86d159c8b986c78",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "3a70c6d04fc25deab17e00f0cbdcb5b4d102ca9712e834cda00470f1cd2b028f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "4267e5b12c8fe5d06786278ab0a3b695713275f3437872d247c9d8f7fb32dca6",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "cc9b6f2cd31ae754d111aa578b3823385cbb3d10ab94f9cfbeaea4a2b2eb0df4",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "811b04f43e46218c0c65b982a1a10b7f47a58961150ffef207bf5b15f23c19ac",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "8c40f666570f77c07fdb945865aab43581b8e99048431e59eb505714f010b57a",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "e86d7912f1ed9b6303a478b617888a1f7bcdad3e92ad9925e25fb9cd60aee96f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "34979c0fc197d2e52be337c5924d10591374da0a8fe8f1ae930498a773bf1325",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "7b8f3894c1d0ee0bdd099ff980f34fb799d825e0c93538e107aba93ea618f759",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/guardian_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "53939a8cf996fbcc7edfced8455769a0e747e43728dd28552ccce22c8f7e2ba6",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "f713dacd12282624fa6e50e28a671ef3b61ba544dc145276a9ca71eab44f9e41",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "482e2c24f6c3324589597f9e5d81d2b01e37e162817a2013c3a946b2d1c3a0dd",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "7cc709140c80d47920a0b9ede7fa5bfbe2af8f2dd7bed86c070b69701b684694",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "2b540e32f950c39e4c9ab4fe21cc4cd70bfb032bacbf902649f64be469532e95",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "944ed340d78c06ac0449e4778d06e5890b2a1af199ec839a9c19569ea22b05d8",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "8af189911335c0b73b4886afddd56cd215b82fcfe4b67034db809d2188a14c3f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "8a285477654c57ee9839dba04b8f92a9d6a26a5a7644a21a4b11d4a857503cc3",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "47eac8155ff28cdb0510a0d97de1e560ce8144f3785aa754d143c4b85971cec9",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "55fd9d6935045eb3617fc63e78d3f23c5614ead8504f446c618f6885268d4032",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "4f79c6b84ae284e65aa11278dbb396612fecfb42bc419638e6b971ddf1e92a17",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "660fe87bff7df34499933cef8a15b7f9d365da1d3a76c39ee3cf0915295ec672",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "807fee6d68980b29b8f439c384691ff59eab9e601d6a7ccd5f3a364c659de246",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "31cd92fc63aed774d99fa3da4bdd77b876922f9e67d021dde2bffc17754afcea",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_watcher_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "ec656aad12c4e4296298ec49495f96ec9ea9eebc153c1db57091193a11742184",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_watcher_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "1b092458695479665dc46f2dc2bf57aacd45e7990dfa3afb168244e6c4956717",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_watcher_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "a0bdcb2ad925a696cc711b545441d27312d75a7f8d7521a09b68e687d9819374",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_watcher_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "31e192de2251fc3ce78ad0b203338ca1d65977ced49170e848f8586dd1708bfd",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "f5f8eb9976ab9e3d46dba34fd20a01e66315c2a8598b8e8fc7858589e7d99ca8",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "540e0ae8a79aa3bd6035963d619a03d1421815d05da6d4757a476a0919be298e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "eaed96b40866195a41e5a3a40c5c41cfc2e76f24bff960356ece2f580442fbc0",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_guardian_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "dd113ee808df7bbf86b37d2cca8e143c88b577c3200d572db26f9794300a5aed",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "89eb469601a15e5e610637cd71b37af5d11b711030635fd7ded8441db300e580",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "407daa688b154e7ac1f436576eef6ce3844046010c803eb62aed05f5b03e487c",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "ba49dcc34b3c4e97596125e8c2f533e366935859cdb79f80d042734d0249431c",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_defect_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "c884a2a1804a79480795591ff5af59d7a10dd9db4da4f1ac937cf796097499f0",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_defect_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "f5cd4b3c00a9da960ae2348f1d4d95132e79b755a21ecc62671bd39effdf4423",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_defect_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "632e1b9ecc583837cd1cf4c6ec838518fefa2e89698646663cb9d071588402f6",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_defect_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "5840b2b5f7a31f749758e2c925d24140186b62721d705acbc1fb4d8f1e56da98",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "bc827e3205ca40bd29c8085081528cd9801bf9b26d41efb16b35f0e2001a6812",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "c090def3bfe6eb2d277efe2c140c200a24e001f096e951214be49158b18ce0a0",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "b11db3e3753c277011b119aa4bc312641329355509600520200c55dac826af2f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "ab2a47cedf6983da986c10a8d6e882399311aa01c1873846b99c05261808a454",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "cf46e00bd2d197905f9a1411fac64d8f17895afd88defd26134dd39ca7a95985",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "624f0b8163d3d546db2754658a08548e7b95a924ecc9c5151d4517c5581002e1",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "ee380780a4c71c50bf60f26789998ca9bc8d93577125ddcd0340831b2d914c3c",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "a953842b21cb4d869c20bbb012c39fc92df3e3af3c9087993ec7c0d07b88ffee",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "18550d72fcd2cf920778f177598a1cb5bba0e3986331b59f8a823c8acd731b60",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "f33eeeabe16753687914469f46808e6b35b63d4427aff23040eed60e0b3b6871",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_watcher_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "d431d2d20496ecc7dc790e035c5ba0f7bd76217ad55dd479d874abb34692d799",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_watcher_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "78ca305b0477a768225e98181604b0aba19b37636206e5f88584470392dc777d",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_watcher_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "47050cfc471193a208db43b8c22bf9a10ab1bd464d30bb3e6cb9ddfa30ba440d",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_watcher_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "e599bd85c3d27d21aede909c2c0e7f30b77d163919e42a47c4e0643c385f4f06",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "8ad5ae6a88d2cac02a2be9ee1e809eb12648b8a262ba1c52576b7039b0a16e87",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "0572d5120b8b89c3490e2bb86fd7931a17e7bf9c351c66d9c404b8bbb4bf9b4f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_slime_boss_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "a024b0f6c8add176f58e78e04343dd27fb36c117dffcb132d6b824055a1dd031",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_slime_boss_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "972ac8d0cbe774fc6145ffa27591b2b7e30d53d6b46569eee6d70bc2ec270401",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "3294bdb6c0251a86ad8daca839e1d4888c5803bec5e16e017c68fb574aec4178",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "7d9597d777bb9a3f8f017a55070134c98fb890d5d712479393ea549737b204c9",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_slime_boss_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "5fc6ee5cd322b5ec0922a22f73373140607751f46bbea9b33836120186dccb96",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "644b6718bb1717ed6fa6d5a9f091c0381fe15d2fdb46c7c0e1938c0a827f92dc",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "14be64e14c83271a4687ecc7bf1e0069986fb5af2628ca4ba97b567389f0120f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "0970d4fa4421a2135dceed7280a2f1695216973b42aeca19e9d9a79f0723200e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "405a4d53bcc3210ccb1585223c501c80619334d5bb2c57de9a6cff50edeca29a",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "db285d7bc8c3d0251b69af7fb6a91e3bdae411bf0dd845ec7312b61fe6373622",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "265295e0a86de54b7cb8a0835b81aa1b415db860b112c5a781d676aa4b1fd554",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "3064d58e28fec59c769b74a9bc5c6f88d03d6685897dd8591b1008d43379cc48",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "350f119756610bae9c6bd69140f789650246ad41bab6ab76481b0b73658637c1",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "d43fd8b4ba2dd5cd9bc1621684f104b9063d3b5beebd8bb82296bb744012e370",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "b8c749490668f6db1a8c55aeeb0c246d579a256af20c100a7c5e57e30e1225b5",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "feafdfbaa4bdb1ca044abeb5b32e7a11f6df1aced8669d69383acbd341c1ce00",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "f437c679061df0920d5955ad53bdeb79ef24fe546bbe8adf9cbb8e57d74d2166",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "f012cacedd980a6ee328237b2c8554fafa15625744517925bbf6d010cc35b73b",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "1e036c82b2ca1ac5e1d658cd1146943f94cc7487e3a990353e27e4b1e9fd768e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "67da46025955687db4689f26fbe868f2aa7a5a158b0242e0ea4854497f8d7b32",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "ef2aea487ad2a6b4de67cb878ac68c4273b02389ca55c90c7dfd1623c723b33e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "3c51bf510b501d32b57c8ada6b0ceb5c16e8be70c3ec0f226ea53242f5f1ce54",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "9b94c8ce52c50edcefca8abda45252455fad9865288b606e0d61d97a0e25372c",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "fd47aeac703d8ecf8be067a76892bec83c601cc3e88511a9dfe243c5d799c5bb",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "1bd9939e69a4e7beb85ab581b50b55c53034d7b9894efeba3778e2d686e3d9f6",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_watcher_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "473586362d3ba1321ec27668412ffdabe70ba3c01b8662f3315d6447594472de",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_watcher_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "e54c229f02c831847b0bbd637a8c73c73ded11cfd85faefa9ec595d4ed441b46",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_watcher_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "ebda173ed215213f0f3535bfc9ee07a289dc5968d2d631b9b94b844fab3a5d91",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_watcher_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "bca96c32b79f33556c64355a79fbda4dce73080a4e789ce50a87c09b63fd4aa1",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "4e498c2232d11076fb9d42820a21eb43c3bd7212ea84020e558fd679901ec0e9",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "5d9a36e6dd408aaa8a8bfe3a0883bd902edc0089d74fa7d6b549491dfac39624",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "fe95aaf288e2273e26141fcf93b6afc6a8a5fe36cf2e41b8be59f67767fa895f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_guardian_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "09fd26e8b9e535f2588493f70c9ce9cc0d22f8c963f1326bdc201bb3001e4f5c",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "2458b6d7a6205cdb837a8b46de895a9688cc9db2c321426628ce2bc15928e772",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "573c4e67ea4bf0036750228cbcef0e2b47732c54afc716edf9b48ba481a6ff68",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "806f258386f1c8af0541d50d9734999660dfe385c9218a68e1ce75607baf69c7",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "7140197a69a81045ad960bd98527b08e419085be0029680f59e7b3884f65e415",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "96fe0c96315ae1d0ba7abeb4ee8e0372d058fccdcfb051ecb7eff77d795c8cc3",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_slime_boss_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "a2a12044dedbc102d2e38e0470696f1734283c11a9e188cbf6655ca45b736415",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_slime_boss_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "cb392090e54768e31667d568fe66cc50ab902ad79b6b2cbc41f6a33b85146a28",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "ae7fdbf05b128dd4752fcedd131a21cc50696429d87d6f7e26f07ac8bb447d42",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "d73fce20657606baa66562d89e56be25aa5529004e8a98c8194d2ae7a05499df",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_slime_boss_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "61b5108513a3589b7c6b446adcd2c12b0f68578bfbb1206e1ac03e4b2ada3547",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "85b69e4993303954c07ab2d0c9554be27475fa175928670d9c47a6d2650c507c",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "037d43ec8ca2ff20d63b32fc7489928e0c6b4c927dbbf75055cbb96df4c323e6",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "d503464cf3abcca91e4e301e1586166df0cce4e68c26af2554b453d1bf632c69",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "a1f3b94c8f14715552189cdb7ebc96b675ee02f796801114e300ce4c2932220d",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "2bfb64602f92b04927e3022c8fa0014943a0be8dd2758601daa41fd9031d65d4",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "9f207cfc3823d225aff88724017cfcbe859f52184706058ef18c33e99806a0d6",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "761bf4d5fa18ba70970d31bec1e2ac0faafa187fcce8651551c3f45cb35b137b",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "fc1c4c1aaa60871209c1051c33f356f477e0982b26f873bd5d93168542676dc1",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "a4373a3fda602d4d3fc664c07c7cc671493d2f082b9e8c298af3694a8633579b",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "e3da478984231692b66243aefa6afe3138b68ea1c0be3e69094e58063f6dc756",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "1423a8acb4335e4cec4431c780b43f513bc96fcc43e536ccb09ad88f2715a1e8",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "e126d11d66c2278881240657df6e56e31860872d8ea7fa302431e743fe682d83",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/slime_boss_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "271997d5737e3ca021d5e018578754712c95bcb91c7957a56eef25cbd0243435",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/slime_boss_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "8306ed25a476c8c9079b7a869968c85020b3a557427691e32578d7a77e49acbe",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/slime_boss_guardian_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "de4e622bfb8138e08494412c946e543087d3118c20c61a4d23a06f65d7d61aa2",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "632cb1aedb6bb95b447ac571b0874e9d43cc5970c1a3d5baf1b6a926d249a1d7",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "8c81d33dce94402a9dd8e1ef25e376295ec4db246225e7b9e31910043b5cab32",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/slime_boss_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "40f537cbdf1496f547415acb60fa838407daed10e93296caba37e160a4474d21",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "6e60dfbc355f100c5c23af4592fa3f0bb5d6fdb435725fc2991509a8c6ad1abb",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "5d8b5227e79c2e765d50245dd4922d137a46a400490600f090c7760dc01ea608",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "38429b87098d0954a7f9fe18d91cd74d3fa6615faa5aa0a30c575037e3677dab",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_guardian_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "356ae2a953d2e2a1ebab396016745187ba0012357d6fe78275b08cabbf1a45a8",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "fd9c687b6e76b7de06ee6e1d0fa26d8725b90189499eb56a6cc570111d4b6a9a",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "3ae47b92887e39aea3dd08857376051561ea645bb1f142d35c3beacb2ae689c5",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "b9ea8d83ebc2aa3848a9b06b034af9cecf9ded5632554a517f4352af21227783",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_slime_boss_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "df35b1c9b84a84354c650c0e3243dfb1eef5361ce3f3408654f6ede7bd130379",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_slime_boss_guardian_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "d1bd828c78bd0ee452dadc667379f84f9eaf0ea5150496b1264e4823dead7977",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_slime_boss_guardian_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "f9dd1254c3daa1de720697f763cfd31e92edac70523d262b6d732c6a846d7d3d",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_slime_boss_guardian_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "ceeac92c53d78ea182a7cd0ed4b11b5d461b11e56793dfa0e09829801c5b2e0c",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_slime_boss_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "d095feb0e1001466a9766f02c8ea28008466324ca2ac781e84298c6cbcb2073f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_slime_boss_hexaghost_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "23e8961a944402009af533f301a3733f8566cdae6deedf0ae536f04e1d103628",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_slime_boss_hexaghost_hermit_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "98f5340a10c59cb80ea618bfd349b13346e34488cc9d68b41f63167f3f0dcf8e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/ancient_temple.webp",
+      "size": [
+        3840,
+        1853
+      ],
+      "originalSize": [
+        1805,
+        871
+      ],
+      "originalSha256": "62e7d2afd4142ce6842868467e7a6ad15e48865908c30e32cdaba743d7157523",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/ancient_writing.webp",
+      "size": [
+        3840,
+        1637
+      ],
+      "originalSize": [
+        1921,
+        819
+      ],
+      "originalSha256": "7e8064f0f645a9938e0eb29faeedd763d80777074f0364aaba87e9dbfb937e0b",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/augmenter.webp",
+      "size": [
+        3840,
+        1597
+      ],
+      "originalSize": [
+        1945,
+        809
+      ],
+      "originalSha256": "a30655748e224221bc70db9a1b567e39013c72ff7b027dccae2053f6b66e4c2a",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/big_fish.webp",
+      "size": [
+        3840,
+        1879
+      ],
+      "originalSize": [
+        1792,
+        877
+      ],
+      "originalSha256": "6e40a4357a67968feeecb8ff7d0dac75752c8d537c5cd7104617e7f648bb572e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/bonfire_spirits.webp",
+      "size": [
+        3840,
+        1536
+      ],
+      "originalSize": [
+        1983,
+        793
+      ],
+      "originalSha256": "e87dd0caf39790d4097918c5a02acb0198e3a110ae7bec45d865733e36d0451a",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/colosseum.webp",
+      "size": [
+        3840,
+        1895
+      ],
+      "originalSize": [
+        1785,
+        881
+      ],
+      "originalSha256": "c9c3d413237c2ca2055ae8579718c11abf518c7463aa021238d71ca6ed542a2d",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/cursed_tome.webp",
+      "size": [
+        3840,
+        1920
+      ],
+      "originalSize": [
+        1774,
+        887
+      ],
+      "originalSha256": "bfc61ac04e90d88b5303c88e46e8e8b29825a028c1c5773da517f68827120976",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/dead_adventurer.webp",
+      "size": [
+        3840,
+        1611
+      ],
+      "originalSize": [
+        1935,
+        812
+      ],
+      "originalSha256": "a8e572fd1106413ee156e34f95044ca17ebed6c62557448e1e6995aa79d278fb",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/designer.webp",
+      "size": [
+        3840,
+        1661
+      ],
+      "originalSize": [
+        1907,
+        825
+      ],
+      "originalSha256": "8251fad24159d331a5b36ced6ab069ebe2cefe185819d96c67b6aad532ca7295",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/encounter.webp",
+      "size": [
+        3840,
+        1711
+      ],
+      "originalSize": [
+        1879,
+        837
+      ],
+      "originalSha256": "45f90378d55a0fb4984d95d80ae296afe37df9f129bd06339b48c0707893d8f2",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/encounter_redraw.webp",
+      "size": [
+        3840,
+        1633
+      ],
+      "originalSize": [
+        1923,
+        818
+      ],
+      "originalSha256": "20ad30809ea52a120a49ac4bbe888e9641e3bee7cd98890e12e00bd6cece9655",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/face_trader.webp",
+      "size": [
+        3840,
+        1920
+      ],
+      "originalSize": [
+        1774,
+        887
+      ],
+      "originalSha256": "9cdf48e28ca3a50308ab741fec2912a9e949c77ec2103abdb95c12b78570ded3",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/falling.webp",
+      "size": [
+        3840,
+        1751
+      ],
+      "originalSize": [
+        1857,
+        847
+      ],
+      "originalSha256": "de46dd6545f84c00f17900381d1a59a82415d5f634bcaa7dad0870a60e01304e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/forgotten_altar.webp",
+      "size": [
+        3840,
+        1629
+      ],
+      "originalSize": [
+        1926,
+        817
+      ],
+      "originalSha256": "de26ad72a4155de12e64e3b9e138e4df19ca96ed14b9eb320d8ffefeb616ae62",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/golden_shrine.webp",
+      "size": [
+        3840,
+        1920
+      ],
+      "originalSize": [
+        1774,
+        887
+      ],
+      "originalSha256": "cc19c56446107d69805422bb615f6f45cd521f96985f2a2569e1830995d2d8a5",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/knowing_skull.webp",
+      "size": [
+        3840,
+        1920
+      ],
+      "originalSize": [
+        1774,
+        887
+      ],
+      "originalSha256": "974059504d96c43b08222ee880949a1e09fffa5c2b045bd48a844ee0a3e29b21",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/lab.webp",
+      "size": [
+        3840,
+        1678
+      ],
+      "originalSize": [
+        1897,
+        829
+      ],
+      "originalSha256": "f924cd53224694b7f04300547c882648adf8516adcf9181d261d99e057addf2c",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/mausoleum.webp",
+      "size": [
+        3840,
+        1650
+      ],
+      "originalSize": [
+        1913,
+        822
+      ],
+      "originalSha256": "25034483c08a35da10b8afc126b5d047b4f454a05dc94b79ca336d903ccaf76e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/merchant.webp",
+      "size": [
+        3840,
+        1536
+      ],
+      "originalSize": [
+        1983,
+        793
+      ],
+      "originalSha256": "4de58d92018368eb7fcfb12a4adf4dead1cc83315ea2fdb7f57f96d49d62857a",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/merchant_redraw.webp",
+      "size": [
+        3840,
+        1748
+      ],
+      "originalSize": [
+        1858,
+        846
+      ],
+      "originalSha256": "51768dd40382f281da9229b32b7a1357bb4838180d6345e3a828fffe568b63a6",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/mind_bloom.webp",
+      "size": [
+        3840,
+        1792
+      ],
+      "originalSize": [
+        1836,
+        857
+      ],
+      "originalSha256": "8b4c965584a33a2293e34fdeb754a972ebde7d6d92df36ed70a320897c537cab",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/moai_head.webp",
+      "size": [
+        3840,
+        1707
+      ],
+      "originalSize": [
+        1881,
+        836
+      ],
+      "originalSha256": "24a51eb5b594e5fe59fa27178120a160fe797955a2c922864c5ee1c099adb212",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/nloth.webp",
+      "size": [
+        3840,
+        1818
+      ],
+      "originalSize": [
+        1823,
+        863
+      ],
+      "originalSha256": "f68e2c823098fa019b27aec92b81b46e68c8a1de9fc996220de0a0068e69a14b",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/note_for_yourself.webp",
+      "size": [
+        3840,
+        1920
+      ],
+      "originalSize": [
+        1774,
+        887
+      ],
+      "originalSha256": "db8ef0d3db15871e31e72b55b411b186732cd58622fc0d58734be64c1fdfefee",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/old_beggar.webp",
+      "size": [
+        3840,
+        1796
+      ],
+      "originalSize": [
+        1834,
+        858
+      ],
+      "originalSha256": "26c460aa1d2cc78d0e5a491662e1bc90825787825cddcd90289721de2dcd1a3d",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/ominous_forge.webp",
+      "size": [
+        3840,
+        1790
+      ],
+      "originalSize": [
+        1836,
+        856
+      ],
+      "originalSha256": "905d8bdb0f26e7b5e7f28a2768ca2bc97ecaa5c32254c15a392f550143bd44d6",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/purifier.webp",
+      "size": [
+        3840,
+        1670
+      ],
+      "originalSize": [
+        1902,
+        827
+      ],
+      "originalSha256": "edc79353506655f28608a390a7f6f80d46fda59a8d6098376f775c2224de848a",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/scrap_ooze.webp",
+      "size": [
+        3840,
+        1920
+      ],
+      "originalSize": [
+        1774,
+        887
+      ],
+      "originalSha256": "7db79a00514a049cc1a4ecd3934557912aeb40603bf636d0414751bd550d31c9",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/secret_portal.webp",
+      "size": [
+        3840,
+        1776
+      ],
+      "originalSize": [
+        1844,
+        853
+      ],
+      "originalSha256": "c52b25350441dc9812d0c6b918d401f7dc12cffdc7238b740b53202511683618",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/sensory_stone.webp",
+      "size": [
+        3840,
+        1818
+      ],
+      "originalSize": [
+        1823,
+        863
+      ],
+      "originalSha256": "49961af35eafbc46d0bc5f2ce5dcd67da401565c179d602d4d2e4db95ddff998",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/the_cleric.webp",
+      "size": [
+        3840,
+        1801
+      ],
+      "originalSize": [
+        1832,
+        859
+      ],
+      "originalSha256": "76833401180018da7f22f4e9059b9d9e1814a8a2bae9feb0969c186a6eb998b1",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/the_joust.webp",
+      "size": [
+        3840,
+        1536
+      ],
+      "originalSize": [
+        1983,
+        793
+      ],
+      "originalSha256": "d8fd40b74a5e6df86a7b618af9636901ba087c79cb82ca0fb959e33a9278ecd0",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/the_library.webp",
+      "size": [
+        3840,
+        1638
+      ],
+      "originalSize": [
+        1920,
+        819
+      ],
+      "originalSha256": "bf415017dd219fd05edbfab43aa81464b4a127fd0a65797e97853645e1185d0f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/tomb_red_mask.webp",
+      "size": [
+        3840,
+        1755
+      ],
+      "originalSize": [
+        1855,
+        848
+      ],
+      "originalSha256": "32594bbaf3706b3ca204c8fd8e32c46aa5e62449fa0819c5401ab064b499ebc8",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/transmogriphier.webp",
+      "size": [
+        3840,
+        1707
+      ],
+      "originalSize": [
+        1881,
+        836
+      ],
+      "originalSha256": "fa83267923ad86ab19f71ff0b8c6e2142b7cbe873d9b534acf81486c909506f8",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/upgrade_shrine.webp",
+      "size": [
+        3840,
+        1873
+      ],
+      "originalSize": [
+        1796,
+        876
+      ],
+      "originalSha256": "936b5c51c995044fb51381009c50673dce36c013713b206eb3986949f188369d",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/we_meet_again.webp",
+      "size": [
+        3840,
+        1707
+      ],
+      "originalSize": [
+        1881,
+        836
+      ],
+      "originalSha256": "4a1c77e36ed6ed9436702209eb53594b6b3e1cec7818a6d6dc7ce253c87649c4",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/wheel_of_change.webp",
+      "size": [
+        3840,
+        1920
+      ],
+      "originalSize": [
+        1774,
+        887
+      ],
+      "originalSha256": "4184bcd5b4b3b78051ee690b647082598fcae7a3e4bea0ef750978b7bbc15b69",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/winding_halls.webp",
+      "size": [
+        3840,
+        1673
+      ],
+      "originalSize": [
+        1900,
+        828
+      ],
+      "originalSha256": "7b361725a1d60a0946d0b4e89d654e8f90b172f1325328a92535cec7fb21244d",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/wing_statue.webp",
+      "size": [
+        3840,
+        1595
+      ],
+      "originalSize": [
+        1945,
+        808
+      ],
+      "originalSha256": "cbd4cbda1c2c8b47468a6614ac2a3e50a5fdb22bdc9b671deaf56782f823e4ca",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/woman_in_blue.webp",
+      "size": [
+        3840,
+        2016
+      ],
+      "originalSize": [
+        1731,
+        909
+      ],
+      "originalSha256": "3f2dcb14e049bd847ad721d8875a3094a7d325078e989d76ec13c27bff26c2c8",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/events/world_of_goop.webp",
+      "size": [
+        3840,
+        1784
+      ],
+      "originalSize": [
+        1840,
+        855
+      ],
+      "originalSha256": "5e0c86aeb81e021e723283f4918cb11f8a60f3988062e30eb2fc9b27b4271392",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/merchant/background-wide.webp",
+      "size": [
+        3840,
+        1622
+      ],
+      "originalSize": [
+        1930,
+        815
+      ],
+      "originalSha256": "de2b8a547511775e8177781f4289020dcab371611b8b540c4737b0501e2b647b",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/merchant/background.webp",
+      "size": [
+        3840,
+        2162
+      ],
+      "originalSize": [
+        1600,
+        901
+      ],
+      "originalSha256": "75500f0b8c164eea56cdfd0e15807b3585e6952f59b1123b9312920bdfba664e",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/treasure/background.webp",
+      "size": [
+        3520,
+        2347
+      ],
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalSha256": "4e5ca4a4ba11fad6591a576e8af277f561f47669075e26b278ab095e1744983a",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/combat/characters/ironclad-ready.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "dcf87eb53dd160c06e4c5ddfbee84750cb5bfaa619c4a9aa934ba83a946c685d",
+      "kind": "cutout",
+      "bounds": [
+        236,
+        12,
+        940,
+        664
+      ]
+    },
+    {
+      "path": "public/assets/combat/characters/ironclad-impact.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "811736641e926e7af57178bf78b5ba5e3a31a96572b1dd876caa02b59fc530d2",
+      "kind": "cutout",
+      "bounds": [
+        286,
+        12,
+        770,
+        662
+      ]
+    },
+    {
+      "path": "public/assets/combat/characters/watcher-ready.webp",
+      "size": [
+        1008,
+        1024
+      ],
+      "originalSize": [
+        504,
+        512
+      ],
+      "originalSha256": "a3332fa9572dabb9a13df7ede92f8042e9059713215f98e2574f4bc60c11c54c",
+      "kind": "cutout",
+      "bounds": [
+        10,
+        14,
+        994,
+        1006
+      ]
+    },
+    {
+      "path": "public/assets/combat/characters/watcher-thrust.webp",
+      "size": [
+        966,
+        1024
+      ],
+      "originalSize": [
+        483,
+        512
+      ],
+      "originalSha256": "4590e01354be6c59be3602b6b47206376df400ac6ce7a3969b4e91d7250eb0b5",
+      "kind": "cutout",
+      "bounds": [
+        46,
+        18,
+        946,
+        974
+      ]
+    },
+    {
+      "path": "public/assets/combat/characters/silent-throw.webp",
+      "size": [
+        1024,
+        684
+      ],
+      "originalSize": [
+        512,
+        342
+      ],
+      "originalSha256": "976c9d835bcb9dd80a1369513de38a1867a6f5569a6caf0a20c2e155cc03fa9f",
+      "kind": "cutout",
+      "bounds": [
+        12,
+        10,
+        820,
+        668
+      ]
+    },
+    {
+      "path": "public/assets/combat/characters/defect-charge.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "127df6654b5dad91089be8732c42585453082ba6882994f396cde073261f8244",
+      "kind": "cutout",
+      "bounds": [
+        204,
+        22,
+        848,
+        664
+      ]
+    },
+    {
+      "path": "public/assets/combat/characters/defect-release.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "362af474e486275824c189c0bf6ae6abbc7309c539d1e7a2acf987c9d1760859",
+      "kind": "cutout",
+      "bounds": [
+        208,
+        10,
+        824,
+        656
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/awakened_one_phase_1.webp",
+      "size": [
+        1024,
+        714
+      ],
+      "originalSize": [
+        512,
+        357
+      ],
+      "originalSha256": "a4f7541b86df885e7d703828e1b00b20191de4cfcab92207dbd0e4ddc27f4da7",
+      "kind": "cutout",
+      "bounds": [
+        78,
+        130,
+        1016,
+        550
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/awakened_one_phase_2.webp",
+      "size": [
+        1024,
+        714
+      ],
+      "originalSize": [
+        512,
+        357
+      ],
+      "originalSha256": "1c4a4aa6fc0b7ec7e1ceffb99365ab17f6f8569c55b7af4806b3970d5317689c",
+      "kind": "cutout",
+      "bounds": [
+        74,
+        166,
+        982,
+        548
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/corrupt_heart.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "fe4a5d3a42c2291a3fbd439a3b18366c6f0680d4e2a10eabab064617524b021e",
+      "kind": "cutout",
+      "bounds": [
+        208,
+        52,
+        866,
+        944
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/deca.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "7c984c6ffc53a252e713c6f466ac0b42b49a5e51e7185cd2140b9decbe3b3010",
+      "kind": "cutout",
+      "bounds": [
+        168,
+        94,
+        884,
+        856
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/donu.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "ea4c56d7beb9955d9da280a94551bc1903559908f6a5090c1de90e72f31067af",
+      "kind": "cutout",
+      "bounds": [
+        130,
+        88,
+        904,
+        896
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_blasphemer.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "02ce7f516933637e9c5d3fcd3c8af786e1a11d56f328f148f373bb9348f13745",
+      "kind": "cutout",
+      "bounds": [
+        50,
+        18,
+        1000,
+        1004
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_corrupted.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "82375a25c8837b3b89d48b3ce7a57b60487b2a2e74222ec6bd4b2338707cca30",
+      "kind": "cutout",
+      "bounds": [
+        12,
+        16,
+        1008,
+        1008
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_dark_core.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "d1b7704dfe8e298942d30dc73dd4fd08e9af95e786c4ae429d345f8bb855bb9d",
+      "kind": "cutout",
+      "bounds": [
+        52,
+        14,
+        990,
+        994
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_demon.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "8b4c50cf4ee2cd1fad8e1ea8d593657332e605843bd28e1ac8eb7bc3b558b13b",
+      "kind": "cutout",
+      "bounds": [
+        34,
+        44,
+        1000,
+        988
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_doppelganger.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "55c2044f29e3ee91248257c0c630481a7b1271d932d3f310edf57f4ea84bb029",
+      "kind": "cutout",
+      "bounds": [
+        20,
+        32,
+        1008,
+        994
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_flame_barrier.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "d5281de0fc455f8b02b6f340a3bbe465459a33e0b7449e0721c6b4c96af3d4bd",
+      "kind": "cutout",
+      "bounds": [
+        12,
+        36,
+        980,
+        1000
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_inferno.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "40a4f6db395bc2d7fbba7f61e83fee11db4aeeae7b812101d4d5b743e420d89d",
+      "kind": "cutout",
+      "bounds": [
+        188,
+        22,
+        936,
+        982
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_neow.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "bb592b6ac7d3ca3db689027362672e940f32659cbb948aedfd1c8fcb3c6aa36c",
+      "kind": "cutout",
+      "bounds": [
+        26,
+        26,
+        994,
+        1004
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_orb_master.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "d626b72a3b586797e74aa059728ee729d12df4f75c0134bf14c49cb23c446160",
+      "kind": "cutout",
+      "bounds": [
+        108,
+        16,
+        962,
+        980
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_trickster.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "60e52c397953e1b1f832f4cfd16e21cfba1762c0f87db6cd43129555ce826ac9",
+      "kind": "cutout",
+      "bounds": [
+        14,
+        84,
+        1012,
+        914
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_witch.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "f2c37bc9aa796adaa054682c7e37b16a49871ae72e7e4b611bd8ab4ab292812b",
+      "kind": "cutout",
+      "bounds": [
+        80,
+        12,
+        1016,
+        986
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_wraith.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "4f9f5cdb9d7417e4a8bd65412b7ca51559bdd2e7b9437252a399078eb57ae28e",
+      "kind": "cutout",
+      "bounds": [
+        36,
+        24,
+        1002,
+        1004
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/downfall_wrathful.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "018b6a145cbd9eae1ef3ca736e06899c26c4b99a40c944debba92b7b63c527eb",
+      "kind": "cutout",
+      "bounds": [
+        20,
+        14,
+        1006,
+        996
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/guardian_attack.webp",
+      "size": [
+        936,
+        1024
+      ],
+      "originalSize": [
+        468,
+        512
+      ],
+      "originalSha256": "c1f63eab954f43f26445ed46a81c232a708e1c99a02e485b90f0df7a867f092d",
+      "kind": "cutout",
+      "bounds": [
+        14,
+        70,
+        920,
+        950
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/guardian_defensive.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "25fb0de786244b639f0058f01db643149c8609f47a78de47e95ea5bf7ff448c9",
+      "kind": "cutout",
+      "bounds": [
+        72,
+        64,
+        966,
+        922
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/hexaghost.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "210b6b4efa58140eea1ff3fad3f169764ebdae2e6e464318bb3900200aa04889",
+      "kind": "cutout",
+      "bounds": [
+        130,
+        76,
+        892,
+        804
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/slime_boss.webp",
+      "size": [
+        1024,
+        776
+      ],
+      "originalSize": [
+        512,
+        388
+      ],
+      "originalSha256": "b4693a7aea29602bcc0e0db35d59578d1f536b96eb1afd3839c24e6740a204ee",
+      "kind": "cutout",
+      "bounds": [
+        128,
+        56,
+        900,
+        694
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/the_collector.webp",
+      "size": [
+        696,
+        1024
+      ],
+      "originalSize": [
+        348,
+        512
+      ],
+      "originalSha256": "d9c7d35e160d4c5e00aebfab51f4c20e5378f747679dbe42f0cc945979325eab",
+      "kind": "cutout",
+      "bounds": [
+        74,
+        24,
+        606,
+        1008
+      ]
+    },
+    {
+      "path": "public/assets/combat/enemies/time_eater.webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "originalSize": [
+        512,
+        512
+      ],
+      "originalSha256": "2d2b2793294b4a9ab0437f0429e9497c8867df368ffb77ff9a40b87f4eaa7b58",
+      "kind": "cutout",
+      "bounds": [
+        78,
+        70,
+        950,
+        942
+      ]
+    },
+    {
+      "path": "public/assets/combat/characters/silent.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "18cce2580002093bf40fe45a8de7f5fb7525efcb815e322c91c70e1305089f90",
+      "kind": "cutout",
+      "bounds": [
+        128,
+        4,
+        856,
+        666
+      ]
+    },
+    {
+      "path": "public/assets/combat/characters/defect.webp",
+      "size": [
+        1024,
+        682
+      ],
+      "originalSize": [
+        512,
+        341
+      ],
+      "originalSha256": "e6d4187e2305f46ae2c481142983cf7fbf90bc6587aa76ad03239447180ef37b",
+      "kind": "cutout",
+      "bounds": [
+        214,
+        12,
+        852,
+        666
+      ]
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_watcher_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "0fabcb3f6df82caf5b2b47b4a54533e102cd5b01a1c339f2f2d1a22e3e1437e3",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "aa6ea2a06b408b1a2af5e3d84bb0aec076ec84aa017d7dd7fec034e70751ee4b",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "744db4845dc20262e19a3fbffb91100bf7e9e1e8c72f41717f8bb1efc2561510",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/watcher_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "4b42c508fc38492f4b5b790e4b03f3012534c22906e84ef65eac33960fe5e9a1",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_watcher_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "fbb6d8abe47b6bf13fa3d414fcbf3acd874418f17ab2626c3c8bc55cefe615f7",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "bafefd8f2e84eae8a814a067f51328d565b92cade1dd8d1da438502e1338d3b5",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_watcher_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "bf6a1671223a6b829fcc886ec37f56000e0e4616961ce088b0e3ba30bd0c1464",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/silent_defect_watcher_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "60415882a8142bec15bed17bebe52a62e8e5b52789e87016fa3dcb04dadc11cd",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_watcher_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "9fad135b7254267a6866315916ffd2f8c412a958a96548708f3f6cdc075a37c1",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/defect_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "e4df1c76a9b7ab0508544b833dd3bfde047952ee8589d420ac5905897ebc802f",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_defect_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "d829bee0be026c6946d7122092d265159b57627a0c4efeafa0718e729c85b186",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/empty_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "afb05d492b8ae2d51e74f1c846f341ab3cfe2ba29431ca213fbee29d17298011",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "4f43276cce314beaabbf9e83c9ca712b6ef86fe30ebfbf3b02ce022006264409",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_defect_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "75120d14a10dd29254482fc5c0fd120e477044d199a57b282c77e66464aa852b",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_watcher_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "b23263d46a8423da210d3a668bcc39ccb7bbfce1460248a1743bb35e6ee01b1b",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/noncombat/campfire/ironclad_silent_defect_watcher_firecamp.webp",
+      "size": [
+        3840,
+        2161
+      ],
+      "originalSize": [
+        1672,
+        941
+      ],
+      "originalSha256": "d9aad06197b8726261e9d0d2bca9a95cd7c90bc79520b0f0e567413c62526bbf",
+      "kind": "scene"
+    },
+    {
+      "path": "public/assets/combat/stage-act-1.webp",
+      "size": [
+        3840,
+        2159
+      ],
+      "originalSize": [
+        1672,
+        940
+      ],
+      "originalSha256": "9d42879ef7912b6b73142f75d4335f8bf3114866f11e8e647112de869a472722",
+      "kind": "scene"
+    },
+    {
+      "path": "scripts/animation/sources/hero-guardian-body-poses.png",
+      "size": [
+        3072,
+        2048
+      ],
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalSha256": "c1b35d2912278f073ce29f560959e6c875a9986e0e855c9567f676c706034376",
+      "kind": "sheet"
+    },
+    {
+      "path": "scripts/animation/sources/hero-hermit-body-poses.png",
+      "size": [
+        3072,
+        2048
+      ],
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalSha256": "21cad56448551eb114db93f2b544d049dea140cc275ecf53eeadd370ec0a718e",
+      "kind": "sheet"
+    },
+    {
+      "path": "scripts/animation/sources/awakened-body-poses.png",
+      "size": [
+        3072,
+        2048
+      ],
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalSha256": "05958d0e5f86902092321a4f7671e9c568228657ccbe51842f04c2c3ffa81e3d",
+      "kind": "sheet"
+    },
+    {
+      "path": "scripts/animation/sources/bronze-body-poses.png",
+      "size": [
+        3732,
+        3552
+      ],
+      "originalSize": [
+        1866,
+        1776
+      ],
+      "originalSha256": "7ccf90777b8cbeec7f686178f01b30ee362fd7e56f57ed52db63beb1e3bb8c77",
+      "kind": "sheet"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_trickster-body.png",
+      "size": [
+        3072,
+        2048
+      ],
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalSha256": "3cfbb00b66c22b8a160556fccc0c9122f7b12d25a3ffec8a8e4079a4165eeb55",
+      "kind": "sheet"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_wrathful-body.png",
+      "size": [
+        3072,
+        2048
+      ],
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalSha256": "04c70dbdbb68e09e11ff95aa9e42ac4d6d1a14338150d0922a9c5ce4e0032d47",
+      "kind": "sheet"
+    },
+    {
+      "path": "scripts/animation/sources/guardian-body-poses.png",
+      "size": [
+        3072,
+        2048
+      ],
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalSha256": "fc74c9ec75e0666e236cc4f2358f00ef0dc96d8abdfd0b864f05ce04b3965a18",
+      "kind": "sheet"
+    },
+    {
+      "path": "scripts/animation/sources/the_collector-body.png",
+      "size": [
+        3072,
+        2048
+      ],
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalSha256": "d711185b1a4cf31010914d2c04b5a6ceb1a085e618bbde0ea0f0cdbfeb2c8ca8",
+      "kind": "sheet"
+    },
+    {
+      "path": "scripts/animation/sources/time-eater-body-poses.png",
+      "size": [
+        3072,
+        2048
+      ],
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalSha256": "66bc5239d8a7e49717e934b03c3712a6a821d1f2311b72d07a3dd783328243c1",
+      "kind": "sheet"
+    },
+    {
+      "path": "scripts/animation/sources/awakened_one_phase_1-upscaled.webp",
+      "size": [
+        1280,
+        854
+      ],
+      "bounds": [
+        94,
+        192,
+        1268,
+        740
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        427
+      ],
+      "originalSha256": "d297c207292ba1d45c3f0142ea27c13bf5cc8b9534853d6b0841931b3339d70b"
+    },
+    {
+      "path": "scripts/animation/sources/awakened_one_phase_2-upscaled.webp",
+      "size": [
+        1280,
+        854
+      ],
+      "bounds": [
+        70,
+        276,
+        1254,
+        774
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        427
+      ],
+      "originalSha256": "1ed97134fb694d2423a028af2f62e4d7c4810a0828c9e6d0b236299fc9959e2e"
+    },
+    {
+      "path": "scripts/animation/sources/corrupt_heart-upscaled.webp",
+      "size": [
+        1280,
+        854
+      ],
+      "bounds": [
+        312,
+        18,
+        1006,
+        854
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        427
+      ],
+      "originalSha256": "1389bc64d00237208dcdb1e81ec4cf58b8aa3a2cc5b1297eb20df572161104a1"
+    },
+    {
+      "path": "scripts/animation/sources/deca-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        200,
+        154,
+        1098,
+        1116
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "3d24c751670e468e1661d701b25f6f6771d237195abd69e91564959009d19173"
+    },
+    {
+      "path": "scripts/animation/sources/donu-upscaled.webp",
+      "size": [
+        1280,
+        854
+      ],
+      "bounds": [
+        280,
+        26,
+        1040,
+        812
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        427
+      ],
+      "originalSha256": "d8b57cafa85c96a2cb4a919339596e7f5f93e4ad95926fa200411d4b1ea5e4c2"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_blasphemer-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        136,
+        84,
+        1146,
+        1196
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "434c570d1523ae31ec8db1acbc3f7781ab87edd91f7ad0a7e7cf15065d78f685"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_corrupted-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        84,
+        294,
+        1202,
+        1198
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "cbb809b64a7a6962ce255573deabacf6883c44517e87da944237f4c067205f90"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_dark_core-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        100,
+        82,
+        1176,
+        1202
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "ace3c56e35b51e569e53a792a7821cbf50e8b54cf317effc8feee18ec5baf9a8"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_demon-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        82,
+        318,
+        1202,
+        1198
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "3d754e8fb3a315a43f3171d5a9bc35e9797107cc2dbcadb8141da2235360bbc9"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_doppelganger-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        106,
+        172,
+        1180,
+        1198
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "9629e60e287e8946c493e405886ab4dc22ee06bf95dfcb55e90f88f51386566a"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_flame_barrier-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        92,
+        194,
+        1186,
+        1196
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "e2d225df58c1aeed1100474ff574baa577c54e4d24fbd6fd422957c6fdd08535"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_inferno-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        206,
+        80,
+        1076,
+        1196
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "e990adf4508601032d81960459baa14f694e8f33989a7d77f3852a7d0fa22075"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_neow-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        96,
+        90,
+        1184,
+        1198
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "e3cc88febc07a0649570ad7564075cb7634f79674040ae4ae6fd009821bf4b74"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_orb_master-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        202,
+        126,
+        1082,
+        1200
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "09b8b7eed117774cde16ad088833f4bbac9b02512489004cb2edece9d4736a91"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_trickster-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        82,
+        314,
+        1202,
+        1200
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "c690277da21941f47a9b19d265d494d34fab1498bae1d282fe95d77b0c4ceff0"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_witch-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        112,
+        160,
+        1162,
+        1198
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "fa4b83b1f231ac3e1f902dc1484deca4257f805473bb73437f0a662532a18d47"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_wraith-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        130,
+        80,
+        1146,
+        1200
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "2251e062476e8233ebf9fc33f8eb6fc5242d8217a430b96cf5970c56d49ed003"
+    },
+    {
+      "path": "scripts/animation/sources/downfall_wrathful-upscaled.webp",
+      "size": [
+        1280,
+        1280
+      ],
+      "bounds": [
+        104,
+        104,
+        1176,
+        1196
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        640
+      ],
+      "originalSha256": "1f31893847048f42e45d4508e51ac2f937d07188d89efa6f99b35cb5c5327f8f"
+    },
+    {
+      "path": "scripts/animation/sources/guardian_attack-upscaled.webp",
+      "size": [
+        1280,
+        1322
+      ],
+      "bounds": [
+        8,
+        64,
+        1280,
+        1306
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        661
+      ],
+      "originalSha256": "e20e246f3333c0e26f34a822a3c97042a42c8d3af271e2097db74f7de8ebb9bc"
+    },
+    {
+      "path": "scripts/animation/sources/guardian_defensive-upscaled.webp",
+      "size": [
+        1280,
+        1258
+      ],
+      "bounds": [
+        148,
+        100,
+        1242,
+        1112
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        629
+      ],
+      "originalSha256": "284dd75f50e43b6dcfa9a9ce993507b6722eea4a32fc1b125b2fafbbf7bef360"
+    },
+    {
+      "path": "scripts/animation/sources/hexaghost-upscaled.webp",
+      "size": [
+        1280,
+        1098
+      ],
+      "bounds": [
+        182,
+        8,
+        1198,
+        964
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        549
+      ],
+      "originalSha256": "cafca52d062cd6b809f2c4dc1ecb3f47aefc755ce4ccdd502398481191e71f58"
+    },
+    {
+      "path": "scripts/animation/sources/slime_boss-upscaled.webp",
+      "size": [
+        1280,
+        960
+      ],
+      "bounds": [
+        56,
+        60,
+        1192,
+        946
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        480
+      ],
+      "originalSha256": "5f4ac72dfb5eeca3a3adaf57002c9eab155952eaaa89fe3d6e5f448ef806b55e"
+    },
+    {
+      "path": "scripts/animation/sources/the_collector-upscaled.webp",
+      "size": [
+        1280,
+        1344
+      ],
+      "bounds": [
+        328,
+        54,
+        1104,
+        1306
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        672
+      ],
+      "originalSha256": "9c694b4cf0f6f7e788ee8beddc284edc42fa1586f6d5c9b4a02e6da8fa2eed55"
+    },
+    {
+      "path": "scripts/animation/sources/time_eater-upscaled.webp",
+      "size": [
+        1280,
+        854
+      ],
+      "bounds": [
+        168,
+        20,
+        1066,
+        838
+      ],
+      "kind": "cutout",
+      "originalSize": [
+        640,
+        427
+      ],
+      "originalSha256": "55f9b4df5c0b9eeaba68a214b6c712cab7dbc58fd5308fecd451ea2c22468c60"
+    }
+  ]
+}

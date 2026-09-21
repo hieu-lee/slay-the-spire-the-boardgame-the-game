@@ -109,9 +109,11 @@ def deform(points, bones, phase, pose, contact, duration=1830, aspect=1):
 
 def render(spec, pose, output, size=400, fps=30):
     source = Image.open(ROOT / spec['source']).convert('RGBA')
-    if spec.get('flipX'): source = source.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    box = spec.get('sourceBounds', source.getbbox())
+    if spec.get('flipX'):
+        source = source.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+        box = (source.width-box[2], box[1], source.width-box[0], box[3])
     width, height = size, round(size * source.height / source.width)
-    box = source.getbbox()
     texture = source.crop(box)
     if pose == 'idle' and 'idleSource' in spec:
         texture = Image.open(ROOT / spec['idleSource']).convert('RGBA')

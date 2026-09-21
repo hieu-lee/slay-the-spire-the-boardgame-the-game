@@ -10,7 +10,7 @@
   overflow: clip;
   background:
     linear-gradient(180deg, rgb(2 8 10 / 0.12), transparent 46%, rgb(1 5 6 / 0.45)),
-    var(--campfire-scene, url('/assets/noncombat/campfire/ironclad_firecamp.png')) center / cover no-repeat;
+    var(--campfire-scene, url('/assets/noncombat/campfire/ironclad_firecamp.webp')) center / cover no-repeat;
   box-shadow: inset 0 0 9rem rgb(0 0 0 / 0.9);
   flex: 1;
   min-height: 0;
@@ -33,7 +33,7 @@
   .sts-scope .campfire::before {
     z-index: 0;
     inset: -1rem;
-    background: var(--campfire-scene, url('/assets/noncombat/campfire/ironclad_firecamp.png')) center / cover no-repeat;
+    background: var(--campfire-scene, url('/assets/noncombat/campfire/ironclad_firecamp.webp')) center / cover no-repeat;
     filter: blur(1rem) brightness(0.38);
   }
 
@@ -41,7 +41,7 @@
     z-index: 1;
     background:
       linear-gradient(180deg, rgb(2 8 10 / 0.12), transparent 46%, rgb(1 5 6 / 0.45)),
-      var(--campfire-scene, url('/assets/noncombat/campfire/ironclad_firecamp.png')) center / contain no-repeat;
+      var(--campfire-scene, url('/assets/noncombat/campfire/ironclad_firecamp.webp')) center / contain no-repeat;
   }
 }
 

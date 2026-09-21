@@ -31,7 +31,7 @@ def available(name):
 
 def render(name, spec, output):
     original = Image.open(ROOT / spec['source']).convert('RGBA')
-    rest = original.crop(original.getbbox())
+    rest = original.crop(spec.get('sourceBounds', original.getbbox()))
     width = spec.get('size', 400)
     height = round(width * original.height / original.width)
     scale = min(width*.8/rest.width, height*spec.get('heightFit', .88)/rest.height)
@@ -64,7 +64,7 @@ def render(name, spec, output):
             return sum(image.getchannel('A').histogram()[33:])
         source_scale = scale * math.sqrt(area(original) / area(poses[0]))
     fixed_core = name.startswith('hero-hexaghost')
-    rest_box = original.getbbox()
+    rest_box = spec.get('sourceBounds', original.getbbox())
     foot_band = original.getchannel('A').crop((0, round(rest_box[1]+(rest_box[3]-rest_box[1])*.75), original.width, rest_box[3])).getbbox()
     rest_center = (foot_band[0]+foot_band[2])/2
     target_center = (width-rest.width*scale)/2 + (rest_center-rest_box[0])*scale

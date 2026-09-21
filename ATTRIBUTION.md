@@ -123,3 +123,14 @@ Open an issue and the referenced material will be removed.
 ## Please buy the game
 
 <https://contentiongames.com/games/slay/>
+
+### September 2026 resolution derivatives
+
+Selected existing combat cutouts, authored poses, animation sheets and scene
+backgrounds were faithfully restored using OpenAI `gpt-image-2.5-sunburst`.
+These are generated illustrative derivatives of the artwork credited above,
+not new official source art. Cutouts preserve native alpha and are registered
+to their original painted bounds; scenes retain their framing and exposure.
+See `docs/asset-resolution.json` for the original hashes and final dimensions,
+and `docs/asset-resolution-prompts.md` for prompts and processing settings.
+Printed card scans remain unmodified.

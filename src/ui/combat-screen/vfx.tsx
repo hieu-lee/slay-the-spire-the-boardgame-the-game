@@ -209,8 +209,9 @@ export function DefectEvokeVfx({ event }: { event: Extract<CombatPresentationEve
       // Mouth registration in the 400 x 266 idle rig, including its transparent
       // overscan. The rendered image rect already includes the character scale.
       const body = combatBodyPoint(portrait)
-      source.style.left = `${(event.orb === 'frost' ? body.x : image.left + (image.width - art.naturalWidth * fit) / 2 + 222 * fit) - parent.left}px`
-      source.style.top = `${(event.orb === 'frost' ? body.y : image.bottom - (art.naturalHeight - 89) * fit) - parent.top}px`
+      const sourceScale = art.naturalWidth / 400
+      source.style.left = `${(event.orb === 'frost' ? body.x : image.left + (image.width - art.naturalWidth * fit) / 2 + 222 * sourceScale * fit) - parent.left}px`
+      source.style.top = `${(event.orb === 'frost' ? body.y : image.bottom - (art.naturalHeight - 89 * sourceScale) * fit) - parent.top}px`
       if (event.orb === 'frost') return
       const origin = source.getBoundingClientRect()
       setBeams(event.enemyIds.flatMap(id => {
@@ -251,7 +252,7 @@ export function DefectEvokeVfx({ event }: { event: Extract<CombatPresentationEve
   </span>
 }
 
-// Flash onsets and the two barrel tips in the shipped 400x400 Hermit rig.
+// Flash onsets and barrel tips in the canonical 400x400 Hermit rig.
 // Keep in sync with drawn.py's poses 8, 10, 12, 14, 16 (including its sway).
 export const HERMIT_VOLLEYS = [
   { ms: 611, muzzles: [[328, 218], [272, 253]] },
@@ -280,9 +281,10 @@ export function HermitBullets({ event }: { event: CombatPresentationEvent }) {
       const parent = source.getBoundingClientRect()
       const fit = Math.min(rect.width / art.naturalWidth, rect.height / art.naturalHeight)
       if (!Number.isFinite(fit)) return
+      const sourceScale = art.naturalWidth / 400
       setShots(HERMIT_VOLLEYS.flatMap((volley, i) => volley.muzzles.flatMap(([mx, my], gun) => {
-        const x = rect.left + (rect.width - art.naturalWidth * fit) / 2 + mx * fit
-        const y = rect.bottom - (art.naturalHeight - my) * fit
+        const x = rect.left + (rect.width - art.naturalWidth * fit) / 2 + mx * sourceScale * fit
+        const y = rect.bottom - (art.naturalHeight - my * sourceScale) * fit
         return event.enemyIds.flatMap(id => {
           const target = board.querySelector<HTMLElement>(`.enemy[data-enemy-id="${CSS.escape(id)}"] .enemy__portrait`)
           if (!target) return []

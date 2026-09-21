@@ -5,12 +5,12 @@
     "scale": 2.1
   },
   "hero-silent": {
-    "contactLeft": 122,
+    "contactLeft": 121,
     "height": 533,
     "scale": 1.15
   },
   "hero-defect": {
-    "contactLeft": 205,
+    "contactLeft": 203,
     "height": 533,
     "scale": 1.15
   },
@@ -20,12 +20,12 @@
     "scale": 2.2
   },
   "hero-guardian": {
-    "contactLeft": 170,
+    "contactLeft": 149,
     "height": 800,
     "scale": 1.15
   },
   "hero-hermit": {
-    "contactLeft": 230,
+    "contactLeft": 207,
     "height": 800,
     "scale": 1.5
   },
@@ -75,7 +75,7 @@
     "scale": 1.15
   },
   "awakened_one_phase_1": {
-    "contactLeft": 162,
+    "contactLeft": 200,
     "height": 534,
     "scale": 1.65
   },
@@ -85,7 +85,7 @@
     "scale": 1.65
   },
   "bronze_automaton": {
-    "contactLeft": 248,
+    "contactLeft": 260,
     "height": 800,
     "scale": 1.65
   },
@@ -150,7 +150,7 @@
     "scale": 1.65
   },
   "downfall_trickster": {
-    "contactLeft": 80,
+    "contactLeft": 83,
     "height": 800,
     "scale": 1.65
   },
@@ -165,12 +165,12 @@
     "scale": 1.65
   },
   "downfall_wrathful": {
-    "contactLeft": 148,
+    "contactLeft": 136,
     "height": 800,
     "scale": 1.65
   },
   "guardian_attack": {
-    "contactLeft": 238,
+    "contactLeft": 269,
     "height": 826,
     "scale": 1.65
   },
@@ -195,12 +195,12 @@
     "scale": 2.0
   },
   "the_collector": {
-    "contactLeft": 111,
+    "contactLeft": 84,
     "height": 840,
     "scale": 1.65
   },
   "time_eater": {
-    "contactLeft": 243,
+    "contactLeft": 189,
     "height": 534,
     "scale": 1.65
   },
@@ -276,411 +276,411 @@
     "scale": 1.25
   },
   "small_slime": {
-    "contactLeft": 59,
-    "height": 320,
+    "contactLeft": 117,
+    "height": 641,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-pounce"
   },
   "acid_slime": {
-    "contactLeft": 59,
-    "height": 400,
+    "contactLeft": 119,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "silent-poison",
     "impact": "turn-poison-impact",
     "origin": [
-      133,
-      338
+      267,
+      675
     ]
   },
   "large_slime": {
-    "contactLeft": 64,
-    "height": 225,
+    "contactLeft": 129,
+    "height": 450,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "silent-poison",
     "impact": "turn-poison-impact",
     "origin": [
-      138,
-      172
+      276,
+      327
     ]
   },
   "spike_slime": {
-    "contactLeft": 58,
-    "height": 400,
+    "contactLeft": 116,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-pounce"
   },
   "cultist": {
-    "contactLeft": 32,
-    "height": 469,
+    "contactLeft": 64,
+    "height": 937,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "jaw_worm": {
-    "contactLeft": 62,
-    "height": 250,
+    "contactLeft": 122,
+    "height": 500,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-pounce"
   },
   "green_louse": {
-    "contactLeft": 50,
-    "height": 250,
+    "contactLeft": 101,
+    "height": 500,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-pounce"
   },
   "red_louse": {
-    "contactLeft": 51,
-    "height": 250,
+    "contactLeft": 104,
+    "height": 500,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-pounce"
   },
   "fungi_beast": {
-    "contactLeft": 62,
-    "height": 266,
+    "contactLeft": 121,
+    "height": 533,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-pounce"
   },
   "looter": {
-    "contactLeft": 52,
-    "height": 400,
+    "contactLeft": 106,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "mugger": {
-    "contactLeft": 66,
-    "height": 411,
+    "contactLeft": 132,
+    "height": 822,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-stabs"
   },
   "mad_gremlin": {
-    "contactLeft": 60,
-    "height": 420,
+    "contactLeft": 124,
+    "height": 839,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "sneaky_gremlin": {
-    "contactLeft": 70,
-    "height": 545,
+    "contactLeft": 142,
+    "height": 1089,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-stabs"
   },
   "gremlin_wizard": {
-    "contactLeft": 74,
-    "height": 437,
+    "contactLeft": 149,
+    "height": 873,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "magic-burst",
     "impact": "turn-dark-evoke-impact",
     "origin": [
-      111,
-      173
+      223,
+      344
     ]
   },
   "fat_gremlin": {
-    "contactLeft": 1,
-    "height": 533,
+    "contactLeft": 8,
+    "height": 1067,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "chosen": {
-    "contactLeft": 71,
-    "height": 601,
+    "contactLeft": 143,
+    "height": 1201,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "dark-channel",
     "impact": "turn-dark-evoke-impact",
     "origin": [
-      181,
-      353
+      374,
+      707
     ]
   },
   "centurion": {
-    "contactLeft": 53,
-    "height": 601,
+    "contactLeft": 107,
+    "height": 1201,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-bash"
   },
   "mystic": {
-    "contactLeft": 87,
-    "height": 421,
+    "contactLeft": 176,
+    "height": 843,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "magic-burst",
     "impact": "magic-burst",
     "origin": [
-      117,
-      90
+      234,
+      200
     ]
   },
   "byrd": {
-    "contactLeft": 74,
-    "height": 266,
+    "contactLeft": 147,
+    "height": 533,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-pounce"
   },
   "snake_plant": {
-    "contactLeft": 50,
-    "height": 413,
+    "contactLeft": 100,
+    "height": 826,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-stabs"
   },
   "shelled_parasite": {
-    "contactLeft": 64,
-    "height": 266,
+    "contactLeft": 131,
+    "height": 533,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-pounce"
   },
   "snecko": {
-    "contactLeft": 64,
-    "height": 302,
+    "contactLeft": 128,
+    "height": 605,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "spheric_guardian": {
-    "contactLeft": 50,
-    "height": 266,
+    "contactLeft": 101,
+    "height": 533,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "lightning-channel",
     "impact": "turn-lightning-passive-impact",
     "origin": [
-      186,
-      133
+      371,
+      265
     ]
   },
   "spire_growth": {
-    "contactLeft": 57,
-    "height": 400,
+    "contactLeft": 117,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "repulsor": {
-    "contactLeft": 104,
-    "height": 266,
+    "contactLeft": 211,
+    "height": 533,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "dark-channel",
     "impact": "turn-dark-evoke-impact",
     "origin": [
-      164,
-      161
+      330,
+      324
     ]
   },
   "exploder": {
-    "contactLeft": 47,
-    "height": 312,
+    "contactLeft": 140,
+    "height": 625,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "lightning-channel",
     "impact": "turn-damage-impact",
     "origin": [
-      186,
-      188
+      364,
+      362
     ]
   },
   "orb_walker": {
-    "contactLeft": 56,
-    "height": 352,
+    "contactLeft": 112,
+    "height": 703,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "hexaghost-flame",
     "impact": "hexaghost-flame-impact",
     "origin": [
-      186,
-      225
+      344,
+      435
     ]
   },
   "maw": {
-    "contactLeft": 67,
-    "height": 266,
+    "contactLeft": 137,
+    "height": 533,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "writhing_mass": {
-    "contactLeft": 66,
-    "height": 266,
+    "contactLeft": 129,
+    "height": 533,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "darkling": {
-    "contactLeft": 61,
-    "height": 266,
+    "contactLeft": 122,
+    "height": 533,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-pounce"
   },
   "spiker": {
-    "contactLeft": 56,
-    "height": 374,
+    "contactLeft": 115,
+    "height": 748,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "dagger": {
-    "contactLeft": 97,
-    "height": 400,
+    "contactLeft": 196,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "torch_head": {
-    "contactLeft": 16,
-    "height": 601,
+    "contactLeft": 34,
+    "height": 1201,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "bronze_orb": {
-    "contactLeft": 125,
-    "height": 601,
+    "contactLeft": 253,
+    "height": 1201,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "lightning-channel",
     "impact": "turn-lightning-passive-impact",
     "origin": [
-      179,
-      362
+      358,
+      720
     ]
   },
   "downfall_dark_orb": {
-    "contactLeft": 61,
-    "height": 400,
+    "contactLeft": 123,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "dark-channel",
     "impact": "turn-dark-evoke-impact",
     "origin": [
-      200,
-      249
+      402,
+      486
     ]
   },
   "downfall_lightning_orb": {
-    "contactLeft": 41,
-    "height": 400,
+    "contactLeft": 83,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "lightning-channel",
     "impact": "turn-lightning-passive-impact",
     "origin": [
-      200,
-      255
+      400,
+      506
     ]
   },
   "downfall_frost_orb": {
-    "contactLeft": 82,
-    "height": 400,
+    "contactLeft": 165,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "frost-channel",
     "impact": "turn-frost-passive-impact",
     "origin": [
-      200,
-      252
+      416,
+      500
     ]
   },
   "downfall_shiv": {
-    "contactLeft": 29,
-    "height": 400,
+    "contactLeft": 55,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "downfall_pc_ironclad": {
-    "contactLeft": 39,
-    "height": 400,
+    "contactLeft": 78,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "downfall_pc_silent": {
-    "contactLeft": 63,
-    "height": 400,
+    "contactLeft": 126,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "silent-knife",
     "impact": "turn-damage-impact",
     "origin": [
-      161,
-      219
+      322,
+      438
     ]
   },
   "downfall_pc_defect": {
-    "contactLeft": 46,
-    "height": 400,
+    "contactLeft": 92,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "lightning-channel",
     "impact": "turn-lightning-passive-impact",
     "origin": [
-      111,
-      194
+      221,
+      389
     ]
   },
   "downfall_pc_watcher": {
-    "contactLeft": 60,
-    "height": 400,
+    "contactLeft": 118,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "magic-burst",
     "impact": "magic-burst",
     "origin": [
-      108,
-      316
+      216,
+      632
     ]
   },
   "downfall_loot_chest": {
-    "contactLeft": 48,
-    "height": 400,
+    "contactLeft": 95,
+    "height": 800,
     "scale": 1.15,
     "attackMotion": "ranged",
     "rootMotion": "elite-core",
     "projectile": "hexaghost-flame",
     "impact": "hexaghost-flame-impact",
     "origin": [
-      117,
-      265
+      232,
+      529
     ]
   },
   "transient": {
-    "contactLeft": 74,
-    "height": 320,
+    "contactLeft": 150,
+    "height": 641,
     "scale": 1.15,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"

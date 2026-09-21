@@ -234,7 +234,7 @@ try {
         assert((await pose.locator(':scope > img').getAttribute('src')).endsWith('/watcher-ready.webp'))
         assert.equal(await pose.evaluate(e=>getComputedStyle(e).opacity),'1','Watcher must raise her staff before casting')
         assert.equal(await page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig`).count(),0)
-      } else assert.equal(await pose.locator(':scope > img').evaluate(i=>i.naturalWidth),400,character)
+      } else assert.equal(await pose.locator(':scope > img').evaluate(i=>i.naturalWidth),rigs[character==='hexaghost'?'hero-hexaghost-heat-0':`hero-${character}`].size,character)
       await page.waitForTimeout(character==='hexaghost'?1400:character==='ironclad'?850:600)
       if(character==='watcher') {
         const cast=page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--watcher-cast`)
@@ -334,16 +334,18 @@ try {
               const art=node.closest('.seat__portrait').querySelector(':scope > img')
               const image=art.getBoundingClientRect()
               const fit=Math.min(image.width/art.naturalWidth,image.height/art.naturalHeight)
-              const mouthX=image.left+(image.width-art.naturalWidth*fit)/2+222*fit
-              const mouthY=image.bottom-(art.naturalHeight-89)*fit
+              const sourceScale=art.naturalWidth/400
+              const mouthX=image.left+(image.width-art.naturalWidth*fit)/2+222*sourceScale*fit
+              const mouthY=image.bottom-(art.naturalHeight-89*sourceScale)*fit
               return [...node.querySelectorAll('.defect-evoke__ray')].map(ray=>{
                 const portrait=document.querySelector(`.enemy[data-enemy-id="${ray.dataset.evokeTarget}"] .enemy__portrait`)
                 const targetArt=portrait.querySelector(':scope > img')
                 const target=targetArt.getBoundingClientRect()
                 const targetFit=Math.min(target.width/targetArt.naturalWidth,target.height/targetArt.naturalHeight)
                 // Jaw Worm's painted torso in the canonical 400 x 250 idle rig.
-                const targetX=target.left+(target.width-targetArt.naturalWidth*targetFit)/2+170.3*targetFit
-                const targetY=target.bottom-(targetArt.naturalHeight-181)*targetFit
+                const targetScale=targetArt.naturalWidth/400
+                const targetX=target.left+(target.width-targetArt.naturalWidth*targetFit)/2+170.3*targetScale*targetFit
+                const targetY=target.bottom-(targetArt.naturalHeight-181*targetScale)*targetFit
                 const impact=portrait.querySelector(`.combat-vfx--target[data-vfx-seq="${node.dataset.evokeSeq}"]`).getBoundingClientRect()
                 const length=parseFloat(ray.style.getPropertyValue('--beam-length'))
                 const angle=parseFloat(ray.style.getPropertyValue('--beam-angle'))*Math.PI/180
@@ -437,6 +439,14 @@ try {
         await page.locator('.board').screenshot({path:resolve(output,`${screen}-hermit-live-${count}.png`)})
         const geometry = await shots.evaluateAll(nodes => nodes.map(node => {
           const origin = node.getBoundingClientRect()
+          const [volley, gun] = node.dataset.shot.split('-').map(Number)
+          const muzzle = [[[328,218],[272,253]],[[337,218],[275,246]],[[295,218],[226,246]],[[303,218],[226,244]],[[313,218],[243,244]]][volley][gun]
+          const source = node.closest('[data-hermit-seq]').parentElement.querySelector(':scope > img')
+          const sourceRect = source.getBoundingClientRect()
+          const sourceFit = Math.min(sourceRect.width/source.naturalWidth, sourceRect.height/source.naturalHeight)
+          const sourceScale = source.naturalWidth / 400
+          const muzzleX = sourceRect.left + (sourceRect.width-source.naturalWidth*sourceFit)/2 + muzzle[0]*sourceScale*sourceFit
+          const muzzleY = sourceRect.bottom - (source.naturalHeight-muzzle[1]*sourceScale)*sourceFit
           const dx = parseFloat(node.style.getPropertyValue('--shot-dx'))
           const dy = parseFloat(node.style.getPropertyValue('--shot-dy'))
           const targetId = node.dataset.shot.split('-').slice(2).join('-')
@@ -450,9 +460,9 @@ try {
           flight.pause(); flight.currentTime = 0
           const before = getComputedStyle(flight.effect.target).opacity
           flight.currentTime = flight.effect.getTiming().delay + 90
-          return { x: origin.x + dx, y: origin.y + dy,
-            targetX: rect.left + (rect.width - target.naturalWidth * fit) / 2 + 170.3 * fit,
-            targetY: rect.bottom - (target.naturalHeight - 181) * fit,
+          return { x: origin.x + dx, y: origin.y + dy, originX: origin.x, originY: origin.y, muzzleX, muzzleY,
+            targetX: rect.left + (rect.width - target.naturalWidth * fit) / 2 + 170.3 * (target.naturalWidth / 400) * fit,
+            targetY: rect.bottom - (target.naturalHeight - 181 * (target.naturalWidth / 400)) * fit,
             before, during: getComputedStyle(flight.effect.target).opacity,
             delay: flight.effect.getTiming().delay, duration: flight.effect.getTiming().duration,
             impactDelay: impact.effect.getTiming().delay,
@@ -462,6 +472,7 @@ try {
             trail: getComputedStyle(node.querySelector('.hermit-shot__bullet'), '::before').backgroundImage }
         }))
         for (const shot of geometry) {
+          assert(Math.abs(shot.originX-shot.muzzleX)<1 && Math.abs(shot.originY-shot.muzzleY)<1, 'bullet detached from barrel')
           assert(Math.abs(shot.x-shot.targetX)<3 && Math.abs(shot.y-shot.targetY)<3, 'bullet misses torso')
           assert.equal(shot.before, '0', 'bullet visible before muzzle flash')
           assert.equal(shot.during, '1', 'bullet invisible in flight')
@@ -745,10 +756,11 @@ try {
               const art=document.querySelector(`.seat[data-player-id="${e.dataset.targetPlayer}"] .seat__portrait > img`)
               const image=art.getBoundingClientRect()
               const fit=Math.min(image.width/art.naturalWidth,image.height/art.naturalHeight)
-              // Defect's torso is below his mouth at (222, 89), at stable rig scale.
+              // Canonical Defect torso coordinates are measured on the original 400px canvas.
+              const sourceScale = art.naturalWidth / 400
               return {x:impact.left+impact.width/2,y:impact.top+impact.height/2,
-                bodyX:image.left+(image.width-art.naturalWidth*fit)/2+195.4*fit,
-                bodyY:image.bottom-(art.naturalHeight-149.4)*fit}
+                bodyX:image.left+(image.width-art.naturalWidth*fit)/2+195.4*sourceScale*fit,
+                bodyY:image.bottom-(art.naturalHeight-149.4*sourceScale)*fit}
             })
             assert(Math.abs(anchor.x-anchor.bodyX)<3&&Math.abs(anchor.y-anchor.bodyY)<3,`${enemy.id}: damage impact misses painted torso ${JSON.stringify(anchor)}`)
           }

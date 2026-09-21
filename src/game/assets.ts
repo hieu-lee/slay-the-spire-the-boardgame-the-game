@@ -6,7 +6,7 @@
 import type { CardDef } from './cards.ts'
 import type { EnemyDef } from './enemies.ts'
 import type { PotionDef, RelicDef } from './relics.ts'
-import { BASE_CHARACTER_IDS, CHARACTER_IDS, type CharacterId } from './types.ts'
+import { CHARACTER_IDS, type CharacterId } from './types.ts'
 
 /** Public asset URL under Vite's current deployment base. */
 export const assetPath = (path: string): string => `${import.meta.env?.BASE_URL ?? '/'}assets/${path}`
@@ -127,13 +127,10 @@ export function potionCardImagePath(def: PotionDef): string {
 export const relicIconPath = (id: string) => assetPath(`relic-icons/${id.replace(/^downfall_/, '')}.png`)
 export const potionIconPath = (id: string) => assetPath(`potion-icons/${id}.png`)
 
-const BASE_CAMPFIRE_CHARACTERS = new Set<CharacterId>(BASE_CHARACTER_IDS)
-
 export function campfireScenePath(characters: CharacterId[]): string {
-  if (characters.length === 0) return assetPath('noncombat/campfire/empty_firecamp.png')
+  if (characters.length === 0) return assetPath('noncombat/campfire/empty_firecamp.webp')
   const party = CHARACTER_IDS.filter((character) => characters.includes(character)).join('_')
-  const baseOnly = characters.every((character) => BASE_CAMPFIRE_CHARACTERS.has(character))
-  return assetPath(`noncombat/campfire/${party}_firecamp.${baseOnly ? 'png' : 'webp'}`)
+  return assetPath(`noncombat/campfire/${party}_firecamp.webp`)
 }
 
 /**

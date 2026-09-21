@@ -132,12 +132,12 @@ const cardIndex = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json')
  * paints one at `max-height: 62vh`.
  */
 const PILE_ICON_EDGE = [160, 256]
-const ENEMY_CUTOUT_EDGE = [256, 512]
+const ENEMY_CUTOUT_EDGE = [256, 1024]
 const BOSS_ELITE_CUTOUT_EDGE = [256, 1024]
 /** Only the `-hero` pair, painted by the character-select and Neow scenes. */
 const CHARACTER_HERO_EDGE = [700, 1536]
 /** Every other character cutout: combat seats, roster thumbs, lobby seats. */
-const CHARACTER_CUTOUT_EDGE = [256, 512]
+const CHARACTER_CUTOUT_EDGE = [256, 1024]
 const MERCHANT_CHARACTER_EDGE = [256, 576]
 const DIE_ICON_EDGE = 128
 /** Matches THUMB_WIDTH in scripts/sync-card-assets.mjs. */
@@ -166,20 +166,14 @@ check('every campfire party resolves to one complete wide scene', () => {
   }
   choose(0, [])
   const expected = parties.map((party) => campfireScenePath(party).split('/').pop()).sort()
-  const scenes = [...expected, 'empty_firecamp.png'].sort()
+  const scenes = [...expected, 'empty_firecamp.webp'].sort()
   assertDeepEqual(campfireSceneFiles.sort(), scenes)
   for (const file of scenes) {
-    if (file.endsWith('.png')) {
-      const bytes = readFileSync(join(campfireRoot, file))
-      assert(bytes.subarray(1, 4).toString() === 'PNG', `${file} is not a PNG`)
-      assert(bytes.readUInt32BE(16) === 1672 && bytes.readUInt32BE(20) === 941, `${file} is not 1672x941`)
-    } else {
-      const info = spawnSync('webpinfo', ['-summary', join(campfireRoot, file)], { encoding: 'utf8' })
-      assert(info.status === 0 && /Width: 1672[\s\S]*Height: 941/.test(info.stdout), `${file} is not 1672x941 WebP`)
-    }
+    const info = spawnSync('webpinfo', ['-summary', join(campfireRoot, file)], { encoding: 'utf8' })
+    assert(info.status === 0 && /Width: 3840[\s\S]*Height: 2161/.test(info.stdout), `${file} is not 3840x2161 WebP`)
   }
-  assert(scenes.reduce((bytes, file) => bytes + statSync(join(campfireRoot, file)).size, 0) < 96 * 1024 * 1024,
-    'campfire scenes exceed 96 MiB')
+  assert(scenes.reduce((bytes, file) => bytes + statSync(join(campfireRoot, file)).size, 0) < 128 * 1024 * 1024,
+    'campfire scenes exceed 128 MiB')
 })
 
 check('sound effects are complete, compact, and decodable', () => {
@@ -994,7 +988,7 @@ check('bundled stage and generated icon inventories are complete and decodable',
   const stage = join(combatStageRoot, 'stage-act-1.webp')
   assert(existsSync(stage), 'missing Act I combat stage')
   const stageInfo = spawnSync('webpinfo', ['-summary', stage], { encoding: 'utf8' })
-  assert(stageInfo.status === 0 && /Width: 1672[\s\S]*Height: 940/.test(stageInfo.stdout),
+  assert(stageInfo.status === 0 && /Width: 3840[\s\S]*Height: 2159/.test(stageInfo.stdout),
     stageInfo.stderr || 'the Act I stage is missing, corrupt, or the wrong size')
   for (const file of [...statusIconFiles.map((name) => join(statusIconRoot, name)),
     ...powerIconFiles.map((name) => join(powerIconRoot, name)),

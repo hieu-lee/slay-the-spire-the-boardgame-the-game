@@ -45,6 +45,7 @@ def sprites(path, count=24, columns=6):
 
 def render(name, spec, output):
     drawings = sprites(ROOT / spec['drawnSheet'])
+    source_scale = spec.get('drawnSourceScale', 1)
     idle = Image.open(ROOT / spec['output'] / f'{name}-idle.webp').convert('RGBA')
     area = lambda image: sum(image.getchannel('A').histogram()[33:])
     scale = math.sqrt(area(idle) / area(drawings[0][0]))
@@ -70,7 +71,7 @@ def render(name, spec, output):
         sword = Image.open(ROOT/'scripts/animation/sources/champ-sword.png').convert('RGBA')
         # Body drawings are 2x the original sheet; sword dimensions and grips
         # use the same source-pixel coordinate system before registration.
-        sword = sword.resize((round(320*scale),round(320*scale*2/3)),Image.Resampling.LANCZOS)
+        sword = sword.resize((round(320*scale*source_scale),round(320*scale*source_scale*2/3)),Image.Resampling.LANCZOS)
         pivot = (1300*sword.width/1536,520*sword.height/1024)
         grips = [(394,408),(922,405),(1469,254),(1979,216),(2512,219),(3011,213),
                  (451,707),(635,891),(635,891),(1670,880),(2198,893),(2726,909),
@@ -83,7 +84,7 @@ def render(name, spec, output):
     prop = json.loads((ROOT/'scripts/animation/drawn-props.json').read_text()).get(name)
     if prop:
         sword = Image.open(ROOT/f'scripts/animation/sources/{name}-staff.png').convert('RGBA')
-        sword = sword.resize((round(prop['width']*scale),round(prop['width']*scale*sword.height/sword.width)),Image.Resampling.LANCZOS)
+        sword = sword.resize((round(prop['width']*scale*source_scale),round(prop['width']*scale*source_scale*sword.height/sword.width)),Image.Resampling.LANCZOS)
         pivot = (prop['pivot'][0]*sword.width/1536,prop['pivot'][1]*sword.height/1024)
         grips = prop['grips']
         order = spec.get('drawnOrder', list(range(24)))
@@ -93,7 +94,7 @@ def render(name, spec, output):
         support = [prop.get('supportGrips', [None]*24)[i] for i in order]
     if name == 'hero-hermit':
         # Reuse the first gun's native-alpha flash for the second muzzle.
-        flash = Image.open(ROOT / spec['drawnSheet']).convert('RGBA').crop((728,296,782,353))
+        flash = Image.open(ROOT / spec['drawnSheet']).convert('RGBA').crop(tuple(v*source_scale for v in (728,296,782,353)))
         muzzles = {8:(675,362),10:(1195,357),12:(165,610),14:(668,611),16:(1173,609)}
         drawings[2] = drawings[1]  # Reject the isolated premature gun-lowering pose.
         drawings[20] = drawings[21]  # Recovery drawing 20 has an extra left hand; use the adjacent holstered pose.
@@ -104,18 +105,18 @@ def render(name, spec, output):
         frame.alpha_composite(drawing, (x, y))
         if name == 'hero-hermit' and index in muzzles:
             mx, my = muzzles[index]
-            gx, gy = x+(mx-box[0])*scale, y+(my-box[1])*scale
+            gx, gy = x+(mx*source_scale-box[0])*scale, y+(my*source_scale-box[1])*scale
             angle = math.radians(25 if index == 8 else 12)
             c, s = math.cos(angle)/scale, math.sin(angle)/scale
             second_flash = flash.transform(frame.size, Image.Transform.AFFINE,
-                (c,s,-c*gx-s*gy,-s,c,30+s*gx-c*gy), Image.Resampling.BICUBIC)
+                (c,s,-c*gx-s*gy,-s,c,30*source_scale+s*gx-c*gy), Image.Resampling.BICUBIC)
             frame.alpha_composite(second_flash)
         if name == 'the_champ' or prop:
-            points.append((x+(grips[index][0]-box[0])*scale,y+(grips[index][1]-box[1])*scale))
+            points.append((x+(grips[index][0]*source_scale-box[0])*scale,y+(grips[index][1]*source_scale-box[1])*scale))
         if prop:
             point = support[index]
             support_points.append(None if point is None else
-                (x+(point[0]-box[0])*scale,y+(point[1]-box[1])*scale))
+                (x+(point[0]*source_scale-box[0])*scale,y+(point[1]*source_scale-box[1])*scale))
         poses.append(frame)
     duration = spec.get('duration', 1830)
     phase_keys = ([0,7,16,23], [0,550,1100,duration]) if name.startswith('hero-') else ([0,6,9,16,23], [0,550,730,1280,duration])
@@ -144,7 +145,7 @@ def render(name, spec, output):
             ghost = ImageOps.colorize(frame.convert('L'), (35,12,65), (211,144,255)).convert('RGBA')
             ghost.putalpha(frame.getchannel('A').point(lambda alpha: round(alpha*opacity)))
             combined = Image.new('RGBA', frame.size)
-            combined.alpha_composite(ghost, (-round(45*scale), -round(12*scale)))
+            combined.alpha_composite(ghost, (-round(45*scale*source_scale), -round(12*scale*source_scale)))
             combined.alpha_composite(frame)
             frame = combined
         frames.append(frame.rotate(.4*math.sin(2*math.pi*t/duration),

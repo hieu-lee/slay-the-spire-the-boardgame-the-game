@@ -20,11 +20,12 @@
       ],
       "sourceSha256": "82f69c986a0ebd79a39749566dea7366222642ba4729fedb34f9093f493858ac",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_witch.webp": "f2c37bc9aa796adaa054682c7e37b16a49871ae72e7e4b611bd8ab4ab292812b",
+        "public/assets/combat/enemies/downfall_witch.webp": "e7bd70c26402d48f19973ce296202ad9bde6a887990c16c9ea99bfb3a619973b",
         "public/assets/combat/enemies/animations/downfall_witch-idle.webp": "cfcd949cbb8cc2d3b20f8fc09e0f7742baab9021bb67495d34fbb1110b0a5218",
         "public/assets/combat/enemies/animations/downfall_witch-attack.webp": "1c4bbdb6a4066cd170db995fcc7d84f0c34ee80f1496873ea1bab7f296208f0f",
         "public/assets/combat/enemies/projectiles/downfall_witch.webp": "3808a9d1003b29fdd114890b8bc1ede3f48bb6c75dab210c2f1faf1a9ef44160"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_dark_core",
@@ -41,11 +42,12 @@
       ],
       "sourceSha256": "b42a3787a176067847bc701e48a16d33614185018939fd0ea86cf7f92a4b899a",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_dark_core.webp": "d1b7704dfe8e298942d30dc73dd4fd08e9af95e786c4ae429d345f8bb855bb9d",
+        "public/assets/combat/enemies/downfall_dark_core.webp": "11fbffda5525671da81d52aa1f10d3e6d4b019bc18e7c02746088b2378b6e556",
         "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp": "ebafe1984088d421ebad4a62a0837cf693d0a6dfee48686c33ab2e13bdf8f20d",
         "public/assets/combat/enemies/animations/downfall_dark_core-attack.webp": "75da3b17784fa85f5c52dae9500e6035164ad5958bd59b1b5de19f066d6a30ed",
         "public/assets/combat/enemies/projectiles/downfall_dark_core.webp": "046c37d75fd37cc0531091b3d5d4f247f2c23f0a7f4a88bc46ae27adf273dc07"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_wrathful",
@@ -61,10 +63,11 @@
       ],
       "sourceSha256": "a82122b307ee6232160bcf5d58f9add4b57942b753c1cd1aca029d7af1984ce3",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_wrathful.webp": "018b6a145cbd9eae1ef3ca736e06899c26c4b99a40c944debba92b7b63c527eb",
+        "public/assets/combat/enemies/downfall_wrathful.webp": "e4d26438d04b14b2262ffeeb25ddab6b015c18cdcf66d7d3b1255326ae554fee",
         "public/assets/combat/enemies/animations/downfall_wrathful-idle.webp": "d697b91503d394b87e0b05ba6640bb432cfbd085d37558f008f0b41389625e1f",
         "public/assets/combat/enemies/animations/downfall_wrathful-attack.webp": "cee4053d29462daf2e88bf1d3e6c5b5de95e0d2b6e74b1b95673f3cab3efbb31"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_orb_master",
@@ -81,11 +84,12 @@
       ],
       "sourceSha256": "d15a2f7438163c1ef976cea89f0ae0f96126cee9a332e69b061537560d46d6f0",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_orb_master.webp": "d626b72a3b586797e74aa059728ee729d12df4f75c0134bf14c49cb23c446160",
+        "public/assets/combat/enemies/downfall_orb_master.webp": "2f0fca6b5806b259278be3c7ac97db06adc02c42240d474cd4bf52e551f6235e",
         "public/assets/combat/enemies/animations/downfall_orb_master-idle.webp": "13c7e082b5f8fd2356ac0f564c1a4fa80d9ace4b6a24f5112a2ad93362019eb2",
         "public/assets/combat/enemies/animations/downfall_orb_master-attack.webp": "f69a6b3d6d8912d567d9bca24b50c0ffd4564eb32e047521e4fbbe68ff49e609",
         "public/assets/combat/enemies/projectiles/downfall_orb_master.webp": "8b14b392502af55790527d8499f334a01b4bb3a73e00e62456005c1c0013145c"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_inferno",
@@ -102,11 +106,12 @@
       ],
       "sourceSha256": "ea7a595197110d1d76046951b842762229527a59b161cc0382ea7d88ab9486ec",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_inferno.webp": "40a4f6db395bc2d7fbba7f61e83fee11db4aeeae7b812101d4d5b743e420d89d",
+        "public/assets/combat/enemies/downfall_inferno.webp": "ef6124f4fc1caa5ad560834fcc14e8a9e464ee1fc0832602c6ce8ef1df75bf44",
         "public/assets/combat/enemies/animations/downfall_inferno-idle.webp": "11ade156f778f6aced15ffc14a9cb238df3891c7c4f38e19964e180bd4204aea",
         "public/assets/combat/enemies/animations/downfall_inferno-attack.webp": "c5f43952a4022a56bbdf66c49091fd29a69d7385a3349b955f4bafab38837e1e",
         "public/assets/combat/enemies/projectiles/downfall_inferno.webp": "b95d9c8d00480931b8884320cc730a767494f37997d172f8f593107ffd863961"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_trickster",
@@ -122,10 +127,11 @@
       ],
       "sourceSha256": "ede31ae8d0ae42b2dc2b682ef3ac76868dae4b9fc4c5ebea4f161ff4620a4381",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_trickster.webp": "60e52c397953e1b1f832f4cfd16e21cfba1762c0f87db6cd43129555ce826ac9",
+        "public/assets/combat/enemies/downfall_trickster.webp": "8e5e6d49fb597796f106ebec4b6f3353dc9e5abb7f2926cefd3a59408fca813b",
         "public/assets/combat/enemies/animations/downfall_trickster-idle.webp": "27f31266dbba320a1209da99233d4a2b2a751fe271bb6c3b8cb943303d3289e4",
         "public/assets/combat/enemies/animations/downfall_trickster-attack.webp": "b3316d70e5dd9e1825c5d64ada4c08ea3bf322f382527573f46b6ac74729903a"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_demon",
@@ -143,12 +149,13 @@
       ],
       "sourceSha256": "7b3822ce4b229497621d3ba866776584f202cdb5f1bb71434ae19ab5137a2da3",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_demon.webp": "8b4c50cf4ee2cd1fad8e1ea8d593657332e605843bd28e1ac8eb7bc3b558b13b",
+        "public/assets/combat/enemies/downfall_demon.webp": "e8b2ef7b27274d1960f01305d6c8d5183c56a419eacb5aa11f74dfd1989d65bf",
         "public/assets/combat/enemies/animations/downfall_demon-idle.webp": "8549101dd24713181012065dc4c3cf23d10be33f86cbcbea90f094d3475fbab3",
         "public/assets/combat/enemies/animations/downfall_demon-airborne.webp": "c544d2c3838366ca60bb180912aea531b41551c29a8e6fec5b631dd683c52b3e",
         "public/assets/combat/enemies/animations/downfall_demon-ground-slam.webp": "25d28370e7b52ec8dff5c9aaba1b50116871e937fa82b9668b2abead250ad62f",
         "public/assets/combat/vfx/actions/downfall-demon-ground-splat.webp": "af8421590388554fe9af3c7588663bba2bed2e924e95c0bf65bf269101a6cff9"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_wraith",
@@ -165,11 +172,12 @@
       ],
       "sourceSha256": "6a570b2d338398aedc936081eef720cdce8396670a8b5a0a789cb625073ccded",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_wraith.webp": "4f9f5cdb9d7417e4a8bd65412b7ca51559bdd2e7b9437252a399078eb57ae28e",
+        "public/assets/combat/enemies/downfall_wraith.webp": "b67439782730dc6055e254b0129c591d9198811f8be3eb86569d94835128d918",
         "public/assets/combat/enemies/animations/downfall_wraith-idle.webp": "c4c49052e073b24198438a2b9f7a4055da712f8ac43d5d9dcbfbe4f70b9b20b7",
         "public/assets/combat/enemies/animations/downfall_wraith-attack.webp": "2c1561e03b33891b277fbfde2c523f12ca2da9301699effe096498972e3be484",
         "public/assets/combat/enemies/projectiles/downfall_wraith.webp": "f217ab28cc5cf6d202bc1d84d88f0241aa9c41acd2fbc7469de337a9b9e68e41"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_blasphemer",
@@ -186,11 +194,12 @@
       ],
       "sourceSha256": "e038ff20a8ac255c1786833f8a0affffccd7f407add4867f5f6207d6f9197b2a",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_blasphemer.webp": "02ce7f516933637e9c5d3fcd3c8af786e1a11d56f328f148f373bb9348f13745",
+        "public/assets/combat/enemies/downfall_blasphemer.webp": "20c0337cfeb3c151acfefe3729fc119b26dc381cb5f07417bf749d92668a016c",
         "public/assets/combat/enemies/animations/downfall_blasphemer-idle.webp": "bbb1f082ac1e13c6cc4c226c461f16ea28732423bcc1c8039c439060c72331b8",
         "public/assets/combat/enemies/animations/downfall_blasphemer-attack.webp": "545ea3d6502d2e466d23a7ce3bea073601cb801b670d47e057aacb08b12f9274",
         "public/assets/combat/enemies/projectiles/downfall_blasphemer.webp": "4eb837727d9d9d4bd74bd9e8f8c698d8102e8ab69f7add5f11cb0480c10778e0"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_neow",
@@ -207,11 +216,12 @@
       ],
       "sourceSha256": "7151cd8af8e8b0690b15cc1de96b109791387b54bf8053c950beb4f5eb9bf91c",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_neow.webp": "bb592b6ac7d3ca3db689027362672e940f32659cbb948aedfd1c8fcb3c6aa36c",
+        "public/assets/combat/enemies/downfall_neow.webp": "d951747c56d7da358b3f1e02d873e5cc02626938af6953feb831b2b27b00b727",
         "public/assets/combat/enemies/animations/downfall_neow-idle.webp": "96d4c8cf23223b87da0ad65c9b8c349283f6edcb36e3e08dca4b69b6bb291161",
         "public/assets/combat/enemies/animations/downfall_neow-attack.webp": "d8bca7804657a1c99f66f8908b19e15b51450fc360b73eaf9be529be2d8390f2",
         "public/assets/combat/enemies/projectiles/downfall_neow.webp": "e0fedccd4f9f5cae50d665390ab5bb6d1742434df83de89369fffbeeea59bb34"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_flame_barrier",
@@ -226,9 +236,10 @@
       ],
       "sourceSha256": "0a586f121b19072da7de710aaf4973fbb4f9810e5b08999c1eeec7d7bc1b87a7",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_flame_barrier.webp": "d5281de0fc455f8b02b6f340a3bbe465459a33e0b7449e0721c6b4c96af3d4bd",
+        "public/assets/combat/enemies/downfall_flame_barrier.webp": "39da86c5a537c2d3d4987457fda3a40b5b7e52b90a050f77954094d1c829b5a9",
         "public/assets/combat/enemies/animations/downfall_flame_barrier-idle.webp": "c6c6c70f398609eca714df376ec33f01e3c521edac94f3397de9abacd7d963ab"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_doppelganger",
@@ -244,10 +255,11 @@
       ],
       "sourceSha256": "3c6100a5f9f0389f01dd697905328c993a5dabc77cfa06c574207715136cf705",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_doppelganger.webp": "55c2044f29e3ee91248257c0c630481a7b1271d932d3f310edf57f4ea84bb029",
+        "public/assets/combat/enemies/downfall_doppelganger.webp": "35cf1a06963b88602497dbfc0a6b919f2430536d571b84281760727f69cb63d9",
         "public/assets/combat/enemies/animations/downfall_doppelganger-idle.webp": "b67fbd5ec7366ce565fa19cedac523079bb7855c3d14d9e0328dac88530bf0d0",
         "public/assets/combat/enemies/animations/downfall_doppelganger-attack.webp": "9b11357ff1b881e4d007b88c3b89375dfb45fd973623540e0498b078b6c271c5"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_corrupted",
@@ -264,11 +276,12 @@
       ],
       "sourceSha256": "82285ae54c63f61c87da02da0e70823ff5e648effa54cc17e8599dde61b5e443",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_corrupted.webp": "82375a25c8837b3b89d48b3ce7a57b60487b2a2e74222ec6bd4b2338707cca30",
+        "public/assets/combat/enemies/downfall_corrupted.webp": "bd4bd15f046cb0102b5a46d95fca443fcfa82239fb9f3677bd21a09894dd8f09",
         "public/assets/combat/enemies/animations/downfall_corrupted-idle.webp": "4c468f8ca90d9f1006177d79e4da4f8c15832747e9e59654038feb5b4b7231ac",
         "public/assets/combat/enemies/animations/downfall_corrupted-attack.webp": "effe048ae2ff0ac312095eefbcfcf4b5b9348e0b3bd9b709e7eed518e9480bfe",
         "public/assets/combat/enemies/projectiles/downfall_corrupted.webp": "623c4a28feda3607651d4fef2e37202984bb082d76a8d589e6daa39eb584c973"
-      }
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_pc_ironclad",
@@ -282,8 +295,9 @@
       "sourceSha256": "284dd6549edd2fe6a2f6efadede1018a97d125f66682ec156b3ed9fa1e8546ee",
       "upstreamCodeSha256": "ca5f9de8b450f232252eb1709a694e88dae1e271c0ebc61e1b813f9057954903",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_pc_ironclad.webp": "97401ad04a081430b155a4ced6d679a8485972eae326d935fa00775dd3e862d9"
-      }
+        "public/assets/combat/enemies/downfall_pc_ironclad.webp": "891578f0ba4976d89bbb00148eb8a099677262233b40de7ca3c483299a6ec051"
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_pc_silent",
@@ -297,8 +311,9 @@
       "sourceSha256": "45364aac4a8284c5899298fdbf0ccff381205b51c2dc72b307bd074033e3e5f1",
       "upstreamCodeSha256": "88711007afeb78bca78433c58bd20b7241cd83de09772955a92eeeb3af2182e3",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_pc_silent.webp": "c360503b99156300e6f5aac01c32317225d0155590ee488ecd871c4e3df80499"
-      }
+        "public/assets/combat/enemies/downfall_pc_silent.webp": "f3551a0a97b3195869c36fb56c2f9c0092670a589e957a90d93b683e42fa402f"
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_pc_defect",
@@ -312,8 +327,9 @@
       "sourceSha256": "6326b5cf923167f63c0fa70c0368af48b615c2a0222486d3f503604f603df7df",
       "upstreamCodeSha256": "b8130f76a61f7f650388aa021335ada9ae7ba3e47dab1debaee983a9b2a8de89",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_pc_defect.webp": "3a69e8eefedd52ded106b7efaa31ce45a1994be6606680693de180a7c377b828"
-      }
+        "public/assets/combat/enemies/downfall_pc_defect.webp": "c8959f1515c6daa2ce74e2c8ccb69cd69ea254545bea81a9459d5e1c85a1513c"
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_pc_watcher",
@@ -327,8 +343,9 @@
       "sourceSha256": "e84c385aac820e94f6244e3ddc7408f76bdf54a8af475c9154992c6202492f96",
       "upstreamCodeSha256": "48e3552e6e2a7a6de8ba3713e39947d360052f6564ecb6b2004f1a7b2fe67340",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_pc_watcher.webp": "57bd58a0138b02b108f88f3d130df2d09d597f52e512d2d0b7d9f7d02457b8ee"
-      }
+        "public/assets/combat/enemies/downfall_pc_watcher.webp": "47772728c2d62db66d3aadeb88eed8099468fa78f9a3b2f1add12bc56e0a18b9"
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "spire_shield",
@@ -357,8 +374,9 @@
       "sourceSha256": "5feace259617aa706edbcadf76bf0d2231adfa3eab20399bddd146e023b82837",
       "upstreamCodeSha256": "d2db232a15627800f52006e8be70b127a9171a7fe7debdddde4b9459c4876068",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_lightning_orb.webp": "5feace259617aa706edbcadf76bf0d2231adfa3eab20399bddd146e023b82837"
-      }
+        "public/assets/combat/enemies/downfall_lightning_orb.webp": "a0555750841dec000918c87553c707e4fed079d7142432216e3834b904cff7d9"
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_frost_orb",
@@ -372,8 +390,9 @@
       "sourceSha256": "547263e9c70fc183f42dd0b041f348e322be251a1c4e0e2210674c9f4c7e0522",
       "upstreamCodeSha256": "85104226af475806af18d300be7227cccbe927a59c5dcafd19a8601c51b700be",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_frost_orb.webp": "547263e9c70fc183f42dd0b041f348e322be251a1c4e0e2210674c9f4c7e0522"
-      }
+        "public/assets/combat/enemies/downfall_frost_orb.webp": "b106a3d9537a2853bab6d3c8cc1c9df9955d7542f9984db2492ea32cb4451336"
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_dark_orb",
@@ -387,8 +406,9 @@
       "sourceSha256": "24efbd9a817e3bc557ff102d28a3bdf790bb18eac183f15ad068dff4fa6a34e2",
       "upstreamCodeSha256": "0d2484a3d72957960d417c1c4d19ebaf01d2dfa7eb97a5da86d80e691b379f76",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_dark_orb.webp": "24efbd9a817e3bc557ff102d28a3bdf790bb18eac183f15ad068dff4fa6a34e2"
-      }
+        "public/assets/combat/enemies/downfall_dark_orb.webp": "c421478f5fc98bdcec56dc2deb42dc652e2da50cc06ffab577fc22901441d6cb"
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_shiv",
@@ -402,8 +422,9 @@
       "sourceSha256": "f4de2853d9c99b2399aa70d54c1f55cb296ee81ba6a1ce2cc273a99ee036a50a",
       "upstreamCodeSha256": "98788e2da8e2ee8e74227b807bd0879c2cb41dfe6af91c976105a18f468bdbeb",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_shiv.webp": "7a4084bb766f897b637701804d36f04ee63fcfa4373c5f13f2eb787d948357cf"
-      }
+        "public/assets/combat/enemies/downfall_shiv.webp": "52b174a2f49aa2cd6f403bd1e41b67e4254508a79ef9d34423e86eca12414e1c"
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     },
     {
       "artId": "downfall_loot_chest",
@@ -417,8 +438,9 @@
       "sourceSha256": "166f8b19338a0e9628c57d3ab07a5fb2e19fd5b407a0eed277c8088afcc26d1d",
       "upstreamCodeSha256": "f33e1e7a13ad270105ef58e60fac51e75944866a7b7f264da1985dd1118d04be",
       "runtimeSha256": {
-        "public/assets/combat/enemies/downfall_loot_chest.webp": "735b3e0ac6e417175deb097e4d287ef8a6141a9c4a4939dec227de35e92161f1"
-      }
+        "public/assets/combat/enemies/downfall_loot_chest.webp": "ebf5300b21e0e7cc2f5cfcbd948705e7c11658a9a576df3dd61fe9857ddd201a"
+      },
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
     }
   ],
   "boardGame": {

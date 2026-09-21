@@ -45,7 +45,7 @@ def reviewed_rigs():
             if pose == 'idle' and 'idleSource' in spec:
                 # Higher-resolution textures must not move or shrink the registered body.
                 reference = Image.open(ROOT / spec['source']).convert('RGBA')
-                reference = reference.crop(reference.getbbox())
+                reference = reference.crop(spec.get('sourceBounds', reference.getbbox()))
                 scale = min(im.width*.8/reference.width, im.height*spec.get('heightFit', .88)/reference.height) / spec.get('displayScale', 1)
                 reference = reference.resize(tuple(round(v*scale) for v in reference.size), Image.Resampling.LANCZOS)
                 x = (im.width-reference.width)//2

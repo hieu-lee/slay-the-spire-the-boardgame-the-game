@@ -16823,12 +16823,12 @@ for (let mask = 1; mask < 16; mask += 1) {
       const image = new Image()
       image.src = url
       await image.decode()
-      loaded = image.naturalWidth === 1672 && image.naturalHeight === 941
+      loaded = image.naturalWidth === 3840 && image.naturalHeight === 2161
     }
     return {
       statusCards: campfire.querySelectorAll('.campfire__players, .campfire__seat').length,
       expected,
-      selected: url.endsWith(`/${expected}_firecamp.png`),
+      selected: url.endsWith(`/${expected}_firecamp.webp`),
       loaded,
       overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
     }
@@ -16861,7 +16861,7 @@ for (const [characters, expected] of [
     await image.decode()
     return {
       scene: new URL(url).pathname,
-      decoded: image.naturalWidth === 1672 && image.naturalHeight === 941,
+      decoded: image.naturalWidth === 3840 && image.naturalHeight === 2161,
     }
   }))
 }
@@ -16877,7 +16877,7 @@ await page.evaluate(() => {
   run.players = run.players.map((player, index) => ({ ...player, character: characters[index] }))
   debug.setRun(run)
 })
-await page.waitForFunction(() => getComputedStyle(document.querySelector('.campfire')).backgroundImage.includes('/ironclad_silent_defect_watcher_firecamp.png'))
+await page.waitForFunction(() => getComputedStyle(document.querySelector('.campfire')).backgroundImage.includes('/ironclad_silent_defect_watcher_firecamp.webp'))
 const campfireResponsiveLayouts = []
 for (const viewport of [{ width: 1440, height: 900 }, { width: 667, height: 375 }]) {
   await page.setViewportSize(viewport)

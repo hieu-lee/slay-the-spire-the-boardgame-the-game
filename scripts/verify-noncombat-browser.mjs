@@ -187,7 +187,7 @@ const downfallCampfireScene = await page.locator('.campfire').evaluate(async (ca
 await page.screenshot({ path: join(outDir, 'campfire-guardian-desktop.png'), fullPage: true })
 check('a Downfall campfire renders its complete baked scene', () => {
   assert(downfallCampfireScene.url.endsWith('/guardian_firecamp.webp'), downfallCampfireScene.url)
-  assertDeepEqual([downfallCampfireScene.width, downfallCampfireScene.height], [1672, 941])
+  assertDeepEqual([downfallCampfireScene.width, downfallCampfireScene.height], [3840, 2161])
 })
 const localNightTerrorsRestDisabled = await page.getByRole('button', { name: /^Rest/ }).evaluateAll((buttons) =>
   buttons.length > 0 && buttons.every((button) => button.disabled))
