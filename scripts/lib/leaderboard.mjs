@@ -70,7 +70,18 @@ export function restoreLeaderboardRuns(values) {
   if (!Array.isArray(values)) return []
   const restored = []
   for (const value of values) {
-    try { restored.push(normalizeLeaderboardRun(value, value?.recordedAt)) } catch { /* Ignore a damaged historical row, not the whole room store. */ }
+    try {
+      const run = normalizeLeaderboardRun(value, value?.recordedAt)
+      if (run.recordedAt === 1790025582194 && run.characters.join(',') === 'defect,watcher' &&
+          run.finalDeck?.length === 36 && run.finalDeck[22]?.defId === 'strike_watcher') {
+        run.winningDecks = [
+          { username: 'BestDefect2002', character: 'defect', finalDeck: run.finalDeck.slice(0, 22) },
+          { username: 'phuotthu', character: 'watcher', finalDeck: run.finalDeck.slice(22) },
+        ]
+        delete run.finalDeck
+      }
+      restored.push(run)
+    } catch { /* Ignore a damaged historical row, not the whole room store. */ }
   }
   return restored
 }

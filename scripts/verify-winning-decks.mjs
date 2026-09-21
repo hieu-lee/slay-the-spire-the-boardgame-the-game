@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { winningDecksPage, normalizeLeaderboardRun } from './lib/leaderboard.mjs'
+import { winningDecksPage, normalizeLeaderboardRun, restoreLeaderboardRuns } from './lib/leaderboard.mjs'
 import { createRoomServer } from './room-server.mjs'
 
 const runs = Array.from({ length: 45 }, (_, index) => normalizeLeaderboardRun({
@@ -57,6 +57,14 @@ const partyRun = normalizeLeaderboardRun({ ...runs[0], id: 'party-winning-run', 
 const partyDecks = winningDecksPage([partyRun]).rows
 assert.deepEqual(new Set(partyDecks.map((row) => `${row.id}:${row.username}:${row.character}`)),
   new Set(['0:0:BestDefect2002:defect', '0:1:phuotthu:watcher']))
+const retainedDeck = [...Array.from({ length: 22 }, () => ({ defId: 'defend_defect', upgraded: false })),
+  ...Array.from({ length: 14 }, (_, index) => ({ defId: index === 0 ? 'strike_watcher' : 'defend_watcher', upgraded: false }))]
+const [retainedRun] = restoreLeaderboardRuns([{ ...runs[0], characters: ['defect', 'watcher'], finalDeck: retainedDeck,
+  recordedAt: 1790025582194 }])
+assert.deepEqual(winningDecksPage([retainedRun]).rows.map(({ username, character, cardCount }) => ({ username, character, cardCount })), [
+  { username: 'phuotthu', character: 'watcher', cardCount: 14 },
+  { username: 'BestDefect2002', character: 'defect', cardCount: 22 },
+])
 assert.equal(winningDecksPage([{ ...runs[0], finalDeck: undefined }, { ...runs[1], highestBossActDefeated: 2 }]).total, 0)
 assert.equal(winningDecksPage([{ ...runs[0], username: undefined }]).rows[0].username, 'Unknown')
 for (const params of [{ sort: 'id' }, { direction: 'bad' }, { ascension: '14' }, { character: 'bad' }, { cursor: '-1' }, { cursor: '1.1' }, { cursor: '99999' }]) {
