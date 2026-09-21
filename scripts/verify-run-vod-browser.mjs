@@ -778,6 +778,32 @@ try {
         index === 0 ? { ...card, upgraded: true } : card) }],
     }
     const recoveredSmith = vod.runVodEventChoice(upgradeEvent, campfire)
+    const relicReward = structuredClone(terminal)
+    relicReward.phase = 'reward'
+    relicReward.players[0].relics.push({ defId: 'forbidden_fruit', spent: false, pending: true,
+      pendingRewardIndices: { 0: 1 } })
+    const recoveredRelicReward = vod.runVodEventChoice({ viewerId: relicReward.players[0].id,
+      choice: { source: { selector: '#double-tap', name: 'Double Tap, cost 1, skill' } }, patch: [] }, relicReward)
+    const retainedEnchiridion = ['enchiridion', 'downfall_enchiridion'].map(defId => {
+      const state = structuredClone(terminal)
+      state.phase = 'reward'
+      state.players[0].relics.push({ defId, spent: false, pending: true })
+      return vod.runVodEventChoice({ viewerId: state.players[0].id,
+        choice: { source: { selector: '#double-tap', name: 'Double Tap, cost 1, skill' } }, patch: [] }, state)
+    })
+    const neowRelicReward = structuredClone(terminal)
+    neowRelicReward.phase = 'neow'
+    neowRelicReward.players[0].relics.push({ defId: 'tiny_house', spent: false, pending: true })
+    const recoveredNeowRelicReward = vod.runVodEventChoice({ viewerId: neowRelicReward.players[0].id,
+      choice: { source: { selector: '#double-tap', name: 'Double Tap, cost 1, skill' } }, patch: [] }, neowRelicReward)
+    const outOfOrderRelicReward = structuredClone(terminal)
+    outOfOrderRelicReward.phase = 'reward'
+    const relicIndex = outOfOrderRelicReward.players[0].relics.length
+    outOfOrderRelicReward.players[0].relics.push({ defId: 'orrery', spent: false, pending: true,
+      pendingRewardIndices: { 1: 1 } })
+    const recoveredOutOfOrderReward = vod.runVodEventChoice({ viewerId: outOfOrderRelicReward.players[0].id,
+      choice: { source: { selector: '#double-tap', name: 'Double Tap, cost 1, skill' } },
+      patch: [{ path: ['players', 0, 'relics', relicIndex, 'pendingRewardIndices', 3], value: 1 }] }, outOfOrderRelicReward)
     const retainedSetupUpgrade = vod.runVodEventChoice(upgradeEvent, { ...campfire, phase: 'setup' })
     const restChoice = { source: { selector: '#rest', name: 'Rest' },
       steps: [{ selector: '#card', name: 'Recursion, cost 1, skill' }, { selector: '#confirm', name: 'Confirm' }] }
@@ -807,6 +833,11 @@ try {
       orbTarget: orbChoice.target.name, orbSteps: orbChoice.steps.map(step => step.selector),
       recoveredCard: recoveredChoice.source.name, recoveredSteps: recoveredChoice.steps.length,
       recoveredSmith: [recoveredSmith.source.name, ...recoveredSmith.steps.map(step => step.name)],
+      recoveredRelicReward: [recoveredRelicReward.source.selector, recoveredRelicReward.source.name,
+        ...recoveredRelicReward.steps.map(step => step.name)],
+      retainedEnchiridion: retainedEnchiridion.map(choice => choice.source.name),
+      recoveredNeowRelicReward: recoveredNeowRelicReward.source.name,
+      recoveredOutOfOrderReward: recoveredOutOfOrderReward.source.selector,
       retainedSetupUpgrade: retainedSetupUpgrade.source.name,
       retainedRest: [retainedRemoval.source.name, retainedTransform.source.name],
       retainedOrb: vod.runVodEventChoice(orbEvent, beforeChoice).steps[0].selector,
@@ -827,6 +858,11 @@ try {
       orbTarget: 'Cultist, 5 HP', orbSteps: ['#lightning'],
       recoveredCard: 'FTL, cost 1', recoveredSteps: 0,
       recoveredSmith: ['Smith upgrade', 'Recursion, cost 1, skill', 'Confirm'],
+      recoveredRelicReward: ['.reward-screen__player > .loot-choice:nth-of-type(1)',
+        'Add a card to your deck.', 'Double Tap, cost 1, skill'],
+      retainedEnchiridion: ['Double Tap, cost 1, skill', 'Double Tap, cost 1, skill'],
+      recoveredNeowRelicReward: 'Add a card to your deck.',
+      recoveredOutOfOrderReward: '.reward-screen__player > .loot-choice:nth-of-type(3)',
       retainedSetupUpgrade: 'Recursion, cost 1, skill',
       retainedRest: ['Rest', 'Rest'],
       retainedOrb: '#orb', retainedSynthetic: '#relic',

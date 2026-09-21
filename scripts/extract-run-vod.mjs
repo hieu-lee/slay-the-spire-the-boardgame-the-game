@@ -10,10 +10,10 @@ const run = promisify(execFile)
 const source = process.argv[2] && resolve(process.argv[2])
 if (!source) throw new Error('Usage: node scripts/extract-run-vod.mjs <vod-debug.json> [output.mp4]')
 const payload = JSON.parse(await fs.readFile(source, 'utf8'))
-const log = payload.log
-const expected = payload.solo?.terminalRun
-if (!log?.events || !expected?.campaign?.runId) throw new Error('The debug log does not contain a finished solo run.')
-const output = resolve(process.argv[3] ?? join(dirname(source), `slay-the-spire-run-${expected.campaign.runId}.mp4`))
+const log = payload.log ?? (payload.version === 2 ? payload : null)
+let expected = payload.solo?.terminalRun
+if (!log?.events || !log.runId) throw new Error('The file does not contain a Run VOD log.')
+const output = resolve(process.argv[3] ?? join(dirname(source), `slay-the-spire-run-${log.runId}.mp4`))
 await fs.mkdir(dirname(output), { recursive: true })
 const directory = await fs.mkdtemp(join(tmpdir(), 'sts-vod-'))
 const server = await createServer({ logLevel: 'silent', server: { host: '127.0.0.1', port: 0 } })
@@ -33,9 +33,13 @@ try {
   const probe = await page()
   let lengths
   try {
-    lengths = await probe.page.evaluate(async ({ log, expected }) =>
-      (await import('/src/ui/run-vod.ts')).runVodLocations(log, expected).map(location => location.log.events.length),
-    { log, expected })
+    const prepared = await probe.page.evaluate(async ({ log, expected }) => {
+      const vod = await import('/src/ui/run-vod.ts')
+      expected ??= log.events.reduce(vod.applyRunVodEvent, log.initial)
+      return { expected, lengths: vod.runVodLocations(log, expected).map(location => location.log.events.length) }
+    }, { log, expected })
+    expected = prepared.expected
+    lengths = prepared.lengths
   } finally { await probe.browser.close() }
   const chunks = lengths.flatMap((length, location) => Array.from({ length }, (_, index) => ({
     location, from: index, to: index + 1,

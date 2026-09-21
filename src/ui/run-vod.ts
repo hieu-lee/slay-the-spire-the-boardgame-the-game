@@ -80,6 +80,21 @@ export function runVodEventChoice(event: RunVodEvent, before: RunState): RunVodC
     before.phase === 'room' && !before.roomState && currentRoom(before.map)?.kind === 'campfire' && semanticDeckUpgrade(event, before)) {
     choice = { source: { selector: '.campfire__choices button', name: 'Smith upgrade' }, steps: [choice.source, ...choice.steps] }
   }
+  const pendingRelic = before.players.find((player) => player.id === (event.viewerId ?? before.players[0]?.id))
+    ?.relics.find((relic) => relic.pending)
+  const pendingRewardCount = pendingRelic?.defId === 'forbidden_fruit' ? 2
+    : pendingRelic?.defId === 'orrery' ? 4 : pendingRelic?.defId === 'tiny_house' ? 1 : 0
+  if (choice && choice.source.name !== 'Add a card to your deck.' && /, cost /.test(choice.source.name ?? '') &&
+    Object.keys(pendingRelic?.pendingRewardIndices ?? {}).length < pendingRewardCount) {
+    const chosen = pendingRelic?.pendingRewardIndices ?? {}
+    const outstanding = Array.from({ length: pendingRewardCount }, (_, index) => index).filter(index => !(index in chosen))
+    const afterPending = applyRunVodEvent(before, event).players.find((player) => player.id === (event.viewerId ?? before.players[0]?.id))
+      ?.relics.find((relic) => relic.pending)
+    const reward = outstanding.find(index => index in (afterPending?.pendingRewardIndices ?? {})) ?? outstanding[0]!
+    const ordinal = outstanding.indexOf(reward) + 1
+    choice = { source: { selector: `.reward-screen__player > .loot-choice:nth-of-type(${ordinal})`, name: 'Add a card to your deck.' },
+      steps: [choice.source, ...(choice.steps ?? [])] }
+  }
   const handCard = (ref: ControlRef) => Boolean(ref.card || ref.drag && / > footer > .* > button/.test(ref.selector) && /, cost /.test(ref.name ?? ''))
   if (choice?.steps?.length && handCard(choice.source) && before.combat) {
     const after = applyRunVodEvent(before, event)
