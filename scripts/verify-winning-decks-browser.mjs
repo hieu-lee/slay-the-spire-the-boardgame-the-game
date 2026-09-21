@@ -11,13 +11,19 @@ const root = resolve(import.meta.dirname, '..')
 const output = resolve(root, 'artifacts/winning-decks-browser')
 mkdirSync(output, { recursive: true })
 const rooms = createRoomServer()
-rooms.store.leaderboardRuns = Array.from({ length: 45 }, (_, index) => normalizeLeaderboardRun({
-  id: `archive-browser-${index}`, character: index % 2 ? 'silent' : 'ironclad', ascension: index % 14,
-  ...(index === 44 ? { characters: ['defect', 'silent', 'ironclad'] } : {}),
-  username: index === 44 ? 'A very long player name' : `Player${String(index).padStart(2, '0')}`,
-  mode: 'standard', startedAtAct: 1, highestBossActDefeated: 3, combatsFinished: 1, damageDealt: 1, damageTaken: 1, damageBlocked: 1,
-  finalDeck: Array.from({ length: 10 + index % 7 }, (_, card) => ({ defId: card % 2 ? 'defend_ironclad' : 'strike_ironclad', upgraded: card === 0 })),
-}, 1700000000000 + index * 1000))
+rooms.store.leaderboardRuns = Array.from({ length: 45 }, (_, index) => {
+  const finalDeck = Array.from({ length: 10 + index % 7 }, (_, card) =>
+    ({ defId: card % 2 ? 'defend_ironclad' : 'strike_ironclad', upgraded: card === 0 }))
+  return normalizeLeaderboardRun({
+    id: `archive-browser-${index}`, character: index % 2 ? 'silent' : 'ironclad', ascension: index % 14,
+    ...(index === 44 ? { characters: ['defect', 'watcher'], winningDecks: [
+      { username: 'BestDefect2002', character: 'defect', finalDeck },
+      { username: 'phuotthu', character: 'watcher', finalDeck },
+    ] } : { username: `Player${String(index).padStart(2, '0')}`, finalDeck }),
+    mode: 'standard', startedAtAct: 1, highestBossActDefeated: 3,
+    combatsFinished: 1, damageDealt: 1, damageTaken: 1, damageBlocked: 1,
+  }, 1700000000000 + index * 1000)
+})
 const { port } = await rooms.listen(0)
 const vite = await createServer({ root, logLevel: 'silent', server: { host: '127.0.0.1', port: 0, proxy: { '/api': { target: `http://127.0.0.1:${port}` } } } })
 await vite.listen()
@@ -41,7 +47,7 @@ try {
   await page.getByRole('button', { name: 'Winning decks', exact: true }).click()
   await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 20)
   assert.equal(requests.length, 1)
-  assert.match(await rows.first().innerText(), /A very long player name/)
+  assert.match(await rows.first().innerText(), /phuotthu/)
   await screenshot('decks-desktop')
   await rows.first().locator('td').last().click()
   const dialog = page.getByRole('dialog')
@@ -56,9 +62,9 @@ try {
   await page.getByRole('button', { name: 'Load 20 more', exact: true }).scrollIntoViewIfNeeded()
   await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 40)
   await page.getByRole('button', { name: 'Load 20 more', exact: true }).scrollIntoViewIfNeeded()
-  await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 45)
+  await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 46)
   assert.equal(requests.length, 3)
-  for (const [label, key] of [['Heroes', 'character'], ['Ascension', 'ascension'], ['Card count', 'cardCount'], ['Username', 'username'], ['Won at', 'recordedAt']]) {
+  for (const [label, key] of [['Hero', 'character'], ['Ascension', 'ascension'], ['Card count', 'cardCount'], ['Username', 'username'], ['Won at', 'recordedAt']]) {
     await page.getByRole('columnheader').getByRole('button', { name: label }).focus()
     await page.keyboard.press('Enter')
     await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 20)
@@ -82,8 +88,10 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 20)
   await page.getByRole('button', { name: 'Ironclad', exact: true }).click()
   await page.getByRole('button', { name: 'Silent', exact: true }).click()
-  await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 1)
-  assert.equal(await rows.first().locator('.leaderboard__party-icons img').count(), 3)
+  await page.waitForFunction(() => document.querySelector('.winning-decks__status')?.textContent?.includes('of 44'))
+  assert((await rows.getByRole('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))))
+    .every((label) => label.includes('Ironclad') || label.includes('Silent')))
+  assert.match(await page.getByRole('heading', { level: 2 }).innerText(), /Ironclad or Silent/)
   assert.deepEqual(new URL(requests.at(-1)).searchParams.getAll('character'), ['ironclad', 'silent'])
   await page.getByRole('button', { name: 'All heroes', exact: true }).click()
   await page.waitForFunction(() => document.querySelectorAll('.winning-decks tbody tr').length === 20)
@@ -112,15 +120,15 @@ try {
   await rows.first().waitFor()
   for (const field of ['defId', 'attachedGemId']) {
     await page.getByRole('button', { name: 'Win rates', exact: true }).click()
-    const original = rooms.store.leaderboardRuns[44].finalDeck[0]
-    rooms.store.leaderboardRuns[44].finalDeck[0] = { ...original, [field]: 'unavailable_card' }
+    const original = rooms.store.leaderboardRuns[44].winningDecks[1].finalDeck[0]
+    rooms.store.leaderboardRuns[44].winningDecks[1].finalDeck[0] = { ...original, [field]: 'unavailable_card' }
     await page.getByRole('button', { name: 'Winning decks', exact: true }).click()
     await rows.first().getByRole('button').click()
     await page.getByRole('alert').waitFor()
     assert.match(await page.getByRole('alert').innerText(), /cards unavailable/)
     assert.equal(await page.locator('dialog[open]').count(), 0)
     await page.getByRole('button', { name: 'Dismiss', exact: true }).click()
-    rooms.store.leaderboardRuns[44].finalDeck[0] = original
+    rooms.store.leaderboardRuns[44].winningDecks[1].finalDeck[0] = original
   }
   await page.getByRole('button', { name: 'Back to main menu' }).click()
   await page.setViewportSize({ width: 1440, height: 900 })

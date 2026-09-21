@@ -6,7 +6,7 @@ import { loadWinningDecks, type WinningDeck, type WinningDeckPage, type WinningD
 import { CardCollectionDialog } from './CardCollectionOverlay.tsx'
 import { CHARACTER_LABEL } from './run-summary-data.ts'
 
-const COLUMNS = [['character', 'Heroes'], ['ascension', 'Ascension'], ['cardCount', 'Card count'],
+const COLUMNS = [['character', 'Hero'], ['ascension', 'Ascension'], ['cardCount', 'Card count'],
   ['username', 'Username'], ['recordedAt', 'Won at']] as const
 const partyOf = (run: WinningDeck) => run.characters ?? [run.character]
 
@@ -54,7 +54,7 @@ function WinningDeckRows({ characters, ascension, sort, direction, onSort }: {
     characters.forEach((character) => params.append('character', character))
     if (cursor !== null) params.set('cursor', cursor)
     loadWinningDecks(params, controller.signal).then(result => {
-      const rows = result.rows.filter((row) => characters.every((character) => partyOf(row).includes(character)))
+      const rows = result.rows.filter((row) => characters.length === 0 || characters.some((character) => partyOf(row).includes(character)))
       const page = rows.length === result.rows.length ? result : { ...result, rows, total: rows.length, nextCursor: null }
       if (!controller.signal.aborted) setPage(previous => ({ ...page,
         rows: [...(previous?.rows ?? []), ...page.rows.filter(row => !previous?.rows.some(old => old.id === row.id))],

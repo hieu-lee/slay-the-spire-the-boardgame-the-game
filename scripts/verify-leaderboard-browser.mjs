@@ -215,7 +215,7 @@ try {
       damageDealt: 0, damageTaken: 0, damageBlocked: 0,
     }]))
   })
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     const run = structuredClone(window.__STS_DEBUG__.getRun())
     run.phase = 'defeat'
     run.campaign.finalized = true
@@ -225,8 +225,11 @@ try {
     run.players = [run.players[0]]
     run.players[0].damageStats = { attack: 12, poison: 3, special: 0, taken: 4, blocked: 6 }
     window.__STS_DEBUG__.setRun(run)
+    const { queueFinishedSoloRun, flushLeaderboardOutbox } = await import('/src/leaderboard.ts')
+    queueFinishedSoloRun(run)
+    await flushLeaderboardOutbox(true)
   })
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]').length === 1)
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]')[0]?.floorsCleared === 4)
   const queuedAcrossRestart = await page.evaluate(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]'))
   check('an old server acknowledgment keeps floor telemetry queued until the new server takes over', () => {
     assertEqual(queuedAcrossRestart[0].floorsCleared, 4)

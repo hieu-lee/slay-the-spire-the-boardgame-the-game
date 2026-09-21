@@ -21,6 +21,17 @@ function finalDeck(value) {
   })
 }
 
+function personalDecks(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 4) bad('Winning decks are invalid')
+  const heroes = new Set()
+  return value.map((deck) => {
+    if (!deck || typeof deck.username !== 'string' || deck.username.length > 24 ||
+        !CHARACTERS.has(deck.character) || heroes.has(deck.character)) bad('Winning deck owner is invalid')
+    heroes.add(deck.character)
+    return { username: deck.username, character: deck.character, finalDeck: finalDeck(deck.finalDeck) }
+  })
+}
+
 function characters(value) {
   const party = value.characters ?? [value.character]
   if (!Array.isArray(party) || party.length < 1 || party.length > 4 ||
@@ -37,6 +48,7 @@ export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
     id: value.id,
     ...(typeof value.username === 'string' && value.username.length <= 24 ? { username: value.username } : {}),
     ...(value.highestBossActDefeated >= 3 && value.finalDeck !== undefined ? { finalDeck: finalDeck(value.finalDeck) } : {}),
+    ...(value.highestBossActDefeated >= 3 && value.winningDecks !== undefined ? { winningDecks: personalDecks(value.winningDecks) } : {}),
     character: party[0],
     characters: party,
     ascension: integer(value.ascension, 'Ascension', 0, 13),
@@ -71,6 +83,8 @@ export function addLeaderboardRun(store, value, recordedAt = Date.now()) {
     const updates = {
       ...(previous.floorsCleared == null && run.floorsCleared != null ? { floorsCleared: run.floorsCleared } : {}),
       ...(previous.highestBossActDefeated >= 3 && previous.finalDeck === undefined && run.finalDeck !== undefined ? { finalDeck: run.finalDeck } : {}),
+      ...(previous.highestBossActDefeated >= 3 && previous.winningDecks === undefined && run.winningDecks !== undefined
+        ? { winningDecks: run.winningDecks, finalDeck: undefined } : {}),
       ...(previous.username === undefined && run.username !== undefined ? { username: run.username } : {}),
     }
     if (Object.keys(updates).length) {
@@ -157,29 +171,33 @@ export function winningDecksPage(runs, params = new URLSearchParams()) {
       !['asc', 'desc'].includes(direction) || new Set(selectedCharacters).size !== selectedCharacters.length ||
       selectedCharacters.some((character) => !CHARACTERS.has(character)) ||
       ascension !== 'all' && !/^(?:[0-9]|1[0-3])$/.test(ascension) ||
-      cursor !== null && !/^(0|[1-9][0-9]{0,5})$/.test(cursor)) bad('Invalid winning deck query')
-  const value = run => sort === 'cardCount' ? run.finalDeck.length
-    : sort === 'character' ? run.characters.join(',')
-    : sort === 'username' ? run.username ?? 'Unknown' : run[sort]
+      cursor !== null && !/^(?:0|[1-9][0-9]{0,5})(?::[0-3])?$/.test(cursor)) bad('Invalid winning deck query')
+  const value = entry => sort === 'cardCount' ? entry.finalDeck.length
+    : sort === 'character' ? entry.characters.join(',')
+    : sort === 'username' ? entry.username : entry.run[sort]
   // The archive is capped at 20,000 runs; sort metadata before copying one page.
-  const eligible = runs.map((run, index) => ({ run, index }))
-    .filter(({ run }) => run.highestBossActDefeated >= 3 && Array.isArray(run.finalDeck) &&
-      selectedCharacters.every((character) => run.characters.includes(character)) &&
+  const eligible = runs.flatMap((run, index) => Array.isArray(run.winningDecks)
+    ? run.winningDecks.map((deck, deckIndex) => ({ run, index: `${index}:${deckIndex}`,
+      order: index * 4 + deckIndex, username: deck.username, characters: [deck.character], finalDeck: deck.finalDeck }))
+    : Array.isArray(run.finalDeck) ? [{ run, index: String(index), username: run.username ?? 'Unknown',
+      order: index * 4, characters: run.characters, finalDeck: run.finalDeck }] : [])
+    .filter(({ run, characters }) => run.highestBossActDefeated >= 3 &&
+      (selectedCharacters.length === 0 || selectedCharacters.some((character) => characters.includes(character))) &&
       (ascension === 'all' || run.ascension === Number(ascension)))
     .sort((a, b) => {
-      const left = value(a.run), right = value(b.run)
+      const left = value(a), right = value(b)
       const compared = typeof left === 'string' ? compareNames(left, right) : left - right
-      return compared * (direction === 'asc' ? 1 : -1) || b.run.recordedAt - a.run.recordedAt || b.index - a.index
+      return compared * (direction === 'asc' ? 1 : -1) || b.run.recordedAt - a.run.recordedAt || b.order - a.order
     })
-  const previous = cursor === null ? -1 : eligible.findIndex(entry => entry.index === Number(cursor))
+  const previous = cursor === null ? -1 : eligible.findIndex(entry => entry.index === cursor)
   if (cursor !== null && previous < 0) bad('Winning deck cursor is no longer available')
   const page = eligible.slice(previous + 1, previous + 21)
   return {
     total: eligible.length,
-    rows: page.map(({ run, index }) => ({
-      id: String(index), character: run.character, characters: run.characters, ascension: run.ascension,
-      cardCount: run.finalDeck.length, username: run.username ?? 'Unknown',
-      recordedAt: run.recordedAt, cards: run.finalDeck,
+    rows: page.map(({ run, index, username, characters, finalDeck }) => ({
+      id: index, character: characters[0], characters, ascension: run.ascension,
+      cardCount: finalDeck.length, username,
+      recordedAt: run.recordedAt, cards: finalDeck,
     })),
     nextCursor: previous + 1 + page.length < eligible.length ? String(page.at(-1).index) : null,
   }
@@ -196,8 +214,12 @@ export function roomLeaderboardRun(room) {
   return {
     id: `room:${room.code}:${run.campaign.runId}:${run.seed}`,
     characters: run.players.map((player) => player.character),
-    ...(run.campaign.highestBossActDefeated >= 3 ? { finalDeck: run.players.flatMap((player) =>
-      player.deck.map(({ defId, upgraded, attachedGemId }) => ({ defId, upgraded, ...(attachedGemId ? { attachedGemId } : {}) }))) } : {}),
+    ...(run.campaign.highestBossActDefeated >= 3 ? { winningDecks: run.players.map((player) => ({
+      username: player.name,
+      character: player.character,
+      finalDeck: player.deck.map(({ defId, upgraded, attachedGemId }) =>
+        ({ defId, upgraded, ...(attachedGemId ? { attachedGemId } : {}) })),
+    })) } : {}),
     ascension: run.ascension,
     mode: run.meta.mode,
     damageStatsComplete: run.combatsFinished !== undefined,

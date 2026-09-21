@@ -31,7 +31,9 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
   const rows = useMemo(() => (snapshot?.rows ?? [])
     .filter((row) => filters.every((filter) => partyOf(row).includes(filter)) &&
       (ascension === 'all' || row.ascension === ascension)), [ascension, filters, snapshot])
-  const filterTitle = filters.length === 0 ? 'All heroes' : `Parties with ${filters.map((filter) => CHARACTER_LABEL[filter]).join(' + ')}`
+  const filterTitle = filters.length === 0 ? 'All heroes' : tab === 'decks'
+    ? filters.map((filter) => CHARACTER_LABEL[filter]).join(' or ')
+    : `Parties with ${filters.map((filter) => CHARACTER_LABEL[filter]).join(' + ')}`
 
   return (
     <main className="leaderboard">

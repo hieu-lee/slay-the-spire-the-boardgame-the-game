@@ -417,7 +417,8 @@ export function createRoomServer({
         const body = await readJson(request)
         const profile = store.profiles.find((entry) => entry.token === body.profileToken)
         if (body.profileToken && !profile) return send(response, 409, { error: 'Profile unavailable' })
-        const added = addLeaderboardRun(store, { ...body, username: profile?.username })
+        const { winningDecks: _, ...submission } = body
+        const added = addLeaderboardRun(store, { ...submission, username: profile?.username })
         if (added) queueSave()
         return send(response, added ? 201 : 200, { ok: true, added, floorsClearedAccepted: true, finalDeckAccepted: true, profileAccepted: true })
       }
