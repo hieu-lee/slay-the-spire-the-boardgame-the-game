@@ -183,6 +183,143 @@ async function decodeRaster(doc: Document, svg: string, width: number, height: n
 
 export type RunVodRasterRegion = { x: number; y: number; width: number; height: number; safe: boolean }
 
+type NativeRasterCanvas = HTMLCanvasElement & {
+  requestPaint?: () => void
+}
+type NativeRasterContext = CanvasRenderingContext2D & {
+  drawElementImage?: (element: Element, x: number, y: number) => void
+}
+export const hasNativeRunVodRaster = (view = window) =>
+  typeof (view.HTMLCanvasElement.prototype as NativeRasterCanvas).requestPaint === 'function' &&
+  typeof (view.CanvasRenderingContext2D.prototype as NativeRasterContext).drawElementImage === 'function'
+const nativeRasters = new Map<Document, { canvas: NativeRasterCanvas; root: HTMLElement; frame: HTMLElement | null;
+  opacity: string; cover: HTMLElement | null; context: NativeRasterContext; observer: MutationObserver; dirty: boolean;
+  content: HTMLElement | null; sources: Element[]; copies: Element[]; animationStyle: HTMLStyleElement | null;
+  overrides: { target: HTMLElement | SVGElement; property: string; value: string; priority: string }[] }>()
+
+function releaseNativeRaster(doc: Document) {
+  const native = nativeRasters.get(doc)
+  if (!native) return
+  if (native.frame) native.frame.style.opacity = native.opacity
+  native.cover?.remove()
+  native.observer.disconnect()
+  native.canvas.remove()
+  nativeRasters.delete(doc)
+}
+
+async function nativeRaster(doc: Document, width: number, height: number, at: number | undefined,
+  readback: boolean, crop?: RunVodRasterRegion) {
+  let raster = nativeRasters.get(doc)
+  if (!raster) {
+    const canvas = doc.createElement('canvas') as NativeRasterCanvas
+    const context = canvas.getContext('2d', { alpha: false }) as NativeRasterContext | null
+    const root = doc.getElementById('root')
+    if (!(root instanceof doc.defaultView!.HTMLElement) || typeof canvas.requestPaint !== 'function' ||
+      !context || typeof context.drawElementImage !== 'function') return null
+    snapshots.get(doc)?.observer.disconnect()
+    snapshots.delete(doc)
+    canvas.width = width; canvas.height = height
+    canvas.setAttribute('layoutsubtree', '')
+    canvas.setAttribute('content', 'drawable')
+    canvas.style.cssText = `display:block;width:${width}px;height:${height}px;background:${doc.defaultView!.getComputedStyle(doc.body).background}`
+    const frame = doc.defaultView!.frameElement as HTMLElement | null
+    const opacity = frame?.style.opacity ?? ''
+    if (frame) frame.style.opacity = '1'
+    const cover = frame?.ownerDocument.createElement('div') ?? null
+    cover?.setAttribute('aria-hidden', 'true')
+    if (cover) cover.style.cssText = 'position:absolute;inset:0;z-index:1;background:#05070c'
+    if (frame && cover) frame.after(cover)
+    canvas.dataset.runVodNativeRaster = ''
+    doc.getElementById('root')!.after(canvas)
+    raster = { canvas, root, frame, opacity, cover, context, observer: null!, dirty: true, content: null,
+      sources: [], copies: [], animationStyle: null, overrides: [] }
+    raster.observer = new MutationObserver(() => { raster!.dirty = true })
+    raster.observer.observe(root, { childList: true, subtree: true, attributes: true, characterData: true })
+    nativeRasters.set(doc, raster)
+  }
+  if (raster.observer.takeRecords().length) raster.dirty = true
+  if (raster.dirty) {
+    const copiedRoot = raster.root.cloneNode(true) as HTMLElement
+    const content = doc.createElement('div')
+    content.style.cssText = `position:fixed;inset:0;width:${width}px;height:${height}px;overflow:hidden`
+    content.className = 'run-vod-native'
+    content.setAttribute('drawable', '')
+    content.append(copiedRoot)
+    const style = doc.createElement('style')
+    content.prepend(style)
+    raster.canvas.replaceChildren(content)
+    raster.content = content
+    raster.sources = [raster.root, ...raster.root.querySelectorAll('*')]
+    raster.copies = [copiedRoot, ...copiedRoot.querySelectorAll('*')]
+    raster.animationStyle = style
+    raster.overrides = []
+    raster.dirty = false
+  }
+  if (!raster.content!.isConnected) raster.canvas.replaceChildren(raster.content!)
+  for (const override of raster.overrides) {
+    override.target.style.setProperty(override.property, override.value, override.priority)
+  }
+  raster.overrides = []
+  const indices = new Map(raster.sources.map((source, index) => [source, index]))
+  const animationCss: string[] = []
+  for (const animation of doc.getAnimations()) {
+    const effect = animation.effect
+    if (!(effect instanceof doc.defaultView!.KeyframeEffect) || !(effect.target instanceof doc.defaultView!.Element)) continue
+    const index = indices.get(effect.target)
+    const target = index === undefined ? undefined : raster.copies[index] as HTMLElement | SVGElement | undefined
+    if (!target) continue
+    const pseudo = effect.pseudoElement ?? ''
+    const style = doc.defaultView!.getComputedStyle(effect.target, pseudo)
+    const properties = [...new Set(effect.getKeyframes().flatMap(frame => Object.keys(frame)))]
+      .filter(property => !/^(offset|easing|composite|computedOffset)$/.test(property))
+    const declarations = properties.map((property) => {
+        const css = property.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)
+        return `${css}:${style.getPropertyValue(css)}!important`
+      }).join(';')
+    if (pseudo) {
+      target.setAttribute('data-run-vod-native', String(index))
+      animationCss.push(`[data-run-vod-native="${index}"]${pseudo}{${declarations}}`)
+    } else for (const property of properties) {
+      const css = property.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)
+      raster.overrides.push({ target, property: css, value: target.style.getPropertyValue(css), priority: target.style.getPropertyPriority(css) })
+      target.style.setProperty(css, style.getPropertyValue(css), 'important')
+    }
+  }
+  raster.animationStyle!.textContent = `.run-vod-native,.run-vod-native *, .run-vod-native::before,.run-vod-native::after,.run-vod-native *::before,.run-vod-native *::after{animation:none!important;transition:none!important}${animationCss.join('')}`
+  const images: Promise<unknown>[] = []
+  for (const [index, source] of raster.sources.entries()) {
+    const copied = raster.copies[index]
+    if (source instanceof doc.defaultView!.HTMLElement && copied instanceof doc.defaultView!.HTMLElement) {
+      copied.scrollLeft = source.scrollLeft; copied.scrollTop = source.scrollTop
+    }
+    if (source instanceof doc.defaultView!.HTMLCanvasElement && copied instanceof doc.defaultView!.HTMLCanvasElement) {
+      copied.getContext('2d')?.drawImage(source, 0, 0)
+    }
+    if (at !== undefined && source instanceof doc.defaultView!.HTMLImageElement && copied instanceof doc.defaultView!.HTMLImageElement) {
+      const src = source.currentSrc || source.src
+      if (/\.webp(?:\?|$)/.test(src) || src.startsWith('blob:')) {
+        images.push(imageAt(source, src, at).then(value => { copied.src = value }))
+      }
+    }
+  }
+  await Promise.all(images)
+  await new Promise<void>((resolve) => {
+    const done = () => { doc.defaultView!.clearTimeout(timeout); raster!.canvas.removeEventListener('paint', done); resolve() }
+    const timeout = doc.defaultView!.setTimeout(done, 100)
+    raster!.canvas.addEventListener('paint', done, { once: true })
+    raster!.canvas.requestPaint!()
+  })
+  raster.context.clearRect(0, 0, width, height)
+  raster.context.drawElementImage!(raster.content!, 0, 0)
+  const output = doc.createElement('canvas')
+  output.width = crop?.width ?? width
+  output.height = crop?.height ?? height
+  output.getContext('2d', { willReadFrequently: readback })!.drawImage(raster.canvas,
+    crop?.x ?? 0, crop?.y ?? 0, output.width, output.height, 0, 0, output.width, output.height)
+  raster.content!.remove()
+  return output
+}
+
 export function mergeRunVodRasterRegions(values: RunVodRasterRegion[], limit = 8) {
   const regions = values.map(region => ({ ...region }))
   const join = (i: number, j: number) => {
@@ -449,7 +586,8 @@ export async function pruneRunVodRaster(doc: Document) {
 }
 
 export async function releaseRunVodRaster(doc?: Document) {
-  for (const document of doc ? [doc] : new Set([...snapshots.keys(), ...documentDecoders.keys(), ...rasterDecoders.keys()])) {
+  for (const document of doc ? [doc] : new Set([...snapshots.keys(), ...documentDecoders.keys(), ...rasterDecoders.keys(), ...nativeRasters.keys()])) {
+    releaseNativeRaster(document)
     snapshots.get(document)?.observer.disconnect()
     snapshots.delete(document)
     for (const decoder of documentDecoders.get(document)?.values() ?? []) {
@@ -538,8 +676,16 @@ function fontCss(doc: Document) {
 export async function rasterRunVod(element: HTMLElement, width: number, height: number, at?: number, prepared?: () => void, readback = false,
   crop?: RunVodRasterRegion) {
   const doc = element.ownerDocument
-  rasterDecoder(doc)
   const view = doc.defaultView!
+  const root = doc.getElementById('root')
+  const native = element === doc.body && !doc.querySelector('dialog[open]') && [...doc.body.children].every(child =>
+    child === root || child.matches('script,style,link,[hidden],[data-run-vod-native-raster],[data-run-vod-raster-decoder]')) &&
+    hasNativeRunVodRaster(view)
+  if (native) {
+    const canvas = await nativeRaster(doc, width, height, at, readback, crop)
+    if (canvas) { prepared?.(); return canvas }
+  } else releaseNativeRaster(doc)
+  rasterDecoder(doc)
   await doc.fonts.ready
   const defaults = initialStyle(doc)
   const viewport = `${view.innerWidth}:${view.innerHeight}`
@@ -733,6 +879,7 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
   if (!cached) {
     const style = doc.createElement('style')
     const animation = doc.createElement('style')
+    animation.dataset.runVodAnimation = ''
     animation.textContent = animationMarker
     // A per-node `all` shorthand expands into hundreds of declarations when
     // resource URLs are assigned. One scoped rule avoids megabytes per frame.
@@ -749,6 +896,9 @@ export async function rasterRunVod(element: HTMLElement, width: number, height: 
     const mutations = (records: MutationRecord[]) => {
       for (const record of records) {
         const source = record.target
+        if (source instanceof view.Element && source.matches('[data-run-vod-native-raster]')) continue
+        if (record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].every(node =>
+          node instanceof view.Element && node.matches('[data-run-vod-native-raster]'))) continue
         if (source instanceof view.Element) {
           const closedDialog = source.closest('dialog:not([open])')
           // The card-collection controls remain mounted in closed dialogs.

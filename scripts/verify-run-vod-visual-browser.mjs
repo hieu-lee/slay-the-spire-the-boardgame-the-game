@@ -13,7 +13,8 @@ const server = await createServer({ logLevel: 'silent', server: { port: 0 }, plu
   },
 }] })
 await server.listen()
-const browser = await chromium.launch({ headless: true })
+const browser = await chromium.launch({ headless: true, args: ['--enable-blink-features=CanvasDrawElement'],
+  ...(process.env.VOD_SYSTEM_CHROME ? { executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' } : {}) })
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } })
 const errors = []
 page.on('pageerror', (error) => errors.push(String(error)))
@@ -49,16 +50,20 @@ try {
   writeFileSync(`${output}/raster-before.png`, Buffer.from(frame.png.split(',')[1], 'base64'))
   console.log(`Native raster ${Math.round(frame.ms)}ms`)
   const assetPixels = await page.evaluate(async () => {
-    const { rasterRunVod } = await import('/src/ui/run-vod-raster.ts')
-    const host = document.createElement('div')
+    const { rasterRunVod, releaseRunVodRaster } = await import('/src/ui/run-vod-raster.ts')
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const doc = frame.contentDocument
+    const host = doc.createElement('div')
     host.style.cssText = 'display:block;width:32px;height:32px;line-height:0'
-    const source = new Image(32, 32)
+    const source = doc.createElement('img')
+    source.width = source.height = 32
     source.src = '/assets/ui/cursor.png'
     source.style.cssText = 'display:block;width:32px;height:32px'
-    host.append(source); document.body.append(host)
+    host.append(source); doc.body.append(host)
     try {
       await source.decode()
-      const expected = document.createElement('canvas')
+      const expected = doc.createElement('canvas')
       expected.width = expected.height = 32
       expected.getContext('2d').drawImage(source, 0, 0)
       const actual = await rasterRunVod(host, 32, 32, 0)
@@ -67,7 +72,7 @@ try {
       const mismatch = left.reduce((count, pixel, index) => count + Number(pixel !== right[index]), 0)
       expected.width = expected.height = actual.width = actual.height = 0
       return mismatch
-    } finally { host.remove() }
+    } finally { await releaseRunVodRaster(doc); frame.remove() }
   })
   assert.equal(assetPixels, 0, 'same-origin artwork must be embedded in a VOD raster')
   for (const [name, width, height] of [['desktop', 1920, 1080], ['phone', 844, 390]]) {
@@ -490,25 +495,27 @@ try {
   assert.deepEqual(clockAndCache.pixels, [[255, 0, 0, 255], [0, 0, 255, 255], [0, 0, 255, 255]])
   const closedDialogCache = await page.evaluate(async () => {
     const { rasterRunVod, releaseRunVodRaster } = await import('/src/ui/run-vod-raster.ts')
-    await releaseRunVodRaster()
-    const dialog = document.createElement('dialog')
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const doc = frame.contentDocument
+    const dialog = doc.createElement('dialog')
     dialog.innerHTML = '<input type="checkbox" aria-label="Hidden upgrade preview">'
-    document.body.append(dialog)
+    doc.body.append(dialog)
     const native = XMLSerializer.prototype.serializeToString
     let serializations = 0
     XMLSerializer.prototype.serializeToString = function (...args) { serializations++; return native.apply(this, args) }
     try {
-      await rasterRunVod(document.body, 1920, 1080, 0)
+      await rasterRunVod(doc.body, 1920, 1080, 0)
       const initial = serializations
       dialog.querySelector('input').name = 'hidden-preview'
-      await rasterRunVod(document.body, 1920, 1080, 0)
+      await rasterRunVod(doc.body, 1920, 1080, 0)
       const cached = serializations
       dialog.showModal()
-      await rasterRunVod(document.body, 1920, 1080, 0)
+      await rasterRunVod(doc.body, 1920, 1080, 0)
       return { reused: cached === initial, opened: serializations > cached }
     } finally {
       XMLSerializer.prototype.serializeToString = native
-      dialog.close(); dialog.remove(); await releaseRunVodRaster()
+      dialog.close(); dialog.remove(); await releaseRunVodRaster(doc); frame.remove()
     }
   })
   assert.deepEqual(closedDialogCache, { reused: true, opened: true },

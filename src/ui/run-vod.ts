@@ -3,7 +3,7 @@ import { assetPath } from '../game/assets.ts'
 import { cardDef } from '../game/cards.ts'
 import { currentRoom } from '../game/map.ts'
 import type { RunState } from '../game/run.ts'
-import { mergeRunVodRasterRegions, rasterRunVod, pruneRunVodRaster, releaseRunVodRaster, runVodImagePhases, runVodRasterRegions, seedRunVodImagePhases, setRunVodRasterDecoderUrl, trackRunVodImagePhases, type RunVodRasterRegion } from './run-vod-raster.ts'
+import { hasNativeRunVodRaster, mergeRunVodRasterRegions, rasterRunVod, pruneRunVodRaster, releaseRunVodRaster, runVodImagePhases, runVodRasterRegions, seedRunVodImagePhases, setRunVodRasterDecoderUrl, trackRunVodImagePhases, type RunVodRasterRegion } from './run-vod-raster.ts'
 import { createRunVodClock, type RunVodClock } from './run-vod-clock.ts'
 import { createRunVodEncoder } from './run-vod-encoder.ts'
 import type { RunVodAudioCue } from './sfx.ts'
@@ -1489,10 +1489,11 @@ export async function startRunVodExport(log: RunVodLog, expected: RunState, resu
 }
 
 function exportChunks(log: RunVodLog, expected: RunState): { location: { log: RunVodLog; expected: RunState }; locationIndex: number; from: number; to: number }[] {
+  const chunkSize = hasNativeRunVodRaster() ? 4 : RUN_VOD_EXPORT_EVENTS
   return runVodLocations(log, expected).flatMap((location, locationIndex) =>
-    Array.from({ length: Math.ceil(location.log.events.length / RUN_VOD_EXPORT_EVENTS) }, (_, index) => ({
-      location, locationIndex, from: index * RUN_VOD_EXPORT_EVENTS,
-      to: Math.min(location.log.events.length, (index + 1) * RUN_VOD_EXPORT_EVENTS),
+    Array.from({ length: Math.ceil(location.log.events.length / chunkSize) }, (_, index) => ({
+      location, locationIndex, from: index * chunkSize,
+      to: Math.min(location.log.events.length, (index + 1) * chunkSize),
     })))
 }
 
@@ -1699,8 +1700,10 @@ export async function extractRunVod(log: RunVodLog, expected: RunState) {
     let active = 0
     const fill = () => {
       // Keep four actual renderers busy even when later short rooms finish
-      // first. At most eight clips (active or encoded) may await ordered join.
-      while (!cancelled && active < 4 && nextStart < Math.min(locations.length, nextJoin + 8)) start(nextStart++)
+      const native = hasNativeRunVodRaster()
+      // Native rasterization saturates one renderer; legacy SVG decoding benefits from parallel documents.
+      while (!cancelled && active < (native ? 1 : 4) &&
+        nextStart < Math.min(locations.length, nextJoin + (native ? 2 : 8))) start(nextStart++)
     }
     const start = (index: number) => {
       active++

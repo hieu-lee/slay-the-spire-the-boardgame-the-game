@@ -37,7 +37,7 @@ assert(resumeStart >= 0 && resumeEnd > resumeStart && resumeEnd < firstCanvas,
 const coordinator = source.slice(source.indexOf('export async function extractRunVod('), source.indexOf('export async function renderRunVodLocation('))
   .replace('export ', '').replace("await import('./run-vod-video.ts')", 'joinModule')
 const coordinateJs = ts.transpile(coordinator, { target: ts.ScriptTarget.ES2022 })
-for (const mode of ['complete', 'cancel', 'startup-cancel', 'fallback-cancel', 'finish-cancel', 'failure', 'late-failure']) {
+for (const mode of ['complete', 'native', 'cancel', 'startup-cancel', 'fallback-cancel', 'finish-cancel', 'failure', 'late-failure']) {
   const completesClips = mode === 'complete' || mode === 'finish-cancel'
   const gates = new Map(), started = [], joined = [], cleaned = [], buttons = []
   let active = 0, peak = 0, presented = false, removed = false, aborted = false, storeCleaned = false
@@ -47,6 +47,7 @@ for (const mode of ['complete', 'cancel', 'startup-cancel', 'fallback-cancel', '
     runVodLocations: () => Array.from({ length: 9 }, (_, index) => ({ log: { index, events: [{}] }, expected: {} })),
     replayFrame: () => ({ iframe: { remove() {} }, workbench: { append() {}, addEventListener() {} }, update() {}, remove() { removed = true } }),
     document: { createElement: () => { const button = {}; buttons.push(button); return button } },
+    hasNativeRunVodRaster: () => mode === 'native',
     snapshotStore: async () => ({ cleanup: async () => {
       const first = !storeCleaned; storeCleaned = true
       if (first && mode === 'fallback-cancel') await new Promise(resolve => gates.set('cleanup', resolve))
@@ -82,6 +83,15 @@ for (const mode of ['complete', 'cancel', 'startup-cancel', 'fallback-cancel', '
     buttons[0].onclick(); gates.get(mode === 'startup-cancel' ? 'join' : 'cleanup')()
     assert((await outcome).includes('cancelled'))
     assert(removed && (aborted || mode === 'fallback-cancel') && storeCleaned && !presented && active === 0)
+    continue
+  }
+  if (mode === 'native') {
+    for (let index = 0; index < 9; index++) {
+      assert.deepEqual(started, Array.from({ length: index + 1 }, (_, position) => position))
+      gates.get(index)(); await tick()
+    }
+    assert.equal(await outcome, ''); assert.equal(peak, 1); assert.equal(active, 0); assert(removed && presented)
+    assert.deepEqual(joined, [0, 1, 2, 3, 4, 5, 6, 7, 8]); assert.deepEqual(cleaned, joined)
     continue
   }
   assert.deepEqual(started, [0, 1, 2, 3])
