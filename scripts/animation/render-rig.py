@@ -111,12 +111,19 @@ def render(spec, pose, output, size=400, fps=30):
     source = Image.open(ROOT / spec['source']).convert('RGBA')
     if spec.get('flipX'): source = source.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     width, height = size, round(size * source.height / source.width)
-    source = source.crop(source.getbbox())
+    box = source.getbbox()
+    texture = source.crop(box)
+    if pose == 'idle' and 'idleSource' in spec:
+        texture = Image.open(ROOT / spec['idleSource']).convert('RGBA')
+        # Preserve canonical registration; original textures can contain distant alpha=1 specks.
+        texture = texture.crop(tuple(round(v * (texture.width / source.width if i % 2 == 0
+                                                else texture.height / source.height)) for i, v in enumerate(box)))
+    source = source.crop(box)
     # Generous fixed overscan for weapons, never independently fit each frame.
     display_scale = spec.get('displayScale', 1)
     scale = min(width * .8 / source.width, height * spec.get('heightFit', .88) / source.height) / display_scale
     sw, sh = [round(v * scale) for v in source.size]
-    source = source.resize((sw, sh), Image.Resampling.LANCZOS)
+    source = texture.resize((sw, sh), Image.Resampling.LANCZOS)
     ox, oy = (width-sw)//2, round(height*(1-(1-spec.get('ground', .98))/display_scale))-sh
     canvas = Image.new('RGBA', (width, height))
     canvas.paste(source, (ox, oy))

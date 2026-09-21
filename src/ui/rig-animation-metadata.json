@@ -1,77 +1,77 @@
 {
   "hero-ironclad": {
-    "contactLeft": 132,
-    "height": 266,
+    "contactLeft": 267,
+    "height": 532,
     "scale": 2.1
   },
   "hero-silent": {
-    "contactLeft": 61,
-    "height": 266,
+    "contactLeft": 122,
+    "height": 533,
     "scale": 1.15
   },
   "hero-defect": {
-    "contactLeft": 101,
-    "height": 266,
+    "contactLeft": 205,
+    "height": 533,
     "scale": 1.15
   },
   "hero-watcher": {
-    "contactLeft": 137,
-    "height": 406,
+    "contactLeft": 276,
+    "height": 811,
     "scale": 2.2
   },
   "hero-guardian": {
-    "contactLeft": 86,
-    "height": 400,
+    "contactLeft": 170,
+    "height": 800,
     "scale": 1.15
   },
   "hero-hermit": {
-    "contactLeft": 115,
-    "height": 400,
+    "contactLeft": 230,
+    "height": 800,
     "scale": 1.5
   },
   "hero-slime_boss": {
-    "contactLeft": 51,
-    "height": 400,
+    "contactLeft": 105,
+    "height": 800,
     "scale": 1.15
   },
   "hero-guardian-defense": {
-    "contactLeft": 61,
-    "height": 400,
+    "contactLeft": 121,
+    "height": 800,
     "scale": 1.15
   },
   "hero-hexaghost-heat-0": {
-    "contactLeft": 91,
-    "height": 400,
+    "contactLeft": 183,
+    "height": 800,
     "scale": 1.15
   },
   "hero-hexaghost-heat-1": {
-    "contactLeft": 91,
-    "height": 400,
+    "contactLeft": 183,
+    "height": 800,
     "scale": 1.15
   },
   "hero-hexaghost-heat-2": {
-    "contactLeft": 91,
-    "height": 400,
+    "contactLeft": 183,
+    "height": 800,
     "scale": 1.15
   },
   "hero-hexaghost-heat-3": {
-    "contactLeft": 91,
-    "height": 400,
+    "contactLeft": 183,
+    "height": 800,
     "scale": 1.15
   },
   "hero-hexaghost-heat-4": {
-    "contactLeft": 91,
-    "height": 400,
+    "contactLeft": 183,
+    "height": 800,
     "scale": 1.15
   },
   "hero-hexaghost-heat-5": {
-    "contactLeft": 91,
-    "height": 400,
+    "contactLeft": 183,
+    "height": 800,
     "scale": 1.15
   },
   "hero-hexaghost-heat-6": {
-    "contactLeft": 72,
-    "height": 400,
+    "contactLeft": 146,
+    "height": 800,
     "scale": 1.15
   },
   "awakened_one_phase_1": {

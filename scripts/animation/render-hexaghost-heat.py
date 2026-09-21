@@ -35,7 +35,7 @@ def render(heat):
             body.seek(index)
             frame = body.convert('RGBA')
             duration = body.info['duration']
-            frames.append(overlay(frame,heat,time))
+            frames.append(overlay(frame,heat,time,body.width/400))
             durations.append(duration)
             time += duration
         frames[0].save(OUT/f'hero-hexaghost-heat-{heat}-{action}.webp',save_all=True,

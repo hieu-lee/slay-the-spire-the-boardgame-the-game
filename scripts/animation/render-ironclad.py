@@ -2,9 +2,9 @@
 from PIL import Image
 import numpy as np, math
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2]; OUT=ROOT/'public/assets/combat/rigged'; size=(400,266); scale=.39
+ROOT=Path(__file__).resolve().parents[2]; OUT=ROOT/'public/assets/combat/rigged'; size=(800,532); scale=.78
 weapon=Image.open(ROOT/'scripts/animation/sources/ironclad-sword.png').convert('RGBA')
-weapon=weapon.resize((120,80),Image.Resampling.LANCZOS);pivot=(1310*120/1536,525*120/1536)
+weapon=weapon.resize((240,160),Image.Resampling.LANCZOS);pivot=(1310*240/1536,525*240/1536)
 grips=[(143,46),(153,40),(170,42),(176,43),(180,28),(183,36),
        (232,57),(256,72),(277,70),(279,70),(286,86),(306,108),
        (307,112),(301,127),(284,163),(278,188),(310,184),(296,197),
@@ -17,7 +17,7 @@ for half,rows in [('upper',[0,350,695,1024]),('lower',[0,335,678,1024])]:
     for i in range(12):
         pose=sheet.crop((i%4*384,rows[i//4],(i%4+1)*384,rows[i//4+1]))
         bottom=pose.getbbox()[3]
-        offset=(235-round(175*scale),263-round(bottom*scale))
+        offset=(470-round(175*scale),526-round(bottom*scale))
         frame=Image.new('RGBA',size)
         pose=pose.resize((round(pose.width*scale),round(pose.height*scale)),Image.Resampling.LANCZOS)
         frame.alpha_composite(pose,offset);bodies.append(frame)
@@ -25,16 +25,16 @@ for half,rows in [('upper',[0,350,695,1024]),('lower',[0,335,678,1024])]:
         points.append((offset[0]+grip[0]*scale,offset[1]+grip[1]*scale))
 from rigid_weapon import attach_weapon
 def attach(body,grip,degrees):
-    return attach_weapon(body,weapon,pivot,grip,degrees,7)
+    return attach_weapon(body,weapon,pivot,grip,degrees,14)
 
 # Idle is the canonical horizontal-sword drawing, never a swing's final pose.
-original=Image.open(ROOT/'public/assets/combat/characters/ironclad.webp').convert('RGBA')
+original=Image.open(ROOT/'public/assets/combat/characters/ironclad-hero.webp').convert('RGBA')
 box=original.getbbox()
 rest_scale=(bodies[23].getbbox()[3]-bodies[23].getbbox()[1])/(box[3]-box[1])
 feet=original.getchannel('A').crop((0,round(box[3]*.8),original.width,box[3])).getbbox()
 rest=Image.new('RGBA',size)
 rest.alpha_composite(original.resize((round(original.width*rest_scale),round(original.height*rest_scale)),Image.Resampling.LANCZOS),
-    (round(235-(feet[0]+feet[2])/2*rest_scale),263-round(box[3]*rest_scale)))
+    (round(470-(feet[0]+feet[2])/2*rest_scale),526-round(box[3]*rest_scale)))
 
 # The full original clock is preserved: raise, dash, swing, return, recover.
 # Pose 15 briefly reverses the descending hands; omit that drawing.
@@ -51,7 +51,7 @@ for action,duration in [('idle',3000),('attack',1800)]:
         if action=='idle' or t>=1260:
             # Rigid vertical breathing keeps the sword parallel to the floor.
             frame=rest.transform(size,Image.Transform.AFFINE,
-                (1,0,0,0,1,.4*math.sin(2*math.pi*t/duration)),Image.Resampling.BICUBIC)
+                (1,0,0,0,1,.8*math.sin(2*math.pi*t/duration)),Image.Resampling.BICUBIC)
         else:
             k=min(max(i for i,(ms,_) in enumerate(keys) if ms<=t),len(keys)-2)
             a,ai=keys[k];b,bi=keys[k+1];u=(t-a)/(b-a)
@@ -59,7 +59,7 @@ for action,duration in [('idle',3000),('attack',1800)]:
             grip=points[ai]
             angle=angles[ai]*(1-u)+angles[bi]*u
             frame=attach(body,grip,angle)
-            frame=frame.rotate(.45*math.sin(2*math.pi*t/duration),Image.Resampling.BICUBIC,center=(235,263))
+            frame=frame.rotate(.45*math.sin(2*math.pi*t/duration),Image.Resampling.BICUBIC,center=(470,526))
         frames.append(frame)
     durations=[b-a for a,b in zip(times,times[1:]+[duration])]
     assert sum(durations)==duration and min(durations)>=20

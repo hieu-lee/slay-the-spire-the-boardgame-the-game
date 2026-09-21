@@ -104,8 +104,12 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
   }, { character, heat })
   await page.waitForTimeout(100)
   await waitForIdle(page)
+  await setSize(page, screen === 'desktop' ? 2.5 : 1.25)
+  await page.locator('.board').screenshot({ path: resolve(output, `${browserName}-${screen}-${character}-${heat}-resolution.png`) })
   await setSize(page, 1)
   const idleBase = await measure(page, idleSelector)
+  assert(await page.locator(idleSelector).evaluate(image => image.naturalWidth >= 800),
+    `${screen}/${character}: idle art must retain high-resolution detail`)
   if (character === 'guardian' || character === 'guardian-defense') {
     const initialMode = character === 'guardian-defense' ? 'defense' : 'attack'
     const nextMode = initialMode === 'attack' ? 'defense' : 'attack'
@@ -160,6 +164,10 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
   }
   await setSize(page, 1)
   const attackBase = await measure(page, poseSelector)
+  if (!['ironclad', 'watcher'].includes(character)) {
+    assert(await page.locator(poseSelector).first().evaluate(image => image.naturalWidth >= 800),
+      `${screen}/${character}: baked attacks must retain high-resolution detail`)
+  }
   await setSize(page, 1.25)
   assertScaled(attackBase, await measure(page, poseSelector), 1.25, `${screen}/${character}/attack`)
   if (character === 'guardian') {

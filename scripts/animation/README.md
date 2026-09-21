@@ -145,3 +145,12 @@ reconnect cleanup. `review-rigs.py` records pose galleries for visual inspection
 Damage impacts and projectile destinations use the cached painted body center,
 with sprite scale, padding and object fit applied. Acid instead grows from its
 painted base at foot level; Defect's beam source retains its mouth registration.
+
+Hero rigs export at 800px wide to preserve detail at desktop/Retina display sizes.
+Idle exports use the original `-hero.webp` texture through `idleSource` where
+available, preserving the registered canvas aspect and display scale. Ironclad's
+specialized renderer uses the same doubled geometry and original texture;
+Watcher's static idle uses her original texture directly. Heat flame anchors
+remain in 400px authoring coordinates and scale with the exported canvas.
+Run `verify-character-size-browser.mjs` to guard resolution, placement and attacks
+on desktop and horizontal phones; regenerate contact metadata after exports.

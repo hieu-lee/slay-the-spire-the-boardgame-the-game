@@ -349,7 +349,7 @@ function GuardianPortrait({ mode, animate, restartKey }: {
   }, [animate, mode])
   const file = transition
     ? `guardian-${transition}.webp`
-    : mode === 'defense' ? 'guardian-defense.webp' : 'guardian.webp'
+    : mode === 'defense' ? 'guardian-defense.webp' : 'guardian-hero.webp'
   return <img
     key={`${transition ?? mode}-${restartKey}`}
     src={assetPath(animate && !transition
@@ -6051,7 +6051,7 @@ function CombatScreenView({
             : occupant?.character
           const characterAttackAsset = assetPath(`combat/rigged/hero-${rigId}-attack.webp`)
           const characterIdleAsset = assetPath(occupant?.character === 'watcher'
-            ? 'combat/characters/watcher.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
+            ? 'combat/characters/watcher-hero.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
           const characterArtScale = prefersReducedMotion || occupant?.dead || occupant?.character === 'watcher' ? 1
             : (rigMetadata as Record<string, { scale?: number }>)[`hero-${rigId}`]?.scale ?? 1
           return (
@@ -6127,7 +6127,7 @@ function CombatScreenView({
                               ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
                               : occupant.character === 'slime_boss' && slimeSpawnEvent
                                 ? 'combat/characters/slime_boss-spawn.webp'
-                              : `combat/characters/${occupant.character}.webp`)}
+                              : `combat/characters/${occupant.character}-hero.webp`)}
                             data-vfx-seq={characterAttack?.active.event.seq}
                             alt=""
                             onError={(event) => {

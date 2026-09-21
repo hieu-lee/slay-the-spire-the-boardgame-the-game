@@ -42,6 +42,17 @@ def reviewed_rigs():
             # Trickster's intentional spectral duplicate adds painted area at impact.
             if pose == 'idle' or not has_authored_attack(name) or ('drawnSheet' in spec and name not in ('downfall_trickster','hero-guardian-defense')):
                 assert max(areas)/min(areas)<(1.4 if 'drawnSheet' in spec else 1.3), (name,pose,'area changed too much',max(areas)/min(areas))
+            if pose == 'idle' and 'idleSource' in spec:
+                # Higher-resolution textures must not move or shrink the registered body.
+                reference = Image.open(ROOT / spec['source']).convert('RGBA')
+                reference = reference.crop(reference.getbbox())
+                scale = min(im.width*.8/reference.width, im.height*spec.get('heightFit', .88)/reference.height) / spec.get('displayScale', 1)
+                reference = reference.resize(tuple(round(v*scale) for v in reference.size), Image.Resampling.LANCZOS)
+                x = (im.width-reference.width)//2
+                y = round(im.height*(1-(1-spec.get('ground', .98))/spec.get('displayScale', 1)))-reference.height
+                expected = reference.getchannel('A').point(lambda a: 255 if a > 32 else 0).getbbox()
+                expected = tuple(v + (x if i % 2 == 0 else y) for i, v in enumerate(expected))
+                assert max(abs(a-b) for a,b in zip(boxes[0], expected)) <= 4, (name, 'idle texture changed registration', boxes[0], expected)
             poses[pose] = (frames, np.cumsum(durations))
         if not name.startswith('hero-'):
             # Equal canvases do not prove equal body size. Guard transitions
