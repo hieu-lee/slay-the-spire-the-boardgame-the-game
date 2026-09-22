@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { validateRoomStore } from '../infra/validate-room-store.mjs'
@@ -12,6 +13,46 @@ const server = readFileSync(new URL('../.github/workflows/server-deploy.yml', im
 const service = readFileSync(new URL('../infra/systemd/sts-room-server.service', import.meta.url), 'utf8')
 const runner = readFileSync(new URL('../infra/systemd/sts-actions-runner.service', import.meta.url), 'utf8')
 const deploy = readFileSync(new URL('../infra/deploy-local-server.sh', import.meta.url), 'utf8')
+assert.match(deploy, /active_state=\$\(systemctl --user show -p ActiveState --value sts-room-server\.service/)
+assert.match(deploy, /\[ -n "\$previous_release" \] && \[ "\$server_stopped" = true \]; then\s+node "\$release\/infra\/validate-room-store\.mjs" --materialize "\$store" "\$previous_release\/scripts\/lib\/leaderboard\.mjs"/)
+
+for (const activeState of ['active', 'inactive']) {
+  const failedStopHome = mkdtempSync(join(tmpdir(), 'sts-failed-stop-'))
+  try {
+    const data = join(failedStopHome, '.local/share/slay-the-spire-server')
+    const release = join(data, 'releases', 'a'.repeat(40))
+    const previous = join(data, 'releases', 'previous')
+    const commands = join(failedStopHome, 'commands')
+    mkdirSync(join(release, 'node_modules/ws'), { recursive: true })
+    mkdirSync(join(release, 'infra/systemd'), { recursive: true })
+    mkdirSync(join(release, 'scripts'), { recursive: true })
+    mkdirSync(join(previous, 'scripts', 'lib'), { recursive: true })
+    mkdirSync(commands)
+    symlinkSync(previous, join(data, 'current'))
+    writeFileSync(join(release, 'scripts/room-server.mjs'), '')
+    writeFileSync(join(release, 'infra/systemd/sts-room-server.service'), '[Service]\n')
+    writeFileSync(join(release, 'infra/validate-room-store.mjs'), 'import { writeFileSync } from "node:fs"; writeFileSync(process.env.ROLLBACK_MARKER, "called")\n')
+    const systemctl = join(commands, 'systemctl')
+    writeFileSync(systemctl, '#!/bin/sh\ncase "$2" in\n  restart|stop) exit 1;;\n  show) printf "%s\\n" "$SIMULATED_ACTIVE_STATE";;\n  start) printf started > "$START_MARKER";;\nesac\nexit 0\n')
+    chmodSync(systemctl, 0o755)
+    const node = join(commands, 'node')
+    writeFileSync(node, `#!/bin/sh\n[ "$1" = --input-type=module ] && exit 0\nexec "${process.execPath}" "$@"\n`)
+    chmodSync(node, 0o755)
+    const marker = join(failedStopHome, 'materialized')
+    const startMarker = join(failedStopHome, 'restarted-current')
+    const result = spawnSync('bash', ['infra/deploy-local-server.sh'], { cwd: new URL('..', import.meta.url),
+      env: { ...process.env, HOME: failedStopHome, PATH: `${commands}:${process.env.PATH}`,
+        SESSION_SHA: 'a'.repeat(40), ROLLBACK_MARKER: marker, START_MARKER: startMarker,
+        SIMULATED_ACTIVE_STATE: activeState }, encoding: 'utf8', timeout: 10_000 })
+    assert.equal(result.status, 1, result.stderr)
+    assert.equal(readlinkSync(join(data, 'current')), activeState === 'inactive' ? previous : release,
+      'rollback selected the wrong release after a failed stop')
+    assert.equal(existsSync(marker), activeState === 'inactive', 'rollback materialized with an active server')
+    assert.equal(existsSync(startMarker), true, 'failed stop left the server down')
+  } finally {
+    rmSync(failedStopHome, { recursive: true, force: true })
+  }
+}
 const windowsInstall = readFileSync(new URL('../infra/windows/install-host.ps1', import.meta.url), 'utf8')
 const routerMapping = readFileSync(new URL('../infra/windows/renew-router-pinhole.ps1', import.meta.url), 'utf8')
 const caddy = readFileSync(new URL('../infra/windows/Caddyfile', import.meta.url), 'utf8')

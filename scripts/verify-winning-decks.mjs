@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { winningDecksPage, normalizeLeaderboardRun, restoreLeaderboardRuns } from './lib/leaderboard.mjs'
+import { addLeaderboardRun, winningDecksPage, normalizeLeaderboardRun, restoreLeaderboardRuns } from './lib/leaderboard.mjs'
 import { createRoomServer } from './room-server.mjs'
 
 const runs = Array.from({ length: 45 }, (_, index) => normalizeLeaderboardRun({
@@ -90,5 +90,12 @@ try {
   assert(!JSON.stringify(body).includes('private-installation'))
   assert.deepEqual(body.rows[0].cards, runs[44].finalDeck)
   assert.equal((await fetch(`${url}?sort=profileToken`)).status, 400)
+  assert.equal((await fetch(`${url}?nonce=1`)).status, 400)
+  assert.equal((await fetch(`${url}?sort=character&sort=ascension`)).status, 400)
+  addLeaderboardRun(server.store, { ...runs[0], id: 'new-installation:cache-invalidated', username: 'New player' }, 1900000000000)
+  assert.equal((await (await fetch(url)).json()).rows[0].username, 'New player')
+  let limited
+  for (let request = 0; request < 29; request++) limited = await fetch(url)
+  assert.equal(limited.status, 429)
 } finally { await server.close() }
 console.log('Winning decks: bounded pages, global sorting, filters, stable ties/cursors, safe public fields and HTTP validation pass')

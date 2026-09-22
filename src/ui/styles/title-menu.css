@@ -560,6 +560,14 @@
   .start-menu__nav { bottom: 1.9rem; left: 0.75rem; }
   .start-menu__nav button { min-width: 12rem; padding: 0.1rem 2.5rem; font-size: 1.2rem; }
 }
+@media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
+  .start-menu__nav { top: 5.25rem; bottom: auto; left: 1.75rem; }
+  .start-menu__nav button { min-width: 12rem; padding: .05rem 2.5rem; font-size: 1.25rem; line-height: 1.4; }
+}
+@media (max-height: 360px) and (orientation: landscape) {
+  .start-menu__nav { top: 4.5rem; }
+  .start-menu__nav button { font-size: 1.12rem; line-height: 1.18; }
+}
 .start-menu__meta { position: relative; align-self: center; color: #d9c796; font-size: .65rem; text-transform: uppercase; }
 .start-menu__meta > summary { min-height: 2rem; display: flex; align-items: center; padding: .3rem .55rem; border: 1px solid #655339; border-radius: .2rem; background: #181a18; color: #f2e8d3; cursor: pointer; }
 .start-menu__meta-panel { position: absolute; right: 0; bottom: calc(100% + .5rem); z-index: 20; width: min(36rem, calc(100vw - 2rem)); max-height: min(34rem, calc(100vh - 9rem)); overflow: auto; padding: .8rem; border: 1px solid #8d6d42; border-radius: .55rem; background: #171414f5; box-shadow: 0 .75rem 2rem #000b; text-transform: none; }

@@ -21,7 +21,7 @@ prepare_release() {
     cleanup_candidate() { rm -rf -- "$candidate"; }
     trap cleanup_candidate EXIT
     git -C "$root" archive HEAD -- package.json scripts/room-server.mjs \
-      scripts/lib/rooms.mjs scripts/lib/leaderboard.mjs scripts/lib/profiles.mjs \
+      scripts/lib/rooms.mjs scripts/lib/leaderboard.mjs scripts/lib/stats.mjs scripts/lib/profiles.mjs \
       src/game infra/systemd/sts-room-server.service infra/validate-room-store.mjs | tar -x -C "$candidate"
     mkdir "$candidate/node_modules"
     cp -aL "$root/node_modules/ws" "$candidate/node_modules/ws"
@@ -88,26 +88,38 @@ finish_deployment() {
   if [ "$deployment_complete" != true ]; then
     rollback_failed=false
     set +e
-    systemctl --user stop sts-room-server.service || rollback_failed=true
-    if [ -n "$previous_release" ] && [ -d "$previous_release" ]; then
-      ln -sfn "$previous_release" "$data_dir/current.rollback"
-      mv -Tf "$data_dir/current.rollback" "$data_dir/current" || rollback_failed=true
+    server_stopped=false
+    systemctl --user stop sts-room-server.service || true
+    active_state=$(systemctl --user show -p ActiveState --value sts-room-server.service 2>/dev/null || true)
+    if [ "$active_state" = inactive ] || [ "$active_state" = failed ]; then
+      server_stopped=true
     else
-      rm -f -- "$data_dir/current" || rollback_failed=true
+      rollback_failed=true
+      systemctl --user start sts-room-server.service || rollback_failed=true
     fi
-    if [ "$had_unit" = true ]; then
-      cp -p "$backup" "$unit_file" || rollback_failed=true
-    else
-      rm -f -- "$unit_file" || rollback_failed=true
+    if [ -n "$previous_release" ] && [ "$server_stopped" = true ]; then
+      node "$release/infra/validate-room-store.mjs" --materialize "$store" "$previous_release/scripts/lib/leaderboard.mjs" || rollback_failed=true
     fi
-    systemctl --user daemon-reload || rollback_failed=true
-    if [ -n "$previous_release" ]; then
-      if node "$release/infra/validate-room-store.mjs" --materialize "$store"; then
+    if [ "$server_stopped" = true ] && [ "$rollback_failed" = false ]; then
+      if [ -n "$previous_release" ] && [ -d "$previous_release" ]; then
+        ln -sfn "$previous_release" "$data_dir/current.rollback"
+        mv -Tf "$data_dir/current.rollback" "$data_dir/current" || rollback_failed=true
+      else
+        rm -f -- "$data_dir/current" || rollback_failed=true
+      fi
+      if [ "$had_unit" = true ]; then
+        cp -p "$backup" "$unit_file" || rollback_failed=true
+      else
+        rm -f -- "$unit_file" || rollback_failed=true
+      fi
+      systemctl --user daemon-reload || rollback_failed=true
+      if [ -n "$previous_release" ] && [ "$rollback_failed" = false ]; then
         systemctl --user start sts-room-server.service || rollback_failed=true
         check_health '' http://127.0.0.1:8787 "$MULTIPLAYER_SERVER_ORIGIN" || rollback_failed=true
-      else
-        rollback_failed=true
       fi
+    fi
+    if [ "$server_stopped" = true ] && [ "$rollback_failed" = true ]; then
+      systemctl --user start sts-room-server.service || rollback_failed=true
     fi
     if [ "$rollback_failed" = true ]; then
       echo 'Deployment rollback failed; preserving the service-unit backup for recovery.' >&2

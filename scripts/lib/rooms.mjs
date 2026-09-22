@@ -14,9 +14,10 @@
 // the same instant. Every mutation therefore goes through `apply`, which is the
 // single writer — Node's single thread does the rest.
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, truncateSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { mergeLeaderboardRuns, restoreLeaderboardRuns } from './leaderboard.mjs'
+import { classificationRecord, deckHash, HERO_NAMES, INITIAL_DECK_TYPES, validDeckType } from './stats.mjs'
 import {
   CAPS,
   CHARACTER_IDS,
@@ -222,8 +223,58 @@ function assignPendingRelicIds(run) {
   run.nextPendingRelicId = next
 }
 
+function readJournal(store, path) {
+  let buffer
+  try { buffer = readFileSync(path) } catch (error) {
+    if (error?.code === 'ENOENT') return ''
+    throw error
+  }
+  const validBytes = buffer.lastIndexOf(10) + 1
+  if (validBytes === buffer.length) return buffer.toString('utf8')
+  let complete = false
+  try { JSON.parse(buffer.subarray(validBytes).toString('utf8')); complete = true } catch {}
+  store.interruptedJournals.set(path, { buffer, validBytes, complete })
+  return complete ? `${buffer.toString('utf8')}\n` : buffer.subarray(0, validBytes).toString('utf8')
+}
+
+export function repairInterruptedJournals(store) {
+  for (const [path, { buffer, validBytes, complete }] of store.interruptedJournals) {
+    if (!readFileSync(path).equals(buffer)) throw new Error(`Journal changed during recovery: ${path}`)
+    if (complete) appendFileSync(path, '\n', { mode: 0o600 })
+    else {
+      writeFileSync(`${path}.partial-${randomBytes(8).toString('hex')}`, buffer.subarray(validBytes), { mode: 0o600, flag: 'wx' })
+      truncateSync(path, validBytes)
+      console.warn(`Preserved an incomplete journal tail from ${path}`)
+    }
+    store.interruptedJournals.delete(path)
+  }
+}
+
+function appendJournal(store, path, entries) {
+  let descriptor
+  try { descriptor = openSync(path, 'r') } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+  if (descriptor !== undefined) {
+    try {
+      const size = fstatSync(descriptor).size
+      if (size) {
+        const lastByte = Buffer.alloc(1)
+        if (readSync(descriptor, lastByte, 0, 1, size - 1) !== 1) throw new Error(`Journal changed during append: ${path}`)
+        if (lastByte[0] !== 10) {
+          readJournal(store, path)
+          repairInterruptedJournals(store)
+        }
+      }
+    } finally { closeSync(descriptor) }
+  }
+  appendFileSync(path, entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n', { mode: 0o600 })
+}
+
 export function createStore({ file, restartRecovery = false, restartReconnectMs = 5 * 60_000 } = {}) {
-  const store = { rooms: new Map(), leaderboardRuns: [], leaderboardDirty: true, profiles: [], file, reconnectQuorums: new Map() }
+  const store = { rooms: new Map(), leaderboardRuns: [], leaderboardRevision: 0, leaderboardDirty: true, leaderboardChanges: new Map(),
+    statsStateDirty: true, statsChanges: new Map(), interruptedJournals: new Map(),
+    deckTypes: [...INITIAL_DECK_TYPES], deckClassificationBudget: { day: -1, used: 0 }, profiles: [], file, reconnectQuorums: new Map() }
   if (!file) return store
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8'))
@@ -237,13 +288,81 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
     if (archive !== undefined && !Array.isArray(archive)) throw new Error('Leaderboard archive must be an array')
     const archivedRuns = restoreLeaderboardRuns(archive)
     if (archive !== undefined && archivedRuns.length !== archive.length) throw new Error('Leaderboard archive has invalid runs')
-    store.leaderboardRuns = mergeLeaderboardRuns(legacyRuns, archivedRuns)
+    const journal = readJournal(store, `${file}.leaderboard.log`)
+    if (archive === undefined && existsSync(`${file}.leaderboard.log`)) throw new Error('Leaderboard archive is missing for its log')
+    const archivedById = new Map(archivedRuns.map((run) => [run.id, run]))
+    const journalIds = new Set()
+    for (const line of journal.split('\n')) {
+      if (!line) continue
+      const entry = JSON.parse(line)
+      const [run] = restoreLeaderboardRuns([entry])
+      if (!run) throw new Error('Leaderboard log contains an invalid run')
+      archivedById.set(run.id, run)
+      journalIds.add(run.id)
+    }
+    store.leaderboardRuns = mergeLeaderboardRuns(legacyRuns, [...archivedById.values()], {
+      preferLegacyRuns: !saved.leaderboardArchive, journalIds,
+    })
     store.leaderboardDirty = archive === undefined
-    if (!store.leaderboardDirty && legacyRuns.length) {
-      const mergedById = new Map(store.leaderboardRuns.map((run) => [run.id, run]))
-      const archivedById = new Map(archivedRuns.map((run) => [run.id, run]))
-      store.leaderboardDirty = legacyRuns.some((run) =>
-        JSON.stringify(mergedById.get(run.id)) !== JSON.stringify(archivedById.get(run.id)))
+    if (!store.leaderboardDirty && legacyRuns.length)
+      for (const run of store.leaderboardRuns)
+        if (JSON.stringify(run) !== JSON.stringify(archivedById.get(run.id))) store.leaderboardChanges.set(run.id, run)
+    if (Array.isArray(saved.deckTypes)) store.deckTypes = [...new Set([...store.deckTypes, ...saved.deckTypes.filter(validDeckType)])]
+    if (Number.isSafeInteger(saved.deckClassificationBudget?.day) && Number.isSafeInteger(saved.deckClassificationBudget?.used) && saved.deckClassificationBudget.used >= 0)
+      store.deckClassificationBudget = saved.deckClassificationBudget
+    let statsState
+    try { statsState = JSON.parse(readFileSync(`${file}.stats.json`, 'utf8')) } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    if (statsState !== undefined) {
+      if (!Array.isArray(statsState?.deckTypes) || statsState.deckTypes.some((type) => !validDeckType(type)) ||
+          !Number.isSafeInteger(statsState.deckClassificationBudget?.day) ||
+          !Number.isSafeInteger(statsState.deckClassificationBudget?.used) || statsState.deckClassificationBudget.used < 0)
+        throw new Error('Stats state is invalid')
+      store.deckTypes = [...new Set([...store.deckTypes, ...statsState.deckTypes])]
+      const currentBudget = store.deckClassificationBudget
+      const backedUpBudget = statsState.deckClassificationBudget
+      if (backedUpBudget.day > currentBudget.day ||
+          backedUpBudget.day === currentBudget.day && backedUpBudget.used > currentBudget.used)
+        store.deckClassificationBudget = backedUpBudget
+      store.statsStateDirty = store.deckTypes.length !== statsState.deckTypes.length ||
+        store.deckClassificationBudget.day !== backedUpBudget.day ||
+        store.deckClassificationBudget.used !== backedUpBudget.used
+    }
+    const statsLog = readJournal(store, `${file}.stats.log`)
+    const logged = new Map()
+    const knownTypes = new Set(store.deckTypes)
+    for (const line of statsLog.split('\n')) {
+      if (!line) continue
+      const record = JSON.parse(line)
+      if (typeof record?.id !== 'string' || !Object.hasOwn(HERO_NAMES, record.hero) || !/^[0-9a-f]{64}$/.test(record.hash) ||
+          record.deckType !== undefined && !validDeckType(record.deckType) ||
+          record.retry !== undefined && (!Number.isSafeInteger(record.retry?.after) || record.retry.after < 0 ||
+          !/^[0-9a-f]{64}$/.test(record.retry.hash))) throw new Error('Stats log is invalid')
+      logged.set(record.id, record)
+      if (record.deckType && !knownTypes.has(record.deckType)) {
+        knownTypes.add(record.deckType)
+        store.deckTypes.push(record.deckType)
+        store.statsStateDirty = true
+      }
+    }
+    for (const run of store.leaderboardRuns) {
+      const record = logged.get(run.id)
+      if (record?.hero === run.character && record.hash === deckHash(run)) {
+        if (!run.deckType && record.deckType) { run.deckType = record.deckType; delete run.deckClassificationRetry }
+        else if (!run.deckType && record.retry &&
+            (!run.deckClassificationRetry || record.retry.after >= run.deckClassificationRetry.after))
+          run.deckClassificationRetry = record.retry
+      }
+      if (run.deckType || run.deckClassificationRetry) {
+        const latest = classificationRecord(run)
+        if (JSON.stringify(latest) !== JSON.stringify(record)) store.statsChanges.set(run.id, latest)
+      }
+      if (run.deckType && !knownTypes.has(run.deckType)) {
+        knownTypes.add(run.deckType)
+        store.deckTypes.push(run.deckType)
+        store.statsStateDirty = true
+      }
     }
     store.profiles = saved.profiles ?? []
     for (const room of saved.rooms) {
@@ -373,7 +492,8 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
       }
     }
   } catch (error) {
-    if (error?.code !== 'ENOENT' || existsSync(`${file}.leaderboard.json`)) {
+    if (error?.code !== 'ENOENT' || existsSync(`${file}.leaderboard.json`) || existsSync(`${file}.leaderboard.log`) ||
+        existsSync(`${file}.stats.json`) || existsSync(`${file}.stats.log`)) {
       throw new Error(`Could not load room store: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -383,18 +503,39 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
 export function saveStore(store) {
   if (!store.file) return
   mkdirSync(dirname(store.file), { recursive: true })
+  const temporary = `${store.file}.tmp`
+  const reconnectQuorums = Object.fromEntries([...store.reconnectQuorums].map(([code, quorum]) => [code, {
+    playerIds: [...quorum.playerIds], expiresAt: quorum.expiresAt,
+  }]))
+  const main = { version: 1, rooms: [...store.rooms.values()], deckTypes: store.deckTypes,
+    deckClassificationBudget: store.deckClassificationBudget, profiles: store.profiles, reconnectQuorums }
+  if (!existsSync(store.file) || store.leaderboardDirty) {
+    writeFileSync(temporary, JSON.stringify({ ...main, leaderboardRuns: store.leaderboardRuns }), { mode: 0o600 })
+    renameSync(temporary, store.file)
+  }
+  repairInterruptedJournals(store)
   const archive = `${store.file}.leaderboard.json`
   if (store.leaderboardDirty) {
     const archiveTemporary = `${archive}.tmp`
     writeFileSync(archiveTemporary, JSON.stringify(store.leaderboardRuns), { mode: 0o600 })
     renameSync(archiveTemporary, archive)
     store.leaderboardDirty = false
+    store.leaderboardChanges.clear()
+  } else if (store.leaderboardChanges.size) {
+    appendJournal(store, `${store.file}.leaderboard.log`, [...store.leaderboardChanges.values()])
+    store.leaderboardChanges.clear()
   }
-  const temporary = `${store.file}.tmp`
-  const reconnectQuorums = Object.fromEntries([...store.reconnectQuorums].map(([code, quorum]) => [code, {
-    playerIds: [...quorum.playerIds], expiresAt: quorum.expiresAt,
-  }]))
-  writeFileSync(temporary, JSON.stringify({ version: 1, rooms: [...store.rooms.values()], leaderboardArchive: true, profiles: store.profiles, reconnectQuorums }), { mode: 0o600 })
+  if (store.statsChanges.size) {
+    appendJournal(store, `${store.file}.stats.log`, [...store.statsChanges.values()])
+    store.statsChanges.clear()
+  }
+  if (store.statsStateDirty) {
+    const statsTemporary = `${store.file}.stats.json.tmp`
+    writeFileSync(statsTemporary, JSON.stringify({ deckTypes: store.deckTypes, deckClassificationBudget: store.deckClassificationBudget }), { mode: 0o600 })
+    renameSync(statsTemporary, `${store.file}.stats.json`)
+    store.statsStateDirty = false
+  }
+  writeFileSync(temporary, JSON.stringify({ ...main, leaderboardArchive: true }), { mode: 0o600 })
   renameSync(temporary, store.file)
 }
 
