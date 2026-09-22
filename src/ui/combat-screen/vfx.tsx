@@ -130,7 +130,7 @@ export function CombatVfx({
       ? combat?.querySelector<HTMLElement>(`.enemy[data-enemy-id="${CSS.escape(targetEnemyId)}"] .enemy__portrait`)
       : source?.closest<HTMLElement>('.seat__portrait, .enemy__portrait')
     if (!source || !portrait || role !== 'target') return
-    const art = portrait.querySelector<CombatArtElement>(':scope > :is(img, video)')
+    const art = portrait.querySelector<CombatArtElement>(':scope > :is(img, video):not([data-inactive])')
     const measure = () => {
       const rect = portrait.getBoundingClientRect()
       if (lightningStrike && combat) {

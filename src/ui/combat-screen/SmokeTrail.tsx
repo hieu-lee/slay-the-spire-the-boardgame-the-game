@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, useId } from 'react'
+import { useSafariCombatRendering } from '../CombatAnimation.tsx'
 import { cardFlightPath, type TrailBounds as Bounds } from './card-flight.ts'
 
 // Reuse the rendered texture across repeated plays; only the cheap reveal mask animates.
@@ -101,14 +102,23 @@ export function SmokeTrail({ path, bounds }: { path: string; bounds: Bounds }) {
     )
     return () => { active = false; release?.() }
   }, [path, bounds])
-  return <svg ref={root} className="card-flight-trail" width="100%" height="100%" data-texture-ready={Boolean(texture)}>
-    <defs><mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width={size.width} height={size.height}>
+  const safari = useSafariCombatRendering
+  const image = texture ? <image href={texture.src} x={texture.x} y={texture.y}
+    width={texture.width} height={texture.height} mask={`url(#${maskId})`} /> : null
+  const artwork = <svg ref={root} className={safari ? 'card-flight-trail__texture' : 'card-flight-trail'}
+    width="100%" height="100%" viewBox={safari ? `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}` : undefined}
+    data-texture-ready={!safari ? Boolean(texture) : undefined}>
+    <defs><mask id={maskId} maskUnits="userSpaceOnUse"
+      x={safari ? bounds.x : 0} y={safari ? bounds.y : 0}
+      width={safari ? bounds.width : size.width} height={safari ? bounds.height : size.height}>
       <path className="card-flight-trail__reveal" d={path} pathLength="1" />
     </mask></defs>
-    <g className="card-flight-trail__drift">
-      {texture ? <image href={texture.src} x={texture.x} y={texture.y} width={texture.width} height={texture.height} mask={`url(#${maskId})`} /> : null}
-    </g>
+    {safari ? image : <g className="card-flight-trail__drift">{image}</g>}
   </svg>
+  return safari ? <div className="card-flight-trail card-flight-trail--safari"
+    style={{ left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height,
+      transformOrigin: `${size.width / 2 - bounds.x}px ${size.height / 2 - bounds.y}px` }}
+    data-texture-ready={Boolean(texture)}>{artwork}</div> : artwork
 }
 
 /** Prepare the three public pile routes before the player plays their first card. */

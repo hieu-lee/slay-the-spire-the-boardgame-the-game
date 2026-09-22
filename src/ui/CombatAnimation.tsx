@@ -8,9 +8,9 @@ const forceWebp = query.get('combat-webp') === '1'
 const assetCdnOrigin = import.meta.env?.VITE_ASSET_CDN_ORIGIN
 const iOSWebKit = /iP(?:hone|ad|od)/.test(userAgent) ||
   (/Macintosh/.test(userAgent) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1)
-export const useSafariCombatVideo = !forceWebp && typeof document !== 'undefined' &&
-  /AppleWebKit/.test(userAgent) && /Safari/.test(userAgent) &&
-  !/(?:Chrome|Chromium|CriOS|Edg|OPR|Android)/.test(userAgent) &&
+export const useSafariCombatRendering = /AppleWebKit/.test(userAgent) && /Safari/.test(userAgent) &&
+  !/(?:Chrome|Chromium|CriOS|Edg|OPR|Android)/.test(userAgent)
+export const useSafariCombatVideo = useSafariCombatRendering && !forceWebp && typeof document !== 'undefined' &&
   !iOSWebKit &&
   document.createElement('video').canPlayType('video/quicktime; codecs="hvc1"') !== ''
 

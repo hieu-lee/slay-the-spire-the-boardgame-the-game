@@ -641,11 +641,11 @@ try {
       await page.evaluate(e=>window.fixture.install('defect',e.id,!!e.isBoss),enemy)
       const card=page.locator(`.enemy[data-enemy-def="${enemy.id}"]`)
       await card.waitFor()
-      await page.waitForFunction(()=>[...document.querySelectorAll('.enemy__art--cutout')].every(i=>i.complete&&i.naturalWidth>0))
+      await page.waitForFunction(()=>[...document.querySelectorAll('.enemy__art--cutout:not([data-inactive])')].every(i=>i.complete&&i.naturalWidth>0))
       assert.equal(await card.getAttribute('data-animation'),'idle',enemy.id)
-      if (enemy.isBoss || eliteArt(enemy)) assert.equal(await card.locator('.enemy__art--cutout').evaluate(i => i.naturalWidth), rigs[enemy.artId ?? enemy.id].size, `${enemy.id}: idle resolution`)
-      const before=await card.locator('.enemy__art--cutout').boundingBox()
-      const silhouette=await card.locator('.enemy__art--cutout').evaluate(image=>{
+      if (enemy.isBoss || eliteArt(enemy)) assert.equal(await card.locator('.enemy__art--cutout:not([data-inactive])').evaluate(i => i.naturalWidth), rigs[enemy.artId ?? enemy.id].size, `${enemy.id}: idle resolution`)
+      const before=await card.locator('.enemy__art--cutout:not([data-inactive])').boundingBox()
+      const silhouette=await card.locator('.enemy__art--cutout:not([data-inactive])').evaluate(image=>{
         const rect=image.getBoundingClientRect(), canvas=document.createElement('canvas')
         canvas.width=image.naturalWidth;canvas.height=image.naturalHeight
         const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0)
@@ -660,7 +660,7 @@ try {
       })
       if(enemy.elite||enemy.isBoss){
         const bands=await card.evaluate(e=>{
-          const image=e.querySelector('.enemy__art--cutout')
+          const image=e.querySelector('.enemy__art--cutout:not([data-inactive])')
           const art=image.getBoundingClientRect()
           const canvas=document.createElement('canvas')
           canvas.width=image.naturalWidth;canvas.height=image.naturalHeight
@@ -683,7 +683,7 @@ try {
         assert(!bands.effectBottom||bands.effectBottom<=bands.artTop+1,`${screen}/${enemy.id}: effect overlaps art ${JSON.stringify(bands)}`)
       }
       if(normalsOnly) {
-        const art = card.locator('.enemy__art--cutout')
+        const art = card.locator('.enemy__art--cutout:not([data-inactive])')
         const first = await art.screenshot()
         await page.waitForTimeout(250)
         assert.notDeepEqual(first, await art.screenshot(), `${enemy.id}: idle texture frozen`)
@@ -692,15 +692,15 @@ try {
       if(normalsOnly||eliteArt(enemy)||enemy.isBoss)await page.locator('.board').screenshot({path:resolve(output,`${screen}-${enemy.id}-idle.png`)})
       const attacks=await page.evaluate(()=>{const f=window.fixture;f.state.phase='enemy';f.render();return f.attacks})
       if(attacks){
-        await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='attack')
-        assert((await card.locator('.enemy__art--cutout').getAttribute('src')).startsWith('blob:'),`${enemy.id}: recording captured the unloaded idle fallback`)
-        if (enemy.isBoss || eliteArt(enemy)) assert.equal(await card.locator('.enemy__art--cutout').evaluate(i => i.naturalWidth), rigs[enemy.artId ?? enemy.id].size, `${enemy.id}: attack resolution`)
+        await page.waitForFunction(()=>document.querySelector('.enemy')?.classList.contains('enemy--acting'))
+        assert((await card.locator('.enemy__art--cutout:not([data-inactive])').getAttribute('src')).startsWith('blob:'),`${enemy.id}: recording captured the unloaded idle fallback`)
+        if (enemy.isBoss || eliteArt(enemy)) assert.equal(await card.locator('.enemy__art--cutout:not([data-inactive])').evaluate(i => i.naturalWidth), rigs[enemy.artId ?? enemy.id].size, `${enemy.id}: attack resolution`)
         if (bossProjectileImagePath(enemy.artId ?? enemy.id)) {
           // Reload through a fresh blob URL after the initial resize delivery.
           // Native load dispatch can run microtasks between ancestor listeners;
           // synthetic dispatchEvent would hide that ordering bug.
           const originError = await card.evaluate(async (card, { origin, scale }) => {
-            const image = card.querySelector('.enemy__art--cutout')
+            const image = card.querySelector('.enemy__art--cutout:not([data-inactive])')
             await new Promise(requestAnimationFrame)
             const source = URL.createObjectURL(await (await fetch(image.src)).blob())
             const loaded = new Promise(resolve => image.addEventListener('load', resolve, { once: true }))
@@ -719,7 +719,7 @@ try {
           assert(originError < 1, `${enemy.id}: projectile was measured before loaded art alignment (${originError}px)`)
         }
         await page.waitForTimeout(760)
-        const after=await card.locator('.enemy__art--cutout').boundingBox()
+        const after=await card.locator('.enemy__art--cutout:not([data-inactive])').boundingBox()
         assert(Math.abs(before.width-after.width)<1&&Math.abs(before.height-after.height)<1,`${enemy.id}: attack scale changed`)
         if(bossProjectileImagePath(enemy.artId??enemy.id)){
           const origin=await card.evaluate(e=>{
@@ -785,7 +785,8 @@ try {
       let previousSrc
       for (let repeat=0;repeat<2;repeat++) {
         await page.evaluate(()=>{const f=window.fixture;f.state.phase='enemy';f.render()})
-        const art=page.locator('.enemy[data-animation="attack"] .enemy__art--cutout')
+        await page.locator('.enemy--acting').waitFor()
+        const art=page.locator('.enemy[data-animation="attack"] .enemy__art--cutout:not([data-inactive])')
         await art.waitFor()
         const src=await art.getAttribute('src')
         assert(src.startsWith('blob:') && src!==previousSrc,`${screen}/${id}: attack did not get a fresh replay URL`)

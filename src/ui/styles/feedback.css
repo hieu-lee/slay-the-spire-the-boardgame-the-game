@@ -75,8 +75,18 @@
   filter: none;
   box-shadow: 0 1.2rem 1rem #000a;
 }
+/* Transform and fade an HTML layer so WebKit can composite the smoke texture
+   instead of rerasterizing its masked pixels throughout overlapping flights. */
 .card-flight-trail { position: fixed; inset: 0; overflow: visible; }
 .card-flight-trail__drift { transform-origin: center; animation: card-smoke-drift 1800ms ease-out both; }
+.card-flight-trail--safari {
+  inset: auto;
+  will-change: transform, opacity;
+  animation: card-smoke-drift 1800ms ease-out both, card-smoke-fade 1800ms linear both;
+}
+/* The reveal is white: alpha is identical and skips WebKit luminance conversion. */
+.card-flight-trail--safari mask { mask-type: alpha; }
+.card-flight-trail__texture { display: block; overflow: visible; }
 @keyframes card-smoke-drift {
   0%, 55% { transform: translateY(0) scale(1); }
   100% { transform: translateY(-22px) scale(1.035); }
@@ -90,12 +100,26 @@
   stroke-dashoffset: 1;
   animation: card-flight-smoke 1800ms linear both;
 }
+.card-flight-trail--safari .card-flight-trail__reveal {
+  animation: card-smoke-reveal 235ms 745ms linear both;
+}
 @keyframes card-flight-smoke {
   0%, 41.38% { opacity: 0; stroke-dashoffset: 1; }
   44% { opacity: 1; }
   54.45% { opacity: .95; stroke-dashoffset: 0; }
   70% { opacity: .55; stroke-dashoffset: 0; }
   100% { opacity: 0; stroke-dashoffset: 0; }
+}
+@keyframes card-smoke-reveal {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes card-smoke-fade {
+  0%, 41.38% { opacity: 0; }
+  44% { opacity: 1; }
+  54.45% { opacity: .95; }
+  70% { opacity: .55; }
+  100% { opacity: 0; }
 }
 
 .motion-pulse-0 { animation: ui-pulse 420ms cubic-bezier(0.2, 0.8, 0.2, 1); }

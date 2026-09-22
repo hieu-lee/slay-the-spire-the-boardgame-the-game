@@ -29,10 +29,8 @@ import {
   CombatAnimation,
   combatArtReady,
   combatArtSize,
-  combatVideoPath,
   onCombatArtReady,
-  preloadCombatVideo,
-  useSafariCombatVideo,
+  useSafariCombatRendering,
   type CombatArtElement,
 } from './CombatAnimation.tsx'
 
@@ -307,13 +305,12 @@ export function EnemyCard({
   const numberTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
   const nextNumber = useRef(0)
   const [bulletNumbers, setBulletNumbers] = useState<{ id: number; damage: number; x: number; y: number }[]>([])
-  const attackPreload = useRef<{ source: string; blob?: Blob } | null>(null)
+  const attackPreload = useRef<{ source: string; blob: Blob } | null>(null)
   const bossAttackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [presentedBossAttack, setPresentedBossAttack] = useState<{
     art: string
     artId: string
     source: string
-    forceWebp?: boolean
   } | null>(null)
   const [awaitingNextEnemyPhase, setAwaitingNextEnemyPhase] = useState(acting)
   const displayBeat = useRef(0)
@@ -468,6 +465,12 @@ export function EnemyCard({
   const currentProjectileImpact = enemyProjectileImpactPath(currentBossArtId)
   const bossAttackRequested = Boolean(animatedEnemy && acting && bossHasAttackAction)
   const [bossAttackReady, setBossAttackReady] = useState(false)
+  const finishBossAttack = () => {
+    if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
+    bossAttackTimer.current = null
+    setBossAttackReady(false)
+    setPresentedBossAttack(null)
+  }
   useLayoutEffect(() => {
     if (!acting) setAwaitingNextEnemyPhase(false)
   }, [acting])
@@ -479,12 +482,9 @@ export function EnemyCard({
     if (!bossAttackTriggered) return
     const cached = attackPreload.current
     // Each one-shot WebP needs its own URL; a decoded preload shares an ended timeline.
-    const art = !useSafariCombatVideo && cached?.source === currentBossAttackArt && cached.blob
-      ? URL.createObjectURL(cached.blob) : currentIdleArt
-    const safariVideoReady = useSafariCombatVideo && cached?.source === currentBossAttackArt
-    const presentedArt = useSafariCombatVideo ? currentBossAttackArt : art
-    setPresentedBossAttack({ art: presentedArt, artId: currentBossArtId, source: currentBossAttackArt,
-      forceWebp: useSafariCombatVideo && !safariVideoReady })
+    const art = cached?.source === currentBossAttackArt && cached.blob
+      ? URL.createObjectURL(cached.blob) : useSafariCombatRendering ? currentBossAttackArt : currentIdleArt
+    setPresentedBossAttack({ art, artId: currentBossArtId, source: currentBossAttackArt })
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
     bossAttackTimer.current = null
     setBossAttackReady(false)
@@ -499,25 +499,39 @@ export function EnemyCard({
     ? bossAttacking ? presentedBossAttack?.art ?? currentBossAttackArt : currentIdleArt
     : enemyImagePath(def)
   const bossArtId = presentedBossAttack?.artId ?? currentBossArtId
+  const onArtError = (image: HTMLImageElement) => {
+    // Keep combat usable if both bundled animation formats fail.
+    if (image.dataset.fallback !== 'true') {
+      image.dataset.fallback = 'true'
+      image.style.scale = '1'
+      if (normalSize) {
+        image.style.width = `calc(var(--stage-actor-width) * ${normalSize[2]})`
+        image.style.height = `calc(var(--stage-actor-width) * ${normalSize[3]})`
+        image.style.left = `calc(50% - var(--stage-actor-width) * ${normalSize[2]} / 2)`
+      }
+      image.src = enemyImagePath(def)
+    } else image.style.display = 'none'
+  }
   // Hit only the painted creature and its HUD, never a neighbour's transparent
   // animation canvas. The art itself remains free to overflow during attacks.
   useLayoutEffect(() => {
     const portrait = cardRef.current?.querySelector<HTMLElement>('.enemy__portrait')
     const hit = portrait?.querySelector<HTMLElement>('.enemy__hit-area')
-    const initialImage = portrait?.querySelector<CombatArtElement>(':scope > :is(img, video)')
+    const initialImage = portrait?.querySelector<CombatArtElement>(':scope > :is(img, video):not([data-inactive])')
     if (!portrait || !hit || !initialImage) return
     const measure = () => {
-      const image = portrait.querySelector<CombatArtElement>(':scope > :is(img, video)')
-      if (!image) return
-      // Reviewed normalized X anchors: [animated resting pose, static fallback].
-      // Feet/body bases belong over HP; keep this anchor throughout the attack.
-      const feet = (enemyFootAnchors as Record<string, number[]>)[bossArtId]
-      const { width: naturalWidth, height: naturalHeight } = combatArtSize(image)
-      if (feet && naturalWidth && naturalHeight) {
-        const staticArt = !animatedEnemy || image.dataset.fallback === 'true'
-        const fit = Math.min(image.clientWidth / naturalWidth, image.clientHeight / naturalHeight)
-        const scale = staticArt ? 1 : enemyArtScaleFor(bossArtId)
-        image.style.marginLeft = `${(.5 - feet[staticArt ? 1 : 0]!) * naturalWidth * fit * scale}px`
+      const images = portrait.querySelectorAll<CombatArtElement>(':scope > .enemy__art--cutout')
+      for (const image of images) {
+        // Reviewed normalized X anchors: [animated resting pose, static fallback].
+        // Feet/body bases belong over HP; keep this anchor throughout the attack.
+        const feet = (enemyFootAnchors as Record<string, number[]>)[bossArtId]
+        const { width: naturalWidth, height: naturalHeight } = combatArtSize(image)
+        if (feet && naturalWidth && naturalHeight) {
+          const staticArt = !animatedEnemy || image.dataset.fallback === 'true'
+          const fit = Math.min(image.clientWidth / naturalWidth, image.clientHeight / naturalHeight)
+          const scale = staticArt ? 1 : enemyArtScaleFor(bossArtId)
+          image.style.marginLeft = `${(.5 - feet[staticArt ? 1 : 0]!) * naturalWidth * fit * scale}px`
+        }
       }
       const bounds = combatArtBounds(portrait)
       const parent = portrait.getBoundingClientRect()
@@ -538,19 +552,10 @@ export function EnemyCard({
       portrait.removeEventListener('load', measure, true)
       portrait.removeEventListener('loadeddata', measure, true)
     }
-  }, [art, animatedEnemy, bossArtId])
+  }, [art, animatedEnemy, bossArtId, bossAttackPlaying])
   const bossAttackArt = animatedEnemy ? currentBossAttackArt : undefined
   useEffect(() => {
     if (!bossAttackArt) return
-    if (useSafariCombatVideo) {
-      const cancel = preloadCombatVideo(combatVideoPath(bossAttackArt), () => {
-        attackPreload.current = { source: bossAttackArt }
-      })
-      return () => {
-        cancel()
-        attackPreload.current = null
-      }
-    }
     const controller = new AbortController()
     void fetch(bossAttackArt, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) return
@@ -588,11 +593,11 @@ export function EnemyCard({
   useLayoutEffect(() => {
     const card = cardRef.current
     if (!card || !bossAttacking || bossAttackMotion !== 'melee') return
-    const initialBoss = card.querySelector<CombatArtElement>('.enemy__art--cutout')
+    const initialBoss = card.querySelector<CombatArtElement>('.enemy__art--cutout[data-animation-layer="attack"]')
     const heroes = [...(card.closest('.board')?.querySelectorAll<HTMLElement>('.seat:not(.seat--dead) .seat__portrait') ?? [])]
     if (!initialBoss || heroes.length === 0) return
     const measure = () => {
-      const boss = card.querySelector<CombatArtElement>('.enemy__art--cutout')
+      const boss = card.querySelector<CombatArtElement>('.enemy__art--cutout[data-animation-layer="attack"]')
       if (!boss) return
       if (!combatArtReady(boss)) return
       const { width: naturalWidth, height: naturalHeight } = combatArtSize(boss)
@@ -642,11 +647,11 @@ export function EnemyCard({
   useLayoutEffect(() => {
     const card = cardRef.current
     if (!card || !bossAttacking || !bossProjectileArt) return
-    const initialBoss = card.querySelector<CombatArtElement>('.enemy__art--cutout')
+    const initialBoss = card.querySelector<CombatArtElement>('.enemy__art--cutout[data-animation-layer="attack"]')
     const board = card.closest('.board')
     if (!initialBoss || !board) return
     const measure = () => {
-      const boss = card.querySelector<CombatArtElement>('.enemy__art--cutout')
+      const boss = card.querySelector<CombatArtElement>('.enemy__art--cutout[data-animation-layer="attack"]')
       if (!boss) return
       if (!combatArtReady(boss)) return
       const { width: naturalWidth, height: naturalHeight } = combatArtSize(boss)
@@ -824,38 +829,39 @@ export function EnemyCard({
           <span className="boss-demon-ground-splat boss-demon-ground-splat--origin" aria-hidden="true" />
           <span className="boss-demon-ground-splat boss-demon-ground-splat--target" aria-hidden="true" />
         </> : null}
-        {animatedEnemy ? <CombatAnimation
-          key={`${def.artId ?? def.id}-${bossAttacking ? 'attack' : 'idle'}`}
-          className="enemy__art--cutout"
-          src={art}
-          posterSrc={bossAttacking ? currentIdleArt : undefined}
-          forceWebp={presentedBossAttack?.forceWebp}
-          loop={!bossAttacking}
-          data-animation-asset={bossAttacking ? presentedBossAttack?.source : art}
-          loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
-          onReady={() => {
-            if (!bossAttacking || bossAttackTimer.current) return
-            setBossAttackReady(true)
-            bossAttackTimer.current = setTimeout(() => {
-              setBossAttackReady(false)
-              setPresentedBossAttack(null)
-              bossAttackTimer.current = null
-            }, bossAttackDurationFor(bossArtId))
-          }}
-          onError={(image) => {
-            // Keep combat usable if both bundled animation formats fail.
-            if (image.dataset.fallback !== 'true') {
-              image.dataset.fallback = 'true'
-              image.style.scale = '1'
-              if (normalSize) {
-                image.style.width = `calc(var(--stage-actor-width) * ${normalSize[2]})`
-                image.style.height = `calc(var(--stage-actor-width) * ${normalSize[3]})`
-                image.style.left = `calc(50% - var(--stage-actor-width) * ${normalSize[2]} / 2)`
-              }
-              image.src = enemyImagePath(def)
-            } else image.style.display = 'none'
-          }}
-        /> : <img
+        {animatedEnemy ? <>
+          {/* Retain the decoded idle across handoffs; Safari native video can paint blank transitions. */}
+          {useSafariCombatRendering ? <CombatAnimation
+            key={`${currentBossArtId}-idle`}
+            className="enemy__art--cutout"
+            src={currentIdleArt}
+            forceWebp
+            style={{ animation: 'none' }}
+            data-animation-layer="idle"
+            data-inactive={bossAttackPlaying || undefined}
+            data-animation-asset={currentIdleArt}
+            loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
+            onError={onArtError}
+          /> : null}
+          {!useSafariCombatRendering || bossAttacking ? <CombatAnimation
+            key={`${def.artId ?? def.id}-${bossAttacking ? 'attack' : 'idle'}`}
+            className="enemy__art--cutout"
+            src={art}
+            data-animation-layer={bossAttacking ? 'attack' : 'idle'}
+            data-inactive={useSafariCombatRendering && !bossAttackPlaying || undefined}
+            posterSrc={!useSafariCombatRendering && bossAttacking ? currentIdleArt : undefined}
+            forceWebp={useSafariCombatRendering}
+            loop={!bossAttacking}
+            data-animation-asset={bossAttacking ? presentedBossAttack?.source : art}
+            loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
+            onReady={() => {
+              if (!bossAttacking || bossAttackTimer.current) return
+              setBossAttackReady(true)
+              bossAttackTimer.current = setTimeout(finishBossAttack, bossAttackDurationFor(bossArtId))
+            }}
+            onError={onArtError}
+          /> : null}
+        </> : <img
           key={`${def.artId ?? def.id}-static`}
           className="enemy__art--cutout"
           src={art}

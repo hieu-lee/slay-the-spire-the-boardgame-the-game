@@ -559,6 +559,8 @@
   transform-origin: center bottom;
 }
 
+.enemy__art--cutout[data-inactive] { opacity: 0 !important; }
+
 .enemy--boss .enemy__portrait > :is(.enemy__art--cutout, .boss-demon-grounded) {
   transform: none;
   filter:

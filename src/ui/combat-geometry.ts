@@ -6,7 +6,7 @@ const paintedArt = new WeakMap<CombatArtElement, {
 }>()
 
 export function combatArtBounds(portrait: HTMLElement) {
-  const image = portrait.querySelector<CombatArtElement>(':scope > :is(img, video)')
+  const image = portrait.querySelector<CombatArtElement>(':scope > :is(img, video):not([data-inactive])')
   const rect = portrait.getBoundingClientRect()
   const fallback = { x: rect.left + rect.width / 2, y: rect.top + rect.height * .7,
     left: rect.left, top: rect.top, width: rect.width, height: rect.height }

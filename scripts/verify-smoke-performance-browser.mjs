@@ -101,6 +101,12 @@ try {
      }
      requestAnimationFrame(sample)
     }))
+    const mask = await page.locator('.card-flight-trail mask').evaluate(mask => {
+      const image = mask.closest('svg').querySelector('image')
+      return { area: Number(mask.getAttribute('width')) * Number(mask.getAttribute('height')),
+        textureArea: Number(image.getAttribute('width')) * Number(image.getAttribute('height')) }
+    })
+    if (name === 'webkit') assert(mask.area <= mask.textureArea, `${name}: smoke mask allocates beyond its painted texture: ${JSON.stringify(mask)}`)
     metrics.destination = destination
     assert(metrics.readyAt < 30, `${name} ${destination}: texture was not predecoded ${JSON.stringify(metrics)}`)
     assert(metrics.startupMax < 60, `${name} ${destination}: first-render stall ${JSON.stringify(metrics)}`)
@@ -113,6 +119,51 @@ try {
     assert.match(flight.willChange, /transform/, `${name} ${destination}: flight was not compositor-promoted`)
     assert.equal(flight.filter, 'none', `${name} ${destination}: moving card retained a repainting filter`)
     assert.notEqual(flight.boxShadow, 'none', `${name} ${destination}: card shadow was lost`)
+    if (destination === 'discard') {
+      await page.evaluate(() => {
+        document.querySelector('#root').style.visibility = 'hidden'
+        const trail = document.querySelector('.card-flight-trail'), image = trail.querySelector('image')
+        const path = trail.querySelector('path')
+        const old = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+        old.id = 'legacy-smoke'; old.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;overflow:visible'
+        old.innerHTML = `<defs><mask id="legacy-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${innerWidth}" height="${innerHeight}">
+          <path d="${path.getAttribute('d')}" pathLength="1" fill="none" stroke="white" stroke-width="84" stroke-linecap="round" stroke-dasharray="1" style="animation:legacy-reveal 1800ms linear both" />
+          </mask></defs><g style="transform-origin:center;animation:card-smoke-drift 1800ms ease-out both">${image.outerHTML.replace(/mask="[^"]*"/, 'mask="url(#legacy-mask)"')}</g>`
+        trail.parentElement.append(old)
+        const style=document.createElement('style');style.id='legacy-smoke-style'
+        style.textContent='@keyframes legacy-reveal {0%,41.38%{opacity:0;stroke-dashoffset:1}44%{opacity:1}54.45%{opacity:.95;stroke-dashoffset:0}70%{opacity:.55;stroke-dashoffset:0}100%{opacity:0;stroke-dashoffset:0}}'
+        document.head.append(style)
+      })
+      mkdirSync(`${root}artifacts/card-trails`, { recursive: true })
+      for (const time of [810, 930, 1200, 1600]) {
+        const shots=[]
+        for (const legacy of [false,true]) {
+          await page.evaluate(({time,legacy})=>{
+            const current=document.querySelector('.card-flight-trail'), old=document.querySelector('#legacy-smoke')
+            for(const root of [current,old]) for(const animation of root.getAnimations({subtree:true})) {animation.pause();animation.currentTime=time}
+            current.style.visibility=legacy?'hidden':'visible';old.style.visibility=legacy?'visible':'hidden'
+          },{time,legacy})
+          shots.push(await page.screenshot({path:`${root}artifacts/card-trails/${name}-smoke-${time}-${legacy?'before':'after'}.png`}))
+        }
+        const difference=await page.evaluate(async sources=>{
+          const canvases=await Promise.all(sources.map(async source=>{
+            const img=new Image();img.src=source;await img.decode()
+            const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height
+            const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);return ctx.getImageData(0,0,canvas.width,canvas.height).data
+          }))
+          let changed=0,total=0
+          for(let i=0;i<canvases[0].length;i+=4) for(let c=0;c<3;c++) {
+            const diff=Math.abs(canvases[0][i+c]-canvases[1][i+c]);total+=diff;if(diff>8)changed++
+          }
+          return {mean:total/(canvases[0].length*.75),changed:changed/(canvases[0].length*.75)}
+        },shots.map(shot=>`data:image/png;base64,${shot.toString('base64')}`))
+        assert(difference.mean<.2 && difference.changed<.003, `${name}: smoke changed at ${time}ms: ${JSON.stringify(difference)}`)
+      }
+      await page.evaluate(()=>{
+        document.querySelector('#legacy-smoke').remove();document.querySelector('#legacy-smoke-style').remove()
+        document.querySelector('#root').style.visibility=''
+      })
+    }
     metrics.flight = flight
     results[name].push(metrics)
    }

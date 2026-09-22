@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium, devices, webkit } from './lib/profile-browser.mjs'
 
-// Reproduce the recorded Cultist handoff with a warmed but slow video request.
-// Save the waiting pose, repeated attacks, frame timings, and decoder lifetimes.
+// Reproduce the recorded Cultist handoff with repeated full-resolution WebP handoffs.
+// Save painted frames across both handoffs, repeated attacks, and decoder lifetimes.
 const root = resolve(import.meta.dirname, '..')
 const baseline = process.argv.includes('--baseline')
 const output = resolve(root, `artifacts/safari-transitions${baseline ? '-before' : ''}`)
@@ -24,7 +25,7 @@ async function paintedPose(page, path) {
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
     let top = canvas.height, bottom = 0, count = 0
     // The Cultist's blue feathers isolate its painted body from this brown scene.
-    for (let y = 0; y < canvas.height; y++) for (let x = Math.floor(canvas.width * .65); x < canvas.width; x++) {
+    for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
       const i = (y * canvas.width + x) * 4
       if (pixels[i] < 100 && pixels[i + 1] > 70 && pixels[i + 1] < 200 && pixels[i + 2] > 200) {
         top = Math.min(top, y); bottom = Math.max(bottom, y); count++
@@ -34,13 +35,13 @@ async function paintedPose(page, path) {
   }, `data:image/png;base64,${screenshot.toString('base64')}`)
 }
 try {
-  for (const [name, engine] of Object.entries({ webkit, chromium })) {
+  for (const [name, engine] of Object.entries(process.argv.includes('--webkit-only') ? { webkit } : { webkit, chromium })) {
     const browser = await engine.launch({ headless: true })
     try {
       for (const phone of [false, true]) {
         const label = `${name}-${phone ? 'horizontal-phone' : 'desktop'}`
         const context = await browser.newContext({
-          ...(phone ? devices['iPhone 13 landscape'] : { viewport: { width: 1440, height: 900 } }),
+          ...(phone ? { ...devices[name === 'webkit' ? 'iPhone 13 landscape' : 'Pixel 7 landscape'], viewport: { width: 844, height: 390 } } : { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 }),
           recordVideo: { dir: output, size: phone ? { width: 844, height: 390 } : { width: 1440, height: 900 } },
         })
         const page = await context.newPage()
@@ -55,9 +56,10 @@ try {
             return element
           }
         })
-        let holdAttack = false, releaseAttack
+        const holdAttack = name === 'webkit'
+        let releaseAttack
         const attackGate = new Promise(resolve => { releaseAttack = resolve })
-        await page.route('**/cultist-attack.mov', async route => {
+        await page.route('**/cultist-attack.webp', async route => {
           if (holdAttack) await attackGate
           await route.continue()
         })
@@ -89,41 +91,60 @@ try {
             }
           }
           const reactRoot = (D.createRoot ?? D.default.createRoot)(node)
-          window.fixture = { state, video: media.useSafariCombatVideo, unmount: () => reactRoot.unmount(),
+          window.fixture = { state, safari: media.useSafariCombatRendering, unmount: () => reactRoot.unmount(),
             render() { reactRoot.render((R.createElement ?? R.default.createElement)(R.StrictMode ?? R.default.StrictMode, null,
               (R.createElement ?? R.default.createElement)(CombatScreen, {
               state: structuredClone(state), act: 1, viewerId: 'p1', autoAdvance: false, onAction: () => {},
             }))) },
           }
           window.fixture.render()
-          if (media.useSafariCombatVideo) await new Promise(resolve =>
-            media.preloadCombatVideo(media.combatVideoPath('./assets/combat/rigged/cultist-attack.webp'), resolve))
+
         })
         await page.waitForFunction(() => {
           const art = document.querySelector('.enemy__art--cutout')
-          return window.fixture.video ? art?.tagName === 'VIDEO' && art.readyState >= 2
-            : art?.complete && art.naturalWidth > 0
+          return art instanceof HTMLVideoElement ? art.readyState >= 2 : art?.complete && art.naturalWidth > 0
         })
         await page.waitForTimeout(400)
         const idlePose = await paintedPose(page, resolve(output, `${label}-idle.png`))
-        const video = await page.evaluate(() => window.fixture.video)
-        holdAttack = video
+        await page.evaluate(() => {
+          window.idleArt = document.querySelector('.enemy__art--cutout')
+          // This corner marker delimits the ready gameplay frames in the recording.
+          const marker = document.createElement('div'); marker.id = 'handoff-capture'
+          marker.style.cssText = 'position:fixed;top:0;left:0;width:16px;height:16px;background:#f0f;z-index:99999;pointer-events:none'
+          document.body.append(marker)
+        })
+        const safari = await page.evaluate(() => window.fixture.safari)
         await page.evaluate(() => { window.fixture.state.phase = 'enemy'; window.fixture.render() })
         await page.locator('.enemy[data-animation="attack"]').waitFor()
-        const waiting = await page.locator('.enemy__art--cutout').evaluate(art => ({
+        const waiting = await page.locator('.enemy__art--cutout:not([data-inactive])').evaluate(art => ({
           poster: art.poster, background: getComputedStyle(art).backgroundImage,
           rect: art.getBoundingClientRect().toJSON(),
         }))
-        const waitingPose = await paintedPose(page, resolve(output, `${label}-waiting.png`))
-        if (video && !baseline) {
-          assert(waitingPose.count > 100, 'Cultist disappeared while its attack loaded')
-          assert(waitingPose.height / idlePose.height > .8 && waitingPose.height / idlePose.height < 1.2,
-            `Cultist changed painted size before attacking: ${JSON.stringify({ idlePose, waitingPose })}`)
-          assert.match(waiting.poster, /\/rigged\/cultist-idle\.webp$/, 'attack poster must share the idle canvas and body scale')
-          assert.match(waiting.background, /cultist-idle\.webp/, 'loading video needs a painted fallback until its first frame')
+
+        if (safari && !baseline) {
+          assert(await page.evaluate(() => window.idleArt.isConnected), 'loading an attack removed the already painted idle media')
         }
+        // Let the movie capture both handoffs without locator screenshots, which
+        // temporarily reconfigure WebKit's compositing surfaces during capture.
         releaseAttack()
-        await page.locator('.enemy--acting').waitFor()
+        const frames = await page.evaluate(() => new Promise(resolve => {
+          const frames = [], start = performance.now()
+          function sample(time) {
+            frames.push({ elapsed: time - start, phase: document.querySelector('.enemy').dataset.animation,
+              idleRetained: window.idleArt.isConnected })
+            if (time - start < 2500) requestAnimationFrame(sample)
+            else resolve(frames)
+          }
+          requestAnimationFrame(sample)
+        }))
+        writeFileSync(resolve(output, `${label}-frames.json`), JSON.stringify(frames, null, 2))
+        assert(frames.some(frame => frame.phase === 'attack') && frames.some(frame => frame.phase === 'idle'),
+          `${label}: recording missed a handoff`)
+        if (!baseline) {
+          if (safari) assert(frames.every(frame => frame.idleRetained), `${label}: handoff discarded the decoded idle animation`)
+          if (safari) assert(await page.evaluate(() => document.querySelector('.enemy__art--cutout:not([data-inactive])') === window.idleArt),
+            `${label}: return to idle restarted its media`)
+        }
         await page.locator('.enemy[data-animation="idle"]').waitFor()
         const gaps = await page.evaluate(async () => {
           window.fixture.state.phase = 'player'; window.fixture.render()
@@ -143,6 +164,10 @@ try {
           return gaps
         })
         await page.locator('.enemy[data-animation="idle"]').waitFor()
+        await page.evaluate(async () => {
+          document.querySelector('#handoff-capture').remove()
+          await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame)
+        })
         await page.locator('.board').screenshot({ path: resolve(output, `${label}-returned.png`) })
         const retained = await page.evaluate(() => window.createdVideos
           .filter(video => !video.isConnected && video.hasAttribute('src')).map(video => video.src))
@@ -150,18 +175,38 @@ try {
         const afterUnmount = await page.evaluate(() => window.createdVideos
           .filter(video => video.hasAttribute('src')).map(video => video.src))
         const sorted = gaps.toSorted((a, b) => a - b)
-        const result = { label, waiting, idlePose, waitingPose,
+        const result = { label, waiting, idlePose,
           p95: sorted[Math.floor(sorted.length * .95)], max: Math.max(...gaps), retained, afterUnmount }
         results.push(result)
         writeFileSync(resolve(output, 'report.json'), JSON.stringify(results, null, 2))
         if (!baseline) {
           assert.deepEqual(retained, [], `${label}: detached media retained decoders`)
           assert.deepEqual(afterUnmount, [], `${label}: leaving combat retained decoders`)
-          assert(result.p95 < 40 && result.max < 150, `${label}: attack frame stall ${JSON.stringify(result)}`)
+          // Capture timing is diagnostic; the uncaptured full-app burst verifier owns frame budgets.
         }
         assert.deepEqual(errors, [])
         await context.close()
-        await page.video().saveAs(resolve(output, `${label}.webm`))
+        const movie = resolve(output, `${label}.webm`)
+        await page.video().saveAs(movie)
+        // Check EVERY recorded frame (25fps), not just slower Playwright screenshots.
+        const width = phone ? 422 : 720, height = phone ? 195 : 450
+        const pixels = execFileSync('ffmpeg', ['-loglevel', 'error', '-i', movie,
+          '-vf', `scale=${width}:${height}`, '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'],
+        { maxBuffer: 256 * 1024 * 1024 })
+        const frameBytes = width * height * 3, paintedFrames = []
+        for (let start = 0; start < pixels.length; start += frameBytes) {
+          const corner = start + (width * 2 + 2) * 3
+          if (!(pixels[corner] > 180 && pixels[corner + 1] < 80 && pixels[corner + 2] > 180)) continue
+          let count = 0
+          for (let i = start; i < start + frameBytes; i += 3) {
+            if (pixels[i] < 100 && pixels[i + 1] > 70 && pixels[i + 1] < 200 && pixels[i + 2] > 180) count++
+          }
+          paintedFrames.push({ frame: start / frameBytes, count })
+        }
+        writeFileSync(resolve(output, `${label}-movie-frames.json`), JSON.stringify(paintedFrames, null, 2))
+        assert(paintedFrames.length > 100, `${label}: movie missed the handoff capture window`)
+        if (!baseline && safari) assert(paintedFrames.every(frame => frame.count > 50),
+          `${label}: blank enemy in movie: ${JSON.stringify(paintedFrames.filter(frame => frame.count <= 50))}`)
         console.log(`PASS ${label}: repeated attack p95=${result.p95.toFixed(1)}ms max=${result.max.toFixed(1)}ms`)
       }
     } finally { await browser.close() }

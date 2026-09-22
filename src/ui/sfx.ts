@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useSafariCombatRendering } from './CombatAnimation.tsx'
 import { assetPath } from '../game/assets.ts'
 import { enemyDef } from '../game/enemies.ts'
 import { ANIMATION_SOUND_VOLUMES, type AnimationSound, type CombatSfxRecipe } from './combat-sfx.ts'
@@ -24,7 +25,8 @@ const SOUNDS = {
 } as const
 
 type Sound = keyof typeof SOUNDS
-const activeEffects = new Set<HTMLAudioElement>()
+type SoundPlayback = { pause: () => void }
+const activeEffects = new Set<SoundPlayback>()
 const playAudio = (audio: HTMLAudioElement) => audio.play()
 
 function audioElement(source: string) {
@@ -34,9 +36,66 @@ function audioElement(source: string) {
   return audio
 }
 
-function releaseAudio(audio: HTMLAudioElement) {
+function releaseAudio(audio: SoundPlayback) {
   audio.pause()
   activeEffects.delete(audio)
+}
+
+// Safari stalls when rapid card plays each start several HTML media pipelines.
+// Decode the same source files once, then mix short effects in one audio context.
+let effectContext: AudioContext | undefined
+const soundBuffers = new Map<Sound, Promise<AudioBuffer>>()
+function soundBuffer(sound: Sound) {
+  effectContext ??= new AudioContext()
+  let buffer = soundBuffers.get(sound)
+  if (!buffer) {
+    const context = effectContext
+    buffer = fetch(SOUNDS[sound].replace(/\.ogg$/, '.wav')).then(response => {
+      if (!response.ok) throw new Error(`Sound unavailable: ${response.status}`)
+      return response.arrayBuffer()
+    }).then(bytes => context.decodeAudioData(bytes))
+    soundBuffers.set(sound, buffer)
+    void buffer.catch(() => soundBuffers.delete(sound))
+  }
+  return buffer
+}
+
+function playBufferedSound(sound: Sound, volume: number, rate: number, cue?: string, delayMs = 0): SoundPlayback {
+  let cancelled = false
+  let source: AudioBufferSourceNode | undefined
+  let gain: GainNode | undefined
+  let fallback: HTMLAudioElement | undefined
+  const disconnect = () => { source?.disconnect(); gain?.disconnect(); activeEffects.delete(playback) }
+  const playback = { pause: () => {
+    cancelled = true
+    source?.stop()
+    if (fallback) releaseAudio(fallback)
+    disconnect()
+  } }
+  activeEffects.add(playback)
+  void (async () => {
+    try {
+      const buffer = soundBuffer(sound)
+      const context = effectContext!
+      if (context.state !== 'running') await context.resume()
+      const decoded = await buffer
+      if (cancelled) return
+      source = context.createBufferSource()
+      gain = context.createGain()
+      source.buffer = decoded
+      source.playbackRate.value = rate
+      gain.gain.value = volume * currentSfxVolume()
+      source.connect(gain).connect(context.destination)
+      source.onended = disconnect
+      source.start()
+    } catch {
+      if (cancelled) return
+      activeEffects.delete(playback)
+      fallback = playMediaSound(sound, volume, rate, cue, delayMs)
+      fallback.addEventListener('ended', disconnect, { once: true })
+    }
+  })()
+  return playback
 }
 
 const BOSS_TRACKS = {
@@ -164,7 +223,10 @@ export function useRunOutcomeSound(
 
 export function installSoundEffects(warm = true) {
   // Warm short effect files before the first attack; playback still requires an interaction.
-  const preload = warm ? Object.values(SOUNDS).map(source => {
+  if (warm && useSafariCombatRendering) {
+    for (const sound of Object.keys(SOUNDS) as Sound[]) void Promise.resolve().then(() => soundBuffer(sound)).catch(() => {})
+  }
+  const preload = warm && !useSafariCombatRendering ? Object.values(SOUNDS).map(source => {
     const audio = audioElement(source)
     audio.preload = 'auto'
     audio.load()
@@ -202,7 +264,7 @@ const IMPACT_SOUNDS = new Set(['attack', 'enemy', 'block', 'weak'])
 export function playCombatSound(recipe: CombatSfxRecipe, impactDelayMs = 0, impactsOnly = false): () => void {
   if (currentSfxVolume() === 0) return () => {}
   const timers: number[] = []
-  const playing: HTMLAudioElement[] = []
+  const playing: SoundPlayback[] = []
   recipe.layers.forEach((layer) => {
     if (impactsOnly && (layer.delayMs > 0 || !IMPACT_SOUNDS.has(layer.sound))) return
     const delayMs = layer.delayMs || !IMPACT_SOUNDS.has(layer.sound) ? layer.delayMs : impactDelayMs
@@ -226,6 +288,11 @@ function playSound(sound: Sound, volume = 0.35, rate = 1, cue?: string, delayMs 
     const oldest = activeEffects.values().next().value!
     releaseAudio(oldest)
   }
+  if (useSafariCombatRendering) return playBufferedSound(sound, volume, rate, cue, delayMs)
+  return playMediaSound(sound, volume, rate, cue, delayMs)
+}
+
+function playMediaSound(sound: Sound, volume: number, rate: number, cue?: string, delayMs = 0) {
   const audio = audioElement(SOUNDS[sound])
   activeEffects.add(audio)
   audio.addEventListener('ended', () => activeEffects.delete(audio), { once: true })

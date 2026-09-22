@@ -30,28 +30,14 @@ try {
         const safariVideo = engineName === 'webkit' && !phone
         const movRequests = []
         page.on('request', request => { if (/\.mov(?:\?|$)/.test(request.url())) movRequests.push(request.url()) })
-        let releaseAttackVideo
-        let releaseAttackPoster
         let releaseIdleVideo
         let releasePlayerAttackVideo
         if (safariVideo) {
-          let releaseVideo, releasePoster, releaseIdle, releasePlayerVideo
-          const videoGate = new Promise(resolve => { releaseVideo = resolve })
-          const posterGate = new Promise(resolve => { releasePoster = resolve })
+          let releaseIdle, releasePlayerVideo
           const idleGate = new Promise(resolve => { releaseIdle = resolve })
           const playerVideoGate = new Promise(resolve => { releasePlayerVideo = resolve })
-          releaseAttackVideo = releaseVideo
-          releaseAttackPoster = releasePoster
           releaseIdleVideo = releaseIdle
           releasePlayerAttackVideo = releasePlayerVideo
-          await page.route('**/guardian_attack-attack.mov', async route => {
-            await videoGate
-            await route.continue()
-          })
-          await page.route('**/combat/enemies/guardian_attack.webp', async route => {
-            await posterGate
-            await route.continue()
-          })
           await page.route('**/hero-defect-idle.mov', async route => {
             await idleGate
             await route.continue()
@@ -100,7 +86,7 @@ try {
           window.fixture.render()
         })
 
-        const media = '.seat__portrait > :is(img, video), .enemy__art--cutout'
+        const media = '.seat__portrait > :is(img, video), .enemy__art--cutout:not([data-inactive])'
         const tag = safariVideo ? 'VIDEO' : 'IMG'
         if (safariVideo) {
           const coldIdle = page.locator('.seat__portrait > img')
@@ -116,19 +102,20 @@ try {
         await page.waitForFunction(({ media, loaded, tag }) => {
           const ready = new Function('element', `return (${loaded})(element)`)
           const elements = [...document.querySelectorAll(media)]
-          return elements.length === 2 && elements.every(element => element.tagName === tag && ready(element))
+          return elements.length === 2 && elements.every(element =>
+            element.tagName === (element.closest('.enemy') ? 'IMG' : tag) && ready(element))
         }, { media, loaded: loaded.toString(), tag })
         const resting = await page.locator(media).evaluateAll(async (elements, helpers) => {
           const getSize = new Function('element', `return (${helpers.size})(element)`)
           return Promise.all(elements.map(async element => {
             const asset = element.dataset.animationAsset ?? element.src.replace(/\.mov(?=\?|$)/, '.webp')
             const source = new Image(); source.src = asset; await source.decode()
-            return { tag: element.tagName, src: element.src, asset,
+            return { enemy: Boolean(element.closest('.enemy')), tag: element.tagName, src: element.src, asset,
               size: getSize(element), sourceSize: [source.naturalWidth, source.naturalHeight] }
           }))
         }, { size: size.toString() })
         const extension = safariVideo ? '.mov' : '.webp'
-        assert(resting.every(item => item.tag === tag && item.src.endsWith(extension)), `${engineName}/${screen}: ${JSON.stringify(resting)}`)
+        assert(resting.every(item => item.tag === (item.enemy ? 'IMG' : tag) && item.src.endsWith(item.enemy ? '.webp' : extension)), `${engineName}/${screen}: ${JSON.stringify(resting)}`)
         assert(resting.every(item => item.size.every((value, axis) =>
           value === item.sourceSize[axis] || value === item.sourceSize[axis] + item.sourceSize[axis] % 2)),
           `${engineName}/${screen}: companion changed intrinsic resolution ${JSON.stringify(resting)}`)
@@ -174,30 +161,27 @@ try {
           window.fixture.state.phase = 'enemy'
           window.fixture.render()
         }, safariVideo)
-        const attack = page.locator('.enemy[data-animation="attack"] .enemy__art--cutout')
+        await page.waitForFunction(() => document.querySelector('.enemy')?.classList.contains('enemy--acting'))
+        const attack = page.locator('.enemy[data-animation="attack"] .enemy__art--cutout:not([data-inactive])')
         await attack.waitFor()
         await page.waitForFunction(({ selector, loaded }) => {
           const element = document.querySelector(selector)
           return element && new Function('element', `return (${loaded})(element)`)(element)
-        }, { selector: '.enemy[data-animation="attack"] .enemy__art--cutout', loaded: loaded.toString() })
+        }, { selector: '.enemy[data-animation="attack"] .enemy__art--cutout:not([data-inactive])', loaded: loaded.toString() })
         assert.equal(await attack.evaluate(element => element.tagName), 'IMG')
         assert((await attack.getAttribute('data-animation-asset')).endsWith('/guardian_attack-attack.webp'))
         if (safariVideo) {
-          assert((await attack.getAttribute('src')).endsWith('/guardian_attack-attack.webp'),
-            'cold enemy MOV did not use its same-resolution WebP attack fallback')
+          assert((await attack.getAttribute('src')).startsWith('blob:'),
+            'enemy attack did not restart its full-resolution WebP timeline')
           const firstAttack = createHash('sha256').update(await attack.screenshot()).digest('hex')
           await page.waitForTimeout(180)
           assert.notEqual(createHash('sha256').update(await attack.screenshot()).digest('hex'), firstAttack,
-            'cold enemy MOV fallback froze')
+            'enemy WebP attack froze')
         }
         await page.waitForFunction(() => document.querySelector('.enemy')?.classList.contains('enemy--acting'))
         if (safariVideo) {
           await page.waitForFunction(() => window.fixture.actions.includes('resolveEnemies'))
-          releaseAttackPoster()
-          releaseAttackVideo()
-          await page.waitForTimeout(100)
-          assert.equal(await page.locator('.enemy[data-animation="attack"] video[src$="guardian_attack-attack.mov"]').count(), 0,
-            'late enemy MOV replaced the active fallback after enemy-phase auto advance')
+          assert(!movRequests.some(url => /guardian_attack/.test(url)), 'Safari enemies must retain the full-resolution WebP path')
         }
 
         if (safariVideo) {
@@ -212,12 +196,12 @@ try {
           }), './assets/combat/characters/watcher-hero.webp',
           'hosted video origin rewrote an asset without a MOV companion')
           await page.evaluate(() => { window.fixture.state.phase = 'player'; window.fixture.render() })
-          const idle = page.locator('.enemy[data-animation="idle"] .enemy__art--cutout')
+          const idle = page.locator('.seat__portrait > video')
           await idle.waitFor()
           await idle.evaluate(video => { video.src = '/missing-safari-animation.mov' })
-          await page.waitForFunction(() => document.querySelector('.enemy__art--cutout')?.tagName === 'IMG')
-          const fallback = page.locator('.enemy__art--cutout')
-          assert((await fallback.getAttribute('src')).endsWith('/guardian_attack-idle.webp'), 'video failure did not restore WebP')
+          await page.waitForFunction(() => document.querySelector('.seat__portrait > img')?.complete)
+          const fallback = page.locator('.seat__portrait > img')
+          assert((await fallback.getAttribute('src')).endsWith('/hero-defect-idle.webp'), 'video failure did not restore WebP')
           assert.equal(await fallback.evaluate(image => {
             const canvas = document.createElement('canvas')
             canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
@@ -233,8 +217,8 @@ try {
             const fit = Math.min(rect.width / canvas.width, rect.height / canvas.height)
             const x = rect.left + (rect.width - canvas.width * fit) / 2 + (left + right) / 2 * fit
             const y = rect.bottom - (canvas.height - (top + bottom) / 2) * fit
-            return document.elementFromPoint(x, y)?.closest('.enemy')?.dataset.enemyId
-          }), 'enemy-0', 'video fallback left stale target geometry')
+            return document.elementFromPoint(x, y)?.closest('[data-player-id]')?.dataset.playerId
+          }), 'p1', 'hero video fallback left stale target geometry')
         }
 
         if (engineName === 'webkit' && phone) assert.deepEqual(movRequests, [],
