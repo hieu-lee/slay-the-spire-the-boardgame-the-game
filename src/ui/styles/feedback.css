@@ -58,10 +58,9 @@
   position: fixed;
   left: 0; top: 0;
   width: var(--card-width);
-  offset-anchor: center;
-  offset-rotate: 0deg;
   pointer-events: none;
-  animation: card-resolve 980ms linear both;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
 }
 .card-flight--ironclad { --flight-trace: #e74b38; }
 .card-flight--silent { --flight-trace: #54ca68; }
@@ -70,7 +69,12 @@
 .card-flight--slime_boss { --flight-trace: #a5df42; }
 .card-flight--guardian { --flight-trace: #49d9c5; }
 .card-flight--hermit { --flight-trace: #e8b650; }
-.card-flight .card { width: 100%; transform: none; filter: drop-shadow(0 1.2rem 1rem #000a); }
+.card-flight .card {
+  width: 100%;
+  transform: none;
+  filter: none;
+  box-shadow: 0 1.2rem 1rem #000a;
+}
 .card-flight-trail { position: fixed; inset: 0; overflow: visible; }
 .card-flight-trail__drift { transform-origin: center; animation: card-smoke-drift 1800ms ease-out both; }
 @keyframes card-smoke-drift {
@@ -85,13 +89,6 @@
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
   animation: card-flight-smoke 1800ms linear both;
-}
-@keyframes card-resolve {
-  0% { opacity: 1; offset-distance: 0%; transform: rotate(-5deg) scale(.88); }
-  18% { offset-distance: var(--flight-hold); transform: scale(1.58); }
-  34%, 66% { opacity: 1; offset-distance: var(--flight-hold); transform: scale(1.05); }
-  76% { opacity: 1; offset-distance: var(--flight-hold); transform: scale(.32); }
-  100% { opacity: .7; offset-distance: 100%; transform: rotate(12deg) scale(.22); }
 }
 @keyframes card-flight-smoke {
   0%, 41.38% { opacity: 0; stroke-dashoffset: 1; }

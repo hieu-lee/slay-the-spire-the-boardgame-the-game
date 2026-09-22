@@ -5721,12 +5721,12 @@ await page.locator('.enemy .enemy__hit-area').first().click()
 const committedCardFlight = page.locator('.card-flight').filter({ hasText: 'Bash' }).last()
 await committedCardFlight.waitFor()
 const cardPlayMotion = await committedCardFlight.evaluate((flight) => ({
-  animation: getComputedStyle(flight).animationName,
+  animation: flight.getAnimations().find(animation => animation.id === 'card-resolve')?.id,
   destination: [...flight.classList].find((name) => name.startsWith('card-flight--')),
 }))
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (animation.animationName === 'card-resolve') {
+    if (animation.id === 'card-resolve') {
       animation.currentTime = 500
       animation.pause()
     }
@@ -5735,7 +5735,7 @@ await page.evaluate(() => {
 await page.screenshot({ path: join(animationReferenceDir, 'combat-card-play.png'), timeout: 15_000 })
 const cardPlayLanding = await page.evaluate(() => {
   const flight = [...document.querySelectorAll('.card-flight')].at(-1)
-  const animation = flight?.getAnimations().find((candidate) => candidate.animationName === 'card-resolve')
+  const animation = flight?.getAnimations().find((candidate) => candidate.id === 'card-resolve')
   if (!animation) return null
   animation.currentTime = 979
   const flightRect = flight?.getBoundingClientRect()
@@ -5753,7 +5753,7 @@ const cardPlayLanding = await page.evaluate(() => {
 })
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (animation.animationName === 'card-resolve' && animation.playState === 'paused') animation.play()
+    if (animation.id === 'card-resolve' && animation.playState === 'paused') animation.play()
   }
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().startTurnProgress?.forcedCard === undefined)
@@ -6131,7 +6131,7 @@ const exhaustFlight = await page.locator('.card-flight--exhaust').evaluate((flig
 }))
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (['card-resolve', 'card-flight-smoke', 'card-flight-motes'].includes(animation.animationName)) {
+    if (animation.id === 'card-resolve' || ['card-flight-smoke', 'card-flight-motes'].includes(animation.animationName)) {
       animation.currentTime = 500
       animation.pause()
     }
@@ -6140,7 +6140,7 @@ await page.evaluate(() => {
 await shot('03b-card-center-hold')
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (['card-resolve', 'card-flight-smoke', 'card-flight-motes'].includes(animation.animationName)) {
+    if (animation.id === 'card-resolve' || ['card-flight-smoke', 'card-flight-motes'].includes(animation.animationName)) {
       animation.currentTime = 850
     }
   }

@@ -1,6 +1,5 @@
 import { SmokeTrail, warmSmokeTrails } from './combat-screen/SmokeTrail.tsx'
-import type { CSSProperties } from 'react'
-import { cardFlightPath } from './combat-screen/card-flight.ts'
+import { animateCardFlight, cardFlightPath } from './combat-screen/card-flight.ts'
 import { unknownPowerRefreshDecision } from './combat-screen/unknown-power.ts'
 // The combat screen: the board, the hand, and every prompt a fight puts up.
 //
@@ -384,6 +383,20 @@ function GuardianPortrait({ mode, animate, restartKey }: {
         }}
         onError={(event) => { event.currentTarget.style.display = 'none' }}
       />
+}
+
+function FlyingCard({ flight, character }: { flight: CardFlight; character: string }) {
+  const element = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!element.current) return undefined
+    const animation = animateCardFlight(element.current, flight.motionFrames)
+    return () => animation.cancel()
+  }, [flight.beat, flight.motionFrames])
+  return <div ref={element}
+    className={`card-flight card-flight--${flight.destination} card-flight--${character}`}
+  >
+    <Card card={flight.card} playable={false} immediateArt />
+  </div>
 }
 
 function CombatScreenView({
@@ -6877,12 +6890,7 @@ function CombatScreenView({
       {cardFlights.map((flight) => (
         <div key={flight.beat} className={`card-flight-effect card-flight--${viewer.character}`} aria-hidden="true" inert>
           {flight.destination !== 'stage' ? <SmokeTrail path={flight.trailPath} bounds={flight.trailBounds} /> : null}
-          {!flight.landed ? <div
-            className={`card-flight card-flight--${flight.destination} card-flight--${viewer.character}`}
-            style={{ offsetPath: `path('${flight.path}')`, '--flight-hold': flight.hold } as CSSProperties}
-          >
-            <Card card={flight.card} playable={false} immediateArt />
-          </div> : null}
+          {!flight.landed ? <FlyingCard flight={flight} character={viewer.character} /> : null}
         </div>
       ))}
     </div>

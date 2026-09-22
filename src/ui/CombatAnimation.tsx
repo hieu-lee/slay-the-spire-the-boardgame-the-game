@@ -6,9 +6,12 @@ const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
 const query = typeof location === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search)
 const forceWebp = query.get('combat-webp') === '1'
 const assetCdnOrigin = import.meta.env?.VITE_ASSET_CDN_ORIGIN
+const iOSWebKit = /iP(?:hone|ad|od)/.test(userAgent) ||
+  (/Macintosh/.test(userAgent) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1)
 export const useSafariCombatVideo = !forceWebp && typeof document !== 'undefined' &&
   /AppleWebKit/.test(userAgent) && /Safari/.test(userAgent) &&
   !/(?:Chrome|Chromium|CriOS|Edg|OPR|Android)/.test(userAgent) &&
+  !iOSWebKit &&
   document.createElement('video').canPlayType('video/quicktime; codecs="hvc1"') !== ''
 
 export function combatVideoPath(src: string, origin = assetCdnOrigin): string {
@@ -181,7 +184,7 @@ type CombatAnimationProps = DataAttributes & {
   onError?: (image: HTMLImageElement) => void
 }
 
-/** Safari hardware-decodes the matching HEVC-alpha asset; every failure falls back to WebP. */
+/** macOS Safari hardware-decodes HEVC-alpha; iOS keeps the pixel-identical WebP to avoid decoder corruption. */
 export function CombatAnimation({
   src, mediaSrc, posterSrc, alt = '', className, style, loading, loop = true, hidden, forceWebp,
   onReady, onError, ...data

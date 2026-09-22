@@ -17,7 +17,7 @@ try {
     const { default: React } = await import('/node_modules/.vite/deps/react.js')
     const { default: { createRoot } } = await import('/node_modules/.vite/deps/react-dom_client.js')
     const { SmokeTrail, warmSmokeTrails } = await import('/src/ui/combat-screen/SmokeTrail.tsx')
-    const { cardFlightPath } = await import('/src/ui/combat-screen/card-flight.ts')
+    const { animateCardFlight, cardFlightPath } = await import('/src/ui/combat-screen/card-flight.ts')
     const host = document.createElement('div'); host.className='card-flight-effect card-flight--defect'; document.body.append(host)
     for (const [destination, right] of [['discard', 30], ['draw', 110], ['exhaust', 190]]) {
       const pile = document.createElement('div'); pile.dataset.pile = destination; pile.style.cssText = `position:fixed;right:${right}px;bottom:20px;width:60px;height:80px`; document.body.append(pile)
@@ -45,6 +45,43 @@ try {
     window.mountSmokeBatch = () => root.render(Array.from({ length: 13 }, (_, index) => React.createElement(SmokeTrail, {
       path: `M 0 ${index} L ${100 + index} 100`, bounds: { x: 0, y: 0, width: 120, height: 120 }, key: index,
     })))
+    window.measureFlight = async destination => {
+      const route = window.smokeRoutes[destination]
+      const flight = document.createElement('div')
+      flight.className = 'card-flight'
+      const card = document.createElement('img')
+      card.className = 'card'
+      card.src = '/assets/cards-sm/silent__starter__defend.webp'
+      flight.append(card); host.append(flight)
+      await card.decode()
+      const gaps = []
+      let start, previous
+      const frames = new Promise(resolve => {
+        const sample = time => {
+          start ??= time
+          if (previous !== undefined) gaps.push(time - previous)
+          previous = time
+          if (time - start < 980) requestAnimationFrame(sample)
+          else resolve()
+        }
+        requestAnimationFrame(sample)
+      })
+      const animation = animateCardFlight(flight, route.motionFrames)
+      await Promise.all([frames, animation.finished])
+      const rect = flight.getBoundingClientRect()
+      const pile = document.querySelector(`[data-pile="${destination}"]`).getBoundingClientRect()
+      const style = getComputedStyle(flight), cardStyle = getComputedStyle(card)
+      const sorted = gaps.toSorted((a, b) => a - b)
+      const result = {
+        p95: sorted[Math.floor(sorted.length * .95)], max: Math.max(...gaps),
+        distance: Math.hypot(rect.x + rect.width / 2 - pile.x - pile.width / 2,
+          rect.y + rect.height / 2 - pile.y - pile.height / 2),
+        offsetPath: style.offsetPath, willChange: style.willChange,
+        filter: cardStyle.filter, boxShadow: cardStyle.boxShadow,
+      }
+      flight.remove()
+      return result
+    }
    })
    results[name] = []
    for (const destination of ['discard', 'draw', 'exhaust']) {
@@ -69,6 +106,14 @@ try {
     assert(metrics.startupMax < 60, `${name} ${destination}: first-render stall ${JSON.stringify(metrics)}`)
     assert(metrics.p95 < 50, `${name} ${destination}: dropped frames ${JSON.stringify(metrics)}`)
     assert(metrics.maxRevealRate < .006, `${name} ${destination}: trail jumped ${JSON.stringify(metrics)}`)
+    const flight = await page.evaluate(destination => window.measureFlight(destination), destination)
+    assert(flight.p95 < 35 && flight.max < 80, `${name} ${destination}: card flight dropped frames ${JSON.stringify(flight)}`)
+    assert(flight.distance < 20, `${name} ${destination}: card flight missed its pile ${JSON.stringify(flight)}`)
+    assert.equal(flight.offsetPath, 'none', `${name} ${destination}: CSS Motion Path returned`)
+    assert.match(flight.willChange, /transform/, `${name} ${destination}: flight was not compositor-promoted`)
+    assert.equal(flight.filter, 'none', `${name} ${destination}: moving card retained a repainting filter`)
+    assert.notEqual(flight.boxShadow, 'none', `${name} ${destination}: card shadow was lost`)
+    metrics.flight = flight
     results[name].push(metrics)
    }
    await page.evaluate(() => window.mountSmokeBatch())

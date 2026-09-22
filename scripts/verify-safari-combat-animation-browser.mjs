@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium, webkit } from './lib/profile-browser.mjs'
+import { chromium, devices, webkit } from './lib/profile-browser.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const output = resolve(root, 'artifacts/safari-combat-animation')
@@ -25,13 +25,16 @@ try {
     try {
       for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }], ['horizontal-phone', { width: 844, height: 390 }]]) {
         const phone = screen === 'horizontal-phone'
-        const context = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone })
+        const context = await browser.newContext(phone ? devices['iPhone 13 landscape'] : { viewport })
         const page = await context.newPage()
+        const safariVideo = engineName === 'webkit' && !phone
+        const movRequests = []
+        page.on('request', request => { if (/\.mov(?:\?|$)/.test(request.url())) movRequests.push(request.url()) })
         let releaseAttackVideo
         let releaseAttackPoster
         let releaseIdleVideo
         let releasePlayerAttackVideo
-        if (engineName === 'webkit') {
+        if (safariVideo) {
           let releaseVideo, releasePoster, releaseIdle, releasePlayerVideo
           const videoGate = new Promise(resolve => { releaseVideo = resolve })
           const posterGate = new Promise(resolve => { releasePoster = resolve })
@@ -98,8 +101,8 @@ try {
         })
 
         const media = '.seat__portrait > :is(img, video), .enemy__art--cutout'
-        const tag = engineName === 'webkit' ? 'VIDEO' : 'IMG'
-        if (engineName === 'webkit') {
+        const tag = safariVideo ? 'VIDEO' : 'IMG'
+        if (safariVideo) {
           const coldIdle = page.locator('.seat__portrait > img')
           await coldIdle.waitFor()
           assert((await coldIdle.getAttribute('src')).endsWith('/hero-defect-idle.webp'),
@@ -124,7 +127,7 @@ try {
               size: getSize(element), sourceSize: [source.naturalWidth, source.naturalHeight] }
           }))
         }, { size: size.toString() })
-        const extension = engineName === 'webkit' ? '.mov' : '.webp'
+        const extension = safariVideo ? '.mov' : '.webp'
         assert(resting.every(item => item.tag === tag && item.src.endsWith(extension)), `${engineName}/${screen}: ${JSON.stringify(resting)}`)
         assert(resting.every(item => item.size.every((value, axis) =>
           value === item.sourceSize[axis] || value === item.sourceSize[axis] + item.sourceSize[axis] % 2)),
@@ -146,7 +149,7 @@ try {
             `${engineName}/${screen}: idle animation froze`)
         }
 
-        if (engineName === 'webkit') {
+        if (safariVideo) {
           await page.evaluate(() => {
             window.fixture.state.presentationEvents.push({ seq: 1, kind: 'card', actorId: 'p1', sourceId: 'strike_defect',
               enemyIds: ['enemy-0'], playerIds: [], upgraded: false, copied: false, energy: 1 })
@@ -170,7 +173,7 @@ try {
           window.fixture.autoAdvance = autoAdvance
           window.fixture.state.phase = 'enemy'
           window.fixture.render()
-        }, engineName === 'webkit')
+        }, safariVideo)
         const attack = page.locator('.enemy[data-animation="attack"] .enemy__art--cutout')
         await attack.waitFor()
         await page.waitForFunction(({ selector, loaded }) => {
@@ -179,7 +182,7 @@ try {
         }, { selector: '.enemy[data-animation="attack"] .enemy__art--cutout', loaded: loaded.toString() })
         assert.equal(await attack.evaluate(element => element.tagName), 'IMG')
         assert((await attack.getAttribute('data-animation-asset')).endsWith('/guardian_attack-attack.webp'))
-        if (engineName === 'webkit') {
+        if (safariVideo) {
           assert((await attack.getAttribute('src')).endsWith('/guardian_attack-attack.webp'),
             'cold enemy MOV did not use its same-resolution WebP attack fallback')
           const firstAttack = createHash('sha256').update(await attack.screenshot()).digest('hex')
@@ -188,7 +191,7 @@ try {
             'cold enemy MOV fallback froze')
         }
         await page.waitForFunction(() => document.querySelector('.enemy')?.classList.contains('enemy--acting'))
-        if (engineName === 'webkit') {
+        if (safariVideo) {
           await page.waitForFunction(() => window.fixture.actions.includes('resolveEnemies'))
           releaseAttackPoster()
           releaseAttackVideo()
@@ -197,7 +200,7 @@ try {
             'late enemy MOV replaced the active fallback after enemy-phase auto advance')
         }
 
-        if (engineName === 'webkit') {
+        if (safariVideo) {
           assert.equal(await page.evaluate(async () => {
             const { combatVideoPath } = await import('/src/ui/CombatAnimation.tsx')
             return combatVideoPath('./assets/combat/rigged/guardian_attack-idle.webp', 'https://cdn.example/public/assets')
@@ -234,6 +237,8 @@ try {
           }), 'enemy-0', 'video fallback left stale target geometry')
         }
 
+        if (engineName === 'webkit' && phone) assert.deepEqual(movRequests, [],
+          'iPhone requested HEVC-alpha assets that corrupt on its hardware decoder')
         await page.locator('.board').screenshot({ path: resolve(output, `${engineName}-${screen}.png`) })
         assert.deepEqual(errors, [])
         await context.close()

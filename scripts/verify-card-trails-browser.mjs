@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
-import { chromium, webkit } from './lib/profile-browser.mjs'
+import { chromium, devices, webkit } from './lib/profile-browser.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const out = `${root}artifacts/card-trails`
@@ -21,7 +21,9 @@ try {
       for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 844, height: 390 }]]) {
         if (process.env.TRAIL_SCREEN && process.env.TRAIL_SCREEN !== screen) continue
         if (recording && screen !== 'desktop') continue
-        const context = await browser.newContext({ viewport, hasTouch: screen === 'phone', ...(recording ? { recordVideo: { dir: out, size: viewport } } : {}) })
+        const context = await browser.newContext({ viewport, ...(screen === 'phone'
+          ? { hasTouch: true, userAgent: devices['iPhone 13 landscape'].userAgent } : {}),
+          ...(recording ? { recordVideo: { dir: out, size: viewport } } : {}) })
         const page = await context.newPage()
         page.on('pageerror', error => errors.push(String(error)))
         await page.goto(`http://localhost:${server.httpServer.address().port}`, { waitUntil: 'networkidle' })
@@ -134,9 +136,25 @@ try {
           assert.equal(await flight.evaluate(el => getComputedStyle(el).getPropertyValue('--flight-trace').trim()), colors[character])
           await page.locator('.card-flight-trail[data-texture-ready="true"]').waitFor()
           assert.equal(await page.locator('.card-flight-effect filter').count(), 0, 'No live noise filter during playback')
+          const compositor = await flight.evaluate(element => {
+            const card = element.querySelector('.card')
+            const motion = getComputedStyle(element)
+            const artwork = getComputedStyle(card)
+            return {
+              offsetPath: motion.offsetPath,
+              willChange: motion.willChange,
+              filter: artwork.filter,
+              boxShadow: artwork.boxShadow,
+            }
+          })
+          assert(!compositor.offsetPath || compositor.offsetPath === 'none',
+            `${engineName} ${screen}: flight fell back to CSS Motion Path`)
+          assert.match(compositor.willChange, /transform/, `${engineName} ${screen}: flight was not compositor-promoted`)
+          assert.equal(compositor.filter, 'none', `${engineName} ${screen}: moving card retained a repainting filter`)
+          assert.notEqual(compositor.boxShadow, 'none', `${engineName} ${screen}: card shadow was lost`)
           // Freeze close to landing to verify the real pile coordinates, then let it finish.
           const distance = recording ? 0 : await flight.evaluate(el => {
-            const animation = el.getAnimations().find(a => a.animationName === 'card-resolve')
+            const animation = el.getAnimations().find(a => a.id === 'card-resolve')
             const previousTime = animation.currentTime
             animation.pause(); animation.currentTime = 979
             const rect = el.getBoundingClientRect()

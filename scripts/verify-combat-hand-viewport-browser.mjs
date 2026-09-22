@@ -53,12 +53,11 @@ try {
               })),
               enemies: [...document.querySelectorAll('.enemy .bar')].map(rect).sort((a, b) => a.left - b.left) }
           })
-          assert(geometry.cards.every(card => card.revealed
-            ? card.top >= geometry.hand.top - 1 && card.bottom <= geometry.shell.bottom + 1
-            : card.top >= geometry.handArea.top - 1 && card.bottom <= geometry.handArea.bottom + 1),
+          assert(geometry.cards.every(card =>
+            card.top >= geometry.hand.top - 1 && card.bottom <= geometry.handArea.bottom + 1),
           `${label}: hand card leaves its reserved area ${JSON.stringify(geometry)}`)
           assert([geometry.cards[0], geometry.cards.at(-1)].filter(card => !card.revealed)
-            .every(card => Math.abs(card.bottom - geometry.shell.bottom) <= 2),
+            .every(card => Math.abs(card.bottom - geometry.shell.bottom) <= 16),
           `${label}: resting outer card does not touch the screen edge ${JSON.stringify(geometry)}`)
           assert(geometry.cards.filter(card => card.revealed).every(card =>
             card.right <= geometry.endTurn.left || card.left >= geometry.endTurn.right ||

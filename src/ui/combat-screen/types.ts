@@ -106,10 +106,9 @@ export type CardFlight = {
   beat: number
   card: CardInstance
   destination: ReturnType<typeof cardMotionDestination>
-  path: string
   trailBounds: import('./card-flight.ts').TrailBounds
   trailPath: string
-  hold: string
+  motionFrames: Keyframe[]
   landed?: boolean
 }
 
