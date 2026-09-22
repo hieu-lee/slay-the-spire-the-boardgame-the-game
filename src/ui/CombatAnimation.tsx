@@ -14,8 +14,8 @@ export const useSafariCombatVideo = !forceWebp && typeof document !== 'undefined
 export function combatVideoPath(src: string, origin = assetCdnOrigin): string {
   const video = src.includes('/combat/rigged/') ? src.replace(/\.webp(?=\?|$)/, '.mov') : src
   if (video === src) return src
-  const asset = video.indexOf('/assets/')
-  return origin && asset >= 0 ? `${origin.replace(/\/$/, '')}/${video.slice(asset + 8)}` : video
+  const asset = video.indexOf('assets/')
+  return origin && asset >= 0 ? `${origin.replace(/\/$/, '')}/${video.slice(asset + 7)}` : video
 }
 
 type VideoPreload = {
