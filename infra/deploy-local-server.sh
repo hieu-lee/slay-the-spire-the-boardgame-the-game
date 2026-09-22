@@ -102,8 +102,12 @@ finish_deployment() {
     fi
     systemctl --user daemon-reload || rollback_failed=true
     if [ -n "$previous_release" ]; then
-      systemctl --user start sts-room-server.service || rollback_failed=true
-      check_health '' http://127.0.0.1:8787 "$MULTIPLAYER_SERVER_ORIGIN" || rollback_failed=true
+      if node "$release/infra/validate-room-store.mjs" --materialize "$store"; then
+        systemctl --user start sts-room-server.service || rollback_failed=true
+        check_health '' http://127.0.0.1:8787 "$MULTIPLAYER_SERVER_ORIGIN" || rollback_failed=true
+      else
+        rollback_failed=true
+      fi
     fi
     if [ "$rollback_failed" = true ]; then
       echo 'Deployment rollback failed; preserving the service-unit backup for recovery.' >&2

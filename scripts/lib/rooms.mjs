@@ -14,9 +14,9 @@
 // the same instant. Every mutation therefore goes through `apply`, which is the
 // single writer — Node's single thread does the rest.
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { restoreLeaderboardRuns } from './leaderboard.mjs'
+import { mergeLeaderboardRuns, restoreLeaderboardRuns } from './leaderboard.mjs'
 import {
   CAPS,
   CHARACTER_IDS,
@@ -223,12 +223,28 @@ function assignPendingRelicIds(run) {
 }
 
 export function createStore({ file, restartRecovery = false, restartReconnectMs = 5 * 60_000 } = {}) {
-  const store = { rooms: new Map(), leaderboardRuns: [], profiles: [], file, reconnectQuorums: new Map() }
+  const store = { rooms: new Map(), leaderboardRuns: [], leaderboardDirty: true, profiles: [], file, reconnectQuorums: new Map() }
   if (!file) return store
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8'))
     if (!Array.isArray(saved?.rooms)) throw new Error('rooms must be an array')
-    store.leaderboardRuns = restoreLeaderboardRuns(saved.leaderboardRuns)
+    const legacyRuns = restoreLeaderboardRuns(saved.leaderboardRuns)
+    let archive
+    try { archive = JSON.parse(readFileSync(`${file}.leaderboard.json`, 'utf8')) } catch (error) {
+      if (error?.code === 'ENOENT' && saved.leaderboardArchive) throw new Error('Leaderboard archive is missing')
+      if (error?.code !== 'ENOENT') throw error
+    }
+    if (archive !== undefined && !Array.isArray(archive)) throw new Error('Leaderboard archive must be an array')
+    const archivedRuns = restoreLeaderboardRuns(archive)
+    if (archive !== undefined && archivedRuns.length !== archive.length) throw new Error('Leaderboard archive has invalid runs')
+    store.leaderboardRuns = mergeLeaderboardRuns(legacyRuns, archivedRuns)
+    store.leaderboardDirty = archive === undefined
+    if (!store.leaderboardDirty && legacyRuns.length) {
+      const mergedById = new Map(store.leaderboardRuns.map((run) => [run.id, run]))
+      const archivedById = new Map(archivedRuns.map((run) => [run.id, run]))
+      store.leaderboardDirty = legacyRuns.some((run) =>
+        JSON.stringify(mergedById.get(run.id)) !== JSON.stringify(archivedById.get(run.id)))
+    }
     store.profiles = saved.profiles ?? []
     for (const room of saved.rooms) {
       if (typeof room?.code === 'string' && Array.isArray(room.seats) && room.campaignProgress) {
@@ -357,7 +373,9 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
       }
     }
   } catch (error) {
-    if (error?.code !== 'ENOENT') throw new Error(`Could not load room store: ${error instanceof Error ? error.message : String(error)}`)
+    if (error?.code !== 'ENOENT' || existsSync(`${file}.leaderboard.json`)) {
+      throw new Error(`Could not load room store: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
   return store
 }
@@ -365,11 +383,18 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
 export function saveStore(store) {
   if (!store.file) return
   mkdirSync(dirname(store.file), { recursive: true })
+  const archive = `${store.file}.leaderboard.json`
+  if (store.leaderboardDirty) {
+    const archiveTemporary = `${archive}.tmp`
+    writeFileSync(archiveTemporary, JSON.stringify(store.leaderboardRuns), { mode: 0o600 })
+    renameSync(archiveTemporary, archive)
+    store.leaderboardDirty = false
+  }
   const temporary = `${store.file}.tmp`
   const reconnectQuorums = Object.fromEntries([...store.reconnectQuorums].map(([code, quorum]) => [code, {
     playerIds: [...quorum.playerIds], expiresAt: quorum.expiresAt,
   }]))
-  writeFileSync(temporary, JSON.stringify({ version: 1, rooms: [...store.rooms.values()], leaderboardRuns: store.leaderboardRuns, profiles: store.profiles, reconnectQuorums }), { mode: 0o600 })
+  writeFileSync(temporary, JSON.stringify({ version: 1, rooms: [...store.rooms.values()], leaderboardArchive: true, profiles: store.profiles, reconnectQuorums }), { mode: 0o600 })
   renameSync(temporary, store.file)
 }
 

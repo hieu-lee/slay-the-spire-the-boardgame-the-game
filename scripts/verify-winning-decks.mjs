@@ -70,6 +70,14 @@ assert.equal(winningDecksPage([{ ...runs[0], username: undefined }]).rows[0].use
 for (const params of [{ sort: 'id' }, { direction: 'bad' }, { ascension: '14' }, { character: 'bad' }, { cursor: '-1' }, { cursor: '1.1' }, { cursor: '99999' }]) {
   assert.throws(() => winningDecksPage(runs, query(params)), { status: 400 })
 }
+const sparseRuns = Array(1_000_022)
+for (let index = 0; index < 22; index += 1) {
+  sparseRuns[1_000_000 + index] = { ...runs[0], id: `large-index-${index}`, recordedAt: index }
+}
+const sparseFirst = winningDecksPage(sparseRuns)
+assert.equal(sparseFirst.total, 22)
+assert.match(sparseFirst.nextCursor, /^1000[0-9]{3}$/)
+assert.equal(winningDecksPage(sparseRuns, query({ cursor: sparseFirst.nextCursor })).rows.length, 2)
 const server = createRoomServer()
 server.store.leaderboardRuns = runs
 const { port } = await server.listen(0)

@@ -88,6 +88,10 @@ Room data lives outside the checkout at
 `~/.local/share/slay-the-spire-server/rooms.json`. Actions deployments update the `current`
 release symlink, validate the existing store, and restart the service without deleting it.
 Players connected during a restart retain their seats while the browsers reconnect.
+Only multiplayer rooms expire after 24 hours of inactivity. Leaderboard runs are retained
+indefinitely in `rooms.json.leaderboard.json` (migrated from the original room store), while
+player profiles remain in `rooms.json`. Keep both files together when backing up or restoring;
+never replace the entire store to clean up stale rooms.
 
 If the Bbox public IPv4 or delegated IPv6 prefix changes, the mapping task regenerates and
 reloads Caddy, verifies the replacement HTTPS origin, updates
