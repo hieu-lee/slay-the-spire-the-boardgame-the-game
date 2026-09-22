@@ -621,6 +621,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const foreignStartTurnDiscard = discardOwner !== undefined && discardOwner.playerId !== snapshot.you.playerId
   const foreignInteractionLock = blockingForeignCardChoice || foreignTrigger || foreignStartTurnDiscard
   const combatViewer = run.combat?.players.find((player) => player.id === snapshot.you.playerId)
+  const headerViewer = run.phase === 'combat' ? combatViewer ?? viewer : viewer
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const waitingForCatchUpMerchant = run.phase === 'room' && run.roomState?.kind === 'merchant' &&
     run.setup?.kind === 'catch-up' && !run.setup.playerIds.includes(snapshot.you.playerId)
@@ -630,16 +631,16 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}
       className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendiumOpen ? ' app-shell--compendium-open' : ''}`}>
       <header className="app-shell__header">
-        <PlayerTitle character={viewer?.character} />
+        <PlayerTitle character={headerViewer?.character} />
         <div className="run-status">
           <span className="pip">Room {snapshot.code}</span>
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>
           <span className="pip">Act {run.act}</span>
           {run.ascension > 0 ? <span className="pip">Ascension {run.ascension}</span> : null}
           {/* See App.tsx: HP belongs in the header on every screen, not only in combat. */}
-          {viewer ? <span className="pip pip--hp" role="img" aria-label={`Health ${viewer.hp} of ${viewer.maxHp}`}>{viewer.hp}/{viewer.maxHp}</span> : null}
-          {viewer ? <span className="pip"><IconValue name="gold" value={viewer.gold} size={20} /></span> : null}
-          {viewer ? <RelicBar relics={viewer.relics} label={`${viewer.name}'s relics`} /> : null}
+          {headerViewer ? <span className="pip pip--hp" role="img" aria-label={`Health ${headerViewer.hp} of ${headerViewer.maxHp}`}>{headerViewer.hp}/{headerViewer.maxHp}</span> : null}
+          {headerViewer ? <span className="pip"><IconValue name="gold" value={headerViewer.gold} size={20} /></span> : null}
+          {headerViewer ? <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`} /> : null}
           {viewer && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
           !victoryIsTerminal(run, snapshot.campaignProgress) && !pendingAcquisition ? (
             <OutsidePotionBar players={run.players.map(playerForUi)} viewerId={snapshot.you.playerId}

@@ -796,6 +796,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   }, [compendium, open, pauseOpen, prefersReducedMotion, replayLog, run.combat, settings.reducedMotion, settingsOpen])
 
   const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
+  const headerViewer = run.phase === 'combat'
+    ? run.combat?.players.find((player) => player.id === viewerId) ?? viewer
+    : viewer
   // Fires wherever a card changed — campfire, event, reward, Neow, a relic —
   // because it watches the deck rather than each of those call sites.
   const morph = useCardMorphs(viewer?.deck, open ? run.campaign.runId : undefined, run.phase, viewerId)
@@ -894,23 +897,23 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     <>
     <main ref={runShell} tabIndex={-1} inert={compendium || undefined} aria-hidden={compendium || undefined} className={`app-shell sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendium ? ' app-shell--compendium-open' : ''}`}>
       <header className="app-shell__header">
-        <PlayerTitle character={viewer?.character} />
+        <PlayerTitle character={headerViewer?.character} />
         <div className="run-status">
           <span className="pip">Act {run.act}</span>
           {run.ascension > 0 ? <span className="pip">Ascension {run.ascension}</span> : null}
-          {viewer ? (
+          {headerViewer ? (
             <>
               {/* HP rides the header on every screen, not only in combat. It is
                   the number the whole run is steered by — whether to take the
                   elite, whether to rest or upgrade — and the digital game pins
                   it top-left everywhere for exactly that reason. */}
-              <span className="pip pip--hp" role="img" aria-label={`Health ${viewer.hp} of ${viewer.maxHp}`}>
-                {viewer.hp}/{viewer.maxHp}
+              <span className="pip pip--hp" role="img" aria-label={`Health ${headerViewer.hp} of ${headerViewer.maxHp}`}>
+                {headerViewer.hp}/{headerViewer.maxHp}
               </span>
               <span className="pip" title="Gold">
-                <IconValue name="gold" value={viewer.gold} size={20} />
+                <IconValue name="gold" value={headerViewer.gold} size={20} />
               </span>
-              <RelicBar relics={viewer.relics} label={`${viewer.name}'s relics`} />
+              <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`} />
               {!allocatingCampaignMarks && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
               !victoryIsTerminal(run, run.campaignProgress) && !pendingAcquisition ? (
                 <OutsidePotionBar players={run.players} viewerId={viewerId}
