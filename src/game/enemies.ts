@@ -1474,6 +1474,10 @@ const SUMMON_CARDS: SummonSupply = {
   spheric_guardian: ['spheric_guardian'],
 }
 
+export function isSummonGroup(name: string): boolean {
+  return Object.hasOwn(SUMMON_CARDS, name) || Object.hasOwn(DOWNFALL_SUMMON_CARDS, name)
+}
+
 export function createSummonSupply(
   rng: RngState,
   ruleset: 'base' | 'downfall' = 'base',

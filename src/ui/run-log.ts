@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { assetPath } from '../game/assets.ts'
 import { CARDS, cardDef } from '../game/cards.ts'
-import { ENEMIES } from '../game/enemies.ts'
+import { ENEMIES, isSummonGroup } from '../game/enemies.ts'
 import { currentRoom } from '../game/map.ts'
 import { DAILY_MODIFIERS } from '../game/meta.ts'
 import { neowCard } from '../game/neow.ts'
@@ -638,14 +638,16 @@ function validRunState(value: unknown, runId: string): value is RunState {
     ((entry as { potionReward?: unknown }).potionReward === undefined || typeof (entry as { potionReward?: unknown }).potionReward === 'boolean') &&
     ((entry as { relicReward?: unknown }).relicReward === undefined || typeof (entry as { relicReward?: unknown }).relicReward === 'boolean') &&
     ((entry as { summons?: unknown }).summons === undefined || Array.isArray((entry as { summons: unknown }).summons) &&
-      (entry as { summons: unknown[] }).summons.length <= 32 && known((entry as { summons: unknown }).summons, ENEMIES)) &&
+      (entry as { summons: unknown[] }).summons.length <= 32 &&
+      (entry as { summons: unknown[] }).summons.every((group) => typeof group === 'string' && isSummonGroup(group))) &&
     ((entry as { summonsPerPlayer?: unknown }).summonsPerPlayer === undefined ||
       Array.isArray((entry as { summonsPerPlayer: unknown }).summonsPerPlayer) &&
-      (entry as { summonsPerPlayer: unknown[] }).summonsPerPlayer.length <= 32 && known((entry as { summonsPerPlayer: unknown }).summonsPerPlayer, ENEMIES)) &&
+      (entry as { summonsPerPlayer: unknown[] }).summonsPerPlayer.length <= 32 &&
+      (entry as { summonsPerPlayer: unknown[] }).summonsPerPlayer.every((group) => typeof group === 'string' && isSummonGroup(group))) &&
     ['randomSummons', 'randomSummonsPerPlayer'].every((field) => {
       const random = (entry as Record<string, unknown>)[field]
       return random === undefined || Boolean(random && typeof random === 'object' &&
-        typeof (random as { group?: unknown }).group === 'string' && (random as { group: string }).group.length <= 256 &&
+        typeof (random as { group?: unknown }).group === 'string' && isSummonGroup((random as { group: string }).group) &&
         Number.isInteger((random as { count?: unknown }).count) && (random as { count: number }).count >= 0 &&
         (random as { count: number }).count <= 32 && ((random as { soloCount?: unknown }).soloCount === undefined ||
           Number.isInteger((random as { soloCount?: unknown }).soloCount) && (random as { soloCount: number }).soloCount >= 0 &&

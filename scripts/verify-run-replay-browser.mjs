@@ -322,15 +322,18 @@ try {
     const potion = createRun(50, [{ id: 'p1', name: 'Replay Tester', character: 'ironclad' }])
     potion.neow.players.p1.reward = { kind: 'potion', choices: ['attack_potion'],
       cardsDrawn: ['attack_potion'], raresDrawn: [] }
+    const summonGroup = createRun(52, [{ id: 'p1', name: 'Replay Tester', character: 'ironclad' }])
+    summonGroup.enemyDecks.encounter[0] = { ...summonGroup.enemyDecks.encounter[0], summons: ['byrd'] }
     const redundant = createRun(51, [{ id: 'p1', name: 'Replay Tester', character: 'ironclad' }])
     delete redundant.nextPendingRelicId
     const final = structuredClone(redundant); final.phase = 'defeat'; final.neow = null
     const removal = { version: 2, runId: redundant.campaign.runId, initial: redundant, events: [
       { patch: [{ path: ['nextPendingRelicId'], remove: true }] }, { patch: [{ path: [], value: final }] },
     ] }
-    return { selectorRuns, potion: Boolean(validateRunLog(makeLog(potion))), removal: Boolean(validateRunLog(removal)) }
+    return { selectorRuns, potion: Boolean(validateRunLog(makeLog(potion))),
+      summonGroup: Boolean(validateRunLog(makeLog(summonGroup))), removal: Boolean(validateRunLog(removal)) }
   })
-  assert.deepEqual(legacyCompatibility, { selectorRuns: [true, true, true], potion: true, removal: true },
+  assert.deepEqual(legacyCompatibility, { selectorRuns: [true, true, true], potion: true, summonGroup: true, removal: true },
     'Previously recorded run-log shapes stopped validating')
 
   assert.equal(await page.evaluate(async () => {
@@ -632,6 +635,9 @@ try {
     'Normalized legacy log did not survive validation')
   assert.equal(await page.getByText('Run log downloaded.', { exact: true }).count(), 1)
 
+  assert.equal(await page.getByRole('button', { name: 'Prepare next run →', exact: true }).count(), 0,
+    'Extracting logs unlocked the next run before the campaign result was recorded')
+  await page.getByRole('button', { name: 'Record campaign result', exact: true }).click()
   await page.getByRole('button', { name: 'Prepare next run →', exact: true }).click()
   await page.getByRole('button', { name: 'Back', exact: true }).click()
   await page.getByRole('button', { name: 'Replay', exact: true }).click()
