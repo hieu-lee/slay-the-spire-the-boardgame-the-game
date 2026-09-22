@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { restoreLeaderboardRuns } from './leaderboard.mjs'
+import { INITIAL_DECK_TYPES, validDeckType } from './stats.mjs'
 import {
   CAPS,
   CHARACTER_IDS,
@@ -223,12 +224,15 @@ function assignPendingRelicIds(run) {
 }
 
 export function createStore({ file, restartRecovery = false, restartReconnectMs = 5 * 60_000 } = {}) {
-  const store = { rooms: new Map(), leaderboardRuns: [], profiles: [], file, reconnectQuorums: new Map() }
+  const store = { rooms: new Map(), leaderboardRuns: [], deckTypes: [...INITIAL_DECK_TYPES], deckClassificationBudget: { day: -1, used: 0 }, profiles: [], file, reconnectQuorums: new Map() }
   if (!file) return store
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8'))
     if (!Array.isArray(saved?.rooms)) throw new Error('rooms must be an array')
     store.leaderboardRuns = restoreLeaderboardRuns(saved.leaderboardRuns)
+    if (Array.isArray(saved.deckTypes)) store.deckTypes = [...new Set([...store.deckTypes, ...saved.deckTypes.filter(validDeckType)])]
+    if (Number.isSafeInteger(saved.deckClassificationBudget?.day) && Number.isSafeInteger(saved.deckClassificationBudget?.used) && saved.deckClassificationBudget.used >= 0)
+      store.deckClassificationBudget = saved.deckClassificationBudget
     store.profiles = saved.profiles ?? []
     for (const room of saved.rooms) {
       if (typeof room?.code === 'string' && Array.isArray(room.seats) && room.campaignProgress) {
@@ -369,7 +373,7 @@ export function saveStore(store) {
   const reconnectQuorums = Object.fromEntries([...store.reconnectQuorums].map(([code, quorum]) => [code, {
     playerIds: [...quorum.playerIds], expiresAt: quorum.expiresAt,
   }]))
-  writeFileSync(temporary, JSON.stringify({ version: 1, rooms: [...store.rooms.values()], leaderboardRuns: store.leaderboardRuns, profiles: store.profiles, reconnectQuorums }), { mode: 0o600 })
+  writeFileSync(temporary, JSON.stringify({ version: 1, rooms: [...store.rooms.values()], leaderboardRuns: store.leaderboardRuns, deckTypes: store.deckTypes, deckClassificationBudget: store.deckClassificationBudget, profiles: store.profiles, reconnectQuorums }), { mode: 0o600 })
   renameSync(temporary, store.file)
 }
 

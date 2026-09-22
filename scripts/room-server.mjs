@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { claimProfile } from './lib/profiles.mjs'
+import { createHash } from 'node:crypto'
 import { createServer as createHttpServer } from 'node:http'
 import { writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { WebSocketServer } from 'ws'
 import { addLeaderboardRun, leaderboardSnapshot, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
+import { classifyDeckType, HERO_NAMES, randomDeck, soloDeck, statsSnapshot, validDeckType, validSoloDeck } from './lib/stats.mjs'
 import {
   apply,
   chooseAscension,
@@ -48,6 +50,8 @@ const MAX_PROFILE_CLAIMS_PER_WINDOW = 30
 const MAX_CREATES_PER_WINDOW = 10
 const MAX_JOINS_PER_WINDOW = 30
 const MAX_LEADERBOARD_WRITES_PER_WINDOW = 6
+const MAX_STATS_READS_PER_WINDOW = 120
+const CLASSIFICATION_DAY_MS = 24 * 60 * 60 * 1000
 const MAX_UPGRADES_PER_WINDOW = 120
 const MAX_RATE_KEYS = 1024
 const MAX_ROOMS_PER_IP = 10
@@ -101,6 +105,9 @@ export function createRoomServer({
   maxUpgradesPerWindow = MAX_UPGRADES_PER_WINDOW,
   saveDelayMs = STORE_SAVE_DELAY_MS,
   saveStoreImpl = saveStore,
+  openAiKey = process.env.OPENAI_API_KEY,
+  maxDeckClassificationsPerDay = Number(process.env.STS_DECK_CLASSIFICATIONS_PER_DAY ?? 100),
+  deckClassifier = classifyDeckType,
   onSaveError = (error) => console.error('Room store save failed:', error),
   onSlowOperation = ({ kind, roomCode, durationMs }) =>
     console.warn(`Slow multiplayer ${kind} in room ${roomCode}: ${durationMs}ms`),
@@ -108,6 +115,7 @@ export function createRoomServer({
   restartRecovery = process.env.STS_RESTART_RECOVERY === 'true',
   restartReconnectMs = Math.max(5 * 60_000, Number(process.env.STS_RESTART_RECONNECT_MS) || 0),
 } = {}) {
+  if (!Number.isSafeInteger(maxDeckClassificationsPerDay) || maxDeckClassificationsPerDay < 0) throw new Error('Invalid deck classification daily limit')
   const store = createStore({ file: storeFile, restartRecovery, restartReconnectMs })
   const sockets = new Map()
   const roomActivity = new Map()
@@ -117,6 +125,7 @@ export function createRoomServer({
   const joinRates = new Map()
   const entryRetryRates = new Map()
   const leaderboardRates = new Map()
+  const statsRates = new Map()
   const upgradeRates = new Map()
   const invalidUpgradeRates = new Map()
   const actionRates = new Map()
@@ -135,9 +144,12 @@ export function createRoomServer({
     const finalized = room.run?.campaign.finalized === true
     const checkpoint = !finalized && action?.kind === 'finishRun' ? structuredClone(room) : null
     try {
-      if (finalized && addLeaderboardRun(store, roomLeaderboardRun(room))) queueSave()
+      if (finalized && addLeaderboardRun(store, roomLeaderboardRun(room))) { queueSave(); scheduleClassification() }
       const result = apply(room, token, action)
-      if (!finalized && room.run?.campaign.finalized === true) addLeaderboardRun(store, roomLeaderboardRun(room))
+      if (!finalized && room.run?.campaign.finalized === true) {
+        addLeaderboardRun(store, roomLeaderboardRun(room))
+        scheduleClassification()
+      }
       return result
     } catch (error) {
       if (checkpoint && room.run?.campaign.finalized) restoreRoom(room, checkpoint)
@@ -176,12 +188,110 @@ export function createRoomServer({
     if (!attemptSave()) throw saveError
   }
 
+  let classifierTimer
+  let classifierTimerAt = Infinity
+  let classifierAbort
+  let classificationTask
+  let classifying = false
+  let classifierClosed = false
+  const failedDecks = new Map(store.leaderboardRuns.filter((entry) => entry.deckClassificationRetry)
+    .map((entry) => [entry.id, { at: entry.deckClassificationRetry.after, hash: entry.deckClassificationRetry.hash, hero: entry.character }]))
+  const deckHash = (run) => createHash('sha256').update(JSON.stringify(soloDeck(run))).digest('hex')
+  const scheduleClassification = (delay = 0) => {
+    if (!openAiKey || classifierClosed || classifying) return
+    const nextAt = Date.now() + delay
+    if (classifierTimer && nextAt >= classifierTimerAt) return
+    if (classifierTimer) clearTimeout(classifierTimer)
+    classifierTimerAt = nextAt
+    classifierTimer = setTimeout(() => {
+      classifierTimer = undefined
+      classifierTimerAt = Infinity
+      classificationTask = classifyPending().finally(() => { classificationTask = null })
+    }, delay)
+    classifierTimer.unref()
+  }
+  const classifyPending = async () => {
+    if (classifying || classifierClosed) return
+    classifying = true
+    let retryAt = Infinity
+    try {
+      while (!classifierClosed) {
+        const now = Date.now()
+        const run = store.leaderboardRuns.find((entry) => {
+          if (!validSoloDeck(entry) || entry.deckType) return false
+          const failed = failedDecks.get(entry.id)
+          if (failed && (failed.hero !== entry.character || failed.hash && failed.hash !== deckHash(entry))) {
+            if (entry.deckClassificationRetry) { delete entry.deckClassificationRetry; queueSave() }
+            failedDecks.delete(entry.id)
+          }
+          return (failedDecks.get(entry.id)?.at ?? 0) <= now
+        })
+        if (!run) {
+          if (failedDecks.size) {
+            const retryable = new Set(store.leaderboardRuns.filter((entry) => validSoloDeck(entry) && !entry.deckType).map((entry) => entry.id))
+            for (const id of failedDecks.keys()) if (!retryable.has(id)) failedDecks.delete(id)
+            if (failedDecks.size) retryAt = Math.min(...[...failedDecks.values()].map((failure) => failure.at))
+          }
+          break
+        }
+        const day = Math.floor(now / CLASSIFICATION_DAY_MS)
+        if (store.deckClassificationBudget.day !== day) store.deckClassificationBudget = { day, used: 0 }
+        if (store.deckClassificationBudget.used >= maxDeckClassificationsPerDay) {
+          retryAt = (day + 1) * CLASSIFICATION_DAY_MS
+          break
+        }
+        store.deckClassificationBudget.used += 1
+        if (store.file && !attemptSave()) {
+          store.deckClassificationBudget.used -= 1
+          queueSave()
+          retryAt = Date.now() + 60_000
+          break
+        }
+        const controller = new AbortController()
+        classifierAbort = controller
+        const deck = JSON.stringify(soloDeck(run))
+        const hero = run.character
+        try {
+          const type = await deckClassifier(run, store.deckTypes, openAiKey, undefined,
+            AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)]))
+          if (classifierClosed) break
+          if (!validDeckType(type) || !type.startsWith(`${HERO_NAMES[run.character]} `)) throw new Error('Deck classifier returned an invalid type')
+          const current = store.leaderboardRuns.find((entry) => entry.id === run.id)
+          if (!current || current.deckType || current.character !== hero || JSON.stringify(soloDeck(current)) !== deck) continue
+          if (!store.deckTypes.includes(type)) store.deckTypes.push(type)
+          current.deckType = type
+          delete current.deckClassificationRetry
+          failedDecks.delete(run.id)
+          queueSave()
+        } catch (error) {
+          if (classifierClosed) break
+          console.error('Deck classification failed:', error)
+          const current = store.leaderboardRuns.find((entry) => entry.id === run.id)
+          if (!current || current.character !== hero || JSON.stringify(soloDeck(current)) !== deck) continue
+          if (error?.code === 'max_output_tokens') {
+            const after = (Math.floor(Date.now() / CLASSIFICATION_DAY_MS) + 1) * CLASSIFICATION_DAY_MS
+            const hash = deckHash(current)
+            current.deckClassificationRetry = { after, hash }
+            failedDecks.set(run.id, { at: after, hash, hero })
+            if (store.file && !attemptSave()) queueSave()
+          } else failedDecks.set(run.id, { at: Date.now() + 60_000, hash: deckHash(run), hero })
+        } finally {
+          classifierAbort = undefined
+        }
+      }
+    } finally {
+      classifying = false
+      if (Number.isFinite(retryAt)) scheduleClassification(Math.max(0, retryAt - Date.now()))
+    }
+  }
+
   let restoredLeaderboardRuns = false
   for (const room of store.rooms.values()) {
     if (!room.run?.campaign.finalized) continue
     try { restoredLeaderboardRuns = addLeaderboardRun(store, roomLeaderboardRun(room)) || restoredLeaderboardRuns } catch {}
   }
   if (restoredLeaderboardRuns) queueSave()
+  scheduleClassification()
 
   for (const [code, room] of store.rooms) roomActivity.set(code, room.lastActivityAt ?? Date.now())
 
@@ -225,6 +335,7 @@ export function createRoomServer({
     for (const [key, rate] of joinRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) joinRates.delete(key)
     for (const [key, rate] of entryRetryRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) entryRetryRates.delete(key)
     for (const [key, rate] of leaderboardRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) leaderboardRates.delete(key)
+    for (const [key, rate] of statsRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) statsRates.delete(key)
     for (const [key, rate] of upgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) upgradeRates.delete(key)
     for (const [key, rate] of invalidUpgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) invalidUpgradeRates.delete(key)
     for (const [key, rate] of actionRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) actionRates.delete(key)
@@ -368,6 +479,14 @@ export function createRoomServer({
       if (request.method === 'GET' && url.pathname === '/api/leaderboard/decks') {
         return send(response, 200, winningDecksPage(store.leaderboardRuns, url.searchParams))
       }
+      if (request.method === 'GET' && url.pathname === '/api/stats') {
+        if (!consume(statsRates, sourceOf(request), CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many stats requests' })
+        return send(response, 200, statsSnapshot(store.leaderboardRuns, url.searchParams))
+      }
+      if (request.method === 'GET' && url.pathname === '/api/stats/deck') {
+        if (!consume(statsRates, sourceOf(request), CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many stats requests' })
+        return send(response, 200, randomDeck(store.leaderboardRuns, url.searchParams))
+      }
       if (request.method === 'GET' && url.pathname === '/api/leaderboard') {
         return send(response, 200, leaderboardSnapshot(store.leaderboardRuns))
       }
@@ -381,7 +500,7 @@ export function createRoomServer({
         if (body.profileToken && !profile) return send(response, 409, { error: 'Profile unavailable' })
         const { winningDecks: _, ...submission } = body
         const added = addLeaderboardRun(store, { ...submission, username: profile?.username })
-        if (added) queueSave()
+        if (added) { queueSave(); scheduleClassification() }
         return send(response, added ? 201 : 200, { ok: true, added, floorsClearedAccepted: true, finalDeckAccepted: true, profileAccepted: true })
       }
       if (request.method === 'POST' && url.pathname === '/api/rooms') {
@@ -779,6 +898,9 @@ export function createRoomServer({
     },
     close({ preserveRooms = false, markerFile } = {}) {
       if (closePromise) return closePromise
+      classifierClosed = true
+      if (classifierTimer) clearTimeout(classifierTimer)
+      classifierAbort?.abort()
       preserveRoomsOnClose = preserveRooms
       clearInterval(heartbeat)
       clearInterval(sweeper)
@@ -790,7 +912,7 @@ export function createRoomServer({
         socket.once('close', resolve)
         socket.terminate()
       })))
-      closePromise = Promise.all([stopped, disconnected]).then(() => {
+      closePromise = Promise.all([stopped, disconnected, classificationTask]).then(() => {
         flushSave()
         if (markerFile) writeFileSync(markerFile, 'ok\n', { mode: 0o600 })
       })

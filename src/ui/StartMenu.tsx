@@ -30,6 +30,7 @@ type StartMenuProps = {
   onResume?: () => void
   onOnline?: () => void
   onLeaderboard: () => void
+  onStats: () => void
   onCompendium: () => void
   onAchievements: () => void
   onReplay: (log: RunLog) => void
@@ -115,6 +116,7 @@ export function StartMenu({
   onResume,
   onOnline,
   onLeaderboard,
+  onStats,
   onCompendium,
   onAchievements,
   onReplay,
@@ -285,6 +287,8 @@ export function StartMenu({
           : null}
         <button type="button" aria-label="Leaderboard" data-selected={selection === 'Leaderboard'}
           onFocus={() => setSelection('Leaderboard')} onMouseEnter={() => setSelection('Leaderboard')} onClick={onLeaderboard}>Leaderboard</button>
+        <button type="button" aria-label="Stats" data-selected={selection === 'Stats'}
+          onFocus={() => setSelection('Stats')} onMouseEnter={() => setSelection('Stats')} onClick={onStats}>Stats</button>
         <button type="button" aria-label="Replay" data-selected={selection === 'Replay'}
           onFocus={() => setSelection('Replay')} onMouseEnter={() => setSelection('Replay')}
           onClick={() => setScreen('replay')}>Replay</button>

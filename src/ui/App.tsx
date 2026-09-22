@@ -115,6 +115,7 @@ const OnlineGame = SINGLE_PLAYER_ONLY ? null : lazy(() => import('./OnlineGame.t
 const CompendiumScreen = lazy(() => import('./CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
 const AchievementsScreen = lazy(() => import('./AchievementsScreen.tsx').then((module) => ({ default: module.AchievementsScreen })))
 const LeaderboardScreen = lazy(() => import('./LeaderboardScreen.tsx').then((module) => ({ default: module.LeaderboardScreen })))
+const StatsScreen = lazy(() => import('./StatsScreen.tsx').then((module) => ({ default: module.StatsScreen })))
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -521,6 +522,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
   const [leaderboard, setLeaderboard] = useState(false)
+  const [stats, setStats] = useState(false)
   const [giveUpOpen, setGiveUpOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -848,6 +850,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   if (!open) {
     if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
     if (leaderboard) return <LeaderboardScreen onBack={() => setLeaderboard(false)} />
+    if (stats) return <StatsScreen onBack={() => setStats(false)} />
     if (achievements) return <AchievementsScreen onBack={() => setAchievements(false)} />
     return <StartMenu
       characters={characters}
@@ -883,6 +886,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       onResume={resume ? resumeSoloRun : undefined}
       onOnline={onOnline}
       onLeaderboard={() => setLeaderboard(true)}
+      onStats={() => setStats(true)}
       onCompendium={() => setCompendium(true)}
       onAchievements={() => setAchievements(true)}
       onReplay={startReplay}

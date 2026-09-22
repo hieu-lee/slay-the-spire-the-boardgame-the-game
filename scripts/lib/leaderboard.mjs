@@ -1,3 +1,5 @@
+import { primeStatsDeck, soloDeck, validDeckType } from './stats.mjs'
+
 const CHARACTERS = new Set(['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'])
 const CHARACTER_ORDER = [...CHARACTERS]
 const MODES = new Set(['standard', 'daily', 'custom'])
@@ -44,7 +46,7 @@ export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
   if (typeof value.id !== 'string' || !/^[a-zA-Z0-9:_-]{8,160}$/.test(value.id)) bad('Run id is invalid')
   if (!MODES.has(value.mode)) bad('Run mode is invalid')
   const party = characters(value)
-  return {
+  const run = {
     id: value.id,
     ...(typeof value.username === 'string' && value.username.length <= 24 ? { username: value.username } : {}),
     ...(value.finalDeck !== undefined ? { finalDeck: finalDeck(value.finalDeck) } : {}),
@@ -64,6 +66,8 @@ export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
       ? null : integer(value.floorsCleared, 'Floor count', 0, 1000),
     recordedAt: integer(recordedAt, 'Recorded time', 0, Number.MAX_SAFE_INTEGER),
   }
+  primeStatsDeck(run)
+  return run
 }
 
 export function restoreLeaderboardRuns(values) {
@@ -72,6 +76,10 @@ export function restoreLeaderboardRuns(values) {
   for (const value of values) {
     try {
       const run = normalizeLeaderboardRun(value, value?.recordedAt)
+      if (validDeckType(value?.deckType)) run.deckType = value.deckType
+      if (Number.isSafeInteger(value?.deckClassificationRetry?.after) && value.deckClassificationRetry.after >= 0 &&
+          /^[0-9a-f]{64}$/.test(value.deckClassificationRetry.hash))
+        run.deckClassificationRetry = { after: value.deckClassificationRetry.after, hash: value.deckClassificationRetry.hash }
       if (run.recordedAt === 1790025582194 && run.characters.join(',') === 'defect,watcher' &&
           run.finalDeck?.length === 36 && run.finalDeck[22]?.defId === 'strike_watcher') {
         run.winningDecks = [
@@ -91,15 +99,30 @@ export function addLeaderboardRun(store, value, recordedAt = Date.now()) {
   const existing = store.leaderboardRuns.findIndex((entry) => entry.id === run.id)
   if (existing >= 0) {
     const previous = store.leaderboardRuns[existing]
+    if (run.winningDecks) {
+      const updated = { ...run, recordedAt: previous.recordedAt }
+      if (updated.character === previous.character && JSON.stringify(soloDeck(updated)) === JSON.stringify(soloDeck(previous))) {
+        if (previous.deckType) updated.deckType = previous.deckType
+        if (previous.deckClassificationRetry) updated.deckClassificationRetry = previous.deckClassificationRetry
+      }
+      if (Object.keys(updated).every((key) => JSON.stringify(updated[key]) === JSON.stringify(previous[key])) &&
+          Object.keys(previous).every((key) => Object.hasOwn(updated, key))) return false
+      store.leaderboardRuns[existing] = updated
+      return true
+    }
+    if (previous.winningDecks) return false
     const updates = {
       ...(previous.floorsCleared == null && run.floorsCleared != null ? { floorsCleared: run.floorsCleared } : {}),
       ...(previous.finalDeck === undefined && run.finalDeck !== undefined ? { finalDeck: run.finalDeck } : {}),
-      ...(previous.winningDecks === undefined && run.winningDecks !== undefined
-        ? { winningDecks: run.winningDecks, finalDeck: undefined } : {}),
       ...(previous.username === undefined && run.username !== undefined ? { username: run.username } : {}),
     }
     if (Object.keys(updates).length) {
-      store.leaderboardRuns[existing] = { ...previous, ...updates }
+      const updated = { ...previous, ...updates }
+      if (JSON.stringify(soloDeck(updated)) !== JSON.stringify(soloDeck(previous))) {
+        delete updated.deckType
+        delete updated.deckClassificationRetry
+      }
+      store.leaderboardRuns[existing] = updated
       return true
     }
     return false
