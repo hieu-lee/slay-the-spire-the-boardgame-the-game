@@ -1168,10 +1168,10 @@ export function queryRunLogControl(doc: Document, ref: ControlRef): HTMLElement 
   }
   try {
     const matches = [...doc.querySelectorAll<HTMLElement>(ref.selector)]
-    if (matches.some((element) => element.matches(CONTROL) && !replayableControl(element))) return null
     const exact = matches.find((element) => replayableControl(element) &&
       visible(element, !/^\[data-(?:enemy-id|player-id|room|event-option)=/.test(ref.selector)))
     if (exact) return exact
+    if (matches.some((element) => element.matches(CONTROL) && !replayableControl(element))) return null
   } catch {}
   if (!ref.name) return null
   return [...doc.querySelectorAll<HTMLElement>(CONTROL)].find((element) => replayableControl(element) && nameMatches(element) && visible(element)) ?? null

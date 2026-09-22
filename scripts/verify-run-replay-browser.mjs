@@ -661,6 +661,45 @@ try {
   assert.deepEqual(desktop.errors, [])
   await desktop.context.close()
 
+  const merchantReplay = await open({ width: 1600, height: 900 })
+  for (const label of ['Single Player', 'Standard', 'Embark', 'Start standard campaign']) {
+    await merchantReplay.page.getByRole('button', { name: label, exact: true }).click()
+  }
+  const merchantRemoval = await merchantReplay.page.evaluate(async () => {
+    const { createRun } = await import('/src/game/run.ts')
+    const { createMerchant } = await import('/src/game/noncombat.ts')
+    const { playRunLog } = await import('/src/ui/run-log.ts')
+    const initial = createRun(53, [{ id: 'p1', name: 'Replay Tester', character: 'ironclad' }])
+    initial.players[0].gold = 99
+    initial.roomState = createMerchant(initial.itemDecks, initial.players)
+    initial.phase = 'room'; initial.neow = null; initial.map.position = initial.map.rows[0][0]
+    const after = structuredClone(initial)
+    after.players[0].gold -= 3
+    after.players[0].deck.splice(1, 1)
+    after.roomState.removalUsed.push('p1')
+    const event = { patch: [{ path: [], value: after }], choice: {
+      source: { selector: 'main > section > div:nth-of-type(1) > button', name: 'Enter merchant shop' },
+      steps: [
+        { selector: 'main > section > div:nth-of-type(2) > div:nth-of-type(5) > button', name: '▱Card Removal Service3 Gold' },
+        { selector: 'dialog:nth-of-type(2) > section > div > button:nth-of-type(2)', name: 'Strike, cost 1, attack, deal 1 damage' },
+        { selector: 'dialog:nth-of-type(2) > section > button', name: 'Remove selected card · ◉ 3' },
+      ],
+    } }
+    const controller = new AbortController()
+    try {
+      const cleanup = await playRunLog({ version: 2, runId: initial.campaign.runId, initial, events: [event] }, {
+        setRun: (run) => window.__STS_DEBUG__.setRun(run), setViewer() {}, reducedMotion: true, signal: controller.signal,
+      })
+      cleanup()
+      return { error: null, deckSize: window.__STS_DEBUG__.getRun().players[0].deck.length }
+    } catch (error) { return { error: String(error), deckSize: window.__STS_DEBUG__.getRun().players[0].deck.length } }
+    finally { controller.abort() }
+  })
+  assert.deepEqual(merchantRemoval, { error: null, deckSize: 9 }, 'Replay stalled in the merchant card-removal dialog')
+  await merchantReplay.page.screenshot({ path: join(output, 'merchant-card-removal-replay.png') })
+  assert.deepEqual(merchantReplay.errors, [])
+  await merchantReplay.context.close()
+
   const touchDesktop = await open({ width: 1600, height: 900 }, true)
   await touchDesktop.page.getByRole('button', { name: 'Replay', exact: true }).click()
   assert.equal(await touchDesktop.page.getByRole('button', { name: 'Choose run log' }).isVisible(), false,
