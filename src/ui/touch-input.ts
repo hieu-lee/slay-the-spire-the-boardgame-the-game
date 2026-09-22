@@ -14,7 +14,6 @@
 import { useEffect, useState } from 'react'
 
 const NO_HOVER = '(hover: none)'
-const CANONICAL_REPLAY = new URLSearchParams(location.search).get('run-vod') === '1'
 
 /**
  * How recently a `pointerdown` must have happened for the click that follows to
@@ -32,7 +31,7 @@ const CANONICAL_REPLAY = new URLSearchParams(location.search).get('run-vod') ===
 export const POINTER_CLICK_WINDOW_MS = 1000
 
 function hoverUnavailable(): boolean {
-  return !CANONICAL_REPLAY && typeof window !== 'undefined' && window.matchMedia(NO_HOVER).matches
+  return typeof window !== 'undefined' && window.matchMedia(NO_HOVER).matches
 }
 
 /**
@@ -45,7 +44,6 @@ function hoverUnavailable(): boolean {
 export function useHoverUnavailable(): boolean {
   const [unavailable, setUnavailable] = useState(hoverUnavailable)
   useEffect(() => {
-    if (CANONICAL_REPLAY) return setUnavailable(false)
     const query = window.matchMedia(NO_HOVER)
     const sync = () => setUnavailable(query.matches)
     sync()

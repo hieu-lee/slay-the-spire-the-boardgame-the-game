@@ -93,30 +93,21 @@ import {
 import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
-import {
-  captureRunVodAudio, setRunVodAudioSegment, installSoundEffects, playSoundEffect, setRunVodAudioMuted, startRunVodAudio, stopRunVodAudio,
-  useCombatMusic, useRunOutcomeSound, useVictoryMusic,
-} from './sfx.ts'
+import { installSoundEffects, playSoundEffect, useCombatMusic, useRunOutcomeSound, useVictoryMusic } from './sfx.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import { useGameSettings } from './game-settings.ts'
 import { wingBootLabel } from './wing-boots.ts'
 import type { GameSettings } from './game-settings.ts'
 import { useWebMcp } from './useWebMcp.ts'
 import { flushLeaderboardOutbox, queueFinishedSoloRun } from '../leaderboard.ts'
-import './styles/run-vod.css'
 import {
-  discardRunVod,
-  cleanupDeferredRunVod,
-  RUN_VOD_REPLAY,
-  RUN_VOD_RETURN_PARAM,
-  startRunVodExport,
-  startRunVod,
-  useRunVod,
-} from './run-vod.ts'
-
-const RUN_VOD_SETTINGS: GameSettings = {
-  bgmVolume: 100, sfxVolume: 100, voiceVolume: 100, reducedMotion: false, highContrast: false,
-}
+  discardRunLog,
+  downloadRunLog,
+  playRunLog,
+  startRunLog,
+  useRunLog,
+  type RunLog,
+} from './run-log.ts'
 
 const SINGLE_PLAYER_ONLY = import.meta.env.VITE_SINGLE_PLAYER === 'true'
 const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
@@ -155,7 +146,7 @@ type SoloRunSave = {
   built: BuiltRun
   terminalRun?: RunState | null
   recordRunId?: string | null
-  vodExtractedRunId?: string | null
+  runLogExtractedRunId?: string | null
 }
 
 const RUN_PHASES = new Set(['neow', 'map', 'combat', 'reward', 'betweenCombat', 'room', 'setup', 'victory', 'defeat'])
@@ -244,33 +235,10 @@ function campaignBeforePendingRun(run: RunState): CampaignProgress {
 
 export function App() {
   useWebMcp()
-  const [online, setOnline] = useState(() => !RUN_VOD_REPLAY && !SINGLE_PLAYER_ONLY && hasRoomSession())
-  const [localOpen, setLocalOpen] = useState(RUN_VOD_REPLAY)
-  const [settings, setSettings] = useGameSettings(RUN_VOD_REPLAY ? RUN_VOD_SETTINGS : undefined)
-  useEffect(() => { if (!RUN_VOD_REPLAY) void cleanupDeferredRunVod() }, [])
-  useEffect(() => settings.sfxVolume > 0 ? installSoundEffects(!RUN_VOD_REPLAY) : undefined, [settings.sfxVolume])
-  useLayoutEffect(() => {
-    if (!RUN_VOD_REPLAY) return
-    document.title = 'Slay the Spire Run VOD — 1920×1080'
-    document.documentElement.dataset.runVodReplay = 'true'
-    document.documentElement.dataset.mobilePerformance = 'false'
-    const normalizeMedia = (rules: CSSRuleList) => {
-      for (const rule of rules) {
-        if (rule instanceof CSSMediaRule) {
-          if (rule.media.mediaText.includes('prefers-reduced-motion') || rule.media.mediaText.includes('(hover: none)'))
-            rule.media.mediaText = 'not all'
-          else if (rule.media.mediaText.includes('(hover: hover)')) rule.media.mediaText = 'all'
-        }
-        const nested = (rule as CSSRule & { cssRules?: CSSRuleList }).cssRules
-        if (nested) normalizeMedia(nested)
-      }
-    }
-    for (const sheet of document.styleSheets) {
-      try {
-        normalizeMedia(sheet.cssRules)
-      } catch { /* All bundled styles are same-origin; ignore injected cross-origin sheets. */ }
-    }
-  }, [])
+  const [online, setOnline] = useState(() => !SINGLE_PLAYER_ONLY && hasRoomSession())
+  const [localOpen, setLocalOpen] = useState(false)
+  const [settings, setSettings] = useGameSettings()
+  useEffect(() => settings.sfxVolume > 0 ? installSoundEffects(true) : undefined, [settings.sfxVolume])
   useEffect(() => {
     let shiftHeld = false
     let preferFocus = false
@@ -515,14 +483,14 @@ export function App() {
     <Suspense fallback={<main className="app-loading" role="status">Loading…</main>}>
       <div className="game-mode" hidden={online}>
         <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onClose={() => setLocalOpen(false)} onOnline={SINGLE_PLAYER_ONLY ? undefined : () => setOnline(true)}
-          settings={settings} onSettings={setSettings} active={!online} replay={RUN_VOD_REPLAY} />
+          settings={settings} onSettings={setSettings} active={!online} />
       </div>
       {online && OnlineGame ? <OnlineGame onLocal={() => setOnline(false)} settings={settings} onSettings={setSettings} /> : null}
     </Suspense>
   )
 }
 
-function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, active, replay }: {
+function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, active }: {
   open: boolean
   onOpen: () => void
   onClose: () => void
@@ -530,7 +498,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   settings: GameSettings
   onSettings: (settings: GameSettings) => void
   active: boolean
-  replay: boolean
 }) {
   const [seedText, setSeedText] = useState<string>(() => crypto.randomUUID())
   const [ascension, setAscension] = useState(0)
@@ -565,12 +532,15 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const leaderboardSubmission = useRef<string | null>(null)
   const [leaderboardStatus, setLeaderboardStatus] = useState<'pending' | 'recorded' | 'queued' | 'rejected' | null>(null)
   const [recordRunId, setRecordRunId] = useState<string | null>(null)
-  const [vodExtractedRunId, setVodExtractedRunId] = useState<string | null>(null)
-  const [vodMessage, setVodMessage] = useState<string | null>(null)
-  const [extractingVod, setExtractingVod] = useState(false)
+  const [runLogExtractedRunId, setRunLogExtractedRunId] = useState<string | null>(null)
+  const [runLogMessage, setRunLogMessage] = useState<string | null>(null)
+  const [extractingRunLog, setExtractingRunLog] = useState(false)
+  const [replayLog, setReplayLog] = useState<RunLog | null>(null)
+  const replayCursorCleanup = useRef<(() => void) | null>(null)
+  const replayReturn = useRef<{ run: RunState; viewerId: string } | null>(null)
   const terminalRun = useRef<RunState | null>(null)
-  const { available: vodAvailable, discard: discardVod, load: loadVod } = useRunVod(
-    run, active && open && !replay, viewerId,
+  const { available: runLogAvailable, discard: discardLog, load: loadRunLog } = useRunLog(
+    run, active && open && !replayLog, viewerId,
   )
   const [achievements, setAchievements] = useState(false)
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
@@ -599,32 +569,12 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     setRun(resume.run)
     terminalRun.current = resume.terminalRun ? structuredClone(resume.terminalRun) : null
     setRecordRunId(resume.recordRunId ?? null)
-    setVodExtractedRunId(resume.vodExtractedRunId ?? null)
-    setVodMessage(null)
+    setRunLogExtractedRunId(resume.runLogExtractedRunId ?? null)
+    setRunLogMessage(null)
     setViewerId('p1')
     setChoosingNextCharacter(false)
     onOpen()
   }
-
-  useEffect(() => {
-    const url = new URL(location.href)
-    if (url.searchParams.get(RUN_VOD_RETURN_PARAM) !== resume?.run.campaign.runId) return
-    url.searchParams.delete(RUN_VOD_RETURN_PARAM)
-    history.replaceState(history.state, '', url)
-    resumeSoloRun()
-  }, [])
-
-  useEffect(() => {
-    const syncVodExport = (event: StorageEvent) => {
-      if (event.key !== SOLO_RUN_KEY || !event.newValue) return
-      try {
-        const extractedRunId = (JSON.parse(event.newValue) as SoloRunSave).vodExtractedRunId
-        if (extractedRunId) setVodExtractedRunId(extractedRunId)
-      } catch { /* Ignore another tab's incomplete storage write. */ }
-    }
-    window.addEventListener('storage', syncVodExport)
-    return () => window.removeEventListener('storage', syncVodExport)
-  }, [])
 
   const flushQueuedRun = () => void flushLeaderboardOutbox().then(({ recorded, rejected }) => {
     const id = leaderboardSubmission.current
@@ -634,13 +584,13 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   })
 
   useEffect(() => {
-    if (replay) return
+    if (replayLog) return
     flushQueuedRun()
     const retry = window.setInterval(flushQueuedRun, 60_000)
     const online = flushQueuedRun
     window.addEventListener('online', online)
     return () => { clearInterval(retry); window.removeEventListener('online', online) }
-  }, [replay])
+  }, [replayLog])
 
   useEffect(() => {
     const dialog = pauseDialog.current
@@ -686,12 +636,13 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     setLastStand(nextLastStand)
     setViewerId('p1')
     setRecordRunId(null)
-    setVodExtractedRunId(null)
-    setVodMessage(null)
+    setRunLogExtractedRunId(null)
+    setRunLogMessage(null)
+    setReplayLog(null)
     terminalRun.current = null
     setBuilt({ count, seed, ascension: legalAscension, chooseYourRelic: nextChooseYourRelic, lastStand: nextLastStand, characters: nextCharacters, meta: nextMeta })
     const next = newRun(count, seed, legalAscension, progress, nextChooseYourRelic, nextLastStand, nextCharacters, nextMeta)
-    if (!replay) void startRunVod(next)
+    void startRunLog(next)
     setRun(next)
   }
 
@@ -704,55 +655,64 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     })
   }
 
-  const extractRunVod = async () => {
-    if (extractingVod) return
-    const exportWindow = window.open('', '_blank', 'popup,width=1440,height=900')
-    if (exportWindow) {
-      exportWindow.document.title = 'Run VOD export'
-      exportWindow.document.documentElement.style.cssText = 'color-scheme:dark;background:#080b12'
-      exportWindow.document.body.style.cssText = 'margin:0;padding:24px;background:#080b12;color:#f4f1e8;font:16px system-ui'
-      exportWindow.document.body.textContent = 'Preparing native 1080p Run VOD export…'
-    }
-    setExtractingVod(true)
-    const returnRun = structuredClone(run)
+  const extractRunLog = async () => {
+    if (extractingRunLog) return
+    setExtractingRunLog(true)
     try {
-      const log = await loadVod()
-      if (!log) {
-        exportWindow?.close()
-        setVodMessage('This run could not be loaded for replay.')
-        return
-      }
-      const terminal = terminalRun.current?.campaign.runId === run.campaign.runId
-        ? structuredClone(terminalRun.current)
-        : structuredClone(run)
-      const saved: SoloRunSave = {
-        version: 1, run: returnRun, built,
-        terminalRun: terminalRun.current?.campaign.runId === run.campaign.runId ? structuredClone(terminalRun.current) : null,
-        recordRunId,
-        vodExtractedRunId,
-      }
-      setVodMessage(exportWindow
-        ? 'VOD export opened in a separate window. You can switch tabs while it renders.'
-        : 'Preparing the native 1080p replay…')
-      const completed = await startRunVodExport(log, terminal, saved, exportWindow)
-      if (completed) {
-        setVodExtractedRunId(log.runId)
-        setVodMessage('Run VOD downloaded.')
-      } else if (exportWindow) setVodMessage('VOD export window closed. Your run is still available to export.')
+      const log = await loadRunLog()
+      if (!log) return setRunLogMessage('This run log could not be loaded.')
+      downloadRunLog(log)
+      setRunLogExtractedRunId(log.runId)
+      setRunLogMessage('Run log downloaded.')
     } catch (error) {
-      exportWindow?.close()
-      setRun(returnRun)
-      setVodMessage(error instanceof Error ? error.message : 'Run VOD extraction failed.')
-    } finally { setExtractingVod(false) }
+      setRunLogMessage(error instanceof Error ? error.message : 'Run log extraction failed.')
+    } finally { setExtractingRunLog(false) }
   }
 
   const prepareNextRun = () => {
-    discardVod()
+    discardLog()
     discardSoloRun()
     setSeedText(crypto.randomUUID())
     setChoosingNextCharacter(true)
     onClose()
   }
+
+  const startReplay = (log: RunLog) => {
+    replayCursorCleanup.current?.()
+    replayCursorCleanup.current = null
+    replayReturn.current = { run: structuredClone(run), viewerId }
+    setRunLogMessage(null)
+    setReplayLog(log)
+    setRun(structuredClone(log.initial))
+    setViewerId(log.initial.players[0]!.id)
+    setCompendium(false)
+    setPauseOpen(false)
+    setSettingsOpen(false)
+    onOpen()
+  }
+
+  useEffect(() => {
+    if (!replayLog || !open || !active) return
+    const controller = new AbortController()
+    let cleanup: (() => void) | undefined
+    void playRunLog(replayLog, {
+      setRun,
+      setViewer: setViewerId,
+      reducedMotion: settings.reducedMotion || prefersReducedMotion,
+      signal: controller.signal,
+      pause: () => setPauseOpen(true),
+    }).then((removeCursor) => {
+      if (controller.signal.aborted) removeCursor()
+      else { cleanup = removeCursor; replayCursorCleanup.current = removeCursor }
+    }).catch((error) => {
+      if (!controller.signal.aborted) setRunLogMessage(error instanceof Error ? error.message : 'Replay stopped.')
+    })
+    return () => {
+      controller.abort()
+      cleanup?.()
+      if (replayCursorCleanup.current === cleanup) replayCursorCleanup.current = null
+    }
+  }, [active, open, replayLog])
 
   // A debug bridge for the Playwright suite: drive real clicks, assert real
   // state. Screenshots are for review; assertions read from here.
@@ -762,23 +722,17 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       /** The combat state, or null outside a fight. */
       getState: () => run.combat,
       setRun: (next: RunState) => flushSync(() => setRun(next)),
-      flushVod: (callback: () => void) => flushSync(callback),
       reset: (count: number, seed: string, nextAscension = 0) => restart(count, seed, nextAscension, chooseYourRelic, lastStand, DEFAULT_CHARACTERS),
       setViewer: (id: string) => flushSync(() => setViewerId(id)),
-      startVodAudio: startRunVodAudio,
-      captureVodAudio: captureRunVodAudio,
-      setVodAudioSegment: setRunVodAudioSegment,
-      setVodAudioMuted: setRunVodAudioMuted,
-      stopVodAudio: stopRunVodAudio,
-      playVodUiSound: () => playSoundEffect('ui'),
+      playUiSound: () => playSoundEffect('ui'),
       getSettings: () => settings,
     }
     ;(window as unknown as { __STS_DEBUG__?: typeof bridge }).__STS_DEBUG__ = bridge
   }, [run, settings])
 
   useEffect(() => {
-    setAscension((current) => Math.min(current, run.campaignProgress.highestAscension))
-  }, [run.campaignProgress.highestAscension])
+    if (!replayLog) setAscension((current) => Math.min(current, run.campaignProgress.highestAscension))
+  }, [replayLog, run.campaignProgress.highestAscension])
 
   // Guarded, like the read at `savedCampaign`. `setItem` throws on a full quota
   // and on blocked storage (Chrome's "block all cookies", enterprise policy, a
@@ -787,16 +741,16 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   // white. Losing the campaign journal is a bad outcome; losing the game is a
   // worse one.
   useEffect(() => {
-    if (replay) return
+    if (replayLog) return
     try {
       localStorage.setItem(CAMPAIGN_KEY, JSON.stringify(open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)))
     } catch {
       // Storage is unavailable; the run continues in memory.
     }
-  }, [open, replay, run.campaignProgress, run.campaign.finalized])
+  }, [open, replayLog, run.campaignProgress, run.campaign.finalized])
 
   useLayoutEffect(() => {
-    if (!open || replay) return
+    if (!open || replayLog) return
     if (run.campaign.finalized) {
       if (terminalRun.current?.campaign.runId !== run.campaign.runId) return discardSoloRun()
       if (recordRunId === run.campaign.runId && queuedLeaderboardRun.current !== run.campaign.runId) {
@@ -812,19 +766,19 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       version: 1, run, built,
       terminalRun: terminalRun.current?.campaign.runId === run.campaign.runId ? terminalRun.current : null,
       recordRunId,
-      vodExtractedRunId,
+      runLogExtractedRunId,
     }
     try {
       localStorage.setItem(SOLO_RUN_KEY, JSON.stringify(saved))
     } catch {
       // Keep the last atomic checkpoint; the run continues in memory.
     }
-  }, [built, open, recordRunId, replay, run, vodExtractedRunId])
+  }, [built, open, recordRunId, replayLog, run, runLogExtractedRunId])
 
   // A finished combat folds back into the run on its own; the player should not
   // have to click through a screen that only says "you won".
   useEffect(() => {
-    if (!replay && open && !compendium && !pauseOpen && !settingsOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
+    if (!replayLog && open && !compendium && !pauseOpen && !settingsOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
       let timer: number
       const resolveWhenAnimationsFinish = () => {
         if (combatOutcomeAnimationActive()) {
@@ -839,7 +793,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       return () => clearTimeout(timer)
     }
     return undefined
-  }, [compendium, open, pauseOpen, prefersReducedMotion, replay, run.combat, settings.reducedMotion, settingsOpen])
+  }, [compendium, open, pauseOpen, prefersReducedMotion, replayLog, run.combat, settings.reducedMotion, settingsOpen])
 
   const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
   // Fires wherever a card changed — campfire, event, reward, Neow, a relic —
@@ -868,7 +822,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const allocatingCampaignMarks = run.campaign.finalized || run.campaignProgress.unspentMarks > 0
   const resultRecorded = recordRunId === run.campaign.runId
-  const vodExtracted = vodExtractedRunId === run.campaign.runId
+  const runLogExtracted = runLogExtractedRunId === run.campaign.runId
   useEffect(() => {
     if (!allocatingCampaignMarks) return
     // The campaign journal precedes the direct character-selection route.
@@ -918,7 +872,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       onQuickStartAct={setQuickStartAct}
       onStart={(campaign) => {
         discardSoloRun()
-        discardRunVod(resume?.run.campaign.runId ?? run.campaign.runId)
+        discardRunLog(resume?.run.campaign.runId ?? run.campaign.runId)
         setChoosingNextCharacter(false)
         restart(1, seedText, ascension, false, false, characters, { ...metaOptions, campaign })
         onOpen()
@@ -928,6 +882,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       onLeaderboard={() => setLeaderboard(true)}
       onCompendium={() => setCompendium(true)}
       onAchievements={() => setAchievements(true)}
+      onReplay={startReplay}
       onCharacterBack={() => setChoosingNextCharacter(false)}
       settings={settings}
       onSettings={onSettings}
@@ -1017,10 +972,21 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           <button type="button" className="is-chosen" onClick={() => setPauseOpen(false)}>Resume</button>
           <button type="button" onClick={() => { setPauseOpen(false); setSettingsReturnToPause(true); setSettingsOpen(true) }}>Settings</button>
           <button type="button" onClick={() => { setPauseOpen(false); setCompendium(true) }}>Compendium</button>
-          {canGiveUp ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
+          {!replayLog && canGiveUp ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
           <button type="button" onClick={() => {
             setPauseOpen(false)
-            if (!run.campaign.finalized) setResume({ version: 1, run, built })
+            if (replayLog) {
+              replayCursorCleanup.current?.()
+              replayCursorCleanup.current = null
+              const previous = replayReturn.current
+              replayReturn.current = null
+              if (previous) {
+                setRun(previous.run)
+                setViewerId(previous.viewerId)
+              }
+              setReplayLog(null)
+              setRunLogMessage(null)
+            } else if (!run.campaign.finalized) setResume({ version: 1, run, built })
             onClose()
           }}>Return to main menu</button>
         </section>
@@ -1031,8 +997,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           state={run.combat}
           act={run.act}
           viewerId={viewerId}
-          animateOpeningHand={document.documentElement.dataset.runVodResume !== 'true'}
-          autoAdvance={!replay && !compendium && !pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
+          animateOpeningHand
+          autoAdvance={!replayLog && !compendium && !pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
           courierAvailable={!run.courier.usedBy.includes(viewerId) &&
             run.combat.players.some((player) => player.id === viewerId && player.relics.some((relic) => relic.defId === 'the_courier'))}
           mutationsEnabled={!run.courier.offer}
@@ -1217,24 +1183,24 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           {run.lastStand && run.players.some((player) => player.dead) && run.act < 4 ? (
             <p role="status">Last Stand won the Act, but a fallen hero means the party cannot continue to the next Act.</p>
           ) : null}
-          <div className="room-screen__actions">
-            {!vodExtracted && !(run.lastStand && run.players.some((player) => player.dead)) &&
-            (run.act < 3 || canEnterActIV(run.campaignProgress, run.campaign.keys, run.act)) ? <button type="button" disabled={pendingAcquisition || extractingVod}
+          {!replayLog ? <div className="room-screen__actions">
+            {!runLogExtracted && !(run.lastStand && run.players.some((player) => player.dead)) &&
+            (run.act < 3 || canEnterActIV(run.campaignProgress, run.campaign.keys, run.act)) ? <button type="button" disabled={pendingAcquisition || extractingRunLog}
               onClick={() => {
-                setVodExtractedRunId(null)
-                setVodMessage(null)
+                setRunLogExtractedRunId(null)
+                setRunLogMessage(null)
                 terminalRun.current = null
                 setRun((current) => advanceAct(current))
               }}>
               Climb to Act {run.act + 1}
             </button> : null}
-            <button type="button" disabled={pendingAcquisition || extractingVod}
-              onClick={recordRunResult} data-run-vod-control>Stop and record result</button>
-            <button type="button" onClick={() => void extractRunVod()} disabled={!vodAvailable || extractingVod}
-              data-run-vod-control>{vodExtracted ? 'Extract run VOD again' : 'Extract run VOD'}</button>
-            {vodExtracted ? <button type="button" onClick={prepareNextRun} disabled={extractingVod} data-run-vod-control>Prepare next run →</button> : null}
-          </div>
-          {vodMessage ? <p aria-live="polite">{vodMessage}</p> : null}
+            <button type="button" disabled={pendingAcquisition || extractingRunLog}
+              onClick={recordRunResult} data-run-log-control>Stop and record result</button>
+            <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog}
+              data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button>
+            {runLogExtracted ? <button type="button" onClick={prepareNextRun} disabled={extractingRunLog} data-run-log-control>Prepare next run →</button> : null}
+          </div> : null}
+          {runLogMessage ? <p aria-live="polite">{runLogMessage}</p> : null}
         </section>
       ) : null}
 
@@ -1243,18 +1209,19 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           <h2 className="room-screen__defeat">The party has fallen</h2>
           <RunSummary act={run.act} roomsCleared={roomsCleared}
             ascension={run.ascension} seats={run.players.map(summarySeat)} />
-          {!run.campaign.finalized ? <><div className="room-screen__actions">
-            <button type="button" onClick={recordRunResult} disabled={extractingVod} data-run-vod-control>Record campaign result</button>
-            <button type="button" onClick={() => void extractRunVod()} disabled={!vodAvailable || extractingVod}
-              data-run-vod-control>{vodExtracted ? 'Extract run VOD again' : 'Extract run VOD'}</button>
-            {vodExtracted ? <button type="button" onClick={prepareNextRun} disabled={extractingVod} data-run-vod-control>Prepare next run →</button> : null}
-          </div>{vodMessage ? <p aria-live="polite">{vodMessage}</p> : null}</> : null}
+          {!run.campaign.finalized && !replayLog ? <><div className="room-screen__actions">
+            <button type="button" onClick={recordRunResult} disabled={extractingRunLog} data-run-log-control>Record campaign result</button>
+            <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog}
+              data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button>
+            {runLogExtracted ? <button type="button" onClick={prepareNextRun} disabled={extractingRunLog} data-run-log-control>Prepare next run →</button> : null}
+          </div>{runLogMessage ? <p aria-live="polite">{runLogMessage}</p> : null}</> : null}
         </section>
       ) : null}
 
-      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p>{run.campaign.finalized && leaderboardStatus ? <p key={leaderboardStatus} aria-live="polite" data-webmcp-transient-status data-webmcp-pending={leaderboardStatus === 'pending' ? 'true' : undefined}>{leaderboardStatus === 'pending' ? 'Recording run on the leaderboard…' : leaderboardStatus === 'recorded' ? 'Run recorded on the leaderboard.' : leaderboardStatus === 'queued' ? 'Leaderboard unavailable — run saved for automatic retry.' : 'Leaderboard rejected this run.'}</p> : null}{vodMessage ? <p aria-live="polite">{vodMessage}</p> : null}<div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && !resultRecorded ? <button type="button" onClick={recordRunResult} disabled={extractingVod} data-run-vod-control>Record campaign result</button> : null}{run.campaign.finalized ? <button type="button" onClick={() => void extractRunVod()} disabled={!vodAvailable || extractingVod} data-run-vod-control>{vodExtracted ? 'Extract run VOD again' : 'Extract run VOD'}</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" disabled={extractingVod} onClick={() => { discardVod(); discardSoloRun(); setSeedText(crypto.randomUUID()); setChoosingNextCharacter(true); onClose() }}>Prepare next run →</button> : null}</div></section> : null}
+      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p>{!replayLog && run.campaign.finalized && leaderboardStatus ? <p key={leaderboardStatus} aria-live="polite" data-webmcp-transient-status data-webmcp-pending={leaderboardStatus === 'pending' ? 'true' : undefined}>{leaderboardStatus === 'pending' ? 'Recording run on the leaderboard…' : leaderboardStatus === 'recorded' ? 'Run recorded on the leaderboard.' : leaderboardStatus === 'queued' ? 'Leaderboard unavailable — run saved for automatic retry.' : 'Leaderboard rejected this run.'}</p> : null}{runLogMessage ? <p aria-live="polite">{runLogMessage}</p> : null}{!replayLog ? <div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && !resultRecorded ? <button type="button" onClick={recordRunResult} disabled={extractingRunLog} data-run-log-control>Record campaign result</button> : null}{run.campaign.finalized ? <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog} data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" disabled={extractingRunLog} onClick={() => { discardLog(); discardSoloRun(); setSeedText(crypto.randomUUID()); setChoosingNextCharacter(true); onClose() }}>Prepare next run →</button> : null}</div> : null}</section> : null}
       <TreasureEffects room={run.roomState?.kind === 'treasure' ? run.roomState : null}
         players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />
+      {replayLog && runLogMessage ? <p className="run-replay__status" role="alert">{runLogMessage}</p> : null}
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
       {/* `aria-live` rather than `role="status"`: the run already has status
           regions ("Choice locked. Waiting for the party…"), and a second one

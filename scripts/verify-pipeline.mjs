@@ -56,17 +56,11 @@ check('frontend surfaces select their cores and named focused browser checks', (
     'verify-browser.mjs', 'verify-online-browser.mjs', 'verify-lightning-act2-browser.mjs',
   ], 'combat VFX')
   assertDeepEqual(affectedBrowser('src/ui/PowerRow.tsx'), ['verify-power-hover-browser.mjs'])
-  assertDeepEqual(affectedBrowser('src/ui/run-vod.ts'), ['verify-run-vod-browser.mjs', 'verify-run-vod-encoder-browser.mjs', 'verify-run-vod-visual-browser.mjs'])
-  assert(affected('src/ui/run-vod.ts').includes('verify-run-vod-recorder.mjs'))
-  assertDeepEqual(affectedBrowser('src/ui/run-vod-video.ts'), ['verify-run-vod-video-browser.mjs'])
-  for (const file of ['src/ui/run-vod-encoder.ts', 'src/ui/run-vod-encode.worker.ts']) {
-    assertDeepEqual(affectedBrowser(file), ['verify-run-vod-encoder-browser.mjs'])
-  }
-  for (const file of ['src/ui/App.tsx', 'src/ui/CardMorph.tsx', 'src/ui/combat-screen/hooks.ts',
-    'src/ui/game-settings.ts', 'src/ui/sfx.ts', 'src/ui/touch-input.ts']) {
+  assertDeepEqual(affectedBrowser('src/ui/run-log.ts'), ['verify-run-replay-browser.mjs'])
+  for (const file of ['src/ui/App.tsx', 'src/ui/StartMenu.tsx', 'src/ui/sfx.ts']) {
     const owners = affectedBrowser(file)
-    assert(owners.includes('verify-run-vod-browser.mjs'), `${file} omitted focused VOD coverage`)
-    assert(owners.some((owner) => owner !== 'verify-run-vod-browser.mjs'), `${file} lost its shared browser owners`)
+    assert(owners.includes('verify-run-replay-browser.mjs'), `${file} omitted focused replay coverage`)
+    assert(owners.some((owner) => owner !== 'verify-run-replay-browser.mjs'), `${file} lost its shared browser owners`)
   }
   assert(affected('src/ui/icons.ts').includes('verify-noncombat-browser.mjs'))
   assert(affected('src/ui/run-summary-data.ts').includes('verify-noncombat-browser.mjs'))
@@ -133,8 +127,9 @@ check('shared frontend changes use cores plus named visual owners', () => {
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
     'verify-lightning-act2-browser.mjs',
   ], 'presentation overlays')
-  assertDeepEqual(affectedBrowser('src/ui/styles/powers-in-play.css'), ['verify-power-hover-browser.mjs', 'verify-run-vod-visual-browser.mjs'])
-  assertDeepEqual(affectedBrowser('src/ui/styles/run-vod.css'), ['verify-run-vod-browser.mjs'])
+  assert(affectedBrowser('src/ui/styles/title-menu.css').includes('verify-run-replay-browser.mjs'),
+    'title menu stylesheet omitted focused replay coverage')
+  assertDeepEqual(affectedBrowser('src/ui/styles/powers-in-play.css'), ['verify-power-hover-browser.mjs'])
 })
 check('toolchain changes select their focused owners', () => {
   for (const file of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.app.json', 'vite.config.ts']) {

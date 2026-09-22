@@ -240,12 +240,12 @@ try {
         console.log(`PASS ${engineName}/${screen}: Safari combat animation media, alpha, motion and fallback`)
       }
       if (engineName === 'webkit') {
-        const replayContext = await browser.newContext()
-        const replay = await replayContext.newPage()
-        await replay.goto(`http://localhost:${server.httpServer.address().port}?run-vod=1`)
-        assert.equal(await replay.evaluate(async () => (await import('/src/ui/CombatAnimation.tsx')).useSafariCombatVideo), false,
-          'Safari VOD replay must keep deterministic WebP frames')
-        await replayContext.close()
+        const webpContext = await browser.newContext()
+        const webp = await webpContext.newPage()
+        await webp.goto(`http://localhost:${server.httpServer.address().port}?combat-webp=1`)
+        assert.equal(await webp.evaluate(async () => (await import('/src/ui/CombatAnimation.tsx')).useSafariCombatVideo), false,
+          'Safari WebP override must disable combat video')
+        await webpContext.close()
 
         const stallContext = await browser.newContext()
         const stall = await stallContext.newPage()

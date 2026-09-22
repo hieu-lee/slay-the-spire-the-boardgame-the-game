@@ -32,25 +32,17 @@ const focusedEngineOwners = new Map([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = new Map([
-  ['src/ui/App.tsx', ['verify-run-vod-browser.mjs']],
-  ['src/ui/CardMorph.tsx', ['verify-run-vod-browser.mjs']],
-  ['src/ui/combat-screen/hooks.ts', ['verify-run-vod-browser.mjs']],
-  ['src/ui/game-settings.ts', ['verify-run-vod-browser.mjs']],
-  ['src/ui/sfx.ts', ['verify-run-vod-browser.mjs']],
-  ['src/ui/touch-input.ts', ['verify-run-vod-browser.mjs']],
+  ['src/ui/App.tsx', ['verify-run-replay-browser.mjs']],
+  ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs']],
+  ['src/ui/sfx.ts', ['verify-run-replay-browser.mjs']],
   ['src/ui/combat-screen/vfx.tsx', ['verify-lightning-act2-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
+  ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
   ['src/ui/PowerRow.tsx', ['verify-power-hover-browser.mjs']],
-  ['src/ui/run-vod.ts', ['verify-run-vod-browser.mjs', 'verify-run-vod-visual-browser.mjs', 'verify-run-vod-recorder.mjs', 'verify-run-vod-encoder-browser.mjs']],
-  ['src/ui/run-vod-encoder.ts', ['verify-run-vod-encoder-browser.mjs']],
-  ['src/ui/run-vod-video.ts', ['verify-run-vod-video-browser.mjs']],
-  ['src/ui/run-vod-encode.worker.ts', ['verify-run-vod-encoder-browser.mjs']],
-  ['src/ui/run-vod-clock.ts', ['verify-run-vod-visual-browser.mjs']],
-  ['src/ui/run-vod-raster.ts', ['verify-run-vod-visual-browser.mjs']],
-  ['src/ui/styles/powers-in-play.css', ['verify-power-hover-browser.mjs', 'verify-run-vod-visual-browser.mjs']],
-  ['src/ui/styles/run-vod.css', ['verify-run-vod-browser.mjs']],
+  ['src/ui/run-log.ts', ['verify-run-replay-browser.mjs']],
+  ['src/ui/styles/powers-in-play.css', ['verify-power-hover-browser.mjs']],
 ])
 const sourceExtensions = ['', '.ts', '.tsx', '.mjs', '.js']
 const sharedBrowserOwners = ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs']

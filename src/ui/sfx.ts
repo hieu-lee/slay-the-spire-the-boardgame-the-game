@@ -25,101 +25,18 @@ const SOUNDS = {
 
 type Sound = keyof typeof SOUNDS
 const activeEffects = new Set<HTMLAudioElement>()
-const vodAudio = new Set<HTMLAudioElement>()
-const vodAudioNodes = new Map<HTMLAudioElement, MediaElementAudioSourceNode>()
-let vodAudioContext: AudioContext | null = null
-let vodAudioDestination: MediaStreamAudioDestinationNode | null = null
-let vodAudioClock: OscillatorNode | null = null
-let vodAudioMuted = false
-export type RunVodAudioCue = { source: string; at: number; end?: number; volume: number; rate: number; loop: boolean; segment?: string; endSegment?: string }
-let vodAudioCapture: { started: number; segment: string; cues: RunVodAudioCue[]; playing: Map<HTMLAudioElement, RunVodAudioCue> } | null = null
-
-export function captureRunVodAudio() {
-  vodAudio.forEach(releaseAudio)
-  vodAudioCapture = { started: performance.now(), segment: 'initial', cues: [], playing: new Map() }
-  return vodAudioCapture.cues
-}
-
-export function setRunVodAudioSegment(segment: string) {
-  if (vodAudioCapture) { vodAudioCapture.segment = segment; vodAudioCapture.started = performance.now() }
-}
-
-function playAudio(audio: HTMLAudioElement) {
-  if (!vodAudioCapture) return audio.play()
-  const cue: RunVodAudioCue = { source: audio.src, at: (performance.now() - vodAudioCapture.started) / 1000,
-    volume: audio.volume, rate: audio.playbackRate, loop: audio.loop, segment: vodAudioCapture.segment }
-  vodAudioCapture.cues.push(cue)
-  vodAudioCapture.playing.set(audio, cue)
-  return Promise.resolve()
-}
+const playAudio = (audio: HTMLAudioElement) => audio.play()
 
 function audioElement(source: string) {
   const audio = new Audio()
   if (new URL(source, location.href).origin !== location.origin) audio.crossOrigin = 'anonymous'
   audio.src = source
-  audio.muted = vodAudioMuted
-  vodAudio.add(audio)
-  const forget = () => {
-    vodAudio.delete(audio)
-    vodAudioNodes.get(audio)?.disconnect()
-    vodAudioNodes.delete(audio)
-  }
-  audio.addEventListener('ended', forget, { once: true })
-  audio.addEventListener('error', forget, { once: true })
-  if (vodAudioContext && vodAudioDestination) {
-    const node = vodAudioContext.createMediaElementSource(audio)
-    node.connect(vodAudioContext.destination)
-    node.connect(vodAudioDestination)
-    vodAudioNodes.set(audio, node)
-  }
   return audio
 }
 
 function releaseAudio(audio: HTMLAudioElement) {
-  const cue = vodAudioCapture?.playing.get(audio)
-  if (cue) {
-    cue.end = (performance.now() - vodAudioCapture!.started) / 1000
-    cue.endSegment = vodAudioCapture!.segment
-  }
-  vodAudioCapture?.playing.delete(audio)
   audio.pause()
   activeEffects.delete(audio)
-  vodAudio.delete(audio)
-  vodAudioNodes.get(audio)?.disconnect()
-  vodAudioNodes.delete(audio)
-}
-
-export function startRunVodAudio() {
-  vodAudioClock?.stop()
-  vodAudioContext?.close().catch(() => {})
-  vodAudioContext = new AudioContext()
-  vodAudioDestination = vodAudioContext.createMediaStreamDestination()
-  const clock = vodAudioContext.createOscillator()
-  const silence = vodAudioContext.createGain()
-  silence.gain.value = 0
-  clock.connect(silence).connect(vodAudioDestination)
-  clock.start()
-  vodAudioClock = clock
-  void vodAudioContext.resume()
-  return vodAudioDestination.stream
-}
-
-export function setRunVodAudioMuted(muted: boolean) {
-  vodAudioMuted = muted
-  vodAudio.forEach((audio) => { audio.muted = muted })
-}
-
-export function stopRunVodAudio() {
-  vodAudioCapture = null
-  vodAudio.forEach(releaseAudio)
-  vodAudio.clear()
-  vodAudioNodes.clear()
-  vodAudioClock?.stop()
-  vodAudioClock = null
-  vodAudioDestination = null
-  const context = vodAudioContext
-  vodAudioContext = null
-  void context?.close()
 }
 
 const BOSS_TRACKS = {
@@ -310,7 +227,7 @@ function playSound(sound: Sound, volume = 0.35, rate = 1, cue?: string, delayMs 
     releaseAudio(oldest)
   }
   const audio = audioElement(SOUNDS[sound])
-  if (!vodAudioCapture) activeEffects.add(audio)
+  activeEffects.add(audio)
   audio.addEventListener('ended', () => activeEffects.delete(audio), { once: true })
   audio.volume = volume * currentSfxVolume()
   audio.playbackRate = rate

@@ -85,8 +85,7 @@ function shouldReduceMotion(): boolean {
   // Phones expose this choice in-game; do not let an invisible iOS preference
   // erase combat while the visible toggle is off.
   return root.reducedMotion === 'true' ||
-    root.runVodReplay !== 'true' && root.mobilePerformance !== 'true' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    root.mobilePerformance !== 'true' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
 export function useReducedEffects(): boolean {

@@ -4,7 +4,7 @@ export type CombatArtElement = HTMLImageElement | HTMLVideoElement
 
 const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
 const query = typeof location === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search)
-const forceWebp = query.get('run-vod') === '1' || query.get('combat-webp') === '1'
+const forceWebp = query.get('combat-webp') === '1'
 const assetCdnOrigin = import.meta.env?.VITE_ASSET_CDN_ORIGIN
 export const useSafariCombatVideo = !forceWebp && typeof document !== 'undefined' &&
   /AppleWebKit/.test(userAgent) && /Safari/.test(userAgent) &&

@@ -6,6 +6,7 @@ import { ASCENSION_RULES } from '../game/run.ts'
 import type { CharacterId } from '../game/types.ts'
 import { CampaignSelect } from './CampaignSelect.tsx'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
+import { MAX_RUN_LOG_BYTES, parseRunLog, type RunLog } from './run-log.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import type { GameSettings } from './game-settings.ts'
 
@@ -31,6 +32,7 @@ type StartMenuProps = {
   onLeaderboard: () => void
   onCompendium: () => void
   onAchievements: () => void
+  onReplay: (log: RunLog) => void
   onCharacterBack: () => void
   settings: GameSettings
   onSettings: (settings: GameSettings) => void
@@ -115,6 +117,7 @@ export function StartMenu({
   onLeaderboard,
   onCompendium,
   onAchievements,
+  onReplay,
   onCharacterBack,
   settings,
   onSettings,
@@ -122,7 +125,7 @@ export function StartMenu({
 }: StartMenuProps) {
   const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
   const [selection, setSelection] = useState(onResume ? 'Resume' : 'Single Player')
-  const [screen, setScreen] = useState<'main' | 'mode' | 'daily' | 'custom' | 'character' | 'campaign'>(initiallyChoosingCharacter ? 'character' : 'main')
+  const [screen, setScreen] = useState<'main' | 'mode' | 'daily' | 'custom' | 'character' | 'campaign' | 'replay'>(initiallyChoosingCharacter ? 'character' : 'main')
   const [characterTransition, setCharacterTransition] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [embarking, setEmbarking] = useState(false)
@@ -134,10 +137,17 @@ export function StartMenu({
   const loadingBack = useRef<HTMLButtonElement>(null)
   const hoveredWallpaper = useRef<string | null>(null)
   const mainMenuButton = useRef<HTMLButtonElement>(null)
+  const replayFile = useRef<HTMLInputElement>(null)
+  const invalidReplayTimer = useRef<number | undefined>(undefined)
+  const replayStartTimer = useRef<number | undefined>(undefined)
+  const replayRequest = useRef(0)
+  const [replayPrompt, setReplayPrompt] = useState('Give your run to me')
+  const [replayDragging, setReplayDragging] = useState(false)
+  const [replayTransition, setReplayTransition] = useState(false)
   const startingRelic = STARTING_RELIC[hero.id]
   const special = startingRelic ? relicDef(startingRelic) : null
   useEffect(() => {
-    if (screen === 'main' || screen === 'campaign') return
+    if (screen === 'main' || screen === 'campaign' || screen === 'replay') return
     // Run setup gives these assets time to load before character selection.
     // Decode only the displayed wallpaper and campaign pair: decoding all
     // eight full-screen wallpapers would pressure small-device GPU memory.
@@ -157,14 +167,23 @@ export function StartMenu({
     if (screen === 'character' && preparingCharacter) loadingBack.current?.focus()
   }, [preparingCharacter, screen])
   useEffect(() => () => {
+    replayRequest.current += 1
     campaignLoad.current += 1
+    clearTimeout(invalidReplayTimer.current)
+    clearTimeout(replayStartTimer.current)
     releasePreloadedImages([...CHARACTER_WALLPAPERS, ...CAMPAIGN_ART])
   }, [])
   const returnToMain = () => {
+    replayRequest.current += 1
     campaignLoad.current += 1
     characterLoad.current += 1
     setEmbarking(false)
     setPreparingCharacter(false)
+    clearTimeout(invalidReplayTimer.current)
+    clearTimeout(replayStartTimer.current)
+    setReplayPrompt('Give your run to me')
+    setReplayDragging(false)
+    setReplayTransition(false)
     releasePreloadedImages([...CHARACTER_WALLPAPERS, ...CAMPAIGN_ART])
     setScreen('main')
     requestAnimationFrame(() => mainMenuButton.current?.focus())
@@ -213,6 +232,29 @@ export function StartMenu({
       requestAnimationFrame(() => characterButtons.current.get(character)?.focus())
     })
   }
+  const invalidReplay = () => {
+    clearTimeout(invalidReplayTimer.current)
+    setReplayPrompt('Your run is invalid')
+    invalidReplayTimer.current = window.setTimeout(() => setReplayPrompt('Give your run to me'), 3_000)
+  }
+  const acceptReplay = async (files: File[]) => {
+    const request = ++replayRequest.current
+    const file = files[0]
+    if (files.length !== 1 || !file?.name.toLowerCase().endsWith('.json') || file.size > MAX_RUN_LOG_BYTES) return invalidReplay()
+    let log: RunLog | null = null
+    try { log = parseRunLog(await file.text()) } catch { /* Invalid file. */ }
+    if (request !== replayRequest.current) return
+    if (!log) return invalidReplay()
+    clearTimeout(invalidReplayTimer.current)
+    setReplayPrompt('Your run is accepted')
+    setReplayTransition(true)
+    replayStartTimer.current = window.setTimeout(() => onReplay(log), 900)
+  }
+  const dropReplay = (event: React.DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    setReplayDragging(false)
+    return acceptReplay([...event.dataTransfer.files])
+  }
   if (screen === 'campaign') return <CampaignSelect onChoose={onStart} onBack={() => {
     campaignLoad.current += 1
     setEmbarking(false)
@@ -238,6 +280,9 @@ export function StartMenu({
         <button type="button" aria-label="Single Player" data-selected={selection === 'Single Player'}
           onFocus={() => setSelection('Single Player')} onMouseEnter={() => setSelection('Single Player')}
           ref={mainMenuButton} onClick={() => { warmRunSetup(hero.id); setScreen('mode') }}>Single Player</button>
+        <button type="button" aria-label="Replay" data-selected={selection === 'Replay'}
+          onFocus={() => setSelection('Replay')} onMouseEnter={() => setSelection('Replay')}
+          onClick={() => setScreen('replay')}>Replay</button>
         {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" data-selected={selection === 'Multiplayer'}
           onFocus={() => setSelection('Multiplayer')} onMouseEnter={() => setSelection('Multiplayer')} onClick={onOnline}>Multiplayer</button>
           : null}
@@ -267,6 +312,26 @@ export function StartMenu({
         </div>
         {preparingCharacter ? <p className="start-menu__mode-loading" role="status">Preparing character artwork…</p> : null}
         <button type="button" className="start-menu__screen-back ribbon-back" aria-label="Back" onClick={returnToMain}><span aria-hidden="true"></span></button>
+      </section> : null}
+
+      {screen === 'replay' ? <section className="run-replay-import" data-dragging={replayDragging || undefined}
+        data-transitioning={replayTransition || undefined}
+        onDragEnter={(event) => { event.preventDefault(); if (!replayTransition) setReplayDragging(true) }}
+        onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }}
+        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setReplayDragging(false) }}
+        onDrop={(event) => { event.preventDefault(); if (!replayTransition) void dropReplay(event) }}>
+        <p key={replayPrompt} className="run-replay-import__prompt" aria-live="polite">{replayPrompt}</p>
+        <span className="run-replay-import__hint">Drag one run log JSON anywhere onto this screen</span>
+        <input ref={replayFile} className="run-replay-import__file" type="file" accept=".json,application/json"
+          disabled={replayTransition} onChange={(event) => {
+            const input = event.currentTarget
+            void acceptReplay([...(input.files ?? [])]).finally(() => { input.value = '' })
+          }} />
+        <button type="button" className="run-replay-import__upload" disabled={replayTransition}
+          onClick={() => replayFile.current?.click()}>Choose run log</button>
+        <button type="button" className="run-replay-import__back ribbon-back" aria-label="Back to main menu"
+          disabled={replayTransition} onClick={returnToMain}><span aria-hidden="true"></span></button>
+        <span className="run-replay-import__flash" aria-hidden="true"></span>
       </section> : null}
 
       {screen === 'custom' || screen === 'daily' ? <section className="start-menu__run-options" aria-labelledby="run-options-title">
