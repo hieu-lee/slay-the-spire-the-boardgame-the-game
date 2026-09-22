@@ -17,8 +17,8 @@ const origin = `http://127.0.0.1:${address.port}`
 const browser = await chromium.launch({ headless: true })
 
 const profile = { username: 'Replay Tester', token: '00000000-0000-4000-8000-000000000001' }
-const open = async (viewport, hasTouch = viewport.width === 844) => {
-  const context = await browser.newContext({ viewport, hasTouch })
+const open = async (viewport, hasTouch = viewport.width === 844, isMobile = false) => {
+  const context = await browser.newContext({ viewport, hasTouch, isMobile })
   await context.addInitScript((saved) => localStorage.setItem('sts-profile', JSON.stringify(saved)), profile)
   const page = await context.newPage()
   const errors = []
@@ -661,7 +661,7 @@ try {
     'Touch-capable desktop exposed the horizontal-phone file chooser')
   await touchDesktop.context.close()
 
-  const phone = await open({ width: 844, height: 390 }, false)
+  const phone = await open({ width: 844, height: 390 }, true, true)
   await phone.page.getByRole('button', { name: 'Replay', exact: true }).click()
   await phone.page.getByText('Give your run to me', { exact: true }).waitFor()
   await phone.page.getByRole('button', { name: 'Choose run log' }).waitFor()
@@ -669,11 +669,13 @@ try {
   const phoneFit = await phone.page.evaluate(() => {
     const required = [...document.querySelectorAll('.run-replay-import__prompt, .run-replay-import__upload, .run-replay-import__back')]
       .map((element) => element.getBoundingClientRect().toJSON())
+    const upload = document.querySelector('.run-replay-import__upload')?.getBoundingClientRect().toJSON()
     return { width: innerWidth, height: innerHeight, required, scrollWidth: document.documentElement.scrollWidth,
-      scrollHeight: document.documentElement.scrollHeight }
+      scrollHeight: document.documentElement.scrollHeight, upload }
   })
   assert(phoneFit.scrollWidth <= phoneFit.width && phoneFit.scrollHeight <= phoneFit.height)
   assert(phoneFit.required.every((box) => box.x >= 0 && box.y >= 0 && box.right <= phoneFit.width && box.bottom <= phoneFit.height), JSON.stringify(phoneFit))
+  assert(phoneFit.upload && phoneFit.upload.width >= 240 && phoneFit.upload.height >= 72, JSON.stringify(phoneFit.upload))
   await phone.page.locator('input[type="file"]').setInputFiles({ name: 'run.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) })
   await phone.page.getByText('Your run is accepted', { exact: true }).waitFor()
   await phone.page.locator('.app-shell').waitFor()
@@ -683,7 +685,7 @@ try {
   assert.deepEqual(phone.errors, [])
   await phone.context.close()
 
-  const widePhone = await open({ width: 932, height: 430 }, false)
+  const widePhone = await open({ width: 932, height: 430 }, true, true)
   await widePhone.page.getByRole('button', { name: 'Replay', exact: true }).click()
   await widePhone.page.getByRole('button', { name: 'Choose run log' }).waitFor()
   assert.deepEqual(widePhone.errors, [])

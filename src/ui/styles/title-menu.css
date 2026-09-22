@@ -688,23 +688,23 @@
   .run-replay-import__back.ribbon-back { bottom: 0.35rem; left: 0.35rem; }
 }
 
-@media (orientation: landscape) and (max-width: 1024px) and (max-height: 500px) {
-  .run-replay-import__hint { display: none; }
-  .run-replay-import__upload {
+@media (orientation: landscape) {
+  html[data-mobile-performance='true'] .run-replay-import__hint { display: none; }
+  html[data-mobile-performance='true'] .run-replay-import__upload {
     position: absolute;
     bottom: 4%;
     left: 50%;
     display: block;
-    min-width: 10rem;
-    padding: 0.55rem 1rem;
+    min-width: 15rem;
+    padding: 1.65rem 1.5rem;
     border: 1px solid #d3b46a;
     color: #f7e4aa;
     background: rgb(18 22 20 / 0.82);
-    font: 700 0.9rem/1.2 'Kreon', Georgia, serif;
+    font: 700 1.25rem/1.2 'Kreon', Georgia, serif;
     transform: translateX(-50%);
     transition: opacity 260ms ease, background-color 160ms ease;
   }
-  .run-replay-import__upload:active { background: rgb(45 61 52 / 0.92); }
+  html[data-mobile-performance='true'] .run-replay-import__upload:active { background: rgb(45 61 52 / 0.92); }
 }
 
 @media (prefers-reduced-motion: reduce) {
