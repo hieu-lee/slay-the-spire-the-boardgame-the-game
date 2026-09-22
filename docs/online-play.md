@@ -15,6 +15,9 @@ runner or a third-party tunnel:
 - `sts-room-server.service` keeps the authoritative Node room process running and restarts
   it after a failure. The game process is a local systemd user service and does not depend
   on an Actions job staying alive.
+- The `Slay the Spire WSL services` Windows task keeps the WSL user session alive. It starts
+  at boot and logon, restarts after failures or power-state changes, and retries every minute
+  so WSL termination cannot leave the room server or Actions runner offline indefinitely.
 - Caddy runs on Windows, terminates public HTTPS and WebSocket traffic, and proxies it to
   WSL on `127.0.0.1:8787`.
 - A small Windows task renews native Bbox IPv4 and IPv6 mappings every hour. IPv4

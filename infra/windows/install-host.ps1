@@ -88,11 +88,20 @@ try {
   $settings = New-ScheduledTaskSettingsSet -RestartCount 10 -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -StartWhenAvailable -WakeToRun
+  $wslSettings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable -WakeToRun -MultipleInstances IgnoreNew
   $taskPrincipal = New-ScheduledTaskPrincipal `
     -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType S4U -RunLevel Limited
   $hostTriggers = @(
     (New-ScheduledTaskTrigger -AtStartup),
     (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME)
+  )
+  $wslTriggers = @(
+    (New-ScheduledTaskTrigger -AtStartup),
+    (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
+    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+      -RepetitionInterval (New-TimeSpan -Minutes 1))
   )
   $caddyArguments = 'run --config "' + $caddyFile + '" --adapter caddyfile'
   $caddyAction = New-ScheduledTaskAction -Execute $caddy -Argument $caddyArguments -WorkingDirectory $installRoot
@@ -106,11 +115,14 @@ try {
   Register-ScheduledTask -TaskName 'Slay the Spire router mapping' -Action $mappingAction -Trigger $hostTriggers `
     -Principal $taskPrincipal -Settings $settings `
     -Description 'Renews IPv4 and IPv6 multiplayer port mappings' -Force | Out-Null
+  $wslArguments = '-d Ubuntu-26.04 -u hieul -- bash -lc "systemctl --user start ' + `
+    'sts-actions-runner.service sts-room-server.service && exec sleep infinity"'
   $wslAction = New-ScheduledTaskAction -Execute "$env:WINDIR\System32\wsl.exe" `
-    -Argument '-d Ubuntu-26.04 -u hieul -- systemctl --user start sts-actions-runner.service sts-room-server.service'
-  Register-ScheduledTask -TaskName 'Slay the Spire WSL services' -Action $wslAction -Trigger $hostTriggers `
-    -Principal $taskPrincipal -Settings $settings `
-    -Description 'Starts the Slay the Spire room server and deployment runner' -Force | Out-Null
+    -Argument $wslArguments
+  Stop-ScheduledTask -TaskName 'Slay the Spire WSL services' -ErrorAction SilentlyContinue
+  Register-ScheduledTask -TaskName 'Slay the Spire WSL services' -Action $wslAction -Trigger $wslTriggers `
+    -Principal $taskPrincipal -Settings $wslSettings `
+    -Description 'Keeps the Slay the Spire room server and deployment runner WSL session alive' -Force | Out-Null
   if (-not $firewallRuleExisted) {
     New-NetFirewallRule -DisplayName 'Slay the Spire TLS proxy' -Direction Inbound -Action Allow `
       -Protocol TCP -LocalPort 80,443 -Program $caddy -Profile Any | Out-Null
@@ -140,6 +152,7 @@ try {
       elseif (Test-Path $mappingScript) { Remove-Item -LiteralPath $mappingScript -Force }
       if ($previousTemplate) { Copy-Item -LiteralPath $templateBackup -Destination $caddyTemplateFile -Force }
       elseif (Test-Path $caddyTemplateFile) { Remove-Item -LiteralPath $caddyTemplateFile -Force }
+      Stop-ScheduledTask -TaskName 'Slay the Spire WSL services' -ErrorAction SilentlyContinue
       foreach ($taskName in $managedTasks) {
         if ($taskBackups.ContainsKey($taskName)) {
           Register-ScheduledTask -TaskName $taskName -Xml $taskBackups[$taskName] -Force | Out-Null

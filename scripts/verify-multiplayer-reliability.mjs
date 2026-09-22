@@ -129,6 +129,25 @@ assert.doesNotMatch(wslWatchdog, /stop sts-room-server|migration-hold|held/)
 
 assert.match(windowsInstall, /New-ScheduledTaskTrigger -AtStartup/)
 assert.match(windowsInstall, /LogonType S4U/)
+assert.match(windowsInstall, /RestartCount 999/)
+assert.match(windowsInstall, /RepetitionInterval \(New-TimeSpan -Minutes 1\)/)
+assert.match(windowsInstall, /MultipleInstances IgnoreNew/)
+assert.match(
+  windowsInstall,
+  /\$wslArguments = [\s\S]{0,200}sts-actions-runner\.service sts-room-server\.service && exec sleep infinity/,
+)
+assert.match(
+  windowsInstall,
+  /Register-ScheduledTask -TaskName 'Slay the Spire WSL services'[\s\S]{0,160}-Trigger \$wslTriggers[\s\S]{0,100}-Settings \$wslSettings/,
+)
+assert.match(
+  windowsInstall,
+  /Stop-ScheduledTask -TaskName 'Slay the Spire WSL services'[^\n]*\n  Register-ScheduledTask -TaskName 'Slay the Spire WSL services'/,
+)
+assert.match(
+  windowsInstall,
+  /if \(-not \$installationSucceeded\)[\s\S]{0,900}Stop-ScheduledTask -TaskName 'Slay the Spire WSL services'[^\n]*\n      foreach \(\$taskName in \$managedTasks\)/,
+)
 assert.match(routerMapping, /Invoke-NatPmpMapping \$ipv4Route\.NextHop 443 18443/)
 assert.match(routerMapping, /Invoke-PcpMapping \$sourceIpv6 \$scopedIpv6Gateway 443 18443/)
 assert.match(routerMapping, /gh variable set MULTIPLAYER_SERVER_ORIGIN/)
