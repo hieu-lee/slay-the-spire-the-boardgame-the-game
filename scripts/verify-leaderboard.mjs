@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addLeaderboardRun, leaderboardSnapshot, MAX_LEADERBOARD_RUNS, normalizeLeaderboardRun, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
+import { addLeaderboardRun, leaderboardSnapshot, normalizeLeaderboardRun, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
 import { createRoom, createStore, joinRoom, saveStore, startRun } from './lib/rooms.mjs'
 import { createRoomServer } from './room-server.mjs'
+import { materializeLeaderboardArchive } from '../infra/validate-room-store.mjs'
 import { assert, assertDeepEqual, assertEqual, assertThrows, check, report, suite } from './lib/harness.mjs'
 
 suite('leaderboard')
@@ -84,6 +85,20 @@ const directory = mkdtempSync(join(tmpdir(), 'sts-leaderboard-'))
 const file = join(directory, 'rooms.json')
 try {
   const store = createStore({ file })
+  const initialFile = join(directory, 'first-save.json')
+  const initialStore = createStore({ file: initialFile })
+  createRoom(initialStore, { code: 'FIRSTS' })
+  addLeaderboardRun(initialStore, run({ id: 'browser-1234:first-save' }))
+  mkdirSync(`${initialFile}.leaderboard.json.tmp`)
+  assertThrows(() => saveStore(initialStore))
+  check('a failed first archive save leaves a loadable room and its recorded run', () => {
+    const restored = createStore({ file: initialFile })
+    assertEqual(restored.rooms.size, 1)
+    assertEqual(restored.leaderboardRuns.length, 1)
+    rmSync(`${initialFile}.leaderboard.json.tmp`, { recursive: true })
+    saveStore(restored)
+    assertEqual(createStore({ file: initialFile }).leaderboardRuns.length, 1)
+  })
   check('duplicate retries enrich a legacy floor count without duplicating the run', () => {
     assertEqual(addLeaderboardRun(store, run({ floorsCleared: null }), 10), true)
     assertEqual(addLeaderboardRun(store, run({ floorsCleared: 27 }), 11), true)
@@ -91,16 +106,233 @@ try {
     assertEqual(store.leaderboardRuns.length, 1)
     assertEqual(store.leaderboardRuns[0].floorsCleared, 27)
   })
-  check('a bounded public store cannot threaten room restart persistence', () => {
-    const full = { leaderboardRuns: Array(MAX_LEADERBOARD_RUNS).fill(store.leaderboardRuns[0]) }
-    assertThrows(() => addLeaderboardRun(full, run({ id: 'browser-1234:over-capacity' }), 12))
+  check('recorded runs never expire or hit a leaderboard capacity', () => {
+    const full = { leaderboardRuns: Array(20_000).fill(store.leaderboardRuns[0]) }
+    assertEqual(addLeaderboardRun(full, run({ id: 'browser-1234:over-capacity' }), 12), true)
+    assertEqual(full.leaderboardRuns.length, 20_001)
   })
   saveStore(store)
   check('the complete leaderboard remains in the persistent room store', () => {
     const serialized = JSON.parse(readFileSync(file, 'utf8'))
-    assertEqual(serialized.leaderboardRuns.length, 1)
+    assertEqual(serialized.leaderboardArchive, true)
+    assertEqual(serialized.leaderboardRuns, undefined)
+    assertEqual(JSON.parse(readFileSync(`${file}.leaderboard.json`, 'utf8')).length, 1)
     const restored = createStore({ file, restartRecovery: true })
     assertDeepEqual(restored.leaderboardRuns, store.leaderboardRuns)
+  })
+  const archiveModified = statSync(`${file}.leaderboard.json`, { bigint: true }).mtimeNs
+  createRoom(store, { code: 'LOGRUM' })
+  saveStore(store)
+  check('room-only saves do not rewrite the historical leaderboard archive', () => {
+    assertEqual(statSync(`${file}.leaderboard.json`, { bigint: true }).mtimeNs, archiveModified)
+    assertEqual(createStore({ file }).leaderboardRuns.length, 1)
+  })
+  const journalFile = join(directory, 'journal.json')
+  const journalStore = createStore({ file: journalFile })
+  addLeaderboardRun(journalStore, run({ id: 'browser-1234:journal-first' }))
+  saveStore(journalStore)
+  const snapshotModified = statSync(`${journalFile}.leaderboard.json`, { bigint: true }).mtimeNs
+  addLeaderboardRun(journalStore, run({ id: 'browser-1234:journal-second' }))
+  saveStore(journalStore)
+  check('new runs append to the archive journal without rewriting unlimited history', () => {
+    assertEqual(statSync(`${journalFile}.leaderboard.json`, { bigint: true }).mtimeNs, snapshotModified)
+    assertEqual(createStore({ file: journalFile }).leaderboardRuns.length, 2)
+    assert(readFileSync(`${journalFile}.leaderboard.log`, 'utf8').includes('journal-second'))
+  })
+  const intermediate = JSON.parse(readFileSync(journalFile, 'utf8'))
+  writeFileSync(journalFile, JSON.stringify({ ...intermediate, leaderboardRuns: createStore({ file: journalFile }).leaderboardRuns }))
+  check('main-store materialization protects older releases before archive replacement', () => {
+    assertEqual(JSON.parse(readFileSync(journalFile, 'utf8')).leaderboardRuns.length, 2)
+    assertEqual(JSON.parse(readFileSync(`${journalFile}.leaderboard.json`, 'utf8')).length, 1)
+    assertEqual(createStore({ file: journalFile }).leaderboardRuns.length, 2)
+  })
+  await materializeLeaderboardArchive(journalFile)
+  check('rollback materializes and clears the archive journal for older releases', () => {
+    assertEqual(JSON.parse(readFileSync(`${journalFile}.leaderboard.json`, 'utf8')).length, 2)
+    assertEqual(JSON.parse(readFileSync(journalFile, 'utf8')).leaderboardRuns.length, 2)
+    assertEqual(readFileSync(`${journalFile}.leaderboard.log`, 'utf8'), '')
+    assertEqual(createStore({ file: journalFile }).leaderboardRuns.length, 2)
+  })
+  const cappedRelease = join(directory, 'capped-release.mjs')
+  writeFileSync(cappedRelease, 'export const MAX_LEADERBOARD_RUNS = 2\n')
+  let capacityError
+  try { await materializeLeaderboardArchive(journalFile, cappedRelease) } catch (error) { capacityError = error }
+  check('rollback refuses a previous release whose archive is at its capacity', () => {
+    assert(capacityError?.message.includes('leaderboard capacity'))
+    assertEqual(JSON.parse(readFileSync(journalFile, 'utf8')).leaderboardRuns.length, 2)
+    assertEqual(JSON.parse(readFileSync(`${journalFile}.leaderboard.json`, 'utf8')).length, 2)
+  })
+  const legacyFile = join(directory, 'legacy.json')
+  const legacyRun = normalizeLeaderboardRun(run({ id: 'browser-1234:legacy-store' }), 3)
+  writeFileSync(legacyFile, JSON.stringify({ version: 1, rooms: [], leaderboardRuns: [legacyRun], profiles: [] }))
+  const legacyStore = createStore({ file: legacyFile })
+  saveStore(legacyStore)
+  check('legacy room stores migrate every recorded run to the archive', () => {
+    assertEqual(JSON.parse(readFileSync(`${legacyFile}.leaderboard.json`, 'utf8')).length, 1)
+    assertEqual(createStore({ file: legacyFile }).leaderboardRuns[0].id, legacyRun.id)
+  })
+  const migrationFile = join(directory, 'corrected-migration.json')
+  const migrationRun = normalizeLeaderboardRun(run({ id: 'browser-1234:corrected-migration', floorsCleared: null }), 1)
+  writeFileSync(migrationFile, JSON.stringify({ version: 1, rooms: [], leaderboardRuns: [migrationRun] }))
+  const migrationStore = createStore({ file: migrationFile })
+  addLeaderboardRun(migrationStore, run({ id: migrationRun.id, floorsCleared: 27 }), 2)
+  mkdirSync(`${migrationFile}.stats.json.tmp`)
+  assertThrows(() => saveStore(migrationStore))
+  check('a crash after the first archive write preserves corrected legacy main data', () => {
+    assertEqual(JSON.parse(readFileSync(`${migrationFile}.leaderboard.json`, 'utf8'))[0].floorsCleared, 27)
+    assertEqual(JSON.parse(readFileSync(migrationFile, 'utf8')).leaderboardRuns[0].floorsCleared, 27)
+    const restored = createStore({ file: migrationFile })
+    assertEqual(restored.leaderboardRuns[0].floorsCleared, 27)
+    rmSync(`${migrationFile}.stats.json.tmp`, { recursive: true })
+    saveStore(restored)
+    assertEqual(createStore({ file: migrationFile }).leaderboardRuns[0].floorsCleared, 27)
+  })
+  const missingArchiveFile = join(directory, 'missing-archive.json')
+  writeFileSync(missingArchiveFile, JSON.stringify({ version: 1, rooms: [], leaderboardArchive: true }))
+  check('a missing archive never silently resets the leaderboard', () => {
+    assertThrows(() => createStore({ file: missingArchiveFile }))
+  })
+  const nullArchiveFile = join(directory, 'null-archive.json')
+  writeFileSync(nullArchiveFile, JSON.stringify({ version: 1, rooms: [], leaderboardArchive: true }))
+  writeFileSync(`${nullArchiveFile}.leaderboard.json`, 'null')
+  check('an invalid null archive never silently resets the leaderboard', () => {
+    assertThrows(() => createStore({ file: nullArchiveFile }))
+    assertEqual(readFileSync(`${nullArchiveFile}.leaderboard.json`, 'utf8'), 'null')
+  })
+  const orphanFile = join(directory, 'orphan.json')
+  writeFileSync(`${orphanFile}.leaderboard.json`, JSON.stringify([legacyRun]))
+  check('a surviving archive cannot be overwritten when the room file is missing', () => {
+    assertThrows(() => createStore({ file: orphanFile }))
+    assertEqual(JSON.parse(readFileSync(`${orphanFile}.leaderboard.json`, 'utf8')).length, 1)
+  })
+  const orphanLogFile = join(directory, 'orphan-journal.json')
+  writeFileSync(`${orphanLogFile}.leaderboard.log`, JSON.stringify(legacyRun) + '\n')
+  check('a surviving leaderboard journal cannot be lost when its room store is missing', () => {
+    assertThrows(() => createStore({ file: orphanLogFile }))
+  })
+  const orphanSnapshotFile = join(directory, 'orphan-snapshot.json')
+  writeFileSync(orphanSnapshotFile, JSON.stringify({ version: 1, rooms: [], leaderboardRuns: [legacyRun] }))
+  writeFileSync(`${orphanSnapshotFile}.leaderboard.log`, JSON.stringify(legacyRun) + '\n')
+  let rejectedOrphanSnapshot = false
+  try { await materializeLeaderboardArchive(orphanSnapshotFile) } catch { rejectedOrphanSnapshot = true }
+  check('rollback refuses a journal without its archive even for legacy store files', () => {
+    assert(rejectedOrphanSnapshot)
+    assertEqual(JSON.parse(readFileSync(orphanSnapshotFile, 'utf8')).leaderboardRuns.length, 1)
+  })
+  const damagedLogFile = join(directory, 'damaged-journal.json')
+  saveStore(createStore({ file: damagedLogFile }))
+  writeFileSync(`${damagedLogFile}.leaderboard.log`, '{\n')
+  check('a malformed complete archive record fails closed instead of silently dropping runs', () => {
+    assertThrows(() => createStore({ file: damagedLogFile }))
+  })
+  const retryFile = join(directory, 'same-process-retry.json')
+  const retryStore = createStore({ file: retryFile })
+  addLeaderboardRun(retryStore, run({ id: 'browser-1234:retry-first' }))
+  saveStore(retryStore)
+  appendFileSync(`${retryFile}.leaderboard.log`, '{"id":')
+  addLeaderboardRun(retryStore, run({ id: 'browser-1234:retry-second' }))
+  saveStore(retryStore)
+  check('a same-process retry repairs a short archive write before appending', () => {
+    assertEqual(createStore({ file: retryFile }).leaderboardRuns.length, 2)
+    assert(readdirSync(directory).some((file) => file.startsWith('same-process-retry.json.leaderboard.log.partial-')))
+  })
+  const crashFile = join(directory, 'older-main-crash.json')
+  const crashStore = createStore({ file: crashFile })
+  addLeaderboardRun(crashStore, run({ id: 'browser-1234:crash-window', floorsCleared: null }))
+  saveStore(crashStore)
+  const oldRun = crashStore.leaderboardRuns[0]
+  const oldMain = JSON.parse(readFileSync(crashFile, 'utf8'))
+  delete oldMain.leaderboardArchive
+  oldMain.leaderboardRuns = [oldRun]
+  writeFileSync(crashFile, JSON.stringify(oldMain))
+  appendFileSync(`${crashFile}.leaderboard.log`, JSON.stringify({ ...oldRun, floorsCleared: 27 }) + '\n')
+  check('journaled corrections outrank an older-release main file after a crash', () => {
+    const restored = createStore({ file: crashFile })
+    assertEqual(restored.leaderboardRuns[0].floorsCleared, 27)
+    saveStore(restored)
+    assertEqual(createStore({ file: crashFile }).leaderboardRuns[0].floorsCleared, 27)
+  })
+  const interruptedFile = join(directory, 'interrupted.json')
+  const interruptedStore = createStore({ file: interruptedFile })
+  addLeaderboardRun(interruptedStore, run({ id: 'browser-1234:interrupted-first' }))
+  saveStore(interruptedStore)
+  addLeaderboardRun(interruptedStore, run({ id: 'browser-1234:interrupted-second' }))
+  saveStore(interruptedStore)
+  appendFileSync(`${interruptedFile}.leaderboard.log`, '{"id":')
+  const recovered = createStore({ file: interruptedFile })
+  check('restart retains complete runs and preserves an interrupted append for inspection', () => {
+    assertEqual(recovered.leaderboardRuns.length, 2)
+    assertEqual(recovered.interruptedJournals.size, 1)
+    saveStore(recovered)
+    assertEqual(createStore({ file: interruptedFile }).leaderboardRuns.length, 2)
+    assert(readdirSync(directory).some((file) => file.startsWith('interrupted.json.leaderboard.log.partial-')))
+  })
+  appendFileSync(`${interruptedFile}.leaderboard.log`, JSON.stringify(normalizeLeaderboardRun(run({ id: 'browser-1234:valid-tail' }))))
+  const validTail = createStore({ file: interruptedFile })
+  check('a complete final record without a newline is retained on restart', () => {
+    assertEqual(validTail.leaderboardRuns.length, 3)
+    saveStore(validTail)
+    assertEqual(createStore({ file: interruptedFile }).leaderboardRuns.length, 3)
+  })
+  appendFileSync(`${interruptedFile}.leaderboard.log`, '{"id":')
+  await materializeLeaderboardArchive(interruptedFile)
+  check('rollback repairs an interrupted append before checkpointing the archive', () => {
+    assertEqual(JSON.parse(readFileSync(`${interruptedFile}.leaderboard.json`, 'utf8')).length, 3)
+    assertEqual(JSON.parse(readFileSync(interruptedFile, 'utf8')).leaderboardRuns.length, 3)
+    assertEqual(readFileSync(`${interruptedFile}.leaderboard.log`, 'utf8'), '')
+    assertEqual(readdirSync(directory).filter((file) => file.startsWith('interrupted.json.leaderboard.log.partial-')).length, 2)
+  })
+  const rollbackFile = join(directory, 'rollback.json')
+  const emptyRollbackFile = join(directory, 'empty-rollback.json')
+  await materializeLeaderboardArchive(emptyRollbackFile)
+  check('a rollback before the first room-store save needs no archive materialization', () => {
+    assertEqual(existsSync(emptyRollbackFile), false)
+    assertEqual(existsSync(`${emptyRollbackFile}.leaderboard.json`), false)
+  })
+  const rollbackStore = createStore({ file: rollbackFile })
+  addLeaderboardRun(rollbackStore, run({ id: 'browser-1234:old-release', floorsCleared: null }), 2)
+  saveStore(rollbackStore)
+  const rollbackRaw = JSON.parse(readFileSync(rollbackFile, 'utf8'))
+  const recoveredDeck = [{ defId: 'strike_ironclad', upgraded: false }]
+  rollbackRaw.leaderboardRuns = [legacyRun, normalizeLeaderboardRun(run({ id: 'browser-1234:old-release', floorsCleared: 27,
+    finalDeck: recoveredDeck }), 2)]
+  writeFileSync(rollbackFile, JSON.stringify(rollbackRaw))
+  await materializeLeaderboardArchive(rollbackFile)
+  check('rolling back to an older release keeps archived leaderboard history', () => {
+    const serialized = JSON.parse(readFileSync(rollbackFile, 'utf8'))
+    assertEqual(serialized.leaderboardRuns.length, 2)
+    assertEqual(serialized.leaderboardRuns.find((run) => run.id === 'browser-1234:old-release').floorsCleared, 27)
+    const loaded = createStore({ file: rollbackFile })
+    assertEqual(loaded.leaderboardRuns.length, 2)
+    assertDeepEqual(loaded.leaderboardRuns.find((run) => run.id === 'browser-1234:old-release').finalDeck, recoveredDeck)
+    saveStore(loaded)
+    assertEqual(JSON.parse(readFileSync(`${rollbackFile}.leaderboard.json`, 'utf8'))
+      .find((run) => run.id === 'browser-1234:old-release').floorsCleared, 27)
+  })
+
+  const expirationFile = join(directory, 'expiration.json')
+  const expirationStore = createStore({ file: expirationFile })
+  addLeaderboardRun(expirationStore, run(), 1)
+  const staleRoom = createRoom(expirationStore, { code: 'LOGOLD' })
+  const freshRoom = createRoom(expirationStore, { code: 'LOGFRE' })
+  const sweepAt = Date.now()
+  staleRoom.lastActivityAt = sweepAt - 24 * 60 * 60_000 - 1
+  freshRoom.lastActivityAt = sweepAt - 24 * 60 * 60_000
+  saveStore(expirationStore)
+  const expirationService = createRoomServer({ storeFile: expirationFile, saveDelayMs: 0 })
+  await expirationService.listen(0)
+  expirationService.sweepRooms(sweepAt)
+  check('only inactive rooms expire after 24 hours, never historical runs', () => {
+    assertEqual(expirationService.store.rooms.has('LOGOLD'), false)
+    assertEqual(expirationService.store.rooms.has('LOGFRE'), true)
+    assertEqual(expirationService.store.leaderboardRuns.length, 1)
+  })
+  await expirationService.close({ preserveRooms: true })
+  check('expired rooms stay deleted while leaderboard history survives restart', () => {
+    const restored = createStore({ file: expirationFile })
+    assertEqual(restored.rooms.has('LOGOLD'), false)
+    assertEqual(restored.rooms.has('LOGFRE'), true)
+    assertEqual(restored.leaderboardRuns.length, 1)
   })
 
   const startupFile = join(directory, 'startup.json')
@@ -129,7 +361,8 @@ try {
     const decks = winningDecksPage([migrated]).rows
     assertDeepEqual(new Set(decks.map((deck) => `${deck.username}:${deck.character}`)),
       new Set(['BestDefect2002:defect', 'phuotthu:watcher']))
-    assertDeepEqual(JSON.parse(readFileSync(startupFile, 'utf8')).leaderboardRuns[0], migrated)
+    assertDeepEqual(createStore({ file: startupFile }).leaderboardRuns[0], migrated)
+    assertDeepEqual(JSON.parse(readFileSync(`${startupFile}.leaderboard.log`, 'utf8').trim()), migrated)
   })
   await startupService.close({ preserveRooms: true })
 
@@ -180,6 +413,11 @@ try {
         new Map([['Ann', decks.Ann], ['Bo', decks.Bo]]))
       assertDeepEqual(new Set(winningDecksPage([recorded]).rows.map((deck) => deck.username)), new Set(['Ann', 'Bo']))
     })
+    const refreshedSummary = await fetch(`${origin}/api/leaderboard`).then((value) => value.json())
+    check('public leaderboard summary cache refreshes after an accepted room result', () => {
+      assertEqual(refreshedSummary.totalRuns, 3)
+      assertEqual(refreshedSummary.rows.find((row) => row.characters.length === 2).runs, 1)
+    })
 
     const lostRoom = createRoom(service.store, { code: 'LOGLOS' })
     const lostLeader = joinRoom(lostRoom, { name: 'Cara', character: 'defect' })
@@ -221,15 +459,15 @@ try {
     fullRoom.run = { ...fullRoom.run, phase: 'victory', act: 3,
       campaign: { ...fullRoom.run.campaign, bossesDefeated: 3, highestBossActDefeated: 3 } }
     const existingRuns = service.store.leaderboardRuns
-    service.store.leaderboardRuns = Array(MAX_LEADERBOARD_RUNS).fill(existingRuns[0])
+    service.store.leaderboardRuns = Array(20_000).fill(existingRuns[0])
     const full = await fetch(`${origin}/api/rooms/LOGFUL/action`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-room-token': fullLeader.token },
       body: JSON.stringify({ action: { kind: 'finishRun' } }),
     })
-    check('leaderboard capacity refusal leaves a multiplayer run retryable', () => {
-      assertEqual(full.status, 503)
-      assertEqual(fullRoom.run.campaign.finalized, false)
-      assertEqual(service.store.leaderboardRuns.length, MAX_LEADERBOARD_RUNS)
+    check('finishing a multiplayer run records it beyond 20,000 historical runs', () => {
+      assertEqual(full.status, 200)
+      assertEqual(fullRoom.run.campaign.finalized, true)
+      assertEqual(service.store.leaderboardRuns.length, 20_001)
     })
     service.store.leaderboardRuns = existingRuns
 

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { CARDS, faceOf } from '../../src/game/cards.ts'
 
 export const HERO_NAMES = {
@@ -25,6 +26,18 @@ export const validDeckType = (name) => typeof name === 'string' && name.length <
 
 export const soloDeck = (run) => run.characters.length === 1
   ? run.winningDecks?.[0]?.finalDeck ?? run.finalDeck ?? null : null
+
+export const deckHash = (run) => createHash('sha256').update(JSON.stringify(soloDeck(run))).digest('hex')
+
+export function classificationRecord(run) {
+  return { id: run.id, hero: run.character, hash: deckHash(run),
+    ...(run.deckType ? { deckType: run.deckType } : {}),
+    ...(run.deckClassificationRetry ? { retry: run.deckClassificationRetry } : {}) }
+}
+
+export function recordDeckClassification(store, run) {
+  store.statsChanges?.set(run.id, classificationRecord(run))
+}
 
 const validCard = ({ defId, upgraded, attachedGemId }) => Object.hasOwn(CARDS, defId) &&
   (upgraded === false || upgraded === true && Boolean(CARDS[defId].upgrade)) && (attachedGemId === undefined ||

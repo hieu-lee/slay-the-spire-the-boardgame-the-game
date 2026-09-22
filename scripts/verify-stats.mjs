@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-import { mkdtempSync, rmSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CARDS } from '../src/game/cards.ts'
 import { addLeaderboardRun, normalizeLeaderboardRun } from './lib/leaderboard.mjs'
 import { createRoom, createStore, joinRoom, saveStore, startRun } from './lib/rooms.mjs'
-import { classifyDeckType, INITIAL_DECK_TYPES, randomDeck, statsSnapshot } from './lib/stats.mjs'
+import { classifyDeckType, deckHash, INITIAL_DECK_TYPES, randomDeck, statsSnapshot } from './lib/stats.mjs'
 import { createRoomServer } from './room-server.mjs'
+import { materializeLeaderboardArchive } from '../infra/validate-room-store.mjs'
 import { joinQueries, parseStatsExpression, validateStatsQuery } from '../src/stats-query.ts'
 import { assert, assertDeepEqual, assertEqual, assertThrows, check, report, suite } from './lib/harness.mjs'
 
@@ -235,6 +236,169 @@ try {
     assert(restored.deckTypes.includes('Defect Newly Discovered Combo'))
     assertEqual(restored.leaderboardRuns[0].deckType, 'Defect Lightning Orb Focus')
     assertDeepEqual(restored.deckClassificationBudget, store.deckClassificationBudget)
+    assertEqual(JSON.parse(readFileSync(file, 'utf8')).leaderboardRuns, undefined)
+    assertEqual(JSON.parse(readFileSync(`${file}.leaderboard.json`, 'utf8'))[0].deckType, 'Defect Lightning Orb Focus')
+  })
+  const migrationFile = join(directory, 'stats-migration.json')
+  const archived = [normalizeLeaderboardRun(run(55)), normalizeLeaderboardRun(run(56, { character: 'ironclad' })),
+    { ...normalizeLeaderboardRun(run(57)), deckClassificationRetry: { after: 2_000_000_000_000, hash: 'a'.repeat(64) } },
+    { ...normalizeLeaderboardRun(run(58, { finalDeck: [{ defId: 'claw', upgraded: false }] })), deckType: 'Defect Claw Spam' }]
+  const legacy = [
+    { ...normalizeLeaderboardRun(run(55)), deckType: 'Defect Lightning Orb Focus' },
+    { ...normalizeLeaderboardRun(run(56)), deckType: 'Defect Mixed Orb' },
+    { ...normalizeLeaderboardRun(run(57)), deckType: 'Defect Lightning Orb Focus' },
+    normalizeLeaderboardRun(run(58, { finalDeck: undefined, winningDecks: [
+      { username: 'Room Owner', character: 'defect', finalDeck: [{ defId: 'dual_cast', upgraded: false }] },
+    ] })),
+  ]
+  writeFileSync(migrationFile, JSON.stringify({ version: 1, rooms: [], leaderboardArchive: true,
+    leaderboardRuns: legacy, deckTypes: ['Defect Newly Discovered Combo'], deckClassificationBudget: { day: 123, used: 4 } }))
+  writeFileSync(`${migrationFile}.leaderboard.json`, JSON.stringify(archived))
+  const migrated = createStore({ file: migrationFile })
+  check('split archive migration retains matching classification without carrying stale hero types', () => {
+    assertEqual(migrated.leaderboardRuns[0].deckType, 'Defect Lightning Orb Focus')
+    assertEqual(migrated.leaderboardRuns[1].deckType, undefined)
+    assertEqual(migrated.leaderboardRuns[2].deckType, 'Defect Lightning Orb Focus')
+    assertEqual(migrated.leaderboardRuns[2].deckClassificationRetry, undefined)
+    assertEqual(migrated.leaderboardRuns[3].deckType, undefined)
+    assertEqual(statsSnapshot([migrated.leaderboardRuns[3]], query(card('dual_cast'))).pending, 1)
+    assert(migrated.deckTypes.includes('Defect Newly Discovered Combo'))
+    assertDeepEqual(migrated.deckClassificationBudget, { day: 123, used: 4 })
+    assertEqual(migrated.leaderboardDirty, false)
+    assert(migrated.leaderboardChanges.size > 0)
+    saveStore(migrated)
+    assertEqual(JSON.parse(readFileSync(`${migrationFile}.leaderboard.json`, 'utf8'))[0].deckType, undefined)
+    assertEqual(createStore({ file: migrationFile }).leaderboardRuns[0].deckType, 'Defect Lightning Orb Focus')
+    assert(readFileSync(`${migrationFile}.stats.log`, 'utf8').includes('Defect Lightning Orb Focus'))
+    assertEqual(createStore({ file: migrationFile }).statsStateDirty, false)
+  })
+
+  const rollbackFile = join(directory, 'stats-rollback.json')
+  const rollbackStore = createStore({ file: rollbackFile })
+  addLeaderboardRun(rollbackStore, run(59))
+  saveStore(rollbackStore)
+  const archiveFile = `${rollbackFile}.leaderboard.json`
+  const archiveModified = statSync(archiveFile, { bigint: true }).mtimeNs
+  let rollbackCalls = 0
+  const rollbackServer = createRoomServer({ storeFile: rollbackFile, openAiKey: 'local-test-key', deckClassifier: async () => {
+    rollbackCalls += 1
+    return 'Defect Newly Discovered Combo'
+  } })
+  try {
+    await rollbackServer.listen(0)
+    for (let attempt = 0; attempt < 40 && !rollbackServer.store.leaderboardRuns[0]?.deckType; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+  } finally { await rollbackServer.close() }
+  check('classification appends metadata without rewriting the archived run history', () => {
+    assertEqual(rollbackCalls, 1)
+    assertEqual(statSync(archiveFile, { bigint: true }).mtimeNs, archiveModified)
+    assertEqual(JSON.parse(readFileSync(archiveFile, 'utf8'))[0].deckType, undefined)
+    assert(readFileSync(`${rollbackFile}.stats.log`, 'utf8').includes('Defect Newly Discovered Combo'))
+    assertEqual(createStore({ file: rollbackFile }).leaderboardRuns[0].deckType, 'Defect Newly Discovered Combo')
+  })
+  const retryStatsStore = createStore({ file: rollbackFile })
+  appendFileSync(`${rollbackFile}.stats.log`, '{"id":')
+  const classifiedRun = retryStatsStore.leaderboardRuns[0]
+  retryStatsStore.statsChanges.set(classifiedRun.id, { id: classifiedRun.id, hero: classifiedRun.character,
+    hash: deckHash(classifiedRun), deckType: classifiedRun.deckType })
+  saveStore(retryStatsStore)
+  check('a same-process retry repairs a short stats write before appending', () => {
+    assertEqual(createStore({ file: rollbackFile }).leaderboardRuns[0].deckType, 'Defect Newly Discovered Combo')
+    assert(readdirSync(directory).some((file) => file.startsWith('stats-rollback.json.stats.log.partial-')))
+  })
+  appendFileSync(`${rollbackFile}.stats.log`, '{"id":')
+  const recoveredStatsServer = createRoomServer({ storeFile: rollbackFile, openAiKey: '' })
+  try {
+    await recoveredStatsServer.listen(0)
+    check('server startup repairs an interrupted stats append without losing complete classifications', () => {
+      assertEqual(recoveredStatsServer.store.leaderboardRuns[0].deckType, 'Defect Newly Discovered Combo')
+      assertEqual(recoveredStatsServer.store.interruptedJournals.size, 0)
+      assert(readdirSync(directory).some((file) => file.startsWith('stats-rollback.json.stats.log.partial-')))
+      assertEqual(createStore({ file: rollbackFile }).leaderboardRuns[0].deckType, 'Defect Newly Discovered Combo')
+    })
+  } finally { await recoveredStatsServer.close() }
+  const taxonomyStateFile = `${rollbackFile}.stats.json`
+  const incompleteTaxonomy = JSON.parse(readFileSync(taxonomyStateFile, 'utf8'))
+  incompleteTaxonomy.deckTypes = [...INITIAL_DECK_TYPES]
+  writeFileSync(taxonomyStateFile, JSON.stringify(incompleteTaxonomy))
+  const incompleteMain = JSON.parse(readFileSync(rollbackFile, 'utf8'))
+  incompleteMain.deckTypes = [...INITIAL_DECK_TYPES]
+  writeFileSync(rollbackFile, JSON.stringify(incompleteMain))
+  check('a crash between archetype log append and taxonomy save recovers the learned name', () => {
+    const recovered = createStore({ file: rollbackFile })
+    assertEqual(recovered.leaderboardRuns[0].deckType, 'Defect Newly Discovered Combo')
+    assert(recovered.deckTypes.includes('Defect Newly Discovered Combo'))
+    assertEqual(recovered.statsStateDirty, true)
+    saveStore(recovered)
+    assert(JSON.parse(readFileSync(taxonomyStateFile, 'utf8')).deckTypes.includes('Defect Newly Discovered Combo'))
+  })
+  const deferredFile = join(directory, 'deferred-retry.json')
+  const deferredRun = normalizeLeaderboardRun(run(60))
+  const deferredHash = deckHash(deferredRun)
+  const olderRetry = { after: 2_000_000_000_000, hash: deferredHash }
+  const newerRetry = { after: olderRetry.after + 86_400_000, hash: deferredHash }
+  writeFileSync(deferredFile, JSON.stringify({ version: 1, rooms: [], leaderboardArchive: true }))
+  writeFileSync(`${deferredFile}.leaderboard.json`, JSON.stringify([{ ...deferredRun, deckClassificationRetry: olderRetry }]))
+  writeFileSync(`${deferredFile}.stats.log`, JSON.stringify({ id: deferredRun.id, hero: deferredRun.character,
+    hash: deferredHash, retry: newerRetry }) + '\n')
+  let prematureCalls = 0
+  const deferredServer = createRoomServer({ storeFile: deferredFile, openAiKey: 'local-test-key',
+    deckClassifier: async () => { prematureCalls += 1; return 'Defect Lightning Orb Focus' } })
+  try {
+    await deferredServer.listen(0)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    check('a newer retry journal entry supersedes the archived retry across another restart', () => {
+      assertDeepEqual(deferredServer.store.leaderboardRuns[0].deckClassificationRetry, newerRetry)
+      assertEqual(prematureCalls, 0)
+      assertDeepEqual(createStore({ file: deferredFile }).leaderboardRuns[0].deckClassificationRetry, newerRetry)
+    })
+  } finally { await deferredServer.close() }
+  await materializeLeaderboardArchive(rollbackFile)
+  check('rollback materializes sidecar labels, taxonomy and paid attempts for older releases', () => {
+    const raw = JSON.parse(readFileSync(rollbackFile, 'utf8'))
+    assertEqual(raw.leaderboardRuns[0].deckType, 'Defect Newly Discovered Combo')
+    assert(raw.deckTypes.includes('Defect Newly Discovered Combo'))
+    assertEqual(raw.deckClassificationBudget.used, 1)
+  })
+  const downgraded = JSON.parse(readFileSync(rollbackFile, 'utf8'))
+  downgraded.leaderboardRuns = downgraded.leaderboardRuns.map((entry) => normalizeLeaderboardRun(entry, entry.recordedAt))
+  delete downgraded.deckTypes
+  delete downgraded.deckClassificationBudget
+  writeFileSync(rollbackFile, JSON.stringify(downgraded))
+  writeFileSync(archiveFile, JSON.stringify(downgraded.leaderboardRuns))
+  check('redeploy restores learned types, classifications and attempts after an older release saves', () => {
+    const restored = createStore({ file: rollbackFile })
+    assertEqual(restored.leaderboardRuns[0].deckType, 'Defect Newly Discovered Combo')
+    assert(restored.deckTypes.includes('Defect Newly Discovered Combo'))
+    assertEqual(restored.deckClassificationBudget.used, 1)
+  })
+  downgraded.deckClassificationBudget = { ...rollbackServer.store.deckClassificationBudget, used: 3 }
+  writeFileSync(rollbackFile, JSON.stringify(downgraded))
+  check('a newer paid-attempt count from an older stats-aware release wins on redeploy', () => {
+    const restored = createStore({ file: rollbackFile })
+    assertEqual(restored.deckClassificationBudget.used, 3)
+    saveStore(restored)
+    assertEqual(JSON.parse(readFileSync(`${rollbackFile}.stats.json`, 'utf8')).deckClassificationBudget.used, 3)
+  })
+  const changed = JSON.parse(readFileSync(rollbackFile, 'utf8'))
+  changed.leaderboardRuns = JSON.parse(readFileSync(archiveFile, 'utf8'))
+  delete changed.leaderboardRuns[0].finalDeck
+  changed.leaderboardRuns[0].winningDecks = [{ username: 'Tester', character: 'defect',
+    finalDeck: [{ defId: 'claw', upgraded: false }] }]
+  changed.leaderboardRuns[0].combatsFinished = 12
+  changed.leaderboardRuns[0].damageDealt = 200
+  delete changed.leaderboardArchive
+  writeFileSync(rollbackFile, JSON.stringify(changed))
+  check('older-release score and deck replacements retain their metrics without stale classifications', () => {
+    const restored = createStore({ file: rollbackFile })
+    assertDeepEqual(restored.leaderboardRuns[0].winningDecks, changed.leaderboardRuns[0].winningDecks)
+    assertEqual(restored.leaderboardRuns[0].combatsFinished, 12)
+    assertEqual(restored.leaderboardRuns[0].damageDealt, 200)
+    assertEqual(restored.leaderboardRuns[0].deckType, undefined)
+    saveStore(restored)
+    const redeployed = createStore({ file: rollbackFile }).leaderboardRuns[0]
+    assertDeepEqual(redeployed.winningDecks, restored.leaderboardRuns[0].winningDecks)
+    assertEqual(redeployed.damageDealt, 200)
   })
 
   let payload
@@ -392,7 +556,12 @@ try {
       assertEqual(limited.store.deckClassificationBudget.used, 1)
     })
   } finally { await limited.close() }
-  check('daily model budget survives server restarts', () => assertEqual(createStore({ file: limitedFile }).deckClassificationBudget.used, 1))
+  check('daily model budget and newly classified archive rows survive server restarts', () => {
+    const restored = createStore({ file: limitedFile })
+    assertEqual(restored.deckClassificationBudget.used, 1)
+    assertEqual(restored.leaderboardRuns[0].deckType, 'Defect Lightning Orb Focus')
+    assertEqual(restored.leaderboardRuns[1].deckType, undefined)
+  })
 
   let resolveHeld
   let signalHeld

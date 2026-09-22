@@ -1,10 +1,9 @@
-import { primeStatsDeck, soloDeck, validDeckType } from './stats.mjs'
+import { primeStatsDeck, recordDeckClassification, soloDeck, validDeckType } from './stats.mjs'
 
 const CHARACTERS = new Set(['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'])
 const CHARACTER_ORDER = [...CHARACTERS]
 const MODES = new Set(['standard', 'daily', 'custom'])
 const compareNames = new Intl.Collator('en', { sensitivity: 'base' }).compare
-export const MAX_LEADERBOARD_RUNS = 20_000
 
 const bad = (message) => { throw Object.assign(new Error(message), { status: 400 }) }
 const integer = (value, name, minimum, maximum) => {
@@ -94,6 +93,46 @@ export function restoreLeaderboardRuns(values) {
   return restored
 }
 
+function missingRunDetails(previous, run) {
+  return {
+    ...(previous.floorsCleared == null && run.floorsCleared != null ? { floorsCleared: run.floorsCleared } : {}),
+    ...(previous.finalDeck === undefined && previous.winningDecks === undefined && run.finalDeck !== undefined
+      ? { finalDeck: run.finalDeck } : {}),
+    ...(previous.winningDecks === undefined && run.winningDecks !== undefined
+      ? { winningDecks: run.winningDecks, finalDeck: undefined } : {}),
+    ...(previous.username === undefined && run.username !== undefined ? { username: run.username } : {}),
+  }
+}
+
+export function mergeLeaderboardRuns(legacyRuns, archivedRuns, { preferLegacyRuns = false, journalIds = new Set() } = {}) {
+  const runs = new Map(legacyRuns.map((run) => [run.id, run]))
+  for (const run of archivedRuns) {
+    const legacy = runs.get(run.id)
+    const merged = legacy ? { ...run, ...(preferLegacyRuns && !journalIds.has(run.id) ? legacy : missingRunDetails(run, legacy)) } : run
+    if (merged.character !== run.character || JSON.stringify(soloDeck(merged)) !== JSON.stringify(soloDeck(run))) {
+      delete merged.deckType
+      delete merged.deckClassificationRetry
+    }
+    if (legacy && merged.character === legacy.character &&
+        JSON.stringify(soloDeck(merged)) === JSON.stringify(soloDeck(legacy))) {
+      if (!merged.deckType && legacy.deckType) {
+        merged.deckType = legacy.deckType
+        delete merged.deckClassificationRetry
+      } else if (!merged.deckType && !merged.deckClassificationRetry && legacy.deckClassificationRetry) {
+        merged.deckClassificationRetry = legacy.deckClassificationRetry
+      }
+    }
+    runs.set(run.id, merged)
+  }
+  return [...runs.values()]
+}
+
+function markLeaderboardRun(store, run) {
+  store.leaderboardRevision = (store.leaderboardRevision ?? 0) + 1
+  if (store.leaderboardChanges) store.leaderboardChanges.set(run.id, run)
+  else store.leaderboardDirty = true
+}
+
 export function addLeaderboardRun(store, value, recordedAt = Date.now()) {
   const run = normalizeLeaderboardRun(value, recordedAt)
   const existing = store.leaderboardRuns.findIndex((entry) => entry.id === run.id)
@@ -108,14 +147,13 @@ export function addLeaderboardRun(store, value, recordedAt = Date.now()) {
       if (Object.keys(updated).every((key) => JSON.stringify(updated[key]) === JSON.stringify(previous[key])) &&
           Object.keys(previous).every((key) => Object.hasOwn(updated, key))) return false
       store.leaderboardRuns[existing] = updated
+      markLeaderboardRun(store, updated)
+      if (updated.character !== previous.character || JSON.stringify(soloDeck(updated)) !== JSON.stringify(soloDeck(previous)))
+        recordDeckClassification(store, updated)
       return true
     }
     if (previous.winningDecks) return false
-    const updates = {
-      ...(previous.floorsCleared == null && run.floorsCleared != null ? { floorsCleared: run.floorsCleared } : {}),
-      ...(previous.finalDeck === undefined && run.finalDeck !== undefined ? { finalDeck: run.finalDeck } : {}),
-      ...(previous.username === undefined && run.username !== undefined ? { username: run.username } : {}),
-    }
+    const updates = missingRunDetails(previous, run)
     if (Object.keys(updates).length) {
       const updated = { ...previous, ...updates }
       if (JSON.stringify(soloDeck(updated)) !== JSON.stringify(soloDeck(previous))) {
@@ -123,14 +161,14 @@ export function addLeaderboardRun(store, value, recordedAt = Date.now()) {
         delete updated.deckClassificationRetry
       }
       store.leaderboardRuns[existing] = updated
+      markLeaderboardRun(store, updated)
+      if (JSON.stringify(soloDeck(updated)) !== JSON.stringify(soloDeck(previous))) recordDeckClassification(store, updated)
       return true
     }
     return false
   }
-  if (store.leaderboardRuns.length >= MAX_LEADERBOARD_RUNS) {
-    throw Object.assign(new Error('Leaderboard capacity reached'), { status: 503 })
-  }
   store.leaderboardRuns.push(run)
+  markLeaderboardRun(store, run)
   return true
 }
 
@@ -205,11 +243,11 @@ export function winningDecksPage(runs, params = new URLSearchParams()) {
       !['asc', 'desc'].includes(direction) || new Set(selectedCharacters).size !== selectedCharacters.length ||
       selectedCharacters.some((character) => !CHARACTERS.has(character)) ||
       ascension !== 'all' && !/^(?:[0-9]|1[0-3])$/.test(ascension) ||
-      cursor !== null && !/^(?:0|[1-9][0-9]{0,5})(?::[0-3])?$/.test(cursor)) bad('Invalid winning deck query')
+      cursor !== null && !/^(?:0|[1-9][0-9]*)(?::[0-3])?$/.test(cursor)) bad('Invalid winning deck query')
   const value = entry => sort === 'cardCount' ? entry.finalDeck.length
     : sort === 'character' ? entry.characters.join(',')
     : sort === 'username' ? entry.username : entry.run[sort]
-  // The archive is capped at 20,000 runs; sort metadata before copying one page.
+  // Sort metadata before copying one page.
   const eligible = runs.flatMap((run, index) => Array.isArray(run.winningDecks)
     ? run.winningDecks.map((deck, deckIndex) => ({ run, index: `${index}:${deckIndex}`,
       order: index * 4 + deckIndex, username: deck.username, characters: [deck.character], finalDeck: deck.finalDeck }))
