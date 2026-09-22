@@ -280,14 +280,14 @@ export function StartMenu({
         <button type="button" aria-label="Single Player" data-selected={selection === 'Single Player'}
           onFocus={() => setSelection('Single Player')} onMouseEnter={() => setSelection('Single Player')}
           ref={mainMenuButton} onClick={() => { warmRunSetup(hero.id); setScreen('mode') }}>Single Player</button>
-        <button type="button" aria-label="Replay" data-selected={selection === 'Replay'}
-          onFocus={() => setSelection('Replay')} onMouseEnter={() => setSelection('Replay')}
-          onClick={() => setScreen('replay')}>Replay</button>
         {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" data-selected={selection === 'Multiplayer'}
           onFocus={() => setSelection('Multiplayer')} onMouseEnter={() => setSelection('Multiplayer')} onClick={onOnline}>Multiplayer</button>
           : null}
         <button type="button" aria-label="Leaderboard" data-selected={selection === 'Leaderboard'}
           onFocus={() => setSelection('Leaderboard')} onMouseEnter={() => setSelection('Leaderboard')} onClick={onLeaderboard}>Leaderboard</button>
+        <button type="button" aria-label="Replay" data-selected={selection === 'Replay'}
+          onFocus={() => setSelection('Replay')} onMouseEnter={() => setSelection('Replay')}
+          onClick={() => setScreen('replay')}>Replay</button>
         <button type="button" aria-label="Compendium" data-selected={selection === 'Compendium'}
           onFocus={() => setSelection('Compendium')} onMouseEnter={() => setSelection('Compendium')} onClick={onCompendium}>Compendium</button>
         <button type="button" aria-label="Achievements" data-selected={selection === 'Achievements'}
