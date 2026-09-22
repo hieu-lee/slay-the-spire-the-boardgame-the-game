@@ -3579,12 +3579,9 @@ function CombatScreenView({
         : [...pending.picked, card.uid].slice(-need)
       const next = { ...pending, picked, choiceConfirmed: false, chamberChoiceConfirmed: false }
       setPending(next)
-      // True Grit exhausts a card AND blocks any player, so satisfying the
-      // choice must not skip the ally step.
-      if (!any && !next.needsEnemy && !next.needsAlly &&
-        next.playerIds.length >= next.playerChoices && !next.needsSwitch && picked.length === need) {
-        stageOrCommit(next)
-      }
+      // The card may already have been dragged onto its target. Let the shared
+      // readiness check commit as soon as its fixed hand cost is satisfied.
+      if (!any && picked.length === need) stageOrCommit(next)
       return
     }
 
