@@ -34,6 +34,20 @@ const videoPreloads = new Map<string, VideoPreload>()
 const readyVideoPreloads = new Set<string>()
 let activeVideoPreloads = 0
 
+function releaseVideo(video: HTMLVideoElement) {
+  video.pause()
+  video.removeAttribute('src')
+  video.load()
+}
+
+// React calls this cleanup when the video is replaced or combat unmounts.
+function mountedVideo(video: HTMLVideoElement | null) {
+  // StrictMode rehearses ref cleanup while the node is still mounted.
+  if (video) return () => queueMicrotask(() => {
+    if (!video.isConnected) releaseVideo(video)
+  })
+}
+
 function runVideoPreloads() {
   while (activeVideoPreloads < 2 && videoPreloadQueue.length) {
     const task = videoPreloadQueue.shift()!
@@ -49,6 +63,7 @@ function runVideoPreloads() {
       video.removeEventListener('loadeddata', loaded)
       video.removeEventListener('canplaythrough', loaded)
       video.removeEventListener('error', failed)
+      releaseVideo(video)
       task.stop = undefined
       activeVideoPreloads -= 1
       if (videoPreloads.get(task.src) === task) videoPreloads.delete(task.src)
@@ -64,8 +79,6 @@ function runVideoPreloads() {
     const failed = () => settle(false)
     const abort = () => {
       task.cancelled = true
-      video.removeAttribute('src')
-      video.load()
       settle(false)
     }
     task.stop = abort
@@ -194,6 +207,7 @@ export function CombatAnimation({
   const [warmedVideo, setWarmedVideo] = useState('')
   const [loadedImage, setLoadedImage] = useState('')
   const stallTimer = useRef(0)
+  const cancelReadyFrame = useRef<() => void>(() => undefined)
   const videoSrc = combatVideoPath(src)
   const videoRequest = mediaSrc ?? videoSrc
   const wantsVideo = !forceWebp && useSafariCombatVideo && videoSrc !== src
@@ -209,7 +223,7 @@ export function CombatAnimation({
     clearStallTimer()
     stallTimer.current = window.setTimeout(() => setFailedVideo(videoRequest), 1_500)
   }
-  useEffect(() => clearStallTimer, [videoRequest])
+  useEffect(() => () => { clearStallTimer(); cancelReadyFrame.current() }, [videoRequest])
   useEffect(() => {
     if (!wantsVideo || !loop) return
     return preloadCombatVideo(videoRequest, () => setWarmedVideo(videoRequest), true)
@@ -219,11 +233,22 @@ export function CombatAnimation({
     const timeout = window.setTimeout(() => setFailedVideo(videoRequest), 5_000)
     return () => window.clearTimeout(timeout)
   }, [videoFailed, videoLoaded, videoRequest, videoWarmed, wantsVideo])
-  if (wantsVideo && videoWarmed && !videoFailed) {
+  // A native video poster can disappear before WebKit composites its first
+  // alpha frame. Paint the same canvas underneath until that frame is visible.
+  const renderVideo = wantsVideo && videoWarmed && !videoFailed
+  const poster = posterSrc ?? (renderVideo ? src : undefined)
+  const waitingPoster = poster && !(renderVideo ? videoLoaded : loadedImage === imageSrc) ? {
+    backgroundImage: `url(${poster})`,
+    backgroundPosition: 'center bottom',
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: 'contain',
+  } : undefined
+  if (renderVideo) {
     return <video
       {...data}
+      ref={mountedVideo}
       className={className}
-      style={{ ...style, visibility: hidden ? 'hidden' : style?.visibility }}
+      style={{ ...style, ...waitingPoster, visibility: hidden ? 'hidden' : style?.visibility }}
       crossOrigin={videoSrc.startsWith('http') ? 'anonymous' : undefined}
       src={mediaSrc ?? videoSrc}
       poster={posterSrc ?? src}
@@ -236,9 +261,14 @@ export function CombatAnimation({
       aria-hidden={alt === '' || undefined}
       onLoadedData={(event) => {
         const video = event.currentTarget
-        setLoadedVideo(videoRequest)
+        const request = video.src
+        cancelReadyFrame.current()
         void video.play().then(() => {
-          afterVideoFrame(video, () => onReady?.(video))
+          if (!video.isConnected || video.src !== request) return
+          cancelReadyFrame.current = afterVideoFrame(video, () => {
+            setLoadedVideo(videoRequest)
+            onReady?.(video)
+          })
         }, () => setFailedVideo(videoRequest))
       }}
       onPlaying={clearStallTimer}
@@ -248,12 +278,6 @@ export function CombatAnimation({
       onError={() => setFailedVideo(videoRequest)}
     />
   }
-  const waitingPoster = posterSrc && loadedImage !== imageSrc ? {
-    backgroundImage: `url(${posterSrc})`,
-    backgroundPosition: 'center bottom',
-    backgroundRepeat: 'no-repeat',
-    backgroundSize: 'contain',
-  } : undefined
   return <img
     {...data}
     className={className}

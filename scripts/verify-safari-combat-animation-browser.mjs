@@ -388,7 +388,7 @@ try {
           } finally {
             HTMLMediaElement.prototype.load = originalLoad
           }
-        }), { initial: 2, afterFirst: 'four.mov', afterCancel: 'three.mov', afterCached: 4, aborted: 1,
+        }), { initial: 2, afterFirst: 'four.mov', afterCancel: 'three.mov', afterCached: 4, aborted: 4,
           ready: ['one-a', 'one-b', 'four', 'three', 'one-c'] },
         'Safari MOV warmup was not visible-first, bounded, deduplicated, cached, abortable, and per-subscriber ready')
         await preloadContext.close()

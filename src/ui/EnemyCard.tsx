@@ -464,7 +464,6 @@ export function EnemyCard({
     ? assetPath('combat/rigged/downfall_demon-airborne.webp')
     : enemyAnimationImagePath(def, 'attack')
   const currentIdleArt = enemyAnimationImagePath(def, 'idle')
-  const currentFallbackArt = enemyImagePath(def)
   const currentBossProjectileArt = bossProjectileImagePath(currentBossArtId)
   const currentProjectileImpact = enemyProjectileImpactPath(currentBossArtId)
   const bossAttackRequested = Boolean(animatedEnemy && acting && bossHasAttackAction)
@@ -829,7 +828,7 @@ export function EnemyCard({
           key={`${def.artId ?? def.id}-${bossAttacking ? 'attack' : 'idle'}`}
           className="enemy__art--cutout"
           src={art}
-          posterSrc={bossAttacking ? currentFallbackArt : undefined}
+          posterSrc={bossAttacking ? currentIdleArt : undefined}
           forceWebp={presentedBossAttack?.forceWebp}
           loop={!bossAttacking}
           data-animation-asset={bossAttacking ? presentedBossAttack?.source : art}

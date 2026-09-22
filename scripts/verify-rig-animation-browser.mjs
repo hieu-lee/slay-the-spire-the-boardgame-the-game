@@ -819,7 +819,7 @@ try {
       },id)
       await page.waitForTimeout(1000)
       await page.evaluate(()=>{const f=window.fixture;f.state.phase='enemy';f.render()})
-      await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='attack')
+      await page.locator('.enemy--acting').waitFor()
       assert.equal(await page.locator('.boss-projectile').count(),expected,`${id}: multiplayer projectile targets`)
       assert.equal(await page.locator('.enemy-projectile-impact').count(),expected,`${id}: multiplayer impact targets`)
       await page.waitForTimeout(780)

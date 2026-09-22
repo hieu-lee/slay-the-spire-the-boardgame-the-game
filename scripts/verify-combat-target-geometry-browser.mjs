@@ -103,10 +103,9 @@ try {
             const media = [...document.querySelectorAll('.enemy__art--cutout,.seat__portrait > :is(img, video)')]
             const loaded = i => i instanceof HTMLVideoElement ? i.readyState >= 2 && i.videoWidth : i.complete && i.naturalWidth
             if (!document.querySelector('.enemy') || !media.length || !media.every(loaded)) return false
-            await Promise.all(media.filter(i => i instanceof HTMLVideoElement).map(async video => {
-              if (video.paused) await video.play()
-              await new Promise(resolve => video.requestVideoFrameCallback(resolve))
-            }))
+            // A disposed video will never deliver another frame. Use the
+            // bounded helper, then retry against the currently mounted media.
+            await Promise.all(media.filter(i => i instanceof HTMLVideoElement).map(window.fixture.frame))
             await new Promise(resolve => requestAnimationFrame(resolve))
             return media.every(i => i.isConnected && loaded(i))
           })
@@ -344,8 +343,10 @@ try {
           }
           // Commit the last local target choice before injecting another render.
           await page.waitForFunction(() => document.querySelector('.combat__end-turn')?.disabled === false)
-          // A preceding attack expires 2310ms after arrival. Resolve the real
-          // Storm+ choices while it recovers, so idle remounts during the beam.
+          // Resolve real Storm+ choices during attack recovery. The idle media
+          // stays mounted now; verify its identity separately from the short
+          // beam lifetime instead of racing two independent presentation clocks.
+          const idlePortrait = await page.locator('.seat__interactive[data-character="defect"] .seat__portrait > :is(img, video)').elementHandle()
           await page.evaluate(() => {
             const f = window.fixture
             f.state.presentationEvents.push({ seq: f.seq, kind: 'card', actorId: 'p1', sourceId: 'strike_defect',
@@ -364,7 +365,7 @@ try {
           assert.deepEqual(events, [orb, orb])
           const geometry = await page.waitForFunction(() => {
             const seat = document.querySelector('.seat:has(.defect-evoke)')
-            if (!seat || document.querySelector('.character-attack') || document.querySelectorAll('.defect-evoke__beam').length !== 2) return false
+            if (!seat || document.querySelectorAll('.defect-evoke__beam').length !== 2) return false
             const beams = [...document.querySelectorAll('.defect-evoke')].map(e => {
               const art = e.closest('.seat__portrait').querySelector(':scope > :is(img, video)'), r = art.getBoundingClientRect()
               const size = window.fixture.size(art)
@@ -426,6 +427,9 @@ try {
           }, { png: shot.toString('base64'), orb, ray })
           await page.locator('.defect-evoke--test-clone').evaluateAll(clones => clones.forEach(clone => clone.remove()))
           assert(painted > 10, `${engineName}/${screen}/party${partySize}/${orb}: beam is clipped before reaching the enemy`)
+          await page.locator('.character-attack').waitFor({ state: 'detached' })
+          assert(await idlePortrait.evaluate(art => art.isConnected), 'attack recovery remounted the idle portrait')
+          await idlePortrait.dispose()
           await page.evaluate(() => { window.fixture.restoration++; window.fixture.render() })
           await page.waitForFunction(() => !document.querySelector('.defect-evoke'))
         }

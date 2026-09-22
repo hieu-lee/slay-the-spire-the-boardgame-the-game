@@ -1,11 +1,8 @@
-/* Phone and desktop combat share the same animation/VFX rules. Save layer
-   memory only while an actor is idle; active attack classes keep their short,
-   compositor-promoted layers from attack-timing.css. */
-html[data-mobile-performance='true']
-  .seat:not([class*='seat--attack-']) .seat__portrait > :is(img, video),
-html[data-mobile-performance='true']
-  .enemy:not(.enemy--acting):not(.enemy--falling) .enemy__portrait > .enemy__art--cutout {
-  will-change: auto;
+/* An idle sprite still changes every frame. Keep its filters on an actor-sized
+   layer so WebKit does not repaint the battlefield behind it on every frame. */
+.seat__portrait > :is(img, video):not([data-static-art]):not([data-guardian-transition]),
+.enemy:is([data-animation='idle'], [data-animation='attack']) .enemy__portrait > .enemy__art--cutout {
+  will-change: transform;
 }
 
 html[data-mobile-performance='true'] .choice-modal::backdrop {
