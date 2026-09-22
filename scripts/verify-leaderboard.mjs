@@ -46,6 +46,11 @@ check('submissions are validated at the public boundary', () => {
   }] })))
 })
 
+check('losing submissions retain their final deck for future result views', () => {
+  const finalDeck = [{ defId: 'strike', upgraded: false }]
+  assertDeepEqual(normalizeLeaderboardRun(run({ highestBossActDefeated: 0, finalDeck }), 1).finalDeck, finalDeck)
+})
+
 check('rows aggregate the requested per-character and ascension metrics', () => {
   const snapshot = leaderboardSnapshot([
     normalizeLeaderboardRun(run(), 1),
@@ -175,6 +180,27 @@ try {
         new Map([['Ann', decks.Ann], ['Bo', decks.Bo]]))
       assertDeepEqual(new Set(winningDecksPage([recorded]).rows.map((deck) => deck.username)), new Set(['Ann', 'Bo']))
     })
+
+    const lostRoom = createRoom(service.store, { code: 'LOGLOS' })
+    const lostLeader = joinRoom(lostRoom, { name: 'Cara', character: 'defect' })
+    startRun(lostRoom, lostLeader.token, { seed: 127 })
+    lostRoom.run = { ...lostRoom.run, phase: 'defeat', floorsCleared: 4, combatsFinished: 2 }
+    lostRoom.run.players[0].damageStats.attack = 17
+    const lostDeck = lostRoom.run.players[0].deck.map(({ defId, upgraded }) => ({ defId, upgraded }))
+    const lost = await fetch(`${origin}/api/rooms/LOGLOS/action`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-room-token': lostLeader.token },
+      body: JSON.stringify({ action: { kind: 'finishRun' } }),
+    })
+    const lostRun = service.store.leaderboardRuns.at(-1)
+    check('the room authority records player details and statistics after a loss', () => {
+      assertEqual(lost.status, 200)
+      assertEqual(lostRun.highestBossActDefeated, 0)
+      assertEqual(lostRun.damageDealt, 17)
+      assertEqual(lostRun.floorsCleared, 4)
+      assertDeepEqual(lostRun.winningDecks, [{ username: 'Cara', character: 'defect', finalDeck: lostDeck }])
+      assertEqual(winningDecksPage([lostRun]).total, 0)
+    })
+    service.store.leaderboardRuns.pop()
     service.store.leaderboardRuns.pop()
     room.campaignProgress.unspentMarks = 0
     room.run.campaignProgress = room.campaignProgress

@@ -80,11 +80,9 @@ export function queueFinishedSoloRun(run: RunState) {
   const submission: LeaderboardSubmission = {
     id: `${installationId()}:${run.campaign.runId}:${run.seed}`,
     profileToken: savedProfile()?.token,
-    ...(run.campaign.highestBossActDefeated >= 3 ? {
-      finalDeck: run.players[0]!.deck.map(({ defId, upgraded, attachedGemId }) => ({
-        defId, upgraded, ...(attachedGemId ? { attachedGemId } : {}),
-      })),
-    } : {}),
+    finalDeck: run.players[0]!.deck.map(({ defId, upgraded, attachedGemId }) => ({
+      defId, upgraded, ...(attachedGemId ? { attachedGemId } : {}),
+    })),
     character: run.players[0]!.character,
     characters: [run.players[0]!.character],
     ascension: run.ascension,

@@ -193,10 +193,11 @@ try {
     queueFinishedSoloRun(run)
     return JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]')
   })
-  check('a queued legacy result gains its known floor count without duplicating or replacing prior stats', () => {
+  check('a queued legacy loss gains its final deck and known floor count without replacing prior stats', () => {
     assertEqual(enrichedOutbox.length, 1)
     assertEqual(enrichedOutbox[0].floorsCleared, 4)
     assertEqual(enrichedOutbox[0].damageDealt, 777)
+    assertEqual(enrichedOutbox[0].finalDeck.length, combatRun.players[0].deck.length)
   })
   await page.evaluate(() => {
     window.__LEADERBOARD_LEGACY__ = true
@@ -263,7 +264,7 @@ try {
     const saved = rooms.store.leaderboardRuns.at(-1)
     assertEqual(saved.username, 'ArchiveTester')
     assertEqual(JSON.stringify(saved.finalDeck), JSON.stringify(winningDeck))
-    assertEqual(rooms.store.leaderboardRuns.at(-2).finalDeck, undefined)
+    assert(rooms.store.leaderboardRuns.at(-2).finalDeck.length > 0)
   })
   check('the leaderboard surface raised no browser errors', () => assertEqual(errors.length, 0, errors.join('\n')))
 } finally {

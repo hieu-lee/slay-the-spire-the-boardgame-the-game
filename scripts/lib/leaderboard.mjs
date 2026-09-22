@@ -47,8 +47,8 @@ export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
   return {
     id: value.id,
     ...(typeof value.username === 'string' && value.username.length <= 24 ? { username: value.username } : {}),
-    ...(value.highestBossActDefeated >= 3 && value.finalDeck !== undefined ? { finalDeck: finalDeck(value.finalDeck) } : {}),
-    ...(value.highestBossActDefeated >= 3 && value.winningDecks !== undefined ? { winningDecks: personalDecks(value.winningDecks) } : {}),
+    ...(value.finalDeck !== undefined ? { finalDeck: finalDeck(value.finalDeck) } : {}),
+    ...(value.winningDecks !== undefined ? { winningDecks: personalDecks(value.winningDecks) } : {}),
     character: party[0],
     characters: party,
     ascension: integer(value.ascension, 'Ascension', 0, 13),
@@ -93,8 +93,8 @@ export function addLeaderboardRun(store, value, recordedAt = Date.now()) {
     const previous = store.leaderboardRuns[existing]
     const updates = {
       ...(previous.floorsCleared == null && run.floorsCleared != null ? { floorsCleared: run.floorsCleared } : {}),
-      ...(previous.highestBossActDefeated >= 3 && previous.finalDeck === undefined && run.finalDeck !== undefined ? { finalDeck: run.finalDeck } : {}),
-      ...(previous.highestBossActDefeated >= 3 && previous.winningDecks === undefined && run.winningDecks !== undefined
+      ...(previous.finalDeck === undefined && run.finalDeck !== undefined ? { finalDeck: run.finalDeck } : {}),
+      ...(previous.winningDecks === undefined && run.winningDecks !== undefined
         ? { winningDecks: run.winningDecks, finalDeck: undefined } : {}),
       ...(previous.username === undefined && run.username !== undefined ? { username: run.username } : {}),
     }
@@ -225,12 +225,12 @@ export function roomLeaderboardRun(room) {
   return {
     id: `room:${room.code}:${run.campaign.runId}:${run.seed}`,
     characters: run.players.map((player) => player.character),
-    ...(run.campaign.highestBossActDefeated >= 3 ? { winningDecks: run.players.map((player) => ({
+    winningDecks: run.players.map((player) => ({
       username: player.name,
       character: player.character,
       finalDeck: player.deck.map(({ defId, upgraded, attachedGemId }) =>
         ({ defId, upgraded, ...(attachedGemId ? { attachedGemId } : {}) })),
-    })) } : {}),
+    })),
     ascension: run.ascension,
     mode: run.meta.mode,
     damageStatsComplete: run.combatsFinished !== undefined,

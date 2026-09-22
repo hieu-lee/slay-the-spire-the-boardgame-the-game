@@ -40,7 +40,7 @@ try {
   assert.equal(server.store.leaderboardRuns[0].username, profile.username)
   assert.deepEqual(server.store.leaderboardRuns[0].finalDeck, run.finalDeck)
   assert.equal('profileToken' in server.store.leaderboardRuns[0], false)
-  assert.equal(normalizeLeaderboardRun({ ...run, highestBossActDefeated: 2 }).finalDeck, undefined)
+  assert.deepEqual(normalizeLeaderboardRun({ ...run, highestBossActDefeated: 2 }).finalDeck, run.finalDeck)
   assert.deepEqual(normalizeLeaderboardRun({ ...run, highestBossActDefeated: 4 }).finalDeck, run.finalDeck)
   assert.throws(() => normalizeLeaderboardRun({ ...run, finalDeck: [{ defId: 'bad', upgraded: 1 }] }))
   const store = { leaderboardRuns: [] }
