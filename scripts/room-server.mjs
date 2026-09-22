@@ -32,8 +32,8 @@ const JSON_HEADERS = {
 const MAX_BODY = 64 * 1024
 const MULTIPLAYER_PROTOCOL_VERSION = 1
 const MAX_ROOMS = 100
-const ROOM_TTL_MS = 6 * 60 * 60 * 1000
-const RESUMABLE_ROOM_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const ROOM_TTL_MS = 24 * 60 * 60 * 1000
+const TURN_CREDENTIAL_TTL_SECONDS = 6 * 60 * 60
 const HEARTBEAT_MS = 30_000
 const releaseDirectory = basename(process.cwd())
 const RELEASE_SHA = /^[0-9a-f]{40}$/.test(releaseDirectory) ? releaseDirectory : null
@@ -254,10 +254,9 @@ export function createRoomServer({
           publish(room)
         }
       }
-      const ttl = room?.run || room?.campaignProgress?.finishedRunIds?.length > 0 ? RESUMABLE_ROOM_TTL_MS : ROOM_TTL_MS
-      if (now - touchedAt >= ttl) {
+      if (now - touchedAt > ROOM_TTL_MS) {
         if (room?.run?.campaign.finalized) {
-          try { addLeaderboardRun(store, roomLeaderboardRun(room)) } catch { continue }
+          try { addLeaderboardRun(store, roomLeaderboardRun(room)) } catch {}
         }
         for (const [socket, client] of sockets) if (client.code === code) socket.close(4004, 'Room expired')
         store.rooms.delete(code)
@@ -301,7 +300,7 @@ export function createRoomServer({
         {
           method: 'POST',
           headers: { authorization: `Bearer ${turnApiToken}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ ttl: ROOM_TTL_MS / 1000 }),
+          body: JSON.stringify({ ttl: TURN_CREDENTIAL_TTL_SECONDS }),
           signal: AbortSignal.timeout(10_000),
         },
       )

@@ -586,7 +586,7 @@ try {
   const aged = createRoom(store, { code: 'AGEDXX' })
   const agedSeat = joinRoom(aged, { name: 'Bo', character: 'silent' })
   startRun(aged, agedSeat.token, { seed: 99 })
-  aged.lastActivityAt = Date.now() - 31 * 24 * 60 * 60 * 1000
+  aged.lastActivityAt = Date.now() - 25 * 60 * 60 * 1000
   saveStore(store)
   const restarted = createRoomServer({ storeFile: file })
   restarted.sweepRooms()
@@ -609,19 +609,26 @@ const finalized = createRoom(expiring.store, { code: 'FINALZ' })
 const finalizedSeat = joinRoom(finalized, { name: 'Bo', character: 'silent' })
 startRun(finalized, finalizedSeat.token, { seed: 100 })
 finalized.run = { ...finalized.run, phase: 'defeat', campaign: { ...finalized.run.campaign, finalized: true } }
-for (const room of [empty, active, journal, finalized]) expiring.touch(room)
-expiring.sweepRooms(Date.now() + 7 * 60 * 60 * 1000)
-check('expiry removes abandoned lobbies but preserves resumable runs and campaign journals', () => {
-  assertEqual(expiring.store.rooms.has(empty.code), false)
+const damaged = structuredClone(finalized)
+damaged.code = 'DAMAGE'
+damaged.run.meta.mode = 'invalid'
+expiring.store.rooms.set(damaged.code, damaged)
+for (const room of [empty, active, journal, finalized, damaged]) expiring.touch(room)
+expiring.sweepRooms(empty.lastActivityAt + 24 * 60 * 60 * 1000)
+check('all room types remain available through exactly one inactive day', () => {
+  assertEqual(expiring.store.rooms.has(empty.code), true)
   assertEqual(expiring.store.rooms.has(active.code), true)
   assertEqual(expiring.store.rooms.has(journal.code), true)
   assertEqual(expiring.store.rooms.has(finalized.code), true)
+  assertEqual(expiring.store.rooms.has(damaged.code), true)
 })
-expiring.sweepRooms(Date.now() + 31 * 24 * 60 * 60 * 1000)
-check('resumable rooms expire after the bounded thirty-day recovery window', () => {
+expiring.sweepRooms(Date.now() + 25 * 60 * 60 * 1000)
+check('all room types expire after one inactive day', () => {
+  assertEqual(expiring.store.rooms.has(empty.code), false)
   assertEqual(expiring.store.rooms.has(active.code), false)
   assertEqual(expiring.store.rooms.has(journal.code), false)
   assertEqual(expiring.store.rooms.has(finalized.code), false)
+  assertEqual(expiring.store.rooms.has(damaged.code), false, 'failed leaderboard archival kept a room alive')
   assertEqual(expiring.store.leaderboardRuns.some((run) => run.id.includes(':FINALZ:')), true)
 })
 await expiring.close()
