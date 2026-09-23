@@ -1321,14 +1321,6 @@ check('exactly one room is reachable at the start', () => {
   assertEqual(reachableAtStart, 1, 'the opening encounter is the only way in')
 })
 
-check('the opening map starts scrolled to its reachable room', async () => {
-  const map = page.locator('.map:not([inert])')
-  const room = map.locator('.room--reachable')
-  const [port, node] = await Promise.all([map.boundingBox(), room.boundingBox()])
-  assert(port && node && node.y >= port.y && node.y + node.height <= port.y + port.height,
-    'the opening encounter is outside the map scrollport')
-})
-
 await page.evaluate(() => {
   const run = structuredClone(window.__STS_DEBUG__.getRun())
   run.meta.ruleset = 'downfall'

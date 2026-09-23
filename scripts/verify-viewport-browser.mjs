@@ -114,6 +114,11 @@ try {
     await checkRunCompendium('neow-compendium')
     await setRun(base)
     await capture('map', '.app-shell')
+    const map = page.locator('.map:not([inert])')
+    const reachableRoom = map.locator('.room--reachable')
+    const [port, node] = await Promise.all([map.boundingBox(), reachableRoom.boundingBox()])
+    assert(port && node && node.y >= port.y && node.y + node.height <= port.y + port.height,
+      'the opening encounter is outside the map scrollport')
     for (const [kind, selector] of [['campfire', '.campfire'], ['merchant', '.merchant-arrival'], ['event', '.event-stage'], ['treasure', '.treasure-stage']]) {
       await setRun(roomRun(kind))
       await capture(kind, selector)
