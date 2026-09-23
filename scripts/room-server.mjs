@@ -121,7 +121,7 @@ export function createRoomServer({
   if (!Number.isSafeInteger(maxDeckClassificationsPerDay) || maxDeckClassificationsPerDay < 0) throw new Error('Invalid deck classification daily limit')
   const store = createStore({ file: storeFile, restartRecovery, restartReconnectMs })
   if (classifierEnabled && deckClassifier === classifyDeckType && !codexReady()) {
-    console.error('Deck classification disabled: dedicated ChatGPT Codex login or sandbox is unavailable')
+    console.error('Deck classification disabled: local Codex CLI login or sandbox is unavailable')
     classifierEnabled = false
   }
   if (store.deckClassifierRelease !== releaseDirectory) {

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { EventEmitter } from 'node:events'
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Codex } from '@openai/codex-sdk'
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import { addLeaderboardRun, normalizeLeaderboardRun } from './lib/leaderboard.mjs'
 import { createRoom, createStore, joinRoom, saveStore, startRun } from './lib/rooms.mjs'
@@ -482,42 +482,58 @@ try {
 
   const threadId = '123e4567-e89b-12d3-a456-426614174000'
   const calls = []
-  const simulatedCodex = (name) => (command, args, options) => {
-    const child = new EventEmitter()
-    child.stdout = new EventEmitter()
-    child.stderr = new EventEmitter()
-    child.kill = () => {}
-    child.stdin = new EventEmitter()
-    child.stdin.end = (prompt) => {
-      calls.push({ command, args, options, prompt })
-      queueMicrotask(() => {
-        child.stdout.emit('data', `${JSON.stringify({ type: 'thread.started', thread_id: threadId })}\n`)
-        child.stdout.emit('data', `${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: JSON.stringify({ name }) } })}\n`)
-        child.stdout.emit('data', '{"type":"turn.completed"}\n')
-        child.emit('close', 0)
-      })
+  const mockCodex = (responses, error) => (options) => {
+    const makeThread = (resumeId, threadOptions) => {
+      const thread = { id: resumeId, async runStreamed(prompt, turnOptions) {
+        calls.push({ options, threadOptions, prompt, turnOptions, resumeId })
+        return { events: (async function* () {
+          for (const event of responses) {
+            if (event?.type === 'thread.started') thread.id = event.thread_id
+            yield event
+          }
+          if (error) throw error
+        })() }
+      } }
+      return thread
     }
-    return child
+    return { startThread: (threadOptions) => makeThread(null, threadOptions),
+      resumeThread: (resumeId, threadOptions) => makeThread(resumeId, threadOptions) }
   }
-  const type = await classifyDeckType(normalizeLeaderboardRun(run(6)), INITIAL_DECK_TYPES, undefined,
-    simulatedCodex('Defect Mixed Orb'))
+  const simulatedCodex = (name) => mockCodex([
+    { type: 'thread.started', thread_id: threadId },
+    { type: 'item.completed', item: { type: 'agent_message', text: JSON.stringify({ name }) } },
+    { type: 'turn.completed' },
+  ])
+  const existingApiKey = process.env.OPENAI_API_KEY
+  process.env.OPENAI_API_KEY = 'sk-test-not-for-codex'
+  let type
+  try {
+    type = await classifyDeckType(normalizeLeaderboardRun(run(6)), INITIAL_DECK_TYPES, undefined,
+      simulatedCodex('Defect Mixed Orb'))
+  } finally {
+    if (existingApiKey === undefined) delete process.env.OPENAI_API_KEY
+    else process.env.OPENAI_API_KEY = existingApiKey
+  }
   const resumedType = await classifyDeckType(archive[0], INITIAL_DECK_TYPES, threadId,
     simulatedCodex('defect mixed orb'))
-  check('server-only Codex CLI creates and resumes a read-only GPT-6 Sol high thread', () => {
+  check('server-only Codex SDK creates and resumes a read-only GPT-6 Sol high thread', () => {
     assertDeepEqual(type, { type: 'Defect Mixed Orb', threadId })
     assertDeepEqual(resumedType, type)
-    assert(calls[0].args.includes('gpt-6-sol'))
-    assert(calls[0].args.includes('model_reasoning_effort="high"'))
-    assert(!calls[0].args.some((argument) => argument.startsWith('sandbox_mode=')))
-    assert(calls[0].args.includes('default_permissions="deck_classifier"'))
-    assert(calls[0].args.includes('permissions.deck_classifier.filesystem={":root"="read","/codex-home"="deny"}'))
-    assert(calls[0].args.includes('--ignore-user-config'))
-    assert(calls[0].args.includes('--strict-config'))
-    assert(calls[0].args.includes('--output-schema'))
-    assertEqual(calls[0].command, '/bin/bash')
-    assert(calls[0].args[0].endsWith('/codex-deck-worker.sh'))
-    assertDeepEqual(calls[1].args.slice(-3), ['resume', threadId, '-'])
-    assert(!Object.keys(calls[0].options.env).some((key) => /KEY|TOKEN|SECRET/.test(key)))
+    assertEqual(calls[0].threadOptions.model, 'gpt-6-sol')
+    assertEqual(calls[0].threadOptions.modelReasoningEffort, 'high')
+    assertEqual(calls[0].threadOptions.sandboxMode, undefined)
+    assertEqual(calls[0].threadOptions.approvalPolicy, 'never')
+    assertEqual(calls[0].threadOptions.webSearchMode, 'disabled')
+    assertEqual(calls[0].threadOptions.workingDirectory, '/workspace')
+    assertEqual(calls[0].options.config.default_permissions, 'deck_classifier')
+    assert(calls[0].options.configOverrides.includes('permissions.deck_classifier.filesystem={":root"="read","/codex-home"="deny"}'))
+    assert(calls[0].options.codexPathOverride.endsWith('/codex-deck-worker.sh'))
+    assertDeepEqual(calls[0].turnOptions.outputSchema.required, ['name'])
+    assertEqual(calls[1].resumeId, threadId)
+    assertEqual(calls[0].options.env.OPENAI_API_KEY, 'sk-test-not-for-codex')
+    assert(!Object.keys(calls[0].options.env).some((key) => key !== 'OPENAI_API_KEY' && /KEY|TOKEN|SECRET/.test(key)))
+    assert(readFileSync(new URL('../infra/systemd/sts-room-server.service', import.meta.url), 'utf8')
+      .includes('EnvironmentFile=-%h/.config/slay-the-spire-server/codex.env'))
     assert(JSON.parse(calls[0].prompt.slice(calls[0].prompt.indexOf('\n') + 1)).cards.some((card) => card.name === 'Dual Cast'))
   })
   const hermitDeck = (id, floorsCleared) => normalizeLeaderboardRun(run(id, { character: 'hermit', floorsCleared,
@@ -611,20 +627,23 @@ try {
     assertEqual(missingBinError?.message, 'Codex CLI is unavailable or not authenticated')
   })
   const isolatedHome = join(directory, 'isolated-auth')
-  const isolatedAuth = join(isolatedHome, '.local/share/slay-the-spire-server/codex/auth.json')
+  const isolatedAuth = join(isolatedHome, '.codex/auth.json')
   const fakeCodex = join(isolatedHome, 'cli/bin/codex.js')
   const standaloneCodex = join(isolatedHome, 'cli/codex')
   const fakeBwrapDir = join(isolatedHome, 'bin')
-  mkdirSync(join(isolatedHome, '.local/share/slay-the-spire-server/codex'), { recursive: true })
+  mkdirSync(join(isolatedHome, '.codex'), { recursive: true, mode: 0o700 })
   mkdirSync(join(isolatedHome, 'cli/bin'), { recursive: true })
   mkdirSync(fakeBwrapDir)
   writeFileSync(fakeCodex, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
   writeFileSync(standaloneCodex, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
-  writeFileSync(join(fakeBwrapDir, 'bwrap'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$HOME/bwrap-args"\nprintf called > "$HOME/bwrap-invoked"\n', { mode: 0o755 })
-  const fakeLogin = (executable = fakeCodex) => spawnSync('/bin/bash', [calls[0].args[0], 'login', 'status'], {
+  writeFileSync(join(fakeBwrapDir, 'bwrap'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$HOME/bwrap-args"\nprintf "%s\\n" "$*" >> "$HOME/bwrap-calls"\nprintf called > "$HOME/bwrap-invoked"\n', { mode: 0o755 })
+  const fakeEnvironment = (executable = fakeCodex) => ({
+    HOME: isolatedHome, USER: process.env.USER, PATH: `${fakeBwrapDir}:${process.env.PATH}`,
+    NODE_BINARY: process.execPath, STS_CODEX_BIN: executable,
+  })
+  const fakeLogin = (executable = fakeCodex) => spawnSync('/bin/bash', [calls[0].options.codexPathOverride, 'login', 'status'], {
     cwd: process.cwd(), stdio: 'ignore', env: {
-      HOME: isolatedHome, USER: process.env.USER, PATH: `${fakeBwrapDir}:${process.env.PATH}`,
-      NODE_BINARY: process.execPath, STS_CODEX_BIN: executable,
+      ...fakeEnvironment(executable),
     },
   }).status
   writeFileSync(isolatedAuth, JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'fake-never-send' }), { mode: 0o600 })
@@ -633,21 +652,53 @@ try {
   writeFileSync(isolatedAuth, JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: 'fake-never-send' } }), { mode: 0o600 })
   const unsupportedBinaryStatus = fakeLogin(standaloneCodex)
   const chatgptLoginStatus = fakeLogin()
-  check('the isolated worker rejects API-key auth and allows only dedicated ChatGPT credentials', () => {
-    assertEqual(keyLoginStatus, 66)
-    assertEqual(keyReachedWorker, false)
+  const schemaDirectory = mkdtempSync(join(tmpdir(), 'codex-output-schema-'))
+  const schemaFile = join(schemaDirectory, 'schema.json')
+  writeFileSync(schemaFile, '{"type":"object"}')
+  const schemaStatus = spawnSync('/bin/bash', [calls[0].options.codexPathOverride, 'exec', '--output-schema', schemaFile], {
+    cwd: process.cwd(), stdio: 'ignore', env: fakeEnvironment(),
+  }).status
+  rmSync(schemaDirectory, { recursive: true, force: true })
+  check('the sandbox reuses either local CLI login and mounts the SDK schema without exposing the room store', () => {
+    assertEqual(keyLoginStatus, 0)
+    assertEqual(keyReachedWorker, true)
     assertEqual(unsupportedBinaryStatus, 66)
     assertEqual(chatgptLoginStatus, 0)
-    assertEqual(statSync(join(isolatedHome, '.local/share/slay-the-spire-server/codex')).mode & 0o777, 0o700)
+    assertEqual(schemaStatus, 0)
+    assertEqual(statSync(join(isolatedHome, '.codex')).mode & 0o777, 0o700)
     const mounts = readFileSync(join(isolatedHome, 'bwrap-args'), 'utf8').split('\n')
     assert(mounts.includes(join(process.cwd(), 'src/game')))
     assert(mounts.includes('/workspace/src/game'))
-    assert(mounts.includes(join('/workspace', 'scripts', 'lib', 'deck-type.schema.json')))
+    assert(mounts.includes(join(isolatedHome, '.codex')))
+    assert(mounts.includes('/codex-home'))
+    assert(mounts.includes(schemaFile))
+    assert(mounts.includes('--ignore-user-config'))
+    assert(mounts.includes('--strict-config'))
+    assert(mounts.includes('--unsetenv'))
+    assert(mounts.includes('OPENAI_API_KEY'))
     assert(!mounts.some((source, index) => source === process.cwd() && mounts[index + 1] === '/workspace'))
+    assert(!mounts.includes(join(isolatedHome, '.local/share/slay-the-spire-server/rooms.json')))
     assert(!mounts.some((source, index) => source === '/opt' && mounts[index + 1] === '/opt'))
     assert(!mounts.some((source, index) => source === '/etc/ssl' && mounts[index + 1] === '/etc/ssl'))
     assert(mounts.includes('/etc/ssl/certs'))
     if (process.execPath.startsWith('/opt/')) assert(mounts.includes(join(process.execPath, '..', '..')))
+  })
+  const envKeyStatus = spawnSync('/bin/bash', [calls[0].options.codexPathOverride, 'login', 'status'], {
+    cwd: process.cwd(), stdio: 'ignore', env: { ...fakeEnvironment(), OPENAI_API_KEY: 'sk-fixture-env-only' },
+  }).status
+  check('the worker synchronizes a private environment key with its local CLI login', () => {
+    assertEqual(envKeyStatus, 0)
+    assert(readFileSync(join(isolatedHome, 'bwrap-calls'), 'utf8').includes('login --with-api-key'))
+  })
+  const noLogin = new Codex({ codexPathOverride: calls[0].options.codexPathOverride,
+    env: { HOME: join(directory, 'missing-login'), PATH: process.env.PATH, NODE_BINARY: process.execPath } })
+  let missingLoginError
+  try {
+    const { events } = await noLogin.startThread({ skipGitRepoCheck: true }).runStreamed('test'.repeat(16_000))
+    for await (const _event of events) {}
+  } catch (error) { missingLoginError = error }
+  check('an early worker exit drains the SDK prompt without terminating the server', () => {
+    assert(missingLoginError?.message.includes('code 66'))
   })
   let abilityCards
   await classifyDeckType(normalizeLeaderboardRun(run(46, { character: 'ironclad', finalDeck: [
@@ -724,30 +775,30 @@ try {
     assert(JSON.stringify(input).length <= 100_000)
     assert(crowdedDuration < 5_000, `catalog trimming blocked for ${crowdedDuration}ms`)
   })
-  const failedJsonl = (event, startThread = false) => () => {
-    const child = new EventEmitter()
-    child.stdout = new EventEmitter()
-    child.stderr = new EventEmitter()
-    child.stdin = new EventEmitter()
-    child.kill = () => {}
-    child.stdin.end = () => queueMicrotask(() => {
-      if (startThread) child.stdout.emit('data', `${JSON.stringify({ type: 'thread.started', thread_id: threadId })}\n`)
-      child.stdout.emit('data', `${JSON.stringify(event)}\n`)
-      child.emit('close', 1)
-    })
-    return child
-  }
+  const failedSdk = (event, startThread = false) => mockCodex([
+    ...(startThread ? [{ type: 'thread.started', thread_id: threadId }] : []), event,
+  ])
   let exhaustedError
   try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
-    failedJsonl({ type: 'turn.failed', error: { message: 'max_output_tokens exceeded' } }, true)) }
+    failedSdk({ type: 'turn.failed', error: { message: 'max_output_tokens exceeded' } }, true)) }
   catch (error) { exhaustedError = error }
   check('Codex output token exhaustion preserves its resumable first-turn thread', () => {
     assertEqual(exhaustedError?.code, 'max_output_tokens')
     assertEqual(exhaustedError?.threadId, threadId)
   })
+  let interruptedOutput
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+    mockCodex([{ type: 'thread.started', thread_id: threadId },
+      { type: 'turn.failed', error: { message: 'max_output_tokens exceeded' } }],
+    new Error('Codex Exec exited with code 1: stream disconnected'))) }
+  catch (error) { interruptedOutput = error }
+  check('SDK stream errors retain the preceding model failure and thread', () => {
+    assertEqual(interruptedOutput?.code, 'max_output_tokens')
+    assertEqual(interruptedOutput?.threadId, threadId)
+  })
   let contextError
   try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
-    failedJsonl({ type: 'turn.failed', error: { message: 'context_window_exceeded' } }, true)) }
+    failedSdk({ type: 'turn.failed', error: { message: 'context_window_exceeded' } }, true)) }
   catch (error) { contextError = error }
   check('first-turn context exhaustion does not become a resumable output limit', () => {
     assertEqual(contextError?.code, 'context_exhausted')
@@ -755,125 +806,74 @@ try {
   })
   let failedFirstTurn
   try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
-    failedJsonl({ type: 'turn.failed', error: { message: 'temporary network failure' } }, true)) }
+    failedSdk({ type: 'turn.failed', error: { message: 'temporary network failure' } }, true)) }
   catch (error) { failedFirstTurn = error }
   check('transient first-turn failures keep the started thread for the next retry', () => {
     assertEqual(failedFirstTurn?.code, undefined)
     assertEqual(failedFirstTurn?.threadId, threadId)
   })
-  const abortedCodex = (startBeforeAbort) => () => {
-    const child = new EventEmitter()
-    child.stdout = new EventEmitter()
-    child.stderr = new EventEmitter()
-    child.stdin = new EventEmitter()
-    child.kill = () => {}
-    child.stdin.end = () => queueMicrotask(() => {
-      const started = () => child.stdout.emit('data', `${JSON.stringify({ type: 'thread.started', thread_id: threadId })}\n`)
-      if (startBeforeAbort) started()
-      child.emit('error', Object.assign(new Error('model turn timed out'), { code: 'ABORT_ERR' }))
-      if (!startBeforeAbort) started()
-      child.emit('close', null)
-    })
-    return child
-  }
   const timedOutFirstTurns = []
   for (const startBeforeAbort of [true, false]) {
-    try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined, abortedCodex(startBeforeAbort)) }
+    try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+      mockCodex(startBeforeAbort ? [{ type: 'thread.started', thread_id: threadId }] : [],
+        Object.assign(new Error('model turn timed out'), { code: 'ABORT_ERR' }))) }
     catch (error) { timedOutFirstTurns.push({ code: error.code, threadId: error.threadId }) }
   }
-  check('Codex startup and timeout preserve a resumable thread in either event order', () => {
-    assertDeepEqual(timedOutFirstTurns, [true, false].map(() => ({ code: 'ABORT_ERR', threadId })))
+  check('SDK aborts preserve a thread only after its start event', () => {
+    assertDeepEqual(timedOutFirstTurns, [{ code: 'ABORT_ERR', threadId }, { code: 'ABORT_ERR', threadId: undefined }])
   })
-  let jsonlUnauthorized
+  let eventUnauthorized
   try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
-    failedJsonl({ type: 'error', message: '401 Unauthorized' })) }
-  catch (error) { jsonlUnauthorized = error }
-  check('JSONL-only authentication errors disable further classified attempts', () =>
-    assertEqual(jsonlUnauthorized?.code, 'classifier_unavailable'))
-  const malformedJsonl = () => {
-    const child = new EventEmitter()
-    child.stdout = new EventEmitter()
-    child.stderr = new EventEmitter()
-    child.stdin = new EventEmitter()
-    child.kill = () => {}
-    child.stdin.end = () => queueMicrotask(() => {
-      child.stdout.emit('data', 'null\n')
-      child.emit('close', 1)
-    })
-    return child
-  }
+    failedSdk({ type: 'error', message: '401 Unauthorized' })) }
+  catch (error) { eventUnauthorized = error }
+  check('SDK authentication error events disable further classified attempts', () =>
+    assertEqual(eventUnauthorized?.code, 'classifier_unavailable'))
   let malformedError
-  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined, malformedJsonl) }
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined, mockCodex([null])) }
   catch (error) { malformedError = error }
-  check('malformed Codex JSONL cannot crash the multiplayer process', () =>
+  check('malformed SDK events cannot crash the multiplayer process', () =>
     assertEqual(malformedError?.message, 'Deck classifier emitted invalid output'))
   let expiredTokenError
   try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
-    failedJsonl({ type: 'error', message: 'Failed to refresh token' })) }
+    failedSdk({ type: 'error', message: 'Failed to refresh token' })) }
   catch (error) { expiredTokenError = error }
-  check('expired ChatGPT refresh tokens stop classification without wasting daily attempts', () =>
+  check('expired CLI auth stops classification without wasting daily attempts', () =>
     assertEqual(expiredTokenError?.code, 'classifier_unavailable'))
-  const mixedFailure = (stdoutFirst) => () => {
-    const child = new EventEmitter()
-    child.stdout = new EventEmitter()
-    child.stderr = new EventEmitter()
-    child.stdin = new EventEmitter()
-    child.kill = () => {}
-    child.stdin.end = () => queueMicrotask(() => {
-      const stdout = () => child.stdout.emit('data', '{"type":"turn.failed","error":{"message":"stream disconnected"}}\n')
-      if (stdoutFirst) stdout()
-      child.stderr.emit('data', '401 Unauthorized')
-      if (!stdoutFirst) stdout()
-      child.emit('close', 1)
-    })
-    return child
-  }
   const mixedFailureCodes = []
-  for (const stdoutFirst of [true, false]) {
-    try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined, mixedFailure(stdoutFirst)) }
+  for (const failedTurnFirst of [true, false]) {
+    try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+      mockCodex(failedTurnFirst ? [{ type: 'turn.failed', error: { message: 'stream disconnected' } }] : [],
+        new Error('Codex Exec exited with code 1: 401 Unauthorized'))) }
     catch (error) { mixedFailureCodes.push(error.code) }
   }
-  check('mixed stderr and JSONL auth failures refund attempts regardless of output order', () =>
+  check('SDK turn failures and CLI auth errors refund attempts', () =>
     assertDeepEqual(mixedFailureCodes, ['classifier_unavailable', 'classifier_unavailable']))
-  const failureOnStderr = (reason) => () => {
-    const child = new EventEmitter()
-    child.stdout = new EventEmitter()
-    child.stderr = new EventEmitter()
-    child.stdin = new EventEmitter()
-    child.kill = () => {}
-    child.stdin.end = () => queueMicrotask(() => {
-      child.stderr.emit('data', reason)
-      child.emit('close', 1)
-    })
-    return child
-  }
+  const cliFailure = (reason) => mockCodex([], new Error(`Codex Exec exited with code 1: ${reason}`))
   let missingSessionError
   try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, threadId,
-    failureOnStderr('Error: thread/resume failed: no rollout found for thread id')) }
+    cliFailure('Error: thread/resume failed: no rollout found for thread id')) }
   catch (error) { missingSessionError = error }
   check('missing Codex rollouts reset stale thread IDs instead of retrying forever', () =>
     assertEqual(missingSessionError?.code, 'stale_thread'))
   let unauthorizedError
   try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
-    failureOnStderr('Error: 401 Unauthorized')) }
+    cliFailure('Error: 401 Unauthorized')) }
   catch (error) { unauthorizedError = error }
-  check('stderr-only authentication failures disable Codex instead of burning the budget', () =>
+  check('CLI authentication failures disable Codex instead of burning the budget', () =>
     assertEqual(unauthorizedError?.code, 'classifier_unavailable'))
   let fullContextError
   try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, threadId,
-    failureOnStderr('Error: context_window_exceeded')) }
+    cliFailure('Error: context_window_exceeded')) }
   catch (error) { fullContextError = error }
   check('full Codex contexts reset the thread rather than resuming it next day', () =>
     assertEqual(fullContextError?.code, 'stale_thread'))
 
   const classifications = []
   const suppliedSignal = new AbortController()
-  let forwardedSignal
-  await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined, (command, args, options) => {
-    forwardedSignal = options.signal
-    return simulatedCodex('Defect Lightning Orb Focus')(command, args, options)
-  }, suppliedSignal.signal)
-  check('deck classifier passes the supplied shutdown signal to its child process', () => assertEqual(forwardedSignal, suppliedSignal.signal))
+  await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+    simulatedCodex('Defect Lightning Orb Focus'), suppliedSignal.signal)
+  check('deck classifier passes the supplied shutdown signal to the SDK turn', () =>
+    assertEqual(calls.at(-1).turnOptions.signal, suppliedSignal.signal))
   server = createRoomServer({ classifierEnabled: true, deckClassifier: async (entry, types, currentThreadId) => {
     classifications.push({ id: entry.id, types: [...types], currentThreadId })
     return entry.character === 'defect' ? 'Defect Lightning Orb Focus' : 'Ironclad Exhaust Engine'

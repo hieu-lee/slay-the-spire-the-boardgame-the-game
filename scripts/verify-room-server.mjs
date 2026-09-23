@@ -4,6 +4,7 @@ import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
+import { GIVE_UP_TIMEOUT_MS } from './lib/rooms.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 import { createCampaignProgress, defaultStartTurnChoices } from '../src/game/state.ts'
 
@@ -428,10 +429,12 @@ try {
     assertEqual(bLive.socket.readyState, WebSocket.OPEN)
   })
 
+  const voteRequestedAt = Date.now()
   const voteStarted = await request(`/api/rooms/${code}/action`, {
     method: 'POST', token: a.token,
     body: { action: { kind: 'giveUpVote', vote: 'start' } },
   })
+  const voteReceivedAt = Date.now()
   const voteDeadline = voteStarted.body.giveUpVote.deadlineAt
   const firstYes = await request(`/api/rooms/${code}/action`, {
     method: 'POST', token: a.token,
@@ -444,7 +447,9 @@ try {
   })
   check('give-up votes are authenticated, public, and refused after the server deadline', () => {
     assertEqual(voteStarted.status, 200)
-    assert(voteStarted.body.giveUpVote.remainingMs > 9_000 && voteStarted.body.giveUpVote.remainingMs <= 10_000)
+    assert(voteStarted.body.giveUpVote.deadlineAt >= voteRequestedAt + GIVE_UP_TIMEOUT_MS &&
+      voteStarted.body.giveUpVote.deadlineAt <= voteReceivedAt + GIVE_UP_TIMEOUT_MS)
+    assert(voteStarted.body.giveUpVote.remainingMs >= 0 && voteStarted.body.giveUpVote.remainingMs <= GIVE_UP_TIMEOUT_MS)
     assertEqual(firstYes.body.giveUpVote.votes[a.playerId], true)
     assertEqual(lateYes.status, 409)
     assertEqual(service.store.rooms.get(code).run.phase, 'combat')

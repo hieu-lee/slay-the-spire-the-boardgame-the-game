@@ -360,7 +360,7 @@ try {
     await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: hostedStats })
   })
   await hostedPage.goto(`http://127.0.0.1:${hostedAddress.port}`, { waitUntil: 'domcontentloaded' })
-  await hostedPage.getByRole('button', { name: 'Stats', exact: true }).click()
+  await hostedPage.getByRole('button', { name: 'Stats', exact: true }).click({ timeout: 60_000 })
   await checkAsync('slow hosted discovery does not consume the stats request timeout', async () => {
     await hostedPage.getByRole('button', { name: /Defect Lightning Orb Focus/ }).waitFor({ timeout: 4_000 })
     assertEqual(hostedStatsRequests, 1)

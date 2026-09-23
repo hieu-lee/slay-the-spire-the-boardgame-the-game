@@ -24,14 +24,16 @@ prepare_release() {
       scripts/lib/rooms.mjs scripts/lib/leaderboard.mjs scripts/lib/stats.mjs scripts/lib/codex-deck-classifier.mjs \
       scripts/lib/codex-deck-worker.sh scripts/lib/deck-type.schema.json scripts/lib/profiles.mjs \
       src/game infra/systemd/sts-room-server.service infra/validate-room-store.mjs | tar -x -C "$candidate"
-    mkdir "$candidate/node_modules"
+    mkdir -p "$candidate/node_modules/@openai"
     cp -aL "$root/node_modules/ws" "$candidate/node_modules/ws"
+    cp -aL "$root/node_modules/@openai/codex-sdk" "$candidate/node_modules/@openai/codex-sdk"
     chmod -R u=rwX,go=rX "$candidate"
     mv "$candidate" "$release"
     trap - EXIT
   fi
   test -f "$release/scripts/room-server.mjs"
   test -d "$release/node_modules/ws"
+  test -f "$release/node_modules/@openai/codex-sdk/dist/index.js"
 }
 
 if [ "$mode" = prepare ]; then
@@ -41,6 +43,7 @@ fi
 [ "$mode" = deploy ]
 test -f "$release/scripts/room-server.mjs"
 test -d "$release/node_modules/ws"
+test -f "$release/node_modules/@openai/codex-sdk/dist/index.js"
 if [ -f "$store" ]; then
   node "$release/infra/validate-room-store.mjs" "$store" "$release/scripts/lib/rooms.mjs"
 fi

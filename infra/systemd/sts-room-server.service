@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=%h/.local/share/slay-the-spire-server/current
 Environment=NODE_ENV=production
+EnvironmentFile=-%h/.config/slay-the-spire-server/codex.env
 Environment=STS_DECK_CLASSIFIER_ENABLED=true
 Environment=STS_CODEX_BIN=%h/.local/bin/codex
 Environment=HOST=127.0.0.1
