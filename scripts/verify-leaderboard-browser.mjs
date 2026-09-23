@@ -216,7 +216,7 @@ try {
       damageDealt: 0, damageTaken: 0, damageBlocked: 0,
     }]))
   })
-  await page.evaluate(async () => {
+  const rollingRestart = await page.evaluate(async () => {
     const run = structuredClone(window.__STS_DEBUG__.getRun())
     run.phase = 'defeat'
     run.campaign.finalized = true
@@ -227,20 +227,27 @@ try {
     run.players[0].damageStats = { attack: 12, poison: 3, special: 0, taken: 4, blocked: 6 }
     window.__STS_DEBUG__.setRun(run)
     const { queueFinishedSoloRun, flushLeaderboardOutbox } = await import('/src/leaderboard.ts')
-    queueFinishedSoloRun(run)
-    await flushLeaderboardOutbox(true)
+    const queuedId = queueFinishedSoloRun(run)
+    const firstFlush = await flushLeaderboardOutbox(true)
+    return { queuedId, firstFlush, queued: JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]') }
   })
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]')[0]?.floorsCleared === 4)
-  const queuedAcrossRestart = await page.evaluate(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]'))
   check('an old server acknowledgment keeps floor telemetry queued until the new server takes over', () => {
-    assertEqual(queuedAcrossRestart[0].floorsCleared, 4)
+    assertEqual(rollingRestart.queued.length, 1)
+    assertEqual(rollingRestart.queued[0].id, rollingRestart.queuedId)
+    assertEqual(rollingRestart.queued[0].floorsCleared, 4)
   })
-  await page.evaluate(() => { window.__LEADERBOARD_LEGACY__ = false; window.dispatchEvent(new Event('online')) })
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]').length === 0)
-  await page.waitForTimeout(50)
+  const restartedFlush = await page.evaluate(async () => {
+    window.__LEADERBOARD_LEGACY__ = false
+    const { flushLeaderboardOutbox } = await import('/src/leaderboard.ts')
+    const report = await flushLeaderboardOutbox(true)
+    return { report, queued: JSON.parse(localStorage.getItem('sts-leaderboard-outbox') ?? '[]') }
+  })
   check('a bad queued row cannot block a later solo result through a rolling restart', () => {
-    assertEqual(rooms.store.leaderboardRuns.length, 5)
-    const logged = rooms.store.leaderboardRuns.at(-1)
+    assertEqual(JSON.stringify(rollingRestart.firstFlush.rejected), JSON.stringify(['browser-1234:permanently-invalid']))
+    assertEqual(JSON.stringify(restartedFlush.report.recorded), JSON.stringify([rollingRestart.queuedId]))
+    assertEqual(restartedFlush.queued.length, 0)
+    const logged = rooms.store.leaderboardRuns.find((run) => run.id === rollingRestart.queuedId)
+    assert(logged, 'the accepted queued run was not written to the server')
     assertEqual(logged.character, 'ironclad')
     assertEqual(logged.ascension, 5)
     assertEqual(logged.combatsFinished, 3)
