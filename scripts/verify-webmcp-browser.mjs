@@ -112,6 +112,7 @@ const controls = await page.evaluate(async () => {
   fixture.innerHTML = `
     <span id="strike-description">Reliable opening damage.</span>
     <button title="Strike" aria-label="Strike, 1 Energy, Attack, Deal 6 damage" aria-describedby="strike-description">Strike</button>
+    <button aria-pressed="false" aria-label="Arm potion">Arm potion</button>
     <button aria-disabled="true" aria-label="Bash, 2 Energy, Attack, Deal 8 damage and apply 2 Vulnerable">Bash</button>
     <button aria-label="Delayed advance">Delayed advance</button>
     <button aria-label="Staged advance">Staged advance</button>
@@ -259,6 +260,7 @@ const controls = await page.evaluate(async () => {
   }
   const listed = await read()
   const passiveListed = listed.controls.some((control) => control.label === 'Join voice')
+  const unarmedPotion = listed.controls.find((control) => control.label === 'Arm potion')?.selected
   const delayedControl = listed.controls.find((control) => control.label === 'Delayed advance')
   const delayedPending = interact.execute({ controlId: delayedControl.id }, { signal: new AbortController().signal })
   await new Promise((resolve) => setTimeout(resolve, 25))
@@ -369,6 +371,7 @@ const controls = await page.evaluate(async () => {
     waitingResult,
     waitingMs,
     passiveListed,
+    unarmedPotion,
     passiveTextListed: listed.screen.text.includes('Party voice token noise') || listed.screen.text.includes('Voice unavailable'),
     duplicateTextListed: listed.screen.text.includes('Delayed advance') || listed.screen.text.includes('Reliable opening damage.'),
     wrappedLabelDuplicated: listed.screen.text.includes('Keep Bash') || listed.screen.text.includes('Locked target'),
@@ -431,6 +434,16 @@ const pagination = await page.evaluate(async () => {
     button.disabled = true
     fixture.append(button)
   }
+  const clearedRoom = document.createElement('button')
+  clearedRoom.className = 'room--visited'
+  clearedRoom.disabled = true
+  clearedRoom.textContent = 'Cleared room'
+  fixture.append(clearedRoom)
+  const currentRoom = document.createElement('button')
+  currentRoom.className = 'room--visited room--here'
+  currentRoom.disabled = true
+  currentRoom.textContent = 'Current room'
+  fixture.append(currentRoom)
   document.getElementById('root').append(fixture)
   const tools = await document.modelContext.getTools()
   const inspect = tools.find((tool) => tool.name === 'inspect_game')
@@ -494,6 +507,10 @@ const pagination = await page.evaluate(async () => {
     totalUnavailable: firstPage.totalUnavailableControls,
     unavailableTruncated: firstPage.unavailableControlsTruncated,
     secondPageUnavailable: secondPage.unavailableControls.length,
+    clearedRoomHidden: ![...firstPage.unavailableControls, ...secondPage.unavailableControls]
+      .some((control) => control.label === 'Cleared room'),
+    currentRoomVisible: [...firstPage.unavailableControls, ...secondPage.unavailableControls]
+      .some((control) => control.label === 'Current room'),
   }
 })
 const portal = await page.evaluate(async () => {
@@ -669,7 +686,18 @@ await page.locator('.room--reachable').waitFor()
 const roomLabel = await page.locator('.room--reachable').getAttribute('aria-label')
 const mapInspection = await inspectAll()
 const futureRoomContexts = await page.locator('.room[aria-disabled="true"]').evaluateAll((rooms) =>
-  rooms.map((room) => room.getAttribute('data-webmcp-context')).filter(Boolean).sort())
+  rooms.filter((room) => !room.classList.contains('room--visited') || room.classList.contains('room--here'))
+    .map((room) => room.getAttribute('data-webmcp-context')).filter(Boolean).sort())
+const futureRoomExamples = await page.locator('.room[aria-disabled="true"]').evaluateAll((rooms) => {
+  const described = new Set()
+  return rooms.filter((room) => !room.classList.contains('room--visited') || room.classList.contains('room--here'))
+    .flatMap((room) => {
+      const name = room.getAttribute('data-webmcp-label')?.replace(/ \(here\)$/, '')
+      if (!name || described.has(name)) return []
+      described.add(name)
+      return [room.getAttribute('aria-label')]
+    }).filter(Boolean)
+})
 const roomControl = mapInspection.controls.find((control) => control.label === roomLabel)
 if (!roomControl) throw new Error(`reachable room is missing from WebMCP: ${roomLabel}`)
 await interact(roomControl.id)
@@ -1024,12 +1052,16 @@ check('registers two low-friction, safely annotated game tools', () => {
 check('returns visible gameplay context and drives every gameplay control kind', () => {
   assert(initial.screen.headings.length > 0, 'inspection reads the visible start screen')
   assert(initial.controls.some((control) => control.label === 'Single Player'), 'inspection lists the visible menu')
+  assert(initial.controls.every((control) => control.kind !== 'button') &&
+    initial.nextOffset === null && !('snapshotId' in initial) && !('textTruncated' in initial.screen),
+  'ordinary inspections omit redundant button kinds and pagination/truncation metadata')
   assert(malformed.inspectNull.includes('Expected an object input') && malformed.inspectOffset.includes('offset must be') &&
     malformed.inspectExtra.includes('Unexpected input property') && malformed.interactNull.includes('Expected an object input') &&
     malformed.controlId.includes('controlId must be') && malformed.interactExtra.includes('Unexpected input property'),
   'malformed tool inputs return clear retryable errors')
   assert(controls.richLabel.includes('Deal 6 damage') && controls.context === 'Ironclad training hand' &&
     controls.description === 'Reliable opening damage.', 'card actions preserve rich accessible context')
+  assert(controls.unarmedPotion === false, 'unpressed targetable actions remain distinct from ordinary buttons')
   assert(controls.buttonClicks === 1 && controls.orbClicks === 1, 'button and role-button controls use their visible click paths')
   assert(controls.delayed.controls.some((control) => control.label === 'Delayed next'),
     'interaction waits for a delayed authoritative update before returning reusable controls')
@@ -1105,9 +1137,10 @@ check('keeps snapshots scoped, stable, opaque, and current', () => {
     pagination.staleActionResult.includes('Control is no longer available'),
   'concurrent and identical-tree replacements reject mixed pages and stale page-one actions')
   assert(pagination.secondPageScreen === undefined, 'continuation pages do not repeat unchanged screen text')
-  assert(pagination.unavailableCount === 30 && pagination.totalUnavailable >= 35 && pagination.unavailableTruncated &&
+  assert(pagination.clearedRoomHidden && pagination.currentRoomVisible && pagination.unavailableCount === 30 &&
+    pagination.totalUnavailable >= 35 && pagination.unavailableTruncated &&
     pagination.unavailableCount + pagination.secondPageUnavailable === pagination.totalUnavailable,
-  `unavailable controls paginate without losing planning choices: ${JSON.stringify(pagination)}`)
+  `unavailable controls paginate without losing future rooms or listing cleared rooms: ${JSON.stringify(pagination)}`)
   assert(portal.heading && portal.hidesBackground && portal.observation && portal.clicks === 1 &&
     portal.backgroundDeferred && portal.hiddenSurfaceExcluded && portal.ancestorPending,
     `a portal card picker exposes its complete modal context without background controls: ${JSON.stringify(portal)}`)
@@ -1124,7 +1157,8 @@ check('keeps snapshots scoped, stable, opaque, and current', () => {
 })
 
 check('keeps representative WebMCP payloads compact', () => {
-  assert(payloadChars.metadata < 1_350 && payloadChars.start < 1_100 && payloadChars.fixture < 3_700 && payloadChars.lab < 950,
+  assert(payloadChars.metadata < 1_250 && payloadChars.start < 1_000 && payloadChars.fixture < 3_600 && payloadChars.lab < 900 &&
+    payloadChars.map < 6_700 && payloadChars.combat < 2_500,
     `payload budget exceeded: ${JSON.stringify(payloadChars)}`)
 })
 
@@ -1136,6 +1170,9 @@ check('starts a real Watcher run through WebMCP and loads cleanly', () => {
   assert(mapInspection.totalUnavailableControls > 0 &&
     JSON.stringify(mapInspection.unavailableControls.filter((control) => control.context?.startsWith('Floor '))
       .map((control) => control.context).sort()) === JSON.stringify(futureRoomContexts) &&
+    mapInspection.unavailableControls.filter((control) => control.context?.startsWith('Floor '))
+      .map((control) => control.label).filter((label) => label.includes('Out of reach')).length <= futureRoomExamples.length &&
+    futureRoomExamples.every((label) => mapInspection.unavailableControls.some((control) => control.label === label)) &&
     futureRoomContexts.some((context) => context.includes('; exits to floor ')) &&
     automaticStartInspection.controls.some((control) => control.label === 'End turn'),
   'map inspection preserves future routes and the settled combat screen exposes End turn')

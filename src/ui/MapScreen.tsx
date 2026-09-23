@@ -434,6 +434,7 @@ export function MapScreen({
                   key={id}
                   data-room={id}
                   data-webmcp-context={routeContext(map, room, bossDefId)}
+                  data-webmcp-label={`${named ? `${ROOM_LABEL.boss}: ${named}` : label}${room.burning ? ', Burning Elite' : ''}${isHere ? ' (here)' : ''}`}
                   className={[
                     'room',
                     `room--${room.kind}`,

@@ -20,7 +20,7 @@ type ModelContext = {
 type ControlKind = 'button' | 'checkbox' | 'select' | 'text' | 'number'
 type VisibleControl = {
   id: string
-  kind: ControlKind
+  kind?: ControlKind
   label: string
   context?: string
   description?: string
@@ -33,7 +33,7 @@ type VisibleControl = {
   required?: boolean
   options?: { value: string; label: string }[]
 }
-type Control = VisibleControl & { element: HTMLElement }
+type Control = VisibleControl & { kind: ControlKind; element: HTMLElement }
 
 const PAGE_SIZE = 30
 const SCREEN_TEXT_LIMIT = 8_000
@@ -126,10 +126,10 @@ function controlKind(element: HTMLElement): ControlKind | null {
   return null
 }
 
-function publicControl(element: HTMLElement, id = ''): VisibleControl | null {
+function publicControl(element: HTMLElement, id = ''): Omit<Control, 'element'> | null {
   const kind = controlKind(element)
   if (!kind) return null
-  const result: VisibleControl = { id, kind, label: label(element) }
+  const result: Omit<Control, 'element'> = { id, kind, label: label(element) }
   const context = contextLabel(element)
   const description = referencedText(element, 'aria-describedby')
   if (context) result.context = context
@@ -160,6 +160,10 @@ function snapshot(control: Control): Omit<Control, 'id' | 'element'> {
   return value
 }
 
+function listedControls(): VisibleControl[] {
+  return controls.map(({ element: _, kind, ...control }) => kind === 'button' ? control : { ...control, kind })
+}
+
 function visibleControls(): VisibleControl[] {
   const current = activeScopes().flatMap((scope) => [...scope.querySelectorAll<HTMLElement>(
     CONTROL_SELECTOR,
@@ -172,12 +176,14 @@ function visibleControls(): VisibleControl[] {
     return previous?.element === control.element && JSON.stringify(snapshot(previous)) === JSON.stringify(snapshot(control))
   })
   if (!unchanged) controls = identify(current)
-  return controls.map(({ element: _, ...control }) => control)
+  return listedControls()
 }
 
 function unavailableControls() {
+  const describedRooms = new Set<string>()
   return activeScopes().flatMap((scope) => [...scope.querySelectorAll<HTMLElement>(CONTROL_SELECTOR)])
-    .filter((element) => rendered(element) && !available(element) && !element.closest('[data-webmcp-passive]'))
+    .filter((element) => rendered(element) && !available(element) &&
+      !element.closest('[data-webmcp-passive]') && !element.matches('.room--visited:not(.room--here)'))
     .flatMap((element) => {
       const control = publicControl(element)
       if (!control) return []
@@ -185,8 +191,12 @@ function unavailableControls() {
         const { id: _, ...result } = control
         return [result]
       }
+      const roomName = element.dataset.webmcpLabel
+      const roomType = roomName?.replace(/ \(here\)$/, '')
+      const alreadyDescribed = roomType && describedRooms.has(roomType)
+      if (roomType) describedRooms.add(roomType)
       return [{
-        label: control.label,
+        label: alreadyDescribed ? roomName : control.label,
         ...(control.context ? { context: control.context } : {}),
         ...(control.description ? { description: control.description } : {}),
         ...(control.selected !== undefined ? { selected: control.selected } : {}),
@@ -255,7 +265,7 @@ function gameScreen(announcementNodes = announcementElements()) {
     headings,
     status,
     text: rawText.slice(0, SCREEN_TEXT_LIMIT),
-    textTruncated: rawText.length > SCREEN_TEXT_LIMIT,
+    ...(rawText.length > SCREEN_TEXT_LIMIT ? { textTruncated: true } : {}),
     observations,
     ...(announcements.length > 0 ? { announcements } : {}),
   }
@@ -290,9 +300,6 @@ function captureGame(input: unknown, acknowledge: boolean) {
       ...(start === 0 ? { screen: gameScreen() } : {}),
       controls: [],
       unavailableControls: [],
-      totalUnavailableControls: 0,
-      unavailableControlsTruncated: false,
-      totalControls: 0,
       nextOffset: null,
       pending: true,
     }
@@ -308,7 +315,7 @@ function captureGame(input: unknown, acknowledge: boolean) {
   })
   if (controlStateSignature && stateSignature !== controlStateSignature) {
     controls = identify(controls)
-    available = controls.map(({ element: _, ...control }) => control)
+    available = listedControls()
   }
   const page = available.slice(start, start + PAGE_SIZE)
   const unavailablePage = unavailable.slice(start, start + PAGE_SIZE)
@@ -319,15 +326,18 @@ function captureGame(input: unknown, acknowledge: boolean) {
   }
   if (start === 0) pageSnapshot = { id: String(++pageSnapshotSequence), signature: paginationSignature }
   controlStateSignature = stateSignature
+  const nextOffset = start + PAGE_SIZE < Math.max(available.length, unavailable.length) ? start + PAGE_SIZE : null
   const result = {
     ...(start === 0 ? { screen } : {}),
     controls: page,
     unavailableControls: unavailablePage,
-    totalUnavailableControls: unavailable.length,
-    unavailableControlsTruncated: start + unavailablePage.length < unavailable.length,
-    totalControls: available.length,
-    snapshotId: pageSnapshot!.id,
-    nextOffset: start + PAGE_SIZE < Math.max(available.length, unavailable.length) ? start + PAGE_SIZE : null,
+    ...(nextOffset !== null ? {
+      totalUnavailableControls: unavailable.length,
+      totalControls: available.length,
+      snapshotId: pageSnapshot!.id,
+    } : {}),
+    ...(start + unavailablePage.length < unavailable.length ? { unavailableControlsTruncated: true } : {}),
+    nextOffset,
   }
   if (acknowledge) acknowledgeAnnouncements(capturedAnnouncements)
   return result
@@ -389,7 +399,7 @@ export function useWebMcp() {
       {
         name: 'inspect_game',
         title: 'Inspect game',
-        description: 'Read visible state and controls: start-turn choices, relic resolution, and usable relic abilities. Entries in controls work with interact_with_game; unavailableControls and future rooms are planning-only. Page with nextOffset/snapshotId; if pending, wait and inspect again.',
+        description: 'Read visible state and controls, including start-turn and relic choices. unavailableControls (future rooms) are planning-only. Continue with nextOffset/snapshotId if present; retry if pending.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -404,7 +414,7 @@ export function useWebMcp() {
       {
         name: 'interact_with_game',
         title: 'Interact with game',
-        description: 'Invoke any listed control ID, including start-turn, relic-resolution, and usable-relic controls. Omit value for buttons or a required empty single-choice select; otherwise pass its listed value. Returns settled state.',
+        description: 'Use a listed controlId for start-turn, relic, or other choices. Omit value for buttons or an empty required single-choice select. Returns settled state; inspect again only if pending or nextOffset is set.',
         inputSchema: {
           type: 'object',
           properties: {
