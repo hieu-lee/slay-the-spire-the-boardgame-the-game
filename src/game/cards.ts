@@ -364,7 +364,7 @@ type EffectKind =
   | { kind: 'discardChamber'; amount: number; curseOnly?: boolean; optional?: boolean; then?: Effect[] }
   | { kind: 'discountChamber'; amount: number }
   | { kind: 'deadOnEffects'; effects: Effect[] }
-  | { kind: 'deadOnPrintedBlock'; amount: number }
+  | { kind: 'deadOnHitBlock' }
   | { kind: 'drawLastHitDamage' }
   | { kind: 'grantNextAttackRapidFire' }
   | { kind: 'discardHand' }

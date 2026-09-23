@@ -4,7 +4,7 @@ Compared all 198 installed Slime Boss, Hexaghost, and Hermit definitions (394 ba
 
 Coverage: printed costs, card types, effect values, resource icons, targeting, conditional clauses, Retain/Exhaust, upgrade changes, and all 13 Slime level tables. Hermit's Golden Ticket is included in its definition count; Slime Boss and Hexaghost reward-ticket handling is covered by their existing acquisition verifiers. Duplicate physical copies are counted once per face.
 
-Energy, Strength, Soulburn, and Guardian Vigor are distinct resources. Slime Strength retains the historical internal field name `vigor`; it is not Guardian Vigor. Multiple hit icons share a target unless the card explicitly permits separate targets (rules.md, multi-hits); plain “damage” uses the unmodified damage path. Snapshot follows the recorded official FAQ's printed-damage rule.
+Energy, Strength, Soulburn, and Guardian Vigor are distinct resources. Slime Strength retains the historical internal field name `vigor`; it is not Guardian Vigor. Multiple hit icons share a target unless the card explicitly permits separate targets (rules.md, multi-hits); plain “damage” uses the unmodified damage path. Snapshot's Block follows modified hit damage, ignoring target Block and remaining HP.
 
 Six card definitions needed corrections, on both faces, listed below. Shared Command resolution also now skips a target killed by an earlier Command without spending the later Slime's command allowance; unknown targets still fail validation. Horizontal-phone combat also reserves space for End turn so it cannot cover active Power buttons. This existing regression failed on unchanged master and now passes.
 

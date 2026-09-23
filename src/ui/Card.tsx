@@ -330,7 +330,7 @@ function effectText(effect: Effect): string {
     case 'discardChamber': return `${effect.optional ? 'may ' : ''}discard ${effect.amount} ${effect.curseOnly ? 'Curse from your hand or Chamber' : 'from your Chamber'}${effect.then?.length ? `, then ${effect.then.map(effectText).join(', ')}` : ''}${condition}`
     case 'discountChamber': return `choose ${effect.amount} Chamber card to cost 0 this turn${condition}`
     case 'deadOnEffects': return `Dead On: ${effect.effects.map(effectText).join(', then ')}`
-    case 'deadOnPrintedBlock': return `gain ${effect.amount} Block from printed damage`
+    case 'deadOnHitBlock': return 'gain Block equal to modified hit damage before enemy Block or HP limits'
     case 'drawLastHitDamage': return 'draw cards equal to the damage dealt'
     case 'grantNextAttackRapidFire': return 'the next Attack you play gains Rapid Fire'
     case 'discardHand': return 'discard your hand'

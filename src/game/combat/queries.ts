@@ -289,6 +289,7 @@ export function resolutionContext(
     energySpent,
     sourceAttackCounted: false,
     lastHitDamage: 0,
+    lastHitDamageBeforeBlock: 0,
   }
 }
 

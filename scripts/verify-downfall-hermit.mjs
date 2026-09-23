@@ -61,7 +61,6 @@ import {
   playHermitChamberCard,
   setupHermitCombat,
   shouldHermitEtherealExhaust,
-  snapshotDeadOnBlock,
 } from '../src/game/downfall/hermit.ts'
 
 const manifestUrl = new URL('../tmp/downfall-reference/manifests/hermit-card-manifest.md', import.meta.url)
@@ -237,7 +236,6 @@ check('all Hermit Curse Load reactions and the three-Gold merchant cost are exac
 check('FAQ edge cases retain the official outcomes', () => {
   assert.equal(shouldHermitEtherealExhaust('chamber'), HERMIT_FAQ.loadedEtherealExhaustsAtEndOfTurn)
   assert.equal(shouldHermitEtherealExhaust('hand'), true)
-  assert.equal(snapshotDeadOnBlock(3), 3)
   assert.equal(fatalDesireGold('add', false), 10)
   assert.equal(fatalDesireGold('add', true), 10)
   assert.equal(fatalDesireGold('remove', false), 0)
@@ -967,15 +965,49 @@ check('a lethal queued Cheat relic clears every terminal mandatory choice', () =
   assert.deepEqual(combat.pendingTriggers, [])
 })
 
-check('live Chamber play activates Dead On and Snapshot uses printed damage for Block', () => {
-  const snapshot = instance('snapshot', 'hermit_snapshot', true)
-  const combat = createCombat(createRng(48), [player({ chamber: [snapshot] })], [enemy()])
+check('Snapshot Dead On Block matches modified hit damage, even through Block or overkill', () => {
+  for (const { upgraded, strength, weak, hp, block, vulnerable, defId, damage, expectedBlock } of [
+    { upgraded: false, strength: 0, weak: 0, hp: 20, block: 0, damage: 2, expectedBlock: 2 },
+    { upgraded: true, strength: 2, weak: 0, hp: 20, block: 0, damage: 5, expectedBlock: 5 },
+    { upgraded: false, strength: 0, weak: 1, hp: 20, block: 0, damage: 1, expectedBlock: 1 },
+    { upgraded: true, strength: 2, weak: 0, hp: 20, block: 3, damage: 2, expectedBlock: 5 },
+    { upgraded: true, strength: 2, weak: 0, hp: 1, block: 0, damage: 1, expectedBlock: 5 },
+    { upgraded: false, strength: 0, weak: 0, hp: 20, block: 0, vulnerable: 1, damage: 4, expectedBlock: 4 },
+    { upgraded: true, strength: 2, weak: 0, hp: 5, block: 0, defId: 'byrd_encounter', damage: 1, expectedBlock: 1 },
+  ]) {
+    const snapshot = instance('snapshot', 'hermit_snapshot', upgraded)
+    const combat = createCombat(createRng(48), [player({ chamber: [snapshot], strength, weak })],
+      [enemy({ hp, block, vulnerable, defId: defId ?? 'cultist' }), enemy({ uid: 'e2' })])
+    combat.pendingHermitSetupLoads = []
+    const next = playLiveHermitChamberCard(combat, 'p1', snapshot.uid, { enemyUid: 'e1', playerId: null })
+    assert.notEqual(next, combat)
+    assert.equal(hp - next.enemies[0].hp, damage)
+    assert.equal(next.players[0].block, expectedBlock)
+    assert.equal(next.players[0].chamber.length, 0)
+  }
+  const snapshot = instance('buffer-snapshot', 'hermit_snapshot')
+  const combat = createCombat(createRng(48), [player({ chamber: [snapshot] })],
+    [enemy({ defId: 'hexaghost', hp: 36, maxHp: 36, abilityCubes: 1 })])
   combat.pendingHermitSetupLoads = []
-  const next = playLiveHermitChamberCard(combat, 'p1', snapshot.uid, { enemyUid: 'e1', playerId: null })
-  assert.notEqual(next, combat)
-  assert.equal(next.enemies[0].hp, 17)
-  assert.equal(next.players[0].block, 3)
-  assert.equal(next.players[0].chamber.length, 0)
+  const buffered = playLiveHermitChamberCard(combat, 'p1', snapshot.uid, { enemyUid: 'e1', playerId: null })
+  assert.equal(buffered.enemies[0].hp, 36)
+  assert.equal(buffered.enemies[0].abilityCubes, 0)
+  assert.equal(buffered.players[0].block, 0)
+  const boosted = createCombat(createRng(48), [player({ chamber: [snapshot] })],
+    [enemy({ defId: 'hexaghost', hp: 36, maxHp: 36, abilityCubes: 1 })])
+  boosted.pendingHermitSetupLoads = []
+  boosted.players[0].cardBlockBonus = 1
+  const boostedBuffer = playLiveHermitChamberCard(boosted, 'p1', snapshot.uid, { enemyUid: 'e1', playerId: null })
+  assert.equal(boostedBuffer.players[0].block, 0)
+  boosted.enemies[0].abilityCubes = 0
+  const boostedHit = playLiveHermitChamberCard(boosted, 'p1', snapshot.uid, { enemyUid: 'e1', playerId: null })
+  assert.equal(boostedHit.players[0].block, 3)
+  const atFloor = createCombat(createRng(48), [player({ chamber: [instance('floor-snapshot', 'hermit_snapshot', true)] })],
+    [enemy({ defId: 'corrupt_heart', hp: 50, maxHp: 100, isBoss: true })])
+  atFloor.pendingHermitSetupLoads = []
+  const invincible = playLiveHermitChamberCard(atFloor, 'p1', 'floor-snapshot', { enemyUid: 'e1', playerId: null })
+  assert.equal(invincible.enemies[0].hp, 50)
+  assert.equal(invincible.players[0].block, 3)
 })
 
 check('a Dead On-only Chamber attack chooses its enemy before resolving', () => {

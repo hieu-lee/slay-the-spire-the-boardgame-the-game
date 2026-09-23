@@ -1204,6 +1204,7 @@ export function applyEffect(
         let poisonAppliedTotal = 0
         let poisonEvents = 0
         let damagingHits = 0
+        let damageBeforeBlock = 0
         for (let i = 0; i < times; i++) {
           if (target.dead) break
           const abilities = enemyAbilities(enemyDef(target.defId, target.ascension))
@@ -1216,7 +1217,9 @@ export function applyEffect(
             context.sourceHermitDeadOn && vulnerableAtStart > 0 && mods.weak === 0) amount *= 2
           if (actor.damageDealtZeroThisTurn) amount = 0
           if (flying?.kind === 'flying') amount = Math.min(amount, flying.maxDamagePerHit)
+          const bufferBefore = target.abilityCubes ?? 0
           const result = damageEnemy(state, target, amount, !slimeCommand && context.sourceCardType !== undefined)
+          if ((target.abilityCubes ?? 0) === bufferBefore) damageBeforeBlock += amount
           recordDamageDealt(actor, 'attack', result.blocked + result.hpLost)
           blocked += result.blocked
           curled = result.curled || curled
@@ -1245,6 +1248,7 @@ export function applyEffect(
         const name = enemyLabel(state.enemies, target)
         const lost = hpBefore - target.hp
         context.lastHitDamage = lost
+        context.lastHitDamageBeforeBlock = damageBeforeBlock
         state.log = [
           ...state.log,
           lost > 0
@@ -2811,8 +2815,9 @@ export function applyEffect(
         ]
       }
       return
-    case 'deadOnPrintedBlock':
-      return applyEffect(state, actor, { kind: 'block', amount: effect.amount }, 'self', supportScope, context, source)
+    case 'deadOnHitBlock':
+      if (!context.lastHitDamageBeforeBlock) return
+      return applyEffect(state, actor, { kind: 'block', amount: context.lastHitDamageBeforeBlock }, 'self', supportScope, context, source)
     case 'drawLastHitDamage':
       return applyEffect(state, actor, { kind: 'draw', amount: context.lastHitDamage ?? 0 }, 'self', supportScope, context, source)
     case 'grantNextAttackRapidFire':

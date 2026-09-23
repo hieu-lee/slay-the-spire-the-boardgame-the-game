@@ -55,9 +55,10 @@ try {
       const chamber = page.getByRole('button', { name: /^Chamber,/ })
       if (await chamber.getAttribute('aria-expanded') !== 'true') await chamber.click()
     }
-    for (const [defId, damage] of [['hermit_strike', 1], ['hermit_headshot', 5], ['hermit_golden_bullet', 2], ['hermit_roulette', 1]]) {
+    for (const [defId, damage] of [['hermit_strike', 1], ['hermit_snapshot', 2], ['hermit_headshot', 5], ['hermit_golden_bullet', 2], ['hermit_roulette', 1]]) {
       await load(1, defId)
       const card = page.locator('.hand .card--chamber-drawn')
+      if (defId === 'hermit_snapshot') assert.match(await card.getAttribute('aria-label'), /Gain Block equal to the damage dealt/)
       await card.click()
       await page.waitForTimeout(100)
       assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length), 1,
@@ -72,6 +73,14 @@ try {
       await page.locator('.enemy:not(.enemy--dead) .enemy__head').first().click()
       await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 0)
       assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp), 40 - damage)
+      if (defId === 'hermit_snapshot') {
+        await page.waitForFunction(expected => window.__STS_DEBUG__.getRun().combat.players[0].block === expected, damage)
+        const result = await page.evaluate(() => ({
+          block: window.__STS_DEBUG__.getRun().combat.players[0].block,
+          log: window.__STS_DEBUG__.getRun().combat.log.slice(-8),
+        }))
+        assert.equal(result.block, damage, JSON.stringify(result.log))
+      }
       await load(2, defId)
       await card.focus()
       await page.waitForTimeout(250)

@@ -41,7 +41,7 @@ export const HERMIT_STARTING_COMBAT_ABILITY = {
 export const HERMIT_FAQ = {
   attackPotionHighCaliberPlays: 4,
   loadedEtherealExhaustsAtEndOfTurn: false,
-  snapshotUsesPrintedDamage: true,
+  snapshotUsesModifiedDamage: true,
   fatalDesireUpgradesAfterAdd: true,
 } as const
 
@@ -239,8 +239,8 @@ const HERMIT_LIVE_SPECS: Readonly<Record<string, HermitLiveSpec>> = {
   hermit_covet: { type: 'skill', rarity: 'starter', cost: 0, retain: true, effects: [load(1)],
     upgrade: { effects: [load(2, { upTo: true })] } },
   hermit_strike: { type: 'attack', rarity: 'starter', cost: 1, effects: [hit(1)], upgrade: { effects: [hit(2)] } },
-  hermit_snapshot: { type: 'attack', rarity: 'starter', cost: 2, effects: [hit(2), deadOn(H('deadOnPrintedBlock', { amount: 2 }))],
-    hermit: { deadOn: true }, upgrade: { effects: [hit(3), deadOn(H('deadOnPrintedBlock', { amount: 3 }))] } },
+  hermit_snapshot: { type: 'attack', rarity: 'starter', cost: 2, effects: [hit(2), deadOn(H('deadOnHitBlock'))],
+    hermit: { deadOn: true }, upgrade: { effects: [hit(3), deadOn(H('deadOnHitBlock'))] } },
   hermit_defend: { type: 'skill', rarity: 'starter', cost: 1, effects: [block(1)],
     upgrade: { effects: [block(2, true)], supportTarget: 'anyPlayer' } },
 
@@ -577,12 +577,6 @@ export function planHermitRapidFire(options: {
       targetChosenIndependently: true,
     })),
   ])
-}
-
-/** FAQ: target Block and remaining HP do not reduce Snapshot's Dead On Block. */
-export function snapshotDeadOnBlock(printedDamage: number): number {
-  if (!Number.isSafeInteger(printedDamage) || printedDamage < 0) throw new RangeError('Printed damage must be a non-negative integer')
-  return printedDamage
 }
 
 /** Ethereal and other held-at-end-of-turn effects inspect the hand, not Chamber. */

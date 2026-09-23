@@ -580,6 +580,7 @@ export type PlayContext = {
   sourceAttackCounted?: boolean
   /** HP removed by the immediately preceding hit effect. */
   lastHitDamage?: number
+  lastHitDamageBeforeBlock?: number
 }
 
 export type CardChoicePreview = {
