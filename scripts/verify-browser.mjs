@@ -4621,8 +4621,9 @@ await page.evaluate(async (run) => {
 await page.getByRole('group', { name: 'Choose Guardian form for this turn' }).waitFor()
 await page.getByRole('button', { name: 'Choose Defense Mode' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].guardianMode === 'defense')
-check('Guardian can make the printed optional Mode Shift at start of turn', async () => {
-  assertEqual((await readRun()).combat.players[0].guardianMode, 'defense')
+const chosenGuardianMode = (await readRun()).combat.players[0].guardianMode
+check('Guardian can make the printed optional Mode Shift at start of turn', () => {
+  assertEqual(chosenGuardianMode, 'defense')
 })
 
 const downfallChoiceResults = {}
