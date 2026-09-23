@@ -13,7 +13,7 @@ const output = join(root, 'artifacts/stats-explorer-browser')
 mkdirSync(output, { recursive: true })
 process.env.VITE_LEADERBOARD = 'true'
 const server = createRoomServer({ openAiKey: 'browser-test-key', deckClassifier: async (entry) =>
-  entry.character === 'ironclad' ? 'Ironclad Barricade Body Slam'
+  entry.character === 'ironclad' ? 'Ironclad Barricade Body Slam Entrench Exhaust Control'
     : entry.finalDeck.some((card) => card.defId === 'claw') ? 'Defect Claw Spam' : 'Defect Lightning Orb Focus' })
 const address = await server.listen(0)
 const roomOrigin = `http://127.0.0.1:${address.port}`
@@ -98,36 +98,75 @@ try {
   await page.getByRole('heading', { name: 'Deck archetypes' }).waitFor()
   await page.getByRole('button', { name: /Defect Lightning Orb Focus/ }).waitFor()
   await page.screenshot({ path: join(output, 'stats-desktop.png') })
+  await checkAsync('header actions keep their compact type instead of the inherited button font', async () => {
+    await page.getByRole('searchbox', { name: 'Find a card for All of these' }).fill('Dual Cast')
+    await page.getByRole('listbox', { name: 'All of these suggestions' }).getByRole('option').first().click()
+    const sizes = await page.evaluate(() => ['.stats__clear', '.stats__chip', '.stats__editor-tabs button']
+      .map((selector) => getComputedStyle(document.querySelector(selector)).fontSize))
+    assert(sizes.every((size) => parseFloat(size) < 14), `Header action font sizes: ${sizes}`)
+    await page.getByRole('button', { name: 'Clear filters' }).click()
+  })
+  await page.locator('.stats__metric').first().locator('strong').getByText('6', { exact: true }).waitFor()
+  await page.locator('.stats__metric').nth(1).locator('strong').getByText('22.7', { exact: true }).waitFor()
+  await page.locator('.stats__table tbody tr').nth(2).waitFor()
   await checkAsync('default columns and run averages render from recorded data', async () => {
-    for (const heading of ['Deck Type', 'Average Floors Reached', 'Average Damage', 'Average Block %'])
+    for (const heading of ['Deck', 'Floors', 'Damage', 'Block'])
       assertEqual(await page.getByRole('columnheader', { name: heading }).count(), 1)
     assertEqual(await page.locator('.stats__table tbody tr').count(), 3)
     assert((await page.locator('.stats__metrics').innerText()).includes('22.7'))
+    await page.waitForFunction(() => {
+      const icons = [...document.querySelectorAll('.stats__metric img')]
+      return icons.length === 4 && icons.every((icon) => icon.complete && icon.naturalWidth > 0)
+    }, undefined, { timeout: 10_000 })
   })
 
-  await page.getByLabel('ASCENSION').selectOption('3+')
+  for (const viewport of [{ width: 1150, height: 700 }, { width: 1200, height: 800 }, { width: 1280, height: 800 }, { width: 1536, height: 864 }, { width: 932, height: 430 }]) {
+    await page.setViewportSize(viewport)
+    await checkAsync(`card impact text and deck names are not truncated at ${viewport.width}x${viewport.height}`, async () => {
+      const fits = await page.locator('.stats__next-name').evaluateAll((names) => names.flatMap((name) => [...name.querySelectorAll('strong, small span')]
+        .map((element) => element.scrollWidth <= element.clientWidth && element.getBoundingClientRect().right <= name.getBoundingClientRect().right + 0.5)))
+      assert(fits.length > 0 && fits.every(Boolean), `Truncated card impact text: ${fits}`)
+      assert(await page.locator('.stats__row-button strong').evaluateAll((names) => names.length === 3 &&
+        names.every((name) => name.scrollHeight <= name.clientHeight + 1 && name.scrollWidth <= name.clientWidth)), 'Deck names are truncated')
+    })
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+
+  await page.getByRole('searchbox', { name: 'Find a card for None of these' }).fill('s')
+  await checkAsync('card suggestions stay above the archetype table header', async () => {
+    const listbox = page.getByRole('listbox', { name: 'None of these suggestions' })
+    await listbox.waitFor()
+    assert(await listbox.evaluate((list) => {
+      const box = list.getBoundingClientRect()
+      return Array.from({ length: Math.floor(box.height / 8) }, (_, index) => box.top + 4 + index * 8)
+        .every((y) => list.contains(document.elementFromPoint(box.left + box.width / 2, y)))
+    }), 'Suggestions are covered by other content')
+  })
+  await page.getByRole('searchbox', { name: 'Find a card for None of these' }).fill('')
+  await page.getByLabel('Ascension').selectOption('3+')
   await checkAsync('Ascension 3+ includes higher-level runs', async () => {
     await page.locator('.stats__metric').first().locator('strong').getByText('6', { exact: true }).waitFor()
   })
-  await page.getByLabel('ASCENSION').selectOption('3')
+  await page.getByLabel('Ascension').selectOption('3')
   await checkAsync('exact Ascension 3 excludes the Ascension 9 run', async () => {
     await page.locator('.stats__metric').first().locator('strong').getByText('5', { exact: true }).waitFor()
   })
-  await page.getByLabel('ASCENSION').selectOption('9+')
+  await page.getByLabel('Ascension').selectOption('9+')
   await checkAsync('Ascension 9+ narrows the archive and deck samples', async () => {
     await page.locator('.stats__metric').first().locator('strong').getByText('1', { exact: true }).waitFor()
   })
-  await page.getByLabel('ASCENSION').selectOption('all')
+  await page.getByLabel('Ascension').selectOption('all')
   await page.locator('.stats__metric').first().locator('strong').getByText('6', { exact: true }).waitFor()
 
   await page.getByRole('button', { name: 'Defect', exact: true }).click()
-  await page.getByRole('searchbox', { name: 'Find a card for ANY OF THESE' }).fill('Dual Cast')
+  await page.getByRole('searchbox', { name: 'Find a card for Any of these' }).fill('Dual Cast')
   await page.getByRole('option').filter({ hasText: 'Dual Cast+' }).first().click()
-  await page.getByRole('searchbox', { name: 'Find a card for ANY OF THESE' }).fill('Dual Cast')
+  await page.getByRole('searchbox', { name: 'Find a card for Any of these' }).fill('Dual Cast')
   await page.getByRole('option').filter({ hasText: 'Dual Cast' }).filter({ hasNotText: 'Dual Cast+' }).filter({ hasText: 'Defect' }).first().click()
-  await page.getByRole('searchbox', { name: 'Find a card for NONE OF THESE' }).fill('Strike')
+  await page.getByRole('searchbox', { name: 'Find a card for None of these' }).fill('Strike')
   await page.getByRole('option').filter({ hasText: /^Strike\s*Defect/ }).first().click()
-  await page.getByText('3 TYPES').waitFor({ state: 'hidden' })
+  await page.locator('.stats__metric').first().locator('strong').getByText('3', { exact: true }).waitFor()
+  await page.locator('.stats__metric').nth(1).locator('strong').getByText('24.0', { exact: true }).waitFor()
   await page.getByRole('button', { name: /Defect Lightning Orb Focus/ }).waitFor()
   await page.screenshot({ path: join(output, 'stats-filtered-desktop.png') })
   await checkAsync('visual ANY upgrades and NONE starter filters compose', async () => {
@@ -144,19 +183,21 @@ try {
   })
   await page.getByRole('dialog').press('Escape')
   await page.getByRole('button', { name: 'Expression' }).click()
-  await page.getByLabel('COMBINE CARDS WITH AND').fill('(Dual Cast or Dual Cast+) and not (Strike or Strike+)')
+  await page.getByLabel('Card expression').fill('(Dual Cast or Dual Cast+) and not (Strike or Strike+)')
   await page.getByRole('button', { name: 'Apply' }).click()
   await checkAsync('expression parser handles parentheses, OR upgrades, and NOT cards', async () => {
+    await page.locator('.stats__metric').first().locator('strong').getByText('3', { exact: true }).waitFor()
+    await page.locator('.stats__metric').nth(1).locator('strong').getByText('24.0', { exact: true }).waitFor()
+    await page.locator('.stats__table tbody tr').nth(1).waitFor()
     assertEqual(await page.locator('.stats__table tbody tr').count(), 2)
-    assert((await page.locator('.stats__metrics').innerText()).includes('24.0'))
   })
-  await page.getByLabel('COMBINE CARDS WITH AND').fill(`${'not '.repeat(14)}Dual Cast`)
+  await page.getByLabel('Card expression').fill(`${'not '.repeat(14)}Dual Cast`)
   await page.getByRole('button', { name: 'Apply' }).click()
   await checkAsync('expressions beyond server depth limits fail locally without dropping the last valid query', async () => {
     assert((await page.getByRole('alert').innerText()).includes('nested operators'))
     assertEqual(await page.locator('.stats__table tbody tr').count(), 2)
   })
-  await page.getByLabel('COMBINE CARDS WITH AND').fill('(Dual Cast or')
+  await page.getByLabel('Card expression').fill('(Dual Cast or')
   await page.getByRole('button', { name: 'Apply' }).click()
   await checkAsync('invalid expressions explain the error without losing the applied query', async () => {
     assert(await page.getByRole('alert').count() > 0)
@@ -164,12 +205,14 @@ try {
   })
   await page.getByRole('button', { name: 'Visual builder' }).click()
   await page.getByRole('button', { name: 'All heroes', exact: true }).click()
-  await page.getByRole('searchbox', { name: 'Find a card for ALL OF THESE' }).fill('Explosive Corps')
+  await page.getByRole('searchbox', { name: 'Find a card for All of these' }).fill('Explosive Corps')
   await checkAsync('the requested Explosive Corps spelling suggests the real card art', async () => {
     assert(await page.getByRole('option').filter({ hasText: 'Corpse Explosion' }).count() >= 2)
     assert(await page.getByRole('option').filter({ hasText: 'Corpse Explosion' }).first().locator('img').isVisible())
   })
-  await page.getByRole('searchbox', { name: 'Find a card for ALL OF THESE' }).fill('')
+  await page.getByRole('searchbox', { name: 'Find a card for All of these' }).fill('')
+  await page.locator('.stats__metric').first().locator('strong').getByText('3', { exact: true }).waitFor()
+  await page.locator('.stats__table tbody tr').nth(1).waitFor()
   await page.setViewportSize({ width: 844, height: 390 })
   await page.getByRole('heading', { name: 'Deck archetypes' }).waitFor()
   await page.getByRole('heading', { name: 'Deck archetypes' }).click()
@@ -185,8 +228,26 @@ try {
     assert(frame && rail && workbench && rail.height < 80 && workbench.x >= 0 && workbench.x < 844)
     assert(selects && tabs && selects.x + selects.width <= 844 && tabs.x + tabs.width <= 844)
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
-    assert(await page.getByRole('searchbox', { name: 'Find a card for ALL OF THESE' }).isVisible())
+    assert(await page.getByRole('searchbox', { name: 'Find a card for All of these' }).isVisible())
+    const back = await page.locator('.stats__back.ribbon-back').boundingBox()
+    assert(back && back.x >= 0 && back.y >= 0 && back.y + back.height <= rail.y + rail.height, 'Back ribbon is clipped')
+    const heroes = await page.locator('.stats__heroes button').evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().right))
+    assert(heroes.length === 9 && heroes.every((right) => right <= selects.x), `Hero buttons hidden behind filters: ${heroes}`)
   })
+  await page.setViewportSize({ width: 568, height: 320 })
+  await page.screenshot({ path: join(output, 'stats-small-horizontal-phone.png') })
+  await checkAsync('small horizontal phone keeps every hero and filter in the top bar', async () => {
+    const selects = await page.locator('.stats__rail-selects').boundingBox()
+    const heroes = await page.locator('.stats__heroes').evaluate((strip) => ({
+      scrolls: strip.scrollWidth > strip.clientWidth,
+      rights: [...strip.querySelectorAll('button')].map((button) => button.getBoundingClientRect().right),
+    }))
+    assert(selects && selects.x + selects.width <= 568, 'Filters overflow the small phone')
+    assert(await page.locator('.stats__table-scroll').evaluate((table) => table.scrollWidth <= table.clientWidth), 'Archetype table overflows the small phone')
+    assert(await page.locator('.stats__row-button strong').evaluateAll((names) => names.length > 0 && names.every((name) => name.scrollHeight <= name.clientHeight + 1)), 'Archetype names are truncated on the small phone')
+    assert(!heroes.scrolls && heroes.rights.length === 9 && heroes.rights.every((right) => right <= selects.x), `Hero buttons hidden on small phone: ${heroes.rights}`)
+  })
+  await page.setViewportSize({ width: 844, height: 390 })
   await page.locator('.stats__scroll').evaluate((element) => { element.scrollTop = element.scrollHeight })
   await page.screenshot({ path: join(output, 'stats-next-card-phone.png') })
   await checkAsync('next-card comparison remains reachable on a horizontal phone', async () => {
@@ -194,11 +255,11 @@ try {
   })
   await page.getByRole('button', { name: /Coolheaded/ }).click()
   await checkAsync('choosing a next-card delta adds an any-upgrade required card', async () => {
-    assert(await page.getByRole('button', { name: /Remove Coolheaded \(any upgrade\) from ALL OF THESE/ }).isVisible())
+    assert(await page.getByRole('button', { name: /Remove Coolheaded \(any upgrade\) from All of these/ }).isVisible())
     await page.locator('.stats__metric').first().locator('strong').getByText('2', { exact: true }).waitFor()
   })
   await page.getByRole('button', { name: 'Expression' }).click()
-  await page.getByLabel('COMBINE CARDS WITH AND').fill('Dual Cast or Dual Cast+')
+  await page.getByLabel('Card expression').fill('Dual Cast or Dual Cast+')
   await page.getByRole('button', { name: 'Apply' }).click()
   await page.locator('.stats__metric').first().locator('strong').getByText('4', { exact: true }).waitFor()
   await page.locator('.stats__next').scrollIntoViewIfNeeded()
@@ -206,7 +267,7 @@ try {
   await checkAsync('next-card deltas preserve and refine a complex expression, even when reapplied', async () => {
     await page.locator('.stats__metric').first().locator('strong').getByText('2', { exact: true }).waitFor()
     assert(await page.getByRole('button', { name: 'Expression' }).getAttribute('aria-pressed') === 'true')
-    assert((await page.getByLabel('COMBINE CARDS WITH AND').inputValue()).includes('@coolheaded'))
+    assert((await page.getByLabel('Card expression').inputValue()).includes('@coolheaded'))
     await page.getByRole('button', { name: 'Apply' }).click()
     await page.locator('.stats__metric').first().locator('strong').getByText('2', { exact: true }).waitFor()
   })
@@ -218,12 +279,15 @@ try {
   await pendingPage.goto(`http://127.0.0.1:${viteAddress.port}`, { waitUntil: 'networkidle' })
   await pendingPage.getByRole('button', { name: 'Stats', exact: true }).click()
   await pendingPage.getByRole('button', { name: /Refresh 1 pending/ }).waitFor()
+  await checkAsync('pending refresh uses the gold action colour', async () => {
+    assertEqual(await pendingPage.getByRole('button', { name: /Refresh 1 pending/ }).evaluate((button) => getComputedStyle(button).color), 'rgb(241, 202, 133)')
+  })
   pending.deckType = 'Defect Lightning Orb Focus'
   await pendingPage.getByRole('button', { name: /Refresh 1 pending/ }).click()
   await checkAsync('pending classifications can be refreshed without changing filters', async () => {
     await pendingPage.locator('.stats__metric').first().locator('strong').getByText('7', { exact: true }).waitFor()
     await pendingPage.getByRole('button', { name: /Refresh 1 pending/ }).waitFor({ state: 'hidden' })
-    assert((await pendingPage.getByRole('button', { name: /Defect Lightning Orb Focus/ }).innerText()).includes('4 runs sampled'))
+    assert((await pendingPage.getByRole('button', { name: /Defect Lightning Orb Focus/ }).innerText()).includes('4 runs'))
   })
   pending.deckType = undefined
   await pendingPage.getByRole('button', { name: 'Defect', exact: true }).click()
@@ -237,15 +301,18 @@ try {
   await pendingPage.getByRole('alert').waitFor()
   pending.deckType = 'Defect Lightning Orb Focus'
   await checkAsync('a transient stats outage does not stop pending auto-refresh after recovery', async () => {
-    await pendingPage.getByRole('button', { name: /Defect Lightning Orb Focus/ }).getByText('4 runs sampled').waitFor({ timeout: 25_000 })
+    await pendingPage.getByRole('button', { name: /Defect Lightning Orb Focus/ }).getByText('4 runs').waitFor({ timeout: 25_000 })
     assertEqual(failedStatsRequests, 2)
   })
   await pendingPage.close()
   await page.getByRole('button', { name: 'Visual builder' }).click()
   await page.getByRole('button', { name: 'Clear filters' }).click()
-  const cardSearch = page.getByRole('searchbox', { name: 'Find a card for ALL OF THESE' })
+  await checkAsync('clearing filters hides the clear action', async () => {
+    assertEqual(await page.getByRole('button', { name: 'Clear filters' }).count(), 0)
+  })
+  const cardSearch = page.getByRole('searchbox', { name: 'Find a card for All of these' })
   await cardSearch.fill('Strike')
-  const suggestion = page.getByRole('listbox', { name: 'ALL OF THESE suggestions' }).getByRole('option').first()
+  const suggestion = page.getByRole('listbox', { name: 'All of these suggestions' }).getByRole('option').first()
   await suggestion.waitFor()
   await cardSearch.press('Tab')
   await checkAsync('keyboard focus remains in card suggestions and Enter chooses a result', async () => {
@@ -257,13 +324,13 @@ try {
   })
   server.store.leaderboardRuns[4].finalDeck = [...server.store.leaderboardRuns[4].finalDeck, card('strike_ironclad')]
   await page.getByRole('button', { name: 'Expression' }).click()
-  await page.getByLabel('COMBINE CARDS WITH AND').fill('')
+  await page.getByLabel('Card expression').fill('')
   await page.getByRole('button', { name: 'Apply' }).click()
   await page.getByRole('button', { name: 'All heroes' }).click()
   await page.getByRole('region', { name: 'Next card comparison' }).getByRole('button', { name: /Strike/ }).click()
   await checkAsync('reapplying a shared-name next-card filter keeps its specific hero card', async () => {
     await page.locator('.stats__metric').first().locator('strong').getByText('2', { exact: true }).waitFor()
-    assert((await page.getByLabel('COMBINE CARDS WITH AND').inputValue()).includes('@strike_defect'))
+    assert((await page.getByLabel('Card expression').inputValue()).includes('@strike_defect'))
     await page.getByRole('button', { name: 'Apply' }).click()
     await page.locator('.stats__metric').first().locator('strong').getByText('2', { exact: true }).waitFor()
   })
@@ -302,12 +369,12 @@ try {
     id: `browser-1234:stats-burn-${index}`, finalDeck: [card('burn')] })
   await page.route('**/api/stats?*', async (route) => route.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify(statsSnapshot(server.store.leaderboardRuns, new URL(route.request().url()).searchParams)) }))
-  await page.getByLabel('COMBINE CARDS WITH AND').fill('')
+  await page.getByLabel('Card expression').fill('')
   await page.getByRole('button', { name: 'Apply' }).click()
   await page.getByRole('region', { name: 'Next card comparison' }).getByRole('button', { name: /Burn/ }).click()
   await checkAsync('status-card suggestions remain valid when the expression is reapplied', async () => {
     await page.locator('.stats__metric').first().locator('strong').getByText('2', { exact: true }).waitFor()
-    assert((await page.getByLabel('COMBINE CARDS WITH AND').inputValue()).includes('@burn'))
+    assert((await page.getByLabel('Card expression').inputValue()).includes('@burn'))
     await page.getByRole('button', { name: 'Apply' }).click()
     await page.locator('.stats__metric').first().locator('strong').getByText('2', { exact: true }).waitFor()
   })
@@ -315,11 +382,16 @@ try {
   await page.getByRole('button', { name: 'Visual builder' }).click()
   await page.getByRole('button', { name: 'Clear filters' }).click()
   await page.getByRole('button', { name: 'Defect', exact: true }).click()
-  await page.getByRole('searchbox', { name: 'Find a card for ALL OF THESE' }).fill('Barricade')
-  await page.getByRole('listbox', { name: 'ALL OF THESE suggestions' }).getByRole('option').filter({ hasText: 'Barricade' }).filter({ hasText: 'Ironclad' }).first().click()
+  await page.getByRole('searchbox', { name: 'Find a card for All of these' }).fill('Barricade')
+  await page.getByRole('listbox', { name: 'All of these suggestions' }).getByRole('option').filter({ hasText: 'Barricade' }).filter({ hasText: 'Ironclad' }).first().click()
   await checkAsync('a Defect run with a cross-hero card is searchable in the visual builder', async () => {
-    assert(await page.getByRole('button', { name: /Remove Barricade from ALL OF THESE/ }).isVisible())
+    assert(await page.getByRole('button', { name: /Remove Barricade from All of these/ }).isVisible())
     await page.locator('.stats__metric').first().locator('strong').getByText('1', { exact: true }).waitFor()
+  })
+  await page.getByRole('button', { name: 'Back to main menu' }).click()
+  await checkAsync('the back ribbon returns to the main menu', async () => {
+    await page.getByRole('button', { name: 'Stats', exact: true }).waitFor()
+    assertEqual(await page.locator('.stats').count(), 0)
   })
   check('page has no uncaught errors', () => assertEqual(errors.length, 0, errors.join('\n')))
   report('stats explorer browser')

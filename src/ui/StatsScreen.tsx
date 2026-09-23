@@ -9,8 +9,8 @@ import { CHARACTER_LABEL } from './run-summary-data.ts'
 
 const HEROES = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'] as const
 const COLUMNS = [
-  ['deckType', 'Deck Type'], ['averageFloors', 'Average Floors Reached'],
-  ['averageDamage', 'Average Damage'], ['averageBlock', 'Average Block %'],
+  ['deckType', 'Deck'], ['averageFloors', 'Floors'],
+  ['averageDamage', 'Damage'], ['averageBlock', 'Block'],
 ] as const
 const CHOICES: (CardChoice & { owner: string })[] = Object.values(CARDS).flatMap((card) => [
   { id: card.id, label: card.name, upgraded: false, owner: card.owner },
@@ -30,8 +30,8 @@ const decimal = (value: number | null | undefined) => value == null ? '—' : va
 const percent = (value: number | null | undefined) => value == null ? '—' : `${Math.round(value * 100)}%`
 const delta = (value: number | null, suffix = '') => value == null ? '—' : `${value >= 0 ? '+' : ''}${(value * (suffix === '%' ? 100 : 1)).toFixed(1)}${suffix}`
 
-function CardFilter({ bucket, label, hint, choices, selected, onAdd, onRemove }: {
-  bucket: Bucket; label: string; hint: string; choices: typeof CHOICES
+function CardFilter({ bucket, label, choices, selected, onAdd, onRemove }: {
+  bucket: Bucket; label: string; choices: typeof CHOICES
   selected: CardChoice[]; onAdd: (choice: CardChoice) => void; onRemove: (choice: CardChoice) => void
 }) {
   const [search, setSearch] = useState('')
@@ -45,7 +45,7 @@ function CardFilter({ bucket, label, hint, choices, selected, onAdd, onRemove }:
   }).slice(0, 7)
   const pick = (choice: CardChoice) => { onAdd(choice); setSearch(''); input.current?.focus(); setFocused(false) }
   return <div className="stats__filter" data-bucket={bucket}>
-    <div className="stats__filter-heading"><strong>{label}</strong><span>{hint}</span></div>
+    <strong className="stats__filter-label">{label}</strong>
     <div className="stats__filter-content">
       {selected.map((choice) => <button type="button" className="stats__chip" key={choiceKey(choice)}
         title={`Remove ${choice.label}`} aria-label={`Remove ${choice.label} from ${label}`} onClick={() => onRemove(choice)}>
@@ -72,8 +72,9 @@ function CardFilter({ bucket, label, hint, choices, selected, onAdd, onRemove }:
   </div>
 }
 
-function Metric({ label, value, foot }: { label: string; value: string; foot: string }) {
-  return <div className="stats__metric"><span>{label}</span><strong>{value}</strong><small>{foot}</small></div>
+function Metric({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return <div className="stats__metric"><img src={assetPath(icon)} alt="" />
+    <span>{label}</span><strong>{value}</strong></div>
 }
 
 export function StatsScreen({ onBack }: { onBack: () => void }) {
@@ -182,21 +183,23 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
     setAppliedExpression(nextQuery)
     setExpressionError('')
   }
-  const title = character === 'all' ? 'Every hero' : CHARACTER_LABEL[character]
+  const hasFilters = editor === 'builder' ? buckets.all.length + buckets.any.length + buckets.none.length > 0 : Boolean(appliedExpression)
+  const clearFilters = () => {
+    setBuckets({ all: [], any: [], none: [] }); setBuilderError('')
+    setAppliedExpression(null); appliedText.current = ''; setExpression(''); setExpressionError('')
+  }
   return <main className="stats" aria-labelledby="stats-title">
     <aside className="stats__rail">
-      <button type="button" className="stats__back" onClick={onBack} aria-label="Back to main menu">← <span>BACK TO MENU</span></button>
-      <div className="stats__brand"><span className="stats__sigil" aria-hidden="true">✦</span><span>THE SPIRE<br /><strong>ARCHIVE</strong></span></div>
-      <div className="stats__rail-title"><span>01 / EXPLORE</span><h1 id="stats-title">Stats<span>.</span></h1>
-        <p>Every run leaves a pattern.<br />Find the ones worth keeping.</p></div>
-      <div className="stats__rail-filters"><p className="stats__overline">THE HEROES</p>
+      <button type="button" className="stats__back ribbon-back" onClick={onBack} aria-label="Back to main menu"><span aria-hidden="true" /></button>
+      <h1 id="stats-title">Stats</h1>
+      <div className="stats__rail-filters">
         <div className="stats__heroes" role="group" aria-label="Filter by hero">
-          <button type="button" aria-pressed={character === 'all'} onClick={() => setCharacter('all')}><span className="stats__all-icon" aria-hidden="true">✦</span>All heroes</button>
-          {HEROES.map((hero) => <button type="button" key={hero} aria-pressed={character === hero} onClick={() => setCharacter(hero)}>
-            <img src={assetPath(`menu/compendium-icons/${hero}.webp`)} alt="" />{CHARACTER_LABEL[hero]}</button>)}
+          <button type="button" title="All heroes" aria-pressed={character === 'all'} onClick={() => setCharacter('all')}><span className="stats__all-icon" aria-hidden="true">✦</span><span className="stats__hero-name">All heroes</span></button>
+          {HEROES.map((hero) => <button type="button" key={hero} title={CHARACTER_LABEL[hero]} aria-pressed={character === hero} onClick={() => setCharacter(hero)}>
+            <img src={assetPath(`menu/compendium-icons/${hero}.webp`)} alt="" /><span className="stats__hero-name">{CHARACTER_LABEL[hero]}</span></button>)}
         </div>
         <div className="stats__rail-selects">
-          <label>ASCENSION <select value={ascension} onChange={(event) => setAscension(event.target.value === 'all' ? 'all'
+          <label>Ascension <select value={ascension} onChange={(event) => setAscension(event.target.value === 'all' ? 'all'
             : event.target.value.endsWith('+') ? event.target.value as `${number}+` : Number(event.target.value))}>
             <option value="all">All ascensions</option>
             <optgroup label="At least">
@@ -206,57 +209,51 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
               {Array.from({ length: 14 }, (_, value) => <option key={value} value={value}>Ascension {value}</option>)}
             </optgroup>
           </select></label>
-          <label>RUN MODE <select value={mode} onChange={(event) => setMode(event.target.value as StatsFilters['mode'])}>
+          <label>Run mode <select value={mode} onChange={(event) => setMode(event.target.value as StatsFilters['mode'])}>
             <option value="all">All modes</option><option value="standard">Standard</option><option value="daily">Daily</option><option value="custom">Custom</option>
           </select></label>
         </div>
       </div>
-      <div className="stats__rail-foot"><span>✧</span> DECK LABORATORY <small>Observe. Compare. Discover.</small></div>
     </aside>
 
     <section className="stats__body" aria-label="Stats explorer"
-      style={{ backgroundImage: `linear-gradient(115deg, #0c171af2, #101b1ff2), url("${assetPath('menu/compendium-archive.webp')}")` }}>
-      <header className="stats__top"><div><span className="stats__overline">THE ARCHIVE / STATS EXPLORER</span><h2>Explore the <em>possibilities.</em></h2>
-        <p>Build a question about the deck. Let the runs answer it.</p></div>
-        <div className="stats__live"><span aria-hidden="true">●</span> LIVE RUN DATA</div>
-      </header>
+      style={{ backgroundImage: `linear-gradient(115deg, #0b1215f0, #150f0cf0), url("${assetPath('menu/compendium-archive.webp')}")` }}>
       <div className="stats__scroll">
-        <section className="stats__workbench" aria-label="Deck filters">
-          <div className="stats__section-heading"><div><span className="stats__overline">01 — ASK A QUESTION</span><h3>Deck filters</h3></div>
-            <div className="stats__editor-tabs" role="group" aria-label="Filter editor"><button type="button" aria-pressed={editor === 'builder'} onClick={() => setEditor('builder')}>Visual builder</button>
-              <button type="button" aria-pressed={editor === 'expression'} onClick={() => setEditor('expression')}>Expression</button></div></div>
+        <section className="stats__panel stats__workbench" aria-label="Deck filters">
+          <header className="stats__section-heading"><h2>Deck filters</h2>
+            <div className="stats__heading-actions">
+              {hasFilters && <button type="button" className="stats__clear" onClick={clearFilters}>Clear filters</button>}
+              <div className="stats__editor-tabs" role="group" aria-label="Filter editor"><button type="button" aria-pressed={editor === 'builder'} onClick={() => setEditor('builder')}>Visual builder</button>
+                <button type="button" aria-pressed={editor === 'expression'} onClick={() => setEditor('expression')}>Expression</button></div>
+            </div></header>
           {editor === 'builder' ? <div className="stats__filters">
-            <CardFilter bucket="all" label="ALL OF THESE" hint="Include every card" choices={CHOICES} selected={buckets.all} onAdd={(choice) => addChoice('all', choice)} onRemove={(choice) => removeChoice('all', choice)} />
-            <CardFilter bucket="any" label="ANY OF THESE" hint="At least one card" choices={CHOICES} selected={buckets.any} onAdd={(choice) => addChoice('any', choice)} onRemove={(choice) => removeChoice('any', choice)} />
-            <CardFilter bucket="none" label="NONE OF THESE" hint="Exclude these cards" choices={CHOICES} selected={buckets.none} onAdd={(choice) => addChoice('none', choice)} onRemove={(choice) => removeChoice('none', choice)} />
-          </div> : <div className="stats__expression"><label htmlFor="stats-expression">COMBINE CARDS WITH AND · OR · NOT · ( )</label>
-            <div><input id="stats-expression" value={expression} onChange={(event) => setExpression(event.target.value)}
+            <CardFilter bucket="all" label="All of these" choices={CHOICES} selected={buckets.all} onAdd={(choice) => addChoice('all', choice)} onRemove={(choice) => removeChoice('all', choice)} />
+            <CardFilter bucket="any" label="Any of these" choices={CHOICES} selected={buckets.any} onAdd={(choice) => addChoice('any', choice)} onRemove={(choice) => removeChoice('any', choice)} />
+            <CardFilter bucket="none" label="None of these" choices={CHOICES} selected={buckets.none} onAdd={(choice) => addChoice('none', choice)} onRemove={(choice) => removeChoice('none', choice)} />
+          </div> : <div className="stats__expression">
+            <div><input value={expression} aria-label="Card expression" onChange={(event) => setExpression(event.target.value)}
+              title={'Combine cards with and, or, not and ( ). Quote names with spaces; @strike_defect matches one hero\'s card, any upgrade.'}
               onKeyDown={(event) => { if (event.key === 'Enter') applyExpression() }}
-              placeholder={'("Dual Cast" or "Dual Cast+") and not ("Strike" or "Strike+")'} />
-              <button type="button" onClick={applyExpression}>Apply ↗</button></div>
-            <small>Use card names; quote names with spaces. “Strike” matches every hero; @strike_defect matches Defect only, any upgrade.</small>
+              placeholder={'("Dual Cast" or "Dual Cast+") and not @strike_defect'} />
+              <button type="button" onClick={applyExpression}>Apply</button></div>
             {expressionError && <p role="alert">{expressionError}</p>}
           </div>}
           {editor === 'builder' && builderError && <p className="stats__filter-error" role="alert">{builderError}</p>}
-          {(buckets.all.length + buckets.any.length + buckets.none.length > 0 && editor === 'builder' || editor === 'expression' && appliedExpression) &&
-            <button type="button" className="stats__clear" onClick={() => { setBuckets({ all: [], any: [], none: [] }); setBuilderError(''); setAppliedExpression(null); appliedText.current = ''; setExpression(''); setExpressionError('') }}>Clear filters ×</button>}
         </section>
 
         <div className="stats__metrics" aria-label="Filtered run averages">
-          <Metric label="MATCHING RUNS" value={snapshot?.runs.toLocaleString() ?? '—'} foot={snapshot?.pending ? `${snapshot.pending} awaiting deck type` : 'submitted solo decks'} />
-          <Metric label="AVG. FLOORS REACHED" value={decimal(snapshot?.averageFloors)} foot="per recorded run" />
-          <Metric label="AVG. DAMAGE" value={decimal(snapshot?.averageDamage)} foot="dealt per fight" />
-          <Metric label="AVG. BLOCK %" value={percent(snapshot?.averageBlock)} foot="of incoming damage" />
+          <Metric icon="icons/card-reward.png" label="Runs" value={snapshot?.runs.toLocaleString() ?? '—'} />
+          <Metric icon="menu/map-scroll.png" label="Floors" value={decimal(snapshot?.averageFloors)} />
+          <Metric icon="icons/attack.png" label="Damage" value={decimal(snapshot?.averageDamage)} />
+          <Metric icon="icons/block.png" label="Block" value={percent(snapshot?.averageBlock)} />
         </div>
 
-        <section className="stats__results" aria-label="Deck type statistics">
-          <div className="stats__section-heading"><div><span className="stats__overline">02 — DISCOVER THE PATTERNS</span><h3>Deck archetypes <span>/{title}</span></h3></div>
-            <div className="stats__result-actions">{snapshot?.pending ? <button type="button" onClick={() => setRetry((current) => current + 1)}>↻ Refresh {snapshot.pending} pending</button> : null}
-              <span className="stats__result-count">{rows.length} TYPES</span></div></div>
-          <p className="stats__explain">Click an archetype to open a random deck from matching runs. Damage is dealt per fight; block is the share of incoming damage prevented.</p>
-          {loading ? <div className="stats__message" role="status">Reading the run archive…</div>
+        <section className="stats__panel" aria-label="Deck type statistics">
+          <header className="stats__section-heading"><h2>Deck archetypes</h2>
+            {snapshot?.pending ? <button type="button" className="stats__refresh" onClick={() => setRetry((current) => current + 1)}>↻ Refresh {snapshot.pending} pending</button> : null}</header>
+          {loading ? <div className="stats__message" role="status">Loading…</div>
             : error ? <div className="stats__message" role="alert">{error} <button type="button" onClick={() => setRetry((value) => value + 1)}>Try again</button></div>
-              : rows.length === 0 ? <div className="stats__message"><strong>No matching archetypes yet.</strong><span>{snapshot?.pending ? `${snapshot.pending} deck${snapshot.pending === 1 ? ' is' : 's are'} awaiting classification. Results refresh automatically; check the server key or daily budget if this persists.` : 'Try a different card combination, hero, or ascension.'}</span></div>
+              : rows.length === 0 ? <div className="stats__message"><strong>No matching decks</strong>{snapshot?.pending ? <span>{snapshot.pending} still being classified</span> : null}</div>
                 : <div className="stats__table-scroll"><table className="stats__table"><thead><tr>{COLUMNS.map(([column, label]) => <th key={column} scope="col" aria-sort={sort === column ? descending ? 'descending' : 'ascending' : undefined}>
                   <button type="button" onClick={() => {
                     if (sort === column) setDescending(!descending)
@@ -265,28 +262,26 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
                   <tbody>{rows.map((row) => <tr key={row.deckType} onClick={(event) => {
                     const button = event.currentTarget.querySelector<HTMLButtonElement>('button')
                     if (button) openDeck(row.deckType, button)
-                  }}><th scope="row"><button type="button" className="stats__row-button" onClick={(event) => { event.stopPropagation(); openDeck(row.deckType, event.currentTarget) }}>
-                    <img src={assetPath(`menu/compendium-icons/${row.character}.webp`)} alt="" /><span><strong>{row.deckType}</strong><small>{row.runs} run{row.runs === 1 ? '' : 's'} sampled</small></span><span className="stats__row-arrow" aria-hidden="true">↗</span></button></th>
+                  }}><th scope="row"><button type="button" className="stats__row-button" title={row.deckType} onClick={(event) => { event.stopPropagation(); openDeck(row.deckType, event.currentTarget) }}>
+                    <img src={assetPath(`menu/compendium-icons/${row.character}.webp`)} alt="" /><span><strong>{row.deckType}</strong><small>{row.runs} run{row.runs === 1 ? '' : 's'}</small></span><span className="stats__row-arrow" aria-hidden="true">›</span></button></th>
                     <td>{decimal(row.averageFloors)}</td><td>{decimal(row.averageDamage)}</td><td>{percent(row.averageBlock)}</td></tr>)}</tbody></table></div>}
         </section>
 
-        <section className="stats__next" aria-label="Next card comparison">
-          <div className="stats__section-heading"><div><span className="stats__overline">03 — GO DEEPER</span><h3>What if you had this card?</h3></div><span className="stats__result-count">NEXT CARD DELTA</span></div>
-          <p className="stats__explain">Within these matching runs, compare decks with each card to decks without it. Correlation, not a promise of improvement.</p>
+        <section className="stats__panel stats__next" aria-label="Next card comparison">
+          <header className="stats__section-heading"><h2>Card impact</h2></header>
           {snapshot && snapshot.nextCards.length > 0 ? <div className="stats__next-list">{snapshot.nextCards.map((entry) => {
             const card = CARDS[entry.defId]
-            return <button type="button" key={entry.defId} className="stats__next-card" onClick={() => addNextCard(entry.defId)} title="Add this card to the required filters">
+            return <button type="button" key={entry.defId} className="stats__next-card" onClick={() => addNextCard(entry.defId)} title="Add to filters">
               {card && <img src={cardThumbPath(card, false)} alt="" loading="lazy" />}
-              <span className="stats__next-name"><strong>{card?.name ?? entry.defId}</strong><small>{entry.runs} runs · any upgrade</small></span>
-              <span className="stats__next-delta" data-positive={entry.deltaFloors != null && entry.deltaFloors >= 0}> {delta(entry.deltaFloors)} <small>floors</small></span>
-              <span className="stats__next-extra">{delta(entry.deltaDamage)} dmg · {delta(entry.deltaBlock, '%')} block</span><span aria-hidden="true">＋</span>
+              <span className="stats__next-name"><strong>{card?.name ?? entry.defId}</strong><small><span>{entry.runs} runs</span><span>{delta(entry.deltaDamage)} dmg</span><span>{delta(entry.deltaBlock, '%')} block</span></small></span>
+              <span className="stats__next-delta" data-positive={entry.deltaFloors != null && entry.deltaFloors >= 0}>{delta(entry.deltaFloors)} <small>floors</small></span><span className="stats__next-add" aria-hidden="true">＋</span>
             </button>
-          })}</div> : <div className="stats__message stats__message--compact">More varied decks are needed to compare next cards.</div>}
+          })}</div> : <div className="stats__message stats__message--compact">Not enough runs yet</div>}
         </section>
       </div>
-      {deckLoading && <div className="stats__deck-loading" role="status">Drawing a deck from the archive…</div>}
+      {deckLoading && <div className="stats__deck-loading" role="status">Drawing a deck…</div>}
       {deckError && <div className="stats__deck-loading" role="alert">{deckError} <button type="button" onClick={() => setDeckError('')}>Dismiss</button></div>}
-      {sample && <CardCollectionDialog label={`${sample.deckType} · a random run`} cards={sample.cards.map((card, index) => ({ ...card, uid: `stats:${index}` }))}
+      {sample && <CardCollectionDialog label={`${sample.deckType} · random run`} cards={sample.cards.map((card, index) => ({ ...card, uid: `stats:${index}` }))}
         onClose={() => { setSample(null); requestAnimationFrame(() => opener.current?.focus({ preventScroll: true })) }} />}
     </section>
   </main>
