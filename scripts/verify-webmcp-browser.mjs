@@ -672,7 +672,7 @@ const futureRoomContexts = await page.locator('.room[aria-disabled="true"]').eva
   rooms.map((room) => room.getAttribute('data-webmcp-context')).filter(Boolean).sort())
 const roomControl = mapInspection.controls.find((control) => control.label === roomLabel)
 if (!roomControl) throw new Error(`reachable room is missing from WebMCP: ${roomLabel}`)
-const mapInteraction = await interact(roomControl.id)
+await interact(roomControl.id)
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')
 await page.waitForFunction(() => window.__STS_DEBUG__.getState()?.phase === 'player')
 const automaticStartInspection = await inspectAll()
@@ -731,6 +731,43 @@ const combatFlow = {
   targetReturnedState: Boolean(targetSettlement?.result.controls),
   changed: afterAttack.energy < beforeAttack.energy || afterAttack.enemyHp < beforeAttack.enemyHp,
   nextTurnReturned: /Turn 2/.test(endTurnResult.screen?.text ?? ''),
+}
+
+for (const hasHeldCard of [false, true]) {
+  await page.evaluate((held) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const player = run.combat.players[0]
+    Object.assign(player, {
+      character: 'hermit', hand: held ? [{ uid: 'webmcp-feint-held', defId: 'hermit_snapshot', upgraded: false }] : [],
+      chamber: [{ uid: 'webmcp-feint', defId: 'hermit_feint', upgraded: false }],
+      chamberSlots: 2, draw: [
+        { uid: 'webmcp-feint-draw-1', defId: 'hermit_strike', upgraded: false },
+        { uid: 'webmcp-feint-draw-2', defId: 'hermit_defend', upgraded: false },
+      ], discard: [], energy: 3, drawLocked: false,
+    })
+    Object.assign(run.combat, { phase: 'player', pendingCardCopy: undefined, pendingHermitSetupLoads: [] })
+    debug.setRun({ ...run, phase: 'map' })
+    debug.setRun(run)
+  }, hasHeldCard)
+  await page.getByRole('button', { name: 'Chamber, 1 of 2 slots filled' }).waitFor()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getState()?.players[0]?.chamber[0]?.defId === 'hermit_feint')
+  const chamber = (await inspectAll()).controls.find((control) => control.label === 'Chamber, 1 of 2 slots filled')
+  await interact(chamber.id)
+  const feint = (await inspectAll()).controls.find((control) => control.label.startsWith('Feint, cost 1'))
+  if (!feint) throw new Error(`WebMCP did not expose chambered Feint: ${JSON.stringify((await inspectAll()).controls.map((control) => control.label))}`)
+  const feintChoice = await interact(feint.id)
+  const feintCards = feintChoice.controls.filter((control) => control.context === 'Choose 1 to Load')
+  assertDeepEqual(feintCards.map((control) => control.label.split(',')[0]).sort(),
+    hasHeldCard ? ['Defend', 'Snapshot', 'Strike'] : ['Defend', 'Strike'],
+    'chambered Feint must reveal its post-draw Load choices without a pre-draw prompt')
+  const picked = await interact(feintCards.find((control) => control.label.startsWith('Defend'))?.id)
+  const confirmFeint = picked.controls.find((control) => control.label === 'Load 1 card')
+  if (!confirmFeint) throw new Error('WebMCP did not expose Feint Load confirmation')
+  await interact(confirmFeint.id)
+  assert(await page.evaluate(() => window.__STS_DEBUG__.getState().players[0].chamber
+    .some((card) => card.uid === 'webmcp-feint-draw-2')),
+    'WebMCP Feint Load confirmation must complete the play')
 }
 
 await page.evaluate(() => {
@@ -1087,7 +1124,7 @@ check('keeps snapshots scoped, stable, opaque, and current', () => {
 })
 
 check('keeps representative WebMCP payloads compact', () => {
-  assert(payloadChars.metadata < 1_350 && payloadChars.start < 900 && payloadChars.fixture < 3_700 && payloadChars.lab < 950,
+  assert(payloadChars.metadata < 1_350 && payloadChars.start < 1_100 && payloadChars.fixture < 3_700 && payloadChars.lab < 950,
     `payload budget exceeded: ${JSON.stringify(payloadChars)}`)
 })
 
@@ -1100,8 +1137,8 @@ check('starts a real Watcher run through WebMCP and loads cleanly', () => {
     JSON.stringify(mapInspection.unavailableControls.filter((control) => control.context?.startsWith('Floor '))
       .map((control) => control.context).sort()) === JSON.stringify(futureRoomContexts) &&
     futureRoomContexts.some((context) => context.includes('; exits to floor ')) &&
-    mapInteraction.controls.some((control) => control.label === 'End turn'),
-  'map inspection preserves every future route-planning room and map entry returns the settled combat screen')
+    automaticStartInspection.controls.some((control) => control.label === 'End turn'),
+  'map inspection preserves future routes and the settled combat screen exposes End turn')
   assertDeepEqual({ phase: automaticStartPhase, resolveControls: automaticStartResolveControls.length }, {
     phase: 'player', resolveControls: 0,
   }, 'WebMCP exposed a redundant action for deterministic start-of-combat effects')

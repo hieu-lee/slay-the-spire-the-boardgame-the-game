@@ -10,6 +10,7 @@ import type { CardDef, Effect } from '../../game/cards.ts'
 import {
   cardEnemyChoiceCount,
   cardIsPlayable,
+  cardNeedsChoicePreview,
   cardNeedsEnemy,
   cardPlayerChoiceCount,
   cardShivChoiceCount,
@@ -224,6 +225,7 @@ export function pendingFor(
     card.hermitDeadOn === true, choiceCards?.length, attachedGemId, card.uid,
     energyCharged ?? undefined,
   )
+  const needsChoicePreview = choiceCards === null && cardNeedsChoicePreview(def, state, viewer)
   return {
     card: shownCard,
     cardInHand,
@@ -232,6 +234,7 @@ export function pendingFor(
     effectEnergy,
     energyCharged,
     ...requirements,
+    choice: needsChoicePreview ? null : requirements.choice,
     guardianModeShift: requirements.guardianModeShift === null || attachedGemId === 'guardian_amethyst' ? null : false,
     enemyUid: null,
     playerId: null,
@@ -246,7 +249,7 @@ export function pendingFor(
     evokeEnemyUids: [],
     mode: null,
     corruptedShardMode: null,
-    choiceCards: choiceCards ?? (requirements.choice?.kind === 'recover'
+    choiceCards: choiceCards ?? (needsChoicePreview ? null : requirements.choice?.kind === 'recover'
       ? viewer.discard
       : requirements.choice?.kind === 'recoverExhaust' ? viewer.exhaust
         : requirements.choice?.kind === 'load' || requirements.choice?.kind === 'loadAny'
