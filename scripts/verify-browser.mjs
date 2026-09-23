@@ -4015,8 +4015,9 @@ await page.evaluate(async (run) => {
 const invincibleChoices = page.getByRole('group', { name: /Resolve .*Invincible/ })
 await invincibleChoices.getByRole('button', { name: 'Keep Invincible' }).click()
 await page.waitForFunction(() => !document.querySelector('.end-turn-effects'))
-check('Invincible can keep its Power from the sequential end-turn UI', async () => {
-  assert((await readRun()).combat.players[0].powers.some((power) => power.uid === 'ui-invincible'))
+const keptInvincible = (await readRun()).combat.players[0].powers.some((power) => power.uid === 'ui-invincible')
+check('Invincible can keep its Power from the sequential end-turn UI', () => {
+  assert(keptInvincible)
 })
 
 await page.setViewportSize({ width: 1440, height: 900 })
