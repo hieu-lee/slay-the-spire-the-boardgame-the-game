@@ -39,23 +39,25 @@ check('shared engine changes select every browser flow that imports them', () =>
 check('frontend surfaces select their cores and named focused browser checks', () => {
   const combat = affectedBrowser('src/ui/CombatScreen.tsx')
   includesEvery(combat, ['verify-browser.mjs', 'verify-online-browser.mjs',
-    'verify-safari-combat-animation-browser.mjs'], 'combat screen')
+    'verify-safari-combat-animation-browser.mjs', 'verify-courier-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 10, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 11, 'combat screen selected an unrelated browser suite')
   const room = affectedBrowser('src/ui/RoomScreen.tsx')
   includesEvery(room, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'room screen')
   const online = affectedBrowser('src/ui/OnlineGame.tsx')
-  includesEvery(online, ['verify-online-browser.mjs', 'verify-hosted-multiplayer-browser.mjs'], 'online screen')
+  includesEvery(online, ['verify-online-browser.mjs', 'verify-hosted-multiplayer-browser.mjs', 'verify-courier-browser.mjs'], 'online screen')
   assert(!online.includes('verify-browser.mjs'))
   assert(!online.includes('verify-noncombat-browser.mjs'))
-  assertEqual(online.length, 2, 'online screen selected an unrelated browser suite')
+  assertEqual(online.length, 3, 'online screen selected an unrelated browser suite')
   assertDeepEqual(affectedBrowser('src\\ui\\OnlineGame.tsx'), online)
-  assertDeepEqual(affectedBrowser('src/multiplayer/useRoomSession.ts'), online)
+  assertDeepEqual(affectedBrowser('src/multiplayer/useRoomSession.ts'), online.filter((script) => script !== 'verify-courier-browser.mjs'))
   assertDeepEqual(affectedBrowser('src/ui/WelcomeScreen.tsx'), ['verify-browser.mjs'])
   includesEvery(affectedBrowser('src/ui/combat-screen/vfx.tsx'), [
     'verify-browser.mjs', 'verify-online-browser.mjs', 'verify-lightning-act2-browser.mjs',
   ], 'combat VFX')
   assertDeepEqual(affectedBrowser('src/ui/PowerRow.tsx'), ['verify-power-hover-browser.mjs'])
+  assertDeepEqual(affectedBrowser('src/ui/CourierPanel.tsx'), ['verify-courier-browser.mjs'])
+  assertDeepEqual(affectedBrowser('src/ui/chrome/courier.css'), ['verify-courier-browser.mjs'])
   assertDeepEqual(affectedBrowser('src/ui/run-log.ts'), ['verify-run-replay-browser.mjs'])
   for (const file of ['src/ui/App.tsx', 'src/ui/StartMenu.tsx', 'src/ui/sfx.ts']) {
     const owners = affectedBrowser(file)
@@ -95,8 +97,13 @@ check('an engine submodule selects what its barrel selects', () => {
   assertEqual(guardianGems.length, 5, 'Guardian gem state selected unrelated focused browser suites')
   includesEvery(affectedBrowser('src/game/run/merchant.ts'), [
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
-    'verify-merchant-overflow-browser.mjs',
+    'verify-merchant-overflow-browser.mjs', 'verify-courier-browser.mjs',
   ], 'merchant engine')
+  for (const file of ['src/ui/App.tsx', 'src/ui/chrome/stone-keys.css', 'src/game/noncombat.ts', 'src/game/acquisition.ts',
+    'src/ui/ItemImage.tsx', 'src/ui/RelicChip.tsx', 'src/game/combat.ts', 'src/ui/chrome/run-header.css', 'src/ui/styles/combat.css',
+    'src/ui/styles/painterly-combat-stage.css']) {
+    includesEvery(affectedBrowser(file), ['verify-courier-browser.mjs'], `${file} hosts the Courier`)
+  }
   const guardianSocketResolution = affectedBrowser('src/game/run/guardian-gems.ts')
   includesEvery(guardianSocketResolution, [
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',

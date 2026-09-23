@@ -28,44 +28,6 @@
   font-family: 'Kreon', Georgia, serif;
 }
 
-.courier-panel {
-  position: fixed;
-  z-index: 30;
-  right: 1rem;
-  bottom: 1rem;
-  display: flex;
-  align-items: center;
-  gap: .65rem;
-  max-width: min(42rem, calc(100vw - 2rem));
-  padding: .75rem;
-  border: 1px solid #d8a84b;
-  border-radius: .7rem;
-  background: #17120f;
-  box-shadow: 0 .5rem 2rem #000b;
-  color: #f6e4b1;
-}
-
-.courier-panel label { display: flex; gap: .4rem; align-items: center; }
-
-.courier-panel .item-replacement {
-  display: grid;
-  flex: 1 0 100%;
-  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
-  gap: .4rem;
-}
-
-.courier-panel .item-replacement .item-icon-image { width: 2rem; height: 2rem; }
-
-.courier-panel button {
-  border: 1px solid #d8a84b;
-  background: #302318;
-  color: #fff0bd;
-}
-
-.courier-panel button:focus-visible { outline: 3px solid #f3c85b; outline-offset: 2px; }
-
-.courier-panel button:disabled { color: #9d9278; background: #241f1a; }
-
 * {
   box-sizing: border-box;
 }

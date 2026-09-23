@@ -1,29 +1,224 @@
-/* The panel is a nowrap flex row capped at 42rem, already carrying a title, a
-   cost, an optional Replace select and two buttons. Adding the offer's printed
-   text made a sixth item, so every child shrank toward min-content and the
-   prose — the widest, so the biggest shrink share — collapsed into a column one
-   word wide. The panel is fixed to the bottom edge and grows UPWARD, so it ate
-   the board. The prose gets its own full-width line instead. */
-.courier-panel {
-  flex-wrap: wrap;
-  /* Narrower than the 42rem styles.css allows: at full width the prose row
-     pushed the panel to 661px, which reached across the board and covered both
-     the End turn key and three cards of the hand. */
-  max-width: min(30rem, calc(100vw - 2rem));
+/* The offer is modal in practice: App.tsx and OnlineGame.tsx mark the board
+   `inert` while it is open, so it is centred over a dimmed board instead of
+   competing with the hand and the End turn key in the corner. */
+.courier {
+  color: #f6e4b1;
+  font-family: 'Kreon', Georgia, serif;
 }
 
-/* Clear of the End turn key, which is fixed to the same corner and occupies
-   the 4.5rem-7.5rem band (styles.css: `bottom: 4.5rem`, `min-height: 3rem`).
-   Anything below 7.5rem here puts the offer straight through the one control
-   the player needs on their turn.
+.courier--available {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-block: -.35rem;
+  padding: .25rem .45rem .25rem .4rem;
+  background: url('/assets/ui/panels/loot-stone.svg') center / 100% 100% no-repeat;
+  filter: drop-shadow(0 .3rem .3rem rgb(0 0 0 / .7));
+  animation: courier-arrive 320ms cubic-bezier(.22, .61, .36, 1) both;
+}
 
-   It still crosses a couple of hand cards at 1024px, and that is left alone:
-   App.tsx marks the whole board `inert` while an offer is open, so nothing
-   underneath is interactive and the panel IS the decision. Only the End turn
-   collision mattered, because that key is what the panel was hiding. */
-.app-shell--combat .courier-panel { bottom: 8rem; }
+.courier__mascot {
+  width: 2.6rem;
+  height: 2.6rem;
+  margin-block: -.45rem;
+  rotate: -8deg;
+  object-fit: contain;
+  filter: drop-shadow(0 .2rem .15rem rgb(0 0 0 / .7));
+}
 
-.courier-panel > .room-item-text {
-  flex: 1 0 100%;
-  max-width: 100%;
+.courier--available > strong {
+  color: #f5d96e;
+  font-size: .95rem;
+  letter-spacing: .04em;
+  text-shadow: 0 2px 2px #000;
+}
+
+.courier__peek { display: flex; gap: .35rem; }
+
+.courier--header { display: none; }
+
+.sts-scope .courier__peek button {
+  gap: .3rem;
+  min-height: 2.35rem;
+  padding: .15rem .7rem;
+  font-size: .85rem;
+}
+
+.courier__peek img { width: 1.35rem; height: 1.35rem; object-fit: contain; filter: drop-shadow(0 .1rem .1rem #000); }
+
+/* Above the offer too, so the header's relic tooltips are never cut by the banner. */
+.app-shell--combat:has(.courier--offer) > .app-shell__header { z-index: 71; }
+
+.courier-backdrop {
+  position: fixed;
+  z-index: 68;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgb(5 8 10 / .55), rgb(5 8 10 / .85));
+  animation: courier-fade 220ms ease both;
+}
+
+.courier--offer:focus { outline: none; }
+
+.courier--offer {
+  position: fixed;
+  z-index: 70;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  width: min(30rem, calc(100vw - 2rem));
+  translate: -50% -50%;
+  animation: courier-arrive 320ms cubic-bezier(.22, .61, .36, 1) both;
+}
+
+.courier__banner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  width: min(24rem, 90%);
+  min-height: 4.6rem;
+  margin: 0 0 -1.4rem;
+  padding: .55rem 3rem 1.1rem;
+  background: url('/assets/ui/panels/loot-scroll.svg') center / 100% 100% no-repeat;
+  color: #fff9df;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  line-height: 1;
+  text-shadow: 0 .12rem 0 #5d492e, 0 0 .22rem #362716;
+  filter: drop-shadow(0 .45rem .3rem rgb(0 0 0 / .7));
+}
+
+.courier__banner img { width: 2.3rem; height: 2.3rem; margin-top: -.2rem; object-fit: contain; filter: drop-shadow(0 .15rem .1rem rgb(0 0 0 / .55)); }
+
+.courier__stone {
+  display: grid;
+  grid-template-columns: 10.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 1.3rem;
+  width: 100%;
+  padding: 2.4rem 2rem 1.9rem;
+  background: url('/assets/ui/panels/loot-stone.svg') center / 100% 100% no-repeat;
+  filter: drop-shadow(0 .6rem .4rem rgb(0 0 0 / .7));
+}
+
+.courier__item { position: relative; display: grid; place-items: center; }
+
+.courier__item::before {
+  position: absolute;
+  inset: -18%;
+  background: radial-gradient(closest-side, rgb(246 207 77 / .28), transparent);
+  content: '';
+  pointer-events: none;
+}
+
+.courier__item > :is(.item-card-image, .item-card-fallback) {
+  width: 100%;
+  margin: 0;
+  animation: courier-float 3.2s ease-in-out infinite alternate;
+}
+
+.courier__details { display: grid; min-width: 0; align-content: center; gap: .85rem; }
+
+.courier__details h3 {
+  margin: 0;
+  color: #f5d96e;
+  font-size: 1.45rem;
+  line-height: 1.1;
+  text-shadow: 0 2px 2px #000;
+}
+
+.courier__price { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+
+.courier__gold { display: inline-flex; align-items: center; gap: .2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.courier__gold img { width: 1.35em; height: 1.35em; object-fit: contain; filter: drop-shadow(0 .1rem .08rem #000); }
+
+.courier__price > .courier__gold { color: #f5d96e; font-size: 1.35rem; text-shadow: 0 2px 2px #000; }
+
+.courier__funding {
+  position: relative;
+  display: grid;
+  flex: 1 1 6rem;
+  height: 1.15rem;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #8d7340;
+  border-radius: 1rem;
+  background: #0a1519;
+}
+
+.courier__funding > span { position: absolute; inset: 0 auto 0 0; background: linear-gradient(#f3d16a, #b98326); transition: width 300ms ease; }
+
+.courier__funding > small { position: relative; color: #fff7dc; font-size: .7rem; font-weight: 700; text-shadow: 0 1px 2px #000; }
+
+.courier__notice { margin: 0; color: #f4a896; font-size: .9rem; }
+
+.courier__replace { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: 0; padding: 0; border: 0; }
+
+.courier__replace legend { float: left; margin-right: .35rem; color: #d9bf72; font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+
+.sts-scope .courier__replace button { width: 2.9rem; height: 2.9rem; padding: 0; }
+
+.courier__replace .item-icon-image { width: 1.8rem; height: 1.8rem; }
+
+.courier__actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+.sts-scope .courier__actions button { gap: .35rem; min-height: 2.7rem; padding: .2rem 1.1rem; font-size: 1rem; font-weight: 700; }
+
+.sts-scope .courier--offer .courier__actions button.courier__buy:not(:disabled) {
+  background:
+    linear-gradient(180deg, #f3d16a, #c69036 52%, #9d6d20) padding-box,
+    linear-gradient(135deg, #fff0b0, #9b7431 48%, #e0bd6a) border-box;
+  color: #271b0a;
+  text-shadow: 0 1px 0 #fff5;
+}
+
+.courier__buy .courier__gold img { filter: none; }
+
+@keyframes courier-arrive { from { opacity: 0; transform: translateY(.75rem) scale(.97); } }
+@keyframes courier-fade { from { opacity: 0; } }
+@keyframes courier-float { to { transform: translateY(-.35rem); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .courier, .courier-backdrop, .courier__item > :is(.item-card-image, .item-card-fallback) { animation: none; }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .courier__banner { min-height: 3.4rem; margin-bottom: -1rem; padding: .35rem 2.5rem .85rem; font-size: 1.3rem; }
+  .courier__banner img { width: 1.8rem; height: 1.8rem; }
+  .courier__stone { grid-template-columns: 7.5rem minmax(0, 1fr); gap: 1rem; padding: 1.7rem 1.6rem 1.3rem; }
+  .courier__details { gap: .55rem; }
+  .courier__details h3 { font-size: 1.15rem; }
+}
+
+/* The stage's own short-screen breakpoint: below it the stage rises into the
+   turn bar, so the peek moves to the header as one key. */
+@media (orientation: landscape) and (max-height: 26.25rem) {
+  /* The raised header would otherwise clip the banner on the shortest phones. */
+  .courier--offer { top: calc(50% + 1.25rem); }
+  .courier--bar { display: none; }
+  .courier--header { display: flex; flex: none; z-index: 3; margin: 0; padding: 0; background: none; filter: none; animation: none; }
+  .courier--header:not([data-open]) > .courier__peek { display: none; }
+  /* The key stands in for the Courier's own relic chip, so the crowded header
+     row keeps its width. */
+  .run-status:has(> .courier--header) > .relic-bar > .relic-chip[data-relic='the_courier'] { display: none; }
+  .sts-scope .courier--header > .courier__toggle { min-width: 2.15rem; width: 2.15rem; min-height: 2.15rem; padding: 0; }
+  .courier__toggle img { width: 1.6rem; height: 1.6rem; rotate: -8deg; object-fit: contain; filter: drop-shadow(0 .15rem .1rem #000); }
+  .courier--header > .courier__peek {
+    position: absolute;
+    z-index: 1;
+    top: calc(100% + .35rem);
+    left: 0;
+    padding: .45rem .5rem;
+    background: url('/assets/ui/panels/loot-stone.svg') center / 100% 100% no-repeat;
+    filter: drop-shadow(0 .3rem .3rem rgb(0 0 0 / .7));
+  }
+  .sts-scope .courier__peek button { min-height: 2.6rem; padding: .05rem .6rem; font-size: .8rem; }
+  .courier--header > .courier__peek { flex-wrap: wrap; width: 14.5rem; padding: .65rem .8rem .6rem; }
+  .courier__rules { flex: 1 0 100%; margin: 0 0 .15rem; color: #efe0bb; font-size: .72rem; line-height: 1.25; }
+  .courier__toggle[aria-disabled='true'] { opacity: .45; cursor: default; }
 }

@@ -1,7 +1,7 @@
 import { TreasureEffects } from "./TreasureEffects.tsx"
 import { savedProfile } from '../profile.ts'
 import { PlayerTitle } from './PlayerTitle.tsx'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import { assetPath, preloadImages, releasePreloadedImages } from '../game/assets.ts'
 import type { CombatState } from '../game/combat.ts'
@@ -29,7 +29,8 @@ import { useCardMorphs } from './useCardMorphs.ts'
 import type { SummarySeat } from './RunSummary.tsx'
 import { GuardianSocketPanel, RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { wingBootLabel } from './wing-boots.ts'
-import { CourierPanel, RoomScreen } from './RoomScreen.tsx'
+import { CourierPanel, CourierPeek, courierPeekPhase } from './CourierPanel.tsx'
+import { RoomScreen } from './RoomScreen.tsx'
 import { ACT_IV_UNLOCK_BOXES } from '../game/campaign.ts'
 import { NeowScreen } from './NeowScreen.tsx'
 import { QuickSetupScreen } from './QuickSetupScreen.tsx'
@@ -241,6 +242,8 @@ function VoiceControls({ voice, seats, connected, volume, compact = false }: {
 
 export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const room = useRoomSession()
+  const { act: roomAct } = room
+  const revealCourierOnline = useCallback((kind: 'relic' | 'potion') => roomAct({ kind: 'courierReveal', itemKind: kind }), [roomAct])
   const prefersReducedMotion = usePrefersReducedMotion()
   const name = savedProfile()?.username ?? ''
   const [code, setCode] = useState('')
@@ -640,6 +643,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           {/* See App.tsx: HP belongs in the header on every screen, not only in combat. */}
           {headerViewer ? <span className="pip pip--hp" role="img" aria-label={`Health ${headerViewer.hp} of ${headerViewer.maxHp}`}>{headerViewer.hp}/{headerViewer.maxHp}</span> : null}
           {headerViewer ? <span className="pip"><IconValue name="gold" value={headerViewer.gold} size={20} /></span> : null}
+          {run.phase === 'combat' && combat ? <CourierPeek placement="header" players={combat.players} viewerId={snapshot.you.playerId} usedBy={run.courier.usedBy}
+            active={!run.courier.offer && courierPeekPhase(combat) && room.connection === 'connected' && !foreignInteractionLock && !giveUpStartPending}
+            onReveal={revealCourierOnline} /> : null}
           {headerViewer ? <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`} /> : null}
           {viewer && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
           !victoryIsTerminal(run, snapshot.campaignProgress) && !pendingAcquisition ? (
@@ -770,6 +776,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           state={combat}
           act={run.act}
           viewerId={snapshot.you.playerId}
+          courierUsedBy={run.courier.usedBy}
+          onCourierReveal={run.courier.offer ? undefined : revealCourierOnline}
           drawCount={combatViewer?.drawCount}
           decidedPlayerIds={snapshot.endTurnDecided}
           requiredEndTurnPlayerIds={snapshot.endTurnRequired}
@@ -803,7 +811,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           autoAdvance={!compendiumOpen && !pauseOpen && !settingsOpen && !giveUpStartPending && !soloGiveUpOpen && !giveUpVote && !run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
             !combat.players.find((player) => player.id === seat.playerId)?.dead)?.playerId === snapshot.you.playerId}
           onAction={room.act}
-        /></div><CourierPanel players={combat.players} viewerId={snapshot.you.playerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} pledge={snapshot.courierPledge} online onReveal={(kind) => room.act({ kind: 'courierReveal', itemKind: kind })} onResolve={(decision, payments, discardPotionId) => room.act({ kind: 'courierResolve', playerId: run.courier.offer?.playerId, decision, payments, discardPotionId })} /></>
+        /></div><CourierPanel players={combat.players} viewerId={snapshot.you.playerId} ascension={run.ascension} offer={run.courier.offer} pledge={snapshot.courierPledge} online onResolve={(decision, payments, discardPotionId) => room.act({ kind: 'courierResolve', playerId: run.courier.offer?.playerId, decision, payments, discardPotionId })} /></>
       ) : null}
       {run.phase === 'map' ? <><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)}
         blocked={pendingAcquisition} bossDefId={run.actBossDefId}

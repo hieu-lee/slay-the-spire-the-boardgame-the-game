@@ -236,7 +236,7 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
     </PotionTooltipAnchor>
   )
   return (
-    <span className={`relic-chip${relic.spent ? ' relic-chip--spent' : ''}`} tabIndex={0} role="img"
+    <span className={`relic-chip${relic.spent ? ' relic-chip--spent' : ''}`} data-relic={relic.defId} tabIndex={0} role="img"
       data-tip-dismissed={dismissed ? 'true' : undefined}
       // The panel cannot be left to `:focus-within` on a phone: iOS Safari does
       // not focus a `tabindex` span when you tap it, so the chip stayed silent

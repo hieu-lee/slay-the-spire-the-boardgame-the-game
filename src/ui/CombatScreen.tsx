@@ -190,6 +190,7 @@ import { enemyAttackTargetPlayerIds, cardVfxRecipe, orbVfxRecipe, potionVfxRecip
 import { combatBodyPoint } from './combat-geometry.ts'
 import { playSoundEffect } from './sfx.ts'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { CourierPeek, courierPeekPhase, courierReady } from './CourierPanel.tsx'
 import { createPortal } from 'react-dom'
 
 function targetPresentationTiming(
@@ -406,7 +407,8 @@ function CombatScreenView({
   onChange,
   onAction,
   autoAdvance = true,
-  courierAvailable = false,
+  courierUsedBy,
+  onCourierReveal,
   mutationsEnabled = true,
   drawCount,
   decidedPlayerIds,
@@ -591,6 +593,7 @@ function CombatScreenView({
   }
   const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
+  const courierAvailable = Boolean(onCourierReveal) && courierReady(viewer, courierUsedBy ?? [])
   const canUsePotionNow = (potionId: string) => Boolean(viewer &&
     canActivatePotion(state, viewer, potionId) && !(partyStartTurnPostRollLocked &&
       isPostRollStartTurnPotionChoice(state, viewer, potionId)))
@@ -4720,6 +4723,8 @@ function CombatScreenView({
         <span key={`${state.turn}-${state.phase}`} className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
           ? `Resolve ${copyResolutionLabel ?? 'card'}`
           : PHASE_LABEL[state.phase]}</span>
+        {onCourierReveal && courierPeekPhase(state)
+          ? <CourierPeek placement="bar" players={state.players} viewerId={viewerId} usedBy={courierUsedBy ?? []} onReveal={onCourierReveal} /> : null}
         <span className="combat__actions">
           {!viewer.dead && !relicScry && !voluntaryActionsBlocked && (state.phase === 'player' || state.phase === 'discard' ||
             state.phase === 'start' && viewer.potions.includes('gamblers_brew')) ? (

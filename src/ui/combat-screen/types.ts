@@ -25,7 +25,8 @@ export type CombatScreenProps = {
   onChange?: (next: CombatState) => void
   onAction?: (action: Record<string, unknown>) => void | Promise<ActionOutcome | void>
   autoAdvance?: boolean
-  courierAvailable?: boolean
+  courierUsedBy?: string[]
+  onCourierReveal?: (kind: 'relic' | 'potion') => void
   mutationsEnabled?: boolean
   drawCount?: number
   decidedPlayerIds?: string[]

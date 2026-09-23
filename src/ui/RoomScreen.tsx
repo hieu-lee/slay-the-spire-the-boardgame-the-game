@@ -7,13 +7,11 @@ import { startTurnScryAbilities, startTurnScryPreview } from "../game/combat.ts"
 import { potionDef, relicDef } from "../game/relics.ts";
 import type { EventDecision, EventRoomState } from "../game/event-room.ts";
 import type {
-  CourierOffer,
   MerchantPurchase,
   MerchantState,
   RelicRewardState,
   TreasureDecision,
 } from "../game/noncombat.ts";
-import { courierCost } from "../game/noncombat.ts";
 import { merchantCardCost, merchantRelicCost, potionLimit } from "../game/acquisition.ts";
 import { relicOptionLabel, RelicOptionText } from "./RelicChip.tsx";
 import { useHoverUnavailable } from "./touch-input.ts";
@@ -127,44 +125,6 @@ function Price({ value, sale = false }: { value: number | null; sale?: boolean }
         <span className="visually-hidden"> Gold{sale ? ", on sale" : ""}</span></>}
     </span>
   );
-}
-
-export function CourierPanel({ players, viewerId, ascension, usedBy, offer, pledge, online = false, onReveal, onResolve }: {
-  players: Player[];
-  viewerId: string;
-  ascension: number;
-  usedBy: string[];
-  offer: CourierOffer | null;
-  pledge?: { playerId: string; id: string; discardPotionId?: string; payments: Record<string, number> };
-  online?: boolean;
-  onReveal: (kind: CourierOffer['kind']) => void;
-  onResolve: (decision: 'buy' | 'discard', payments?: Record<string, number>, discardPotionId?: string) => void;
-}) {
-  const viewer = players.find((player) => player.id === viewerId) ?? players[0]!;
-  const owner = players.find((player) => player.id === offer?.playerId) ?? viewer;
-  const [discardPotionId, setDiscardPotionId] = useState('');
-  const livingPlayers = players.filter((player) => !player.dead);
-  const ownsCourier = !viewer.dead && viewer.relics.some((relic) => relic.defId === 'the_courier');
-  if (!offer && (!ownsCourier || usedBy.includes(viewer.id))) return null;
-  if (!offer) return <aside className="courier-panel" aria-label="The Courier"><strong>The Courier</strong><span>Once this combat, inspect a deck.</span><button type="button" onClick={() => onReveal('relic')}>Look at Relic</button><button type="button" onClick={() => onReveal('potion')}>Look at Potion</button></aside>;
-  const cost = courierCost(offer);
-  const funded = Object.values(pledge?.payments ?? {}).reduce((sum, amount) => sum + amount, 0);
-  const remaining = Math.max(0, (cost ?? 0) - funded);
-  const mine = pledge?.payments[viewer.id] ?? 0;
-  const contribution = viewer.dead ? 0 : online ? Math.min(Math.max(0, viewer.gold - mine), remaining) : livingPlayers.reduce((sum, player) => sum + player.gold, 0) >= remaining ? remaining : 0;
-  const partyCanAfford = livingPlayers.reduce((sum, player) => sum + player.gold, 0) >= remaining;
-  const payments = online ? { [viewer.id]: mine + contribution } : (() => {
-    let left = remaining;
-    return Object.fromEntries(livingPlayers.map((player): [string, number] => {
-      const paid = Math.min(player.gold, left);
-      left -= paid;
-      return [player.id, paid];
-    }).filter(([, paid]) => paid > 0));
-  })();
-  const potionBlocked = offer.kind === 'potion' && hasSozu(owner);
-  const potionFull = offer.kind === 'potion' && owner.potions.length >= potionLimit(ascension, owner);
-  const canFund = !viewer.dead && !potionBlocked && cost !== null && (pledge ? contribution > 0 : (!online || viewer.id === owner.id) && partyCanAfford) && (!online || viewer.id === owner.id || Boolean(pledge)) && (!potionFull || Boolean(pledge?.discardPotionId ?? discardPotionId));
-  return <aside className="courier-panel" aria-label="The Courier offer"><strong>The Courier · {offer.kind === 'relic' ? relicDef(offer.id).name : potionDef(offer.id).name}</strong><ItemImage kind={offer.kind} id={offer.id} card={offer.kind === 'relic'} /><span className="room-item-text">{offer.kind === 'relic' ? relicDef(offer.id).text : potionDef(offer.id).text}</span><span>{potionBlocked ? 'Sozu prevents gaining Potions' : cost === null ? 'Cannot be bought' : `◉ ${cost}${funded ? ` · ${remaining} remaining` : ''}`}</span>{potionFull && !potionBlocked && viewer.id === owner.id && !pledge ? <fieldset className="item-replacement" aria-label="Replace Potion"><legend>Replace Potion</legend>{owner.potions.map((id, index) => <button type="button" key={`${id}-${index}`} aria-pressed={discardPotionId === id} onClick={() => setDiscardPotionId((current) => current === id ? '' : id)}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}</fieldset> : null}<button type="button" disabled={!canFund} onClick={() => onResolve('buy', payments, pledge?.discardPotionId ?? (discardPotionId || undefined))}>Buy / pledge ◉ {contribution}</button>{viewer.id === owner.id ? <button type="button" onClick={() => onResolve('discard')}>Discard offer</button> : null}</aside>;
 }
 
 export function RoomScreen(props: Props) {

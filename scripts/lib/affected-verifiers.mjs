@@ -21,7 +21,10 @@ const onlineUi = /^(src\/multiplayer\/|src\/ui\/Online)/
 const focusedEngineOwners = new Map([
   ['src/game/guardian-gems.ts', ['verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs']],
   ['src/game/run/guardian-gems.ts', ['verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs']],
-  ['src/game/run/merchant.ts', ['verify-merchant-overflow-browser.mjs']],
+  ['src/game/acquisition.ts', ['verify-courier-browser.mjs']],
+  ['src/game/combat.ts', ['verify-courier-browser.mjs']],
+  ['src/game/noncombat.ts', ['verify-courier-browser.mjs']],
+  ['src/game/run/merchant.ts', ['verify-merchant-overflow-browser.mjs', 'verify-courier-browser.mjs']],
   ['src/game/run/neow.ts', [
     'verify-blessing-potions-browser.mjs', 'verify-boon-socket-browser.mjs', 'verify-neow-viewport-browser.mjs',
   ]],
@@ -32,7 +35,11 @@ const focusedEngineOwners = new Map([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = new Map([
-  ['src/ui/App.tsx', ['verify-run-replay-browser.mjs']],
+  ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-courier-browser.mjs']],
+  ['src/ui/CombatScreen.tsx', ['verify-courier-browser.mjs']],
+  ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
+  ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
+  ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs']],
   ['src/ui/sfx.ts', ['verify-run-replay-browser.mjs']],
   ['src/ui/combat-screen/vfx.tsx', ['verify-lightning-act2-browser.mjs']],
@@ -40,6 +47,8 @@ const focusedUiOwners = new Map([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
+  ['src/ui/CourierPanel.tsx', ['verify-courier-browser.mjs']],
+  ['src/ui/chrome/courier.css', ['verify-courier-browser.mjs']],
   ['src/ui/PowerRow.tsx', ['verify-power-hover-browser.mjs']],
   ['src/ui/run-log.ts', ['verify-run-replay-browser.mjs']],
   ['src/ui/styles/powers-in-play.css', ['verify-power-hover-browser.mjs']],
@@ -50,6 +59,10 @@ const onlineBrowserOwners = ['verify-online-browser.mjs', 'verify-hosted-multipl
 const stylesheetBrowserOwners = (file) => file === 'src/ui/styles/hand.css'
   ? ['verify-card-cancel-browser.mjs', 'verify-combat-hand-viewport-browser.mjs',
     'verify-combat-player-clipping-browser.mjs', 'verify-end-turn-drag-browser.mjs']
+  : file === 'src/ui/styles/combat.css' || file === 'src/ui/styles/painterly-combat-stage.css'
+    ? ['verify-courier-browser.mjs']
+  : file === 'src/ui/chrome/stone-keys.css' || file === 'src/ui/chrome/run-header.css'
+    ? ['verify-hover-overflow-browser.mjs', 'verify-courier-browser.mjs']
   : file === 'src/ui/chrome.css' || file.startsWith('src/ui/chrome/')
     ? ['verify-hover-overflow-browser.mjs']
     : []

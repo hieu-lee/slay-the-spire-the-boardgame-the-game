@@ -172,7 +172,7 @@ try {
       debug.setRun(run)
     })
     await page.locator('.room-screen:has(> .run-summary)').waitFor()
-    await assertStoneKey(page, '.room-screen:has(> .run-summary) > button', true, `record-result-${viewport.width}`)
+    await assertStoneKey(page, '.room-screen:has(> .run-summary) > .room-screen__actions > button', true, `record-result-${viewport.width}`)
     await page.evaluate(() => {
       const debug = window.__STS_DEBUG__
       const run = structuredClone(debug.getRun())
