@@ -6,7 +6,7 @@ import { basename } from 'node:path'
 import { WebSocketServer } from 'ws'
 import { classifyDeckType, codexReady } from './lib/codex-deck-classifier.mjs'
 import { addLeaderboardRun, leaderboardSnapshot, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
-import { deckHash, HERO_NAMES, randomDeck, recordDeckClassification, soloDeck, statsSnapshot, validClassifierThreadId, validDeckType, validSoloDeck } from './lib/stats.mjs'
+import { deckHash, HERO_NAMES, SPECIFIC_ARCHETYPE_FLOOR, otherDeckType, randomDeck, recordDeckClassification, soloDeck, statsSnapshot, validClassifierThreadId, validDeckType, validSoloDeck } from './lib/stats.mjs'
 import {
   apply,
   chooseAscension,
@@ -214,7 +214,28 @@ export function createRoomServer({
   const failedDecks = new Map(store.leaderboardRuns.filter((entry) => entry.deckClassificationRetry)
     .map((entry) => [entry.id, { at: entry.deckClassificationRetry.after, hash: entry.deckClassificationRetry.hash, hero: entry.character }]))
   const scheduleClassification = (delay = 0) => {
-    if (!classifierEnabled || classifierClosed || classifying) return
+    if (classifierClosed) return
+    for (const run of store.leaderboardRuns) {
+      const other = otherDeckType(run.character)
+      if (run.deckType && (run.deckType !== other || run.floorsCleared < SPECIFIC_ARCHETYPE_FLOOR)) continue
+      if (!validSoloDeck(run)) continue
+      const hasSpecific = store.deckTypes.some((type) => type.startsWith(`${HERO_NAMES[run.character]} `) && type !== other)
+      if (run.deckType === other && run.floorsCleared >= SPECIFIC_ARCHETYPE_FLOOR && !hasSpecific) {
+        delete run.deckType
+        store.leaderboardChanges.set(run.id, run)
+        store.leaderboardRevision += 1
+        recordDeckClassification(store, run)
+        queueSave()
+      }
+      if (run.deckType || run.floorsCleared >= SPECIFIC_ARCHETYPE_FLOOR || hasSpecific) continue
+      if (!store.deckTypes.includes(other)) { store.deckTypes.push(other); store.statsStateDirty = true }
+      run.deckType = other
+      delete run.deckClassificationRetry
+      failedDecks.delete(run.id)
+      recordDeckClassification(store, run)
+      queueSave()
+    }
+    if (!classifierEnabled || classifying) return
     const nextAt = Date.now() + delay
     if (classifierTimer && nextAt >= classifierTimerAt) return
     if (classifierTimer) clearTimeout(classifierTimer)
@@ -269,6 +290,7 @@ export function createRoomServer({
         classifierAbort = controller
         const deck = JSON.stringify(soloDeck(run))
         const hero = run.character
+        const deepRun = run.floorsCleared >= SPECIFIC_ARCHETYPE_FLOOR
         try {
           const result = await deckClassifier(run, store.deckTypes, store.deckClassifierThreadId, undefined,
             AbortSignal.any([controller.signal, AbortSignal.timeout(300_000)]), store.leaderboardRuns)
@@ -278,6 +300,13 @@ export function createRoomServer({
           if (!validDeckType(type) || !type.startsWith(`${HERO_NAMES[run.character]} `)) throw new Error('Deck classifier returned an invalid type')
           const current = store.leaderboardRuns.find((entry) => entry.id === run.id)
           if (!current || current.deckType || current.character !== hero || JSON.stringify(soloDeck(current)) !== deck) continue
+          const other = otherDeckType(hero)
+          const currentDeep = current.floorsCleared >= SPECIFIC_ARCHETYPE_FLOOR
+          if (!currentDeep && type !== other && !store.deckTypes.includes(type) ||
+              currentDeep && type === other && !store.deckTypes.some((name) => name.startsWith(`${HERO_NAMES[hero]} `) && name !== other)) {
+            if (currentDeep !== deepRun) continue
+            throw new Error('Deck classifier returned a type not allowed for this floor')
+          }
           if (result?.threadId && result.threadId !== store.deckClassifierThreadId) {
             store.deckClassifierThreadId = result.threadId
             store.statsStateDirty = true
@@ -304,7 +333,8 @@ export function createRoomServer({
             queueSave()
           }
           const current = store.leaderboardRuns.find((entry) => entry.id === run.id)
-          if (!current || current.character !== hero || JSON.stringify(soloDeck(current)) !== deck) continue
+          if (!current || current.character !== hero || JSON.stringify(soloDeck(current)) !== deck ||
+              (current.floorsCleared >= SPECIFIC_ARCHETYPE_FLOOR) !== deepRun) continue
           if ((!error?.code || error.code === 'ABORT_ERR' || error.code === 'max_output_tokens') && validClassifierThreadId(error?.threadId) && error.threadId !== store.deckClassifierThreadId) {
             store.deckClassifierThreadId = error.threadId
             store.statsStateDirty = true

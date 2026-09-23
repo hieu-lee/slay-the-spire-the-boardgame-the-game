@@ -508,6 +508,33 @@ try {
     assert(!Object.keys(calls[0].options.env).some((key) => /KEY|TOKEN|SECRET/.test(key)))
     assert(JSON.parse(calls[0].prompt.slice(calls[0].prompt.indexOf('\n') + 1)).cards.some((card) => card.name === 'Dual Cast'))
   })
+  const hermitDeck = (id, floorsCleared) => normalizeLeaderboardRun(run(id, { character: 'hermit', floorsCleared,
+    finalDeck: [{ defId: 'hermit_snapshot', upgraded: false }] }))
+  const hermitLow = hermitDeck(149, 14)
+  const hermitHigh = hermitDeck(150, 15)
+  const hermitTypes = ['Hermit Other', 'Hermit Chamber Shots']
+  const lowExisting = await classifyDeckType(hermitLow, hermitTypes, undefined, simulatedCodex('hermit chamber shots'))
+  const lowOther = await classifyDeckType(hermitDeck(151, null), hermitTypes, undefined, simulatedCodex('hermit other'))
+  const inventedLow = await classifyDeckType(hermitLow, hermitTypes, undefined,
+    simulatedCodex('Hermit New Plan')).then(() => null, (error) => error)
+  const firstHighOther = await classifyDeckType(hermitHigh, ['Hermit Other'], undefined,
+    simulatedCodex('Hermit Other')).then(() => null, (error) => error)
+  const firstHighSpecific = await classifyDeckType(hermitHigh, ['Hermit Other'], undefined,
+    simulatedCodex('Hermit Chamber Shots'))
+  const laterHighOther = await classifyDeckType(hermitHigh, hermitTypes, undefined,
+    simulatedCodex('Hermit Other'))
+  check('Codex can reuse types below floor 15 but cannot invent a specific type, including with unknown floors', () => {
+    assertEqual(lowExisting.type, 'Hermit Chamber Shots')
+    assertEqual(lowOther.type, 'Hermit Other')
+    assert(inventedLow?.message.includes('invalid type'))
+    assert(calls.at(-5).prompt.includes('never invent a new specific archetype'))
+  })
+  check('the first floor-15 Hermit deck must create a specific type, not reuse Other', () => {
+    assert(firstHighOther?.message.includes('invalid type'))
+    assertEqual(firstHighSpecific.type, 'Hermit Chamber Shots')
+    assertEqual(laterHighOther.type, 'Hermit Other')
+    assert(calls.at(-2).prompt.includes('never choose "Hermit Other"'))
+  })
   const sampleRuns = [
     ...archive,
     { ...normalizeLeaderboardRun(run(63, { finalDeck: [{ defId: 'zap', upgraded: false }] })), deckType: 'Defect Lightning Orb Focus' },
@@ -1021,6 +1048,108 @@ try {
     if (savedBin === undefined) delete process.env.STS_CODEX_BIN
     else process.env.STS_CODEX_BIN = savedBin
   }
+  const thresholdFile = join(directory, 'archetype-floor.json')
+  const thresholdServer = createRoomServer({ storeFile: thresholdFile, classifierEnabled: false })
+  try {
+    const address = await thresholdServer.listen(0)
+    const submit = (id, floorsCleared) => fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(run(id, { character: 'hermit', floorsCleared,
+        finalDeck: [{ defId: 'hermit_snapshot', upgraded: false }] })) })
+    assertEqual((await submit(151, null)).status, 201)
+    assertEqual((await submit(152, 14)).status, 201)
+    assertEqual((await submit(153, 15)).status, 201)
+    check('shallow first decks use Hermit Other without login or model spending, but floor-15 decks remain pending', () => {
+      assertDeepEqual(thresholdServer.store.leaderboardRuns.map((entry) => entry.deckType), ['Hermit Other', 'Hermit Other', undefined])
+      assertEqual(thresholdServer.store.deckClassificationBudget.used, 0)
+      assert(thresholdServer.store.deckTypes.includes('Hermit Other'))
+      assertEqual(statsSnapshot(thresholdServer.store.leaderboardRuns).rows.find((row) => row.deckType === 'Hermit Other').runs, 2)
+    })
+    saveStore(thresholdServer.store)
+    assertEqual(createStore({ file: thresholdFile }).leaderboardRuns[0].deckType, 'Hermit Other')
+    assertEqual((await submit(151, 15)).status, 201)
+    check('a corrected floor count reopens Other for the first specific archetype', () => {
+      assertEqual(thresholdServer.store.leaderboardRuns[0].floorsCleared, 15)
+      assertEqual(thresholdServer.store.leaderboardRuns[0].deckType, undefined)
+      assertEqual(thresholdServer.store.leaderboardRuns[1].deckType, 'Hermit Other')
+    })
+  } finally { await thresholdServer.close() }
+  check('Other survives restart but newly floor-15 runs remain unclassified', () => {
+    const persisted = createStore({ file: thresholdFile })
+    assertDeepEqual(persisted.leaderboardRuns.map((entry) => entry.deckType), [undefined, 'Hermit Other', undefined])
+    assert(persisted.deckTypes.includes('Hermit Other'))
+  })
+  const thresholdCalls = []
+  const firstSpecificServer = createRoomServer({ storeFile: thresholdFile, classifierEnabled: true,
+    deckClassifier: async (_entry, types) => {
+      thresholdCalls.push([...types])
+      return 'Hermit Chamber Shots'
+    } })
+  try {
+    await firstSpecificServer.listen(0)
+    for (let attempt = 0; attempt < 40 && !firstSpecificServer.store.leaderboardRuns[2]?.deckType; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    check('the first floor-15 deck creates a specific type even after shallow Other decks', () => {
+      assertDeepEqual(thresholdCalls[0].filter((name) => name.startsWith('Hermit ')), ['Hermit Other'])
+      assertEqual(firstSpecificServer.store.leaderboardRuns[0].deckType, 'Hermit Chamber Shots')
+      assertEqual(firstSpecificServer.store.leaderboardRuns[1].deckType, 'Hermit Other')
+      assertEqual(firstSpecificServer.store.leaderboardRuns[2].deckType, 'Hermit Chamber Shots')
+    })
+  } finally { await firstSpecificServer.close() }
+  check('the first specific archetype replaces archived Other across another restart', () => {
+    const restored = createStore({ file: thresholdFile })
+    assertEqual(restored.leaderboardRuns[0].deckType, 'Hermit Chamber Shots')
+    assertEqual(restored.leaderboardRuns[1].deckType, 'Hermit Other')
+    assertEqual(restored.leaderboardRuns[2].deckType, 'Hermit Chamber Shots')
+  })
+  const invalidLowServer = createRoomServer({ storeFile: thresholdFile, classifierEnabled: true,
+    maxDeckClassificationsPerDay: 3, deckClassifier: async () => 'Hermit Unseeded Combo' })
+  try {
+    const address = await invalidLowServer.listen(0)
+    assertEqual((await fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(run(155, { character: 'hermit', floorsCleared: 14,
+        finalDeck: [{ defId: 'hermit_snapshot', upgraded: false }] })) })).status, 201)
+    for (let attempt = 0; attempt < 40 && invalidLowServer.store.deckClassificationBudget.used < 3; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    check('server cannot invent a specific archetype for a shallow deck even with a faulty classifier', () => {
+      assertEqual(invalidLowServer.store.leaderboardRuns[3].deckType, undefined)
+      assert(!invalidLowServer.store.deckTypes.includes('Hermit Unseeded Combo'))
+    })
+  } finally { await invalidLowServer.close() }
+  const invalidFirstServer = createRoomServer({ classifierEnabled: true, maxDeckClassificationsPerDay: 1,
+    deckClassifier: async () => 'Guardian Other' })
+  try {
+    const address = await invalidFirstServer.listen(0)
+    assertEqual((await fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(run(154, { character: 'guardian', floorsCleared: 15,
+        finalDeck: [{ defId: 'guardian_strike', upgraded: false }] })) })).status, 201)
+    for (let attempt = 0; attempt < 40 && invalidFirstServer.store.deckClassificationBudget.used < 1; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    check('server rejects an Other response for the first floor-15 deck even from a faulty classifier', () => {
+      assertEqual(invalidFirstServer.store.leaderboardRuns[0].deckType, undefined)
+      assert(!invalidFirstServer.store.deckTypes.includes('Guardian Other'))
+      assertEqual(invalidFirstServer.store.deckClassificationBudget.used, 1)
+    })
+  } finally { await invalidFirstServer.close() }
+  const staleOtherFile = join(directory, 'stale-other.json')
+  const staleOtherStore = createStore({ file: staleOtherFile })
+  addLeaderboardRun(staleOtherStore, run(156, { character: 'hermit', floorsCleared: 15,
+    finalDeck: [{ defId: 'hermit_snapshot', upgraded: false }] }))
+  staleOtherStore.leaderboardRuns[0].deckType = 'Hermit Other'
+  staleOtherStore.deckTypes.push('Hermit Other')
+  staleOtherStore.statsStateDirty = true
+  saveStore(staleOtherStore)
+  const staleOtherServer = createRoomServer({ storeFile: staleOtherFile, classifierEnabled: false })
+  try {
+    await staleOtherServer.listen(0)
+    check('a first deep deck previously labeled Other is reopened without Codex login', () =>
+      assertEqual(staleOtherServer.store.leaderboardRuns[0].deckType, undefined))
+  } finally { await staleOtherServer.close() }
+  check('clearing stale Other remains durable in the leaderboard archive after restart', () =>
+    assertEqual(createStore({ file: staleOtherFile }).leaderboardRuns[0].deckType, undefined))
   const unavailableFile = join(directory, 'unavailable.json')
   const unavailableStore = createStore({ file: unavailableFile })
   addLeaderboardRun(unavailableStore, run(68))
@@ -1326,7 +1455,7 @@ try {
     const service = createRoomServer({ storeFile: roomRetryFile, classifierEnabled: true, deckClassifier: async () => {
       roomRetryCalls += 1
       if (roomRetryCalls === 1) throw new Error('Temporary Codex failure')
-      return 'Defect Lightning Orb Focus'
+      return 'Defect Mixed Orb'
     } })
     await service.listen(0)
     return service
@@ -1346,7 +1475,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 30))
     check('replaying a finalized solo room retries once across restarts without reclassifying it again', () => {
       assertEqual(roomRetryCalls, 2)
-      assertEqual(replayServer.store.leaderboardRuns[0]?.deckType, 'Defect Lightning Orb Focus')
+      assertEqual(replayServer.store.leaderboardRuns[0]?.deckType, 'Defect Mixed Orb')
     })
   } finally { if (replayServer) await replayServer.close() }
 

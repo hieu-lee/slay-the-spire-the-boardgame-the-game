@@ -5,6 +5,7 @@ export const HERO_NAMES = {
   ironclad: 'Ironclad', silent: 'Silent', defect: 'Defect', watcher: 'Watcher',
   slime_boss: 'Slime Boss', guardian: 'Guardian', hexaghost: 'Hexaghost', hermit: 'Hermit',
 }
+export const SPECIFIC_ARCHETYPE_FLOOR = 15
 
 const INITIAL_DECK_GROUPS = {
   'Ironclad Strength Scaling': [
@@ -66,6 +67,8 @@ const INITIAL_DECK_GROUPS = {
 export const INITIAL_DECK_TYPES = Object.keys(INITIAL_DECK_GROUPS)
 export const INITIAL_DECK_CLASSIFICATIONS = new Map(Object.entries(INITIAL_DECK_GROUPS)
   .flatMap(([type, hashes]) => hashes.map((hash) => [hash, type])))
+
+export const otherDeckType = (character) => `${HERO_NAMES[character]} Other`
 
 export const validDeckType = (name) => typeof name === 'string' && name.length <= 70 &&
   /^(Ironclad|Silent|Defect|Watcher|Slime Boss|Guardian|Hexaghost|Hermit) [A-Za-z0-9 +/&'-]{3,60}$/.test(name)
