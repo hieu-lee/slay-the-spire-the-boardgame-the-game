@@ -1664,13 +1664,20 @@ function CombatScreenView({
   // A teammate can spend Shivs or kill a staged target while this client is
   // choosing Cunning Potion's overflow attacks. Restart a changed count and
   // drop dead targets instead of submitting choices for an older board.
+  const previousPotionDie = useRef(state.die)
   useEffect(() => {
+    const dieChanged = previousPotionDie.current !== state.die
+    previousPotionDie.current = state.die
     if (!pendingPotion) return
     if (!viewer?.potions.includes(pendingPotion) || !canUsePotionNow(pendingPotion)) {
       setPendingPotion(null)
       setPotionShivEnemyUids([])
       setPotionOverflowRequired(0)
       setPotionCardUids([])
+      return
+    }
+    if (pendingPotion === 'mystery_potion' && dieChanged && state.die > 2) {
+      setPendingPotion(null)
       return
     }
     if (pendingPotion === 'entropic_brew' && viewerHasSozu) {
@@ -2077,6 +2084,8 @@ function CombatScreenView({
 
   const over = state.phase === 'won' || state.phase === 'lost'
   const pendingPotionDef = pendingPotion ? potionDef(pendingPotion) : null
+  const pendingPotionNeedsEnemy = pendingPotionDef?.target === 'enemy' ||
+    pendingPotion === 'mystery_potion' && state.die <= 2
   const pendingPotionNeedsCards = ['liquid_memories', 'liquid_void', 'transforming_brew', 'purity_potion'].includes(pendingPotion ?? '')
   const pendingPower = pendingPowerUid
     ? viewer.powers.find((power) => power.uid === pendingPowerUid)
@@ -2700,7 +2709,7 @@ function CombatScreenView({
         if (count === 0 || (outcome.status === 'reconciled' && count < potionCountBefore)) return
         const def = potionDef(potionId)
         const liveOverflow = overflowShivCount(authoritative.combat, gainedShivs(def.effects))
-        const needsTarget = Boolean(def.target) || (
+        const needsTarget = Boolean(def.target) || potionId === 'mystery_potion' && authoritative.combat.die <= 2 || (
           def.supportTarget === 'anyPlayer' && authoritative.combat.players.filter((player) => !player.dead).length > 1
         ) || liveOverflow > 0
         if (!needsTarget) return
@@ -4585,7 +4594,7 @@ function CombatScreenView({
       ? `Choose an enemy for ${pendingPotionDef.name} — its whole row is hit${rowHitSuffix}`
       : pendingPotionOverflow > 0
         ? `Choose overflow Shiv target ${potionShivEnemyUids.length + 1}/${pendingPotionOverflow}, or skip the rest`
-        : `Choose ${pendingPotionDef.target ? 'an enemy' : 'a player'} for ${pendingPotionDef.name}`
+        : `Choose ${pendingPotionNeedsEnemy ? 'an enemy' : 'a player'} for ${pendingPotionDef.name}`
     : spendingShiv
     ? 'Choose an enemy for the Shiv'
     : spendingSoulburn
@@ -6059,7 +6068,7 @@ function CombatScreenView({
                     (pendingTrigger.targets?.some((target) => target.uid === enemy.uid) ||
                       triggerSlimeEnemyUids.length < triggerSlimeEnemyAmount)) ||
                   isEnemyRowClickTargetable(enemy) ||
-                  ((pendingPotionDef?.target === 'enemy' || pendingPowerNeedsEnemy || (pendingPowerDef && pendingPowerDef.target !== 'row' &&
+                  ((pendingPotionNeedsEnemy || pendingPowerNeedsEnemy || (pendingPowerDef && pendingPowerDef.target !== 'row' &&
                     (!pendingHermitPower || pendingPowerDef.id === 'hermit_black_wind' && powerLoadUids.length === 1)) || pendingPotionOverflow > 0) || spendingShiv || spendingSoulburn ||
                   Boolean(pending && (pending.slimeEnemyUids.length < slimeEnemyChoicesRequired(pending) ||
                     pending.hermitEnemyUids.length < loadedTargetCount(pending) ||
@@ -6567,7 +6576,7 @@ function CombatScreenView({
                           (pendingTrigger.targets?.some((target) => target.uid === enemy.uid) ||
                             triggerSlimeEnemyUids.length < triggerSlimeEnemyAmount)) ||
                         isEnemyRowClickTargetable(enemy) ||
-                        ((pendingPotionDef?.target === 'enemy' || pendingPowerNeedsEnemy || (pendingPowerDef && pendingPowerDef.target !== 'row' &&
+                        ((pendingPotionNeedsEnemy || pendingPowerNeedsEnemy || (pendingPowerDef && pendingPowerDef.target !== 'row' &&
                           (!pendingHermitPower || pendingPowerDef.id === 'hermit_black_wind' && powerLoadUids.length === 1)) || pendingPotionOverflow > 0) || spendingShiv || spendingSoulburn ||
                         Boolean(pending && (pending.slimeEnemyUids.length < slimeEnemyChoicesRequired(pending) ||
                           pending.hermitEnemyUids.length < loadedTargetCount(pending) ||

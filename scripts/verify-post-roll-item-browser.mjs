@@ -21,6 +21,14 @@ try {
     const page = await context.newPage()
     const errors = []
     page.on('pageerror', (error) => errors.push(String(error)))
+    await page.addInitScript(() => {
+      const tools = new Map()
+      Object.defineProperty(document, 'modelContext', { value: {
+        registerTool(tool) { tools.set(tool.name, tool); return Promise.resolve() },
+        getTools() { return Promise.resolve([...tools.values()]) },
+        executeTool(tool, input) { return Promise.resolve(tool.execute(input)).then(JSON.stringify) },
+      } })
+    })
     await page.goto(`http://localhost:${server.httpServer.address().port}`)
     await page.evaluate(async () => {
       document.querySelector('#root').style.display = 'none'
@@ -63,9 +71,14 @@ try {
       const createElement = React.createElement ?? React.default.createElement
       const createRoot = ReactDom.createRoot ?? ReactDom.default.createRoot
       const root = createRoot(host)
-      const fixture = window.postRollFixture = { locked: false }
+      const fixture = window.postRollFixture = { host, locked: false, state, actions: [], refuse: false }
       fixture.render = () => root.render(createElement(CombatScreen, {
-        state, act: 1, viewerId: 'p1', autoAdvance: false, onAction: async () => undefined,
+        state: fixture.state, act: 1, viewerId: 'p1', autoAdvance: false,
+        onAction: async (action) => {
+          fixture.actions.push(action)
+          return fixture.refuse ? { status: 'refused', snapshot: { version: 0,
+            run: { combat: fixture.refusedCombat ?? fixture.state } } } : undefined
+        },
         partyStartTurnPostRollLocked: fixture.locked,
         partyStartTurnAbilities: fixture.locked ? abilities : [],
         requiredStartTurnPlayerIds: fixture.locked ? ['p2'] : ['p1'],
@@ -100,6 +113,82 @@ try {
       `${screen}: Charon's Ashes card leaked into Blue Candle after lock`)
     assert.deepEqual(errors, [], `${screen}: browser errors`)
     await page.screenshot({ path: resolve(output, `${screen}.png`), fullPage: true })
+    await candle.locator('summary').click()
+    await page.evaluate(() => {
+      const fixture = window.postRollFixture
+      const root = document.querySelector('#root')
+      root.replaceChildren(fixture.host)
+      root.style.display = ''
+      fixture.state = { ...fixture.state, phase: 'player', die: 1, players: fixture.state.players.map((player) =>
+        player.id === 'p1' ? { ...player, potions: ['mystery_potion'] } : player) }
+      fixture.locked = false
+      fixture.refuse = true
+      fixture.render()
+    })
+    await page.getByRole('button', { name: 'Use Mystery Potion' }).click()
+    await page.getByText('Choose an enemy for Mystery Potion').waitFor()
+    const targets = page.locator('button.enemy--targeted')
+    assert.equal(await targets.count(), 2, `${screen}: Mystery Potion enemies are not targetable`)
+    await page.screenshot({ path: resolve(output, `${screen}-mystery-target.png`), fullPage: true })
+    const webmcpTarget = async (name) => page.evaluate(async (targetName) => {
+      const tools = await document.modelContext.getTools()
+      const inspect = tools.find((tool) => tool.name === 'inspect_game')
+      const interact = tools.find((tool) => tool.name === 'interact_with_game')
+      if (!inspect || !interact) throw new Error('WebMCP tools are unavailable')
+      const snapshot = JSON.parse(await document.modelContext.executeTool(inspect, {}))
+      const target = snapshot.controls.find((control) => control.label.includes(targetName))
+      if (!target) throw new Error(`WebMCP did not expose ${targetName}`)
+      await document.modelContext.executeTool(interact, { controlId: target.id })
+      return target.label
+    }, name)
+    assert.match(await webmcpTarget('Jaw Worm'), /Jaw Worm/, `${screen}: WebMCP target not available`)
+    const action = await page.evaluate(() => window.postRollFixture.actions.at(-1))
+    assert.equal(action?.kind, 'usePotion', `${screen}: Mystery Potion was not used`)
+    assert(['left', 'right'].includes(action.enemyUid), `${screen}: Mystery Potion did not select an enemy`)
+    await page.getByText('Choose an enemy for Mystery Potion').waitFor()
+    assert.equal(await targets.count(), 2, `${screen}: refused Mystery Potion did not restore enemy targets`)
+    await page.evaluate(() => {
+      const fixture = window.postRollFixture
+      fixture.state = { ...fixture.state, die: 3 }
+      fixture.refuse = false
+      fixture.render()
+    })
+    await page.getByText('Choose an enemy for Mystery Potion').waitFor({ state: 'detached' })
+    await page.getByRole('button', { name: 'Use Mystery Potion' }).click()
+    assert.equal((await page.evaluate(() => window.postRollFixture.actions.at(-1)))?.enemyUid, undefined,
+      `${screen}: Mystery Potion still requested an enemy after the die changed`)
+    await page.evaluate(() => {
+      const fixture = window.postRollFixture
+      fixture.refuse = true
+      fixture.refusedCombat = { ...fixture.state, die: 1 }
+    })
+    await page.getByRole('button', { name: 'Use Mystery Potion' }).click()
+    await page.getByText('Choose a player for Mystery Potion').waitFor()
+    await page.evaluate(() => {
+      const fixture = window.postRollFixture
+      fixture.state = fixture.refusedCombat
+      fixture.refuse = false
+      fixture.refusedCombat = null
+      fixture.render()
+    })
+    await page.getByText('Choose an enemy for Mystery Potion').waitFor()
+    assert.equal(await targets.count(), 2, `${screen}: 3→1 refusal lost the staged enemy targets`)
+    await page.getByRole('button', { name: 'Use Mystery Potion' }).click()
+    await page.evaluate(() => {
+      const fixture = window.postRollFixture
+      fixture.state = { ...fixture.state, die: 1, enemies: [
+        { ...fixture.state.enemies[0], uid: 'boss', defId: 'donu', isBoss: true, hp: 50, maxHp: 50 },
+      ] }
+      fixture.render()
+    })
+    await page.getByRole('button', { name: 'Use Mystery Potion' }).click()
+    const boss = page.locator('button.enemy--targeted').filter({ hasText: 'Donu' })
+    assert.equal(await boss.count(), 1, `${screen}: Mystery Potion boss is not targetable`)
+    await page.screenshot({ path: resolve(output, `${screen}-mystery-boss.png`), fullPage: true })
+    assert.match(await webmcpTarget('Donu'), /Donu/, `${screen}: WebMCP boss target not available`)
+    assert.equal((await page.evaluate(() => window.postRollFixture.actions.at(-1)))?.enemyUid, 'boss',
+      `${screen}: Mystery Potion did not select the boss`)
+    assert.deepEqual(errors, [], `${screen}: browser errors after Mystery Potion`)
     await context.close()
   }
   console.log('✓ post-roll item browser: 2/2 screen classes passed')
