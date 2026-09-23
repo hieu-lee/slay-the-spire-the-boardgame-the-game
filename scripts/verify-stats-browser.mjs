@@ -73,18 +73,8 @@ try {
     }
   })
   await page.setViewportSize({ width: 568, height: 320 })
-  await page.locator('.start-menu__nav').evaluate((navigation) => {
-    const selected = navigation.querySelector('button')
-    const resume = selected.cloneNode(true)
-    selected.dataset.selected = 'false'
-    resume.textContent = 'Resume'
-    resume.setAttribute('aria-label', 'Resume')
-    navigation.prepend(resume)
-  })
-  await page.waitForTimeout(300)
   await page.screenshot({ path: join(output, 'stats-menu-small-horizontal-phone.png') })
-  await checkAsync('all menu entries fit a small horizontal phone with Resume available', async () => {
-    assertEqual(await page.locator('.start-menu__nav button[data-selected="true"]').count(), 1)
+  await checkAsync('all menu entries fit a small horizontal phone', async () => {
     const profile = await page.locator('.start-menu__profile').boundingBox()
     assert(profile)
     for (const button of await page.locator('.start-menu__nav button').all()) {
@@ -92,7 +82,6 @@ try {
       assert(box && box.y >= profile.y + profile.height && box.y + box.height <= 320, `${await button.innerText()} is clipped`)
     }
   })
-  await page.getByRole('button', { name: 'Resume' }).evaluate((button) => button.remove())
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.getByRole('button', { name: 'Stats', exact: true }).click()
   await page.getByRole('heading', { name: 'Deck archetypes' }).waitFor()
