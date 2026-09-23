@@ -204,9 +204,4 @@ check('campaign persistence accepts only a complete bounded versioned shape', ()
   }
 })
 
-check('legacy campaign saves discard obsolete achievement completion state', () => {
-  const legacy = createCampaignProgress()
-  assertEqual('achievements' in parseCampaignProgress({ ...legacy, achievements: ['ruby'] }), false)
-})
-
 report('campaign')

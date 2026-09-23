@@ -72,17 +72,6 @@ async function openMerchantShop(target = page) {
 await page.goto(base, { waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__)
 
-await page.getByRole('button', { name: 'Achievements' }).click()
-await page.getByRole('heading', { name: 'Achievements', exact: true }).waitFor()
-const localAchievementCount = await page.locator('.achievement-card').count()
-const localAchievementDevControls = await page.getByText('Mark complete', { exact: false }).count()
-const localAchievementProgressUi = await page.locator('progress[aria-label="Achievement completion"], .achievement-card small, .achievement-card[data-complete]').count()
-const localAchievementHeights = await page.locator('.achievement-card').evaluateAll((cards) =>
-  [...new Set(cards.map((card) => Math.round(card.getBoundingClientRect().height)))])
-await page.setViewportSize({ width: 1280, height: 800 })
-await page.screenshot({ path: join(outDir, 'achievements-local-compact-desktop.png'), fullPage: true })
-await page.getByRole('button', { name: 'Back to main menu' }).click()
-
 await page.setViewportSize({ width: 1280, height: 720 })
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('button', { name: 'Daily', exact: true }).click()
@@ -448,11 +437,7 @@ check('Neow Potion rewards use the compact icon reward sheet', () => {
   assert(localNeowPotionLayout.tallestButton <= 72, `Potion action is ${localNeowPotionLayout.tallestButton}px tall`)
 })
 
-check('meta setup, achievements, and compact title layout survive real local navigation', () => {
-  assertEqual(localAchievementCount, 19)
-  assertEqual(localAchievementDevControls, 0, 'achievement developer controls are visible')
-  assertEqual(localAchievementProgressUi, 0, 'the reference gallery still claims unsupported completion progress')
-  assertDeepEqual(localAchievementHeights, [240], 'achievement cards have inconsistent heights')
+check('meta setup and compact title layout survive real local navigation', () => {
   assertEqual(localDailyModifierCount, 2)
   assertDeepEqual(
     localDailyRunIds,
@@ -3302,29 +3287,6 @@ const reconnectStartDisabled = await lobbyPage.waitForFunction(() => {
 }, undefined, { timeout: 5000 }).then((handle) => handle.jsonValue())
 check('lobby Start disables immediately while the local client reconnects', () => assertEqual(reconnectStartDisabled, true))
 await lobbyPage.locator('.connection--connected').waitFor()
-
-await onlineLobby.getByRole('button', { name: /Achievements/ }).click()
-await lobbyPage.getByRole('heading', { name: 'Achievements', exact: true }).waitFor()
-const onlineAchievementCount = await lobbyPage.locator('.achievement-card').count()
-const onlineAchievementDevControls = await lobbyPage.getByText('Mark complete', { exact: false }).count()
-const onlineAchievementProgressUi = await lobbyPage.locator('progress[aria-label="Achievement completion"], .achievement-card small, .achievement-card[data-complete]').count()
-await lobbyPage.screenshot({ path: join(outDir, 'achievements-online-reconnect.png'), fullPage: true })
-await lobbyPage.getByRole('button', { name: 'Back to main menu' }).click()
-await guestLobbyPage.getByRole('button', { name: /Achievements/ }).click()
-await guestLobbyPage.getByRole('heading', { name: 'Achievements', exact: true }).waitFor()
-const guestAchievementState = await guestLobbyPage.evaluate(() => ({
-  count: document.querySelectorAll('.achievement-card').length,
-  controls: [...document.querySelectorAll('main.compendium button, main.compendium input')]
-    .filter((control) => !control.matches('.compendium__back')).length,
-}))
-await guestLobbyPage.getByRole('button', { name: 'Back to main menu' }).click()
-check('online achievements remain a presentation-only record for every seat', () => {
-  assertEqual(onlineAchievementCount, 19)
-  assertEqual(onlineAchievementDevControls, 0)
-  assertEqual(onlineAchievementProgressUi, 0)
-  assertEqual(guestAchievementState.count, 19)
-  assertEqual(guestAchievementState.controls, 0)
-})
 
 liveRoom.phase = 'run'
 liveRoom.run = createRun(8800, onlineSeats.map(({ playerId: id, name, character }) => ({ id, name, character })), 0,

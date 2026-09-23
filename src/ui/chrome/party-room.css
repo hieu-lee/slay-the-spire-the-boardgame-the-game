@@ -1,6 +1,6 @@
 /* The lobby was the last screen still wearing the pre-chrome web idiom: a
    0.75rem-radius card with a 1px gold hairline, floating on a flat gradient,
-   while the main menu, the compendium and the achievements screen had all moved
+   while the main menu and the compendium had both moved
    to painted art with chamfered panels. It read as a different application, and
    with every control stacked in one centred column it read as a form.
 
@@ -138,7 +138,7 @@
   text-align: center;
 }
 
-/* Voice and Achievements, spaced like controls rather than like a paragraph. */
+/* Voice and settings, spaced like controls rather than like a paragraph. */
 .sts-scope .online-lobby__aside {
   display: flex;
   flex-wrap: wrap;

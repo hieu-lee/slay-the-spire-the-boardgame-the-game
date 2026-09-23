@@ -30,10 +30,6 @@ check('shared engine changes select every browser flow that imports them', () =>
   const run = affectedBrowser('src/game/run.ts')
   includesEvery(run, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'run barrel')
   assert(!run.includes('verify-animation-browser.mjs'), 'run barrel selected an unrelated animation fixture')
-  const achievements = affectedBrowser('src/game/achievements.ts')
-  assert(achievements.includes('verify-noncombat-browser.mjs'))
-  assert(!achievements.includes('verify-browser.mjs'))
-  assert(!achievements.includes('verify-online-browser.mjs'))
   assert(affected('src/game/damage.ts').includes('verify-browser.mjs'))
 })
 check('frontend surfaces select their cores and named focused browser checks', () => {
@@ -134,8 +130,8 @@ check('shared frontend changes use cores plus named visual owners', () => {
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
     'verify-lightning-act2-browser.mjs',
   ], 'presentation overlays')
-  assert(affectedBrowser('src/ui/styles/title-menu.css').includes('verify-run-replay-browser.mjs'),
-    'title menu stylesheet omitted focused replay coverage')
+  includesEvery(affectedBrowser('src/ui/styles/title-menu.css'),
+    ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs'], 'title menu stylesheet')
   assertDeepEqual(affectedBrowser('src/ui/styles/powers-in-play.css'), ['verify-power-hover-browser.mjs'])
 })
 check('toolchain changes select their focused owners', () => {

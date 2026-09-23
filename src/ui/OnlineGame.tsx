@@ -37,7 +37,6 @@ import { QuickSetupScreen } from './QuickSetupScreen.tsx'
 import { currentQuickSetupStep } from '../game/meta.ts'
 import { DAILY_MODIFIERS } from '../game/meta.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
-import { AchievementsScreen } from './AchievementsScreen.tsx'
 import { CompendiumScreen } from './CompendiumScreen.tsx'
 import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { shouldAnimateOnlineOpeningHand } from './board-signals.ts'
@@ -248,7 +247,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const name = savedProfile()?.username ?? ''
   const [code, setCode] = useState('')
   const [character, setCharacter] = useState<(typeof CHARACTERS)[number][0]>('ironclad')
-  const [achievementsOpen, setAchievementsOpen] = useState(false)
   const [compendiumOpen, setCompendiumOpen] = useState(false)
   const [soloGiveUpOpen, setSoloGiveUpOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
@@ -499,7 +497,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       disabled={!connected || !ready || !isPartyLeader || room.mutationPending}
       message={room.error || (!connected || !ready ? 'Waiting for every seat to connect.'
         : !isPartyLeader ? `${partyLeader?.name ?? 'The party leader'} chooses the campaign.` : undefined)} />
-    if (achievementsOpen) return <AchievementsScreen onBack={() => setAchievementsOpen(false)} />
     return (
       <main key="lobby" className="online-lobby sts-scope"
         data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}>
@@ -569,13 +566,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             </fieldset>
           </details>
           {/* Secondary controls on one line, below the settings tray and above
-              the only button that starts anything. Voice and Achievements were
-              stacked between the room code and the seats, where they read as
-              steps in setting the party up. */}
+              the only button that starts anything. */}
           <div className="online-lobby__aside">
             <VoiceControls voice={voice} seats={snapshot.seats} connected={connected} volume={settings.voiceVolume} />
             <button type="button" onClick={() => setSettingsOpen(true)}>Settings</button>
-            <button type="button" onClick={() => setAchievementsOpen(true)}>Achievements</button>
           </div>
 
           <button className="online-lobby__start" type="button"

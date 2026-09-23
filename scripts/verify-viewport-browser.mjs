@@ -90,7 +90,7 @@ try {
     await page.getByRole('button', { name: 'Play online', exact: true }).click()
     await capture('online-entry', '.online-entry')
     await page.getByRole('button', { name: 'Back to solo table', exact: true }).click()
-    for (const [button, selector] of [['Achievements', '.compendium'], ['Compendium', '.compendium'], ['Leaderboard', '.leaderboard']]) {
+    for (const [button, selector] of [['Compendium', '.compendium'], ['Leaderboard', '.leaderboard']]) {
       await page.getByRole('button', { name: button, exact: true }).click()
       if (button === 'Compendium') await page.getByRole('searchbox', { name: 'Search cards' }).fill('Strike')
       await capture(button.toLowerCase(), selector)

@@ -6,7 +6,7 @@ import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 // change is a change to the sheet that imports it.
 const sharedUi = /^(src\/main\.tsx|src\/ui\/(App|StartMenu)\.tsx|src\/ui\/(chrome|styles)(\/[\w.-]+)*\.css)$/
 const noncombatRoots = [
-  'AchievementsScreen', 'CampfireScreen', 'CompendiumScreen', 'MapOverlay', 'MapScreen', 'MetaRunOptions',
+  'CampfireScreen', 'CompendiumScreen', 'MapOverlay', 'MapScreen', 'MetaRunOptions',
   'NeowScreen', 'QuickSetupScreen', 'RelicResolvePanel', 'RewardScreen', 'RoomScreen', 'RunSummary',
   'SettingsDialog', 'StartMenu',
 ].map((name) => `src/ui/${name}.tsx`)
@@ -40,11 +40,11 @@ const focusedUiOwners = new Map([
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs']],
-  ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs']],
+  ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs']],
   ['src/ui/sfx.ts', ['verify-run-replay-browser.mjs']],
   ['src/ui/combat-screen/vfx.tsx', ['verify-lightning-act2-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
-  ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs']],
+  ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
   ['src/ui/CourierPanel.tsx', ['verify-courier-browser.mjs']],

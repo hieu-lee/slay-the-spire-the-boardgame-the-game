@@ -124,8 +124,8 @@ const controls = await page.evaluate(async () => {
     <span data-vfx-seq="99" aria-hidden="true">Unrelated teammate presentation</span>
     <span id="morph-summary" hidden data-webmcp-transient-status></span>
     <span class="visually-hidden">Draw pile, 7 cards. 3 Energy. 5 Gold.</span>
-    <span id="achievement-detail" class="visually-hidden">Unique achievement challenge.</span>
-    <article aria-label="Achievement" aria-describedby="achievement-detail"></article>
+    <span id="challenge-detail" class="visually-hidden">Unique challenge.</span>
+    <article aria-label="Challenge" aria-describedby="challenge-detail"></article>
     <span id="hidden-owner-detail">Visible hidden-owner narrative.</span>
     <button hidden aria-describedby="hidden-owner-detail">Hidden owner</button>
     <span id="passive-owner-detail">Visible passive-owner narrative.</span>
@@ -376,7 +376,7 @@ const controls = await page.evaluate(async () => {
     duplicateTextListed: listed.screen.text.includes('Delayed advance') || listed.screen.text.includes('Reliable opening damage.'),
     wrappedLabelDuplicated: listed.screen.text.includes('Keep Bash') || listed.screen.text.includes('Locked target'),
     semanticTextListed: listed.screen.text.includes('Draw pile, 7 cards. 3 Energy. 5 Gold.'),
-    nonControlDescriptionListed: listed.screen.text.includes('Unique achievement challenge.'),
+    nonControlDescriptionListed: listed.screen.text.includes('Unique challenge.'),
     unlistedDescriptionOwnersPreserved: listed.screen.text.includes('Visible hidden-owner narrative.') &&
       listed.screen.text.includes('Visible passive-owner narrative.'),
     unsupportedInputPreserved: listed.screen.text.includes('Upload') && listed.screen.text.includes('Visible upload detail.') &&

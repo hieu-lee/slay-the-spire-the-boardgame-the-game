@@ -32,7 +32,6 @@ type StartMenuProps = {
   onLeaderboard: () => void
   onStats: () => void
   onCompendium: () => void
-  onAchievements: () => void
   onReplay: (log: RunLog) => void
   onCharacterBack: () => void
   settings: GameSettings
@@ -118,7 +117,6 @@ export function StartMenu({
   onLeaderboard,
   onStats,
   onCompendium,
-  onAchievements,
   onReplay,
   onCharacterBack,
   settings,
@@ -270,12 +268,12 @@ export function StartMenu({
         <span><strong>THE PARTY</strong><small>Board Game Chronicle</small></span>
       </div> : null}
 
-      {screen === 'main' ? <section className="start-menu__title" aria-labelledby="game-title">
-        <h1 id="game-title"><span>Slay</span><small>the</small><span aria-label="Spire">Sp<span className="start-menu__flame-i" aria-hidden="true">ı</span>re</span></h1>
-        <p className="start-menu__edition">THE BOARD GAME</p>
-      </section> : null}
-
-      {screen === 'main' ? <nav className="start-menu__nav" aria-label="Main menu">
+      {screen === 'main' ? <div className="start-menu__landing">
+        <section className="start-menu__title" aria-labelledby="game-title">
+          <h1 id="game-title"><span>Slay <small>the</small></span><span aria-label="Spire">Sp<span className="start-menu__flame-i" aria-hidden="true">ı</span>re</span></h1>
+          <p className="start-menu__edition">THE BOARD GAME</p>
+        </section>
+        <nav className="start-menu__nav" aria-label="Main menu">
         {onResume ? <button type="button" aria-label="Resume" data-selected={selection === 'Resume'}
           onFocus={() => setSelection('Resume')} onMouseEnter={() => setSelection('Resume')}
           onClick={onResume}>Resume</button> : null}
@@ -294,12 +292,11 @@ export function StartMenu({
           onClick={() => setScreen('replay')}>Replay</button>
         <button type="button" aria-label="Compendium" data-selected={selection === 'Compendium'}
           onFocus={() => setSelection('Compendium')} onMouseEnter={() => setSelection('Compendium')} onClick={onCompendium}>Compendium</button>
-        <button type="button" aria-label="Achievements" data-selected={selection === 'Achievements'}
-          onFocus={() => setSelection('Achievements')} onMouseEnter={() => setSelection('Achievements')} onClick={onAchievements}>Achievements</button>
         <button type="button" aria-label="Settings" data-selected={selection === 'Settings'}
           onFocus={() => setSelection('Settings')} onMouseEnter={() => setSelection('Settings')}
           onClick={() => setSettingsOpen(true)}>Settings</button>
-      </nav> : null}
+        </nav>
+      </div> : null}
 
       {screen === 'mode' ? <section className="start-menu__mode-select" aria-label="Run modes">
         <div className="start-menu__mode-choices">

@@ -114,7 +114,6 @@ const SINGLE_PLAYER_ONLY = import.meta.env.VITE_SINGLE_PLAYER === 'true'
 const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
 const OnlineGame = SINGLE_PLAYER_ONLY ? null : lazy(() => import('./OnlineGame.tsx').then((module) => ({ default: module.OnlineGame })))
 const CompendiumScreen = lazy(() => import('./CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
-const AchievementsScreen = lazy(() => import('./AchievementsScreen.tsx').then((module) => ({ default: module.AchievementsScreen })))
 const LeaderboardScreen = lazy(() => import('./LeaderboardScreen.tsx').then((module) => ({ default: module.LeaderboardScreen })))
 const StatsScreen = lazy(() => import('./StatsScreen.tsx').then((module) => ({ default: module.StatsScreen })))
 
@@ -546,7 +545,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const { available: runLogAvailable, discard: discardLog, load: loadRunLog } = useRunLog(
     run, active && open && !replayLog, viewerId,
   )
-  const [achievements, setAchievements] = useState(false)
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
   const metaOptions: RunMetaOptions = { mode, modifiers: customModifierIds, quickStartAct }
   const canGiveUp = canGiveUpRun(run, run.campaignProgress)
@@ -853,7 +851,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
     if (leaderboard) return <LeaderboardScreen onBack={() => setLeaderboard(false)} />
     if (stats) return <StatsScreen onBack={() => setStats(false)} />
-    if (achievements) return <AchievementsScreen onBack={() => setAchievements(false)} />
     return <StartMenu
       characters={characters}
       ascension={ascension}
@@ -890,7 +887,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       onLeaderboard={() => setLeaderboard(true)}
       onStats={() => setStats(true)}
       onCompendium={() => setCompendium(true)}
-      onAchievements={() => setAchievements(true)}
       onReplay={startReplay}
       onCharacterBack={() => setChoosingNextCharacter(false)}
       settings={settings}

@@ -66,20 +66,6 @@
 .compendium__library header span { color: #c0b49b; }
 .compendium__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.2rem, 1fr)); align-items: start; gap: 1.15rem 1rem; }
 
-.achievement-card {
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
-  height: 15rem;
-  padding: 1rem;
-  border: 2px solid #6b5944;
-  border-radius: .55rem;
-  color: #ddd2be;
-  background: linear-gradient(155deg, rgb(73 31 38 / .97), rgb(27 23 23 / .98));
-  box-shadow: 0 .55rem .75rem rgb(0 0 0 / .72), inset 0 0 1.5rem rgb(230 179 74 / .08);
-  filter: grayscale(.65);
-}
-.achievement-card strong { font-size: 1.08rem; }
-.achievement-card > span { margin-top: .55rem; overflow: auto; line-height: 1.35; }
 .compendium__empty { margin: 4rem auto; color: #d5c6a8; font-size: 1.1rem; text-align: center; }
 
 .compendium-card { --card-width: 13rem; position: relative; width: 100%; max-width: 13rem; aspect-ratio: 744 / 1039; justify-self: center; padding: 0; overflow: hidden; border: 2px solid #5d4b3f; border-radius: 0.55rem; background: linear-gradient(#4d1d23, #21191a); box-shadow: 0 0.55rem 0.55rem rgb(0 0 0 / 0.7); content-visibility: auto; contain-intrinsic-size: auto 13rem 18.15rem; transition: transform var(--motion-fast) var(--ease), filter var(--motion-fast) var(--ease); }
