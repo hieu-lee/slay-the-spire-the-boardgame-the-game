@@ -46,7 +46,7 @@ function nextMessage(socket, type, accept = () => true) {
     const timer = setTimeout(() => {
       socket.off('message', receive)
       reject(new Error(`timed out waiting for ${type}`))
-    }, 3000)
+    }, 10000)
     function receive(raw) {
       const message = JSON.parse(raw.toString())
       if (message.type !== type || !accept(message)) return

@@ -12,7 +12,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const output = join(root, 'artifacts/stats-explorer-browser')
 mkdirSync(output, { recursive: true })
 process.env.VITE_LEADERBOARD = 'true'
-const server = createRoomServer({ openAiKey: 'browser-test-key', deckClassifier: async (entry) =>
+const server = createRoomServer({ classifierEnabled: true, deckClassifier: async (entry) =>
   entry.character === 'ironclad' ? 'Ironclad Barricade Body Slam Entrench Exhaust Control'
     : entry.finalDeck.some((card) => card.defId === 'claw') ? 'Defect Claw Spam' : 'Defect Lightning Orb Focus' })
 const address = await server.listen(0)
@@ -230,19 +230,21 @@ try {
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     assert(await page.getByRole('searchbox', { name: 'Find a card for All of these' }).isVisible())
     const back = await page.locator('.stats__back.ribbon-back').boundingBox()
-    assert(back && back.x >= 0 && back.y >= 0 && back.y + back.height <= rail.y + rail.height, 'Back ribbon is clipped')
+    assert(back && back.width >= 44 && back.height >= 44 && back.x >= 0 && back.y >= 0 && back.y + back.height <= rail.y + rail.height, 'Back ribbon is clipped or too small')
     const heroes = await page.locator('.stats__heroes button').evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().right))
     assert(heroes.length === 9 && heroes.every((right) => right <= selects.x), `Hero buttons hidden behind filters: ${heroes}`)
   })
   await page.setViewportSize({ width: 568, height: 320 })
   await page.screenshot({ path: join(output, 'stats-small-horizontal-phone.png') })
   await checkAsync('small horizontal phone keeps every hero and filter in the top bar', async () => {
+    const back = await page.locator('.stats__back.ribbon-back').boundingBox()
     const selects = await page.locator('.stats__rail-selects').boundingBox()
     const heroes = await page.locator('.stats__heroes').evaluate((strip) => ({
       scrolls: strip.scrollWidth > strip.clientWidth,
       rights: [...strip.querySelectorAll('button')].map((button) => button.getBoundingClientRect().right),
     }))
     assert(selects && selects.x + selects.width <= 568, 'Filters overflow the small phone')
+    assert(back && back.width >= 44 && back.height >= 44, 'Back ribbon touch target is too small')
     assert(await page.locator('.stats__table-scroll').evaluate((table) => table.scrollWidth <= table.clientWidth), 'Archetype table overflows the small phone')
     assert(await page.locator('.stats__row-button strong').evaluateAll((names) => names.length > 0 && names.every((name) => name.scrollHeight <= name.clientHeight + 1)), 'Archetype names are truncated on the small phone')
     assert(!heroes.scrolls && heroes.rights.length === 9 && heroes.rights.every((right) => right <= selects.x), `Hero buttons hidden on small phone: ${heroes.rights}`)

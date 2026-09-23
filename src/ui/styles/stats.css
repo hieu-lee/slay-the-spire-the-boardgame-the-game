@@ -141,7 +141,8 @@
   .stats__table tbody td { font-size: .85rem; }
 }
 @media (max-height: 500px) and (max-width: 700px) and (orientation: landscape) {
-  .stats__back.ribbon-back { width: 3rem; }
+  .stats__back.ribbon-back { width: 3.9rem; }
+  .stats__heroes { gap: .05rem; }
   .stats__heroes button { padding: .1rem .15rem; }
   .stats__heroes img, .stats__all-icon { width: 1.4rem; height: 1.4rem; }
   .stats__rail-selects select { width: 6.3rem; font-size: .58rem; }

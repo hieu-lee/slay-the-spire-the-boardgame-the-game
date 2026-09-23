@@ -4,8 +4,9 @@ import { createServer as createHttpServer } from 'node:http'
 import { existsSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { WebSocketServer } from 'ws'
+import { classifyDeckType, codexReady } from './lib/codex-deck-classifier.mjs'
 import { addLeaderboardRun, leaderboardSnapshot, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
-import { classifyDeckType, deckHash, HERO_NAMES, randomDeck, recordDeckClassification, soloDeck, statsSnapshot, validDeckType, validSoloDeck } from './lib/stats.mjs'
+import { deckHash, HERO_NAMES, randomDeck, recordDeckClassification, soloDeck, statsSnapshot, validClassifierThreadId, validDeckType, validSoloDeck } from './lib/stats.mjs'
 import {
   apply,
   chooseAscension,
@@ -107,7 +108,7 @@ export function createRoomServer({
   maxUpgradesPerWindow = MAX_UPGRADES_PER_WINDOW,
   saveDelayMs = STORE_SAVE_DELAY_MS,
   saveStoreImpl = saveStore,
-  openAiKey = process.env.OPENAI_API_KEY,
+  classifierEnabled = process.env.STS_DECK_CLASSIFIER_ENABLED === 'true',
   maxDeckClassificationsPerDay = Number(process.env.STS_DECK_CLASSIFICATIONS_PER_DAY ?? 100),
   deckClassifier = classifyDeckType,
   onSaveError = (error) => console.error('Room store save failed:', error),
@@ -119,6 +120,15 @@ export function createRoomServer({
 } = {}) {
   if (!Number.isSafeInteger(maxDeckClassificationsPerDay) || maxDeckClassificationsPerDay < 0) throw new Error('Invalid deck classification daily limit')
   const store = createStore({ file: storeFile, restartRecovery, restartReconnectMs })
+  if (classifierEnabled && deckClassifier === classifyDeckType && !codexReady()) {
+    console.error('Deck classification disabled: dedicated ChatGPT Codex login or sandbox is unavailable')
+    classifierEnabled = false
+  }
+  if (store.deckClassifierRelease !== releaseDirectory) {
+    store.deckClassifierThreadId = undefined
+    store.deckClassifierRelease = releaseDirectory
+    store.statsStateDirty = true
+  }
   const sockets = new Map()
   const roomActivity = new Map()
   const roomOwners = new Map()
@@ -204,7 +214,7 @@ export function createRoomServer({
   const failedDecks = new Map(store.leaderboardRuns.filter((entry) => entry.deckClassificationRetry)
     .map((entry) => [entry.id, { at: entry.deckClassificationRetry.after, hash: entry.deckClassificationRetry.hash, hero: entry.character }]))
   const scheduleClassification = (delay = 0) => {
-    if (!openAiKey || classifierClosed || classifying) return
+    if (!classifierEnabled || classifierClosed || classifying) return
     const nextAt = Date.now() + delay
     if (classifierTimer && nextAt >= classifierTimerAt) return
     if (classifierTimer) clearTimeout(classifierTimer)
@@ -213,7 +223,7 @@ export function createRoomServer({
       classifierTimer = undefined
       classifierTimerAt = Infinity
       classificationTask = classifyPending().finally(() => { classificationTask = null })
-    }, delay)
+    }, Math.min(delay, 2_147_483_647))
     classifierTimer.unref()
   }
   const classifyPending = async () => {
@@ -260,12 +270,18 @@ export function createRoomServer({
         const deck = JSON.stringify(soloDeck(run))
         const hero = run.character
         try {
-          const type = await deckClassifier(run, store.deckTypes, openAiKey, undefined,
-            AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)]))
+          const result = await deckClassifier(run, store.deckTypes, store.deckClassifierThreadId, undefined,
+            AbortSignal.any([controller.signal, AbortSignal.timeout(300_000)]), store.leaderboardRuns)
           if (classifierClosed) break
+          const type = typeof result === 'string' ? result : result?.type
+          if (result?.threadId !== undefined && !validClassifierThreadId(result.threadId)) throw new Error('Deck classifier returned an invalid thread')
           if (!validDeckType(type) || !type.startsWith(`${HERO_NAMES[run.character]} `)) throw new Error('Deck classifier returned an invalid type')
           const current = store.leaderboardRuns.find((entry) => entry.id === run.id)
           if (!current || current.deckType || current.character !== hero || JSON.stringify(soloDeck(current)) !== deck) continue
+          if (result?.threadId && result.threadId !== store.deckClassifierThreadId) {
+            store.deckClassifierThreadId = result.threadId
+            store.statsStateDirty = true
+          }
           if (!store.deckTypes.includes(type)) { store.deckTypes.push(type); store.statsStateDirty = true }
           current.deckType = type
           delete current.deckClassificationRetry
@@ -275,9 +291,26 @@ export function createRoomServer({
         } catch (error) {
           if (classifierClosed) break
           console.error('Deck classification failed:', error)
+          if (error?.code === 'classifier_unavailable') {
+            classifierEnabled = false
+            store.deckClassificationBudget.used -= 1
+            store.statsStateDirty = true
+            queueSave()
+            break
+          }
+          if (error?.code === 'stale_thread' && store.deckClassifierThreadId) {
+            store.deckClassifierThreadId = undefined
+            store.statsStateDirty = true
+            queueSave()
+          }
           const current = store.leaderboardRuns.find((entry) => entry.id === run.id)
           if (!current || current.character !== hero || JSON.stringify(soloDeck(current)) !== deck) continue
-          if (error?.code === 'max_output_tokens') {
+          if ((!error?.code || error.code === 'ABORT_ERR' || error.code === 'max_output_tokens') && validClassifierThreadId(error?.threadId) && error.threadId !== store.deckClassifierThreadId) {
+            store.deckClassifierThreadId = error.threadId
+            store.statsStateDirty = true
+            queueSave()
+          }
+          if (error?.code === 'max_output_tokens' || error?.code === 'context_exhausted') {
             const after = (Math.floor(Date.now() / CLASSIFICATION_DAY_MS) + 1) * CLASSIFICATION_DAY_MS
             const hash = deckHash(current)
             current.deckClassificationRetry = { after, hash }

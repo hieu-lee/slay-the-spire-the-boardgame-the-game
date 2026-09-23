@@ -253,7 +253,7 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
             {snapshot?.pending ? <button type="button" className="stats__refresh" onClick={() => setRetry((current) => current + 1)}>↻ Refresh {snapshot.pending} pending</button> : null}</header>
           {loading ? <div className="stats__message" role="status">Loading…</div>
             : error ? <div className="stats__message" role="alert">{error} <button type="button" onClick={() => setRetry((value) => value + 1)}>Try again</button></div>
-              : rows.length === 0 ? <div className="stats__message"><strong>No matching decks</strong>{snapshot?.pending ? <span>{snapshot.pending} still being classified</span> : null}</div>
+              : rows.length === 0 ? <div className="stats__message"><strong>No matching decks</strong><span>{snapshot?.pending ? `${snapshot.pending} awaiting classification. Check the server Codex login or daily budget if this persists.` : 'Try a different filter.'}</span></div>
                 : <div className="stats__table-scroll"><table className="stats__table"><thead><tr>{COLUMNS.map(([column, label]) => <th key={column} scope="col" aria-sort={sort === column ? descending ? 'descending' : 'ascending' : undefined}>
                   <button type="button" onClick={() => {
                     if (sort === column) setDescending(!descending)

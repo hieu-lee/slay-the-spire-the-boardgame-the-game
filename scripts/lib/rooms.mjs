@@ -17,7 +17,8 @@ import { randomBytes } from 'node:crypto'
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, truncateSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { mergeLeaderboardRuns, restoreLeaderboardRuns } from './leaderboard.mjs'
-import { classificationRecord, deckHash, HERO_NAMES, INITIAL_DECK_TYPES, validDeckType } from './stats.mjs'
+import { classificationRecord, deckHash, HERO_NAMES, INITIAL_DECK_CLASSIFICATIONS, INITIAL_DECK_TYPES,
+  recordDeckClassification, validClassifierThreadId, validDeckType, validSoloDeck } from './stats.mjs'
 import {
   CAPS,
   CHARACTER_IDS,
@@ -175,6 +176,20 @@ export const GIVE_UP_TIMEOUT_MS = 10_000
  * Ambiguous glyphs are left out: a room code gets read aloud over voice chat,
  * where O/0 and I/1 are the same sound and the same mistake.
  */
+const LEGACY_DECK_TYPES = new Set([
+  'Ironclad Barricade Body Slam', 'Ironclad Strength Multi-Hit', 'Ironclad Exhaust Engine',
+  'Ironclad Block Fortress', 'Ironclad Heavy Blade', 'Ironclad Wound Engine',
+  'Silent Poison Catalyst', 'Silent Shiv Finisher', 'Silent Discard Engine',
+  'Silent Footwork Block', 'Silent Poison Shiv Hybrid', 'Silent Draw Combo',
+  'Defect Lightning Orb Focus', 'Defect Frost Orb Focus', 'Defect Mixed Orb',
+  'Defect Claw Spam', 'Defect Dark Orb Burst', 'Defect Zero Cost Cycle', 'Defect Powers Engine',
+  'Watcher Stance Dance', 'Watcher Wrath Burst', 'Watcher Retain Engine',
+  'Watcher Scry Engine', 'Watcher Divinity Mantra', 'Watcher Calm Block',
+  'Slime Boss Slime Swarm', 'Slime Boss Split Engine', 'Slime Boss Tackle Burst',
+  'Guardian Mode Shift', 'Guardian Socket Gems', 'Guardian Defensive Scaling',
+  'Hexaghost Ignite Engine', 'Hexaghost Ghostflame Cycle', 'Hexaghost Burn Control',
+  'Hermit Chamber Combo', 'Hermit Dead On Burst', 'Hermit Curse Engine',
+])
 const CODE_ALPHABET = 'ACDEFGHJKLMNPQRTUVWXY34679'
 
 export function roomCode(random = randomBytes) {
@@ -274,7 +289,8 @@ function appendJournal(store, path, entries) {
 export function createStore({ file, restartRecovery = false, restartReconnectMs = 5 * 60_000 } = {}) {
   const store = { rooms: new Map(), leaderboardRuns: [], leaderboardRevision: 0, leaderboardDirty: true, leaderboardChanges: new Map(),
     statsStateDirty: true, statsChanges: new Map(), interruptedJournals: new Map(),
-    deckTypes: [...INITIAL_DECK_TYPES], deckClassificationBudget: { day: -1, used: 0 }, profiles: [], file, reconnectQuorums: new Map() }
+    deckTypes: [...INITIAL_DECK_TYPES], deckClassificationBudget: { day: -1, used: 0 },
+    deckClassifierThreadId: undefined, deckClassifierRelease: undefined, profiles: [], file, reconnectQuorums: new Map() }
   if (!file) return store
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8'))
@@ -310,6 +326,10 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
     if (Array.isArray(saved.deckTypes)) store.deckTypes = [...new Set([...store.deckTypes, ...saved.deckTypes.filter(validDeckType)])]
     if (Number.isSafeInteger(saved.deckClassificationBudget?.day) && Number.isSafeInteger(saved.deckClassificationBudget?.used) && saved.deckClassificationBudget.used >= 0)
       store.deckClassificationBudget = saved.deckClassificationBudget
+    if (validClassifierThreadId(saved.deckClassifierThreadId) && typeof saved.deckClassifierRelease === 'string') {
+      store.deckClassifierThreadId = saved.deckClassifierThreadId
+      store.deckClassifierRelease = saved.deckClassifierRelease
+    }
     let statsState
     try { statsState = JSON.parse(readFileSync(`${file}.stats.json`, 'utf8')) } catch (error) {
       if (error?.code !== 'ENOENT') throw error
@@ -317,9 +337,16 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
     if (statsState !== undefined) {
       if (!Array.isArray(statsState?.deckTypes) || statsState.deckTypes.some((type) => !validDeckType(type)) ||
           !Number.isSafeInteger(statsState.deckClassificationBudget?.day) ||
-          !Number.isSafeInteger(statsState.deckClassificationBudget?.used) || statsState.deckClassificationBudget.used < 0)
+          !Number.isSafeInteger(statsState.deckClassificationBudget?.used) || statsState.deckClassificationBudget.used < 0 ||
+          statsState.deckClassifierThreadId !== undefined && (!validClassifierThreadId(statsState.deckClassifierThreadId) ||
+          typeof statsState.deckClassifierRelease !== 'string') ||
+          statsState.deckClassifierRelease !== undefined && typeof statsState.deckClassifierRelease !== 'string')
         throw new Error('Stats state is invalid')
       store.deckTypes = [...new Set([...store.deckTypes, ...statsState.deckTypes])]
+      if (statsState.deckClassifierRelease !== undefined) {
+        store.deckClassifierThreadId = statsState.deckClassifierThreadId
+        store.deckClassifierRelease = statsState.deckClassifierRelease
+      }
       const currentBudget = store.deckClassificationBudget
       const backedUpBudget = statsState.deckClassificationBudget
       if (backedUpBudget.day > currentBudget.day ||
@@ -327,7 +354,9 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
         store.deckClassificationBudget = backedUpBudget
       store.statsStateDirty = store.deckTypes.length !== statsState.deckTypes.length ||
         store.deckClassificationBudget.day !== backedUpBudget.day ||
-        store.deckClassificationBudget.used !== backedUpBudget.used
+        store.deckClassificationBudget.used !== backedUpBudget.used ||
+        store.deckClassifierThreadId !== statsState.deckClassifierThreadId ||
+        store.deckClassifierRelease !== statsState.deckClassifierRelease
     }
     const statsLog = readJournal(store, `${file}.stats.log`)
     const logged = new Map()
@@ -340,11 +369,6 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
           record.retry !== undefined && (!Number.isSafeInteger(record.retry?.after) || record.retry.after < 0 ||
           !/^[0-9a-f]{64}$/.test(record.retry.hash))) throw new Error('Stats log is invalid')
       logged.set(record.id, record)
-      if (record.deckType && !knownTypes.has(record.deckType)) {
-        knownTypes.add(record.deckType)
-        store.deckTypes.push(record.deckType)
-        store.statsStateDirty = true
-      }
     }
     for (const run of store.leaderboardRuns) {
       const record = logged.get(run.id)
@@ -491,6 +515,21 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
         store.rooms.set(room.code, room)
       }
     }
+    const evidenced = new Set(store.leaderboardRuns.map((run) => run.deckType).filter(Boolean))
+    const retained = store.deckTypes.filter((type) => !LEGACY_DECK_TYPES.has(type) ||
+      INITIAL_DECK_TYPES.includes(type) || evidenced.has(type))
+    if (retained.length !== store.deckTypes.length) {
+      store.deckTypes = retained
+      store.statsStateDirty = true
+    }
+    for (const run of store.leaderboardRuns) {
+      if (run.deckType || !validSoloDeck(run)) continue
+      const type = INITIAL_DECK_CLASSIFICATIONS.get(deckHash(run))
+      if (!type?.startsWith(`${HERO_NAMES[run.character]} `)) continue
+      run.deckType = type
+      delete run.deckClassificationRetry
+      recordDeckClassification(store, run)
+    }
   } catch (error) {
     if (error?.code !== 'ENOENT' || existsSync(`${file}.leaderboard.json`) || existsSync(`${file}.leaderboard.log`) ||
         existsSync(`${file}.stats.json`) || existsSync(`${file}.stats.log`)) {
@@ -508,7 +547,8 @@ export function saveStore(store) {
     playerIds: [...quorum.playerIds], expiresAt: quorum.expiresAt,
   }]))
   const main = { version: 1, rooms: [...store.rooms.values()], deckTypes: store.deckTypes,
-    deckClassificationBudget: store.deckClassificationBudget, profiles: store.profiles, reconnectQuorums }
+    deckClassificationBudget: store.deckClassificationBudget, deckClassifierThreadId: store.deckClassifierThreadId,
+    deckClassifierRelease: store.deckClassifierRelease, profiles: store.profiles, reconnectQuorums }
   if (!existsSync(store.file) || store.leaderboardDirty) {
     writeFileSync(temporary, JSON.stringify({ ...main, leaderboardRuns: store.leaderboardRuns }), { mode: 0o600 })
     renameSync(temporary, store.file)
@@ -531,7 +571,8 @@ export function saveStore(store) {
   }
   if (store.statsStateDirty) {
     const statsTemporary = `${store.file}.stats.json.tmp`
-    writeFileSync(statsTemporary, JSON.stringify({ deckTypes: store.deckTypes, deckClassificationBudget: store.deckClassificationBudget }), { mode: 0o600 })
+    writeFileSync(statsTemporary, JSON.stringify({ deckTypes: store.deckTypes, deckClassificationBudget: store.deckClassificationBudget,
+      deckClassifierThreadId: store.deckClassifierThreadId, deckClassifierRelease: store.deckClassifierRelease }), { mode: 0o600 })
     renameSync(statsTemporary, `${store.file}.stats.json`)
     store.statsStateDirty = false
   }

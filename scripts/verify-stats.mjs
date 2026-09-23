@@ -1,11 +1,14 @@
 #!/usr/bin/env node
-import { appendFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { EventEmitter } from 'node:events'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CARDS } from '../src/game/cards.ts'
+import { CARDS, faceOf } from '../src/game/cards.ts'
 import { addLeaderboardRun, normalizeLeaderboardRun } from './lib/leaderboard.mjs'
 import { createRoom, createStore, joinRoom, saveStore, startRun } from './lib/rooms.mjs'
-import { classifyDeckType, deckHash, INITIAL_DECK_TYPES, randomDeck, statsSnapshot } from './lib/stats.mjs'
+import { classifyDeckType } from './lib/codex-deck-classifier.mjs'
+import { deckHash, INITIAL_DECK_CLASSIFICATIONS, INITIAL_DECK_TYPES, randomDeck, statsSnapshot, validDeckType } from './lib/stats.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { materializeLeaderboardArchive } from '../infra/validate-room-store.mjs'
 import { joinQueries, parseStatsExpression, validateStatsQuery } from '../src/stats-query.ts'
@@ -30,9 +33,12 @@ const archive = [
     floorsCleared: 10, damageTaken: 100, damageBlocked: 0 })), deckType: 'Defect Claw Spam' },
 ]
 
-check('seed taxonomy covers every playable hero', () => {
-  for (const hero of ['Ironclad', 'Silent', 'Defect', 'Watcher', 'Slime Boss', 'Guardian', 'Hexaghost', 'Hermit'])
-    assert(INITIAL_DECK_TYPES.some((name) => name.startsWith(`${hero} `)))
+check('initial taxonomy is evidence-led, valid and not one label per run', () => {
+  assertEqual(INITIAL_DECK_TYPES.length, 9)
+  assert(INITIAL_DECK_TYPES.every(validDeckType))
+  assertEqual(new Set(INITIAL_DECK_TYPES).size, INITIAL_DECK_TYPES.length)
+  for (const hero of ['Guardian', 'Hermit'])
+    assert(!INITIAL_DECK_TYPES.some((name) => name.startsWith(`${hero} `)))
 })
 check('all submitted solo runs determine weighted averages, not averages of averages', () => {
   const result = statsSnapshot(archive)
@@ -225,6 +231,67 @@ const directory = mkdtempSync(join(tmpdir(), 'stats-test-'))
 let server
 try {
   const file = join(directory, 'rooms.json')
+  const seededFile = join(directory, 'seeded-archetypes.json')
+  const seed = createStore({ file: seededFile })
+  const exampleCards = ['strike_watcher', 'defend_watcher', 'eruption', 'vigilance', 'empty_body', 'protect',
+    'rushdown', 'tantrum', 'pray', 'mental_fortress', 'talk_to_the_hand', 'tranquility']
+    .map((defId) => ({ defId, upgraded: ['eruption', 'rushdown', 'tantrum', 'pray', 'mental_fortress'].includes(defId) }))
+  addLeaderboardRun(seed, run(800, { character: 'watcher', finalDeck: exampleCards }))
+  addLeaderboardRun(seed, run(801, { character: 'defect', finalDeck: exampleCards }))
+  addLeaderboardRun(seed, run(802, { character: 'watcher', finalDeck: exampleCards.slice(0, -1) }))
+  seed.leaderboardRuns[0].deckClassificationRetry = { after: Date.now() + 86_400_000, hash: deckHash(seed.leaderboardRuns[0]) }
+  saveStore(seed)
+  check('evidence-led initial archetypes classify only the exact hero and deck, clearing stale retries', () => {
+    assertEqual(deckHash(seed.leaderboardRuns[0]), '48ef6393e30de702b8b86f9976716889f84f24b1ac3f572bde18db09fc20b84a')
+    assertEqual(INITIAL_DECK_CLASSIFICATIONS.size, 37)
+    assertDeepEqual(new Set(INITIAL_DECK_CLASSIFICATIONS.values()), new Set(INITIAL_DECK_TYPES))
+    const seeded = createStore({ file: seededFile })
+    assertEqual(seeded.leaderboardRuns[0].deckType, 'Watcher Stance Dance')
+    assertEqual(seeded.leaderboardRuns[0].deckClassificationRetry, undefined)
+    assertEqual(seeded.leaderboardRuns[1].deckType, undefined)
+    assertEqual(seeded.leaderboardRuns[2].deckType, undefined)
+    assertEqual(seeded.statsChanges.size, 1)
+    assertEqual(statsSnapshot(seeded.leaderboardRuns).rows.find((row) => row.deckType === 'Watcher Stance Dance').runs, 1)
+    saveStore(seeded)
+    assertEqual(createStore({ file: seededFile }).statsChanges.size, 0)
+  })
+  const outdatedFile = join(directory, 'legacy-catalog.json')
+  const outdated = createStore({ file: outdatedFile })
+  outdated.deckTypes = ['Ironclad Block Fortress', 'Defect Lightning Orb Focus', 'Defect Newly Discovered Combo']
+  addLeaderboardRun(outdated, run(62))
+  addLeaderboardRun(outdated, run(66))
+  outdated.leaderboardRuns[1].deckType = 'Defect Lightning Orb Focus'
+  saveStore(outdated)
+  appendFileSync(`${outdatedFile}.stats.log`, `${JSON.stringify({ id: run(62).id, hero: 'defect', hash: deckHash(outdated.leaderboardRuns[0]),
+    retry: { after: Date.now() + 60_000, hash: deckHash(outdated.leaderboardRuns[0]) } })}\n`)
+  appendFileSync(`${outdatedFile}.stats.log`, `${JSON.stringify({ id: run(9000).id, hero: 'defect',
+    hash: 'f'.repeat(64), deckType: 'Defect Frost Orb Focus' })}\n`)
+  check('unused speculative seeds are replaced by archetypes derived from submitted decks', () => {
+    const migrated = createStore({ file: outdatedFile })
+    assertDeepEqual(migrated.deckTypes, [...INITIAL_DECK_TYPES, 'Defect Lightning Orb Focus', 'Defect Newly Discovered Combo'])
+    assert(!migrated.deckTypes.includes('Ironclad Block Fortress'))
+    assert(!migrated.deckTypes.includes('Defect Frost Orb Focus'))
+    assertEqual(migrated.statsStateDirty, true)
+    assertEqual(migrated.leaderboardRuns[0].deckType, undefined)
+    assertEqual(migrated.leaderboardRuns[1].deckType, 'Defect Lightning Orb Focus')
+    assert(migrated.leaderboardRuns[0].deckClassificationRetry)
+  })
+  const migratedServer = createRoomServer({ storeFile: outdatedFile, classifierEnabled: false })
+  await migratedServer.close()
+  check('orphaned journal archetypes stay removed after a release marker is saved', () => {
+    const restarted = createStore({ file: outdatedFile })
+    assert(!restarted.deckTypes.includes('Defect Frost Orb Focus'))
+    assert(!restarted.deckTypes.includes('Ironclad Block Fortress'))
+  })
+  const staleMainFile = JSON.parse(readFileSync(outdatedFile, 'utf8'))
+  staleMainFile.deckTypes.push('Ironclad Block Fortress')
+  writeFileSync(outdatedFile, JSON.stringify(staleMainFile))
+  check('interrupted migration cannot restore legacy seeds from the stale main store', () => {
+    const restarted = createStore({ file: outdatedFile })
+    assert(!restarted.deckTypes.includes('Ironclad Block Fortress'))
+    assert(restarted.deckTypes.includes('Defect Lightning Orb Focus'))
+    assertEqual(restarted.statsStateDirty, true)
+  })
   const store = createStore({ file })
   addLeaderboardRun(store, run(5))
   store.leaderboardRuns[0].deckType = 'Defect Lightning Orb Focus'
@@ -280,7 +347,7 @@ try {
   const archiveFile = `${rollbackFile}.leaderboard.json`
   const archiveModified = statSync(archiveFile, { bigint: true }).mtimeNs
   let rollbackCalls = 0
-  const rollbackServer = createRoomServer({ storeFile: rollbackFile, openAiKey: 'local-test-key', deckClassifier: async () => {
+  const rollbackServer = createRoomServer({ storeFile: rollbackFile, classifierEnabled: true, deckClassifier: async () => {
     rollbackCalls += 1
     return 'Defect Newly Discovered Combo'
   } })
@@ -307,7 +374,7 @@ try {
     assert(readdirSync(directory).some((file) => file.startsWith('stats-rollback.json.stats.log.partial-')))
   })
   appendFileSync(`${rollbackFile}.stats.log`, '{"id":')
-  const recoveredStatsServer = createRoomServer({ storeFile: rollbackFile, openAiKey: '' })
+  const recoveredStatsServer = createRoomServer({ storeFile: rollbackFile, classifierEnabled: false })
   try {
     await recoveredStatsServer.listen(0)
     check('server startup repairs an interrupted stats append without losing complete classifications', () => {
@@ -342,7 +409,7 @@ try {
   writeFileSync(`${deferredFile}.stats.log`, JSON.stringify({ id: deferredRun.id, hero: deferredRun.character,
     hash: deferredHash, retry: newerRetry }) + '\n')
   let prematureCalls = 0
-  const deferredServer = createRoomServer({ storeFile: deferredFile, openAiKey: 'local-test-key',
+  const deferredServer = createRoomServer({ storeFile: deferredFile, classifierEnabled: true,
     deckClassifier: async () => { prematureCalls += 1; return 'Defect Lightning Orb Focus' } })
   try {
     await deferredServer.listen(0)
@@ -401,50 +468,164 @@ try {
     assertEqual(redeployed.damageDealt, 200)
   })
 
-  let payload
-  const type = await classifyDeckType(normalizeLeaderboardRun(run(6)), INITIAL_DECK_TYPES, 'private-key', async (url, options) => {
-    payload = { url, options }
-    return { ok: true, json: async () => ({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ name: 'Defect Lightning Orb Focus' }) }] }] }) }
+  const threadId = '123e4567-e89b-12d3-a456-426614174000'
+  const calls = []
+  const simulatedCodex = (name) => (command, args, options) => {
+    const child = new EventEmitter()
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.kill = () => {}
+    child.stdin = new EventEmitter()
+    child.stdin.end = (prompt) => {
+      calls.push({ command, args, options, prompt })
+      queueMicrotask(() => {
+        child.stdout.emit('data', `${JSON.stringify({ type: 'thread.started', thread_id: threadId })}\n`)
+        child.stdout.emit('data', `${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: JSON.stringify({ name }) } })}\n`)
+        child.stdout.emit('data', '{"type":"turn.completed"}\n')
+        child.emit('close', 0)
+      })
+    }
+    return child
+  }
+  const type = await classifyDeckType(normalizeLeaderboardRun(run(6)), INITIAL_DECK_TYPES, undefined,
+    simulatedCodex('Defect Mixed Orb'))
+  const resumedType = await classifyDeckType(archive[0], INITIAL_DECK_TYPES, threadId,
+    simulatedCodex('defect mixed orb'))
+  check('server-only Codex CLI creates and resumes a read-only GPT-6 Sol high thread', () => {
+    assertDeepEqual(type, { type: 'Defect Mixed Orb', threadId })
+    assertDeepEqual(resumedType, type)
+    assert(calls[0].args.includes('gpt-6-sol'))
+    assert(calls[0].args.includes('model_reasoning_effort="high"'))
+    assert(!calls[0].args.some((argument) => argument.startsWith('sandbox_mode=')))
+    assert(calls[0].args.includes('default_permissions="deck_classifier"'))
+    assert(calls[0].args.includes('permissions.deck_classifier.filesystem={":root"="read","/codex-home"="deny"}'))
+    assert(calls[0].args.includes('--ignore-user-config'))
+    assert(calls[0].args.includes('--strict-config'))
+    assert(calls[0].args.includes('--output-schema'))
+    assertEqual(calls[0].command, '/bin/bash')
+    assert(calls[0].args[0].endsWith('/codex-deck-worker.sh'))
+    assertDeepEqual(calls[1].args.slice(-3), ['resume', threadId, '-'])
+    assert(!Object.keys(calls[0].options.env).some((key) => /KEY|TOKEN|SECRET/.test(key)))
+    assert(JSON.parse(calls[0].prompt.slice(calls[0].prompt.indexOf('\n') + 1)).cards.some((card) => card.name === 'Dual Cast'))
   })
-  check('classifier calls GPT-6 Sol with high reasoning only from the server', () => {
-    assertEqual(type, 'Defect Lightning Orb Focus')
-    assertEqual(payload.url, 'https://api.openai.com/v1/responses')
-    assertEqual(JSON.parse(payload.options.body).model, 'gpt-6-sol')
-    assertEqual(JSON.parse(payload.options.body).reasoning.effort, 'high')
-    assertEqual(JSON.parse(payload.options.body).store, false)
-    assertEqual(JSON.parse(payload.options.body).max_output_tokens, 25_000)
-    assert(JSON.parse(JSON.parse(payload.options.body).input).cards.some((card) => card.name === 'Dual Cast'))
-    assertEqual(payload.options.headers.authorization, 'Bearer private-key')
+  const sampleRuns = [
+    ...archive,
+    { ...normalizeLeaderboardRun(run(63, { finalDeck: [{ defId: 'zap', upgraded: false }] })), deckType: 'Defect Lightning Orb Focus' },
+    { ...normalizeLeaderboardRun(run(64, { finalDeck: archive[0].finalDeck })), deckType: 'Defect Lightning Orb Focus' },
+    { ...normalizeLeaderboardRun(run(65, { character: 'silent', finalDeck: [{ defId: 'neutralize', upgraded: false }] })), deckType: 'Silent Poison' },
+  ]
+  await classifyDeckType(archive[0], [...INITIAL_DECK_TYPES, 'Defect Lightning Orb Focus'], undefined,
+    simulatedCodex('Defect Mixed Orb'), undefined, sampleRuns)
+  check('each hero archetype includes up to three distinct matching deck samples and never player IDs', () => {
+    const input = JSON.parse(calls.at(-1).prompt.split('\n').at(-1))
+    const lightning = input.existingTypes.find((entry) => entry.name === 'Defect Lightning Orb Focus')
+    assertEqual(lightning.samples.length, 3)
+    assertEqual(input.existingTypes.find((entry) => entry.name === 'Defect Claw Spam').samples.length, 1)
+    assert(input.existingTypes.every((entry) => entry.name.startsWith('Defect ')))
+    assert(lightning.samples.some((sample) => sample.cards.some(([name]) => name === 'Zap')))
+    assert(!JSON.stringify(input).includes('browser-1234'))
+    assert(calls.at(-1).prompt.includes('For EVERY existing archetype'))
   })
-  let incompleteError
+  const sameNameSamples = ['strike_defect', 'strike_ironclad'].map((defId, index) => ({
+    ...normalizeLeaderboardRun(run(75 + index, { finalDeck: [{ defId, upgraded: true }] })), deckType: 'Defect Mixed Orb',
+  }))
+  await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+    simulatedCodex('Defect Mixed Orb'), undefined, sameNameSamples)
+  check('distinct cross-hero cards keep separate sample identities despite identical display names', () => {
+    const group = JSON.parse(calls.at(-1).prompt.split('\n').at(-1)).existingTypes.find((entry) => entry.name === 'Defect Mixed Orb')
+    assertEqual(group.samples.length, 2)
+    assertDeepEqual(group.samples.map((sample) => sample.cards[0][2]).sort(), ['strike_defect', 'strike_ironclad'])
+  })
+  const beforeZap = Object.keys(CARDS).filter((defId) => defId !== 'zap' && faceOf(CARDS[defId], false).name.localeCompare('Zap') < 0).slice(0, 40)
+  const engineSample = { ...normalizeLeaderboardRun(run(78, { finalDeck: [
+    ...beforeZap.map((defId) => ({ defId, upgraded: false })),
+    ...Array.from({ length: 30 }, () => ({ defId: 'zap', upgraded: false })),
+  ] })), deckType: 'Defect Mixed Orb' }
+  await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+    simulatedCodex('Defect Mixed Orb'), undefined, [engineSample])
+  check('sample truncation keeps a deck’s defining repeated cards', () => {
+    assertEqual(beforeZap.length, 40)
+    const sample = JSON.parse(calls.at(-1).prompt.split('\n').at(-1)).existingTypes.find((entry) => entry.name === 'Defect Mixed Orb').samples[0]
+    assertDeepEqual(sample.cards[0].slice(0, 2), ['Zap', 30])
+    assertEqual(sample.omittedCards, 1)
+  })
+  let invalidTypeError
   try {
-    await classifyDeckType(archive[0], INITIAL_DECK_TYPES, 'private-key', async () => ({ ok: true, json: async () => ({
-      status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output: [],
-    }) }))
-  } catch (error) { incompleteError = error }
-  check('model output exhaustion is distinguished from transient errors', () => assertEqual(incompleteError?.code, 'max_output_tokens'))
+    await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined, simulatedCodex('Silent Shiv Finisher'))
+  } catch (error) { invalidTypeError = error }
+  check('wrong-hero responses are rejected without losing the started thread', () => {
+    assertEqual(invalidTypeError?.message, 'Deck classifier returned an invalid type')
+    assertEqual(invalidTypeError?.threadId, threadId)
+  })
+  const previousBin = process.env.STS_CODEX_BIN
+  let missingBinError
+  try {
+    process.env.STS_CODEX_BIN = join(directory, 'missing-codex')
+    await classifyDeckType(archive[0], INITIAL_DECK_TYPES)
+  } catch (error) { missingBinError = error }
+  finally {
+    if (previousBin === undefined) delete process.env.STS_CODEX_BIN
+    else process.env.STS_CODEX_BIN = previousBin
+  }
+  check('missing Codex CLI fails safely without classifying a run', () => {
+    assertEqual(missingBinError?.code, 'classifier_unavailable')
+    assertEqual(missingBinError?.message, 'Codex CLI is unavailable or not authenticated')
+  })
+  const isolatedHome = join(directory, 'isolated-auth')
+  const isolatedAuth = join(isolatedHome, '.local/share/slay-the-spire-server/codex/auth.json')
+  const fakeCodex = join(isolatedHome, 'cli/bin/codex.js')
+  const standaloneCodex = join(isolatedHome, 'cli/codex')
+  const fakeBwrapDir = join(isolatedHome, 'bin')
+  mkdirSync(join(isolatedHome, '.local/share/slay-the-spire-server/codex'), { recursive: true })
+  mkdirSync(join(isolatedHome, 'cli/bin'), { recursive: true })
+  mkdirSync(fakeBwrapDir)
+  writeFileSync(fakeCodex, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  writeFileSync(standaloneCodex, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  writeFileSync(join(fakeBwrapDir, 'bwrap'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$HOME/bwrap-args"\nprintf called > "$HOME/bwrap-invoked"\n', { mode: 0o755 })
+  const fakeLogin = (executable = fakeCodex) => spawnSync('/bin/bash', [calls[0].args[0], 'login', 'status'], {
+    cwd: process.cwd(), stdio: 'ignore', env: {
+      HOME: isolatedHome, USER: process.env.USER, PATH: `${fakeBwrapDir}:${process.env.PATH}`,
+      NODE_BINARY: process.execPath, STS_CODEX_BIN: executable,
+    },
+  }).status
+  writeFileSync(isolatedAuth, JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'fake-never-send' }), { mode: 0o600 })
+  const keyLoginStatus = fakeLogin()
+  const keyReachedWorker = existsSync(join(isolatedHome, 'bwrap-invoked'))
+  writeFileSync(isolatedAuth, JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: 'fake-never-send' } }), { mode: 0o600 })
+  const unsupportedBinaryStatus = fakeLogin(standaloneCodex)
+  const chatgptLoginStatus = fakeLogin()
+  check('the isolated worker rejects API-key auth and allows only dedicated ChatGPT credentials', () => {
+    assertEqual(keyLoginStatus, 66)
+    assertEqual(keyReachedWorker, false)
+    assertEqual(unsupportedBinaryStatus, 66)
+    assertEqual(chatgptLoginStatus, 0)
+    assertEqual(statSync(join(isolatedHome, '.local/share/slay-the-spire-server/codex')).mode & 0o777, 0o700)
+    const mounts = readFileSync(join(isolatedHome, 'bwrap-args'), 'utf8').split('\n')
+    assert(mounts.includes(join(process.cwd(), 'src/game')))
+    assert(mounts.includes('/workspace/src/game'))
+    assert(mounts.includes(join('/workspace', 'scripts', 'lib', 'deck-type.schema.json')))
+    assert(!mounts.some((source, index) => source === process.cwd() && mounts[index + 1] === '/workspace'))
+    assert(!mounts.some((source, index) => source === '/opt' && mounts[index + 1] === '/opt'))
+    assert(!mounts.some((source, index) => source === '/etc/ssl' && mounts[index + 1] === '/etc/ssl'))
+    assert(mounts.includes('/etc/ssl/certs'))
+    if (process.execPath.startsWith('/opt/')) assert(mounts.includes(join(process.execPath, '..', '..')))
+  })
   let abilityCards
   await classifyDeckType(normalizeLeaderboardRun(run(46, { character: 'ironclad', finalDeck: [
     { defId: 'barricade', upgraded: false }, { defId: 'heavy_blade', upgraded: true },
-  ] })), INITIAL_DECK_TYPES, 'private-key', async (_url, options) => {
-    abilityCards = JSON.parse(JSON.parse(options.body).input).cards
-    return { ok: true, json: async () => ({ status: 'completed', output: [{ content: [{ type: 'output_text', text: '{"name":"Ironclad Barricade Body Slam"}' }] }] }) }
-  })
+  ] })), INITIAL_DECK_TYPES, undefined, simulatedCodex('Ironclad Barricade Body Slam'))
+  abilityCards = JSON.parse(calls.at(-1).prompt.split('\n').at(-1)).cards
   check('classification retains card abilities and effect amounts, not just effect names', () => {
     assert(abilityCards.find((card) => card.name === 'Barricade').rules.includes('"retainBlock":true'))
     const heavy = abilityCards.find((card) => card.name === 'Heavy Blade+')
     assert(heavy.rules.includes('"per":"strength"') && heavy.rules.includes('"scale":4'))
   })
   const guardianPayload = async (gemId) => {
-    let cards
     const guardianRun = normalizeLeaderboardRun(run(25, { character: 'guardian', finalDeck: [
       { defId: 'guardian_prismatic_barrier', upgraded: true, attachedGemId: gemId },
     ] }))
-    await classifyDeckType(guardianRun, INITIAL_DECK_TYPES, 'private-key', async (_url, options) => {
-      cards = JSON.parse(JSON.parse(options.body).input).cards
-      return { ok: true, json: async () => ({ status: 'completed', output: [{ content: [{ type: 'output_text', text: '{"name":"Guardian Socket Gems"}' }] }] }) }
-    })
-    return cards
+    await classifyDeckType(guardianRun, INITIAL_DECK_TYPES, undefined, simulatedCodex('Guardian Socket Gems'))
+    return JSON.parse(calls.at(-1).prompt.split('\n').at(-1)).cards
   }
   const rubyCards = await guardianPayload('guardian_ruby')
   const sapphireCards = await guardianPayload('guardian_sapphire')
@@ -456,35 +637,206 @@ try {
     assertEqual(sapphireCards[0].socketedGem.name, 'Sapphire')
     assert(!rubyCards[0].name.endsWith('++'))
   })
-  let upgradedPayload
-  await classifyDeckType(normalizeLeaderboardRun(run(28, { finalDeck: [{ defId: 'dual_cast', upgraded: true }] })), INITIAL_DECK_TYPES, 'private-key', async (_url, options) => {
-    upgradedPayload = JSON.parse(JSON.parse(options.body).input).cards
-    return { ok: true, json: async () => ({ status: 'completed', output: [{ content: [{ type: 'output_text', text: '{"name":"Defect Lightning Orb Focus"}' }] }] }) }
-  })
+  await classifyDeckType(normalizeLeaderboardRun(run(28, { finalDeck: [{ defId: 'dual_cast', upgraded: true }] })),
+    INITIAL_DECK_TYPES, undefined, simulatedCodex('Defect Lightning Orb Focus'))
+  const upgradedPayload = JSON.parse(calls.at(-1).prompt.split('\n').at(-1)).cards
   check('non-Guardian upgraded cards are named without duplicate plus signs', () => assertEqual(upgradedPayload[0].name, 'Dual Cast+'))
-  let largeInput
   const largeDeck = normalizeLeaderboardRun(run(36, { finalDeck: Object.keys(CARDS).slice(0, 470).map((defId) => ({ defId, upgraded: false })) }))
-  await classifyDeckType(largeDeck, INITIAL_DECK_TYPES, 'private-key', async (_url, options) => {
-    largeInput = JSON.parse(options.body).input
-    return { ok: true, json: async () => ({ status: 'completed', output: [{ content: [{ type: 'output_text', text: '{"name":"Defect Lightning Orb Focus"}' }] }] }) }
-  })
+  await classifyDeckType(largeDeck, INITIAL_DECK_TYPES, undefined, simulatedCodex('Defect Lightning Orb Focus'))
+  const largeInput = calls.at(-1).prompt.split('\n').at(-1)
   check('unusually large public decks cannot send unbounded model input', () => {
     assert(largeInput.length <= 20_000)
     assert(JSON.parse(largeInput).cards.length <= 50)
     assert(JSON.parse(largeInput).omittedCards > 0)
     assertEqual(JSON.parse(largeInput).totalCards, 470)
   })
+  const incomingRun = normalizeLeaderboardRun(run(71, { finalDeck: Object.keys(CARDS).slice(70, 120)
+    .map((defId) => ({ defId, upgraded: false })) }))
+  await classifyDeckType(incomingRun, INITIAL_DECK_TYPES, undefined, simulatedCodex('Defect Mixed Orb'))
+  const unsampledCards = JSON.parse(calls.at(-1).prompt.split('\n').at(-1)).cards
+  const manyTypes = Array.from({ length: 44 }, (_, index) => `Defect Variant ${String(index).padStart(2, '0')}`)
+  const manySamples = manyTypes.flatMap((name, typeIndex) => Array.from({ length: 3 }, (_, sampleIndex) => ({
+    ...normalizeLeaderboardRun(run(200 + typeIndex * 3 + sampleIndex, {
+      finalDeck: Object.keys(CARDS).slice(20 + typeIndex + sampleIndex, 70 + typeIndex + sampleIndex)
+        .map((defId) => ({ defId, upgraded: false })),
+    })), deckType: name,
+  })))
+  await classifyDeckType(incomingRun, manyTypes.slice(0, 8), undefined, simulatedCodex('Defect Mixed Orb'), undefined, manySamples)
+  const sampledCards = JSON.parse(calls.at(-1).prompt.split('\n').at(-1)).cards
+  await classifyDeckType(incomingRun, manyTypes, undefined, simulatedCodex('Defect Mixed Orb'), undefined, manySamples)
+  const manyInput = JSON.parse(calls.at(-1).prompt.split('\n').at(-1))
+  check('archetype samples never crowd out the submitted deck and large catalogs keep every candidate', () => {
+    assertDeepEqual(sampledCards, unsampledCards)
+    assertDeepEqual(manyInput.cards, unsampledCards)
+    assertEqual(manyInput.existingTypes.length, manyTypes.length)
+    assert(manyInput.existingTypes.every((entry) => entry.samples.length >= 1 && entry.samples.length <= 3))
+    assert(JSON.stringify(manyInput).length <= 100_000)
+  })
+  const crowdedTypes = Array.from({ length: 180 }, (_, index) => `Defect Catalog ${String(index).padStart(3, '0')}`)
+  const crowdedSamples = crowdedTypes.flatMap((name, typeIndex) => Array.from({ length: 3 }, (_, sampleIndex) => ({
+    ...manySamples[(typeIndex * 3 + sampleIndex) % manySamples.length], deckType: name,
+  })))
+  const crowdedStart = performance.now()
+  await classifyDeckType(incomingRun, crowdedTypes, undefined, simulatedCodex('Defect Mixed Orb'), undefined, crowdedSamples)
+  const crowdedDuration = performance.now() - crowdedStart
+  check('crowded catalogs trim without blocking multiplayer on repeated full serialization', () => {
+    const input = JSON.parse(calls.at(-1).prompt.split('\n').at(-1))
+    assertEqual(input.existingTypes.length, crowdedTypes.length)
+    assert(JSON.stringify(input).length <= 100_000)
+    assert(crowdedDuration < 5_000, `catalog trimming blocked for ${crowdedDuration}ms`)
+  })
+  const failedJsonl = (event, startThread = false) => () => {
+    const child = new EventEmitter()
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.stdin = new EventEmitter()
+    child.kill = () => {}
+    child.stdin.end = () => queueMicrotask(() => {
+      if (startThread) child.stdout.emit('data', `${JSON.stringify({ type: 'thread.started', thread_id: threadId })}\n`)
+      child.stdout.emit('data', `${JSON.stringify(event)}\n`)
+      child.emit('close', 1)
+    })
+    return child
+  }
+  let exhaustedError
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+    failedJsonl({ type: 'turn.failed', error: { message: 'max_output_tokens exceeded' } }, true)) }
+  catch (error) { exhaustedError = error }
+  check('Codex output token exhaustion preserves its resumable first-turn thread', () => {
+    assertEqual(exhaustedError?.code, 'max_output_tokens')
+    assertEqual(exhaustedError?.threadId, threadId)
+  })
+  let contextError
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+    failedJsonl({ type: 'turn.failed', error: { message: 'context_window_exceeded' } }, true)) }
+  catch (error) { contextError = error }
+  check('first-turn context exhaustion does not become a resumable output limit', () => {
+    assertEqual(contextError?.code, 'context_exhausted')
+    assertEqual(contextError?.threadId, threadId)
+  })
+  let failedFirstTurn
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+    failedJsonl({ type: 'turn.failed', error: { message: 'temporary network failure' } }, true)) }
+  catch (error) { failedFirstTurn = error }
+  check('transient first-turn failures keep the started thread for the next retry', () => {
+    assertEqual(failedFirstTurn?.code, undefined)
+    assertEqual(failedFirstTurn?.threadId, threadId)
+  })
+  const abortedCodex = (startBeforeAbort) => () => {
+    const child = new EventEmitter()
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.stdin = new EventEmitter()
+    child.kill = () => {}
+    child.stdin.end = () => queueMicrotask(() => {
+      const started = () => child.stdout.emit('data', `${JSON.stringify({ type: 'thread.started', thread_id: threadId })}\n`)
+      if (startBeforeAbort) started()
+      child.emit('error', Object.assign(new Error('model turn timed out'), { code: 'ABORT_ERR' }))
+      if (!startBeforeAbort) started()
+      child.emit('close', null)
+    })
+    return child
+  }
+  const timedOutFirstTurns = []
+  for (const startBeforeAbort of [true, false]) {
+    try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined, abortedCodex(startBeforeAbort)) }
+    catch (error) { timedOutFirstTurns.push({ code: error.code, threadId: error.threadId }) }
+  }
+  check('Codex startup and timeout preserve a resumable thread in either event order', () => {
+    assertDeepEqual(timedOutFirstTurns, [true, false].map(() => ({ code: 'ABORT_ERR', threadId })))
+  })
+  let jsonlUnauthorized
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+    failedJsonl({ type: 'error', message: '401 Unauthorized' })) }
+  catch (error) { jsonlUnauthorized = error }
+  check('JSONL-only authentication errors disable further classified attempts', () =>
+    assertEqual(jsonlUnauthorized?.code, 'classifier_unavailable'))
+  const malformedJsonl = () => {
+    const child = new EventEmitter()
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.stdin = new EventEmitter()
+    child.kill = () => {}
+    child.stdin.end = () => queueMicrotask(() => {
+      child.stdout.emit('data', 'null\n')
+      child.emit('close', 1)
+    })
+    return child
+  }
+  let malformedError
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined, malformedJsonl) }
+  catch (error) { malformedError = error }
+  check('malformed Codex JSONL cannot crash the multiplayer process', () =>
+    assertEqual(malformedError?.message, 'Deck classifier emitted invalid output'))
+  let expiredTokenError
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+    failedJsonl({ type: 'error', message: 'Failed to refresh token' })) }
+  catch (error) { expiredTokenError = error }
+  check('expired ChatGPT refresh tokens stop classification without wasting daily attempts', () =>
+    assertEqual(expiredTokenError?.code, 'classifier_unavailable'))
+  const mixedFailure = (stdoutFirst) => () => {
+    const child = new EventEmitter()
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.stdin = new EventEmitter()
+    child.kill = () => {}
+    child.stdin.end = () => queueMicrotask(() => {
+      const stdout = () => child.stdout.emit('data', '{"type":"turn.failed","error":{"message":"stream disconnected"}}\n')
+      if (stdoutFirst) stdout()
+      child.stderr.emit('data', '401 Unauthorized')
+      if (!stdoutFirst) stdout()
+      child.emit('close', 1)
+    })
+    return child
+  }
+  const mixedFailureCodes = []
+  for (const stdoutFirst of [true, false]) {
+    try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined, mixedFailure(stdoutFirst)) }
+    catch (error) { mixedFailureCodes.push(error.code) }
+  }
+  check('mixed stderr and JSONL auth failures refund attempts regardless of output order', () =>
+    assertDeepEqual(mixedFailureCodes, ['classifier_unavailable', 'classifier_unavailable']))
+  const failureOnStderr = (reason) => () => {
+    const child = new EventEmitter()
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.stdin = new EventEmitter()
+    child.kill = () => {}
+    child.stdin.end = () => queueMicrotask(() => {
+      child.stderr.emit('data', reason)
+      child.emit('close', 1)
+    })
+    return child
+  }
+  let missingSessionError
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, threadId,
+    failureOnStderr('Error: thread/resume failed: no rollout found for thread id')) }
+  catch (error) { missingSessionError = error }
+  check('missing Codex rollouts reset stale thread IDs instead of retrying forever', () =>
+    assertEqual(missingSessionError?.code, 'stale_thread'))
+  let unauthorizedError
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined,
+    failureOnStderr('Error: 401 Unauthorized')) }
+  catch (error) { unauthorizedError = error }
+  check('stderr-only authentication failures disable Codex instead of burning the budget', () =>
+    assertEqual(unauthorizedError?.code, 'classifier_unavailable'))
+  let fullContextError
+  try { await classifyDeckType(archive[0], INITIAL_DECK_TYPES, threadId,
+    failureOnStderr('Error: context_window_exceeded')) }
+  catch (error) { fullContextError = error }
+  check('full Codex contexts reset the thread rather than resuming it next day', () =>
+    assertEqual(fullContextError?.code, 'stale_thread'))
 
   const classifications = []
   const suppliedSignal = new AbortController()
   let forwardedSignal
-  await classifyDeckType(archive[0], INITIAL_DECK_TYPES, 'private-key', async (_url, options) => {
+  await classifyDeckType(archive[0], INITIAL_DECK_TYPES, undefined, (command, args, options) => {
     forwardedSignal = options.signal
-    return { ok: true, json: async () => ({ status: 'completed', output: [{ content: [{ type: 'output_text', text: '{"name":"Defect Lightning Orb Focus"}' }] }] }) }
+    return simulatedCodex('Defect Lightning Orb Focus')(command, args, options)
   }, suppliedSignal.signal)
-  check('deck classifier passes the supplied shutdown signal to its upstream request', () => assertEqual(forwardedSignal, suppliedSignal.signal))
-  server = createRoomServer({ openAiKey: 'local-test-key', deckClassifier: async (entry, types, key) => {
-    classifications.push({ id: entry.id, types: [...types], key })
+  check('deck classifier passes the supplied shutdown signal to its child process', () => assertEqual(forwardedSignal, suppliedSignal.signal))
+  server = createRoomServer({ classifierEnabled: true, deckClassifier: async (entry, types, currentThreadId) => {
+    classifications.push({ id: entry.id, types: [...types], currentThreadId })
     return entry.character === 'defect' ? 'Defect Lightning Orb Focus' : 'Ironclad Exhaust Engine'
   } })
   const { port } = await server.listen(0)
@@ -496,7 +848,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 10))
   check('submissions cannot forge types; private background classification owns them', () => {
     assertEqual(server.store.leaderboardRuns[0].deckType, 'Defect Lightning Orb Focus')
-    assertEqual(classifications[0].key, 'local-test-key')
+    assertEqual(classifications[0].currentThreadId, undefined)
   })
   const stats = await fetch(`${base}/api/stats`).then((response) => response.json())
   const sample = await fetch(`${base}/api/stats/deck?type=Defect+Lightning+Orb+Focus`).then((response) => response.json())
@@ -528,10 +880,10 @@ try {
   let invoked = false
   const invalidType = await classifyDeckType(normalizeLeaderboardRun(run(18, { finalDeck: [
     { defId: 'unknown_card', upgraded: false },
-  ] })), INITIAL_DECK_TYPES, 'private-key', async () => { invoked = true })
+  ] })), INITIAL_DECK_TYPES, undefined, () => { invoked = true })
   const impossibleType = await classifyDeckType(normalizeLeaderboardRun(run(45, { finalDeck: [
     { defId: 'burn', upgraded: true },
-  ] })), INITIAL_DECK_TYPES, 'private-key', async () => { invoked = true })
+  ] })), INITIAL_DECK_TYPES, undefined, () => { invoked = true })
   check('unknown cards and impossible upgrades never reach the paid model', () => {
     assertEqual(invalidType, null)
     assertEqual(impossibleType, null)
@@ -539,7 +891,7 @@ try {
   })
 
   const limitedFile = join(directory, 'budget.json')
-  const limited = createRoomServer({ storeFile: limitedFile, openAiKey: 'local-test-key', maxDeckClassificationsPerDay: 1,
+  const limited = createRoomServer({ storeFile: limitedFile, classifierEnabled: true, maxDeckClassificationsPerDay: 1,
     deckClassifier: async () => 'Defect Lightning Orb Focus' })
   try {
     const limitedAddress = await limited.listen(0)
@@ -562,13 +914,139 @@ try {
     assertEqual(restored.leaderboardRuns[0].deckType, 'Defect Lightning Orb Focus')
     assertEqual(restored.leaderboardRuns[1].deckType, undefined)
   })
+  const longRetryFile = join(directory, 'long-retry.json')
+  const longRetryStore = createStore({ file: longRetryFile })
+  addLeaderboardRun(longRetryStore, run(74))
+  longRetryStore.leaderboardRuns[0].deckClassificationRetry = {
+    after: Date.now() + 2_147_483_647 + 100_000, hash: deckHash(longRetryStore.leaderboardRuns[0]),
+  }
+  saveStore(longRetryStore)
+  const nativeSetTimeout = globalThis.setTimeout
+  let longTimer = 0
+  let longRetryCalls = 0
+  let longRetryServer
+  try {
+    globalThis.setTimeout = (callback, delay, ...args) => {
+      if (delay > 1_000_000_000) longTimer = Math.max(longTimer, delay)
+      return nativeSetTimeout(callback, delay, ...args)
+    }
+    longRetryServer = createRoomServer({ storeFile: longRetryFile, classifierEnabled: true,
+      deckClassifier: async () => { longRetryCalls += 1; return 'Defect Mixed Orb' } })
+    await longRetryServer.listen(0)
+    await new Promise((resolve) => nativeSetTimeout(resolve, 40))
+    check('distant persisted retries clamp timers rather than spinning every millisecond', () => {
+      assertEqual(longTimer, 2_147_483_647)
+      assertEqual(longRetryCalls, 0)
+    })
+  } finally {
+    globalThis.setTimeout = nativeSetTimeout
+    if (longRetryServer) await longRetryServer.close()
+  }
+  const exhaustedFile = join(directory, 'exhausted.json')
+  const exhaustedThreads = []
+  const exhaustedClassifier = async (_entry, _types, currentThreadId) => {
+    exhaustedThreads.push(currentThreadId)
+    if (exhaustedThreads.length === 1)
+      throw Object.assign(new Error('Codex output token limit'), { code: 'max_output_tokens', threadId })
+    return { type: 'Defect Mixed Orb', threadId }
+  }
+  let exhaustedServer = createRoomServer({ storeFile: exhaustedFile, classifierEnabled: true, deckClassifier: exhaustedClassifier })
+  try {
+    const address = await exhaustedServer.listen(0)
+    assertEqual((await fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(70)) })).status, 201)
+    for (let attempt = 0; attempt < 40 && !exhaustedServer.store.leaderboardRuns[0]?.deckClassificationRetry; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    await exhaustedServer.close()
+    exhaustedServer = createRoomServer({ storeFile: exhaustedFile, classifierEnabled: true, deckClassifier: exhaustedClassifier })
+    const resumedAddress = await exhaustedServer.listen(0)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    check('token exhaustion defers the deck until next UTC day even after restart', () => {
+      assertEqual(exhaustedThreads.length, 1)
+      const restored = createStore({ file: exhaustedFile })
+      assert(restored.leaderboardRuns[0].deckClassificationRetry.after > Date.now())
+      assertEqual(restored.deckClassificationBudget.used, 1)
+      assertEqual(restored.deckClassifierThreadId, threadId)
+    })
+    assertEqual((await fetch(`http://127.0.0.1:${resumedAddress.port}/api/leaderboard`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(76)) })).status, 201)
+    for (let attempt = 0; attempt < 40 && !exhaustedServer.store.leaderboardRuns[1]?.deckType; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    check('the next submitted deck reuses a first-turn thread even while that deck waits', () => {
+      assertDeepEqual(exhaustedThreads, [undefined, threadId])
+      assertEqual(exhaustedServer.store.leaderboardRuns[0].deckType, undefined)
+      assertEqual(exhaustedServer.store.leaderboardRuns[1].deckType, 'Defect Mixed Orb')
+    })
+  } finally { await exhaustedServer.close() }
+  const contextFile = join(directory, 'context-exhausted.json')
+  const contextThreads = []
+  const contextServer = createRoomServer({ storeFile: contextFile, classifierEnabled: true,
+    deckClassifier: async (_entry, _types, currentThreadId) => {
+      contextThreads.push(currentThreadId)
+      if (contextThreads.length === 1)
+        throw Object.assign(new Error('Codex context is full'), { code: 'context_exhausted', threadId })
+      return { type: 'Defect Mixed Orb', threadId }
+    } })
+  try {
+    const address = await contextServer.listen(0)
+    const submit = (id) => fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(id)) })
+    assertEqual((await submit(77)).status, 201)
+    for (let attempt = 0; attempt < 40 && !contextServer.store.leaderboardRuns[0]?.deckClassificationRetry; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    assertEqual((await submit(79)).status, 201)
+    for (let attempt = 0; attempt < 40 && !contextServer.store.leaderboardRuns[1]?.deckType; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    check('first-turn context exhaustion defers its deck without retaining a full thread', () => {
+      assertDeepEqual(contextThreads, [undefined, undefined])
+      assert(contextServer.store.leaderboardRuns[0].deckClassificationRetry.after > Date.now())
+      assertEqual(contextServer.store.leaderboardRuns[1].deckType, 'Defect Mixed Orb')
+    })
+  } finally { await contextServer.close() }
+  const unauthenticatedFile = join(directory, 'unauthenticated.json')
+  const savedBin = process.env.STS_CODEX_BIN
+  process.env.STS_CODEX_BIN = join(directory, 'missing-codex')
+  let unauthenticatedServer
+  try {
+    unauthenticatedServer = createRoomServer({ storeFile: unauthenticatedFile, classifierEnabled: true })
+    const address = await unauthenticatedServer.listen(0)
+    assertEqual((await fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(67)) })).status, 201)
+    check('missing authentication disables classification before spending daily attempts', () => {
+      assertEqual(unauthenticatedServer.store.leaderboardRuns[0].deckType, undefined)
+      assertEqual(unauthenticatedServer.store.deckClassificationBudget.used, 0)
+    })
+  } finally {
+    if (unauthenticatedServer) await unauthenticatedServer.close()
+    if (savedBin === undefined) delete process.env.STS_CODEX_BIN
+    else process.env.STS_CODEX_BIN = savedBin
+  }
+  const unavailableFile = join(directory, 'unavailable.json')
+  const unavailableStore = createStore({ file: unavailableFile })
+  addLeaderboardRun(unavailableStore, run(68))
+  addLeaderboardRun(unavailableStore, run(69))
+  saveStore(unavailableStore)
+  let unavailableCalls = 0
+  const unavailableServer = createRoomServer({ storeFile: unavailableFile, classifierEnabled: true,
+    deckClassifier: async () => { unavailableCalls += 1
+      throw Object.assign(new Error('Codex login expired'), { code: 'classifier_unavailable' }) } })
+  try {
+    await unavailableServer.listen(0)
+    for (let attempt = 0; attempt < 40 && !unavailableCalls; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    check('expired Codex auth stops an active backlog and refunds the attempt', () => {
+      assertEqual(unavailableCalls, 1)
+      assertEqual(unavailableServer.store.deckClassificationBudget.used, 0)
+      assertEqual(unavailableServer.store.leaderboardRuns[1].deckType, undefined)
+    })
+  } finally { await unavailableServer.close() }
 
   let resolveHeld
   let signalHeld
   const held = new Promise((resolve) => { resolveHeld = resolve })
   const started = new Promise((resolve) => { signalHeld = resolve })
   const heldFile = join(directory, 'held.json')
-  const heldServer = createRoomServer({ storeFile: heldFile, openAiKey: 'local-test-key', deckClassifier: async () => {
+  const heldServer = createRoomServer({ storeFile: heldFile, classifierEnabled: true, deckClassifier: async () => {
     signalHeld()
     await held
     return 'Defect Lightning Orb Focus'
@@ -585,7 +1063,7 @@ try {
   let writes = 0
   let paidCalls = 0
   let cannotWrite = true
-  const unwritable = createRoomServer({ storeFile: join(directory, 'unwritable.json'), openAiKey: 'local-test-key',
+  const unwritable = createRoomServer({ storeFile: join(directory, 'unwritable.json'), classifierEnabled: true,
     saveStoreImpl: (entry) => { writes += 1; if (cannotWrite) throw new Error('simulated full disk'); saveStore(entry) },
     onSaveError: () => {}, deckClassifier: async () => { paidCalls += 1; return 'Defect Lightning Orb Focus' } })
   try {
@@ -604,7 +1082,7 @@ try {
   const waiting = new Promise((resolve) => { releaseUpdate = resolve })
   const updating = new Promise((resolve) => { signalUpdate = resolve })
   let updateCalls = 0
-  const updateServer = createRoomServer({ openAiKey: 'local-test-key', deckClassifier: async () => {
+  const updateServer = createRoomServer({ classifierEnabled: true, deckClassifier: async () => {
     updateCalls += 1
     signalUpdate()
     await waiting
@@ -631,7 +1109,7 @@ try {
   const heldHero = new Promise((resolve) => { releaseHero = resolve })
   const heroStarted = new Promise((resolve) => { signalHero = resolve })
   let heroCalls = 0
-  const heroServer = createRoomServer({ openAiKey: 'local-test-key', deckClassifier: async (entry) => {
+  const heroServer = createRoomServer({ classifierEnabled: true, deckClassifier: async (entry) => {
     heroCalls += 1
     if (heroCalls === 1) { signalHero(); await heldHero }
     return entry.character === 'ironclad' ? 'Ironclad Barricade Body Slam' : 'Defect Lightning Orb Focus'
@@ -654,9 +1132,9 @@ try {
   } finally { releaseHero(); await heroServer.close() }
 
   const changedHeroCalls = []
-  const changedHeroServer = createRoomServer({ openAiKey: 'local-test-key', deckClassifier: async (entry) => {
+  const changedHeroServer = createRoomServer({ classifierEnabled: true, deckClassifier: async (entry) => {
     changedHeroCalls.push(entry.character)
-    if (entry.character === 'defect') throw Object.assign(new Error('Expected output limit'), { code: 'max_output_tokens' })
+    if (entry.character === 'defect') throw new Error('Expected classification failure')
     return 'Ironclad Barricade Body Slam'
   } })
   try {
@@ -664,9 +1142,11 @@ try {
     const endpoint = `http://127.0.0.1:${address.port}/api/leaderboard`
     const submit = (entry) => fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(entry) })
     assertEqual((await submit(run(53))).status, 201)
-    for (let attempt = 0; attempt < 40 && !changedHeroServer.store.leaderboardRuns[0]?.deckClassificationRetry; attempt++)
+    for (let attempt = 0; attempt < 40 && !changedHeroCalls.length; attempt++)
       await new Promise((resolve) => setTimeout(resolve, 10))
-    assert(changedHeroServer.store.leaderboardRuns[0]?.deckClassificationRetry)
+    changedHeroServer.store.leaderboardRuns[0].deckClassificationRetry = {
+      after: Date.now() + 86_400_000, hash: deckHash(changedHeroServer.store.leaderboardRuns[0]),
+    }
     addLeaderboardRun(changedHeroServer.store, run(53, { character: 'ironclad', finalDeck: undefined, winningDecks: [
       { username: 'Room Owner', character: 'ironclad', finalDeck: run(53).finalDeck },
     ] }))
@@ -674,7 +1154,7 @@ try {
     assertEqual((await submit(run(54, { finalDeck: undefined }))).status, 201)
     for (let attempt = 0; attempt < 40 && !changedHeroServer.store.leaderboardRuns[0].deckType; attempt++)
       await new Promise((resolve) => setTimeout(resolve, 10))
-    check('changing hero invalidates the previous hero next-day retry for the same deck', () => {
+    check('changing hero invalidates a previous hero retry for the same deck', () => {
       assertDeepEqual(changedHeroCalls, ['defect', 'ironclad'])
       assertEqual(changedHeroServer.store.leaderboardRuns[0].deckType, 'Ironclad Barricade Body Slam')
     })
@@ -686,7 +1166,7 @@ try {
   let signalThird
   const heldThird = new Promise((resolve) => { releaseThird = resolve })
   const startedThird = new Promise((resolve) => { signalThird = resolve })
-  const failureServer = createRoomServer({ openAiKey: 'local-test-key', deckClassifier: async (entry) => {
+  const failureServer = createRoomServer({ classifierEnabled: true, deckClassifier: async (entry) => {
     attempts.push(entry.id)
     if (entry.id === failedId) throw new Error('expected classifier failure')
     if (entry.id === run(23).id) { signalThird(); await heldThird }
@@ -731,54 +1211,107 @@ try {
     } finally { releaseThird(); Date.now = originalNow; globalThis.setTimeout = originalSetTimeout }
   } finally { releaseThird(); await failureServer.close() }
 
-  const originalClock = Date.now
-  let clock = Math.floor(originalClock() / 86_400_000) * 86_400_000 + 12 * 60 * 60_000
-  const exhaustedId = run(48).id
-  const exhaustionCalls = []
-  const exhaustedFile = join(directory, 'exhausted.json')
-  const classifyExhausted = async (entry) => {
-    exhaustionCalls.push(entry.id)
-    if (entry.id === exhaustedId && entry.finalDeck?.[0]?.defId === 'dual_cast')
-      throw Object.assign(new Error('Expected output limit'), { code: 'max_output_tokens' })
-    return 'Defect Lightning Orb Focus'
-  }
-  let exhaustedServer = createRoomServer({ storeFile: exhaustedFile, openAiKey: 'local-test-key', deckClassifier: classifyExhausted })
+  const firstTurnFile = join(directory, 'first-turn.json')
+  let failedFirstTurnStarted = false
+  const firstTurnServer = createRoomServer({ storeFile: firstTurnFile, classifierEnabled: true,
+    deckClassifier: async () => {
+      failedFirstTurnStarted = true
+      throw Object.assign(new Error('first-turn timeout'), { threadId, code: 'ABORT_ERR' })
+    } })
   try {
-    Date.now = () => clock
-    const address = await exhaustedServer.listen(0)
+    const address = await firstTurnServer.listen(0)
+    assertEqual((await fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(73)) })).status, 201)
+    for (let attempt = 0; attempt < 40 && !failedFirstTurnStarted; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+  } finally { await firstTurnServer.close() }
+  check('timed-out first turns persist their Codex thread before the next server startup', () => {
+    assertEqual(failedFirstTurnStarted, true)
+    assertEqual(createStore({ file: firstTurnFile }).deckClassifierThreadId, threadId)
+  })
+  let resumedFirstTurn
+  const firstTurnRetry = createRoomServer({ storeFile: firstTurnFile, classifierEnabled: true,
+    deckClassifier: async (_entry, _types, currentThreadId) => {
+      resumedFirstTurn = currentThreadId
+      return { type: 'Defect Mixed Orb', threadId }
+    } })
+  try {
+    await firstTurnRetry.listen(0)
+    for (let attempt = 0; attempt < 40 && !resumedFirstTurn; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    check('a restarted classifier resumes the thread created by a failed first turn', () =>
+      assertEqual(resumedFirstTurn, threadId))
+  } finally { await firstTurnRetry.close() }
+
+  const sessionsFile = join(directory, 'codex-sessions.json')
+  const resumedThreads = []
+  const classifySessions = async (_entry, _types, currentThreadId) => {
+    resumedThreads.push(currentThreadId)
+    return { type: 'Defect Lightning Orb Focus', threadId }
+  }
+  let sessionsServer = createRoomServer({ storeFile: sessionsFile, classifierEnabled: true, deckClassifier: classifySessions })
+  try {
+    const address = await sessionsServer.listen(0)
     const endpoint = `http://127.0.0.1:${address.port}/api/leaderboard`
     const submit = (id) => fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(id)) })
     assertEqual((await submit(48)).status, 201)
-    for (let attempt = 0; attempt < 40 && !exhaustionCalls.length; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
-    check('an exhausted model response persists its deck-specific retry time before restart', () => {
-      const retry = createStore({ file: exhaustedFile }).leaderboardRuns[0].deckClassificationRetry
-      assertEqual(retry?.after, clock - clock % 86_400_000 + 86_400_000)
-      assertEqual(retry?.hash.length, 64)
+    for (let attempt = 0; attempt < 40 && !sessionsServer.store.leaderboardRuns[0]?.deckType; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    await sessionsServer.close()
+    check('Codex thread ID survives server restart in private stats state', () => {
+      assertEqual(createStore({ file: sessionsFile }).deckClassifierThreadId, threadId)
+      assertEqual(JSON.parse(readFileSync(`${sessionsFile}.stats.json`, 'utf8')).deckClassifierThreadId, threadId)
     })
-    await exhaustedServer.close()
-    clock += 61_000
-    exhaustedServer = createRoomServer({ storeFile: exhaustedFile, openAiKey: 'local-test-key', deckClassifier: classifyExhausted })
-    const resumed = await exhaustedServer.listen(0)
+    sessionsServer = createRoomServer({ storeFile: sessionsFile, classifierEnabled: true, deckClassifier: classifySessions })
+    const resumed = await sessionsServer.listen(0)
     const resumeEndpoint = `http://127.0.0.1:${resumed.port}/api/leaderboard`
     assertEqual((await fetch(resumeEndpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(49)) })).status, 201)
-    for (let attempt = 0; attempt < 40 && !exhaustedServer.store.leaderboardRuns[1]?.deckType; attempt++)
+    for (let attempt = 0; attempt < 40 && !sessionsServer.store.leaderboardRuns[1]?.deckType; attempt++)
       await new Promise((resolve) => setTimeout(resolve, 10))
-    check('output exhaustion survives restart without blocking other decks', () => {
-      assertDeepEqual(exhaustionCalls, [exhaustedId, run(49).id])
-      assertEqual(exhaustedServer.store.leaderboardRuns[1].deckType, 'Defect Lightning Orb Focus')
-      assertEqual(exhaustedServer.store.deckClassificationBudget.used, 2)
+    check('subsequent decks resume the same Codex thread', () => {
+      assertDeepEqual(resumedThreads, [undefined, threadId])
+      assertEqual(sessionsServer.store.deckClassificationBudget.used, 2)
     })
-    addLeaderboardRun(exhaustedServer.store, run(48, { finalDeck: undefined, winningDecks: [
-      { username: 'Room Owner', character: 'defect', finalDeck: [{ defId: 'claw', upgraded: false }] },
-    ] }))
-    assertEqual((await fetch(resumeEndpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(50)) })).status, 201)
-    for (let attempt = 0; attempt < 40 && !exhaustedServer.store.leaderboardRuns[0]?.deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
-    check('an authoritative deck replacement clears a deferred classification', () => {
-      assertEqual(exhaustedServer.store.leaderboardRuns[0].deckType, 'Defect Lightning Orb Focus')
-      assertEqual(exhaustedServer.store.leaderboardRuns[0].deckClassificationRetry, undefined)
+    await sessionsServer.close()
+    let resumedFailure = false
+    sessionsServer = createRoomServer({ storeFile: sessionsFile, classifierEnabled: true,
+      deckClassifier: async (_entry, _types, currentThreadId) => {
+        resumedFailure = true
+        assertEqual(currentThreadId, threadId)
+        throw new Error('Temporary network failure')
+      } })
+    const failing = await sessionsServer.listen(0)
+    assertEqual((await fetch(`http://127.0.0.1:${failing.port}/api/leaderboard`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(50)) })).status, 201)
+    for (let attempt = 0; attempt < 40 && !resumedFailure; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    await sessionsServer.close()
+    check('transient failures preserve a resumable Codex thread', () => {
+      assertEqual(resumedFailure, true)
+      assertEqual(createStore({ file: sessionsFile }).deckClassifierThreadId, threadId)
     })
-  } finally { Date.now = originalClock; await exhaustedServer.close() }
+    let staleFailure = false
+    sessionsServer = createRoomServer({ storeFile: sessionsFile, classifierEnabled: true,
+      deckClassifier: async (_entry, _types, currentThreadId) => {
+        staleFailure = true
+        assertEqual(currentThreadId, threadId)
+        throw Object.assign(new Error('Codex session unavailable'), { code: 'stale_thread' })
+      } })
+    await sessionsServer.listen(0)
+    for (let attempt = 0; attempt < 40 && !staleFailure; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    await sessionsServer.close()
+    check('only genuinely stale resumed sessions clear their ID', () => {
+      assertEqual(staleFailure, true)
+      assertEqual(createStore({ file: sessionsFile }).deckClassifierThreadId, undefined)
+    })
+    const legacyStats = JSON.parse(readFileSync(`${sessionsFile}.stats.json`, 'utf8'))
+    legacyStats.deckClassifierThreadId = threadId
+    legacyStats.deckClassifierRelease = 'previous-release'
+    writeFileSync(`${sessionsFile}.stats.json`, JSON.stringify(legacyStats))
+    const nextRelease = createRoomServer({ storeFile: sessionsFile, classifierEnabled: false })
+    try {
+      check('deployment changes start a new thread against the new codebase', () => assertEqual(nextRelease.store.deckClassifierThreadId, undefined))
+    } finally { await nextRelease.close() }
+  } finally { await sessionsServer.close() }
 
   const roomRetryFile = join(directory, 'room-retry.json')
   const roomRetryStore = createStore({ file: roomRetryFile })
@@ -790,9 +1323,10 @@ try {
   saveStore(roomRetryStore)
   let roomRetryCalls = 0
   const openRoomReplay = async () => {
-    const service = createRoomServer({ storeFile: roomRetryFile, openAiKey: 'local-test-key', deckClassifier: async () => {
+    const service = createRoomServer({ storeFile: roomRetryFile, classifierEnabled: true, deckClassifier: async () => {
       roomRetryCalls += 1
-      throw Object.assign(new Error('Expected output limit'), { code: 'max_output_tokens' })
+      if (roomRetryCalls === 1) throw new Error('Temporary Codex failure')
+      return 'Defect Lightning Orb Focus'
     } })
     await service.listen(0)
     return service
@@ -800,26 +1334,26 @@ try {
   let replayServer
   try {
     replayServer = await openRoomReplay()
-    for (let attempt = 0; attempt < 40 && !replayServer.store.leaderboardRuns[0]?.deckClassificationRetry; attempt++)
+    for (let attempt = 0; attempt < 40 && !roomRetryCalls; attempt++)
       await new Promise((resolve) => setTimeout(resolve, 10))
-    assert(replayServer.store.leaderboardRuns[0]?.deckClassificationRetry)
+    assertEqual(replayServer.store.leaderboardRuns[0]?.deckType, undefined)
+    await replayServer.close()
+    replayServer = await openRoomReplay()
+    for (let attempt = 0; attempt < 40 && !replayServer.store.leaderboardRuns[0]?.deckType; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
     await replayServer.close()
     replayServer = await openRoomReplay()
     await new Promise((resolve) => setTimeout(resolve, 30))
-    assert(replayServer.store.leaderboardRuns[0]?.deckClassificationRetry)
-    await replayServer.close()
-    replayServer = await openRoomReplay()
-    await new Promise((resolve) => setTimeout(resolve, 30))
-    check('replaying a finalized solo room across two restarts retains its paid retry deferral', () => {
-      assertEqual(roomRetryCalls, 1)
-      assert(replayServer.store.leaderboardRuns[0]?.deckClassificationRetry)
+    check('replaying a finalized solo room retries once across restarts without reclassifying it again', () => {
+      assertEqual(roomRetryCalls, 2)
+      assertEqual(replayServer.store.leaderboardRuns[0]?.deckType, 'Defect Lightning Orb Focus')
     })
   } finally { if (replayServer) await replayServer.close() }
 
   let notifyStarted
   let inFlightSignal
   const modelStarted = new Promise((resolve) => { notifyStarted = resolve })
-  const closingServer = createRoomServer({ openAiKey: 'local-test-key', deckClassifier: async (_entry, _types, _key, _fetch, signal) => {
+  const closingServer = createRoomServer({ classifierEnabled: true, deckClassifier: async (_entry, _types, _threadId, _spawn, signal) => {
     inFlightSignal = signal
     notifyStarted()
     await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('Model request cancelled')), { once: true }))
