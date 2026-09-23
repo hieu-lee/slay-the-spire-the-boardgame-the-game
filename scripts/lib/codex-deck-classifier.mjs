@@ -96,7 +96,7 @@ export async function classifyDeckType(run, types, threadId, createCodex = (opti
       'permissions.deck_classifier.description="Read game rules without reading Codex credentials"',
       'permissions.deck_classifier.filesystem={":root"="read","/codex-home"="deny"}',
     ] })
-  const options = { model: 'gpt-6-sol', modelReasoningEffort: 'high', workingDirectory: '/workspace',
+  const options = { model: 'gpt-6-sol', modelReasoningEffort: 'medium', workingDirectory: '/workspace',
     skipGitRepoCheck: true, approvalPolicy: 'never', webSearchMode: 'disabled' }
   const thread = threadId ? codex.resumeThread(threadId, options) : codex.startThread(options)
   let failureReason = ''

@@ -516,11 +516,11 @@ try {
   }
   const resumedType = await classifyDeckType(archive[0], INITIAL_DECK_TYPES, threadId,
     simulatedCodex('defect mixed orb'))
-  check('server-only Codex SDK creates and resumes a read-only GPT-6 Sol high thread', () => {
+  check('server-only Codex SDK creates and resumes a read-only GPT-6 Sol medium thread', () => {
     assertDeepEqual(type, { type: 'Defect Mixed Orb', threadId })
     assertDeepEqual(resumedType, type)
     assertEqual(calls[0].threadOptions.model, 'gpt-6-sol')
-    assertEqual(calls[0].threadOptions.modelReasoningEffort, 'high')
+    assertEqual(calls[0].threadOptions.modelReasoningEffort, 'medium')
     assertEqual(calls[0].threadOptions.sandboxMode, undefined)
     assertEqual(calls[0].threadOptions.approvalPolicy, 'never')
     assertEqual(calls[0].threadOptions.webSearchMode, 'disabled')
@@ -530,6 +530,7 @@ try {
     assert(calls[0].options.codexPathOverride.endsWith('/codex-deck-worker.sh'))
     assertDeepEqual(calls[0].turnOptions.outputSchema.required, ['name'])
     assertEqual(calls[1].resumeId, threadId)
+    assertEqual(calls[1].threadOptions.modelReasoningEffort, 'medium')
     assertEqual(calls[0].options.env.OPENAI_API_KEY, 'sk-test-not-for-codex')
     assert(!Object.keys(calls[0].options.env).some((key) => key !== 'OPENAI_API_KEY' && /KEY|TOKEN|SECRET/.test(key)))
     assert(readFileSync(new URL('../infra/systemd/sts-room-server.service', import.meta.url), 'utf8')
