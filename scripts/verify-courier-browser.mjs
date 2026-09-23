@@ -21,13 +21,17 @@ await server.listen()
 const base = `http://localhost:${server.httpServer.address().port}`
 const browser = await chromium.launch()
 const errors = []
+const expectedOfflineErrors = new WeakSet()
 const checkAsync = async (label, assertion) => {
   try { await assertion(); check(label, () => {}) }
   catch (error) { check(label, () => { throw error }) }
 }
 const watch = (page) => {
   page.on('pageerror', (error) => errors.push(String(error)))
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('console', (message) => {
+    if (message.type() === 'error' && !(expectedOfflineErrors.has(page) &&
+      message.text() === 'Failed to load resource: net::ERR_INTERNET_DISCONNECTED')) errors.push(message.text())
+  })
   return page
 }
 
@@ -86,15 +90,17 @@ async function clearancesAt(page, viewports) {
   const clearances = []
   for (const viewport of viewports) {
     await page.setViewportSize(viewport)
-    await page.waitForTimeout(300)
+    await page.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height &&
+      [...document.querySelectorAll('.courier--available')].some((plaque) => plaque.getClientRects().length &&
+        plaque.getAnimations().every((animation) => animation.playState === 'finished')), viewport)
     const hiddenTips = await hiddenRelicTips(page)
     const blockedHeader = await headerBlocked(page)
     const withoutCourier = await page.addStyleTag({ content: `.courier--available { display: none !important }
       .relic-chip[data-relic='the_courier'] { display: inline-grid !important }` })
-    await page.waitForTimeout(100)
     const blockedHeaderBefore = await headerBlocked(page)
     await withoutCourier.evaluate((style) => style.remove())
-    await page.waitForTimeout(450)
+    await page.waitForFunction(() => [...document.querySelectorAll('.courier--available')].some((plaque) => plaque.getClientRects().length &&
+      plaque.getAnimations().every((animation) => animation.playState === 'finished')))
     clearances.push({ viewport, frame: await boxes(page), covered: await coveredByPlaque(page), hiddenTips, blockedAbilities: await blockedAbilities(page),
       blockedHeader: blockedHeader.filter((label) => !blockedHeaderBefore.includes(label)) })
   }
@@ -156,7 +162,8 @@ const hiddenRelicTips = async (page) => {
   for (const relic of await page.locator('.app-shell__header .relic-chip').all()) {
     if (!(await relic.isVisible())) continue
     await relic.focus()
-    await page.waitForTimeout(350)
+    await relic.locator('.relic-tip').waitFor({ state: 'visible' })
+    await relic.locator('.relic-tip').evaluate((tip) => Promise.all(tip.getAnimations().map((animation) => animation.finished)).then(() => undefined))
     hidden.push(await relic.evaluate((chip) => {
       const tip = [...chip.querySelectorAll('.relic-tip')].find((element) => getComputedStyle(element).visibility !== 'hidden')
       if (!tip) return `no tooltip for ${chip.getAttribute('aria-label')}`
@@ -169,9 +176,9 @@ const hiddenRelicTips = async (page) => {
       return ''
     }))
     await relic.evaluate((chip) => chip.blur())
+    await relic.locator('.relic-tip').waitFor({ state: 'hidden' })
   }
   await page.evaluate(() => document.activeElement?.blur())
-  await page.waitForTimeout(300)
   return hidden.filter(Boolean)
 }
 const blockedAbilities = (page) => page.evaluate(() => [...document.querySelectorAll('.relic-actions section > button, .relic-actions section > details > summary, .combat__actions button')].filter((button) => {
@@ -483,12 +490,14 @@ try {
   })
   await bo.locator('.combat__end-turn').focus()
   await ann.setViewportSize({ width: 844, height: 390 })
+  expectedOfflineErrors.add(ann)
   await ann.context().setOffline(true)
   await ann.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'Courier reconnect test'))
   await ann.locator('.connection--connected').waitFor({ state: 'detached' })
   const liveWhileReconnecting = await liveCourierControls(ann)
   await ann.context().setOffline(false)
   await ann.locator('.connection--connected').waitFor({ timeout: 20000 })
+  expectedOfflineErrors.delete(ann)
   const onlinePhoneKey = ann.getByRole('button', { name: 'Courier choices' })
   await onlinePhoneKey.click()
   await ann.getByRole('button', { name: 'Look at Relic' }).click()
