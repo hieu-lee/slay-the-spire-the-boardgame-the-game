@@ -78,7 +78,8 @@ import { OutsidePotionBar } from './OutsidePotionBar.tsx'
 import { GuardianSocketPanel, RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { StartMenu } from './StartMenu.tsx'
 import { GiveUpPanel } from './GiveUpPanel.tsx'
-import { CourierPanel, RoomScreen } from './RoomScreen.tsx'
+import { CourierPanel, CourierPeek, courierPeekPhase } from './CourierPanel.tsx'
+import { RoomScreen } from './RoomScreen.tsx'
 import { NeowScreen } from './NeowScreen.tsx'
 import { QuickSetupScreen } from './QuickSetupScreen.tsx'
 import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
@@ -520,6 +521,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   useCombatMusic(run, active && open && settings.bgmVolume > 0, settings.bgmVolume)
   useVictoryMusic(!run.campaign.finalized && victoryIsTerminal(run, run.campaignProgress), active && open && settings.bgmVolume > 0, settings.bgmVolume)
   const [viewerId, setViewerId] = useState('p1')
+  const revealLocalCourier = useCallback((kind: 'relic' | 'potion') => setRun((current) => revealCourier(current, viewerId, kind)), [viewerId])
   const [compendium, setCompendium] = useState(false)
   const [leaderboard, setLeaderboard] = useState(false)
   const [stats, setStats] = useState(false)
@@ -917,6 +919,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
               <span className="pip" title="Gold">
                 <IconValue name="gold" value={headerViewer.gold} size={20} />
               </span>
+              {run.phase === 'combat' && run.combat ? <CourierPeek placement="header" active={!run.courier.offer && courierPeekPhase(run.combat)}
+                players={run.combat.players} viewerId={viewerId} usedBy={run.courier.usedBy} onReveal={revealLocalCourier} /> : null}
               <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`} />
               {!allocatingCampaignMarks && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
               !victoryIsTerminal(run, run.campaignProgress) && !pendingAcquisition ? (
@@ -1006,11 +1010,11 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           viewerId={viewerId}
           animateOpeningHand
           autoAdvance={!replayLog && !compendium && !pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
-          courierAvailable={!run.courier.usedBy.includes(viewerId) &&
-            run.combat.players.some((player) => player.id === viewerId && player.relics.some((relic) => relic.defId === 'the_courier'))}
+          courierUsedBy={run.courier.usedBy}
+          onCourierReveal={run.courier.offer ? undefined : revealLocalCourier}
           mutationsEnabled={!run.courier.offer}
           onChange={updateCombat}
-        /></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} onReveal={(kind) => setRun((current) => revealCourier(current, viewerId, kind))} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
+        /></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} offer={run.courier.offer} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
       ) : null}
       {pendingPreview ? <RelicResolvePanel key={`${pendingPreview.id}:${JSON.stringify(pendingPreview.rewardIndices ?? {})}`}
         pending={pendingPreview}

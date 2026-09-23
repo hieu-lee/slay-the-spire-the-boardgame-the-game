@@ -77,6 +77,8 @@ try {
         document.querySelector('.reward-screen--card-choice').parentElement.style.display = 'none'
         document.querySelector('#hand-fixture')?.remove()
         const host = document.createElement('div'); host.id = 'hand-fixture'; host.className = 'sts-scope'; document.body.append(host)
+        // The hand sizes its cards from a width `.combat` defines; this fixture renders outside combat.
+        host.style.setProperty('--hand-card-width', 'calc(var(--card-width) * .759)')
         const h = R.createElement ?? R.default.createElement
         window.choices = []
         ;(D.createRoot ?? D.default.createRoot)(host).render(h('div', { className: 'hand-area' },
