@@ -619,6 +619,7 @@ export function playCard(
   actor.hand = actor.hand.filter((card) => card.uid !== cardUid)
   actor.energy -= cost
   actor.energySpentThisTurn = (actor.energySpentThisTurn ?? 0) + cost
+  if (cost >= 2) actor.spentTwoEnergyOnCardThisTurn = true
   actor.vigor -= vigorSpent
   actor.vigorSpentThisTurn += vigorSpent
   actor.nextCardCost = null

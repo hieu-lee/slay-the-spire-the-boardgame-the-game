@@ -49,6 +49,7 @@ export function createCombat(
       retainCardsThisTurn: 0,
       cardsPlayedThisTurn: 0,
       energySpentThisTurn: 0,
+      spentTwoEnergyOnCardThisTurn: false,
       nextPowerOrSlimeDiscount: undefined,
       nextAttackRapidFire: 0,
       chamber: player.chamber ?? [],

@@ -118,6 +118,30 @@ const enemy = {
 }
 const combat = createCombat(createRng(47), [player], [enemy])
 
+const slippery = byName.get('Slippery')
+const slipperyCard = { uid: 'slippery-cost', defId: slippery.id, upgraded: false }
+const defendCards = [1, 2].map((index) => ({ uid: `slippery-defend-${index}`, defId: byName.get('Defend').id, upgraded: false }))
+let separateCosts = createCombat(createRng(4701), [{ ...player, character: 'slime_boss', energy: 4,
+  hand: [...defendCards, slipperyCard] }], [enemy])
+for (const defend of defendCards) {
+  separateCosts = playCard(separateCosts, player.id, defend.uid, { enemyUid: null, playerId: player.id })
+}
+assert.equal(separateCosts.players[0].energySpentThisTurn, 2, 'two separate Defends spend two Energy total')
+assert.equal(playCost(slippery, separateCosts.players[0], slipperyCard), 2,
+  'Slippery needs two Energy spent on one other card, not across two cards')
+const paidSlippery = playCard(separateCosts, player.id, slipperyCard.uid, { enemyUid: null, playerId: player.id })
+assert.equal(paidSlippery.players[0].energy, 0, 'Slippery charges two Energy after separate one-cost plays')
+
+const expensiveCard = { uid: 'slippery-living-wall', defId: byName.get('Living Wall').id, upgraded: false }
+let singleCost = createCombat(createRng(4702), [{ ...player, character: 'slime_boss',
+  hand: [expensiveCard, { ...slipperyCard, upgraded: true }] }], [enemy])
+singleCost = playCard(singleCost, player.id, expensiveCard.uid, { enemyUid: null, playerId: player.id })
+assert.equal(singleCost.players[0].energy, 1, 'Living Wall charges its full two Energy')
+assert.equal(playCost(slippery, singleCost.players[0], singleCost.players[0].hand[0]), 0,
+  'upgraded Slippery is free after a single two-Energy card')
+assert.equal(playCard(singleCost, player.id, slipperyCard.uid, { enemyUid: null, playerId: player.id }).players[0].energy, 1,
+  'the discounted Slippery charges no Energy')
+
 const soleBruiser = beginEndTurnResolution(combat)
 assert.equal(endTurnResolutionAbility(soleBruiser), undefined,
   'Bruiser Slime asked where to Command when only one enemy was legal')

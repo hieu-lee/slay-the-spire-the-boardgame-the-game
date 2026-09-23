@@ -161,6 +161,8 @@ export type Player = {
   /** Vantage grants one Rapid Fire to the next Attack this turn. */
   nextAttackRapidFire?: number
   energySpentThisTurn?: number
+  /** Slippery needs one other card charged at least 2 Energy, not 2 Energy in total. */
+  spentTwoEnergyOnCardThisTurn?: boolean
   /** Conclude prevents any further card play until the next Player Turn. */
   cardPlayLocked?: boolean
   /** Double Tap makes this many subsequent Attack cards play twice this turn. */

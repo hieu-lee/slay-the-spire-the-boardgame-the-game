@@ -570,6 +570,7 @@ function validRunState(value: unknown, runId: string): value is RunState {
       'clawCubesGainedThisCombat', 'starterDefendBlockBonus', 'holyWaterCubes', 'orbEvokeBonus', 'darkOrbEvokeBonus',
       'orbEndTurnBonus', 'lightningEndTurnBonus', 'nextSoulburnDamageBonus', 'lootChests']
     const optionalBoolean = ['shuffledThisCombat', 'cardPlayLocked', 'powerPlayedThisTurn', 'damageDealtZeroThisTurn',
+      'spentTwoEnergyOnCardThisTurn',
       'calipersArmed', 'soulburnUsedThisTurn', 'guardianModeLocked']
     return typeof current.id === 'string' && typeof current.name === 'string' && CHARACTER_IDS.includes(current.character) &&
       numeric.every((field) => Number.isFinite(current[field])) && typeof current.drawLocked === 'boolean' &&

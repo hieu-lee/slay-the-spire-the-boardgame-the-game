@@ -5691,6 +5691,7 @@ function redactPlayer(player, viewerId) {
     nextPowerOrSlimeDiscount: player.nextPowerOrSlimeDiscount,
     nextAttackRapidFire: player.nextAttackRapidFire ?? 0,
     energySpentThisTurn: player.energySpentThisTurn ?? 0,
+    spentTwoEnergyOnCardThisTurn: player.spentTwoEnergyOnCardThisTurn === true,
     heat: player.heat ?? 0,
     soulburn: player.soulburn ?? 0,
     soulburnUsedThisTurn: player.soulburnUsedThisTurn === true,

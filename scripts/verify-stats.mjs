@@ -661,6 +661,11 @@ try {
   }).status
   rmSync(schemaDirectory, { recursive: true, force: true })
   check('the sandbox reuses either local CLI login and mounts the SDK schema without exposing the room store', () => {
+    if (process.platform !== 'linux') {
+      assertDeepEqual([keyLoginStatus, unsupportedBinaryStatus, chatgptLoginStatus, schemaStatus], [66, 66, 66, 66])
+      assertEqual(keyReachedWorker, false)
+      return
+    }
     assertEqual(keyLoginStatus, 0)
     assertEqual(keyReachedWorker, true)
     assertEqual(unsupportedBinaryStatus, 66)
@@ -688,6 +693,10 @@ try {
     cwd: process.cwd(), stdio: 'ignore', env: { ...fakeEnvironment(), OPENAI_API_KEY: 'sk-fixture-env-only' },
   }).status
   check('the worker synchronizes a private environment key with its local CLI login', () => {
+    if (process.platform !== 'linux') {
+      assertEqual(envKeyStatus, 66)
+      return
+    }
     assertEqual(envKeyStatus, 0)
     assert(readFileSync(join(isolatedHome, 'bwrap-calls'), 'utf8').includes('login --with-api-key'))
   })

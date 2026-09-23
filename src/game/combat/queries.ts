@@ -126,7 +126,7 @@ export function guardianGemForCard(
 /** The Energy actually charged for a card on this player's current board. */
 export function playCost(
   def: CardDef,
-  player: Pick<Player, 'powers' | 'relics' | 'lostHpThisCombat' | 'freeCardsThisTurn' | 'nextCardCost' | 'enemyNextCardCost' | 'freeAttacksThisTurn' | 'freeGemCardsThisTurn' | 'freePowersThisTurn' | 'nextPowerOrSlimeDiscount' | 'energySpentThisTurn' | 'exhaust' | 'heat' | 'chamber' | 'attacksPlayedThisTurn' | 'guardianMode'> & { hand: readonly CardInstance[] | null },
+  player: Pick<Player, 'powers' | 'relics' | 'lostHpThisCombat' | 'freeCardsThisTurn' | 'nextCardCost' | 'enemyNextCardCost' | 'freeAttacksThisTurn' | 'freeGemCardsThisTurn' | 'freePowersThisTurn' | 'nextPowerOrSlimeDiscount' | 'spentTwoEnergyOnCardThisTurn' | 'exhaust' | 'heat' | 'chamber' | 'attacksPlayedThisTurn' | 'guardianMode'> & { hand: readonly CardInstance[] | null },
   card?: Pick<CardInstance, 'freeThisTurn' | 'costReductionThisTurn' | 'stasisRetained' | 'hermitDeadOn'>,
 ): number | 'X' {
   if (player.enemyNextCardCost !== null && player.enemyNextCardCost !== undefined) return player.enemyNextCardCost
@@ -137,7 +137,7 @@ export function playCost(
     (def.type === 'power' && ((player.freePowersThisTurn ?? 0) > 0 ||
       player.powers.some((power) => power.defId === 'guardian_construction_form')))
   ) return 0
-  if (def.costAfterSpentTwoEnergy !== undefined && (player.energySpentThisTurn ?? 0) >= 2) return def.costAfterSpentTwoEnergy
+  if (def.costAfterSpentTwoEnergy !== undefined && player.spentTwoEnergyOnCardThisTurn) return def.costAfterSpentTwoEnergy
   const cost = player.nextCardCost ?? cardCost(def, player.powers, player.lostHpThisCombat)
   if (cost === 'X') return cost
   const retainDiscount = def.retainCostReduction

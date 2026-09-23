@@ -271,6 +271,7 @@ function beginPlayerTurn(next: CombatState, pauseAfterDraw = false): CombatState
     player.retainCardsThisTurn = 0
     player.cardsPlayedThisTurn = 0
     player.energySpentThisTurn = 0
+    player.spentTwoEnergyOnCardThisTurn = false
     player.nextPowerOrSlimeDiscount = undefined
     player.powerPlayedThisTurn = false
     player.damageDealtZeroThisTurn = false

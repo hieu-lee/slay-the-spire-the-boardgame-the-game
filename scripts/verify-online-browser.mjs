@@ -4223,7 +4223,7 @@ try {
     a.locator('.combat[data-phase="start"]').waitFor(),
     b.locator('.combat[data-phase="start"]').waitFor(),
   ])
-  await b.getByText("Charon's Ashes", { exact: true }).waitFor()
+  await b.getByLabel('Relic abilities').getByText("Charon's Ashes", { exact: true }).waitFor()
   await a.waitForTimeout(500)
   const hiddenCharonSnapshot = await snapshot(a)
   const hiddenCharonOwner = hiddenCharonSnapshot.run.combat.players.find((player) => player.name === 'Bo')
@@ -5090,6 +5090,7 @@ try {
     assertEqual(restored.phase, 'run')
     assertEqual(createWhileReconnecting, 0, 'reconnect exposed a destructive fresh-room form')
   })
+  await b.locator('.app-shell--online .combat img').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
   await b.screenshot({ path: join(outDir, '05-reconnected-seat.png'), fullPage: true })
 
   const recoveryTab = installScreenAudit(await bContext.newPage())
