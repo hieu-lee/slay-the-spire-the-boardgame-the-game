@@ -63,6 +63,9 @@ const INITIAL_DECK_GROUPS = {
     '4a0207a375a63617f039405e6c3ff6ca2448f181c231d5572feb3e937e2938e0',
     '0b86cffa73da5956255b04702dfe3146ba87b1995bc715f3c2dcce17b5c98421',
   ],
+  'Hermit Curse-Chamber Payoffs': [
+    'ebacbfb88b205e055b01c62aa569ee873470af0c0150cc9203973ea3ae90b775',
+  ],
 }
 export const INITIAL_DECK_TYPES = Object.keys(INITIAL_DECK_GROUPS)
 export const INITIAL_DECK_CLASSIFICATIONS = new Map(Object.entries(INITIAL_DECK_GROUPS)
