@@ -11,8 +11,8 @@
   },
   "public/assets/combat/rigged/awakened_one_phase_1-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "a79b5774a0a20c302d9340587781b2e8cd8004218e488365ba6dbdf63d962ed6",
-    "video": "d2df1b48355991545ad1a2f3a242770774f9d638d577d36bf5b7cff6f0fec49a"
+    "source": "6a2305fa378697c5b1ef37947f8b727a2f366426e0da027c634701b678bd5939",
+    "video": "58d9e2a2f0f32fa5bef38439ff49539c2c6dbb22f0ec040d93f897c61dc33bce"
   },
   "public/assets/combat/rigged/awakened_one_phase_1-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -21,8 +21,8 @@
   },
   "public/assets/combat/rigged/awakened_one_phase_2-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "60e785d7b441a2d17d9a058c9325e0428c0bf8c52ad53256fd235e47bc8e3e15",
-    "video": "93cee6d6e93fb00dd5f6fcd639f503c18c1186e50d1662850567b249d53b6564"
+    "source": "93078e61fbbdbc434ccec31e2609b92e62c0d74fbfa8d3eb51902a399a6e90c9",
+    "video": "2cf6bf7aa0307eb4175649ffa38195b857a583cabaf01d9af124c17a01ad0bf3"
   },
   "public/assets/combat/rigged/awakened_one_phase_2-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -51,8 +51,8 @@
   },
   "public/assets/combat/rigged/bronze_automaton-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "48df8d82301d7ff219ba1037d87b381638d4d6a6d431bc49b478b4d75a543e44",
-    "video": "a828aec10c6502b2830218c064bf09063af749be321944f66e041f3efeebc111"
+    "source": "44187c036f1aef73be18060dc10b39ae5226547bcbf79170eab219944e6431e5",
+    "video": "0d41649e4cd934eb77b0fe1827db129f76b0fa25a80c95955d0b905e009044dc"
   },
   "public/assets/combat/rigged/bronze_automaton-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -351,8 +351,8 @@
   },
   "public/assets/combat/rigged/downfall_trickster-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "02db375aebe37fcbd2a436065275b071c899dc45012be57b3d58549875b08b46",
-    "video": "f5e5d2216b7fa8f7865d0baabb5261a9a438bfbc64f6b4b8b49564e3ed12a8ac"
+    "source": "697c73ced8d293152fe135621570ae137f75c66ff716241cc5bb85eb1b21953b",
+    "video": "62b10c36b041179d8cabee6e5bd7e33dc6b6106c8ef6b91bf3ea94b5cca63cdb"
   },
   "public/assets/combat/rigged/downfall_trickster-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -381,8 +381,8 @@
   },
   "public/assets/combat/rigged/downfall_wrathful-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "72015e878e9a94cf9be4b9143c14d1ab1c1f091a4cca3aeac42b757470552a47",
-    "video": "100c621ba227a433984be1474b1bb9d8134a92fe29e24900aedf6af784a624b1"
+    "source": "8f5022b588b0508a11bf2073c15156f6ce4abe9a718e608f115368159427d799",
+    "video": "2f9acf9e6bc1edb36f93b879506fc30effed86d816723b607a796844cc32a17f"
   },
   "public/assets/combat/rigged/downfall_wrathful-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -471,8 +471,8 @@
   },
   "public/assets/combat/rigged/guardian_attack-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "3ca9d1c5a3339b84ee585bb051e6ed3a43841501a5212c259bd42bc040808a40",
-    "video": "666690a4f23b32016219eb0c30f0167cdb6b552449f9fac31e210fee31849f40"
+    "source": "702bb00f8877250f07aa615ec9691edbd480e095f5c19e0457161f90146bc98e",
+    "video": "4a3ea807904e081c9ee79cc94e3f907dc02b2305333f7cdd6c7629bfb5cddb46"
   },
   "public/assets/combat/rigged/guardian_attack-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -481,8 +481,8 @@
   },
   "public/assets/combat/rigged/guardian_defensive-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "265a0fca47b6a5ce02eee8e06d3fd07dbdf586ad47ff4e1e3d5a731ea7a7e43c",
-    "video": "4eb43f0c742186b8977f4d8358ea45561e1c5f88894d01bcd64e3af884dd4a7c"
+    "source": "fcd34936525f9e50432105085909921ade511cd980ff358b9f54632d335c5097",
+    "video": "a2904022e77633e1599ce588d1534790f627c8a8efb4158a61388231b044e4ad"
   },
   "public/assets/combat/rigged/guardian_defensive-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -491,8 +491,8 @@
   },
   "public/assets/combat/rigged/hero-defect-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "f82e86f685ae7f44052b4ace64d25683cf8fc7b1159a7fce1d7525ee13010798",
-    "video": "c35ab06d6d8e54dcb40fff4601dbb37ed47d8b77197250fce99c508860bea413"
+    "source": "7e8993bf3f13406d423cca1c4c387e1147c2156e99b9db4facc0dd66fd2824c0",
+    "video": "2215782c7cd35dd67e0f4d2f88798f64934e832f54f06c610655a24ca248748d"
   },
   "public/assets/combat/rigged/hero-defect-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -501,8 +501,8 @@
   },
   "public/assets/combat/rigged/hero-guardian-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "6d3c337cbbcf34cd18caa83181243f83d6482af6ddd0015693317e6fb3447c04",
-    "video": "b519bb26ecef058c0029477067b055302e188413f7921cd75f31d76c8a2d465e"
+    "source": "90ecb6da17a59145213f0796c574dd4df81335759337eb3b3ac8eefd275afd14",
+    "video": "65033990e352897484eb54889efa7efc74c1706fd528eadcfd209ba423cbeb3f"
   },
   "public/assets/combat/rigged/hero-guardian-defense-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -521,8 +521,8 @@
   },
   "public/assets/combat/rigged/hero-hermit-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "4ed968fcdcc5c259d1d39f0c92c2499a650a1c4674a8751e95e448e2485231be",
-    "video": "5ef23fb3e96f45071159a4022a97010f23d62e3f03ac89ec5f720e89bb5a11bf"
+    "source": "e71df4eb276cad4462093ad2d9fdc2a293356ee4f70f7002cb3338477667a68b",
+    "video": "6bfd81390692fcfa25237688df2639b67a54ee136473142df60885accdd314df"
   },
   "public/assets/combat/rigged/hero-hermit-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -601,8 +601,8 @@
   },
   "public/assets/combat/rigged/hero-ironclad-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "480b026dad0955b6c5116e838b37c5fd34d3aad095aa71c7503c4bd541878d50",
-    "video": "66f17f14a56cad6d49b92abde615bd958460f3194b264f376651150f57f31c43"
+    "source": "20b5b6efbb57dad1153cec78d2ec1408eaea7fb7a4aeb9862d9c070eba056283",
+    "video": "8938c609bbd6e3cca645f1a4f9032f41832e3736c03fbc4b379751168a2de9bf"
   },
   "public/assets/combat/rigged/hero-ironclad-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -611,8 +611,8 @@
   },
   "public/assets/combat/rigged/hero-silent-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "818a57d3ef49d48c4456f229a8d0e1d569e78a3b0dad16f1d94cc35251ed98b7",
-    "video": "8c443e5e43bca9c5153015e877bf778e9ec0a1ac6cb516f6044ee40a1e5c0a81"
+    "source": "64d349d04ce5e8f8c42553dd681883c51ab6e68f2ecf8f7655319c41329b8dc4",
+    "video": "f2f4e993db7b56e8ab7c2b98c0656afeb16094680515e291796779b2a7348e9b"
   },
   "public/assets/combat/rigged/hero-silent-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -631,8 +631,8 @@
   },
   "public/assets/combat/rigged/hero-watcher-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "29a0a7d5897d51452872ec9b6a7308e85ebb1092d3d5ecc1f382b081848d0bef",
-    "video": "9c7324c58dae6bcac12efedea9e96d1adb18b3bebf44c1087cf2bf2a70392a86"
+    "source": "30822d083e457bc361f2043321a7530ad951b14a9cdc039b0f6a88b48cd4dcef",
+    "video": "d83f2f38a82cb9500759fc4a6d4e84e88c5dd08e9476ed2add0848131e6a2ccb"
   },
   "public/assets/combat/rigged/hero-watcher-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -931,8 +931,8 @@
   },
   "public/assets/combat/rigged/the_champ-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "78fc1bba045e95168094c9854dd7ba098fe56481e6127621bfd25b2c4e5994a7",
-    "video": "ec76aee2467f8ba4afddaa2c7c638e8037157cc45303d4dc6b70ed0df818ce65"
+    "source": "503c50917e23244332f46e428d7d40004ecd6c1c960a7fa753f58992e47a6e4d",
+    "video": "e9abb2f73ef57b2c7a2e571bf224ccc273b6e68f612b57e87425e54b669a906c"
   },
   "public/assets/combat/rigged/the_champ-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -941,8 +941,8 @@
   },
   "public/assets/combat/rigged/the_collector-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "1b92a8d0584a5be4490912ec2fc111e18a00ce10f84f9a1565ec016326825d49",
-    "video": "ae85fb8a8cf800e8e89abd88ca8966b2a050b39dbd7b2792d04a166b93d381aa"
+    "source": "8f3faa12d1adb12aabcf340247f20557c8bb8ffdcb876f2d38e7c433f12d40ed",
+    "video": "09bd97fedd4196c4c0de3fc32e3a44e057ec77bbd16119c55a088119f9da64a1"
   },
   "public/assets/combat/rigged/the_collector-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
@@ -951,8 +951,8 @@
   },
   "public/assets/combat/rigged/time_eater-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "611d9fc0564d4c97671de81f5ead30134b11c76a8b82fc57847f2fce67307ee0",
-    "video": "11b6fbacdb26bcdb337823bc4d3dec1636cead186e02ef478372ecfc173bda59"
+    "source": "5dd071eba436982ecfbf4562637b7272292406418d601a5d348b0016ce5ae39e",
+    "video": "796862bf3de3a90a7348e1efb78bd1d6f9f89555b39224dfd7befe59dcbf315b"
   },
   "public/assets/combat/rigged/time_eater-idle.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",

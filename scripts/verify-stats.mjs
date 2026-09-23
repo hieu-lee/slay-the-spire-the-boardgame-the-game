@@ -641,7 +641,7 @@ try {
     HOME: isolatedHome, USER: process.env.USER, PATH: `${fakeBwrapDir}:${process.env.PATH}`,
     NODE_BINARY: process.execPath, STS_CODEX_BIN: executable,
   })
-  const fakeLogin = (executable = fakeCodex) => spawnSync('/bin/bash', [calls[0].options.codexPathOverride, 'login', 'status'], {
+  const fakeLogin = (executable = fakeCodex) => spawnSync('bash', [calls[0].options.codexPathOverride, 'login', 'status'], {
     cwd: process.cwd(), stdio: 'ignore', env: {
       ...fakeEnvironment(executable),
     },
@@ -655,7 +655,7 @@ try {
   const schemaDirectory = mkdtempSync(join(tmpdir(), 'codex-output-schema-'))
   const schemaFile = join(schemaDirectory, 'schema.json')
   writeFileSync(schemaFile, '{"type":"object"}')
-  const schemaStatus = spawnSync('/bin/bash', [calls[0].options.codexPathOverride, 'exec', '--output-schema', schemaFile], {
+  const schemaStatus = spawnSync('bash', [calls[0].options.codexPathOverride, 'exec', '--output-schema', schemaFile], {
     cwd: process.cwd(), stdio: 'ignore', env: fakeEnvironment(),
   }).status
   rmSync(schemaDirectory, { recursive: true, force: true })
@@ -683,7 +683,7 @@ try {
     assert(mounts.includes('/etc/ssl/certs'))
     if (process.execPath.startsWith('/opt/')) assert(mounts.includes(join(process.execPath, '..', '..')))
   })
-  const envKeyStatus = spawnSync('/bin/bash', [calls[0].options.codexPathOverride, 'login', 'status'], {
+  const envKeyStatus = spawnSync('bash', [calls[0].options.codexPathOverride, 'login', 'status'], {
     cwd: process.cwd(), stdio: 'ignore', env: { ...fakeEnvironment(), OPENAI_API_KEY: 'sk-fixture-env-only' },
   }).status
   check('the worker synchronizes a private environment key with its local CLI login', () => {

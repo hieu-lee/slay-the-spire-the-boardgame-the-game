@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -47,7 +47,7 @@ for (const activeState of ['active', 'inactive']) {
         SESSION_SHA: 'a'.repeat(40), ROLLBACK_MARKER: marker, START_MARKER: startMarker,
         SIMULATED_ACTIVE_STATE: activeState }, encoding: 'utf8', timeout: 10_000 })
     assert.equal(result.status, 1, result.stderr)
-    assert.equal(readlinkSync(join(data, 'current')), activeState === 'inactive' ? previous : release,
+    assert.equal(realpathSync(join(data, 'current')), realpathSync(activeState === 'inactive' ? previous : release),
       'rollback selected the wrong release after a failed stop')
     assert.equal(existsSync(marker), activeState === 'inactive', 'rollback materialized with an active server')
     assert.equal(existsSync(startMarker), true, 'failed stop left the server down')
