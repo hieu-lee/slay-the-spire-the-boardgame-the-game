@@ -3992,8 +3992,9 @@ const stasisChoiceLayout = await stasisChoices.evaluate((group) => {
 })
 await stasisChoices.getByRole('button', { name: 'Defend' }).first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand[0]?.stasisRetained === true)
-check('Stasis Engine can resolve its private hand target from the sequential end-turn UI', async () => {
-  assert((await readRun()).combat.players[0].hand[0]?.stasisRetained)
+const stasisRetained = (await readRun()).combat.players[0].hand[0]?.stasisRetained
+check('Stasis Engine can resolve its private hand target from the sequential end-turn UI', () => {
+  assert(stasisRetained)
   assert(stasisChoiceLayout.insideViewport && stasisChoiceLayout.rows > 1,
     `phone Stasis choices did not wrap inside the viewport: ${JSON.stringify(stasisChoiceLayout)}`)
 })
