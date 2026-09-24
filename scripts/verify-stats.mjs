@@ -8,7 +8,7 @@ import { CARDS, faceOf } from '../src/game/cards.ts'
 import { addLeaderboardRun, normalizeLeaderboardRun } from './lib/leaderboard.mjs'
 import { createRoom, createStore, joinRoom, saveStore, startRun } from './lib/rooms.mjs'
 import { classifyDeckType } from './lib/codex-deck-classifier.mjs'
-import { deckHash, INITIAL_DECK_CLASSIFICATIONS, INITIAL_DECK_TYPES, randomDeck, statsSnapshot, validDeckType } from './lib/stats.mjs'
+import { deckHash, INITIAL_DECK_CLASSIFICATIONS, INITIAL_DECK_TYPES, randomDeck, recordDeckClassification, statsDecks, statsSnapshot, validDeckType } from './lib/stats.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { materializeLeaderboardArchive } from '../infra/validate-room-store.mjs'
 import { joinQueries, parseStatsExpression, validateStatsQuery } from '../src/stats-query.ts'
@@ -152,6 +152,47 @@ check('a finished one-player room uses its personal deck without exposing its ow
   assertDeepEqual(randomDeck([room], new URLSearchParams({ type: 'Defect Lightning Orb Focus' })).cards,
     [{ defId: 'dual_cast', upgraded: true }])
   assert(!JSON.stringify(result).includes('Solo Room Player'))
+})
+check('multiplayer counts each valid personal deck without assigning team combat damage to a player', () => {
+  const multiplayer = normalizeLeaderboardRun(run(160, { characters: ['ironclad', 'defect'], finalDeck: undefined,
+    winningDecks: [
+      { username: 'First Player', character: 'ironclad', finalDeck: [{ defId: 'strike_ironclad', upgraded: false }] },
+      { username: 'Second Player', character: 'defect', finalDeck: [{ defId: 'dual_cast', upgraded: true }] },
+    ], floorsCleared: 18 }))
+  const decks = statsDecks(multiplayer)
+  decks[0].deckType = 'Ironclad Strength Scaling'
+  decks[1].deckType = 'Defect Lightning Orb Focus'
+  const result = statsSnapshot(decks)
+  assertEqual(result.runs, 2)
+  assertEqual(result.pending, 0)
+  assertEqual(result.averageFloors, 18)
+  assertEqual(result.averageDamage, null)
+  assertEqual(result.averageBlock, null)
+  assertEqual(statsSnapshot(decks, new URLSearchParams({ character: 'ironclad', q: JSON.stringify(card('strike_ironclad')) })).runs, 1)
+  assertEqual(statsSnapshot(decks, new URLSearchParams({ character: 'defect', q: JSON.stringify(card('dual_cast', true)) })).runs, 1)
+  assertDeepEqual(result.rows.map((row) => row.character).sort(), ['defect', 'ironclad'])
+  assertDeepEqual(randomDeck(decks, new URLSearchParams({ type: 'Defect Lightning Orb Focus' })).cards,
+    [{ defId: 'dual_cast', upgraded: true }])
+  assert(!JSON.stringify(result).includes('First Player'))
+  assert(!JSON.stringify(result).includes('Second Player'))
+  assertEqual(statsSnapshot([archive[0], ...decks]).averageDamage, archive[0].damageDealt / archive[0].combatsFinished)
+  assertEqual(statsSnapshot([multiplayer]).runs, 2)
+  assertEqual(statsSnapshot([archive[0], multiplayer], new URLSearchParams({ mode: 'multiplayer' })).runs, 2)
+  assertEqual(statsSnapshot([archive[0], multiplayer], new URLSearchParams({ mode: 'standard' })).runs, 1)
+  assertEqual(statsSnapshot([archive[0], multiplayer], new URLSearchParams({ mode: 'multiplayer', character: 'defect',
+    q: JSON.stringify(card('dual_cast', true)) })).runs, 1)
+  assertDeepEqual(randomDeck(decks, new URLSearchParams({ mode: 'multiplayer', type: 'Defect Lightning Orb Focus' })).cards,
+    [{ defId: 'dual_cast', upgraded: true }])
+  assertThrows(() => statsSnapshot(decks, new URLSearchParams({ mode: 'coop' })))
+  assertThrows(() => normalizeLeaderboardRun(run(161, { characters: ['ironclad', 'defect'], winningDecks: [
+    { username: 'Wrong Hero', character: 'silent', finalDeck: [] },
+    { username: 'Other Hero', character: 'defect', finalDeck: [] },
+  ] })))
+  const collisionStore = createStore()
+  addLeaderboardRun(collisionStore, multiplayer)
+  addLeaderboardRun(collisionStore, run(164, { id: `${multiplayer.id}:deck:ironclad` }))
+  assertEqual(collisionStore.statsRuns.length, 3)
+  assertEqual(statsSnapshot(collisionStore.statsRuns).runs, 3)
 })
 check('authoritative solo-room deck changes invalidate a previous public archetype', () => {
   const entries = { leaderboardRuns: [] }
@@ -324,6 +365,75 @@ try {
     assertDeepEqual(restored.deckClassificationBudget, store.deckClassificationBudget)
     assertEqual(JSON.parse(readFileSync(file, 'utf8')).leaderboardRuns, undefined)
     assertEqual(JSON.parse(readFileSync(`${file}.leaderboard.json`, 'utf8'))[0].deckType, 'Defect Lightning Orb Focus')
+  })
+  const multiplayerFile = join(directory, 'multiplayer-stats.json')
+  const multiplayerStore = createStore({ file: multiplayerFile })
+  const multiplayerRun = run(162, { characters: ['ironclad', 'defect'], finalDeck: undefined, winningDecks: [
+    { username: 'First Player', character: 'ironclad', finalDeck: [{ defId: 'strike_ironclad', upgraded: false }] },
+    { username: 'Second Player', character: 'defect', finalDeck: [{ defId: 'dual_cast', upgraded: false }] },
+  ] })
+  addLeaderboardRun(multiplayerStore, multiplayerRun)
+  assertThrows(() => normalizeLeaderboardRun(run(163, { id: multiplayerStore.statsRuns[0].id })))
+  for (const entry of multiplayerStore.statsRuns) {
+    entry.deckType = entry.character === 'ironclad' ? 'Ironclad Strength Scaling' : 'Defect Lightning Orb Focus'
+    recordDeckClassification(multiplayerStore, entry)
+  }
+  saveStore(multiplayerStore)
+  check('multiplayer deck types persist privately without changing leaderboard run counts', () => {
+    const restored = createStore({ file: multiplayerFile })
+    assertEqual(restored.leaderboardRuns.length, 1)
+    assertEqual(restored.statsRuns.length, 2)
+    assertEqual(statsSnapshot(restored.statsRuns).rows.length, 2)
+    assert(!JSON.stringify(restored.leaderboardRuns).includes('deckType'))
+    assert(!JSON.stringify(readFileSync(`${multiplayerFile}.leaderboard.json`, 'utf8')).includes('deckType'))
+    assertEqual(restored.statsRuns[1].deckType, 'Defect Lightning Orb Focus')
+  })
+  addLeaderboardRun(multiplayerStore, { ...multiplayerRun, winningDecks: [
+    multiplayerRun.winningDecks[0],
+    { ...multiplayerRun.winningDecks[1], finalDeck: [{ defId: 'claw', upgraded: false }] },
+  ] })
+  check('a corrected multiplayer deck resets only its own classification', () => {
+    assertEqual(multiplayerStore.statsRuns.length, 2)
+    assertEqual(multiplayerStore.statsRuns[0].deckType, 'Ironclad Strength Scaling')
+    assertEqual(multiplayerStore.statsRuns[1].deckType, undefined)
+    assertEqual(statsSnapshot(multiplayerStore.statsRuns).pending, 1)
+    assertEqual(statsSnapshot(multiplayerStore.statsRuns, query(card('dual_cast'))).runs, 0)
+    assertEqual(statsSnapshot(multiplayerStore.statsRuns, query(card('claw'))).runs, 1)
+  })
+  const multiplayerServerFile = join(directory, 'multiplayer-server.json')
+  const seededMultiplayerStore = createStore({ file: multiplayerServerFile })
+  addLeaderboardRun(seededMultiplayerStore, { ...multiplayerRun,
+    winningDecks: multiplayerRun.winningDecks.map((deck) => ({ ...deck, deckType: 'Ironclad Forged Type' })) })
+  saveStore(seededMultiplayerStore)
+  const multiplayerServer = createRoomServer({ storeFile: multiplayerServerFile, classifierEnabled: true,
+    deckClassifier: async (entry) => entry.character === 'ironclad' ? 'Ironclad Strength Scaling' : 'Defect Lightning Orb Focus' })
+  try {
+    const address = await multiplayerServer.listen(0)
+    const endpoint = `http://127.0.0.1:${address.port}`
+    await waitFor(() => multiplayerServer.store.statsRuns.length === 2 &&
+      multiplayerServer.store.statsRuns.every((entry) => entry.deckType))
+    const response = await fetch(`${endpoint}/api/stats`).then((result) => result.json())
+    const filtered = await fetch(`${endpoint}/api/stats?mode=multiplayer`).then((result) => result.json())
+    const solo = await fetch(`${endpoint}/api/stats?mode=standard`).then((result) => result.json())
+    const sample = await fetch(`${endpoint}/api/stats/deck?type=Ironclad+Strength+Scaling`).then((result) => result.json())
+    check('public Stats counts and privately classifies both players in one authoritative room run', () => {
+      assertEqual(multiplayerServer.store.leaderboardRuns.length, 1)
+      assertEqual(response.runs, 2)
+      assertEqual(filtered.runs, 2)
+      assertEqual(solo.runs, 0)
+      assertEqual(response.pending, 0)
+      assertEqual(response.rows.length, 2)
+      assertEqual(response.averageDamage, null)
+      assertDeepEqual(sample.cards, multiplayerRun.winningDecks[0].finalDeck)
+      assert(!JSON.stringify({ response, sample }).includes('First Player'))
+      assert(!JSON.stringify({ response, sample }).includes('Second Player'))
+      assert(!JSON.stringify(multiplayerServer.store.leaderboardRuns).includes('Forged Type'))
+    })
+  } finally { await multiplayerServer.close() }
+  check('background classifications of multiplayer decks survive a server restart', () => {
+    const restored = createStore({ file: multiplayerServerFile })
+    assertEqual(restored.statsRuns.length, 2)
+    assertEqual(statsSnapshot(restored.statsRuns).pending, 0)
   })
   const migrationFile = join(directory, 'stats-migration.json')
   const archived = [normalizeLeaderboardRun(run(55)), normalizeLeaderboardRun(run(56, { character: 'ironclad' })),

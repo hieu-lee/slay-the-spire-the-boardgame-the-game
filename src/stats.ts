@@ -19,7 +19,7 @@ export type StatsSnapshot = StatsMetrics & {
   nextCards: (StatsMetrics & { defId: string; deltaFloors: number | null; deltaDamage: number | null; deltaBlock: number | null })[]
 }
 
-export type StatsFilters = { character: CharacterId | 'all'; ascension: number | 'all' | `${number}+`; mode: 'all' | 'standard' | 'daily' | 'custom'; query: StatsQuery | null }
+export type StatsFilters = { character: CharacterId | 'all'; ascension: number | 'all' | `${number}+`; mode: 'all' | 'standard' | 'daily' | 'custom' | 'multiplayer'; query: StatsQuery | null }
 export type SampleDeck = { deckType: string; character: CharacterId; cards: Omit<CardInstance, 'uid'>[] }
 
 function paramsFor(filters: StatsFilters) {

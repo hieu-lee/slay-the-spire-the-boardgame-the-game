@@ -18,7 +18,7 @@ import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, 
 import { dirname } from 'node:path'
 import { mergeLeaderboardRuns, restoreLeaderboardRuns } from './leaderboard.mjs'
 import { classificationRecord, deckHash, HERO_NAMES, INITIAL_DECK_CLASSIFICATIONS, INITIAL_DECK_TYPES,
-  recordDeckClassification, validClassifierThreadId, validDeckType, validSoloDeck } from './stats.mjs'
+  recordDeckClassification, statsDecks, validClassifierThreadId, validDeckType, validSoloDeck } from './stats.mjs'
 import {
   CAPS,
   CHARACTER_IDS,
@@ -287,7 +287,7 @@ function appendJournal(store, path, entries) {
 }
 
 export function createStore({ file, restartRecovery = false, restartReconnectMs = 5 * 60_000 } = {}) {
-  const store = { rooms: new Map(), leaderboardRuns: [], leaderboardRevision: 0, leaderboardDirty: true, leaderboardChanges: new Map(),
+  const store = { rooms: new Map(), leaderboardRuns: [], statsRuns: [], leaderboardRevision: 0, leaderboardDirty: true, leaderboardChanges: new Map(),
     statsStateDirty: true, statsChanges: new Map(), interruptedJournals: new Map(),
     deckTypes: [...INITIAL_DECK_TYPES], deckClassificationBudget: { day: -1, used: 0 },
     deckClassifierThreadId: undefined, deckClassifierRelease: undefined, profiles: [], file, reconnectQuorums: new Map() }
@@ -319,6 +319,7 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
     store.leaderboardRuns = mergeLeaderboardRuns(legacyRuns, [...archivedById.values()], {
       preferLegacyRuns: !saved.leaderboardArchive, journalIds,
     })
+    store.statsRuns = store.leaderboardRuns.flatMap(statsDecks)
     store.leaderboardDirty = archive === undefined
     if (!store.leaderboardDirty && legacyRuns.length)
       for (const run of store.leaderboardRuns)
@@ -370,7 +371,7 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
           !/^[0-9a-f]{64}$/.test(record.retry.hash))) throw new Error('Stats log is invalid')
       logged.set(record.id, record)
     }
-    for (const run of store.leaderboardRuns) {
+    for (const run of store.statsRuns) {
       const record = logged.get(run.id)
       if (record?.hero === run.character && record.hash === deckHash(run)) {
         if (!run.deckType && record.deckType) { run.deckType = record.deckType; delete run.deckClassificationRetry }
@@ -515,14 +516,14 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
         store.rooms.set(room.code, room)
       }
     }
-    const evidenced = new Set(store.leaderboardRuns.map((run) => run.deckType).filter(Boolean))
+    const evidenced = new Set(store.statsRuns.map((run) => run.deckType).filter(Boolean))
     const retained = store.deckTypes.filter((type) => !LEGACY_DECK_TYPES.has(type) ||
       INITIAL_DECK_TYPES.includes(type) || evidenced.has(type))
     if (retained.length !== store.deckTypes.length) {
       store.deckTypes = retained
       store.statsStateDirty = true
     }
-    for (const run of store.leaderboardRuns) {
+    for (const run of store.statsRuns) {
       if (run.deckType || !validSoloDeck(run)) continue
       const type = INITIAL_DECK_CLASSIFICATIONS.get(deckHash(run))
       if (!type?.startsWith(`${HERO_NAMES[run.character]} `)) continue

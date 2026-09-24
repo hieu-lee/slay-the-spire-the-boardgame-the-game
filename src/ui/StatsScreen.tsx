@@ -210,7 +210,7 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
             </optgroup>
           </select></label>
           <label><span className="visually-hidden">Run mode</span><select value={mode} onChange={(event) => setMode(event.target.value as StatsFilters['mode'])}>
-            <option value="all">All modes</option><option value="standard">Standard</option><option value="daily">Daily</option><option value="custom">Custom</option>
+            <option value="all">All modes</option><option value="standard">Standard</option><option value="daily">Daily</option><option value="custom">Custom</option><option value="multiplayer">Multiplayer</option>
           </select></label>
         </div>
       </div>
@@ -240,8 +240,8 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
           {editor === 'builder' && builderError && <p className="stats__filter-error" role="alert">{builderError}</p>}
         </section>
 
-        <div className="stats__metrics" aria-label="Filtered run averages">
-          <Metric icon="icons/card-reward.png" label="Runs" value={snapshot?.runs.toLocaleString() ?? '—'} />
+        <div className="stats__metrics" aria-label="Filtered deck averages">
+          <Metric icon="icons/card-reward.png" label="Decks" value={snapshot?.runs.toLocaleString() ?? '—'} />
           <Metric icon="menu/map-scroll.png" label="Floors" value={decimal(snapshot?.averageFloors)} />
           <Metric icon="icons/attack.png" label="Damage" value={decimal(snapshot?.averageDamage)} />
           <Metric icon="icons/block.png" label="Block" value={percent(snapshot?.averageBlock)} />
@@ -262,7 +262,7 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
                     const button = event.currentTarget.querySelector<HTMLButtonElement>('button')
                     if (button) openDeck(row.deckType, button)
                   }}><th scope="row"><button type="button" className="stats__row-button" title={row.deckType} onClick={(event) => { event.stopPropagation(); openDeck(row.deckType, event.currentTarget) }}>
-                    <img src={assetPath(`menu/compendium-icons/${row.character}.webp`)} alt="" /><span><strong>{row.deckType}</strong><small>{row.runs} run{row.runs === 1 ? '' : 's'}</small></span><span className="stats__row-arrow" aria-hidden="true">›</span></button></th>
+                    <img src={assetPath(`menu/compendium-icons/${row.character}.webp`)} alt="" /><span><strong>{row.deckType}</strong><small>{row.runs} deck{row.runs === 1 ? '' : 's'}</small></span><span className="stats__row-arrow" aria-hidden="true">›</span></button></th>
                     <td>{decimal(row.averageFloors)}</td><td>{decimal(row.averageDamage)}</td><td>{percent(row.averageBlock)}</td></tr>)}</tbody></table></div>}
         </section>
 
@@ -272,15 +272,15 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
             const card = CARDS[entry.defId]
             return <button type="button" key={entry.defId} className="stats__next-card" onClick={() => addNextCard(entry.defId)} title="Add to filters">
               {card && <img src={cardThumbPath(card, false)} alt="" loading="lazy" />}
-              <span className="stats__next-name"><strong>{card?.name ?? entry.defId}</strong><small><span>{entry.runs} runs</span><span>{delta(entry.deltaDamage)} dmg</span><span>{delta(entry.deltaBlock, '%')} block</span></small></span>
+              <span className="stats__next-name"><strong>{card?.name ?? entry.defId}</strong><small><span>{entry.runs} decks</span><span>{delta(entry.deltaDamage)} dmg</span><span>{delta(entry.deltaBlock, '%')} block</span></small></span>
               <span className="stats__next-delta" data-positive={entry.deltaFloors != null && entry.deltaFloors >= 0}>{delta(entry.deltaFloors)} <small>floors</small></span><span className="stats__next-add" aria-hidden="true">＋</span>
             </button>
-          })}</div> : <div className="stats__message stats__message--compact">Not enough runs yet</div>}
+          })}</div> : <div className="stats__message stats__message--compact">Not enough decks yet</div>}
         </section>
       </div>
       {deckLoading && <div className="stats__deck-loading" role="status">Drawing a deck…</div>}
       {deckError && <div className="stats__deck-loading" role="alert">{deckError} <button type="button" onClick={() => setDeckError('')}>Dismiss</button></div>}
-      {sample && <CardCollectionDialog label={`${sample.deckType} · random run`} cards={sample.cards.map((card, index) => ({ ...card, uid: `stats:${index}` }))}
+      {sample && <CardCollectionDialog label={`${sample.deckType} · random deck`} cards={sample.cards.map((card, index) => ({ ...card, uid: `stats:${index}` }))}
         onClose={() => { setSample(null); requestAnimationFrame(() => opener.current?.focus({ preventScroll: true })) }} />}
     </section>
   </main>

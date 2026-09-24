@@ -211,19 +211,21 @@ export function createRoomServer({
   let classificationTask
   let classifying = false
   let classifierClosed = false
-  const failedDecks = new Map(store.leaderboardRuns.filter((entry) => entry.deckClassificationRetry)
+  const failedDecks = new Map(store.statsRuns.filter((entry) => entry.deckClassificationRetry)
     .map((entry) => [entry.id, { at: entry.deckClassificationRetry.after, hash: entry.deckClassificationRetry.hash, hero: entry.character }]))
   const scheduleClassification = (delay = 0) => {
     if (classifierClosed) return
-    for (const run of store.leaderboardRuns) {
+    for (const run of store.statsRuns) {
       const other = otherDeckType(run.character)
       if (run.deckType && (run.deckType !== other || run.floorsCleared < SPECIFIC_ARCHETYPE_FLOOR)) continue
       if (!validSoloDeck(run)) continue
       const hasSpecific = store.deckTypes.some((type) => type.startsWith(`${HERO_NAMES[run.character]} `) && type !== other)
       if (run.deckType === other && run.floorsCleared >= SPECIFIC_ARCHETYPE_FLOOR && !hasSpecific) {
         delete run.deckType
-        store.leaderboardChanges.set(run.id, run)
-        store.leaderboardRevision += 1
+        if (!run.sourceRunId) {
+          store.leaderboardChanges.set(run.id, run)
+          store.leaderboardRevision += 1
+        }
         recordDeckClassification(store, run)
         queueSave()
       }
@@ -254,7 +256,7 @@ export function createRoomServer({
     try {
       while (!classifierClosed) {
         const now = Date.now()
-        const run = store.leaderboardRuns.find((entry) => {
+        const run = store.statsRuns.find((entry) => {
           if (!validSoloDeck(entry) || entry.deckType) return false
           const failed = failedDecks.get(entry.id)
           if (failed && (failed.hero !== entry.character || failed.hash && failed.hash !== deckHash(entry))) {
@@ -265,7 +267,7 @@ export function createRoomServer({
         })
         if (!run) {
           if (failedDecks.size) {
-            const retryable = new Set(store.leaderboardRuns.filter((entry) => validSoloDeck(entry) && !entry.deckType).map((entry) => entry.id))
+            const retryable = new Set(store.statsRuns.filter((entry) => validSoloDeck(entry) && !entry.deckType).map((entry) => entry.id))
             for (const id of failedDecks.keys()) if (!retryable.has(id)) failedDecks.delete(id)
             if (failedDecks.size) retryAt = Math.min(...[...failedDecks.values()].map((failure) => failure.at))
           }
@@ -293,12 +295,12 @@ export function createRoomServer({
         const deepRun = run.floorsCleared >= SPECIFIC_ARCHETYPE_FLOOR
         try {
           const result = await deckClassifier(run, store.deckTypes, store.deckClassifierThreadId, undefined,
-            AbortSignal.any([controller.signal, AbortSignal.timeout(300_000)]), store.leaderboardRuns)
+            AbortSignal.any([controller.signal, AbortSignal.timeout(300_000)]), store.statsRuns)
           if (classifierClosed) break
           const type = typeof result === 'string' ? result : result?.type
           if (result?.threadId !== undefined && !validClassifierThreadId(result.threadId)) throw new Error('Deck classifier returned an invalid thread')
           if (!validDeckType(type) || !type.startsWith(`${HERO_NAMES[run.character]} `)) throw new Error('Deck classifier returned an invalid type')
-          const current = store.leaderboardRuns.find((entry) => entry.id === run.id)
+          const current = store.statsRuns.find((entry) => entry.id === run.id)
           if (!current || current.deckType || current.character !== hero || JSON.stringify(soloDeck(current)) !== deck) continue
           const other = otherDeckType(hero)
           const currentDeep = current.floorsCleared >= SPECIFIC_ARCHETYPE_FLOOR
@@ -332,7 +334,7 @@ export function createRoomServer({
             store.statsStateDirty = true
             queueSave()
           }
-          const current = store.leaderboardRuns.find((entry) => entry.id === run.id)
+          const current = store.statsRuns.find((entry) => entry.id === run.id)
           if (!current || current.character !== hero || JSON.stringify(soloDeck(current)) !== deck ||
               (current.floorsCleared >= SPECIFIC_ARCHETYPE_FLOOR) !== deepRun) continue
           if ((!error?.code || error.code === 'ABORT_ERR' || error.code === 'max_output_tokens') && validClassifierThreadId(error?.threadId) && error.threadId !== store.deckClassifierThreadId) {
@@ -571,11 +573,11 @@ export function createRoomServer({
       }
       if (request.method === 'GET' && url.pathname === '/api/stats') {
         if (!consume(statsRates, sourceOf(request), CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many stats requests' })
-        return send(response, 200, statsSnapshot(store.leaderboardRuns, url.searchParams))
+        return send(response, 200, statsSnapshot(store.statsRuns, url.searchParams))
       }
       if (request.method === 'GET' && url.pathname === '/api/stats/deck') {
         if (!consume(statsRates, sourceOf(request), CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many stats requests' })
-        return send(response, 200, randomDeck(store.leaderboardRuns, url.searchParams))
+        return send(response, 200, randomDeck(store.statsRuns, url.searchParams))
       }
       if (request.method === 'GET' && url.pathname === '/api/leaderboard') {
         if (leaderboardSummaryRevision !== store.leaderboardRevision) {

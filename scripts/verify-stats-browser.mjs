@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { createServer as createViteServer } from 'vite'
 import { chromium } from './lib/profile-browser.mjs'
 import { createRoomServer } from './room-server.mjs'
+import { addLeaderboardRun } from './lib/leaderboard.mjs'
 import { statsSnapshot } from './lib/stats.mjs'
 import { assert, assertEqual, check, report, suite } from './lib/harness.mjs'
 
@@ -99,6 +100,7 @@ try {
   await page.locator('.stats__metric').nth(1).locator('strong').getByText('22.7', { exact: true }).waitFor()
   await page.locator('.stats__table tbody tr').nth(2).waitFor()
   await checkAsync('default columns and run averages render from recorded data', async () => {
+    assertEqual(await page.locator('.stats__metric').first().getByText('Decks', { exact: true }).count(), 1)
     for (const heading of ['Deck', 'Floors', 'Damage', 'Block'])
       assertEqual(await page.getByRole('columnheader', { name: heading }).count(), 1)
     assertEqual(await page.locator('.stats__table tbody tr').count(), 3)
@@ -264,7 +266,7 @@ try {
   })
 
   const pending = { ...server.store.leaderboardRuns[0], id: 'browser-1234:stats-pending', deckType: undefined }
-  server.store.leaderboardRuns.push(pending)
+  server.store.statsRuns.push(pending)
   const pendingPage = await context.newPage()
   pendingPage.on('pageerror', (reason) => errors.push(String(reason)))
   await pendingPage.goto(`http://127.0.0.1:${viteAddress.port}`, { waitUntil: 'networkidle' })
@@ -278,7 +280,7 @@ try {
   await checkAsync('pending classifications can be refreshed without changing filters', async () => {
     await pendingPage.locator('.stats__metric').first().locator('strong').getByText('7', { exact: true }).waitFor()
     await pendingPage.getByRole('button', { name: /Refresh 1 pending/ }).waitFor({ state: 'hidden' })
-    assert((await pendingPage.getByRole('button', { name: /Defect Lightning Orb Focus/ }).innerText()).includes('4 runs'))
+    assert((await pendingPage.getByRole('button', { name: /Defect Lightning Orb Focus/ }).innerText()).includes('4 decks'))
   })
   pending.deckType = undefined
   await pendingPage.getByRole('button', { name: 'Defect', exact: true }).click()
@@ -292,7 +294,7 @@ try {
   await pendingPage.getByRole('alert').waitFor()
   pending.deckType = 'Defect Lightning Orb Focus'
   await checkAsync('a transient stats outage does not stop pending auto-refresh after recovery', async () => {
-    await pendingPage.getByRole('button', { name: /Defect Lightning Orb Focus/ }).getByText('4 runs').waitFor({ timeout: 25_000 })
+    await pendingPage.getByRole('button', { name: /Defect Lightning Orb Focus/ }).getByText('4 decks').waitFor({ timeout: 25_000 })
     assertEqual(failedStatsRequests, 2)
   })
   await pendingPage.close()
@@ -396,6 +398,31 @@ try {
     await page.getByRole('button', { name: 'Stats', exact: true }).waitFor()
     assertEqual(await page.locator('.stats').count(), 0)
   })
+  const multiplayer = { ...deck(7, 'ironclad', [], 18, 120, 20, 30), characters: ['ironclad', 'defect'],
+    finalDeck: undefined, winningDecks: [
+      { username: 'First Room Player', character: 'ironclad', finalDeck: [card('barricade')] },
+      { username: 'Second Room Player', character: 'defect', finalDeck: [card('dual_cast')] },
+    ] }
+  addLeaderboardRun(server.store, multiplayer)
+  for (const entry of server.store.statsRuns.filter((run) => run.sourceRunId === multiplayer.id))
+    entry.deckType = entry.character === 'ironclad' ? 'Ironclad Barricade Body Slam Entrench Exhaust Control' : 'Defect Lightning Orb Focus'
+  const multiplayerPage = await context.newPage()
+  multiplayerPage.on('pageerror', (reason) => errors.push(String(reason)))
+  await multiplayerPage.goto(`http://127.0.0.1:${viteAddress.port}`, { waitUntil: 'networkidle' })
+  await multiplayerPage.getByRole('button', { name: 'Stats', exact: true }).click()
+  await multiplayerPage.locator('.stats__metric').first().locator('strong').getByText('9', { exact: true }).waitFor()
+  await multiplayerPage.getByRole('combobox', { name: 'Run mode' }).selectOption('multiplayer')
+  await multiplayerPage.locator('.stats__metric').first().locator('strong').getByText('2', { exact: true }).waitFor()
+  await multiplayerPage.screenshot({ path: join(output, 'stats-multiplayer-desktop.png') })
+  await checkAsync('Multiplayer mode shows only room decks, not a separate leaderboard run per player', async () => {
+    assertEqual(server.store.leaderboardRuns.length, 9)
+    assertEqual(await multiplayerPage.locator('.stats__table tbody tr').count(), 2)
+    await multiplayerPage.getByRole('button', { name: 'Ironclad', exact: true }).click()
+    await multiplayerPage.locator('.stats__metric').first().locator('strong').getByText('1', { exact: true }).waitFor()
+  })
+  await multiplayerPage.setViewportSize({ width: 844, height: 390 })
+  await multiplayerPage.screenshot({ path: join(output, 'stats-multiplayer-horizontal-phone.png') })
+  await multiplayerPage.close()
   check('page has no uncaught errors', () => assertEqual(errors.length, 0, errors.join('\n')))
   report('stats explorer browser')
 } finally {

@@ -81,6 +81,13 @@ export const validClassifierThreadId = (id) => typeof id === 'string' &&
 export const soloDeck = (run) => run.characters.length === 1
   ? run.winningDecks?.[0]?.finalDeck ?? run.finalDeck ?? null : null
 
+export const statsDecks = (run) => run.characters.length === 1 ? [run] : (run.winningDecks ?? []).map((deck) => ({
+  id: `${run.id}:deck.${deck.character}`, sourceRunId: run.id,
+  character: deck.character, characters: [deck.character], finalDeck: deck.finalDeck,
+  ascension: run.ascension, mode: run.mode, floorsCleared: run.floorsCleared,
+  damageStatsComplete: false,
+}))
+
 export const deckHash = (run) => createHash('sha256').update(JSON.stringify(soloDeck(run))).digest('hex')
 
 export function classificationRecord(run) {
@@ -115,8 +122,10 @@ function indexDeck(deck) {
 }
 
 export function primeStatsDeck(run) {
-  const deck = soloDeck(run)
-  if (deck) indexDeck(deck)
+  for (const entry of statsDecks(run)) {
+    const deck = soloDeck(entry)
+    if (deck) indexDeck(deck)
+  }
 }
 
 export const validSoloDeck = (run) => {
@@ -162,17 +171,17 @@ function filtersOf(params) {
   const mode = params.get('mode') ?? 'all'
   if (character !== 'all' && !Object.hasOwn(HERO_NAMES, character) ||
       ascension !== 'all' && !/^(?:(?:[0-9]|1[0-3])|(?:[0-9]|10)\+)$/.test(ascension) ||
-      mode !== 'all' && !['standard', 'daily', 'custom'].includes(mode)) bad()
+      mode !== 'all' && !['standard', 'daily', 'custom', 'multiplayer'].includes(mode)) bad()
   return { character, ascension, mode, query: queryOf(params) }
 }
 
 function eligibleRuns(runs, params) {
   const { character, ascension, mode, query } = filtersOf(params)
-  return runs.filter((run) => {
+  return runs.flatMap(statsDecks).filter((run) => {
     if (character !== 'all' && run.character !== character ||
         ascension !== 'all' && (ascension.endsWith('+')
           ? run.ascension < Number(ascension.slice(0, -1)) : run.ascension !== Number(ascension)) ||
-        mode !== 'all' && run.mode !== mode) return false
+        (mode === 'multiplayer' ? !run.sourceRunId : mode !== 'all' && (run.sourceRunId || run.mode !== mode))) return false
     const deck = soloDeck(run)
     if (!deck) return false
     const index = indexDeck(deck)

@@ -1,4 +1,4 @@
-import { primeStatsDeck, recordDeckClassification, soloDeck, validDeckType } from './stats.mjs'
+import { deckHash, primeStatsDeck, recordDeckClassification, soloDeck, statsDecks, validDeckType } from './stats.mjs'
 
 const CHARACTERS = new Set(['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'])
 const CHARACTER_ORDER = [...CHARACTERS]
@@ -45,6 +45,8 @@ export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
   if (typeof value.id !== 'string' || !/^[a-zA-Z0-9:_-]{8,160}$/.test(value.id)) bad('Run id is invalid')
   if (!MODES.has(value.mode)) bad('Run mode is invalid')
   const party = characters(value)
+  if (value.winningDecks !== undefined && (!Array.isArray(value.winningDecks) || value.winningDecks.length !== party.length ||
+      value.winningDecks.some((deck) => !deck || !party.includes(deck.character)))) bad('Winning deck owners do not match the party')
   const run = {
     id: value.id,
     ...(typeof value.username === 'string' && value.username.length <= 24 ? { username: value.username } : {}),
@@ -128,6 +130,19 @@ export function mergeLeaderboardRuns(legacyRuns, archivedRuns, { preferLegacyRun
 }
 
 function markLeaderboardRun(store, run) {
+  if (store.statsRuns) {
+    const previous = new Map(store.statsRuns.filter((entry) => (entry.sourceRunId ?? entry.id) === run.id)
+      .map((entry) => [entry.id, entry]))
+    store.statsRuns = store.statsRuns.filter((entry) => (entry.sourceRunId ?? entry.id) !== run.id)
+    for (const entry of statsDecks(run)) {
+      const old = previous.get(entry.id)
+      if (entry.sourceRunId && old?.character === entry.character && deckHash(old) === deckHash(entry)) {
+        if (old.deckType) entry.deckType = old.deckType
+        if (old.deckClassificationRetry) entry.deckClassificationRetry = old.deckClassificationRetry
+      }
+      store.statsRuns.push(entry)
+    }
+  }
   store.leaderboardRevision = (store.leaderboardRevision ?? 0) + 1
   if (store.leaderboardChanges) store.leaderboardChanges.set(run.id, run)
   else store.leaderboardDirty = true
