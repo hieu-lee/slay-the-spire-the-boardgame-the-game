@@ -69,7 +69,13 @@ const inspectAll = async () => page.evaluate(async () => {
   const first = JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
   const controls = [...first.controls]
   const unavailableControls = [...first.unavailableControls]
+  const maxOffset = Math.max(first.totalControls ?? 0, first.totalUnavailableControls ?? 0)
+  let previousOffset = 0
   for (let offset = first.nextOffset; offset !== null;) {
+    if (!Number.isSafeInteger(maxOffset) || !Number.isSafeInteger(offset) || offset <= previousOffset || offset >= maxOffset) {
+      throw new Error(`inspect_game pagination has invalid or non-advancing nextOffset ${offset} (max ${maxOffset})`)
+    }
+    previousOffset = offset
     const page = JSON.parse(await document.modelContext.executeTool(inspect, { offset, snapshotId: first.snapshotId }))
     controls.push(...page.controls)
     unavailableControls.push(...page.unavailableControls)
