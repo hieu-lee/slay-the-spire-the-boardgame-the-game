@@ -568,6 +568,26 @@ const combat = (owner, enemies = [enemy()]) => createCombat(createRng(147), [own
   assert.equal(state.players[0].hand[0].defId, 'anger')
   assert.equal(state.players[0].deck[0].defId, 'anger', 'Transforming Brew persists its in-hand replacement in the run deck')
 
+  const temporary = card('anger')
+  state = combat(player({ hand: [temporary], deck: [], cardRewards: ['bash'], potions: ['transforming_brew'] }))
+  state = activatePotion(state, 'p1', 'transforming_brew', { transformHandUid: temporary.uid })
+  assert.equal(state.players[0].hand[0].defId, 'bash', 'a card created in hand can be transformed')
+  assert.equal(state.players[0].deck[0].defId, 'bash', 'the gained card enters the combat deck')
+
+  let run = createRun(194, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.neow = null
+  const owner = { ...run.players[0], hand: [temporary], cardRewards: ['bash'], potions: ['transforming_brew'] }
+  state = combat(owner, [enemy({ hp: 0, dead: true })])
+  state = activatePotion(state, 'p1', 'transforming_brew', { transformHandUid: temporary.uid })
+  state.phase = 'won'
+  run = resolveCombat({ ...run, phase: 'combat', combat: state })
+  assert.equal(run.players[0].deck.find((card) => card.uid === temporary.uid)?.defId, 'bash',
+    'a replacement for a temporary card persists after victory')
+
+  state = combat(player({ hand: [old], deck: [old], cardRewards: ['golden_ticket'], rareRewards: [], potions: ['transforming_brew'] }))
+  assert.equal(activatePotion(state, 'p1', 'transforming_brew', { transformHandUid: old.uid }), state,
+    'a spent rare deck must not offer a Transform that cannot produce a card')
+
   const curse = card('hermit_scorn')
   const valid = card('strike_ironclad')
   state = combat(player({ hand: [curse, valid], deck: [curse, valid], cardRewards: ['anger'], potions: ['transforming_brew'] }))

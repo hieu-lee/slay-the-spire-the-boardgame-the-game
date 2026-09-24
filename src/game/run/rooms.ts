@@ -306,9 +306,10 @@ export function resolveCombat(state: RunState): RunState {
     const meatHp = hasRelic(after, 'meat_on_the_bone') && after.hp < 4 ? 4 : after.hp
     const hp = Math.min(healingCapFor(after, state.meta.ruleset), meatHp)
     const transformed = new Map(after.deck.map((card) => [card.uid, card]))
+    const originalUids = new Set(player.deck.map((card) => card.uid))
     return {
       ...player,
-      deck: player.deck.map((card) => {
+      deck: [...player.deck, ...after.deck.filter((card) => !originalUids.has(card.uid))].map((card) => {
         const replacement = transformed.get(card.uid)
         return replacement ? {
           uid: replacement.uid,

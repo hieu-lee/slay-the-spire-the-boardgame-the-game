@@ -9,7 +9,7 @@ import { addPresentationEvent, presentationTargets } from './presentation.ts'
 import { activePowerWindow, cardCanBeForced, cardIsPlayable, mandatoryChoicePending, overflowShivCount, reachedTimeWarpLimit, reachesEnemy } from './queries.ts'
 import type { CombatState, PlayContext, PotionContext, RelicContext } from './types.ts'
 import { cardDef, cardIsCurse, faceOf } from '../cards.ts'
-import { healingCapFor, transformCard } from '../acquisition.ts'
+import { availableTransformRewards, healingCapFor, transformCard } from '../acquisition.ts'
 import { gainBlock, gainStrength } from '../damage.ts'
 import { scry } from '../piles.ts'
 import { chosenDieRelicAbilities, potionDef, relicDef } from '../relics.ts'
@@ -337,7 +337,7 @@ export function canActivatePotion(state: CombatState, player: Player, potionId: 
     (potionId !== 'liquid_memories' || player.discard.length > 0) &&
     (potionId !== 'liquid_void' || player.exhaust.length > 0) &&
     (potionId !== 'transforming_brew' || player.hand.some((card) => !cardIsCurse(card.defId)) &&
-      player.cardRewards.length > 0)
+      availableTransformRewards(player) > 0)
 }
 
 /** Use and discard one held potion during the shared Player Turn (p.8, p.12). */
@@ -430,7 +430,8 @@ export function activatePotion(
   if (potionId === 'transforming_brew') {
     const old = actor.hand.find((card) => card.uid === context.transformHandUid)!
     const newUid = old.uid
-    const transformed = transformCard(next.rng, actor, old.uid, newUid)
+    const transformed = transformCard(next.rng,
+      actor.deck.some((card) => card.uid === old.uid) ? actor : { ...actor, deck: [...actor.deck, old] }, old.uid, newUid)
     const replacement = transformed.deck.find((card) => card.uid === newUid)
     if (!replacement) return state
     Object.assign(actor, transformed)
