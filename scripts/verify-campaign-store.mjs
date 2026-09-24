@@ -10,6 +10,7 @@ import { createRoomServer } from './room-server.mjs'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 suite('campaign persistence')
+const savedShape = (value) => JSON.parse(JSON.stringify(value))
 
 const directory = mkdtempSync(join(tmpdir(), 'sts-campaign-'))
 try {
@@ -560,10 +561,10 @@ try {
   check('restart leaves already-settled ordinary and Prismatic boss draws untouched', () => {
     const ordinary = createStore({ file }).rooms.get('OLDSET')
     const prismatic = createStore({ file }).rooms.get('OLDSPR')
-    assertDeepEqual(ordinary.run.players[0], expectedSettledPlayer)
+    assertDeepEqual(ordinary.run.players[0], savedShape(expectedSettledPlayer))
     assertEqual(ordinary.run.rewards[0].cardReward, true)
     assertEqual(ordinary.run.rewards[0].cardSource, 'rare')
-    assertDeepEqual(prismatic.run.players, expectedSettledPrismaticPlayers)
+    assertDeepEqual(prismatic.run.players, savedShape(expectedSettledPrismaticPlayers))
     assertDeepEqual(prismatic.run.itemDecks, expectedSettledPrismaticItems)
     assertEqual(prismatic.run.rewards[0].cardReward, true)
     assertEqual(prismatic.run.rewards[0].cardSource, 'rare')
@@ -571,7 +572,7 @@ try {
 
   check('reverse overlapping Prismatic reveals migrate exactly like normal simultaneous skips', () => {
     const migrated = createStore({ file }).rooms.get('OLDREV').run
-    assertDeepEqual(migrated.players, normallySkippedReversePrismatic.players)
+    assertDeepEqual(migrated.players, savedShape(normallySkippedReversePrismatic.players))
     assertDeepEqual(migrated.itemDecks, normallySkippedReversePrismatic.itemDecks)
   })
 
