@@ -9,9 +9,12 @@ import type { PotionDef, RelicDef } from './relics.ts'
 import { CHARACTER_IDS, type CharacterId } from './types.ts'
 
 const assetCdnOrigin = import.meta.env?.VITE_ASSET_CDN_ORIGIN?.replace(/\/$/, '')
+const campfireBackupOrigin = import.meta.env?.VITE_CAMPFIRE_BACKUP_ORIGIN?.replace(/\/$/, '')
 
 /** Public asset URL under Vite's current deployment base. */
-export const assetPath = (path: string): string => assetCdnOrigin && path.startsWith('bgm/')
+export const assetPath = (path: string): string => assetCdnOrigin &&
+  (path.startsWith('bgm/') || path.startsWith('noncombat/campfire/') && path.endsWith('_firecamp.webp') &&
+    path !== 'noncombat/campfire/empty_firecamp.webp')
   ? `${assetCdnOrigin}/${path}`
   : `${import.meta.env?.BASE_URL ?? '/'}assets/${path}`
 
@@ -131,11 +134,13 @@ export function potionCardImagePath(def: PotionDef): string {
 export const relicIconPath = (id: string) => assetPath(`relic-icons/${id.replace(/^downfall_/, '')}.png`)
 export const potionIconPath = (id: string) => assetPath(`potion-icons/${id}.png`)
 
-export function campfireScenePath(characters: CharacterId[]): string {
-  if (characters.length === 0) return assetPath('noncombat/campfire/empty_firecamp.webp')
+export function campfireScenePath(characters: CharacterId[], backup = false): string {
   const party = CHARACTER_IDS.filter((character) => characters.includes(character)).join('_')
-  return assetPath(`noncombat/campfire/${party}_firecamp.webp`)
+  const path = `noncombat/campfire/${party ? `${party}_` : 'empty_'}firecamp.webp`
+  return backup && campfireBackupOrigin ? `${campfireBackupOrigin}/${path}` : assetPath(path)
 }
+
+export const campfireSceneLocalPath = () => `${import.meta.env?.BASE_URL ?? '/'}assets/noncombat/campfire/empty_firecamp.webp`
 
 /**
  * The tier directory a card's scan lives in. Player cards are filed by rarity:

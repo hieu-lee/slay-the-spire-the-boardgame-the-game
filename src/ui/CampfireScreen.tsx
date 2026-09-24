@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { assetPath, campfireScenePath } from '../game/assets.ts'
+import { assetPath } from '../game/assets.ts'
 import { campfireNeedsDecision, campfireRestAvailable, canUpgradeCard } from '../game/run.ts'
 import type { CampfireDecision } from '../game/run.ts'
 import { rulesetForCharacters } from '../game/meta.ts'
@@ -9,6 +9,7 @@ import { cardIsCurse } from '../game/cards.ts'
 import type { Player } from '../game/types.ts'
 import { CardPicker } from './CardPicker.tsx'
 import { Icon } from './Icon.tsx'
+import { useCampfireScene } from './useCampfireScene.ts'
 
 type CampfireScreenProps = {
   players: Player[]
@@ -37,6 +38,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
   const [picker, setPicker] = useState<'remove' | 'transform' | 'upgrade' | null>(null)
   const living = players.filter((player) => !player.dead)
   const livingCharacters = living.map((seat) => seat.character)
+  const scene = useCampfireScene(livingCharacters)
   const ruleset = rulesetForCharacters(players.map((seat) => seat.character), requestedRuleset)
   const [focusedId, setFocusedId] = useState(living[0]?.id ?? '')
   const player = living.find((candidate) => candidate.id === focusedId) ?? living[0]
@@ -84,7 +86,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
 
   return (
     <section className="campfire" data-party-size={living.length}
-      style={{ '--campfire-scene': `url("${new URL(campfireScenePath(livingCharacters), window.location.href).href}")` } as CSSProperties}>
+      style={{ '--campfire-scene': `url("${new URL(scene, window.location.href).href}")` } as CSSProperties}>
       <div className="campfire__prompt">
         <h2><Icon name="burn" size={26} /> Campfire <small>Rest Site</small></h2>
         {player ? <div className="campfire__player" role="group" aria-label={`${player.name}, ${player.hp} of ${player.maxHp} HP`}>

@@ -119,6 +119,10 @@ check('an engine submodule selects what its barrel selects', () => {
   assertDeepEqual(affected('src/game/run/not-imported-yet.ts'), scripts)
 })
 check('shared frontend changes use cores plus named visual owners', () => {
+  for (const file of ['src/game/assets.ts', 'src/ui/useCampfireScene.ts', 'src/ui/CampfireScreen.tsx',
+    'src/ui/OnlineCampfireScreen.tsx']) {
+    includesEvery(affectedBrowser(file), ['verify-campfire-assets-browser.mjs'], `${file} campfire artwork`)
+  }
   for (const sheet of ['src/ui/chrome.css', 'src/ui/chrome/keys.css']) {
     includesEvery(affectedBrowser(sheet), [
       'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
