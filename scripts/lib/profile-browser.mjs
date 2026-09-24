@@ -15,7 +15,7 @@ async function seed(context) {
 
 function returningPlayer(engine) {
   const optionsFor = (options) => engine === webkitEngine && options?.isMobile
-    ? { userAgent: devices['iPhone 13 landscape'].userAgent, ...options } : options
+    ? { ...devices['iPhone 13 landscape'], ...options, screen: options.screen ?? options.viewport ?? devices['iPhone 13 landscape'].viewport } : options
   return { async launch(options) {
     const browser = await engine.launch(options)
     const newContext = browser.newContext.bind(browser)

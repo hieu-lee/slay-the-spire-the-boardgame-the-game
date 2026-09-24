@@ -21,6 +21,10 @@ try {
         const errors = []
         page.on('pageerror', error => errors.push(String(error)))
         await page.goto(`http://localhost:${server.httpServer.address().port}`)
+        if (engineName === 'webkit' && screen === 'horizontal-phone') assert(await page.evaluate(() =>
+          /iPhone/.test(navigator.userAgent) && 'ontouchstart' in window &&
+          Math.abs(devicePixelRatio / visualViewport.scale - 3) < .01 &&
+          matchMedia('(pointer: coarse)').matches && innerWidth >= 1280), 'mobile WebKit must use an iPhone device profile')
         for (const name of ['Single Player', 'Standard', 'Embark', 'Start standard campaign'])
           await page.getByRole('button', { name, exact: true }).click()
         const run = postNeowRun(47, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])

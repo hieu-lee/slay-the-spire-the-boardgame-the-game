@@ -30,8 +30,36 @@ async function profile(page, username) {
     body: JSON.stringify({ origin: roomOrigin, protocolVersion: 1 }),
   }))
   await page.goto(origin, { waitUntil: 'networkidle' })
+  if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) {
+    await page.keyboard.press('a')
+    assert(await page.evaluate(() => document.activeElement === document.querySelector('#welcome-name')),
+      'mobile player who started with a hardware keyboard cannot type their name')
+    await page.reload({ waitUntil: 'networkidle' })
+  }
   await page.getByRole('button', { name: 'Tap, click, or press any key to start' }).click()
+  if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) {
+    await page.locator('.welcome__panel').evaluate(panel => Promise.all(panel.getAnimations().map(animation => animation.finished)))
+    assert(await page.evaluate(() => document.activeElement !== document.querySelector('#welcome-name')),
+      'mobile welcome screen raised the keyboard before the player tapped the name field')
+    assert(await page.locator('#welcome-name').evaluate(input =>
+      parseFloat(getComputedStyle(input).fontSize) * visualViewport.scale >= 16),
+    'mobile username font is too small and iOS zooms the form on focus')
+    assert(await page.locator('.welcome__panel').evaluate(panel => {
+      const bounds = panel.getBoundingClientRect()
+      return bounds.top >= 0 && bounds.bottom <= innerHeight
+    }), 'mobile welcome sheet is clipped')
+    await page.screenshot({ path: `${output}/landscape-phone-registration.png` })
+  }
   await page.getByRole('textbox', { name: 'How should we call you?' }).fill(username)
+  if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) {
+    assert(await page.evaluate(() => {
+      const title = document.querySelector('.welcome__panel .reward-screen__title').getBoundingClientRect()
+      const submit = document.querySelector('.welcome__confirm').getBoundingClientRect()
+      // Playwright cannot raise iOS's software keyboard; bound the form to its compact footprint.
+      return title.top >= 0 && submit.bottom - title.top <= 240
+    }), 'mobile welcome controls exceed the keyboard-safe footprint')
+    await page.screenshot({ path: `${output}/landscape-phone-registration-focused.png` })
+  }
   await page.getByRole('button', { name: 'Confirm username' }).click()
   await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Play online', exact: true }).waitFor()

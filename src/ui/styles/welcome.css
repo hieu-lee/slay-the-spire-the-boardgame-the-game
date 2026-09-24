@@ -5,6 +5,12 @@
 .sts-scope .welcome__panel .reward-screen__players { width: 94%; min-height: 0; max-height: none; padding: 3rem 3rem 2.2rem; justify-items: center; gap: .8rem; text-align: center; }
 .welcome__panel p { margin: 0; color: #f6ecd6; text-shadow: 0 2px 2px #152022; }
 .welcome__panel input { width: 100%; min-height: 3rem; padding: .5rem .75rem; border: 2px solid #aa9466; border-radius: .25rem; color: #f9efd8; background: #1b2b30; font: 1.3rem 'Kreon', Georgia, serif; text-align: center; }
+html[data-mobile-performance='true'] .welcome__panel input { font-size: 2.4rem; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] { align-items: start; padding: 0; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .reward-screen__title { padding: .1rem 1rem; font-size: 1.1rem; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .reward-screen__players { padding: .25rem 1rem; gap: .15rem; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .reward-screen__players > p:not(#welcome-error) { display: none; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .welcome__confirm { min-height: 2.5rem; }
 .welcome__panel input:focus-visible, .welcome__confirm:focus-visible { outline: 3px solid #f8d67b; outline-offset: 3px; }
 #welcome-hint { font-size: .8rem; }
 #welcome-error { color: #ffe4ba; font-size: .9rem; }

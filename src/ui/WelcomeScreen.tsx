@@ -6,7 +6,9 @@ export function WelcomeScreen({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState(savedProfile)
   const [revealed, setRevealed] = useState(false)
   const input = useRef<HTMLInputElement>(null)
+  const startedWithKeyboard = useRef(false)
   const [username, setUsername] = useState('')
+  const [editing, setEditing] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -14,14 +16,15 @@ export function WelcomeScreen({ children }: { children: ReactNode }) {
     const start = (event: KeyboardEvent) => {
       if (event.repeat) return
       event.preventDefault()
+      startedWithKeyboard.current = true
       setRevealed(true)
     }
     window.addEventListener('keydown', start)
     return () => window.removeEventListener('keydown', start)
   }, [profile, revealed])
-  useEffect(() => { if (revealed) input.current?.focus() }, [revealed])
+  useEffect(() => { if (revealed && (startedWithKeyboard.current || !matchMedia('(pointer: coarse)').matches)) input.current?.focus() }, [revealed])
   if (profile) return children
-  return <main className="welcome sts-scope">
+  return <main className="welcome sts-scope" data-editing={editing}>
     <img className="welcome__wallpaper" src={assetPath('menu/welcome-wallpaper.webp')} alt="" />
     {!revealed ? <button type="button" className="welcome__start" onClick={() => setRevealed(true)}>
       <span>Tap, click, or press any key to start</span>
@@ -38,7 +41,7 @@ export function WelcomeScreen({ children }: { children: ReactNode }) {
       <div className="reward-screen__players">
         <p>Your name will be remembered in the Spire.</p>
         <input ref={input} id="welcome-name" autoComplete="nickname" minLength={2} maxLength={24} required
-          value={username} onChange={(event) => setUsername(event.target.value)}
+          value={username} onFocus={() => setEditing(true)} onChange={(event) => setUsername(event.target.value)}
           aria-describedby="welcome-hint welcome-error" disabled={pending} placeholder="Your username" />
         <p id="welcome-hint">2–24 letters, numbers, spaces, underscores or hyphens.</p>
         <p id="welcome-error" role="alert">{error}</p>
