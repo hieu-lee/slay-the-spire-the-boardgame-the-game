@@ -29,6 +29,7 @@ try {
     const page = await context.newPage()
     await page.goto(`http://127.0.0.1:${address.port}`)
     await page.locator('.start-menu__nav').waitFor()
+    assert.equal(await page.getByText('THE BOARD GAME', { exact: true }).count(), 0, `${screen}: removed subtitle is visible`)
     assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), phone, `${screen}: unexpected pointer mode`)
     for (const saved of [false, true]) {
       const label = saved ? `saved-${screen}` : screen

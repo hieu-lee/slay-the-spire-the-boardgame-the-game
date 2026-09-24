@@ -68,7 +68,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.3rem;
-  margin: 0 0 1.25rem;
+  margin: 0;
   color: #ffd817;
   font-size: clamp(5rem, min(12vw, 17vh), 14rem);
   font-weight: 700;
@@ -104,15 +104,6 @@
   clip-path: polygon(50% 0, 77% 35%, 68% 58%, 86% 74%, 51% 100%, 15% 76%, 34% 48%, 27% 30%);
   content: '';
   transform: translateX(-50%);
-}
-
-.start-menu__edition {
-  margin: 0;
-  color: #69e6ef;
-  font-size: clamp(0.8rem, 1.5vw, 1.25rem);
-  font-weight: 700;
-  letter-spacing: 0.5em;
-  text-shadow: 0 2px 3px #000;
 }
 
 .start-menu__nav {
@@ -563,13 +554,12 @@
 }
 @media (max-height: 620px) and (orientation: landscape) {
   .start-menu__landing { gap: clamp(0.5rem, 2vh, 1rem); }
-  .start-menu__title h1 { margin-bottom: 0.4rem; font-size: clamp(2.1rem, 6vw, 5rem); }
-  .start-menu__edition { font-size: 0.62rem; letter-spacing: 0.35em; }
+  .start-menu__title h1 { font-size: clamp(2.1rem, 6vw, 5rem); }
   .start-menu__nav button { min-width: 12rem; padding: 0.04rem 2.5rem; font-size: clamp(0.95rem, 2.2vw, 1.25rem); line-height: 1.15; }
 }
 @media (pointer: coarse) and (orientation: landscape) and (min-height: 700px) {
   html[data-mobile-performance='true'] .start-menu__landing { gap: 0.5rem; padding: 3rem 1rem 1.5rem; }
-  html[data-mobile-performance='true'] .start-menu__title h1 { margin-bottom: 0.4rem; font-size: clamp(5rem, 14vh, 7rem); line-height: 0.9; }
+  html[data-mobile-performance='true'] .start-menu__title h1 { font-size: clamp(5rem, 14vh, 7rem); line-height: 0.9; }
   html[data-mobile-performance='true'] .start-menu__nav button { font-size: clamp(1.25rem, 3.7vh, 1.75rem); line-height: 1.15; padding: 0.65rem 2.5rem; }
 }
 .start-menu__meta { position: relative; align-self: center; color: #d9c796; font-size: .65rem; text-transform: uppercase; }

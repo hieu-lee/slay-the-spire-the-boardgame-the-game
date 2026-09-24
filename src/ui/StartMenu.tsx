@@ -271,7 +271,6 @@ export function StartMenu({
       {screen === 'main' ? <div className="start-menu__landing">
         <section className="start-menu__title" aria-labelledby="game-title">
           <h1 id="game-title"><span>Slay <small>the</small></span><span aria-label="Spire">Sp<span className="start-menu__flame-i" aria-hidden="true">ı</span>re</span></h1>
-          <p className="start-menu__edition">THE BOARD GAME</p>
         </section>
         <nav className="start-menu__nav" aria-label="Main menu">
         {onResume ? <button type="button" aria-label="Resume" data-selected={selection === 'Resume'}

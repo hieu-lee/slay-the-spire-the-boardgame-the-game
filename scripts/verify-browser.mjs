@@ -543,8 +543,6 @@ const titleMenu = await page.locator('.start-menu').evaluate((menu) => {
     setup: setup && { left: setup.left, top: setup.top, right: setup.right, bottom: setup.bottom },
     background: getComputedStyle(menu).backgroundImage,
     font: getComputedStyle(menu).fontFamily,
-    titleBottom: menu.querySelector('.start-menu__title h1')?.getBoundingClientRect().bottom,
-    editionTop: menu.querySelector('.start-menu__edition')?.getBoundingClientRect().top,
   }
 })
 const titleFlame = await page.locator('.start-menu__flame-i').evaluate((flame) => ({
@@ -591,9 +589,6 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assert(titleFlame.content === '""' && titleFlame.top < 0 && titleFlame.background.includes('radial-gradient'),
     'the blue flame dot is missing from the Spire title')
   assert(titleMenu.font.includes('Kreon'), `the game-style typeface is missing: ${titleMenu.font}`)
-  assert(titleMenu.titleBottom !== undefined && titleMenu.editionTop !== undefined &&
-    titleMenu.editionTop >= titleMenu.titleBottom + 8,
-  `the board-game subtitle clips the title: ${titleMenu.titleBottom} / ${titleMenu.editionTop}`)
   for (const [name, box] of Object.entries({ title: titleMenu.title, nav: titleMenu.nav })) {
     assert(box && box.left >= titleMenu.box.left - 1 && box.right <= titleMenu.box.right + 1 &&
       box.top >= titleMenu.box.top - 1 && box.bottom <= titleMenu.box.bottom + 1,
