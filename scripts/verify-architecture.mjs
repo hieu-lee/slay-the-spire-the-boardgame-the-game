@@ -13,8 +13,9 @@ import { readFileSync, existsSync, readdirSync, statSync, mkdtempSync, writeFile
 import { CARDS, DEFERRED_CARDS } from '../src/game/cards.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { RELICS, POTIONS } from '../src/game/relics.ts'
+import ts from 'typescript'
 import { fileURLToPath } from 'node:url'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
@@ -32,26 +33,15 @@ function walk(dir) {
   return out
 }
 
-// Two strippers, because the two kinds of scan want opposite failure modes.
-//
-// The import graph must never MISS an import — a missed edge hides a real cycle
-// or boundary violation. So it only removes block comments and whole-line
-// comments, neither of which can truncate a string literal.
-function stripSafeComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-}
-
-// The banned-spelling scans below would rather over-match than under-match: a
-// false alarm is a one-line fix, a miss ships a desync nobody can reproduce. So
-// this also drops trailing comments, accepting that it can truncate a line
-// containing a `//` inside a string.
-function stripAllComments(source) {
-  return stripSafeComments(source).replace(/(^|[^:])\/\/.*$/gm, '$1')
+const printer = ts.createPrinter({ removeComments: true })
+function stripComments(source, file = 'source.ts') {
+  const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  return printer.printFile(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, false, kind))
 }
 
 /** Import specifiers, ignoring anything inside a line/block comment. */
 function importsOf(file) {
-  const source = stripSafeComments(readFileSync(file, 'utf8'))
+  const source = stripComments(readFileSync(file, 'utf8'), file)
   const specifiers = []
   const pattern = /(?:^|[\s;}])(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\sfrom\s+)?['"]([^'"]+)['"]/g
   for (const match of source.matchAll(pattern)) specifiers.push(match[1])
@@ -61,7 +51,7 @@ function importsOf(file) {
 
 /** Runtime import specifiers; type-only declarations are erased and cannot form a module cycle. */
 function runtimeImportsOf(file) {
-  const source = stripSafeComments(readFileSync(file, 'utf8'))
+  const source = stripComments(readFileSync(file, 'utf8'), file)
   const specifiers = []
   const pattern = /(?:^|[\s;}])(?:import|export)\s+(type\s+)?(?:[^'\"]*?\sfrom\s+)?['\"]([^'\"]+)['\"]/g
   for (const match of source.matchAll(pattern)) if (!match[1]) specifiers.push(match[2])
@@ -81,6 +71,8 @@ function resolveLocal(fromFile, specifier) {
   }
   return base
 }
+
+const within = (root, target) => target === root || target.startsWith(`${root}${sep}`)
 
 function buildGraph(root, readImports = importsOf) {
   const graph = new Map()
@@ -172,6 +164,8 @@ check('comment stripping never hides an import', () => {
     writeFileSync(join(dir, 'b.ts'), 'export const b = 1\n')
     const found = importsOf(join(dir, 'a.ts'))
     assert(found.includes('./sub//b.ts'), `import was lost to comment stripping, got ${JSON.stringify(found)}`)
+    writeFileSync(join(dir, 'quoted.ts'), 'const url = "x//y"; const before = "/*"; import "./b.ts"; const after = "*/"; // note\n')
+    assert(importsOf(join(dir, 'quoted.ts')).includes('./b.ts'), 'quoted comment delimiters hid an import')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -179,6 +173,7 @@ check('comment stripping never hides an import', () => {
 
 check('src/game imports nothing outside itself', () => {
   const gameRoot = join(srcRoot, 'game')
+  assert(!within(gameRoot, resolve(gameRoot, '../game-extra/module.ts')), 'sibling path prefix escaped the game boundary')
   for (const file of walk(gameRoot)) {
     for (const specifier of importsOf(file)) {
       if (specifier.startsWith('node:')) continue
@@ -188,7 +183,7 @@ check('src/game imports nothing outside itself', () => {
       )
       const target = resolveLocal(file, specifier)
       assert(
-        target !== null && target.startsWith(gameRoot),
+        target !== null && within(gameRoot, target),
         `${show(file)} imports "${specifier}" outside src/game/; the engine must not depend on UI or transport`,
       )
     }
@@ -223,7 +218,7 @@ check('src/ uses erasable-only TypeScript', () => {
     [/constructor\s*\([^)]*\b(?:public|private|protected|readonly)\s+\w/s, 'constructor parameter property'],
   ]
   for (const file of walk(srcRoot)) {
-    const source = stripAllComments(readFileSync(file, 'utf8'))
+    const source = stripComments(readFileSync(file, 'utf8'), file)
     for (const [pattern, label] of banned) {
       assert(!pattern.test(source), `${show(file)} uses ${label}, which Node's type stripping cannot erase`)
     }
@@ -241,20 +236,21 @@ check('the erasable-syntax detector actually fires', () => {
   }
 })
 
+const nondeterminism = [
+  [/Math\s*\.\s*random|Math\s*\[\s*['"]random['"]\s*\]/, 'Math.random', 'draw from src/game/rng.ts instead'],
+  [/\bDate\s*(?:\.\s*now|\()/, 'the wall clock', 'the engine must be a pure function of its state'],
+  [/performance\s*\.\s*now/, 'performance.now', 'the engine must be a pure function of its state'],
+  [/crypto\s*\.\s*(?:randomUUID|getRandomValues)/, 'crypto randomness', 'draw from src/game/rng.ts instead'],
+]
+
 check('the engine has no source of nondeterminism', () => {
   // A run replays from (seed, action log). Any ambient randomness or clock read
   // in the engine breaks replay, desyncs multiplayer, and makes playtests flaky.
   // Matched by spelling rather than by AST: over-matching a string literal is a
   // one-line false alarm, under-matching ships a desync nobody can reproduce.
-  const banned = [
-    [/Math\s*\.\s*random|Math\s*\[\s*['"]random['"]\s*\]/, 'Math.random', 'draw from src/game/rng.ts instead'],
-    [/Date\s*\.\s*now|new\s+Date\s*\(/, 'the wall clock', 'the engine must be a pure function of its state'],
-    [/performance\s*\.\s*now/, 'performance.now', 'the engine must be a pure function of its state'],
-    [/crypto\s*\.\s*(?:randomUUID|getRandomValues)/, 'crypto randomness', 'draw from src/game/rng.ts instead'],
-  ]
   for (const file of walk(join(srcRoot, 'game'))) {
-    const source = stripAllComments(readFileSync(file, 'utf8'))
-    for (const [pattern, what, why] of banned) {
+    const source = stripComments(readFileSync(file, 'utf8'), file)
+    for (const [pattern, what, why] of nondeterminism) {
       assert(!pattern.test(source), `${show(file)} reaches for ${what}; ${why}`)
     }
   }
@@ -267,17 +263,14 @@ check('the nondeterminism detector catches the ways around it', () => {
     'Math . random ()',
     'const t = new Date().getTime()',
     'const t = Date .now()',
+    'const t = Date()',
     'const t = performance.now()',
     'const id = crypto.randomUUID()',
-  ]
-  const banned = [
-    /Math\s*\.\s*random|Math\s*\[\s*['"]random['"]\s*\]/,
-    /Date\s*\.\s*now|new\s+Date\s*\(/,
-    /performance\s*\.\s*now/,
-    /crypto\s*\.\s*(?:randomUUID|getRandomValues)/,
+    'const url = "x//y"; Math.random()',
+    'const before = "/*"; Math.random(); const after = "*/"',
   ]
   for (const evasion of evasions) {
-    assert(banned.some((pattern) => pattern.test(evasion)), `detector missed: ${evasion}`)
+    assert(nondeterminism.some(([pattern]) => pattern.test(stripComments(evasion))), `detector missed: ${evasion}`)
   }
 })
 
