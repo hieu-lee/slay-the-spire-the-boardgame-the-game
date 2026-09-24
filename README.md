@@ -86,26 +86,6 @@ keeps the engine importable from playtests, the server, and the browser without 
 step — at the cost of requiring **erasable-only TypeScript** in `src/`: no `enum`, no
 `namespace`, no constructor parameter properties.
 
-## iOS (Capacitor)
-
-Install full Xcode and an iPhone simulator runtime from the Mac App Store/Xcode Settings first.
-Command Line Tools alone cannot build or run the app. Then:
-
-```bash
-pnpm install
-pnpm ios:sync   # bundle the full client and sync its assets into the native app
-pnpm ios:open   # select an iPhone simulator and Run in Xcode
-node scripts/verify-ios-bundle-browser.mjs # bundled WebKit/Chromium E2E screenshots and report
-```
-
-For a physical iPhone, choose your Apple development team under the App target's
-Signing & Capabilities in Xcode. The iPhone app is landscape-only, bundles the
-client, and discovers the live multiplayer server through the GitHub Pages
-`session.json`. First-time name registration, multiplayer, and the leaderboard
-need the room server to allow `capacitor://localhost` and an internet connection.
-After changing web code, rerun `pnpm ios:sync` before building in Xcode. The
-native project lives in `ios/App/App.xcodeproj`.
-
 ## Determinism
 
 Every random decision routes through the seeded RNG in `src/game/rng.ts`. A game is fully

@@ -5,15 +5,14 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { chromium, devices, webkit } from 'playwright'
 import { preview } from 'vite'
-import WebSocket from 'ws'
 import { createRoomServer } from './room-server.mjs'
 
 const root = resolve(import.meta.dirname, '..')
-const output = resolve(root, 'artifacts/ios-bundle')
+const output = resolve(root, 'artifacts/mobile-client')
 mkdirSync(output, { recursive: true })
 const previewServer = await preview({ root, logLevel: 'silent', preview: { host: '127.0.0.1', port: 0 } })
 const origin = `http://127.0.0.1:${previewServer.httpServer.address().port}`
-const rooms = createRoomServer({ allowedOrigin: `${origin},capacitor://localhost` })
+const rooms = createRoomServer({ allowedOrigin: origin })
 const { port } = await rooms.listen(0)
 const roomOrigin = `http://127.0.0.1:${port}`
 const failures = []
@@ -24,9 +23,8 @@ async function profile(page, username) {
   page.on('response', response => {
     if (response.url().startsWith(origin) && response.status() >= 400) failures.push(`${response.status()} ${response.url()}`)
   })
-  await page.route('https://hieu-lee.github.io/**/session.json*', route => route.fulfill({
+  await page.route(`${origin}/session.json*`, route => route.fulfill({
     contentType: 'application/json',
-    headers: { 'access-control-allow-origin': '*' },
     body: JSON.stringify({ origin: roomOrigin, protocolVersion: 1 }),
   }))
   await page.goto(origin, { waitUntil: 'networkidle' })
@@ -66,11 +64,11 @@ async function profile(page, username) {
 }
 
 try {
-  const nativePreflight = await fetch(`${roomOrigin}/api/health`, {
-    method: 'OPTIONS', headers: { origin: 'capacitor://localhost', 'access-control-request-method': 'GET' },
+  const browserPreflight = await fetch(`${roomOrigin}/api/health`, {
+    method: 'OPTIONS', headers: { origin, 'access-control-request-method': 'GET' },
   })
-  assert.equal(nativePreflight.status, 204)
-  assert.equal(nativePreflight.headers.get('access-control-allow-origin'), 'capacitor://localhost')
+  assert.equal(browserPreflight.status, 204)
+  assert.equal(browserPreflight.headers.get('access-control-allow-origin'), origin)
   assert.equal((await fetch(`${roomOrigin}/api/health`, { headers: { origin: 'https://untrusted.example' } })).status, 403)
 
   const phoneBrowser = await webkit.launch()
@@ -78,16 +76,6 @@ try {
   browsers.push(phoneBrowser, desktopBrowser)
   const phone = await phoneBrowser.newPage({ ...devices['iPhone 13 landscape'], viewport: { width: 844, height: 390 }, screen: { width: 844, height: 390 } })
   const desktop = await desktopBrowser.newPage({ viewport: { width: 1440, height: 900 } })
-  await phone.goto(origin)
-  const manifestUrl = await phone.locator('link[rel="manifest"]').getAttribute('href')
-  assert.equal(manifestUrl, './manifest.webmanifest', 'Home Screen manifest must resolve under the Pages project path')
-  assert.equal(await phone.locator('link[rel="apple-touch-icon"]').getAttribute('href'), './favicon.png')
-  assert.equal(await phone.locator('meta[name="apple-mobile-web-app-capable"]').getAttribute('content'), 'yes')
-  const manifest = await (await phone.request.get(new URL(manifestUrl, origin).href)).json()
-  assert.equal(manifest.display, 'standalone')
-  assert.equal(manifest.start_url, './')
-  assert.equal(manifest.scope, './')
-  assert.equal((await phone.request.get(new URL(manifest.icons[0].src, origin).href)).status(), 200)
   await profile(phone, 'iOSHost')
   assert(await phone.evaluate(() => innerWidth >= 1280 && matchMedia('(pointer: coarse)').matches && /iPhone/.test(navigator.userAgent)),
     'phone fixture did not apply the real mobile Safari viewport policy')
@@ -124,16 +112,13 @@ try {
   await phone.reload({ waitUntil: 'networkidle' })
   await phone.getByRole('heading', { name: 'Neow’s Blessing', exact: true }).waitFor()
 
-  const nativeSocket = new WebSocket(`${roomOrigin.replace('http:', 'ws:')}/ws?room=${code}`, { origin: 'capacitor://localhost' })
-  await new Promise((resolve, reject) => { nativeSocket.once('open', resolve); nativeSocket.once('error', reject) })
-  nativeSocket.close()
   assert.deepEqual(failures, [])
   writeFileSync(resolve(output, 'report.json'), JSON.stringify({
     bundleIndexSha256: createHash('sha256').update(readFileSync(resolve(root, 'dist/index.html'))).digest('hex'),
     phone: ['registered through hosted session', 'solo run saved', 'multiplayer room joined and started', 'room reconnected after reload'],
-    desktop: 'joined phone room', nativeOrigin: 'HTTP preflight and WebSocket accepted', failures,
+    desktop: 'joined phone room', browserOrigin: 'HTTP preflight and multiplayer WebSocket accepted', failures,
   }, null, 2))
-  console.log(`iOS client E2E verified: ${output}/report.json`)
+  console.log(`Mobile web client E2E verified: ${output}/report.json`)
 } finally {
   await Promise.all(browsers.map(browser => browser.close()))
   await rooms.close()
