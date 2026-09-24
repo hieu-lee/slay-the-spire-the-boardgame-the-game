@@ -440,6 +440,32 @@ const enemy = (over = {}) => ({
 const combat = (owner, enemies = [enemy()]) => createCombat(createRng(147), [owner], enemies)
 
 {
+  const drawn = Array.from({ length: 5 }, () => card('strike_ironclad'))
+  let state = combat(player({
+    hand: [card('defend_ironclad'), card('bash'), card('strike_ironclad')],
+    draw: drawn, potions: ['whale_ale'],
+  }))
+  state = activatePotion(state, 'p1', 'whale_ale')
+  assert.equal(state.players[0].hand.length, 7, 'Whale Ale draws four cards in solo combat, without a five-card hand limit')
+  assert.equal(state.players[0].draw.length, 1)
+
+  state = createCombat(createRng(148), [
+    player({ draw: drawn, potions: ['whale_ale'] }),
+    player({ id: 'p2', name: 'Ally', draw: Array.from({ length: 5 }, () => card('strike_ironclad')) }),
+  ], [enemy()])
+  state = activatePotion(state, 'p1', 'whale_ale')
+  assert.deepEqual(state.players.map(({ hand }) => hand.length), [2, 2], 'Whale Ale draws two for each living player in a party')
+
+  state = createCombat(createRng(149), [
+    player({ draw: drawn, potions: ['whale_ale'] }),
+    player({ id: 'p2', name: 'Fallen Ally', dead: true, hp: 0, draw: Array.from({ length: 5 }, () => card('strike_ironclad')) }),
+  ], [enemy()])
+  state = activatePotion(state, 'p1', 'whale_ale')
+  assert.deepEqual(state.players.map(({ hand }) => hand.length), [2, 0],
+    'a surviving multiplayer teammate draws two, not the solo four, and the fallen teammate draws none')
+}
+
+{
   for (const [withOther, expectedBlock] of [[false, 0], [true, 1]]) {
     const jack = card('jack_of_all_trades')
     let state = combat(player({ hand: [jack, ...(withOther ? [card('strike_ironclad')] : [])] }))

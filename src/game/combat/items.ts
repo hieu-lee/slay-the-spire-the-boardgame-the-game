@@ -18,7 +18,7 @@ import { CAPS } from '../types.ts'
 import type { Player } from '../types.ts'
 import { MAX_HP } from '../run/rules.ts'
 import { playerCanGainBlock } from './pieces.ts'
-import { downfallRelicBaseId } from '../downfall/items.ts'
+import { downfallRelicBaseId, whaleAleDrawCount } from '../downfall/items.ts'
 
 /** Potions whose official face cannot be expressed by the generic Effect list. */
 export const SPECIAL_POTION_RUNTIME_IDS = new Set([
@@ -502,10 +502,13 @@ export function activatePotion(
     invalidShivTarget: false,
   }
   for (const effect of def.effects) {
+    const resolvedEffect = potionId === 'whale_ale' && effect.kind === 'draw'
+      ? { ...effect, amount: whaleAleDrawCount(next.players.length) }
+      : effect
     applyEffect(
       next,
       actor,
-      effect,
+      resolvedEffect,
       def.target ? target : 'self',
       def.supportTarget ?? 'self',
       ctx,

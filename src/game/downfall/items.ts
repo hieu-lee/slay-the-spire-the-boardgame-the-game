@@ -2932,7 +2932,7 @@ const CUSTOM_RULES: Readonly<Record<string, DownfallExecutableRule>> = {
     kind: 'effects',
     effects: [{ kind: 'loseOwnHp', amount: 1 }, { kind: 'gainEnergy', amount: 2 }, { kind: 'draw', amount: 3 }],
   },
-  whale_ale: { kind: 'effects', effects: [{ kind: 'draw', amount: 2 }], supportTarget: 'allPlayers' },
+  whale_ale: { kind: 'effects', effects: [{ kind: 'draw', amount: 2, toChosen: true }], supportTarget: 'allPlayers' },
   dented_plate: {
     kind: 'abilities',
     abilities: [{
@@ -3015,7 +3015,7 @@ export function mysteryPotionEffects(die: number): readonly Effect[] {
   return [{ kind: 'gainEnergy', amount: 2 }]
 }
 
-export const whaleAleDrawCount = (livingPlayers: number): number => livingPlayers <= 0 ? 0 : livingPlayers === 1 ? 4 : 2
+export const whaleAleDrawCount = (partySize: number): number => partySize <= 0 ? 0 : partySize === 1 ? 4 : 2
 
 export function conditionMet(
   condition: DownfallCondition,
