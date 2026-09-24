@@ -74,14 +74,20 @@ check('Room spending is seat-authoritative, public, and survives reconnect and r
     startRun(room, owner.token, { seed: 910 })
     const combat = fixture()
     combat.players[0].id = owner.playerId
-    combat.players.push({ ...room.run.players[1], hand: [], draw: [], discard: [] })
+    combat.players.push({ ...room.run.players[1], hand: [], draw: [], discard: [], guardianMode: 'attack', vigor: 2, vigorSpentThisTurn: 0 })
     room.run = { ...room.run, phase: 'combat', combat }
-    assert.throws(() => apply(room, peer.token, { kind: 'spendVigor', playerId: owner.playerId }))
-    assert.equal(room.run.combat.players[0].vigor, 3)
+    apply(room, peer.token, { kind: 'spendVigor', playerId: owner.playerId })
+    assert.deepEqual(room.run.combat.players.map((player) => [player.vigor, player.vigorSpentThisTurn]), [[3, 0], [1, 1]],
+      'a forged playerId can spend only the caller\'s Vigor')
     apply(room, owner.token, { kind: 'spendVigor' })
     const seen = snapshotFor(room, peer.token).run.combat.players[0]
     assert.deepEqual([seen.vigor, seen.vigorSpentThisTurn, seen.hand], [2, 1, null])
-    joinRoom(room, { token: owner.token, connected: true })
+    joinRoom(room, { token: owner.token, connected: false })
+    assert.equal(room.seats[0].connected, false)
+    const rejoined = joinRoom(room, { token: owner.token, connected: true })
+    assert.equal(rejoined.playerId, owner.playerId)
+    assert.equal(rejoined.connected, true)
+    assert.equal(snapshotFor(room, owner.token).run.combat.players[0].vigor, 2)
     saveStore(store)
     const restored = createStore({ file }).rooms.get('VIGOR')
     assert.deepEqual([restored.run.combat.players[0].vigor, restored.run.combat.players[0].vigorSpentThisTurn], [2, 1])
