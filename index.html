@@ -12,12 +12,49 @@
       let viewport
       let landscape
       let landscapeWidth = 1280
+      let resizeTimer
+      let keyboardBlurTimer
+      let holdViewport = false
+      let focusHeight = 0
+      const visibleViewport = window.visualViewport
+      const textEntry = (element) => element?.isContentEditable ||
+        element?.matches('textarea, select, input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=button]):not([type=submit]):not([type=reset]):not([type=color])')
+      const releaseViewport = () => {
+        if (keyboardBlurTimer !== undefined) return
+        keyboardBlurTimer = setTimeout(() => {
+          keyboardBlurTimer = undefined
+          if (!textEntry(document.activeElement)) {
+            holdViewport = false
+            fitDesktopViewport()
+          }
+        }, 650)
+      }
       const fitDesktopViewport = () => {
         const nextLandscape = matchMedia('(orientation: landscape)').matches
-        if (viewport && nextLandscape === landscape) return
-        if (phone && nextLandscape) {
-          landscapeWidth = Math.max(1280, Math.round(innerWidth / innerHeight * 720))
+        const zoom = innerWidth / (visibleViewport?.width || innerWidth)
+        const visibleHeight = (visibleViewport?.height || innerHeight) * zoom
+        const rotated = nextLandscape !== landscape
+        if (rotated) {
+          holdViewport = textEntry(document.activeElement)
+          if (holdViewport) focusHeight = Math.max(innerHeight, visibleHeight)
         }
+        if (holdViewport && !textEntry(document.activeElement)) {
+          if (visibleHeight >= focusHeight * 0.85) {
+            clearTimeout(keyboardBlurTimer)
+            keyboardBlurTimer = undefined
+            holdViewport = false
+          } else releaseViewport()
+        }
+        if (phone) {
+          if (nextLandscape && (!holdViewport || visibleHeight >= focusHeight * 0.65)) {
+            document.documentElement.style.setProperty('--visible-viewport-height', `${visibleHeight}px`)
+          }
+          else if (!nextLandscape) document.documentElement.style.removeProperty('--visible-viewport-height')
+        }
+        const nextWidth = holdViewport && !rotated && viewport ? landscapeWidth :
+          phone && nextLandscape ? Math.max(1280, Math.round(innerWidth / (holdViewport ? Math.max(innerHeight, visibleHeight) : visibleHeight) * 720)) : 1280
+        if (viewport && nextLandscape === landscape && nextWidth === landscapeWidth) return
+        landscapeWidth = nextWidth
         landscape = nextLandscape
         viewport?.remove()
         viewport = document.createElement('meta')
@@ -26,9 +63,35 @@
           ? `width=${landscapeWidth}`
           : 'width=device-width, initial-scale=1, viewport-fit=cover'
         document.head.append(viewport)
+        if (phone && nextLandscape) requestAnimationFrame(() => {
+          if (landscape && (!holdViewport || visibleHeight >= focusHeight * 0.65)) document.documentElement.style.setProperty('--visible-viewport-height',
+            `${(visibleViewport?.height || innerHeight) * innerWidth / (visibleViewport?.width || innerWidth)}px`)
+        })
+      }
+      const refreshViewport = () => {
+        clearTimeout(resizeTimer)
+        if (matchMedia('(orientation: landscape)').matches !== landscape) fitDesktopViewport()
+        resizeTimer = setTimeout(fitDesktopViewport, 160)
       }
       fitDesktopViewport()
-      if (phone) addEventListener('resize', fitDesktopViewport, { passive: true })
+      if (phone) {
+        addEventListener('focusin', (event) => {
+          if (textEntry(event.target)) {
+            clearTimeout(keyboardBlurTimer)
+            keyboardBlurTimer = undefined
+            if (!holdViewport) focusHeight = (visibleViewport?.height || innerHeight) * innerWidth / (visibleViewport?.width || innerWidth)
+            holdViewport = true
+          }
+        }, true)
+        addEventListener('focusout', () => {
+          clearTimeout(keyboardBlurTimer)
+          keyboardBlurTimer = undefined
+          releaseViewport()
+        }, true)
+        addEventListener('resize', refreshViewport, { passive: true })
+        addEventListener('load', refreshViewport, { once: true })
+        visibleViewport?.addEventListener('resize', refreshViewport, { passive: true })
+      }
     </script>
     <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/hit-burst.webp" as="image" type="image/webp" />
     <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/death-ash.webp" as="image" type="image/webp" />

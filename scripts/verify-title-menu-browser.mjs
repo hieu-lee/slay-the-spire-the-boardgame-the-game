@@ -3,11 +3,12 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
-import { chromium } from './lib/profile-browser.mjs'
+import { chromium, webkit } from './lib/profile-browser.mjs'
 import { createRoomServer } from './room-server.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const output = join(root, 'artifacts/title-menu')
+const useWebkit = process.env.BROWSER === 'webkit'
+const output = join(root, `artifacts/title-menu${useWebkit ? '-webkit' : ''}`)
 mkdirSync(output, { recursive: true })
 const rooms = createRoomServer()
 const roomAddress = await rooms.listen(0)
@@ -18,7 +19,8 @@ const vite = await createServer({ root, logLevel: 'silent', server: {
 await vite.listen()
 const address = vite.httpServer?.address()
 if (!address || typeof address === 'string') throw new Error('vite did not report a port')
-const browser = await chromium.launch()
+const browser = await (useWebkit ? webkit : chromium).launch(
+  useWebkit && process.env.WEBKIT_EXECUTABLE_PATH ? { executablePath: process.env.WEBKIT_EXECUTABLE_PATH } : undefined)
 
 try {
   for (const [screen, viewport, phone] of [
@@ -75,6 +77,38 @@ try {
       assert.deepEqual(await page.locator('.start-menu__nav button').allTextContents(),
         [...(saved ? ['Resume'] : []), 'Single Player', 'Multiplayer', 'Leaderboard', 'Stats', 'Replay', 'Compendium', 'Settings'])
       await page.screenshot({ path: join(output, `${label}.png`) })
+      if (phone) {
+        const originalViewport = await page.locator('meta[name="viewport"]').getAttribute('content')
+        await page.setViewportSize({ width: viewport.width, height: viewport.height - 46 })
+        await page.waitForFunction((previous) => document.querySelector('meta[name="viewport"]').content !== previous,
+          originalViewport, { timeout: 3000 })
+        const gap = await page.locator('.start-menu__nav').evaluate((nav) =>
+          nav.getBoundingClientRect().top - document.querySelector('.start-menu__title').getBoundingClientRect().bottom)
+        assert(gap >= 24, `${label}: title and options are too close after browser chrome resizes: ${gap}`)
+        await page.screenshot({ path: join(output, `${label}-browser-chrome.png`) })
+        await page.setViewportSize(viewport)
+        await page.waitForFunction((expected) => document.querySelector('meta[name="viewport"]').content === expected,
+          originalViewport, { timeout: 3000 })
+        if (viewport.width === 568) {
+          await page.setViewportSize({ width: viewport.width, height: viewport.height - 81 })
+          await page.waitForFunction((previous) => document.querySelector('meta[name="viewport"]').content !== previous,
+            originalViewport, { timeout: 3000 })
+          const shortLayout = await page.locator('.start-menu').evaluate((menu) => {
+            const title = menu.querySelector('.start-menu__title').getBoundingClientRect()
+            const nav = menu.querySelector('.start-menu__nav').getBoundingClientRect()
+            const version = menu.querySelector('.start-menu__version').getBoundingClientRect()
+            return { gap: nav.top - title.bottom, navBottom: nav.bottom, versionTop: version.top,
+              versionBottom: version.bottom, visibleBottom: visualViewport.offsetTop + visualViewport.height }
+          })
+          assert(shortLayout.gap >= 24 && shortLayout.versionTop >= shortLayout.navBottom + 6 &&
+            shortLayout.versionBottom <= shortLayout.visibleBottom,
+          `${label}: title menu clipped with a tall browser toolbar: ${JSON.stringify(shortLayout)}`)
+          await page.screenshot({ path: join(output, `${label}-short-browser-chrome.png`) })
+          await page.setViewportSize(viewport)
+          await page.waitForFunction((expected) => document.querySelector('meta[name="viewport"]').content === expected,
+            originalViewport, { timeout: 3000 })
+        }
+      }
       console.log(`${label}: title and options fit and remain centered`)
     }
     if (!phone) {
