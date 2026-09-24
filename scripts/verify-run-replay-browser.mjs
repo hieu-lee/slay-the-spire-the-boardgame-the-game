@@ -20,6 +20,21 @@ const profile = { username: 'Replay Tester', token: '00000000-0000-4000-8000-000
 const open = async (viewport, hasTouch = viewport.width === 844, isMobile = false) => {
   const context = await browser.newContext({ viewport, hasTouch, isMobile })
   await context.addInitScript((saved) => localStorage.setItem('sts-profile', JSON.stringify(saved)), profile)
+  await context.addInitScript(() => {
+    window.__awaitReplay = async ({ controller, promise }, timeout = 30_000) => {
+      let timer
+      try {
+        return await Promise.race([promise, new Promise((_, reject) => {
+          timer = setTimeout(() => { reject(new Error(`Replay timed out after ${timeout}ms`)); controller.abort() }, timeout)
+        })])
+      } catch (error) {
+        controller.abort()
+        throw error
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+  })
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(String(error)))
@@ -34,8 +49,9 @@ const droppedFile = async (page, name, text) => page.locator('.run-replay-import
   screen.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
 }, { name, text })
 
+let desktop
 try {
-  const desktop = await open({ width: 1600, height: 900 })
+  desktop = await open({ width: 1600, height: 900 })
   const { page } = desktop
   await page.getByRole('button', { name: 'Replay', exact: true }).click()
   await page.getByText('Give your run to me', { exact: true }).waitFor()
@@ -57,7 +73,6 @@ try {
 
   await droppedFile(page, 'not-a-run.txt', '{}')
   await page.getByText('Your run is invalid', { exact: true }).waitFor()
-  await page.waitForTimeout(3_100)
   await page.getByText('Give your run to me', { exact: true }).waitFor()
   await droppedFile(page, 'broken.json', '{')
   await page.getByText('Your run is invalid', { exact: true }).waitFor()
@@ -392,10 +407,15 @@ try {
     const replay = playRunLog({ version: 2, runId: initial.campaign.runId, initial, events: [{
       patch: [{ path: [], value: final }], choice: { source: { selector: '#never-appears' } },
     }] }, { setRun: (run) => gold.push(run.players[0].gold), setViewer() {}, reducedMotion: true, signal: controller.signal })
-    setTimeout(() => controller.abort(), 120)
-    const remove = await replay
-    remove()
-    return gold
+    const abortTimer = setTimeout(() => controller.abort(), 120)
+    try {
+      const remove = await window.__awaitReplay({ controller, promise: replay }, 5_000)
+      remove()
+      return gold
+    } finally {
+      clearTimeout(abortTimer)
+      controller.abort()
+    }
   })
   assert.deepEqual(abortedReplayStates, [0], 'Aborted replay applied the in-flight event patch')
   assert.equal(await page.locator('.run-replay__cursor').count(), 0, 'Aborted replay left its synthetic cursor behind')
@@ -510,7 +530,7 @@ try {
     open: document.querySelector('.card-collection').open,
     pauses: document.body.dataset.replayPauseRequests,
   })), { open: false, pauses: '1' }, 'Escape failed to close replay inspection without opening pause')
-  await page.evaluate(() => window.__REPLAY_GUARD__.promise)
+  await page.evaluate(() => window.__awaitReplay(window.__REPLAY_GUARD__))
   assert.equal(await page.locator('.run-replay__cursor').evaluate((cursor) => cursor.getAnimations().length), 0,
     'Replay retained completed cursor animations')
   await page.getByRole('button', { name: 'Replay action fixture' }).click()
@@ -521,7 +541,7 @@ try {
   assert.deepEqual(afterReplay, { action: '1', step: '1', inspect: '2' }, 'Replay stopped being read-only at the end of the log')
   await page.evaluate(async () => {
     window.__REPLAY_GUARD__.controller.abort()
-    const remove = await window.__REPLAY_GUARD__.promise
+    const remove = await window.__awaitReplay(window.__REPLAY_GUARD__)
     remove()
     document.querySelector('#replay-action-fixture').click()
     if (document.querySelector('#replay-action-fixture').dataset.clicks !== '2') throw new Error('Replay guard survived cleanup')
@@ -536,7 +556,7 @@ try {
     { setRun() {}, setViewer() {}, reducedMotion: true, signal: controller.signal }).then(() => '', (error) => String(error)) }
   })
   await page.waitForFunction(() => document.querySelector('#replay-action-fixture')?.dataset.clicks === '3')
-  assert.match(await page.evaluate(() => window.__REPLAY_FAILURE__.promise), /Invalid run log path/)
+  assert.match(await page.evaluate(() => window.__awaitReplay(window.__REPLAY_FAILURE__)), /Invalid run log path/)
   assert.equal(await page.locator('.run-replay__cursor').count(), 0, 'Failed replay left a frozen cursor')
   await page.getByRole('button', { name: 'Replay action fixture' }).click()
   assert.equal(await page.evaluate(() => document.querySelector('#replay-action-fixture').dataset.clicks), '3',
@@ -560,19 +580,16 @@ try {
   await page.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'neow')
   await page.getByRole('button', { name: 'Gain 3 Gold', exact: true }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players[0].gold === 3)
-  await page.waitForTimeout(50)
   await page.evaluate(() => {
     const run = structuredClone(window.__STS_DEBUG__.getRun())
     run.nextPendingRelicId = 1
     window.__STS_DEBUG__.setRun(run)
   })
-  await page.waitForTimeout(50)
   await page.evaluate(() => {
     const run = structuredClone(window.__STS_DEBUG__.getRun())
     run.nextPendingRelicId = undefined
     window.__STS_DEBUG__.setRun(run)
   })
-  await page.waitForTimeout(50)
   await page.evaluate(async () => {
     const { createCombat } = await import('/src/game/combat.ts')
     const run = structuredClone(window.__STS_DEBUG__.getRun())
@@ -687,9 +704,9 @@ try {
     } }
     const controller = new AbortController()
     try {
-      const cleanup = await playRunLog({ version: 2, runId: initial.campaign.runId, initial, events: [event] }, {
+      const cleanup = await window.__awaitReplay({ controller, promise: playRunLog({ version: 2, runId: initial.campaign.runId, initial, events: [event] }, {
         setRun: (run) => window.__STS_DEBUG__.setRun(run), setViewer() {}, reducedMotion: true, signal: controller.signal,
-      })
+      }) })
       cleanup()
       return { error: null, deckSize: window.__STS_DEBUG__.getRun().players[0].deck.length }
     } catch (error) { return { error: String(error), deckSize: window.__STS_DEBUG__.getRun().players[0].deck.length } }
@@ -738,6 +755,10 @@ try {
 
   console.log('✓ run replay: desktop drag and phone upload validation, Time Eater transition, live cursor, input guard, pause menu, log download')
 } finally {
+  if (desktop) await desktop.page.evaluate(() => {
+    window.__REPLAY_GUARD__?.controller.abort()
+    window.__REPLAY_FAILURE__?.controller.abort()
+  }).catch(() => {})
   await browser.close()
   await server.close()
 }
