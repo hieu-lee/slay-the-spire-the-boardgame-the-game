@@ -23,6 +23,13 @@ const run = (id, overrides = {}) => ({
 })
 const card = (id, upgraded = false) => ({ op: 'card', id, upgraded })
 const query = (value) => new URLSearchParams({ q: JSON.stringify(value) })
+const waitFor = async (condition) => {
+  const deadline = performance.now() + 1500
+  while (!condition()) {
+    if (performance.now() >= deadline) throw new Error('Timed out waiting for deck classification')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
 const archive = [
   { ...normalizeLeaderboardRun(run(1, { finalDeck: [
     { defId: 'dual_cast', upgraded: false }, { defId: 'strike_defect', upgraded: false },
@@ -365,8 +372,7 @@ try {
   } })
   try {
     await rollbackServer.listen(0)
-    for (let attempt = 0; attempt < 40 && !rollbackServer.store.leaderboardRuns[0]?.deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => rollbackServer.store.leaderboardRuns[0]?.deckType)
   } finally { await rollbackServer.close() }
   check('classification appends metadata without rewriting the archived run history', () => {
     assertEqual(rollbackCalls, 1)
@@ -893,8 +899,7 @@ try {
   const submitted = await fetch(`${base}/api/leaderboard`, { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ...run(7), deckType: 'Defect Claw Spam', username: 'private user' }) })
   assertEqual(submitted.status, 201)
-  for (let attempt = 0; attempt < 40 && !server.store.leaderboardRuns[0]?.deckType; attempt++)
-    await new Promise((resolve) => setTimeout(resolve, 10))
+  await waitFor(() => server.store.leaderboardRuns[0]?.deckType)
   check('submissions cannot forge types; private background classification owns them', () => {
     assertEqual(server.store.leaderboardRuns[0].deckType, 'Defect Lightning Orb Focus')
     assertEqual(classifications[0].currentThreadId, undefined)
@@ -949,8 +954,7 @@ try {
       const response = await fetch(limitedUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'cf-connecting-ip': `client-${id}` }, body: JSON.stringify(run(id)) })
       assertEqual(response.status, 201)
     }
-    for (let attempt = 0; attempt < 40 && !limited.store.leaderboardRuns[0]?.deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => limited.store.leaderboardRuns[0]?.deckType)
     check('global daily budget caps anonymous submissions independently of IP limits', () => {
       assertEqual(limited.store.leaderboardRuns[0].deckType, 'Defect Lightning Orb Focus')
       assertEqual(limited.store.leaderboardRuns[1].deckType, undefined)
@@ -1004,8 +1008,7 @@ try {
     const address = await exhaustedServer.listen(0)
     assertEqual((await fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(70)) })).status, 201)
-    for (let attempt = 0; attempt < 40 && !exhaustedServer.store.leaderboardRuns[0]?.deckClassificationRetry; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => exhaustedServer.store.leaderboardRuns[0]?.deckClassificationRetry)
     await exhaustedServer.close()
     exhaustedServer = createRoomServer({ storeFile: exhaustedFile, classifierEnabled: true, deckClassifier: exhaustedClassifier })
     const resumedAddress = await exhaustedServer.listen(0)
@@ -1019,8 +1022,7 @@ try {
     })
     assertEqual((await fetch(`http://127.0.0.1:${resumedAddress.port}/api/leaderboard`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(76)) })).status, 201)
-    for (let attempt = 0; attempt < 40 && !exhaustedServer.store.leaderboardRuns[1]?.deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => exhaustedServer.store.leaderboardRuns[1]?.deckType)
     check('the next submitted deck reuses a first-turn thread even while that deck waits', () => {
       assertDeepEqual(exhaustedThreads, [undefined, threadId])
       assertEqual(exhaustedServer.store.leaderboardRuns[0].deckType, undefined)
@@ -1041,11 +1043,9 @@ try {
     const submit = (id) => fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(id)) })
     assertEqual((await submit(77)).status, 201)
-    for (let attempt = 0; attempt < 40 && !contextServer.store.leaderboardRuns[0]?.deckClassificationRetry; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => contextServer.store.leaderboardRuns[0]?.deckClassificationRetry)
     assertEqual((await submit(79)).status, 201)
-    for (let attempt = 0; attempt < 40 && !contextServer.store.leaderboardRuns[1]?.deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => contextServer.store.leaderboardRuns[1]?.deckType)
     check('first-turn context exhaustion defers its deck without retaining a full thread', () => {
       assertDeepEqual(contextThreads, [undefined, undefined])
       assert(contextServer.store.leaderboardRuns[0].deckClassificationRetry.after > Date.now())
@@ -1109,8 +1109,7 @@ try {
     } })
   try {
     await firstSpecificServer.listen(0)
-    for (let attempt = 0; attempt < 40 && !firstSpecificServer.store.leaderboardRuns[2]?.deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => firstSpecificServer.store.leaderboardRuns[2]?.deckType)
     check('the first floor-15 deck creates a specific type even after shallow Other decks', () => {
       assertDeepEqual(thresholdCalls[0].filter((name) => name.startsWith('Guardian ')), ['Guardian Other'])
       assertEqual(firstSpecificServer.store.leaderboardRuns[0].deckType, 'Guardian Prismatic Defense')
@@ -1132,8 +1131,7 @@ try {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(run(155, { character: 'guardian', floorsCleared: 14,
         finalDeck: [{ defId: 'guardian_prismatic_barrier', upgraded: false }] })) })).status, 201)
-    for (let attempt = 0; attempt < 40 && invalidLowServer.store.deckClassificationBudget.used < 3; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => invalidLowServer.store.deckClassificationBudget.used >= 3)
     check('server cannot invent a specific archetype for a shallow deck even with a faulty classifier', () => {
       assertEqual(invalidLowServer.store.leaderboardRuns[3].deckType, undefined)
       assert(!invalidLowServer.store.deckTypes.includes('Guardian Unseeded Combo'))
@@ -1147,8 +1145,7 @@ try {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(run(154, { character: 'guardian', floorsCleared: 15,
         finalDeck: [{ defId: 'guardian_strike', upgraded: false }] })) })).status, 201)
-    for (let attempt = 0; attempt < 40 && invalidFirstServer.store.deckClassificationBudget.used < 1; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => invalidFirstServer.store.deckClassificationBudget.used >= 1)
     await new Promise((resolve) => setTimeout(resolve, 20))
     check('server rejects an Other response for the first floor-15 deck even from a faulty classifier', () => {
       assertEqual(invalidFirstServer.store.leaderboardRuns[0].deckType, undefined)
@@ -1183,7 +1180,7 @@ try {
       throw Object.assign(new Error('Codex login expired'), { code: 'classifier_unavailable' }) } })
   try {
     await unavailableServer.listen(0)
-    for (let attempt = 0; attempt < 40 && !unavailableCalls; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => unavailableCalls)
     await new Promise((resolve) => setTimeout(resolve, 40))
     check('expired Codex auth stops an active backlog and refunds the attempt', () => {
       assertEqual(unavailableCalls, 1)
@@ -1220,7 +1217,7 @@ try {
   try {
     const unwritableAddress = await unwritable.listen(0)
     assertEqual((await fetch(`http://127.0.0.1:${unwritableAddress.port}/api/leaderboard`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(30)) })).status, 201)
-    for (let attempt = 0; attempt < 40 && !writes; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => writes)
     check('a failed budget write blocks the paid call and does not consume the cap', () => {
       assert(writes > 0)
       assertEqual(paidCalls, 0)
@@ -1247,7 +1244,7 @@ try {
     await Promise.race([updating, new Promise((_resolve, reject) => setTimeout(() => reject(new Error('Classifier did not start')), 1500))])
     assertEqual((await post(run(31, { floorsCleared: 26 }))).status, 201)
     releaseUpdate()
-    for (let attempt = 0; attempt < 40 && !updateServer.store.leaderboardRuns[0].deckType; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => updateServer.store.leaderboardRuns[0].deckType)
     check('duplicate run updates retain the result of an in-flight classification', () => {
       assertEqual(updateCalls, 1)
       assertEqual(updateServer.store.leaderboardRuns[0].floorsCleared, 26)
@@ -1274,8 +1271,7 @@ try {
       { username: 'Room Owner', character: 'ironclad', finalDeck: run(52).finalDeck },
     ] }))
     releaseHero()
-    for (let attempt = 0; attempt < 40 && !heroServer.store.leaderboardRuns[0].deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => heroServer.store.leaderboardRuns[0].deckType)
     check('an in-flight result cannot assign the previous hero archetype after rearchive', () => {
       assertEqual(heroCalls, 2)
       assertEqual(heroServer.store.leaderboardRuns[0].deckType, 'Ironclad Barricade Body Slam')
@@ -1293,8 +1289,7 @@ try {
     const endpoint = `http://127.0.0.1:${address.port}/api/leaderboard`
     const submit = (entry) => fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(entry) })
     assertEqual((await submit(run(53))).status, 201)
-    for (let attempt = 0; attempt < 40 && !changedHeroCalls.length; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => changedHeroCalls.length)
     changedHeroServer.store.leaderboardRuns[0].deckClassificationRetry = {
       after: Date.now() + 86_400_000, hash: deckHash(changedHeroServer.store.leaderboardRuns[0]),
     }
@@ -1303,8 +1298,7 @@ try {
     ] }))
     assertEqual(changedHeroServer.store.leaderboardRuns[0].deckClassificationRetry, undefined)
     assertEqual((await submit(run(54, { finalDeck: undefined }))).status, 201)
-    for (let attempt = 0; attempt < 40 && !changedHeroServer.store.leaderboardRuns[0].deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => changedHeroServer.store.leaderboardRuns[0].deckType)
     check('changing hero invalidates a previous hero retry for the same deck', () => {
       assertDeepEqual(changedHeroCalls, ['defect', 'ironclad'])
       assertEqual(changedHeroServer.store.leaderboardRuns[0].deckType, 'Ironclad Barricade Body Slam')
@@ -1328,10 +1322,9 @@ try {
     const endpoint = `http://127.0.0.1:${failureAddress.port}/api/leaderboard`
     const submit = (id) => fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(id)) })
     assertEqual((await submit(21)).status, 201)
-    for (let attempt = 0; attempt < 40 && !attempts.length; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => attempts.length)
     assertEqual((await submit(22)).status, 201)
-    for (let attempt = 0; attempt < 40 && !failureServer.store.leaderboardRuns[1]?.deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => failureServer.store.leaderboardRuns[1]?.deckType)
     check('a failed deck waits for retry without blocking a later submission', () => {
       assertDeepEqual(attempts, [failedId, run(22).id])
       assertEqual(failureServer.store.leaderboardRuns[1].deckType, 'Defect Lightning Orb Focus')
@@ -1352,8 +1345,7 @@ try {
       await Promise.race([startedThird, new Promise((_resolve, reject) => originalSetTimeout(() => reject(new Error('Third classifier did not start')), 1500))])
       offset = 61_000
       releaseThird()
-      for (let attempt = 0; attempt < 40 && !failureServer.store.leaderboardRuns[2]?.deckType; attempt++)
-        await new Promise((resolve) => originalSetTimeout(resolve, 10))
+      await waitFor(() => failureServer.store.leaderboardRuns[2]?.deckType)
       await new Promise((resolve) => originalSetTimeout(resolve, 100))
       check('failed decks made ineligible are pruned instead of spinning zero-delay retries', () => {
         assertEqual(failureServer.store.leaderboardRuns[2].deckType, 'Defect Lightning Orb Focus')
@@ -1373,8 +1365,7 @@ try {
     const address = await firstTurnServer.listen(0)
     assertEqual((await fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(73)) })).status, 201)
-    for (let attempt = 0; attempt < 40 && !failedFirstTurnStarted; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => failedFirstTurnStarted)
   } finally { await firstTurnServer.close() }
   check('timed-out first turns persist their Codex thread before the next server startup', () => {
     assertEqual(failedFirstTurnStarted, true)
@@ -1388,8 +1379,7 @@ try {
     } })
   try {
     await firstTurnRetry.listen(0)
-    for (let attempt = 0; attempt < 40 && !resumedFirstTurn; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => resumedFirstTurn)
     check('a restarted classifier resumes the thread created by a failed first turn', () =>
       assertEqual(resumedFirstTurn, threadId))
   } finally { await firstTurnRetry.close() }
@@ -1406,8 +1396,7 @@ try {
     const endpoint = `http://127.0.0.1:${address.port}/api/leaderboard`
     const submit = (id) => fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(id)) })
     assertEqual((await submit(48)).status, 201)
-    for (let attempt = 0; attempt < 40 && !sessionsServer.store.leaderboardRuns[0]?.deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => sessionsServer.store.leaderboardRuns[0]?.deckType)
     await sessionsServer.close()
     check('Codex thread ID survives server restart in private stats state', () => {
       assertEqual(createStore({ file: sessionsFile }).deckClassifierThreadId, threadId)
@@ -1417,8 +1406,7 @@ try {
     const resumed = await sessionsServer.listen(0)
     const resumeEndpoint = `http://127.0.0.1:${resumed.port}/api/leaderboard`
     assertEqual((await fetch(resumeEndpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(49)) })).status, 201)
-    for (let attempt = 0; attempt < 40 && !sessionsServer.store.leaderboardRuns[1]?.deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => sessionsServer.store.leaderboardRuns[1]?.deckType)
     check('subsequent decks resume the same Codex thread', () => {
       assertDeepEqual(resumedThreads, [undefined, threadId])
       assertEqual(sessionsServer.store.deckClassificationBudget.used, 2)
@@ -1434,7 +1422,7 @@ try {
     const failing = await sessionsServer.listen(0)
     assertEqual((await fetch(`http://127.0.0.1:${failing.port}/api/leaderboard`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(50)) })).status, 201)
-    for (let attempt = 0; attempt < 40 && !resumedFailure; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => resumedFailure)
     await sessionsServer.close()
     check('transient failures preserve a resumable Codex thread', () => {
       assertEqual(resumedFailure, true)
@@ -1448,7 +1436,7 @@ try {
         throw Object.assign(new Error('Codex session unavailable'), { code: 'stale_thread' })
       } })
     await sessionsServer.listen(0)
-    for (let attempt = 0; attempt < 40 && !staleFailure; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => staleFailure)
     await sessionsServer.close()
     check('only genuinely stale resumed sessions clear their ID', () => {
       assertEqual(staleFailure, true)
@@ -1485,13 +1473,11 @@ try {
   let replayServer
   try {
     replayServer = await openRoomReplay()
-    for (let attempt = 0; attempt < 40 && !roomRetryCalls; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => roomRetryCalls)
     assertEqual(replayServer.store.leaderboardRuns[0]?.deckType, undefined)
     await replayServer.close()
     replayServer = await openRoomReplay()
-    for (let attempt = 0; attempt < 40 && !replayServer.store.leaderboardRuns[0]?.deckType; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => replayServer.store.leaderboardRuns[0]?.deckType)
     await replayServer.close()
     replayServer = await openRoomReplay()
     await new Promise((resolve) => setTimeout(resolve, 30))
@@ -1509,14 +1495,16 @@ try {
     notifyStarted()
     await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('Model request cancelled')), { once: true }))
   } })
+  let closeStarted = false
   try {
     const address = await closingServer.listen(0)
     assertEqual((await fetch(`http://127.0.0.1:${address.port}/api/leaderboard`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify(run(39)) })).status, 201)
     await Promise.race([modelStarted, new Promise((_resolve, reject) => setTimeout(() => reject(new Error('Model request did not start')), 1500))])
+    closeStarted = true
     await Promise.race([closingServer.close(), new Promise((_resolve, reject) => setTimeout(() => reject(new Error('Model request outlived shutdown')), 1500))])
     check('shutdown aborts and settles an in-flight paid model request', () => assert(inFlightSignal.aborted))
-  } finally { await closingServer.close() }
+  } finally { if (!closeStarted) await closingServer.close() }
 } finally {
   if (server) await server.close()
   rmSync(directory, { recursive: true, force: true })
