@@ -26,7 +26,7 @@ check('every event has its own full-screen background', () => {
   const hashes = files.map((file) => createHash('sha256').update(readFileSync(file)).digest('hex'))
   assertEqual(new Set(hashes).size, hashes.length, 'event backgrounds must not reuse one generic scene')
   for (const file of files) {
-    const inspected = spawnSync('webpinfo', ['-summary', fileURLToPath(file)], { encoding: 'utf8' })
+    const inspected = spawnSync('webpinfo', ['-summary', fileURLToPath(file)], { encoding: 'utf8', timeout: 10_000 })
     const width = Number(inspected.stdout.match(/Width:\s+(\d+)/)?.[1])
     const height = Number(inspected.stdout.match(/Height:\s+(\d+)/)?.[1])
     assert(inspected.status === 0 && width / height >= 1.9,
