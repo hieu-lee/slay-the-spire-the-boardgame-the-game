@@ -436,7 +436,6 @@ export function useRoomSession() {
     let retry: number | undefined
     let retryDelay = RECONNECT_MIN_DELAY_MS
     let livenessTimer: number | undefined
-    let livenessFailures = 0
     const connectedGeneration = generation.current
     const retryConnection = (callback: () => void) => {
       retry = window.setTimeout(callback, retryDelay)
@@ -486,18 +485,11 @@ export function useRoomSession() {
             })) as RoomSnapshot
             if (!active || socket.current !== next) return
             if (!latest.you.connected) return reconnect()
-            livenessFailures = 0
             if (accept(latest)) setRestorationEpoch((current) => current + 1)
-            livenessTimer = window.setTimeout(probe, LIVENESS_INTERVAL_MS)
-          } catch (cause) {
+            livenessTimer ??= window.setTimeout(probe, LIVENESS_INTERVAL_MS)
+          } catch {
             if (!active || socket.current !== next) return
-            if (livenessFailures++ === 0) {
-              resetRoomEndpoint()
-              livenessTimer = window.setTimeout(probe, RECONNECT_MIN_DELAY_MS)
-              return
-            }
-            resetAfterFailure()
-            reconnect()
+            livenessTimer ??= window.setTimeout(probe, LIVENESS_INTERVAL_MS)
           }
         }
         connectionTimeout = window.setTimeout(reconnect, ACTION_TIMEOUT_MS)
@@ -518,7 +510,6 @@ export function useRoomSession() {
               setConnection('connected')
               setError('')
               retryDelay = RECONNECT_MIN_DELAY_MS
-              livenessFailures = 0
               const pending = socketActions.current.get(message.requestId)
               if (pending) {
                 clearTimeout(pending.timeout)

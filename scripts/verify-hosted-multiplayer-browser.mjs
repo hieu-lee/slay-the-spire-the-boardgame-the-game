@@ -45,6 +45,11 @@ try {
   const phone = await profile({ width: 640, height: 360 }, 'HostedGuest', '00000000-0000-4000-8000-000000000012')
   const host = await desktop.newPage()
   const guest = await phone.newPage()
+  const guestSockets = []
+  const roomWebSocketOrigin = roomOrigin.replace(/^http/, 'ws')
+  guest.on('websocket', (socket) => {
+    if (socket.url().startsWith(`${roomWebSocketOrigin}/ws?room=`)) guestSockets.push(socket)
+  })
 
   for (const page of [host, guest]) {
     await page.goto(pagesOrigin)
@@ -63,8 +68,72 @@ try {
   await guest.getByLabel('HostedHost, Ironclad, online').waitFor()
   await guest.getByLabel('HostedGuest, Silent, you, online').waitFor()
 
+  let failedReads = 0
+  let failedTwice
+  const twoFailures = new Promise((resolve) => { failedTwice = resolve })
+  const roomSnapshotUrl = `${roomOrigin}/api/rooms/${code}`
+  const recoveredRead = guest.waitForResponse((response) =>
+    response.url() === roomSnapshotUrl && response.status() === 200, { timeout: 45_000 })
+  await guest.route(roomSnapshotUrl, (route) => {
+    if (failedReads < 2) {
+      failedReads += 1
+      if (failedReads === 2) failedTwice()
+      return route.abort()
+    }
+    return route.continue()
+  })
+  await Promise.race([twoFailures, guest.waitForTimeout(35_000).then(() => { throw new Error('No liveness probes arrived') })])
+  await recoveredRead
+  assert.equal(failedReads, 2, 'HTTP liveness was not retried after two failures')
+  assert.equal(guestSockets.length, 1, 'failed HTTP liveness reads replaced a working WebSocket')
+  assert.equal(rooms.store.rooms.get(code).seats[1].connected, true, 'failed HTTP liveness reads disconnected the guest')
+  await guest.getByLabel('HostedGuest, Silent, you, online').waitFor()
+
+  await guest.unroute(roomSnapshotUrl)
+  let releaseHeldRead
+  const heldRead = new Promise((resolve) => { releaseHeldRead = resolve })
+  let announceHeldRead
+  const waitingRead = new Promise((resolve) => { announceHeldRead = resolve })
+  let announceRetry
+  const retriedRead = new Promise((resolve) => { announceRetry = resolve })
+  let heldOnce = false
+  let retryReads = 0
+  await guest.route(roomSnapshotUrl, async (route) => {
+    if (!heldOnce) {
+      heldOnce = true
+      announceHeldRead()
+      await heldRead
+      return route.abort()
+    }
+    retryReads += 1
+    if (retryReads === 1) announceRetry()
+    return route.continue()
+  })
+  await Promise.race([waitingRead, guest.waitForTimeout(15_000).then(() => { throw new Error('No delayed probe arrived') })])
+  const snapshotFrame = guestSockets[0].waitForEvent('framereceived', {
+    predicate: ({ payload }) => JSON.parse(String(payload)).type === 'snapshot', timeout: 10_000,
+  })
+  rooms.publishRoom(code)
+  await snapshotFrame
+  releaseHeldRead()
+  await Promise.race([retriedRead, guest.waitForTimeout(20_000).then(() => { throw new Error('No retry after the delayed probe') })])
+  await guest.waitForTimeout(500)
+  assert.equal(retryReads, 1, 'a delayed HTTP failure and a WebSocket snapshot scheduled duplicate probes')
+
+  const replacement = guest.waitForEvent('websocket', {
+    predicate: (socket) => socket.url().startsWith(`${roomWebSocketOrigin}/ws?room=`), timeout: 10_000,
+  })
+  rooms.dropConnection(code, rooms.store.rooms.get(code).seats[1].token)
+  const newSocket = await replacement
+  await newSocket.waitForEvent('framereceived', {
+    predicate: ({ payload }) => JSON.parse(String(payload)).type === 'snapshot', timeout: 10_000,
+  })
+  await guest.getByLabel('HostedGuest, Silent, you, online').waitFor()
+  assert.equal(rooms.store.rooms.get(code).seats[1].connected, true, 'the replacement socket did not restore the guest')
+  assert.equal(guestSockets.length, 2, 'an actual WebSocket drop did not reconnect the guest')
+
   await Promise.all([desktop.close(), phone.close()])
-  console.log('✓ stable hosted session connects desktop and horizontal-phone multiplayer clients')
+  console.log('✓ hosted clients keep a live socket through failed HTTP probes and reconnect after a real drop')
 } finally {
   await browser?.close()
   await rooms?.close()
