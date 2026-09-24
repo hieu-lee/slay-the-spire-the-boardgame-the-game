@@ -558,7 +558,7 @@
   .start-menu__nav button { min-width: 12rem; padding: 0.04rem 2.5rem; font-size: clamp(0.95rem, 2.2vw, 1.25rem); line-height: 1.15; }
 }
 @media (pointer: coarse) and (orientation: landscape) and (min-height: 700px) {
-  html[data-mobile-performance='true'] .start-menu__landing { gap: 0.5rem; padding: 3rem 1rem 1.5rem; }
+  html[data-mobile-performance='true'] .start-menu__landing { gap: 1.75rem; padding: 3rem 1rem 1.5rem; }
   html[data-mobile-performance='true'] .start-menu__title h1 { font-size: clamp(5rem, 14vh, 7rem); line-height: 0.9; }
   html[data-mobile-performance='true'] .start-menu__nav button { font-size: clamp(1.25rem, 3.7vh, 1.75rem); line-height: 1.15; padding: 0.65rem 2.5rem; }
 }

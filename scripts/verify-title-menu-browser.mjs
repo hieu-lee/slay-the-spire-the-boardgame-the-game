@@ -24,6 +24,7 @@ try {
   for (const [screen, viewport, phone] of [
     ['desktop', { width: 1440, height: 900 }, false],
     ['landscape-phone', { width: 844, height: 390 }, true],
+    ['narrow-landscape-phone', { width: 568, height: 320 }, true],
   ]) {
     const context = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone })
     const page = await context.newPage()
@@ -61,7 +62,7 @@ try {
           buttons: [...menu.querySelectorAll('.start-menu__nav button')].map((button) => button.getBoundingClientRect().toJSON()),
         }
       })
-      assert(layout.nav.top >= layout.title.bottom + 8, `${label}: options overlap the title: ${JSON.stringify(layout)}`)
+      assert(layout.nav.top >= layout.title.bottom + (phone ? 24 : 8), `${label}: options are too close to the title: ${JSON.stringify(layout)}`)
       assert(Math.abs(layout.nav.x + layout.nav.width / 2 - layout.title.x - layout.title.width / 2) < 2,
         `${label}: options are not centered under the title: ${JSON.stringify(layout)}`)
       assert(layout.version.top >= layout.nav.bottom + 6, `${label}: menu overlaps the version: ${JSON.stringify(layout)}`)
