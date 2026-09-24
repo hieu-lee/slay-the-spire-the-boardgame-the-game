@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   affectedVerifiers, browserScript, changedPaths, drivesABrowser, mergeBase, needsTypecheck, requiresFullSuite,
 } from './lib/affected-verifiers.mjs'
-import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
+import { suite, check, assert, assertDeepEqual, assertEqual, assertThrows, report } from './lib/harness.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const scripts = readdirSync(resolve(root, 'scripts'))
@@ -19,6 +19,12 @@ const includesEvery = (actual, expected, context) => {
 }
 
 suite('verification pipeline')
+check('deep equality compares Set and Map contents', () => {
+  assertDeepEqual(new Set([1, 2]), new Set([2, 1]))
+  assertThrows(() => assertDeepEqual(new Set([1]), new Set([2])))
+  assertThrows(() => assertDeepEqual(new Map([['key', 1]]), new Map([['key', 2]])))
+  assertThrows(() => assertDeepEqual({ values: new Set([1]) }, { values: new Set([2]) }))
+})
 check('logic changes select dependent logic checks and direct browser consumers', () => {
   const selected = affected('src/game/rng.ts')
   assert(selected.includes('verify-rng.mjs'))

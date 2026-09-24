@@ -1,6 +1,7 @@
 // Tiny assertion harness shared by every scripts/verify-*.mjs.
 // No framework: each verify script is a plain node program that exits non-zero
 // on failure, so `node scripts/verify-foo.mjs` works standalone and in CI.
+import { deepStrictEqual } from 'node:assert/strict'
 
 let passed = 0
 const failures = []
@@ -34,11 +35,7 @@ export function assertEqual(actual, expected, message) {
 }
 
 export function assertDeepEqual(actual, expected, message) {
-  const a = JSON.stringify(actual)
-  const b = JSON.stringify(expected)
-  if (a !== b) {
-    throw new Error(`${message ?? 'not deep equal'}:\n  expected ${b}\n  actual   ${a}`)
-  }
+  deepStrictEqual(actual, expected, message)
 }
 
 export function assertThrows(fn, message) {
