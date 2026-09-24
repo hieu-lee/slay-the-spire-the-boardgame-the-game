@@ -317,12 +317,12 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.locator('.neow-options').waitFor()
-const soloNeowBoundaryLayouts = []
-for (const width of [768, 800, 801]) {
-  await page.setViewportSize({ width, height: 900 })
+const soloNeowScreenLayouts = []
+for (const viewport of [{ width: 1280, height: 600 }, { width: 844, height: 390 }]) {
+  await page.setViewportSize(viewport)
   await page.locator('.neow-options button').first().hover()
   await page.waitForTimeout(200)
-  soloNeowBoundaryLayouts.push(await page.evaluate(() => {
+  soloNeowScreenLayouts.push(await page.evaluate(() => {
     const stage = document.querySelector('.neow-screen')?.getBoundingClientRect()
     const action = document.querySelector('.neow-action')?.getBoundingClientRect()
     const option = document.querySelector('.neow-options button')?.getBoundingClientRect()
@@ -402,10 +402,10 @@ suite('non-combat browser')
 check('solo Neow dialogue stays on-screen beside Neow', () => {
   assert(soloNeowLayout.speechLeft >= 0 && soloNeowLayout.speechRight <= soloNeowLayout.viewportWidth)
   assert(soloNeowLayout.gap <= 16, `Neow dialogue gap is ${soloNeowLayout.gap}px`)
-  assert(soloNeowBoundaryLayouts.every((layout) => layout &&
+  assert(soloNeowScreenLayouts.every((layout) => layout &&
     layout.actionLeft >= layout.stageLeft && layout.actionRight <= layout.stageRight &&
     layout.optionLeft >= layout.stageLeft && layout.optionRight <= layout.stageRight),
-  `solo Neow choices clip near the compact breakpoint: ${JSON.stringify(soloNeowBoundaryLayouts)}`)
+  `solo Neow choices clip on desktop or horizontal phone: ${JSON.stringify(soloNeowScreenLayouts)}`)
 })
 
 check('The Heart’s Boon shows the Heart and its printed dialogue on the right', () => {
