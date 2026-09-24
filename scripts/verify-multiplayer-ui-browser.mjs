@@ -38,6 +38,18 @@ async function openExpedition(page, name, character, campaignProgress) {
   return entry
 }
 
+/** The parchment's torn edge sits about 4% inside its box; content must stay clear of it. */
+async function assertBoardInset(page, board, contents, label) {
+  const gaps = await page.locator(board).evaluate((panel, selectors) => {
+    const box = panel.getBoundingClientRect()
+    return selectors.map((selector) => {
+      const content = panel.querySelector(selector).getBoundingClientRect()
+      return { selector, left: (content.left - box.left) / box.width, right: (box.right - content.right) / box.width }
+    })
+  }, contents)
+  for (const gap of gaps) assert(gap.left >= 0.04 && gap.right >= 0.04, `${label}: ${gap.selector} runs onto the torn parchment edge: ${JSON.stringify(gap)}`)
+}
+
 try {
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'landscape-phone', width: 560, height: 315 }]) {
     const context = await browser.newContext({ viewport })
@@ -107,6 +119,16 @@ try {
     assert.equal(entryChrome.selected, 'Silent', `${viewport.name}: hero strip did not select Silent`)
     assert.notEqual(entryChrome.unselectedBorder, entryChrome.selectedBorder, `${viewport.name}: all entry heroes look selected`)
     assert(!entryChrome.overflow, `${viewport.name}: entry overflows horizontally`)
+    await assertBoardInset(page, '.online-entry__panel', ['.online-character-roster', '.online-entry__actions'], `${viewport.name} entry`)
+    const boardNotices = await page.locator('.online-entry__panel').evaluate((panel) => {
+      const error = panel.appendChild(Object.assign(document.createElement('p'), { className: 'online-error', textContent: 'Room not found' }))
+      const chip = panel.appendChild(Object.assign(document.createElement('span'), { className: 'connection connection--reconnecting', textContent: 'Link: reconnecting' }))
+      const result = { error: getComputedStyle(error).color, chip: getComputedStyle(chip).backgroundColor }
+      error.remove(); chip.remove()
+      return result
+    })
+    assert.equal(boardNotices.error, 'rgb(255, 194, 176)', `${viewport.name}: room errors lost their parchment-readable colour`)
+    assert.equal(boardNotices.chip, 'rgba(20, 14, 10, 0.72)', `${viewport.name}: connection chip lost its dark backing on the board`)
 
     await entry.getByRole('button', { name: 'Back to solo table', exact: true }).click()
     await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
@@ -147,6 +169,20 @@ try {
       }
     })
     assert.equal(lobbyChrome.seats, 4, `${viewport.name}: party staging lost seats`)
+    await assertBoardInset(page, '.online-lobby__table', ['.online-lobby__code', '.online-lobby__seats'], `${viewport.name} lobby`)
+    await lobby.getByRole('button', { name: 'Settings', exact: true }).click()
+    const settingsDialog = page.locator('dialog.settings-dialog[open]')
+    await settingsDialog.waitFor()
+    const settingsChrome = await settingsDialog.evaluate((dialog) => ({
+      title: getComputedStyle(dialog.querySelector('h2')).color,
+      keys: [...dialog.querySelectorAll('nav button, .settings-action button')].map((button) => getComputedStyle(button).clipPath),
+      rows: [...dialog.querySelectorAll('.settings-toggle, .settings-action')].map((row) => ({ color: getComputedStyle(row).color, width: row.getBoundingClientRect().width / row.parentElement.getBoundingClientRect().width })),
+    }))
+    assert(settingsChrome.rows.length > 0 && settingsChrome.rows.every((row) => row.color === 'rgb(255, 248, 234)' && row.width > 0.95), `${viewport.name}: lobby rules leak into Settings rows: ${JSON.stringify(settingsChrome.rows)}`)
+    assert.equal(settingsChrome.title, 'rgb(255, 220, 96)', `${viewport.name}: lobby Settings title lost the board gold`)
+    assert(settingsChrome.keys.length > 0 && settingsChrome.keys.every((clip) => clip === 'none'), `${viewport.name}: lobby Settings keys picked up the stone-key skin: ${settingsChrome.keys}`)
+    await settingsDialog.getByRole('button', { name: 'Back', exact: true }).click()
+    await settingsDialog.waitFor({ state: 'detached' })
     assert.equal(lobbyChrome.roster, 8, `${viewport.name}: party character strip lost heroes`)
     assert.equal(lobbyChrome.selected, 'Ironclad', `${viewport.name}: lobby selection diverged from the room`)
     assert.notEqual(lobbyChrome.ribbonClip, 'none', `${viewport.name}: lobby leave ribbon lost its silhouette`)

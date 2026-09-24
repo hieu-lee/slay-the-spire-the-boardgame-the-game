@@ -271,7 +271,7 @@ try {
   await pendingPage.getByRole('button', { name: 'Stats', exact: true }).click()
   await pendingPage.getByRole('button', { name: /Refresh 1 pending/ }).waitFor()
   await checkAsync('pending refresh uses the gold action colour', async () => {
-    assertEqual(await pendingPage.getByRole('button', { name: /Refresh 1 pending/ }).evaluate((button) => getComputedStyle(button).color), 'rgb(241, 202, 133)')
+    assertEqual(await pendingPage.getByRole('button', { name: /Refresh 1 pending/ }).evaluate((button) => getComputedStyle(button).color), 'rgb(255, 220, 96)')
   })
   pending.deckType = 'Defect Lightning Orb Focus'
   await pendingPage.getByRole('button', { name: /Refresh 1 pending/ }).click()
@@ -353,8 +353,20 @@ try {
   await checkAsync('slow hosted discovery does not consume the stats request timeout', async () => {
     await hostedPage.getByRole('button', { name: /Defect Lightning Orb Focus/ }).waitFor({ timeout: 4_000 })
     assertEqual(hostedStatsRequests, 1)
-    const background = await hostedPage.locator('.stats__body').getAttribute('style')
-    assert(background?.includes('assets/menu/compendium-archive.webp'), `Hosted background: ${background}`)
+    const icon = await hostedPage.locator('.stats__heroes img').first().evaluate(async (image) => {
+      if (!image.complete) await image.decode().catch(() => {})
+      return { src: image.getAttribute('src'), loaded: image.naturalWidth > 0 }
+    })
+    assert(icon.src?.includes('assets/menu/compendium-icons/') && icon.loaded, `Hosted hero icon: ${JSON.stringify(icon)}`)
+    const ground = await hostedPage.locator('.stats').evaluate(async (stats) => {
+      const url = getComputedStyle(stats).backgroundImage.match(/url\("?([^")]+)"?\)/)?.[1]
+      if (!url) return { url, ok: false }
+      const image = new Image()
+      image.src = url
+      await image.decode().catch(() => {})
+      return { url, ok: image.naturalWidth > 0 }
+    })
+    assert(ground.url?.includes('title-spire.webp') && ground.ok, `Hosted painted ground: ${JSON.stringify(ground)}`)
   })
   for (let index = 0; index < 2; index += 1) server.store.leaderboardRuns.push({ ...server.store.leaderboardRuns[0],
     id: `browser-1234:stats-burn-${index}`, finalDeck: [card('burn')] })

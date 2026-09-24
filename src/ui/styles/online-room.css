@@ -17,13 +17,7 @@
 
 .online-entry__panel,
 .online-lobby__table {
-  width: min(42rem, 100%);
-  padding: clamp(1.5rem, 5vw, 3.5rem);
   text-align: center;
-  border: 1px solid rgb(215 169 75 / 0.35);
-  border-radius: 0.75rem;
-  background: linear-gradient(145deg, rgb(39 33 25 / 0.96), rgb(20 17 14 / 0.98));
-  box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 0.45), inset 0 0 4rem rgb(163 35 43 / 0.06);
 }
 
 .online-entry__eyebrow {
@@ -44,7 +38,7 @@
 }
 
 .online-entry label,
-.online-lobby label {
+.online-lobby__table label {
   display: grid;
   gap: 0.35rem;
   margin: 1rem auto;
@@ -57,9 +51,9 @@
 .online-entry input,
 .online-entry select,
 .online-entry button,
-.online-lobby input,
-.online-lobby select,
-.online-lobby button,
+.online-lobby__table input,
+.online-lobby__table select,
+.online-lobby__table button,
 .online-entry__back {
   border: 1px solid var(--edge);
   border-radius: 0.3rem;
@@ -96,8 +90,6 @@
   justify-content: center;
   gap: 0.55rem;
   margin-top: 1.25rem;
-  color: var(--ink-dim);
-  font-size: 0.8rem;
 }
 
 .online-lobby > header {

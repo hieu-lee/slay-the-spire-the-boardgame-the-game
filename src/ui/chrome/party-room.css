@@ -11,22 +11,15 @@
   padding: 4.5rem 1rem 2.5rem;
 }
 
+.sts-scope.online-lobby > header .connection { padding: 0.2rem 0.55rem; background: rgb(20 14 10 / 0.72); }
+
 .sts-scope .online-lobby__table {
   width: min(46rem, 100%);
-  padding: clamp(1.4rem, 4vw, 2.4rem);
+  padding: clamp(1.6rem, 4vw, 2.6rem) clamp(1.6rem, 5vw, 3rem);
   border: 0;
   border-radius: 0;
-  clip-path: polygon(
-    var(--chamfer) 0, calc(100% - var(--chamfer)) 0, 100% var(--chamfer),
-    100% calc(100% - var(--chamfer)), calc(100% - var(--chamfer)) 100%,
-    var(--chamfer) 100%, 0 calc(100% - var(--chamfer)), 0 var(--chamfer));
-  background:
-    linear-gradient(180deg, rgb(217 180 91 / 0.1), transparent 16%),
-    linear-gradient(180deg, #2b211a, #17110d 70%);
-  box-shadow:
-    inset 0 0 0 2px var(--trim-dim),
-    inset 0 0 0 3px rgb(0 0 0 / 0.7),
-    var(--hard-shadow-lg);
+  background: none;
+  box-shadow: none;
 }
 
 /* The room code and the one thing anybody does with it, on a line. */
@@ -47,7 +40,7 @@
 .sts-scope.online-lobby h1 {
   grid-column: 1;
   margin: 0;
-  color: var(--cream);
+  color: #ffdc60;
   font-size: clamp(2rem, 6vw, 3.1rem);
   letter-spacing: 0.16em;
 }
@@ -116,15 +109,15 @@
 
 .sts-scope .online-seat--empty {
   border: 0;
-  box-shadow: inset 0 0 0 2px rgb(0 0 0 / 0.4), inset 0 0 0 3px rgb(122 96 60 / 0.35);
-  background: linear-gradient(180deg, rgb(30 24 19 / 0.5), rgb(16 13 10 / 0.6));
+  box-shadow: inset 0 0 0 2px rgb(58 38 24 / 0.55);
+  background: rgb(40 26 16 / 0.28);
 }
 
 .sts-scope .online-seat__open {
   display: grid;
   min-height: 8.4rem;
   place-items: center;
-  color: var(--trim-dim);
+  color: #f1e2c4;
   letter-spacing: 0.08em;
 }
 

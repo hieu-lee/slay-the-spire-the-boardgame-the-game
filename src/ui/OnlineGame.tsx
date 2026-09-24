@@ -430,14 +430,13 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
 
   if (!snapshot && room.activeCode) {
     return (
-      <main className="online-entry online-reconnecting sts-scope"
+      <main className="online-entry online-reconnecting sts-scope menu-ground"
         data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}>
         <button type="button" className="online-entry__back ribbon-back" aria-label="Back to solo table"
           onClick={() => { room.forget(); onLocal() }}><span aria-hidden="true"></span></button>
-        <section className="online-entry__panel">
+        <section className="online-entry__panel menu-board menu-board--slate">
           <span className="online-entry__eyebrow">Party room {room.activeCode}</span>
           <h1>Reconnecting</h1>
-          <p>Your seat is preserved. The table will return when the connection does.</p>
           {/* Labelled, because on this screen the chip's raw value is the same
               word as the heading directly above it — "Reconnecting" printed
               twice, 40px apart, with nothing between. */}
@@ -450,16 +449,13 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
 
   if (!snapshot) {
     return (
-      <main className="online-entry sts-scope"
+      <main className="online-entry sts-scope menu-ground"
         data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}>
         <button type="button" className="online-entry__back ribbon-back" aria-label="Back to solo table" disabled={room.entering}
           onClick={() => { room.forget(); onLocal() }}><span aria-hidden="true"></span></button>
-        <section className="online-entry__panel">
-          <span className="online-entry__eyebrow">Co-op expedition</span>
+        <section className="online-entry__panel menu-board menu-board--slate">
           <h1>Climb together</h1>
-          <p>Open a room for up to four players, or enter the six-glyph code your party shared.</p>
           <div className="online-entry__character">
-            <span>Choose your character</span>
             <CharacterRoster character={character} disabled={room.entering} onChoose={setCharacter} />
           </div>
           <div className="online-entry__actions">
@@ -474,7 +470,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           </div>
           {room.recoveries.length ? (
             <div className="online-entry__recoveries">
-              <span>Saved expeditions</span>
               {room.recoveries.map((saved) => (
                 <button type="button" key={saved.token} disabled={room.entering} onClick={() => room.resume(saved)}>Resume {saved.code}</button>
               ))}
@@ -498,7 +493,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       message={room.error || (!connected || !ready ? 'Waiting for every seat to connect.'
         : !isPartyLeader ? `${partyLeader?.name ?? 'The party leader'} chooses the campaign.` : undefined)} />
     return (
-      <main key="lobby" className="online-lobby sts-scope"
+      <main key="lobby" className="online-lobby sts-scope menu-ground"
         data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}>
         <header>
           <button type="button" className="online-lobby__leave ribbon-back" aria-label="Leave room"
@@ -510,7 +505,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             }}><span aria-hidden="true"></span></button>
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>
         </header>
-        <section className="online-lobby__table">
+        <section className="online-lobby__table menu-board menu-board--slate">
           {/* The code and the one action taken on it, on one line: it was a
               headline with a full-width button under it, which read as the
               screen's primary control rather than as a convenience. */}

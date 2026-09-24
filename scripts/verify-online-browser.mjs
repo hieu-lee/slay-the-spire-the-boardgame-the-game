@@ -441,9 +441,9 @@ try {
     const seats = [...document.querySelectorAll('.online-seat:not(.online-seat--empty)')]
     const box = table.getBoundingClientRect()
     return {
-      // The panel wears the same chamfer + hard shadow as every other painted
-      // panel, rather than the flat rounded card this screen used to be.
-      chamfered: getComputedStyle(table).clipPath !== 'none',
+      // The panel is a parchment board like the title menu's mode cards,
+      // rather than the flat rounded card this screen used to be.
+      parchment: getComputedStyle(table, '::before').backgroundImage.includes('parchment.svg'),
       rounded: getComputedStyle(table).borderRadius,
       portraits: seats.filter((seat) => seat.querySelector('.online-seat__portrait img')).length,
       mineIsFirst: mine === seats[0],
@@ -453,7 +453,7 @@ try {
     }
   })
   check('the party room is dressed like the rest of the game and fits a desktop', () => {
-    assert(lobbyChrome.chamfered, 'the lobby panel is not chamfered like the other painted panels')
+    assert(lobbyChrome.parchment, 'the lobby panel is not a parchment board like the title menu')
     assertEqual(lobbyChrome.rounded, '0px', 'the pre-chrome rounded card is still there')
     assertEqual(lobbyChrome.portraits, 2, 'a taken seat did not show its character portrait')
     assert(lobbyChrome.mineIsFirst, 'the viewer\'s own seat is not the one marked')

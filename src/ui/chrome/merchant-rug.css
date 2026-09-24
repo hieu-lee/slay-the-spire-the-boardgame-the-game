@@ -150,7 +150,6 @@
 
 @media (max-width: 760px) {
   .settings-dialog { width: 100%; height: 100dvh; }
-  .settings-dialog__panel { clip-path: none; }
   .settings-dialog__panel > header h2 { display: none; }
   .settings-dialog nav button { min-height: 3rem; font-size: 0.78rem; }
   .settings-volume { grid-template-columns: 1fr; }

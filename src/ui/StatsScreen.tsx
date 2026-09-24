@@ -73,7 +73,7 @@ function CardFilter({ bucket, label, choices, selected, onAdd, onRemove }: {
 }
 
 function Metric({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return <div className="stats__metric"><img src={assetPath(icon)} alt="" />
+  return <div className="stats__metric menu-board menu-board--mauve"><img src={assetPath(icon)} alt="" />
     <span>{label}</span><strong>{value}</strong></div>
 }
 
@@ -188,8 +188,8 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
     setBuckets({ all: [], any: [], none: [] }); setBuilderError('')
     setAppliedExpression(null); appliedText.current = ''; setExpression(''); setExpressionError('')
   }
-  return <main className="stats" aria-labelledby="stats-title">
-    <aside className="stats__rail">
+  return <main className="stats menu-ground" aria-labelledby="stats-title">
+    <aside className="stats__rail menu-board menu-board--slate">
       <button type="button" className="stats__back ribbon-back" onClick={onBack} aria-label="Back to main menu"><span aria-hidden="true" /></button>
       <h1 id="stats-title">Stats</h1>
       <div className="stats__rail-filters">
@@ -199,7 +199,7 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
             <img src={assetPath(`menu/compendium-icons/${hero}.webp`)} alt="" /><span className="stats__hero-name">{CHARACTER_LABEL[hero]}</span></button>)}
         </div>
         <div className="stats__rail-selects">
-          <label>Ascension <select value={ascension} onChange={(event) => setAscension(event.target.value === 'all' ? 'all'
+          <label><span className="visually-hidden">Ascension</span><select value={ascension} onChange={(event) => setAscension(event.target.value === 'all' ? 'all'
             : event.target.value.endsWith('+') ? event.target.value as `${number}+` : Number(event.target.value))}>
             <option value="all">All ascensions</option>
             <optgroup label="At least">
@@ -209,17 +209,16 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
               {Array.from({ length: 14 }, (_, value) => <option key={value} value={value}>Ascension {value}</option>)}
             </optgroup>
           </select></label>
-          <label>Run mode <select value={mode} onChange={(event) => setMode(event.target.value as StatsFilters['mode'])}>
+          <label><span className="visually-hidden">Run mode</span><select value={mode} onChange={(event) => setMode(event.target.value as StatsFilters['mode'])}>
             <option value="all">All modes</option><option value="standard">Standard</option><option value="daily">Daily</option><option value="custom">Custom</option>
           </select></label>
         </div>
       </div>
     </aside>
 
-    <section className="stats__body" aria-label="Stats explorer"
-      style={{ backgroundImage: `linear-gradient(115deg, #0b1215f0, #150f0cf0), url("${assetPath('menu/compendium-archive.webp')}")` }}>
+    <section className="stats__body" aria-label="Stats explorer">
       <div className="stats__scroll">
-        <section className="stats__panel stats__workbench" aria-label="Deck filters">
+        <section className="menu-board stats__panel stats__workbench" aria-label="Deck filters">
           <header className="stats__section-heading"><h2>Deck filters</h2>
             <div className="stats__heading-actions">
               {hasFilters && <button type="button" className="stats__clear" onClick={clearFilters}>Clear filters</button>}
@@ -248,7 +247,7 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
           <Metric icon="icons/block.png" label="Block" value={percent(snapshot?.averageBlock)} />
         </div>
 
-        <section className="stats__panel" aria-label="Deck type statistics">
+        <section className="menu-board stats__panel" aria-label="Deck type statistics">
           <header className="stats__section-heading"><h2>Deck archetypes</h2>
             {snapshot?.pending ? <button type="button" className="stats__refresh" onClick={() => setRetry((current) => current + 1)}>↻ Refresh {snapshot.pending} pending</button> : null}</header>
           {loading ? <div className="stats__message" role="status">Loading…</div>
@@ -267,7 +266,7 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
                     <td>{decimal(row.averageFloors)}</td><td>{decimal(row.averageDamage)}</td><td>{percent(row.averageBlock)}</td></tr>)}</tbody></table></div>}
         </section>
 
-        <section className="stats__panel stats__next" aria-label="Next card comparison">
+        <section className="menu-board stats__panel stats__next" aria-label="Next card comparison">
           <header className="stats__section-heading"><h2>Card impact</h2></header>
           {snapshot && snapshot.nextCards.length > 0 ? <div className="stats__next-list">{snapshot.nextCards.map((entry) => {
             const card = CARDS[entry.defId]

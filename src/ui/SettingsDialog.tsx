@@ -70,14 +70,14 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
     <dialog ref={dialog} className="settings-dialog" aria-labelledby={`${id}-title`}
       onCancel={(event) => { event.preventDefault(); onClose() }}
       onClose={() => { if (suppressedCloses.current > 0) suppressedCloses.current -= 1; else onClose() }}>
-      <section className="settings-dialog__panel">
+      <section className="settings-dialog__panel menu-board">
         <header>
           <button type="button" className="settings-dialog__back ribbon-back" aria-label="Back" onClick={onClose}><span aria-hidden="true"></span></button>
           <h2 id={`${id}-title`}>Settings</h2>
         </header>
         <nav aria-label="Settings sections">
           {(generalChildren ? ['general', 'video', 'audio'] as const : ['video', 'audio'] as const)
-            .map((section) => <button type="button" key={section}
+            .map((section) => <button type="button" className="settings-dialog__key" key={section}
             id={`${id}-${section}-tab`} aria-pressed={tab === section}
             aria-controls={`${id}-${section}-panel`} onClick={() => setTab(section)}>{section}</button>)}
         </nav>
@@ -87,17 +87,17 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
           </section> : null}
           {tab === 'video' ? <section id={`${id}-video-panel`} role="tabpanel" aria-labelledby={`${id}-video-tab`}>
             <div className="settings-action">
-              <span><strong>Display mode</strong><small>{fullscreen ? 'Fullscreen' : 'Windowed'}</small></span>
-              <button type="button" aria-pressed={fullscreen} onClick={() => void toggleFullscreen()}>
+              <span><strong>Display mode</strong></span>
+              <button type="button" className="settings-dialog__key" aria-pressed={fullscreen} onClick={() => void toggleFullscreen()}>
                 {fullscreen ? 'Leave fullscreen' : 'Enter fullscreen'}
               </button>
             </div>
             <label className="settings-toggle">
-              <span><strong>Reduce motion</strong><small>Disable decorative movement and transitions.</small></span>
+              <span><strong>Reduce motion</strong></span>
               <input type="checkbox" checked={settings.reducedMotion} onChange={(event) => set('reducedMotion', event.target.checked)} />
             </label>
             <label className="settings-toggle">
-              <span><strong>High-contrast UI</strong><small>Strengthen panel edges and readable text.</small></span>
+              <span><strong>High-contrast UI</strong></span>
               <input type="checkbox" checked={settings.highContrast} onChange={(event) => set('highContrast', event.target.checked)} />
             </label>
             {fullscreenError ? <p className="settings-dialog__error" role="alert">{fullscreenError}</p> : null}

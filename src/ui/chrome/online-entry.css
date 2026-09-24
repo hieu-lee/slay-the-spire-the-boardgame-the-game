@@ -1,6 +1,6 @@
 /* `.online-entry` / `.online-lobby` are `display: grid; place-items: center`,
    whose single implicit column is an AUTO track — it sizes to the panel's
-   max-content, not to the window. So the panel's own `width: min(42rem, 100%)`
+   max-content, not to the window. So the panel's own `width: min(46rem, 100%)`
    resolves 100% against a track that is already too wide, and the panel spills:
    at 360px it measured 373px wide with the page really scrolling 29px sideways
    (`html { overflow-x: clip }` does not save a grid track that overflows its

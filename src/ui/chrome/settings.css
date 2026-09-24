@@ -35,53 +35,47 @@
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   width: 100%;
   height: 100%;
-  padding: clamp(1rem, 3vw, 2.2rem);
-  background:
-    radial-gradient(circle at 50% 0, rgb(213 164 73 / 0.12), transparent 38%),
-    linear-gradient(145deg, #2d211a, #17110d 66%, #090706);
-  box-shadow: inset 0 0 0 2px var(--trim-dim), inset 0 0 0 4px #090604, inset 0 0 5rem rgb(0 0 0 / 0.55);
-  clip-path: polygon(1rem 0, calc(100% - 1rem) 0, 100% 1rem, 100% calc(100% - 1rem), calc(100% - 1rem) 100%, 1rem 100%, 0 calc(100% - 1rem), 0 1rem);
+  padding: clamp(1.3rem, 3.5vw, 2.4rem) max(1.8rem, 5.5%);
 }
 
 .settings-dialog__panel > header { display: flex; align-items: center; gap: 1rem; }
-.settings-dialog__panel > header h2 { margin: 0; color: var(--light-yellow); font-size: clamp(1.6rem, 3vw, 2.5rem); }
+.settings-dialog__panel > header h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.5rem); }
 .settings-dialog__back { min-width: 7rem; }
 
+/* Every key here carries a class: keys.css skins `.sts-scope button:not([class])`
+   as a slate stone key, and the dialog opens inside `.sts-scope` in-game. */
 .settings-dialog button {
   min-height: 2.7rem;
   padding: 0.45rem 0.9rem;
-  border: 1px solid var(--trim-dim);
-  color: var(--cream);
-  background: linear-gradient(180deg, var(--slate-lit), var(--slate), var(--slate-dim));
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 -2px 0 rgb(0 0 0 / 0.45);
+  border: 2px solid #3a2410;
+  color: #fff8ea;
+  background: linear-gradient(#6d5641, #46331f);
+  box-shadow: inset 0 1px rgb(255 236 190 / 0.25), 0 0.2rem 0.3rem rgb(0 0 0 / 0.4);
   font-family: 'Kreon', Georgia, serif;
+  text-shadow: 0 2px 2px #1c1109;
   cursor: pointer;
 }
 
 .settings-dialog button:hover,
-.settings-dialog button:focus-visible { color: var(--light-yellow); filter: brightness(1.12); }
+.settings-dialog button:focus-visible { color: #ffdc60; filter: brightness(1.12); }
 
 .settings-dialog nav {
   display: grid;
+  width: min(40rem, 100%);
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  margin: 0.75rem 0;
-  border-block: 1px solid var(--trim-dim);
+  gap: 0.35rem;
+  margin: 0.75rem auto;
 }
 
 .settings-dialog nav button {
-  min-height: 3rem;
-  border: 0;
-  border-inline-end: 1px solid var(--trim-dim);
-  color: var(--cream);
-  background: rgb(0 0 0 / 0.18);
+  min-height: 2.8rem;
   font: 700 1rem 'Kreon', Georgia, serif;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.settings-dialog nav button:last-child { border-inline-end: 0; }
-.settings-dialog nav button[aria-pressed='true'] { color: #241807; background: linear-gradient(#f5d880, #b97c2d); }
+.settings-dialog nav button[aria-pressed='true'] { color: #2b1b08; background: linear-gradient(#ffe68a, #d6a23e); text-shadow: none; }
 
 .settings-dialog__body { min-height: 0; overflow: auto; }
 .settings-dialog__body > section { display: grid; width: min(40rem, 100%); margin: 0 auto; gap: 0.8rem; }
@@ -95,16 +89,15 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 1rem;
-  min-height: 4.5rem;
-  padding: 0.8rem 1rem;
-  border: 1px solid rgb(217 180 91 / 0.3);
-  background: rgb(0 0 0 / 0.28);
+  min-height: 3.6rem;
+  padding: 0.6rem 1rem;
+  border-left: 4px solid #ffdc60;
+  background: rgb(58 38 24 / 0.22);
 }
 
 .settings-toggle span,
 .settings-action span,
 .settings-volume > span { display: grid; gap: 0.18rem; }
-.settings-dialog small { color: var(--ink-dim); }
 .settings-toggle input { width: 1.5rem; height: 1.5rem; accent-color: #d19a3e; }
 .settings-volume {
   grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
@@ -112,12 +105,12 @@
   padding: 0.65rem 0.8rem;
 }
 .settings-volume > span { min-width: 0; grid-template-columns: minmax(0, 1fr) auto; }
-.settings-volume output { color: var(--light-yellow); font-variant-numeric: tabular-nums; }
+.settings-volume output { color: #ffdc60; font-variant-numeric: tabular-nums; }
 .settings-volume input { width: 100%; min-width: 0; accent-color: #d19a3e; }
 .settings-select select { min-width: 12rem; }
 .settings-party { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
 .settings-party span { color: var(--cream); }
-.settings-dialog__error { color: var(--red-text); }
+.settings-dialog__error { color: #ffc2b0; text-shadow: 0 1px 0 #2a1a0c, 0 0 3px #2a1a0c; }
 .settings-dialog__reset { justify-self: center; min-width: 12rem; margin-top: 1rem; }
 
 html[data-reduced-motion='true'] *,
