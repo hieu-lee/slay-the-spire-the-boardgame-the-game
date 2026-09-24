@@ -10789,7 +10789,17 @@ check('post-roll die changes finish before downstream Relic targets are planned'
     'a downstream target owner joined the quorum before the die was locked')
 })
 
-check('crowded start-turn queues skip expensive dependency replays', () => {
+function withoutStartTurnReplay(callback) {
+  const originalClone = globalThis.structuredClone
+  try {
+    globalThis.structuredClone = () => { throw new Error('start-turn order detection replayed the combat state') }
+    return callback()
+  } finally {
+    globalThis.structuredClone = originalClone
+  }
+}
+
+check('crowded start-turn queues do not need an ordering choice', () => {
   const state = {
     ...combat([makePlayer({
       relics: Array.from({ length: 10 }, () => ({ defId: 'stone_calendar', spent: false })),
@@ -10798,11 +10808,8 @@ check('crowded start-turn queues skip expensive dependency replays', () => {
   }
   const abilities = startTurnAbilities(state)
   assertEqual(abilities.length, 10, 'precondition: the crowded queue has ten abilities')
-  const startedAt = performance.now()
-  assertEqual(startTurnOrderChoicePlayerId(state, abilities), undefined,
+  assertEqual(withoutStartTurnReplay(() => startTurnOrderChoicePlayerId(state, abilities)), undefined,
     'identical crowded sources created a redundant ordering owner')
-  assert(performance.now() - startedAt < 500,
-    'crowded order planning replayed the expensive start-turn queue')
 })
 
 check('crowded equal-damage sources preserve their different target scopes', () => {
@@ -10818,6 +10825,11 @@ check('crowded equal-damage sources preserve their different target scopes', () 
   }
   assertEqual(startTurnOrderChoicePlayerId(state), 'p1',
     'a crowded row-and-enemy queue was mistaken for identical sources')
+
+  const singleEnemy = { ...state, enemies: [state.enemies[0]] }
+  const abilities = startTurnAbilities(singleEnemy)
+  assertEqual(abilities.length, 5)
+  assertEqual(withoutStartTurnReplay(() => startTurnOrderChoicePlayerId(singleEnemy, abilities)), 'p1')
 })
 
 check('duplicate consumable start-turn Powers preserve physical source identity', () => {
@@ -11489,9 +11501,8 @@ check('table-facing start turns auto-resolve deterministic effects and require o
     })), [makeEnemy()]),
     phase: 'start', die: 3,
   }
-  const startedAt = performance.now()
-  assertEqual(startTurnNeedsChoice(crowded), false)
-  assert(performance.now() - startedAt < 500, 'deterministic order detection is too slow for a render-time query')
+  const crowdedAbilities = startTurnAbilities(crowded)
+  assertEqual(withoutStartTurnReplay(() => startTurnNeedsChoice(crowded, crowdedAbilities)), false)
 
   const poisonCapped = {
     ...combat([makePlayer({ character: 'silent', powers: [instance('noxious_fumes')] })], [
