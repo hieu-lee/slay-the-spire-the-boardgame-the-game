@@ -59,7 +59,8 @@ function allKeys(value, out = []) {
 }
 
 function finishNeow(room) {
-  while (room.run.phase === 'neow') {
+  for (let attempts = 0; room.run.phase === 'neow'; attempts++) {
+    assert(attempts < 64, 'Neow fixture did not settle')
     let changed = false
     for (const seat of room.seats) {
       const preview = snapshotFor(room, seat.token).run.neow?.players[seat.playerId]
@@ -110,12 +111,13 @@ function enterFirstCombat(room, seatToken) {
   finishNeow(room)
   const [first] = roomChoices(room.run)
   apply(room, seatToken, { kind: 'enterRoom', roomId: first.id })
-  while (room.run.combat?.phase === 'start') {
+  for (let attempts = 0; room.run.combat?.phase === 'start'; attempts++) {
+    assert(attempts < 64, 'Start-of-Turn fixture did not settle')
     const publicView = snapshotFor(room, seatToken)
     const ownerId = publicView.startTurnRequired?.find((playerId) =>
       !publicView.startTurnDecided?.includes(playerId))
     const owner = room.seats.find((candidate) => candidate.playerId === ownerId)
-    if (!owner) break
+    assert(owner, 'Start-of-Turn fixture has no pending owner')
     confirmStartTurn(room, owner)
   }
   return room
