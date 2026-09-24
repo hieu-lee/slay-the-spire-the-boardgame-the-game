@@ -1458,7 +1458,8 @@ function CombatScreenView({
       unknownCardAction.current = null
       cardActionPending.current = false
       setUsingCard(false)
-      if (!cardCommitted && current) restoreUnknownCard(card.pending, current, card.usingMiracle, state)
+      if (cardCommitted) setPending(null)
+      else if (current) restoreUnknownCard(card.pending, current, card.usingMiracle, state)
     }
   }, [authoritativeRefresh, powerPreview, state, viewerId])
 
@@ -3106,7 +3107,8 @@ function CombatScreenView({
       enemyUid: next.enemyUid,
       enemyUids: next.enemyUids,
       playerId: next.playerId ?? viewer!.id,
-      energySpent: next.energySpent ?? undefined,
+      energySpent: next.chamberPlay && faceOf(cardDef(next.card.defId), next.card.upgraded).cost !== 'X'
+        ? undefined : next.energySpent ?? undefined,
       playerIds: next.playerIds,
       switchWithPlayerId: next.switchChoiceDone ? next.switchPlayerId : null,
       mode: next.mode ?? undefined,
@@ -3207,7 +3209,8 @@ function CombatScreenView({
             if (refreshed && shouldDisarmCardFlight(next.cardInHand || next.chamberPlay, committed === true)) {
               armedCardFlight.current = null
             }
-            if (!committed && current) restoreUnknownCard(next, current, usingMiracle)
+            if (committed) setPending(null)
+            else if (current) restoreUnknownCard(next, current, usingMiracle)
             unlock()
           }
           else if (refreshAttempt !== undefined) {
@@ -3242,7 +3245,10 @@ function CombatScreenView({
             : next.cardInHand
               ? !authoritative.player.hand?.some((card) => card.uid === next.card.uid)
               : authoritative.combat.pendingCardCopy?.card.uid !== next.card.uid ||
-                authoritative.combat.pendingCardCopy.id !== action.copyId) return
+                authoritative.combat.pendingCardCopy.id !== action.copyId) {
+            setPending(null)
+            return
+          }
           if (next.cardInHand || next.chamberPlay) armedCardFlight.current = null
           const authoritativePlayer: Player = {
             ...viewer!,

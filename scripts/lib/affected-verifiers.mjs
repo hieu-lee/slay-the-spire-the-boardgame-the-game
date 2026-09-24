@@ -38,7 +38,7 @@ const focusedEngineOwners = new Map([
 const focusedUiOwners = new Map([
   ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-courier-browser.mjs']],
   ['src/ui/CampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
-  ['src/ui/CombatScreen.tsx', ['verify-courier-browser.mjs']],
+  ['src/ui/CombatScreen.tsx', ['verify-courier-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs']],
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs']],

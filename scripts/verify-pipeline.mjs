@@ -41,9 +41,10 @@ check('shared engine changes select every browser flow that imports them', () =>
 check('frontend surfaces select their cores and named focused browser checks', () => {
   const combat = affectedBrowser('src/ui/CombatScreen.tsx')
   includesEvery(combat, ['verify-browser.mjs', 'verify-online-browser.mjs',
-    'verify-safari-combat-animation-browser.mjs', 'verify-courier-browser.mjs'], 'combat screen')
+    'verify-safari-combat-animation-browser.mjs', 'verify-courier-browser.mjs',
+    'verify-hermit-load-reconnect-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 11, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 12, 'combat screen selected an unrelated browser suite')
   const room = affectedBrowser('src/ui/RoomScreen.tsx')
   includesEvery(room, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'room screen')
   const online = affectedBrowser('src/ui/OnlineGame.tsx')
