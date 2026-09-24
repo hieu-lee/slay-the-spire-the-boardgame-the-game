@@ -52,7 +52,7 @@ async function fixture({ character, powers = [], orbs = [null, null, null], enem
   await page.evaluate(({ character, powers, orbs, enemies, combatTemplate }) => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())
-    run.combat ??= structuredClone(combatTemplate)
+    run.combat = structuredClone(combatTemplate)
     const baseEnemy = run.combat.enemies[0]
     const player = run.combat.players[0]
     run.phase = 'combat'
@@ -66,7 +66,8 @@ async function fixture({ character, powers = [], orbs = [null, null, null], enem
       ...player,
       character,
       name: character[0].toUpperCase() + character.slice(1),
-      hand: [], draw: [], discard: [], exhaust: [], powers, relics: [], potions: [],
+      hand: [{ uid: 'fixture-deflect', defId: 'deflect', upgraded: false }],
+      draw: [], discard: [], exhaust: [], powers, relics: [], potions: [],
       hp: 100, maxHp: 100, energy: 0, block: 0, strength: 0, weak: 0, vulnerable: 0,
       shivs: 0, miracles: 0, orbEndTurnBonus: 0, lightningEndTurnBonus: 0,
       orbEvokeBonus: 0, darkOrbEvokeBonus: 0,
@@ -152,7 +153,9 @@ try {
     const player = run.combat.players[0]
     const haunted = { uid: 'local-mayhem-haunted', defId: 'haunted_hand', upgraded: false }
     Object.assign(player, {
-      character: 'hexaghost', heat: 2, hand: [haunted], draw: [], discard: [], exhaust: [], powers: [],
+      character: 'hexaghost', heat: 2,
+      hand: [haunted, { uid: 'mayhem-deflect', defId: 'deflect', upgraded: false }],
+      draw: [], discard: [], exhaust: [], powers: [],
     })
     Object.assign(run.combat, {
       combatId: 'end-turn-drag:mayhem',
@@ -245,6 +248,13 @@ try {
     powers: [{ uid: 'drag-panache', defId: 'panache', upgraded: true }],
     enemies: [{ uid: 'panache-e1', hp: 20 }, { uid: 'panache-e2', hp: 20, row: 1 }],
   })
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.players[0].hand = []
+    debug.setRun(run)
+  })
+  await page.waitForFunction(() => document.querySelector('.hand')?.querySelectorAll('.card').length === 0)
   await page.getByRole('button', { name: 'End turn', exact: true }).click()
   const panache = page.locator('.end-turn-effect--card')
   await panache.waitFor()
@@ -253,7 +263,6 @@ try {
   await page.locator('[data-enemy-id="panache-e2"] .enemy__hit-area').click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies
     .find((enemy) => enemy.uid === 'panache-e2')?.hp === 15)
-  check('another end-turn Power uses the same card-to-row targeting flow', () => assert(true))
 
   await fixture({
     character: 'defect',
@@ -303,13 +312,23 @@ try {
   assert(Math.abs(orbRowBox.y + orbRowBox.height - defectHeadTop) <= 1,
     'the Orb row no longer rests directly above the Defect portrait')
   await page.setViewportSize({ width: 1440, height: 700 })
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  await page.waitForFunction(() => {
+    const combat = document.querySelector('.combat')
+    return combat && !combat.getAnimations({ subtree: true }).some(animation =>
+      animation instanceof CSSTransition && animation.transitionProperty.startsWith('--stage-') &&
+      animation.playState !== 'finished')
+  }, null, { timeout: 10_000 })
   const compactOrbRowBox = await page.locator('.seat--viewer + .orbs').boundingBox()
   const compactPortraitBox = await page.locator('.seat--viewer .seat__portrait').boundingBox()
-  assert(compactOrbRowBox && compactPortraitBox && Math.abs(
+  await page.screenshot({ path: join(output, 'defect-loop-compact.png') })
+  const compactOrbGap = compactOrbRowBox && compactPortraitBox &&
     compactOrbRowBox.y + compactOrbRowBox.height -
-    (compactPortraitBox.y + compactPortraitBox.height - compactPortraitBox.width * 0.66),
+    (compactPortraitBox.y + compactPortraitBox.height - compactPortraitBox.width * 0.66)
+  assert(compactOrbRowBox && compactPortraitBox && Math.abs(
+    compactOrbGap,
   ) <= 4,
-  'the Orb row no longer rests directly above the compact Defect portrait')
+  `the Orb row no longer rests directly above the compact Defect portrait: ${compactOrbGap}px`)
   await page.setViewportSize({ width: 1440, height: 900 })
   assert(loopCardBox.y < loopOrbBox.y, 'the Loop card was not above the Orb drag source')
   await drag(loopOrb, loop)
@@ -438,11 +457,12 @@ try {
     })
     debug.setRun(run)
   })
+  const beatPlayerIds = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players.map(player => player.id))
+  assert(beatPlayerIds.length === 2, 'Beat of Death fixture needs two players')
   await page.getByRole('button', { name: 'End turn', exact: true }).click()
-  await page.waitForFunction(() => document.querySelectorAll(
-    '.seat .combat-vfx[data-vfx-kind="turn"][data-vfx-asset="turn-damage-impact"]',
-  ).length === 2)
-  check('Beat of Death renders its turn-damage impact on every damaged player', () => assert(true))
+  await page.waitForFunction(playerIds => playerIds.every(id => document.querySelector(
+    `.seat[data-player-id="${CSS.escape(id)}"] .combat-vfx[data-vfx-kind="turn"][data-vfx-asset="turn-damage-impact"]`,
+  )), beatPlayerIds)
 
   assert(pageErrors.length === 0, `browser errors: ${pageErrors.join('\n')}`)
 } finally {
