@@ -29,7 +29,14 @@ function personalDecks(value) {
     if (!deck || typeof deck.username !== 'string' || deck.username.length > 24 ||
         !CHARACTERS.has(deck.character) || heroes.has(deck.character)) bad('Winning deck owner is invalid')
     heroes.add(deck.character)
-    return { username: deck.username, character: deck.character, finalDeck: finalDeck(deck.finalDeck) }
+    const hasDamage = ['damageDealt', 'damageTaken', 'damageBlocked'].some((key) => deck[key] !== undefined)
+    return { username: deck.username, character: deck.character, finalDeck: finalDeck(deck.finalDeck),
+      ...(hasDamage ? {
+        damageDealt: integer(deck.damageDealt, 'Player damage dealt', 0, 1_000_000_000),
+        damageTaken: integer(deck.damageTaken, 'Player damage taken', 0, 1_000_000_000),
+        damageBlocked: integer(deck.damageBlocked, 'Player damage blocked', 0, 1_000_000_000),
+      } : {}),
+    }
   })
 }
 
@@ -292,20 +299,26 @@ export function winningDecksPage(runs, params = new URLSearchParams()) {
 
 export function roomLeaderboardRun(room) {
   const run = room.run
-  const totals = run.players.reduce((sum, player) => ({
-    damageDealt: sum.damageDealt + Math.max(0, Math.floor((player.damageStats?.attack ?? 0) +
+  const playerTotals = run.players.map((player) => ({
+    damageDealt: Math.max(0, Math.floor((player.damageStats?.attack ?? 0) +
       (player.damageStats?.poison ?? 0) + (player.damageStats?.special ?? 0))),
-    damageTaken: sum.damageTaken + Math.max(0, Math.floor(player.damageStats?.taken ?? 0)),
-    damageBlocked: sum.damageBlocked + Math.max(0, Math.floor(player.damageStats?.blocked ?? 0)),
+    damageTaken: Math.max(0, Math.floor(player.damageStats?.taken ?? 0)),
+    damageBlocked: Math.max(0, Math.floor(player.damageStats?.blocked ?? 0)),
+  }))
+  const totals = playerTotals.reduce((sum, player) => ({
+    damageDealt: sum.damageDealt + player.damageDealt,
+    damageTaken: sum.damageTaken + player.damageTaken,
+    damageBlocked: sum.damageBlocked + player.damageBlocked,
   }), { damageDealt: 0, damageTaken: 0, damageBlocked: 0 })
   return {
     id: `room:${room.code}:${run.campaign.runId}:${run.seed}`,
     characters: run.players.map((player) => player.character),
-    winningDecks: run.players.map((player) => ({
+    winningDecks: run.players.map((player, index) => ({
       username: player.name,
       character: player.character,
       finalDeck: player.deck.map(({ defId, upgraded, attachedGemId }) =>
         ({ defId, upgraded, ...(attachedGemId ? { attachedGemId } : {}) })),
+      ...(run.combatsFinished !== undefined && player.damageStats ? playerTotals[index] : {}),
     })),
     ascension: run.ascension,
     mode: run.meta.mode,

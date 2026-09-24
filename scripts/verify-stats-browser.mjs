@@ -400,8 +400,10 @@ try {
   })
   const multiplayer = { ...deck(7, 'ironclad', [], 18, 120, 20, 30), characters: ['ironclad', 'defect'],
     finalDeck: undefined, winningDecks: [
-      { username: 'First Room Player', character: 'ironclad', finalDeck: [card('barricade')] },
-      { username: 'Second Room Player', character: 'defect', finalDeck: [card('dual_cast')] },
+      { username: 'First Room Player', character: 'ironclad', finalDeck: [card('barricade')],
+        damageDealt: 40, damageTaken: 20, damageBlocked: 30 },
+      { username: 'Second Room Player', character: 'defect', finalDeck: [card('dual_cast')],
+        damageDealt: 624, damageTaken: 204, damageBlocked: 130 },
     ] }
   addLeaderboardRun(server.store, multiplayer)
   for (const entry of server.store.statsRuns.filter((run) => run.sourceRunId === multiplayer.id))
@@ -413,12 +415,16 @@ try {
   await multiplayerPage.locator('.stats__metric').first().locator('strong').getByText('9', { exact: true }).waitFor()
   await multiplayerPage.getByRole('combobox', { name: 'Run mode' }).selectOption('multiplayer')
   await multiplayerPage.locator('.stats__metric').first().locator('strong').getByText('2', { exact: true }).waitFor()
+  await multiplayerPage.getByText('33.2', { exact: true }).first().waitFor()
+  await multiplayerPage.getByText('42%', { exact: true }).first().waitFor()
   await multiplayerPage.screenshot({ path: join(output, 'stats-multiplayer-desktop.png') })
   await checkAsync('Multiplayer mode shows only room decks, not a separate leaderboard run per player', async () => {
     assertEqual(server.store.leaderboardRuns.length, 9)
     assertEqual(await multiplayerPage.locator('.stats__table tbody tr').count(), 2)
     await multiplayerPage.getByRole('button', { name: 'Ironclad', exact: true }).click()
     await multiplayerPage.locator('.stats__metric').first().locator('strong').getByText('1', { exact: true }).waitFor()
+    await multiplayerPage.getByText('4.0', { exact: true }).first().waitFor()
+    await multiplayerPage.getByText('60%', { exact: true }).first().waitFor()
   })
   await multiplayerPage.setViewportSize({ width: 844, height: 390 })
   await multiplayerPage.screenshot({ path: join(output, 'stats-multiplayer-horizontal-phone.png') })

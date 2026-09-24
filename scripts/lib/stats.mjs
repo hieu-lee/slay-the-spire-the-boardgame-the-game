@@ -85,7 +85,11 @@ export const statsDecks = (run) => run.characters.length === 1 ? [run] : (run.wi
   id: `${run.id}:deck.${deck.character}`, sourceRunId: run.id,
   character: deck.character, characters: [deck.character], finalDeck: deck.finalDeck,
   ascension: run.ascension, mode: run.mode, floorsCleared: run.floorsCleared,
-  damageStatsComplete: false,
+  damageStatsComplete: run.damageStatsComplete && deck.damageDealt !== undefined,
+  ...(deck.damageDealt === undefined ? {} : {
+    combatsFinished: run.combatsFinished, damageDealt: deck.damageDealt,
+    damageTaken: deck.damageTaken, damageBlocked: deck.damageBlocked,
+  }),
 }))
 
 export const deckHash = (run) => createHash('sha256').update(JSON.stringify(soloDeck(run))).digest('hex')

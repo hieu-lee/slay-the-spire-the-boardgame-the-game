@@ -397,6 +397,9 @@ try {
       campaign: { ...room.run.campaign, bossesDefeated: 3, highestBossActDefeated: 3 } }
     room.run.players[0].damageStats.attack = 11
     room.run.players[1].damageStats.attack = 22
+    room.run.players[0].damageStats.taken = 3
+    room.run.players[0].damageStats.blocked = 7
+    room.run.players[1].damageStats.blocked = 5
     const decks = Object.fromEntries(room.run.players.map((player) => [player.name,
       player.deck.map(({ defId, upgraded }) => ({ defId, upgraded }))]))
     const finished = await fetch(`${origin}/api/rooms/LOGRUN/action`, {
@@ -408,7 +411,12 @@ try {
       assertEqual(finished.status, 200)
       assertDeepEqual(recorded.characters, ['ironclad', 'silent'])
       assertEqual(recorded.damageDealt, 33)
+      assertEqual(recorded.damageTaken, 3)
+      assertEqual(recorded.damageBlocked, 12)
       assertEqual(recorded.floorsCleared, 18)
+      assertDeepEqual(new Map(recorded.winningDecks.map((deck) => [deck.username,
+        [deck.damageDealt, deck.damageTaken, deck.damageBlocked]])),
+      new Map([['Ann', [11, 3, 7]], ['Bo', [22, 0, 5]]]))
       assertDeepEqual(new Map(recorded.winningDecks.map((deck) => [deck.username, deck.finalDeck])),
         new Map([['Ann', decks.Ann], ['Bo', decks.Bo]]))
       assertDeepEqual(new Set(winningDecksPage([recorded]).rows.map((deck) => deck.username)), new Set(['Ann', 'Bo']))
@@ -435,7 +443,8 @@ try {
       assertEqual(lostRun.highestBossActDefeated, 0)
       assertEqual(lostRun.damageDealt, 17)
       assertEqual(lostRun.floorsCleared, 4)
-      assertDeepEqual(lostRun.winningDecks, [{ username: 'Cara', character: 'defect', finalDeck: lostDeck }])
+      assertDeepEqual(lostRun.winningDecks, [{ username: 'Cara', character: 'defect', finalDeck: lostDeck,
+        damageDealt: 17, damageTaken: 0, damageBlocked: 0 }])
       assertEqual(winningDecksPage([lostRun]).total, 0)
     })
     service.store.leaderboardRuns.pop()

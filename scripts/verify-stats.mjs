@@ -153,7 +153,7 @@ check('a finished one-player room uses its personal deck without exposing its ow
     [{ defId: 'dual_cast', upgraded: true }])
   assert(!JSON.stringify(result).includes('Solo Room Player'))
 })
-check('multiplayer counts each valid personal deck without assigning team combat damage to a player', () => {
+check('older multiplayer decks count without assigning team combat damage to a player', () => {
   const multiplayer = normalizeLeaderboardRun(run(160, { characters: ['ironclad', 'defect'], finalDeck: undefined,
     winningDecks: [
       { username: 'First Player', character: 'ironclad', finalDeck: [{ defId: 'strike_ironclad', upgraded: false }] },
@@ -193,6 +193,28 @@ check('multiplayer counts each valid personal deck without assigning team combat
   addLeaderboardRun(collisionStore, run(164, { id: `${multiplayer.id}:deck:ironclad` }))
   assertEqual(collisionStore.statsRuns.length, 3)
   assertEqual(statsSnapshot(collisionStore.statsRuns).runs, 3)
+})
+check('multiplayer decks use personal damage and block, including when filtering by hero', () => {
+  const multiplayer = normalizeLeaderboardRun(run(165, { characters: ['ironclad', 'defect'], finalDeck: undefined,
+    winningDecks: [
+      { username: 'First Player', character: 'ironclad', finalDeck: [{ defId: 'strike_ironclad', upgraded: false }],
+        damageDealt: 60, damageTaken: 5, damageBlocked: 15 },
+      { username: 'Second Player', character: 'defect', finalDeck: [{ defId: 'dual_cast', upgraded: false }],
+        damageDealt: 624, damageTaken: 204, damageBlocked: 130 },
+    ] }))
+  const result = statsSnapshot([multiplayer], new URLSearchParams({ mode: 'multiplayer' }))
+  assertEqual(result.runs, 2)
+  assertEqual(result.averageDamage, 684 / 20)
+  assertEqual(result.averageBlock, 145 / 354)
+  const defect = statsSnapshot([multiplayer], new URLSearchParams({ mode: 'multiplayer', character: 'defect' }))
+  assertEqual(defect.averageDamage, 624 / 10)
+  assertEqual(defect.averageBlock, 130 / 334)
+  assertEqual(statsSnapshot([multiplayer], new URLSearchParams({ character: 'ironclad' })).averageDamage, 6)
+  assert(!JSON.stringify(result).includes('Second Player'))
+  assertThrows(() => normalizeLeaderboardRun(run(166, { characters: ['ironclad', 'defect'], winningDecks: [
+    { username: 'First Player', character: 'ironclad', finalDeck: [], damageDealt: 624 },
+    { username: 'Second Player', character: 'defect', finalDeck: [] },
+  ] })))
 })
 check('authoritative solo-room deck changes invalidate a previous public archetype', () => {
   const entries = { leaderboardRuns: [] }
@@ -369,8 +391,10 @@ try {
   const multiplayerFile = join(directory, 'multiplayer-stats.json')
   const multiplayerStore = createStore({ file: multiplayerFile })
   const multiplayerRun = run(162, { characters: ['ironclad', 'defect'], finalDeck: undefined, winningDecks: [
-    { username: 'First Player', character: 'ironclad', finalDeck: [{ defId: 'strike_ironclad', upgraded: false }] },
-    { username: 'Second Player', character: 'defect', finalDeck: [{ defId: 'dual_cast', upgraded: false }] },
+    { username: 'First Player', character: 'ironclad', finalDeck: [{ defId: 'strike_ironclad', upgraded: false }],
+      damageDealt: 60, damageTaken: 5, damageBlocked: 15 },
+    { username: 'Second Player', character: 'defect', finalDeck: [{ defId: 'dual_cast', upgraded: false }],
+      damageDealt: 624, damageTaken: 204, damageBlocked: 130 },
   ] })
   addLeaderboardRun(multiplayerStore, multiplayerRun)
   assertThrows(() => normalizeLeaderboardRun(run(163, { id: multiplayerStore.statsRuns[0].id })))
@@ -387,6 +411,8 @@ try {
     assert(!JSON.stringify(restored.leaderboardRuns).includes('deckType'))
     assert(!JSON.stringify(readFileSync(`${multiplayerFile}.leaderboard.json`, 'utf8')).includes('deckType'))
     assertEqual(restored.statsRuns[1].deckType, 'Defect Lightning Orb Focus')
+    assertEqual(statsSnapshot(restored.statsRuns).averageDamage, 684 / 20)
+    assertEqual(statsSnapshot(restored.statsRuns).averageBlock, 145 / 354)
   })
   addLeaderboardRun(multiplayerStore, { ...multiplayerRun, winningDecks: [
     multiplayerRun.winningDecks[0],
@@ -399,6 +425,7 @@ try {
     assertEqual(statsSnapshot(multiplayerStore.statsRuns).pending, 1)
     assertEqual(statsSnapshot(multiplayerStore.statsRuns, query(card('dual_cast'))).runs, 0)
     assertEqual(statsSnapshot(multiplayerStore.statsRuns, query(card('claw'))).runs, 1)
+    assertEqual(statsSnapshot(multiplayerStore.statsRuns, query(card('claw'))).averageDamage, 624 / 10)
   })
   const multiplayerServerFile = join(directory, 'multiplayer-server.json')
   const seededMultiplayerStore = createStore({ file: multiplayerServerFile })
@@ -423,7 +450,8 @@ try {
       assertEqual(solo.runs, 0)
       assertEqual(response.pending, 0)
       assertEqual(response.rows.length, 2)
-      assertEqual(response.averageDamage, null)
+      assertEqual(response.averageDamage, 684 / 20)
+      assertEqual(response.averageBlock, 145 / 354)
       assertDeepEqual(sample.cards, multiplayerRun.winningDecks[0].finalDeck)
       assert(!JSON.stringify({ response, sample }).includes('First Player'))
       assert(!JSON.stringify({ response, sample }).includes('Second Player'))
