@@ -83,10 +83,17 @@ try {
   await loadingPage.getByRole('button', { name: 'Embark', exact: true }).click()
   assert.equal(await loadingPage.getByRole('button', { name: 'Embark', exact: true }).isDisabled(), true)
   assert.equal(await loadingPage.locator('.campaign-select').count(), 0)
+  await loadingPage.evaluate(async (paths) => {
+    const { preloadImages } = await import('/src/game/assets.ts')
+    window.__CAMPAIGN_PRELOAD_SETTLED__ = false
+    void preloadImages(paths, { decode: true }).then(() => { window.__CAMPAIGN_PRELOAD_SETTLED__ = true })
+  }, campaignAssetPaths)
   await loadingPage.getByRole('button', { name: 'Back', exact: true }).click()
   await loadingPage.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
   for (const asset of campaignAssetPaths) heldRequests.get(asset)?.()
-  await loadingPage.waitForTimeout(50)
+  await loadingPage.waitForFunction(() => window.__CAMPAIGN_PRELOAD_SETTLED__)
+  await loadingPage.evaluate(() => new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(resolve))))
   assert.equal(await loadingPage.locator('.campaign-select').count(), 0)
   await loadingContext.close()
 
