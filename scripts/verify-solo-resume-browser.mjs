@@ -14,20 +14,43 @@ await server.listen()
 const address = server.httpServer?.address()
 if (!address || typeof address === 'string') throw new Error('Vite did not report a port')
 const browser = await chromium.launch({ headless: true })
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+let page = await context.newPage()
 const errors = []
-page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
-page.on('pageerror', (error) => errors.push(String(error)))
+const failedRequests = []
+const captureErrors = () => {
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('pageerror', (error) => errors.push(String(error)))
+  page.on('requestfailed', (request) => failedRequests.push(`${request.url()}: ${request.failure()?.errorText}`))
+}
+captureErrors()
 const base = `http://localhost:${address.port}`
 
 const waitForSavedRun = (phase) => page.waitForFunction((wanted) => {
   const saved = JSON.parse(localStorage.getItem('sts-solo-run') ?? 'null')
   return saved?.run?.phase === wanted && JSON.stringify(saved.run) === JSON.stringify(window.__STS_DEBUG__.getRun())
 }, phase)
+const reloadMenu = async () => {
+  const viewport = page.viewportSize()
+  await page.close()
+  page = await context.newPage()
+  await page.setViewportSize(viewport)
+  captureErrors()
+  await page.goto(base, { waitUntil: 'domcontentloaded' })
+  try {
+    await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor({ timeout: 10_000 })
+  } catch (error) {
+    throw new Error(`Menu failed to render: ${JSON.stringify({
+      body: await page.locator('body').innerText(),
+      errors: errors.slice(-8),
+      failedRequests: failedRequests.slice(-8),
+    })}`, { cause: error })
+  }
+}
 
 const reloadAndResume = async (selector) => {
   const before = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun()))
-  await page.reload({ waitUntil: 'networkidle' })
+  await reloadMenu()
   await page.getByRole('button', { name: 'Resume', exact: true }).click()
   await page.locator(selector).waitFor()
   const after = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun()))
@@ -36,12 +59,13 @@ const reloadAndResume = async (selector) => {
 
 try {
   suite('single-player resume')
-  await page.goto(base, { waitUntil: 'networkidle' })
+  await page.goto(base, { waitUntil: 'domcontentloaded' })
+  await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
   const freshResumeCount = await page.getByRole('button', { name: 'Resume', exact: true }).count()
   check('a fresh profile has no Resume action', () => assertEqual(freshResumeCount, 0))
 
   await page.evaluate(() => localStorage.setItem('sts-solo-run', '{"version":1,"run":{"campaign":{"finalized":false}}}'))
-  await page.reload({ waitUntil: 'networkidle' })
+  await reloadMenu()
   const corruptResumeCount = await page.getByRole('button', { name: 'Resume', exact: true }).count()
   check('a corrupt checkpoint is ignored', () => assertEqual(corruptResumeCount, 0))
   await page.evaluate(() => localStorage.removeItem('sts-solo-run'))
@@ -67,15 +91,21 @@ try {
   const lastGoodCheckpoint = await page.evaluate(() => localStorage.getItem('sts-solo-run'))
   await page.evaluate(() => {
     window.__ORIGINAL_SET_ITEM__ = Storage.prototype.setItem
+    window.__FAILED_SAVE_ATTEMPTS__ = 0
     Storage.prototype.setItem = function setItem(key, value) {
-      if (key === 'sts-solo-run') throw new DOMException('quota', 'QuotaExceededError')
+      if (key === 'sts-solo-run') {
+        window.__FAILED_SAVE_ATTEMPTS__++
+        throw new DOMException('quota', 'QuotaExceededError')
+      }
       return window.__ORIGINAL_SET_ITEM__.call(this, key, value)
     }
     const run = structuredClone(window.__STS_DEBUG__.getRun())
     run.log.push('resume-check: failed-write')
     window.__STS_DEBUG__.setRun(run)
   })
-  await page.waitForTimeout(50)
+  const failedWriteAttempts = await (await page.waitForFunction(
+    () => window.__FAILED_SAVE_ATTEMPTS__ || false, null, { timeout: 3_000 }
+  )).jsonValue()
   const checkpointAfterFailure = await page.evaluate(() => localStorage.getItem('sts-solo-run'))
   await page.evaluate(() => {
     Storage.prototype.setItem = window.__ORIGINAL_SET_ITEM__
@@ -84,8 +114,10 @@ try {
     window.__STS_DEBUG__.setRun(run)
   })
   await waitForSavedRun('combat')
-  check('a failed write preserves the last atomic checkpoint', () =>
-    assertEqual(checkpointAfterFailure, lastGoodCheckpoint))
+  check('a failed write preserves the last atomic checkpoint', () => {
+    assert(failedWriteAttempts > 0, 'the checkpoint write was never attempted')
+    assertEqual(checkpointAfterFailure, lastGoodCheckpoint)
+  })
   const combatSnapshot = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun()))
   const validCheckpoint = await page.evaluate(() => localStorage.getItem('sts-solo-run'))
   await page.evaluate(() => {
@@ -93,7 +125,7 @@ try {
     delete saved.run.map
     localStorage.setItem('sts-solo-run', JSON.stringify(saved))
   })
-  await page.reload({ waitUntil: 'networkidle' })
+  await reloadMenu()
   const incompleteResumeCount = await page.getByRole('button', { name: 'Resume', exact: true }).count()
   check('a shape-compatible but incomplete checkpoint is ignored', () => assertEqual(incompleteResumeCount, 0))
   await page.evaluate((checkpoint) => localStorage.setItem('sts-solo-run', checkpoint), validCheckpoint)
@@ -102,7 +134,7 @@ try {
     saved.run.combat = null
     localStorage.setItem('sts-solo-run', JSON.stringify(saved))
   })
-  await page.reload({ waitUntil: 'networkidle' })
+  await reloadMenu()
   const impossibleCombatResumeCount = await page.getByRole('button', { name: 'Resume', exact: true }).count()
   check('a combat checkpoint without a combat is ignored', () => assertEqual(impossibleCombatResumeCount, 0))
   await page.evaluate((checkpoint) => localStorage.setItem('sts-solo-run', checkpoint), validCheckpoint)
@@ -111,11 +143,11 @@ try {
     saved.built.meta.modifiers = 1
     localStorage.setItem('sts-solo-run', JSON.stringify(saved))
   })
-  await page.reload({ waitUntil: 'networkidle' })
+  await reloadMenu()
   const malformedMetaResumeCount = await page.getByRole('button', { name: 'Resume', exact: true }).count()
   check('a checkpoint with malformed build options is ignored', () => assertEqual(malformedMetaResumeCount, 0))
   await page.evaluate((checkpoint) => localStorage.setItem('sts-solo-run', checkpoint), validCheckpoint)
-  await page.reload({ waitUntil: 'networkidle' })
+  await reloadMenu()
   await page.getByRole('button', { name: 'Resume', exact: true }).waitFor()
   const firstMenuActions = await page.locator('.start-menu__nav button').evaluateAll((buttons) =>
     buttons.slice(0, 2).map((button) => button.textContent?.trim()))
@@ -156,7 +188,7 @@ try {
   await waitForSavedRun('room')
   const eventSnapshot = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun()))
   await page.setViewportSize({ width: 844, height: 390 })
-  await page.reload({ waitUntil: 'networkidle' })
+  await reloadMenu()
   const resume = page.getByRole('button', { name: 'Resume', exact: true })
   await resume.waitFor()
   await page.screenshot({ path: join(output, 'resume-horizontal-phone.png'), fullPage: true })
@@ -186,8 +218,8 @@ try {
 
   const beforeMainMenu = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun()))
   await page.keyboard.press('Escape')
-  const pause = page.getByRole('dialog', { name: 'Slay the Spire' })
-  await pause.getByRole('button', { name: 'Return to main menu', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Slay the Spire' })
+    .getByRole('button', { name: 'Return to main menu', exact: true }).click()
   await page.getByRole('button', { name: 'Resume', exact: true }).waitFor()
   const savedAtMainMenu = await page.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('sts-solo-run')).run))
   await page.getByRole('button', { name: 'Resume', exact: true }).click()
@@ -199,7 +231,7 @@ try {
   })
 
   const oldRunId = await page.evaluate(() => window.__STS_DEBUG__.getRun().campaign.runId)
-  await page.reload({ waitUntil: 'networkidle' })
+  await reloadMenu()
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
   await page.getByRole('button', { name: 'Standard', exact: true }).click()
   await page.getByRole('button', { name: 'Embark' }).click()
@@ -220,9 +252,10 @@ try {
   })
   await page.waitForFunction(() => localStorage.getItem('sts-solo-run') === null)
   await page.keyboard.press('Escape')
-  await pause.getByRole('button', { name: 'Return to main menu', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Slay the Spire' })
+    .getByRole('button', { name: 'Return to main menu', exact: true }).click()
   const finishedReturnResumeCount = await page.getByRole('button', { name: 'Resume', exact: true }).count()
-  await page.reload({ waitUntil: 'networkidle' })
+  await reloadMenu()
   const finishedResumeCount = await page.getByRole('button', { name: 'Resume', exact: true }).count()
   check('finished runs are not resumable', () => {
     assertEqual(finishedReturnResumeCount, 0)
