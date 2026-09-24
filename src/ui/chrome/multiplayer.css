@@ -4,28 +4,22 @@
 .sts-scope.online-entry {
   align-content: center;
   padding: 4.5rem 1rem 2.5rem;
-  background:
-    radial-gradient(ellipse at 50% 45%, rgb(12 35 42 / 0.22), transparent 42%),
-    radial-gradient(ellipse at 50% 85%, rgb(167 61 26 / 0.16), transparent 50%),
-    linear-gradient(rgb(3 6 9 / 0.45), rgb(3 5 8 / 0.84)),
-    url('/assets/menu/title-spire.webp') center / cover no-repeat fixed;
 }
 
 .sts-scope .online-entry__panel {
   position: relative;
   width: min(46rem, 100%);
-  padding: clamp(1.25rem, 3vw, 2.1rem);
+  padding: clamp(1.6rem, 4vw, 2.6rem) clamp(1.6rem, 5vw, 3rem);
   border: 0;
   border-radius: 0;
-  background:
-    linear-gradient(180deg, rgb(188 152 75 / 0.12), transparent 18%),
-    linear-gradient(145deg, rgb(31 27 22 / 0.96), rgb(13 15 16 / 0.98));
-  box-shadow: inset 0 0 0 2px var(--trim-dim), inset 0 0 0 3px rgb(0 0 0 / 0.72), var(--hard-shadow-lg);
-  clip-path: polygon(1rem 0, calc(100% - 1rem) 0, 100% 1rem, 100% calc(100% - 1rem), calc(100% - 1rem) 100%, 1rem 100%, 0 calc(100% - 1rem), 0 1rem);
+  background: none;
+  box-shadow: none;
 }
 
-.sts-scope .online-entry h1 { color: var(--light-yellow); letter-spacing: 0.04em; text-transform: none; }
-.sts-scope .online-entry__panel > p { max-width: 34rem; margin: 0.35rem auto 1rem; color: var(--cream); }
+.sts-scope.online-entry h1 { color: #ffdc60; letter-spacing: 0.04em; text-transform: none; }
+.sts-scope .menu-board .online-error { color: #ffc2b0; text-shadow: 0 1px 0 #2a1a0c, 0 0 3px #2a1a0c; }
+.sts-scope .menu-board :is(.online-entry__eyebrow, .online-lobby__character > span, .voice--unavailable) { color: #fff8ea; text-shadow: 0 1px 0 #2a1a0c, 0 0 3px #2a1a0c; }
+.sts-scope .menu-board .connection { padding: 0.2rem 0.55rem; background: rgb(20 14 10 / 0.72); }
 
 .sts-scope .online-entry__character,
 .sts-scope .online-lobby__character {
@@ -95,15 +89,14 @@
 
 @media (max-height: 620px) {
   .sts-scope.online-entry { place-items: start center; padding: 2.9rem 0.55rem 0.5rem; }
-  .sts-scope .online-entry__panel { width: min(37rem, 100%); padding: 0.65rem 0.85rem; }
-  .sts-scope .online-entry h1 { margin: 0.1rem 0 0.2rem; font-size: clamp(1.55rem, 4vw, 2.25rem); }
-  .sts-scope .online-entry__panel > p { margin: 0.15rem auto 0.4rem; font-size: 0.78rem; }
+  .sts-scope .online-entry__panel { width: min(37rem, 100%); padding: 0.8rem max(1.6rem, 6%); }
+  .sts-scope.online-entry h1 { margin: 0.1rem 0 0.2rem; font-size: clamp(1.55rem, 4vw, 2.25rem); }
   .sts-scope .online-entry label,
   .sts-scope .online-entry__character { margin: 0.4rem auto; }
   .sts-scope .online-entry__actions { margin-top: 0.5rem; }
 
   .sts-scope.online-lobby { place-items: start center; align-content: start; padding: 4rem 0.5rem 0.5rem; }
-  .sts-scope .online-lobby__table { width: min(43rem, 100%); padding: 0.65rem; }
+  .sts-scope .online-lobby__table { width: min(43rem, 100%); padding: 1rem max(1.6rem, 6%) 0.9rem; }
   .sts-scope .online-lobby__code { padding-bottom: 0.45rem; }
   .sts-scope.online-lobby h1 { font-size: clamp(1.35rem, 4vw, 2rem); }
   .sts-scope .online-lobby__seats { gap: 0.35rem; margin: 0.55rem 0; }

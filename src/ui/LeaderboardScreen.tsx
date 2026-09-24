@@ -18,7 +18,6 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null)
   const [failed, setFailed] = useState(false)
   const [request, setRequest] = useState(0)
-  const hero = filters[0] ?? 'ironclad'
 
   useEffect(() => {
     let current = true
@@ -36,23 +35,21 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
     : `Parties with ${filters.map((filter) => CHARACTER_LABEL[filter]).join(' + ')}`
 
   return (
-    <main className="leaderboard">
-      <img className="leaderboard__wallpaper" src={assetPath(`menu/character-select/character-${hero}-wallpaper.webp`)} alt="" />
-      <aside className="leaderboard__rail">
+    <main className="leaderboard menu-ground">
+      <aside className="leaderboard__rail menu-board menu-board--slate">
         <button type="button" className="leaderboard__back ribbon-back" onClick={onBack} aria-label="Back to main menu"><span aria-hidden="true"></span></button>
-        <p className="leaderboard__eyebrow">The Spire remembers</p>
         <h1>Leaderboard</h1>
         <div className="leaderboard__heroes" role="group" aria-label="Filter by character">
           <button type="button" aria-label="All heroes" aria-pressed={filters.length === 0} onClick={() => setFilters([])}>
-            <span aria-hidden="true">◆</span><small>All heroes</small>
+            <span aria-hidden="true">◆</span>
           </button>
           {HEROES.map((character) => <button type="button" key={character} title={CHARACTER_LABEL[character]}
             aria-label={CHARACTER_LABEL[character]} aria-pressed={filters.includes(character)} onClick={() => setFilters((current) =>
               current.includes(character) ? current.filter((filter) => filter !== character) : [...current, character])}>
-            <img src={assetPath(`menu/compendium-icons/${character}.webp`)} alt="" /><small>{CHARACTER_LABEL[character]}</small>
+            <img src={assetPath(`menu/compendium-icons/${character}.webp`)} alt="" />
           </button>)}
         </div>
-        <label className="leaderboard__ascension"><span>Ascension</span><select value={ascension}
+        <label className="leaderboard__ascension"><span className="visually-hidden">Ascension</span><select value={ascension}
           onChange={(event) => setAscension(event.target.value === 'all' ? 'all' : Number(event.target.value))}>
           <option value="all">All ascensions</option>
           {Array.from({ length: 14 }, (_, value) => <option key={value} value={value}>Ascension {value}</option>)}
@@ -61,19 +58,19 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
           <button type="button" aria-pressed={tab === 'statistics'} onClick={() => setTab('statistics')}>Win rates</button>
           <button type="button" aria-pressed={tab === 'decks'} onClick={() => setTab('decks')}>Winning decks</button>
         </div>
-        <p className="leaderboard__count"><strong>{snapshot?.totalRuns ?? 0}</strong><span>run{snapshot?.totalRuns === 1 ? '' : 's'} chronicled</span></p>
+        <p className="leaderboard__count"><strong>{snapshot?.totalRuns ?? 0}</strong><span>run{snapshot?.totalRuns === 1 ? '' : 's'}</span></p>
       </aside>
 
-      <section className="leaderboard__archive" aria-labelledby="leaderboard-title">
-        <header>
-          <div><p>Hall of Ascension</p><h2 id="leaderboard-title">{filterTitle}{ascension === 'all' ? '' : ` · A${ascension}`}</h2></div>
-          <span>All run modes</span>
-        </header>
-        {tab === 'decks' ? <WinningDecks characters={filters} ascension={ascension} /> : failed ? <div className="leaderboard__message" role="alert"><strong>The archive is beyond reach.</strong><span>Your finished run remains safely queued.</span><button type="button" onClick={() => setRequest((value) => value + 1)}>Try again</button></div>
-          : !snapshot ? <div className="leaderboard__message" aria-live="polite"><span className="leaderboard__spinner" aria-hidden="true"></span><strong>Opening the archive…</strong></div>
-          : rows.length === 0 ? <div className="leaderboard__message"><strong>No names are etched here yet.</strong><span>Finish a run to claim the first place.</span></div>
+      <section className="leaderboard__archive menu-board" aria-labelledby="leaderboard-title">
+        <header><h2 id="leaderboard-title">{filterTitle}{ascension === 'all' ? '' : ` · A${ascension}`}</h2></header>
+        {tab === 'decks' ? <WinningDecks characters={filters} ascension={ascension} /> : failed ? <div className="leaderboard__message" role="alert"><strong>Archive unreachable</strong><button type="button" onClick={() => setRequest((value) => value + 1)}>Try again</button></div>
+          : !snapshot ? <div className="leaderboard__message" aria-live="polite"><span className="leaderboard__spinner" aria-hidden="true"></span><strong>Loading…</strong></div>
+          : rows.length === 0 ? <div className="leaderboard__message"><strong>No runs yet</strong></div>
           : <div className="leaderboard__table-wrap"><table>
-            <thead><tr><th scope="col">Rank</th><th scope="col">Heroes</th><th scope="col">Ascension</th><th scope="col">Runs</th><th scope="col">Act III win rate</th><th scope="col">Avg. floors</th><th scope="col">Damage / fight</th><th scope="col">Blocked</th><th scope="col">Act IV wins</th></tr></thead>
+            <thead><tr><ShortHeader label="Rank" caption="#" /><th scope="col">Heroes</th><ShortHeader label="Ascension" caption="Asc." />
+              <ShortHeader label="Runs" icon="icons/card-reward.png" /><ShortHeader label="Act III win rate" caption="Act III" />
+              <ShortHeader label="Avg. floors" caption="Floors" icon="menu/map-scroll.png" /><ShortHeader label="Damage / fight" caption="Dmg" icon="icons/attack.png" />
+              <ShortHeader label="Blocked" caption="Block" icon="icons/block.png" /><ShortHeader label="Act IV wins" caption="Act IV" /></tr></thead>
             <tbody>{rows.map((row, index) => <tr key={`${partyOf(row).join(':')}:${row.ascension}`}>
               <td data-label="Rank"><span className="leaderboard__rank">{index + 1}</span></td>
               <th scope="row" aria-label={partyOf(row).map((character) => CHARACTER_LABEL[character]).join(', ')}><span className="leaderboard__party-icons" aria-hidden="true">{partyOf(row).map((character) =>
@@ -90,4 +87,11 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
       </section>
     </main>
   )
+}
+
+function ShortHeader({ label, caption, icon }: { label: string; caption?: string; icon?: string }) {
+  return <th scope="col" title={label}>
+    <span className="leaderboard__header-face" aria-hidden="true">{icon ? <img src={assetPath(icon)} alt="" /> : null}{caption}</span>
+    <span className="visually-hidden">{label}</span>
+  </th>
 }

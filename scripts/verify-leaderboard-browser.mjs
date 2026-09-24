@@ -102,6 +102,11 @@ try {
   })
   await waitForImages()
   await page.screenshot({ path: join(output, 'leaderboard-desktop.png'), fullPage: true })
+  const headerNames = ['Rank', 'Heroes', 'Ascension', 'Runs', 'Act III win rate', 'Avg. floors', 'Damage / fight', 'Blocked', 'Act IV wins']
+  const headerCounts = await Promise.all(headerNames.map((name) => page.getByRole('columnheader', { name, exact: true }).count()))
+  check('short column headers keep their full accessible names', () => {
+    assertEqual(headerCounts.join(','), headerNames.map(() => 1).join(','))
+  })
 
   await page.getByRole('button', { name: 'Ironclad', exact: true }).click()
   const ironcladRows = await page.locator('tbody tr').count()
@@ -125,7 +130,7 @@ try {
   check('character and ascension filters compose without stale rows', () => {
     assertEqual(missingAscensionRows, 0)
   })
-  await page.getByText('No names are etched here yet.').waitFor()
+  await page.getByText('No runs yet').waitFor()
   await page.getByLabel('Ascension').selectOption('all')
 
   await page.setViewportSize({ width: 844, height: 390 })

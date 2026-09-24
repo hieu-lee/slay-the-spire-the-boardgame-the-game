@@ -217,10 +217,6 @@ html[data-mobile-performance='true'] .sts-scope .merchant-arrival::before {
   transform: none;
 }
 
-html[data-mobile-performance='true'] .sts-scope.online-lobby {
-  background-attachment: scroll;
-}
-
 html[data-mobile-performance='true'] .map__path--live,
 html[data-mobile-performance='true'] .map .room--reachable,
 html[data-mobile-performance='true'] .map .room--here::after,

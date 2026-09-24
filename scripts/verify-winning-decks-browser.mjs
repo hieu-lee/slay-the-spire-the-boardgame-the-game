@@ -100,6 +100,16 @@ try {
   const fit = await page.locator('.winning-decks__scroll').evaluate(e => ({ width: e.clientWidth, scroll: e.scrollWidth, bottom: e.getBoundingClientRect().bottom, viewport: innerHeight }))
   assert(fit.scroll <= fit.width + 1, JSON.stringify(fit))
   assert(fit.bottom <= fit.viewport, JSON.stringify(fit))
+  await page.setViewportSize({ width: 568, height: 320 })
+  await screenshot('decks-small-horizontal-phone')
+  const smallFit = await page.locator('.winning-decks__scroll').evaluate(e => {
+    const party = e.querySelector('tbody tr .leaderboard__party-icons')
+    const icon = party.querySelector('img')
+    while (party.children.length < 4) party.append(icon.cloneNode())
+    return { width: e.clientWidth, scroll: e.scrollWidth }
+  })
+  assert(smallFit.scroll <= smallFit.width + 1, `A four-hero party overflows Winning decks on the small phone: ${JSON.stringify(smallFit)}`)
+  await page.setViewportSize({ width: 844, height: 390 })
   await rows.first().getByRole('button').focus()
   await page.keyboard.press('Enter')
   await dialog.waitFor()
