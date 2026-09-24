@@ -17,7 +17,7 @@ export const supportsWebSocketActionAcks = () => HOSTED_SESSION && webSocketActi
 export async function roomUrl(path: string) {
   if (!HOSTED_SESSION) return path
   if (!roomOrigin) {
-    const configUrl = new URL('session.json', document.baseURI)
+    const configUrl = new URL(import.meta.env.VITE_NATIVE_SESSION_URL || 'session.json', document.baseURI)
     configUrl.searchParams.set('refresh', Date.now().toString())
     const response = await fetch(configUrl, { cache: 'no-store', signal: AbortSignal.timeout(5_000) })
     if (!response.ok) throw new Error('Could not find the multiplayer server')

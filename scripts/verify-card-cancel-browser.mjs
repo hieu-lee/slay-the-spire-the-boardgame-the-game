@@ -17,7 +17,7 @@ try {
     const browser = await engine.launch()
     try {
       for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }], ['horizontal-phone', { width: 844, height: 390 }]]) {
-        const page = await browser.newPage({ viewport })
+        const page = await browser.newPage({ viewport, ...(screen === 'horizontal-phone' ? { isMobile: true, hasTouch: true } : {}) })
         const errors = []
         page.on('pageerror', error => errors.push(String(error)))
         await page.goto(`http://localhost:${server.httpServer.address().port}`)

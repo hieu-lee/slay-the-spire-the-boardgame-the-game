@@ -22,7 +22,8 @@ try {
     const browser = await engine.launch(process.argv.includes('--chrome') ? { channel: 'chrome' } : {})
     try {
       for (const [screen, width, height, scale] of [['desktop', 1440, 900, 1], ['retina-desktop', 1440, 900, 2], ['horizontal-phone', 844, 390, 2]]) {
-        const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: scale, hasTouch: screen === 'horizontal-phone' })
+        const context = await browser.newContext({ viewport: { width, height }, screen: { width, height }, deviceScaleFactor: scale,
+          hasTouch: screen === 'horizontal-phone', isMobile: screen === 'horizontal-phone' })
         const page = await context.newPage()
         const errors = []
         const cursorRequests = []

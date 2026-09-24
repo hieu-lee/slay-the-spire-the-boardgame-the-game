@@ -107,7 +107,7 @@ finish_deployment() {
     if [ "$server_stopped" = true ] && [ "$rollback_failed" = false ]; then
       if [ -n "$previous_release" ] && [ -d "$previous_release" ]; then
         ln -sfn "$previous_release" "$data_dir/current.rollback"
-        mv -Tf "$data_dir/current.rollback" "$data_dir/current" || rollback_failed=true
+        node -e 'require("fs").renameSync(process.argv[1], process.argv[2])' "$data_dir/current.rollback" "$data_dir/current" || rollback_failed=true
       else
         rm -f -- "$data_dir/current" || rollback_failed=true
       fi
@@ -141,7 +141,7 @@ trap finish_deployment EXIT
 
 install -m 0644 "$release/infra/systemd/sts-room-server.service" "$unit_file"
 ln -sfn "$release" "$data_dir/current.next"
-mv -Tf "$data_dir/current.next" "$data_dir/current"
+node -e 'require("fs").renameSync(process.argv[1], process.argv[2])' "$data_dir/current.next" "$data_dir/current"
 systemctl --user daemon-reload
 systemctl --user enable sts-room-server.service
 systemctl --user restart sts-room-server.service

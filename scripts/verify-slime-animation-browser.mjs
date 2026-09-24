@@ -84,12 +84,12 @@ try {
     ['horizontal-phone', { width: 844, height: 390 }],
     ['small-horizontal-phone', { width: 568, height: 320 }],
     ['horizontal-phone-os-reduced', { width: 844, height: 390 }, 'reduce']]) {
-    const page = await browser.newPage({ viewport, reducedMotion, recordVideo: { dir: output, size: viewport } })
+    const page = await browser.newPage({ viewport, reducedMotion, recordVideo: { dir: output, size: viewport },
+      ...(name !== 'desktop' ? { isMobile: true, hasTouch: true } : {}) })
     page.on('pageerror', (error) => errors.push(String(error)))
     await page.goto(`http://localhost:${server.httpServer.address().port}`)
     await page.evaluate(() => {
       document.querySelector('#root').style.display = 'none'
-      document.documentElement.dataset.mobilePerformance = String(innerWidth < 900)
       document.documentElement.dataset.reducedMotion = 'false'
       const container = document.createElement('div')
       container.id = 'test'

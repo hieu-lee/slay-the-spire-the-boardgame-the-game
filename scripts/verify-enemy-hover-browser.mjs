@@ -17,7 +17,7 @@ try {
     const browser = await engine.launch()
     try {
       for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }], ['horizontal-phone', { width: 844, height: 390 }]]) {
-        const page = await browser.newPage({ viewport })
+        const page = await browser.newPage({ viewport, ...(screen === 'horizontal-phone' ? { isMobile: true, hasTouch: true } : {}) })
         const errors = []
         page.on('pageerror', error => errors.push(String(error)))
         await page.goto(`http://localhost:${server.httpServer.address().port}`)
@@ -34,111 +34,109 @@ try {
         await page.evaluate(run => window.__STS_DEBUG__.setRun(run), combat)
         await page.locator('.hand .card').first().waitFor()
         await page.waitForTimeout(1500)
-        const fungi = page.locator('[data-enemy-def="fungi_beast"]')
-        await fungi.locator('.enemy__hit-area').hover()
-        const tip = page.locator('.card-keyword-tips[data-open]')
-        await tip.waitFor()
-        assert.match(await tip.innerText(), /Spore Cloud/)
-        assert.equal(await page.locator('.enemy__ability').count(), 0)
-        assert.match(await fungi.getAttribute('aria-label'), /Spore Cloud/)
-        const box = await tip.boundingBox()
-        assert(box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1)
-        await page.screenshot({ path: resolve(out, `${engineName}-${screen}-enemy.png`) })
-        const target = await tip.boundingBox()
-        const source = await fungi.locator('.enemy__hit-area').boundingBox()
-        await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
-        await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 12 })
-        await page.waitForTimeout(250)
-        assert.equal(await tip.count(), 1, 'tooltip must stay readable under pointer')
-        await page.keyboard.press('Escape')
-        await tip.waitFor({ state: 'hidden' })
-        await page.locator('[data-enemy-def="jaw_worm"] .enemy__hit-area').hover()
-        await tip.waitFor({ state: 'hidden' })
-        assert.equal(await tip.count(), 0, 'enemy without abilities must not open a panel')
-        await fungi.focus()
-        await page.keyboard.press('Tab')
-        await fungi.focus()
-        await tip.waitFor()
-        await fungi.evaluate(e => e.blur())
-        await page.mouse.move(2, 2)
-        await tip.waitFor({ state: 'hidden' })
-        const cards = page.locator('.hand .card')
-        await page.screenshot({ path: resolve(out, `${engineName}-${screen}-resting-hand.png`) })
-        const center = cards.nth(3)
-        const resting = await center.boundingBox()
-        assert((viewport.height - resting.y) / resting.height >= .58, 'middle card must expose artwork through its type')
-        for (const index of [0, 3, 6]) {
-          await page.mouse.move(2, 2)
-          await page.waitForTimeout(200)
-          const card = cards.nth(index)
-          const point = await card.evaluate(node => {
-            const r = node.getBoundingClientRect()
-            for (let y = Math.min(innerHeight - 3, Math.floor(r.bottom - 3)); y >= Math.max(3, r.top + 3); y--)
-              for (let x = Math.ceil(r.left + 3); x < r.right - 3; x++)
-                if (document.elementFromPoint(x, y)?.closest('.card') === node) return { x, y }
-            return null
-          })
-          assert(point, `${screen}: card ${index} has no resting hit area`)
-          await page.mouse.move(point.x, point.y)
+        if (screen === 'desktop') {
+          const layoutViewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+          const fungi = page.locator('[data-enemy-def="fungi_beast"]')
+          await fungi.locator('.enemy__hit-area').hover()
+          const tip = page.locator('.card-keyword-tips[data-open]')
+          await tip.waitFor()
+          assert.match(await tip.innerText(), /Spore Cloud/)
+          assert.equal(await page.locator('.enemy__ability').count(), 0)
+          assert.match(await fungi.getAttribute('aria-label'), /Spore Cloud/)
+          const box = await tip.boundingBox()
+          assert(box.x >= 0 && box.y >= 0 && box.x + box.width <= layoutViewport.width + 1 && box.y + box.height <= layoutViewport.height + 1)
+          await page.screenshot({ path: resolve(out, `${engineName}-${screen}-enemy.png`) })
+          const target = await tip.boundingBox()
+          const source = await fungi.locator('.enemy__hit-area').boundingBox()
+          await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
+          await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 12 })
           await page.waitForTimeout(250)
-          const samples = await card.evaluate(async node => {
-            const result = []
-            for (let i = 0; i < 30; i++) {
-              await new Promise(requestAnimationFrame)
+          assert.equal(await tip.count(), 1, 'tooltip must stay readable under pointer')
+          await page.keyboard.press('Escape')
+          await tip.waitFor({ state: 'hidden' })
+          await page.locator('[data-enemy-def="jaw_worm"] .enemy__hit-area').hover()
+          await tip.waitFor({ state: 'hidden' })
+          assert.equal(await tip.count(), 0, 'enemy without abilities must not open a panel')
+          await fungi.focus()
+          await page.keyboard.press('Tab')
+          await fungi.focus()
+          await tip.waitFor()
+          await fungi.evaluate(e => e.blur())
+          await page.mouse.move(2, 2)
+          await tip.waitFor({ state: 'hidden' })
+          const cards = page.locator('.hand .card')
+          await page.screenshot({ path: resolve(out, `${engineName}-${screen}-resting-hand.png`) })
+          const center = cards.nth(3)
+          const resting = await center.boundingBox()
+          assert((layoutViewport.height - resting.y) / resting.height >= .58, 'middle card must expose artwork through its type')
+          for (const index of [0, 3, 6]) {
+            await page.mouse.move(2, 2)
+            await page.waitForTimeout(200)
+            const card = cards.nth(index)
+            const point = await card.evaluate(node => {
               const r = node.getBoundingClientRect()
-              result.push({ hover: node.matches(':hover'), bottom: r.bottom, width: r.width,
-                padding: parseFloat(getComputedStyle(node.parentElement).paddingBottom),
-                scroll: node.closest('.hand-scroll').scrollTop })
-            }
-            return result
+              for (let y = Math.min(innerHeight - 3, Math.floor(r.bottom - 3)); y >= Math.max(3, r.top + 3); y--)
+                for (let x = Math.ceil(r.left + 3); x < r.right - 3; x++)
+                  if (document.elementFromPoint(x, y)?.closest('.card') === node) return { x, y }
+              return null
+            })
+            assert(point, `${screen}: card ${index} has no resting hit area`)
+            await page.mouse.move(point.x, point.y)
+            await page.waitForTimeout(250)
+            const samples = await card.evaluate(async node => {
+              const result = []
+              for (let i = 0; i < 30; i++) {
+                await new Promise(requestAnimationFrame)
+                const r = node.getBoundingClientRect()
+                result.push({ hover: node.matches(':hover'), bottom: r.bottom, width: r.width,
+                  padding: parseFloat(getComputedStyle(node.parentElement).paddingBottom),
+                  scroll: node.closest('.hand-scroll').scrollTop })
+              }
+              return result
+            })
+            assert(samples.every(s => s.hover && s.scroll === 0), `${engineName}/${screen} card ${index} at ${JSON.stringify(point)}: ${JSON.stringify(samples)}`)
+            assert(Math.max(...samples.map(s => s.width)) - Math.min(...samples.map(s => s.width)) < .5, 'card oscillates')
+            assert(samples.every(s => layoutViewport.height - s.bottom >= 0 && layoutViewport.height - s.bottom <= s.padding + 1),
+              `hover lifts beyond the hand's reserved bottom space: ${JSON.stringify(samples)}`)
+          }
+          await center.hover()
+          assert.equal(await tip.count(), 0, 'card help remains Shift-only')
+          await page.keyboard.down('Shift')
+          await tip.waitFor()
+          await page.keyboard.up('Shift')
+          await tip.waitFor({ state: 'hidden' })
+          await page.waitForTimeout(250)
+          await page.screenshot({ path: resolve(out, `${engineName}-${screen}-hand.png`) })
+          await page.mouse.move(2, 2)
+          await page.evaluate(() => {
+            const run = structuredClone(window.__STS_DEBUG__.getRun())
+            Object.assign(run.combat.enemies[0], { defId: 'time_eater', isBoss: true, hp: 30, maxHp: 30, abilityUsed: false })
+            window.__STS_DEBUG__.setRun(run)
           })
-          assert(samples.every(s => s.hover && s.scroll === 0), `${engineName}/${screen} card ${index} at ${JSON.stringify(point)}: ${JSON.stringify(samples)}`)
-          assert(Math.max(...samples.map(s => s.width)) - Math.min(...samples.map(s => s.width)) < .5, 'card oscillates')
-          assert(samples.every(s => viewport.height - s.bottom >= 0 && viewport.height - s.bottom <= s.padding + 1),
-            `hover lifts beyond the hand's reserved bottom space: ${JSON.stringify(samples)}`)
+          const boss = page.locator('[data-enemy-def="time_eater"]')
+          await page.keyboard.press('Tab')
+          await boss.focus()
+          await tip.waitFor()
+          assert.match(await tip.innerText(), /Time Warp/)
+          assert.match(await tip.innerText(), /Haste/)
+          await page.evaluate(() => {
+            const run = structuredClone(window.__STS_DEBUG__.getRun())
+            run.combat.enemies[0].abilityUsed = true
+            window.__STS_DEBUG__.setRun(run)
+          })
+          await page.waitForFunction(() => document.querySelector('.card-keyword-tips[data-open]')?.textContent.includes('spent'))
+          assert.match(await tip.innerText(), /Time Warp/, 'spent Haste must retain the other rule')
+          await page.evaluate(() => {
+            const run = structuredClone(window.__STS_DEBUG__.getRun())
+            Object.assign(run.combat.enemies[0], { hp: 0, dead: true })
+            window.__STS_DEBUG__.setRun(run)
+          })
+          await tip.waitFor({ state: 'hidden' })
         }
-        await center.hover()
-        assert.equal(await tip.count(), 0, 'card help remains Shift-only')
-        await page.keyboard.down('Shift')
-        await tip.waitFor()
-        await page.keyboard.up('Shift')
-        await tip.waitFor({ state: 'hidden' })
-        await page.waitForTimeout(250)
-        await page.screenshot({ path: resolve(out, `${engineName}-${screen}-hand.png`) })
-        await page.mouse.move(2, 2)
-        await page.evaluate(() => {
-          const run = structuredClone(window.__STS_DEBUG__.getRun())
-          Object.assign(run.combat.enemies[0], { defId: 'time_eater', isBoss: true, hp: 30, maxHp: 30, abilityUsed: false })
-          window.__STS_DEBUG__.setRun(run)
-        })
-        const boss = page.locator('[data-enemy-def="time_eater"]')
-        await page.keyboard.press('Tab')
-        await boss.focus()
-        await tip.waitFor()
-        assert.match(await tip.innerText(), /Time Warp/)
-        assert.match(await tip.innerText(), /Haste/)
-        await page.evaluate(() => {
-          const run = structuredClone(window.__STS_DEBUG__.getRun())
-          run.combat.enemies[0].abilityUsed = true
-          window.__STS_DEBUG__.setRun(run)
-        })
-        await page.waitForFunction(() => document.querySelector('.card-keyword-tips[data-open]')?.textContent.includes('spent'))
-        assert.match(await tip.innerText(), /Time Warp/, 'spent Haste must retain the other rule')
-        await page.evaluate(() => {
-          const run = structuredClone(window.__STS_DEBUG__.getRun())
-          Object.assign(run.combat.enemies[0], { hp: 0, dead: true })
-          window.__STS_DEBUG__.setRun(run)
-        })
-        await tip.waitFor({ state: 'hidden' })
-        assert.deepEqual(errors, [])
         // Actual touch input gets the same rules on a tap, and an outside tap
         // dismisses them. This uses the app's mobile viewport policy too.
         if (screen === 'horizontal-phone') {
-          const touchPage = await browser.newPage({ viewport, isMobile: true, hasTouch: true })
-          await touchPage.goto(`http://localhost:${server.httpServer.address().port}`)
-          for (const name of ['Single Player', 'Standard', 'Embark', 'Start standard campaign'])
-            await touchPage.getByRole('button', { name, exact: true }).click()
-          await touchPage.evaluate(run => window.__STS_DEBUG__.setRun(run), combat)
+          const touchPage = page
           const hit = touchPage.locator('[data-enemy-def="fungi_beast"] .enemy__hit-area')
           await hit.waitFor()
           await touchPage.waitForTimeout(1000)
@@ -185,10 +183,10 @@ try {
             assert.equal(await touchPage.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].energy), afterTap.energy - 1)
             await cdp.detach()
           }
-          await touchPage.close()
         }
+        assert.deepEqual(errors, [])
         await page.close()
-        console.log(`${engineName}/${screen}: enemy help, seven-card artwork and stable low hover passed`)
+        console.log(`${engineName}/${screen}: ${screen === 'desktop' ? 'enemy help and stable hover' : 'touch inspection and play'} passed`)
       }
     } finally { await browser.close() }
   }

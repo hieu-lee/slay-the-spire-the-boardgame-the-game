@@ -117,8 +117,9 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
   await page.locator('.board').screenshot({ path: resolve(output, `${browserName}-${screen}-${character}-${heat}-resolution.png`) })
   if (character !== 'watcher') {
     const media = await page.locator(idleSelector).evaluate(element => ({ tag: element.tagName, src: element.src }))
-    assert.equal(media.tag, browserName === 'webkit' ? 'VIDEO' : 'IMG', `${screen}/${character}: preferred media element`)
-    assert(media.src.endsWith(browserName === 'webkit' ? '.mov' : '.webp'), `${screen}/${character}: preferred media source ${media.src}`)
+    const desktopSafariVideo = browserName === 'webkit' && screen === 'desktop'
+    assert.equal(media.tag, desktopSafariVideo ? 'VIDEO' : 'IMG', `${screen}/${character}: preferred media element`)
+    assert(media.src.endsWith(desktopSafariVideo ? '.mov' : '.webp'), `${screen}/${character}: preferred media source ${media.src}`)
   }
   await setSize(page, 1)
   const idleBase = await measure(page, idleSelector)
@@ -166,7 +167,7 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
     await setSize(page, 1)
   }
 
-  if (browserName !== 'webkit' || character !== 'defect') {
+  if (browserName !== 'webkit' || screen !== 'desktop' || character !== 'defect') {
     await page.waitForFunction((readyCount) => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= readyCount, readyCount)
   }
   const seq = await page.evaluate((sourceId) => window.fixture.attack(sourceId), sourceId)
@@ -174,7 +175,7 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
   await page.locator(attackRoot).waitFor()
   const poseSelector = `${attackRoot} .character-attack__pose > :is(img, video)`
   await waitForImage(page, poseSelector)
-  if (browserName === 'webkit' && character === 'defect') {
+  if (browserName === 'webkit' && screen === 'desktop' && character === 'defect') {
     const media = await page.locator(poseSelector).evaluate(element => ({ tag: element.tagName, src: element.src }))
     assert.equal(media.tag, 'IMG', `${screen}/${character}: failed MOV preload must fall back to WebP`)
     assert(media.src.endsWith('/hero-defect-attack.webp'), `${screen}/${character}: wrong attack fallback ${media.src}`)
@@ -230,7 +231,7 @@ try {
         })
         try {
           const page = await context.newPage()
-          if (browserName === 'webkit') await page.route('**/hero-defect-attack.mov', route => route.abort())
+          if (browserName === 'webkit' && screen === 'desktop') await page.route('**/hero-defect-attack.mov', route => route.abort())
           page.on('pageerror', (error) => errors.push(`${browserName}/${screen}: ${error}`))
           page.on('response', (response) => {
             if (response.status() >= 400 && /\/assets\/combat\/(characters|rigged)\//.test(response.url())) {

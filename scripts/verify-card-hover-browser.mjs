@@ -2,18 +2,21 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium, webkit } from './lib/profile-browser.mjs'
+import { chromium, devices, webkit } from './lib/profile-browser.mjs'
 
 const root = resolve(import.meta.dirname, '..')
-const engine = process.argv.includes('--webkit') ? webkit : chromium
-const output = resolve(root, 'artifacts/card-hover-browser', process.argv.includes('--webkit') ? 'webkit' : 'chromium')
+const phoneOnly = process.argv.includes('--phone-only')
+const useWebkit = phoneOnly || process.argv.includes('--webkit')
+const engine = useWebkit ? webkit : chromium
+const output = resolve(root, 'artifacts/card-hover-browser', useWebkit ? 'webkit' : 'chromium')
 mkdirSync(output, { recursive: true })
 const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
 await server.listen()
 const browser = await engine.launch({ headless: true })
 try {
-  for (const [name, viewport] of [['desktop', { width: 1440, height: 900 }], ['horizontal-phone', { width: 844, height: 390 }]]) {
-    if (process.argv.includes('--phone-only') && name !== 'horizontal-phone') continue
+  // Hover is pointer-only; the mobile WebKit case below checks the touch reward instead.
+  for (const [name, viewport] of [['desktop', { width: 1440, height: 900 }]]) {
+    if (phoneOnly) continue
     const page = await browser.newPage({ viewport, recordVideo: { dir: output, size: viewport } })
     const errors = []
     page.on('pageerror', error => errors.push(String(error)))
@@ -131,6 +134,37 @@ try {
     assert.deepEqual(errors, [])
     await page.close()
     console.log(`${name}: stationary card-edge hover and selection passed`)
+  }
+  if (useWebkit) {
+    const phone = await browser.newPage({ ...devices['iPhone 13 landscape'], viewport: { width: 844, height: 390 } })
+    await phone.goto(`http://localhost:${server.httpServer.address().port}`)
+    await phone.evaluate(async () => {
+      const [React, ReactDOM, { CardRewardPicker }] = await Promise.all([
+        import('/@id/react'), import('/@id/react-dom/client'), import('/src/ui/CardRewardPicker.tsx'),
+        import('/src/ui/styles.css'), import('/src/ui/chrome.css'),
+      ])
+      document.querySelector('#root').style.display = 'none'
+      const host = document.createElement('div'); host.className = 'sts-scope'; document.body.append(host)
+      window.choices = []
+      ;(ReactDOM.createRoot ?? ReactDOM.default.createRoot)(host).render((React.createElement ?? React.default.createElement)(CardRewardPicker, {
+        choices: ['buffer', 'melter', 'skim'], onChoose: index => window.choices.push(index),
+      }))
+    })
+    const card = phone.locator('.reward-screen__cards > .card').nth(1)
+    await card.waitFor()
+    await phone.waitForFunction(() => [...document.querySelectorAll('.reward-screen__cards .card__art')]
+      .every(image => image.complete && image.naturalWidth > 0 && getComputedStyle(image).visibility === 'visible'))
+    await phone.waitForTimeout(600)
+    await phone.screenshot({ path: resolve(output, 'horizontal-phone-card-reward.png') })
+    const tap = async () => {
+      const box = await card.boundingBox()
+      const visual = await phone.evaluate(() => ({ x: visualViewport.offsetLeft, y: visualViewport.offsetTop, scale: visualViewport.scale }))
+      await phone.touchscreen.tap((box.x + box.width / 2 - visual.x) * visual.scale,
+        (box.y + box.height / 2 - visual.y) * visual.scale)
+    }
+    await tap()
+    assert.deepEqual(await phone.evaluate(() => window.choices), [1], 'touch chose the wrong reward')
+    await phone.close()
   }
 } finally {
   await browser.close()

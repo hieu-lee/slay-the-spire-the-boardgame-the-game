@@ -24,12 +24,22 @@ function fixture(shared = true, roster = seats) {
 }
 try {
   for (const [engineName, engine] of [['chromium', chromium], ['webkit', webkit]]) {
+    if (process.argv.includes('--webkit-only') && engineName !== 'webkit') continue
     const browser = await engine.launch()
     try {
       for (const [name, viewport] of [['desktop', { width: 1440, height: 900 }], ['horizontal-phone', { width: 844, height: 390 }]]) {
         if (process.argv.includes('--touch-only') && name !== 'horizontal-phone') continue
-        const context = await browser.newContext({ viewport, hasTouch: name === 'horizontal-phone', ...(engineName === 'chromium' && name === 'desktop' ? { recordVideo: { dir: output, size: viewport } } : {}) })
+        const context = await browser.newContext({ viewport, hasTouch: name === 'horizontal-phone', isMobile: name === 'horizontal-phone',
+          ...(engineName === 'chromium' && name === 'desktop' ? { recordVideo: { dir: output, size: viewport } } : {}) })
         const page = await context.newPage()
+        const tap = async (locator) => {
+          if (engineName !== 'webkit') return locator.tap()
+          await locator.scrollIntoViewIfNeeded()
+          const box = await locator.boundingBox()
+          const visual = await page.evaluate(() => ({ x: visualViewport.offsetLeft, y: visualViewport.offsetTop, scale: visualViewport.scale }))
+          await page.touchscreen.tap((box.x + box.width / 2 - visual.x) * visual.scale,
+            (box.y + box.height / 2 - visual.y) * visual.scale)
+        }
         page.on('pageerror', (error) => errors.push(String(error)))
         await page.goto(`http://localhost:${server.httpServer.address().port}`, { waitUntil: 'networkidle' })
         await page.getByRole('button', { name: 'Single Player', exact: true }).click()
@@ -42,7 +52,8 @@ try {
         await page.getByRole('button', { name: 'Open treasure chest', exact: true }).click()
         await page.waitForTimeout(1700)
         await page.mouse.move(5,5)
-        if (name === 'horizontal-phone') await page.locator('[data-treasure-slot="0"]').tap()
+        await page.screenshot({ path: `${output}/${engineName}-${name}-before-pick.png` })
+        if (name === 'horizontal-phone') await tap(page.locator('[data-treasure-slot="0"]'))
         else await page.locator('[data-treasure-slot="0"]').hover()
         await page.locator('.potion-tip:visible').waitFor()
         assert.match(await page.locator('.potion-tip:visible').innerText(), /Anchor/)
@@ -53,7 +64,7 @@ try {
         }
         assert.equal(await page.locator('.treasure-claim').count(), 0, 'No hover hand')
         await page.screenshot({ path: `${output}/${engineName}-${name}-hover.png` })
-        if (name === 'horizontal-phone') await page.locator('[data-treasure-slot="0"]').tap()
+        if (name === 'horizontal-phone') await tap(page.locator('[data-treasure-slot="0"]'))
         else await page.locator('[data-treasure-slot="0"]').click()
         await page.locator('.treasure-claim--0').waitFor({ state: 'attached' })
         assert.equal(await page.locator('[data-treasure-slot="0"]').getAttribute('data-taken'), 'true')
@@ -132,9 +143,9 @@ try {
           assert.equal(await page.locator('.loot-choice').count(), shared ? 4 : 1)
           const item = page.locator('.loot-choice').first()
           if (name === 'horizontal-phone') {
-            await item.tap()
+            await tap(item)
             assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().roomState.decisions), {})
-            await item.tap()
+            await tap(item)
           } else await item.click()
           await page.waitForFunction(() => window.__STS_DEBUG__.getRun().roomState.decisions.p1 !== undefined)
           assert.equal(await page.locator('.treasure-claim').count(), 0)

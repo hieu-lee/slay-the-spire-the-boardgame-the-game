@@ -12,7 +12,7 @@ Environment=STS_DECK_CLASSIFIER_ENABLED=true
 Environment=STS_CODEX_BIN=%h/.local/bin/codex
 Environment=HOST=127.0.0.1
 Environment=PORT=8787
-Environment=STS_ALLOWED_ORIGIN=https://hieu-lee.github.io
+Environment=STS_ALLOWED_ORIGIN=https://hieu-lee.github.io,capacitor://localhost
 Environment=STS_PRESERVE_ON_SHUTDOWN=true
 Environment=STS_ROOM_STORE=%h/.local/share/slay-the-spire-server/rooms.json
 Environment=STS_RESTART_RECOVERY=true

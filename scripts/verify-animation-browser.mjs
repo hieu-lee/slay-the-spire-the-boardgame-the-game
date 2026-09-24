@@ -157,20 +157,28 @@ try {
     'Wing Boots could replace a room already selected for the pencil-circle transition')
   await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), mapRun)
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
-  await page.setViewportSize({ width: 844, height: 390 })
-  const horizontalSelectedRoom = page.locator('.room--reachable').first()
+  const mapPhoneContext = await browser.newContext(devices['iPhone 13 landscape'])
+  const mapPhone = await mapPhoneContext.newPage()
+  await mapPhone.goto(`http://localhost:${address.port}`, { waitUntil: 'networkidle' })
+  for (const name of ['Single Player', 'Standard', 'Embark', 'Start standard campaign'])
+    await mapPhone.getByRole('button', { name, exact: true }).click()
+  await mapPhone.evaluate((run) => window.__STS_DEBUG__.setRun(run), mapRun)
+  await mapPhone.locator('.room--reachable').first().waitFor()
+  const horizontalSelectedRoom = mapPhone.locator('.room--reachable').first()
   await horizontalSelectedRoom.click()
-  await page.waitForTimeout(180)
-  check(await horizontalSelectedRoom.evaluate((room) => room.classList.contains('room--selected') &&
+  await mapPhone.waitForTimeout(180)
+  check(await mapPhone.locator('.room-tip__confirm').isVisible(),
+    'the horizontal-phone map chooser did not preview the first tap')
+  await mapPhone.screenshot({ path: join(output, `short-wide-${browserName}-selecting-map-room.png`) })
+  await horizontalSelectedRoom.click()
+  check(await horizontalSelectedRoom.evaluate((room) =>
     getComputedStyle(room.querySelector('.map__ink path')).animationName === 'map-ink-draw' &&
     Number.parseFloat(getComputedStyle(room.querySelector('.map__ink path')).strokeDashoffset) > 0),
   'the horizontal-phone map chooser did not draw the selected room before leaving')
-  await page.screenshot({ path: join(output, `short-wide-${browserName}-selecting-map-room.png`) })
-  check(await page.evaluate(() => document.documentElement.dataset.mapTransition === 'true'),
-    'the horizontal-phone map chooser did not fade into the selected room')
-  await page.locator('.combat').waitFor()
-  await page.waitForFunction(() => document.documentElement.dataset.mapTransition === undefined)
-  await page.setViewportSize({ width: 1440, height: 900 })
+  check(await mapPhone.evaluate(() => document.documentElement.dataset.mapTransition === 'true'),
+    'the horizontal-phone map chooser did not fade into the selected room after the second tap')
+  await mapPhone.locator('.combat').waitFor()
+  await mapPhone.waitForFunction(() => document.documentElement.dataset.mapTransition === undefined)
   await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), mapRun)
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
   const selectedRoom = page.locator('.room--reachable').first()
@@ -219,15 +227,18 @@ try {
     overlayLegendAfter.x >= mapPanelBox.x &&
     overlayLegendAfter.x + overlayLegendAfter.width <= mapPanelBox.x + mapPanelBox.width),
   'the desktop map-dialog legend moved or clipped when the map scrolled')
-  for (const viewport of [
-    { width: 844, height: 390, name: 'short-wide' },
-  ]) {
-    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+  {
+    await mapPhone.getByRole('button', { name: 'Map', exact: true }).click()
+    const phoneDialog = mapPhone.getByRole('dialog', { name: /Act 1 map/ })
+    const phonePanel = phoneDialog.locator('.map-peek__panel')
+    const phoneLegend = phoneDialog.locator('.map .map__legend')
+    await phoneLegend.waitFor()
+    const viewport = await mapPhone.evaluate(() => ({ width: innerWidth, height: innerHeight }))
     const [responsiveLegendBox, mapHeaderBox, closeBox] = await Promise.all([
-      overlayLegend.boundingBox(), mapPanel.locator(':scope > header').boundingBox(),
-      mapDialog.getByRole('button', { name: 'Close' }).boundingBox(),
+      phoneLegend.boundingBox(), phonePanel.locator(':scope > header').boundingBox(),
+      phoneDialog.getByRole('button', { name: 'Close' }).boundingBox(),
     ])
-    const closeOwnsCentre = await page.evaluate(({ x, y }) => {
+    const closeOwnsCentre = await mapPhone.evaluate(({ x, y }) => {
       const hit = document.elementFromPoint(x, y)
       return Boolean(hit?.closest('button')?.textContent?.includes('Close'))
     }, { x: (closeBox?.x ?? 0) + (closeBox?.width ?? 0) / 2,
@@ -235,11 +246,11 @@ try {
     check(Boolean(responsiveLegendBox && mapHeaderBox && closeBox && closeOwnsCentre &&
       responsiveLegendBox.y >= mapHeaderBox.y + mapHeaderBox.height &&
       responsiveLegendBox.x >= 0 && responsiveLegendBox.x + responsiveLegendBox.width <= viewport.width + 1),
-    `the ${viewport.name} map-dialog legend clips the dialog header or Close button`)
-    await page.screenshot({ path: join(output, `${viewport.name}-${browserName}-scrolled-map-legend.png`) })
+    'the horizontal-phone map-dialog legend clips the dialog header or Close button')
+    await mapPhone.screenshot({ path: join(output, `short-wide-${browserName}-scrolled-map-legend.png`) })
   }
+  await mapPhoneContext.close()
   await mapDialog.getByRole('button', { name: 'Close' }).click()
-  await page.setViewportSize({ width: 1440, height: 900 })
 
   await page.waitForFunction(() => document.documentElement.dataset.mapTransition === undefined)
   await page.evaluate((run) => {

@@ -119,6 +119,7 @@ export function createRoomServer({
   restartReconnectMs = Math.max(5 * 60_000, Number(process.env.STS_RESTART_RECONNECT_MS) || 0),
 } = {}) {
   if (!Number.isSafeInteger(maxDeckClassificationsPerDay) || maxDeckClassificationsPerDay < 0) throw new Error('Invalid deck classification daily limit')
+  const allowedOrigins = new Set(allowedOrigin?.split(',').map((origin) => origin.trim()).filter(Boolean))
   const store = createStore({ file: storeFile, restartRecovery, restartReconnectMs })
   if (classifierEnabled && deckClassifier === classifyDeckType && !codexReady()) {
     console.error('Deck classification disabled: local Codex CLI login or sandbox is unavailable')
@@ -518,18 +519,19 @@ export function createRoomServer({
   const server = createHttpServer(async (request, response) => {
     let acted = null
     try {
-      if (allowedOrigin && request.headers.origin === allowedOrigin) {
-        response.setHeader('access-control-allow-origin', allowedOrigin)
+      const acceptedOrigin = request.headers.origin && allowedOrigins.has(request.headers.origin)
+      if (acceptedOrigin) {
+        response.setHeader('access-control-allow-origin', request.headers.origin)
         response.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS')
         response.setHeader('access-control-allow-headers', 'content-type, x-room-token')
         response.setHeader('access-control-max-age', '600')
         response.setHeader('vary', 'Origin')
       }
       if (request.method === 'OPTIONS') {
-        response.writeHead(allowedOrigin && request.headers.origin === allowedOrigin ? 204 : 403)
+        response.writeHead(acceptedOrigin ? 204 : 403)
         return response.end()
       }
-      if (allowedOrigin && request.headers.origin && request.headers.origin !== allowedOrigin) {
+      if (allowedOrigin && request.headers.origin && !acceptedOrigin) {
         return send(response, 403, { error: 'Origin not allowed' })
       }
       const url = new URL(request.url ?? '/', 'http://localhost')
@@ -762,7 +764,7 @@ export function createRoomServer({
     try {
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (url.pathname !== '/ws') throw new Error('Not found')
-      if (allowedOrigin && request.headers.origin && request.headers.origin !== allowedOrigin) throw new Error('Origin not allowed')
+      if (allowedOrigin && request.headers.origin && !allowedOrigins.has(request.headers.origin)) throw new Error('Origin not allowed')
       const source = sourceOf(request)
       const code = codeOf(url.searchParams.get('room') ?? '')
       const room = store.rooms.get(code)

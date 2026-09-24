@@ -22,7 +22,7 @@ try {
         if (process.env.TRAIL_SCREEN && process.env.TRAIL_SCREEN !== screen) continue
         if (recording && screen !== 'desktop') continue
         const context = await browser.newContext({ viewport, ...(screen === 'phone'
-          ? { hasTouch: true, userAgent: devices['iPhone 13 landscape'].userAgent } : {}),
+          ? { ...devices['iPhone 13 landscape'], viewport } : {}),
           ...(recording ? { recordVideo: { dir: out, size: viewport } } : {}) })
         const page = await context.newPage()
         page.on('pageerror', error => errors.push(String(error)))
@@ -32,7 +32,7 @@ try {
         await page.evaluate(() => { const run = window.__STS_DEBUG__.getRun(); window.__STS_DEBUG__.setRun({ ...run, phase: 'map', neow: null }) })
         await page.locator('.map__legend').waitFor()
         const legend = await page.locator('.map__legend').boundingBox()
-        assert(legend.y >= 0 && legend.y + legend.height <= viewport.height, 'Legend fits the viewport')
+        assert(legend.y >= 0 && legend.y + legend.height <= await page.evaluate(() => innerHeight), 'Legend fits the viewport')
         await page.locator('.map__legend').evaluate(async el => {
           const image = new Image()
           image.src = getComputedStyle(el).backgroundImage.slice(5, -2)
