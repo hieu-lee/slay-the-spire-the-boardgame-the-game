@@ -12,7 +12,7 @@
     "dev:rooms": "node scripts/room-server.mjs",
     "play": "pnpm run --parallel \"/^(dev|dev:rooms)$/\"",
     "build": "tsc -b && vite build",
-    "ios:sync": "VITE_HOSTED_SESSION=true VITE_NATIVE_SESSION_URL=https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/session.json pnpm build && cap sync ios",
+    "ios:sync": "VITE_HOSTED_SESSION=true VITE_NATIVE_SESSION_URL=https://hieu-lee.github.io/slay-the-spire-the-boardgame-the-game/session.json pnpm build && cap sync ios && find ios/App/App/public/assets/combat/rigged -type f -name '*.mov' -delete",
     "ios:open": "cap open ios",
     "preview": "vite preview --host 0.0.0.0",
     "verify": "node scripts/verify-all.mjs",
