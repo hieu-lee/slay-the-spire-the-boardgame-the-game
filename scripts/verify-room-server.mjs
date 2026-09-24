@@ -1,4 +1,5 @@
 import WebSocket from 'ws'
+import { once } from 'node:events'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -860,115 +861,133 @@ try {
 }
 
 const capacityService = createRoomServer()
-const capacityAddress = await capacityService.listen(0)
-const capacityOrigin = `http://127.0.0.1:${capacityAddress.port}`
 const capacitySockets = []
-const capacityPlayers = []
-const capacityRooms = []
-const characters = ['ironclad', 'silent', 'defect', 'watcher']
-for (let roomIndex = 0; roomIndex < 13; roomIndex += 1) {
-  const source = `198.51.100.${roomIndex + 1}`
-  const seats = roomIndex < 12 ? 4 : 2
-  const created = await fetch(`${capacityOrigin}/api/rooms`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'cf-connecting-ip': source },
-    body: JSON.stringify({ name: `Capacity ${roomIndex}-0`, character: characters[0] }),
-  }).then((response) => response.json())
-  capacityRooms.push(created)
-  const tokens = [created.token]
-  for (let seatIndex = 1; seatIndex < seats; seatIndex += 1) {
-    const joined = await fetch(`${capacityOrigin}/api/rooms/${created.snapshot.code}/join`, {
+const allCapacitySockets = new Set()
+let capacityFailed = false
+try {
+  const capacityAddress = await capacityService.listen(0)
+  const capacityOrigin = `http://127.0.0.1:${capacityAddress.port}`
+  const capacityPlayers = []
+  const capacityRooms = []
+  const characters = ['ironclad', 'silent', 'defect', 'watcher']
+  for (let roomIndex = 0; roomIndex < 13; roomIndex += 1) {
+    const source = `198.51.100.${roomIndex + 1}`
+    const seats = roomIndex < 12 ? 4 : 2
+    const created = await fetch(`${capacityOrigin}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'cf-connecting-ip': source },
-      body: JSON.stringify({ name: `Capacity ${roomIndex}-${seatIndex}`, character: characters[seatIndex] }),
+      body: JSON.stringify({ name: `Capacity ${roomIndex}-0`, character: characters[0] }),
     }).then((response) => response.json())
-    tokens.push(joined.token)
+    capacityRooms.push(created)
+    const tokens = [created.token]
+    for (let seatIndex = 1; seatIndex < seats; seatIndex += 1) {
+      const joined = await fetch(`${capacityOrigin}/api/rooms/${created.snapshot.code}/join`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'cf-connecting-ip': source },
+        body: JSON.stringify({ name: `Capacity ${roomIndex}-${seatIndex}`, character: characters[seatIndex] }),
+      }).then((response) => response.json())
+      tokens.push(joined.token)
+    }
+    for (const token of tokens) {
+      const socket = new WebSocket(
+        `ws://127.0.0.1:${capacityAddress.port}/ws?room=${created.snapshot.code}`,
+        { headers: { 'cf-connecting-ip': source } },
+      )
+      allCapacitySockets.add(socket)
+      await new Promise((resolve, reject) => {
+        socket.once('open', resolve)
+        socket.once('error', reject)
+      })
+      const authenticated = nextMessage(socket, 'snapshot')
+      socket.send(JSON.stringify({ type: 'authenticate', token }))
+      const authenticatedSnapshot = (await authenticated).snapshot
+      capacitySockets.push(socket)
+      capacityPlayers.push({ socket, token, snapshot: authenticatedSnapshot, code: created.snapshot.code })
+    }
   }
-  for (const token of tokens) {
-    const socket = new WebSocket(
-      `ws://127.0.0.1:${capacityAddress.port}/ws?room=${created.snapshot.code}`,
-      { headers: { 'cf-connecting-ip': source } },
-    )
-    const authenticated = nextMessage(socket, 'snapshot')
-    await new Promise((resolve, reject) => {
-      socket.once('open', resolve)
-      socket.once('error', reject)
-    })
-    socket.send(JSON.stringify({ type: 'authenticate', token }))
-    const authenticatedSnapshot = (await authenticated).snapshot
-    capacitySockets.push(socket)
-    capacityPlayers.push({ socket, token, snapshot: authenticatedSnapshot, code: created.snapshot.code })
+  for (const player of capacityPlayers.slice(0, 10)) {
+    const peer = capacityPlayers.find((candidate) =>
+      candidate.code === player.code && candidate.token !== player.token)
+    const lastSignal = nextMessage(peer.socket, 'voice', (message) =>
+      message.from === player.snapshot.you.playerId && message.signal.sequence === 39)
+    for (let sequence = 0; sequence < 40; sequence += 1) {
+      player.socket.send(JSON.stringify({
+        type: 'voice', to: peer.snapshot.you.playerId, signal: { sequence },
+      }))
+    }
+    await lastSignal
+    for (let actionIndex = 0; actionIndex < 30; actionIndex += 1) {
+      const requestId = crypto.randomUUID()
+      const refused = nextMessage(player.socket, 'error', (message) => message.requestId === requestId)
+      player.socket.send(JSON.stringify({ type: 'action', requestId, action: null }))
+      assertEqual((await refused).status, 409)
+    }
+  }
+  check('ten daily players absorb repeated action and voice bursts without disconnecting', () => {
+    assert(capacityPlayers.slice(0, 10).every((player) => player.socket.readyState === WebSocket.OPEN))
+  })
+  const fullHealth = await fetch(`${capacityOrigin}/api/health`).then((response) => response.json())
+  const replacementAtCapacity = new WebSocket(
+    `ws://127.0.0.1:${capacityAddress.port}/ws?room=${capacityRooms[0].snapshot.code}`,
+    { headers: { 'cf-connecting-ip': '198.51.100.1' } },
+  )
+  allCapacitySockets.add(replacementAtCapacity)
+  await new Promise((resolve, reject) => {
+    replacementAtCapacity.once('open', resolve)
+    replacementAtCapacity.once('error', reject)
+  })
+  const replacedAtCapacity = once(capacitySockets[0], 'close', { signal: AbortSignal.timeout(10_000) })
+  const replacementSnapshot = nextMessage(replacementAtCapacity, 'snapshot')
+  replacementAtCapacity.send(JSON.stringify({ type: 'authenticate', token: capacityRooms[0].token }))
+  const [[replacedAtCapacityCode]] = await Promise.all([replacedAtCapacity, replacementSnapshot])
+  capacitySockets[0] = replacementAtCapacity
+  capacityPlayers[0].socket = replacementAtCapacity
+  const extraSeat = await fetch(
+    `${capacityOrigin}/api/rooms/${capacityRooms.at(-1).snapshot.code}/join`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.13' },
+      body: JSON.stringify({ name: 'Capacity extra', character: 'defect' }),
+    },
+  ).then((response) => response.json())
+  const overCapacity = new WebSocket(
+    `ws://127.0.0.1:${capacityAddress.port}/ws?room=${capacityRooms.at(-1).snapshot.code}`,
+    { headers: { 'cf-connecting-ip': '203.0.113.1' } },
+  )
+  allCapacitySockets.add(overCapacity)
+  await new Promise((resolve, reject) => {
+    overCapacity.once('open', resolve)
+    overCapacity.once('error', reject)
+  })
+  const overCapacityClosed = once(overCapacity, 'close', { signal: AbortSignal.timeout(10_000) })
+  overCapacity.send(JSON.stringify({ type: 'authenticate', token: extraSeat.token }))
+  const [overCapacityCode] = await overCapacityClosed
+  const healthAfterCapacityRefusal = await fetch(`${capacityOrigin}/api/health`).then((response) => response.json())
+  check('fifty players stay connected, including a replacement, while a new fifty-first seat is refused cleanly', () => {
+    assertEqual(capacitySockets.length, 50)
+    assertEqual(fullHealth.connections, 50)
+    assertEqual(replacedAtCapacityCode, 4001)
+    assertEqual(healthAfterCapacityRefusal.connections, 50)
+    assert(capacitySockets.every((socket) => socket.readyState === WebSocket.OPEN),
+      'a player disconnected during the fifty-client load check')
+    assertEqual(overCapacityCode, 4009)
+  })
+} catch (error) {
+  capacityFailed = true
+  throw error
+} finally {
+  let cleanupFailure
+  for (const socket of allCapacitySockets) {
+    try {
+      if (socket.readyState === WebSocket.CONNECTING) socket.once('error', () => {})
+      socket.terminate()
+    } catch (error) { cleanupFailure ??= error }
+  }
+  try { await capacityService.close() } catch (error) { cleanupFailure ??= error }
+  if (cleanupFailure) {
+    if (capacityFailed) console.error('Capacity cleanup failed:', cleanupFailure)
+    else throw cleanupFailure
   }
 }
-for (const player of capacityPlayers.slice(0, 10)) {
-  const peer = capacityPlayers.find((candidate) =>
-    candidate.code === player.code && candidate.token !== player.token)
-  const lastSignal = nextMessage(peer.socket, 'voice', (message) =>
-    message.from === player.snapshot.you.playerId && message.signal.sequence === 39)
-  for (let sequence = 0; sequence < 40; sequence += 1) {
-    player.socket.send(JSON.stringify({
-      type: 'voice', to: peer.snapshot.you.playerId, signal: { sequence },
-    }))
-  }
-  await lastSignal
-  for (let actionIndex = 0; actionIndex < 30; actionIndex += 1) {
-    const requestId = crypto.randomUUID()
-    const refused = nextMessage(player.socket, 'error', (message) => message.requestId === requestId)
-    player.socket.send(JSON.stringify({ type: 'action', requestId, action: null }))
-    assertEqual((await refused).status, 409)
-  }
-}
-check('ten daily players absorb repeated action and voice bursts without disconnecting', () => {
-  assert(capacityPlayers.slice(0, 10).every((player) => player.socket.readyState === WebSocket.OPEN))
-})
-const fullHealth = await fetch(`${capacityOrigin}/api/health`).then((response) => response.json())
-const replacedAtCapacity = new Promise((resolve) =>
-  capacitySockets[0].once('close', (code) => resolve(code)))
-const replacementAtCapacity = new WebSocket(
-  `ws://127.0.0.1:${capacityAddress.port}/ws?room=${capacityRooms[0].snapshot.code}`,
-  { headers: { 'cf-connecting-ip': '198.51.100.1' } },
-)
-const replacementSnapshot = nextMessage(replacementAtCapacity, 'snapshot')
-await new Promise((resolve, reject) => {
-  replacementAtCapacity.once('open', resolve)
-  replacementAtCapacity.once('error', reject)
-})
-replacementAtCapacity.send(JSON.stringify({ type: 'authenticate', token: capacityRooms[0].token }))
-await replacementSnapshot
-const replacedAtCapacityCode = await replacedAtCapacity
-capacitySockets[0] = replacementAtCapacity
-capacityPlayers[0].socket = replacementAtCapacity
-const extraSeat = await fetch(
-  `${capacityOrigin}/api/rooms/${capacityRooms.at(-1).snapshot.code}/join`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.13' },
-    body: JSON.stringify({ name: 'Capacity extra', character: 'defect' }),
-  },
-).then((response) => response.json())
-const overCapacity = new WebSocket(
-  `ws://127.0.0.1:${capacityAddress.port}/ws?room=${capacityRooms.at(-1).snapshot.code}`,
-  { headers: { 'cf-connecting-ip': '203.0.113.1' } },
-)
-const overCapacityClosed = new Promise((resolve) =>
-  overCapacity.once('close', (code) => resolve(code)))
-await new Promise((resolve, reject) => {
-  overCapacity.once('open', resolve)
-  overCapacity.once('error', reject)
-})
-overCapacity.send(JSON.stringify({ type: 'authenticate', token: extraSeat.token }))
-const overCapacityCode = await overCapacityClosed
-const healthAfterCapacityRefusal = await fetch(`${capacityOrigin}/api/health`).then((response) => response.json())
-check('fifty players stay connected, including a replacement, while a new fifty-first seat is refused cleanly', () => {
-  assertEqual(capacitySockets.length, 50)
-  assertEqual(fullHealth.connections, 50)
-  assertEqual(replacedAtCapacityCode, 4001)
-  assertEqual(healthAfterCapacityRefusal.connections, 50)
-  assert(capacitySockets.every((socket) => socket.readyState === WebSocket.OPEN),
-    'a player disconnected during the fifty-client load check')
-  assertEqual(overCapacityCode, 4009)
-})
-for (const socket of capacitySockets) socket.close()
-await capacityService.close()
 
 let burstSaves = 0
 const burstService = createRoomServer({
@@ -1077,19 +1096,22 @@ try {
   entryService.server.on('request', onRequest)
   const expiredResponse = new Promise((resolve, reject) => {
     const request = httpRequest(`${entryOrigin}/api/rooms/${code}/join`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(10_000),
     }, (response) => {
       response.resume()
       response.once('end', () => resolve(response.statusCode))
+      response.once('error', reject)
     })
     request.once('error', reject)
     request.write('{"name":"Joining",')
     void seen.then(() => {
+      if (request.destroyed) return
       entryService.store.rooms.delete(code)
       request.end(`"character":"silent","requestId":"${joinRequestId}"}`)
     })
   })
-  const expiredStatus = await expiredResponse
+  let expiredStatus
+  try { expiredStatus = await expiredResponse } finally { entryService.server.off('request', onRequest) }
 
   check('entry retries survive the rate boundary without enabling unlimited replay or stale-room recovery', () => {
     assertEqual(repeatedCreate.status, 200)
@@ -1298,9 +1320,24 @@ try {
   })
   const refusedSocketStatus = await new Promise((resolve, reject) => {
     const socket = new WebSocket(`ws://127.0.0.1:${corsAddress.port}/ws?room=ABCDEF`, { origin: 'https://example.com' })
-    socket.once('unexpected-response', (_request, response) => resolve(response.statusCode))
-    socket.once('open', () => reject(new Error('cross-site WebSocket opened')))
-    socket.once('error', () => {})
+    const timer = setTimeout(() => {
+      socket.terminate()
+      reject(new Error('cross-site WebSocket handshake timed out'))
+    }, 10_000)
+    socket.once('unexpected-response', (_request, response) => {
+      clearTimeout(timer)
+      response.resume()
+      resolve(response.statusCode)
+    })
+    socket.once('open', () => {
+      clearTimeout(timer)
+      socket.terminate()
+      reject(new Error('cross-site WebSocket opened'))
+    })
+    socket.once('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
   })
   check('only the stable Pages origin may call the room API cross-origin', () => {
     assertEqual(allowed.status, 204)
