@@ -63,8 +63,12 @@ try {
         return { matches: top?.closest('.power') === tile, top: top?.className ?? top?.tagName ?? 'nothing' }
       })
       await power.hover()
-      await page.locator('.power__zoom').waitFor()
-      probes.push(await page.locator('.power__zoom').evaluate((zoom) => {
+      await page.waitForFunction((tile) => {
+        const zoom = document.querySelector('.power__zoom:not(.slime-party__zoom)')
+        return tile.getAttribute('aria-expanded') === 'true' &&
+          zoom?.firstElementChild?.textContent === tile.getAttribute('aria-label')
+      }, await power.elementHandle())
+      probes.push(await page.locator('.power__zoom:not(.slime-party__zoom)').evaluate((zoom) => {
         const box = zoom.getBoundingClientRect()
         return {
           width: Math.round(box.width), height: Math.round(box.height),
