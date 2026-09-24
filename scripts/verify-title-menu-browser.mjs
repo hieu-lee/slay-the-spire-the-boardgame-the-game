@@ -162,12 +162,8 @@ try {
     await page.screenshot({ path: join(output, `${screen}-settings.png`) })
     const contrast = page.getByRole('checkbox', { name: /High-contrast UI/ })
     await contrast.check()
-    const contrastBacking = await page.locator('.start-menu').evaluate(menu => {
-      const style = getComputedStyle(menu, '::before')
-      return { content: style.content, background: style.backgroundColor }
-    })
-    assert.equal(contrastBacking.content, '""')
-    assert.equal(contrastBacking.background, 'rgba(0, 0, 0, 0.72)')
+    assert((await page.locator('.start-menu').evaluate(menu => getComputedStyle(menu).backgroundImage))
+      .includes('rgba(0, 0, 0, 0.72)'), 'high contrast needs its dark background layer')
     await contrast.uncheck()
     const motion = page.getByRole('checkbox', { name: /Reduce motion/ })
     await motion.check()
@@ -181,15 +177,45 @@ try {
     await assertTypeface()
     await page.screenshot({ path: join(output, `${screen}-character.png`) })
     await page.getByRole('button', { name: 'Back', exact: true }).click()
-    if (!phone) {
-      await page.getByRole('button', { name: 'Play online', exact: true }).click()
-      await page.getByRole('button', { name: 'Create room', exact: true }).click()
-      const lobby = page.locator('.online-lobby')
-      await lobby.waitFor()
-      assert.equal(await lobby.getByRole('button', { name: 'Achievements' }).count(), 0)
-      await assertTypeface()
-      await page.screenshot({ path: join(output, `${screen}-lobby.png`) })
+    const backdrop = async selector => page.locator(selector).evaluate(element => {
+      const style = getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return { image: style.backgroundImage, position: style.backgroundPosition, size: style.backgroundSize,
+        attachment: style.backgroundAttachment, color: style.backgroundColor,
+        width: rect.width, height: rect.height, x: rect.x, y: rect.y }
+    })
+    const photographBackdrop = async (selector, label) => {
+      const hidePanels = await page.addStyleTag({ content: `${selector} > * { visibility: hidden !important; }` })
+      const image = await page.locator(selector).screenshot({ path: join(output, `${screen}-background-${label}.png`) })
+      await hidePanels.evaluate(element => element.remove())
+      return image
     }
+    const menuImage = await photographBackdrop('.start-menu', 'menu')
+    const menuBackdrop = await backdrop('.start-menu')
+    await page.locator('html').evaluate(element => { element.dataset.highContrast = 'true' })
+    const contrastBackdrop = await backdrop('.start-menu')
+    await page.locator('html').evaluate(element => { element.dataset.highContrast = 'false' })
+    await page.getByRole('button', { name: 'Play online', exact: true }).click()
+    await page.locator('.online-entry').waitFor()
+    assert.deepEqual(await backdrop('.online-entry'), menuBackdrop, `${screen}: multiplayer entry changes the menu backdrop`)
+    assert.equal(Buffer.compare(await photographBackdrop('.online-entry', 'entry'), menuImage), 0,
+      `${screen}: multiplayer entry background pixels differ from the menu`)
+    await page.screenshot({ path: join(output, `${screen}-multiplayer-entry.png`) })
+    await page.getByRole('button', { name: 'Create room', exact: true }).click()
+    const lobby = page.locator('.online-lobby')
+    await lobby.waitFor()
+    assert.deepEqual(await backdrop('.online-lobby'), menuBackdrop, `${screen}: party lobby changes the menu backdrop`)
+    assert.equal(Buffer.compare(await photographBackdrop('.online-lobby', 'lobby'), menuImage), 0,
+      `${screen}: party lobby background pixels differ from the menu`)
+    await lobby.evaluate(element => { element.scrollTop = element.scrollHeight })
+    assert.deepEqual(await backdrop('.online-lobby'), menuBackdrop, `${screen}: scrolling changes the lobby backdrop`)
+    await page.locator('html').evaluate(element => { element.dataset.highContrast = 'true' })
+    assert.deepEqual(await backdrop('.online-lobby'), contrastBackdrop, `${screen}: high contrast changes the lobby backdrop`)
+    await page.locator('html').evaluate(element => { element.dataset.highContrast = 'false' })
+    await lobby.evaluate(element => { element.scrollTop = 0 })
+    assert.equal(await lobby.getByRole('button', { name: 'Achievements' }).count(), 0)
+    await assertTypeface()
+    await page.screenshot({ path: join(output, `${screen}-lobby.png`) })
     await context.close()
   }
 } finally {

@@ -9,9 +9,6 @@
 .sts-scope.online-lobby {
   align-content: center;
   padding: 4.5rem 1rem 2.5rem;
-  background:
-    radial-gradient(ellipse at 50% 42%, rgb(10 8 7 / 0.62), rgb(8 6 5 / 0.9) 60%, rgb(4 3 3 / 0.97)),
-    url('/assets/menu/title-spire.webp') center 28% / cover no-repeat fixed;
 }
 
 .sts-scope .online-lobby__table {

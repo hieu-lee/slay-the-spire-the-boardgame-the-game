@@ -140,7 +140,7 @@ html[data-reduced-motion='true'] .combat-vfx::before,
 html[data-reduced-motion='true'] .combat-vfx::after { opacity: 0.45; }
 
 html[data-high-contrast='true'] { --cream: #fff9e8; --ink-dim: #d8cdb7; --trim-dim: #d2aa55; }
-html[data-high-contrast='true'] .start-menu::before { background: rgb(0 0 0 / 0.72); }
+html[data-high-contrast='true'] { --menu-shade: rgb(0 0 0 / 0.72); }
 html[data-high-contrast='true'] .start-menu__nav button { color: #fff; }
 html[data-high-contrast='true'] .start-menu__nav button:is(:hover, :focus-visible) { color: #fff36b; }
 html[data-high-contrast='true'] .start-menu__nav button:focus-visible { outline-color: #fff; }

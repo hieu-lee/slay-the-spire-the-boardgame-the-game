@@ -1,20 +1,18 @@
+.start-menu,
+.sts-scope.online-entry,
+.sts-scope.online-lobby {
+  width: 100%;
+  height: min(100%, var(--visible-viewport-height, 100%));
+  background: linear-gradient(var(--menu-shade, transparent), var(--menu-shade, transparent)),
+    #1b2930 url('/assets/menu/title-spire.webp') center bottom / cover no-repeat;
+}
+
 .start-menu {
   position: relative;
   isolation: isolate;
-  width: 100%;
-  height: min(100%, var(--visible-viewport-height, 100%));
   overflow: hidden;
   color: #f6ead3;
-  background: #1b2930 url('/assets/menu/title-spire.webp') center bottom / cover no-repeat;
   font-family: 'Kreon', Georgia, serif;
-}
-
-.start-menu::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  /* The high-contrast setting supplies its optional dark backing. */
 }
 
 .start-menu__profile {
