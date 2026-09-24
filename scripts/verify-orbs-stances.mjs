@@ -4,6 +4,7 @@
 import {
   beginEndTurnResolution,
   beginEndPlayerTurn,
+  activateRelic,
   createCombat,
   endPlayerTurn,
   endTurnResolutionAbility,
@@ -681,7 +682,7 @@ const withRelic = (defId, over = {}) =>
 // did nothing. These pin each trigger point.
 check('Akabeko waits for its printed manual once-per-combat activation', () => {
   const deck = Array.from({ length: 10 }, () => instance('strike_ironclad'))
-  let state = createCombat(createRng(5), [withRelic('anchor', { draw: deck })], [enemy()])
+  let state = createCombat(createRng(5), [withRelic('akabeko', { draw: deck })], [enemy()])
   state = startPlayerTurn(state)
   assertEqual(state.players[0].strength, 0, 'Akabeko does not grant digital-style permanent Strength')
 
@@ -690,6 +691,9 @@ check('Akabeko waits for its printed manual once-per-combat activation', () => {
   state = startPlayerTurn(enemyTurn(endPlayerTurn(state)))
   assertEqual(state.turn, 2, 'precondition: the second round must actually begin')
   assertEqual(state.players[0].strength, 0, 'and it stays inert until its owner activates it')
+  const activated = activateRelic(state, 'p1', 0)
+  assertEqual(activated.players[0].akabekoAttacks, 1, 'manual activation arms the next Attack')
+  assertEqual(activateRelic(activated, 'p1', 0), activated, 'Akabeko activates only once per combat')
 })
 
 check('a start-of-combat draw relic fills the hand further', () => {
@@ -745,8 +749,8 @@ check('a dead player ends combat before any relics fire', () => {
       [enemy()],
     ),
   )
-  assertEqual(state.players[0].strength, 0, 'the dead gain nothing from their relics')
-  assertEqual(state.players[1].strength, 0, 'nothing resolves after the party loses')
+  assertEqual(state.players[0].block, 0, 'the dead gain nothing from Anchor')
+  assertEqual(state.players[1].block, 0, 'nothing resolves after the party loses')
   assertEqual(state.phase, 'lost')
 })
 
@@ -762,8 +766,8 @@ check('one player\'s relic never fires for another', () => {
       [enemy()],
     ),
   )
-  assertEqual(state.players[0].strength, 0, 'the owner must activate the once-per-combat effect')
-  assertEqual(state.players[1].strength, 0, 'the other player gets nothing')
+  assertEqual(state.players[0].block, 2, 'Anchor grants Block to its owner')
+  assertEqual(state.players[1].block, 0, 'the other player gets nothing')
 })
 
 check('a player with no relics is unaffected', () => {
