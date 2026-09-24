@@ -42,6 +42,7 @@ try {
     await page.screenshot({ path: `artifacts/boon-socket/map-${viewport.width}.png` })
     const finished = await page.evaluate(() => window.__STS_DEBUG__.getRun())
     assert.equal(finished.players[0].hp, run.players[0].hp - 1)
+    assert.equal(finished.players[0].deck.find(card => card.uid === pending.cardUid)?.attachedGemId, pending.gemIds[0])
     const stuck = structuredClone(run)
     stuck.players[0].deck = finished.players[0].deck
     stuck.pendingGuardianSockets = []
@@ -53,6 +54,8 @@ try {
     await page.reload()
     await page.getByRole('button', { name: 'Resume', exact: true }).click()
     await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+    const recovered = await page.evaluate(() => window.__STS_DEBUG__.getRun())
+    assert.equal(recovered.players[0].deck.find(card => card.uid === pending.cardUid)?.attachedGemId, pending.gemIds[0])
     assert.deepEqual(errors, [])
     console.log(`Boon Socket and stuck-save recovery passed: ${viewport.width}x${viewport.height}`)
     await page.close()
