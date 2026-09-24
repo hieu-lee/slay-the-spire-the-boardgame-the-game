@@ -52,7 +52,8 @@ pnpm sync:assets     # refresh card faces and icons; add optional Act I enemy cr
 | Neow cutout (`public/assets/neow/neow.webp`) | user-supplied transparent Slay the Spire character artwork; optimized to WebP for this UI |
 | Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
 | Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |
-| UI, card and combat sound effects | `80 CC0 RPG SFX` by rubberduck, released under CC0 on OpenGameArt |
+| UI click sound | Original synthesized effect; regenerate with `python3 scripts/generate-ui-click.py` |
+| Card and combat sound effects | `80 CC0 RPG SFX` by rubberduck, released under CC0 on OpenGameArt |
 
 The sync scripts keep the rulebook PDF, source-resolution working files, and unused enemy variants
 out of version control. Optimized card scans, rulebook icons, and runtime enemy artwork are

@@ -331,7 +331,8 @@ try {
   `the Orb row no longer rests directly above the compact Defect portrait: ${compactOrbGap}px`)
   await page.setViewportSize({ width: 1440, height: 900 })
   assert(loopCardBox.y < loopOrbBox.y, 'the Loop card was not above the Orb drag source')
-  await drag(loopOrb, loop)
+  await loop.click()
+  await loopOrb.press('Enter')
   await page.waitForFunction(() => Object.values(
     window.__STS_DEBUG__.getRun().combat.endTurnProgress?.loopSelections ?? {},
   ).includes(1))
@@ -350,7 +351,7 @@ try {
     .find((enemy) => enemy.uid === 'loop-row-two')?.hp === 19)
   const loopBossHp = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies
     .find((enemy) => enemy.uid === 'loop-row-boss')?.hp)
-  check('Loop selects Orbs by dragging them up to its card, then copied Electrodynamics Lightning uses a minion row', () => {
+  check('Loop selects Orbs by drag or keyboard, then copied Electrodynamics Lightning uses a minion row', () => {
     assert(!copiedBossWasTargeted, 'copied Lightning highlighted an ambiguous boss target')
     assert(copiedRowWasTargeted, 'copied Lightning did not highlight a populated row')
     assert(loopBossHp === 19, `the selected copied Lightning row did not include the boss: ${loopBossHp}`)

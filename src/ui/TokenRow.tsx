@@ -103,7 +103,7 @@ export function OrbRow({
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault()
                 event.stopPropagation()
-                onTarget?.(slot)
+                event.currentTarget.click()
               }
             }}
             aria-label={`Choose ${orb} Orb ${slot + 1}`}>

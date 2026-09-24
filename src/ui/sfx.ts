@@ -236,17 +236,17 @@ export function installSoundEffects(warm = true) {
     const target = event.target instanceof Element ? event.target : null
     const control = event.type === 'change'
       ? target?.closest('input, select, textarea')
-      : target?.closest('button, summary, a[href]')
+      : target?.closest('button, summary, a[href], [role="button"]')
     if (!control || control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true' || control.closest('[inert]')) return
     const sound = control.getAttribute('data-sfx') as Sound | 'none' | null
     if (sound === 'none') return
     playSound(sound && sound in SOUNDS ? sound : 'ui')
   }
 
-  document.addEventListener('click', play)
+  document.addEventListener('click', play, true)
   document.addEventListener('change', play)
   return () => {
-    document.removeEventListener('click', play)
+    document.removeEventListener('click', play, true)
     document.removeEventListener('change', play)
     for (const audio of activeEffects) releaseAudio(audio)
     activeEffects.clear()
