@@ -1108,12 +1108,7 @@ print(json.dumps(faults))
     existsSync(file),
   )
   const result = spawnSync('python3', ['-c', probe, ...files], { encoding: 'utf8' })
-  if (result.status !== 0) {
-    // Pillow is only needed to BUILD these; a machine without it should not
-    // fail the suite, it should say why the check could not run.
-    console.log('· icon pixels not checked (needs python3 + Pillow)')
-    return
-  }
+  assert(result.status === 0, result.stderr || result.error?.message || 'icon pixel audit requires python3 + Pillow')
   const faults = JSON.parse(result.stdout.trim().split('\n').pop())
   assert(faults.length === 0, `icon conversion is wrong:\n    ${faults.join('\n    ')}`)
 })
