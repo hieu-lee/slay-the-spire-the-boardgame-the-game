@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createRun } from '../src/game/run.ts'
 import { createCombat, playCard } from '../src/game/combat.ts'
 import { cardDef } from '../src/game/cards.ts'
-import { createStore, createRoom, joinRoom, startRun, apply, snapshotFor } from './lib/rooms.mjs'
+import { createStore, createRoom, joinRoom, markDisconnected, startRun, apply, snapshotFor } from './lib/rooms.mjs'
 import { check, report } from './lib/harness.mjs'
 
 function fixture(id, upgraded = false) {
@@ -102,9 +102,12 @@ check('Room authority preserves corrected targets and private hands across recon
     state.players[0].id = owner.playerId
     state.players[1].id = peer.playerId
     room.run = { ...room.run, phase: 'combat', combat: state }
-    assert.throws(() => apply(room, peer.token, { kind: 'playCard', cardUid: 'card', playerId: owner.playerId }))
-    apply(room, owner.token, { kind: 'playCard', cardUid: 'card', enemyUid: 'e0',
-      ...(id === 'reinforced_body' ? { energySpent: 2, playerId: peer.playerId } : {}) })
+    const action = { kind: 'playCard', cardUid: 'card', enemyUid: 'e0',
+      ...(id === 'reinforced_body' ? { energySpent: 2, playerId: peer.playerId } : {}) }
+    assert.throws(() => apply(room, peer.token, action),
+      { name: 'RoomError', message: 'That card is not in your hand' })
+    apply(room, owner.token, action)
+    markDisconnected(room, owner.token)
     joinRoom(room, { token: owner.token, connected: true })
     const seen = snapshotFor(room, peer.token).run.combat
     assert.equal(seen.players[0].hand, null)
