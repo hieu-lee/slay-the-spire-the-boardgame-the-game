@@ -22,7 +22,11 @@ assert.equal(new Set([...first.rows, ...second.rows, ...third.rows].map(r => r.i
 for (const sort of ['character', 'ascension', 'cardCount', 'username', 'recordedAt']) {
   for (const direction of ['asc', 'desc']) {
     let cursor = null, rows = []
+    const seenCursors = new Set()
     do {
+      assert(!seenCursors.has(cursor), `${sort} ${direction}: repeated cursor ${cursor}`)
+      assert(seenCursors.size < runs.length, `${sort} ${direction}: too many pages`)
+      seenCursors.add(cursor)
       const page = winningDecksPage(runs, query({ sort, direction, ...(cursor === null ? {} : { cursor }) }))
       rows.push(...page.rows); cursor = page.nextCursor
     } while (cursor !== null)
@@ -94,8 +98,7 @@ try {
   assert.equal((await fetch(`${url}?sort=character&sort=ascension`)).status, 400)
   addLeaderboardRun(server.store, { ...runs[0], id: 'new-installation:cache-invalidated', username: 'New player' }, 1900000000000)
   assert.equal((await (await fetch(url)).json()).rows[0].username, 'New player')
-  let limited
-  for (let request = 0; request < 29; request++) limited = await fetch(url)
-  assert.equal(limited.status, 429)
+  for (let request = 0; request < 25; request++) assert.equal((await fetch(url)).status, 200)
+  assert.equal((await fetch(url)).status, 429)
 } finally { await server.close() }
 console.log('Winning decks: bounded pages, global sorting, filters, stable ties/cursors, safe public fields and HTTP validation pass')
