@@ -133,11 +133,19 @@ try {
     await route.continue()
   })
   await desktop.getByRole('button', { name: 'Choose Defense Mode' }).evaluate(button => button.click())
-  await startTurnIntercepted
-  assert.deepEqual(await form(desktop).getByRole('button').evaluateAll(buttons =>
-    buttons.map(button => button.disabled)), [true, true])
-  assert.equal(await desktop.getByRole('button', { name: /^Resolve start turn/ }).count(), 0)
-  releaseStartTurn()
+  let timeout
+  try {
+    await Promise.race([
+      startTurnIntercepted,
+      new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('resolveStartTurn request was not intercepted')), 30_000) }),
+    ])
+    assert.deepEqual(await form(desktop).getByRole('button').evaluateAll(buttons =>
+      buttons.map(button => button.disabled)), [true, true])
+    assert.equal(await desktop.getByRole('button', { name: /^Resolve start turn/ }).count(), 0)
+  } finally {
+    clearTimeout(timeout)
+    releaseStartTurn()
+  }
   let staged
   for (let attempt = 0; attempt < 40; attempt += 1) {
     staged = await snapshot(desktop)
