@@ -40,7 +40,7 @@
 .online-lobby h1 {
   margin: 0.35rem 0 1rem;
   color: var(--ink);
-  font-family: Georgia, serif;
+  font-family: 'Kreon', Georgia, serif;
   font-size: clamp(2.2rem, 8vw, 4rem);
   letter-spacing: 0.08em;
   text-transform: uppercase;

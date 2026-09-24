@@ -67,6 +67,8 @@ html *::backdrop {
   cursor: url('/assets/ui/cursor-click.png') 7 6, auto !important;
 }
 
+input, select, textarea { font-family: inherit; }
+
 button {
   font: inherit;
   color: inherit;

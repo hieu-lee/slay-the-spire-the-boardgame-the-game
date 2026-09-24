@@ -52,9 +52,12 @@ try {
       }
       await page.evaluate(async () => {
         await document.fonts.ready
-        const backdrop = new Image()
-        backdrop.src = '/assets/menu/title-spire.webp'
-        await backdrop.decode()
+        await Promise.all(['title-spire.webp', 'title-flame.webp', 'menu-ornament.webp'].map(async asset => {
+          const image = new Image()
+          image.src = `/assets/menu/${asset}`
+          await image.decode()
+        }))
+        await document.querySelector('.start-menu__title img').decode()
       })
       const layout = await page.locator('.start-menu').evaluate((menu) => {
         const box = (selector) => menu.querySelector(selector).getBoundingClientRect().toJSON()
@@ -76,7 +79,36 @@ try {
         `${label}: a menu target is too short to tap: ${JSON.stringify(layout)}`)
       assert.deepEqual(await page.locator('.start-menu__nav button').allTextContents(),
         [...(saved ? ['Resume'] : []), 'Single Player', 'Multiplayer', 'Leaderboard', 'Stats', 'Replay', 'Compendium', 'Settings'])
+      assert.equal(await page.locator('.start-menu__title img').getAttribute('alt'), 'Slay the Spire')
+      const flame = page.locator('.start-menu__title-flame')
+      assert.equal(await flame.evaluate(element => getComputedStyle(element).animationName), 'title-flame-flicker')
+      assert.equal(await flame.getAttribute('aria-hidden'), 'true')
+      const transform = await flame.evaluate(element => getComputedStyle(element).transform)
+      await page.waitForFunction(previous => getComputedStyle(document.querySelector('.start-menu__title-flame')).transform !== previous, transform)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      assert.equal(await flame.evaluate(element => getComputedStyle(element).animationName), 'none')
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      const menuStyle = await page.locator('.start-menu__nav button').first().evaluate(button => {
+        const style = getComputedStyle(button)
+        return { font: style.fontFamily, stroke: style.webkitTextStrokeWidth, spacing: style.letterSpacing }
+      })
+      assert(menuStyle.font.includes('Kreon') && parseFloat(menuStyle.stroke) >= 3 && parseFloat(menuStyle.spacing) > 0,
+        `${label}: reference menu typography is missing: ${JSON.stringify(menuStyle)}`)
       await page.screenshot({ path: join(output, `${label}.png`) })
+      if (!phone) {
+        const option = page.getByRole('button', { name: 'Settings', exact: true })
+        await option.hover()
+        await page.waitForFunction(() => getComputedStyle(document.querySelector('.start-menu__nav button:last-child'), '::before').opacity === '1')
+        assert.equal(await option.evaluate(button => getComputedStyle(button).backgroundImage), 'none')
+        await page.screenshot({ path: join(output, `${label}-hover.png`) })
+        await page.mouse.move(0, 0)
+        await page.waitForFunction(() => getComputedStyle(document.querySelector('.start-menu__nav button:last-child'), '::before').opacity === '0')
+        await page.keyboard.press('Tab')
+        await option.focus()
+        assert.equal(await option.evaluate(button => button.matches(':focus-visible')), true)
+        await page.screenshot({ path: join(output, `${label}-keyboard.png`) })
+        await option.evaluate(button => button.blur())
+      }
       if (phone) {
         const originalViewport = await page.locator('meta[name="viewport"]').getAttribute('content')
         await page.setViewportSize({ width: viewport.width, height: viewport.height - 46 })
@@ -111,15 +143,47 @@ try {
       }
       console.log(`${label}: title and options fit and remain centered`)
     }
+    const assertTypeface = async () => {
+      const wrongFaces = await page.locator('body').evaluate(body => [...body.querySelectorAll('*')]
+        .filter(element => element.getClientRects().length && [...element.childNodes].some(node =>
+          node.nodeType === Node.TEXT_NODE && node.textContent.trim()))
+        .filter(element => !getComputedStyle(element).fontFamily.startsWith('Kreon'))
+        .map(element => `${element.tagName}.${element.className}: ${getComputedStyle(element).fontFamily}`))
+      assert.deepEqual(wrongFaces, [], `${screen}: visible text uses a competing typeface`)
+    }
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Settings' }).waitFor()
+    await assertTypeface()
+    await page.screenshot({ path: join(output, `${screen}-settings.png`) })
+    const contrast = page.getByRole('checkbox', { name: /High-contrast UI/ })
+    await contrast.check()
+    const contrastBacking = await page.locator('.start-menu').evaluate(menu => {
+      const style = getComputedStyle(menu, '::before')
+      return { content: style.content, background: style.backgroundColor }
+    })
+    assert.equal(contrastBacking.content, '""')
+    assert.equal(contrastBacking.background, 'rgba(0, 0, 0, 0.72)')
+    await contrast.uncheck()
+    const motion = page.getByRole('checkbox', { name: /Reduce motion/ })
+    await motion.check()
+    assert.equal(await page.locator('.start-menu__title-flame').evaluate(element => getComputedStyle(element).animationName), 'none')
+    await motion.uncheck()
+    await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
+    await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+    await page.getByRole('button', { name: 'Standard', exact: true }).click()
+    await page.locator('.start-menu__character-wallpaper[data-decoded]').waitFor()
+    await page.waitForFunction(() => document.querySelector('.start-menu__character-wallpaper').getAnimations().every(animation => animation.playState === 'finished'))
+    await assertTypeface()
+    await page.screenshot({ path: join(output, `${screen}-character.png`) })
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
     if (!phone) {
-      await page.getByRole('button', { name: 'Settings', exact: true }).click()
-      await page.getByRole('dialog', { name: 'Settings' }).waitFor()
-      await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
       await page.getByRole('button', { name: 'Play online', exact: true }).click()
       await page.getByRole('button', { name: 'Create room', exact: true }).click()
       const lobby = page.locator('.online-lobby')
       await lobby.waitFor()
       assert.equal(await lobby.getByRole('button', { name: 'Achievements' }).count(), 0)
+      await assertTypeface()
+      await page.screenshot({ path: join(output, `${screen}-lobby.png`) })
     }
     await context.close()
   }

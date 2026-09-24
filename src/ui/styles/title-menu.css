@@ -5,7 +5,7 @@
   height: min(100%, var(--visible-viewport-height, 100%));
   overflow: hidden;
   color: #f6ead3;
-  background: #1b2930 url('/assets/menu/title-spire.webp') center / cover no-repeat;
+  background: #1b2930 url('/assets/menu/title-spire.webp') center bottom / cover no-repeat;
   font-family: 'Kreon', Georgia, serif;
 }
 
@@ -14,9 +14,7 @@
   position: absolute;
   z-index: -1;
   inset: 0;
-  background:
-    linear-gradient(90deg, rgb(5 9 13 / 0.62), transparent 52%),
-    linear-gradient(0deg, rgb(4 8 12 / 0.42), transparent 50%);
+  /* The high-contrast setting supplies its optional dark backing. */
 }
 
 .start-menu__profile {
@@ -58,52 +56,67 @@
 
 .start-menu__title {
   text-align: center;
-  filter: drop-shadow(0 0.55rem 0.2rem rgb(0 0 0 / 0.8));
   pointer-events: none;
 }
 
 .start-menu__title h1 {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3rem;
-  margin: 0;
-  color: #ffd817;
-  font-size: clamp(5rem, min(12vw, 17vh), 14rem);
-  font-weight: 700;
-  letter-spacing: -0.08em;
-  line-height: 0.96;
-  text-shadow: -3px 3px 0 #33220a, 3px 3px 0 #33220a, 0 0 4px #000;
-  transform: rotate(-1.5deg);
-}
-
-.start-menu__title h1 > span { white-space: nowrap; }
-.start-menu__title h1 small {
-  color: #e9f3e9;
-  font-size: 0.28em;
-  font-style: italic;
-  letter-spacing: 0;
-}
-
-.start-menu__flame-i {
   position: relative;
-  display: inline-block;
-  width: 0.26em;
+  margin: 0;
+  font-size: clamp(5rem, min(12vw, 17vh), 14rem);
+  line-height: 0;
 }
 
-.start-menu__flame-i::after {
+.start-menu__title img {
+  display: block;
+  width: 3.3em;
+  max-width: calc(100vw - 2rem);
+  height: auto;
+}
+
+.start-menu__title-flame {
   position: absolute;
-  top: -0.08em;
-  left: 50%;
-  width: 0.23em;
-  height: 0.34em;
-  border-radius: 65% 45% 60% 45%;
-  background: radial-gradient(circle at 52% 68%, #f5ffff 0 10%, #8ffaff 13% 27%, #38d9ef 30% 58%, #078cae 62%);
-  box-shadow: 0 0 0.08em #d4ffff, 0 0 0.2em #30cfea;
-  clip-path: polygon(50% 0, 77% 35%, 68% 58%, 86% 74%, 51% 100%, 15% 76%, 34% 48%, 27% 30%);
+  left: 57.17%;
+  top: 23.1%;
+  width: 9.44%;
+  height: 20.65%;
+  background: url('/assets/menu/title-flame.webp') center / contain no-repeat;
+  filter: drop-shadow(0 0 0.045em #50eaff);
+  transform-origin: 50% 85%;
+  animation: title-flame-flicker 1.4s ease-in-out infinite;
+}
+
+.start-menu__title-flame::after {
   content: '';
-  transform: translateX(-50%);
+  position: absolute;
+  left: 48%;
+  top: 23%;
+  width: 5%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #b4ffff;
+  box-shadow: 0 0 0.035em #3de9ff;
+  animation: title-flame-ember 1.8s ease-out infinite;
+}
+
+@keyframes title-flame-flicker {
+  0%, 100% { transform: rotate(-2deg) scale(0.96, 1.02); }
+  30% { transform: rotate(2deg) scale(1.04, 0.97); }
+  55% { transform: rotate(-1deg) scale(0.93, 1.09); }
+  75% { transform: rotate(1deg) scale(1.02, 1.03); }
+}
+
+@keyframes title-flame-ember {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  20% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(0.025em, -0.22em) scale(0.2); }
+}
+
+.start-menu[data-reduced-motion] .start-menu__title-flame { animation: none; }
+.start-menu[data-reduced-motion] .start-menu__title-flame::after { display: none; animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .start-menu__title-flame { animation: none; }
+  .start-menu__title-flame::after { display: none; animation: none; }
 }
 
 .start-menu__nav {
@@ -114,16 +127,19 @@
 
 .start-menu__nav button {
   position: relative;
-  min-width: 14rem;
+  min-width: 0;
   padding: 0.16rem 2.5rem;
   border: 0;
-  color: #eee7d7;
+  color: #fff9e6;
   background: none;
   font-family: 'Kreon', Georgia, serif;
   font-size: clamp(1.5rem, min(2.3vw, 3.7vh), 2.25rem);
   font-weight: 700;
   text-align: center;
-  text-shadow: -2px 2px 0 #15130f, 2px 2px 0 #15130f, 0 0 4px #000;
+  letter-spacing: 0.025em;
+  -webkit-text-stroke: 4px #171d1d;
+  paint-order: stroke fill;
+  text-shadow: 0 2px 1px #080b0c;
 }
 
 .start-menu__nav button::before,
@@ -131,12 +147,9 @@
   position: absolute;
   top: 50%;
   width: 1.55rem;
-  height: 0.65rem;
+  height: 1.05rem;
   opacity: 0;
-  background:
-    radial-gradient(ellipse at 78% 50%, #f7d76a 0 18%, transparent 20%),
-    linear-gradient(25deg, transparent 38%, #dfb344 40% 52%, transparent 54%),
-    linear-gradient(-25deg, transparent 44%, #a97828 46% 55%, transparent 57%);
+  background: url('/assets/menu/menu-ornament.webp') center / contain no-repeat;
   content: '';
   filter: drop-shadow(0 2px 1px #000);
   transform: translateY(-50%) scaleX(0.7);
@@ -146,18 +159,17 @@
 .start-menu__nav button::before { left: 0.45rem; }
 .start-menu__nav button::after { right: 0.45rem; transform: translateY(-50%) scaleX(-0.7); }
 
-.start-menu__nav button[data-selected='true'] {
-  color: #ffd75a;
-  background: radial-gradient(ellipse at 50% 55%, rgb(255 211 91 / 0.26), transparent 68%);
+.start-menu__nav button:is(:hover, :focus-visible) {
+  color: #e9c95f;
 }
 
-.start-menu__nav button[data-selected='true']::before,
-.start-menu__nav button[data-selected='true']::after {
+.start-menu__nav button:is(:hover, :focus-visible)::before,
+.start-menu__nav button:is(:hover, :focus-visible)::after {
   opacity: 1;
   transform: translateY(-50%) scaleX(1);
 }
 
-.start-menu__nav button[data-selected='true']::after { transform: translateY(-50%) scaleX(-1); }
+.start-menu__nav button:is(:hover, :focus-visible)::after { transform: translateY(-50%) scaleX(-1); }
 .start-menu__nav button:focus-visible { outline: 1px solid rgb(255 218 113 / 0.5); outline-offset: -3px; }
 
 .start-menu__mode-select {
@@ -443,7 +455,7 @@
   width: clamp(4rem, 8vw, 7.5rem);
   aspect-ratio: 1.7;
   border: 0;
-  font: 900 clamp(2rem, 3.5vw, 3.35rem)/1 Georgia, serif;
+  font: 900 clamp(2rem, 3.5vw, 3.35rem)/1 'Kreon', Georgia, serif;
   filter: drop-shadow(0 0.3rem 0.32rem rgb(0 0 0 / 0.48));
 }
 
@@ -555,12 +567,13 @@
 @media (max-height: 620px) and (orientation: landscape) {
   .start-menu__landing { gap: clamp(0.5rem, 2vh, 1rem); }
   .start-menu__title h1 { font-size: clamp(2.1rem, 6vw, 5rem); }
-  .start-menu__nav button { min-width: 12rem; padding: 0.04rem 2.5rem; font-size: clamp(0.95rem, 2.2vw, 1.25rem); line-height: 1.15; }
+  .start-menu__nav button { min-width: 0; padding: 0.04rem 2.5rem; font-size: clamp(0.95rem, 2.2vw, 1.25rem); line-height: 1.15; }
 }
 @media (pointer: coarse) and (orientation: landscape) and (min-height: 700px) {
   html[data-mobile-performance='true'] .start-menu__landing { gap: 1.75rem; padding: 3rem 1rem 1.5rem; }
   html[data-mobile-performance='true'] .start-menu__mode-choice { gap: .75rem; padding: 1.5rem 11% 7%; }
   html[data-mobile-performance='true'] .start-menu__mode-choice img { max-height: min(34vh, calc(var(--visible-viewport-height, 100dvh) * .35)); }
+  html[data-mobile-performance='true'] .start-menu__title img { width: 2.7em; }
   html[data-mobile-performance='true'] .start-menu__title h1 { font-size: clamp(5rem, 14vh, 7rem); line-height: 0.9; }
   html[data-mobile-performance='true'] .start-menu__nav button { font-size: clamp(1.25rem, 3.7vh, 1.75rem); line-height: 1.15; padding: 0.65rem 2.5rem; }
 }

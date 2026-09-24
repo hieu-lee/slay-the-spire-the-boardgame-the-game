@@ -398,7 +398,7 @@
   inset: auto 0 -0.1rem;
   justify-content: center;
   padding: 0.8rem 0.25rem 0.1rem;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Kreon', Georgia, serif;
   font-weight: 700;
   text-align: center;
   text-shadow: 0 2px 2px #000;
@@ -455,7 +455,7 @@
   left: 65%;
   bottom: 72%;
   color: #fff1c7;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Kreon', Georgia, serif;
   font-size: 1.6rem;
   text-shadow: 0 2px 0 #641817, 0 0 5px #000;
   animation: damage-float 520ms var(--hit-delay, 0ms) var(--ease) both;
@@ -609,7 +609,7 @@
   z-index: 21;
   pointer-events: none;
   color: #fff1c7;
-  font: bold 1.15rem Georgia, 'Times New Roman', serif;
+  font: bold 1.15rem 'Kreon', Georgia, serif;
   text-shadow: 0 2px 0 #641817, 0 0 5px #000;
   animation: hermit-damage-float 600ms ease-out both;
 }

@@ -545,15 +545,10 @@ const titleMenu = await page.locator('.start-menu').evaluate((menu) => {
     font: getComputedStyle(menu).fontFamily,
   }
 })
-const titleFlame = await page.locator('.start-menu__flame-i').evaluate((flame) => ({
-  background: getComputedStyle(flame, '::after').backgroundImage,
-  content: getComputedStyle(flame, '::after').content,
-  top: Number.parseFloat(getComputedStyle(flame, '::after').top),
-}))
 const menuSelection = await page.locator('.start-menu__nav').evaluate((nav) => ({
-  selected: [...nav.querySelectorAll('button')].filter((button) => button.dataset.selected === 'true')
+  selected: [...nav.querySelectorAll('button')].filter((button) => button.matches(':hover, :focus-visible'))
     .map((button) => button.textContent?.trim()),
-  marker: getComputedStyle(nav.querySelector('button[data-selected="true"]'), '::before').content,
+  marker: getComputedStyle(nav.querySelector('button:hover, button:focus-visible'), '::before').content,
 }))
 const titleMenuAt = async (width, height) => {
   await page.setViewportSize({ width, height })
@@ -586,8 +581,6 @@ check('the title menu fills the viewport without clipping its controls', () => {
   const separate = (first, second) => first.right < second.left || second.right < first.left ||
     first.bottom < second.top || second.bottom < first.top
   assert(titleMenu.background.includes('title-spire.webp'), 'the generated title backdrop is missing')
-  assert(titleFlame.content === '""' && titleFlame.top < 0 && titleFlame.background.includes('radial-gradient'),
-    'the blue flame dot is missing from the Spire title')
   assert(titleMenu.font.includes('Kreon'), `the game-style typeface is missing: ${titleMenu.font}`)
   for (const [name, box] of Object.entries({ title: titleMenu.title, nav: titleMenu.nav })) {
     assert(box && box.left >= titleMenu.box.left - 1 && box.right <= titleMenu.box.right + 1 &&

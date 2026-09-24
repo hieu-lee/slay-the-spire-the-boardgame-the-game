@@ -47,7 +47,7 @@
   border: 2px solid color-mix(in srgb, var(--card-frame), #e8d8b4 30%);
   border-radius: 6px;
   box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.08);
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Kreon', Georgia, serif;
   text-align: center;
   text-shadow: 0 1px 2px #000;
 }
@@ -117,7 +117,7 @@
   overflow: hidden;
   padding: 4%;
   background: linear-gradient(rgb(255 255 255 / 0.05), transparent), var(--card-panel);
-  font-family: 'Trebuchet MS', system-ui, sans-serif;
+  font-family: 'Kreon', Georgia, serif;
   font-size: clamp(0.32rem, calc(var(--card-width) * 0.043), 0.49rem);
   line-height: 1.15;
   text-shadow: none;

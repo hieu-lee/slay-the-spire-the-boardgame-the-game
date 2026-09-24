@@ -115,7 +115,7 @@
 .neow-face--done { opacity: .74; }
 .neow-face__owner { display: flex; justify-content: space-between; gap: .5rem; color: #7fd9fb; }
 .neow-face__owner span { color: #b8ae9e; font-size: .8rem; }
-.neow-face blockquote { min-height: 2.5em; margin: .55rem 0; color: #e7d3ae; font-family: Georgia, serif; font-style: italic; }
+.neow-face blockquote { min-height: 2.5em; margin: .55rem 0; color: #e7d3ae; font-family: 'Kreon', Georgia, serif; font-style: italic; }
 .neow-face__red { display: flex; align-items: center; gap: .35rem; padding: .45rem .55rem; border-radius: 7px; background: rgba(135, 36, 36, .38); color: #ffd6bf; font-weight: 700; }
 .neow-face ol { display: grid; gap: .35rem; margin: .7rem 0; padding: 0; list-style: none; counter-reset: neow-option; }
 .neow-face li { counter-increment: neow-option; padding: .38rem .45rem; border-left: 3px solid #237bb1; background: rgba(25, 76, 111, .23); font-size: .88rem; }

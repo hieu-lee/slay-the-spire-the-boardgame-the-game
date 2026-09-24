@@ -22,7 +22,7 @@
 
 .app-shell--combat > .app-shell__header h1 {
   color: #f4dfab;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Kreon', Georgia, serif;
   font-size: clamp(1rem, 1.6vw, 1.4rem);
   text-shadow: 0 2px 2px #000;
 }
@@ -60,7 +60,7 @@
 .combat__turn,
 .combat__phase {
   color: #f0ddb0;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Kreon', Georgia, serif;
   font-weight: 700;
 }
 
@@ -322,7 +322,7 @@
   border: 1px solid rgb(255 244 186 / 0.68);
   border-radius: 999px;
   color: #fff4bd;
-  font: 700 min(0.62rem, calc(0.72rem * var(--stage-scale))) / 1 Georgia, serif;
+  font: 700 min(0.62rem, calc(0.72rem * var(--stage-scale))) / 1 'Kreon', Georgia, serif;
   text-shadow: 0 1px 2px #000;
   background: rgb(25 56 28 / 0.94);
   box-shadow: 0 1px 3px #000;
@@ -343,7 +343,7 @@
   bottom: calc(0.4rem * var(--stage-scale));
   left: 50%;
   color: #fff4bd;
-  font: 700 min(0.68rem, calc(0.76rem * var(--stage-scale))) / 1 Georgia, serif;
+  font: 700 min(0.68rem, calc(0.76rem * var(--stage-scale))) / 1 'Kreon', Georgia, serif;
   text-shadow: 0 1px 3px #000, 0 0 0.2rem #000;
   transform: translateX(-50%);
 }
@@ -426,7 +426,7 @@
 }
 
 .seat__name {
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Kreon', Georgia, serif;
   font-size: 0.78rem;
   font-weight: 700;
   text-shadow: 0 2px 2px #000, 0 0 6px #000;
@@ -499,7 +499,7 @@
   background: rgb(12 16 14 / 0.32);
   border: 1px dashed rgb(241 200 120 / 0.5);
   border-radius: 6px;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Kreon', Georgia, serif;
   font-size: 0.85rem;
   text-shadow: 0 2px 2px #000;
   filter: drop-shadow(0 0.4rem 0.4rem rgb(0 0 0 / 0.45));

@@ -148,7 +148,7 @@
   bottom: -0.08rem;
   min-width: 1rem;
   color: #fff8df;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Kreon', Georgia, serif;
   font-size: clamp(0.62rem, calc(2.5rem / var(--orb-count)), 0.82rem);
   font-weight: 700;
   line-height: 1;

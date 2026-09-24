@@ -124,7 +124,6 @@ export function StartMenu({
   initiallyChoosingCharacter = false,
 }: StartMenuProps) {
   const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
-  const [selection, setSelection] = useState(onResume ? 'Resume' : 'Single Player')
   const [screen, setScreen] = useState<'main' | 'mode' | 'daily' | 'custom' | 'character' | 'campaign' | 'replay'>(initiallyChoosingCharacter ? 'character' : 'main')
   const [characterTransition, setCharacterTransition] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -270,29 +269,21 @@ export function StartMenu({
 
       {screen === 'main' ? <div className="start-menu__landing">
         <section className="start-menu__title" aria-labelledby="game-title">
-          <h1 id="game-title"><span>Slay <small>the</small></span><span aria-label="Spire">Sp<span className="start-menu__flame-i" aria-hidden="true">ı</span>re</span></h1>
+          <h1 id="game-title"><img src={assetPath('menu/title-logo.webp')} width="530" height="368" alt="Slay the Spire" /><span className="start-menu__title-flame" aria-hidden="true" /></h1>
         </section>
         <nav className="start-menu__nav" aria-label="Main menu">
-        {onResume ? <button type="button" aria-label="Resume" data-selected={selection === 'Resume'}
-          onFocus={() => setSelection('Resume')} onMouseEnter={() => setSelection('Resume')}
+        {onResume ? <button type="button" aria-label="Resume"
           onClick={onResume}>Resume</button> : null}
-        <button type="button" aria-label="Single Player" data-selected={selection === 'Single Player'}
-          onFocus={() => setSelection('Single Player')} onMouseEnter={() => setSelection('Single Player')}
+        <button type="button" aria-label="Single Player"
           ref={mainMenuButton} onClick={() => { warmRunSetup(hero.id); setScreen('mode') }}>Single Player</button>
-        {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" data-selected={selection === 'Multiplayer'}
-          onFocus={() => setSelection('Multiplayer')} onMouseEnter={() => setSelection('Multiplayer')} onClick={onOnline}>Multiplayer</button>
+        {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" onClick={onOnline}>Multiplayer</button>
           : null}
-        <button type="button" aria-label="Leaderboard" data-selected={selection === 'Leaderboard'}
-          onFocus={() => setSelection('Leaderboard')} onMouseEnter={() => setSelection('Leaderboard')} onClick={onLeaderboard}>Leaderboard</button>
-        <button type="button" aria-label="Stats" data-selected={selection === 'Stats'}
-          onFocus={() => setSelection('Stats')} onMouseEnter={() => setSelection('Stats')} onClick={onStats}>Stats</button>
-        <button type="button" aria-label="Replay" data-selected={selection === 'Replay'}
-          onFocus={() => setSelection('Replay')} onMouseEnter={() => setSelection('Replay')}
+        <button type="button" aria-label="Leaderboard" onClick={onLeaderboard}>Leaderboard</button>
+        <button type="button" aria-label="Stats" onClick={onStats}>Stats</button>
+        <button type="button" aria-label="Replay"
           onClick={() => setScreen('replay')}>Replay</button>
-        <button type="button" aria-label="Compendium" data-selected={selection === 'Compendium'}
-          onFocus={() => setSelection('Compendium')} onMouseEnter={() => setSelection('Compendium')} onClick={onCompendium}>Compendium</button>
-        <button type="button" aria-label="Settings" data-selected={selection === 'Settings'}
-          onFocus={() => setSelection('Settings')} onMouseEnter={() => setSelection('Settings')}
+        <button type="button" aria-label="Compendium" onClick={onCompendium}>Compendium</button>
+        <button type="button" aria-label="Settings"
           onClick={() => setSettingsOpen(true)}>Settings</button>
         </nav>
       </div> : null}
