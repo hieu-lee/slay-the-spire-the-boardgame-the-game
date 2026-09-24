@@ -1175,9 +1175,7 @@ check('an end-of-turn draw is preserved when a discard order was submitted', () 
   delete CARDS.fixture_end_draw
 })
 
-check('relics resolve before Powers on the same event', () => {
-  // Both fire on the same trigger, so the order decides the outcome whenever
-  // one feeds the other. Fixed order beats "whichever was pushed first".
+check('default Start-of-Combat resolves Mutagen before a Power', () => {
   CARDS.fixture_order_power = {
     id: 'fixture_order_power',
     name: 'Fixture Order Power',
@@ -1185,28 +1183,23 @@ check('relics resolve before Powers on the same event', () => {
     type: 'power',
     rarity: 'rare',
     cost: 0,
-    trigger: { kind: 'startOfTurn' },
-    // Reads the Strength the relic just granted: 1 base + whatever is there.
+    trigger: { kind: 'startOfCombat' },
     effects: [{ kind: 'hit', amount: 1 }],
   }
   const state = startPlayerTurn(
     combat(
       [
         player({
-          // Burning Blood is endOfCombat; use a start-of-turn die relic that
-          // grants Strength so the two land on the same event.
-          powers: [instance('fixture_order_power'), instance('demon_form')],
+          relics: [{ defId: 'mutagen', spent: false }],
+          powers: [instance('fixture_order_power')],
           draw: deck(10),
         }),
       ],
       [enemy({ hp: 40 })],
     ),
   )
-  // Demon Form is pushed after the hitting Power, so the hit lands BEFORE the
-  // Strength — 1 damage, not 2. Pinning the order stops a silent reshuffle of
-  // the sources list from changing outcomes.
-  assertEqual(state.players[0].strength, 1, 'Demon Form granted its Strength')
-  assertEqual(state.enemies[0].hp, 39, 'and the earlier Power hit for 1, before that Strength existed')
+  assertEqual(state.players[0].strength, 1, 'Mutagen granted temporary Strength')
+  assertEqual(state.enemies[0].hp, 38, 'the Power hit for 2 after Mutagen granted Strength')
 })
 
 suite('what the table can see')
