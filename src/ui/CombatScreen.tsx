@@ -6146,7 +6146,6 @@ function CombatScreenView({
           const characterIdleAsset = assetPath(occupant?.character === 'watcher'
             ? 'combat/characters/watcher-hero.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
           const characterArtScale = prefersReducedMotion || occupant?.dead || occupant?.character === 'watcher' ? 1
-            : occupant?.character === 'defect' ? 1.8
             : (rigMetadata as Record<string, { scale?: number }>)[`hero-${rigId}`]?.scale ?? 1
           return (
             <div

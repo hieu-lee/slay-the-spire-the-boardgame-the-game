@@ -209,10 +209,6 @@
 .seat__interactive[data-character='defect']:has(> .orbs) {
   --hero-head-height: calc(var(--stage-actor-width) * 0.66);
 }
-/* Clear the enlarged sprite without moving potion and status chips. */
-.seat__interactive[data-character='defect'] > .orbs {
-  --hero-head-height: calc(var(--stage-actor-width) * 0.8);
-}
 .seat__interactive > .orbs {
   top: calc(100% - (3rem * var(--stage-scale)) - var(--portrait-floor-extra, 0rem) - var(--hero-head-height, var(--portrait-height)) - var(--orb-size) - var(--orb-margin));
 }
