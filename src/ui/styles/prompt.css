@@ -249,6 +249,180 @@
   border-color: var(--edge);
 }
 
+/* Override the UA cap (100% - 2em - 6px) so the panel's own limit is the one that applies. */
+.hermit-trigger-choice {
+  max-height: calc(100dvh - 0.5rem);
+  width: fit-content;
+  min-width: min(26rem, calc(100% - 1rem));
+  max-width: min(80rem, calc(100% - 1rem));
+}
+
+.hermit-trigger-choice .choice-modal__panel {
+  display: grid;
+  gap: 0.7rem;
+  max-height: calc(100dvh - 0.5rem);
+  padding: clamp(0.6rem, 2vw, 1.25rem);
+}
+
+.hermit-trigger-choice .choice-modal__panel h2,
+.hermit-trigger-choice .choice-modal__panel p,
+.hermit-trigger-choice h3 { margin: 0; }
+
+.hermit-trigger-choice__header { display: grid; gap: 0.3rem; }
+
+.hermit-trigger-choice__drawn { color: var(--gold); }
+
+.hermit-trigger-choice__detail {
+  min-height: 2.6em;
+  max-width: 44rem;
+  justify-self: center;
+  color: var(--ink-dim);
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.hermit-trigger-choice__detail strong { color: var(--ink); }
+
+.hermit-trigger-choice__sections {
+  display: flex;
+  gap: clamp(0.75rem, 2vw, 1.5rem);
+  min-width: 0;
+}
+
+.hermit-trigger-choice__sections > section {
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.hermit-trigger-choice__sections > section:first-child { flex: 1 1 auto; }
+
+.hermit-trigger-choice__chamber {
+  flex: 0 0 auto;
+  width: min-content;
+  margin-inline: auto;
+}
+
+.hermit-trigger-choice__chamber:not(:first-child) {
+  padding-left: clamp(0.75rem, 2vw, 1.5rem);
+  border-left: 1px solid rgb(203 158 83 / 0.45);
+}
+
+/* The Chamber holds only a few slots, so its row sets the column width and the heading wraps to it. */
+.hermit-trigger-choice .hermit-trigger-choice__chamber .hermit-trigger-choice__cards {
+  flex-wrap: nowrap;
+  overflow: visible;
+}
+
+.hermit-trigger-choice h3 {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.hermit-trigger-choice__count {
+  color: var(--ink-dim);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.hermit-trigger-choice .hermit-trigger-choice__cards {
+  --card-width: clamp(78px, 8vw, 118px);
+  flex-wrap: wrap;
+  row-gap: 0.9rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0.6rem 0.35rem 0.35rem;
+}
+
+.hermit-trigger-choice__option {
+  position: relative;
+  flex: 0 0 var(--card-width);
+}
+
+.hermit-trigger-choice__option .card { width: 100%; }
+
+/* Hover lifts every card here, so selection needs a mark that survives the pointer resting on it. */
+.hermit-trigger-choice__option .card--selected {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.hermit-trigger-choice__badge {
+  position: absolute;
+  top: -0.55rem;
+  left: 50%;
+  padding: 0.05rem 0.45rem;
+  color: #241807;
+  background: linear-gradient(#ffe79a, #c99331);
+  border-radius: 999px;
+  box-shadow: 0 2px 4px #000a;
+  font: 700 0.7rem/1.2 'Kreon', Georgia, serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.hermit-trigger-choice__actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.hermit-trigger-choice__actions button {
+  min-height: 44px;
+  padding: 0.45rem 1rem;
+  border-radius: 5px;
+  font: 700 0.95rem/1.1 'Kreon', Georgia, serif;
+}
+
+.hermit-trigger-choice__confirm {
+  color: #241807;
+  background: linear-gradient(#ffe79a, #c99331);
+  border: 1px solid #ffe79a;
+}
+
+.hermit-trigger-choice__confirm:disabled {
+  color: var(--ink-dim);
+  background: var(--bg-raised);
+  border-color: var(--edge);
+}
+
+.hermit-trigger-choice__secondary {
+  color: var(--ink);
+  background: var(--bg-raised);
+  border: 1px solid var(--edge);
+}
+
+@media (max-height: 30rem) {
+  .hermit-trigger-choice .choice-modal__panel { gap: 0.35rem; }
+  .hermit-trigger-choice .choice-modal__panel h2 { font-size: 1.05rem; }
+  .hermit-trigger-choice__header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    column-gap: 0.75rem;
+  }
+  .hermit-trigger-choice__drawn { font-size: 0.85rem; }
+  .hermit-trigger-choice h3 { font-size: 0.85rem; }
+  .hermit-trigger-choice .hermit-trigger-choice__cards {
+    --card-width: clamp(64px, 9vw, 96px);
+    row-gap: 0.75rem;
+  }
+  /* Touch browsers hide overlay scrollbars; shrink a crowded choice so no card sits off the edge. */
+  .hermit-trigger-choice .hermit-trigger-choice__cards--many { --card-width: 58px; }
+  .hermit-trigger-choice__detail { min-height: 2.5em; font-size: 0.75rem; }
+  .hermit-trigger-choice__actions button { min-height: 40px; padding: 0.3rem 0.9rem; }
+}
+
 .give-up-panel { width: min(28rem, calc(100% - 2rem)); }
 .give-up-panel ul { margin: 0 0 1rem; padding: 0; list-style: none; }
 .give-up-panel__actions { display: flex; justify-content: center; gap: .75rem; }

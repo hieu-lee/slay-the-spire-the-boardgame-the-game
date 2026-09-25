@@ -3551,9 +3551,12 @@ export function triggerNeedsEnemyChoice(
 ): boolean {
   const targetedCurse = triggerHermitChoices(player, source)?.loadCards.some((card) =>
     ['hermit_grudge', 'hermit_malice', 'hermit_horror'].includes(card.defId)) === true
-  return enemyUid === undefined && ((source.scope === 'enemy' &&
-    source.effects.some((effect) => reachesEnemy(effect, player))) ||
+  return enemyUid === undefined && (triggerSourceReachesEnemy(player, source) ||
     (triggerNeedsHermitChoice(state, player, source) && targetedCurse)) && livingEnemies(state).length > 1
+}
+
+export function triggerSourceReachesEnemy(player: Player, source: TriggerSource): boolean {
+  return source.scope === 'enemy' && source.effects.some((effect) => reachesEnemy(effect, player))
 }
 
 function hermitChoiceEffects(effects: readonly Effect[]): Effect[] {
@@ -3580,6 +3583,9 @@ export function triggerHermitChoices(player: Player, source: TriggerSource):
   const chamberRequested = chamberEffect?.kind === 'playChamber' && chamberEffect.amount === 'all'
     ? chamberCards.length : Number(chamberEffect && 'amount' in chamberEffect ? chamberEffect.amount : 0)
   const chamberBase = Math.min(chamberRequested, chamberCards.length)
+  const thenDraw = chamberEffect?.kind === 'discardChamber'
+    ? chamberEffect.then?.find((effect): effect is Extract<Effect, { kind: 'draw' }> => effect.kind === 'draw')?.amount
+    : undefined
   const replacements = Math.max(0, loadAmount - Math.max(0, player.chamberSlots - player.chamber.length))
   const chamberAmount = Math.min(chamberCards.length, chamberBase + replacements)
   return {
@@ -3589,6 +3595,10 @@ export function triggerHermitChoices(player: Player, source: TriggerSource):
     loadMinimum: load?.upTo ? 0 : loadAmount,
     chamberAmount,
     chamberMinimum: chamberEffect?.kind === 'discardChamber' && chamberEffect.optional ? 0 : chamberAmount,
+    loadDiscount: load?.discount === true,
+    chamberThenDraw: typeof thenDraw === 'number' ? thenDraw : 0,
+    chamberAction: chamberEffect?.kind === 'playChamber' ? 'play' : chamberEffect?.kind === 'discardChamber'
+      ? 'discard' : chamberEffect?.kind === 'discountChamber' ? 'discount' : 'replace',
   }
 }
 

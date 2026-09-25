@@ -33,6 +33,8 @@ type CardProps = {
   fan?: number
   /** Removes an otherwise-real card button from sequential keyboard navigation. */
   tabIndex?: number
+  /** Appended to the accessible name, e.g. to tell a just-drawn duplicate apart. */
+  accessibleNote?: string
   onClick?: (card: CardInstance) => void
   onPointerDown?: React.PointerEventHandler<HTMLButtonElement>
   onPointerMove?: React.PointerEventHandler<HTMLButtonElement>
@@ -671,6 +673,7 @@ export function Card({
   gemPowerDamage,
   fan = 0,
   tabIndex,
+  accessibleNote,
   onClick,
   onPointerDown,
   onPointerMove,
@@ -736,7 +739,8 @@ export function Card({
         onClick?.(card)
       }}
       aria-label={`${cardAccessibleName(def, cost)}${attachedGem
-        ? `, socketed with ${attachedGem.name}: ${cardRuleDescription(attachedGem)}` : ''}`}
+        ? `, socketed with ${attachedGem.name}: ${cardRuleDescription(attachedGem)}` : ''}${
+        accessibleNote ? `, ${accessibleNote}` : ''}`}
       aria-pressed={selected || picked}
       title={def.name}
     >

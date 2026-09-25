@@ -41,6 +41,7 @@ import {
   triggerNeedsPlayerChoice,
   triggerNeedsRowChoice,
   triggerSlimeChoice,
+  triggerSourceReachesEnemy,
   triggerHermitChoices,
   triggerSourceById,
   triggerSources,
@@ -835,6 +836,7 @@ export function pendingTriggerAbility(state: CombatState): PendingTriggerAbility
   if (!player || !source) return undefined
   const choicePlayer = triggerChoicePlayer(state, player, source)
   const hermitChoices = triggerHermitChoices(choicePlayer, source)
+  const needsEnemy = triggerNeedsEnemyChoice(state, choicePlayer, source, pending.enemyUid)
   return {
     id: pending.id,
     playerId: player.id,
@@ -842,12 +844,13 @@ export function pendingTriggerAbility(state: CombatState): PendingTriggerAbility
     rows: triggerNeedsRowChoice(state, player, source)
       ? combatRows(state).map((row) => ({ row, label: combatRowLabel(state, row) }))
       : undefined,
-    targets: triggerNeedsEnemyChoice(state, choicePlayer, source, pending.enemyUid)
+    targets: needsEnemy
       ? livingEnemies(state).map((enemy) => ({
         uid: enemy.uid,
         label: enemyLabel(state.enemies, enemy),
       }))
       : undefined,
+    targetsOnlyForLoadedCurse: needsEnemy && !triggerSourceReachesEnemy(choicePlayer, source),
     players: triggerNeedsPlayerChoice(state, source)
       ? state.players.filter((candidate) => !candidate.dead).map((candidate) => ({ id: candidate.id, label: candidate.name }))
       : undefined,

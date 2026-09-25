@@ -40,8 +40,10 @@ const focusedEngineOwners = new Map([
 const focusedUiOwners = new Map([
   ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-courier-browser.mjs']],
   ['src/ui/CampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
-  ['src/ui/CombatScreen.tsx', ['verify-courier-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
-    'verify-combat-layout-reload-browser.mjs']],
+  ['src/ui/CombatScreen.tsx', [
+    'verify-courier-browser.mjs', 'verify-hermit-combo-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
+    'verify-hermit-online-staged-trigger-browser.mjs', 'verify-combat-layout-reload-browser.mjs',
+  ]],
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
   ['src/multiplayer/useRoomSession.ts', ['verify-combat-layout-reload-browser.mjs']],
   ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
@@ -50,7 +52,11 @@ const focusedUiOwners = new Map([
   ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs']],
   ['src/ui/sfx.ts', ['verify-run-replay-browser.mjs']],
   ['src/ui/useCampfireScene.ts', ['verify-campfire-assets-browser.mjs']],
+  ['src/ui/combat-screen/HermitTriggerChoice.tsx', [
+    'verify-hermit-combo-browser.mjs', 'verify-hermit-online-staged-trigger-browser.mjs',
+  ]],
   ['src/ui/combat-screen/vfx.tsx', ['verify-lightning-act2-browser.mjs']],
+  ['src/ui/styles/prompt.css', ['verify-hermit-combo-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
   ['src/ui/styles/stage-scale.css', ['verify-combat-layout-reload-browser.mjs']],
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs']],

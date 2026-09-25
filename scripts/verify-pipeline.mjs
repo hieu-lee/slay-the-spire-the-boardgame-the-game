@@ -45,10 +45,14 @@ check('frontend surfaces select their cores and named focused browser checks', (
   const combat = affectedBrowser('src/ui/CombatScreen.tsx')
   includesEvery(combat, ['verify-browser.mjs', 'verify-online-browser.mjs',
     'verify-safari-combat-animation-browser.mjs', 'verify-courier-browser.mjs',
-    'verify-hermit-load-reconnect-browser.mjs', 'verify-combat-layout-reload-browser.mjs'], 'combat screen')
+    'verify-hermit-combo-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
+    'verify-hermit-online-staged-trigger-browser.mjs', 'verify-combat-layout-reload-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 13, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 15, 'combat screen selected an unrelated browser suite')
   assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))
+  includesEvery(affectedBrowser('src/ui/combat-screen/HermitTriggerChoice.tsx'), [
+    'verify-hermit-combo-browser.mjs', 'verify-hermit-online-staged-trigger-browser.mjs', 'verify-online-browser.mjs',
+  ], 'Hermit trigger choice')
   const room = affectedBrowser('src/ui/RoomScreen.tsx')
   includesEvery(room, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'room screen')
   const online = affectedBrowser('src/ui/OnlineGame.tsx')

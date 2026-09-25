@@ -1724,25 +1724,28 @@ try {
   ]
   liveRoom.version += 1
   rooms.publishRoom(code)
-  await a.getByText("Ann's Combo — choose Hermit card choices").waitFor()
+  const comboDialog = a.getByRole('dialog', { name: "Ann's Combo" })
+  await comboDialog.waitFor()
   const comboOwnerSnapshot = await snapshot(a)
   const comboPeerSnapshot = await snapshot(b)
   const ownerComboCards = comboOwnerSnapshot.run.combat.pendingTriggerAbility.hermitChoices.loadCards
     .map((card) => card.uid)
   const peerComboText = JSON.stringify(comboPeerSnapshot)
-  const loadComboGrudge = a.getByRole('checkbox', { name: 'Load Grudge' })
-  const comboEnemyPrompt = a.getByText("Ann's Combo — choose an enemy")
-  for (let attempt = 0; attempt < 20 && !await comboEnemyPrompt.isVisible().catch(() => false); attempt += 1) {
-    if (!await loadComboGrudge.isChecked()) await loadComboGrudge.evaluate((input) => input.click())
-    await a.waitForTimeout(100)
-  }
+  await comboDialog.locator('section[aria-labelledby="hermit-trigger-choice-load"] .card[title="Grudge"]').click()
+  await comboDialog.getByRole('button', { name: 'Load Grudge, then choose its target' }).click()
+  const comboEnemyPrompt = a.getByText("Ann's Combo — choose an enemy for Grudge")
   await comboEnemyPrompt.waitFor()
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await waitForRoomVersion(a, liveRoom.version)
+  const comboStepSurvivedPublish = await comboEnemyPrompt.isVisible() && !await comboDialog.isVisible()
   await a.getByRole('button', { name: /Cultist/ }).last().dispatchEvent('click')
   await comboEnemyPrompt.waitFor({ state: 'hidden' })
   check('online Combo sends its owner the authoritative post-draw Load preview without leaking it', () => {
     assert(ownerComboCards.includes(comboGrudge.uid) && ownerComboCards.includes(comboDraw.uid),
       `owner Combo preview was incomplete: ${ownerComboCards.join(', ')}`)
     assertEqual(comboPeerSnapshot.run.combat.pendingTriggerAbility, null)
+    assert(comboStepSurvivedPublish, 'an unrelated room publish reopened the Combo card choice')
     assert(!peerComboText.includes(comboGrudge.uid) && !peerComboText.includes(comboDraw.uid),
       'online Combo preview leaked post-draw cards to a peer')
     assertEqual(liveRoom.run.combat.pendingTriggers.length, 0)

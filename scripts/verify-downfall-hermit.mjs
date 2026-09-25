@@ -854,7 +854,14 @@ check('Combo previews a drawn targeted Curse and requires its enemy choice', () 
   combat.pendingTriggers = [{ id: 101, playerId: 'p1', sourceId: `power:${combo.uid}` }]
   const preview = pendingTriggerAbility(combat)
   assert.deepEqual(preview?.targets?.map(({ uid }) => uid), ['combo-e1', 'combo-e2'])
+  assert.equal(preview?.targetsOnlyForLoadedCurse, true)
+  assert.equal(preview?.hermitChoices?.chamberAction, 'replace')
   assert(preview?.hermitChoices?.loadCards.some(({ uid }) => uid === grudge.uid))
+  const plain = resolvePendingTrigger(combat, 'p1', preview.id, undefined, 'combo-e1', undefined, {
+    loadUids: ['combo-draw'], chamberUids: [], hermitEnemyUids: ['combo-e1'],
+  })
+  assert.equal(plain.players[0].chamber[0]?.uid, 'combo-draw', 'a non-Curse Load must accept any enemy')
+  assert.deepEqual(plain.enemies.map(({ hp }) => hp), [20, 20])
   assert.equal(resolvePendingTrigger(combat, 'p1', preview.id, undefined, undefined, undefined, {
     loadUids: [grudge.uid], chamberUids: [], hermitEnemyUids: [],
   }), combat, 'Combo accepted a targeted Curse without an enemy')
@@ -1293,6 +1300,8 @@ check('Smoking Barrel draws only after its optional Chamber discard is paid', ()
   const declinedTrigger = pendingTriggerAbility(declined)
   assert.deepEqual(declinedTrigger.hermitChoices.loadCards, [])
   assert.deepEqual(declinedTrigger.hermitChoices.chamberCards.map(({ uid }) => uid), [chambered.uid])
+  assert.equal(declinedTrigger.hermitChoices.chamberAction, 'discard')
+  assert.equal(declinedTrigger.targetsOnlyForLoadedCurse, false)
   const declinedResult = resolvePendingTrigger(declined, 'p1', declinedTrigger.id, undefined, undefined, undefined, {
     loadUids: [], chamberUids: [], hermitEnemyUids: [],
   })

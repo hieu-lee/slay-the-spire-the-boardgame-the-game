@@ -1,6 +1,7 @@
 import { SmokeTrail, warmSmokeTrails } from './combat-screen/SmokeTrail.tsx'
 import { animateCardFlight, cardFlightPath } from './combat-screen/card-flight.ts'
 import { unknownPowerRefreshDecision } from './combat-screen/unknown-power.ts'
+import { HermitTriggerChoice } from './combat-screen/HermitTriggerChoice.tsx'
 // The combat screen: the board, the hand, and every prompt a fight puts up.
 //
 // One component, because the fight is one interaction — a card being dragged
@@ -501,6 +502,14 @@ function CombatScreenView({
   const [resolvingStartTurnDiscard, setResolvingStartTurnDiscard] = useState(false)
   const [triggerHermitLoadUids, setTriggerHermitLoadUids] = useState<string[]>([])
   const [triggerHermitChamberUids, setTriggerHermitChamberUids] = useState<string[]>([])
+  // `cards` shows the card-face dialog; `board` hides it so the player can read the
+  // board; `target` means the cards are settled and an enemy/row/player click remains.
+  const [triggerHermitStep, setTriggerHermitStep] = useState<'cards' | 'board' | 'target'>('cards')
+  const triggerHermitReopenRef = useRef<HTMLButtonElement | null>(null)
+  // The dialog unmounts rather than closing, so the browser has nowhere to return focus.
+  useEffect(() => {
+    if (triggerHermitStep !== 'cards') triggerHermitReopenRef.current?.focus({ preventScroll: true })
+  }, [triggerHermitStep])
   const [triggerSlimeUids, setTriggerSlimeUids] = useState<string[]>([])
   const [triggerSlimeEnemyUids, setTriggerSlimeEnemyUids] = useState<string[]>([])
   const [{ scale: stageScale, enemySlots: stageEnemySlots }, setStageLayout] = useState({
@@ -767,7 +776,7 @@ function CombatScreenView({
       : pendingTriggerAbility(state)
   const stagedStartTurnTriggerPending = state.phase === 'start' &&
     state.pendingTriggers.some((trigger) => trigger.startTurn && trigger.playerId === viewerId)
-  const triggerHermitChoicesReady = !pendingTrigger?.hermitChoices ||
+  const triggerHermitChoicesReady = !pendingTrigger?.hermitChoices || triggerHermitStep === 'target' &&
     triggerHermitLoadUids.length >= pendingTrigger.hermitChoices.loadMinimum &&
     triggerHermitLoadUids.length <= pendingTrigger.hermitChoices.loadAmount &&
     triggerHermitChamberUids.length >= pendingTrigger.hermitChoices.chamberMinimum &&
@@ -778,6 +787,10 @@ function CombatScreenView({
   const triggerSlimeEnemyLabels = pendingTrigger
     ? pendingTriggerSlimeEnemyChoiceLabels(state, pendingTrigger.id, triggerSlimeUids) : []
   const triggerSlimeEnemyAmount = triggerSlimeEnemyLabels.length
+  const triggerHermitCurse = pendingTrigger?.hermitChoices?.loadCards.find((card) =>
+    triggerHermitLoadUids.includes(card.uid) && hermitTargetedCurses.has(card.defId))
+  const triggerHermitNeedsBoard = Boolean(pendingTrigger?.rows || pendingTrigger?.players ||
+    pendingTrigger?.targets && (!pendingTrigger.targetsOnlyForLoadedCurse || triggerHermitCurse))
   const pendingPlunder = state.pendingPlunderSwitches?.[0]
   const voluntaryActionsBlocked = mandatoryChoicePending(state)
   const requiredHermitChamberCard = state.pendingHermitChamberPlays?.[0]
@@ -948,16 +961,21 @@ function CombatScreenView({
       animateHandReflow(before, [...viewer.chamber, ...viewer.hand])
     }
   }
+  const editingStagedTrigger = stagedStartTurnTriggers?.find((trigger) => trigger.id === editingStagedStartTurnTrigger)
+  const editingStagedChoice = editingStagedTrigger
+    ? savedStartTurnChoices?.find((choice) => choice.id === editingStagedTrigger.choiceId)?.trigger
+    : undefined
+  // Online snapshots rebuild these arrays on every publish; key on their content so
+  // an unrelated room update does not wipe picks the player is still making.
+  const editingStagedChoiceKey = JSON.stringify(editingStagedChoice ?? null)
   useEffect(() => {
-    const editing = stagedStartTurnTriggers?.find((trigger) => trigger.id === editingStagedStartTurnTrigger)
-    const staged = editing
-      ? savedStartTurnChoices?.find((choice) => choice.id === editing.choiceId)?.trigger
-      : undefined
+    const staged = JSON.parse(editingStagedChoiceKey) as typeof editingStagedChoice | null
     setTriggerHermitLoadUids(staged?.loadUids ?? [])
     setTriggerHermitChamberUids(staged?.chamberUids ?? [])
+    setTriggerHermitStep('cards')
     setTriggerSlimeUids(staged?.slimeUids ?? [])
     setTriggerSlimeEnemyUids(staged?.slimeEnemyUids ?? [])
-  }, [pendingTrigger?.id, editingStagedStartTurnTrigger, stagedStartTurnTriggers, savedStartTurnChoices])
+  }, [pendingTrigger?.id, editingStagedStartTurnTrigger, editingStagedChoiceKey])
   useEffect(() => {
     setDieRelicCardUids([])
     setDieRelicEnemyUid(null)
@@ -2941,6 +2959,14 @@ function CombatScreenView({
       .then(() => setEditingStagedStartTurnTrigger(null))
       .finally(() => setUsingTrigger(false))
   }
+
+  function confirmTriggerHermitChoices() {
+    if (!pendingTrigger?.hermitChoices) return
+    if (triggerHermitNeedsBoard) setTriggerHermitStep('target')
+    // The engine still wants an enemy whenever a targeted Curse *could* be loaded;
+    // when none was, any living enemy is equivalent.
+    else resolveTrigger(undefined, pendingTrigger.targets?.[0]?.uid)
+  }
   // Ordinary costs choose from the visible hand minus the card being played.
   // Post-draw costs choose from the private preview, which already models the
   // hand at the exact clause where the engine will charge it.
@@ -4079,7 +4105,7 @@ function CombatScreenView({
         resolveTrigger(undefined, enemy.uid)
         return
       }
-      if (pendingTrigger.rows?.some((target) => target.row === enemy.row)) {
+      if (triggerHermitChoicesReady && pendingTrigger.rows?.some((target) => target.row === enemy.row)) {
         resolveTrigger(enemy.row)
         return
       }
@@ -4264,7 +4290,7 @@ function CombatScreenView({
     if (armedEndTurnAbilityId === endTurnEffect?.id && endTurnTargetForEnemy(enemy) === lightningRowTarget(enemy.row)) {
       return true
     }
-    if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id &&
+    if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id && triggerHermitChoicesReady &&
       pendingTrigger.rows?.some((target) => target.row === enemy.row)) {
       return true
     }
@@ -4290,7 +4316,7 @@ function CombatScreenView({
       resolveTurnEffectTarget(endTurnEffect.id, endTurnTarget)
       return
     }
-    if (pendingTrigger && pendingTrigger.playerId === viewer?.id &&
+    if (pendingTrigger && pendingTrigger.playerId === viewer?.id && triggerHermitChoicesReady &&
       pendingTrigger.rows?.some((target) => target.row === row)) {
       resolveTrigger(row)
       return
@@ -4318,7 +4344,7 @@ function CombatScreenView({
 
   function isRowLaneClickTargetable(row: number): boolean {
     if (armedEndTurnAbilityId === endTurnEffect?.id && endTurnTargetForRow(row)) return true
-    if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id &&
+    if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id && triggerHermitChoicesReady &&
       pendingTrigger.rows?.some((target) => target.row === row)) {
       return true
     }
@@ -4345,7 +4371,7 @@ function CombatScreenView({
     if (armedEndTurnAbilityId === endTurnEffect?.id && endTurnTargetForRow(row)) {
       return `Resolve ${endTurnEffect.label} in ${combatRowLabel(state, row)} (${noLivingAnchor})`
     }
-    if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id &&
+    if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id && triggerHermitChoicesReady &&
       pendingTrigger.rows?.some((target) => target.row === row)) {
       return `Resolve ${pendingTrigger.label} in ${rowLabel} (${noLivingAnchor})`
     }
@@ -4545,11 +4571,12 @@ function CombatScreenView({
   const triggerPrompt = pendingTrigger
     ? pendingTrigger.playerId === viewer.id
       ? `${pendingTrigger.label} — choose ${pendingTrigger.hermitChoices && !triggerHermitChoicesReady
-        ? 'Hermit card choices' : pendingTrigger.slimeChoice && !triggerSlimeChoicesReady ? 'Slime or self' :
+        ? 'cards' : pendingTrigger.slimeChoice && !triggerSlimeChoicesReady ? 'Slime or self' :
         triggerSlimeEnemyUids.length < triggerSlimeEnemyAmount
           ? `${triggerSlimeEnemyLabels[triggerSlimeEnemyUids.length] ?? 'Slime'} Command target ${triggerSlimeEnemyUids.length + 1}/${triggerSlimeEnemyAmount}` :
-        pendingTrigger.targets ? 'an enemy' : pendingTrigger.players ? 'a player' :
-        pendingTrigger.hermitChoices ? 'Hermit card choices' : pendingTrigger.slimeChoice ? 'Slime or self' :
+        pendingTrigger.targets ? triggerHermitCurse ? `an enemy for ${cardDef(triggerHermitCurse.defId).name}` : 'an enemy'
+          : pendingTrigger.players ? 'a player' :
+        pendingTrigger.hermitChoices ? 'cards' : pendingTrigger.slimeChoice ? 'Slime or self' :
           `an enemy — its whole row is hit${rowHitSuffix}`}`
       : `Waiting for ${state.players.find((player) => player.id === pendingTrigger.playerId)?.name ?? 'another player'} to resolve ${pendingTrigger.label}`
     : null
@@ -5121,7 +5148,7 @@ function CombatScreenView({
               </button>
             ))
             : null}
-          {pendingTrigger?.playerId === viewerId ? pendingTrigger.players?.map((player) => (
+          {pendingTrigger?.playerId === viewerId && triggerHermitChoicesReady ? pendingTrigger.players?.map((player) => (
             <button type="button" className="prompt__mode" key={player.id}
               onClick={() => resolveTrigger(undefined, undefined, player.id)}>{player.label}</button>
           )) : null}
@@ -5199,27 +5226,11 @@ function CombatScreenView({
                 }
               }}>Load {cardDef(card.defId).name}</button>
             )) : null}
-          {pendingTrigger?.playerId === viewerId && pendingTrigger.hermitChoices ? (
-            <span className="hermit-prompt__choice">
-              {pendingTrigger.hermitChoices.loadCards.map((card) => <label key={`load-${card.uid}`}>
-                <input type="checkbox" checked={triggerHermitLoadUids.includes(card.uid)} onChange={() =>
-                  setTriggerHermitLoadUids((current) => current.includes(card.uid)
-                    ? current.filter((uid) => uid !== card.uid)
-                    : [...current, card.uid].slice(-pendingTrigger.hermitChoices!.loadAmount))} />
-                Load {cardDef(card.defId).name}
-              </label>)}
-              {pendingTrigger.hermitChoices.chamberCards.map((card) => <label key={`chamber-${card.uid}`}>
-                <input type="checkbox" checked={triggerHermitChamberUids.includes(card.uid)} onChange={() =>
-                  setTriggerHermitChamberUids((current) => current.includes(card.uid)
-                    ? current.filter((uid) => uid !== card.uid)
-                    : [...current, card.uid].slice(-pendingTrigger.hermitChoices!.chamberAmount))} />
-                Chamber: {cardDef(card.defId).name}
-              </label>)}
-              {!pendingTrigger.targets && !pendingTrigger.rows && !pendingTrigger.players ? (
-                <button type="button" className="prompt__mode" disabled={!triggerHermitChoicesReady}
-                  onClick={() => resolveTrigger()}>Resolve</button>
-              ) : null}
-            </span>
+          {pendingTrigger?.playerId === viewerId && pendingTrigger.hermitChoices && triggerHermitStep !== 'cards' ? (
+            <button type="button" className="prompt__mode" ref={triggerHermitReopenRef} disabled={usingTrigger}
+              onClick={() => setTriggerHermitStep('cards')}>
+              {triggerHermitStep === 'target' ? 'Change cards' : 'Choose cards'}
+            </button>
           ) : null}
           {!pendingStartPlayer?.visual ? pendingStartPlayer?.players?.map((player) => (
             <button type="button" className="prompt__mode" key={player.id}
@@ -5787,6 +5798,24 @@ function CombatScreenView({
         </dialog>
       ) : null}
 
+      {pendingTrigger?.playerId === viewerId && pendingTrigger.hermitChoices && triggerHermitStep === 'cards' &&
+        !pendingPlunder ? (
+        <HermitTriggerChoice
+          key={pendingTrigger.id}
+          label={pendingTrigger.label}
+          choices={pendingTrigger.hermitChoices}
+          hand={viewer.hand}
+          loadUids={triggerHermitLoadUids}
+          chamberUids={triggerHermitChamberUids}
+          needsTarget={triggerHermitNeedsBoard}
+          busy={usingTrigger}
+          onLoadUids={setTriggerHermitLoadUids}
+          onChamberUids={setTriggerHermitChamberUids}
+          onConfirm={confirmTriggerHermitChoices}
+          onViewBoard={() => setTriggerHermitStep('board')}
+        />
+      ) : null}
+
       {pending?.choiceCards && pending.choice && !pending.choiceConfirmed ? (
         <dialog ref={choiceDialogRef}
           className={`choice-modal${pending.choice.kind === 'scryToHand' ? ' choice-modal--scry-to-hand' : ''}`}
@@ -6072,7 +6101,7 @@ function CombatScreenView({
                   cardDrag?.targetUid === enemy.uid ||
                   cardDragTargetRow !== undefined && (cardDragTargetRow === enemy.row || enemy.isBoss) ||
                   isStartTurnEnemyTarget(enemy.uid) ||
-                  (pendingTrigger?.playerId === viewer.id &&
+                  (pendingTrigger?.playerId === viewer.id && triggerHermitChoicesReady &&
                     (pendingTrigger.targets?.some((target) => target.uid === enemy.uid) ||
                       triggerSlimeEnemyUids.length < triggerSlimeEnemyAmount)) ||
                   isEnemyRowClickTargetable(enemy) ||
@@ -6580,7 +6609,7 @@ function CombatScreenView({
                         cardDrag?.targetUid === enemy.uid ||
                         cardDragTargetRow !== undefined && (cardDragTargetRow === enemy.row || enemy.isBoss) ||
                         isStartTurnEnemyTarget(enemy.uid) ||
-                        (pendingTrigger?.playerId === viewer.id &&
+                        (pendingTrigger?.playerId === viewer.id && triggerHermitChoicesReady &&
                           (pendingTrigger.targets?.some((target) => target.uid === enemy.uid) ||
                             triggerSlimeEnemyUids.length < triggerSlimeEnemyAmount)) ||
                         isEnemyRowClickTargetable(enemy) ||

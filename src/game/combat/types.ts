@@ -675,7 +675,15 @@ export type PendingTriggerAbility = {
     loadMinimum: number
     chamberAmount: number
     chamberMinimum: number
+    /** The loaded card costs 0 this turn (Eternal Form). */
+    loadDiscount: boolean
+    /** Cards drawn once the Chamber discard is paid (Smoking Barrel). */
+    chamberThenDraw: number
+    /** What happens to the chosen Chamber cards; `replace` discards them to make room for a Load. */
+    chamberAction: 'replace' | 'discard' | 'play' | 'discount'
   }
+  /** `targets` exist only so a loaded targeted Curse has an enemy; the source itself hits nobody. */
+  targetsOnlyForLoadedCurse: boolean
   slimeChoice?: { cards: { uid: string; label: string }[]; amount: number; minimum: number }
   slimeEnemyAmount: number
 }
