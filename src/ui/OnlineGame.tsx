@@ -601,7 +601,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           {connected && ready ? <><span className="online-lobby__status-name">{partyLeader?.name ?? 'The party leader'}</span> starts the run</> : startLabel}
         </p>}
         <button className="online-lobby__start start-menu__character-embark" type="button" title={startLabel}
-          disabled={!startable} onClick={() => room.selectCampaign(true)}>
+          disabled={!startable} aria-busy={connected && ready && isPartyLeader && room.mutationPending || undefined}
+          onClick={() => room.selectCampaign(true)}>
           <span className="visually-hidden">{startLabel}</span>
         </button>
 

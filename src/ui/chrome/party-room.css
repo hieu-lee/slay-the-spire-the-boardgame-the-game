@@ -149,7 +149,8 @@
 }
 
 .sts-scope.online-lobby .online-lobby__start::before { content: '✓' / ''; }
-.sts-scope.online-lobby .online-lobby__start:disabled { cursor: not-allowed; filter: grayscale(0.7) brightness(0.7); }
+.sts-scope.online-lobby .online-lobby__start:disabled { cursor: not-allowed; }
+.sts-scope.online-lobby .online-lobby__start:disabled:not([aria-busy='true']) { filter: grayscale(0.7) brightness(0.7); }
 
 .sts-scope .online-lobby__status {
   position: absolute;
