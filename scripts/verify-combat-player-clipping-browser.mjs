@@ -16,13 +16,17 @@ const browser = await chromium.launch()
 
 try {
   const run = postNeowRun('combat-player-clipping', [
-    { id: 'p1', name: 'master69', character: 'ironclad' },
+    { id: 'p1', name: 'Hermit', character: 'hermit' },
     { id: 'p2', name: 'BestDefect2002', character: 'defect' },
+    { id: 'p3', name: 'Watcher', character: 'watcher' },
   ])
   const roomId = run.map.rows[0][0]
   run.map.rooms[roomId].kind = 'encounter'
+  // Keep start-of-combat relic choices out of this layout fixture.
+  for (const player of run.players) player.relics = []
   const combat = enterRoom(run, roomId)
-  combat.combat.enemies = []
+  combat.combat.phase = 'player'
+  combat.combat.pendingHermitSetupLoads = []
 
   for (const viewport of [{ width: 1280, height: 720 }, { width: 667, height: 375 }]) {
     const context = await browser.newContext({ viewport })
@@ -48,6 +52,34 @@ try {
       combat.getBoundingClientRect().bottom >= combat.closest('.app-shell').getBoundingClientRect().bottom - 1 &&
       combat.querySelector('.combat__end-turn').getBoundingClientRect().bottom <= combat.getBoundingClientRect().bottom + 1),
     'battlefield background must extend beneath End Turn to the bottom of the real app shell')
+    // Compare visible pixels, not the transparent overscan in the sprite canvases.
+    const heights = await page.locator('.seat__portrait > img').evaluateAll(async images => {
+      const result = {}
+      for (const image of images) {
+        await image.decode()
+        const canvas = document.createElement('canvas')
+        canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(image, 0, 0)
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+        let top = canvas.height, bottom = 0
+        for (let y = 0; y < canvas.height; y++) {
+          for (let x = 0; x < canvas.width; x++) {
+            if (pixels[(y * canvas.width + x) * 4 + 3] > 32) {
+              top = Math.min(top, y); bottom = y; break
+            }
+          }
+        }
+        const rect = image.getBoundingClientRect()
+        result[image.closest('[data-character]').dataset.character] = (bottom - top + 1) *
+          Math.min(rect.width / canvas.width, rect.height / canvas.height)
+      }
+      return result
+    })
+    for (const peer of ['hermit', 'watcher']) {
+      assert(heights.defect / heights[peer] > 0.9 && heights.defect / heights[peer] < 1.15,
+        `Defect should stand as tall as ${peer}: ${JSON.stringify(heights)}`)
+    }
     await page.screenshot({ path: join(out, `${viewport.width}x${viewport.height}.png`) })
     await context.close()
   }

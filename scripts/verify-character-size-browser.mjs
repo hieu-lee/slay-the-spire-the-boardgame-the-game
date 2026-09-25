@@ -62,8 +62,11 @@ async function measure(page, selector) {
 async function setSize(page, value) {
   await page.locator('.combat').evaluate(async (combat, value) => {
     combat.style.setProperty('--stage-actor-width', `${10 * value}rem`)
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   }, value)
+  await page.waitForFunction(value => {
+    const image = document.querySelector('.seat__portrait > :is(img, video)')
+    return Math.abs(image.offsetWidth - 10 * value * parseFloat(getComputedStyle(document.documentElement).fontSize)) < 1
+  }, value, { polling: 50 })
 }
 
 async function waitForImage(page, selector) {
@@ -72,7 +75,7 @@ async function waitForImage(page, selector) {
     const image = document.querySelector(selector)
     return image instanceof HTMLVideoElement ? image.readyState >= 1 && image.videoWidth > 0
       : image?.complete && image.naturalWidth > 0
-  }, selector)
+  }, selector, { polling: 50 })
 }
 
 async function waitForIdle(page) {
@@ -102,6 +105,8 @@ async function checkTransition(page, mode, label) {
 
 async function checkHero(page, character, sourceId, heat, screen, browserName) {
   const renderCharacter = character === 'guardian-defense' ? 'guardian' : character
+  const desktopSafariVideo = await page.evaluate(async () =>
+    (await import('/src/ui/CombatAnimation.tsx')).useSafariCombatVideo)
   const idleSelector = '.seat__portrait > :is(img, video)'
   const attackSelector = `.character-attack--${renderCharacter}[data-attack-seq="`
   const readyCount = character === 'hexaghost' ? 1
@@ -117,7 +122,6 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
   await page.locator('.board').screenshot({ path: resolve(output, `${browserName}-${screen}-${character}-${heat}-resolution.png`) })
   if (character !== 'watcher') {
     const media = await page.locator(idleSelector).evaluate(element => ({ tag: element.tagName, src: element.src }))
-    const desktopSafariVideo = browserName === 'webkit' && screen === 'desktop'
     assert.equal(media.tag, desktopSafariVideo ? 'VIDEO' : 'IMG', `${screen}/${character}: preferred media element`)
     assert(media.src.endsWith(desktopSafariVideo ? '.mov' : '.webp'), `${screen}/${character}: preferred media source ${media.src}`)
   }
@@ -126,6 +130,8 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
   assert(await retainsHighResolution(page, idleSelector),
     `${screen}/${character}: idle art must retain high-resolution detail`)
   if (character === 'guardian' || character === 'guardian-defense') {
+    // Keep the 600ms transition alive while browser round trips measure its size.
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 10_000))
     const initialMode = character === 'guardian-defense' ? 'defense' : 'attack'
     const nextMode = initialMode === 'attack' ? 'defense' : 'attack'
     await page.evaluate((mode) => {
@@ -137,6 +143,7 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
       window.fixture.state.players[0].guardianMode = mode
       window.fixture.render()
     }, initialMode)
+    await page.clock.resume()
     await page.locator(`.seat__portrait > [data-guardian-mode="${initialMode}"]`).waitFor()
     await page.waitForFunction(() => !document.querySelector('.seat__portrait > [data-guardian-transition]'))
     await setSize(page, 1)
@@ -167,15 +174,16 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
     await setSize(page, 1)
   }
 
-  if (browserName !== 'webkit' || screen !== 'desktop' || character !== 'defect') {
+  if (!desktopSafariVideo || character !== 'defect') {
     await page.waitForFunction((readyCount) => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= readyCount, readyCount)
   }
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 10_000))
   const seq = await page.evaluate((sourceId) => window.fixture.attack(sourceId), sourceId)
   const attackRoot = `${attackSelector}${seq}"]`
   await page.locator(attackRoot).waitFor()
   const poseSelector = `${attackRoot} .character-attack__pose > :is(img, video)`
   await waitForImage(page, poseSelector)
-  if (browserName === 'webkit' && screen === 'desktop' && character === 'defect') {
+  if (desktopSafariVideo && character === 'defect') {
     const media = await page.locator(poseSelector).evaluate(element => ({ tag: element.tagName, src: element.src }))
     assert.equal(media.tag, 'IMG', `${screen}/${character}: failed MOV preload must fall back to WebP`)
     assert(media.src.endsWith('/hero-defect-attack.webp'), `${screen}/${character}: wrong attack fallback ${media.src}`)
@@ -201,6 +209,7 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
     await page.locator('.board').screenshot({ path: resolve(output, `${browserName}-${screen}-guardian-attack-1.png`) })
   }
 
+  await page.clock.resume()
   await page.evaluate(({ character, heat }) => {
     document.documentElement.dataset.reducedMotion = 'true'
     window.fixture.install(character, heat)
@@ -210,7 +219,7 @@ async function checkHero(page, character, sourceId, heat, screen, browserName) {
     const image = document.querySelector('.seat__portrait > :is(img, video)')
     const loaded = image instanceof HTMLVideoElement ? image.readyState >= 1 && image.videoWidth > 0
       : image?.complete && image.naturalWidth > 0
-    return loaded && !document.querySelector('.character-attack')
+    return loaded && image.src.includes('/combat/characters/') && !document.querySelector('.character-attack')
   })
   await setSize(page, 1)
   const reducedBase = await measure(page, idleSelector)
@@ -231,6 +240,7 @@ try {
         })
         try {
           const page = await context.newPage()
+          await page.clock.install()
           if (browserName === 'webkit' && screen === 'desktop') await page.route('**/hero-defect-attack.mov', route => route.abort())
           page.on('pageerror', (error) => errors.push(`${browserName}/${screen}: ${error}`))
           page.on('response', (response) => {
