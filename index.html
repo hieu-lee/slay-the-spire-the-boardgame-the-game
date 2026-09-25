@@ -7,8 +7,8 @@
     <script>
       const coarsePointer = matchMedia('(pointer: coarse)').matches
       const shortScreenEdge = Math.min(screen.width, screen.height)
-      const phone = coarsePointer && shortScreenEdge <= 500
-      document.documentElement.dataset.mobilePerformance = String(coarsePointer && shortScreenEdge <= 600)
+      const mobilePlatform = navigator.userAgentData?.platform === 'Android' || /Android|iPhone|iPod/i.test(navigator.userAgent)
+      let phone = coarsePointer && shortScreenEdge <= 500
       let viewport
       let landscape
       let landscapeWidth = 1280
@@ -31,6 +31,14 @@
       }
       const fitDesktopViewport = () => {
         const nextLandscape = matchMedia('(orientation: landscape)').matches
+        const physicalWidth = visibleViewport
+          ? (visibleViewport.width || innerWidth) * (visibleViewport.scale || 1) : outerWidth || innerWidth
+        const physicalHeight = innerHeight / innerWidth * physicalWidth
+        const nextPhone = coarsePointer && (shortScreenEdge <= 500 ||
+          mobilePlatform && nextLandscape && physicalWidth <= 1200 && physicalHeight <= 600)
+        document.documentElement.dataset.mobilePerformance = String(coarsePointer && (shortScreenEdge <= 600 || nextPhone))
+        const wasPhone = phone
+        phone = nextPhone
         const zoom = innerWidth / (visibleViewport?.width || innerWidth)
         const visibleHeight = (visibleViewport?.height || innerHeight) * zoom
         const rotated = nextLandscape !== landscape
@@ -45,15 +53,12 @@
             holdViewport = false
           } else releaseViewport()
         }
-        if (phone) {
-          if (nextLandscape && (!holdViewport || visibleHeight >= focusHeight * 0.65)) {
-            document.documentElement.style.setProperty('--visible-viewport-height', `${visibleHeight}px`)
-          }
-          else if (!nextLandscape) document.documentElement.style.removeProperty('--visible-viewport-height')
-        }
+        if (phone && nextLandscape && (!holdViewport || visibleHeight >= focusHeight * 0.65)) {
+          document.documentElement.style.setProperty('--visible-viewport-height', `${visibleHeight}px`)
+        } else if (!phone || !nextLandscape) document.documentElement.style.removeProperty('--visible-viewport-height')
         const nextWidth = holdViewport && !rotated && viewport ? landscapeWidth :
           phone && nextLandscape ? Math.max(1280, Math.round(innerWidth / (holdViewport ? Math.max(innerHeight, visibleHeight) : visibleHeight) * 720)) : 1280
-        if (viewport && nextLandscape === landscape && nextWidth === landscapeWidth) return
+        if (viewport && nextLandscape === landscape && nextWidth === landscapeWidth && phone === wasPhone) return
         landscapeWidth = nextWidth
         landscape = nextLandscape
         viewport?.remove()
@@ -64,7 +69,7 @@
           : 'width=device-width, initial-scale=1, viewport-fit=cover'
         document.head.append(viewport)
         if (phone && nextLandscape) requestAnimationFrame(() => {
-          if (landscape && (!holdViewport || visibleHeight >= focusHeight * 0.65)) document.documentElement.style.setProperty('--visible-viewport-height',
+          if (phone && landscape && (!holdViewport || visibleHeight >= focusHeight * 0.65)) document.documentElement.style.setProperty('--visible-viewport-height',
             `${(visibleViewport?.height || innerHeight) * innerWidth / (visibleViewport?.width || innerWidth)}px`)
         })
       }
@@ -74,7 +79,7 @@
         resizeTimer = setTimeout(fitDesktopViewport, 160)
       }
       fitDesktopViewport()
-      if (phone) {
+      if (coarsePointer) {
         addEventListener('focusin', (event) => {
           if (textEntry(event.target)) {
             clearTimeout(keyboardBlurTimer)
