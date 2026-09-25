@@ -950,7 +950,7 @@ function resolveGuardianCard(
     case 'guardian_blitz': draw(upgraded ? 2 : 1); actor.nextCardCost = 1; break
     case 'guardian_bauble_burst': hit(upgraded ? 4 : 2); break
     case 'guardian_body_crash': { const paid = Math.min(actor.block, context.guardianBlockSpend ?? 0); actor.block -= paid; hit(paid, 2); break }
-    case 'guardian_spiker_protocol': if (context.sourcePowerUid) doEffect({ kind: 'damagePerAttackIntent', amount: upgraded ? 4 : 3 }); break
+    case 'guardian_spiker_protocol': if (context.sourcePowerUid) doEffect({ kind: 'damagePerAttackIntent', amount: upgraded ? 4 : 3, oncePerEnemy: true }); break
     case 'guardian_evade':
       block(upgraded ? 3 : 2)
       if (defense) {
@@ -1406,7 +1406,7 @@ export function applyEffect(
         }, 0)
         if (icons > 0) {
           const before = [target.hp, target.block, target.dead]
-          damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : effect.amount * icons, who, actor)
+          damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : effect.amount * (effect.oncePerEnemy ? 1 : icons), who, actor)
           if (target.hp !== before[0] || target.block !== before[1] || target.dead !== before[2]) {
             markTurnEffect(context, 'damage', { enemyId: target.uid })
           }

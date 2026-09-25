@@ -197,7 +197,7 @@ type EffectKind =
   /** The next card played after this source finishes goes to Exhaust. */
   | { kind: 'exhaustNextCard' }
   /** Flame Barrier: direct damage per printed Attack icon in each enemy's current intent. */
-  | { kind: 'damagePerAttackIntent'; amount: number }
+  | { kind: 'damagePerAttackIntent'; amount: number; oncePerEnemy?: boolean }
   /** Ignores Block entirely. */
   | { kind: 'loseHp'; amount: number }
   /** The caster loses HP, ignoring Block, as a printed card effect. */

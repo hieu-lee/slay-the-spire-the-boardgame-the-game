@@ -1169,6 +1169,15 @@ check('opaque Guardian turn Powers publish their actual semantic effect and targ
   assert.deepEqual(combat.presentationEvents.filter((event) => event.kind === 'turn').map((event) =>
     [event.sourceId, event.effect, event.enemyIds]), [['guardian_spiker_protocol', 'damage', ['attacker']]])
 
+  player = fresh(43925)
+  player.powers = [{ uid: 'spiker-plus', defId: 'guardian_spiker_protocol', upgraded: true }]
+  combat = createCombat({ seed: 43925, calls: 0 }, [player], [
+    { ...enemy('automaton', 0), defId: 'bronze_automaton', isBoss: true, actionIndex: 1 },
+  ], 'guardian-spiker-multihit')
+  combat = beginEndPlayerTurn(combat)
+  assert.equal(combat.enemies[0].hp, 26,
+    'Spiker Protocol+ should damage each attacking enemy once, not once per attack hit')
+
   player = fresh(4393)
   player.damageDealtZeroThisTurn = true
   player.powers = [{ uid: 'laser-no-op', defId: 'guardian_laser_turret', upgraded: false }]
