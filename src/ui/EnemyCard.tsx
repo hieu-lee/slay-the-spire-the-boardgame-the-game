@@ -605,13 +605,16 @@ export function EnemyCard({
       // lane still describes the target's physical position.
       const heroRects = heroes.map((hero) => hero.getBoundingClientRect())
       const heroRight = Math.max(...heroRects.map((rect) => rect.right))
-      const animation = boss.style.animation
-      boss.style.animation = 'none'
+      // Root motion uses translate. Override it only for this measurement:
+      // removing the animation restarts the attack when a later HUD image loads.
+      const translate = boss.style.getPropertyValue('translate')
+      const priority = boss.style.getPropertyPriority('translate')
+      boss.style.setProperty('translate', 'none', 'important')
       const bossRect = boss.getBoundingClientRect()
       const imageScale = Math.min(bossRect.width / naturalWidth, bossRect.height / naturalHeight)
       const imageInset = (bossRect.width - naturalWidth * imageScale) / 2
       const visibleBossLeft = bossRect.left + imageInset + bossAttackContactLeft * imageScale
-      boss.style.animation = animation
+      boss.style.setProperty('translate', translate, priority)
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
       card.style.setProperty('--boss-dash-x', `${Math.min(0, heroRight - visibleBossLeft) / rem}rem`)
       if (bossArtId === 'gremlin_nob') {
@@ -844,7 +847,7 @@ export function EnemyCard({
             onError={onArtError}
           /> : null}
           {!useSafariCombatRendering || bossAttacking ? <CombatAnimation
-            key={`${def.artId ?? def.id}-${bossAttacking ? 'attack' : 'idle'}`}
+            key={`${bossArtId}-${bossAttacking ? 'attack' : 'idle'}`}
             className="enemy__art--cutout"
             src={art}
             data-animation-layer={bossAttacking ? 'attack' : 'idle'}
