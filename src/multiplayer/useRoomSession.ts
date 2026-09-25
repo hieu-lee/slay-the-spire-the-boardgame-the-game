@@ -806,6 +806,13 @@ export function useRoomSession() {
 
   const chooseCharacter = useCallback((character: CharacterId) => enqueue('character', { character }), [enqueue])
   const chooseAscension = useCallback((ascension: number) => enqueue('ascension', { ascension }), [enqueue])
+  // Resolved when the write is sent, so quick repeated steps compose instead of
+  // each re-sending the level that was on screen when it was clicked.
+  const stepAscension = useCallback((delta: -1 | 1) => enqueue('ascension', () => {
+    const current = snapshotRef.current
+    const highest = current?.campaignProgress.highestAscension ?? 0
+    return { ascension: Math.max(0, Math.min(highest, (current?.ascension ?? 0) + delta)) }
+  }), [enqueue])
   const chooseRelicRule = useCallback((enabled: boolean) => enqueue('relic-rule', { enabled }), [enqueue])
   const chooseLastStandRule = useCallback((enabled: boolean) => enqueue('last-stand-rule', { enabled }), [enqueue])
   const chooseRunMeta = useCallback((options: Partial<RunMetaOptions>) => enqueue('run-meta', () => ({
@@ -869,6 +876,7 @@ export function useRoomSession() {
     forget,
     chooseCharacter,
     chooseAscension,
+    stepAscension,
     chooseRelicRule,
     chooseLastStandRule,
     chooseRunMeta,

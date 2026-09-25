@@ -162,13 +162,10 @@ function Seat({ seat, you }: { seat?: PublicSeat; you?: boolean }) {
             <img src={assetPath(`combat/characters/${seat.character}.webp`)} alt=""
               onError={(event) => { event.currentTarget.style.display = 'none' }} />
           </span>
-          <span className="online-seat__name" aria-hidden="true">{seat.name}</span>
-          <span className="online-seat__class" aria-hidden="true">
-            {character?.[1] ?? seat.character}
-            {seat.connected ? null : <em> · away</em>}
-          </span>
+          <span className="online-seat__name" aria-hidden="true" title={seat.name}>{seat.name}</span>
+          {seat.connected ? null : <span className="online-seat__class" aria-hidden="true"><em>away</em></span>}
         </>
-      ) : <span className="online-seat__open" aria-hidden="true">Open seat</span>}
+      ) : <span className="online-seat__open" aria-hidden="true">+</span>}
     </div>
   )
 }
@@ -204,12 +201,13 @@ function RemoteAudio({ stream, volume }: { stream: MediaStream; volume: number }
   return <audio ref={audio} autoPlay playsInline />
 }
 
-function VoiceControls({ voice, seats, connected, volume, compact = false }: {
+function VoiceControls({ voice, seats, connected, volume, compact = false, showError = true }: {
   voice: ReturnType<typeof useVoiceChat>
   seats: PublicSeat[]
   connected: boolean
   volume: number
   compact?: boolean
+  showError?: boolean
 }) {
   if (!voice.available) return compact ? null
     : <span className="voice voice--unavailable" data-webmcp-passive>Voice unavailable</span>
@@ -219,7 +217,7 @@ function VoiceControls({ voice, seats, connected, volume, compact = false }: {
         <button type="button" disabled={!connected || voice.starting} onClick={voice.start}>
           {voice.starting ? 'Opening microphone…' : 'Join voice'}
         </button>
-        {voice.error ? <span className="online-error" role="alert">{voice.error}</span> : null}
+        {showError && voice.error ? <span className="online-error" role="alert">{voice.error}</span> : null}
       </div>
     )
   }
@@ -233,7 +231,7 @@ function VoiceControls({ voice, seats, connected, volume, compact = false }: {
         Leave voice <span className="voice__status">{connectedPeers}/{Math.max(0, seats.length - 1)}</span>
       </button>
       <button type="button" aria-pressed={voice.muted} onClick={voice.toggleMute}>{voice.muted ? 'Unmute' : 'Mute'}</button>
-      {voice.error ? <span className="online-error" role="alert">{voice.error}</span> : null}
+      {showError && voice.error ? <span className="online-error" role="alert">{voice.error}</span> : null}
       {Object.entries(voice.remoteStreams).map(([peerId, stream]) => <RemoteAudio key={peerId} stream={stream} volume={volume} />)}
     </div>
   )
@@ -258,9 +256,28 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const [expiredGiveUpDeadline, setExpiredGiveUpDeadline] = useState<number | null>(null)
   const pauseDialog = useRef<HTMLDialogElement>(null)
   const runShell = useRef<HTMLElement>(null)
+  const runSettings = useRef<HTMLDetailsElement>(null)
   const previousOnlineScreen = useRef<string | null>(null)
   const snapshot = room.snapshot
   const giveUpVote = snapshot?.giveUpVote?.deadlineAt === expiredGiveUpDeadline ? undefined : snapshot?.giveUpVote
+  useEffect(() => {
+    const dismiss = (event: KeyboardEvent | PointerEvent) => {
+      const details = runSettings.current
+      if (!details?.open) return
+      if (event instanceof KeyboardEvent) {
+        if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return
+        const hadFocus = details.contains(document.activeElement)
+        details.open = false
+        if (hadFocus) details.querySelector('summary')?.focus()
+      } else if (!details.contains(event.target as Node)) details.open = false
+    }
+    document.addEventListener('keydown', dismiss)
+    document.addEventListener('pointerdown', dismiss)
+    return () => {
+      document.removeEventListener('keydown', dismiss)
+      document.removeEventListener('pointerdown', dismiss)
+    }
+  }, [])
   useEffect(() => {
     if (!snapshot || snapshot.run) return
     // Players spend time in the lobby while the party forms. Use it to warm
@@ -487,6 +504,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     const connected = room.connection === 'connected'
     const partyLeader = snapshot.seats[0]
     const isPartyLeader = partyLeader?.playerId === snapshot.you.playerId
+    const startable = connected && ready && isPartyLeader && !room.mutationPending
+    const startLabel = connected && ready
+      ? isPartyLeader ? 'Enter the Spire' : `${partyLeader?.name ?? 'The party leader'} starts the run`
+      : 'Waiting for every seat'
     if (snapshot.selectingCampaign) return <CampaignSelect onChoose={room.start}
       onBack={isPartyLeader && connected && !room.mutationPending ? () => { void room.selectCampaign(false) } : undefined}
       disabled={!connected || !ready || !isPartyLeader || room.mutationPending}
@@ -495,86 +516,95 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     return (
       <main key="lobby" className="online-lobby sts-scope menu-ground"
         data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}>
-        <header>
-          <button type="button" className="online-lobby__leave ribbon-back" aria-label="Leave room"
-            onClick={async () => {
-              setLeaving(true)
-              voice.stop()
-              if (await room.leave()) onLocal()
-              else setLeaving(false)
-            }}><span aria-hidden="true"></span></button>
+        <header className="online-lobby__toolbar">
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>
+          <VoiceControls voice={voice} seats={snapshot.seats} connected={connected} volume={settings.voiceVolume} showError={false} />
+          <details ref={runSettings} className="online-lobby__settings">
+            <summary title="Run settings"><span className="visually-hidden">Run settings</span></summary>
+            <div className="online-lobby__settings-panel menu-board">
+              {isPartyLeader ? null : <p className="online-lobby__settings-note">{partyLeader?.name ?? 'The party leader'} sets Last Stand and the run mode</p>}
+              {snapshot.seats.length > 1 ? <label>Choose Your Relic<input type="checkbox" disabled={!connected} checked={snapshot.chooseYourRelic} onChange={(event) => room.chooseRelicRule(event.target.checked)} /></label> : null}
+              {snapshot.seats.length > 1 ? <label>Last Stand
+                <input type="checkbox" aria-label="Last Stand" disabled={!connected || !isPartyLeader}
+                  checked={snapshot.lastStand} onChange={(event) => room.chooseLastStandRule(event.target.checked)} />
+              </label> : null}
+              <fieldset disabled={!connected || !isPartyLeader} className="online-lobby__meta">
+                <MetaRunOptions
+                  mode={snapshot.metaOptions.mode}
+                  dailyModifiers={[]}
+                  customModifierIds={snapshot.metaOptions.modifiers}
+                  quickStartAct={snapshot.metaOptions.quickStartAct}
+                  actIVUnlocked={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES}
+                  onModeChange={(mode) => room.chooseRunMeta({ mode })}
+                  onCustomModifierChange={room.chooseRunModifier}
+                  onQuickStartActChange={(quickStartAct) => room.chooseRunMeta({ quickStartAct })}
+                />
+              </fieldset>
+            </div>
+          </details>
+          <button type="button" className="game-settings game-settings__summary" aria-label="Settings" title="Settings"
+            onClick={() => setSettingsOpen(true)}>
+            <img src={assetPath('menu/settings-cog.png')} alt="" />
+          </button>
         </header>
         <section className="online-lobby__table menu-board menu-board--slate">
-          {/* The code and the one action taken on it, on one line: it was a
-              headline with a full-width button under it, which read as the
-              screen's primary control rather than as a convenience. */}
           <div className="online-lobby__code">
-            <span className="online-entry__eyebrow">Party room</span>
             <h1>{snapshot.code}</h1>
-            <button className="online-lobby__copy" type="button"
-              onClick={() => void navigator.clipboard.writeText(snapshot.code).catch(() => {})}>Copy code</button>
+            <button className="online-lobby__copy" type="button" aria-label="Copy code" title="Copy code"
+              onClick={() => void navigator.clipboard.writeText(snapshot.code).catch(() => {})}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" /></svg>
+            </button>
           </div>
-
           <div className="online-lobby__seats">
             {Array.from({ length: 4 }, (_, index) => (
               <Seat key={index} seat={snapshot.seats[index]}
                 you={snapshot.seats[index]?.playerId === snapshot.you.playerId} />
             ))}
           </div>
-
-          <div className="online-lobby__character">
-            <span>Your character</span>
-            <CharacterRoster character={snapshot.you.character} taken={taken} disabled={!connected} onChoose={room.chooseCharacter} />
-          </div>
-          <details className="online-lobby__settings">
-            <summary>Run settings</summary>
-            <label>
-              Ascension
-              <select disabled={!connected} value={snapshot.ascension} onChange={(event) => room.chooseAscension(Number(event.target.value))}>{Array.from({ length: snapshot.campaignProgress.highestAscension + 1 }, (_, level) => <option key={level}>{level}</option>)}</select>
-            </label>
-            {/* `run-modifiers` is what carries the disclosure's styling; the
-                bare `ascension-rules` class has no rules of its own, so this
-                summary rendered as clickable plain text. */}
-            <details className="ascension-rules run-modifiers">
-              <summary>Ascension {snapshot.ascension} modifiers</summary>
-              <ol>{ASCENSION_RULES.slice(1, snapshot.ascension + 1).map((rule) => <li key={rule}>{rule}</li>)}</ol>
-            </details>
-            {snapshot.seats.length > 1 ? <label>Choose Your Relic<input type="checkbox" disabled={!connected} checked={snapshot.chooseYourRelic} onChange={(event) => room.chooseRelicRule(event.target.checked)} /></label> : null}
-            {snapshot.seats.length > 1 ? <label>Last Stand
-              <input type="checkbox" aria-label="Last Stand" disabled={!connected || !isPartyLeader}
-                checked={snapshot.lastStand} onChange={(event) => room.chooseLastStandRule(event.target.checked)} />
-              {!isPartyLeader ? <small>{partyLeader?.name ?? 'The party leader'} controls this rule.</small> : null}
-            </label> : null}
-            <fieldset disabled={!connected || !isPartyLeader} className="online-lobby__meta">
-              <legend>Official run setup</legend>
-              <MetaRunOptions
-                mode={snapshot.metaOptions.mode}
-                dailyModifiers={[]}
-                customModifierIds={snapshot.metaOptions.modifiers}
-                quickStartAct={snapshot.metaOptions.quickStartAct}
-                actIVUnlocked={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES}
-                onModeChange={(mode) => room.chooseRunMeta({ mode })}
-                onCustomModifierChange={room.chooseRunModifier}
-                onQuickStartActChange={(quickStartAct) => room.chooseRunMeta({ quickStartAct })}
-              />
-            </fieldset>
-          </details>
-          {/* Secondary controls on one line, below the settings tray and above
-              the only button that starts anything. */}
-          <div className="online-lobby__aside">
-            <VoiceControls voice={voice} seats={snapshot.seats} connected={connected} volume={settings.voiceVolume} />
-            <button type="button" onClick={() => setSettingsOpen(true)}>Settings</button>
-          </div>
-
-          <button className="online-lobby__start" type="button"
-            disabled={!connected || !ready || !isPartyLeader || room.mutationPending} onClick={() => room.selectCampaign(true)}>
-            {connected && ready
-              ? isPartyLeader ? 'Enter the Spire' : `${partyLeader?.name ?? 'The party leader'} starts the run`
-              : 'Waiting for every seat'}
-          </button>
-          {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
         </section>
+        {room.error || voice.error ? <div className="online-lobby__alerts">
+          {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
+          {voice.error ? <p className="online-error" role="alert">{voice.error}</p> : null}
+        </div> : null}
+
+        <div className="start-menu__ascension online-lobby__ascension">
+          <button type="button" className="online-lobby__ascension-step" aria-label="Decrease Ascension"
+            disabled={!connected || snapshot.ascension === 0} onClick={() => room.stepAscension(-1)}>‹</button>
+          <div>
+            <span className="start-menu__ascension-level" aria-hidden="true"><span>{snapshot.ascension}</span></span>
+            <p>
+              <label><span className="visually-hidden">Ascension</span>
+                <select aria-label="Ascension" disabled={!connected} value={snapshot.ascension} onChange={(event) => room.chooseAscension(Number(event.target.value))}>
+                  {Array.from({ length: snapshot.campaignProgress.highestAscension + 1 }, (_, level) =>
+                    <option key={level} value={level}>Ascension {level}</option>)}
+                </select>
+              </label>
+              <span>{ASCENSION_RULES[snapshot.ascension]}</span>
+            </p>
+          </div>
+          <button type="button" className="online-lobby__ascension-step" aria-label="Increase Ascension"
+            disabled={!connected || snapshot.ascension >= snapshot.campaignProgress.highestAscension}
+            onClick={() => room.stepAscension(1)}>›</button>
+        </div>
+        <div className="online-lobby__character">
+          <CharacterRoster character={snapshot.you.character} taken={taken} disabled={!connected} onChoose={room.chooseCharacter} />
+        </div>
+
+        <button type="button" className="online-lobby__leave start-menu__character-back ribbon-back" aria-label="Leave room" title="Leave room"
+          onClick={async () => {
+            setLeaving(true)
+            voice.stop()
+            if (await room.leave()) onLocal()
+            else setLeaving(false)
+          }}><span aria-hidden="true"></span></button>
+        {connected && ready && isPartyLeader ? null : <p className="online-lobby__status" aria-hidden="true">
+          {connected && ready ? <><span className="online-lobby__status-name">{partyLeader?.name ?? 'The party leader'}</span> starts the run</> : startLabel}
+        </p>}
+        <button className="online-lobby__start start-menu__character-embark" type="button" title={startLabel}
+          disabled={!startable} onClick={() => room.selectCampaign(true)}>
+          <span className="visually-hidden">{startLabel}</span>
+        </button>
+
         <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onChange={onSettings} />
       </main>
     )

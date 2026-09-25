@@ -1,175 +1,281 @@
-/* The lobby was the last screen still wearing the pre-chrome web idiom: a
-   0.75rem-radius card with a 1px gold hairline, floating on a flat gradient,
-   while the main menu and the compendium had both moved
-   to painted art with chamfered panels. It read as a different application, and
-   with every control stacked in one centred column it read as a form.
-
-   Same background plate as the start menu, so arriving here from "Multiplayer"
-   is a change of panel rather than a change of game. */
+/* The party lobby is laid out like the solo character select: the party board
+   up top, Ascension and the hero strip along the bottom, Leave and Start in the
+   bottom corners, and the room tools as small keys in the top-right corner. The
+   whole screen fits the viewport; nothing scrolls. */
 .sts-scope.online-lobby {
-  align-content: center;
-  padding: 4.5rem 1rem 2.5rem;
+  position: relative;
+  display: block;
+  overflow: hidden;
+  padding: 0;
 }
 
-.sts-scope.online-lobby > header .connection { padding: 0.2rem 0.55rem; background: rgb(20 14 10 / 0.72); }
-
-.sts-scope .online-lobby__table {
-  width: min(46rem, 100%);
-  padding: clamp(1.6rem, 4vw, 2.6rem) clamp(1.6rem, 5vw, 3rem);
-  border: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
+.sts-scope.online-lobby .online-lobby__table {
+  position: absolute;
+  top: clamp(3.6rem, 11vh, 7rem);
+  left: 50%;
+  width: min(52rem, calc(100% - 2rem));
+  padding: clamp(1rem, 2.6vh, 1.7rem) max(1.8rem, 6%) clamp(1.2rem, 3vh, 2rem);
+  transform: translateX(-50%);
 }
 
-/* The room code and the one thing anybody does with it, on a line. */
 .sts-scope .online-lobby__code {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
   align-items: center;
-  gap: 0 1rem;
-  padding-bottom: 1.1rem;
-  border-bottom: 1px solid rgb(217 180 91 / 0.16);
-  text-align: left;
-}
-
-.sts-scope .online-lobby__code .online-entry__eyebrow {
-  grid-column: 1;
+  justify-content: center;
+  gap: 0.6rem;
 }
 
 .sts-scope.online-lobby h1 {
-  grid-column: 1;
   margin: 0;
   color: #ffdc60;
-  font-size: clamp(2rem, 6vw, 3.1rem);
+  font-size: clamp(2rem, 4.6vw, 3.2rem);
   letter-spacing: 0.16em;
 }
 
-.sts-scope .online-lobby__copy {
-  grid-column: 2;
-  grid-row: 1 / span 2;
+.sts-scope.online-lobby .online-lobby__copy {
+  display: grid;
+  width: 2.3rem;
+  height: 2.3rem;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(255 236 190 / 0.45);
+  border-radius: 0.35rem;
+  background: rgb(20 14 10 / 0.45);
+  cursor: pointer;
 }
 
+.sts-scope .online-lobby__copy svg { width: 1.25rem; fill: none; stroke: #ffdc60; stroke-width: 2; }
+.sts-scope .online-lobby__copy:is(:hover, :focus-visible) { background: rgb(20 14 10 / 0.75); box-shadow: 0 0 0.45rem rgb(255 220 96 / 0.55); }
+
 .sts-scope .online-lobby__seats {
-  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
-  gap: 0.9rem;
-  margin: 1.4rem 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(0.4rem, 1.2vw, 0.9rem);
+  margin-top: clamp(0.6rem, 1.8vh, 1.1rem);
 }
 
 .sts-scope .online-seat {
-  min-height: 0;
-  align-content: start;
-  gap: 0.1rem;
-  padding: 0.8rem 0.6rem 0.7rem;
-  border: 0;
-  border-radius: 0;
-  clip-path: polygon(
-    8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px),
-    calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px);
-  background: linear-gradient(180deg, rgb(58 46 36 / 0.7), rgb(22 17 13 / 0.85));
-  box-shadow: inset 0 0 0 2px rgb(0 0 0 / 0.55), inset 0 0 0 3px var(--trim-dim);
+  position: relative;
+  display: grid;
+  height: clamp(6.5rem, 26vh, 14rem);
+  grid-template-rows: minmax(0, 1fr) auto;
+  justify-items: center;
+  gap: 0.2rem;
+  padding: 0.45rem 0.4rem 0.5rem;
+  border-radius: 0.3rem;
+  background: linear-gradient(180deg, rgb(58 46 36 / 0.62), rgb(22 17 13 / 0.85));
+  box-shadow: inset 0 0 0 2px rgb(0 0 0 / 0.45);
 }
 
-/* The seat you occupy, in the same gold the rest of the chrome uses for "this
-   one is yours" — nothing else on the screen said which of the four you were. */
-.sts-scope .online-seat--you {
-  box-shadow: inset 0 0 0 2px rgb(0 0 0 / 0.55), inset 0 0 0 3px var(--sts-gold);
-}
+.sts-scope .online-seat--you { box-shadow: inset 0 0 0 2px #ffdc60, 0 0 0.8rem rgb(255 220 96 / 0.4); }
 
 .sts-scope .online-seat__portrait {
-  display: grid;
-  height: 5.5rem;
-  place-items: end center;
+  position: relative;
+  width: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
 .sts-scope .online-seat__portrait img {
-  max-width: 100%;
-  max-height: 100%;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
+  object-position: bottom;
   filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.55));
 }
 
 .sts-scope .online-seat__name {
-  color: var(--cream);
-  font-size: 1rem;
+  max-width: 100%;
+  overflow: hidden;
+  color: #fff8ea;
+  font-size: clamp(0.7rem, 0.9vw, 0.8rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.sts-scope .online-seat__class {
-  color: var(--trim-lit);
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.sts-scope .online-seat__class em {
-  color: var(--red-text);
-  font-style: normal;
-}
+.sts-scope .online-seat__class { position: absolute; top: 0.3rem; right: 0.3rem; padding: 0.05rem 0.35rem; border-radius: 0.2rem; background: rgb(20 14 10 / 0.8); }
+.sts-scope .online-seat__class em { color: #ffb49c; font-size: 0.72rem; font-style: normal; letter-spacing: 0.08em; text-transform: uppercase; }
 
 .sts-scope .online-seat--empty {
-  border: 0;
-  box-shadow: inset 0 0 0 2px rgb(58 38 24 / 0.55);
-  background: rgb(40 26 16 / 0.28);
-}
-
-.sts-scope .online-seat__open {
-  display: grid;
-  min-height: 8.4rem;
+  grid-template-rows: 1fr;
   place-items: center;
-  color: #f1e2c4;
-  letter-spacing: 0.08em;
+  background: rgb(40 26 16 / 0.28);
+  box-shadow: inset 0 0 0 2px rgb(58 38 24 / 0.55);
 }
 
-.sts-scope .online-lobby__character {
-  max-width: 20rem;
-  margin: 0 auto 1.2rem;
-  justify-items: center;
-  text-align: center;
-}
+.sts-scope .online-seat__open { color: rgb(255 248 234 / 0.45); font-size: 2.2rem; line-height: 1; }
 
-/* Voice and settings, spaced like controls rather than like a paragraph. */
-.sts-scope .online-lobby__aside {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.7rem;
-  margin: 1.3rem 0 1.4rem;
-}
+.sts-scope.online-lobby .online-lobby__ascension > div { min-height: 0; }
+.sts-scope.online-lobby .online-lobby__ascension label { display: block; }
 
-.sts-scope.online-lobby .voice {
-  width: auto;
-  margin: 0;
-  gap: 0.7rem;
-}
-
-.sts-scope .voice__status {
-  color: var(--trim-lit);
-  font-size: 0.78rem;
-}
-
-/* Closed, this is one control among the others; the frame around it belonged to
-   the panel it used to open into and made an empty box of the rest of the line.
-   Open, it earns the frame back. */
-.sts-scope .online-lobby__settings {
-  width: fit-content;
-  margin: 0.4rem auto 0;
+.sts-scope.online-lobby .online-lobby__ascension select {
+  min-height: 0;
   padding: 0;
   border: 0;
-  background: none;
+  color: #f5cf62;
+  background: transparent;
+  box-shadow: none;
+  font: 700 1em 'Kreon', Georgia, serif;
+  cursor: pointer;
 }
 
-.sts-scope .online-lobby__settings[open] {
-  width: min(32rem, 100%);
-  padding: 0.5rem;
-  border: 1px solid #584a36;
-  background: rgb(14 16 17 / 0.7);
+.sts-scope.online-lobby .online-lobby__ascension select:disabled { cursor: not-allowed; opacity: 0.6; }
+.sts-scope.online-lobby .online-lobby__ascension select option { color: #fff8ea; background: #10201c; }
+
+.sts-scope.online-lobby .online-lobby__character {
+  position: absolute;
+  bottom: clamp(0.85rem, 2.5vh, 1.7rem);
+  left: 50%;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  transform: translateX(-50%);
 }
 
-/* The one control that starts anything, given the weight to say so. */
-.sts-scope .online-lobby__start {
-  min-width: 15rem;
-  margin-top: 0.4rem;
-  font-size: 1.05rem;
+.sts-scope.online-lobby .online-character-roster { display: flex; width: auto; gap: clamp(0.22rem, 0.7vw, 0.65rem); }
+
+.sts-scope.online-lobby .online-character-roster__portrait {
+  width: clamp(2.9rem, 5.4vw, 5.2rem);
+  border: 2px solid rgb(33 30 28 / 0.86);
+  transition: transform var(--motion-fast) var(--ease);
+}
+
+.sts-scope.online-lobby .online-character-roster__portrait[aria-pressed='true'] {
+  border-color: #f5cf62;
+  box-shadow: 0 0 0 3px rgb(245 207 98 / 0.42), 0 0 1.25rem rgb(245 207 98 / 0.44);
+  transform: translateY(-0.65rem);
+}
+
+.sts-scope.online-lobby .online-lobby__start::before { content: '✓' / ''; }
+.sts-scope.online-lobby .online-lobby__start:disabled { cursor: not-allowed; filter: grayscale(0.7) brightness(0.7); }
+
+.sts-scope .online-lobby__status {
+  position: absolute;
+  right: 0.6rem;
+  bottom: calc(clamp(0.8rem, 2vh, 1.8rem) + clamp(4rem, 8vw, 7.5rem) / 1.7 + 0.45rem);
+  max-width: min(14rem, calc(26vw - 1.5rem));
+  margin: 0;
+  padding: 0.3rem 0.65rem;
+  border-radius: 0.3rem;
+  color: #fff8ea;
+  background: rgb(20 14 10 / 0.72);
+  font-size: 0.8rem;
+  overflow-wrap: break-word;
+  text-align: right;
+}
+
+.sts-scope .online-lobby__status-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.sts-scope .online-lobby__toolbar {
+  position: absolute;
+  z-index: 3;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sts-scope .online-lobby__toolbar .connection { padding: 0.2rem 0.55rem; background: rgb(20 14 10 / 0.72); }
+.sts-scope .online-lobby__toolbar .game-settings { margin-left: 0; }
+.sts-scope .online-lobby__toolbar .voice--unavailable { padding: 0.2rem 0.55rem; color: #f1e2c4; background: rgb(20 14 10 / 0.72); }
+.sts-scope .online-lobby__toolbar .voice button { min-height: 2.6rem; padding: 0.3rem 0.8rem; font-size: 0.85rem; }
+
+.sts-scope .online-lobby__settings > summary {
+  width: 2.6rem;
+  min-height: 2.6rem;
+  justify-content: center;
+  padding: 0;
+}
+
+.sts-scope .online-lobby__settings-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  display: grid;
+  width: min(24rem, calc(100vw - 1.5rem));
+  max-height: calc(var(--visible-viewport-height, 100dvh) - 5rem);
+  gap: 0.6rem;
+  overflow: auto;
+  padding: 1.2rem max(1.4rem, 6%);
+}
+
+.sts-scope .online-lobby__settings-panel > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0.7rem;
+  border-left: 4px solid #ffdc60;
+  background: rgb(58 38 24 / 0.3);
+}
+
+.sts-scope .online-lobby__settings-panel input[type='checkbox'] { width: 1.3rem; height: 1.3rem; accent-color: #d19a3e; }
+.sts-scope .online-lobby__meta { min-width: 0; margin: 0; padding: 0; border: 0; }
+.sts-scope .online-lobby__settings-panel .start-menu__meta { font-size: 0.8rem; }
+.sts-scope .online-lobby__settings-panel .start-menu__meta-panel { padding: 0; border: 0; background: none; box-shadow: none; }
+.sts-scope .online-lobby__settings-panel .start-menu__meta-panel > label { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: #fff8ea; }
+.sts-scope .online-lobby__settings-panel .start-menu__custom { padding: 0.5rem 0.7rem; border-color: rgb(58 38 24 / 0.55); background: rgb(58 38 24 / 0.3); }
+.sts-scope .online-lobby__settings-panel .start-menu__custom :is(label, legend small) { color: #fff8ea; font-size: 0.78rem; }
+.sts-scope .online-lobby__settings-note { margin: 0; color: #fff8ea; font-size: 0.8rem; text-shadow: 0 1px 0 #2a1a0c, 0 0 3px #2a1a0c; }
+
+/* Errors stack in the empty top-left corner, clear of the toolbar and the
+   bottom controls. On phones a toast may overlay the board's top edge. */
+.sts-scope .online-lobby__alerts {
+  position: absolute;
+  z-index: 4;
+  top: 0.75rem;
+  left: 0.75rem;
+  display: grid;
+  max-width: min(22rem, calc(100vw - 22rem));
+  gap: 0.3rem;
+  justify-items: start;
+}
+
+.sts-scope .online-lobby__alerts .online-error {
+  margin: 0;
+  padding: 0.35rem 0.7rem;
+  border-radius: 0.3rem;
+  color: #ffc2b0;
+  background: rgb(20 14 10 / 0.88);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 760px), (max-height: 620px) {
+  .sts-scope.online-lobby .online-lobby__table { top: 3.1rem; width: min(40rem, calc(100% - 1rem)); padding: 0.6rem max(1.4rem, 6%) 0.75rem; }
+  .sts-scope.online-lobby h1 { font-size: clamp(1.3rem, 4vw, 1.9rem); }
+  .sts-scope.online-lobby .online-lobby__copy { width: 1.8rem; height: 1.8rem; }
+  .sts-scope .online-lobby__copy svg { width: 1rem; }
+  .sts-scope .online-lobby__seats { margin-top: 0.4rem; }
+  .sts-scope .online-seat { height: clamp(3.4rem, 22vh, 5rem); padding: 0.25rem; }
+  .sts-scope .online-seat__name { font-size: 0.62rem; }
+  .sts-scope .online-seat__class em { font-size: 0.55rem; }
+  .sts-scope .online-seat__open { font-size: 1.4rem; }
+  .sts-scope.online-lobby .online-lobby__ascension { bottom: calc(0.55rem + clamp(2.25rem, 7vw, 3.8rem) * 1.5 + 0.6rem); grid-template-columns: 1.85rem minmax(0, 40vw) 1.85rem; }
+  .sts-scope.online-lobby .online-lobby__character { bottom: 0.55rem; }
+  .sts-scope.online-lobby .online-character-roster { gap: 0.18rem; }
+  .sts-scope.online-lobby .online-character-roster__portrait { width: clamp(2.25rem, 7vw, 3.8rem); }
+  .sts-scope.online-lobby .online-character-roster__portrait[aria-pressed='true'] { transform: translateY(-0.28rem); }
+  .sts-scope .online-lobby__status { bottom: calc(0.55rem + clamp(2.25rem, 7vw, 3.8rem) * 1.5 + 0.6rem); max-width: min(12rem, calc(30vw - 3.3rem)); padding: 0.2rem 0.45rem; font-size: 0.6rem; }
+  .sts-scope .online-lobby__toolbar { top: 0.4rem; right: 0.4rem; gap: 0.3rem; }
+  .sts-scope .online-lobby__toolbar .game-settings.game-settings__summary,
+  .sts-scope .online-lobby__settings > summary { width: 2.1rem; min-height: 2.1rem; flex-basis: 2.1rem; }
+  .sts-scope .online-lobby__toolbar .connection { font-size: 0.55rem; }
+  .sts-scope .online-lobby__alerts { top: 0.4rem; left: 0.4rem; max-width: calc(100vw - 24rem); }
+  .sts-scope .online-lobby__alerts .online-error { padding: 0.2rem 0.45rem; font-size: 0.62rem; }
+  .sts-scope .online-lobby__toolbar .voice button { min-height: 2.1rem; padding: 0.2rem 0.55rem; font-size: 0.7rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sts-scope.online-lobby .online-character-roster__portrait { transition: none; }
+  .sts-scope.online-lobby .online-character-roster__portrait[aria-pressed='true'] { transform: none; }
 }

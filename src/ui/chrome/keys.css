@@ -16,8 +16,6 @@
   .sts-scope .reward-screen__skip,
   .sts-scope .neow-offer__skip,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-lobby__copy,
-  .sts-scope .online-lobby__start,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ) {
@@ -62,8 +60,6 @@
   .sts-scope .reward-screen__skip,
   .sts-scope .neow-offer__skip,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-lobby__copy,
-  .sts-scope .online-lobby__start,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ):hover:not(:disabled) {
@@ -80,8 +76,6 @@
   .sts-scope .reward-screen__skip,
   .sts-scope .neow-offer__skip,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-lobby__copy,
-  .sts-scope .online-lobby__start,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ):active:not(:disabled) {
@@ -98,8 +92,6 @@
   .sts-scope .reward-screen__skip,
   .sts-scope .neow-offer__skip,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-lobby__copy,
-  .sts-scope .online-lobby__start,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ):disabled {
@@ -188,8 +180,6 @@
   .sts-scope button:not([class]),
   .sts-scope button[class=''],
   .sts-scope .prompt__cancel,
-  .sts-scope .online-lobby__copy,
-  .sts-scope .online-lobby__start,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ) .muted { color: #dfd5c2; }
@@ -212,8 +202,6 @@
   .sts-scope .reward-screen__skip,
   .sts-scope .neow-offer__skip,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-lobby__copy,
-  .sts-scope .online-lobby__start,
   /* These two carry their own `clip-path` in styles.css and were missed when
      this list was written, so the global 2px ring was clipped away entirely and
      keyboard focus was invisible on the two biggest keys in the game — "Leave
@@ -279,8 +267,8 @@ input:is(:not([type]), [type='text']) {
    their own `background` wiped it — leaving a dropdown with no arrow at all,
    worse than the native control it replaced.
 
-   This change deleted most of those. What is left: `.online-entry select` /
-   `.online-lobby select` (styles.css, one block) merely TIE this rule and lose
+   This change deleted most of those. What is left: `.online-entry select`
+   (styles.css, one block) merely TIEs this rule and loses
    on load order, and `.start-turn-order li select` is (0,1,2) and genuinely
    out-specifies it — which is the only reason the extra arm below is needed. */
 select:not([multiple]),
@@ -301,7 +289,7 @@ select:not([multiple]),
 input[type='search'],
 input:is(:not([type]), [type='text']) { padding-right: 0.6rem; }
 
-/* styles.css skins `.online-entry select` / `.online-lobby select` at (0,1,1),
+/* styles.css skins `.online-entry select` at (0,1,1),
    which beats the bare `select` above — so on the entry screen the Character
    picker kept a 4.8px radius and a lighter plate while the text input beside it
    was square and dark. Two treatments, one panel. The font size is pinned too:
@@ -407,7 +395,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    fieldsets sit one level deeper inside `.event-cards`, hence the second arm.
 
    The full width is what forces a wrapping legend clear of the frame, and it
-   erases the top border across itself as a side effect. Three of these four
+   erases the top border across itself as a side effect. Two of these three
    carry only the UA's `2px groove`, so losing it costs nothing on framed
    screens that supply their own edges. `.event-cards` DOES have an authored
    border, and a round spent trying to keep it: given an intrinsic width the
@@ -419,8 +407,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    border goes, and every legend reads at every width. */
 .sts-scope .event-cards > legend,
 .sts-scope .event-cards fieldset > legend,
-.sts-scope .reward-screen__sources > legend,
-.sts-scope .online-lobby__meta > legend { width: 100%; color: var(--light-yellow); }
+.sts-scope .reward-screen__sources > legend { width: 100%; color: var(--light-yellow); }
 
 /* Headings: one carved gold voice across every framed screen, not five. */
 .sts-scope h2 {

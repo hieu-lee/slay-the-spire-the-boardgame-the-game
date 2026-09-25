@@ -461,8 +461,8 @@ try {
     assert(!lobbyChrome.overflowsX && lobbyChrome.fits, 'the lobby panel overflows a desktop window')
   })
   await Promise.all([openLobbySettings(a), openLobbySettings(b)])
-  await a.locator('.online-lobby').getByLabel('Ascension').selectOption('3')
-  await b.locator('.online-lobby').getByLabel('Ascension').waitFor()
+  await a.locator('.online-lobby').getByLabel('Ascension', { exact: true }).selectOption('3')
+  await b.locator('.online-lobby').getByLabel('Ascension', { exact: true }).waitFor()
   await b.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '3')
   const sharedLobby = await snapshot(a)
   check('lobby leave and ascension are authoritative for the party', () => {
@@ -521,9 +521,9 @@ try {
   await openLobbySettings(b)
   let replacementTab
   try {
-    await b.locator('.online-lobby').getByLabel('Ascension').selectOption('4')
+    await b.locator('.online-lobby').getByLabel('Ascension', { exact: true }).selectOption('4')
     await withTimeout(mutationStarted, 30_000, 'held ascension mutation')
-    await b.locator('.online-lobby').getByLabel('Ascension').selectOption('5')
+    await b.locator('.online-lobby').getByLabel('Ascension', { exact: true }).selectOption('5')
     const replacementTabPromise = bContext.waitForEvent('page')
     await b.evaluate(() => window.open(location.href, '_blank'))
     replacementTab = await replacementTabPromise
@@ -535,7 +535,7 @@ try {
     await b.getByRole('button', { name: `Resume ${code}` }).click()
     await b.locator('.online-lobby').waitFor()
     await openLobbySettings(b)
-    await b.locator('.online-lobby').getByLabel('Ascension').selectOption('6')
+    await b.locator('.online-lobby').getByLabel('Ascension', { exact: true }).selectOption('6')
     await a.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '6')
   } finally {
     releaseMutation()
@@ -564,9 +564,9 @@ try {
     await route.fulfill({ response })
   })
   try {
-    await a.locator('.online-lobby').getByLabel('Ascension').selectOption('5')
+    await a.locator('.online-lobby').getByLabel('Ascension', { exact: true }).selectOption('5')
     await withTimeout(queuedAscensionStart, 30_000, 'held queued ascension')
-    await a.locator('.online-lobby').getByLabel('Ascension').selectOption('4')
+    await a.locator('.online-lobby').getByLabel('Ascension', { exact: true }).selectOption('4')
     await reconnectRoomSocket(a, 'queued write reconnect test')
   } finally {
     releaseQueuedAscension()
@@ -578,7 +578,7 @@ try {
     assertEqual(queuedAscensionRequests, 1)
     assertEqual(afterQueuedReconnect.ascension, 5)
   })
-  await a.locator('.online-lobby').getByLabel('Ascension').selectOption('6')
+  await a.locator('.online-lobby').getByLabel('Ascension', { exact: true }).selectOption('6')
   await b.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '6')
 
   await a.getByRole('button', { name: 'Enter the Spire' }).click()
@@ -5818,7 +5818,7 @@ try {
   await openLobbySettings(fourPages[0])
   await fourPages[0].waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')]
     .find((label) => label.textContent?.includes('Ascension'))?.querySelectorAll('option').length === 14)
-  await fourPages[0].locator('.online-lobby').getByLabel('Ascension').selectOption('13')
+  await fourPages[0].locator('.online-lobby').getByLabel('Ascension', { exact: true }).selectOption('13')
   await fourPages[0].getByRole('button', { name: 'Enter the Spire' }).click()
   await fourPages[0].getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await fourPages[0].getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()

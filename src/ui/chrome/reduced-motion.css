@@ -13,9 +13,7 @@
       .sts-scope .is-chosen,
       .sts-scope .reward-screen__skip,
       .sts-scope .neow-offer__skip,
-      .sts-scope .prompt__cancel,
-      .sts-scope .online-lobby__copy,
-      .sts-scope .online-lobby__start
+      .sts-scope .prompt__cancel
     ):hover:not(:disabled),
     :is(
       .sts-scope button:not([class]),
@@ -23,9 +21,7 @@
       .sts-scope .is-chosen,
       .sts-scope .reward-screen__skip,
       .sts-scope .neow-offer__skip,
-      .sts-scope .prompt__cancel,
-      .sts-scope .online-lobby__copy,
-      .sts-scope .online-lobby__start
+      .sts-scope .prompt__cancel
     ):active:not(:disabled)
   ) { transform: none; }
 

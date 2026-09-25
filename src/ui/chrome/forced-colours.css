@@ -80,4 +80,8 @@
     outline: 5px double Highlight;
     outline-offset: -5px;
   }
+
+  /* Party seats are framed and marked "yours" only by box-shadow. */
+  .sts-scope .online-seat { border: 1px solid CanvasText; }
+  .sts-scope .online-seat--you { outline: 3px solid Highlight; outline-offset: -3px; }
 }

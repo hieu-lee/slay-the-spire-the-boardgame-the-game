@@ -156,13 +156,19 @@ try {
       const ribbon = screen.querySelector('.ribbon-back')
       const panelBox = panel?.getBoundingClientRect()
       const ribbonBox = ribbon?.getBoundingClientRect()
+      const clearOfPanel = (selector) => {
+        const box = screen.querySelector(selector)?.getBoundingClientRect()
+        return Boolean(box && panelBox && (box.top >= panelBox.bottom || box.bottom <= panelBox.top || box.left >= panelBox.right || box.right <= panelBox.left))
+      }
       return {
         seats: screen.querySelectorAll('.online-seat').length,
         roster: roster?.querySelectorAll('button').length,
         selected: roster?.querySelector('[aria-pressed="true"]')?.getAttribute('aria-label'),
         ribbonClip: ribbon ? getComputedStyle(ribbon).clipPath : 'none',
         ribbonVisible: Boolean(ribbonBox && ribbonBox.left >= 0 && ribbonBox.top >= 0 && ribbonBox.right <= innerWidth && ribbonBox.bottom <= innerHeight),
-        ribbonClear: Boolean(ribbonBox && panelBox && ribbonBox.bottom <= panelBox.top),
+        ribbonClear: clearOfPanel('.ribbon-back'),
+        controlsClear: ['.online-lobby__ascension', '.online-character-roster', '.online-lobby__start', '.online-lobby__toolbar'].filter((selector) => !clearOfPanel(selector)),
+        fits: screen.scrollHeight <= screen.clientHeight + 1,
         withinViewport: Boolean(panelBox && panelBox.left >= -1 && panelBox.right <= innerWidth + 1),
         overflow: document.documentElement.scrollWidth > innerWidth + 1,
         scrollTop: screen.scrollTop,
@@ -190,11 +196,65 @@ try {
     assert(lobbyChrome.ribbonClear, `${viewport.name}: lobby leave ribbon overlaps the party table`)
     assert(lobbyChrome.withinViewport && !lobbyChrome.overflow, `${viewport.name}: lobby does not fit its viewport`)
     assert.equal(lobbyChrome.scrollTop, 0, `${viewport.name}: lobby retained stale form scroll`)
+    assert(lobbyChrome.fits, `${viewport.name}: the party lobby has to be scrolled`)
+    assert.deepEqual(lobbyChrome.controlsClear, [], `${viewport.name}: lobby controls overlap the party board`)
 
-    await lobby.getByText('Run settings', { exact: true }).click()
+    const errorClear = await lobby.evaluate((screen) => {
+      const alerts = screen.appendChild(Object.assign(document.createElement('div'), { className: 'online-lobby__alerts' }))
+      for (const text of ['The room server rejected that change. Try again in a moment.', 'Microphone access was denied.'])
+        alerts.appendChild(Object.assign(document.createElement('p'), { className: 'online-error', textContent: text }))
+      const intersects = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+      const [room, voice] = [...alerts.children].map((error) => error.getBoundingClientRect())
+      const overlaps = ['.online-lobby__toolbar', '.online-lobby__copy', '.online-lobby__ascension', '.online-character-roster', '.online-lobby__start', '.ribbon-back']
+        .filter((selector) => intersects(alerts.getBoundingClientRect(), screen.querySelector(selector).getBoundingClientRect()))
+      if (intersects(room, voice)) overlaps.push('errors stack on each other')
+      alerts.remove()
+      return overlaps
+    })
+    assert.deepEqual(errorClear, [], `${viewport.name}: lobby errors cover the lobby controls`)
+    const captionSizes = viewport.name === 'desktop'
+      ? [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]
+      : [{ width: 560, height: 315 }, { width: 640, height: 360 }, { width: 667, height: 375 }, { width: 844, height: 390 }]
+    for (const size of captionSizes) {
+      await page.setViewportSize(size)
+      const captionOverlaps = await lobby.evaluate((screen) => {
+        const caption = screen.appendChild(Object.assign(document.createElement('p'), { className: 'online-lobby__status', textContent: 'Maximilian_Hexaghost starts the run' }))
+        const box = caption.getBoundingClientRect()
+        const overlaps = ['.online-lobby__ascension', '.online-character-roster', '.online-lobby__start'].filter((selector) => {
+          const other = screen.querySelector(selector).getBoundingClientRect()
+          return box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top
+        })
+        if (caption.scrollWidth > caption.clientWidth + 1) overlaps.push('caption text overflows')
+        caption.remove()
+        return overlaps
+      })
+      assert.deepEqual(captionOverlaps, [], `${size.width}x${size.height}: the start status caption covers the lobby controls`)
+    }
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    const runSettings = lobby.locator('.online-lobby__settings')
+    await runSettings.locator(':scope > summary').click()
+    await page.keyboard.press('Escape')
+    assert.equal(await runSettings.evaluate((details) => details.open), false, `${viewport.name}: Escape leaves run settings open`)
+    await runSettings.locator(':scope > summary').click()
+    await page.mouse.click(5, Math.round(viewport.height / 2))
+    assert.equal(await runSettings.evaluate((details) => details.open), false, `${viewport.name}: an outside click leaves run settings open`)
+    await lobby.locator('.online-lobby__settings > summary').click()
     const createdRoom = [...rooms.store.rooms.values()].find((candidate) => candidate.seats.some((seat) => seat.name === `Room ${viewport.name}`))
-    assert.equal(await lobby.getByLabel('Ascension').locator('option').count(), 10,
+    assert.equal(await lobby.getByLabel('Ascension', { exact: true }).locator('option').count(), 10,
       `${viewport.name}: solo Ascension unlock was not shared with the room: ${JSON.stringify(createdRoom?.seats[0]?.campaignUnlocks)}`)
+    const ascensionSelect = lobby.getByLabel('Ascension', { exact: true })
+    assert.equal(await lobby.locator('.online-lobby__ascension-step[aria-label="Decrease Ascension"]').isDisabled(), true, `${viewport.name}: Ascension could step below 0`)
+    await page.route('**/api/rooms/*/ascension', async (route) => { await new Promise((resolve) => setTimeout(resolve, 250)); await route.continue() })
+    const increase = lobby.getByRole('button', { name: 'Increase Ascension' })
+    await increase.click()
+    await increase.click()
+    await page.waitForFunction(() => document.querySelector('.online-lobby__ascension select')?.value === '2')
+    await page.unroute('**/api/rooms/*/ascension')
+    await lobby.getByRole('button', { name: 'Decrease Ascension' }).click()
+    await lobby.getByRole('button', { name: 'Decrease Ascension' }).click()
+    await page.waitForFunction(() => document.querySelector('.online-lobby__ascension select')?.value === '0')
+    assert.equal(await ascensionSelect.inputValue(), '0')
+    await lobby.locator('.online-lobby__settings > summary').click()
     await lobby.getByText('Run mode · Standard', { exact: true }).click()
     assert.equal(await lobby.getByLabel('Starting Act').locator('option[value="4"]').isDisabled(), false, `${viewport.name}: Act IV stayed locked in multiplayer`)
 

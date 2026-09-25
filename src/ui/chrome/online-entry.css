@@ -1,4 +1,4 @@
-/* `.online-entry` / `.online-lobby` are `display: grid; place-items: center`,
+/* `.online-entry` is `display: grid; place-items: center`,
    whose single implicit column is an AUTO track — it sizes to the panel's
    max-content, not to the window. So the panel's own `width: min(46rem, 100%)`
    resolves 100% against a track that is already too wide, and the panel spills:
@@ -11,7 +11,7 @@
    room" 69->77 and "Join" 54->62 and roughly doubled the overhang. Bounding the
    track is the fix for both halves: `minmax(0, …)` lets it shrink, and the
    panel's existing `min()` then does what it always meant to. */
-.sts-scope:is(.online-entry, .online-lobby) {
+.sts-scope.online-entry {
   grid-template-columns: minmax(0, auto);
 }
 

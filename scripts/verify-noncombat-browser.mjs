@@ -3244,7 +3244,7 @@ await lobbyPage.waitForFunction(() => [...document.querySelectorAll('.online-sea
   .filter((seat) => seat.getAttribute('aria-label')?.includes('online')).length === 4)
 const onlineLobby = lobbyPage.locator('main.online-lobby')
 await onlineLobby.locator('.online-lobby__settings > summary').click()
-const ascensionOptions = await onlineLobby.getByLabel('Ascension').locator('option').count()
+const ascensionOptions = await onlineLobby.getByLabel('Ascension', { exact: true }).locator('option').count()
 await onlineLobby.getByLabel('Choose Your Relic').click()
 await lobbyPage.waitForFunction(() => document.querySelector('main.online-lobby input[type="checkbox"]')?.checked === true)
 const onlineMeta = onlineLobby.locator('.start-menu__meta')

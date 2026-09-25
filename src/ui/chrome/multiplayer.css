@@ -1,6 +1,6 @@
 /* Multiplayer uses the same painted menu ground and close-cropped character
    strip as solo. The room protocol stays entirely in OnlineGame; this is only
-   the route into it and the party staging table. */
+   the route into it. The party lobby lives in party-room.css. */
 .sts-scope.online-entry {
   align-content: center;
   padding: 4.5rem 1rem 2.5rem;
@@ -18,11 +18,10 @@
 
 .sts-scope.online-entry h1 { color: #ffdc60; letter-spacing: 0.04em; text-transform: none; }
 .sts-scope .menu-board .online-error { color: #ffc2b0; text-shadow: 0 1px 0 #2a1a0c, 0 0 3px #2a1a0c; }
-.sts-scope .menu-board :is(.online-entry__eyebrow, .online-lobby__character > span, .voice--unavailable) { color: #fff8ea; text-shadow: 0 1px 0 #2a1a0c, 0 0 3px #2a1a0c; }
+.sts-scope .menu-board .online-entry__eyebrow { color: #fff8ea; text-shadow: 0 1px 0 #2a1a0c, 0 0 3px #2a1a0c; }
 .sts-scope .menu-board .connection { padding: 0.2rem 0.55rem; background: rgb(20 14 10 / 0.72); }
 
-.sts-scope .online-entry__character,
-.sts-scope .online-lobby__character {
+.sts-scope .online-entry__character {
   display: grid;
   gap: 0.45rem;
   width: min(34rem, 100%);
@@ -79,14 +78,6 @@
 .sts-scope .online-character-roster__portrait:disabled { cursor: not-allowed; opacity: 0.4; }
 .sts-scope .online-character-roster__portrait:focus-visible { outline: 2px solid #fff1a4; outline-offset: 2px; }
 
-.sts-scope .online-lobby__character { margin: 1rem auto 1.35rem; }
-.sts-scope .online-lobby__seats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.sts-scope .online-seat__open { min-height: 7.5rem; }
-
-/* The lobby's two controls that open auxiliary screens stay below the party;
-   entering the run is still the sole primary action. */
-.sts-scope .online-lobby__aside { margin: 1rem 0 1.1rem; }
-
 @media (max-height: 620px) {
   .sts-scope.online-entry { place-items: start center; padding: 2.9rem 0.55rem 0.5rem; }
   .sts-scope .online-entry__panel { width: min(37rem, 100%); padding: 0.8rem max(1.6rem, 6%); }
@@ -94,20 +85,6 @@
   .sts-scope .online-entry label,
   .sts-scope .online-entry__character { margin: 0.4rem auto; }
   .sts-scope .online-entry__actions { margin-top: 0.5rem; }
-
-  .sts-scope.online-lobby { place-items: start center; align-content: start; padding: 4rem 0.5rem 0.5rem; }
-  .sts-scope .online-lobby__table { width: min(43rem, 100%); padding: 1rem max(1.6rem, 6%) 0.9rem; }
-  .sts-scope .online-lobby__code { padding-bottom: 0.45rem; }
-  .sts-scope.online-lobby h1 { font-size: clamp(1.35rem, 4vw, 2rem); }
-  .sts-scope .online-lobby__seats { gap: 0.35rem; margin: 0.55rem 0; }
-  .sts-scope .online-seat { padding: 0.35rem; }
-  .sts-scope .online-seat__portrait { height: 2.8rem; }
-  .sts-scope .online-seat__name { font-size: 0.68rem; }
-  .sts-scope .online-seat__class { display: none; }
-  .sts-scope .online-seat__open { min-height: 4rem; font-size: 0.64rem; }
-  .sts-scope .online-lobby__character { margin: 0.55rem auto; }
-  .sts-scope .online-lobby__aside { margin: 0.45rem 0; }
-  .sts-scope .online-lobby__start { min-width: 11rem; margin-top: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

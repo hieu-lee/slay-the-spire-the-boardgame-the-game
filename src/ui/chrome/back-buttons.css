@@ -69,8 +69,6 @@ button.ribbon-back:disabled { cursor: not-allowed; filter: grayscale(0.5) bright
   clip-path: polygon(0 16%, 100% 16%, 82% 50%, 100% 84%, 0 84%, 14% 50%);
   filter: drop-shadow(0 0.28rem 0.28rem rgb(0 0 0 / 0.6));
 }
-.sts-scope.online-lobby > header .online-lobby__leave.ribbon-back { position: static; }
-.sts-scope.online-lobby > header { z-index: 3; }
 
 .compendium__back.ribbon-back {
   flex: none;

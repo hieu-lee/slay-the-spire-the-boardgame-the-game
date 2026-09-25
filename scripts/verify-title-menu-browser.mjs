@@ -185,7 +185,9 @@ try {
         width: rect.width, height: rect.height, x: rect.x, y: rect.y }
     })
     const photographBackdrop = async (selector, label) => {
-      const hidePanels = await page.addStyleTag({ content: `${selector} > * { visibility: hidden !important; }` })
+      // `display: none`, not `visibility: hidden`: a hidden child with a filter keeps its
+      // compositing layer, which re-rasterizes the backdrop beneath it by a few levels.
+      const hidePanels = await page.addStyleTag({ content: `${selector} > * { display: none !important; }` })
       const image = await page.locator(selector).screenshot({ path: join(output, `${screen}-background-${label}.png`) })
       await hidePanels.evaluate(element => element.remove())
       return image
@@ -207,12 +209,9 @@ try {
     assert.deepEqual(await backdrop('.online-lobby'), menuBackdrop, `${screen}: party lobby changes the menu backdrop`)
     assert.equal(Buffer.compare(await photographBackdrop('.online-lobby', 'lobby'), menuImage), 0,
       `${screen}: party lobby background pixels differ from the menu`)
-    await lobby.evaluate(element => { element.scrollTop = element.scrollHeight })
-    assert.deepEqual(await backdrop('.online-lobby'), menuBackdrop, `${screen}: scrolling changes the lobby backdrop`)
     await page.locator('html').evaluate(element => { element.dataset.highContrast = 'true' })
     assert.deepEqual(await backdrop('.online-lobby'), contrastBackdrop, `${screen}: high contrast changes the lobby backdrop`)
     await page.locator('html').evaluate(element => { element.dataset.highContrast = 'false' })
-    await lobby.evaluate(element => { element.scrollTop = 0 })
     assert.equal(await lobby.getByRole('button', { name: 'Achievements' }).count(), 0)
     await assertTypeface()
     await page.screenshot({ path: join(output, `${screen}-lobby.png`) })

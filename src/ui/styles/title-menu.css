@@ -568,7 +568,7 @@
 .start-menu__custom input[type='checkbox'] { width: 1.25rem; min-height: 1.25rem; }
 .start-menu__quick-start-note { color: #c8bcaa; line-height: 1.35; }
 .online-lobby__meta .start-menu__meta { display: block; }
-.online-lobby__meta .start-menu__meta-panel { position: static; width: auto; max-height: 24rem; margin-top: .5rem; }
+.online-lobby__meta .start-menu__meta-panel { position: static; width: auto; max-height: none; margin-top: .5rem; }
 
 .start-menu__version { position: absolute; bottom: 0.5rem; left: 0.75rem; margin: 0; color: rgb(216 222 216 / 0.48); font-size: 0.68rem; }
 
