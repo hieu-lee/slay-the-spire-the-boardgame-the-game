@@ -1392,13 +1392,20 @@ try {
   assert(publishTempestFixture.ok, 'could not publish the online Tempest fixture')
   const submittedTempestEnergies = []
   const tempestActionUrl = `**/api/rooms/${code}/action`
+  // The room state changes before the intercepted response is fulfilled, so
+  // unrouting as soon as the server shows the play would race the handler.
+  const tempestHandlers = new Set()
   await a.route(tempestActionUrl, async (route) => {
-    const action = route.request().postDataJSON()?.action
-    if (action?.kind === 'playCard' && action.cardUid === 'online-tempest') {
-      submittedTempestEnergies.push(action.energySpent)
-    }
-    const response = await route.fetch()
-    await route.fulfill({ response })
+    const handled = (async () => {
+      const action = route.request().postDataJSON()?.action
+      if (action?.kind === 'playCard' && action.cardUid === 'online-tempest') {
+        submittedTempestEnergies.push(action.energySpent)
+      }
+      const response = await route.fetch()
+      await route.fulfill({ response })
+    })()
+    tempestHandlers.add(handled)
+    try { await handled } finally { tempestHandlers.delete(handled) }
   })
   await a.getByRole('button', { name: /^Tempest\+,/ }).click()
   await a.getByText('Choose Energy for Tempest+').waitFor()
@@ -1409,6 +1416,7 @@ try {
       .some((card) => card.uid === 'online-tempest'); attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
+  await Promise.allSettled([...tempestHandlers])
   await a.unroute(tempestActionUrl)
   const onlineTempest = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   check('online Tempest waits for its private X choice and submits once', () => {
