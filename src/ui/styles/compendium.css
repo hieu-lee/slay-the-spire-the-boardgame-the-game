@@ -1,6 +1,6 @@
 .compendium {
   display: grid;
-  grid-template-columns: 17rem minmax(0, 1fr);
+  grid-template-columns: 16rem minmax(0, 1fr);
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -12,58 +12,80 @@
   z-index: 2;
   display: flex;
   flex-direction: column;
+  gap: 0.85rem;
   min-height: 0;
   overflow: auto;
-  padding: 1rem;
+  padding: 1rem 1rem 1.25rem;
   color: #e7e0cf;
-  background: linear-gradient(90deg, rgb(15 28 33 / 0.98), rgb(19 33 38 / 0.94));
+  background: linear-gradient(90deg, rgb(15 28 33 / 0.97), rgb(19 33 38 / 0.93));
   border-right: 3px solid #0b1316;
   box-shadow: 0.65rem 0 1.5rem rgb(0 0 0 / 0.45);
 }
 
-.compendium__filters h1 { margin: 0 0 0.55rem; color: #f1c953; font-size: 1.7rem; text-shadow: 0 2px 2px #000; }
-.compendium__back { align-self: start; width: 7rem; min-height: 4.3rem; margin: -1rem 0 0.4rem -1rem; border: 2px solid #6c2c1d; clip-path: polygon(0 8%, 80% 8%, 100% 50%, 80% 92%, 0 92%); color: #fff0c8; background: linear-gradient(#bd4026, #762416); box-shadow: inset 0 0 0 2px rgb(248 130 78 / 0.22), 0.4rem 0.45rem 0.7rem #000; font-size: 3rem; line-height: 1; text-shadow: 0 3px 2px #29100b; }
+.compendium__head { display: flex; align-items: center; gap: 0.35rem; }
+.compendium__head h1 { margin: 0; color: #ffdc60; font-size: 1.6rem; line-height: 1; text-shadow: 0 2px 2px #000; }
+
 .compendium__search { position: relative; display: block; }
-.compendium__search input { width: 100%; padding: 0.55rem 2.2rem 0.55rem 0.65rem; border: 0; border-bottom: 2px solid #526f72; color: #f1ead9; background: rgb(4 10 13 / 0.62); font: inherit; }
+.compendium .compendium__search input { width: 100%; min-height: 0; padding: 0.55rem 2.2rem 0.55rem 0.7rem; border: 1px solid #2f4a4e; border-radius: 0.3rem; color: #f1ead9; background: rgb(4 10 13 / 0.7); font: inherit; }
+.compendium__search input:focus-visible { border-color: #ffdc60; outline: 2px solid transparent; outline-offset: 2px; box-shadow: 0 0 0 2px rgb(255 220 96 / 0.35); }
+.compendium__search input::-webkit-search-cancel-button { display: none; appearance: none; }
 .compendium__search button { position: absolute; top: 0; right: 0; bottom: 0; width: 2rem; border: 0; color: #fff; background: none; font-size: 1.5rem; }
 
-.compendium__pools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.2rem; margin: 0.75rem 0; }
+.compendium__pools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.2rem; }
 .compendium__pools button { display: grid; aspect-ratio: 1; place-items: center; padding: 0.12rem; border: 0; background: none; }
 .compendium__pools img { width: 100%; height: 100%; object-fit: contain; opacity: 0.64; filter: grayscale(0.6) brightness(0.72); transition: opacity var(--motion-fast) var(--ease), filter var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease); }
-.compendium__pool-label { color: #c8bba2; font-size: 0.65rem; font-weight: 700; line-height: 1.05; text-align: center; }
 .compendium__pools button:hover img,
 .compendium__pools button:focus-visible img { opacity: 0.9; filter: grayscale(0.15) brightness(0.95); transform: translateY(-0.12rem) scale(1.05); }
-.compendium__pools button[aria-pressed='true'] { background: none; box-shadow: none; }
 .compendium__pools button[aria-pressed='true'] img { opacity: 1; filter: drop-shadow(0 0 0.42rem rgb(244 205 91 / 0.78)); transform: scale(1.08); }
-.compendium__pools button[aria-pressed='true'] .compendium__pool-label { color: #f4d765; text-shadow: 0 0 0.42rem rgb(244 205 91 / 0.78); }
 
-.compendium__filter-block { margin: 0.25rem 0; border: 1px solid #30484c; border-radius: 0.25rem; background: rgb(18 43 47 / 0.62); }
-.compendium__filter-block h2,
-.compendium__sort { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 2rem; margin: 0; padding: 0.3rem 0.55rem; border: 1px solid rgb(105 158 158 / 0.28); border-radius: 0.2rem; color: #f4d765; background: linear-gradient(#356c70, #285257); box-shadow: inset 0 1px rgb(255 255 255 / 0.1), 0 2px 3px rgb(0 0 0 / 0.45); font-family: 'Kreon', Georgia, serif; font-size: 0.95rem; font-weight: 700; text-align: left; text-shadow: 0 2px 2px #112; }
-.compendium__filter-block h2 span,
-.compendium__sort span { color: #dfcc73; font-size: 0.75rem; }
-.compendium__types { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.35rem; padding: 0.55rem; }
-.compendium__types button { display: grid; aspect-ratio: 1; place-items: center; padding: 0; border: 1px solid #314347; color: #bdc6c3; background: linear-gradient(#89979a, #566467); filter: grayscale(0.8); }
-.compendium__types button[aria-pressed='true'] { border-color: #f0d15d; filter: none; box-shadow: 0 0 0.55rem rgb(103 221 232 / 0.35); }
-.compendium__types .icon { width: 1.5rem; height: 1.5rem; }
-.compendium__checks { display: grid; gap: 0.2rem; padding: 0.5rem 0.6rem; }
-.compendium__checks label,
-.compendium__upgrade { color: #e9e1ce; font-size: 0.82rem; text-transform: capitalize; }
-.compendium__checks label { display: flex; min-height: 24px; align-items: center; }
-.compendium__checks input { width: 1rem; height: 1rem; margin: 0 0.35rem 0 0; vertical-align: -0.18rem; }
-.compendium__checks label:nth-child(3) { color: #7fd7e3; }
-.compendium__checks label:nth-child(4) { color: #f2d35d; }
-.compendium__checks label:nth-child(5) { color: #e4a9e9; }
-.compendium__segments { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.22rem; padding: 0.55rem; }
-.compendium__segments button { min-width: 0; padding: 0.22rem 0; border: 1px solid #23373b; border-radius: 0.2rem; color: #e9e7dc; background: linear-gradient(#557277, #2f4e53); box-shadow: inset 0 1px rgb(255 255 255 / 0.12); font-weight: 700; }
-.compendium__segments button[aria-pressed='true'] { color: #261c0d; background: #e9c455; }
-.compendium__sort { margin: 0.2rem 0; }
-.compendium__upgrade { padding: 0.65rem 0.15rem; color: #f3d66d; }
+.compendium__filter-block { display: grid; gap: 0.4rem; }
+.compendium__filter-block h2 { margin: 0; color: #d9b85a; font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; }
+
+.compendium__types,
+.compendium__segments { display: grid; gap: 0.3rem; }
+.compendium__types { grid-template-columns: repeat(5, 1fr); }
+.compendium__segments { grid-template-columns: repeat(6, 1fr); }
+:is(.compendium__types, .compendium__segments, .compendium__toggles) button,
+.compendium__rarity,
+.compendium__upgrade {
+  display: grid;
+  min-width: 0;
+  min-height: 2rem;
+  place-items: center;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid #2f4a4e;
+  border-radius: 0.3rem;
+  color: #d9e1dd;
+  background: linear-gradient(#35565b, #213a3f);
+  box-shadow: inset 0 1px rgb(255 255 255 / 0.1);
+  font: 700 0.82rem 'Kreon', Georgia, serif;
+  cursor: pointer;
+}
+.compendium__types button { aspect-ratio: 1; padding: 0; }
+.compendium__types .icon { width: 1.35rem; height: 1.35rem; }
+:is(.compendium__types, .compendium__segments) button[aria-pressed='true'],
+:is(.compendium__rarity, .compendium__upgrade):has(input:checked) { border-color: #ffdc60; color: #2a1d08; background: linear-gradient(#ffe487, #d9aa3c); box-shadow: 0 0 0.5rem rgb(255 220 96 / 0.35); }
+:is(.compendium__types, .compendium__segments, .compendium__toggles) button:is(:hover, :focus-visible),
+:is(.compendium__rarity, .compendium__upgrade):hover { filter: brightness(1.15); }
+:is(.compendium__types, .compendium__segments, .compendium__toggles) button:focus-visible,
+:is(.compendium__rarity, .compendium__upgrade):has(input:focus-visible) { outline: 2px solid #fff1a4; outline-offset: 2px; }
+
+.compendium__checks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.3rem; }
+.compendium__rarity { position: relative; padding-inline: 0.1rem; white-space: nowrap; }
+.compendium__rarity--uncommon { color: #8fe3ee; }
+.compendium__rarity--rare { color: #f5d768; }
+.compendium__rarity--special { color: #e8b5ec; }
+.compendium__rarity--curse { color: #e89a9a; }
+.compendium :is(.compendium__rarity, .compendium__upgrade) input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; opacity: 0; cursor: pointer; }
+
+.compendium__toggles { display: flex; gap: 0.35rem; margin-left: auto; }
+.compendium .compendium__toggles > * { min-width: 3.4rem; padding-inline: 0.7rem; }
+.compendium__upgrade { position: relative; }
 
 .compendium__library { min-width: 0; min-height: 0; padding: 1.1rem 2rem 2rem; overflow: auto; background: linear-gradient(rgb(8 7 9 / 0.15), rgb(8 7 9 / 0.58)); }
-.compendium__library header { position: sticky; z-index: 3; top: -1.1rem; display: flex; align-items: baseline; justify-content: space-between; margin: -1.1rem -2rem 1rem; padding: 1rem 2rem 0.7rem; background: linear-gradient(rgb(8 7 9 / 0.95), rgb(8 7 9 / 0.72)); }
-.compendium__library h2 { margin: 0; color: #f5df9d; font-size: 1.65rem; text-shadow: 0 2px 2px #000; }
-.compendium__library header span { color: #c0b49b; }
+.compendium__library header { position: sticky; z-index: 3; top: -1.1rem; display: flex; align-items: center; gap: 0.7rem; margin: -1.1rem -2rem 1rem; padding: 0.9rem 2rem 0.7rem; background: linear-gradient(rgb(8 7 9 / 0.95), rgb(8 7 9 / 0.72)); }
+.compendium__library h2 { margin: 0; color: #ffdc60; font-size: 1.55rem; text-shadow: 0 2px 2px #000; }
+.compendium__library header span { padding: 0.1rem 0.55rem; border-radius: 1rem; color: #e7dcc4; background: rgb(255 255 255 / 0.08); font-size: 0.85rem; }
 .compendium__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.2rem, 1fr)); align-items: start; gap: 1.15rem 1rem; }
 
 .compendium__empty { margin: 4rem auto; color: #d5c6a8; font-size: 1.1rem; text-align: center; }
@@ -71,7 +93,24 @@
 .compendium-card { --card-width: 13rem; position: relative; width: 100%; max-width: 13rem; aspect-ratio: 744 / 1039; justify-self: center; padding: 0; overflow: hidden; border: 2px solid #5d4b3f; border-radius: 0.55rem; background: linear-gradient(#4d1d23, #21191a); box-shadow: 0 0.55rem 0.55rem rgb(0 0 0 / 0.7); content-visibility: auto; contain-intrinsic-size: auto 13rem 18.15rem; transition: transform var(--motion-fast) var(--ease), filter var(--motion-fast) var(--ease); }
 .compendium-card:hover,
 .compendium-card:focus-visible { z-index: 2; transform: translateY(-0.35rem) scale(1.04); filter: brightness(1.12); }
+/* The shared title clamp's 0.95 line-height shaves Kreon's descenders; the
+   compendium keeps its fallback faces at full size, where that shows. */
+:is(.compendium-card, .compendium__detail-card) .card-face__title { padding-block: 0.12em; }
 .compendium-card > img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; }
+
+/* A clear Gem's grey scan, multiplied over its stone's colour. The colour is
+   its own layer, painted only once the scan is, so the multiply never reaches
+   the fallback face underneath. */
+:is(.compendium-card, .compendium__detail-card)[style*='--gem'] { isolation: isolate; }
+:is(.compendium-card, .compendium__detail-card)[style*='--gem']:has(> img[style*='visibility: visible'])::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: 4.5%;
+  content: '';
+  background: radial-gradient(circle at 38% 30%, #fff 0, var(--gem) 42%, color-mix(in srgb, var(--gem) 62%, #1a1216) 100%);
+}
+:is(.compendium-card, .compendium__detail-card)[style*='--gem'] > img[style*='visibility: visible'] { mix-blend-mode: multiply; }
 
 .compendium__detail { position: fixed; z-index: 50; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 2rem; border: 0; background: rgb(0 0 0 / 0.8); place-items: center; }
 .compendium__detail[open] { display: grid; }
@@ -82,10 +121,58 @@
 .compendium__detail-card .card-face__rules { overflow: auto; font-size: 0.82rem; line-height: 1.3; }
 .compendium__detail button { position: fixed; top: 1rem; right: 1rem; z-index: 2; width: 3rem; height: 3rem; border: 1px solid #b49657; border-radius: 50%; color: #fff1cc; background: #321b17; font-size: 2rem; }
 
+@media (max-width: 760px), (max-height: 620px) {
+  .compendium { grid-template-columns: 13.5rem minmax(0, 1fr); }
+  .compendium__filters { gap: 0.55rem; padding: 0.55rem 0.6rem 0.75rem; }
+  .compendium__head h1 { font-size: 1.15rem; }
+  .compendium .compendium__search input { padding: 0.35rem 2rem 0.35rem 0.55rem; font-size: 0.85rem; }
+  .compendium__pools { grid-template-columns: repeat(6, 1fr); }
+  .compendium__filter-block { gap: 0.25rem; }
+  .compendium__filter-block h2 { font-size: 0.6rem; }
+  :is(.compendium__types, .compendium__segments, .compendium__toggles) button,
+  .compendium__rarity,
+  .compendium__upgrade { min-height: 1.7rem; font-size: 0.7rem; }
+  .compendium__types button { aspect-ratio: auto; }
+  .compendium__types .icon { width: 1.1rem; height: 1.1rem; }
+  .compendium__checks,
+  .compendium__types,
+  .compendium__segments,
+  .compendium__toggles { gap: 0.22rem; }
+  .compendium__library { padding: 0.7rem 0.9rem 1rem; }
+  .compendium__library header { top: -0.7rem; margin: -0.7rem -0.9rem 0.7rem; padding: 0.6rem 0.9rem 0.5rem; }
+  .compendium__library h2 { font-size: 1.15rem; }
+  .compendium__library header span { font-size: 0.72rem; }
+  .compendium__grid { grid-template-columns: repeat(auto-fill, minmax(7.4rem, 1fr)); gap: 0.8rem 0.6rem; }
+  .compendium-card { --card-width: 7.4rem; }
+}
+
 @media (max-width: 600px) {
-  .compendium { grid-template-columns: 1fr; grid-template-rows: minmax(12rem, 40%) minmax(0, 1fr); overflow: hidden; }
-  .compendium__filters { min-height: 0; overflow: auto; border-right: 0; border-bottom: 3px solid #0b1316; }
-  .compendium__library { min-height: 0; overflow: auto; padding: 0.8rem; }
-  .compendium__library header { top: 0; margin: -0.8rem -0.8rem 0.8rem; padding: 0.8rem; }
-  .compendium__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem 0.55rem; }
+  .compendium { grid-template-columns: 12rem minmax(0, 1fr); }
+  .compendium__grid { grid-template-columns: repeat(auto-fill, minmax(6.8rem, 1fr)); }
+  .compendium-card { --card-width: 6.8rem; }
+  .compendium__rarity { padding-inline: 0; font-size: 0.64rem; }
+}
+
+@media (max-height: 360px) {
+  .compendium__filters { gap: 0.3rem; padding-block: 0.4rem; }
+  .compendium .compendium__search input { padding-block: 0.25rem; }
+  :is(.compendium__types, .compendium__segments) button,
+  .compendium__rarity { min-height: 1.5rem; }
+}
+
+/* Pressed type and cost keys already take the Highlight ring from
+   forced-colours.css; a checked pill has no other cue once its gradient goes.
+   The archive photo survives forced colours and would sit under the system
+   borders and rings, so it goes too. */
+@media (forced-colors: active) {
+  .compendium { background-image: none; }
+  :is(.compendium__rarity, .compendium__upgrade):has(input:checked) {
+    forced-color-adjust: none;
+    border: 2px solid Highlight;
+    color: HighlightText;
+    background: Highlight;
+    box-shadow: none;
+  }
+  :is(.compendium-card, .compendium__detail-card)[style*='--gem'] > img[style*='visibility: visible'] { mix-blend-mode: normal; }
+  :is(.compendium__rarity, .compendium__upgrade):has(input:checked:focus-visible) { outline: 5px double CanvasText; outline-offset: 2px; }
 }

@@ -64,8 +64,7 @@
      4340 on Cost.
      Scoped to the `.compendium__filters` aside rather than to one group,
      because all three live there and fixing only `__pools` left the identical
-     bug two rows below it. The sort toggle matches too and is unharmed — its
-     state is carried by its own glyph. */
+     bug two rows below it. */
   .compendium__filters [aria-pressed='true'] {
     outline: 3px solid Highlight;
     outline-offset: -3px;
