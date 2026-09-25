@@ -15,6 +15,7 @@ const errors = []
 const seats = ['ironclad', 'silent', 'defect', 'watcher'].map((character, index) => ({ id: `p${index + 1}`, name: ['A · Ironclad', 'B · Silent', 'C · Defect', 'D · Watcher'][index], character }))
 function fixture(shared = true, roster = seats) {
   const run = postNeowRun('treasure-animation', roster)
+  run.campaignProgress.actIV = 5
   run.phase = 'room'
   run.roomState = { kind: 'treasure', playerIds: seats.map((p) => p.id), decisions: {},
     offers: shared ? {} : { p1: 'anchor', p2: 'bag_of_preparation', p3: 'lantern', p4: 'vajra' },
@@ -48,11 +49,23 @@ try {
         await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
         await page.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'neow')
         await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), fixture())
+        // Mobile browser bars reduce the visible app height without changing vh.
+        const browserBars = name === 'horizontal-phone'
+          ? await page.addStyleTag({ content: '#root { height: calc(100dvh - 160px); }' }) : null
         await page.locator('.treasure-chest').waitFor()
         await page.getByRole('button', { name: 'Open treasure chest', exact: true }).click()
         await page.waitForTimeout(1700)
         await page.mouse.move(5,5)
         await page.screenshot({ path: `${output}/${engineName}-${name}-before-pick.png` })
+        for (const label of ['Skip', '◆ Skip for Sapphire Key']) {
+          const button = page.getByRole('button', { name: label, exact: true })
+          assert(await button.evaluate((element) => {
+            const box = element.getBoundingClientRect()
+            return box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth &&
+              [box.top + 2, box.bottom - 2].every((y) => element.contains(document.elementFromPoint(box.x + box.width / 2, y)))
+          }), `${engineName} ${name}: ${label} must be fully visible and unobstructed without scrolling`)
+        }
+        await browserBars?.evaluate((element) => element.remove())
         if (name === 'horizontal-phone') await tap(page.locator('[data-treasure-slot="0"]'))
         else await page.locator('[data-treasure-slot="0"]').hover()
         await page.locator('.potion-tip:visible').waitFor()

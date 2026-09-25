@@ -1,5 +1,7 @@
 /* Scene assets were extracted from the supplied recording, including its black void. */
 .sts-scope .treasure-stage {
+  display: flex;
+  flex-direction: column;
   position: relative;
   isolation: isolate;
   padding: 0;
@@ -14,7 +16,7 @@
   position: relative;
   width: min(100%, 1200px);
   height: min(70vh, 750px);
-  min-height: 300px;
+  min-height: 0;
   margin: auto;
 }
 .sts-scope .treasure-ground, .sts-scope .treasure-chest {
@@ -81,8 +83,8 @@
 .sts-scope .treasure-offer__relic[data-taken='true'] { pointer-events: none; }
 .sts-scope .treasure-offer small { color: var(--claim-color); font-size: 12px; text-shadow: 0 2px 3px #000; }
 .sts-scope .treasure-offer__empty { height: 88px; display: grid; place-items: center; }
-.sts-scope .treasure-actions { position: relative; z-index: 4; padding: 0 12px 12px; margin: 0; }
-.sts-scope .treasure-status { margin: 0; padding-bottom: 10px; color: #b9ad89; }
+.sts-scope .treasure-actions { position: relative; z-index: 4; flex-shrink: 0; padding: 0 12px 12px; margin: 0; }
+.sts-scope .treasure-status { flex-shrink: 0; margin: 0; padding-bottom: 10px; color: #b9ad89; }
 .sts-scope .treasure-coins { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
 .sts-scope .treasure-coins img {
   position: absolute; left: 54%; top: 58%; width: 23px; height: 23px;
