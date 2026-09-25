@@ -605,16 +605,10 @@ export function EnemyCard({
       // lane still describes the target's physical position.
       const heroRects = heroes.map((hero) => hero.getBoundingClientRect())
       const heroRight = Math.max(...heroRects.map((rect) => rect.right))
-      // Root motion uses translate. Override it only for this measurement:
-      // removing the animation restarts the attack when a later HUD image loads.
-      const translate = boss.style.getPropertyValue('translate')
-      const priority = boss.style.getPropertyPriority('translate')
-      boss.style.setProperty('translate', 'none', 'important')
       const bossRect = boss.getBoundingClientRect()
       const imageScale = Math.min(bossRect.width / naturalWidth, bossRect.height / naturalHeight)
       const imageInset = (bossRect.width - naturalWidth * imageScale) / 2
       const visibleBossLeft = bossRect.left + imageInset + bossAttackContactLeft * imageScale
-      boss.style.setProperty('translate', translate, priority)
       const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
       card.style.setProperty('--boss-dash-x', `${Math.min(0, heroRight - visibleBossLeft) / rem}rem`)
       if (bossArtId === 'gremlin_nob') {
@@ -633,14 +627,12 @@ export function EnemyCard({
         card.style.setProperty('--boss-launch-y', `${launchY / rem}rem`)
       }
     }
+    // Calculate travel when the attack art is ready, before its motion starts.
+    // Later intent/status image loads must not remeasure or restart the swing.
     measure()
     const removeReady = onCombatArtReady(initialBoss, measure)
-    card.addEventListener('load', measure, true)
-    card.addEventListener('loadeddata', measure, true)
     return () => {
       removeReady()
-      card.removeEventListener('load', measure, true)
-      card.removeEventListener('loadeddata', measure, true)
       card.style.removeProperty('--boss-dash-x')
       card.style.removeProperty('--boss-dash-y')
       card.style.removeProperty('--boss-launch-x')

@@ -52,7 +52,6 @@ try {
         }
         f.restoration++;f.render()
       }
-      f.install('guardian_defensive', true)
       window.attackStarts = []
       document.addEventListener('animationstart', event => {
         if (event.target.matches('.enemy__art--cutout:not([data-inactive])')) {
@@ -60,12 +59,13 @@ try {
         }
       })
     })
-    // Boss, elite and normal melee paths, plus a ranged control. Two turns verify replay.
+    // Boss, elite and normal melee paths, plus a ranged control. Repeat both reported enemies.
     for (const [id, isBoss] of [['guardian_defensive', true], ['lagavulin', false],
       ['gremlin_nob', false], ['jaw_worm', false], ['sentry_a', false]]) {
       await page.evaluate(([id, isBoss]) => window.fixture.install(id, isBoss), [id, isBoss])
+      await page.locator(`[data-enemy-def="${id}"][data-animation="idle"]`).waitFor()
       await page.waitForLoadState('networkidle')
-      for (let turn = 0; turn < 2; turn++) {
+      for (let turn = 0; turn < (['guardian_defensive', 'lagavulin'].includes(id) ? 2 : 1); turn++) {
         await page.evaluate(() => { window.attackStarts = []; const f = window.fixture; f.state.phase = 'enemy'; f.render() })
         const art = page.locator('.enemy--acting .enemy__art--cutout:not([data-inactive])')
         await art.waitFor()
@@ -92,15 +92,15 @@ try {
         assert(Math.abs(result.time - 900) < 1, `${screen}/${id}: late image load rewound the attack`)
         assert(result.shift < 1, `${screen}/${id}: contact measurement moved the attacker`)
         if (id !== 'sentry_a') assert(parseFloat(result.dash) < 0, `${screen}/${id}: missing melee travel`)
-        if (turn === 0 && ['guardian_defensive', 'lagavulin'].includes(id)) {
-          await page.locator('.board').screenshot({ path: resolve(output, `${screen}-${id}.png`) })
-        }
         await art.evaluate(image => image.getAnimations().forEach(animation => animation.play()))
         // Resolve the real engine turn while the original attack is recovering.
         await page.evaluate(async () => {
           const { enemyTurn } = await import('/src/game/combat.ts')
           const f = window.fixture; f.state = enemyTurn(f.state); f.render()
         })
+        if (turn === 0 && ['guardian_defensive', 'lagavulin'].includes(id)) {
+          await page.screenshot({ path: resolve(output, `${screen}-${id}.png`) })
+        }
         await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'idle')
         assert.equal((await page.evaluate(() => window.attackStarts)).length, 1,
           `${screen}/${id}/turn ${turn}: expected one attack start per turn: ${JSON.stringify(await page.evaluate(() => window.attackStarts))}`)
