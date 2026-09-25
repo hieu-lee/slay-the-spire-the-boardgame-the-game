@@ -271,7 +271,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   }, [snapshot?.code, snapshot?.run])
   useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected',
     settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_SOUND_DELAY_MS)
-  useCombatMusic(snapshot?.run, settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume)
+  useCombatMusic(snapshot?.run, settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume, true)
   useVictoryMusic(Boolean(snapshot?.run && !snapshot.run.campaign.finalized && victoryIsTerminal(snapshot.run, snapshot.campaignProgress)),
     settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume)
   const runPhase = snapshot?.run?.phase

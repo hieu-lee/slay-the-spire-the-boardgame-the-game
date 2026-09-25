@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSafariCombatRendering } from './CombatAnimation.tsx'
 import { assetPath } from '../game/assets.ts'
 import { enemyDef } from '../game/enemies.ts'
@@ -116,7 +116,7 @@ const ELITE_TRACK = assetPath('bgm/facing-the-elite.mp3')
 const VICTORY_TRACK = assetPath('bgm/the-spire-slain.mp3')
 
 type MusicCombat = { combatId: string; phase: string; enemies: readonly { defId: string; ascension?: number; actionIndex?: number; isBoss: boolean }[] }
-type MusicRun = { act: number; combat?: MusicCombat | null }
+type MusicRun = { act: number; phase?: string; combat?: MusicCombat | null }
 
 function hallwayTrack(act: number, combatId: string) {
   const tracks = HALLWAY_TRACKS[act]
@@ -139,20 +139,80 @@ function combatTrack(run?: MusicRun | null) {
 }
 
 /** Loop the original game's act theme while combat is active. */
-export function useCombatMusic(run?: MusicRun | null, enabled = true, volume = 20) {
+export function useCombatMusic(run?: MusicRun | null, enabled = true, volume = 20, keepPreloadOnDisconnect = false) {
   const track = enabled ? combatTrack(run) : undefined
   const audio = useRef<HTMLAudioElement | null>(null)
+  const bossPreload = useRef<{ controller: AbortController; url?: string } | null>(null)
+  const preloadRetryUsed = useRef(false)
+  const [preloadRetry, setPreloadRetry] = useState(0)
+  const preloadBoss = Boolean(volume > 0 && run?.act === 3 && (enabled || (keepPreloadOnDisconnect && bossPreload.current)) && (
+    run.phase === 'map' || run.phase === 'room' || run.phase === 'reward' ||
+    run.phase === 'betweenCombat' || (run.phase === 'combat' && bossPreload.current)))
+
+  useEffect(() => {
+    const previous = bossPreload.current
+    if (!preloadBoss) {
+      preloadRetryUsed.current = false
+      previous?.controller.abort()
+      if (previous?.url) URL.revokeObjectURL(previous.url)
+      bossPreload.current = null
+      return
+    }
+    if (run?.phase === 'combat') {
+      if (!previous?.url) previous?.controller.abort()
+      return
+    }
+    if (!enabled || previous?.url || (previous && !previous.controller.signal.aborted)) return
+    const preloaded = { controller: new AbortController(), url: undefined as string | undefined }
+    bossPreload.current = preloaded
+    void fetch(BOSS_TRACKS[3], { signal: preloaded.controller.signal, priority: 'low' })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Music unavailable: ${response.status}`)
+        return response.blob()
+      })
+      .then((blob) => {
+        if (!preloaded.controller.signal.aborted) {
+          preloaded.url = URL.createObjectURL(blob)
+          preloadRetryUsed.current = false
+        }
+      })
+      .catch(() => {
+        if (preloaded.controller.signal.aborted) return
+        preloaded.controller.abort()
+        if (preloadRetryUsed.current) return
+        preloadRetryUsed.current = true
+        setTimeout(() => {
+          if (bossPreload.current === preloaded) setPreloadRetry((attempt) => attempt + 1)
+        }, 1500)
+      })
+  }, [preloadBoss, enabled, run?.phase, preloadRetry])
+
+  useEffect(() => () => {
+    const preloaded = bossPreload.current
+    preloaded?.controller.abort()
+    if (preloaded?.url) URL.revokeObjectURL(preloaded.url)
+    bossPreload.current = null
+  }, [])
 
   useEffect(() => {
     if (!track) return
-    const next = audioElement(track)
+    const source = track === BOSS_TRACKS[3] ? bossPreload.current?.url ?? track : track
+    const next = audioElement(source)
     audio.current = next
     next.loop = true
     next.volume = volume / 100
-    void playAudio(next).catch(() => {})
+    void playAudio(next).catch((error: unknown) => {
+      if (source === track || audio.current !== next || error instanceof DOMException && error.name === 'NotAllowedError') return
+      const fallback = audioElement(track)
+      fallback.loop = true
+      fallback.volume = next.volume
+      audio.current = fallback
+      void playAudio(fallback).catch(() => {})
+    })
     return () => {
       releaseAudio(next)
-      if (audio.current === next) audio.current = null
+      if (audio.current && audio.current !== next) releaseAudio(audio.current)
+      audio.current = null
     }
   }, [track])
 
