@@ -96,6 +96,8 @@ import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../g
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
 import { installSoundEffects, playSoundEffect, useCombatMusic, useRunOutcomeSound, useVictoryMusic } from './sfx.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
+import { LeaderboardScreen } from './LeaderboardScreen.tsx'
+import { StatsScreen } from './StatsScreen.tsx'
 import { useGameSettings } from './game-settings.ts'
 import { wingBootLabel } from './wing-boots.ts'
 import type { GameSettings } from './game-settings.ts'
@@ -114,8 +116,6 @@ const SINGLE_PLAYER_ONLY = import.meta.env.VITE_SINGLE_PLAYER === 'true'
 const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
 const OnlineGame = SINGLE_PLAYER_ONLY ? null : lazy(() => import('./OnlineGame.tsx').then((module) => ({ default: module.OnlineGame })))
 const CompendiumScreen = lazy(() => import('./CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
-const LeaderboardScreen = lazy(() => import('./LeaderboardScreen.tsx').then((module) => ({ default: module.LeaderboardScreen })))
-const StatsScreen = lazy(() => import('./StatsScreen.tsx').then((module) => ({ default: module.StatsScreen })))
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },

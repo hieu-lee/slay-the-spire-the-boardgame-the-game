@@ -81,6 +81,20 @@ try {
   await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
   await page.reload({ waitUntil: 'networkidle' })
   check('a returning machine skips the welcome page', () => assertEqual(rooms.store.profiles.length, 1))
+  const blockedArchiveModules = []
+  const blockArchiveModules = async (route) => {
+    blockedArchiveModules.push(route.request().url())
+    await route.abort()
+  }
+  await page.route(/\/src\/ui\/(LeaderboardScreen|StatsScreen)\.tsx(?:\?|$)/, blockArchiveModules)
+  await page.getByRole('button', { name: 'Leaderboard', exact: true }).click()
+  await page.getByRole('heading', { name: 'All heroes' }).waitFor({ timeout: 5_000 })
+  await page.getByRole('button', { name: 'Back to main menu' }).click()
+  await page.getByRole('button', { name: 'Stats', exact: true }).click()
+  await page.getByRole('heading', { name: 'Stats', exact: true }).waitFor({ timeout: 5_000 })
+  await page.getByRole('button', { name: 'Back to main menu' }).click()
+  await page.unroute(/\/src\/ui\/(LeaderboardScreen|StatsScreen)\.tsx(?:\?|$)/, blockArchiveModules)
+  check('archive navigation does not need a late module fetch', () => assertEqual(blockedArchiveModules.length, 0, blockedArchiveModules.join('\n')))
   await page.getByRole('button', { name: 'Leaderboard', exact: true }).click()
   await page.getByRole('heading', { name: 'All heroes' }).waitFor()
   const rowFor = (party) => page.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name: party, exact: true }) })
