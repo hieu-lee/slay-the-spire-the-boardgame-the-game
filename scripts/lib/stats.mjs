@@ -182,10 +182,11 @@ function filtersOf(params) {
 function eligibleRuns(runs, params) {
   const { character, ascension, mode, query } = filtersOf(params)
   return runs.flatMap(statsDecks).filter((run) => {
+    const multiplayer = Boolean(run.sourceRunId) || run.id.startsWith('room:')
     if (character !== 'all' && run.character !== character ||
         ascension !== 'all' && (ascension.endsWith('+')
           ? run.ascension < Number(ascension.slice(0, -1)) : run.ascension !== Number(ascension)) ||
-        (mode === 'multiplayer' ? !run.sourceRunId : mode !== 'all' && (run.sourceRunId || run.mode !== mode))) return false
+        (mode === 'multiplayer' ? !multiplayer : multiplayer || mode !== 'all' && run.mode !== mode)) return false
     const deck = soloDeck(run)
     if (!deck) return false
     const index = indexDeck(deck)

@@ -374,6 +374,7 @@ try {
   })
   try {
     const invalid = await submit(run({ id: 'browser-1234:campaign-bad', ascension: 99 }))
+    const reserved = await submit(run({ id: 'room:LOGRUN:campaign-999:123' }))
     const accepted = await submit(run({ id: 'browser-1234:campaign-2', character: 'silent', highestBossActDefeated: 4,
       winningDecks: [{ username: 'forged', character: 'silent', finalDeck: [] }] }))
     const duplicate = await submit(run({ id: 'browser-1234:campaign-2', character: 'silent', highestBossActDefeated: 4 }))
@@ -381,6 +382,7 @@ try {
     const response = await fetch(`${origin}/api/leaderboard`).then((value) => value.json())
     check('the public endpoint rejects bad rows and accepts one copy of retries', () => {
       assertEqual(invalid.status, 400)
+      assertEqual(reserved.status, 400)
       assertEqual(accepted.status, 201)
       assertEqual(acceptedBody.floorsClearedAccepted, true)
       assertEqual(duplicate.status, 200)

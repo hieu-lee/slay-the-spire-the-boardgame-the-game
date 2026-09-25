@@ -210,7 +210,7 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
             </optgroup>
           </select></label>
           <label><span className="visually-hidden">Run mode</span><select value={mode} onChange={(event) => setMode(event.target.value as StatsFilters['mode'])}>
-            <option value="all">All modes</option><option value="standard">Standard</option><option value="daily">Daily</option><option value="custom">Custom</option><option value="multiplayer">Multiplayer</option>
+            <option value="all">All single modes</option><option value="standard">Standard</option><option value="daily">Daily</option><option value="custom">Custom</option><option value="multiplayer">Multiplayer</option>
           </select></label>
         </div>
       </div>

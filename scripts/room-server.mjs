@@ -592,6 +592,9 @@ export function createRoomServer({
           return send(response, 429, { error: 'Too many leaderboard submissions' })
         }
         const body = await readJson(request)
+        if (typeof body.id === 'string' && body.id.startsWith('room:')) {
+          return send(response, 400, { error: 'Run id is reserved for room results' })
+        }
         const profile = store.profiles.find((entry) => entry.token === body.profileToken)
         if (body.profileToken && !profile) return send(response, 409, { error: 'Profile unavailable' })
         const { winningDecks: _, ...submission } = body

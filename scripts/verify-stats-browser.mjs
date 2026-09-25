@@ -412,7 +412,12 @@ try {
   multiplayerPage.on('pageerror', (reason) => errors.push(String(reason)))
   await multiplayerPage.goto(`http://127.0.0.1:${viteAddress.port}`, { waitUntil: 'networkidle' })
   await multiplayerPage.getByRole('button', { name: 'Stats', exact: true }).click()
-  await multiplayerPage.locator('.stats__metric').first().locator('strong').getByText('9', { exact: true }).waitFor()
+  await multiplayerPage.locator('.stats__metric').first().locator('strong').getByText('7', { exact: true }).waitFor()
+  await checkAsync('All single modes excludes multiplayer without hiding its separate mode option', async () => {
+    assertEqual(await multiplayerPage.getByRole('combobox', { name: 'Run mode' }).inputValue(), 'all')
+    assertEqual(await multiplayerPage.getByRole('option', { name: 'All single modes' }).count(), 1)
+    assertEqual(await multiplayerPage.getByRole('option', { name: 'Multiplayer' }).count(), 1)
+  })
   await multiplayerPage.getByRole('combobox', { name: 'Run mode' }).selectOption('multiplayer')
   await multiplayerPage.locator('.stats__metric').first().locator('strong').getByText('2', { exact: true }).waitFor()
   await multiplayerPage.getByText('33.2', { exact: true }).first().waitFor()
