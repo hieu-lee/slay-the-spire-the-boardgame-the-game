@@ -27,9 +27,13 @@ try {
   const combat = enterRoom(run, roomId)
   combat.combat.phase = 'player'
   combat.combat.pendingHermitSetupLoads = []
+  combat.combat.players.find(player => player.id === 'p2').potions = ['fire_potion', 'block_potion']
 
   for (const viewport of [{ width: 1280, height: 720 }, { width: 667, height: 375 }]) {
-    const context = await browser.newContext({ viewport })
+    const context = await browser.newContext({
+      viewport,
+      ...(viewport.width < 900 ? { isMobile: true, hasTouch: true, screen: viewport } : {}),
+    })
     const page = await context.newPage()
     await page.goto(`http://localhost:${server.httpServer.address().port}`, { waitUntil: 'domcontentloaded' })
     await page.getByRole('button', { name: 'Single Player', exact: true }).click()
@@ -52,35 +56,63 @@ try {
       combat.getBoundingClientRect().bottom >= combat.closest('.app-shell').getBoundingClientRect().bottom - 1 &&
       combat.querySelector('.combat__end-turn').getBoundingClientRect().bottom <= combat.getBoundingClientRect().bottom + 1),
     'battlefield background must extend beneath End Turn to the bottom of the real app shell')
-    // Compare visible pixels, not the transparent overscan in the sprite canvases.
-    const heights = await page.locator('.seat__portrait > img').evaluateAll(async images => {
-      const result = {}
-      for (const image of images) {
-        await image.decode()
-        const canvas = document.createElement('canvas')
-        canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(image, 0, 0)
-        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
-        let top = canvas.height, bottom = 0
-        for (let y = 0; y < canvas.height; y++) {
-          for (let x = 0; x < canvas.width; x++) {
-            if (pixels[(y * canvas.width + x) * 4 + 3] > 32) {
-              top = Math.min(top, y); bottom = y; break
+    for (const filled of [false, true]) {
+      if (filled) {
+        await page.evaluate(() => {
+          const next = structuredClone(window.__STS_DEBUG__.getRun())
+          next.combat.players.find(player => player.id === 'p2').orbs = ['lightning', 'frost', 'dark']
+          window.__STS_DEBUG__.setRun(next)
+        })
+        await page.locator('.row--viewer .token--orb-lightning').waitFor()
+      }
+      // Compare visible pixels, not the transparent overscan in the sprite canvases.
+      const heights = await page.locator('.seat__portrait > img').evaluateAll(async images => {
+        const result = {}
+        for (const image of images) {
+          await image.decode()
+          const canvas = document.createElement('canvas')
+          canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(image, 0, 0)
+          const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+          let top = canvas.height, bottom = 0
+          for (let y = 0; y < canvas.height; y++) {
+            for (let x = 0; x < canvas.width; x++) {
+              if (pixels[(y * canvas.width + x) * 4 + 3] > 32) {
+                top = Math.min(top, y); bottom = y; break
+              }
             }
           }
+          const rect = image.getBoundingClientRect()
+          const actor = image.closest('[data-character]')
+          const pixelScale = Math.min(rect.width / canvas.width, rect.height / canvas.height)
+          result[actor.dataset.character] = (bottom - top + 1) * pixelScale
+          if (actor.dataset.character === 'defect') {
+            const headTop = rect.bottom - (canvas.height - top) * pixelScale
+            const slots = [...actor.querySelectorAll('.orbs .token--orb')]
+            const potion = actor.querySelector('.seat__potions').getBoundingClientRect()
+            result.orbPotionOverlap = slots.some(slot => {
+              const orb = slot.getBoundingClientRect()
+              return orb.left < potion.right && orb.right > potion.left && orb.top < potion.bottom && orb.bottom > potion.top
+            })
+            result.orbCount = slots.length
+            result.orbHudGap = Math.min(...slots.map(slot => slot.getBoundingClientRect().top)) -
+              document.querySelector('.combat__bar').getBoundingClientRect().bottom
+            result.orbHeadGap = headTop - Math.max(...slots.map(slot => slot.getBoundingClientRect().bottom))
+          }
         }
-        const rect = image.getBoundingClientRect()
-        result[image.closest('[data-character]').dataset.character] = (bottom - top + 1) *
-          Math.min(rect.width / canvas.width, rect.height / canvas.height)
+        return result
+      })
+      assert(!heights.orbPotionOverlap, `Orbs overlap held potions: ${JSON.stringify(heights)}`)
+      assert.equal(heights.orbCount, 3, 'Defect fixture should show three orb slots')
+      assert(heights.orbHudGap >= 4, `Orb slots must clear the turn HUD: ${JSON.stringify(heights)}`)
+      assert(heights.orbHeadGap >= 4, `Orb slots must clear Defect’s head: ${JSON.stringify(heights)}`)
+      for (const peer of ['hermit', 'watcher']) {
+        assert(heights.defect / heights[peer] > 0.9 && heights.defect / heights[peer] < 1.15,
+          `Defect should stand as tall as ${peer}: ${JSON.stringify(heights)}`)
       }
-      return result
-    })
-    for (const peer of ['hermit', 'watcher']) {
-      assert(heights.defect / heights[peer] > 0.9 && heights.defect / heights[peer] < 1.15,
-        `Defect should stand as tall as ${peer}: ${JSON.stringify(heights)}`)
+      await page.screenshot({ path: join(out, `${viewport.width}x${viewport.height}${filled ? '-filled' : ''}.png`) })
     }
-    await page.screenshot({ path: join(out, `${viewport.width}x${viewport.height}.png`) })
     await context.close()
   }
   console.log('Combat player clipping browser check passed')
