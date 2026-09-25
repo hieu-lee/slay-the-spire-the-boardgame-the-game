@@ -5210,6 +5210,63 @@ check('Dark Shackles counts enemies whose current intent attacks its player', ()
   }
 })
 
+check('Dark Shackles counts the Guardian attack only while its Block remains', () => {
+  for (const upgraded of [false, true]) {
+    for (const block of [0, 5]) {
+      const shackles = instance('dark_shackles', upgraded)
+      const state = {
+        ...combat([makePlayer({ hand: [shackles], energy: 0 })], [
+          makeEnemy({ defId: 'guardian_attack', isBoss: true, actionIndex: 1, block }),
+        ]),
+        die: 1,
+      }
+      const played = playCard(state, 'p1', shackles.uid, { enemyUid: null, playerId: null })
+      const expectedBlock = block === 0 ? 0 : upgraded ? 3 : 2
+      assertEqual(played.players[0].block, expectedBlock)
+    }
+  }
+})
+
+check('Dark Shackles counts sequenced hits including area hits outside the enemy row', () => {
+  for (const [ascension, row, expectedBlock] of [[0, 0, 2], [0, 1, 0], [7, 0, 2], [7, 1, 2]]) {
+    const shackles = instance('dark_shackles')
+    const state = {
+      ...combat([makePlayer({ hand: [shackles], row, energy: 0 })], [
+        makeEnemy({ defId: 'snake_plant', ascension, row: 0 }),
+      ]),
+      die: 1,
+    }
+    const played = playCard(state, 'p1', shackles.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].block, expectedBlock)
+  }
+})
+
+check('Dark Shackles follows the Centurion fury override, not its printed intent', () => {
+  for (const [abilityUsed, expectedBlock] of [[false, 0], [true, 2]]) {
+    const shackles = instance('dark_shackles')
+    const state = {
+      ...combat([makePlayer({ hand: [shackles], energy: 0 })], [
+        makeEnemy({ defId: 'centurion_b3', abilityUsed }),
+      ]),
+      die: 1,
+    }
+    const played = playCard(state, 'p1', shackles.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].block, expectedBlock)
+  }
+})
+
+check('Dark Shackles counts facing attacks only for the faced player', () => {
+  for (const [playerId, expectedBlock] of [['p1', 2], ['p2', 0]]) {
+    const shackles = instance('dark_shackles')
+    const state = combat([
+      makePlayer({ id: 'p1', row: 0, facingEnemyUid: 'spear', hand: playerId === 'p1' ? [shackles] : [] }),
+      makePlayer({ id: 'p2', row: 1, facingEnemyUid: null, hand: playerId === 'p2' ? [shackles] : [] }),
+    ], [makeEnemy({ uid: 'spear', defId: 'spire_spear', row: 1 })])
+    const played = playCard(state, playerId, shackles.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players.find((player) => player.id === playerId)?.block, expectedBlock)
+  }
+})
+
 check('Madness discounts exactly the next card this turn and gains Retain when upgraded', () => {
   const madness = instance('madness')
   const first = instance('hand_of_greed')

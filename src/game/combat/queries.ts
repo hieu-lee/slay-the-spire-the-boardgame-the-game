@@ -7,11 +7,11 @@
 // Every function here is a question, not an action: none of them changes the
 // state, so a UI can call them to grey out a card or count a prompt without
 // risking a half-resolved play.
-import { findPlayer, livingEnemies, resolveEnemyTargets } from './board.ts'
+import { findPlayer, livingEnemies, playersInRowOf, resolveEnemyTargets } from './board.ts'
 import type { CombatState, CopySource, CountablePlayer, EvokeChoice, PlayContext } from './types.ts'
 import { cardCost, cardDef, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
 import type { Amount, CardDef, Condition, CountOf, Effect } from '../cards.ts'
-import { actionsFor, enemyAbilities, enemyDef } from '../enemies.ts'
+import { actionsForEnemy, enemyAbilities, enemyDef } from '../enemies.ts'
 import { CAPS } from '../types.ts'
 import type { CardInstance, Enemy, GuardianMode, OrbType, Player } from '../types.ts'
 import { previewSlimeCommand, slimeDef } from '../downfall/slime-boss.ts'
@@ -494,9 +494,20 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, en
       return actor.attacksPlayedThisTurn ?? 0
     case 'attackingEnemies':
       if (!state) return 0
-      return state.enemies.filter((enemy) => !enemy.dead && actionsFor(
-        enemyDef(enemy.defId, enemy.ascension), state.die, enemy.actionIndex,
-      ).some((action) => action.kind === 'attack' && (action.aoe || enemy.isBoss || enemy.row === actor.row))).length
+      if (!state.players.some((player) => player.id === actor.id && !player.dead)) return 0
+      return state.enemies.filter((enemy) => {
+        if (enemy.dead) return false
+        const targetsRow = playersInRowOf(state, enemy).some((player) => player.id === actor.id)
+        return actionsForEnemy(enemy, state.die).some((action) => {
+          if (action.kind === 'guardianModeShift') return enemy.block > 0 && targetsRow
+          if (action.kind === 'attackSequence') return action.hits.some((hit) => hit.aoe || targetsRow)
+          if (action.kind !== 'attack') return false
+          if (action.aoe) return true
+          if (action.facing) return state.players.some((player) =>
+            player.id === actor.id && player.facingEnemyUid === enemy.uid)
+          return targetsRow
+        })
+      }).length
     case 'clawCubesGainedThisCombat':
       return actor.clawCubesGainedThisCombat ?? 0
     case 'attacksInChamber':
