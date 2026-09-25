@@ -149,6 +149,7 @@ import {
 } from '../../src/game/state.ts'
 import {
   hasPostRollStartTurnChoice,
+  initialEnemySlots,
   isPostRollStartTurnPotionChoice,
   isPostRollStartTurnRelicChoice,
 } from '../../src/game/combat.ts'
@@ -5519,6 +5520,7 @@ function redactCombat(combat, viewerId) {
   const triggerPreview = triggerCombat && pendingTriggerAbility(triggerCombat)
   return {
     combatId: combat.combatId,
+    initialEnemyCount: initialEnemySlots(combat),
     turn: combat.turn,
     die: combat.die,
     phase: combat.phase,

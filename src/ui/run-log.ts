@@ -941,7 +941,10 @@ function validRunState(value: unknown, runId: string): value is RunState {
       combat.ruleset !== undefined && combat.ruleset !== 'base' && combat.ruleset !== 'downfall' ||
       !rng(combat.rng) || !Number.isFinite(combat.turn) ||
       !Number.isFinite(combat.die) || !['start', 'player', 'copy', 'discard', 'enemy', 'roundEnd', 'won', 'lost'].includes(combat.phase) ||
-      !players(combat.players) || !enemies(combat.enemies) || !combat.summonSupply || typeof combat.summonSupply !== 'object' ||
+      !players(combat.players) || !enemies(combat.enemies) ||
+      combat.initialEnemyCount !== undefined && (!Number.isSafeInteger(combat.initialEnemyCount) ||
+        combat.initialEnemyCount < 0 || combat.initialEnemyCount > 64) ||
+      !combat.summonSupply || typeof combat.summonSupply !== 'object' ||
       !Object.values(combat.summonSupply).every((ids) => known(ids, ENEMIES)) || !Array.isArray(combat.pendingSummons) ||
       !combat.pendingSummons.every((pending) => pending && typeof pending.sourceUid === 'string' && Number.isFinite(pending.row) &&
         Number.isFinite(pending.turn) && known(pending.defIds, ENEMIES)) || !known(combat.potionDeck, POTIONS) ||

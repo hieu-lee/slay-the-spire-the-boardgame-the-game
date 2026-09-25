@@ -36,6 +36,8 @@ export type CombatState = {
   phase: CombatPhase
   players: Player[]
   enemies: Enemy[]
+  /** Starting enemy slots, kept when enemies die or summons join the fight. */
+  initialEnemyCount?: number
   summonSupply: SummonSupply
   pendingSummons: {
     sourceUid: string

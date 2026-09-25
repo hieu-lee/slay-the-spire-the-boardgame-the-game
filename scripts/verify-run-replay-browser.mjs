@@ -185,6 +185,15 @@ try {
     brokenPresentation.phase = 'combat'; brokenPresentation.neow = null
     brokenPresentation.combat.presentationEvents.push({ kind: 'card', seq: 1, actorId: 'p1',
       sourceId: 'definitely_not_a_card', enemyIds: [], playerIds: [], upgraded: false, copied: false, energy: 1 })
+    const invalidEnemyCount = structuredClone(brokenPresentation)
+    invalidEnemyCount.combat.presentationEvents = []
+    invalidEnemyCount.combat.initialEnemyCount = 'bad'
+    const negativeEnemyCount = structuredClone(invalidEnemyCount)
+    negativeEnemyCount.combat.initialEnemyCount = -1
+    const oversizedEnemyCount = structuredClone(invalidEnemyCount)
+    oversizedEnemyCount.combat.initialEnemyCount = 65
+    const legacyEnemyCount = structuredClone(invalidEnemyCount)
+    delete legacyEnemyCount.combat.initialEnemyCount
     const oversizedPresentationTargets = structuredClone(brokenPresentation)
     oversizedPresentationTargets.combat.presentationEvents = [{ kind: 'card', seq: 1, actorId: 'p1',
       sourceId: 'strike_ironclad', enemyIds: Array(65).fill('presentation-enemy'), playerIds: [],
@@ -286,6 +295,10 @@ try {
       merchant: validateRunLog(makeLog(brokenMerchant)),
       oversizedMerchant: validateRunLog(makeLog(oversizedMerchant)),
       combat: validateRunLog(makeLog(brokenCombat)),
+      enemyCount: validateRunLog(makeLog(invalidEnemyCount)),
+      negativeEnemyCount: validateRunLog(makeLog(negativeEnemyCount)),
+      oversizedEnemyCount: validateRunLog(makeLog(oversizedEnemyCount)),
+      legacyEnemyCount: Boolean(validateRunLog(makeLog(legacyEnemyCount))),
       presentation: validateRunLog(makeLog(brokenPresentation)),
       presentationTargets: validateRunLog(makeLog(oversizedPresentationTargets)),
       copy: validateRunLog(makeLog(brokenCopy)),
@@ -313,7 +326,8 @@ try {
     inheritedCard: null, modifier: null, repeatedModifier: null, campaign: null, gold: null, rng: null, strayCombat: null, player: null, resources: null,
     collections: null, rapidFire: null, attackCount: null, event: null, oversizedEvent: null, eventEffect: null,
     eventCount: null, neow: null,
-    socket: null, pendingRelic: null, reward: null, setup: null, duplicateSetup: null, merchant: null, oversizedMerchant: null, combat: null,
+    socket: null, pendingRelic: null, reward: null, setup: null, duplicateSetup: null, merchant: null, oversizedMerchant: null,
+    combat: null, enemyCount: null, negativeEnemyCount: null, oversizedEnemyCount: null, legacyEnemyCount: true,
     presentation: null, presentationTargets: null, copy: null, oversizedCopy: null, copyEnergy: null, deferredCopy: null,
     startChoice: null, hand: null,
     preparedCombat: null, eventRoom: null, encounter: null, topLevel: null, nestedCollection: null, treasure: null,

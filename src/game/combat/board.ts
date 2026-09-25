@@ -16,6 +16,11 @@ export function livingEnemies(state: CombatState): Enemy[] {
   return state.enemies.filter((enemy) => !enemy.dead)
 }
 
+export function initialEnemySlots(state: Pick<CombatState, 'initialEnemyCount' | 'enemies'>): number {
+  return state.initialEnemyCount ?? state.enemies.filter((enemy) =>
+    !/-summon-\d+-\d+-\d+$/.test(enemy.uid)).length
+}
+
 export function findPlayer(state: CombatState, playerId: string): Player | undefined {
   return state.players.find((player) => player.id === playerId)
 }

@@ -30,6 +30,7 @@ export function createCombat(
     turn: 0,
     die: 1,
     phase: 'player',
+    initialEnemyCount: enemies.length,
     players: structuredClone(players).map((player) => ({
       ...player,
       lostHpThisCombat: false,

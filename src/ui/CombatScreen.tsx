@@ -145,6 +145,7 @@ import {
   startTurnDiscardPreview,
   isPostRollStartTurnPotionChoice,
   isPostRollStartTurnRelicChoice,
+  initialEnemySlots,
   startTurnNeedsChoice,
   startTurnScryAbilities,
   startTurnScryPreview,
@@ -1937,11 +1938,7 @@ function CombatScreenView({
   const visibleEnemies = displayedEnemies(state.enemies, prefersReducedMotion ? new Set() : falling)
   const bosses = visibleEnemies.filter((enemy) => enemy.isBoss)
   const stageEnemies = visibleEnemies.filter((enemy) => !enemy.isBoss)
-  const initialStageEnemySlots = useRef({ combatId: state.combatId, count: visibleEnemies.length })
-  if (initialStageEnemySlots.current.combatId !== state.combatId) {
-    initialStageEnemySlots.current = { combatId: state.combatId, count: visibleEnemies.length }
-  }
-  const stageEnemyCount = Math.max(initialStageEnemySlots.current.count, visibleEnemies.length)
+  const stageEnemyCount = Math.max(initialEnemySlots(state), visibleEnemies.length)
   const stageScaleActors = state.players.length + stageEnemyCount
   // EnemyCard can briefly retain its previous visual during restoration.
   // Fit from encounter data so new tall enemies start at the correct scale.

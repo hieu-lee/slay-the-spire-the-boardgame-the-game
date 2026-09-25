@@ -30,6 +30,7 @@ export type {
 export {
   combatRowLabel,
   enemyLabel,
+  initialEnemySlots,
   lightningRowFromTarget,
   lightningRowTarget,
   lightningTargetsRows,

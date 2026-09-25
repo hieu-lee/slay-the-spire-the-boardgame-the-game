@@ -37,14 +37,18 @@ check('shared engine changes select every browser flow that imports them', () =>
   includesEvery(run, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'run barrel')
   assert(!run.includes('verify-animation-browser.mjs'), 'run barrel selected an unrelated animation fixture')
   assert(affected('src/game/damage.ts').includes('verify-browser.mjs'))
+  for (const file of ['src/game/combat.ts', 'src/game/combat/board.ts', 'src/game/combat/create.ts']) {
+    assert(affectedBrowser(file).includes('verify-combat-layout-reload-browser.mjs'), `${file} omitted combat reload coverage`)
+  }
 })
 check('frontend surfaces select their cores and named focused browser checks', () => {
   const combat = affectedBrowser('src/ui/CombatScreen.tsx')
   includesEvery(combat, ['verify-browser.mjs', 'verify-online-browser.mjs',
     'verify-safari-combat-animation-browser.mjs', 'verify-courier-browser.mjs',
-    'verify-hermit-load-reconnect-browser.mjs'], 'combat screen')
+    'verify-hermit-load-reconnect-browser.mjs', 'verify-combat-layout-reload-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 12, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 13, 'combat screen selected an unrelated browser suite')
+  assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))
   const room = affectedBrowser('src/ui/RoomScreen.tsx')
   includesEvery(room, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs'], 'room screen')
   const online = affectedBrowser('src/ui/OnlineGame.tsx')
@@ -53,7 +57,8 @@ check('frontend surfaces select their cores and named focused browser checks', (
   assert(!online.includes('verify-noncombat-browser.mjs'))
   assertEqual(online.length, 3, 'online screen selected an unrelated browser suite')
   assertDeepEqual(affectedBrowser('src\\ui\\OnlineGame.tsx'), online)
-  assertDeepEqual(affectedBrowser('src/multiplayer/useRoomSession.ts'), online.filter((script) => script !== 'verify-courier-browser.mjs'))
+  assertDeepEqual(affectedBrowser('src/multiplayer/useRoomSession.ts'),
+    [...online.filter((script) => script !== 'verify-courier-browser.mjs'), 'verify-combat-layout-reload-browser.mjs'].sort())
   assertDeepEqual(affectedBrowser('src/ui/WelcomeScreen.tsx'), ['verify-browser.mjs'])
   includesEvery(affectedBrowser('src/ui/combat-screen/vfx.tsx'), [
     'verify-browser.mjs', 'verify-online-browser.mjs', 'verify-lightning-act2-browser.mjs',

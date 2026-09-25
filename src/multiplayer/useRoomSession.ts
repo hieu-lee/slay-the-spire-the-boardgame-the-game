@@ -50,6 +50,7 @@ export type VisiblePlayer = Omit<
 
 export type VisibleCombat = {
   combatId: string
+  initialEnemyCount?: number
   lastStand: boolean
   turn: number
   die: number

@@ -23,7 +23,9 @@ const focusedEngineOwners = new Map([
   ['src/game/guardian-gems.ts', ['verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs']],
   ['src/game/run/guardian-gems.ts', ['verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs']],
   ['src/game/acquisition.ts', ['verify-courier-browser.mjs']],
-  ['src/game/combat.ts', ['verify-courier-browser.mjs']],
+  ['src/game/combat.ts', ['verify-courier-browser.mjs', 'verify-combat-layout-reload-browser.mjs']],
+  ['src/game/combat/board.ts', ['verify-combat-layout-reload-browser.mjs']],
+  ['src/game/combat/create.ts', ['verify-combat-layout-reload-browser.mjs']],
   ['src/game/noncombat.ts', ['verify-courier-browser.mjs']],
   ['src/game/run/merchant.ts', ['verify-merchant-overflow-browser.mjs', 'verify-courier-browser.mjs']],
   ['src/game/run/neow.ts', [
@@ -38,8 +40,10 @@ const focusedEngineOwners = new Map([
 const focusedUiOwners = new Map([
   ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-courier-browser.mjs']],
   ['src/ui/CampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
-  ['src/ui/CombatScreen.tsx', ['verify-courier-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs']],
+  ['src/ui/CombatScreen.tsx', ['verify-courier-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
+    'verify-combat-layout-reload-browser.mjs']],
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
+  ['src/multiplayer/useRoomSession.ts', ['verify-combat-layout-reload-browser.mjs']],
   ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/OnlineCampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
@@ -48,6 +52,7 @@ const focusedUiOwners = new Map([
   ['src/ui/useCampfireScene.ts', ['verify-campfire-assets-browser.mjs']],
   ['src/ui/combat-screen/vfx.tsx', ['verify-lightning-act2-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
+  ['src/ui/styles/stage-scale.css', ['verify-combat-layout-reload-browser.mjs']],
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
