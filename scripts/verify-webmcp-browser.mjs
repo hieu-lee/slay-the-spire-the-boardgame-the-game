@@ -476,6 +476,132 @@ const controls = await page.evaluate(async () => {
     payloadChars: JSON.stringify(listed).length,
   }
 })
+const chainedTarget = await page.evaluate(async () => {
+  const fixture = document.createElement('section')
+  fixture.innerHTML = '<button class="card" aria-label="Chained attack" aria-pressed="false">Attack</button><button class="enemy" aria-label="Training Slime, 3 HP">Slime</button><span role="status"></span>'
+  document.getElementById('root').append(fixture)
+  const attack = fixture.querySelector('[aria-label="Chained attack"]')
+  const enemy = fixture.querySelector('.enemy')
+  let attacks = 0
+  let hits = 0
+  attack.addEventListener('click', () => {
+    attacks++
+    attack.setAttribute('aria-pressed', 'true')
+    attack.classList.add('card--selected')
+    enemy.classList.add('enemy--targeted')
+    fixture.querySelector('[role="status"]').textContent = 'Choose an enemy'
+    const announcement = document.createElement('span')
+    announcement.dataset.webmcpTransientStatus = ''
+    announcement.textContent = 'Card selected before target'
+    fixture.append(announcement)
+    const persistent = document.createElement('span')
+    persistent.dataset.webmcpTransientStatus = ''
+    persistent.textContent = 'L'.repeat(8_001)
+    fixture.append(persistent)
+  })
+  enemy.addEventListener('click', () => {
+    hits++
+    fixture.querySelector('[data-webmcp-transient-status]')?.remove()
+    fixture.querySelector('[role="status"]').textContent = 'Enemy hit'
+    enemy.classList.remove('enemy--targeted')
+    enemy.setAttribute('aria-label', 'Training Slime, 2 HP')
+  })
+  const tools = await document.modelContext.getTools()
+  const inspect = tools.find((tool) => tool.name === 'inspect_game')
+  const interact = tools.find((tool) => tool.name === 'interact_with_game')
+  const before = JSON.parse(await document.modelContext.executeTool(inspect, {}))
+  const controlId = before.controls.find((control) => control.label === 'Chained attack').id
+  let rejected = ''
+  try {
+    await document.modelContext.executeTool(interact, { controlId, targetLabel: 'Not a visible enemy' })
+  } catch (error) { rejected = String(error) }
+  const after = JSON.parse(await document.modelContext.executeTool(interact, {
+    controlId, since: before.revision, targetLabel: 'Training Slime, 3 HP',
+  }))
+  const longNoticeSurvived = after.changes.screen.announcements?.some((notice) => notice.length === 8_000) &&
+    !after.selectionAnnouncements?.some((notice) => notice.length === 8_000)
+  after.changes.screen.announcements = after.changes.screen.announcements.map((notice) => notice.slice(0, 80))
+  fixture.remove()
+  const second = document.createElement('section')
+  second.innerHTML = '<button class="card" aria-label="Replace target" aria-pressed="false">Replace</button><button class="enemy" aria-label="Twin Slime, 3 HP">Twin</button><button class="card" aria-label="Do not target" aria-pressed="false">No target</button><button class="card" aria-label="Picked card" aria-pressed="false">Picked</button><button aria-label="End turn">End</button><span role="status"></span>'
+  document.getElementById('root').append(second)
+  let replacementHits = 0
+  let endClicks = 0
+  second.querySelector('[aria-label="Replace target"]').addEventListener('click', () => {
+    second.querySelector('[aria-label="Replace target"]').setAttribute('aria-pressed', 'true')
+    second.querySelector('[aria-label="Replace target"]').classList.add('card--selected')
+    const replacement = second.querySelector('.enemy').cloneNode(true)
+    replacement.classList.add('enemy--targeted')
+    replacement.addEventListener('click', () => { replacementHits++ })
+    second.querySelector('.enemy').replaceWith(replacement)
+    second.querySelector('[role="status"]').textContent = 'Choose an enemy'
+  })
+  second.querySelector('[aria-label="Do not target"]').addEventListener('click', () => {
+    second.querySelector('[aria-label="Do not target"]').setAttribute('aria-pressed', 'true')
+    second.querySelector('[aria-label="Do not target"]').classList.add('card--selected')
+    second.querySelector('.enemy').classList.add('enemy--targeted')
+    second.querySelector('[role="status"]').textContent = 'Choose an enemy for a Power'
+    const notice = document.createElement('span')
+    notice.dataset.webmcpTransientStatus = ''
+    notice.textContent = 'Notice after non-targeting card'
+    second.append(notice)
+  })
+  second.querySelector('[aria-label="Picked card"]').addEventListener('click', () => {
+    second.querySelector('[aria-label="Picked card"]').setAttribute('aria-pressed', 'true')
+    second.querySelector('[aria-label="Picked card"]').classList.add('card--picked')
+    second.querySelector('.enemy').classList.add('enemy--targeted')
+    second.querySelector('[role="status"]').textContent = 'Choose an enemy'
+  })
+  second.querySelector('[aria-label="End turn"]').addEventListener('click', () => { endClicks++ })
+  const getId = async (name) => JSON.parse(await document.modelContext.executeTool(inspect, {}))
+    .controls.find((control) => control.label === name).id
+  const replaced = JSON.parse(await document.modelContext.executeTool(interact, {
+    controlId: await getId('Replace target'), targetLabel: 'Twin Slime, 3 HP',
+  }))
+  second.querySelector('.enemy').classList.remove('enemy--targeted')
+  const noTarget = JSON.parse(await document.modelContext.executeTool(interact, {
+    controlId: await getId('Do not target'), targetLabel: 'Twin Slime, 3 HP',
+  }))
+  second.querySelector('.enemy').classList.remove('enemy--targeted')
+  const picked = JSON.parse(await document.modelContext.executeTool(interact, {
+    controlId: await getId('Picked card'), targetLabel: 'Twin Slime, 3 HP',
+  }))
+  second.querySelector('.enemy').classList.remove('enemy--targeted')
+  let unrelated = ''
+  try {
+    await document.modelContext.executeTool(interact, {
+      controlId: await getId('End turn'), targetLabel: 'Twin Slime, 3 HP',
+    })
+  } catch (error) { unrelated = String(error) }
+  second.remove()
+  const third = document.createElement('section')
+  third.innerHTML = '<button class="card" aria-label="Pending attack">Pending</button><button class="enemy" aria-label="Pending Slime, 3 HP">Slime</button><span role="status"></span>'
+  document.getElementById('root').append(third)
+  third.querySelector('.card').addEventListener('click', () => {
+    third.querySelector('.card').classList.add('card--selected')
+    third.querySelector('.enemy').classList.add('enemy--targeted')
+    third.querySelector('[role="status"]').textContent = 'Choose an enemy'
+    const notice = document.createElement('span')
+    notice.dataset.webmcpTransientStatus = ''
+    notice.textContent = 'Notice before pending target'
+    third.append(notice)
+  })
+  third.querySelector('.enemy').addEventListener('click', () => {
+    third.querySelector('.enemy').classList.remove('enemy--targeted')
+    third.querySelector('[data-webmcp-transient-status]').textContent = 'Notice changed during pending'
+    document.documentElement.dataset.webmcpPending = 'true'
+  })
+  const pending = JSON.parse(await document.modelContext.executeTool(interact, {
+    controlId: await getId('Pending attack'), targetLabel: 'Pending Slime, 3 HP',
+  }))
+  const inspectedPending = JSON.parse(await document.modelContext.executeTool(inspect, {}))
+  delete document.documentElement.dataset.webmcpPending
+  const inspectedSettled = JSON.parse(await document.modelContext.executeTool(inspect, {}))
+  const inspectedAgain = JSON.parse(await document.modelContext.executeTool(inspect, {}))
+  third.remove()
+  return { rejected, attacks, hits, after, longNoticeSurvived, replaced, noTarget, picked, replacementHits, endClicks, unrelated,
+    pending, inspectedPending, inspectedSettled, inspectedAgain }
+})
 const disclosure = await page.evaluate(async () => {
   const fixture = document.createElement('details')
   fixture.innerHTML = '<summary>Run settings</summary><select aria-label="Ascension"><option value="0">0</option><option value="1">1</option></select>'
@@ -1172,6 +1298,23 @@ check('offers exact opt-in deltas with a full fallback on unknown revisions', ()
 })
 
 check('returns visible gameplay context and drives every gameplay control kind', () => {
+  assert(chainedTarget.rejected.includes('visible unavailable enemy') && chainedTarget.attacks === 1 && chainedTarget.hits === 1 &&
+    chainedTarget.after.baseRevision && chainedTarget.after.changes.unavailableControls?.some((control) =>
+      control.label === 'Training Slime, 2 HP') &&
+    chainedTarget.after.selectionAnnouncements?.includes('Card selected before target') &&
+    chainedTarget.longNoticeSurvived &&
+    chainedTarget.replaced.controls?.some((control) => control.label === 'Twin Slime, 3 HP') &&
+    chainedTarget.noTarget.controls?.some((control) => control.label === 'Twin Slime, 3 HP') &&
+    chainedTarget.noTarget.screen?.announcements?.includes('Notice after non-targeting card') &&
+    !chainedTarget.noTarget.selectionAnnouncements &&
+    chainedTarget.picked.controls?.some((control) => control.label === 'Twin Slime, 3 HP') &&
+    chainedTarget.replacementHits === 0 && chainedTarget.endClicks === 0 &&
+    chainedTarget.unrelated.includes('can only follow a card or Shiv') &&
+    chainedTarget.pending.pending && chainedTarget.pending.selectionAnnouncements?.includes('Notice before pending target') &&
+    !chainedTarget.inspectedPending.screen.announcements?.includes('Notice before pending target') &&
+    chainedTarget.inspectedSettled.screen.announcements?.includes('Notice changed during pending') &&
+    !chainedTarget.inspectedAgain.screen.announcements?.includes('Notice changed during pending'),
+  'a chained target must be previously visible, unique, and settled after the hit without an intermediate tool call')
   assert(initial.screen.headings.length > 0, 'inspection reads the visible start screen')
   assert(initial.controls.some((control) => control.label === 'Single Player'), 'inspection lists the visible menu')
   assert(initial.controls.every((control) => control.kind !== 'button') &&

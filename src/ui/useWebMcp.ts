@@ -443,7 +443,7 @@ function hasProgressControl(state: ReturnType<typeof captureGame>) {
   return state.controls.some((control) => !/^(Current deck|Map$|Settings$|Discard pile|Exhaust pile)/.test(control.label))
 }
 
-async function waitForInteraction(before: string, signal?: AbortSignal, shortQuietChecks = 7) {
+async function waitForInteraction(before: string, signal?: AbortSignal, shortQuietChecks = 7, acknowledge = true) {
   const deadline = Date.now() + 10_000
   let lastSignature = before
   let quietChecks = 0
@@ -459,7 +459,7 @@ async function waitForInteraction(before: string, signal?: AbortSignal, shortQui
     const signature = controlStateSignature
     if (signature === lastSignature) {
       if (++quietChecks >= (signature === before || hasProgressControl(state) ? shortQuietChecks : 20)) {
-        return captureGame({}, true)
+        return captureGame({}, acknowledge)
       }
       continue
     }
@@ -482,7 +482,7 @@ export function useWebMcp() {
       {
         name: 'inspect_game',
         title: 'Inspect game',
-        description: 'Read start-turn and relic choices. unavailableControls (future rooms) are planning-only. Pass since for changes; continue nextOffset/textNextOffset if set.',
+        description: 'Read start-turn/relic choices. unavailableControls (future rooms) are planning-only. since gives changes; page via nextOffset/textNextOffset.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -499,12 +499,13 @@ export function useWebMcp() {
       {
         name: 'interact_with_game',
         title: 'Interact with game',
-        description: 'Use a listed controlId for start-turn, relic, or other choices. Returns settled state. Pass since for lossless changes; inspect if pending or timed out.',
+        description: 'Use a listed controlId for start-turn/relic choices. targetLabel chains one listed unavailable enemy. Pass since for lossless changes; inspect if pending/timed out.',
         inputSchema: {
           type: 'object',
           properties: {
             controlId: { type: 'string', minLength: 1, maxLength: 64, description: 'ID from the latest state.' },
             since: { type: 'string', maxLength: 32, description: 'Revision from prior state for lossless changes.' },
+            targetLabel: { type: 'string', minLength: 1, maxLength: TEXT_VALUE_LIMIT, description: 'Exact visible unavailable enemy label; unique only.' },
             value: {
               oneOf: [{ type: 'string', maxLength: TEXT_VALUE_LIMIT }, { type: 'number' }, { type: 'boolean' }],
               description: 'Control value when needed.',
@@ -520,12 +521,15 @@ export function useWebMcp() {
             invalidateControls()
             throw new Error('Game interaction is pending. Wait and call inspect_game again.')
           }
-          const { controlId, value, since } = objectInput(input, ['controlId', 'value', 'since'])
+          const { controlId, value, since, targetLabel } = objectInput(input, ['controlId', 'value', 'since', 'targetLabel'])
           if (since !== undefined && (typeof since !== 'string' || !since || since.length > 32)) {
             throw new Error('since must be a revision from the last game response.')
           }
           if (typeof controlId !== 'string' || controlId.length === 0 || controlId.length > 64) {
             throw new Error('controlId must be a listed control ID.')
+          }
+          if (targetLabel !== undefined && (typeof targetLabel !== 'string' || !targetLabel || targetLabel.length > TEXT_VALUE_LIMIT)) {
+            throw new Error('targetLabel must be one listed enemy label.')
           }
           visibleControls()
           const entry = controls.find((control) => control.id === controlId)
@@ -538,6 +542,16 @@ export function useWebMcp() {
           if (before !== controlStateSignature) {
             invalidateControls()
             throw new Error('Game state changed. Call inspect_game again.')
+          }
+          if (targetLabel !== undefined && !element.matches('button.card') && label(element) !== 'Use Shiv') {
+            throw new Error('targetLabel can only follow a card or Shiv action.')
+          }
+          let targetElement: HTMLElement | undefined
+          if (targetLabel !== undefined) {
+            const matches = activeScopes().flatMap((scope) => [...scope.querySelectorAll<HTMLElement>('.enemy')])
+              .filter((candidate) => rendered(candidate) && !available(candidate) && label(candidate) === targetLabel)
+            if (matches.length !== 1) throw new Error('targetLabel must identify one visible unavailable enemy. Call inspect_game again.')
+            targetElement = matches[0]
           }
           if (entry.kind === 'button') {
             if (value !== undefined) throw new Error('value must be omitted for a button.')
@@ -577,23 +591,51 @@ export function useWebMcp() {
           }
           invalidateControls()
           const target = element.matches('.enemy, .seat, .row__enemies--targetable')
-          const state = await waitForInteraction(before, options?.signal, target ? 18 : 7)
-          return state ? publishGame(state, since as string | undefined) : { pending: true }
+          let state = await waitForInteraction(before, options?.signal, target ? 18 : 7, targetLabel === undefined)
+          const selectionNotices = targetElement && state ? announcementElements().map((node) => ({
+            node, message: text(node).slice(0, SCREEN_TEXT_LIMIT),
+          })) : []
+          let targetClicked = false
+          if (state && targetLabel !== undefined) {
+            const match = controls.find((candidate) => candidate.element === targetElement &&
+              candidate.label === targetLabel && available(candidate.element))
+            const prompt = label(element) === 'Use Shiv' ? 'Choose an enemy for the Shiv' : 'Choose an enemy'
+            const selected = element.matches('button.card') ? element.classList.contains('card--selected')
+              : element.getAttribute('aria-pressed') === 'true'
+            if (match && element.isConnected && selected &&
+              state.screen?.status.some((message) => message === prompt || message.startsWith(`${prompt} —`))) {
+              const beforeTarget = stateSignature()
+              match.element.click()
+              targetClicked = true
+              invalidateControls()
+              state = await waitForInteraction(beforeTarget, options?.signal, 18)
+            } else {
+              state = captureGame({}, true)
+            }
+          }
+          const result = state ? publishGame(state, since as string | undefined) : { pending: true }
+          const missedAnnouncements = targetClicked ? selectionNotices.filter(({ node, message }) =>
+            node.dataset.webmcpReported !== 'true' || text(node).slice(0, SCREEN_TEXT_LIMIT) !== message)
+            .map(({ message }) => message) : []
+          if (!state && missedAnnouncements.length) acknowledgeAnnouncements(selectionNotices
+            .filter(({ node, message }) => node.isConnected && text(node).slice(0, SCREEN_TEXT_LIMIT) === message)
+            .map(({ node }) => node))
+          return missedAnnouncements.length ? { ...result, selectionAnnouncements: missedAnnouncements } : result
         },
       },
       {
         name: 'get_stats',
         title: 'Get deck statistics',
-        description: 'Read solo deck outcomes during a run without leaving combat. Filter by hero, Ascension, and card expression; compare candidate card IDs. Set full=true for all rows.',
+        description: 'Read solo deck outcomes in combat; filter hero, Ascension, cards. Compare candidates; full returns all rows.',
         inputSchema: {
           type: 'object',
           properties: {
-            character: { type: 'string', enum: [...STATS_HEROES], description: 'Hero, or all. Defaults to all.' },
-            ascension: { oneOf: [{ type: 'integer', minimum: 0, maximum: 13 }, { type: 'string', pattern: '^(?:all|(?:[0-9]|10)\\+)$' }], description: 'Exact Ascension, threshold 0+–10+, or all.' },
-            mode: { type: 'string', enum: [...STATS_MODES], description: 'Defaults to standard solo runs.' },
-            query: { type: 'string', maxLength: TEXT_VALUE_LIMIT, description: 'Card expression, e.g. @hermit_snapshot and not @hermit_strike. Use defining deck cards.' },
-            candidates: { type: 'array', maxItems: 24, items: { type: 'string' }, description: 'Show listed comparisons for reward card IDs; missing cards may be outside the archive top 24.' },
-            full: { type: 'boolean', description: 'Include all archetype rows and requested comparisons.' },
+            character: { type: 'string', enum: [...STATS_HEROES], description: 'Hero or all (default).' },
+            ascension: { oneOf: [{ type: 'integer', minimum: 0, maximum: 13 }, { type: 'string', pattern: '^(?:all|(?:[0-9]|10)\\+)$' }], description: 'Exact 0–13, threshold 0+–10+, or all.' },
+            mode: { type: 'string', enum: [...STATS_MODES], description: 'Default: standard solo.' },
+            query: { type: 'string', maxLength: TEXT_VALUE_LIMIT, description: 'Card expression; use defining deck cards.' },
+            candidates: { type: 'array', maxItems: 24, items: { type: 'string' }, description: 'Reward card IDs; comparisons cover archive top 24.' },
+            full: { type: 'boolean', description: 'Include all rows/comparisons.' },
           },
           additionalProperties: false,
         },
