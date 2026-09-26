@@ -64,20 +64,8 @@
   align-items: start;
 }
 
-/* The exception, not the rule: a row-target effect can still legally choose
-   a row with nothing living in it (the boss is folded in regardless of which
-   row is picked), so this only ever renders in that one case — clicking an
-   enemy is the norm everywhere else. */
-.row__lane-target {
-  justify-self: start;
-  align-self: center;
-  color: var(--gold);
-  background: rgb(215 169 75 / 0.08);
-  border: 1px dashed var(--gold);
-  border-radius: 4px;
-  padding: 0.35rem 0.8rem;
+/* Empty ground remains reachable without a separate button. */
+.row__enemies--targetable {
   min-height: 44px;
-  font: inherit;
-  font-size: 0.85rem;
   cursor: pointer;
 }

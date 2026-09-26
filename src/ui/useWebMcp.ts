@@ -251,7 +251,10 @@ function gameScreen(announcementNodes = announcementElements()) {
   const read = (selector: string) => scopes.flatMap((scope) => [...scope.querySelectorAll<HTMLElement>(selector)])
     .filter((element) => rendered(element) && !element.closest('[data-webmcp-passive]')).map(text).filter(Boolean)
   const rawText = screenText(scopes)
-  const headings = [...new Set(read('h1, h2, h3, [role="heading"]'))]
+  const headings = [...new Set(scopes.flatMap((scope) => [...scope.querySelectorAll<HTMLElement>('h1, h2, h3, [role="heading"]')])
+    .filter((element) => rendered(element) && !element.closest('[data-webmcp-passive]'))
+    .map((element) => text(element) || element.querySelector('img[alt]')?.getAttribute('alt') || '')
+    .filter(Boolean))]
   const status = [...new Set(read('[role="status"], [role="alert"]'))]
   const structuredText = new Set([...headings, ...status])
   const observations = [...new Set(scopes.flatMap((scope) => [
@@ -487,7 +490,7 @@ export function useWebMcp() {
             setValue(element as HTMLInputElement | HTMLSelectElement, nextValue)
           }
           invalidateControls()
-          const target = element.matches('.enemy, .seat, .row__lane-target')
+          const target = element.matches('.enemy, .seat, .row__enemies--targetable')
           const state = await waitForInteraction(before, options?.signal, target ? 18 : 7)
           return state ?? { pending: true }
         },

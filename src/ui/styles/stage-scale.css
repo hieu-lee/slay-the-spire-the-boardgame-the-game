@@ -91,22 +91,15 @@
   height: calc(14rem * var(--stage-scale));
 }
 
-/* `.row__enemies` collapses to `display: contents` above, so — same as
-   `.board .enemy` right above — this needs its own absolute placement to
-   land in its own row's lane instead of the shared `.row` box every row
-   overlaps at `inset: 0 auto 0 0`. Same horizontal scheme the removed
-   `.row__potion-target` used (offset by `--stage-row`, not `--stage-index` —
-   this stands in for the whole lane, not one particular enemy slot in it),
-   just anchored to the shared actor floor instead of a fixed `top` so it
-   scales with the stage the same way every other actor does. */
-.row__lane-target {
+.row__enemies--targetable {
+  display: block;
   position: absolute;
-  z-index: 101;
-  left: calc(34% + var(--stage-row) * var(--stage-gap));
-  bottom: calc(1.1rem * var(--stage-scale) + 2.75rem);
-  width: var(--stage-actor-width);
+  z-index: 1;
+  left: calc(1.5rem * var(--stage-scale) + var(--stage-party-count) * var(--stage-player-gap) + var(--stage-row) * var(--stage-enemy-gap) / 2);
+  bottom: calc(1.1rem * var(--stage-scale) + .5rem);
+  width: max(44px, calc(var(--stage-enemy-gap) / 2 - .25rem));
   max-width: none;
-  height: calc(14rem * var(--stage-scale));
+  height: 44px;
 }
 
 .board[data-rows='3'] .enemy__portrait:has(> :is(img, video)),

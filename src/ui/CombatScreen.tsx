@@ -4082,8 +4082,8 @@ function CombatScreenView({
   // the thing you mean to hit. This derives that same click from any enemy in
   // the row, the way a `target: 'row'` CARD already works (see `pending.hitsRow`
   // below): the enemy is just the anchor, its row is the actual target. The
-  // buttons stay for a row with nothing living in it to click — a boss-only
-  // lane, or one already cleared — where an anchor is not available.
+  // boss itself anchors a boss-only click; cleared rows can still be chosen
+  // on their empty ground instead of showing another button.
   function onEnemyClick(enemy: Enemy) {
     const endTurnTarget = endTurnTargetForEnemy(enemy)
     if (endTurnTarget && armedEndTurnAbilityId === endTurnEffect?.id) {
@@ -4304,12 +4304,7 @@ function CombatScreenView({
     return false
   }
 
-  // A row can be a legal target (the engine always folds in the boss
-  // regardless of which row is chosen — see `resolveEnemyTargets`'s `'row'`
-  // scope) even once every enemy actually placed in it has died, so there is
-  // nothing left in that lane for `onEnemyClick`/`isEnemyRowClickTargetable`
-  // to anchor on. This pair covers exactly that gap: same row-matching logic,
-  // triggered by clicking the empty lane itself instead of an enemy in it.
+  // Cleared rows are still legal choices when no enemy anchors them.
   function onRowLaneClick(row: number) {
     const endTurnTarget = endTurnTargetForRow(row)
     if (endTurnTarget && armedEndTurnAbilityId === endTurnEffect?.id) {
@@ -4356,39 +4351,30 @@ function CombatScreenView({
     return false
   }
 
-  // Mirrors `isRowLaneClickTargetable`'s own priority order, branch for
-  // branch, so the label always names whichever ability actually resolves
-  // the click — the same distinction the removed per-ability buttons used to
-  // make ("Resolve X in Row Y", "Evoke Lightning in Row Y", "Target Row Y").
-  // The final `return` below is unreachable given the render gate at the call
-  // site (`isRowLaneClickTargetable(row)` already true), kept only to satisfy
-  // TypeScript's exhaustiveness check — a new 6th targeting mode must add its
-  // own explicit branch here, not rely on that fallback.
+  // The ground's accessible name follows the same priority as its click.
   function rowLaneClickLabel(row: number): string {
     const rowLabel = combatRowLabel(state, row)
-    const noLivingAnchor = `no living enemy there${
-      state.enemies.some((enemy) => enemy.isBoss && !enemy.dead) ? ', but the boss is hit' : ''}`
     if (armedEndTurnAbilityId === endTurnEffect?.id && endTurnTargetForRow(row)) {
-      return `Resolve ${endTurnEffect.label} in ${combatRowLabel(state, row)} (${noLivingAnchor})`
+      return `Resolve ${endTurnEffect.label} in ${rowLabel}`
     }
     if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id && triggerHermitChoicesReady &&
       pendingTrigger.rows?.some((target) => target.row === row)) {
-      return `Resolve ${pendingTrigger.label} in ${rowLabel} (${noLivingAnchor})`
+      return `Resolve ${pendingTrigger.label} in ${rowLabel}`
     }
     if (pendingStartEvokeTarget && pendingStartEvokeRows.some((target) => target.row === row)) {
-      return `Evoke Lightning in ${rowLabel} (${noLivingAnchor})`
+      return `Evoke Lightning in ${rowLabel}`
     }
     if (pendingPotion && pendingPotionDef?.target === 'row') {
-      return `Target ${rowLabel} with ${pendingPotionDef.name} (${noLivingAnchor})`
+      return `Target ${rowLabel} with ${pendingPotionDef.name}`
     }
     if (pendingPowerUid && pendingPowerDef?.target === 'row') {
-      return `Target ${rowLabel} with ${pendingPowerDef.name} (${noLivingAnchor})`
+      return `Target ${rowLabel} with ${pendingPowerDef.name}`
     }
     if (pending && pendingEvokeTarget >= 0 && pendingEvokeUsesRows && choiceSatisfied &&
       pendingEvokeTargetUids.has(lightningRowTarget(row))) {
-      return `Evoke Lightning in ${rowLabel} (${noLivingAnchor})`
+      return `Evoke Lightning in ${rowLabel}`
     }
-    return `Target ${rowLabel} (${noLivingAnchor})`
+    return `Target ${rowLabel}`
   }
 
   function onEvokeClick(slot: number) {
@@ -4737,6 +4723,7 @@ function CombatScreenView({
         backgroundImage: `linear-gradient(90deg, rgb(2 5 8 / 0.38), transparent 22%, transparent 74%, rgb(2 5 8 / 0.32)), url("${assetPath(`backgrounds/boss-act-${stageAct}.webp`)}")`,
         '--stage-scale': stageScale,
         '--stage-enemy-count': stageEnemySlots,
+        '--stage-party-count': state.players.length,
         '--stage-width': `calc(${state.players.length} * var(--stage-player-gap) + var(--stage-enemy-count) * var(--stage-enemy-gap) + ${STAGE_MARGIN_REM}rem * var(--stage-scale) + var(--slime-enemy-clearance, 0rem))`,
         '--slime-count': largestSlimeParty,
         '--stage-gap': `calc(${STAGE_GAP_REM}rem * var(--stage-scale))`,
@@ -6122,6 +6109,7 @@ function CombatScreenView({
         {rows.map((row) => {
           const occupant = state.players.find((player) => player.row === row)
           const foes = stageEnemies.filter((enemy) => enemy.row === row)
+          const emptyRowTargetable = foes.length === 0 && isRowLaneClickTargetable(row)
           const actorEvents = occupant ? actorVfxFor(occupant.id) : []
           const actorVfx = actorEvents.filter(({ event }) => event.enemyIds.length === 0 &&
             !(occupant?.character === 'defect' && event.kind === 'orb' && event.sourceId === 'orb-evoke'))
@@ -6578,7 +6566,18 @@ function CombatScreenView({
                   <span className="seat seat--empty">empty row</span>
                 )}
               </div>
-              <div className="row__enemies" data-enemies={foes.length}>
+              <div className={`row__enemies${emptyRowTargetable ? ' row__enemies--targetable' : ''}`}
+                data-enemies={foes.length} role={emptyRowTargetable ? 'button' : undefined}
+                tabIndex={emptyRowTargetable ? 0 : undefined}
+                aria-label={emptyRowTargetable ? `${rowLaneClickLabel(row)}${bosses.some((enemy) => !enemy.dead)
+                  ? ' (the boss is hit)' : ''}` : undefined}
+                onClick={emptyRowTargetable ? () => onRowLaneClick(row) : undefined}
+                onKeyDown={emptyRowTargetable ? (event) => {
+                  if (!event.repeat && (event.key === 'Enter' || event.key === ' ')) {
+                    event.preventDefault()
+                    onRowLaneClick(row)
+                  }
+                } : undefined}>
                 {foes.length > 0 ? (
                   foes.map((enemy) => (
                     <EnemyCard
@@ -6624,23 +6623,6 @@ function CombatScreenView({
                       onClick={onEnemyClick}
                     />
                   ))
-                ) : null}
-                {foes.length === 0 && isRowLaneClickTargetable(row) ? (
-                  // Every enemy that was ever placed here has died (or none
-                  // were), so there is nothing left to click as an anchor —
-                  // this is the one case `onEnemyClick` can't cover. The
-                  // engine still folds the boss into whichever row is chosen
-                  // regardless (`resolveEnemyTargets`'s `'row'` scope), so
-                  // this row remains a legal, sometimes-useful choice (e.g.
-                  // hitting only the boss without also hitting a still-living
-                  // enemy elsewhere).
-                  <button
-                    type="button"
-                    className="row__lane-target"
-                    onClick={() => onRowLaneClick(row)}
-                  >
-                    {rowLaneClickLabel(row)}
-                  </button>
                 ) : null}
               </div>
             </div>

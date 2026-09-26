@@ -142,7 +142,7 @@
   background: none !important;
 }
 
-.board:has(.enemy--targeted, .row__lane-target) > .row { z-index: auto; }
+.board:has(.enemy--targeted, .row__enemies--targetable) > .row { z-index: auto; }
 
 .row__seat {
   position: relative;
@@ -488,27 +488,13 @@
   animation: none;
 }
 
-/* An empty lane with no enemy left to stand in it still needs an anchor for
-   a row-target effect, but shouldn't look like a boxy leftover from the
-   plain board skin — a translucent "ghost slot" that picks up the same
-   targeted glow as a real enemy fits the chrome-stripped stage instead. */
-.row__lane-target {
-  min-height: 8rem;
-  padding: 0.5rem 0.8rem;
-  color: #f3e5c3;
-  background: rgb(12 16 14 / 0.32);
-  border: 1px dashed rgb(241 200 120 / 0.5);
-  border-radius: 6px;
-  font-family: 'Kreon', Georgia, serif;
-  font-size: 0.85rem;
-  text-shadow: 0 2px 2px #000;
-  filter: drop-shadow(0 0.4rem 0.4rem rgb(0 0 0 / 0.45));
+.row__enemies--targetable {
+  pointer-events: auto;
+  border-bottom: 2px solid rgb(101 232 255 / 0.65);
 }
 
-.row__lane-target:hover,
-.row__lane-target:focus-visible {
-  border-color: rgb(101 232 255 / 0.7);
-  filter: drop-shadow(0 0 0.35rem #65e8ff) drop-shadow(0 0 0.8rem rgb(55 203 234 / 0.7));
+.row__enemies--targetable:focus-visible {
+  outline: 2px solid #65e8ff;
 }
 
 .enemy__intent,

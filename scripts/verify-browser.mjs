@@ -16965,11 +16965,8 @@ check('Combust+ visibly targets a row, includes the boss, and locks after use', 
 })
 await shot('16b-combust-resolved')
 
-// A row-target power can still legally target a row with nothing living left
-// in it (the boss is folded in regardless of the chosen row), but there is
-// no enemy anchor left to click for that row — the one gap `onEnemyClick`
-// can't cover. Confirm the empty-lane fallback button appears, is labeled
-// for the ability actually resolving it, and hits only the boss.
+// When the row is empty, the boss itself anchors the row choice; there is no
+// second visible target to compete with it.
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -16987,53 +16984,17 @@ await page.evaluate(() => {
 })
 await page.getByRole('button', { name: 'Use Combust+' }).click()
 await page.getByText('Choose an enemy for Combust+').waitFor()
-const emptyLaneButton = page.locator('.row__lane-target')
-await emptyLaneButton.waitFor()
-const emptyLaneLabel = await emptyLaneButton.textContent()
+await page.locator('.enemy[data-enemy-id="combust-empty-boss"].enemy--targeted').waitFor()
+const emptyLaneButtons = await page.locator('.row__lane-target').count()
 const emptyLaneLivingAnchors = await page.locator('.row .enemy--targeted').count()
-// The stage layout collapses `.row__enemies` to `display: contents` and
-// absolutely positions `.row` itself, so this control needs its own explicit
-// position/size CSS to land in its own lane rather than piling up at the
-// board's origin — regression coverage for exactly that failure mode, since
-// nothing else here would have caught it (a prior round of this fix shipped
-// with the button pinned to the top-left corner despite every functional
-// check passing).
-const emptyLaneGeometry = await page.evaluate(() => {
-  const lane = document.querySelector('.row__lane-target')
-  const anchor = document.querySelector('.row .enemy--targeted')
-  const laneBox = lane.getBoundingClientRect()
-  const anchorBox = anchor.getBoundingClientRect()
-  return {
-    position: getComputedStyle(lane).position,
-    width: laneBox.width,
-    height: laneBox.height,
-    x: laneBox.x,
-    y: laneBox.y,
-    matchesAnchorHeight: Math.round(laneBox.height) === Math.round(anchorBox.height),
-  }
-})
-await shot('16b2-combust-empty-row-fallback')
-await emptyLaneButton.click()
+await shot('16b2-combust-empty-row-boss')
+await page.locator('.enemy[data-enemy-id="combust-empty-boss"] .enemy__hit-area').click()
 const emptyRowResolved = await readState()
-check('an empty-but-legal row can still be targeted through the fallback lane control', () => {
-  assert(emptyLaneLabel.includes('Combust+') && emptyLaneLabel.includes('no living enemy') &&
-    emptyLaneLabel.includes('the boss is hit'), emptyLaneLabel)
+check('a boss anchors an otherwise empty row without another targeting button', () => {
+  assertEqual(emptyLaneButtons, 0)
   assertEqual(emptyLaneLivingAnchors, 1, 'only the living enemy in the other row should be independently clickable')
   assertDeepEqual(emptyRowResolved.enemies.map((enemy) => enemy.hp), [0, 10, 18],
     'the empty row should hit only the boss, leaving the other row untouched')
-})
-check('the fallback lane control is positioned and sized like a real actor card, not pinned at the origin', () => {
-  assertEqual(emptyLaneGeometry.position, 'absolute')
-  assert(emptyLaneGeometry.width >= 44 && emptyLaneGeometry.height >= 44,
-    `fallback lane control below 44px: ${JSON.stringify(emptyLaneGeometry)}`)
-  assert(emptyLaneGeometry.x >= 10 && emptyLaneGeometry.y >= 10,
-    `fallback lane control pinned near the top-left corner: ${JSON.stringify(emptyLaneGeometry)}`)
-  assert(emptyLaneGeometry.matchesAnchorHeight,
-    `fallback lane control height should match a real enemy card's height: ${JSON.stringify(emptyLaneGeometry)}`)
-})
-const emptyLaneButtonGone = await page.locator('.row__lane-target').count()
-check('the fallback lane control disappears once the ability is used', () => {
-  assertEqual(emptyLaneButtonGone, 0)
 })
 
 await page.evaluate(() => {

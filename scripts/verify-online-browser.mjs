@@ -1647,10 +1647,8 @@ try {
   })
   await a.screenshot({ path: join(outDir, '02b-fire-breathing-resolved.png'), fullPage: true })
 
-  // The fallback lane control (for a row-scoped mandatory trigger whose only
-  // offered row has no living enemy left to click) must stay just as private
-  // as the enemy-click highlighting it stands in for — Bo must not see or be
-  // able to click Ann's fallback for her own pending trigger.
+  // A cleared row with no boss remains selectable on its ground for a
+  // row-scoped trigger, but Bo must not see Ann's private targeting state.
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
@@ -1668,9 +1666,7 @@ try {
   liveRoom.run.combat.powerTriggersUsedThisTurn = []
   const laneFireTemplate = liveRoom.run.combat.enemies[0]
   liveRoom.run.combat.enemies = [
-    // Row 0 (Ann's row) has no living enemy left — only the fallback lane
-    // control can anchor a row-scoped trigger there; row 1 (Bo's row) still
-    // has a living enemy that can be clicked directly.
+    // Row 0 has no living enemy or boss; row 1 has a clickable enemy.
     { ...laneFireTemplate, uid: 'online-lane-dead-row0', row: 0, hp: 0, maxHp: 10, dead: true, isBoss: false },
     { ...laneFireTemplate, uid: 'online-lane-living-row1', row: 1, hp: 10, maxHp: 10, dead: false, isBoss: false },
   ]
@@ -1686,21 +1682,20 @@ try {
   // hand-authored one.
   await a.getByRole('button', { name: /^Battle Trance,/ }).click()
   await a.getByText("Ann's Fire Breathing — choose an enemy").waitFor()
-  await a.locator('.row__lane-target').waitFor()
-  const laneFireLabel = await a.locator('.row__lane-target').textContent()
+  await a.locator('.row__enemies--targetable').waitFor()
+  const laneFireLabel = await a.locator('.row__enemies--targetable').getAttribute('aria-label')
   assertEqual(await b.getByText('Waiting for Ann to resolve a triggered ability…').count(), 0,
     'a player-turn trigger still showed a teammate wait lock')
-  const foreignLaneButtons = await b.locator('.row__lane-target').count()
-  await a.locator('.row__lane-target').click()
+  const foreignLaneTargets = await b.locator('.row__enemies--targetable').count()
+  await a.locator('.row__enemies--targetable').click()
   for (let attempt = 0; attempt < 50 && liveRoom.run.combat.pendingTriggers.length !== 0; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
-  const laneButtonGoneAfterResolve = await a.locator('.row__lane-target').count()
-  check('the empty-row fallback lane control stays private to its owner and resolves correctly', () => {
-    assert(laneFireLabel.includes('Fire Breathing') && laneFireLabel.includes('no living enemy') &&
-      !laneFireLabel.includes('boss'), `expected no boss mention (this fixture has none): ${laneFireLabel}`)
-    assertEqual(foreignLaneButtons, 0)
-    assertEqual(laneButtonGoneAfterResolve, 0)
+  const laneTargetGoneAfterResolve = await a.locator('.row__enemies--targetable').count()
+  check('empty-row targeting stays private and resolves without a fallback button', () => {
+    assert(laneFireLabel.includes('Fire Breathing') && laneFireLabel.includes('Row'), laneFireLabel)
+    assertEqual(foreignLaneTargets, 0)
+    assertEqual(laneTargetGoneAfterResolve, 0)
     assertEqual(liveRoom.run.combat.pendingTriggers.length, 0)
     assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [0, 10],
       'the empty row has nothing to hit and no boss exists here, so nothing should take damage')

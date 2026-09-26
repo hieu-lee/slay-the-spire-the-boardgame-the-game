@@ -44,6 +44,7 @@ const focusedUiOwners = new Map([
   ['src/ui/CombatScreen.tsx', [
     'verify-courier-browser.mjs', 'verify-hermit-combo-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
     'verify-hermit-online-staged-trigger-browser.mjs', 'verify-combat-layout-reload-browser.mjs',
+    'verify-row-target-browser.mjs',
   ]],
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
   ['src/multiplayer/useRoomSession.ts', ['verify-combat-layout-reload-browser.mjs']],
