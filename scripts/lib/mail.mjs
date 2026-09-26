@@ -12,6 +12,7 @@ export const MAX_UNANSWERED_LETTERS = 20
 export const MAX_THREADS = 20_000
 /** Every letter body together. The archive is one JSON file on the host. */
 export const MAX_MAIL_CHARACTERS = 8_000_000
+export const WELCOME_LETTER = "Hi, I'm Hieu, the guy who developed this game. Welcome to Slay the Spire: The Board Game! If you have any words for the developer, just send me a letter here. I read every message and will reply to you."
 
 const invalid = (message, status = 400) => { throw Object.assign(new Error(message), { status }) }
 // C0 and C1 controls and bidirectional overrides: letters are printed raw in the
@@ -61,13 +62,21 @@ function unreadFor(thread, reader) {
   return thread.letters.filter((letter) => letter.from === from && letter.at > readAt).length
 }
 
+function readThrough(thread, reader, now) {
+  const from = reader === 'player' ? 'developer' : 'player'
+  return thread.letters.reduce((latest, letter) => letter.from === from ? Math.max(latest, letter.at) : latest, now)
+}
+
+/** Player letters that have not been handled by either delegated mailbox account. */
+export const developerUnread = (mail) => mail.reduce((total, thread) => total + unreadFor(thread, 'developer'), 0)
+
 const publicLetters = (thread) => (thread?.letters ?? []).map(({ id, from, body, at }) => ({ id, from, body, at }))
 
 /** What a player may see: their own letters and the developer's replies. */
 export function playerInbox(mail, profile, { markRead = false, now = Date.now() } = {}) {
   const thread = ownThread(mail, profile)
   const unread = unreadFor(thread, 'player')
-  if (markRead && thread && unread) thread.playerReadAt = now
+  if (markRead && thread && unread) thread.playerReadAt = readThrough(thread, 'player', now)
   return { letters: publicLetters(thread), unread: markRead ? 0 : unread, changed: markRead && unread > 0 }
 }
 
@@ -86,7 +95,9 @@ function append(mail, profile, from, value, now, maxCharacters) {
     thread = { username: profile.username, owner, letters: [], playerReadAt: 0, developerReadAt: 0 }
     mail.push(thread)
   }
-  const letter = { id: randomUUID(), from, body, at: now }
+  const newestAt = mail.reduce((latest, candidate) => Math.max(latest, candidate.letters.at(-1)?.at ?? 0), 0)
+  const readAt = from === 'player' ? thread.developerReadAt : thread.playerReadAt
+  const letter = { id: randomUUID(), from, body, at: Math.max(now, newestAt + 1, readAt + 1) }
   thread.letters.push(letter)
   const trimmed = thread.letters.length > MAX_THREAD_LETTERS ? thread.letters.splice(0, thread.letters.length - MAX_THREAD_LETTERS) : []
   return () => {
@@ -113,21 +124,23 @@ export function sendDeveloperReply(mail, name, body, profiles, { now = Date.now(
 /** Threads newest first, each with how many player letters the developer has not read. */
 export function developerInbox(mail, profiles, { username: name, markRead = false, now = Date.now() } = {}) {
   const username = name === undefined ? undefined : profileNamed(profiles, name)?.username ?? name
-  const threads = username === undefined ? mail : mail.filter((thread) => thread.username === username)
+  const threads = username === undefined
+    ? mail.filter((thread) => thread.letters.some((letter) => letter.from === 'player'))
+    : mail.filter((thread) => thread.username === username)
   let changed = false
   const summary = threads.map((thread) => {
     const unread = unreadFor(thread, 'developer')
     if (markRead && unread) {
-      thread.developerReadAt = now
+      thread.developerReadAt = readThrough(thread, 'developer', now)
       changed = true
     }
     return {
       username: thread.username,
-      unread,
+      unread: markRead ? 0 : unread,
       lastAt: thread.letters.at(-1)?.at ?? 0,
       lastFrom: thread.letters.at(-1)?.from,
       ...(username === undefined ? { preview: thread.letters.at(-1)?.body.slice(0, 120) } : { letters: publicLetters(thread) }),
     }
   })
-  return { threads: summary.sort((left, right) => right.lastAt - left.lastAt), changed }
+  return { threads: summary.sort((left, right) => right.lastAt - left.lastAt), unread: developerUnread(mail), changed }
 }

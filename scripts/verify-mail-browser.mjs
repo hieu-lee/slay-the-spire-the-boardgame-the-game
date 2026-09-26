@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { chromium } from './lib/profile-browser.mjs'
+import { ownerOf } from './lib/mail.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
@@ -16,14 +17,17 @@ const output = join(root, 'artifacts/mail-browser')
 mkdirSync(output, { recursive: true })
 const adminToken = 'mail-browser-admin-token-000000000001'
 const player = { username: 'TestPlayer', token: '00000000-0000-4000-8000-000000000001' }
-const rooms = createRoomServer({ mailAdminToken: adminToken })
+const mailboxAdmin = { username: 'MailboxKeeper', token: '00000000-0000-4000-8000-000000000099' }
+const rooms = createRoomServer({ mailAdminToken: adminToken, mailAdminOwners: [ownerOf(mailboxAdmin.token)] })
 const roomAddress = await rooms.listen(0)
 const target = `http://127.0.0.1:${roomAddress.port}`
 const api = async (path, init = {}) => {
   const response = await fetch(`${target}${path}`, { ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` } })
   return response.json()
 }
-await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(player) })
+for (const profile of [player, mailboxAdmin]) {
+  await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(profile) })
+}
 await api('/api/mail/admin/reply', { method: 'POST', body: JSON.stringify({ username: player.username, body: 'Welcome to the Spire! Tell me what you think.' }) })
 
 process.env.VITE_MAIL = 'true'
@@ -104,6 +108,69 @@ try {
     })
     await context.close()
     if (!phone) await api('/api/mail/admin/reply', { method: 'POST', body: JSON.stringify({ username: player.username, body: 'Noted, thanks!' }) })
+  }
+
+  for (const [screen, viewport, phone] of [
+    ['admin-desktop', { width: 1440, height: 900 }, false],
+    ['admin-landscape-phone', { width: 844, height: 390 }, true],
+  ]) {
+    const suffix = phone ? 'Phone' : 'Desktop'
+    const reporter = { username: `Reporter${suffix}`, token: `00000000-0000-4000-8000-0000000000${phone ? '03' : '02'}` }
+    const newer = { username: `Newer${suffix}`, token: `00000000-0000-4000-8000-0000000000${phone ? '05' : '04'}` }
+    for (const profile of [reporter, newer]) {
+      await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(profile) })
+    }
+    await fetch(`${target}/api/mail/send`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: reporter.token, body: `The ${suffix.toLowerCase()} report is ready.` }) })
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 5))
+    await fetch(`${target}/api/mail/send`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: newer.token, body: `A newer ${suffix.toLowerCase()} report.` }) })
+
+    const context = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone })
+    const page = await context.newPage()
+    page.on('pageerror', (error) => errors.push(`${screen}: ${error.message}`))
+    page.on('console', (message) => { if (message.type() === 'error') errors.push(`${screen}: ${message.text()}`) })
+    await page.goto(`http://127.0.0.1:${address.port}`)
+    await page.evaluate((profile) => localStorage.setItem('sts-profile', JSON.stringify(profile)), mailboxAdmin)
+    await page.reload()
+    await page.locator('.start-menu__nav').waitFor()
+    const envelope = page.getByRole('button', { name: /^Mail/ })
+    await page.locator('.mailbox__badge').waitFor({ timeout: 10_000 })
+    await envelope.click()
+    const dialog = page.locator('dialog.mailbox')
+    await dialog.getByRole('heading', { name: 'Server mail' }).waitFor()
+    const report = dialog.getByRole('button', { name: new RegExp(reporter.username) })
+    const firstBefore = await dialog.locator('.mailbox__threads > li > button').first().innerText()
+    await page.screenshot({ path: join(output, `${screen}-server-inbox.png`) })
+    await report.click()
+    await dialog.getByText(`The ${suffix.toLowerCase()} report is ready.`).waitFor()
+    if (phone) await fetch(`${target}/api/mail/send`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: reporter.token, body: 'One more detail before you answer.' }) })
+    const reply = `Handled from ${screen}.`
+    await dialog.getByLabel(`Reply to ${reporter.username}`).fill(reply)
+    await dialog.getByRole('button', { name: 'Reply' }).click()
+    await dialog.locator('.mailbox__letter--developer').filter({ hasText: reply }).waitFor()
+    const fits = await dialog.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      return box.top >= 0 && box.bottom <= innerHeight + 1 && box.left >= 0 && box.right <= innerWidth + 1
+    })
+    await page.screenshot({ path: join(output, `${screen}-server-mail.png`) })
+    await dialog.getByRole('button', { name: 'Back to server mail' }).click()
+    const answered = dialog.getByRole('button', { name: new RegExp(reporter.username) })
+    const answeredText = await answered.innerText()
+    const firstThread = await dialog.locator('.mailbox__threads > li > button').first().innerText()
+    await page.screenshot({ path: join(output, `${screen}-server-answered.png`) })
+    const saved = await api(`/api/mail/admin?username=${reporter.username}`)
+    check(`${screen}: an owner-bound account reads server mail and replies to its sender`, () => {
+      assert(fits, 'the server mailbox does not fit the screen')
+      assert(answeredText.includes(reply) && answeredText.includes(phone ? '1 new' : 'Answered'),
+        'the replied thread lost its latest state')
+      assert(firstBefore.includes(newer.username), 'the ordering fixture did not begin with the newer thread')
+      assert(firstThread.includes(reporter.username), 'the replied thread did not move to the newest position')
+      assert(saved.threads[0].letters.some((letter) => letter.from === 'developer' && letter.body === reply),
+        'the delegated reply did not reach the sender thread')
+    })
+    await context.close()
   }
   check('the mailbox raised no page or console errors', () => assertEqual(errors.join('\n'), ''))
 } finally {

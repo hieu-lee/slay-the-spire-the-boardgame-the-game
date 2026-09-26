@@ -7,19 +7,21 @@ import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
 import { createStore, saveStore } from './lib/rooms.mjs'
 import {
-  MAX_LETTER_LENGTH, MAX_THREAD_LETTERS, MAX_UNANSWERED_LETTERS, developerInbox, playerInbox, sendDeveloperReply, sendPlayerLetter,
+  MAX_LETTER_LENGTH, MAX_THREAD_LETTERS, MAX_UNANSWERED_LETTERS, WELCOME_LETTER, developerInbox, ownerOf, playerInbox, sendDeveloperReply, sendPlayerLetter,
 } from './lib/mail.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 suite('developer mail')
 
 const adminToken = 'mail-admin-token-for-verification-0001'
+const ann = { username: 'Ann', token: crypto.randomUUID() }
+const bob = { username: 'Bob', token: crypto.randomUUID() }
 const directory = mkdtempSync(join(tmpdir(), 'sts-mail-'))
 const storeFile = join(directory, 'rooms.json')
 let failSaves = false
 const start = async (options = {}) => {
   const service = createRoomServer({
-    storeFile, saveDelayMs: 5, mailAdminToken: adminToken, onSaveError: () => {},
+    storeFile, saveDelayMs: 5, mailAdminToken: adminToken, mailAdminOwners: [ownerOf(ann.token)], onSaveError: () => {},
     saveStoreImpl: (store) => { if (failSaves) throw new Error('disk full'); saveStore(store) },
     ...options,
   })
@@ -41,15 +43,17 @@ async function call(path, { method = 'POST', body, admin, source } = {}) {
   return { status: response.status, body: await response.json() }
 }
 
-const ann = { username: 'Ann', token: crypto.randomUUID() }
-const bob = { username: 'Bob', token: crypto.randomUUID() }
 for (const profile of [ann, bob]) assertEqual((await call('/api/profile', { body: profile })).status, 200)
 
 const unknown = await call('/api/mail', { body: { token: crypto.randomUUID() } })
+const adminEmpty = await call('/api/mail', { body: { token: ann.token } })
 check('an unregistered visitor reads an empty mailbox instead of an error', () => {
   assertEqual(unknown.status, 200)
   assertEqual(unknown.body.letters.length, 0)
   assertEqual(unknown.body.unread, 0)
+  assertEqual(unknown.body.admin, false)
+  assertEqual(adminEmpty.body.admin, true)
+  assertEqual(adminEmpty.body.letters.length, 0, 'a delegated account received the player welcome letter')
 })
 
 const sent = await call('/api/mail/send', { body: { token: ann.token, body: '  The Lab die\u0007 rolled a 7?\r\nKidding.  ' } })
@@ -74,6 +78,9 @@ const noToken = await call('/api/mail/admin', { method: 'GET' })
 const wrongToken = await call('/api/mail/admin', { method: 'GET', admin: `${adminToken}x`, source: '203.0.113.9' })
 const wrongMethod = await call('/api/mail/admin/reply', { method: 'GET', admin: adminToken })
 const listed = await call('/api/mail/admin', { method: 'GET', admin: adminToken })
+const delegated = await call('/api/mail/desk', { body: { token: ann.token } })
+const ordinary = await call('/api/mail/desk', { body: { token: bob.token } })
+const forged = await call('/api/mail/desk', { body: { token: crypto.randomUUID() } })
 check('only the admin token lists threads, each with its unread count', () => {
   assertEqual(noToken.status, 401)
   assertEqual(wrongToken.status, 401)
@@ -84,6 +91,32 @@ check('only the admin token lists threads, each with its unread count', () => {
   assertEqual(annThread.unread, 1)
   assert(annThread.preview.startsWith('The Lab die'), 'the thread list did not preview the letter')
   assertEqual(annThread.letters, undefined, 'the thread list sent whole threads')
+})
+check('only owner-bound delegated profiles can open the in-game server mailbox', () => {
+  assertEqual(delegated.status, 200)
+  assertEqual(delegated.body.unread, 2)
+  assertEqual(delegated.body.threads.map((thread) => thread.username).sort().join(','), 'Ann,Bob')
+  assertEqual(delegated.body.threads[0].letters, undefined, 'the delegated thread list sent whole threads')
+  assertEqual(ordinary.status, 403)
+  assertEqual(forged.status, 403)
+})
+
+const newcomer = { username: 'NewPlayer', token: crypto.randomUUID() }
+await call('/api/profile', { body: newcomer })
+const welcomed = await call('/api/mail', { body: { token: newcomer.token } })
+const welcomedAgain = await call('/api/mail', { body: { token: newcomer.token } })
+const welcomeRead = await call('/api/mail', { body: { token: newcomer.token, markRead: true } })
+const welcomeOnlyAdminList = await call('/api/mail/admin', { method: 'GET', admin: adminToken })
+check('a non-admin empty mailbox receives one persisted welcome letter', () => {
+  assertEqual(welcomed.status, 200)
+  assertEqual(welcomed.body.unread, 1)
+  assertEqual(welcomed.body.letters.length, 1)
+  assertEqual(welcomed.body.letters[0].from, 'developer')
+  assertEqual(welcomed.body.letters[0].body, WELCOME_LETTER)
+  assertEqual(welcomedAgain.body.letters.length, 1, 'checking again duplicated the welcome')
+  assertEqual(welcomeRead.body.unread, 0)
+  assert(!welcomeOnlyAdminList.body.threads.some((thread) => thread.username === newcomer.username),
+    'a welcome-only thread cluttered the server inbox')
 })
 
 const readAnn = await call('/api/mail/admin?username=ann&markRead=true', { method: 'GET', admin: adminToken })
@@ -108,13 +141,33 @@ const bobInbox = await call('/api/mail', { body: { token: bob.token } })
 const annRead = await call('/api/mail', { body: { token: ann.token, markRead: true } })
 const annAfter = await call('/api/mail', { body: { token: ann.token } })
 check('a reply lands unread in that player\'s mailbox only, and opening it clears the count', () => {
-  assertEqual(annUnread.body.unread, 1)
+  assertEqual(annUnread.body.personalUnread, 1)
   assertEqual(annUnread.body.letters.at(-1).from, 'developer')
   assertEqual(bobInbox.body.letters.map((letter) => letter.body).join('|'), 'Bob here.')
   assertEqual(bobInbox.body.unread, 0)
-  assertEqual(annRead.body.unread, 0)
+  assertEqual(annRead.body.personalUnread, 0)
   assertEqual(annRead.body.letters.length, 3)
-  assertEqual(annAfter.body.unread, 0)
+  assertEqual(annAfter.body.personalUnread, 0)
+  assertEqual(annAfter.body.admin, true)
+})
+
+const cara = { username: 'Cara', token: crypto.randomUUID() }
+await call('/api/profile', { body: cara })
+await call('/api/mail/send', { body: { token: cara.token, body: 'Can you see this?' } })
+const delegatedRead = await call('/api/mail/desk', { body: { token: ann.token, username: 'cara', markRead: true } })
+await call('/api/mail/send', { body: { token: cara.token, body: 'One more detail before you answer.' } })
+const delegatedReply = await call('/api/mail/desk/reply', { body: { token: ann.token, username: 'CARA', body: 'Yes, from the game.' } })
+const caraInbox = await call('/api/mail', { body: { token: cara.token } })
+check('a delegated account reads and answers another player without the server admin token', () => {
+  assertEqual(delegatedRead.status, 200)
+  assertEqual(delegatedRead.body.threads[0].username, 'Cara')
+  assertEqual(delegatedRead.body.threads[0].unread, 0)
+  assertEqual(delegatedReply.status, 201)
+  assertEqual(delegatedReply.body.username, 'Cara')
+  assertEqual(delegatedReply.body.threads[0].unread, 1, 'replying hid a letter that arrived after the thread was read')
+  assertEqual(delegatedReply.body.threads[0].letters.at(-1).body, 'Yes, from the game.')
+  assertEqual(caraInbox.body.unread, 1)
+  assertEqual(caraInbox.body.letters.at(-1).body, 'Yes, from the game.')
 })
 
 failSaves = true
@@ -151,7 +204,7 @@ check('letters survive a restart in their own file, without any profile token', 
   assertEqual(restored.body.letters.length, 3)
   assertEqual(restored.body.letters[2].body, 'Fixed in the next build!')
   assertEqual(main.mail, undefined, 'the main room store carried the mail archive')
-  assertEqual(JSON.parse(archive).length, 2)
+  assertEqual(JSON.parse(archive).length, 4)
   assert(!archive.includes(ann.token) && !archive.includes(bob.token), 'a profile token leaked into the mail archive')
 })
 await service.close()
@@ -256,6 +309,24 @@ check('letters are stripped of terminal controls and a thread never passes to th
   try { sendPlayerLetter(mail, heir, 'Mine now?', { now: 2 }) } catch (error) { refused = error.status }
   assertEqual(refused, 409)
   assertEqual(JSON.stringify(mail).includes('eve-token'), false, 'the claim token reached the archive')
+})
+
+check('same-millisecond letters stay unread and globally newest after a read cursor advances', () => {
+  const ivy = { username: 'Ivy', token: 'ivy-token' }
+  const jay = { username: 'Jay', token: 'jay-token' }
+  const profiles = [ivy, jay]
+  const mail = []
+  sendPlayerLetter(mail, ivy, 'First', { now: 1_000 })
+  developerInbox(mail, profiles, { username: ivy.username, markRead: true, now: 1_000 })
+  sendPlayerLetter(mail, jay, 'Other thread', { now: 1_000 })
+  sendPlayerLetter(mail, ivy, 'Same clock, actually later', { now: 1_000 })
+  const developer = developerInbox(mail, profiles)
+  assertEqual(developer.threads[0].username, ivy.username)
+  assertEqual(developer.threads.find((thread) => thread.username === ivy.username).unread, 1)
+  sendDeveloperReply(mail, ivy.username, 'First reply', profiles, { now: 1_000 })
+  playerInbox(mail, ivy, { markRead: true, now: 1_000 })
+  sendDeveloperReply(mail, ivy.username, 'Same clock, new reply', profiles, { now: 1_000 })
+  assertEqual(playerInbox(mail, ivy).unread, 1)
 })
 
 check('the client, deploy archive and service unit agree with the server', () => {

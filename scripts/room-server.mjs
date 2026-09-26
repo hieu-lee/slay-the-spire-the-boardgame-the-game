@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { claimProfile } from './lib/profiles.mjs'
-import { MAX_MAIL_CHARACTERS, developerInbox, playerInbox, sendDeveloperReply, sendPlayerLetter } from './lib/mail.mjs'
+import { MAX_MAIL_CHARACTERS, WELCOME_LETTER, developerInbox, developerUnread, ownerOf, playerInbox, sendDeveloperReply, sendPlayerLetter } from './lib/mail.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { existsSync, writeFileSync } from 'node:fs'
 import { timingSafeEqual } from 'node:crypto'
@@ -58,6 +58,7 @@ const MAX_MAIL_READS_PER_WINDOW = 60
 const MAIL_SEND_WINDOW_MS = 10 * 60_000
 const MAX_MAIL_SENDS_PER_WINDOW = 5
 const MAX_MAIL_SENDS_PER_SOURCE = 20
+const MAX_MAIL_ADMIN_REPLIES_PER_WINDOW = 60
 const MAX_MAIL_ADMIN_FAILURES_PER_WINDOW = 10
 const DECK_PAGE_CACHE_LIMIT = 64
 const DECK_QUERY_KEYS = new Set(['sort', 'direction', 'character', 'ascension', 'cursor'])
@@ -119,6 +120,7 @@ export function createRoomServer({
   maxDeckClassificationsPerDay = Number(process.env.STS_DECK_CLASSIFICATIONS_PER_DAY ?? 100),
   deckClassifier = classifyDeckType,
   mailAdminToken = process.env.STS_MAIL_ADMIN_TOKEN,
+  mailAdminOwners = process.env.STS_MAIL_ADMIN_OWNERS,
   maxMailCharacters = MAX_MAIL_CHARACTERS,
   onSaveError = (error) => console.error('Room store save failed:', error),
   onSlowOperation = ({ kind, roomCode, durationMs }) =>
@@ -151,6 +153,7 @@ export function createRoomServer({
   const mailReadRates = new Map()
   const mailSendRates = new Map()
   const mailProfileRates = new Map()
+  const mailAdminReplyRates = new Map()
   const mailAdminFailures = new Map()
   const deckPages = new Map()
   let deckPagesRevision = store.leaderboardRevision
@@ -410,6 +413,12 @@ export function createRoomServer({
 
   const mailAdminKey = typeof mailAdminToken === 'string' && mailAdminToken.length >= 24 ? Buffer.from(`Bearer ${mailAdminToken}`) : null
   if (mailAdminToken && !mailAdminKey) console.warn('Mail replies disabled: STS_MAIL_ADMIN_TOKEN must be at least 24 characters')
+  const delegatedMailOwners = new Set((typeof mailAdminOwners === 'string' ? mailAdminOwners.split(',') : mailAdminOwners ?? [])
+    .map((value) => String(value).trim().toLowerCase()).filter((value) => /^[0-9a-f]{64}$/.test(value)))
+  const delegatedMailProfile = (token) => {
+    const profile = typeof token === 'string' ? store.profiles.find((entry) => entry.token === token) : undefined
+    return profile && delegatedMailOwners.has(ownerOf(profile.token)) ? profile : undefined
+  }
   // Failures are always counted: when the table is full the oldest source makes
   // room, so a flood of fresh addresses cannot switch the lockout off.
   const mailAdminAuthorized = (request, now = Date.now()) => {
@@ -454,6 +463,7 @@ export function createRoomServer({
     for (const [key, rate] of mailReadRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) mailReadRates.delete(key)
     for (const [key, rate] of mailSendRates) if (now - rate.startedAt >= MAIL_SEND_WINDOW_MS) mailSendRates.delete(key)
     for (const [key, rate] of mailProfileRates) if (now - rate.startedAt >= MAIL_SEND_WINDOW_MS) mailProfileRates.delete(key)
+    for (const [key, rate] of mailAdminReplyRates) if (now - rate.startedAt >= MAIL_SEND_WINDOW_MS) mailAdminReplyRates.delete(key)
     for (const [key, rate] of mailAdminFailures) if (now - rate.startedAt >= CREATE_WINDOW_MS) mailAdminFailures.delete(key)
     for (const [key, rate] of upgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) upgradeRates.delete(key)
     for (const [key, rate] of invalidUpgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) invalidUpgradeRates.delete(key)
@@ -606,13 +616,24 @@ export function createRoomServer({
         if (!sending) {
           // An unknown profile simply has no letters yet: a first visit reads an
           // empty mailbox rather than an error.
-          if (!profile) return send(response, 200, { letters: [], unread: 0 })
-          const inbox = playerInbox(store.mail, profile, { markRead: body.markRead === true })
+          if (!profile) return send(response, 200, { letters: [], unread: 0, admin: false })
+          const admin = delegatedMailOwners.has(ownerOf(profile.token))
+          let inbox = playerInbox(store.mail, profile, { markRead: body.markRead === true })
+          if (!admin && inbox.letters.length === 0) {
+            const { undo } = sendDeveloperReply(store.mail, profile.username, WELCOME_LETTER, store.profiles, { maxCharacters: maxMailCharacters })
+            if (!saveMail(undo)) return send(response, 503, { error: 'Could not open your mailbox. Please try again.' })
+            inbox = playerInbox(store.mail, profile, { markRead: body.markRead === true })
+          }
           if (inbox.changed) {
             store.mailDirty = true
             queueSave()
           }
-          return send(response, 200, { letters: inbox.letters, unread: inbox.unread })
+          return send(response, 200, {
+            letters: inbox.letters,
+            unread: admin ? developerUnread(store.mail) : inbox.unread,
+            personalUnread: inbox.unread,
+            admin,
+          })
         }
         if (!profile) return send(response, 409, { error: 'Your name is not registered on this server.', code: 'profile' })
         if (!consume(mailProfileRates, profile.username, MAIL_SEND_WINDOW_MS, MAX_MAIL_SENDS_PER_WINDOW)) {
@@ -630,6 +651,35 @@ export function createRoomServer({
           return send(response, 503, { error: 'Could not send your letter. Please try again.' })
         }
         return send(response, 201, { letters: sent.letters, unread: sent.unread })
+      }
+      if (request.method === 'POST' && (url.pathname === '/api/mail/desk' || url.pathname === '/api/mail/desk/reply')) {
+        const source = sourceOf(request)
+        if (!consume(url.pathname.endsWith('/reply') ? mailSendRates : mailReadRates, source,
+          url.pathname.endsWith('/reply') ? MAIL_SEND_WINDOW_MS : CREATE_WINDOW_MS,
+          url.pathname.endsWith('/reply') ? MAX_MAIL_SENDS_PER_SOURCE : MAX_MAIL_READS_PER_WINDOW)) {
+          return send(response, 429, { error: 'Too many mail requests' })
+        }
+        const body = await readJson(request)
+        const profile = delegatedMailProfile(body.token)
+        if (!profile) return send(response, 403, { error: 'This account cannot manage server mail.' })
+        if (url.pathname === '/api/mail/desk') {
+          const inbox = developerInbox(store.mail, store.profiles, {
+            username: typeof body.username === 'string' ? body.username : undefined,
+            markRead: body.markRead === true,
+          })
+          if (inbox.changed) {
+            store.mailDirty = true
+            queueSave()
+          }
+          return send(response, 200, { threads: inbox.threads, unread: inbox.unread })
+        }
+        if (!consume(mailAdminReplyRates, ownerOf(profile.token), MAIL_SEND_WINDOW_MS, MAX_MAIL_ADMIN_REPLIES_PER_WINDOW)) {
+          return send(response, 429, { error: 'You have sent a lot of replies. Please wait a little.' })
+        }
+        const { undo, ...reply } = sendDeveloperReply(store.mail, body.username, body.body, store.profiles, { maxCharacters: maxMailCharacters })
+        if (!saveMail(undo)) return send(response, 503, { error: 'Could not save the reply. Please try again.' })
+        const updated = developerInbox(store.mail, store.profiles, { username: reply.username })
+        return send(response, 201, { ...reply, threads: updated.threads, unread: updated.unread })
       }
       if (url.pathname === '/api/mail/admin' || url.pathname === '/api/mail/admin/reply') {
         if (!mailAdminKey) return send(response, 404, { error: 'Not found' })

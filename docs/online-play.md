@@ -103,7 +103,8 @@ reloads Caddy, verifies the replacement HTTPS origin, updates
 
 Players write to the developer from the envelope in the main menu's top-right corner, and
 the badge counts replies they have not opened. Letters live in `rooms.json.mail.json`, one
-thread per player; back it up with the other `rooms.json` sidecars.
+thread per player; back it up with the other `rooms.json` sidecars. The first mailbox check
+creates one welcome letter for every non-admin profile whose thread is still empty.
 
 Replies need an admin token of at least 24 characters. Put it in
 `~/.config/slay-the-spire-server/mail.env` once and restart the service:
@@ -124,6 +125,25 @@ node scripts/mail-admin.mjs reply TestPlayer "Thanks — fixed in the next build
 ```
 
 Without the token the admin endpoints do not exist; players can still write.
+
+Trusted player profiles can also manage the shared server mailbox from the in-game
+envelope. Configure their mail owner hashes, not their display names, so reclaiming a
+name can never grant mailbox access:
+
+```bash
+node - <<'NODE'
+const { createHash } = require('node:crypto')
+const store = require(process.env.HOME + '/.local/share/slay-the-spire-server/rooms.json')
+const names = new Set(['BestDefect2002', 'test1'].map((name) => name.toLowerCase()))
+const owners = store.profiles.filter((profile) => names.has(profile.username.toLowerCase()))
+  .map((profile) => createHash('sha256').update(`sts-mail:${profile.token}`).digest('hex'))
+if (owners.length !== names.size) throw new Error('Every delegated mailbox account must already have a profile')
+console.log(`STS_MAIL_ADMIN_OWNERS=${owners.join(',')}`)
+NODE
+```
+
+Append that one output line to `mail.env` and restart the service. Delegated accounts
+share one handled/unhandled state: opening a thread on either account clears it for both.
 
 ## Reliable voice across restrictive networks
 

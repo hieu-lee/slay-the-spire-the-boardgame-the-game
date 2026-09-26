@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { fetchMailbox, MAIL_POLLING, MAX_LETTER_LENGTH, sendLetter, type Letter } from '../mail.ts'
+import {
+  fetchMailDesk,
+  fetchMailbox,
+  MAIL_POLLING,
+  MAX_LETTER_LENGTH,
+  sendLetter,
+  sendMailDeskReply,
+  type Letter,
+  type MailThread,
+} from '../mail.ts'
 
 const POLL_MS = 90_000
 const FIRST_POLL_MS = 1_500
@@ -26,6 +35,9 @@ export function MailBox() {
   const [open, setOpen] = useState(false)
   const [unread, setUnread] = useState(0)
   const [letters, setLetters] = useState<Letter[] | null>(null)
+  const [admin, setAdmin] = useState(false)
+  const [threads, setThreads] = useState<MailThread[] | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [status, setStatus] = useState<'idle' | 'loading' | 'sending'>('idle')
   const [error, setError] = useState('')
@@ -66,24 +78,56 @@ export function MailBox() {
     setOpen(true)
     setError('')
     setStatus('loading')
-    fetchMailbox(true).then((mailbox) => {
-      setLetters(mailbox.letters)
-      setUnread(0)
+    setSelected(null)
+    fetchMailbox(true).then(async (mailbox) => {
+      setAdmin(mailbox.admin)
+      if (mailbox.admin) {
+        const desk = await fetchMailDesk()
+        setThreads(desk.threads)
+        setLetters(null)
+        setUnread(desk.unread)
+      } else {
+        setThreads(null)
+        setLetters(mailbox.letters)
+        setUnread(0)
+        requestAnimationFrame(() => composer.current?.focus())
+      }
+    }).catch((reason: unknown) => {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }).finally(() => setStatus('idle'))
+  }, [])
+
+  const openThread = (username: string) => {
+    if (status !== 'idle') return
+    setStatus('loading')
+    setError('')
+    fetchMailDesk(username, true).then((desk) => {
+      setSelected(username)
+      setLetters(desk.threads[0]?.letters ?? [])
+      setUnread(desk.unread)
+      setThreads((current) => current?.map((thread) => thread.username === username ? { ...thread, unread: 0 } : thread) ?? null)
+      requestAnimationFrame(() => composer.current?.focus())
     }, (reason: unknown) => {
       setError(reason instanceof Error ? reason.message : String(reason))
-    }).finally(() => {
-      setStatus('idle')
-      requestAnimationFrame(() => composer.current?.focus())
-    })
-  }, [])
+    }).finally(() => setStatus('idle'))
+  }
 
   const send = () => {
     const body = draft.trim()
     if (!body || status !== 'idle') return
     setStatus('sending')
     setError('')
-    sendLetter(body).then((mailbox) => {
-      setLetters(mailbox.letters)
+    const delivery = admin && selected ? sendMailDeskReply(selected, body) : sendLetter(body)
+    delivery.then((mailbox) => {
+      if ('threads' in mailbox) {
+        const updated = mailbox.threads[0]
+        const last = updated?.letters?.at(-1)
+        setLetters(updated?.letters ?? [])
+        setUnread(mailbox.unread)
+        if (updated && last) setThreads((current) => current ? current.map((mailThread) => mailThread.username === updated.username
+          ? { ...mailThread, unread: updated.unread, lastAt: last.at, lastFrom: last.from, preview: last.body.slice(0, 120) }
+          : mailThread).sort((left, right) => right.lastAt - left.lastAt) : null)
+      } else setLetters(mailbox.letters)
       setDraft('')
     }, (reason: unknown) => {
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -98,37 +142,49 @@ export function MailBox() {
         <Envelope />
         {unread ? <span className="mailbox__badge" aria-hidden="true">{badge}</span> : null}
       </button>
-      <dialog ref={dialog} className="mailbox" aria-labelledby="mailbox-title" onClose={() => setOpen(false)}>
+      <dialog ref={dialog} className="mailbox" aria-labelledby="mailbox-title" onClose={() => { setOpen(false); setSelected(null) }}>
         <div className="mailbox__panel">
           <header className="mailbox__header">
-            <h2 id="mailbox-title">Letters</h2>
+            {admin && selected ? <button type="button" className="mailbox__back" aria-label="Back to server mail"
+              onClick={() => { setSelected(null); setLetters(null); setDraft(''); setError('') }}>‹</button> : null}
+            <h2 id="mailbox-title">{admin ? selected ?? 'Server mail' : 'Letters'}</h2>
             <button type="button" className="mailbox__close" aria-label="Close" onClick={() => setOpen(false)}>×</button>
           </header>
-          <ol className="mailbox__thread" ref={thread} aria-label="Letters" aria-busy={status === 'loading' || undefined}>
-            {letters?.length ? letters.map((letter) => (
-              <li key={letter.id} className={`mailbox__letter mailbox__letter--${letter.from}`}>
-                <p>{letter.body}</p>
-                <small>{letter.from === 'developer' ? 'Developer' : 'You'} · {stamp(letter.at)}</small>
-              </li>
-            )) : status === 'loading' ? null : <li className="mailbox__empty">Bugs, ideas, a kind word — write to the developer.</li>}
-          </ol>
-          {error ? <p className="mailbox__error" role="alert">{error}</p> : null}
-          <form className="mailbox__compose" onSubmit={(event) => { event.preventDefault(); send() }}>
-            <label className="visually-hidden" htmlFor="mailbox-draft">Your letter</label>
-            <textarea id="mailbox-draft" ref={composer} value={draft} maxLength={MAX_LETTER_LENGTH} rows={3}
-              placeholder="Dear developer…" onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); send() }
-              }} />
-            <div className="mailbox__compose-foot">
-              <span className="mailbox__count" aria-hidden={draft.length < MAX_LETTER_LENGTH - 200 || undefined}>
-                {draft.length >= MAX_LETTER_LENGTH - 200 ? `${draft.length}/${MAX_LETTER_LENGTH}` : ''}
-              </span>
-              <button type="submit" className="mailbox__send" disabled={!draft.trim() || status !== 'idle'}>
-                {status === 'sending' ? 'Sending…' : 'Send'}
+          {admin && !selected ? <ol className="mailbox__threads" aria-label="Server mail" aria-busy={status === 'loading' || undefined}>
+            {threads?.length ? threads.map((mailThread) => <li key={mailThread.username}>
+              <button type="button" onClick={() => openThread(mailThread.username)}>
+                <strong>{mailThread.username}</strong>
+                <span>{mailThread.preview}</span>
+                <small>{mailThread.unread ? `${mailThread.unread} new` : mailThread.lastFrom === 'player' ? 'Unanswered' : 'Answered'} · {stamp(mailThread.lastAt)}</small>
               </button>
-            </div>
-          </form>
+            </li>) : status === 'loading' ? null : <li className="mailbox__empty">No player letters yet.</li>}
+          </ol> : <ol className="mailbox__thread" ref={thread} aria-label="Letters" aria-busy={status === 'loading' || undefined}>
+              {letters?.length ? letters.map((letter) => (
+                <li key={letter.id} className={`mailbox__letter mailbox__letter--${letter.from}`}>
+                  <p>{letter.body}</p>
+                  <small>{admin
+                    ? letter.from === 'developer' ? 'You' : selected
+                    : letter.from === 'developer' ? 'Developer' : 'You'} · {stamp(letter.at)}</small>
+                </li>
+              )) : status === 'loading' ? null : <li className="mailbox__empty">{admin ? 'This thread is empty.' : 'Bugs, ideas, a kind word — write to the developer.'}</li>}
+            </ol>}
+          {error ? <p className="mailbox__error" role="alert">{error}</p> : null}
+          {!admin || selected ? <form className="mailbox__compose" onSubmit={(event) => { event.preventDefault(); send() }}>
+              <label className="visually-hidden" htmlFor="mailbox-draft">{admin ? `Reply to ${selected}` : 'Your letter'}</label>
+              <textarea id="mailbox-draft" ref={composer} value={draft} maxLength={MAX_LETTER_LENGTH} rows={3}
+                placeholder={admin ? `Reply to ${selected}…` : 'Dear developer…'} onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); send() }
+                }} />
+              <div className="mailbox__compose-foot">
+                <span className="mailbox__count" aria-hidden={draft.length < MAX_LETTER_LENGTH - 200 || undefined}>
+                  {draft.length >= MAX_LETTER_LENGTH - 200 ? `${draft.length}/${MAX_LETTER_LENGTH}` : ''}
+                </span>
+                <button type="submit" className="mailbox__send" disabled={!draft.trim() || status !== 'idle'}>
+                  {status === 'sending' ? 'Sending…' : admin ? 'Reply' : 'Send'}
+                </button>
+              </div>
+            </form> : null}
         </div>
       </dialog>
     </>
