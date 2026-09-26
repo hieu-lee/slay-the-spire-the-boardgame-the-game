@@ -106,6 +106,8 @@ the badge counts replies they have not opened. Letters live in `rooms.json.mail.
 thread per player; back it up with the other `rooms.json` sidecars. The first mailbox check
 creates a welcome letter for an empty non-admin thread when the archive can save it; an
 unsaved welcome never prevents reading the mailbox.
+The hosted main menu checks immediately after a player registers or returns, so the unread
+badge appears without opening the envelope.
 
 Replies need an admin token of at least 24 characters. Put it in
 `~/.config/slay-the-spire-server/mail.env` once and restart the service:

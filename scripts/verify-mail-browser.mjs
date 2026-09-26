@@ -5,6 +5,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
+import { chromium as freshChromium } from 'playwright'
 import { chromium } from './lib/profile-browser.mjs'
 import { ownerOf } from './lib/mail.mjs'
 import { createRoomServer } from './room-server.mjs'
@@ -38,9 +39,78 @@ await vite.listen()
 const address = vite.httpServer?.address()
 if (!address || typeof address === 'string') throw new Error('vite did not report a port')
 const browser = await chromium.launch()
+const firstVisitBrowser = await freshChromium.launch()
 const errors = []
 
 try {
+  {
+    const context = await firstVisitBrowser.newContext({ viewport: { width: 1440, height: 900 } })
+    const page = await context.newPage()
+    page.on('pageerror', (error) => errors.push(`empty admin: ${error.message}`))
+    await page.addInitScript((profile) => localStorage.setItem('sts-profile', JSON.stringify(profile)), mailboxAdmin)
+    const firstRead = page.waitForResponse((response) => response.url().endsWith('/api/mail') &&
+      response.request().postDataJSON()?.token === mailboxAdmin.token)
+    await page.goto(`http://127.0.0.1:${address.port}`)
+    await page.locator('.start-menu__nav').waitFor()
+    const mailbox = await (await firstRead).json()
+    const badge = await page.locator('.mailbox__badge').count()
+    check('an empty delegated mailbox does not receive a welcome notification', () => {
+      assertEqual(mailbox.admin, true)
+      assertEqual(mailbox.letters.length, 0)
+      assertEqual(mailbox.personalUnread, 0)
+      assertEqual(badge, 0)
+    })
+    await context.close()
+  }
+
+  for (const [screen, viewport, phone] of [
+    ['desktop', { width: 1440, height: 900 }, false],
+    ['landscape-phone', { width: 844, height: 390 }, true],
+  ]) {
+    const newcomer = {
+      username: `Welcome${phone ? 'Phone' : 'Desktop'}`,
+      token: `00000000-0000-4000-8000-0000000000${phone ? '07' : '06'}`,
+    }
+    const context = await firstVisitBrowser.newContext({ viewport, isMobile: phone, hasTouch: phone })
+    const page = await context.newPage()
+    const backgroundChecks = []
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/api/mail') backgroundChecks.push(request.postDataJSON()?.token)
+    })
+    page.on('pageerror', (error) => errors.push(`${screen} welcome: ${error.message}`))
+    page.on('console', (message) => { if (message.type() === 'error') errors.push(`${screen} welcome: ${message.text()}`) })
+    if (phone) {
+      await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(newcomer) })
+      await page.addInitScript((profile) => localStorage.setItem('sts-profile', JSON.stringify(profile)), newcomer)
+    }
+    await page.goto(`http://127.0.0.1:${address.port}`)
+    if (!phone) {
+      await page.getByRole('button', { name: 'Tap, click, or press any key to start' }).click()
+      await page.getByRole('textbox', { name: 'How should we call you?' }).fill(newcomer.username)
+      await page.getByRole('button', { name: 'Confirm username' }).click()
+    }
+    await page.locator('.start-menu__nav').waitFor()
+    await page.locator('.mailbox__badge').waitFor({ timeout: 1_200 })
+    const badge = await page.locator('.mailbox__badge').textContent()
+    const dialogClosed = await page.locator('dialog.mailbox').evaluate((element) => !element.open)
+    const token = await page.evaluate(() => JSON.parse(localStorage.getItem('sts-profile')).token)
+    await page.evaluate(() => new Promise((resolvePromise) => requestAnimationFrame(() => requestAnimationFrame(resolvePromise))))
+    const initialChecks = backgroundChecks.filter((checkedToken) => checkedToken === token).length
+    const inbox = await api('/api/mail', { method: 'POST', body: JSON.stringify({ token }) })
+    const again = await api('/api/mail', { method: 'POST', body: JSON.stringify({ token }) })
+    await page.screenshot({ path: join(output, `${screen}-welcome-badge.png`) })
+    check(`${screen}: an empty mailbox gets one welcome notification without opening it`, () => {
+      assertEqual(badge, '1')
+      assertEqual(initialChecks, 1, 'the initial mailbox check ran more than once')
+      assert(dialogClosed, 'the mailbox opened without the player clicking it')
+      assertEqual(inbox.letters.length, 1)
+      assertEqual(inbox.letters[0].from, 'developer')
+      assertEqual(inbox.unread, 1)
+      assertEqual(again.letters.length, 1, 'checking again duplicated the welcome')
+    })
+    await context.close()
+  }
+
   for (const [screen, viewport, phone] of [
     ['desktop', { width: 1440, height: 900 }, false],
     ['landscape-phone', { width: 844, height: 390 }, true],
@@ -321,6 +391,7 @@ try {
   }
   check('the mailbox raised no page or console errors', () => assertEqual(errors.join('\n'), ''))
 } finally {
+  await firstVisitBrowser.close()
   await browser.close()
   await vite.close()
   await rooms.close()

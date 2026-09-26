@@ -11,7 +11,6 @@ import {
 } from '../mail.ts'
 
 const POLL_MS = 90_000
-const FIRST_POLL_MS = 1_500
 
 const stamp = (at: number) => new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 function lastFrom(letters: Letter[], from: Letter['from']) {
@@ -74,12 +73,11 @@ export function MailBox() {
         setPersonalUnread(mailbox.personalUnread)
       }, () => {})
     }
-    const first = window.setTimeout(check, FIRST_POLL_MS)
+    queueMicrotask(() => { if (!cancelled) check() })
     const poll = window.setInterval(check, POLL_MS)
     document.addEventListener('visibilitychange', check)
     return () => {
       cancelled = true
-      window.clearTimeout(first)
       window.clearInterval(poll)
       document.removeEventListener('visibilitychange', check)
     }
