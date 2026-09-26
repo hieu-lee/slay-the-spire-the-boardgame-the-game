@@ -80,6 +80,8 @@ check('frontend surfaces select their cores and named focused browser checks', (
     assert(owners.includes('verify-run-replay-browser.mjs'), `${file} omitted focused replay coverage`)
     assert(owners.some((owner) => owner !== 'verify-run-replay-browser.mjs'), `${file} lost its shared browser owners`)
   }
+  assert(affectedBrowser('src/ui/App.tsx').includes('verify-combat-vfx-preload-browser.mjs'),
+    'app changes omitted first-visit and returning-player VFX coverage')
   assert(affected('src/ui/icons.ts').includes('verify-noncombat-browser.mjs'))
   assert(affected('src/ui/run-summary-data.ts').includes('verify-noncombat-browser.mjs'))
   assert(affected('src/ui/RewardScreen.tsx').includes('verify-browser.mjs'))

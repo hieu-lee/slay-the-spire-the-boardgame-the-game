@@ -923,8 +923,14 @@ check('combat animation effects are complete, transparent, and compact', () => {
   assertDeepEqual(combatVfxFiles.sort(), expected, 'combat VFX inventory')
   assertDeepEqual(combatActionVfxFiles.sort(), [...expectedActions, ...expectedTurnEffects].sort(), 'personal combat VFX inventory')
   const entryHtml = readFileSync(join(repoRoot, 'index.html'), 'utf8')
+  const appSource = readFileSync(join(repoRoot, 'src/ui/App.tsx'), 'utf8')
+  for (const file of ['hit-burst.webp', 'death-ash.webp', 'death-ring.webp']) {
+    assert(appSource.includes(`'combat/vfx/${file}'`), `${file} is not warmed after registration`)
+    assert(entryHtml.includes(`'${file.replace('.webp', '')}'`), `${file} is not warmed for returning players`)
+  }
   for (const file of expectedActions.filter((file) => file !== 'downfall-demon-ground-splat.webp' && !file.startsWith('hermit-'))) {
-    assert(entryHtml.includes(`/assets/combat/vfx/actions/${file}`), `${file} is not preloaded for first use`)
+    assert(appSource.includes(`'${file.replace('.webp', '')}'`), `${file} is not warmed after registration`)
+    assert(entryHtml.includes(`'${file.replace('.webp', '')}'`), `${file} is not warmed for returning players`)
   }
   assert(!entryHtml.includes('/assets/combat/vfx/actions/downfall-demon-ground-splat.webp'),
     'Demon-only splat is globally preloaded')

@@ -93,31 +93,31 @@
         visibleViewport?.addEventListener('resize', refreshViewport, { passive: true })
       }
     </script>
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/hit-burst.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/death-ash.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/death-ring.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/awakened-blue-fire.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/awakened-claw-scratch.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/watcher-calm-aura.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/watcher-wrath-aura.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/guard-bloom.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/hexaghost-flame-impact.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/hexaghost-flame.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/dark-channel.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/defect-face-orb.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/frost-channel.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/ironclad-bash.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/ironclad-strike.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/lightning-channel.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/turn-lightning-strike.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/magic-burst.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/potion-burst.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/silent-knife.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/silent-poison.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/silent-shiv.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/watcher-pray.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/watcher-meteor-impact.webp" as="image" type="image/webp" />
-    <link rel="preload" fetchpriority="low" href="/assets/combat/vfx/actions/watcher-meteor.webp" as="image" type="image/webp" />
+    <script>
+      try {
+        const profile = JSON.parse(localStorage.getItem('sts-profile') ?? 'null')
+        if (typeof profile?.username === 'string' && profile.username.trim().length >= 2 &&
+            typeof profile?.token === 'string' && /^[0-9a-f-]{36}$/.test(profile.token)) {
+          for (const name of [
+            'hit-burst', 'death-ash', 'death-ring',
+            ...['awakened-blue-fire', 'awakened-claw-scratch', 'watcher-calm-aura', 'watcher-wrath-aura',
+              'guard-bloom', 'hexaghost-flame-impact', 'hexaghost-flame', 'dark-channel', 'defect-face-orb',
+              'frost-channel', 'ironclad-bash', 'ironclad-strike', 'lightning-channel', 'turn-lightning-strike',
+              'magic-burst', 'potion-burst', 'silent-knife', 'silent-poison', 'silent-shiv', 'watcher-pray',
+              'watcher-meteor-impact', 'watcher-meteor'].map((asset) => `actions/${asset}`),
+          ]) {
+            const link = document.createElement('link')
+            link.rel = 'preload'
+            link.as = 'image'
+            link.type = 'image/webp'
+            link.fetchPriority = 'low'
+            link.href = `%BASE_URL%assets/combat/vfx/${name}.webp`
+            link.dataset.combatVfx = ''
+            document.head.append(link)
+          }
+        }
+      } catch {}
+    </script>
     <title>Slay the Spire — The Board Game</title>
   </head>
   <body>

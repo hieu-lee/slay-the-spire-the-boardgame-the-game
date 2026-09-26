@@ -115,6 +115,16 @@ const SINGLE_PLAYER_ONLY = import.meta.env.VITE_SINGLE_PLAYER === 'true'
 const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
 const OnlineGame = SINGLE_PLAYER_ONLY ? null : lazy(() => import('./OnlineGame.tsx').then((module) => ({ default: module.OnlineGame })))
 const CompendiumScreen = lazy(() => import('./CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
+const COMBAT_VFX = [
+  'combat/vfx/hit-burst.webp', 'combat/vfx/death-ash.webp', 'combat/vfx/death-ring.webp',
+  ...[
+    'awakened-blue-fire', 'awakened-claw-scratch', 'watcher-calm-aura', 'watcher-wrath-aura',
+    'guard-bloom', 'hexaghost-flame-impact', 'hexaghost-flame', 'dark-channel', 'defect-face-orb',
+    'frost-channel', 'ironclad-bash', 'ironclad-strike', 'lightning-channel', 'turn-lightning-strike',
+    'magic-burst', 'potion-burst', 'silent-knife', 'silent-poison', 'silent-shiv', 'watcher-pray',
+    'watcher-meteor-impact', 'watcher-meteor',
+  ].map((name) => `combat/vfx/actions/${name}.webp`),
+]
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -239,6 +249,11 @@ export function App() {
   const [localOpen, setLocalOpen] = useState(false)
   const [settings, setSettings] = useGameSettings()
   useEffect(() => settings.sfxVolume > 0 ? installSoundEffects(true) : undefined, [settings.sfxVolume])
+  useEffect(() => {
+    if (document.querySelector('link[data-combat-vfx]')) return
+    void preloadImages(COMBAT_VFX, { fetchPriority: 'low' })
+    return () => releasePreloadedImages(COMBAT_VFX)
+  }, [])
   useEffect(() => {
     let shiftHeld = false
     let preferFocus = false

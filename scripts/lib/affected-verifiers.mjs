@@ -38,7 +38,8 @@ const focusedEngineOwners = new Map([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = new Map([
-  ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-courier-browser.mjs']],
+  ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-courier-browser.mjs',
+    'verify-combat-vfx-preload-browser.mjs']],
   ['src/ui/CampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
   ['src/ui/CompendiumScreen.tsx', ['verify-compendium-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
