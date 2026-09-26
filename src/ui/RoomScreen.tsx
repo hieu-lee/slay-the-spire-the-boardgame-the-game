@@ -1401,7 +1401,8 @@ function EventScreen({
         <div className="room-banner">
           <span>Event</span>
           <h2 id="event-title">{room.card.name}</h2>
-          {room.card.prompt ?? room.card.rule ? <p>{room.card.prompt ?? room.card.rule}</p> : null}
+          {repeatScrap ? <p className="event-retry" role="status">Nothing caught. Reach in again, or leave.</p>
+            : room.card.prompt ?? room.card.rule ? <p>{room.card.prompt ?? room.card.rule}</p> : null}
           {eventDie}
           {room.revealedRelics?.[player.id] ? (
             <p role="status">
@@ -1484,7 +1485,7 @@ function EventScreen({
             </div>
           ) : null}
         </div>
-        {(!resolverOpen || room.card.id === "knowing_skull") ? <div className="event-options" ref={eventOptions}>
+        {(!resolverOpen || room.card.id === "knowing_skull") ? <div className={`event-options${repeatScrap ? " event-options--retry" : ""}`} ref={eventOptions}>
           {room.card.options.map((choice) => {
             const cardSlots = eventCardSlots(choice.effects, pendingDie, player, players);
             const choiceEffects = activeEffects(choice.effects);
@@ -1563,8 +1564,10 @@ function EventScreen({
                   submit([choice.id], prismaticRare ? rareRewardSources : rewardSources);
                 }}
               >
-                <strong>[{choice.label}]</strong>
-                <span>{choice.description}</span>
+                {repeatScrap ? <strong>{choice.id === "reach_inside" ? "Reach again" : choice.label}</strong> : <>
+                  <strong>[{choice.label}]</strong>
+                  <span>{choice.description}</span>
+                </>}
               </button>
             );
           })}

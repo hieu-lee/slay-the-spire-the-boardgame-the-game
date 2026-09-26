@@ -610,6 +610,23 @@ check('each-player Potion gains preserve earlier cross-player passes', () => {
   assertDeepEqual(result.players[1].potions, ['fire_potion', 'swift_potion'])
 })
 
+check('Scrap Ooze reaches again in one action after a 1–2', () => {
+  let run = inEvent('scrap_ooze', 1)
+  const hp = run.players[0].hp
+  run.rng = { ...run.rng, replayValues: [0.01] }
+  run = chooseEvent(run, 'p1', { optionIds: ['reach_inside'] })
+  assertDeepEqual(run.roomState.pendingRolls.p1, [1])
+  assertEqual(run.players[0].hp, hp - 1)
+  run.rng = { ...run.rng, replayValues: [0.4] }
+  const again = chooseEvent(run, 'p1', { optionIds: ['reach_inside'] })
+  assertDeepEqual(again.roomState.pendingRolls.p1, [3], 'Reach again did not roll the die')
+  assertDeepEqual(again.roomState.dieRolls.p1, [1, 3])
+  assertEqual(again.players[0].hp, hp - 2, 'the second reach did not cost its HP')
+  const left = chooseEvent(run, 'p1', { optionIds: ['leave'] })
+  assertEqual(left.players[0].hp, hp - 1, 'leaving after a miss cost more HP')
+  assert(!left.roomState?.pendingRolls?.p1?.length, 'leaving left a pending roll')
+})
+
 check('an item an empty deck cannot supply keeps later reward choices on their own items', () => {
   let run = inEvent('upgrade_shrine', 1)
   const pray = run.roomState.card.options[0]

@@ -272,3 +272,20 @@ html[data-reduced-motion='true'] .sts-scope .event-die .event-die__cube { animat
   .sts-scope .event-die__table > li { min-width: 2.1rem; padding: 0.2rem; }
   .sts-scope .event-die__table .icon { width: 1.05rem; height: 1.05rem; }
 }
+
+/* Scrap Ooze after a 1–2: the die already shows what happened, so the choice is
+   two short keys side by side, not the opening rules repeated. */
+.sts-scope .event-retry { color: var(--light-yellow); font-weight: 700; }
+
+.sts-scope .event-options--retry { grid-template-columns: 1fr 1fr; }
+
+.sts-scope .event-stage .event-options--retry button {
+  min-height: 3rem;
+  justify-content: center;
+  text-align: center;
+}
+
+.sts-scope .event-stage .event-options--retry button strong { font-size: 1.15rem; }
+
+/* The short-window panel cap would let the two keys hang past the border. */
+.sts-scope .event-panel:has(> .event-options--retry) { max-height: none; }

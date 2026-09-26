@@ -2770,15 +2770,15 @@ await page.evaluate(() => {
   ] }, decisions: {}, dieRolls: { [actor.id]: [1] }, pendingRolls: { [actor.id]: [1] }, pendingDecisions: { [actor.id]: { optionIds: ['reach_inside'] } } }
   debug.setRun(run)
 })
-await page.getByRole('button', { name: /\[Leave\]/ }).waitFor()
+await page.getByRole('button', { name: 'Leave', exact: true }).waitFor()
 const scrapRepeatShape = {
-  options: await page.locator('.event-options button').count(),
+  options: await page.locator('.event-options--retry button').allTextContents(),
   genericConfirm: await page.getByRole('button', { name: /Confirm choice/ }).count(),
 }
-await page.getByRole('button', { name: /\[Leave\]/ }).click()
+await page.getByRole('button', { name: 'Leave', exact: true }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 check('Scrap Ooze keeps its printed repeat-or-leave decision after a failed roll', () => {
-  assertEqual(scrapRepeatShape.options, 2)
+  assertDeepEqual(scrapRepeatShape.options.map((label) => label.trim()), ['Reach again', 'Leave'])
   assertEqual(scrapRepeatShape.genericConfirm, 0)
 })
 

@@ -105,6 +105,17 @@ function nextEventCardOffer(
 }
 
 export function chooseEvent(state: RunState, playerId: string, decision: EventDecision): RunState {
+  const reachAgain = state.roomState?.kind === 'event' && state.roomState.card.id === 'scrap_ooze' &&
+    decision?.optionIds?.[0] === 'reach_inside' && (state.roomState.pendingRolls?.[playerId]?.at(-1) ?? 3) <= 2
+  const next = chooseEventOnce(state, playerId, decision)
+  if (!reachAgain || next === state || next.roomState?.kind !== 'event' ||
+    next.roomState.pendingDecisions?.[playerId] || next.roomState.decisions[playerId]) return next
+  // A 1–2 has already cost its HP and found nothing; reaching again is the next
+  // Reach Inside, taken in the same click rather than a second one.
+  return chooseEventOnce(next, playerId, { optionIds: ['reach_inside'] })
+}
+
+function chooseEventOnce(state: RunState, playerId: string, decision: EventDecision): RunState {
   const next = chooseEventInternal(state, playerId, decision, false)
   if (next === state) return state
   const resolved = mirrorItemSupplies(applyDeadlyEvent(state, next), next.itemDecks)

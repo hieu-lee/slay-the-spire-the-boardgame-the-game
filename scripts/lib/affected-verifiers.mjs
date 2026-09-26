@@ -49,6 +49,7 @@ const focusedUiOwners = new Map([
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/MailBox.tsx', ['verify-mail-browser.mjs']],
   ['src/ui/MapScreen.tsx', ['verify-wing-focus-browser.mjs']],
+  ['src/ui/RoomScreen.tsx', ['verify-scrap-ooze-browser.mjs']],
   ['src/ui/chrome/mailbox.css', ['verify-mail-browser.mjs']],
   ['src/multiplayer/useRoomSession.ts', ['verify-combat-layout-reload-browser.mjs']],
   ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
