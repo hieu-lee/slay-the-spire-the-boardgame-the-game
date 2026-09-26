@@ -65,6 +65,7 @@ const focusedUiOwners = new Map([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
+  ['src/ui/useWebMcp.ts', ['verify-webmcp-browser.mjs']],
   ['src/ui/CourierPanel.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/chrome/courier.css', ['verify-courier-browser.mjs']],
   ['src/ui/PowerRow.tsx', ['verify-power-hover-browser.mjs']],

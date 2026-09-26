@@ -1,4 +1,7 @@
 import { useEffect } from 'react'
+import { CARDS } from '../game/cards.ts'
+import { parseStatsExpression, validateStatsQuery } from '../stats-query.ts'
+import { loadStats, type StatsFilters } from '../stats.ts'
 
 type Tool = {
   name: string
@@ -38,12 +41,20 @@ type Control = VisibleControl & { kind: ControlKind; element: HTMLElement }
 const PAGE_SIZE = 30
 const SCREEN_TEXT_LIMIT = 8_000
 const TEXT_VALUE_LIMIT = 1_000
+const STATS_CHOICES = Object.values(CARDS).flatMap((card) => [
+  { id: card.id, label: card.name, upgraded: false },
+  ...(card.upgrade ? [{ id: card.id, label: `${card.name}+`, upgraded: true }] : []),
+])
+const STATS_HEROES = ['all', 'ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'] as const
+const STATS_MODES = ['all', 'standard', 'daily', 'custom', 'multiplayer'] as const
 const CONTROL_SELECTOR = 'button, summary, input, select, [role="button"]'
 const STRUCTURED_TEXT_SELECTOR = 'h1, h2, h3, [role="heading"], [role="status"], [role="alert"]'
 let controls: Control[] = []
 let controlStateSignature = ''
 let pageSnapshot: { id: string; signature: string } | null = null
 let pageSnapshotSequence = 0
+let published: { revision: string; state: ReturnType<typeof captureGame> } | null = null
+let publicationSequence = 0
 
 function identify(current: Control[]): Control[] {
   return current.map((control) => ({ ...control, id: crypto.randomUUID().slice(0, 12) }))
@@ -288,14 +299,22 @@ function objectInput(input: unknown, allowed: readonly string[]): Record<string,
 }
 
 function captureGame(input: unknown, acknowledge: boolean) {
-  const { offset, snapshotId } = objectInput(input, ['offset', 'snapshotId'])
+  const { offset, textOffset, snapshotId, since } = objectInput(input, ['offset', 'textOffset', 'snapshotId', 'since'])
+  if (since !== undefined && (typeof since !== 'string' || !since || since.length > 32)) {
+    throw new Error('since must be a revision from the last game response.')
+  }
   if (offset !== undefined && (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0)) {
     throw new Error('offset must be a non-negative integer.')
   }
+  if (textOffset !== undefined && (typeof textOffset !== 'number' || !Number.isInteger(textOffset) || textOffset < 0)) {
+    throw new Error('textOffset must be a non-negative integer.')
+  }
   const start = offset ?? 0
-  if (start === 0 && snapshotId !== undefined) throw new Error('snapshotId must be omitted when offset is 0.')
-  if (start > 0 && (typeof snapshotId !== 'string' || snapshotId.length === 0 || snapshotId.length > 32)) {
-    throw new Error('snapshotId from the first page is required when offset is greater than 0.')
+  const textStart = textOffset ?? 0
+  if (start > 0 && textStart > 0) throw new Error('Page controls or text separately.')
+  if (start === 0 && textStart === 0 && snapshotId !== undefined) throw new Error('snapshotId must be omitted on the first page.')
+  if ((start > 0 || textStart > 0) && (typeof snapshotId !== 'string' || !snapshotId || snapshotId.length > 32)) {
+    throw new Error('snapshotId from the first page is required for later pages.')
   }
   if (interactionPending()) {
     invalidateControls()
@@ -311,8 +330,11 @@ function captureGame(input: unknown, acknowledge: boolean) {
   const unavailable = unavailableControls()
   const capturedAnnouncements = announcementElements()
   const screen = gameScreen(capturedAnnouncements)
+  const textTail = screen.textTruncated ? screenText(activeScopes()).slice(SCREEN_TEXT_LIMIT) : ''
+  const fullText = screen.text + textTail
+  if (textStart > 0 && textStart >= fullText.length) throw new Error('textOffset is beyond visible screen text.')
   const stateSignature = JSON.stringify({
-    screen: { ...screen, announcements: announcementTexts(announcementElements(true)) },
+    screen: { ...screen, announcements: announcementTexts(announcementElements(true)), textTail },
     controls: available.map(({ id: _, ...control }) => control),
     unavailableControls: unavailable,
   })
@@ -320,46 +342,104 @@ function captureGame(input: unknown, acknowledge: boolean) {
     controls = identify(controls)
     available = listedControls()
   }
-  const page = available.slice(start, start + PAGE_SIZE)
-  const unavailablePage = unavailable.slice(start, start + PAGE_SIZE)
+  const page = textStart ? [] : available.slice(start, start + PAGE_SIZE)
+  const unavailablePage = textStart ? [] : unavailable.slice(start, start + PAGE_SIZE)
   const paginationSignature = JSON.stringify({ stateSignature, controlIds: available.map((control) => control.id) })
-  if (start > 0 && (snapshotId !== pageSnapshot?.id || paginationSignature !== pageSnapshot?.signature)) {
+  if ((start > 0 || textStart > 0) && (snapshotId !== pageSnapshot?.id || paginationSignature !== pageSnapshot?.signature)) {
     invalidateControls()
     throw new Error('Game state changed during pagination. Restart inspect_game at offset 0.')
   }
-  if (start === 0) pageSnapshot = { id: String(++pageSnapshotSequence), signature: paginationSignature }
+  if (start === 0 && textStart === 0) pageSnapshot = { id: String(++pageSnapshotSequence), signature: paginationSignature }
   controlStateSignature = stateSignature
-  const nextOffset = start + PAGE_SIZE < Math.max(available.length, unavailable.length) ? start + PAGE_SIZE : null
+  const nextOffset = !textStart && start + PAGE_SIZE < Math.max(available.length, unavailable.length) ? start + PAGE_SIZE : null
+  const textNextOffset = textStart + SCREEN_TEXT_LIMIT < fullText.length ? textStart + SCREEN_TEXT_LIMIT : null
   const result = {
-    ...(start === 0 ? { screen } : {}),
+    ...(start === 0 ? { screen: textStart ? { ...screen, text: fullText.slice(textStart, textStart + SCREEN_TEXT_LIMIT),
+      textOffset: textStart, textTruncated: textNextOffset !== null, ...(textNextOffset !== null ? { textNextOffset } : {}) } :
+      { ...screen, ...(textNextOffset !== null ? { textNextOffset } : {}) } } : {}),
     controls: page,
     unavailableControls: unavailablePage,
-    ...(nextOffset !== null ? {
+    ...(nextOffset !== null || textNextOffset !== null ? {
       totalUnavailableControls: unavailable.length,
       totalControls: available.length,
       snapshotId: pageSnapshot!.id,
     } : {}),
-    ...(start + unavailablePage.length < unavailable.length ? { unavailableControlsTruncated: true } : {}),
+    ...(!textStart && start + unavailablePage.length < unavailable.length ? { unavailableControlsTruncated: true } : {}),
     nextOffset,
   }
   if (acknowledge) acknowledgeAnnouncements(capturedAnnouncements)
   return result
 }
 
+function publishGame(state: ReturnType<typeof captureGame>, since?: string) {
+  if ('pending' in state || state.nextOffset !== null || !state.screen || state.screen.textTruncated ||
+    'textOffset' in state.screen) {
+    published = null
+    return state
+  }
+  const revision = String(++publicationSequence)
+  const previous = published
+  published = { revision, state }
+  if (since && previous?.revision === since) {
+    const screen = Object.fromEntries(Object.entries(state.screen).filter(([key, value]) =>
+      JSON.stringify(value) !== JSON.stringify((previous.state.screen as Record<string, unknown> | undefined)?.[key])))
+    const removedScreen = Object.keys(previous.state.screen ?? {}).filter((key) => !Object.hasOwn(state.screen!, key))
+    const changes = Object.fromEntries(Object.entries(state).filter(([key, value]) => key !== 'screen' &&
+      JSON.stringify(value) !== JSON.stringify((previous.state as Record<string, unknown>)[key])))
+    const removed = Object.keys(previous.state).filter((key) => !Object.hasOwn(state, key))
+    return { baseRevision: since, revision, changes: { ...changes, ...(Object.keys(screen).length ? { screen } : {}) },
+      ...(removed.length ? { removed } : {}), ...(removedScreen.length ? { removedScreen } : {}) }
+  }
+  return { ...state, revision }
+}
+
 function inspectGame(input: unknown) {
-  return captureGame(input, true)
+  const { since } = objectInput(input, ['offset', 'textOffset', 'snapshotId', 'since'])
+  return publishGame(captureGame(input, true), since as string | undefined)
+}
+
+async function getStats(input: unknown, signal?: AbortSignal) {
+  const { character = 'all', ascension = 'all', mode = 'standard', query = '', candidates, full = false } =
+    objectInput(input, ['character', 'ascension', 'mode', 'query', 'candidates', 'full'])
+  if (!STATS_HEROES.some((hero) => hero === character)) throw new Error('Choose a listed character.')
+  if (!(ascension === 'all' || typeof ascension === 'number' && Number.isInteger(ascension) && ascension >= 0 && ascension <= 13 ||
+    typeof ascension === 'string' && /^(?:[0-9]|10)\+$/.test(ascension))) throw new Error('Choose Ascension 0–13, 0+–10+, or all.')
+  if (!STATS_MODES.some((availableMode) => availableMode === mode)) throw new Error('Choose a listed run mode.')
+  if (typeof query !== 'string' || query.length > TEXT_VALUE_LIMIT) throw new Error('Card query must be at most 1000 characters.')
+  if (candidates !== undefined && (!Array.isArray(candidates) || candidates.length > 24 ||
+    candidates.some((id) => typeof id !== 'string' || !Object.hasOwn(CARDS, id)))) {
+    throw new Error('Candidates must be at most 24 known card IDs.')
+  }
+  const selectedCandidates = candidates as string[] | undefined
+  if (typeof full !== 'boolean') throw new Error('full must be a boolean.')
+  const parsed = parseStatsExpression(query, STATS_CHOICES)
+  validateStatsQuery(parsed)
+  const filters: StatsFilters = {
+    character: character as StatsFilters['character'], ascension: ascension as StatsFilters['ascension'],
+    mode: mode as StatsFilters['mode'], query: parsed,
+  }
+  const result = await loadStats(filters, signal ?? new AbortController().signal)
+  const nextCards = selectedCandidates?.length ? result.nextCards.filter((card) => selectedCandidates.includes(card.defId)) : result.nextCards
+  return { filters: { character, ascension, mode, query },
+    runs: result.runs, averageFloors: result.averageFloors, averageDamage: result.averageDamage,
+    averageBlock: result.averageBlock, pending: result.pending,
+    rows: full ? result.rows : result.rows.slice(0, 5), totalRows: result.rows.length,
+    nextCards: full ? nextCards : nextCards.slice(0, 12), totalNextCards: nextCards.length,
+    ...(selectedCandidates?.length ? { notInTopComparisons: selectedCandidates.filter((id) => !nextCards.some((card) => card.defId === id)) } : {}),
+  }
 }
 
 function stateSignature() {
   const screen = gameScreen()
   return JSON.stringify({
-    screen: { ...screen, announcements: announcementTexts(announcementElements(true)) },
+    screen: { ...screen, announcements: announcementTexts(announcementElements(true)),
+      textTail: screen.textTruncated ? screenText(activeScopes()).slice(SCREEN_TEXT_LIMIT) : '' },
     controls: visibleControls().map(({ id: _, ...control }) => control),
     unavailableControls: unavailableControls(),
   })
 }
 
-function hasProgressControl(state: ReturnType<typeof inspectGame>) {
+function hasProgressControl(state: ReturnType<typeof captureGame>) {
   return state.controls.some((control) => !/^(Current deck|Map$|Settings$|Discard pile|Exhaust pile)/.test(control.label))
 }
 
@@ -402,12 +482,14 @@ export function useWebMcp() {
       {
         name: 'inspect_game',
         title: 'Inspect game',
-        description: 'Read visible state and controls, including start-turn and relic choices. unavailableControls (future rooms) are planning-only. Continue with nextOffset/snapshotId if present; retry if pending.',
+        description: 'Read start-turn and relic choices. unavailableControls (future rooms) are planning-only. Pass since for changes; continue nextOffset/textNextOffset if set.',
         inputSchema: {
           type: 'object',
           properties: {
             offset: { type: 'integer', minimum: 0, description: 'Control-page offset.' },
+            textOffset: { type: 'integer', minimum: 0, description: 'Visible-text offset from textNextOffset.' },
             snapshotId: { type: 'string', maxLength: 32, description: 'First-page ID for later pages.' },
+            since: { type: 'string', maxLength: 32, description: 'Revision from prior state for lossless changes.' },
           },
           additionalProperties: false,
         },
@@ -417,11 +499,12 @@ export function useWebMcp() {
       {
         name: 'interact_with_game',
         title: 'Interact with game',
-        description: 'Use a listed controlId for start-turn, relic, or other choices. Omit value for buttons or an empty required single-choice select. Returns settled state; inspect again only if pending or nextOffset is set.',
+        description: 'Use a listed controlId for start-turn, relic, or other choices. Returns settled state. Pass since for lossless changes; inspect if pending or timed out.',
         inputSchema: {
           type: 'object',
           properties: {
             controlId: { type: 'string', minLength: 1, maxLength: 64, description: 'ID from the latest state.' },
+            since: { type: 'string', maxLength: 32, description: 'Revision from prior state for lossless changes.' },
             value: {
               oneOf: [{ type: 'string', maxLength: TEXT_VALUE_LIMIT }, { type: 'number' }, { type: 'boolean' }],
               description: 'Control value when needed.',
@@ -437,7 +520,10 @@ export function useWebMcp() {
             invalidateControls()
             throw new Error('Game interaction is pending. Wait and call inspect_game again.')
           }
-          const { controlId, value } = objectInput(input, ['controlId', 'value'])
+          const { controlId, value, since } = objectInput(input, ['controlId', 'value', 'since'])
+          if (since !== undefined && (typeof since !== 'string' || !since || since.length > 32)) {
+            throw new Error('since must be a revision from the last game response.')
+          }
           if (typeof controlId !== 'string' || controlId.length === 0 || controlId.length > 64) {
             throw new Error('controlId must be a listed control ID.')
           }
@@ -492,8 +578,27 @@ export function useWebMcp() {
           invalidateControls()
           const target = element.matches('.enemy, .seat, .row__enemies--targetable')
           const state = await waitForInteraction(before, options?.signal, target ? 18 : 7)
-          return state ?? { pending: true }
+          return state ? publishGame(state, since as string | undefined) : { pending: true }
         },
+      },
+      {
+        name: 'get_stats',
+        title: 'Get deck statistics',
+        description: 'Read solo deck outcomes during a run without leaving combat. Filter by hero, Ascension, and card expression; compare candidate card IDs. Set full=true for all rows.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            character: { type: 'string', enum: [...STATS_HEROES], description: 'Hero, or all. Defaults to all.' },
+            ascension: { oneOf: [{ type: 'integer', minimum: 0, maximum: 13 }, { type: 'string', pattern: '^(?:all|(?:[0-9]|10)\\+)$' }], description: 'Exact Ascension, threshold 0+–10+, or all.' },
+            mode: { type: 'string', enum: [...STATS_MODES], description: 'Defaults to standard solo runs.' },
+            query: { type: 'string', maxLength: TEXT_VALUE_LIMIT, description: 'Card expression, e.g. @hermit_snapshot and not @hermit_strike. Use defining deck cards.' },
+            candidates: { type: 'array', maxItems: 24, items: { type: 'string' }, description: 'Show listed comparisons for reward card IDs; missing cards may be outside the archive top 24.' },
+            full: { type: 'boolean', description: 'Include all archetype rows and requested comparisons.' },
+          },
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: true, untrustedContentHint: true },
+        execute: (input, options) => getStats(input, options?.signal),
       },
     ]
     let stopped = false

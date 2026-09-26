@@ -29,6 +29,17 @@ await page.route('**/api/leaderboard', async (route) => {
       '{"ok":true,"added":true,"floorsClearedAccepted":true,"finalDeckAccepted":true,"profileAccepted":true}',
   })
 })
+const statsRequests = []
+await page.route('**/api/stats?*', async (route) => {
+  statsRequests.push(new URL(route.request().url()).searchParams)
+  return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+    runs: 15, averageFloors: 18, averageDamage: 3, averageBlock: 0.7, pending: 2,
+    rows: Array.from({ length: 7 }, (_, index) => ({ deckType: `Hermit ${index}`, character: 'hermit', runs: 2,
+      averageFloors: 18, averageDamage: 3, averageBlock: 0.7 })),
+    nextCards: [{ defId: 'hermit_brawl', runs: 5, averageFloors: 19, averageDamage: 3, averageBlock: 0.7,
+      deltaFloors: 1, deltaDamage: 0, deltaBlock: 0 }],
+  }) })
+})
 const errors = []
 page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
 page.on('pageerror', (error) => errors.push(String(error)))
@@ -56,7 +67,8 @@ await page.addInitScript(() => {
 })
 
 await page.goto(`http://localhost:${address.port}`)
-await page.waitForFunction(async () => (await document.modelContext.getTools()).length === 2)
+await page.waitForFunction(async () => (await document.modelContext.getTools()).length === 3, null, { timeout: 20_000 })
+  .catch((error) => { throw new Error(`${error}; console: ${errors.join('; ')}`) })
 const tools = await page.evaluate(async () => (await document.modelContext.getTools()).map((tool) => ({
   name: tool.name,
   title: tool.title,
@@ -91,6 +103,65 @@ const interact = async (controlId, value) => page.evaluate(async ({ controlId, v
 const initial = await page.evaluate(async () => {
   const inspect = (await document.modelContext.getTools()).find((tool) => tool.name === 'inspect_game')
   return JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 }))
+})
+const statsLookup = await page.evaluate(async () => {
+  const tools = await document.modelContext.getTools()
+  const stats = tools.find((tool) => tool.name === 'get_stats')
+  const inspect = tools.find((tool) => tool.name === 'inspect_game')
+  const before = await inspect.execute({})
+  const summary = await stats.execute({ character: 'hermit', ascension: 1, query: '@hermit_snapshot',
+    candidates: ['hermit_brawl', 'hermit_take_cover'] })
+  const full = await stats.execute({ character: 'hermit', full: true })
+  const after = await inspect.execute({})
+  let unknownCard = ''
+  try { await stats.execute({ query: '@does_not_exist' }) } catch (error) { unknownCard = String(error) }
+  return { summary, full, unchanged: JSON.stringify({ screen: before.screen, controls: before.controls }) ===
+    JSON.stringify({ screen: after.screen, controls: after.controls }), unknownCard }
+})
+const deltaLookup = await page.evaluate(async () => {
+  const tools = await document.modelContext.getTools()
+  const inspect = tools.find((tool) => tool.name === 'inspect_game')
+  const interact = tools.find((tool) => tool.name === 'interact_with_game')
+  const marker = document.createElement('p')
+  marker.textContent = 'Revision marker before'
+  document.getElementById('root').append(marker)
+  const before = await inspect.execute({})
+  const unchanged = await inspect.execute({ since: before.revision })
+  marker.textContent = 'Revision marker after'
+  const delta = await inspect.execute({ since: unchanged.revision })
+  const full = await inspect.execute({})
+  marker.remove()
+  const wrongRevision = await inspect.execute({ since: 'not-a-revision' })
+  const action = document.createElement('button')
+  action.textContent = 'Delta action'
+  action.onclick = () => { action.textContent = 'Delta complete' }
+  document.getElementById('root').append(action)
+  const beforeAction = await inspect.execute({})
+  const controlId = beforeAction.controls.find((control) => control.label === 'Delta action').id
+  let afterAction
+  let actionError = ''
+  try { afterAction = await interact.execute({ controlId, since: beforeAction.revision }) }
+  catch (error) { actionError = String(error) }
+  const afterFailure = actionError ? await inspect.execute({}) : null
+  action.remove()
+  return { before, unchanged, delta, full, wrongRevision, afterAction, actionError,
+    beforeAction: actionError ? beforeAction : null, afterFailure }
+})
+const textPagination = await page.evaluate(async () => {
+  const inspect = (await document.modelContext.getTools()).find((tool) => tool.name === 'inspect_game')
+  const marker = document.createElement('p')
+  marker.textContent = 'x'.repeat(8_100)
+  document.getElementById('root').append(marker)
+  const first = await inspect.execute({})
+  const second = await inspect.execute({ snapshotId: first.snapshotId, textOffset: first.screen.textNextOffset })
+  marker.textContent += ' changed'
+  let stale = ''
+  try { await inspect.execute({ snapshotId: first.snapshotId, textOffset: first.screen.textNextOffset }) }
+  catch (error) { stale = String(error) }
+  marker.remove()
+  return { firstLength: first.screen.text.length, secondLength: second.screen.text.length,
+    firstOffset: first.screen.textNextOffset, secondOffset: second.screen.textOffset,
+    stitched: (first.screen.text + second.screen.text).includes('x'.repeat(8_100)), stale }
 })
 const malformed = await page.evaluate(async () => {
   const tools = await document.modelContext.getTools()
@@ -710,6 +781,16 @@ await interact(roomControl.id)
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')
 await page.waitForFunction(() => window.__STS_DEBUG__.getState()?.phase === 'player')
 const automaticStartInspection = await inspectAll()
+const combatStatsLookup = await page.evaluate(async () => {
+  const tools = await document.modelContext.getTools()
+  const inspect = tools.find((tool) => tool.name === 'inspect_game')
+  const stats = tools.find((tool) => tool.name === 'get_stats')
+  const before = await inspect.execute({})
+  const result = await stats.execute({ character: 'watcher', ascension: 0 })
+  const after = await inspect.execute({})
+  return { result, unchanged: JSON.stringify({ screen: before.screen, controls: before.controls }) ===
+    JSON.stringify({ screen: after.screen, controls: after.controls }) }
+})
 const automaticStartPhase = await page.evaluate(() => window.__STS_DEBUG__.getState()?.phase)
 const automaticStartResolveControls = automaticStartInspection.controls.filter((control) =>
   /^Resolve start/.test(control.label))
@@ -1007,7 +1088,7 @@ await bridge.evaluate(() => {
     },
   })
 })
-await bridge.waitForFunction(() => navigator.modelContext?.listTools().length === 2)
+await bridge.waitForFunction(() => navigator.modelContext?.listTools().length === 3, null, { timeout: 20_000 })
 const bridgeCompatibility = await bridge.evaluate(async () => {
   const before = await navigator.modelContext.callTool('inspect_game', {})
   const singlePlayer = before.controls.find((control) => control.label === 'Single Player')
@@ -1038,21 +1119,56 @@ const payloadChars = {
 
 suite('WebMCP browser contract')
 
-check('registers two low-friction, safely annotated game tools', () => {
-  assertDeepEqual(tools.map((tool) => tool.name), ['inspect_game', 'interact_with_game'])
+check('registers focused, safely annotated game and stats tools', () => {
+  assertDeepEqual(tools.map((tool) => tool.name), ['inspect_game', 'interact_with_game', 'get_stats'])
   assert(tools[0].annotations.readOnlyHint && tools[0].annotations.untrustedContentHint,
     'screen inspection is read-only and marked untrusted')
   assert(tools[1].annotations.untrustedContentHint && !tools[1].annotations.consequentialHint,
     'in-game interactions are marked untrusted but not as real-world consequential actions')
   assert(tools[1].inputSchema.properties.value.oneOf[0].maxLength === 1000, 'free-form tool strings are schema-bounded')
-  assert(tools.every((tool) => /start-turn/.test(tool.description) && /relic/.test(tool.description)),
+  assert(tools[2].annotations.readOnlyHint && tools[2].annotations.untrustedContentHint,
+    'stats lookup is read-only and its archive is untrusted')
+  assert(tools.slice(0, 2).every((tool) => /start-turn/.test(tool.description) && /relic/.test(tool.description)),
     'tool metadata tells agents that start-turn and relic controls are actionable')
   assert(/unavailableControls.*planning-only/.test(tools[0].description),
     'inspection metadata distinguishes invokable controls from planning-only unavailable controls')
   assertDeepEqual(bridgeCompatibility, {
-    tools: ['inspect_game', 'interact_with_game'],
+    tools: ['inspect_game', 'interact_with_game', 'get_stats'],
     reachedModeSelect: true,
   })
+})
+
+check('reads filtered stats without changing game controls or losing full results', () => {
+  assert(statsLookup.unchanged, 'stats lookup changed the current game screen or control IDs')
+  assert(statsLookup.summary.runs === 15 && statsLookup.summary.rows.length === 5 && statsLookup.summary.totalRows === 7,
+    'concise stats retain aggregate metrics and disclose additional rows')
+  assert(statsLookup.full.rows.length === 7, 'full stats omit archetype rows')
+  assertDeepEqual(statsLookup.summary.nextCards.map((card) => card.defId), ['hermit_brawl'])
+  assertDeepEqual(statsLookup.summary.notInTopComparisons, ['hermit_take_cover'])
+  assert(statsLookup.unknownCard.includes('Unknown card'), 'stats lookup accepted an invalid card filter')
+  assert(statsRequests[0].get('character') === 'hermit' && statsRequests[0].get('ascension') === '1' &&
+    statsRequests[0].get('mode') === 'standard' && JSON.parse(statsRequests[0].get('q')).id === 'hermit_snapshot',
+  'stats lookup did not reuse the standard solo card filters')
+  assert(combatStatsLookup.unchanged && combatStatsLookup.result.runs === 15 &&
+    statsRequests.some((params) => params.get('character') === 'watcher' && params.get('ascension') === '0'),
+  'mid-combat stats lookup changed the run or failed to query the archive')
+})
+
+check('offers exact opt-in deltas with a full fallback on unknown revisions', () => {
+  assertDeepEqual(deltaLookup.unchanged.changes, {})
+  assert(deltaLookup.unchanged.baseRevision === deltaLookup.before.revision,
+    'unchanged inspection did not identify its base state')
+  assert(deltaLookup.delta.changes.screen.text === deltaLookup.full.screen.text &&
+    deltaLookup.delta.changes.controls?.length === deltaLookup.full.controls.length,
+  'changed inspection did not preserve the full visible text and actionable controls')
+  assert(deltaLookup.wrongRevision.screen && !deltaLookup.wrongRevision.baseRevision,
+    'unknown base revision did not return a full safe snapshot')
+  assert(deltaLookup.afterAction?.baseRevision && !deltaLookup.afterAction.changes.screen &&
+    deltaLookup.afterAction.changes.controls?.some((control) => control.label === 'Delta complete'),
+  'action delta lost updated invokable controls or repeated unchanged screen text')
+  assert(textPagination.firstLength === 8_000 && textPagination.firstOffset === textPagination.secondOffset &&
+    textPagination.secondLength > 0 && textPagination.stitched && textPagination.stale.includes('Game state changed'),
+  'long visible text could not be reconstructed or stale continuation was accepted')
 })
 
 check('returns visible gameplay context and drives every gameplay control kind', () => {
@@ -1163,7 +1279,7 @@ check('keeps snapshots scoped, stable, opaque, and current', () => {
 })
 
 check('keeps representative WebMCP payloads compact', () => {
-  assert(payloadChars.metadata < 1_250 && payloadChars.start < 1_000 && payloadChars.fixture < 3_600 && payloadChars.lab < 900 &&
+  assert(payloadChars.metadata < 2_750 && payloadChars.start < 1_000 && payloadChars.fixture < 3_600 && payloadChars.lab < 900 &&
     payloadChars.map < 6_700 && payloadChars.combat < 2_500,
     `payload budget exceeded: ${JSON.stringify(payloadChars)}`)
 })
