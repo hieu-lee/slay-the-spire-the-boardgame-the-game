@@ -84,6 +84,7 @@ import {
   cardShivChoiceCount,
   chooseDistilledCard,
   chosenEvokeOrbs,
+  evokePlan,
   chooseEndTurnTarget,
   combatRowLabel,
   defaultStartTurnChoices,
@@ -155,6 +156,7 @@ import type {
   CombatPresentationEvent,
   CombatState,
   DiscardOrders,
+  EndTurnAbility,
   PotionContext,
   PowerContext,
   RelicContext,
@@ -2172,13 +2174,13 @@ function CombatScreenView({
       viewer.hand.some((card) => card.uid === target.uid)) ?? []
     : []
   const endTurnEffectPrompt = endTurnChoiceTargets.length > 0
-    ? `Choose how to resolve ${endTurnEffect?.label}`
+    ? 'Choose one'
     : endTurnEffect?.orbChoice
       ? <>
-          <span className="end-turn-effects__desktop-orb-prompt">Drag a highlighted Orb to {endTurnEffect.label}</span>
-          <span className="end-turn-effects__phone-orb-prompt">Choose an Orb to duplicate with {endTurnEffect.label}</span>
+          <span className="end-turn-effects__desktop-orb-prompt">Drag an Orb onto this card</span>
+          <span className="end-turn-effects__phone-orb-prompt">Choose an Orb</span>
         </>
-      : `Drag ${endTurnEffect?.label} to a highlighted enemy`
+      : 'Drag to an enemy'
   const endTurnEffectVisual = endTurnEffect?.visual
   const endTurnEffectPlayer = endTurnEffect
     ? state.players.find((player) => player.id === endTurnEffect.playerId)
@@ -2293,9 +2295,17 @@ function CombatScreenView({
     : undefined
   const pendingStartEnemy = pendingStartChoice?.kind === 'enemy' ? pendingStartChoice.ability : undefined
   const pendingStartPlayer = pendingStartChoice?.kind === 'player' ? pendingStartChoice.ability : undefined
-  const startTurnEffectVisual = pendingStartPlayer?.visual
+  const pendingStartEvoke = pendingStartChoice?.kind === 'evoke' ? pendingStartChoice.ability : undefined
+  // A targeted start-of-turn relic or Power floats above the board as its own
+  // drag source, so the glowing targets always have a visible cause.
+  const startTurnEffectSource = pendingStartPlayer?.visual ? pendingStartPlayer
+    : pendingStartEnemy?.visual ? pendingStartEnemy
+    : pendingStartEvoke?.visual ? pendingStartEvoke : undefined
+  // An Evoke choice is made on the Orbs themselves; its source is shown only as the cause.
+  const startTurnEffectDraggable = startTurnEffectSource !== undefined && startTurnEffectSource !== pendingStartEvoke
+  const startTurnEffectVisual = startTurnEffectSource?.visual
   const startTurnEffectCard = startTurnEffectVisual?.kind === 'card'
-    ? state.players.find((player) => player.id === pendingStartPlayer?.playerId)
+    ? state.players.find((player) => player.id === startTurnEffectSource?.playerId)
       ?.powers.find((power) => power.uid === startTurnEffectVisual.cardUid)
     : undefined
   const startTurnEffectRelicId = startTurnEffectVisual?.kind === 'relic'
@@ -2306,7 +2316,6 @@ function CombatScreenView({
     ? pendingStartChoice.ability : undefined
   const pendingStartShiv = pendingStartChoice?.kind === 'shiv' ? pendingStartChoice : undefined
   const pendingStartEvokeTarget = pendingStartChoice?.kind === 'evokeTarget' ? pendingStartChoice : undefined
-  const pendingStartEvoke = pendingStartChoice?.kind === 'evoke' ? pendingStartChoice.ability : undefined
   const pendingStartEvokeRows = pendingStartEvokeTarget?.ability.evokeTargets?.flatMap((target) => {
     const row = lightningRowFromTarget(target.uid)
     return row === null ? [] : [{ row, uid: target.uid }]
@@ -3123,6 +3132,37 @@ function CombatScreenView({
     (!pending || pending.playerIds.length >= pending.playerChoices)
   const switchChoiceReady = Boolean(pending?.needsSwitch && !pending.switchChoiceDone &&
     enemyChoicesDone && choiceSatisfied && allyChoiceDone)
+  // A Lightning/Dark Evoke that still needs an enemy floats its Orb like an
+  // end-turn Orb, so the aim can be dragged and the glowing enemies have a cause.
+  const evokeTargetOrb = pendingStartEvokeTarget
+    ? pendingStartEvokeTarget.ability.evokeOrbs?.[pendingStartEvokeTarget.index]
+    : pending && pendingDef && pendingEvokeTarget >= 0 && choiceSatisfied
+      ? chosenEvokeOrbs(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined,
+        pending.effectEnergy ?? 0)[pendingEvokeTarget]
+      : undefined
+  const evokeChoiceOptions = pendingStartEvoke?.evokeChoice?.options ??
+    (pendingEvokeChoice && pendingEvokeTarget < 0 && choiceSatisfied ? pendingEvokeChoice.options : undefined)
+  // Local parties resolve every seat's start-of-turn choices from one screen.
+  const evokeChoicePlayerId = pendingStartEvoke?.playerId ?? pendingStartEvokeTarget?.ability.playerId ?? viewer.id
+  // Earlier Evokes and Channels in the same effect are still only planned; while they
+  // are chosen and aimed, the owner's Orb row shows the slots that plan leaves.
+  const evokePlannedOrbs = pendingStartEvoke?.evokePlanOrbs ?? pendingStartEvokeTarget?.ability.evokePlanOrbs ??
+    (pending && pendingDef && choiceSatisfied && (pendingEvokeChoice || pendingEvokeTarget >= 0)
+      ? evokePlan(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined, pending.effectEnergy ?? 0).orbs
+      : undefined)
+  const evokeTargetSource: EndTurnAbility | undefined = evokeTargetOrb ? {
+    id: 'evoke-target',
+    playerId: pendingStartEvokeTarget?.ability.playerId ?? viewer.id,
+    label: `Evoke ${evokeTargetOrb} Orb`,
+    targets: pendingStartEvokeTarget ? pendingStartEvokeTarget.ability.evokeTargets ?? [] : pendingEvokeTargetOptions,
+  } : undefined
+  const evokeTargetStep = evokeTargetSource
+    ? `${pendingStartEvokeTarget ? `${pendingStartEvokeTarget.ability.id}:${pendingStartEvokeTarget.index}`
+      : `${pending?.card.uid}:${pendingEvokeTarget}`}`
+    : null
+  useEffect(() => {
+    setArmedEndTurnAbilityId((current) => current === 'evoke-target' ? null : current)
+  }, [evokeTargetStep])
 
   function commit(next: Pending, skipOverflow = false) {
     if (cardActionPending.current) return
@@ -3721,6 +3761,10 @@ function CombatScreenView({
 
   function endTurnEffectDragTargetAt(active: EndTurnEffectDrag, x: number, y: number): string | null {
     if (active.sourceTargetUid) return endTurnEffectCardTargetAt(x, y) ? active.sourceTargetUid : null
+    if (active.ability.id === pendingStartEnemy?.id) {
+      const enemyUid = dragTargetAt(x, y, false)
+      return enemyUid && startEnemyChoiceAvailable(enemyUid) ? enemyUid : null
+    }
     if ('players' in active.ability && active.ability.players) {
       const playerId = dragPlayerAt(x, y)
       return active.ability.players.some((player) => player.id === playerId) ? playerId : null
@@ -3760,6 +3804,17 @@ function CombatScreenView({
       setArmedEndTurnAbilityId(null)
       return
     }
+    if (pendingStartEnemy?.id === abilityId) {
+      chooseStartTurnEnemy(targetUid)
+      setArmedEndTurnAbilityId(null)
+      return
+    }
+    if (evokeTargetSource?.id === abilityId) {
+      setArmedEndTurnAbilityId(null)
+      if (pendingStartEvokeTarget) chooseStartTurnEvokeEnemy(targetUid)
+      else chooseCardEvokeTarget(targetUid)
+      return
+    }
     if (!endTurnEffect || !canResolveEndTurn || endTurnEffect.id !== abilityId ||
       !endTurnEffect.targets?.some((target) => target.uid === targetUid)) return
     setArmedEndTurnAbilityId(null)
@@ -3774,7 +3829,8 @@ function CombatScreenView({
   function endTurnEffectCanStartDrag(abilityId: string) {
     return !pendingTrigger && !endTurnEffectDrag && (
       canResolveEndTurn && endTurnEffect?.id === abilityId ||
-      canResolveStartTurn && pendingStartPlayer?.id === abilityId
+      canResolveStartTurn && startTurnEffectDraggable && startTurnEffectSource?.id === abilityId ||
+      evokeTargetSource?.id === abilityId
     )
   }
 
@@ -3783,6 +3839,7 @@ function CombatScreenView({
     event.currentTarget.setPointerCapture(event.pointerId)
     endTurnEffectDragStart.current = {
       ability,
+      ...(ability.id === evokeTargetSource?.id && evokeTargetOrb ? { sourceOrb: evokeTargetOrb } : {}),
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
@@ -4112,6 +4169,7 @@ function CombatScreenView({
     }
     if (pendingStartEnemy) {
       chooseStartTurnEnemy(enemy.uid)
+      setArmedEndTurnAbilityId(null)
       return
     }
     if (pendingStartShiv) {
@@ -4234,16 +4292,7 @@ function CombatScreenView({
       return
     }
     if (pending && pendingEvokeTarget >= 0 && choiceSatisfied) {
-      const targets = [...pending.evokeEnemyUids]
-      if (pendingEvokeUsesRows) {
-        const target = enemy.isBoss ? enemy.uid : lightningRowTarget(enemy.row)
-        if (!pendingEvokeTargetUids.has(target)) return
-        targets[pendingEvokeTarget] = target
-      } else {
-        if (!pendingEvokeTargetUids.has(enemy.uid)) return
-        targets[pendingEvokeTarget] = enemy.uid
-      }
-      stageOrCommit({ ...pending, evokeEnemyUids: targets })
+      chooseCardEvokeTarget(pendingEvokeUsesRows && !enemy.isBoss ? lightningRowTarget(enemy.row) : enemy.uid)
       return
     }
     if (!evokeChoicesDone) return
@@ -4375,6 +4424,13 @@ function CombatScreenView({
       return `Evoke Lightning in ${rowLabel}`
     }
     return `Target ${rowLabel}`
+  }
+
+  function chooseCardEvokeTarget(targetUid: string) {
+    if (!pending || pendingEvokeTarget < 0 || !choiceSatisfied || !pendingEvokeTargetUids.has(targetUid)) return
+    const targets = [...pending.evokeEnemyUids]
+    targets[pendingEvokeTarget] = targetUid
+    stageOrCommit({ ...pending, evokeEnemyUids: targets })
   }
 
   function onEvokeClick(slot: number) {
@@ -4525,7 +4581,7 @@ function CombatScreenView({
   const startTurnPrompt = pendingStartExhaust
     ? `${pendingStartExhaust.label} — choose a card to Exhaust`
     : pendingStartShiv
-      ? `${pendingStartShiv.ability.label} — choose overflow Shiv ${pendingStartShiv.index + 1}/${pendingStartShiv.ability.overflowShivs}, or skip`
+      ? `${pendingStartShiv.ability.label} — throw Shiv ${pendingStartShiv.index + 1}/${pendingStartShiv.ability.overflowShivs}`
       : pendingStartEnemy
       ? `${pendingStartEnemy.label} — choose an enemy`
     : pendingStartPlayer
@@ -4534,7 +4590,7 @@ function CombatScreenView({
       ? `${pendingStartEvokeTarget.ability.label} — choose ${pendingStartEvokeRows.length > 0
         ? `an enemy for the Evoked Orb — its whole row is hit${rowHitSuffix}` : 'a target for the Evoked Orb'}`
     : pendingStartEvoke?.evokeChoice
-      ? `${pendingStartEvoke.label} — choose an Orb to Evoke`
+      ? `${pendingStartEvoke.label} — choose an Orb to Evoke (${pendingStartEvoke.evokeChoice.index + 1})`
     : null
   const forcedSource = forcedCard?.sourceLabel ?? (forcedCard
     ? cardDef(forcedCard.sourceCardId ?? 'mayhem').name
@@ -4681,7 +4737,7 @@ function CombatScreenView({
           ? `Choose an enemy for this evoke — its whole row is hit${rowHitSuffix}`
           : 'Choose an enemy for this evoke'
         : pendingEvokeChoice
-          ? `Choose Orb to evoke ${pendingEvokeChoice.index + 1}`
+          ? `${pendingDef?.name ?? 'Card'} — choose an Orb to Evoke (${pendingEvokeChoice.index + 1})`
         : pending?.needsEnemy && !enemyChoicesDone
         ? enemyPrompt
         : independentPlayerPending
@@ -5122,19 +5178,11 @@ function CombatScreenView({
             </>
           ) : null}
           {pendingStartShiv && canResolveStartTurn ? (
-            <button type="button" className="prompt__cancel" onClick={() => chooseStartTurnShiv(null)}>
-              Skip this Shiv
+            <button type="button" className="prompt__cancel" aria-label="Skip this Shiv"
+              onClick={() => chooseStartTurnShiv(null)}>
+              Skip
             </button>
           ) : null}
-          {pendingStartEvoke?.evokeChoice && !pendingStartEvokeTarget
-            ? pendingStartEvoke.evokeChoice.options.map((option) => (
-              <button type="button" className="prompt__orb" key={option.slot}
-                onClick={() => chooseStartTurnEvoke(option.slot)}>
-                <span className={`token token--orb token--orb-${option.orb}`} />
-                {option.orb} slot {option.slot + 1}
-              </button>
-            ))
-            : null}
           {pendingTrigger?.playerId === viewerId && triggerHermitChoicesReady ? pendingTrigger.players?.map((player) => (
             <button type="button" className="prompt__mode" key={player.id}
               onClick={() => resolveTrigger(undefined, undefined, player.id)}>{player.label}</button>
@@ -5431,13 +5479,6 @@ function CombatScreenView({
                 : `${pending.choice.kind === 'discardAny' ? 'Discard' : pending.choice.kind === 'loadAny' ? 'Load' : 'Exhaust'} ${pending.picked.length}`}
             </button>
           ) : null}
-          {pendingEvokeChoice && pendingEvokeTarget < 0 ? pendingEvokeChoice.options.map((option) => (
-            <button type="button" className="prompt__orb" key={option.slot}
-              onClick={() => onEvokeClick(option.slot)}>
-              <span className={`token token--orb token--orb-${option.orb}`} />
-              {option.orb} slot {option.slot + 1}
-            </button>
-          )) : null}
           {pendingDef?.modes && !modeSatisfied ? pendingDef.modes.map((mode, index) => (
             <button type="button" className="prompt__mode" key={mode.label}
               disabled={!cardModeIsAvailable(pendingDef, state, viewer!, index, drawCount,
@@ -5925,19 +5966,23 @@ function CombatScreenView({
         </dialog>
       ) : null}
 
-      {pendingStartPlayer?.visual ? (
-        <section className="end-turn-effects start-turn-effects" aria-live="polite" aria-label="Start-turn effect">
+      {startTurnEffectSource ? (
+        <section className="end-turn-effects start-turn-effects" aria-live="polite"
+          aria-label={`Start-turn effect: ${startTurnEffectSource.label}`}>
           <p className="end-turn-effects__prompt">
-            Drag {pendingStartPlayer.label} to a highlighted player
+            <span className="visually-hidden">{startTurnEffectSource.label}: </span>
+            {startTurnEffectSource === pendingStartPlayer ? 'Drag to a player'
+              : startTurnEffectDraggable ? 'Drag to an enemy' : 'Choose an Orb'}
           </p>
+          <div className="start-turn-effects__source" inert={!startTurnEffectDraggable}>
           {startTurnEffectCard ? (
             <Card
               className="end-turn-effect end-turn-effect--card"
               card={startTurnEffectCard}
               playable={canResolveStartTurn}
-              selected={armedEndTurnAbilityId === pendingStartPlayer.id}
-              onClick={() => activateEndTurnEffect(pendingStartPlayer)}
-              onPointerDown={(event) => onEndTurnEffectPointerDown(pendingStartPlayer, event)}
+              selected={armedEndTurnAbilityId === startTurnEffectSource.id}
+              onClick={() => activateEndTurnEffect(startTurnEffectSource)}
+              onPointerDown={(event) => onEndTurnEffectPointerDown(startTurnEffectSource, event)}
               onPointerMove={onEndTurnEffectPointerMove}
               onPointerUp={finishEndTurnEffectDrag}
               onPointerCancel={cancelEndTurnEffectDrag}
@@ -5948,10 +5993,10 @@ function CombatScreenView({
               type="button"
               className="end-turn-effect end-turn-effect--relic"
               disabled={!canResolveStartTurn}
-              aria-label={`Resolve ${pendingStartPlayer.label}`}
-              aria-pressed={armedEndTurnAbilityId === pendingStartPlayer.id}
-              onClick={() => activateEndTurnEffect(pendingStartPlayer)}
-              onPointerDown={(event) => onEndTurnEffectPointerDown(pendingStartPlayer, event)}
+              aria-label={`Resolve ${startTurnEffectSource.label}`}
+              aria-pressed={armedEndTurnAbilityId === startTurnEffectSource.id}
+              onClick={() => activateEndTurnEffect(startTurnEffectSource)}
+              onPointerDown={(event) => onEndTurnEffectPointerDown(startTurnEffectSource, event)}
               onPointerMove={onEndTurnEffectPointerMove}
               onPointerUp={finishEndTurnEffectDrag}
               onPointerCancel={cancelEndTurnEffectDrag}
@@ -5960,6 +6005,32 @@ function CombatScreenView({
               <img className="item-icon-image" src={relicIconPath(startTurnEffectRelicId)} alt="" />
             </button>
           ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {evokeTargetSource && evokeTargetOrb ? (
+        <section className="end-turn-effects evoke-target-effect" aria-live="polite" aria-label={evokeTargetSource.label}>
+          <p className="end-turn-effects__prompt">
+            <span className="visually-hidden">
+              {evokeTargetSource.label} {(pendingStartEvokeTarget?.index ?? pendingEvokeTarget) + 1}:{' '}
+            </span>
+            Drag to an enemy
+          </p>
+          <button
+            type="button"
+            className="end-turn-effect end-turn-effect--orb"
+            aria-label={`Aim ${evokeTargetSource.label}`}
+            aria-pressed={armedEndTurnAbilityId === evokeTargetSource.id}
+            onClick={() => activateEndTurnEffect(evokeTargetSource)}
+            onPointerDown={(event) => onEndTurnEffectPointerDown(evokeTargetSource, event)}
+            onPointerMove={onEndTurnEffectPointerMove}
+            onPointerUp={finishEndTurnEffectDrag}
+            onPointerCancel={cancelEndTurnEffectDrag}
+            onLostPointerCapture={cancelEndTurnEffectDrag}
+          >
+            <span className={`token--orb token--orb-${evokeTargetOrb}`} aria-hidden="true" />
+          </button>
         </section>
       ) : null}
 
@@ -5977,11 +6048,13 @@ function CombatScreenView({
       ) : null}
 
       {endTurnEffect ? (
-        <section className="end-turn-effects" aria-live="polite" aria-label="End-turn effect">
+        <section className="end-turn-effects" aria-live="polite" aria-label={`End-turn effect: ${endTurnEffect.label}`}>
           <p className="end-turn-effects__prompt">
+            {/* The live text must change per effect, or consecutive effects are never announced. */}
+            <span className="visually-hidden">{endTurnEffect.label}: </span>
             {canResolveEndTurn
               ? endTurnEffectPrompt
-              : `Waiting for ${state.players.find((player) => player.id === endTurnEffect.playerId)?.name ?? 'its owner'} to target ${endTurnEffect.label}`}
+              : `Waiting for ${state.players.find((player) => player.id === endTurnEffect.playerId)?.name ?? 'its owner'}`}
           </p>
           {endTurnEffectCard ? (
             <Card
@@ -6528,14 +6601,24 @@ function CombatScreenView({
                       </span>
                     ) : null}
                     <OrbRow
-                      player={occupant}
-                      targetableSlots={endTurnEffect?.orbChoice && canResolveEndTurn && occupant.id === endTurnEffect.playerId
+                      player={evokePlannedOrbs && occupant.id === evokeChoicePlayerId
+                        ? { ...occupant, orbs: evokePlannedOrbs }
+                        : occupant}
+                      targetVerb={evokeChoiceOptions && occupant.id === evokeChoicePlayerId ? 'Evoke' : undefined}
+                      targetableSlots={evokeChoiceOptions && occupant.id === evokeChoicePlayerId
+                        ? evokeChoiceOptions.map((option) => option.slot)
+                        : endTurnEffect?.orbChoice && canResolveEndTurn && occupant.id === endTurnEffect.playerId
                         ? endTurnEffect.targets?.flatMap((target) => {
                           const slot = Number(target.uid.slice(4))
                           return target.uid.startsWith('orb:') && Number.isInteger(slot) ? [slot] : []
                         })
                         : []}
                       onTarget={(slot) => {
+                        if (evokeChoiceOptions && occupant.id === evokeChoicePlayerId) {
+                          if (pendingStartEvoke) chooseStartTurnEvoke(slot)
+                          else onEvokeClick(slot)
+                          return
+                        }
                         const targetUid = endTurnTargetForOrb(occupant.id, slot)
                         if (targetUid && suppressEndTurnOrbClick.current === targetUid) {
                           suppressEndTurnOrbClick.current = null

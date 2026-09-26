@@ -68,10 +68,12 @@ export function orbDisplayText(player: Player, orb: OrbType): string {
 export function OrbRow({
   player,
   targetableSlots = [],
+  targetVerb = 'Choose',
   onTarget,
 }: {
   player: Player
   targetableSlots?: readonly number[]
+  targetVerb?: string
   onTarget?: (slot: number) => void
 }) {
   const orbs = player.character === 'defect'
@@ -94,7 +96,10 @@ export function OrbRow({
           </span>
         )
         return targetable.has(slot) ? (
+          // The glow filter isolates each Orb, so stack left over right to keep every
+          // bottom-right value clear of its neighbour's sprite.
           <span role="button" tabIndex={0} className="orbs__target" data-orb-slot={slot} key={slot}
+            style={{ '--orb-stack': orbs.length - index } as CSSProperties}
             onClick={(event) => {
               event.stopPropagation()
               onTarget?.(slot)
@@ -106,7 +111,7 @@ export function OrbRow({
                 event.currentTarget.click()
               }
             }}
-            aria-label={`Choose ${orb} Orb ${slot + 1}`}>
+            aria-label={`${targetVerb} ${orb} Orb ${slot + 1}`}>
             {token}
           </span>
         ) : <span key={slot}>{token}</span>

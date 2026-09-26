@@ -60,11 +60,6 @@
   box-sizing: border-box;
 }
 
-.combat:has(.start-turn-order) > .prompt:has(.prompt__orb) > .prompt__text {
-  flex-basis: 100%;
-  text-align: center;
-}
-
 .start-turn-order[open] > ol {
   position: absolute;
   z-index: 20;

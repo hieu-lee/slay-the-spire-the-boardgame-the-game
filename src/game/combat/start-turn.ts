@@ -822,9 +822,11 @@ function startTurnAbilitiesFor(
     let evokeTargetIndex: number | undefined
     let evokePlanComplete = false
     let evokeEndedCombat = false
+    let evokePlanOrbs: (OrbType | null)[] | undefined
     if (!planningBlocked) {
       const plan = effectEvokePlan(entry.source.effects, planningPlayer, choice?.evokeSlots ?? [])
       evokeOrbs = plan.chosen
+      if (plan.chosen.length > 0 || plan.next) evokePlanOrbs = plan.orbs
       for (let index = 0; index < plan.chosen.length; index++) {
         const orb = plan.chosen[index]
         if (orb === 'frost') continue
@@ -891,7 +893,7 @@ function startTurnAbilitiesFor(
         : undefined,
       overflowShivs: shivEndedCombat ? choice?.shivEnemyUids.length ?? 0 : overflowShivs,
       staleShivIndex, shivTargets,
-      evokeChoice, evokeTargets, evokeOrbs, evokeTargetIndex,
+      evokeChoice, evokeTargets, evokeOrbs, evokeTargetIndex, evokePlanOrbs,
     }
   })
 }

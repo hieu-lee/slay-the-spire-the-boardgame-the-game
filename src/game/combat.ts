@@ -55,6 +55,7 @@ export {
   chosenEvokeOrbs,
   effectIsActive,
   effectiveCombatCardDef,
+  evokePlan,
   guardianPowerBeamCards,
   guardianGemForCard,
   guardianCardNeedsAlly,

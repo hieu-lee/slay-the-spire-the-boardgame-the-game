@@ -489,13 +489,6 @@
   .combat__end-turn { top: 3.8rem; right: 1rem; bottom: auto; }
   /* Summoned parties raise their owner, so use the reserved bottom HUD lane. */
   .combat:has(.slime-party) .combat__end-turn { top: auto; right: 10rem; bottom: 1rem; }
-  /* The open start-turn tray and its Resolve button own the right HUD lane.
-     Keep multi-button Orb prompts in the remaining left lane instead of letting
-     their max-content width cover the ordering controls. */
-  .combat:has(.start-turn-order) > .prompt:has(.prompt__orb) {
-    left: max(6.5rem, calc((100% - 26rem) / 2));
-    max-width: max(12rem, calc(100% - 27rem));
-  }
   .start-turn-order[open] > ol {
     max-height: calc(100dvh - 10rem);
   }

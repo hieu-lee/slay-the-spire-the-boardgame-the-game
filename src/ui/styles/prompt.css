@@ -44,7 +44,6 @@
   white-space: nowrap;
 }
 
-.prompt__orb,
 .prompt__mode {
   display: inline-flex;
   align-items: center;

@@ -282,6 +282,8 @@ export type StartTurnAbility = {
   evokeOrbs?: OrbType[]
   /** Repeated Evokes remove one Orb but collect one target per application. */
   evokeTargetIndex?: number
+  /** Orb slots once the staged Evokes and Channels apply, shown while they are still being chosen. */
+  evokePlanOrbs?: (OrbType | null)[]
 }
 
 export type StartTurnChoice = {

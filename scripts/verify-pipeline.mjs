@@ -47,9 +47,11 @@ check('frontend surfaces select their cores and named focused browser checks', (
     'verify-safari-combat-animation-browser.mjs', 'verify-courier-browser.mjs',
     'verify-hermit-combo-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
     'verify-hermit-online-staged-trigger-browser.mjs', 'verify-combat-layout-reload-browser.mjs',
-    'verify-enemy-attack-once-browser.mjs', 'verify-row-target-browser.mjs'], 'combat screen')
+    'verify-enemy-attack-once-browser.mjs', 'verify-row-target-browser.mjs',
+    'verify-turn-targets-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 17, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 18, 'combat screen selected an unrelated browser suite')
+  includesEvery(affectedBrowser('src/ui/TokenRow.tsx'), ['verify-turn-targets-browser.mjs'], 'Orb row')
   assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))
   includesEvery(affectedBrowser('src/ui/combat-screen/HermitTriggerChoice.tsx'), [
     'verify-hermit-combo-browser.mjs', 'verify-hermit-online-staged-trigger-browser.mjs', 'verify-online-browser.mjs',

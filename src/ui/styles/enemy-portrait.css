@@ -122,7 +122,24 @@
   width: 100%;
   height: 100%;
   margin: 0;
+  border-radius: 50%;
+  /* A ring reads as "pick me" even with the pulse disabled by reduced motion. */
+  box-shadow: 0 0 0 2px rgb(255 236 150 / 0.9), 0 0 0.8rem 0.15rem rgb(255 222 110 / 0.55);
   filter: brightness(1.24) drop-shadow(0 0 0.35rem #f7eb5c);
+  animation: orb-target-pulse 1.1s ease-in-out infinite alternate;
+  transition: scale var(--motion-fast, 120ms) var(--ease, ease);
+}
+
+.orbs__target { position: relative; z-index: var(--orb-stack, 0); }
+.orbs__target:is(:hover, :focus-visible) { z-index: 10; }
+.orbs__target:is(:hover, :focus-visible) .token--orb { scale: 1.18; }
+
+@keyframes orb-target-pulse {
+  to { filter: brightness(1.4) drop-shadow(0 0 0.7rem #fff38a); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-mobile-performance='true']) .orbs__target .token--orb { animation: none; }
 }
 
 .orbs__target:focus-visible .token--orb {
@@ -339,6 +356,8 @@ button.pile:hover { filter: brightness(1.15); }
   font-size: 0.8rem;
   text-align: center;
 }
+
+.start-turn-effects__source { display: contents; }
 
 .end-turn-effects__choices {
   display: flex;

@@ -38,6 +38,8 @@ html[data-mobile-performance='true'] .enemy--targeted .enemy__portrait {
   filter: drop-shadow(0 0 0.35rem #65e8ff) drop-shadow(0 0 0.8rem rgb(55 203 234 / 0.7));
 }
 
+html[data-mobile-performance='true'] .orbs__target .token--orb { animation: none; }
+
 /* The in-game Reduce motion toggle is authoritative on phones. iOS's hidden
    OS preference must not silently delete combat; desktop still honours it. */
 @media (prefers-reduced-motion: reduce) {

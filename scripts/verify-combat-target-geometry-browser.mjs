@@ -147,16 +147,18 @@ try {
           }
           await page.locator('.board').screenshot({ path: resolve(output, `${engineName}-${screen}-${defs.join('-')}.png`) })
         }
-        // Tall boss hit areas must stay behind the shared Orb choice prompt.
+        // Evoke choices are made on the hero's own Orbs; tall boss hit areas
+        // must never intercept them.
+        const orbsReachable = () => page.locator('.orbs__target').evaluateAll(orbs => orbs.length > 0 && orbs.every(orb => {
+          const r = orb.getBoundingClientRect()
+          return orb.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+        }))
         if (!smallPhone) for (const boss of ['bronze_automaton', 'the_champ']) {
           await page.evaluate(boss => window.fixture.install([boss], 'dark'), boss)
           await ready()
-          const choice = page.getByRole('button', { name: 'frost slot 3', exact: true })
+          const choice = page.getByRole('button', { name: 'Evoke frost Orb 3', exact: true })
           await choice.waitFor()
-          assert(await page.locator('.prompt__orb').evaluateAll(buttons => buttons.every(button => {
-            const r = button.getBoundingClientRect()
-            return button.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
-          })), `${engineName}/${screen}/${boss}: boss intercepts Orb choice`)
+          assert(await orbsReachable(), `${engineName}/${screen}/${boss}: boss intercepts Orb choice`)
           await page.screenshot({ path: resolve(output, `${engineName}-${screen}-${boss}-orb-choice.png`) })
           if (phone) await tap(choice); else await choice.click()
           await choice.waitFor({ state: 'detached' })
@@ -223,28 +225,22 @@ try {
         await ready()
         const dual = page.locator('.hand .card').first()
         if (phone) { await tap(dual); await tap(dual) } else await dual.click()
-        await page.locator('.prompt__orb').first().waitFor()
-        assert(await page.locator('.prompt__orb').evaluateAll(buttons => buttons.every(button => {
-          const r = button.getBoundingClientRect()
-          return button.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
-        })), `${engineName}/${screen}: boss intercepts Dual Cast Orb choice`)
+        await page.locator('.orbs__target').first().waitFor()
+        assert(await orbsReachable(), `${engineName}/${screen}: boss intercepts Dual Cast Orb choice`)
         await page.screenshot({ path: resolve(output, `${engineName}-${screen}-dual-cast-orb-choice.png`) })
-        // Stress the same stacking boundary when a tall boss's transparent
-        // hit region overhangs the choice panel, independent of asset poses.
-        await page.locator('.prompt').evaluate(prompt => {
-          const hit = document.querySelector('.enemy__hit-area').getBoundingClientRect()
-          const combat = document.querySelector('.combat').getBoundingClientRect()
-          const button = prompt.querySelectorAll('.prompt__orb')[1].getBoundingClientRect()
-          const panel = prompt.getBoundingClientRect()
-          prompt.style.left = `${hit.x + hit.width / 2 - combat.x - (button.x + button.width / 2 - panel.x)}px`
-          prompt.style.top = `${hit.y + hit.height / 2 - combat.y - (button.y + button.height / 2 - panel.y)}px`
-          prompt.style.transform = 'none'
-        })
-        assert(await page.locator('.prompt__orb').evaluateAll(buttons => buttons.every(button => {
-          const r = button.getBoundingClientRect()
-          return button.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
-        })), `${engineName}/${screen}: boss overhang intercepts the shared prompt`)
-        const frost = page.getByRole('button', { name: 'frost slot 2', exact: true })
+        // Stress the same stacking boundary when a tall boss's transparent hit
+        // region overhangs the Orbs, independent of asset poses.
+        assert(await page.locator('.orbs__target').nth(1).evaluate(orb => {
+          const hit = document.querySelector('.enemy__hit-area')
+          const o = orb.getBoundingClientRect(), h = hit.getBoundingClientRect()
+          hit.style.translate = `${o.x + o.width / 2 - (h.x + h.width / 2)}px ${o.y + o.height / 2 - (h.y + h.height / 2)}px`
+          const moved = hit.getBoundingClientRect()
+          return moved.left < o.x + o.width / 2 && moved.right > o.x + o.width / 2 &&
+            moved.top < o.y + o.height / 2 && moved.bottom > o.y + o.height / 2
+        }), `${engineName}/${screen}: the boss hit area was not moved over the Orbs`)
+        assert(await orbsReachable(), `${engineName}/${screen}: boss overhang intercepts the Orb choice`)
+        await page.evaluate(() => { document.querySelector('.enemy__hit-area').style.translate = '' })
+        const frost = page.getByRole('button', { name: 'Evoke frost Orb 2', exact: true })
         if (phone) await tap(frost); else await frost.click()
         await page.waitForFunction(() => window.fixture.state.players[0].block > 0)
         // Boss size remains visibly larger than the hero, with hit areas following
@@ -272,6 +268,8 @@ try {
           await page.evaluate(() => window.fixture.install(['deca', 'donu']))
           await ready()
           const p = await bodyPoint(target), card = page.locator('.hand .card').first()
+          // A freshly dealt card ignores the pointer until its draw animation ends.
+          await page.waitForFunction(() => !document.querySelector('.hand .card--drawn'))
           if (drag) {
             const r = await card.boundingBox()
             await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2)
@@ -338,7 +336,7 @@ try {
           assert(orbGap >= 0 && orbGap < 4, `${engineName}/${screen}/party${partySize}: Orbs too far from Defect: ${orbGap}rem`)
           await page.screenshot({ path: resolve(output, `${engineName}-${screen}-orbs-${partySize}.png`) })
           for (let i = 0; i < 2; i++) {
-            await page.getByRole('button', { name: `${orb} slot ${orb === 'dark' ? i + 1 : 1}`, exact: true }).click()
+            await page.getByRole('button', { name: `Evoke ${orb} Orb ${orb === 'dark' ? i + 1 : 1}`, exact: true }).click()
             await page.locator('.enemy__head').click()
           }
           // Commit the last local target choice before injecting another render.

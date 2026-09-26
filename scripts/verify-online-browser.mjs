@@ -2238,8 +2238,9 @@ try {
   await a.getByRole('button', { name: /^Multi-Cast, cost X,/ }).click()
   await a.getByText('Choose Energy for Multi-Cast').waitFor()
   await a.getByRole('button', { name: 'Spend 2' }).click()
-  await a.getByRole('button', { name: /frost slot 1/i }).click()
-  await a.getByText('Choose Orb to evoke 1').waitFor()
+  await a.getByRole('button', { name: 'Evoke frost Orb 1', exact: true }).click()
+  await a.getByRole('button', { name: 'Evoke frost Orb 1', exact: true }).waitFor({ state: 'detached' })
+  await a.getByRole('button', { name: 'Evoke frost Orb 2', exact: true }).waitFor()
   await a.locator('.combat[data-phase="copy"]').waitFor()
   const multiCastCopyId = liveRoom.run.combat.pendingCardCopy?.id
   assertEqual(liveRoom.run.combat.pendingCardCopy?.card.uid, 'online-copy-multi-cast')
@@ -2263,7 +2264,7 @@ try {
     return multiCastCopyRefusalDelivered && response.url().endsWith(`/api/rooms/${code}`) &&
       response.request().method() === 'GET' && response.ok()
   })
-  await a.getByRole('button', { name: /frost slot 2/i }).click()
+  await a.getByRole('button', { name: 'Evoke frost Orb 2', exact: true }).click()
   const multiCastCopyRefreshResponse = await multiCastCopyRefresh
   await multiCastCopyRefreshResponse.finished()
   assertEqual(submittedMultiCastCopy?.kind, 'playCardCopy', 'the forged action was not a Multi-Cast copy')
@@ -2274,7 +2275,9 @@ try {
   assertEqual(refreshedMultiCastCopy.run.combat.pendingCardCopy?.id, multiCastCopyId,
     'the authoritative refresh lost the refused copy')
   try {
-    await a.getByText('Choose Orb to evoke 1').waitFor({ timeout: 10_000 })
+    await a.getByRole('button', { name: 'Evoke frost Orb 2', exact: true }).waitFor({ timeout: 10_000 })
+    assertEqual(await a.getByRole('button', { name: 'Evoke frost Orb 1', exact: true }).count(), 0,
+      'the refresh reopened the already-resolved first Evoke choice')
   } catch (error) {
     const ui = await a.locator('.combat').evaluate((combat) => ({
       phase: combat.dataset.phase,
@@ -2290,7 +2293,7 @@ try {
   const multiCastCopyConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
   assert(multiCastCopyConflict >= 0, 'the refused Multi-Cast copy did not surface as an HTTP conflict')
   failures.splice(multiCastCopyConflict, 1)
-  await a.getByRole('button', { name: /frost slot 2/i }).click()
+  await a.getByRole('button', { name: 'Evoke frost Orb 2', exact: true }).click()
   for (let attempt = 0; attempt < 50 && liveRoom.run.combat.phase !== 'player'; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -4230,10 +4233,10 @@ try {
   const [annMixedButton, boMixedButton] = [a, b].map((page) =>
     page.getByRole('button', { name: 'Resolve start turn 0/1' }))
   await Promise.all([annMixedButton.waitFor(), boMixedButton.waitFor()])
-  const boFrostChoice = b.getByRole('button', { name: 'Frost Slot 1' })
+  const boFrostChoice = b.getByRole('button', { name: 'Evoke frost Orb 1', exact: true })
   await boFrostChoice.waitFor()
   const [annMixedDisabled, annFrostChoices, boFrostEnabled, mixedSnapshot] = await Promise.all([
-    annMixedButton.isDisabled(), a.getByRole('button', { name: 'Frost Slot 1' }).count(),
+    annMixedButton.isDisabled(), a.getByRole('button', { name: 'Evoke frost Orb 1', exact: true }).count(),
     boFrostChoice.isEnabled(), snapshot(a),
   ])
   for (const [screen, width, height] of [['desktop', 1280, 800], ['phone', 844, 390]]) {
@@ -4241,16 +4244,16 @@ try {
     await b.locator('.start-turn-order > summary').click()
     const chooserLayout = await b.evaluate(() => {
       const rect = (selector) => document.querySelector(selector)?.getBoundingClientRect()
-      const prompt = rect('.prompt:has(.prompt__orb)')
+      const chooser = rect('.orbs--targetable')
       const summary = rect('.start-turn-order > summary')
       const tray = rect('.start-turn-order[open] > ol')
       const trayElement = document.querySelector('.start-turn-order[open] > ol')
       const resolve = rect('.combat__end-turn')
       const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
-      return Boolean(prompt && summary && tray && resolve && tray.width > 0 && tray.height > 0 &&
+      return Boolean(chooser && summary && tray && resolve && tray.width > 0 && tray.height > 0 &&
         tray.left >= 0 && tray.right <= innerWidth && tray.top >= 0 && tray.bottom <= innerHeight &&
         trayElement.contains(document.elementFromPoint(tray.left + tray.width / 2, tray.top + tray.height / 2)) &&
-        ![summary, tray, resolve].some((control) => overlaps(prompt, control)))
+        ![summary, tray, resolve].some((control) => overlaps(chooser, control)))
     })
     check(`${screen} Storm chooser leaves the order disclosure visible and usable`, () => {
       assert(chooserLayout, 'the Storm chooser overlaps a control or the open order tray leaves the viewport')
@@ -4599,20 +4602,22 @@ try {
     a.locator('.combat[data-phase="start"]').waitFor(),
     b.locator('.combat[data-phase="start"]').waitFor(),
   ])
-  await a.getByRole('button', { name: 'dark slot 3' }).waitFor()
+  await a.getByRole('button', { name: 'Evoke dark Orb 3', exact: true }).waitFor()
   const teammateStormPrompts = await b.locator('.prompt').count()
   const teammateStormTargets = await b.locator('.enemy--targeted').count()
+  const teammateStormOrbs = await b.locator('.orbs__target').count()
   check('waiting teammates cannot choose Storm Orbs or targets', () => {
     assertEqual(teammateStormPrompts, 0)
+    assertEqual(teammateStormOrbs, 0)
     assertEqual(teammateStormTargets, 0)
   })
   const pendingStormRestore = structuredClone(liveRoom.run.combat)
-  await a.getByRole('button', { name: 'dark slot 3' }).click()
+  await a.getByRole('button', { name: 'Evoke dark Orb 3', exact: true }).click()
   await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('target for the Evoked Orb'))
   const orbStormTarget = liveRoom.run.combat.enemies.find((enemy) => enemy.defId === 'cultist')
   assert(orbStormTarget, 'online Storm fixture needs its Cultist target')
   await a.getByRole('button', { name: /Cultist/ }).dispatchEvent('click')
-  await a.getByRole('button', { name: 'frost slot 1' }).click()
+  await a.getByRole('button', { name: 'Evoke frost Orb 1', exact: true }).click()
   let submittedOrbStormChoice
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
     submittedOrbStormChoice = route.request().postDataJSON()?.action?.choices
@@ -5055,7 +5060,7 @@ try {
     await page.mouse.up()
   }
   await dragEffect(a, firstOrb, a.locator(`[data-enemy-id="${firstTarget}"]`))
-  await a.waitForFunction(() => document.querySelector('.end-turn-effects__prompt')?.textContent?.includes('Lightning Orb 2'))
+  await a.waitForFunction(() => document.querySelector('.end-turn-effects')?.getAttribute('aria-label')?.includes('Lightning Orb 2'))
   const secondStage = await snapshot(a)
   const secondTarget = secondStage.endTurnAbilities[0].targets.find((target) => target.uid !== 'online-row-boss').uid
   await dragEffect(a, a.locator('button.end-turn-effect--orb'), a.locator(`[data-enemy-id="${secondTarget}"]`))
@@ -6061,7 +6066,7 @@ try {
   await reconnectRoomSocket(fourPages[2], 'Facing damage reconnect test')
   await fourPages[2].getByRole('button', { name: /^Multi-Cast, cost X,/ }).click()
   await fourPages[2].getByRole('button', { name: 'Spend 2' }).click()
-  await fourPages[2].getByRole('button', { name: /lightning slot 1/i }).click()
+  await fourPages[2].getByRole('button', { name: 'Evoke lightning Orb 1', exact: true }).click()
   const zeroDamageTarget = fourPages[2].getByRole('button', { name: /^Spire Shield,/ })
   await zeroDamageTarget.dispatchEvent('click')
   await zeroDamageTarget.waitFor()
