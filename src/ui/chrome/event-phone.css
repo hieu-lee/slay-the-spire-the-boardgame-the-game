@@ -1,0 +1,41 @@
+/* Events in a short landscape window. The short-window cap in
+   merchant-arrival.css (100vh − 12rem) is far too tight at this height, so the
+   panel takes the whole band under the header, the chrome tightens so most
+   events fit outright, and the rare long one scrolls inside its own frame. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .sts-scope .event-panel:not(.event-panel--resolver) {
+    max-height: calc(var(--visible-viewport-height, 100dvh) - 4.6rem);
+    padding: 0.5rem 0.75rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+
+  .sts-scope .event-panel .room-banner { margin-bottom: 0.4rem; }
+  .sts-scope .event-panel .room-banner > span { font-size: 0.62rem; }
+  .sts-scope .event-panel .room-banner h2 { font-size: 1.3rem; line-height: 1.15; }
+  .sts-scope .event-panel .room-banner p { margin-block: 0.15rem 0; font-size: 0.78rem; line-height: 1.3; }
+
+  .sts-scope .event-stage:has(.event-panel--resolver) { padding-block: 0.4rem; }
+  .sts-scope .event-panel--resolver { padding-block: 0.4rem; }
+  .sts-scope .event-panel:has(.event-options) .event-choice-summary { display: none; }
+
+  .sts-scope .event-options { gap: 0.3rem; }
+  .sts-scope .event-stage .event-panel .event-options:not(.event-options--retry) > button:not(.ribbon-back) {
+    min-height: 2.4rem;
+    padding: 0.25rem 1rem 0.25rem 1.2rem;
+  }
+  /* Name and rules side by side: the window is wide, not tall. The list owns
+     the columns so every rules line starts at the same x. */
+  .sts-scope .event-options:has(> button > strong + span) { grid-template-columns: max-content 1fr; }
+  .sts-scope .event-stage .event-panel .event-options > button:not(.ribbon-back):has(> strong + span) {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+    column-gap: 0.7rem;
+    text-align: left;
+  }
+  .sts-scope .event-options button strong { font-size: 0.95rem; }
+  .sts-scope .event-options button span { font-size: 0.74rem; line-height: 1.25; }
+}

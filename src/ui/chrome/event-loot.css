@@ -287,5 +287,6 @@ html[data-reduced-motion='true'] .sts-scope .event-die .event-die__cube { animat
 
 .sts-scope .event-stage .event-options--retry button strong { font-size: 1.15rem; }
 
-/* The short-window panel cap would let the two keys hang past the border. */
+/* The 820px-window panel cap would let the two keys hang past the border.
+   Below 500px event-phone.css caps the panel again but lets it scroll. */
 .sts-scope .event-panel:has(> .event-options--retry) { max-height: none; }
