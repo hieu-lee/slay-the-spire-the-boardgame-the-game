@@ -1229,10 +1229,9 @@ try {
 // interaction still open mounted both screens, stacked. Reviewers disagreed on
 // which flows can still reach that state, so this is written as the invariant it
 // is: whatever the route in, only one room screen may ever be mounted.
-// The Wing Boots prompt is one of the three surfaces this work re-cut and had no
-// check at all: dropping its class entirely changed nothing. It is a STRIP — one
-// full-width button per destination read as a dialog and cost the map a third of
-// its band, pushing the bottom rows of nodes below the fold.
+// Wing Boots has no prompt of its own: every next-floor room its paths do not
+// reach is simply another reachable node, flagged with the boots' wing and a
+// dashed flight line from the party's room.
 const wingPrompt = await page.evaluate(async () => {
   const debug = window.__STS_DEBUG__
   const before = structuredClone(debug.getRun())
@@ -1264,28 +1263,29 @@ const wingPrompt = await page.evaluate(async () => {
     relics: [...player.relics, { defId: 'wing_boots', spent: false, uses: 3 }] }))
   debug.setRun(run)
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  const prompt = document.querySelector('.map-prompt')
+  const wings = [...document.querySelectorAll('.room--wing')]
   const map = document.querySelector('.map')
-  const options = [...(prompt?.querySelectorAll('button') ?? [])]
   const measured = {
     reachable: true,
-    rendered: Boolean(prompt),
-    height: prompt ? Math.round(prompt.getBoundingClientRect().height) : 0,
-    options: options.length,
-    // Every destination must be clickable at its own centre, and the buttons must
-    // sit on ONE row beside the label rather than stacking.
-    hittable: options.every((option) => {
-      const box = option.getBoundingClientRect()
+    expected: offPath.length,
+    prompt: document.querySelectorAll('.map-prompt').length,
+    wingIds: wings.map((node) => node.dataset.room).sort(),
+    offPath: [...offPath].sort(),
+    enabled: wings.every((node) => node.classList.contains('room--reachable') && node.getAttribute('aria-disabled') === 'false'),
+    labelled: wings.every((node) => /Wing Boots · 3 uses left/.test(node.getAttribute('aria-label') ?? '')),
+    flights: document.querySelectorAll('.map__path--wing').length,
+    badge: wings.length ? getComputedStyle(wings[0], '::after').backgroundImage : '',
+    hittable: wings.every((node) => {
+      node.scrollIntoView({ block: 'center' })
+      const box = node.getBoundingClientRect()
       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-      return Boolean(hit && (hit === option || option.contains(hit)))
+      return Boolean(hit && (hit === node || node.contains(hit)))
     }),
-    rows: new Set(options.map((option) => Math.round(option.getBoundingClientRect().top))).size,
     debugLines: run.log.length,
     hasRunLogUi: Boolean(document.querySelector('.log')),
-    // Nothing on the map may be unreachable once the prompt takes its share.
     // Scrolled in FIRST and then hit-tested: a node still half below the map's
-    // fold has its centre outside the map's clip, where the prompt sits — which
-    // reads as "the prompt covers the map" and is only ever a scroll away.
+    // fold has its centre outside the map's clip and is only ever a scroll away.
+    // The wing badges overhang their nodes and must never steal a neighbour's hit.
     unreachableNodes: [...document.querySelectorAll('.room')].filter((node) => {
       node.scrollIntoView({ block: 'center' })
       const box = node.getBoundingClientRect()
@@ -1299,16 +1299,17 @@ const wingPrompt = await page.evaluate(async () => {
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
   return measured
 })
-check('the Wing Boots prompt is a strip that leaves the map usable', () => {
+check('Wing Boots destinations are map nodes, not a prompt', () => {
   assert(wingPrompt.reachable, 'the map fixture offered no off-path room to walk to')
-  assert(wingPrompt.rendered, 'the Wing Boots prompt did not render')
-  assert(wingPrompt.options >= 2,
-    `the prompt offered ${wingPrompt.options} destination(s); two are needed to tell a strip from a stack`)
+  assertEqual(wingPrompt.prompt, 0, 'the retired Wing Boots button strip still rendered')
+  assertDeepEqual(wingPrompt.wingIds, wingPrompt.offPath, 'the winged nodes were not exactly the off-path next-floor rooms')
+  assert(wingPrompt.enabled, 'a Wing Boots destination was not an enabled reachable node')
+  assert(wingPrompt.labelled, 'a Wing Boots destination did not name the boots and their uses')
+  assertEqual(wingPrompt.flights, wingPrompt.expected, 'every Wing Boots destination needs one flight line')
+  assert(wingPrompt.badge.includes('wing_boots'), 'the Wing Boots badge art did not load')
   assert(wingPrompt.hittable, 'a Wing Boots destination was not clickable at its own centre')
   assertEqual(wingPrompt.debugLines, 30, 'the debug run history was not retained')
   assertEqual(wingPrompt.hasRunLogUi, false, 'the playable map rendered a Run log control')
-  assertEqual(wingPrompt.rows, 1, `the prompt stacked its ${wingPrompt.options} options over ${wingPrompt.rows} rows`)
-  assert(wingPrompt.height <= 80, `the prompt is ${wingPrompt.height}px tall, which is a panel rather than a strip`)
   assertEqual(wingPrompt.unreachableNodes, 0, `${wingPrompt.unreachableNodes} map node(s) became unreachable`)
 })
 
@@ -2169,13 +2170,13 @@ await page.getByRole('heading', { name: 'The Woman in Blue' }).waitFor()
 const buyTwo = page.getByRole('button', { name: /\[Buy 2\]/ })
 await buyTwo.focus()
 await buyTwo.press('Enter')
-await page.getByText('These rewards are face-up').waitFor()
+await page.locator('.event-panel--loot').waitFor()
 const revealedPotions = await page.locator('.event-items .reward-item__body > strong').allTextContents()
 const passControls = await page.getByLabel('Pass to', { exact: true }).count()
-const replacementControls = await page.getByLabel('Replace', { exact: true }).count()
-await page.locator('fieldset[aria-label="Replace"] .item-icon-image').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
-const replacementIcons = await page.locator('fieldset[aria-label="Replace"] .item-icon-image')
-  .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+const defaultPotionChoices = await page.locator('.event-loot').evaluateAll((tiles) => tiles.map((tile) => tile.dataset.choice ?? ''))
+const passNamedByPotion = await Promise.all(revealedPotions.map((name) =>
+  page.getByRole('group', { name, exact: true }).getByLabel('Pass to', { exact: true }).count()))
+const initialReplacementControls = await page.getByLabel('Replace', { exact: true }).count()
 const eventPotionCardFaces = await page.locator('.event-items .reward-screen__potion .item-card-image').count()
 const eventPotionGroups = await page.locator('.event-items .reward-screen__potion[role="group"]').evaluateAll((groups) => groups.map((group) => group.getAttribute('aria-label')))
 await page.locator('.event-stage').evaluate(async (stage) => {
@@ -2184,16 +2185,26 @@ await page.locator('.event-stage').evaluate(async (stage) => {
 if (await page.locator('.card-morph').count()) await page.locator('.card-morph').waitFor({ state: 'detached' })
 await page.screenshot({ path: join(outDir, 'event-potion-rewards.png'), fullPage: true })
 for (const item of await page.locator('.event-items .reward-item').all()) await item.getByRole('button', { name: 'Take' }).click()
+const replacementControls = await page.getByLabel('Replace', { exact: true }).count()
+await page.locator('fieldset[aria-label="Replace"] .item-icon-image').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
+const replacementIcons = await page.locator('fieldset[aria-label="Replace"] .item-icon-image')
+  .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
 const overCapacityResolveDisabled = await page.getByRole('button', { name: /Resolve rewards/ }).isDisabled()
-check('revealed A4 Potion rewards expose take, skip, pass, and replacement controls', () => {
+await page.locator('fieldset[aria-label="Replace"] button').first().click()
+const swappedResolveEnabled = await page.getByRole('button', { name: /Resolve rewards/ }).isEnabled()
+check('revealed A4 Potion rewards take what fits and ask only the overflow to swap', () => {
   assertEqual(revealedPotions.length, 2)
   assertEqual(passControls, 2)
-  assertEqual(replacementControls, 2)
-  assertDeepEqual(replacementIcons, [true, true])
+  assertDeepEqual(defaultPotionChoices, ['take', ''], 'only the Potion with a free slot should start taken')
+  assertDeepEqual(passNamedByPotion, [1, 1], 'each Pass to control must sit inside its own Potion group')
+  assertEqual(initialReplacementControls, 0, 'a Potion that fits asked what to replace')
+  assertEqual(replacementControls, 1, 'the overflowing Potion did not offer a swap')
+  assertDeepEqual(replacementIcons, [true])
   assertEqual(eventPotionCardFaces, 0)
   assertDeepEqual(eventPotionGroups, revealedPotions)
   assertEqual(new Set(revealedPotions).size, 2)
   assert(overCapacityResolveDisabled, 'two taken Potions enabled with only one free A4 slot')
+  assert(swappedResolveEnabled, 'choosing a Potion to swap out did not enable the resolve')
 })
 await chooseLocalSeat({ label: 'Ironclad' })
 await page.getByRole('status').filter({ hasText: /Waiting for .* to resolve that reward/ }).waitFor()
@@ -2212,7 +2223,7 @@ await page.evaluate(() => {
   debug.setRun(run)
   debug.setViewer(actor.id)
 })
-await page.getByText('These rewards are face-up').waitFor()
+await page.locator('.event-panel--loot').waitFor()
 const sozuEventTake = page.getByRole('button', { name: 'Take' })
 const sozuPass = page.getByLabel('Pass to', { exact: true })
 const sozuPassRequired = await sozuPass.evaluate((select) => select.required)
@@ -2494,13 +2505,37 @@ await page.evaluate(() => {
   run.roomState.pendingDecisions = { [run.players[0].id]: { optionIds: ['resolve'] } }
   debug.setRun(run)
 })
+await page.getByRole('button', { name: /Confirm choice/ }).waitFor()
+const labSolo = await page.evaluate(() => window.__STS_DEBUG__.getRun().players.filter((player) => !player.dead).length === 1)
+const labSoloTargets = await page.getByLabel('Target player').count()
+const labSoloEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
+const labDie = await page.locator('.event-die').evaluate((die) => ({
+  status: die.querySelector('[role="status"]')?.textContent,
+  faces: die.querySelectorAll('.event-die__table > li').length,
+}))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players = [...run.players.filter((player) => !player.dead).slice(0, 1), { ...run.players[0], id: 'lab-ally', name: 'Lab ally', dead: false }]
+  debug.setRun(run)
+})
 await page.getByLabel('Target player').waitFor()
 const labBonusDisabled = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 await page.getByLabel('Target player').selectOption({ index: 1 })
 const labBonusEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
-check('Lab asks for a bonus recipient only after a successful party roll', () => {
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players = run.players.filter((player) => player.id !== 'lab-ally')
+  debug.setRun(run)
+})
+check('Lab asks for a bonus recipient only after a successful party roll, and only when there is a choice', () => {
   assertEqual(labTargetBeforeRoll, 0)
   assert(labInitialEnabled)
+  assert(labSolo, 'the Lab fixture expected a solo party')
+  assertEqual(labSoloTargets, 0, 'a solo party was asked which player gains the bonus Potion')
+  assert(labSoloEnabled, 'a solo Lab bonus could not be confirmed')
+  assertDeepEqual(labDie, { status: 'Rolled 6: Potion', faces: 6 })
   assert(labBonusDisabled)
   assert(labBonusEnabled)
 })
@@ -2719,8 +2754,8 @@ await page.evaluate(() => {
 })
 await page.getByRole('button', { name: /\[Box\]/ }).click()
 await page.locator('.event-items').waitFor()
-await page.waitForFunction(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
-const itemResolverFocused = await page.evaluate(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
+await page.waitForFunction(() => document.querySelector('.event-panel--loot')?.contains(document.activeElement))
+const itemResolverFocused = await page.evaluate(() => document.querySelector('.event-panel--loot')?.contains(document.activeElement))
 check('staged Event item resolvers receive keyboard focus', () => assert(itemResolverFocused))
 
 await page.evaluate(() => {
@@ -4284,18 +4319,66 @@ await page.evaluate(() => {
 })
 await page.getByRole('heading', { name: 'Secret Portal' }).waitFor()
 await page.getByRole('button', { name: /Enter the Portal/ }).click()
-const forward = page.getByLabel('Forward room')
-const forwardRequired = await forward.evaluate((select) => select.required)
-assert((await forward.locator('option').count()) > 1, 'Secret Portal did not list higher rooms')
+const forward = page.getByRole('group', { name: 'Forward room' })
+await forward.locator('.map').waitFor()
+const portalMap = await forward.evaluate((group) => {
+  const run = window.__STS_DEBUG__.getRun()
+  const row = run.map.rooms[run.map.position].row
+  const reachable = [...group.querySelectorAll('.room--reachable')].map((node) => node.dataset.room)
+  return {
+    reachable: reachable.length,
+    forward: Object.values(run.map.rooms).filter((room) => room.row > row).length,
+    backwards: reachable.filter((id) => run.map.rooms[id].row <= row).length,
+    selects: group.closest('.event-panel').querySelectorAll('select').length,
+    legend: getComputedStyle(group.querySelector('.map__legend')).display,
+  }
+})
 const targetlessPortalDisabled = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
-await forward.selectOption({ index: 1 })
-const destination = await forward.inputValue()
+const destination = await forward.locator('.room--reachable').nth(3).getAttribute('data-room')
+await forward.locator(`[data-room="${destination}"]`).click()
+const circled = await forward.locator(`[data-room="${destination}"]`).evaluate((node) => ({
+  ink: node.classList.contains('room--picked') && Boolean(node.querySelector('.map__ink')),
+  pressed: node.getAttribute('aria-pressed'),
+  others: [...node.closest('.map').querySelectorAll('.room--reachable[aria-pressed="true"]')].length,
+  hidesTip: node.classList.contains('room--selected'),
+}))
+const enteredOnPick = await page.evaluate(() => window.__STS_DEBUG__.getRun().map.position)
+await page.screenshot({ path: join(outDir, 'secret-portal-map.png') })
+await page.setViewportSize({ width: 844, height: 390 })
+await page.waitForTimeout(300)
+const phonePortal = await forward.evaluate((group) => {
+  const port = group.querySelector('.map').getBoundingClientRect()
+  const header = document.querySelector('.app-shell__header')?.getBoundingClientRect()
+  const top = Math.max(port.top, header?.bottom ?? 0)
+  const bottom = Math.min(port.bottom, innerHeight)
+  const visible = [...group.querySelectorAll('.room--reachable')].filter((node) => {
+    const box = node.getBoundingClientRect()
+    if (box.top < top || box.bottom > bottom) return false
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return Boolean(hit && (hit === node || node.contains(hit)))
+  }).length
+  const confirm = [...document.querySelectorAll('.event-panel button')].find((button) => /Confirm choice/.test(button.textContent ?? ''))
+  const box = confirm?.getBoundingClientRect()
+  return { visible, confirmOnScreen: Boolean(box && box.top >= 0 && box.bottom <= innerHeight + 1) }
+})
+await page.screenshot({ path: join(outDir, 'secret-portal-map-phone.png') })
+await page.setViewportSize({ width: 1100, height: 760 })
 await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction((roomId) => window.__STS_DEBUG__.getRun().map.position === roomId, destination)
 const internalIdInputs = await page.locator('input[placeholder="Room id"]').count()
-check('Secret Portal exposes and enters labeled higher rooms without internal IDs', () => {
+check('Secret Portal picks any higher room on the map and enters it on confirm', () => {
   assert(targetlessPortalDisabled, 'Secret Portal enabled before a destination was chosen')
-  assert(forwardRequired, 'mandatory Secret Portal destination was not marked required')
+  assertEqual(portalMap.reachable, portalMap.forward, 'the portal map did not offer every higher room')
+  assertEqual(portalMap.backwards, 0, 'the portal map offered a room on or below the party')
+  assertEqual(portalMap.selects, 0, 'the portal still rendered a dropdown')
+  assertEqual(portalMap.legend, 'none', 'the floating map legend covered the event panel')
+  assert(circled.ink, 'the picked portal room was not circled')
+  assertEqual(circled.pressed, 'true', 'the picked portal room did not report itself pressed')
+  assertEqual(circled.others, 1, 'more than one portal room reported itself picked')
+  assert(!circled.hidesTip, 'the picked portal room hid its own panel')
+  assert(phonePortal.visible >= 3, `a horizontal phone showed only ${phonePortal.visible} portal destinations`)
+  assert(phonePortal.confirmOnScreen, 'the portal confirm key left a horizontal phone screen')
+  assert(enteredOnPick !== destination, 'picking a portal room entered it before confirmation')
   assertEqual(internalIdInputs, 0)
 })
 

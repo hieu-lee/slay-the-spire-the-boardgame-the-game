@@ -145,16 +145,28 @@ try {
       relics: [...player.relics.filter((relic) => relic.defId !== 'wing_boots'), { defId: 'wing_boots', uses: 3 }],
     })), { ...run.players[0], id: 'map-race-p2', name: 'Map race player', row: 1 }]
     window.__STS_DEBUG__.setRun(run)
-    return { normalTarget: current.exits[0], wingTarget }
+    return { normalTarget: current.exits[0], wingTarget, run }
   }, mapRun)
-  await page.waitForFunction(() => document.querySelector('.map-prompt') !== null)
+  await page.waitForFunction((target) => document.querySelector(`.room--wing[data-room="${target}"]`) !== null, wingBootRace.wingTarget)
   check(await page.locator('.map-row-switch select').count() > 0,
     'the map-race fixture did not expose the row-switch action')
   await page.locator(`[data-room="${wingBootRace.normalTarget}"]`).click()
-  await page.waitForFunction(() => document.querySelector('.map-prompt, .map-row-switch') === null)
+  await page.locator(`[data-room="${wingBootRace.wingTarget}"]`).click({ force: true })
+  await page.waitForFunction(() => document.querySelector('.map-row-switch') === null)
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
   check(await page.evaluate((target) => window.__STS_DEBUG__.getRun().map.position === target, wingBootRace.normalTarget),
     'Wing Boots could replace a room already selected for the pencil-circle transition')
+  check(await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].relics.find((relic) => relic.defId === 'wing_boots')?.uses === 3),
+    'a normal path room spent a Wing Boots use (the engine prefers a path move)')
+  await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), wingBootRace.run)
+  await page.locator(`[data-room="${wingBootRace.wingTarget}"]`).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+  const wingLanding = await page.evaluate(() => {
+    const run = window.__STS_DEBUG__.getRun()
+    return { position: run.map.position, uses: run.players[0].relics.find((relic) => relic.defId === 'wing_boots')?.uses }
+  })
+  check(wingLanding.position === wingBootRace.wingTarget && wingLanding.uses === 2,
+    `clicking a winged node did not fly there on one Wing Boots use: ${JSON.stringify(wingLanding)}`)
   await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), mapRun)
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
   const mapPhoneContext = await browser.newContext(devices['iPhone 13 landscape'])

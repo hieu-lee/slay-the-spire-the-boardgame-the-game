@@ -59,7 +59,6 @@ import {
 import type { RunState } from '../game/run.ts'
 import { createRng, seedFromString } from '../game/rng.ts'
 import type { CharacterId } from '../game/types.ts'
-import { ROOM_LABEL } from '../game/run.ts'
 import { hasRoomSession } from '../multiplayer/useRoomSession.ts'
 import { isActIVUnlocked } from '../game/campaign.ts'
 import { allocateSharedMarks, canEnterActIV } from '../game/campaign.ts'
@@ -99,7 +98,7 @@ import { SettingsDialog } from './SettingsDialog.tsx'
 import { LeaderboardScreen } from './LeaderboardScreen.tsx'
 import { StatsScreen } from './StatsScreen.tsx'
 import { useGameSettings } from './game-settings.ts'
-import { wingBootLabel } from './wing-boots.ts'
+import { wingBootUses } from './wing-boots.ts'
 import type { GameSettings } from './game-settings.ts'
 import { useWebMcp } from './useWebMcp.ts'
 import { flushLeaderboardOutbox, queueFinishedSoloRun } from '../leaderboard.ts'
@@ -1064,14 +1063,10 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
             canRerollBoss={!pendingAcquisition && canRerollDownfallSelfBoss(run)}
             onRerollBoss={() => setRun(rerollDownfallSelfBoss)}
             onSelectionChange={setMapSelectionPending}
-            onEnter={(roomId) => setRun((current) => enterRoom(current, roomId))} />
-          {!pendingAcquisition && !mapSelectionPending && wingChoices.length > 0 ? <section className="room-screen map-prompt">
-            <strong>Wing Boots</strong>
-            {wingChoices.map((room) => <button type="button" key={room.id}
-              onClick={() => setRun((current) => enterRoom(current, room.id, viewerId))}>
-              {wingBootLabel(room, wingChoices, seenMap)}
-            </button>)}
-          </section> : null}
+            wingChoices={pendingAcquisition ? [] : wingChoices}
+            wingUses={wingBootUses(run.players.find((player) => player.id === viewerId))}
+            onEnter={(roomId) => setRun((current) => wingChoices.some((room) => room.id === roomId)
+              ? enterRoom(current, roomId, viewerId) : enterRoom(current, roomId))} />
         </>
       ) : null}
 
@@ -1168,7 +1163,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           unavailableEventOptionIds={unavailableEventOptionIds(run, viewerId)}
           onSkipEvent={(playerId) => setRun((current) => skipEvent(current, playerId))}
           sapphireAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.sapphire}
-          eventForwardRooms={Object.values(seenMap.rooms).filter((room) => room.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((room) => ({ id: room.id, label: `Floor ${room.row + 1} · ${room.hidden ? 'Unknown' : ROOM_LABEL[room.kind]}` }))}
+          eventMap={seenMap}
+          eventBossDefId={run.actBossDefId}
           onArmCardGain={morph.armGain}
         />
       ) : null}

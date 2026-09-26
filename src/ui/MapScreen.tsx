@@ -28,6 +28,20 @@ type MapScreenProps = {
    * which is the entire point of opening it.
    */
   readOnly?: boolean
+  /**
+   * Next-floor rooms off the party's paths that Wing Boots can reach. They are
+   * clickable like any other choice; the shell tells the two apart on entry.
+   */
+  wingChoices?: Room[]
+  /** Printed uses left on the viewer's Wing Boots, for the node's panel. */
+  wingUses?: number
+  /**
+   * Choose a destination instead of walking into it: a click reports the room
+   * at once, without the pencil beat or the scene transition, and `pickedId`
+   * keeps the chosen node circled.
+   */
+  pick?: boolean
+  pickedId?: string
   onEnter: (roomId: string) => void | Promise<unknown>
   onSelectionChange?: (selecting: boolean) => void
 }
@@ -80,7 +94,7 @@ function routeContext(map: SpireMap, room: Room, bossDefId?: string | null): str
   return exits.length ? `${here}; exits to ${exits.join(', ')}` : here
 }
 
-type Line = { key: string; x1: number; y1: number; x2: number; y2: number; live: boolean }
+type Line = { key: string; x1: number; y1: number; x2: number; y2: number; live: boolean; wing?: boolean }
 
 /**
  * A room's hand-placed wobble, in px.
@@ -132,16 +146,19 @@ function jitter(id: string): { x: number; y: number } {
  */
 export function MapScreen({
   map, choices, blocked = false, disabled = false, bossDefId, canRerollBoss = false, onRerollBoss, readOnly = false, onEnter,
-  onSelectionChange,
+  onSelectionChange, wingChoices = [], wingUses = 0, pick = false, pickedId,
 }: MapScreenProps) {
   const frameRef = useRef<HTMLDivElement | null>(null)
   const wasBlocked = useRef(blocked)
   const [lines, setLines] = useState<Line[]>([])
-  const reachable = new Set(choices.map((room) => room.id))
+  const walkable = new Set(choices.map((room) => room.id))
+  const winged = new Set(wingChoices.map((room) => room.id).filter((id) => !walkable.has(id)))
+  const reachable = new Set([...walkable, ...winged])
   const rows = [...map.rows].reverse()
   // A Set is a fresh object every render, so measuring cannot depend on it
   // without re-running forever. Key the effect on its contents instead.
   const reachableKey = [...reachable].sort().join(',')
+  const wingKey = [...winged].sort().join(',')
   // Touch has no hover, so a tap on a reachable node used to walk the party
   // into it with the room's own panel — what it is, and whether it is an Elite
   // — never once on screen. Route planning is most of the decision-making in a
@@ -195,8 +212,13 @@ export function MapScreen({
         })
       }
     }
+    const from = map.position ? centres.get(map.position) : undefined
+    if (from) for (const id of wingKey ? wingKey.split(',') : []) {
+      const to = centres.get(id)
+      if (to) next.push({ key: `${map.position}~>${id}`, x1: from.x, y1: from.y, x2: to.x, y2: to.y, live: true, wing: true })
+    }
     setLines(next)
-  }, [map, reachableKey])
+  }, [map, reachableKey, wingKey])
 
   useEffect(() => {
     measure()
@@ -213,7 +235,11 @@ export function MapScreen({
 
   useEffect(() => {
     if (wasBlocked.current && !blocked && document.activeElement === document.body) {
-      frameRef.current?.querySelector<HTMLButtonElement>('.room--reachable')?.focus()
+      const frame = frameRef.current
+      // A Wing Boots room is reachable too, but one stray Enter must not spend a use.
+      const first = frame?.querySelector<HTMLButtonElement>('.room--reachable:not(.room--wing)')
+        ?? frame?.querySelector<HTMLButtonElement>('.room--reachable')
+      first?.focus()
     }
     wasBlocked.current = blocked
   }, [blocked])
@@ -226,15 +252,20 @@ export function MapScreen({
     if (!frame) return undefined
     const animation = requestAnimationFrame(() => {
       const port = frame.closest<HTMLElement>('.map')
-      const target = frame.querySelector<HTMLElement>('.room--here')
-        ?? frame.querySelector<HTMLElement>('.room--reachable')
+      // Picking looks forward from the party: open on the nearest choice, which
+      // the rows drawn boss-first put last in the document.
+      const target = pick
+        ? frame.querySelector<HTMLElement>('.room--picked') ?? [...frame.querySelectorAll<HTMLElement>('.room--reachable')].at(-1)
+        : frame.querySelector<HTMLElement>('.room--here') ?? frame.querySelector<HTMLElement>('.room--reachable')
       if (!port || !target) return
       const viewport = port.getBoundingClientRect()
       const box = target.getBoundingClientRect()
-      port.scrollTop += box.top + box.height / 2 - (viewport.top + port.clientHeight / 2)
+      // A pick keeps the nearest choices low in the band so the rooms beyond
+      // them fill the rest; walking centres the party.
+      port.scrollTop += box.top + box.height / 2 - (viewport.top + port.clientHeight * (pick ? 0.72 : 0.5))
     })
     return () => cancelAnimationFrame(animation)
-  }, [blocked, map.act, map.position])
+  }, [blocked, map.act, map.position, pick])
 
   // A panel left open across a move would describe a room the party has already
   // left, and its "tap again to enter" would point at a node that is no longer
@@ -367,8 +398,10 @@ export function MapScreen({
       <p className="map__hint muted">
         {readOnly
           ? tapToRead ? 'Tap a room to read it.' : 'Hover a room to read it.'
-          : choices.length === 0
+          : reachable.size === 0
             ? 'Nowhere to go.'
+            : pick
+              ? tapToRead ? 'Tap a room to read it, then tap it again to choose.' : 'Choose a room.'
             : tapToRead
               ? `${map.position === null ? 'Enter the Spire' : 'Choose the next room'} — tap a room to read it, then tap it again to enter.`
               : map.position === null
@@ -390,7 +423,7 @@ export function MapScreen({
           `role="status"`, for the reason App.tsx gives at its own region. */}
       <span className="visually-hidden" aria-live="polite" aria-atomic="true">
         {reading && reachable.has(reading)
-          ? `${roomName(map.rooms[reading], bossDefId)} read. Activate again to enter.`
+          ? `${roomName(map.rooms[reading], bossDefId)} read. Activate again to ${pick ? 'choose' : 'enter'}.`
           : ''}
       </span>
 
@@ -399,7 +432,7 @@ export function MapScreen({
           {lines.map((line) => (
             <line
               key={line.key}
-              className={line.live ? 'map__path map__path--live' : 'map__path'}
+              className={line.wing ? 'map__path map__path--wing' : line.live ? 'map__path map__path--live' : 'map__path'}
               x1={line.x1}
               y1={line.y1}
               x2={line.x2}
@@ -422,12 +455,16 @@ export function MapScreen({
               const text = room.hidden
                 ? 'An Uncertain Future hides what this room holds until you arrive.'
                 : ROOM_TEXT[room.kind]
+              const wing = winged.has(id)
               const status = isHere
                 ? 'The party is here.'
-                : room.visited ? 'Already cleared.' : canGo ? 'Reachable.' : 'Out of reach.'
+                : room.visited ? 'Already cleared.'
+                  : wing ? `Wing Boots · ${wingUses} ${wingUses === 1 ? 'use' : 'uses'} left.`
+                    : canGo ? 'Reachable.' : 'Out of reach.'
               const wobble = jitter(id)
               const ink = Math.abs(wobble.x + wobble.y) % 3
               const selecting = entering === id
+              const picked = pick && pickedId === id
               return (
                 <button
                   type="button"
@@ -442,9 +479,11 @@ export function MapScreen({
                     room.visited ? 'room--visited' : '',
                     isHere ? 'room--here' : '',
                     canGo ? 'room--reachable' : '',
+                    wing ? 'room--wing' : '',
                     reading === id ? 'room--reading' : '',
                     `room--ink-${ink}`,
                     selecting ? 'room--selected' : '',
+                    picked ? 'room--picked' : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
@@ -485,6 +524,11 @@ export function MapScreen({
                       setReading(null)
                       return
                     }
+                    if (canGo && pick) {
+                      setReading(null)
+                      void onEnter(id)
+                      return
+                    }
                     if (canGo) {
                       if (reducedMotion) {
                         setReading(null)
@@ -517,14 +561,15 @@ export function MapScreen({
                     // the two-step exists for a screen reader. A label change on
                     // an already-focused control is not reliably re-announced,
                     // which is why the live region below carries it as well.
-                    reading === id && canGo ? 'Activate again to enter' : '',
+                    reading === id && canGo ? `Activate again to ${pick ? 'choose' : 'enter'}` : '',
                   ]
                     .filter(Boolean)
                     .join(', ')}
                   aria-current={isHere ? 'location' : undefined}
+                  aria-pressed={pick && canGo ? picked : undefined}
                   style={{ '--jitter-x': `${wobble.x}px`, '--jitter-y': `${wobble.y}px` } as React.CSSProperties}
                 >
-                  {room.visited || isHere || selecting ? <span className="map__ink" aria-hidden="true">
+                  {room.visited || isHere || selecting || picked ? <span className="map__ink" aria-hidden="true">
                     <svg viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
                       <path pathLength="1" d="M50 4C76 2 97 23 96 49C95 76 75 97 49 96C23 94 3 75 4 48C5 22 24 5 50 4" />
                     </svg>
@@ -550,7 +595,7 @@ export function MapScreen({
                         this panel through focus and enters on one press — is
                         not being asked to tap anything. */}
                     {tapToRead && canGo && reading === id ? (
-                      <span className="room-tip__confirm">Tap again to enter</span>
+                      <span className="room-tip__confirm">Tap again to {pick ? 'choose' : 'enter'}</span>
                     ) : null}
                   </span>
                 </button>

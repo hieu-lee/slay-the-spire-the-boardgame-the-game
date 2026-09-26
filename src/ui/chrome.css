@@ -88,3 +88,6 @@
 @import './chrome/multiplayer.css';
 @import './chrome/back-buttons.css';
 @import './chrome/stone-keys.css';
+@import './chrome/portal-map.css';
+@import './chrome/event-loot.css';
+@import './chrome/mailbox.css';

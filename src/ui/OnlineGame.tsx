@@ -8,7 +8,6 @@ import type { CombatState } from '../game/combat.ts'
 import { ASCENSION_RULES, canGiveUpRun, hasPendingRelicAcquisition, victoryIsTerminal } from '../game/run.ts'
 import { relicDef } from '../game/relics.ts'
 import type { Room } from '../game/map.ts'
-import { ROOM_LABEL } from '../game/run.ts'
 import type { Player } from '../game/types.ts'
 import { useRoomSession } from '../multiplayer/useRoomSession.ts'
 import type { PublicSeat, VisibleCombat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
@@ -28,7 +27,7 @@ import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
 import { useCardMorphs } from './useCardMorphs.ts'
 import type { SummarySeat } from './RunSummary.tsx'
 import { GuardianSocketPanel, RelicResolvePanel } from './RelicResolvePanel.tsx'
-import { wingBootLabel } from './wing-boots.ts'
+import { wingBootUses } from './wing-boots.ts'
 import { CourierPanel, CourierPeek, courierPeekPhase } from './CourierPanel.tsx'
 import { RoomScreen } from './RoomScreen.tsx'
 import { ACT_IV_UNLOCK_BOXES } from '../game/campaign.ts'
@@ -626,8 +625,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const activeNeowProgress = run.neow?.players[snapshot.you.playerId]
     ?? Object.values(run.neow?.players ?? {}).find((progress) => progress !== null)
   const heartBoon = activeNeowProgress?.card?.source === 'heart'
-  // Derived once: the map prompt needs the list twice, for the guard and for the
-  // labels, and each label compares against the whole set.
   const wingTargets = wingChoices(run.map, viewer)
   const canSwitchRowsHere = run.phase === 'map' || run.phase === 'room' &&
     run.roomState?.kind === 'event' && eventCanStartCombat(run.roomState.card)
@@ -839,13 +836,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         canRerollBoss={!pendingAcquisition && run.canRerollDownfallSelfBoss}
         onRerollBoss={() => room.act({ kind: 'rerollDownfallSelfBoss' })}
         onSelectionChange={setMapSelectionPending}
-        onEnter={(roomId) => room.act({ kind: 'enterRoom', roomId })} />
-        {!pendingAcquisition && !mapSelectionPending && wingTargets.length > 0 ? <section className="room-screen map-prompt"><strong>Wing Boots</strong>
-          {wingTargets.map((target) => <button type="button" key={target.id}
-            onClick={() => room.act({ kind: 'enterRoom', roomId: target.id, useWingBoots: true })}>
-            {wingBootLabel(target, wingTargets, run.map)}
-          </button>)}
-        </section> : null}</> : null}
+        wingChoices={pendingAcquisition ? [] : wingTargets}
+        wingUses={wingBootUses(viewer)}
+        onEnter={(roomId) => room.act(wingTargets.some((target) => target.id === roomId)
+          ? { kind: 'enterRoom', roomId, useWingBoots: true } : { kind: 'enterRoom', roomId })} /></> : null}
       {!pendingAcquisition && !mapSelectionPending && viewer && canSwitchRowsHere &&
       run.players.filter((player) => !player.dead).length > 1 ? <section className="map-row-switch">
         <label>Switch your row before the next combat
@@ -973,7 +967,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           merchantReady={snapshot.merchantReady}
           connectedPlayerIds={snapshot.seats.filter((seat) => seat.connected).map((seat) => seat.playerId)}
           onWithdraw={(key) => room.act({ kind: 'merchantWithdraw', key })}
-          eventForwardRooms={Object.values(run.map.rooms).filter((candidate) => candidate.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((candidate) => ({ id: candidate.id, label: `Floor ${candidate.row + 1} · ${candidate.hidden ? 'Unknown' : ROOM_LABEL[candidate.kind]}` }))}
+          eventMap={run.map}
+          eventBossDefId={run.actBossDefId}
           eventPledge={snapshot.eventPledge}
           onCancelEventPayment={() => room.act({ kind: 'eventCancel' })}
           onArmCardGain={morph.armGain}

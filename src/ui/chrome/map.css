@@ -116,6 +116,9 @@
   opacity: 1;
 }
 .map .room--selected .map__ink path { animation: map-ink-draw 620ms linear both; }
+/* A destination picked on the map, not walked into: circled, still readable. */
+.map .room--picked .map__ink { opacity: 1; }
+.map .room--picked .map__ink path { animation: map-ink-draw 620ms linear both; }
 
 @keyframes map-ink-draw {
   from { stroke-dashoffset: 1; }
@@ -198,4 +201,27 @@ html[data-map-transition='true'] .app-shell {
   stroke-dasharray: 0 17;
   filter: none;
   animation: none;
+}
+
+/* A Wing Boots flight: a long-dashed arc of the same ink, so an off-path room
+   reads as a jump rather than as a trail the map forgot to print. */
+.map__path--wing {
+  stroke: rgb(146 96 30 / 0.62);
+  stroke-width: 3;
+  stroke-dasharray: 9 9;
+  filter: none;
+}
+
+/* The boots' wing, pinned to every room they can reach. */
+.map .room--wing::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: -0.55rem;
+  right: -0.7rem;
+  width: 1.45rem;
+  height: 1.45rem;
+  background: url('/assets/relic-icons/wing_boots.png') center / contain no-repeat;
+  filter: drop-shadow(0 1px 1px rgb(40 24 10 / 0.7));
+  pointer-events: none;
 }

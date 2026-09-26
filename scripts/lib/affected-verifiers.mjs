@@ -47,6 +47,9 @@ const focusedUiOwners = new Map([
     'verify-row-target-browser.mjs', 'verify-turn-targets-browser.mjs',
   ]],
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
+  ['src/ui/MailBox.tsx', ['verify-mail-browser.mjs']],
+  ['src/ui/MapScreen.tsx', ['verify-wing-focus-browser.mjs']],
+  ['src/ui/chrome/mailbox.css', ['verify-mail-browser.mjs']],
   ['src/multiplayer/useRoomSession.ts', ['verify-combat-layout-reload-browser.mjs']],
   ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs']],
@@ -69,6 +72,7 @@ const focusedUiOwners = new Map([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
+  ['src/mail.ts', ['verify-mail-browser.mjs']],
   ['src/ui/useWebMcp.ts', ['verify-webmcp-browser.mjs']],
   ['src/ui/CourierPanel.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/chrome/courier.css', ['verify-courier-browser.mjs']],

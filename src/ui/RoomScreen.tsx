@@ -28,6 +28,11 @@ import { treasureHandPath, treasurePlayerColor } from "./TreasureEffects.tsx";
 import { ItemImage } from "./ItemImage.tsx";
 import { ItemLootChoice, RewardItem } from "./RewardScreen.tsx";
 import { CardRewardPicker } from "./CardRewardPicker.tsx";
+import { MapScreen } from "./MapScreen.tsx";
+import { EventDie, forgetShownRolls } from "./EventDie.tsx";
+import { rolledTable } from "./die-outcomes.ts";
+import { defaultLootChoices, freePotionSlots, lootHolders, planEventPotions } from "./event-loot.ts";
+import type { SpireMap } from "../game/map.ts";
 import type { ActionOutcome } from "../multiplayer/useRoomSession.ts";
 
 type Props = {
@@ -53,7 +58,9 @@ type Props = {
   merchantReady?: string[];
   connectedPlayerIds?: string[];
   onWithdraw?: (key: string) => void;
-  eventForwardRooms?: { id: string; label: string }[];
+  /** The map as the viewer sees it, for picking a Secret Portal destination. */
+  eventMap?: SpireMap;
+  eventBossDefId?: string | null;
   eventPledge?: { actorId: string; optionId: string; cost: number; payments: Record<string, number>; decision: EventDecision };
   onCancelEventPayment?: () => void;
   eventCanSkip?: boolean;
@@ -734,7 +741,8 @@ function EventScreen({
   onPreparedHermitSetup,
   onPreparedStartTurnScryOrder,
   onPreparedStartTurnScry,
-  eventForwardRooms = [],
+  eventMap,
+  eventBossDefId,
   eventPledge,
   onWithdraw,
   onCancelEventPayment,
@@ -753,6 +761,9 @@ function EventScreen({
     players.find((candidate) => candidate.id === viewerId) ?? players[0]!;
   const automaticSkip = useRef("");
   const [automaticSkipRetry, setAutomaticSkipRetry] = useState(0);
+  // On mount: a child die's own unmount cleanup runs after its parent's, so
+  // forgetting on the way out would be undone by the die it just unmounted.
+  useEffect(() => { forgetShownRolls(); }, []);
   useEffect(() => {
     if (!eventCanSkip) {
       automaticSkip.current = "";
@@ -844,7 +855,10 @@ function EventScreen({
   useEffect(() => {
     if (draftStages.current.item === itemDraftStage) return;
     draftStages.current.item = itemDraftStage;
-    setRewardItemChoices(Array(itemOffers?.length ?? 0).fill(''));
+    // A face-up Relic, or a Potion with a free slot waiting, is taken unless the
+    // player says otherwise; only a Potion that would overflow asks first.
+    setRewardItemChoices(defaultLootChoices(itemOffers ?? [],
+      offerHolderIds.map((id) => players.find((seat) => seat.id === id && !seat.dead)), lootFreeSlots));
     setPotionRecipientIds(Array(itemOffers?.filter((offer) => offer.kind === 'potion').length ?? 0).fill(''));
     setPotionReplacementIds(Array(itemOffers?.filter((offer) => offer.kind === 'potion').length ?? 0).fill(null));
   }, [itemDraftStage]);
@@ -856,6 +870,9 @@ function EventScreen({
     setGuardianGemIds([]);
   }, [rewardDraftStage]);
   const pendingDie = room.pendingRolls?.[player.id]?.at(-1);
+  const latestDie = pendingDie ?? room.dieRolls[player.id]?.at(-1);
+  const eventDie = latestDie ? <EventDie face={latestDie} rollKey={`${room.card.instanceId}/${player.id}/${room.dieRolls[player.id]?.length ?? 0}/${latestDie}`}
+    results={rolledTable(room.card.options, pendingDecision?.optionIds ?? decided?.optionIds ?? draftOptionIds)} /> : null;
   const repeatScrap = room.card.id === "scrap_ooze" && Boolean(pendingDecision) && (pendingDie ?? 3) <= 2;
   const resolverOpen = selectionOpen && !repeatScrap;
   const focusResolverOpen = resolverOpen || Boolean(pendingTrade || itemOffers || rewardOffers);
@@ -866,7 +883,7 @@ function EventScreen({
         const resolver = eventResolver.current;
         if (!resolver || resolver.contains(document.activeElement)) return;
         resolver.querySelector<HTMLElement>(
-          '[role="button"]:not([aria-disabled="true"]), button:not(:disabled), select:not(:disabled), input:not(:disabled)',
+          '[role="button"]:not([aria-disabled="true"]), button:not(:disabled):not(.room), select:not(:disabled), input:not(:disabled)',
         )?.focus();
       });
       return;
@@ -964,8 +981,21 @@ function EventScreen({
   const effectivePotionIds = pendingDecision?.potionIds?.length
     ? pendingDecision.potionIds
     : potionIndexes.map((index) => player.potions[index]!).filter(Boolean);
-  const effectiveTargetPlayerId = pendingDecision?.targetPlayerId ?? targetPlayerId;
+  // A plain "one player" payout with a single living player can only go to them.
+  const livingPlayers = players.filter((candidate) => !candidate.dead);
+  const soleTargetId = needsTarget && !trade && !otherCharacter && livingPlayers.length === 1 ? livingPlayers[0]!.id : "";
+  const effectiveTargetPlayerId = pendingDecision?.targetPlayerId ?? (targetPlayerId || soleTargetId);
+  // Who keeps each revealed item when it is not passed on, earlier staged
+  // reveals first; the offers on screen are the tail of that list.
+  const lootHolderIds = lootHolders({
+    cardId: room.card.id, options: room.card.options, optionIds: pendingDecision?.optionIds ?? [], rolls: room.pendingRolls?.[player.id],
+    actorId: player.id, targetId: effectiveTargetPlayerId, livingIds: players.filter((candidate) => !candidate.dead).map((candidate) => candidate.id),
+  });
+  const offerHolderIds = (itemOffers ?? []).map((_offer, index) => lootHolderIds[(pendingDecision?.rewardItemKinds?.length ?? 0) + index] ?? player.id);
+  const lootFreeSlots = freePotionSlots(players, (seat) => potionLimit(ascension, seat), player.id, lootHolderIds, pendingDecision);
   const effectiveRoomId = pendingDecision?.roomId ?? roomId;
+  const portalRow = eventMap?.position ? eventMap.rooms[eventMap.position]?.row ?? -1 : -1;
+  const forwardRooms = eventMap ? Object.values(eventMap.rooms).filter((candidate) => candidate.row > portalRow) : [];
   const effectiveRewardSources = pendingDecision?.rewardSources?.length ? pendingDecision.rewardSources : rewardSources;
   const effectiveRareRewardSources = pendingDecision?.rewardSources?.length ? pendingDecision.rewardSources : rareRewardSources;
   const cardPickerSteps = effects.flatMap((effect) =>
@@ -1056,7 +1086,7 @@ function EventScreen({
   };
   const submit = (optionIds: string[], selectedRewardSources = rewardSources,
     selectedRewardIndexes = rewardIndexes, selectedGuardianGemIds = guardianGemIds,
-    selectedCardUids = effectiveCardUids) =>
+    selectedCardUids = effectiveCardUids, overrides: Partial<EventDecision> = {}) =>
     onEvent(player.id, {
       optionIds,
       cardUids: selectedCardUids,
@@ -1065,12 +1095,13 @@ function EventScreen({
       potionRecipientIds,
       potionReplacementIds,
       rewardItemChoices: rewardItemChoices.length ? rewardItemChoices as ('take' | 'skip')[] : undefined,
-      targetPlayerId: pendingDecision?.targetPlayerId ?? (targetPlayerId || undefined),
+      targetPlayerId: pendingDecision?.targetPlayerId ?? (targetPlayerId || soleTargetId || undefined),
       roomId: roomId || undefined,
       rewardIndexes: selectedRewardIndexes,
       guardianGemIds: selectedGuardianGemIds,
       rewardSources: selectedRewardSources,
       payments: paymentFor(optionIds),
+      ...overrides,
     });
   if (eventPledge) {
     const remaining = eventPledge.cost - Object.values(eventPledge.payments).reduce((sum, amount) => sum + amount, 0);
@@ -1123,49 +1154,67 @@ function EventScreen({
     const pendingCards = Math.max(0, ...room.card.options.filter((option) => pending?.optionIds.includes(option.id)).map((option) => eventCardSlots(option.effects, pendingDie, player, players).length));
     const pendingRelic = pendingEffects.some((effect) => effect.tag === "lose-relic" && !effect.random);
     const pendingTarget = pendingEffects.some((effect) => effect.target === "one-player");
-    const potionChoicesLegal = (() => {
-      const free = new Map(players.map((candidate) => [candidate.id, potionLimit(ascension, candidate) - candidate.potions.length]));
-      const replacements = new Map<string, number>();
-      let potionAt = 0;
-      for (const [index, offer] of itemOffers.entries()) {
-        if (offer.kind !== "potion") continue;
-        const at = potionAt++;
-        if (rewardItemChoices[index] !== "take") continue;
-        const recipientId = potionRecipientIds[at] || player.id;
-        const recipient = players.find((candidate) => candidate.id === recipientId && !candidate.dead);
-        if (!recipient || hasSozu(recipient)) return false;
-        const available = free.get(recipientId) ?? 0;
-        if (available > 0) {
-          free.set(recipientId, available - 1);
-          continue;
-        }
-        const replacementId = recipientId === player.id ? potionReplacementIds[at] : null;
-        if (!replacementId) return false;
-        const used = replacements.get(replacementId) ?? 0;
-        if (player.potions.filter((id) => id === replacementId).length <= used) return false;
-        replacements.set(replacementId, used + 1);
-      }
-      return true;
-    })();
+    const receiversFor = (holderId: string) => players.filter((candidate) => candidate.id !== player.id && candidate.id !== holderId &&
+      !candidate.dead && !hasSozu(candidate) && (lootFreeSlots.get(candidate.id) ?? 0) > 0);
+    const potionOfferIndexes = itemOffers.flatMap((offer, index) => offer.kind === "potion" ? [index] : []);
+    // A teammate chosen here can fill their belt meanwhile; a stale choice falls
+    // back to the holder instead of stranding a pressed Take with no control.
+    const recipientIds = potionOfferIndexes.map((offerIndex, at) => {
+      const id = potionRecipientIds[at] ?? "";
+      return receiversFor(offerHolderIds[offerIndex]!).some((candidate) => candidate.id === id) ? id : "";
+    });
+    const potionPlan = planEventPotions({
+      offers: itemOffers, choices: rewardItemChoices, recipients: recipientIds, replacements: potionReplacementIds,
+      actorId: player.id, holders: offerHolderIds, players, free: lootFreeSlots,
+    });
+    const replacementIds = potionReplacementIds.map((id, at) => potionPlan.swaps[at] ? id : null);
+    // A held Potion an earlier swap already gives up is not offered again.
+    const swapChoices = (at: number) => {
+      const spent = new Map<string, number>();
+      replacementIds.slice(0, at).forEach((id) => { if (id) spent.set(id, (spent.get(id) ?? 0) + 1); });
+      return player.potions.map((id, heldIndex) => ({ id, heldIndex })).filter(({ id }) => {
+        const used = spent.get(id) ?? 0;
+        if (used > 0) spent.set(id, used - 1);
+        return used === 0;
+      });
+    };
     const effectiveCards = pending?.cardUids ?? cards;
     const effectiveRelic = pending?.relicIds?.[0] ?? relicId;
-    const effectiveTarget = pending?.targetPlayerId ?? targetPlayerId;
+    const effectiveTarget = pending?.targetPlayerId ?? (targetPlayerId || soleTargetId);
+    const choose = (index: number, choice: "take" | "skip") =>
+      setRewardItemChoices((current) => current.map((value, at) => at === index ? choice : value));
     let potionIndex = -1;
-    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div ref={eventResolver} className="event-panel event-panel--resolver"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} />{relicDef(relic.defId).name}<RelicOptionText id={relic.defId} /></button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select required disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-items item-offer-list">{itemOffers.map((offer, index) => {
-      if (offer.kind === 'potion') potionIndex += 1;
-      const at = potionIndex;
-      const recipient = offer.kind === 'potion' ? players.find((candidate) => candidate.id === (potionRecipientIds[at] || player.id) && !candidate.dead) : player;
-      const takeBlocked = offer.kind === 'potion' && (!recipient || hasSozu(recipient));
-      const title = offer.kind === 'relic' ? relicDef(offer.id).name : potionDef(offer.id).name;
-      return <RewardItem key={`${offer.kind}-${offer.id}-${index}`} kind={offer.kind} id={offer.id} title={title}>
-        <button type="button" disabled={takeBlocked} aria-pressed={rewardItemChoices[index] === 'take'} onClick={() => setRewardItemChoices((current) => current.map((choice, choiceIndex) => choiceIndex === index ? 'take' : choice))}>Take</button>
-        <button type="button" aria-pressed={rewardItemChoices[index] === 'skip'} onClick={() => setRewardItemChoices((current) => current.map((choice, choiceIndex) => choiceIndex === index ? 'skip' : choice))}>Skip</button>
-        {offer.kind === 'potion' ? <>
-          <label>Pass to<select aria-label="Pass to" required={hasSozu(player)} value={potionRecipientIds[at] ?? ''} onChange={(event) => setPotionRecipientIds((current) => current.map((id, idIndex) => idIndex === at ? event.target.value : id))}><option value="">{hasSozu(player) ? 'Choose a recipient' : 'Keep or replace yours'}</option>{players.filter((candidate) => candidate.id !== player.id && !candidate.dead && !hasSozu(candidate) && candidate.potions.length < potionLimit(ascension, candidate)).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
-          {!hasSozu(player) ? <fieldset className="event-potion-replacement" aria-label="Replace"><legend>Replace</legend><button type="button" aria-pressed={!potionReplacementIds[at]} onClick={() => setPotionReplacementIds((current) => current.map((id, idIndex) => idIndex === at ? null : id))}>None</button>{player.potions.map((id, heldIndex) => <button type="button" key={`${id}-${heldIndex}`} aria-pressed={potionReplacementIds[at] === id} onClick={() => setPotionReplacementIds((current) => current.map((held, idIndex) => idIndex === at ? id : held))}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}</fieldset> : null}
-        </> : null}
-      </RewardItem>;
-    })}</div><button type="button" className="room-proceed" disabled={rewardItemChoices.some((choice) => !choice) || !potionChoicesLegal || effectiveCards.length < pendingCards || (pendingRelic && !effectiveRelic) || (pendingTarget && !effectiveTarget)} onClick={() => submit(pending?.optionIds ?? [])}>Resolve rewards →</button></div></section>;
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
+      <div className="event-art" aria-hidden="true" />
+      <div ref={eventResolver} className="event-panel event-panel--loot">
+        <div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2></div>
+        {eventDie}
+        {pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} />{relicDef(relic.defId).name}<RelicOptionText id={relic.defId} /></button>)}</fieldset> : null}
+        {pendingTarget && !soleTargetId ? <label>Reward recipient<select required disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}
+        <div className="event-items item-offer-list">{itemOffers.map((offer, index) => {
+          if (offer.kind === 'potion') potionIndex += 1;
+          const at = potionIndex;
+          const holder = players.find((candidate) => candidate.id === offerHolderIds[index] && !candidate.dead);
+          const receivers = offer.kind === 'potion' ? receiversFor(offerHolderIds[index]!) : [];
+          const recipient = offer.kind === 'potion' ? players.find((candidate) => candidate.id === potionPlan.recipients[at] && !candidate.dead) : player;
+          const takeBlocked = offer.kind === 'potion' && Boolean(holder) && potionPlan.blocked[at]!;
+          const fullBelt = takeBlocked && recipient && !hasSozu(recipient) ? recipient : undefined;
+          const title = offer.kind === 'relic' ? relicDef(offer.id).name : potionDef(offer.id).name;
+          const swap = offer.kind === 'potion' && potionPlan.swaps[at];
+          const holderSozu = Boolean(holder && hasSozu(holder));
+          return <div className="event-loot" key={`${offer.kind}-${offer.id}-${index}`} role="group" aria-label={title} data-choice={rewardItemChoices[index] || undefined}>
+            <RewardItem kind={offer.kind} id={offer.id} title={title}>
+              <button type="button" disabled={takeBlocked} aria-pressed={rewardItemChoices[index] === 'take'} onClick={() => choose(index, 'take')}>Take</button>
+              <button type="button" aria-pressed={rewardItemChoices[index] === 'skip'} onClick={() => choose(index, 'skip')}>Skip</button>
+            </RewardItem>
+            {offer.kind === 'potion' && (receivers.length > 0 || holderSozu) ? <label className="event-loot__pass">Pass to<select aria-label="Pass to" required={holderSozu} value={recipientIds[at] ?? ''} onChange={(event) => setPotionRecipientIds((current) => current.map((id, idIndex) => idIndex === at ? event.target.value : id))}><option value="">{holderSozu ? 'Choose a recipient' : holder && holder.id !== player.id ? holder.name : 'Keep it'}</option>{receivers.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}
+            {fullBelt ? <p className="event-loot__note">{fullBelt.id === player.id ? 'Your belt is full' : `${fullBelt.name}’s belt is full`}</p> : null}
+            {swap ? <fieldset className="event-potion-replacement" aria-label="Replace"><legend>Belt full · swap out</legend>{swapChoices(at).map(({ id, heldIndex }) => <button type="button" key={`${id}-${heldIndex}`} aria-pressed={potionReplacementIds[at] === id} title={potionDef(id).name} onClick={() => setPotionReplacementIds((current) => current.map((held, idIndex) => idIndex === at ? id : held))}><ItemImage kind="potion" id={id} /><span className="visually-hidden">{potionDef(id).name}</span></button>)}</fieldset> : null}
+          </div>;
+        })}</div>
+        <button type="button" className="room-proceed" disabled={rewardItemChoices.some((choice) => !choice) || !potionPlan.legal || effectiveCards.length < pendingCards || (pendingRelic && !effectiveRelic) || (pendingTarget && !effectiveTarget)} onClick={() => submit(pending?.optionIds ?? [], undefined, undefined, undefined, undefined, { potionRecipientIds: recipientIds.map((id, at) => rewardItemChoices[potionOfferIndexes[at]!] === 'take' ? id : ''), potionReplacementIds: replacementIds })}>Resolve rewards →</button>
+      </div>
+    </section>;
   }
   const stagedBy = [...Object.keys(room.itemOffers ?? {}), ...Object.keys(room.rewardOffers ?? {})].find((id) => id !== player.id);
   if (stagedBy) {
@@ -1258,7 +1307,6 @@ function EventScreen({
         </div>
       </section>
     );
-  const latestDie = room.dieRolls[player.id]?.at(-1);
   const openingHand = room.preparedCombat?.players.find((candidate) => candidate.id === player.id)?.hand ?? [];
   const preparedEnemies = room.preparedCombat?.enemies ?? [];
   const encounterPreview = preparedEnemies.length > 0 ? <fieldset className="event-encounter-preview">
@@ -1349,17 +1397,12 @@ function EventScreen({
   return (
     <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
       <div className="event-art" aria-hidden="true" />
-      <div ref={eventResolver} className={`event-panel${resolverOpen ? " event-panel--resolver" : ""}`}>
+      <div ref={eventResolver} className={`event-panel${resolverOpen ? " event-panel--resolver" : ""}`} data-roll={eventDie ? true : undefined}>
         <div className="room-banner">
           <span>Event</span>
           <h2 id="event-title">{room.card.name}</h2>
-          <p>{room.card.prompt ?? room.card.rule ?? "Choose carefully."}</p>
-          {latestDie ? (
-            <p role="status">
-              Die: {latestDie} · finish the revealed
-              outcome
-            </p>
-          ) : null}
+          {room.card.prompt ?? room.card.rule ? <p>{room.card.prompt ?? room.card.rule}</p> : null}
+          {eventDie}
           {room.revealedRelics?.[player.id] ? (
             <p role="status">
               Revealed relic: {relicDef(room.revealedRelics[player.id]!).name}
@@ -1397,7 +1440,7 @@ function EventScreen({
               {rewardSourceLabel(source)}
             </label>)}
           </fieldset> : null}
-          {needsTarget ? <label>
+          {needsTarget && !soleTargetId ? <label>
             Target player
             <select
               required
@@ -1434,16 +1477,11 @@ function EventScreen({
               {player.potions.map((id, index) => <button type="button" disabled={Boolean(pendingDecision?.potionIds?.length)} aria-pressed={pendingDecision?.potionIds?.length ? effectivePotionIds.includes(id) : potionIndexes.includes(index)} key={`${id}-${index}`} onClick={() => { setRelicId(""); setPotionIndexes((current) => current.includes(index) ? current.filter((value) => value !== index) : maximumPotions === 1 ? [index] : [...current, index].slice(-maximumPotions)); }}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}
             </fieldset>
           ) : null}
-          {resolverOpen && room.card.id === "secret_portal" ? (
-            <label>
-              Forward room
-              <select
-                required
-                disabled={Boolean(pendingDecision?.roomId)}
-                value={effectiveRoomId}
-                onChange={(event) => setRoomId(event.target.value)}
-              ><option value="">Choose a room</option>{eventForwardRooms.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}</select>
-            </label>
+          {resolverOpen && room.card.id === "secret_portal" && eventMap ? (
+            <div className="portal-map" role="group" aria-label="Forward room">
+              <MapScreen map={eventMap} choices={forwardRooms} pick pickedId={effectiveRoomId || undefined}
+                bossDefId={eventBossDefId} disabled={Boolean(pendingDecision?.roomId)} onEnter={setRoomId} />
+            </div>
           ) : null}
         </div>
         {(!resolverOpen || room.card.id === "knowing_skull") ? <div className="event-options" ref={eventOptions}>

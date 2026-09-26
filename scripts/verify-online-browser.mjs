@@ -5312,11 +5312,9 @@ try {
   })
   await ownerGame.locator('.campfire').waitFor({ state: 'hidden' })
   await a.setViewportSize({ width: 1440, height: 900 })
-  // The online Wing Boots prompt, which had no coverage at all: dropping the
-  // `map-prompt` class or swapping `wingBootLabel` for the room's raw `kind` both
-  // passed. The raw kind is the redaction leak the helper exists to stop — the
-  // ONLINE map is rewritten to `encounter` for a hidden room, so reading it prints
-  // a confident lie — and the campfire branch below is the other uncovered guard.
+  // Online Wing Boots destinations are winged map nodes. The ONLINE map rewrites
+  // a hidden room to `encounter`, so a node that read `room.kind` would print a
+  // confident lie; each must still say Unknown room.
   liveRoom.run = structuredClone(itemBaseline)
   // Whichever room offers the most destinations its own exits do not reach.
   let wingFrom = null
@@ -5345,23 +5343,37 @@ try {
     relics: [...player.relics, { defId: 'wing_boots', spent: false, uses: 3 }] }))
   liveRoom.version += 1
   rooms.publishRoom(code)
-  // The wait is guarded: without the strip class the locator never resolves, and a
-  // bare `waitFor` would kill the run on a timeout instead of failing this check.
   const onlineWingPrompt = wingOffPath.length > 0
     ? await (async () => {
       try {
-        await ownerGame.locator('.map-prompt').waitFor({ timeout: 10_000 })
+        await ownerGame.locator('.room--wing').nth(wingOffPath.length - 1).waitFor({ timeout: 10_000 })
       } catch {
-        return { strip: false, labels: [] }
+        return { ids: [], labels: [] }
       }
-      return ownerGame.locator('.map-prompt').evaluate((prompt) => ({
-        // What the class CAUSES, not the class itself: a locator that found
-        // `.map-prompt` obviously has it, so asserting the name proved nothing.
-        strip: getComputedStyle(prompt).flexDirection === 'row',
-        labels: [...prompt.querySelectorAll('button')].map((button) => button.textContent?.trim() ?? ''),
-      }))
+      return ownerGame.locator('.map').evaluate((map) => {
+        const wings = [...map.querySelectorAll('.room--wing')]
+        return {
+          ids: wings.map((node) => node.dataset.room).sort(),
+          prompt: document.querySelectorAll('.map-prompt').length,
+          labels: wings.map((node) => node.getAttribute('aria-label') ?? ''),
+        }
+      })
     })()
-    : { skipped: true, labels: [] }
+    : { skipped: true, ids: [], labels: [] }
+  // A winged node is the only online path that spends Wing Boots: clicking one
+  // must send the Wing Boots move, not a plain one the server would refuse.
+  const onlineWingFlight = wingOffPath.length > 0 && onlineWingPrompt.ids.length > 0
+    ? await (async () => {
+      const target = wingOffPath[0]
+      await ownerGame.locator(`[data-room="${target}"]`).click()
+      const deadline = Date.now() + 10_000
+      while (Date.now() < deadline && liveRoom.run.map.position !== target) await new Promise((done) => setTimeout(done, 50))
+      return {
+        target, position: liveRoom.run.map.position,
+        uses: liveRoom.run.players.find((player) => player.id === annRun.id)?.relics.find((relic) => relic.defId === 'wing_boots')?.uses,
+      }
+    })()
+    : null
   // The online campfire guard had no coverage: dropping `!run.roomState` kept both
   // suites green. A campfire tile carrying an open room interaction must mount ONE
   // screen, not the campfire stacked on top of the shop.
@@ -5461,15 +5473,15 @@ try {
     assertEqual(pendingMerchantAfterReconnect, 0, 'the teammate reconnect restored the blocked Merchant')
   })
 
-  check('the online Wing Boots prompt names a hidden room without revealing it', () => {
+  check('online Wing Boots nodes name a hidden room without revealing it', () => {
     assert(!onlineWingPrompt.skipped, 'the online map fixture offered no off-path room to walk to')
-    assert(onlineWingPrompt.strip, 'the online prompt was a stacked panel rather than a strip')
-    assert(onlineWingPrompt.labels.length > 0, 'the online prompt offered no destination')
+    assertDeepEqual(onlineWingPrompt.ids, [...wingOffPath].sort(), 'the online map did not wing exactly the off-path rooms')
+    assertEqual(onlineWingPrompt.prompt, 0, 'the retired online Wing Boots strip still rendered')
+    assert(onlineWingFlight, 'the online Wing Boots flight was not exercised')
+    assertEqual(onlineWingFlight.position, onlineWingFlight.target, 'clicking a winged node did not fly the party there')
+    assertEqual(onlineWingFlight.uses, 2, 'the online Wing Boots flight did not spend exactly one use')
     for (const label of onlineWingPrompt.labels) {
-      // The online map rewrites a hidden room's kind to `encounter`, so reading
-      // `room.kind` here would print "Encounter" for a room the player has not
-      // seen — a confident lie rather than a leak, and wrong either way.
-      assert(/^Ignore paths to Unknown room/.test(label),
+      assert(/^Unknown room/.test(label) && label.includes('Wing Boots'),
         `an online Wing Boots destination read "${label}" for a room the map is still hiding`)
     }
   })
@@ -5484,6 +5496,11 @@ try {
       potion: false, relic: 'empty_cage', bossRelics: false }],
   }
   const pendingRelicOwner = liveRoom.run.players.find((player) => player.id === annRun.id)
+  // Wing Boots at a room with an off-path detour, so "no winged room behind the
+  // Relic" is a claim about the guard rather than about a fixture without boots.
+  liveRoom.run.map.position = wingFrom
+  liveRoom.run.map.rooms[wingFrom] = { ...liveRoom.run.map.rooms[wingFrom], visited: true }
+  pendingRelicOwner.relics = [...pendingRelicOwner.relics.filter((relic) => relic.defId !== 'wing_boots'), { defId: 'wing_boots', spent: false, uses: 3 }]
   pendingRelicOwner.deck.push(...pendingRelicOwner.deck.slice(0, 6).map((card, index) => ({
     ...card, uid: `empty-cage-overflow-${index}`,
   })))
@@ -5507,7 +5524,7 @@ try {
   })
   const activeGames = [ownerGame, teammateGame]
   const reachableDuringRelic = await ownerGame.locator('.room--reachable').count()
-  const wingBootsDuringRelic = await ownerGame.getByRole('button', { name: /Ignore paths to/ }).count()
+  const wingBootsDuringRelic = await ownerGame.locator('.room--wing').count()
   await a.screenshot({ path: join(outDir, '08a-compact-desktop-pending-relic.png') })
   const pendingOnCompact = (await snapshot(a)).pendingRelic?.relicId
   check('pending Relic acquisition is exposed on the compact desktop owner surface', () => {
@@ -5539,6 +5556,7 @@ try {
   await ownerGame.getByRole('heading', { name: 'Resolve Empty Cage' }).waitFor({ state: 'hidden' })
   await Promise.all([a, b].map((page) => page.setViewportSize({ width: 1280, height: 800 })))
   await Promise.all(activeGames.map((game) => game.locator('.map:not([inert]) .room--reachable').first().waitFor()))
+  const wingBootsAfterRelic = await ownerGame.locator('.map:not([inert]) .room--wing').count()
   const teammateHeaderFocusPreserved = await teammateHeaderControl.evaluate((control) =>
     document.activeElement === control)
   const teammateMapFocusable = await teammateGame.locator('.room--reachable').first()
@@ -5549,6 +5567,7 @@ try {
     return Boolean(room && room.top >= port.top - 1 && room.bottom <= port.bottom + 1)
   })
   check('resolving a mandatory Relic restores the positioned map without stealing teammate focus', () => {
+    assert(wingBootsAfterRelic > 0, 'the Relic fixture never offered a Wing Boots room, so the pending-Relic guard went untested')
     assert(teammateMapFocusable)
     assert(teammateMapPositioned)
     assert(teammateHeaderFocusPreserved)

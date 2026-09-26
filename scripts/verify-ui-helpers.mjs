@@ -32,7 +32,10 @@ import {
   shouldDisarmCardFlight,
   stageScaleFor,
 } from '../src/ui/board-signals.ts'
-import { wingBootLabel } from '../src/ui/wing-boots.ts'
+import { wingBootUses } from '../src/ui/wing-boots.ts'
+import { dieOutcomes, rolledTable } from '../src/ui/die-outcomes.ts'
+import { defaultLootChoices, freePotionSlots, lootHolders, planEventPotions } from '../src/ui/event-loot.ts'
+import { EVENT_DEFINITIONS } from '../src/game/events.ts'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 suite('ui helpers')
@@ -276,50 +279,100 @@ check('all physical potions have distinct audible cues', () => {
 })
 
 
-// Both of this helper's rules are silent when they break: identical buttons look
-// like a rendering quirk, and a leaked room kind looks like a correct label.
-check('Wing Boots labels separate same-kind rooms and never name a hidden one', () => {
-  // The caller's room objects and the MAP's copies are deliberately different
-  // objects. The local prompt passes UNREDACTED rooms straight from
-  // `wingBootChoices` alongside a REDACTED `visibleMap`, so a helper that read
-  // `room.hidden` instead of asking the map would leak the true kind — and a
-  // fixture that reused one object for both could not tell the two apart.
-  const room = (id, kind) => ({ id, kind, row: 1, exits: [] })
-  const map = (rooms, veiled = false) => ({
-    rows: [['a0'], rooms.map((entry) => entry.id)],
-    rooms: Object.fromEntries(rooms.map((entry) => [entry.id,
-      veiled ? { ...entry, kind: 'encounter', hidden: true } : { ...entry }])),
+check('Wing Boots uses read the printed counter and default to none', () => {
+  assertEqual(wingBootUses({ relics: [{ defId: 'anchor' }, { defId: 'wing_boots', uses: 2 }] }), 2)
+  assertEqual(wingBootUses({ relics: [{ defId: 'wing_boots' }] }), 0)
+  assertEqual(wingBootUses({ relics: [] }), 0)
+  assertEqual(wingBootUses(undefined), 0)
+})
+
+check('event die tables name every face and read the chosen option', () => {
+  const lab = rolledTable(EVENT_DEFINITIONS.lab.options, [])
+  const labFaces = dieOutcomes(lab)
+  assertDeepEqual([1, 2, 3, 4, 5, 6].map((face) => labFaces[face].label), ['Nothing', 'Nothing', 'Nothing', 'Potion', 'Potion', 'Potion'])
+  const ooze = dieOutcomes(rolledTable(EVENT_DEFINITIONS.scrap_ooze.options, ['reach_inside']))
+  assertDeepEqual([1, 3, 5].map((face) => [ooze[face].label, ooze[face].tone]),
+    [['Reach again or leave', 'plain'], ['2 Gold', 'good'], ['Relic', 'good']])
+  assertEqual(rolledTable(EVENT_DEFINITIONS.scrap_ooze.options, ['leave']), undefined)
+  const wheel = dieOutcomes(rolledTable(EVENT_DEFINITIONS.wheel_of_change.options, EVENT_DEFINITIONS.wheel_of_change.options.map((option) => option.id)))
+  assertDeepEqual([wheel[2].tone, wheel[6].label], ['bad', 'Lose 2 HP'])
+})
+
+check('event loot plans Potions against the player who actually keeps them', () => {
+  const seat = (id, potions, relics = []) => ({ id, potions, relics: relics.map((defId) => ({ defId })) })
+  const limit = () => 2
+  const viewer = seat('v', ['fire_potion', 'block_potion'])
+  const mate = seat('m', [])
+  const players = [viewer, mate]
+  const potion = { kind: 'potion', id: 'swift_potion' }
+  const plan = (holder, choices, extra = {}) => planEventPotions({
+    offers: [potion], choices, recipients: [''], replacements: [null], actorId: 'v', holders: [holder], players,
+    free: freePotionSlots(players, limit, 'v', [holder]), ...extra,
   })
+  // A one-player payout to a teammate with room: no swap on the viewer's full belt.
+  assertDeepEqual(plan('m', ['take']), { legal: true, swaps: [false], blocked: [false], recipients: ['m'] })
+  // The viewer's own full belt asks for a swap, and only a held Potion answers it.
+  assertDeepEqual(plan('v', ['take']), { legal: false, swaps: [true], blocked: [false], recipients: ['v'] })
+  assert(plan('v', ['take'], { replacements: ['fire_potion'] }).legal)
+  assert(!plan('v', ['take'], { replacements: ['ghost_potion'] }).legal)
+  // A teammate's full belt cannot be swapped from here.
+  const fullMate = [viewer, seat('m', ['a', 'b'])]
+  assert(!planEventPotions({ offers: [potion], choices: ['take'], recipients: [''], replacements: [null], actorId: 'v', holders: ['m'],
+    players: fullMate, free: freePotionSlots(fullMate, limit, 'v', ['m']) }).legal)
+  // Two Potions passed to a teammate with one slot: the second is blocked, taken or not.
+  const oneSlot = [viewer, seat('m', ['a'])]
+  const twice = (choices) => planEventPotions({ offers: [potion, potion], choices, recipients: ['m', 'm'], replacements: [null, null],
+    actorId: 'v', holders: ['v', 'v'], players: oneSlot, free: freePotionSlots(oneSlot, limit, 'v', ['v', 'v']) })
+  assertDeepEqual([twice(['take', '']).blocked, twice(['take', '']).legal], [[false, true], true])
+  assertDeepEqual([twice(['take', 'take']).blocked, twice(['take', 'take']).legal], [[false, true], false])
+  assertDeepEqual(twice(['skip', '']).blocked, [false, false], 'a skipped Potion still used the teammate\'s slot')
+  // The resolving player's only slot went to an earlier reveal and there is
+  // nothing to discard: no swap can make room, so Take is blocked.
+  const bare = [seat('v', [])]
+  const earlier = { rewardItemKinds: ['potion'], rewardItemChoices: ['take'], potionRecipientIds: [''], potionReplacementIds: [''] }
+  const stuck = planEventPotions({ offers: [potion], choices: ['take'], recipients: [''], replacements: [null], actorId: 'v', holders: ['v'],
+    players: bare, free: freePotionSlots(bare, () => 1, 'v', ['v', 'v'], earlier) })
+  assertDeepEqual([stuck.blocked, stuck.swaps, stuck.legal], [[true], [false], false])
+  // Two overflows and one held Potion: the second has nothing left to give up.
+  const oneHeld = [seat('v', ['fire_potion'])]
+  const overflow = planEventPotions({ offers: [potion, potion], choices: ['take', 'take'], recipients: ['', ''], replacements: ['fire_potion', null],
+    actorId: 'v', holders: ['v', 'v'], players: oneHeld, free: freePotionSlots(oneHeld, () => 1, 'v', ['v', 'v']) })
+  assertDeepEqual([overflow.blocked, overflow.swaps, overflow.legal], [[false, true], [true, false], false])
+  // No holder chosen yet is never legal, and a Sozu holder cannot keep it.
+  assert(!plan('', ['take']).legal)
+  const sozu = [seat('v', [], ['sozu'])]
+  assert(!planEventPotions({ offers: [potion], choices: ['take'], recipients: [''], replacements: [null], actorId: 'v', holders: ['v'],
+    players: sozu, free: freePotionSlots(sozu, limit, 'v', ['v']) }).legal)
+  // Potions an earlier reveal already claimed use up the slots they will land
+  // in; a replacement only frees one on the actor's own belt.
+  const staged = { rewardItemKinds: ['potion', 'relic'], rewardItemChoices: ['take', 'take'], potionRecipientIds: [''], potionReplacementIds: [null] }
+  const swapped = { ...staged, potionReplacementIds: ['x'] }
+  assertEqual(freePotionSlots([viewer, mate], limit, 'v', ['m', 'm'], staged).get('m'), 1)
+  assertEqual(freePotionSlots([viewer, mate], limit, 'v', ['m', 'm'], swapped).get('m'), 1, 'a stale replacement freed a teammate\'s slot')
+  assertEqual(freePotionSlots([seat('v', ['a', 'b']), mate], limit, 'v', ['v', 'v'], swapped).get('v'), 0)
+  assertDeepEqual(defaultLootChoices([potion, potion, { kind: 'relic', id: 'anchor' }], [mate, mate, mate],
+    freePotionSlots([viewer, mate], limit, 'v', ['m', 'm', 'm', 'm'], staged)), ['take', '', 'take'])
+  // Each-player gains deal one to every seat in turn, so each Potion checks its own seat.
+  assertDeepEqual(defaultLootChoices([potion, potion], [viewer, mate], new Map([['v', 0], ['m', 2]])), ['', 'take'])
+  assertDeepEqual(defaultLootChoices([potion], [undefined], new Map()), [''])
+})
 
-  // One of a kind: no positional suffix, because there is nothing to tell apart.
-  const single = [room('r1', 'merchant'), room('r2', 'campfire')]
-  assertEqual(wingBootLabel(single[1], single, map(single)), 'Ignore paths to Campfire')
-
-  // Two merchants on the row: both say where they sit, counting from the left,
-  // and the lane is the room's index in the ROW, not in the offered subset.
-  const twin = [room('r1', 'merchant'), room('r2', 'campfire'), room('r3', 'merchant')]
-  const offered = [twin[0], twin[2]]
-  assertEqual(wingBootLabel(twin[0], offered, map(twin)), 'Ignore paths to Merchant · 1 from the left')
-  assertEqual(wingBootLabel(twin[2], offered, map(twin)), 'Ignore paths to Merchant · 3 from the left')
-  assertEqual(wingBootLabel(twin[1], twin, map(twin)), 'Ignore paths to Campfire')
-
-  // A redacted room must never print its kind, on either side of the wire: the
-  // local map is unredacted (printing `kind` would leak it) and the online map
-  // has already been rewritten to `encounter` (printing it would be a lie).
-  // The rooms still carry their TRUE kind, exactly as the local caller hands
-  // them over; only the map knows they are hidden.
-  const veiled = [room('r1', 'merchant'), room('r2', 'elite')]
-  const veiledMap = map(veiled, true)
-  assertEqual(wingBootLabel(veiled[0], veiled, veiledMap), 'Ignore paths to Unknown room · 1 from the left')
-  assertEqual(wingBootLabel(veiled[1], veiled, veiledMap), 'Ignore paths to Unknown room · 2 from the left')
-
-  // A room the map has forgotten degrades to no suffix rather than throwing.
-  // AMBIGUOUS on purpose: a lone choice never reads the lane at all, so a
-  // single-element array left the `lane > 0` guard unexercised.
-  const orphan = room('gone', 'treasure')
-  const twin2 = room('kept', 'treasure')
-  const partial = { rows: [['kept']], rooms: { kept: { ...twin2 }, gone: { ...orphan } } }
-  assertEqual(wingBootLabel(orphan, [orphan, twin2], partial), 'Ignore paths to Treasure')
+check('event loot names the seat that keeps each revealed item, in reveal order', () => {
+  const living = ['v', 'm']
+  const holders = (cardId, optionIds, rolls, targetId = '') => lootHolders({
+    cardId, options: EVENT_DEFINITIONS[cardId].options, optionIds, rolls, actorId: 'v', targetId, livingIds: living,
+  })
+  // Lab's opening Potion is each player's own reveal; its 4–6 bonus goes to the chosen player.
+  assertDeepEqual(holders('lab', ['resolve']), ['v'])
+  assertDeepEqual(holders('lab', ['resolve'], [5], 'm'), ['m'])
+  assertDeepEqual(holders('lab', ['resolve'], [2], 'm'), [])
+  // Dead Adventurer's 5–6 Relic goes to the chosen player; nothing is revealed before the roll.
+  assertDeepEqual(holders('dead_adventurer', ['search']), [])
+  assertDeepEqual(holders('dead_adventurer', ['search'], [6], 'm'), ['m'])
+  // A pre-roll gain is the actor's; the die's Curse is not an item.
+  assertDeepEqual(holders('mausoleum', ['open_coffin']), ['v'])
+  const partyPotions = { id: 'x', effects: [{ tag: 'gain-potion', target: 'each-player' }, { tag: 'gain-potion', count: 2 }] }
+  assertDeepEqual(lootHolders({ cardId: 'x', options: [partyPotions], optionIds: ['x'], actorId: 'v', targetId: '', livingIds: living }), ['v', 'm', 'v', 'v'])
 })
 
 suite('board feedback helpers')

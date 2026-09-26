@@ -5,6 +5,7 @@ import { relicDef, STARTING_RELIC } from '../game/relics.ts'
 import { ASCENSION_RULES } from '../game/run.ts'
 import type { CharacterId } from '../game/types.ts'
 import { CampaignSelect } from './CampaignSelect.tsx'
+import { MailBox } from './MailBox.tsx'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { MAX_RUN_LOG_BYTES, parseRunLog, type RunLog } from './run-log.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
@@ -266,6 +267,7 @@ export function StartMenu({
         <span className="start-menu__profile-mark" aria-hidden="true">◆</span>
         <span><strong>THE PARTY</strong><small>Board Game Chronicle</small></span>
       </div> : null}
+      {screen === 'main' && !SINGLE_PLAYER_ONLY ? <MailBox /> : null}
 
       {screen === 'main' ? <div className="start-menu__landing">
         <section className="start-menu__title" aria-labelledby="game-title">
