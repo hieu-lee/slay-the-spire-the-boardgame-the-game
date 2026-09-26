@@ -81,7 +81,21 @@
 }
 
 .mailbox__header { display: flex; align-items: center; justify-content: space-between; }
-.mailbox__header h2 { margin: 0; color: #332718; font-size: 1.6rem; text-shadow: 0 1px 0 rgb(255 241 194 / 0.75); }
+.mailbox__header h2 { min-width: 0; margin: 0; overflow: hidden; color: #332718; font-size: 1.6rem; text-overflow: ellipsis; text-shadow: 0 1px 0 rgb(255 241 194 / 0.75); white-space: nowrap; }
+
+.mailbox__back {
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  border: 0;
+  color: #49301f;
+  background: none;
+  font: 700 2rem/1 'Kreon', Georgia, serif;
+  cursor: pointer;
+}
+
+.mailbox__back:focus-visible,
+.mailbox__threads > li > button:focus-visible { outline: 3px solid #a4271d; outline-offset: 2px; }
 
 .mailbox__close {
   width: 2.2rem;
@@ -96,6 +110,39 @@
 }
 
 .mailbox__close:hover { background: #6a4529; }
+
+.mailbox__threads {
+  display: flex;
+  min-height: 7rem;
+  max-height: 26rem;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.15rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.mailbox__threads > li > button {
+  display: grid;
+  width: 100%;
+  gap: 0.12rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgb(83 53 25 / 0.42);
+  border-radius: 0.35rem;
+  color: #332718;
+  background: rgb(255 248 225 / 0.62);
+  box-shadow: 0 2px 3px rgb(64 39 16 / 0.16);
+  font-family: 'Kreon', Georgia, serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mailbox__threads > li > button:hover { background: rgb(255 248 225 / 0.86); }
+.mailbox__threads strong { font-size: 1.05rem; }
+.mailbox__threads span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mailbox__threads small { color: #6d4d2b; }
 
 .mailbox__thread {
   display: flex;
@@ -192,6 +239,7 @@
   .mailbox__panel { max-height: calc(100dvh - 1rem); gap: 0.4rem; padding: 0.6rem 0.9rem 0.7rem; }
   .mailbox__header h2 { font-size: 1.25rem; }
   .mailbox__thread { min-height: 3.5rem; }
+  .mailbox__threads { min-height: 3.5rem; max-height: 14rem; }
   .mailbox__compose textarea { min-height: 3.2rem; }
 }
 
@@ -205,6 +253,6 @@ html[data-reduced-motion='true'] .mailbox__badge { animation: none; }
 @media (forced-colors: active) {
   .mailbox__panel { border: 2px solid CanvasText; background: Canvas; clip-path: none; }
   .mailbox__letter { border-color: CanvasText; }
-  .mailbox__send, .mailbox__close { border-color: ButtonText; color: ButtonText; background: ButtonFace; }
+  .mailbox__send, .mailbox__close, .mailbox__threads > li > button { border-color: ButtonText; color: ButtonText; background: ButtonFace; }
   .mailbox__badge { border-color: CanvasText; color: Canvas; background: CanvasText; forced-color-adjust: none; }
 }

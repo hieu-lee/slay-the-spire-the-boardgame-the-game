@@ -58,6 +58,11 @@ try {
           const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
           return box.top >= 0 && box.bottom <= innerHeight && Boolean(hit && key.contains(hit))
         }),
+        centered: keys.every((key) => {
+          const box = key.getBoundingClientRect()
+          const label = key.querySelector('strong').getBoundingClientRect()
+          return Math.abs(label.left + label.width / 2 - (box.left + box.width / 2)) <= 3
+        }),
       }
     })
     await page.screenshot({ path: join(output, `${screen}-retry.png`) })
@@ -69,6 +74,7 @@ try {
       assertDeepEqual(retry.labels, ['Reach again', 'Leave'])
       assert(retry.status?.includes('Reach in again'), 'the retry state did not say what happened')
       assert(retry.onScreen, 'a retry key was off screen or covered')
+      assert(retry.centered, 'a retry key label was not centered on its key')
       assertDeepEqual(rolled, [1, 3], 'Reach again did not roll the die in the same click')
     })
     await page.close()

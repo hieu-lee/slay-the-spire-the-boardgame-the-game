@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { chromium } from './lib/profile-browser.mjs'
+import { ownerOf } from './lib/mail.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
@@ -16,14 +17,17 @@ const output = join(root, 'artifacts/mail-browser')
 mkdirSync(output, { recursive: true })
 const adminToken = 'mail-browser-admin-token-000000000001'
 const player = { username: 'TestPlayer', token: '00000000-0000-4000-8000-000000000001' }
-const rooms = createRoomServer({ mailAdminToken: adminToken })
+const mailboxAdmin = { username: 'MailboxKeeper', token: '00000000-0000-4000-8000-000000000099' }
+const rooms = createRoomServer({ mailAdminToken: adminToken, mailAdminOwners: [ownerOf(mailboxAdmin.token)] })
 const roomAddress = await rooms.listen(0)
 const target = `http://127.0.0.1:${roomAddress.port}`
 const api = async (path, init = {}) => {
   const response = await fetch(`${target}${path}`, { ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` } })
   return response.json()
 }
-await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(player) })
+for (const profile of [player, mailboxAdmin]) {
+  await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(profile) })
+}
 await api('/api/mail/admin/reply', { method: 'POST', body: JSON.stringify({ username: player.username, body: 'Welcome to the Spire! Tell me what you think.' }) })
 
 process.env.VITE_MAIL = 'true'
@@ -71,9 +75,29 @@ try {
       assertEqual(label, 'Mail, 1 unread')
     })
 
+    if (!phone) {
+      let releaseFetch
+      let interceptedFetch
+      const pendingFetch = new Promise((resolvePromise) => { interceptedFetch = resolvePromise })
+      const heldFetch = new Promise((resolvePromise) => { releaseFetch = resolvePromise })
+      await page.route('**/api/mail', async (route) => {
+        const response = await route.fetch()
+        interceptedFetch()
+        await heldFetch
+        await route.fulfill({ response })
+      }, { times: 1 })
+      await envelope.click()
+      await pendingFetch
+      await page.getByRole('dialog', { name: 'Letters' }).getByRole('button', { name: 'Close' }).click()
+      releaseFetch()
+      const unreadAfterClose = await api('/api/mail', { method: 'POST', body: JSON.stringify({ token: player.token }) })
+      check('desktop: closing during the first fetch does not consume unread personal mail', () =>
+        assertEqual(unreadAfterClose.unread, 1))
+    }
     await envelope.click()
     const dialog = page.getByRole('dialog', { name: 'Letters' })
     await dialog.locator('.mailbox__letter--developer').first().waitFor()
+    await page.locator('.mailbox__badge').waitFor({ state: 'detached' })
     await page.waitForFunction(() => document.activeElement?.id === 'mailbox-draft', undefined, { timeout: 3_000 }).catch(() => {})
     const opened = {
       letters: await dialog.locator('.mailbox__letter').count(),
@@ -104,6 +128,196 @@ try {
     })
     await context.close()
     if (!phone) await api('/api/mail/admin/reply', { method: 'POST', body: JSON.stringify({ username: player.username, body: 'Noted, thanks!' }) })
+  }
+
+  for (const [screen, viewport, phone] of [
+    ['admin-desktop', { width: 1440, height: 900 }, false],
+    ['admin-landscape-phone', { width: 844, height: 390 }, true],
+  ]) {
+    const suffix = phone ? 'Phone' : 'Desktop'
+    const reporter = { username: `Reporter${suffix}`, token: `00000000-0000-4000-8000-0000000000${phone ? '03' : '02'}` }
+    const newer = { username: `Newer${suffix}`, token: `00000000-0000-4000-8000-0000000000${phone ? '05' : '04'}` }
+    for (const profile of [reporter, newer]) {
+      await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(profile) })
+    }
+    await fetch(`${target}/api/mail/send`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: reporter.token, body: `The ${suffix.toLowerCase()} report is ready.` }) })
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 5))
+    await fetch(`${target}/api/mail/send`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: newer.token, body: `A newer ${suffix.toLowerCase()} report.` }) })
+
+    const context = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone })
+    const page = await context.newPage()
+    page.on('pageerror', (error) => errors.push(`${screen}: ${error.message}`))
+    page.on('console', (message) => { if (message.type() === 'error') errors.push(`${screen}: ${message.text()}`) })
+    await page.goto(`http://127.0.0.1:${address.port}`)
+    await page.evaluate((profile) => localStorage.setItem('sts-profile', JSON.stringify(profile)), mailboxAdmin)
+    await page.reload()
+    await page.locator('.start-menu__nav').waitFor()
+    const envelope = page.getByRole('button', { name: /^Mail/ })
+    const initialMail = await api('/api/mail', { method: 'POST', body: JSON.stringify({ token: mailboxAdmin.token }) })
+    await page.waitForFunction((count) => document.querySelector('.mailbox__badge')?.textContent === String(count),
+      initialMail.unread + initialMail.personalUnread, { timeout: 10_000 })
+    await envelope.click()
+    const dialog = page.locator('dialog.mailbox')
+    await dialog.getByRole('heading', { name: 'Server mail' }).waitFor()
+    const report = dialog.getByRole('button', { name: new RegExp(reporter.username) })
+    const firstBefore = await dialog.locator('.mailbox__threads > li:not(.mailbox__personal) > button').first().innerText()
+    await page.screenshot({ path: join(output, `${screen}-server-inbox.png`) })
+    if (!phone) {
+      let releaseThreadFetch
+      let interceptedThreadFetch
+      const pendingThreadFetch = new Promise((resolvePromise) => { interceptedThreadFetch = resolvePromise })
+      const heldThreadFetch = new Promise((resolvePromise) => { releaseThreadFetch = resolvePromise })
+      await page.route('**/api/mail/desk', async (route) => {
+        const response = await route.fetch()
+        interceptedThreadFetch()
+        await heldThreadFetch
+        await route.fulfill({ response })
+      }, { times: 1 })
+      const delayedThread = page.waitForResponse((response) => response.url().endsWith('/api/mail/desk') &&
+        response.request().postDataJSON()?.username === reporter.username)
+      await report.click()
+      await pendingThreadFetch
+      await dialog.getByRole('button', { name: 'Close' }).click()
+      await envelope.click()
+      await dialog.getByRole('heading', { name: 'Server mail' }).waitFor()
+      releaseThreadFetch()
+      await delayedThread
+      await page.evaluate(() => new Promise((resolvePromise) => requestAnimationFrame(() => requestAnimationFrame(resolvePromise))))
+      const serverThreads = await api('/api/mail/desk', { method: 'POST', body: JSON.stringify({ token: mailboxAdmin.token }) })
+      check('desktop: a closed server-thread fetch neither handles unread mail nor reopens a stale thread', () => {
+        assertEqual(serverThreads.threads.find((thread) => thread.username === reporter.username)?.unread, 1)
+      })
+      assertEqual(await dialog.getByRole('heading', { name: 'Server mail' }).count(), 1, 'a stale thread replaced the reopened desk')
+    }
+    let releaseMark
+    let interceptedMark
+    let waitForMark
+    let stopHoldingMark
+    if (phone) {
+      const pendingMark = new Promise((resolvePromise) => { interceptedMark = resolvePromise })
+      const heldMark = new Promise((resolvePromise) => { releaseMark = resolvePromise })
+      const holdMark = async (route) => {
+        if (route.request().postDataJSON()?.markRead !== true) return route.continue()
+        interceptedMark()
+        await heldMark
+        await route.continue()
+      }
+      await page.route('**/api/mail/desk', holdMark)
+      waitForMark = pendingMark
+      stopHoldingMark = () => page.unroute('**/api/mail/desk', holdMark, { behavior: 'wait' })
+    }
+    const markedThread = page.waitForResponse((response) => response.url().endsWith('/api/mail/desk') &&
+      response.request().postDataJSON()?.username === reporter.username && response.request().postDataJSON()?.markRead === true)
+    await report.click()
+    await dialog.getByText(`The ${suffix.toLowerCase()} report is ready.`).waitFor()
+    if (phone) {
+      await waitForMark
+      await fetch(`${target}/api/mail/send`, { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: reporter.token, body: 'One more detail before you answer.' }) })
+      releaseMark()
+    }
+    const firstReadAt = (await markedThread).request().postDataJSON().readThroughAt
+    if (phone) await stopHoldingMark()
+    const reply = `Handled from ${screen}.`
+    await dialog.getByLabel(`Reply to ${reporter.username}`).fill(reply)
+    const updatedRead = phone ? page.waitForResponse((response) => response.url().endsWith('/api/mail/desk') &&
+      response.request().postDataJSON()?.username === reporter.username && response.request().postDataJSON()?.markRead === true &&
+      response.request().postDataJSON()?.readThroughAt > firstReadAt) : null
+    await dialog.getByRole('button', { name: 'Reply' }).click()
+    await dialog.locator('.mailbox__letter--developer').filter({ hasText: reply }).waitFor()
+    if (updatedRead) await updatedRead
+    const fits = await dialog.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      return box.top >= 0 && box.bottom <= innerHeight + 1 && box.left >= 0 && box.right <= innerWidth + 1
+    })
+    await page.screenshot({ path: join(output, `${screen}-server-mail.png`) })
+    await dialog.getByRole('button', { name: 'Back to server mail' }).click()
+    const answered = dialog.getByRole('button', { name: new RegExp(reporter.username) })
+    const answeredText = await answered.innerText()
+    const firstThread = await dialog.locator('.mailbox__threads > li:not(.mailbox__personal) > button').first().innerText()
+    await page.screenshot({ path: join(output, `${screen}-server-answered.png`) })
+    const saved = await api(`/api/mail/admin?username=${reporter.username}`)
+    check(`${screen}: an owner-bound account reads server mail and replies to its sender`, () => {
+      assert(fits, 'the server mailbox does not fit the screen')
+      assert(answeredText.includes(reply) && answeredText.includes('Answered'),
+        `the replied thread lost its latest state: ${answeredText}`)
+      assert(firstBefore.includes(newer.username), 'the ordering fixture did not begin with the newer thread')
+      assert(firstThread.includes(reporter.username), 'the replied thread did not move to the newest position')
+      assert(saved.threads[0].letters.some((letter) => letter.from === 'developer' && letter.body === reply),
+        'the delegated reply did not reach the sender thread')
+    })
+    if (!phone) {
+      await dialog.getByRole('button', { name: new RegExp(newer.username) }).click()
+      await dialog.getByText(`A newer ${suffix.toLowerCase()} report.`).waitFor()
+      let releaseReply
+      let interceptedReply
+      const pendingReply = new Promise((resolvePromise) => { interceptedReply = resolvePromise })
+      const heldReply = new Promise((resolvePromise) => { releaseReply = resolvePromise })
+      await page.route('**/api/mail/desk/reply', async (route) => {
+        const response = await route.fetch()
+        interceptedReply()
+        await heldReply
+        await route.fulfill({ response })
+      }, { times: 1 })
+      const delayedReply = page.waitForResponse((response) => response.url().endsWith('/api/mail/desk/reply'))
+      await dialog.getByLabel(`Reply to ${newer.username}`).fill('Handled the other report.')
+      await dialog.getByRole('button', { name: 'Reply' }).click()
+      await pendingReply
+      const blockedBack = await dialog.getByRole('button', { name: 'Back to server mail' }).isDisabled()
+      const blockedClose = await dialog.getByRole('button', { name: 'Close' }).isDisabled()
+      await page.keyboard.press('Escape')
+      const stayedOpen = await dialog.evaluate((element) => element.open)
+      releaseReply()
+      await delayedReply
+      await dialog.getByText('Handled the other report.').waitFor()
+      await dialog.getByRole('button', { name: 'Back to server mail' }).click()
+      await dialog.getByRole('button', { name: new RegExp(newer.username) }).waitFor()
+      check('desktop: navigation waits for a pending reply to finish', () => {
+        assert(blockedBack && blockedClose && stayedOpen, 'sending allowed navigation away from an unacknowledged reply')
+      })
+      await fetch(`${target}/api/mail/send`, { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: newer.token, body: 'Arrived after the desk loaded.' }) })
+      const lateRead = page.waitForResponse((response) => response.url().endsWith('/api/mail/desk') &&
+        response.request().postDataJSON()?.username === newer.username && response.request().postDataJSON()?.markRead === true)
+      await dialog.getByRole('button', { name: new RegExp(newer.username) }).click()
+      await dialog.getByText('Arrived after the desk loaded.').waitFor()
+      await lateRead
+      const refreshedThread = await api('/api/mail/desk', { method: 'POST',
+        body: JSON.stringify({ token: mailboxAdmin.token, username: newer.username }) })
+      check('desktop: opening a thread reads mail newer than the desk preview', () => {
+        assertEqual(refreshedThread.threads[0].unread, 0)
+      })
+      await dialog.getByRole('button', { name: 'Back to server mail' }).click()
+      await dialog.getByRole('button', { name: new RegExp(newer.username) }).waitFor()
+    }
+    const composerOnDesk = await dialog.locator('.mailbox__compose').count()
+    const ownThreadOnDesk = await dialog.getByRole('button', { name: new RegExp(mailboxAdmin.username) }).count()
+    check(`${screen}: delegated accounts read and reply without composing a personal letter`, () => {
+      assertEqual(composerOnDesk, 0)
+      assertEqual(ownThreadOnDesk, 0, 'the owner\'s historic letter appeared in their own desk')
+      assert(initialMail.admin, 'the owner-bound account lost server-mail access')
+    })
+    await api('/api/mail/admin/reply', { method: 'POST', body: JSON.stringify({ username: mailboxAdmin.username, body: `Personal reply for ${screen}.` }) })
+    await dialog.getByRole('button', { name: /Your letters/ }).click()
+    await dialog.getByRole('heading', { name: 'Your letters' }).waitFor()
+    await dialog.getByText(`Personal reply for ${screen}.`).waitFor()
+    const personalComposer = await dialog.locator('.mailbox__compose').count()
+    const personalReply = await dialog.getByText(`Personal reply for ${screen}.`).count()
+    const personalFits = await dialog.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      return box.top >= 0 && box.bottom <= innerHeight + 1 && box.left >= 0 && box.right <= innerWidth + 1
+    })
+    await page.screenshot({ path: join(output, `${screen}-personal-mail.png`) })
+    await dialog.getByRole('button', { name: 'Back to server mail' }).click()
+    await dialog.getByRole('heading', { name: 'Server mail' }).waitFor()
+    check(`${screen}: personal letters are readable but admins cannot send them`, () => {
+      assertEqual(personalComposer, 0)
+      assertEqual(personalReply, 1)
+      assert(personalFits, 'the personal mailbox does not fit the screen')
+    })
+    await context.close()
   }
   check('the mailbox raised no page or console errors', () => assertEqual(errors.join('\n'), ''))
 } finally {

@@ -6,7 +6,16 @@ const REQUEST_TIMEOUT_MS = 8_000
 export const MAX_LETTER_LENGTH = 2_000
 
 export type Letter = { id: string; from: 'player' | 'developer'; body: string; at: number }
-export type Mailbox = { letters: Letter[]; unread: number }
+export type Mailbox = { letters: Letter[]; unread: number; personalUnread: number; admin: boolean }
+export type MailThread = {
+  username: string
+  unread: number
+  lastAt: number
+  lastFrom?: Letter['from']
+  preview?: string
+  letters?: Letter[]
+}
+export type MailDesk = { threads: MailThread[]; unread: number }
 
 /**
  * Only a hosted build polls on its own. A local build's `/api` is a dev proxy
@@ -32,7 +41,19 @@ async function post(path: string, body: Record<string, unknown>): Promise<Reply>
 
 function mailbox({ status, body }: Reply): Mailbox {
   if (status < 200 || status >= 300) throw new Error(typeof body.error === 'string' ? body.error : 'The letter could not be delivered.')
-  return { letters: Array.isArray(body.letters) ? body.letters as Letter[] : [], unread: Number(body.unread) || 0 }
+  const unread = Number(body.unread) || 0
+  const personalUnread = Number(body.personalUnread)
+  return {
+    letters: Array.isArray(body.letters) ? body.letters as Letter[] : [],
+    unread,
+    personalUnread: Number.isFinite(personalUnread) ? personalUnread : unread,
+    admin: body.admin === true,
+  }
+}
+
+function desk({ status, body }: Reply): MailDesk {
+  if (status < 200 || status >= 300) throw new Error(typeof body.error === 'string' ? body.error : 'The server mail could not be opened.')
+  return { threads: Array.isArray(body.threads) ? body.threads as MailThread[] : [], unread: Number(body.unread) || 0 }
 }
 
 function profile(): Profile {
@@ -41,8 +62,8 @@ function profile(): Profile {
   return saved
 }
 
-export async function fetchMailbox(markRead = false): Promise<Mailbox> {
-  return mailbox(await post('/api/mail', { token: profile().token, markRead }))
+export async function fetchMailbox(markRead = false, readThroughAt?: number): Promise<Mailbox> {
+  return mailbox(await post('/api/mail', { token: profile().token, markRead, readThroughAt }))
 }
 
 export async function sendLetter(body: string): Promise<Mailbox> {
@@ -54,4 +75,12 @@ export async function sendLetter(body: string): Promise<Mailbox> {
   const claimed = await post('/api/profile', { username, token })
   if (claimed.status !== 200) throw new Error(typeof claimed.body.error === 'string' ? claimed.body.error : 'Your name could not be registered.')
   return mailbox(await post('/api/mail/send', { token, body }))
+}
+
+export async function fetchMailDesk(username?: string, markRead = false, readThroughAt?: number): Promise<MailDesk> {
+  return desk(await post('/api/mail/desk', { token: profile().token, ...(username ? { username } : {}), markRead, readThroughAt }))
+}
+
+export async function sendMailDeskReply(username: string, body: string): Promise<MailDesk> {
+  return desk(await post('/api/mail/desk/reply', { token: profile().token, username, body }))
 }
