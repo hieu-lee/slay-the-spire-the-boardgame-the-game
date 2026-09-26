@@ -599,6 +599,22 @@ check('row targeting skips the dead', () => {
   assertEqual(resolveEnemyTargets(state, 'row', 'a').length, 1, 'dead enemies are not targets')
 })
 
+check('target resolution keeps enemy order and requires a living row anchor', () => {
+  const state = combat([makePlayer()], [
+    makeEnemy({ uid: 'dead', row: 0, dead: true }),
+    makeEnemy({ uid: 'other', row: 1 }),
+    makeEnemy({ uid: 'same', row: 0 }),
+    makeEnemy({ uid: 'boss', row: 2, isBoss: true }),
+  ])
+  const ids = (scope, uid, row) => resolveEnemyTargets(state, scope, uid, row).map((enemy) => enemy.uid)
+  assertDeepEqual(ids('enemy', 'same'), ['same'], 'a living single target remains selectable')
+  assertDeepEqual(ids('enemy', 'dead'), [], 'a dead single target is excluded')
+  assertDeepEqual(ids('allEnemies', null), ['other', 'same', 'boss'], 'all enemies retain board order')
+  assertDeepEqual(ids('row', 'same'), ['same', 'boss'], 'a row includes the boss in board order')
+  assertDeepEqual(ids('row', 'dead'), [], 'a dead anchor cannot select a row')
+  assertDeepEqual(ids('row', null, 0), ['same', 'boss'], 'an explicit row needs no anchor')
+})
+
 check('start of turn resets energy and block and draws five', () => {
   const deck = STARTER_DECKS.ironclad.map((id) => instance(id))
   const state = combat([makePlayer({ draw: deck, energy: 0, block: 7 })], [makeEnemy()])

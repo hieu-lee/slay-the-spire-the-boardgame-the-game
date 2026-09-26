@@ -128,17 +128,13 @@ export function resolveEnemyTargets(
   chosenUid: string | null,
   chosenRow?: number | null,
 ): Enemy[] {
-  const alive = livingEnemies(state)
-  if (scope === 'allEnemies') return alive
+  if (scope === 'allEnemies') return livingEnemies(state)
   if (scope === 'row') {
-    if (chosenRow !== null && chosenRow !== undefined) {
-      return alive.filter((enemy) => enemy.row === chosenRow || enemy.isBoss)
-    }
-    const anchor = alive.find((enemy) => enemy.uid === chosenUid)
-    if (!anchor) return []
-    return alive.filter((enemy) => enemy.row === anchor.row || enemy.isBoss)
+    const row = chosenRow ?? state.enemies.find((enemy) => !enemy.dead && enemy.uid === chosenUid)?.row
+    if (row === undefined) return []
+    return state.enemies.filter((enemy) => !enemy.dead && (enemy.row === row || enemy.isBoss))
   }
-  const single = alive.find((enemy) => enemy.uid === chosenUid)
+  const single = state.enemies.find((enemy) => !enemy.dead && enemy.uid === chosenUid)
   return single ? [single] : []
 }
 
