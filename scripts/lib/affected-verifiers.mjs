@@ -60,7 +60,9 @@ const focusedUiOwners = new Map([
   ['src/ui/combat-screen/vfx.tsx', ['verify-lightning-act2-browser.mjs']],
   ['src/ui/styles/compendium.css', ['verify-compendium-browser.mjs']],
   ['src/ui/styles/prompt.css', ['verify-hermit-combo-browser.mjs']],
-  ['src/ui/TokenRow.tsx', ['verify-turn-targets-browser.mjs']],
+  ['src/ui/TokenRow.tsx', [
+    'verify-turn-targets-browser.mjs', 'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs',
+  ]],
   ['src/ui/styles/enemy-portrait.css', ['verify-turn-targets-browser.mjs', 'verify-end-turn-drag-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
   ['src/ui/styles/stage-scale.css', ['verify-combat-layout-reload-browser.mjs']],

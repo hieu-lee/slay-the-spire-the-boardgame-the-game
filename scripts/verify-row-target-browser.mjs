@@ -151,7 +151,7 @@ try {
 
         await page.evaluate(() => window.fixture.evoke())
         await page.getByRole('button', { name: /^Dual Cast,/ }).click()
-        await page.getByRole('button', { name: /lightning slot 1/i }).click()
+        await page.getByRole('button', { name: 'Evoke lightning Orb 1', exact: true }).click()
         await page.locator('[data-enemy-id="boss"].enemy--targeted').waitFor()
         assert.equal(await page.locator('.row__lane-target').count(), 0,
           `${screen}: lightning evoke still shows a redundant button`)
@@ -167,7 +167,7 @@ try {
 
         await page.evaluate(() => window.fixture.evoke())
         await page.getByRole('button', { name: /^Dual Cast,/ }).click()
-        await page.getByRole('button', { name: /lightning slot 1/i }).click()
+        await page.getByRole('button', { name: 'Evoke lightning Orb 1', exact: true }).click()
         const lightningGround = page.getByRole('button', { name: 'Evoke Lightning in Row Defect (the boss is hit)' })
         await lightningGround.waitFor()
         await activate(lightningGround)
@@ -178,7 +178,7 @@ try {
 
         await page.evaluate(() => window.fixture.evoke())
         await page.getByRole('button', { name: /^Dual Cast,/ }).click()
-        await page.getByRole('button', { name: /lightning slot 1/i }).click()
+        await page.getByRole('button', { name: 'Evoke lightning Orb 1', exact: true }).click()
         await lightningGround.focus()
         await lightningGround.evaluate(element => element.dispatchEvent(new KeyboardEvent('keydown', {
           key: ' ', repeat: true, bubbles: true,
@@ -189,6 +189,78 @@ try {
         await lightningGround.focus()
         await page.keyboard.press('Space')
         await page.waitForFunction(() => window.fixture.state.enemies.find(enemy => enemy.uid === 'boss').hp < 20)
+
+        // The floating Evoke Orb can be dropped on the same empty-row ground.
+        await page.evaluate(() => window.fixture.evoke())
+        await page.getByRole('button', { name: /^Dual Cast,/ }).click()
+        await page.getByRole('button', { name: 'Evoke lightning Orb 1', exact: true }).click()
+        const bossBeforeDrop = await page.evaluate(() => window.fixture.state.enemies.find(enemy => enemy.uid === 'boss').hp)
+        for (let aim = 0; aim < 2; aim++) {
+          const from = await page.locator('.evoke-target-effect button').boundingBox()
+          const to = await lightningGround.boundingBox()
+          assert(from && to, `${screen}: the Evoke aim or the empty-row ground is offscreen`)
+          await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+          await page.mouse.down()
+          await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 10 })
+          await page.mouse.up()
+          if (aim === 0) await page.waitForFunction(() => document.querySelector('.evoke-target-effect')?.textContent?.includes('Orb 2:'))
+        }
+        await page.locator('.evoke-target-effect').waitFor({ state: 'detached' })
+        await page.waitForFunction(before => window.fixture.state.enemies.find(enemy => enemy.uid === 'boss').hp < before,
+          bossBeforeDrop)
+        assert.equal(await page.evaluate(() => window.fixture.state.enemies.find(enemy => enemy.uid === 'living').hp), 10,
+          `${screen}: a Lightning dropped on empty-row ground hit the populated row`)
+
+        // With two populated rows the boss is no target of its own, yet a row under the
+        // dragged Evoke aim lights it because that row's hit includes the boss.
+        await page.evaluate(() => {
+          window.fixture.evoke()
+          Object.assign(window.fixture.state.enemies.find(enemy => enemy.uid === 'dead'), { hp: 10, dead: false })
+          window.fixture.render()
+        })
+        await page.getByRole('button', { name: /^Dual Cast,/ }).click()
+        await page.getByRole('button', { name: 'Evoke lightning Orb 1', exact: true }).click()
+        const rowAim = await page.locator('.evoke-target-effect button').boundingBox()
+        await page.mouse.move(rowAim.x + rowAim.width / 2, rowAim.y + rowAim.height / 2)
+        await page.mouse.down()
+        await page.mouse.move(rowAim.x + rowAim.width / 2 + 30, rowAim.y + rowAim.height / 2 + 30, { steps: 4 })
+        await page.waitForTimeout(100)
+        assert.equal(await page.locator('[data-enemy-id="boss"].enemy--targeted').count(), 0,
+          `${screen}: the boss lit before any row was under the Evoke aim`)
+        const livingBody = await page.locator('[data-enemy-id="living"] .enemy__hit-area').boundingBox()
+        await page.mouse.move(livingBody.x + livingBody.width / 2, livingBody.y + livingBody.height / 2, { steps: 10 })
+        await page.locator('[data-enemy-id="boss"].enemy--targeted').waitFor()
+        await page.mouse.up()
+        await page.waitForFunction(() => document.querySelector('.evoke-target-effect')?.textContent?.includes('Orb 2:'))
+
+        // An unarmed end-of-turn row-Lightning Orb drops on the same ground.
+        await page.evaluate(() => {
+          window.fixture.evoke()
+          window.fixture.state.players[0].hand = []
+          window.fixture.render()
+        })
+        await page.getByRole('button', { name: 'End turn', exact: true }).click()
+        const endOrb = page.locator('.end-turn-effects button.end-turn-effect--orb')
+        await endOrb.waitFor()
+        const bossBeforeEndTurn = await page.evaluate(() => window.fixture.state.enemies.find(enemy => enemy.uid === 'boss').hp)
+        const endFrom = await endOrb.boundingBox()
+        assert(endFrom, `${screen}: the end-turn Orb is offscreen`)
+        await page.mouse.move(endFrom.x + endFrom.width / 2, endFrom.y + endFrom.height / 2)
+        await page.mouse.down()
+        await page.mouse.move(endFrom.x + endFrom.width / 2 + 30, endFrom.y + endFrom.height / 2 + 30, { steps: 4 })
+        const emptyGround = page.locator('.row__enemies--targetable')
+        await emptyGround.waitFor()
+        assert.equal(await emptyGround.count(), 1, `${screen}: dragging the end-turn Orb did not light the empty row`)
+        assert.equal(await page.locator('[data-enemy-id="living"].enemy--targeted').count(), 1,
+          `${screen}: dragging the end-turn Orb lit the empty row but not the populated one`)
+        const endTo = await emptyGround.boundingBox()
+        await page.mouse.move(endTo.x + endTo.width / 2, endTo.y + endTo.height / 2, { steps: 10 })
+        await page.mouse.up()
+        await page.waitForFunction(() => document.querySelector('.end-turn-effects')?.getAttribute('aria-label')?.includes('Lightning Orb 2'))
+        assert(await page.evaluate(before => window.fixture.state.enemies.find(enemy => enemy.uid === 'boss').hp < before,
+          bossBeforeEndTurn), `${screen}: an end-turn Lightning dropped on empty-row ground missed the boss`)
+        assert.equal(await page.evaluate(() => window.fixture.state.enemies.find(enemy => enemy.uid === 'living').hp), 10,
+          `${screen}: an end-turn Lightning dropped on empty-row ground hit the populated row`)
 
         await page.evaluate(() => window.fixture.fourParty())
         await page.getByRole('button', { name: 'Use Combust+' }).click()

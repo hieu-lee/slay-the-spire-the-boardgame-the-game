@@ -2198,6 +2198,9 @@ function CombatScreenView({
   const endTurnEffectSlimeAsset = endTurnEffectVisual?.kind === 'slime'
     ? assetPath(`combat/slimes/${slimeAssetSlug(endTurnEffectVisual.cardId)}.webp`)
     : undefined
+  // A row-hitting end-turn effect lights empty rows while armed or being dragged.
+  const endTurnEffectAimed = endTurnEffect !== undefined &&
+    (armedEndTurnAbilityId === endTurnEffect.id || endTurnEffectDrag?.ability.id === endTurnEffect.id)
   const endTurnEffectDragVisual = endTurnEffectDrag?.ability.visual
   const endTurnEffectDragCard = !endTurnEffectDrag?.sourceOrb && endTurnEffectDragVisual?.kind === 'card' && endTurnEffectDrag
     ? state.players.find((player) => player.id === endTurnEffectDrag.ability.playerId)
@@ -3736,8 +3739,8 @@ function CombatScreenView({
       target.uid === lightningRowTarget(enemy.row) || target.uid.endsWith(`:${lightningRowTarget(enemy.row)}`))?.uid ?? null
   }
 
-  function endTurnTargetForRow(row: number): string | null {
-    return endTurnEffect?.targets?.find((target) =>
+  function endTurnTargetForRow(row: number, ability: EndTurnEffectDrag['ability'] | undefined = endTurnEffect): string | null {
+    return ability?.targets?.find((target) =>
       target.uid === lightningRowTarget(row) || target.uid.endsWith(`:${lightningRowTarget(row)}`))?.uid ?? null
   }
 
@@ -3771,7 +3774,9 @@ function CombatScreenView({
     }
     const enemyUid = dragTargetAt(x, y, false)
     const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
-    return enemy ? endTurnTargetForEnemy(enemy, active.ability) : null
+    if (enemy) return endTurnTargetForEnemy(enemy, active.ability)
+    const row = Number(document.elementFromPoint(x, y)?.closest<HTMLElement>('.row__enemies--targetable')?.dataset.row)
+    return Number.isInteger(row) ? endTurnTargetForRow(row, active.ability) : null
   }
 
   function onEndTurnOrbPointerDown(player: Player, event: React.PointerEvent<HTMLDivElement>) {
@@ -3793,9 +3798,11 @@ function CombatScreenView({
   }
 
   function isEndTurnEnemyTarget(enemy: Enemy): boolean {
-    const targetUid = endTurnTargetForEnemy(enemy)
-    return targetUid !== null && (endTurnEffectDrag?.targetUid === targetUid ||
-      armedEndTurnAbilityId === endTurnEffect?.id)
+    if (endTurnTargetForEnemy(enemy) !== null) return endTurnEffectAimed
+    // A row hit also hits the boss, so light it while a row lies under a dragged effect or Evoke aim.
+    const hovered = endTurnEffectDrag?.targetUid
+    return enemy.isBoss && !enemy.dead && typeof hovered === 'string' &&
+      lightningRowFromTarget(hovered.split(':').slice(-2).join(':')) !== null
   }
 
   function resolveTurnEffectTarget(abilityId: string, targetUid: string) {
@@ -4378,16 +4385,11 @@ function CombatScreenView({
       usePower(pendingPowerUid, { enemyRow: row })
       return
     }
-    if (pending && pendingEvokeTarget >= 0 && pendingEvokeUsesRows && choiceSatisfied &&
-      pendingEvokeTargetUids.has(lightningRowTarget(row))) {
-      const targets = [...pending.evokeEnemyUids]
-      targets[pendingEvokeTarget] = lightningRowTarget(row)
-      stageOrCommit({ ...pending, evokeEnemyUids: targets })
-    }
+    if (pendingEvokeUsesRows) chooseCardEvokeTarget(lightningRowTarget(row))
   }
 
   function isRowLaneClickTargetable(row: number): boolean {
-    if (armedEndTurnAbilityId === endTurnEffect?.id && endTurnTargetForRow(row)) return true
+    if (endTurnEffectAimed && endTurnTargetForRow(row)) return true
     if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id && triggerHermitChoicesReady &&
       pendingTrigger.rows?.some((target) => target.row === row)) {
       return true
@@ -4403,7 +4405,7 @@ function CombatScreenView({
   // The ground's accessible name follows the same priority as its click.
   function rowLaneClickLabel(row: number): string {
     const rowLabel = combatRowLabel(state, row)
-    if (armedEndTurnAbilityId === endTurnEffect?.id && endTurnTargetForRow(row)) {
+    if (endTurnEffectAimed && endTurnTargetForRow(row)) {
       return `Resolve ${endTurnEffect.label} in ${rowLabel}`
     }
     if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id && triggerHermitChoicesReady &&
@@ -6650,7 +6652,8 @@ function CombatScreenView({
                 )}
               </div>
               <div className={`row__enemies${emptyRowTargetable ? ' row__enemies--targetable' : ''}`}
-                data-enemies={foes.length} role={emptyRowTargetable ? 'button' : undefined}
+                data-enemies={foes.length} data-row={emptyRowTargetable ? row : undefined}
+                role={emptyRowTargetable ? 'button' : undefined}
                 tabIndex={emptyRowTargetable ? 0 : undefined}
                 aria-label={emptyRowTargetable ? `${rowLaneClickLabel(row)}${bosses.some((enemy) => !enemy.dead)
                   ? ' (the boss is hit)' : ''}` : undefined}
