@@ -610,6 +610,52 @@ check('each-player Potion gains preserve earlier cross-player passes', () => {
   assertDeepEqual(result.players[1].potions, ['fire_potion', 'swift_potion'])
 })
 
+check('an item an empty deck cannot supply keeps later reward choices on their own items', () => {
+  let run = inEvent('upgrade_shrine', 1)
+  const pray = run.roomState.card.options[0]
+  run.roomState = { ...run.roomState, card: { ...run.roomState.card, options: [
+    { ...pray, effects: [{ tag: 'gain-potion', count: 2 }, { tag: 'gain-relic' }] },
+  ] } }
+  run.players[0] = { ...run.players[0], potions: [], relics: run.players[0].relics.filter((relic) => relic.defId !== 'anchor') }
+  run.itemDecks = { ...run.itemDecks, potions: ['fire_potion'], relics: ['anchor'] }
+  run = chooseEvent(run, 'p1', { optionIds: [pray.id] })
+  assertDeepEqual(run.roomState.itemOffers.p1, [{ kind: 'potion', id: 'fire_potion' }])
+  run = chooseEvent(run, 'p1', { optionIds: [pray.id], rewardItemChoices: ['take'] })
+  // The second Potion never existed; the Relic after it is the next face-up item.
+  assertDeepEqual(run.roomState.itemOffers.p1, [{ kind: 'relic', id: 'anchor' }])
+  assertDeepEqual(run.roomState.pendingDecisions.p1.rewardItemChoices, ['take', 'skip'], 'the missing Potion took no place in the choices')
+  const skipped = chooseEvent(run, 'p1', { optionIds: [pray.id], rewardItemChoices: ['skip'] })
+  assert(skipped !== run, 'the reward did not resolve')
+  assertDeepEqual(skipped.players[0].potions, ['fire_potion'])
+  assert(!skipped.players[0].relics.some((relic) => relic.defId === 'anchor'), 'the skipped Relic was taken because its choice went to the missing Potion')
+  const taken = chooseEvent(run, 'p1', { optionIds: [pray.id], rewardItemChoices: ['take'] })
+  assert(taken.players[0].relics.some((relic) => relic.defId === 'anchor'), 'the taken Relic was lost')
+})
+
+check('a missing first item keeps every later reward choice on its own item', () => {
+  let run = inEvent('upgrade_shrine', 1)
+  const pray = run.roomState.card.options[0]
+  const cache = [{ tag: 'gain-potion' }, { tag: 'gain-relic' }, { tag: 'gain-relic' }]
+  run.roomState = { ...run.roomState, card: { ...run.roomState.card, options: [
+    { ...pray, effects: [{ tag: 'roll-d6', results: Object.fromEntries([1, 2, 3, 4, 5, 6].map((face) => [face, cache])) }] },
+  ] } }
+  run.players[0] = { ...run.players[0], relics: run.players[0].relics.filter((relic) => !['anchor', 'akabeko'].includes(relic.defId)) }
+  run.itemDecks = { ...run.itemDecks, potions: [], relics: ['anchor', 'akabeko'] }
+  run = chooseEvent(run, 'p1', { optionIds: [pray.id] })
+  assert(run.roomState.pendingRolls?.p1, 'the die was not rolled')
+  run = chooseEvent(run, 'p1', { optionIds: [pray.id] })
+  assertEqual(run.roomState.itemOffers.p1.length, 1)
+  assertEqual(run.roomState.itemOffers.p1[0].kind, 'relic')
+  assertDeepEqual(run.roomState.pendingDecisions.p1.rewardItemChoices, ['skip'], 'the missing Potion took no place in the choices')
+  const first = run.roomState.itemOffers.p1[0].id
+  run = chooseEvent(run, 'p1', { optionIds: [pray.id], rewardItemChoices: ['take'] })
+  const second = run.roomState.itemOffers.p1[0].id
+  run = chooseEvent(run, 'p1', { optionIds: [pray.id], rewardItemChoices: ['skip'] })
+  const relics = run.players[0].relics.map((relic) => relic.defId)
+  assert(relics.includes(first), 'the first Relic, taken, was lost')
+  assert(!relics.includes(second), 'the second Relic, skipped, was taken')
+})
+
 check('Ancient Temple serializes chosen order before charging its extra HP', () => {
   let run = inEvent('ancient_temple', 2)
   run = chooseEvent(run, 'p1', { optionIds: ['go_inside'] })

@@ -513,11 +513,21 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     const itemDecks = structuredClone(state.itemDecks)
     const rewardItemIds: string[] = []
     const rewardItemKinds: ('relic' | 'potion')[] = []
+    // An item the empty deck could not supply still takes its place in every
+    // parallel list, because resolution reads one entry per item from each.
+    const rewardItemChoices: ('take' | 'skip')[] = []
+    const potionRecipientIds: string[] = []
+    const potionReplacementIds: (string | null)[] = []
     for (const kind of itemKinds) {
       const id = drawItems(kind === 'relic' ? itemDecks.relics : itemDecks.potions, 1)[0]
-      if (id) return { ...state, itemDecks, roomState: { ...state.roomState, itemOffers: { ...state.roomState.itemOffers, [playerId]: [{ kind, id }] }, pendingDecisions: { ...state.roomState.pendingDecisions, [playerId]: { ...stageEventDecision(pending ?? decision), rewardItemIds, rewardItemKinds } } } }
+      if (id) return { ...state, itemDecks, roomState: { ...state.roomState, itemOffers: { ...state.roomState.itemOffers, [playerId]: [{ kind, id }] }, pendingDecisions: { ...state.roomState.pendingDecisions, [playerId]: { ...stageEventDecision(pending ?? decision), rewardItemIds, rewardItemKinds, rewardItemChoices, potionRecipientIds, potionReplacementIds } } } }
       rewardItemIds.push('')
       rewardItemKinds.push(kind)
+      rewardItemChoices.push('skip')
+      if (kind === 'potion') {
+        potionRecipientIds.push('')
+        potionReplacementIds.push(null)
+      }
     }
   }
   if (itemOffer && (!decision.rewardItemChoices || decision.rewardItemChoices.length !== itemOffer.length)) return state
@@ -536,7 +546,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
       rewardItemChoices.push(choice!)
       if (offer.kind === 'potion') {
         potionRecipientIds.push(submittedRecipients[potionIndex] ?? '')
-        potionReplacementIds.push(decision.potionReplacementIds?.[potionIndex] ?? '')
+        potionReplacementIds.push(decision.potionReplacementIds?.[potionIndex] ?? null)
       }
       if (choice === 'skip') {
         rewardItemIds.push('')
@@ -567,6 +577,11 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
       }
       rewardItemIds.push('')
       rewardItemKinds.push(kind)
+      rewardItemChoices.push('skip')
+      if (kind === 'potion') {
+        potionRecipientIds.push('')
+        potionReplacementIds.push(null)
+      }
     }
     stagedItemDecks = itemDecks
     decision = {
