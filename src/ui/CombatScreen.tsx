@@ -1162,6 +1162,8 @@ function CombatScreenView({
     })
     return () => cancelAnimationFrame(frame)
   }, [state.combatId, authoritativeRestoration])
+  const stageFormationKey = state.enemies.map((enemy) =>
+    `${enemy.uid}:${enemy.defId}:${enemy.row}:${enemy.isBoss}:${enemy.dead}`).join('|')
   useLayoutEffect(() => {
     if (prefersReducedMotion) return
     const busy = stageAttacksActive || falling.size > 0 || state.phase === 'enemy'
@@ -1184,7 +1186,8 @@ function CombatScreenView({
         }
       }
     }
-  }, [stageAttacksActive, falling.size, state.phase, state.players.length, state.enemies, prefersReducedMotion])
+  }, [stageAttacksActive, falling.size, state.phase, state.players.length, stageFormationKey,
+    stageScale, stageEnemySlots, state.combatId, prefersReducedMotion])
   const [characterAttacks, setCharacterAttacks] = useState<Record<string, CharacterAttackMotion[]>>({})
   const [slimeCommandMotions, setSlimeCommandMotions] = useState<Record<string, {
     seq: number

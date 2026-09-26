@@ -47,10 +47,11 @@ check('frontend surfaces select their cores and named focused browser checks', (
     'verify-safari-combat-animation-browser.mjs', 'verify-courier-browser.mjs',
     'verify-hermit-combo-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
     'verify-hermit-online-staged-trigger-browser.mjs', 'verify-combat-layout-reload-browser.mjs',
+    'verify-combat-stage-scan-browser.mjs',
     'verify-enemy-attack-once-browser.mjs', 'verify-row-target-browser.mjs',
     'verify-turn-targets-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 18, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 19, 'combat screen selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/TokenRow.tsx'), ['verify-turn-targets-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs'], 'Orb row')
   assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))
@@ -143,16 +144,18 @@ check('shared frontend changes use cores plus named visual owners', () => {
     includesEvery(affectedBrowser(sheet), [
       'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
       'verify-enemy-layout-browser.mjs', 'verify-hover-overflow-browser.mjs', 'verify-enemy-attack-once-browser.mjs',
+      'verify-combat-stage-scan-browser.mjs',
     ], sheet)
-    assertEqual(affectedBrowser(sheet).length, 17, `${sheet} selected an unrelated browser suite`)
+    assertEqual(affectedBrowser(sheet).length, 18, `${sheet} selected an unrelated browser suite`)
   }
   const hand = affectedBrowser('src/ui/styles/hand.css')
   includesEvery(hand, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
     'verify-card-cancel-browser.mjs', 'verify-combat-hand-viewport-browser.mjs',
     'verify-combat-player-clipping-browser.mjs', 'verify-end-turn-drag-browser.mjs',
     'verify-enemy-layout-browser.mjs', 'verify-enemy-attack-once-browser.mjs',
+    'verify-combat-stage-scan-browser.mjs',
     'verify-row-target-browser.mjs'], 'hand stylesheet')
-  assertEqual(hand.length, 20, 'hand stylesheet selected an unrelated browser suite')
+  assertEqual(hand.length, 21, 'hand stylesheet selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/styles/presentation-overlays.css'), [
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
     'verify-lightning-act2-browser.mjs',
