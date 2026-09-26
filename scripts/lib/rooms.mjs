@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto'
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, truncateSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { mergeLeaderboardRuns, restoreLeaderboardRuns } from './leaderboard.mjs'
+import { restoreMail } from './mail.mjs'
 import { classificationRecord, deckHash, HERO_NAMES, INITIAL_DECK_CLASSIFICATIONS, INITIAL_DECK_TYPES,
   recordDeckClassification, statsDecks, validClassifierThreadId, validDeckType, validSoloDeck } from './stats.mjs'
 import {
@@ -291,7 +292,7 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
   const store = { rooms: new Map(), leaderboardRuns: [], statsRuns: [], leaderboardRevision: 0, leaderboardDirty: true, leaderboardChanges: new Map(),
     statsStateDirty: true, statsChanges: new Map(), interruptedJournals: new Map(),
     deckTypes: [...INITIAL_DECK_TYPES], deckClassificationBudget: { day: -1, used: 0 },
-    deckClassifierThreadId: undefined, deckClassifierRelease: undefined, profiles: [], file, reconnectQuorums: new Map() }
+    deckClassifierThreadId: undefined, deckClassifierRelease: undefined, profiles: [], mail: [], mailDirty: false, file, reconnectQuorums: new Map() }
   if (!file) return store
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8'))
@@ -534,9 +535,14 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
     }
   } catch (error) {
     if (error?.code !== 'ENOENT' || existsSync(`${file}.leaderboard.json`) || existsSync(`${file}.leaderboard.log`) ||
-        existsSync(`${file}.stats.json`) || existsSync(`${file}.stats.log`)) {
+        existsSync(`${file}.stats.json`) || existsSync(`${file}.stats.log`) || existsSync(`${file}.mail.json`)) {
       throw new Error(`Could not load room store: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+  // Its own file, written only when a letter changes: the main store is
+  // rewritten after every room action and must not carry the whole archive.
+  try { store.mail = restoreMail(JSON.parse(readFileSync(`${file}.mail.json`, 'utf8'))) } catch (error) {
+    if (error?.code !== 'ENOENT') throw new Error(`Could not load mail: ${error instanceof Error ? error.message : String(error)}`)
   }
   return store
 }
@@ -580,6 +586,15 @@ export function saveStore(store) {
   }
   writeFileSync(temporary, JSON.stringify({ ...main, leaderboardArchive: true }), { mode: 0o600 })
   renameSync(temporary, store.file)
+  // Last, and marked clean only once written: a save that fails anywhere
+  // before this leaves mail dirty, so a letter taken back after the failure
+  // is never left behind on disk.
+  if (store.mailDirty) {
+    const mailTemporary = `${store.file}.mail.json.tmp`
+    writeFileSync(mailTemporary, JSON.stringify(store.mail), { mode: 0o600 })
+    renameSync(mailTemporary, `${store.file}.mail.json`)
+    store.mailDirty = false
+  }
 }
 
 export function createRoom(store, options = {}) {

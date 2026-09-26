@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { claimProfile } from './lib/profiles.mjs'
+import { MAX_MAIL_CHARACTERS, developerInbox, playerInbox, sendDeveloperReply, sendPlayerLetter } from './lib/mail.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { existsSync, writeFileSync } from 'node:fs'
+import { timingSafeEqual } from 'node:crypto'
 import { basename } from 'node:path'
 import { WebSocketServer } from 'ws'
 import { classifyDeckType, codexReady } from './lib/codex-deck-classifier.mjs'
@@ -52,6 +54,11 @@ const MAX_JOINS_PER_WINDOW = 30
 const MAX_LEADERBOARD_WRITES_PER_WINDOW = 6
 const MAX_DECK_READS_PER_WINDOW = 30
 const MAX_STATS_READS_PER_WINDOW = 120
+const MAX_MAIL_READS_PER_WINDOW = 60
+const MAIL_SEND_WINDOW_MS = 10 * 60_000
+const MAX_MAIL_SENDS_PER_WINDOW = 5
+const MAX_MAIL_SENDS_PER_SOURCE = 20
+const MAX_MAIL_ADMIN_FAILURES_PER_WINDOW = 10
 const DECK_PAGE_CACHE_LIMIT = 64
 const DECK_QUERY_KEYS = new Set(['sort', 'direction', 'character', 'ascension', 'cursor'])
 const CLASSIFICATION_DAY_MS = 24 * 60 * 60 * 1000
@@ -111,6 +118,8 @@ export function createRoomServer({
   classifierEnabled = process.env.STS_DECK_CLASSIFIER_ENABLED === 'true',
   maxDeckClassificationsPerDay = Number(process.env.STS_DECK_CLASSIFICATIONS_PER_DAY ?? 100),
   deckClassifier = classifyDeckType,
+  mailAdminToken = process.env.STS_MAIL_ADMIN_TOKEN,
+  maxMailCharacters = MAX_MAIL_CHARACTERS,
   onSaveError = (error) => console.error('Room store save failed:', error),
   onSlowOperation = ({ kind, roomCode, durationMs }) =>
     console.warn(`Slow multiplayer ${kind} in room ${roomCode}: ${durationMs}ms`),
@@ -139,6 +148,10 @@ export function createRoomServer({
   const leaderboardRates = new Map()
   const deckReadRates = new Map()
   const statsRates = new Map()
+  const mailReadRates = new Map()
+  const mailSendRates = new Map()
+  const mailProfileRates = new Map()
+  const mailAdminFailures = new Map()
   const deckPages = new Map()
   let deckPagesRevision = store.leaderboardRevision
   let leaderboardSummary
@@ -395,6 +408,31 @@ export function createRoomServer({
     return rate.count <= maximum
   }
 
+  const mailAdminKey = typeof mailAdminToken === 'string' && mailAdminToken.length >= 24 ? Buffer.from(`Bearer ${mailAdminToken}`) : null
+  if (mailAdminToken && !mailAdminKey) console.warn('Mail replies disabled: STS_MAIL_ADMIN_TOKEN must be at least 24 characters')
+  // Failures are always counted: when the table is full the oldest source makes
+  // room, so a flood of fresh addresses cannot switch the lockout off.
+  const mailAdminAuthorized = (request, now = Date.now()) => {
+    const source = sourceOf(request)
+    const failures = mailAdminFailures.get(source)
+    const current = failures && now - failures.startedAt < CREATE_WINDOW_MS ? failures : undefined
+    const offered = Buffer.from(request.headers.authorization?.toString() ?? '')
+    const matches = offered.length === mailAdminKey.length && timingSafeEqual(offered, mailAdminKey)
+    if (matches && (current?.count ?? 0) < MAX_MAIL_ADMIN_FAILURES_PER_WINDOW) return true
+    if (!matches) {
+      if (!current && mailAdminFailures.size >= MAX_RATE_KEYS) mailAdminFailures.delete(mailAdminFailures.keys().next().value)
+      mailAdminFailures.delete(source)
+      mailAdminFailures.set(source, { startedAt: current?.startedAt ?? now, count: (current?.count ?? 0) + 1 })
+    }
+    return false
+  }
+  const saveMail = (undo) => {
+    store.mailDirty = true
+    if (attemptSave()) return true
+    undo()
+    return false
+  }
+
   const mayAct = (room, token) => consume(
     actionRates, `${room.code}:${token}`, MESSAGE_WINDOW_MS, MAX_MESSAGES_PER_WINDOW,
   )
@@ -413,6 +451,10 @@ export function createRoomServer({
     for (const [key, rate] of leaderboardRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) leaderboardRates.delete(key)
     for (const [key, rate] of deckReadRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) deckReadRates.delete(key)
     for (const [key, rate] of statsRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) statsRates.delete(key)
+    for (const [key, rate] of mailReadRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) mailReadRates.delete(key)
+    for (const [key, rate] of mailSendRates) if (now - rate.startedAt >= MAIL_SEND_WINDOW_MS) mailSendRates.delete(key)
+    for (const [key, rate] of mailProfileRates) if (now - rate.startedAt >= MAIL_SEND_WINDOW_MS) mailProfileRates.delete(key)
+    for (const [key, rate] of mailAdminFailures) if (now - rate.startedAt >= CREATE_WINDOW_MS) mailAdminFailures.delete(key)
     for (const [key, rate] of upgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) upgradeRates.delete(key)
     for (const [key, rate] of invalidUpgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) invalidUpgradeRates.delete(key)
     for (const [key, rate] of actionRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) actionRates.delete(key)
@@ -552,6 +594,63 @@ export function createRoomServer({
           return send(response, 503, { error: 'Could not save your name. Please try again.' })
         }
         return send(response, 200, { username: profile.username })
+      }
+      if (request.method === 'POST' && (url.pathname === '/api/mail' || url.pathname === '/api/mail/send')) {
+        const sending = url.pathname === '/api/mail/send'
+        if (!consume(sending ? mailSendRates : mailReadRates, sourceOf(request), sending ? MAIL_SEND_WINDOW_MS : CREATE_WINDOW_MS,
+          sending ? MAX_MAIL_SENDS_PER_SOURCE : MAX_MAIL_READS_PER_WINDOW)) {
+          return send(response, 429, { error: sending ? 'You have sent a lot of letters. Please wait a little.' : 'Too many mail requests' })
+        }
+        const body = await readJson(request)
+        const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
+        if (!sending) {
+          // An unknown profile simply has no letters yet: a first visit reads an
+          // empty mailbox rather than an error.
+          if (!profile) return send(response, 200, { letters: [], unread: 0 })
+          const inbox = playerInbox(store.mail, profile, { markRead: body.markRead === true })
+          if (inbox.changed) {
+            store.mailDirty = true
+            queueSave()
+          }
+          return send(response, 200, { letters: inbox.letters, unread: inbox.unread })
+        }
+        if (!profile) return send(response, 409, { error: 'Your name is not registered on this server.', code: 'profile' })
+        if (!consume(mailProfileRates, profile.username, MAIL_SEND_WINDOW_MS, MAX_MAIL_SENDS_PER_WINDOW)) {
+          return send(response, 429, { error: 'You have sent a lot of letters. Please wait a little.' })
+        }
+        // A letter that is refused or cannot be saved does not count against the allowance.
+        const refund = () => { const rate = mailProfileRates.get(profile.username); if (rate) rate.count -= 1 }
+        let sent
+        try { sent = sendPlayerLetter(store.mail, profile, body.body, { maxCharacters: maxMailCharacters }) } catch (error) {
+          refund()
+          throw error
+        }
+        if (!saveMail(sent.undo)) {
+          refund()
+          return send(response, 503, { error: 'Could not send your letter. Please try again.' })
+        }
+        return send(response, 201, { letters: sent.letters, unread: sent.unread })
+      }
+      if (url.pathname === '/api/mail/admin' || url.pathname === '/api/mail/admin/reply') {
+        if (!mailAdminKey) return send(response, 404, { error: 'Not found' })
+        if (!mailAdminAuthorized(request)) return send(response, 401, { error: 'Unauthorized' })
+        if (request.method === 'GET' && url.pathname === '/api/mail/admin') {
+          const inbox = developerInbox(store.mail, store.profiles, {
+            username: url.searchParams.get('username') ?? undefined, markRead: url.searchParams.get('markRead') === 'true',
+          })
+          if (inbox.changed) {
+            store.mailDirty = true
+            queueSave()
+          }
+          return send(response, 200, { threads: inbox.threads })
+        }
+        if (request.method === 'POST' && url.pathname === '/api/mail/admin/reply') {
+          const body = await readJson(request)
+          const { undo, ...reply } = sendDeveloperReply(store.mail, body.username, body.body, store.profiles, { maxCharacters: maxMailCharacters })
+          if (!saveMail(undo)) return send(response, 503, { error: 'Could not save the reply. Please try again.' })
+          return send(response, 201, reply)
+        }
+        return send(response, 405, { error: 'Method not allowed' })
       }
       if (request.method === 'GET' && url.pathname === '/api/leaderboard/decks') {
         if (!consume(deckReadRates, sourceOf(request), CREATE_WINDOW_MS, MAX_DECK_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many deck requests' })

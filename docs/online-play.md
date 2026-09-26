@@ -99,6 +99,32 @@ reloads Caddy, verifies the replacement HTTPS origin, updates
 `MULTIPLAYER_SERVER_ORIGIN`, and dispatches a client-only Pages refresh. Failures stay in
 `router-pinhole.log` and retry on the next hourly renewal.
 
+## Player letters
+
+Players write to the developer from the envelope in the main menu's top-right corner, and
+the badge counts replies they have not opened. Letters live in `rooms.json.mail.json`, one
+thread per player; back it up with the other `rooms.json` sidecars.
+
+Replies need an admin token of at least 24 characters. Put it in
+`~/.config/slay-the-spire-server/mail.env` once and restart the service:
+
+```bash
+printf 'STS_MAIL_ADMIN_TOKEN=%s\n' "$(openssl rand -hex 24)" > ~/.config/slay-the-spire-server/mail.env
+chmod 600 ~/.config/slay-the-spire-server/mail.env
+systemctl --user restart sts-room-server.service
+```
+
+Then, from WSL with the same token in the environment:
+
+```bash
+export $(cat ~/.config/slay-the-spire-server/mail.env)
+node scripts/mail-admin.mjs                      # threads, newest first
+node scripts/mail-admin.mjs read TestPlayer      # a thread, marked read
+node scripts/mail-admin.mjs reply TestPlayer "Thanks — fixed in the next build!"
+```
+
+Without the token the admin endpoints do not exist; players can still write.
+
 ## Reliable voice across restrictive networks
 
 Without configuration, voice uses public STUN and connects directly when the peers'

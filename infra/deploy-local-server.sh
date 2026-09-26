@@ -22,7 +22,7 @@ prepare_release() {
     trap cleanup_candidate EXIT
     git -C "$root" archive HEAD -- package.json scripts/room-server.mjs \
       scripts/lib/rooms.mjs scripts/lib/leaderboard.mjs scripts/lib/stats.mjs scripts/lib/codex-deck-classifier.mjs \
-      scripts/lib/codex-deck-worker.sh scripts/lib/deck-type.schema.json scripts/lib/profiles.mjs \
+      scripts/lib/codex-deck-worker.sh scripts/lib/deck-type.schema.json scripts/lib/profiles.mjs scripts/lib/mail.mjs \
       src/game infra/systemd/sts-room-server.service infra/validate-room-store.mjs | tar -x -C "$candidate"
     mkdir -p "$candidate/node_modules/@openai"
     cp -aL "$root/node_modules/ws" "$candidate/node_modules/ws"
