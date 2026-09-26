@@ -20,6 +20,5 @@ Before pushing `master`, require `node scripts/verify-all.mjs --changed=origin/m
 
 ## WebMCP campaign runbook
 
-- Start WebMCP campaigns from an explicitly attached built-in-browser game tab and use GPT-5.6 Sol or Terra; Luna has Site tools disabled. If discovery is unavailable on a supported model, stop and report the missing prerequisite instead of injecting a bridge or probing browser processes and ports.
 - A finished Slay the Spire run is not complete until its campaign result is explicitly recorded: after defeat, use `Record campaign result`; after victory, use `Stop and record result`.
-- Verify that the new run appears on the solo leaderboard before starting another run, and update `HEXAGHOST-PLAYBOOK.md` immediately after every finished run.
+- Verify that the new run appears on the solo leaderboard before starting another run, and update playbook immediately after every finished run.
