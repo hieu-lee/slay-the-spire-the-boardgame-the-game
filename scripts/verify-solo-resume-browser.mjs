@@ -160,6 +160,45 @@ try {
     assertEqual(resumedCombatSnapshot, combatSnapshot)
   })
 
+  // Recorded attacks are history on Resume, not a fresh queue of Hermit volleys.
+  await page.evaluate(() => {
+    const run = structuredClone(window.__STS_DEBUG__.getRun())
+    const combat = run.combat
+    run.players[0].character = 'hermit'
+    run.players[0].name = 'Hermit'
+    combat.players[0].character = 'hermit'
+    combat.players[0].name = 'Hermit'
+    combat.presentationEvents = [1, 2, 3].map((seq) => ({
+      seq, kind: 'card', actorId: combat.players[0].id, sourceId: 'hermit_strike',
+      enemyIds: [combat.enemies[0].uid], playerIds: [], upgraded: false, copied: false, energy: 1,
+    }))
+    window.__STS_DEBUG__.setRun(run)
+  })
+  await waitForSavedRun('combat')
+  for (const [screen, viewport] of [
+    ['desktop', { width: 1440, height: 900 }],
+    ['horizontal-phone', { width: 844, height: 390 }],
+  ]) {
+    await page.setViewportSize(viewport)
+    await reloadMenu()
+    await page.getByRole('button', { name: 'Resume', exact: true }).click()
+    await page.locator('.combat').waitFor()
+    await page.waitForTimeout(800)
+    const replayed = await page.locator('.character-attack--hermit').count()
+    check(`saved Hermit attacks do not fire again on ${screen} Resume`, () =>
+      assertEqual(replayed, 0))
+    await page.locator('.board').screenshot({ path: join(output, `hermit-resume-${screen}.png`) })
+    const liveSeq = await page.evaluate(() => {
+      const run = structuredClone(window.__STS_DEBUG__.getRun())
+      const seq = run.combat.presentationEvents.at(-1).seq + 1
+      run.combat.presentationEvents.push({ ...run.combat.presentationEvents.at(-1), seq })
+      window.__STS_DEBUG__.setRun(run)
+      return seq
+    })
+    await page.locator(`.character-attack--hermit[data-attack-seq="${liveSeq}"]`).waitFor()
+    await waitForSavedRun('combat')
+  }
+
   await page.evaluate(() => {
     const run = structuredClone(window.__STS_DEBUG__.getRun())
     run.phase = 'reward'

@@ -1046,7 +1046,6 @@ function CombatScreenView({
   )
   const livePresentation = usePresentationEvents(
     state,
-    animateOpeningHand,
     authoritativeRestoration,
     authoritativeConnected,
     prefersReducedMotion,

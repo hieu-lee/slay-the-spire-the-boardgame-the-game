@@ -362,7 +362,6 @@ export function useFalling(
 /** Only actions witnessed live animate; mounted and restored history is a baseline. */
 export function usePresentationEvents(
   state: CombatState,
-  animateOpeningHand: boolean,
   authoritativeRestoration?: number,
   authoritativeConnected?: boolean,
   reducedEffects = false,
@@ -373,7 +372,7 @@ export function usePresentationEvents(
   finishSlimeCommand: (seq: number) => void
   contactDeadlines: ReadonlyMap<string, TargetContactDeadline>
 } {
-  const baseline = useRef<number | null>(animateOpeningHand ? -1 : null)
+  const baseline = useRef<number | null>(null)
   const previousCombat = useRef(state.combatId)
   const previousRestoration = useRef(authoritativeRestoration)
   const previousConnected = useRef(authoritativeConnected)
