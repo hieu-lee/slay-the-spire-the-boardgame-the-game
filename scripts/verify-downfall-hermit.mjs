@@ -1056,16 +1056,23 @@ check('High-Caliber plus one external copy resolves four independently targeted 
   assert.equal(combat.players[0].block, 4)
 })
 
-check('playing High Noon gives starter Strikes Rapid Fire', () => {
-  const highNoon = instance('high-noon', 'hermit_high_noon')
-  const strike = instance('high-noon-strike', 'hermit_strike')
-  let combat = createCombat(createRng(491), [player({ hand: [highNoon, strike] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
-  combat = playCard(combat, 'p1', highNoon.uid, { enemyUid: null, playerId: null })
-  combat = playCard(combat, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
-  assert.deepEqual(combat.pendingCardCopy?.sourceNames, ['Rapid Fire'])
-  combat = playCardCopy(combat, 'p1', { enemyUid: 'e1', playerId: null })
-  assert.equal(combat.enemies[0].hp, 18)
+check('High Noon gives starter Strikes and upgraded Defends their printed Rapid Fire', () => {
+  for (const highNoonUpgraded of [false, true]) for (const name of ['strike', 'defend']) for (const upgraded of [false, true]) {
+    const highNoon = instance('high-noon', 'hermit_high_noon', highNoonUpgraded)
+    const starter = instance('starter', `hermit_${name}`, upgraded)
+    const target = name === 'strike' ? { enemyUid: 'e1', playerId: null } : { enemyUid: null, playerId: 'p1' }
+    const rapidFire = name === 'strike' || highNoonUpgraded
+    const label = `${highNoonUpgraded ? 'High Noon+' : 'High Noon'} with ${name}${upgraded ? '+' : ''}`
+    let combat = createCombat(createRng(491), [player({ hand: [highNoon, starter] })], [enemy()])
+    combat.pendingHermitSetupLoads = []
+    combat = playCard(combat, 'p1', highNoon.uid, { enemyUid: null, playerId: null })
+    combat = playCard(combat, 'p1', starter.uid, target)
+    assert.deepEqual(combat.pendingCardCopy?.sourceNames ?? [], rapidFire ? ['Rapid Fire'] : [], label)
+    if (rapidFire) combat = playCardCopy(combat, 'p1', target)
+    const amount = (upgraded ? 2 : 1) * (rapidFire ? 2 : 1)
+    assert.equal(combat.enemies[0].hp, 20 - (name === 'strike' ? amount : 0), label)
+    assert.equal(combat.players[0].block, name === 'defend' ? amount : 0, label)
+  }
 })
 
 check('externally queued Hermit cards retain printed, dynamic, and Vantage Rapid Fire', () => {

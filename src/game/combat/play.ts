@@ -88,7 +88,7 @@ import type {
   PowerContext,
   PresentationContext,
 } from './types.ts'
-import { cardDef, cardStaysInPlay, faceOf } from '../cards.ts'
+import { cardDef, cardStaysInPlay, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
 import type { CardDef, Effect, TargetScope } from '../cards.ts'
 import { gainBlock, gainStrength } from '../damage.ts'
 import { enemyAbilities, enemyDef } from '../enemies.ts'
@@ -158,7 +158,8 @@ function hermitRapidFireCount(def: CardDef, actor: Player, sourceInHand = true):
     count += Math.max(0, actor.hand.length - Number(sourceInHand))
   }
   const highNoon = actor.powers.find((power) => power.defId === 'hermit_high_noon')
-  if (highNoon && def.rarity === 'starter' && (def.name === 'Strike' || highNoon.upgraded && def.name === 'Defend')) count++
+  if (highNoon && (isStarterStrikeOrDefend(def.id, 'Strike')
+    || highNoon.upgraded && isStarterStrikeOrDefend(def.id, 'Defend'))) count++
   if (def.type === 'attack') count += actor.nextAttackRapidFire ?? 0
   if (count > 0 && actor.powers.some((power) => power.defId === 'hermit_no_holds_barred')) count++
   return count
