@@ -91,6 +91,7 @@ export function createCombat(
     pendingHermitChamberPlays: [],
     pendingHermitStrengthRewards: [],
     pendingHermitSetupLoads: [],
+    hermitSetupQueued: false,
     pendingDieRelicChoices: [],
     potionDeck: [...potionDeck],
     potionLimit,
@@ -103,14 +104,6 @@ export function createCombat(
     partyAttackDiscount: false,
     presentationEvents: [],
     log: [],
-  }
-
-  for (const player of state.players.filter((candidate) => candidate.character === 'hermit' && !candidate.dead)) {
-    const card = player.draw.shift()
-    if (!card) continue
-    player.hand.push(card)
-    state.pendingHermitSetupLoads!.push({ playerId: player.id })
-    state.log = [...state.log, `${player.name} draws 1 card for the Hermit board ability`]
   }
 
   if (state.enemies.some((enemy) => enemy.isBoss)) for (const player of state.players.filter((candidate) =>

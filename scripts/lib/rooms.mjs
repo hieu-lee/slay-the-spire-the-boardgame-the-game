@@ -935,6 +935,9 @@ function settlePendingRelics(room) {
   }
 }
 
+/** An absent Hermit's setup Load keeps its Curses in hand rather than aiming one blindly. */
+const absentSetupLoadCard = (player) => player?.hand.find((card) => !cardIsCurse(card.defId)) ?? player?.hand[0]
+
 function settleForcedCards(room, consumedPreviewPlayerId = null, suspendActiveCopy = true, suspendedWork = null) {
   // Keep an unattended Start-of-Turn exactly where its owners left it. The
   // first seat back can still default absent owners, but nobody should return
@@ -970,21 +973,9 @@ function settleForcedCards(room, consumedPreviewPlayerId = null, suspendActiveCo
     if (next === room.run) break
     room.run = finishRewardsIfComplete(next)
   }
-  let prepared = room.run?.roomState?.kind === 'event' ? room.run.roomState.preparedCombat : undefined
-  while (prepared?.pendingHermitSetupLoads?.length > 0) {
-    const pending = prepared.pendingHermitSetupLoads[0]
-    const owner = room.seats.find((seat) => seat.playerId === pending.playerId)
-    if (owner?.connected !== false) break
-    const player = prepared.players.find((candidate) => candidate.id === pending.playerId)
-    const next = player?.hand[0]
-      ? resolveHermitSetupLoad(prepared, pending.playerId, player.hand[0].uid,
-        prepared.enemies.find((enemy) => !enemy.dead)?.uid ?? null, true)
-      : prepared
-    const resolved = next === prepared ? abandonHermitSetupLoad(prepared, pending.playerId, true) : next
-    if (resolved === prepared) break
-    room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: resolved } }
-    prepared = resolved
-  }
+  // Like the Start-of-Turn guard above: a table that is entirely away keeps its prepared choices.
+  let prepared = room.run?.roomState?.kind === 'event' && room.seats.some((seat) => seat.connected)
+    ? room.run.roomState.preparedCombat : undefined
   for (let preview = prepared ? startTurnScryPreview(prepared) : undefined; preview;) {
     const owner = room.seats.find((seat) => seat.playerId === preview.playerId)
     if (owner?.connected !== false) break
@@ -993,6 +984,21 @@ function settleForcedCards(room, consumedPreviewPlayerId = null, suspendActiveCo
     room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: next } }
     prepared = next
     preview = startTurnScryPreview(prepared)
+  }
+  // The setup Load follows the opening Draw, which a pre-draw Scry resolved above may just have finished.
+  while (prepared?.pendingHermitSetupLoads?.length > 0) {
+    const pending = prepared.pendingHermitSetupLoads[0]
+    const owner = room.seats.find((seat) => seat.playerId === pending.playerId)
+    if (owner?.connected !== false) break
+    const card = absentSetupLoadCard(prepared.players.find((candidate) => candidate.id === pending.playerId))
+    const next = card
+      ? resolveHermitSetupLoad(prepared, pending.playerId, card.uid,
+        prepared.enemies.find((enemy) => !enemy.dead)?.uid ?? null, true)
+      : prepared
+    const resolved = next === prepared ? abandonHermitSetupLoad(prepared, pending.playerId, true) : next
+    if (resolved === prepared) break
+    room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: resolved } }
+    prepared = resolved
   }
   const combatBeforeSettlement = room.run?.combat
   let combat = combatBeforeSettlement
@@ -1124,9 +1130,9 @@ function settleForcedCards(room, consumedPreviewPlayerId = null, suspendActiveCo
         room.seats.find((seat) => seat.playerId === playerId)?.connected === false)
       const pending = choiceCombat?.pendingHermitSetupLoads[0]
       if (!pending) break
-      const player = choiceCombat.players.find((candidate) => candidate.id === pending.playerId)
-      const next = player?.hand[0]
-        ? resolveHermitSetupLoad(choiceCombat, pending.playerId, player.hand[0].uid,
+      const card = absentSetupLoadCard(choiceCombat.players.find((candidate) => candidate.id === pending.playerId))
+      const next = card
+        ? resolveHermitSetupLoad(choiceCombat, pending.playerId, card.uid,
           choiceCombat.enemies.find((enemy) => !enemy.dead)?.uid ?? null)
         : choiceCombat
       const resolved = next === choiceCombat ? abandonHermitSetupLoad(choiceCombat, pending.playerId) : next
@@ -2408,6 +2414,8 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     action?.kind === 'resolveDieRelicChoice' ||
     action?.kind === 'activatePower' ||
     action?.kind === 'previewPowerChoice' ||
+    // The Hermit setup Load pauses the Draw step; the mandatory-choice gate above already checked its owner.
+    action?.kind === 'resolveHermitSetupLoad' ||
     forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
     action.cardUid === forcedCard.cardUid
   )) fail('Finish the Start-of-Turn abilities')

@@ -34,85 +34,189 @@
 }
 
 .combat__actions:has(.start-turn-order) {
-  flex-wrap: wrap;
   overflow: visible;
 }
 
+/* The start-of-turn order is a decision, so it is docked open under the bar's
+   right end instead of folded into a one-line disclosure: framed like the
+   relic-action panel, readable type, one numbered step per row. The summary
+   still collapses it for a player who wants the board back. */
 .start-turn-order {
-  position: relative;
-  flex: 0 0 auto;
-  align-self: center;
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: clamp(0.75rem, 2vw, 2rem);
   z-index: 59;
-  max-width: 13rem;
-  text-align: right;
-  color: var(--ink-dim);
-  font-size: 0.72rem;
+  box-sizing: border-box;
+  width: min(22rem, calc(100vw - 1.5rem));
+  padding: 0.55rem 0.7rem 0.65rem;
+  color: var(--ink);
+  font-size: 0.9rem;
+  text-align: left;
+  text-shadow: none;
+  background: linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.28);
+  filter: drop-shadow(var(--hard-shadow-lg));
+}
+
+.start-turn-order:not([open]) {
+  width: auto;
+  padding-block: 0.35rem;
 }
 
 .start-turn-order > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   cursor: pointer;
-  padding: 0.25rem 0;
+  color: var(--trim-lit);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
-.combat:has(.start-turn-order) > .prompt {
-  left: calc((100% - 16rem) / 2);
-  max-width: calc(100% - 18rem);
+.start-turn-order__count {
+  min-width: 1.4rem;
+  padding: 0 0.35rem;
   box-sizing: border-box;
+  border-radius: 999px;
+  color: #1b130c;
+  background: var(--trim-lit);
+  font-size: 0.8rem;
+  line-height: 1.4rem;
+  text-align: center;
 }
 
-.start-turn-order[open] > ol {
-  position: absolute;
-  z-index: 20;
-  right: 0;
-  width: 13rem;
-  box-sizing: border-box;
-  /* These trays open unasked — the party ordering stage opens the end-turn one,
-     the before-draw Scry list is always open — and a four-seat party fills them:
-     cap the list so it scrolls instead of growing without bound, with a
-     scrollbar that matches the panel rather than the OS. */
-  max-height: min(60vh, 27rem);
+.start-turn-order__hint {
+  margin: 0.2rem 0 0.45rem;
+  color: var(--ink-dim);
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.start-turn-order > ol {
+  /* A four-seat party fills the list: cap it so it scrolls instead of growing
+     over the board, with a scrollbar that matches the panel, not the OS. */
+  max-height: min(60vh, 30rem);
   overflow-y: auto;
   scrollbar-width: thin;
   color-scheme: dark;
-  margin: 0.25rem 0 0;
-  padding: 0.45rem;
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
   list-style: none;
-  background: var(--bg-raised);
-  border: 1px solid var(--edge);
-  border-radius: 4px;
 }
 
 .start-turn-order li {
   display: grid;
-  grid-template-columns: 1fr auto auto auto;
+  grid-template-columns: 1.5rem 2.4rem minmax(0, 1fr) auto;
   align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.3rem;
+  border: 1px solid rgb(217 180 91 / 0.18);
+  background: rgb(0 0 0 / 0.28);
+}
+
+.start-turn-order__index {
+  width: 1.5rem;
+  height: 1.5rem;
+  box-sizing: border-box;
+  border: 1px solid var(--trim);
+  border-radius: 50%;
+  color: var(--trim-lit);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.4rem;
+  text-align: center;
+}
+
+.start-turn-order__art {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.start-turn-order__art :is(.item-icon-image, .icon) {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 2px #000);
+}
+
+.start-turn-order__text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.start-turn-order__name {
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+
+.start-turn-order__meta {
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
-  padding: 0.15rem 0;
 }
 
-.start-turn-order li > span {
-  white-space: normal;
+.start-turn-order__owner,
+.start-turn-order__badge {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
-/* The one select that keeps its own FONT: this row lists a target per orb and
-   has to stay dense, so `font: inherit` holds it at the list's 0.72rem rather
-   than the 1rem chrome.css pins everywhere else. Only that is bespoke — border,
-   radius, plate and the 46px height floor are all left to chrome.css so it
-   still looks like every other dropdown in the game. */
-.start-turn-order li select {
-  width: min(14rem, 42vw);
-  padding: 0.1rem 0.35rem;
-  font: inherit;
+.start-turn-order__owner {
+  color: var(--ink);
+  background: rgb(255 255 255 / 0.12);
 }
 
-.start-turn-order li button {
-  min-width: 1.8rem;
-  padding: 0.1rem 0.35rem;
+/* A choice still owed reads as a call to act; a made one settles to green. */
+.start-turn-order__badge {
+  color: #1b130c;
+  background: var(--gold);
 }
 
-@media (orientation: landscape) and (max-width: 56.25rem) and (max-height: 43.75rem) {
-  .combat:has(.start-turn-order[open]) > .prompt {
-    left: calc((100% - 26rem) / 2);
-    max-width: calc(100% - 27rem);
-  }
+.start-turn-order__badge--done {
+  color: #cfe8c0;
+  background: rgb(92 140 72 / 0.35);
+}
+
+/* Plain information (a Scry amount), neither owed nor made. */
+.start-turn-order__badge--info {
+  color: var(--ink-dim);
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+
+.start-turn-order__moves {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.combat__actions .start-turn-order .start-turn-order__moves > button {
+  justify-content: center;
+  width: 2.75rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  font-size: 0.9rem;
+}
+
+.combat__actions .start-turn-order .start-turn-order__moves > button:disabled { opacity: 0.35; }
+
+
+.combat:has(.start-turn-order[open]) > .prompt {
+  left: calc((100% - 24rem) / 2);
+  max-width: calc(100% - 26rem);
+  box-sizing: border-box;
 }

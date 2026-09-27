@@ -77,7 +77,6 @@ try {
             window.__STS_DEBUG__.setRun(run)
           }, baseline)
           await page.locator('.start-turn-order > summary').waitFor()
-          await page.locator('.start-turn-order > summary').click()
           await page.locator('.start-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
           await page.locator('.start-turn-order > summary').click()
           await page.locator('.enemy__hit-area').first().click()

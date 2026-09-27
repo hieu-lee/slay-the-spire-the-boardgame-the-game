@@ -13,8 +13,8 @@ export const HERMIT_STARTING_CHAMBER_SLOTS = 2
 export const HERMIT_CURSE_MERCHANT_COST = 3
 
 export const HERMIT_BOARD = {
-  hp: 8,
-  maxHp: 8,
+  hp: 9,
+  maxHp: 9,
   hpTrackMin: 1,
   hpTrackMax: 9,
   energy: 3,

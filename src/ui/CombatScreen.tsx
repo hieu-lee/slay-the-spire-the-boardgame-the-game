@@ -2,6 +2,7 @@ import { SmokeTrail, warmSmokeTrails } from './combat-screen/SmokeTrail.tsx'
 import { animateCardFlight, cardFlightPath } from './combat-screen/card-flight.ts'
 import { unknownPowerRefreshDecision } from './combat-screen/unknown-power.ts'
 import { HermitTriggerChoice } from './combat-screen/HermitTriggerChoice.tsx'
+import { StartTurnOrder } from './combat-screen/StartTurnOrder.tsx'
 // The combat screen: the board, the hand, and every prompt a fight puts up.
 //
 // One component, because the fight is one interaction — a card being dragged
@@ -678,6 +679,7 @@ function CombatScreenView({
     return () => controller.abort()
   }, [characterAttackAssets])
   const hermitSetupPending = state.pendingHermitSetupLoads?.[0]?.playerId === viewerId
+  const hermitSetupOwner = state.players.find((player) => player.id === state.pendingHermitSetupLoads?.[0]?.playerId)
   const hermitStrengthPending = state.pendingHermitStrengthRewards?.[0]?.playerId === viewerId
   const dieRelicPending = state.pendingDieRelicChoices?.[0]
   const dieRelicAbility = dieRelicPending
@@ -2486,6 +2488,16 @@ function CombatScreenView({
     const targets = [...(startTurnEvokeTargets[pendingStartEvokeTarget.ability.id] ?? [])]
     targets[pendingStartEvokeTarget.index] = enemyUid
     setStartTurnEvokeTargets({ ...startTurnEvokeTargets, [pendingStartEvokeTarget.ability.id]: targets })
+  }
+
+  // Whoever may reorder is told how; everyone else is told who does.
+  function startTurnOrderHint(canMove: boolean, noun: string, count: number, locked = false) {
+    const coordinator = state.players.find((player) => player.id === startTurnCoordinatorId)
+    return count < 2 ? 'Resolves when the turn starts.'
+      : canMove ? `Resolves top to bottom. Move ${noun} earlier or later to change the order.`
+      : locked ? 'Resolves top to bottom. The order is locked in.'
+      : coordinator && coordinator.id !== viewerId ? `Resolves top to bottom. ${coordinator.name} sets the order.`
+      : 'Resolves top to bottom. Waiting for the party.'
   }
 
   function moveStartTurnScry(id: string, delta: -1 | 1) {
@@ -4596,7 +4608,10 @@ function CombatScreenView({
     : overflowOnly
     ? `Choose overflow Shiv target ${(pending?.shivEnemyUids.length ?? 0) - (pending?.spentShivs ?? 0) + 1}/${pending?.overflowShivs}, or skip the rest`
     : normalEnemyPrompt
-  const visibleStartModeShift = state.phase === 'start' && !forcedCard && !pendingTrigger &&
+  // The Hermit setup Load pauses the Draw step; start-of-turn order comes after it.
+  const startTurnOpen = state.phase === 'start' && !forcedCard && !pendingTrigger &&
+    (state.pendingHermitSetupLoads?.length ?? 0) === 0
+  const visibleStartModeShift = startTurnOpen &&
     !stagedStartTurnTriggerPending && !activeStartTurnScry && orderedStartTurnScries.length === 0
     ? pendingStartModeShift : undefined
   const startTurnPrompt = pendingStartExhaust
@@ -4816,6 +4831,8 @@ function CombatScreenView({
         </span>
         <span key={`${state.turn}-${state.phase}`} className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
           ? `Resolve ${copyResolutionLabel ?? 'card'}`
+          : hermitSetupPending ? 'Load 1 card'
+          : hermitSetupOwner ? `${hermitSetupOwner.name} Loads a card`
           : PHASE_LABEL[state.phase]}</span>
         {onCourierReveal && courierPeekPhase(state)
           ? <CourierPeek placement="bar" players={state.players} viewerId={viewerId} usedBy={courierUsedBy ?? []} onReveal={onCourierReveal} /> : null}
@@ -5061,31 +5078,21 @@ function CombatScreenView({
               Resolve start turn {startTurnCount}
             </button>
           ) : null}
-          {state.phase === 'start' && !forcedCard && !pendingTrigger && !stagedStartTurnTriggerPending && !activeStartTurnScry &&
+          {startTurnOpen && !stagedStartTurnTriggerPending && !activeStartTurnScry &&
           orderedStartTurnScries.length > 0 ? (
             <>
-              <details className="start-turn-order" open>
-                <summary>Before-draw Scry order ({orderedStartTurnScries.length})</summary>
-                <ol aria-label="Before-draw Scry order" tabIndex={0}>
-                  {orderedStartTurnScries.map((ability, index) => (
-                    <li key={ability.id}>
-                      <span>{ability.label} — Scry {ability.amount}</span>
-                      <button type="button" disabled={!canOrderStartTurnScries || index === 0}
-                        aria-label={`Move ${ability.label} earlier`}
-                        onClick={() => moveStartTurnScry(ability.id, -1)}>↑</button>
-                      <button type="button" disabled={!canOrderStartTurnScries || index === orderedStartTurnScries.length - 1}
-                        aria-label={`Move ${ability.label} later`}
-                        onClick={() => moveStartTurnScry(ability.id, 1)}>↓</button>
-                    </li>
-                  ))}
-                </ol>
-              </details>
+              <StartTurnOrder title="Before-draw Scry order"
+                hint={startTurnOrderHint(canOrderStartTurnScries, 'Scries', orderedStartTurnScries.length)} players={state.players}
+                steps={orderedStartTurnScries.map((ability) => ({
+                  ...ability, badges: [{ text: `Scry ${ability.amount}` }],
+                }))}
+                canMove={canOrderStartTurnScries} onMove={moveStartTurnScry} />
               <button type="button" className="combat__end-turn" disabled={!canOrderStartTurnScries} onClick={finishStartTurnScryOrder}>
                 {canOrderStartTurnScries ? 'Confirm before-draw order' : 'Waiting for before-draw order'}
               </button>
             </>
           ) : null}
-          {state.phase === 'start' && !forcedCard && !pendingTrigger && !stagedStartTurnTriggerPending && !activeStartTurnScry &&
+          {startTurnOpen && !stagedStartTurnTriggerPending && !activeStartTurnScry &&
           orderedStartTurnScries.length === 0 ? (
             <>
               {stagedStartTurnTriggers?.map((trigger) => (
@@ -5093,37 +5100,32 @@ function CombatScreenView({
                   Edit {trigger.label}
                 </button>
               ))}
-              {!visibleStartModeShift ? <details className="start-turn-order">
-                <summary>Start-of-turn order ({orderedStartAbilities.length})</summary>
-                <ol aria-label="Start-of-turn order" tabIndex={0}>
-                  {orderedStartAbilities.map((ability, index) => {
-                    const targetChosen = ability.targets
-                      ? startTurnEnemyTargets[ability.id] !== undefined
-                      : false
-                    const decided = (startTurnTargets[ability.id] ?? [])
-                      .filter((target) => target !== undefined).length
-                    const evoked = startTurnEvokeSlots[ability.id]?.length ?? 0
-                    return (
-                      <li key={ability.id}>
-                        <span>{ability.label}{ability.targets
-                          ? ` — target ${targetChosen ? 1 : 0}/1`
-                          : ability.exhaustCards ? ` — Exhaust ${startTurnExhaustUids[ability.id] ? 1 : 0}/1`
-                          : ''}{ability.overflowShivs > 0
-                          ? ` — overflow ${decided}/${ability.overflowShivs}`
-                          : ''}{evoked > 0 || ability.evokeChoice
-                          ? ` — Evoke ${evoked}${ability.evokeChoice ? '+' : ''}`
-                          : ''}</span>
-                        <button type="button" disabled={!canCommitStartTurnOrder || partyStartTurnOrderLocked || index === 0}
-                          aria-label={`Move ${ability.label} earlier`}
-                          onClick={() => moveStartTurnAbility(ability.id, -1)}>↑</button>
-                        <button type="button" disabled={!canCommitStartTurnOrder || partyStartTurnOrderLocked || index === orderedStartAbilities.length - 1}
-                          aria-label={`Move ${ability.label} later`}
-                          onClick={() => moveStartTurnAbility(ability.id, 1)}>↓</button>
-                      </li>
-                    )
-                  })}
-                </ol>
-              </details> : null}
+              {!visibleStartModeShift ? <StartTurnOrder key={`${state.combatId}/${state.turn}`} title="Start-of-turn order"
+                hint={startTurnOrderHint(canCommitStartTurnOrder && !partyStartTurnOrderLocked, 'effects',
+                  orderedStartAbilities.length, partyStartTurnOrderLocked)} foldWhenShort
+                players={state.players}
+                steps={orderedStartAbilities.map((ability) => {
+                  const decided = (startTurnTargets[ability.id] ?? [])
+                    .filter((target) => target !== undefined).length
+                  const evoked = startTurnEvokeSlots[ability.id]?.length ?? 0
+                  const targetChosen = startTurnEnemyTargets[ability.id] !== undefined
+                  const exhaustChosen = startTurnExhaustUids[ability.id] !== undefined
+                  return {
+                    ...ability,
+                    badges: [
+                      ...ability.targets ? [{ text: targetChosen ? 'Target set' : 'Choose target', done: targetChosen }]
+                        : ability.exhaustCards ? [{ text: exhaustChosen ? 'Exhaust set' : 'Choose Exhaust', done: exhaustChosen }]
+                        : [],
+                      ...ability.overflowShivs > 0
+                        ? [{ text: `Shiv targets ${decided}/${ability.overflowShivs}`, done: decided === ability.overflowShivs }]
+                        : [],
+                      ...evoked > 0 || ability.evokeChoice
+                        ? [{ text: `Evoke ${evoked}${ability.evokeChoice ? '+' : ''}`, done: !ability.evokeChoice }]
+                        : [],
+                    ],
+                  }
+                })}
+                canMove={canCommitStartTurnOrder && !partyStartTurnOrderLocked} onMove={moveStartTurnAbility} /> : null}
               {pendingStartExhaust?.exhaustCards ? (
                 <div className="combat__choice-cards" role="group"
                   aria-label={`${pendingStartExhaust.label} — choose a card to Exhaust`}>
@@ -6771,10 +6773,12 @@ function CombatScreenView({
 
       {hermitSetupPending ? <p className="visually-hidden" role="status"
         aria-label="Hermit start-of-combat Load">Choose a card in hand to Load</p> : null}
+      {hermitSetupOwner && !hermitSetupPending ? <p className="visually-hidden" role="status">
+        Waiting for {hermitSetupOwner.name} to Load a card</p> : null}
       {hermitSetupPending && viewer.hand.some((card) => hermitTargetedCurses.has(card.defId)) &&
       livingEnemies(state).length > 1 ? (
         <section className="prompt" aria-label="Hermit start-of-combat Load target">
-          <span>Choose a target for the Curse to Load</span>
+          <span>Load a card from your hand, or Load a Curse at:</span>
           {viewer.hand.filter((card) => hermitTargetedCurses.has(card.defId)).map((card) =>
             livingEnemies(state).map((enemy) => (
               <button key={`${card.uid}-${enemy.uid}`} type="button" className="prompt__mode"

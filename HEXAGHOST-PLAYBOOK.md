@@ -5,6 +5,7 @@ This is the live playbook for solo Hexaghost runs in Slay the Spire mode. Use We
 ## Verified starting rules
 
 - Character passive / starting relic: **Start of Combat: gain 1 Soulburn.**
+- Starting HP: **9 max HP** at A0/A1; A2 and above remove 1 (8). Every Downfall hero (Slime Boss, Guardian, Hexaghost, Hermit) starts at 9, Ironclad at 10.
 - Heat is a 1–6 track. `Advance` gains 1 Heat; `Retract` loses 1 Heat, including at the cap/floor.
 - Soulburn is a token, not a card. Spend it whenever a card effect allows it to deal damage equal to current Heat; maximum 6.
 - Hexaghost's first positive hit is stopped by its Buffer. Do not mistake the first zero-damage hit for a failed card; use it to consume Buffer, then burst the boss.

@@ -77,7 +77,7 @@ import {
   slimeCommandEnemyChoiceCount,
   soulburnChoiceCount,
 } from './queries.ts'
-import { finishCardCopy, finishForcedCardPlay, preparePlayerTurnThroughDraw, startPlayerTurnWithChoices } from './start-turn.ts'
+import { finishCardCopy, finishForcedCardPlay, resumeStartTurnAfterHermitSetup } from './start-turn.ts'
 import { cardNeedsCorruptedShard } from '../downfall/items.ts'
 import { createRelicInstance } from '../relics.ts'
 import type {
@@ -966,13 +966,13 @@ export function resolveHermitStrengthReward(state: CombatState, ownerId: string,
   return settle(next)
 }
 
-/** Resolves the Hermit's private start-of-combat draw-and-Load board ability. */
+/** Resolves the Load half of the Hermit's private start-of-combat board ability. */
 export function resolveHermitSetupLoad(
   state: CombatState,
   playerId: string,
   cardUid: string,
   enemyUid: string | null = null,
-  pauseAfterDraw = false,
+  prepared = false,
 ): CombatState {
   const pending = state.pendingHermitSetupLoads?.[0]
   const player = findPlayer(state, playerId)
@@ -985,23 +985,17 @@ export function resolveHermitSetupLoad(
   applyEffect(next, actor, { kind: 'load', amount: 1 }, 'self', 'self', context, 'Hermit board')
   if (context.invalidHermitChoice || actor.hand.some((card) => card.uid === cardUid)) return state
   next.pendingHermitSetupLoads = next.pendingHermitSetupLoads?.slice(1)
-  const settled = settle(next)
-  return settled.turn === 0 && settled.pendingHermitSetupLoads?.length === 0
-    ? pauseAfterDraw ? preparePlayerTurnThroughDraw(settled) : startPlayerTurnWithChoices(settled)
-    : settled
+  return resumeStartTurnAfterHermitSetup(next, prepared)
 }
 
 /** Drops a disconnected Hermit's unresolved private setup choice. */
-export function abandonHermitSetupLoad(state: CombatState, playerId: string, pauseAfterDraw = false): CombatState {
+export function abandonHermitSetupLoad(state: CombatState, playerId: string, prepared = false): CombatState {
   const pending = state.pendingHermitSetupLoads?.[0]
   if (!pending || pending.playerId !== playerId) return state
   const next = clone(state)
   next.pendingHermitSetupLoads = next.pendingHermitSetupLoads?.slice(1)
   next.log = [...next.log, `${findPlayer(next, playerId)?.name ?? 'Hermit'}'s setup Load was skipped after disconnecting`]
-  const settled = settle(next)
-  return settled.turn === 0 && settled.pendingHermitSetupLoads?.length === 0
-    ? pauseAfterDraw ? preparePlayerTurnThroughDraw(settled) : startPlayerTurnWithChoices(settled)
-    : settled
+  return resumeStartTurnAfterHermitSetup(next, prepared)
 }
 
 /** Drops a disconnected Hermit's unresolved private Chamber play. */

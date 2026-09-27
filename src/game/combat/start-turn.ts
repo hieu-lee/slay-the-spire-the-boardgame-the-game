@@ -162,11 +162,12 @@ function continueStartTurnDraw(next: CombatState, drewFrom: number, pauseAfterDr
   }
 
   flushPendingTriggers(next)
+  if (!combatIsOver(next) && next.pendingTriggers.length === 0) queueHermitSetupLoads(next)
   if (combatIsOver(next)) {
     finishStartTurnDraw(next, drewFrom, false)
     return settle(next)
   }
-  if (next.pendingTriggers.length > 0) {
+  if (next.pendingTriggers.length > 0 || (next.pendingHermitSetupLoads?.length ?? 0) > 0) {
     next.startTurnProgress = { choices: [], rollPending: { drewFrom, pauseAfterDraw } }
     return next
   }
@@ -178,6 +179,55 @@ function continueStartTurnDraw(next: CombatState, drewFrom: number, pauseAfterDr
   // after every Draw-step reaction, so the die cannot inform those choices.
   finishStartTurnDraw(next, drewFrom, true)
   return next
+}
+
+/**
+ * The Hermit board's Start of Combat ability: draw 1, then Load 1. Start of
+ * Combat abilities resolve after the opening Draw, so the Load chooses from
+ * the whole six-card hand. It runs once per combat; while its private Load
+ * choices wait, the Draw step stays paused before the Roll. Mutates `next`.
+ */
+export function queueHermitSetupLoads(next: CombatState): void {
+  if (next.turn !== 1 || next.hermitSetupQueued !== false) return
+  next.hermitSetupQueued = true
+  for (const player of next.players) {
+    if (player.dead || player.character !== 'hermit') continue
+    if (drawInto(next, player, 1).length > 0) {
+      next.log = [...next.log, `${player.name} draws 1 card for the Hermit board ability`]
+    }
+    if (player.hand.length > 0 && player.chamber.length < player.chamberSlots) {
+      next.pendingHermitSetupLoads = [...(next.pendingHermitSetupLoads ?? []), { playerId: player.id }]
+    }
+  }
+  flushPendingTriggers(next)
+}
+
+/**
+ * Continues the paused Draw step once the last Hermit setup Load resolves.
+ * `prepared` marks Mysterious Sphere's prepared combat, which pauses after the
+ * Draw; only combats saved at the old turn-0 setup Load need to be told.
+ * Mutates `next`.
+ */
+export function resumeStartTurnAfterHermitSetup(next: CombatState, prepared = false): CombatState {
+  const rollPending = next.startTurnProgress?.rollPending
+  // A Loaded Curse can end the fight; the turn still gets its log divider, unrolled.
+  if (rollPending && combatIsOver(next)) finishStartTurnDraw(next, rollPending.drewFrom, false)
+  settle(next)
+  if (next.turn === 0 && next.phase === 'player') {
+    // Saved before the ability moved after the opening hand: its draw and Load already happened.
+    if ((next.pendingHermitSetupLoads?.length ?? 0) > 0) return next
+    next.hermitSetupQueued = true
+    return prepared ? preparePlayerTurnThroughDraw(next) : startPlayerTurnWithChoices(next)
+  }
+  if (next.phase !== 'start' || !rollPending || next.pendingTriggers.length > 0 ||
+    (next.pendingHermitSetupLoads?.length ?? 0) > 0) return next
+  if (rollPending.pauseAfterDraw) {
+    next.startTurnProgress = { choices: [], pauseAfterDraw: { drewFrom: rollPending.drewFrom } }
+    return next
+  }
+  next.startTurnProgress = undefined
+  finishStartTurnDraw(next, rollPending.drewFrom, true)
+  return finishPreparedStartTurnWithChoices(next)
 }
 
 /** Start of Turn: reset, draw 5, then roll the shared die (p.12). Mutates `next`. */

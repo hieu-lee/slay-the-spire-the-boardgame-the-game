@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { CARDS, cardIsCurse } from "../game/cards.ts";
 import { assetPath, enemyImagePath } from "../game/assets.ts";
 import { enemyDef } from "../game/enemies.ts";
-import { startTurnScryAbilities, startTurnScryPreview } from "../game/combat.ts";
+import { enemyLabel, startTurnScryAbilities, startTurnScryPreview } from "../game/combat.ts";
 import { potionDef, relicDef } from "../game/relics.ts";
 import type { EventDecision, EventRoomState } from "../game/event-room.ts";
 import type {
@@ -1331,24 +1331,31 @@ function EventScreen({
     preparedScry?.cards?.some((card) => card.uid === uid));
   if (preparedSetup) {
     const owner = players.find((candidate) => candidate.id === preparedSetup.playerId);
-    const setupCard = preparedSetup.playerId === player.id ? openingHand[0] : undefined;
-    const needsTarget = setupCard && ["hermit_grudge", "hermit_malice", "hermit_horror"].includes(setupCard.defId);
+    const setupHand = preparedSetup.playerId === player.id ? openingHand : [];
+    const targetedCurses = ["hermit_grudge", "hermit_malice", "hermit_horror"];
     return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
       <div className="event-art" aria-hidden="true" />
       <div className="event-panel event-panel--resolver">
         <div className="room-banner"><span>Event</span><h2 id="event-title">{room.card.name}</h2>
           <p>{preparedSetup.playerId === player.id
-            ? "Hermit setup — Load the private setup card before viewing the opening hand."
+            ? "Hermit start of combat — choose a card from your opening hand to Load into the Chamber."
             : `Waiting for ${owner?.name ?? "the Hermit"} to finish their private setup Load.`}</p></div>
         {encounterPreview}
-        {setupCard ? <fieldset className="event-cards"><legend>Hermit setup</legend>
-          <Card card={setupCard} className="card--preview" playable={false} />
-          {needsTarget ? room.preparedCombat?.enemies.filter((enemy) => !enemy.dead).map((enemy) =>
-            <button type="button" key={enemy.uid} onClick={() => onPreparedHermitSetup?.(setupCard.uid, enemy.uid)}>
-              Load and target row {enemy.row + 1}
-            </button>) : <button type="button" onClick={() => onPreparedHermitSetup?.(setupCard.uid, null)}>
-              Load {CARDS[setupCard.defId]?.name}
-            </button>}
+        {setupHand.length > 0 ? <fieldset className="event-cards"><legend>Load 1 card</legend>
+          {setupHand.map((card) => targetedCurses.includes(card.defId)
+            ? <div key={card.uid} className="event-cards__option">
+              <Card card={card} className="card--preview" playable={false} />
+              {room.preparedCombat?.enemies.filter((enemy) => !enemy.dead).map((enemy) =>
+                <button type="button" key={enemy.uid} onClick={() => onPreparedHermitSetup?.(card.uid, enemy.uid)}>
+                  Load {CARDS[card.defId]?.name} at {enemyLabel(preparedEnemies, enemy)}
+                </button>)}
+            </div>
+            : <div key={card.uid} className="event-cards__option">
+              <Card card={card} className="card--preview" playable={false} />
+              <button type="button" onClick={() => onPreparedHermitSetup?.(card.uid, null)}>
+                Load {CARDS[card.defId]?.name}
+              </button>
+            </div>)}
         </fieldset> : null}
       </div>
     </section>;

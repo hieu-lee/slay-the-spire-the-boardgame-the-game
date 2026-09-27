@@ -201,14 +201,14 @@ export const CHARACTER_LESSONS: Record<CharacterId, CharacterLessons> = {
     setup: [
       {
         title: 'Load your first card',
-        body: 'Before the first turn of every fight, the Hermit draws 1 card and must Load a card into the Chamber. Tap a card in your hand to Load it. The fight starts once it is in place.',
+        body: 'At the start of every fight, after your 5-card draw, the Hermit draws 1 more card and must Load one card into the Chamber. Tap a card in your hand to Load it. The turn starts once it is in place.',
         focus: [spot('.hand')],
       },
     ],
     intro: [
       {
         title: 'Playing the Hermit',
-        body: 'The Hermit has 8 HP and a Chamber with 2 slots. At the start of every fight you draw 1 extra card and must Load one card into the Chamber.',
+        body: 'The Hermit has 9 HP and a Chamber with 2 slots. At the start of every fight you draw 1 extra card and must Load one card into the Chamber.',
         focus: [spot('.hermit-chamber-trigger')],
       },
       {

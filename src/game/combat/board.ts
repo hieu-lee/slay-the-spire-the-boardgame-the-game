@@ -145,7 +145,9 @@ export function resolveEnemyTargets(
  * is dead" then names a tile nobody can identify. The row disambiguates only
  * when it needs to, so a single Cultist stays "Cultist".
  */
-export function enemyLabel(enemies: readonly Enemy[], enemy: Enemy): string {
+type LabeledEnemy = Pick<Enemy, 'uid' | 'defId' | 'row' | 'ascension'>
+
+export function enemyLabel(enemies: readonly LabeledEnemy[], enemy: LabeledEnemy): string {
   const name = enemyDef(enemy.defId, enemy.ascension).name
   const sameName = enemies.filter((other) => enemyDef(other.defId).name === name)
   if (sameName.length <= 1) return name

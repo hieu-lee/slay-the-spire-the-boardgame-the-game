@@ -13655,21 +13655,73 @@ check('Mysterious Sphere resolves private Foresight before Draw and pauses befor
     'disconnect fallback did not continue through Draw to the event pause')
 })
 
-check('Mysterious Sphere resolves each private Hermit setup before exposing the opening hand', () => {
+/** Enters the first fight and stops at the Hermit's start-of-combat Load. */
+function enterHermitSetup(room, seatToken) {
+  finishNeow(room)
+  const [first] = roomChoices(room.run)
+  apply(room, seatToken, { kind: 'enterRoom', roomId: first.id })
+}
+
+check('a connected Hermit makes the live setup Load during the turn-1 Draw step', () => {
+  const store = createStore()
+  const room = createRoom(store, { code: 'TESTHS' })
+  const a = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  const b = joinRoom(room, { name: 'Bo', character: 'hermit' })
+  startRun(room, a.token, { seed: 2 })
+  enterHermitSetup(room, a.token)
+  const combat = room.run.combat
+  assertEqual(combat.phase, 'start')
+  assertDeepEqual(combat.pendingHermitSetupLoads, [{ playerId: b.playerId }])
+  const hermit = combat.players.find((player) => player.id === b.playerId)
+  assertEqual(hermit.hand.length, 6, 'the setup Load does not see the whole opening hand')
+  assert(!allStrings(snapshotFor(room, a.token)).includes(hermit.hand[0].uid), 'the Hermit opening hand leaked to a teammate')
+  assertThrows(() => apply(room, a.token, { kind: 'resolveStartTurn', choices: [] }), 'the table resolved the turn over the Hermit setup')
+  const chosen = hermit.hand.at(-1)
+  apply(room, b.token, { kind: 'resolveHermitSetupLoad', cardUid: chosen.uid, enemyUid: null })
+  const loaded = room.run.combat
+  assertEqual(loaded.pendingHermitSetupLoads.length, 0)
+  assertEqual(loaded.players.find((player) => player.id === b.playerId).chamber[0]?.uid, chosen.uid)
+  assert(loaded.log.some((line) => /^Turn 1 begins \(die [1-6]\)$/.test(line)), 'the shared die did not roll after the setup Load')
+  assert(loaded.phase === 'player' || loaded.phase === 'start' && !loaded.startTurnProgress?.rollPending,
+    'the Start of Turn did not continue after the setup Load')
+})
+
+check('an absent Hermit setup Load keeps Curses in hand', () => {
+  const store = createStore()
+  const room = createRoom(store, { code: 'TESTHC' })
+  const a = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  const b = joinRoom(room, { name: 'Bo', character: 'hermit' })
+  startRun(room, a.token, { seed: 2 })
+  enterHermitSetup(room, a.token)
+  const hermit = room.run.combat.players.find((player) => player.id === b.playerId)
+  hermit.hand = [{ uid: 'absent-malice', defId: 'hermit_malice', upgraded: false },
+    { uid: 'absent-defend', defId: 'hermit_defend', upgraded: false }]
+  markDisconnected(room, b.token)
+  const settled = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertEqual(room.run.combat.pendingHermitSetupLoads.length, 0)
+  assertEqual(settled.chamber[0]?.uid, 'absent-defend', 'an absent Hermit Loaded a Curse blindly')
+})
+
+check('Mysterious Sphere resolves each private Hermit setup after the opening Draw', () => {
   const { room, a, b } = twoSeatRoom()
-  const prepared = structuredClone(room.run.combat)
-  const owner = prepared.players.find((player) => player.id === a.playerId)
-  const setup = { uid: 'sphere-hermit-setup', defId: 'hermit_strike', upgraded: false }
-  owner.character = 'hermit'
-  owner.hand = [setup]
-  owner.draw = Array.from({ length: 5 }, (_, index) => ({
-    uid: `sphere-opening-${index}`, defId: 'hermit_defend', upgraded: false,
-  }))
-  owner.chamber = []
-  owner.chamberSlots = 2
-  prepared.turn = 0
-  prepared.phase = 'player'
-  prepared.pendingHermitSetupLoads = [{ playerId: a.playerId }]
+  const base = structuredClone(room.run.combat)
+  const hermitCombat = (ownerId, prefix) => {
+    const combat = structuredClone(base)
+    const owner = combat.players.find((player) => player.id === ownerId)
+    owner.character = 'hermit'
+    owner.hand = []
+    owner.draw = Array.from({ length: 6 }, (_, index) => ({
+      uid: `${prefix}-${index}`, defId: index === 0 ? 'hermit_strike' : 'hermit_defend', upgraded: false,
+    }))
+    owner.chamber = []
+    owner.chamberSlots = 2
+    Object.assign(combat, { turn: 0, phase: 'player', startTurnProgress: undefined, pendingTriggers: [],
+      pendingHermitSetupLoads: [], hermitSetupQueued: false })
+    return preparePlayerTurnThroughDraw(combat)
+  }
+  const prepared = hermitCombat(a.playerId, 'sphere-opening')
+  const setup = { uid: 'sphere-opening-0' }
+  assertDeepEqual(prepared.pendingHermitSetupLoads, [{ playerId: a.playerId }])
   room.run.phase = 'room'
   room.run.combat = null
   room.run.roomState = createEventRoom({
@@ -13679,8 +13731,9 @@ check('Mysterious Sphere resolves each private Hermit setup before exposing the 
   room.run.roomState.preparedCombat = prepared
   const privatePreview = snapshotFor(room, a.token).run.roomState.preparedCombat
   const peerPreview = snapshotFor(room, b.token).run.roomState.preparedCombat
-  assertEqual(privatePreview.players.find((player) => player.id === a.playerId).hand[0].uid, setup.uid)
-  assert(!allStrings(peerPreview).includes(setup.uid), 'the Hermit setup card leaked to a teammate')
+  assertEqual(privatePreview.players.find((player) => player.id === a.playerId).hand.length, 6,
+    'the Hermit chooses its setup Load from the whole opening hand')
+  assert(!allStrings(peerPreview).includes(setup.uid), 'the Hermit opening hand leaked to a teammate')
   assertDeepEqual(peerPreview.enemies.map(({ defId, row }) => ({ defId, row })),
     prepared.enemies.map(({ defId, row }) => ({ defId, row })), 'the public encounter was hidden during setup')
   assertThrows(() => apply(room, b.token, { kind: 'event', playerId: b.playerId,
@@ -13688,23 +13741,46 @@ check('Mysterious Sphere resolves each private Hermit setup before exposing the 
   apply(room, a.token, { kind: 'resolveHermitSetupLoad', cardUid: setup.uid, enemyUid: null })
   const opened = room.run.roomState.preparedCombat.players.find((player) => player.id === a.playerId)
   assertEqual(room.run.roomState.preparedCombat.pendingHermitSetupLoads.length, 0)
+  assert(room.run.roomState.preparedCombat.startTurnProgress?.pauseAfterDraw, 'the Sphere lost its after-Draw pause')
   assertEqual(opened.chamber[0].uid, setup.uid)
   assertEqual(opened.hand.length, 5)
 
-  const disconnected = structuredClone(prepared)
-  disconnected.pendingHermitSetupLoads = [{ playerId: b.playerId }]
-  const disconnectedOwner = disconnected.players.find((player) => player.id === b.playerId)
-  disconnectedOwner.character = 'hermit'
-  disconnectedOwner.hand = [{ uid: 'sphere-disconnect-setup', defId: 'hermit_defend', upgraded: false }]
-  disconnectedOwner.draw = Array.from({ length: 5 }, (_, index) => ({
-    uid: `sphere-disconnect-opening-${index}`, defId: 'hermit_defend', upgraded: false,
-  }))
-  disconnectedOwner.chamber = []
-  disconnectedOwner.chamberSlots = 2
-  room.run.roomState.preparedCombat = disconnected
+  room.run.roomState.preparedCombat = hermitCombat(b.playerId, 'sphere-away-opening')
+  markDisconnected(room, a.token)
+  markDisconnected(room, b.token)
+  assertEqual(room.run.roomState.preparedCombat.pendingHermitSetupLoads.length, 1,
+    'a Hermit setup Load was made while the whole table was away')
+  room.seats.find((seat) => seat.token === a.token).connected = true
+
+  room.run.roomState.preparedCombat = hermitCombat(b.playerId, 'sphere-disconnect-opening')
   markDisconnected(room, b.token)
   assertEqual(room.run.roomState.preparedCombat.pendingHermitSetupLoads.length, 0)
   assertEqual(room.run.roomState.preparedCombat.players.find((player) => player.id === b.playerId).hand.length, 5)
+})
+
+check('Mysterious Sphere settles a disconnected Hermit setup queued by its own pre-draw Scry', () => {
+  const { room, b } = twoSeatRoom()
+  const combat = structuredClone(room.run.combat)
+  const owner = combat.players.find((player) => player.id === b.playerId)
+  Object.assign(owner, {
+    character: 'hermit', hand: [], chamber: [], chamberSlots: 2,
+    powers: [{ uid: 'sphere-hermit-foresight', defId: 'foresight', upgraded: false }],
+    draw: Array.from({ length: 8 }, (_, index) => ({ uid: `sphere-scry-${index}`, defId: 'hermit_defend', upgraded: false })),
+  })
+  Object.assign(combat, { turn: 0, phase: 'player', startTurnProgress: undefined, pendingTriggers: [],
+    pendingHermitSetupLoads: [], hermitSetupQueued: false })
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({
+    ...EVENT_DEFINITIONS.living_wall, instanceId: 'test-sphere-hermit-scry', act: 3,
+    minAscension: 0, requiresColorlessUnlock: false,
+  })
+  room.run.roomState.preparedCombat = preparePlayerTurnThroughDraw(combat)
+  assert(room.run.roomState.preparedCombat.startTurnProgress?.beforeDraw, 'the Scry did not pause before the Draw')
+  markDisconnected(room, b.token)
+  const settled = room.run.roomState.preparedCombat
+  assertEqual(settled.pendingHermitSetupLoads.length, 0, 'the setup queued after the Scry stayed stuck')
+  assert(settled.startTurnProgress?.pauseAfterDraw, 'the Sphere lost its after-Draw pause')
 })
 
 check('Mysterious Sphere settles disconnected owners after Scry ordering and resolution', () => {

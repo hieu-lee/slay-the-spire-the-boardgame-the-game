@@ -126,6 +126,14 @@
 .event-cards .card--preview { filter: none; }
 .event-cards button:not(.card) { min-height: 88px; padding: .7rem; color: #f7eddb; background: linear-gradient(#313e40, #172328); border: 2px solid #708489; border-radius: 7px; box-shadow: 0 5px 0 #0b1012; cursor: pointer; }
 .event-cards button[aria-pressed='true']:not(.card) { color: #17120b; background: #f4cf71; }
+.event-cards__option { display: flex; flex-direction: column; gap: .35rem; }
+/* The Hermit setup Load offers a whole opening hand: keep each card readable
+   in one swipeable row on horizontal phones, with its Load button right under it. */
+@media (orientation: landscape) and (max-height: 43.75rem) {
+  .event-cards:has(> .event-cards__option) { flex-wrap: nowrap; overflow-x: auto; padding-bottom: .4rem; }
+  .event-cards__option { --card-width: 6.5rem; flex: 0 0 auto; width: var(--card-width); }
+  .event-cards__option > button:not(.card) { min-height: 2.75rem; padding: .35rem .5rem; }
+}
 .event-encounter-preview { display: flex; gap: .75rem; flex-wrap: wrap; margin: 0 0 1rem; padding: .65rem; border: 1px solid #708489; border-radius: 7px; background: #0a0c0c85; }
 .event-encounter-preview > legend { padding: 0 .25rem; color: #f4cf71; }
 .event-encounter-preview figure { display: grid; grid-template-columns: 64px auto; align-items: center; gap: .55rem; min-width: 180px; margin: 0; }

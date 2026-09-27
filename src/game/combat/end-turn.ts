@@ -51,6 +51,7 @@ import {
   continueBeforeDraw,
   continueStartTurn,
   finishStartTurnDraw,
+  queueHermitSetupLoads,
   resolveDueSummons,
   stageStartTurnTriggerChoice,
   triggerTargets,
@@ -982,7 +983,9 @@ export function resolvePendingTrigger(
   }
   flushPendingTriggers(next)
   const rollPending = next.startTurnProgress?.rollPending
-  if (rollPending && (next.pendingTriggers.length === 0 || combatIsOver(next))) {
+  if (rollPending && next.pendingTriggers.length === 0 && !combatIsOver(next)) queueHermitSetupLoads(next)
+  if (rollPending && (next.pendingTriggers.length === 0 && (next.pendingHermitSetupLoads?.length ?? 0) === 0 ||
+    combatIsOver(next))) {
     next.startTurnProgress = rollPending.pauseAfterDraw && !combatIsOver(next)
       ? { choices: [], pauseAfterDraw: { drewFrom: rollPending.drewFrom } }
       : undefined

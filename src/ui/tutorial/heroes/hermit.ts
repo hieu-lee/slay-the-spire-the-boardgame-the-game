@@ -14,25 +14,30 @@ const plan: TutorialPlan = {
     effectCards: ['hermit_snapshot'] },
   route: ['a1r0c0', 'a1r1c1', 'a1r2c1', 'a1r3c1', 'a1r4c1', 'a1r5c1', 'a1r6c1', 'a1r7c1', 'a1r8c1', 'a1r9c1', 'a1r10c1', 'a1r11c1', 'a1r12c0'],
   rooms: {
-    // A Hermit fight opens with the board ability's single drawn card, which
-    // must be Loaded before turn 1 deals the real hand; `hand` is that card.
-    a1r0c0: { kind: 'fight', enemies: ['cultist'], hand: ['hermit_snapshot'],
+    // A Hermit fight opens with the 5-card hand plus the board ability's extra
+    // card; one of those 6 must be Loaded before the die rolls. `hand` is all 6.
+    a1r0c0: { kind: 'fight', enemies: ['cultist'],
+      hand: ['hermit_snapshot', 'hermit_covet', 'hermit_defend', 'hermit_strike', 'hermit_strike', 'hermit_strike'],
       cards: ['hermit_low_profile', 'hermit_itchy_trigger', 'hermit_cursed_weapon'], pick: 'hermit_itchy_trigger' },
     a1r1c1: { kind: 'event', event: 'living_wall', option: 'forget', cards: ['hermit_strike'] },
-    a1r2c1: { kind: 'fight', enemies: ['red_slaver'], hand: ['hermit_defend'],
+    a1r2c1: { kind: 'fight', enemies: ['red_slaver'],
+      hand: ['hermit_defend', 'hermit_covet', 'hermit_high_caliber', 'hermit_strike', 'hermit_defend', 'hermit_snapshot'],
       cards: ['hermit_quickdraw', 'hermit_body_armor', 'hermit_called_shot'], pick: 'hermit_body_armor' },
     a1r3c1: { kind: 'merchant', buy: [{ section: 'card', slot: 2, id: 'hermit_tracking_shots' }] },
-    a1r4c1: { kind: 'fight', enemies: ['large_slime'], hand: ['hermit_defend'],
+    a1r4c1: { kind: 'fight', enemies: ['large_slime'],
+      hand: ['hermit_defend', 'hermit_strike', 'hermit_tracking_shots', 'hermit_strike', 'hermit_body_armor', 'hermit_high_caliber'],
       cards: ['hermit_scorn', 'hermit_determination', 'hermit_deadeye'], pick: 'hermit_deadeye' },
     a1r5c1: { kind: 'campfire' },
     a1r6c1: { kind: 'treasure', relic: 'meat_on_the_bone' },
     a1r7c1: { kind: 'event', event: 'wing_statue', option: 'gather_gold' },
     a1r8c1: { kind: 'treasure', relic: 'teleportation_stone' },
-    a1r9c1: { kind: 'fight', enemies: ['blue_slaver'], hand: ['hermit_tracking_shots'],
+    a1r9c1: { kind: 'fight', enemies: ['blue_slaver'],
+      hand: ['hermit_tracking_shots', 'hermit_deadeye', 'hermit_defend', 'hermit_strike', 'hermit_strike', 'hermit_defend'],
       cards: ['hermit_showdown', 'hermit_low_profile', 'hermit_malice'], pick: null },
     a1r10c1: { kind: 'merchant' },
     a1r11c1: { kind: 'campfire' },
-    a1r12c0: { kind: 'fight', enemies: ['downfall_dark_core'], hand: ['hermit_defend'] },
+    a1r12c0: { kind: 'fight', enemies: ['downfall_dark_core'],
+      hand: ['hermit_defend', 'hermit_defend', 'hermit_body_armor', 'hermit_covet', 'hermit_tracking_shots', 'hermit_deadeye'] },
   },
   boss: 'downfall_dark_core',
 }
@@ -72,7 +77,7 @@ export const HERMIT: HeroTutorial = {
       when: inNeow,
       steps: [
         say('Welcome to the Spire', 'This tutorial walks one planned Act I run with the Hermit, a Downfall hero, so every card, enemy and room can be explained. When the coach asks for a move, only the ringed controls respond. Hide tips at any time to play freely.'),
-        say('Your health', 'The Hermit has only 8 HP. Enemy attacks here deal 1 to 4 damage, so Block and killing enemies before they act matter more than for any other hero. At 0 HP the run is over.', at.hp),
+        say('Your health', 'The Hermit has 9 HP. Enemy attacks here deal 1 to 4 damage, so Block and killing enemies before they act matter a lot. At 0 HP the run is over.', at.hp),
         say('Deck and relics', 'Your deck holds Covet, Snapshot, 5 Strikes and 4 Defends; open it here any time. Hermit Strikes deal 1 and Defends give 1 Block. Loaded Die gives 1 extra Energy when the die rolls a 6.', at.deck, at.relics),
         say("The Heart's Boon", "Downfall heroes start with the Heart's Boon instead of Neow's Blessing. The red reward is always 3 Gold and a Card Reward. Then you choose one of three blue options.", at.neowCard),
         task('Take the Gold', 'The red reward starts with 3 Gold. Gold buys cards, relics, potions and card removal from merchants. Take it.',
@@ -82,7 +87,7 @@ export const HERMIT: HeroTutorial = {
         say('Dive', 'Costs 1: gain 2 Block, or 3 while a Curse sits in your Chamber. A plain Defend for now.', at.offeredCard('hermit_dive')),
         say('Feint', 'Costs 1: draw 2 cards, then Load 1 card from your hand into the Chamber. You will learn Loading in the first fight.', at.offeredCard('hermit_feint')),
         say('High-Caliber', 'Costs 2: deal 1 damage and gain 1 Block. Rapid Fire: the card is played one extra time, so it really deals 2 and gives 2 Block.', at.offeredCard('hermit_high_caliber')),
-        task('Take High-Caliber', 'High-Caliber attacks and blocks at once, which a hero with 8 HP needs. Take it.', neowRedTaken, at.offeredCard('hermit_high_caliber')),
+        task('Take High-Caliber', 'High-Caliber attacks and blocks at once, which a hero with 9 HP needs. Take it.', neowRedTaken, at.offeredCard('hermit_high_caliber')),
         say('The blue options', 'Upgrade a card, Add a random rare card, or Look at 3 Relics and take one but gain a Curse. A random rare may not suit your deck, and a Curse is a dead card.', spot('.neow-options')),
         task('Upgrade a card', 'An upgrade is a sure thing. Choose it.', neowBlueChosen, at.neowOption('Upgrade a card')),
         ...pickerSteps('Upgrade', 'hermit_snapshot', 'Snapshot+ deals 3 damage instead of 2. Its Dead On bonus gives Block equal to the damage dealt, so it grows too. Pick Snapshot.', neowDone),
@@ -100,8 +105,8 @@ export const HERMIT: HeroTutorial = {
       steps: [
         say('Your first fight', 'This Cultist has 9 HP. Bring it to 0 to win. It stands in your row, so its attacks hit you.', at.enemy('e0')),
         say('The Chamber', 'The Hermit keeps cards in a Chamber with 2 slots, shown here. Putting a card there is called Loading. A Loaded card waits outside your hand until you play it, even across turns.', CHAMBER),
-        say('Before turn 1', 'At the start of every fight the Hermit draws 1 card and must Load a card before turn 1. Your hand holds only that card: Snapshot+.', at.hand),
-        setupLoad('hermit_snapshot', 'Load Snapshot', 'Tap Snapshot+ to Load it. Then turn 1 begins and you draw your 5 cards.'),
+        say('Start of combat', 'Every fight, after you draw your 5 cards, the Hermit board draws 1 more card, and you must Load one of those 6 into the Chamber.', at.hand),
+        setupLoad('hermit_snapshot', 'Load Snapshot', 'Snapshot+ is the best card to Load here: from the Chamber it also gives Block. Tap it to Load it, then turn 1 begins.'),
       ],
     },
     {
@@ -109,7 +114,7 @@ export const HERMIT: HeroTutorial = {
       when: inFight('a1r0c0', 1),
       steps: [
         say('Enemy intent', 'The icon above an enemy is its intent: what it will do on its turn. The Cultist attacks for 1, then gains 1 Strength. Each Strength adds 1 damage to its hits, so it grows every turn.', at.intent('e0')),
-        say('Your hand', 'You drew Covet, a Defend and 3 Strikes, and Snapshot+ waits in the Chamber. You get 3 Energy a turn; a card\'s cost is in its top-left corner.', at.hand, at.energy),
+        say('Your hand', 'Your hand holds Covet, a Defend and 3 Strikes, and Snapshot+ waits in the Chamber. You get 3 Energy a turn; a card\'s cost is in its top-left corner.', at.hand, at.energy),
         openChamber('hermit_snapshot', 'Cards in the Chamber are played from there.'),
         say('Dead On', 'A card played from the Chamber triggers its Dead On bonus. You still pay its cost. Snapshot+ deals 3, and Dead On adds Block equal to the damage dealt: 3 Block.', at.handCard('hermit_snapshot')),
         task('Fire Snapshot+', 'Play Snapshot+ from the Chamber: tap it, then tap the Cultist, or drag it there.',
@@ -162,7 +167,7 @@ export const HERMIT: HeroTutorial = {
       when: beforeFirstTurn('a1r2c1'),
       steps: [
         say('Red Slaver', 'The Red Slaver has 10 HP. What it does depends on the die rolled each round.', at.enemy('e0')),
-        setupLoad('hermit_defend', 'Load the Defend', 'This time the board ability drew a Defend, and it is the only card you can Load. It will wait in the Chamber for a turn you need Block.'),
+        setupLoad('hermit_defend', 'Load the Defend', 'This time Load a Defend and keep Snapshot+ in hand: it is Covet\'s turn to shine. The Defend waits in the Chamber for a turn you need Block.'),
       ],
     },
     {
@@ -186,7 +191,7 @@ export const HERMIT: HeroTutorial = {
       steps: [
         say('The Daze', 'There is the Daze. It leaves at the end of this turn. The Red Slaver attacks for 2 again.', at.hand, at.intent('e0')),
         task('Itchy Trigger', 'Rapid Fire: 1 damage, played twice, for 1 Energy. The Red Slaver drops to 4 HP.', playedDown('hermit_itchy_trigger'), at.handCard('hermit_itchy_trigger'), at.enemy('e0')),
-        say('Your turn to lead', 'Finish the fight yourself. You have 2 Energy: Strike to push damage, or the Defends (one is in the Chamber) to block. Tip: with 8 HP, block when you cannot kill.', at.hand),
+        say('Your turn to lead', 'Finish the fight yourself. You have 2 Energy: Strike to push damage, or the Defends (one is in the Chamber) to block. Tip: with 9 HP, block when you cannot kill.', at.hand),
       ],
     },
     rewardChapter('a1r2c1', {
@@ -197,7 +202,7 @@ export const HERMIT: HeroTutorial = {
         ['hermit_called_shot', 'A Power: at the start of each turn, one card in your Chamber costs 0 that turn.'],
       ],
       pick: 'hermit_body_armor',
-      pickWhy: 'Body Armor is the Block this 8 HP hero needs, and free from the Chamber. Take it.',
+      pickWhy: 'Body Armor is the Block this 9 HP hero needs, and free from the Chamber. Take it.',
     }),
     moveChapter('a1r2c1', 'a1r3c1', 'Visit the merchant', 'Merchants sell cards, relics and potions, and remove cards.'),
     merchantChapter('a1r3c1', [
@@ -212,7 +217,7 @@ export const HERMIT: HeroTutorial = {
       id: 'fight-a1r4c1-setup',
       when: beforeFirstTurn('a1r4c1'),
       steps: [
-        setupLoad('hermit_defend', 'Load the Defend', 'The Large Slime has 8 HP. Your board ability drew a Defend again: Load it.'),
+        setupLoad('hermit_body_armor', 'Load Body Armor', 'The Large Slime has 8 HP. Load Body Armor: from the Chamber it costs 0. Tracking Shots can Load itself into your other slot.'),
       ],
     },
     {
@@ -220,22 +225,24 @@ export const HERMIT: HeroTutorial = {
       when: inFight('a1r4c1', 1),
       steps: [
         say('The Large Slime', 'This turn it hits every row for 1. Next turn it attacks for 4 and adds a Daze: kill it before then if you can.', at.intent('e0')),
+        openChamber('hermit_body_armor', 'Body Armor is Loaded.'),
+        task('Body Armor', 'Dead On: from the Chamber it costs 0. 2 Block, enough for the 1 damage coming. Tap it, then tap your hero if asked.',
+          fired('hermit_body_armor'), at.handCard('hermit_body_armor'), at.hero),
         task('Tracking Shots', 'Tap Tracking Shots, choose "Load this card" so it goes to your free Chamber slot after it is played, then tap the Slime for 3 damage.',
           playedDown('hermit_tracking_shots'), at.handCard('hermit_tracking_shots'), at.enemy('e0'), spot('.prompt__mode', 'Load this card')),
-        task('Body Armor', 'From the hand Body Armor costs 1: 2 Block, enough for the 1 damage coming. Tap it, then tap your hero if asked.',
-          playedDown('hermit_body_armor'), at.handCard('hermit_body_armor'), at.hero),
-        task('End your turn', 'The Slime is on 5 HP, and Tracking Shots is Loaded for next turn.', turnReached(2), at.endTurn),
+        task('Strike', 'Your last Energy: a Strike deals 1.', spent('hermit_strike', 1), at.handCard('hermit_strike'), at.enemy('e0')),
+        task('End your turn', 'The Slime is on 4 HP, and Tracking Shots is Loaded for next turn.', turnReached(2), at.endTurn),
       ],
     },
     {
       id: 'fight-a1r4c1-turn-2',
       when: inFight('a1r4c1', 2),
       steps: [
-        say('Another 6', 'Loaded Die gave you 4 Energy again. That is exactly enough to kill the Slime before its 4-damage attack.', at.die, at.energy),
+        say('Another 6', 'Loaded Die gave you 4 Energy again, more than enough to kill the Slime before its 4-damage attack.', at.die, at.energy),
         openChamber('hermit_tracking_shots', 'Tracking Shots is in the Chamber.'),
-        task('Fire Tracking Shots', 'It has no Dead On, but the Chamber kept it ready: 3 damage, leaving the Slime on 2. If asked to Load it again, choose Do Not Load.',
+        task('Fire Tracking Shots', 'It has no Dead On, but the Chamber kept it ready: 3 damage, leaving the Slime on 1. If asked to Load it again, choose Do Not Load.',
           fired('hermit_tracking_shots'), at.handCard('hermit_tracking_shots'), at.enemy('e0'), spot('.prompt__mode', 'ot Load')),
-        task('Strike twice', 'Two Strikes deal the last 2 damage. An enemy that dies before its turn never acts.', spent('hermit_strike'), at.handCard('hermit_strike'), at.enemy('e0')),
+        task('Strike', 'A Strike deals the last 1 damage. An enemy that dies before its turn never acts.', spent('hermit_strike'), at.handCard('hermit_strike'), at.enemy('e0')),
       ],
     },
     rewardChapter('a1r4c1', {
@@ -259,11 +266,11 @@ export const HERMIT: HeroTutorial = {
       ],
     },
     moveChapter('a1r5c1', 'a1r6c1', 'Open a chest', 'Every route crosses the row of treasure chests.'),
-    treasureChapter('a1r6c1', 'meat_on_the_bone', 'A safety net for a hero with 8 HP.'),
+    treasureChapter('a1r6c1', 'meat_on_the_bone', 'A safety net for a hero with 9 HP.'),
     moveChapter('a1r6c1', 'a1r7c1', 'Another event', 'Another "?" room.'),
     eventChapter('a1r7c1', [
       say('Wing Statue', 'Pray removes a card but costs 2 HP. Gather Gold gives 2 Gold.', at.event),
-      task('Gather Gold', 'With 8 HP, 2 HP is too high a price. Take the Gold.', roomLeft, at.eventOption('gather_gold')),
+      task('Gather Gold', 'With 9 HP, 2 HP is too high a price. Take the Gold.', roomLeft, at.eventOption('gather_gold')),
     ]),
     moveChapter('a1r7c1', 'a1r8c1', 'One more chest', 'This route passes a second chest.'),
     treasureChapter('a1r8c1', 'teleportation_stone', 'It rides on the shared die, like Loaded Die, so more rolls help you.'),
@@ -272,7 +279,7 @@ export const HERMIT: HeroTutorial = {
       id: 'fight-a1r9c1-setup',
       when: beforeFirstTurn('a1r9c1'),
       steps: [
-        setupLoad('hermit_tracking_shots', 'Load Tracking Shots', 'The Blue Slaver has 10 HP. Your board ability drew Tracking Shots: Load it. It fires from the Chamber whenever you have 2 Energy to spare.'),
+        setupLoad('hermit_tracking_shots', 'Load Tracking Shots', 'The Blue Slaver has 10 HP. Load Tracking Shots: it fires from the Chamber whenever you have 2 Energy to spare.'),
       ],
     },
     {
@@ -317,7 +324,7 @@ export const HERMIT: HeroTutorial = {
       when: beforeFirstTurn('a1r12c0'),
       steps: [
         say('The Dark Core', 'The Act I boss has 32 HP. Bosses count as being in every row and always act last.', at.enemy('boss-0')),
-        task('Load a card', 'As always, Load the card your board ability drew.', (run) => !run.combat || chamber(run).length > 0, at.hand),
+        setupLoad('hermit_deadeye', 'Load Deadeye', 'Load Deadeye: fired from the Chamber, its Dead On gives you Strength for the whole fight.'),
       ],
     },
     {
@@ -325,7 +332,7 @@ export const HERMIT: HeroTutorial = {
       when: inFight('a1r12c0', 1),
       steps: [
         say('Dark Orbs', 'This turn it hits every row for 2 and summons a Dark Orb with 8 HP. An Orb waits one turn, then attacks for 4 and is destroyed. Kill it or have Block ready.', at.intent('boss-0')),
-        say('The plan', 'With Covet and Deadeye in hand, Covet Loads Deadeye, then fire it from the Chamber for Strength all fight. Body Armor blocks the 2. Next turn the Dark Core hits every row for 4, so keep Block coming.', at.hand, CHAMBER),
+        say('The plan', 'Fire Deadeye from the Chamber for Strength all fight. Then Covet Loads Body Armor, which blocks the 2 for free from the Chamber. Next turn the Dark Core hits every row for 4, so keep Block coming.', at.hand, CHAMBER),
         say('Potions', `Use potions when they help. ${potionText('liquid_void')}`, spot('.combat__actions')),
       ],
     },

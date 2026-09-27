@@ -4241,7 +4241,6 @@ try {
   ])
   for (const [screen, width, height] of [['desktop', 1280, 800], ['phone', 844, 390]]) {
     await b.setViewportSize({ width, height })
-    await b.locator('.start-turn-order > summary').click()
     const chooserLayout = await b.evaluate(() => {
       const rect = (selector) => document.querySelector(selector)?.getBoundingClientRect()
       const chooser = rect('.orbs--targetable')
@@ -4259,8 +4258,10 @@ try {
       assert(chooserLayout, 'the Storm chooser overlaps a control or the open order tray leaves the viewport')
     })
     await b.screenshot({ path: join(outDir, `02c-storm-order-open-${screen}.png`), fullPage: true })
+    // The order opens by default; fold it for the owner-only shot, then restore it.
     await b.locator('.start-turn-order > summary').click()
     await b.screenshot({ path: join(outDir, `02c-storm-only-owner-${screen}.png`), fullPage: true })
+    await b.locator('.start-turn-order > summary').click()
   }
   await boFrostChoice.click()
   await boMixedButton.waitFor({ state: 'visible' })

@@ -30,6 +30,8 @@ import {
   spendMiracle,
   spendShiv,
   startPlayerTurn,
+  preparePlayerTurnThroughDraw,
+  startPlayerTurnWithChoices,
 } from '../src/game/combat.ts'
 import { fireTriggers } from '../src/game/combat/effects.ts'
 import { finishForcedCardPlay } from '../src/game/combat/start-turn.ts'
@@ -245,7 +247,7 @@ check('FAQ edge cases retain the official outcomes', () => {
 check('the unlabeled board ability draws one card and then Loads the chosen hand card', () => {
   assert.equal(HERMIT_BOARD_GUID, '63f2c4')
   assert.deepEqual(HERMIT_BOARD, {
-    hp: 8, maxHp: 8, hpTrackMin: 1, hpTrackMax: 9,
+    hp: 9, maxHp: 9, hpTrackMin: 1, hpTrackMax: 9,
     energy: 3, maxEnergy: 6, block: 0, maxBlock: 10, chamberSlots: 2,
     reminders: {
       load: 'Load: Store a card in the Chamber.',
@@ -267,8 +269,18 @@ check('the unlabeled board ability draws one card and then Loads the chosen hand
 })
 
 const instance = (uid, defId, upgraded = false) => ({ uid, defId, upgraded })
+/** Fixtures that skip the setup Load keep the board ability's one extra card in hand, and it never draws again. */
+const skipSetupLoad = (combat) => {
+  for (const hermit of combat.players) {
+    if (hermit.character !== 'hermit' || hermit.dead) continue
+    const card = hermit.draw.shift()
+    if (card) hermit.hand.push(card)
+  }
+  combat.pendingHermitSetupLoads = []
+  combat.hermitSetupQueued = true
+}
 const player = (over = {}) => ({
-  id: 'p1', name: 'Hermit', character: 'hermit', row: 0, hp: 8, maxHp: 8, block: 0, energy: 3,
+  id: 'p1', name: 'Hermit', character: 'hermit', row: 0, hp: 9, maxHp: 9, block: 0, energy: 3,
   deck: [], draw: [], hand: [], discard: [], exhaust: [], powers: [], gold: 0, relics: [], potions: [],
   cardRewards: [], rareRewards: [], strength: 0, strengthLossAtEndOfTurn: 0, vulnerable: 0, weak: 0,
   drawLocked: false, lostHpThisCombat: false, attacksPlayedThisTurn: 0, shivs: 0, shivDamageBonus: 0,
@@ -312,7 +324,7 @@ check('Hermit attack faces resolve their printed damage and Rapid Fire against a
     let combat = createCombat(createRng(701), [player({ hand: [held], energy: 6 })], [
       enemy({ uid: 'untouched', hp: 100, maxHp: 100 }), enemy({ uid: 'chosen', row: 1, hp: 100, maxHp: 100 }),
     ])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     combat.die = 1
     combat = playCard(combat, 'p1', held.uid, { enemyUid: 'chosen', ...(name === 'enervate' ? { energySpent: 3 } : {}) })
     let copies = 0
@@ -330,7 +342,7 @@ check('Golden Bullet multiplies bonuses after Dead On, preserves Weak cancellati
       let combat = createCombat(createRng(702), [player({
         [chamber ? 'chamber' : 'hand']: [bullet], strength: 1, weak,
       })], [enemy({ uid: 'untouched' }), enemy({ uid: 'chosen', row: 1, hp: 100, maxHp: 100, vulnerable, block: 1 })])
-      combat.pendingHermitSetupLoads = []
+      skipSetupLoad(combat)
       const play = chamber ? playLiveHermitChamberCard : playCard
       assert.equal(play(combat, 'p1', bullet.uid, { enemyUid: null }), combat)
       combat = play(combat, 'p1', bullet.uid, { enemyUid: 'chosen' })
@@ -353,7 +365,7 @@ check('Roulette resolves all six printed rolls, including row impacts, from hand
       enemy({ uid: 'row-mate', row: 1, hp: 100, maxHp: 100 }),
       enemy({ uid: 'boss', row: 2, hp: 100, maxHp: 100, isBoss: true }),
     ])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     combat.die = die
     combat.players[0].doubledAttacksThisTurn = 1
     const play = chamber ? playLiveHermitChamberCard : playCard
@@ -381,7 +393,7 @@ check('Body Armor and Golden Bullet activate Combo only when their Dead On bonus
       let combat = createCombat(createRng(704), [player({
         [chamber ? 'chamber' : 'hand']: [held], powers: [combo],
       })], [enemy({ vulnerable })])
-      combat.pendingHermitSetupLoads = []
+      skipSetupLoad(combat)
       combat = (chamber ? playLiveHermitChamberCard : playCard)(combat, 'p1', held.uid, { enemyUid: 'e1' })
       assert.equal(combat.players[0].energy, name === 'body_armor' && chamber ? 3 : 2)
       const expected = chamber && (name === 'body_armor' || vulnerable > 0)
@@ -399,7 +411,7 @@ check('Hermit skill faces grant their printed Block, statuses, draw, and Exhaust
   for (const [name, blocks] of Object.entries(skills)) for (const upgraded of [false, true]) {
     const held = instance('skill', 'hermit_' + name, upgraded)
     let combat = createCombat(createRng(705), [player({ hand: [held] })], [enemy()])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     combat = playCard(combat, 'p1', held.uid, { enemyUid: 'e1', playerId: 'p1' })
     let copies = 0
     while (combat.pendingCardCopy && copies++ < 10) combat = playCardCopy(combat, 'p1', { enemyUid: 'e1', playerId: 'p1' })
@@ -415,7 +427,7 @@ check('Hermit skill faces grant their printed Block, statuses, draw, and Exhaust
       const held = instance('draw-skill', 'hermit_' + name, upgraded)
       const cards = Array.from({ length: 5 }, (_, i) => instance('draw-' + i, 'hermit_defend'))
       let combat = createCombat(createRng(706), [player({ hand: [held], draw: [...cards] })], [enemy()])
-      combat.pendingHermitSetupLoads = []
+      skipSetupLoad(combat)
       combat.players[0].hand = [held]
       combat.players[0].draw = cards
       const loads = ['feint', 'quickdraw'].includes(name) ? 1 : 0
@@ -439,7 +451,7 @@ check('Hermit conditional damage, discounts, and Dead On clauses follow the card
         hand: [instance('hand-curse', 'hermit_scorn'), ...(!deadOn ? [held] : [])],
         chamber: [instance('chamber-curse', 'hermit_scorn'), ...(deadOn ? [held] : [])],
       })], [enemy({ hp: 100, maxHp: 100 })])
-      combat.pendingHermitSetupLoads = []
+      skipSetupLoad(combat)
       combat = (deadOn ? playLiveHermitChamberCard : playCard)(combat, 'p1', held.uid, { enemyUid: 'e1' })
       let copies = 0
       while (combat.pendingCardCopy && copies++ < 10) combat = playCardCopy(combat, 'p1', { enemyUid: 'e1' })
@@ -451,7 +463,7 @@ check('Hermit conditional damage, discounts, and Dead On clauses follow the card
     let combat = createCombat(createRng(708), [player({
       powers: [snipe], chamber: [instance('dead-on', 'hermit_headshot')],
     })], [enemy({ uid: 'untouched' }), enemy({ uid: 'chosen', row: 1 })])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     assert.equal(activatePower(combat, 'p1', snipe.uid), combat)
     combat = activatePower(combat, 'p1', snipe.uid, { enemyUid: 'chosen' })
     assert.deepEqual(combat.enemies.map(({ vulnerable }) => vulnerable), [0, 1])
@@ -470,7 +482,7 @@ check('Hermit passive powers modify starter attacks, Rapid Fire, and Curse loads
         instance('no-holds', 'hermit_no_holds_barred', upgraded),
       ],
     })], [enemy({ hp: 100, maxHp: 100 })])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     combat = playCard(combat, 'p1', strike.uid, { enemyUid: 'e1' })
     assert.equal(combat.pendingCardCopy?.sourceNames.length, 2)
     while (combat.pendingCardCopy) combat = playCardCopy(combat, 'p1', { enemyUid: 'e1' })
@@ -486,7 +498,7 @@ check('Hermit passive powers modify starter attacks, Rapid Fire, and Curse loads
         instance('lone-wolf', 'hermit_lone_wolf', upgraded),
       ],
     })], [enemy()])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     combat = playCard(combat, 'p1', covet.uid, { loadUids: [curse.uid, shot.uid] })
     assert.equal(combat.players[0].block, 3 + (upgraded ? 2 : 1))
     assert.equal(combat.players[0].strength, 1)
@@ -498,7 +510,7 @@ check('playing Overwhelming Power after two attacks grants its once-per-turn dra
     const power = instance('late-power', 'hermit_overwhelming_power', upgraded)
     const cards = Array.from({ length: 4 }, (_, i) => instance('threshold-' + i, 'hermit_defend'))
     let combat = createCombat(createRng(711), [player({ hand: [power] })], [enemy()])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     combat.players[0].draw = cards
     combat.players[0].attacksPlayedThisTurn = 2
     combat = playCard(combat, 'p1', power.uid, {})
@@ -510,7 +522,7 @@ check('playing Overwhelming Power after two attacks grants its once-per-turn dra
 check('presentation records per-card HP loss after Block without changing prior state', () => {
   const strike = instance('shot', 'hermit_strike')
   let combat = createCombat(createRng(47), [player({ hand: [strike] })], [enemy({ block: 1 })])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.phase = 'player'
   const before = structuredClone(combat)
   const next = playCard(combat, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
@@ -521,23 +533,107 @@ check('presentation records per-card HP loss after Block without changing prior 
   assert.deepEqual(combat, before, 'presentation accounting mutated the prior multiplayer snapshot')
 })
 
-check('live start-of-combat Load is serialized, owner-authoritative, and preserves the private card', () => {
-  const deck = Array.from({ length: 6 }, (_, index) => instance(`setup-${index}`, 'hermit_defend'))
-  const [drawn] = deck
-  const combat = createCombat(createRng(47), [player({ draw: deck })], [enemy()])
+check('live start-of-combat Load follows the opening hand, is serialized, and preserves the private card', () => {
+  const deck = Array.from({ length: 8 }, (_, index) => instance(`setup-${index}`, 'hermit_defend'))
+  const created = createCombat(createRng(47), [player({ draw: deck })], [enemy()])
+  assert.deepEqual(created.pendingHermitSetupLoads, [], 'the board ability waits for the opening Draw')
+  assert.equal(created.players[0].hand.length, 0)
+  const combat = startPlayerTurnWithChoices(created)
   assert.deepEqual(combat.pendingHermitSetupLoads, [{ playerId: 'p1' }])
-  assert.equal(combat.players[0].hand[0]?.uid, drawn.uid)
+  assert.equal(combat.turn, 1)
+  assert.equal(combat.phase, 'start')
+  assert(combat.startTurnProgress?.rollPending, 'the shared Roll waits for the setup Load')
+  assert.deepEqual(combat.players[0].hand.map((card) => card.uid), deck.slice(0, 6).map((card) => card.uid),
+    'the board ability draws the sixth card after the five-card opening hand')
+  const chosen = deck[2]
   const restored = JSON.parse(JSON.stringify(combat))
-  const loaded = resolveHermitSetupLoad(restored, 'p1', drawn.uid)
+  const loaded = resolveHermitSetupLoad(restored, 'p1', chosen.uid)
   assert.notEqual(loaded, restored)
-  assert.equal(loaded.players[0].chamber[0]?.uid, drawn.uid)
+  assert.equal(loaded.players[0].chamber[0]?.uid, chosen.uid, 'any opening-hand card can be Loaded')
   assert.deepEqual(loaded.pendingHermitSetupLoads, [])
   assert.equal(loaded.turn, 1)
-  assert.equal(loaded.players[0].hand.length, 5, 'resolving the last setup Load did not open turn one')
+  assert.equal(loaded.phase, 'player', 'resolving the last setup Load did not finish the Start of Turn')
+  assert.equal(loaded.startTurnProgress, undefined)
+  assert.equal(loaded.players[0].hand.length, 5)
+  assert(loaded.log.some((line) => /^Turn 1 begins \(die [1-6]\)$/.test(line)), 'the shared die was not rolled')
 
   const abandoned = abandonHermitSetupLoad(combat, 'p1')
   assert.equal(abandoned.turn, 1)
+  assert.equal(abandoned.phase, 'player')
   assert.equal(abandoned.players[0].hand.length, 6, 'abandoning the last setup Load did not open turn one')
+
+  const legacy = structuredClone(created)
+  legacy.players[0].hand = [legacy.players[0].draw.shift()]
+  legacy.pendingHermitSetupLoads = [{ playerId: 'p1' }]
+  const resumed = resolveHermitSetupLoad(legacy, 'p1', deck[0].uid)
+  assert.equal(resumed.phase, 'player', 'a combat saved at the old turn-0 setup Load did not open turn one')
+  assert.deepEqual(resumed.players[0].chamber.map((card) => card.uid), [deck[0].uid])
+  assert.equal(resumed.players[0].hand.length, 5, 'a saved setup Load drew the board ability card twice')
+
+  // A combat saved by the old code already at turn 1 (its board ability drew at
+  // creation) carries no marker, and must never draw the extra card again.
+  const legacyTurnOne = structuredClone(created)
+  delete legacyTurnOne.hermitSetupQueued
+  const openedLegacy = startPlayerTurnWithChoices(legacyTurnOne)
+  assert.equal(openedLegacy.phase, 'player')
+  assert.deepEqual(openedLegacy.pendingHermitSetupLoads, [])
+  assert.equal(openedLegacy.players[0].hand.length, 5, 'a legacy combat drew the board ability card again')
+
+  const paused = preparePlayerTurnThroughDraw(created)
+  assert.deepEqual(paused.pendingHermitSetupLoads, [{ playerId: 'p1' }])
+  const sphere = resolveHermitSetupLoad(paused, 'p1', chosen.uid)
+  assert(sphere.startTurnProgress?.pauseAfterDraw, 'Mysterious Sphere lost its after-Draw pause')
+  assert.equal(sphere.phase, 'start')
+})
+
+check('Hermit setup Loads resolve in seat order, run once after Draw reactions, and survive a winning Curse', () => {
+  const cards = (prefix, defId = 'hermit_defend') => Array.from({ length: 7 }, (_, index) => instance(`${prefix}-${index}`, defId))
+  const party = startPlayerTurnWithChoices(createCombat(createRng(61), [
+    player({ id: 'p1', name: 'A', draw: cards('a') }),
+    player({ id: 'p2', name: 'B', draw: cards('b') }),
+  ], [enemy()]))
+  assert.deepEqual(party.pendingHermitSetupLoads, [{ playerId: 'p1' }, { playerId: 'p2' }])
+  assert.equal(resolveHermitSetupLoad(party, 'p2', 'b-0'), party, 'the second Hermit jumped the setup queue')
+  const first = abandonHermitSetupLoad(party, 'p1')
+  assert.equal(first.phase, 'start')
+  assert.deepEqual(first.pendingHermitSetupLoads, [{ playerId: 'p2' }])
+  const both = resolveHermitSetupLoad(first, 'p2', 'b-1')
+  assert.equal(both.phase, 'player')
+  assert.deepEqual(both.players.map((hermit) => hermit.hand.length), [6, 5],
+    'an abandoned Hermit drew the board ability card a second time')
+
+  // A Draw-step reaction that needs a row choice resolves first; only then does the board ability draw.
+  const breath = startPlayerTurnWithChoices(createCombat(createRng(64), [player({
+    powers: [instance('setup-breath', 'fire_breathing')],
+    draw: [instance('breath-curse', 'hermit_malice'), ...cards('f')],
+  })], [enemy({ uid: 'e1', row: 0 }), enemy({ uid: 'e2', row: 1 })]))
+  const reaction = pendingTriggerAbility(breath)
+  assert(reaction, 'Fire Breathing did not ask for a row during the Draw step')
+  assert.equal(breath.players[0].hand.length, 5)
+  assert.deepEqual(breath.pendingHermitSetupLoads, [])
+  const afterBreath = resolvePendingTrigger(breath, 'p1', reaction.id, reaction.rows?.[0]?.row, reaction.targets?.[0]?.uid)
+  assert.notEqual(afterBreath, breath)
+  assert.deepEqual(afterBreath.pendingHermitSetupLoads, [{ playerId: 'p1' }], 'the setup Load did not follow the Draw reaction')
+  assert.equal(afterBreath.players[0].hand.length, 6)
+  assert(afterBreath.startTurnProgress?.rollPending, 'the die rolled before the setup Load')
+  const breathLoaded = resolveHermitSetupLoad(afterBreath, 'p1', 'f-0')
+  assert.equal(breathLoaded.phase, 'player')
+  assert.equal(breathLoaded.players[0].hand.length, 5, 'the board ability drew twice')
+
+  const malice = instance('winning-malice', 'hermit_malice')
+  const lethal = startPlayerTurnWithChoices(createCombat(createRng(62),
+    [player({ draw: [malice, ...cards('w').slice(0, 5)] })], [enemy({ hp: 1, maxHp: 1 })]))
+  const won = resolveHermitSetupLoad(lethal, 'p1', malice.uid, 'e1')
+  assert.equal(won.phase, 'won', 'a Loaded Malice did not win the fight')
+  assert(won.log.includes('Turn 1 begins'), 'a fight won by the setup Load lost its turn divider')
+
+  const sphereCreated = createCombat(createRng(63), [player({ draw: cards('s') })], [enemy()])
+  const legacySphere = structuredClone(sphereCreated)
+  legacySphere.players[0].hand = [legacySphere.players[0].draw.shift()]
+  legacySphere.pendingHermitSetupLoads = [{ playerId: 'p1' }]
+  const pausedLegacy = resolveHermitSetupLoad(legacySphere, 'p1', 's-0', null, true)
+  assert(pausedLegacy.startTurnProgress?.pauseAfterDraw, 'a saved Sphere setup lost its after-Draw pause')
+  assert.equal(pausedLegacy.players[0].hand.length, 5)
 })
 
 check('Fully Loaded+ can repeatedly replace Chamber cards while Loading a larger hand', () => {
@@ -545,7 +641,7 @@ check('Fully Loaded+ can repeatedly replace Chamber cards while Loading a larger
   const chamber = [instance('loaded-old-a', 'hermit_defend'), instance('loaded-old-b', 'hermit_strike')]
   const loads = Array.from({ length: 5 }, (_, index) => instance(`loaded-new-${index}`, 'hermit_defend'))
   let combat = createCombat(createRng(505), [player({ hand: [fullyLoaded, ...loads], chamber })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat = playCard(combat, 'p1', fullyLoaded.uid, {
     loadUids: loads.map((card) => card.uid),
     chamberUids: [chamber[0].uid, loads[1].uid, chamber[1].uid, loads[0].uid],
@@ -561,7 +657,7 @@ check('a Shiv reaching two Attacks triggers Overwhelming Power immediately', () 
   let combat = createCombat(createRng(506), [player({
     powers: [power], draw: draws, shivs: 1,
   })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.players[0].attacksPlayedThisTurn = 1
   const handBefore = combat.players[0].hand.length
   combat = spendShiv(combat, 'p1', 'e1')
@@ -610,7 +706,7 @@ check('mandatory Chamber plays retain their private preview exception', () => {
   const coalescence = instance('required-coalescence', 'hermit_coalescence')
   const hidden = instance('required-hidden', 'hermit_defend')
   const combat = createCombat(createRng(94), [player({ chamber: [coalescence], draw: [hidden] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.pendingHermitChamberPlays = [{
     playerId: 'p1', sourceCardId: 'hermit_fan_the_hammer', cardUids: [coalescence.uid], free: true,
   }]
@@ -641,7 +737,7 @@ check('impossible mandatory Chamber plays advance without removing the private c
   ]
   for (const scenario of scenarios) {
     let combat = createCombat(createRng(105), [player({ chamber: [scenario.card], ...scenario.player })], [scenario.enemy])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     Object.assign(combat.players[0], scenario.player)
     combat.pendingHermitChamberPlays = [{
       playerId: 'p1', sourceCardId: 'hermit_fan_the_hammer', cardUids: [scenario.card.uid], free: true,
@@ -663,7 +759,7 @@ check('a mandatory Chamber play with no living enemy is skipped, not stuck forev
   let combat = createCombat(createRng(107), [player({ chamber: [strike, other] })], [
     enemy({ hp: 0, dead: true }),
   ])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   // A pending summon (mirroring an Awakened-One-style phase transition) keeps
   // combat from ending even though no enemy is currently alive.
   combat.pendingSummons = [{ sourceUid: 'e1', row: 0, defIds: ['cultist'], turn: combat.turn + 1 }]
@@ -692,7 +788,7 @@ check('a mandatory Chamber play is skipped, not stuck forever, when its own Herm
     player({ hp: 1, hand: [fanTheHammer], chamber: [chamberCard] }),
     player({ id: 'p2', name: 'Ally', hp: 20, maxHp: 20 }),
   ], [enemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 1, isBoss: true })], undefined, [], 3, {}, true)
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
 
   const resolved = playCard(combat, 'p1', fanTheHammer.uid,
     { enemyUid: 'e1', playerId: null, chamberUids: [chamberCard.uid] })
@@ -713,7 +809,7 @@ check('a mandatory Chamber play is skipped, not stuck forever, when its own Herm
 check('abandoned Defense Mode Guardian copies use their effective Skill cleanup', () => {
   const whirl = instance('guardian-copy-whirl', 'guardian_guardian_whirl')
   let combat = createCombat(createRng(106), [player({ character: 'guardian' })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.players[0].guardianMode = 'defense'
   combat.players[0].powers = [instance('copy-corruption', 'corruption')]
   combat.phase = 'copy'
@@ -731,7 +827,7 @@ check('Cheat exposes die-relic choices and upgraded Cheat may trigger none', () 
   let combat = createCombat(createRng(95), [player({
     chamber: [base], energy: 2, relics: [{ defId: 'happy_flower', spent: false }],
   })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat = playLiveHermitChamberCard(combat, 'p1', base.uid, {
     enemyUid: 'e1', playerId: 'p1',
     hermitDieRelics: [{ playerId: 'p1', relicIndex: 0, abilityIndex: 0 }],
@@ -740,7 +836,7 @@ check('Cheat exposes die-relic choices and upgraded Cheat may trigger none', () 
 
   const upgraded = instance('cheat-upgraded', 'hermit_cheat', true)
   combat = createCombat(createRng(96), [player({ chamber: [upgraded] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   const skipped = playLiveHermitChamberCard(combat, 'p1', upgraded.uid, {
     enemyUid: 'e1', playerId: 'p1', hermitDieRelics: [],
   })
@@ -752,7 +848,7 @@ check('Cheat exposes die-relic choices and upgraded Cheat may trigger none', () 
     chamber: [wheelCheat], hand: fodder, energy: 2,
     relics: [{ defId: 'wheel_of_change', spent: false }],
   })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   const missing = playLiveHermitChamberCard(combat, 'p1', wheelCheat.uid, {
     enemyUid: 'e1', playerId: 'p1',
     hermitDieRelics: [{ playerId: 'p1', relicIndex: 0, abilityIndex: 0 }],
@@ -767,7 +863,7 @@ check('Cheat exposes die-relic choices and upgraded Cheat may trigger none', () 
     id: 'p2', name: 'Ironclad', character: 'ironclad', chamber: undefined, chamberSlots: undefined,
     hand: foreignFodder, relics: [{ defId: 'wheel_of_change', spent: false }],
   })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   const queued = playLiveHermitChamberCard(combat, 'p1', foreignCheat.uid, {
     enemyUid: 'e1', playerId: 'p1',
     hermitDieRelics: [{ playerId: 'p2', relicIndex: 0, abilityIndex: 0 }],
@@ -787,7 +883,7 @@ check('a forced Cheat waits for its die Relic owner before resuming Start of Tur
   let combat = createCombat(createRng(99), [player({
     hand: fodder, relics: [{ defId: 'wheel_of_change', spent: false }],
   })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.phase = 'start'
   combat.pendingDieRelicChoices = [{
     playerId: 'p1', relicDefId: 'wheel_of_change', abilityIndex: 0,
@@ -811,7 +907,7 @@ check('Cheat preserves chosen relic order and queues Combo after the owner payme
     powers: [instance('combo-power', 'hermit_combo')],
     relics: [{ defId: 'wheel_of_change', spent: false }, { defId: 'gremlin_horn', spent: false }],
   })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.players[0].draw = draws
   combat = playLiveHermitChamberCard(combat, 'p1', cheat.uid, {
     enemyUid: 'e1', playerId: 'p1',
@@ -850,7 +946,7 @@ check('Combo previews a drawn targeted Curse and requires its enemy choice', () 
     draw: [grudge, instance('combo-draw', 'hermit_defend')],
     powers: [combo],
   })], [enemy({ uid: 'combo-e1' }), enemy({ uid: 'combo-e2', row: 1 })])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.pendingTriggers = [{ id: 101, playerId: 'p1', sourceId: `power:${combo.uid}` }]
   const preview = pendingTriggerAbility(combat)
   assert.deepEqual(preview?.targets?.map(({ uid }) => uid), ['combo-e1', 'combo-e2'])
@@ -880,7 +976,7 @@ check('Dead or Alive requires an enemy and applies its printed Vulnerable from h
     let combat = createCombat(createRng(501), [player({ [zone]: [bounty], energy: 2 })], [
       enemy({ uid: 'untouched' }), enemy({ uid: 'chosen', row: 1 }),
     ])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     const play = chamber ? playLiveHermitChamberCard : playCard
     assert.equal(cardNeedsEnemy(HERMIT_CARD_DEFS.hermit_dead_or_alive, combat.players[0]), true)
     for (const enemyUid of [null, 'missing']) {
@@ -901,7 +997,7 @@ check('copied Dead or Alive applies Vulnerable without duplicating its physical 
   let combat = createCombat(createRng(503), [player({ hand: [bounty], energy: 2 })], [
     enemy({ uid: 'original' }), enemy({ uid: 'copy-target', row: 1 }),
   ])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.players[0].doubledSkillsThisTurn = 1
   combat = playCard(combat, 'p1', bounty.uid, { enemyUid: 'original' })
   assert.equal(playCardCopy(combat, 'p1', { enemyUid: null }), combat)
@@ -919,7 +1015,7 @@ check('an end-turn bounty kill blocks the Enemy Turn until its Strength choice r
     enemy({ uid: 'bounty-target', hp: 1, maxHp: 1, hermitBounties: [{ playerId: 'p1', card: bounty }] }),
     enemy({ uid: 'surviving-target', row: 1, hp: 20, maxHp: 20 }),
   ])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat = startPlayerTurn(combat)
   const orb = endTurnAbilities(combat).find((ability) => ability.id.startsWith('p2/orb:0'))
   combat = beginEndPlayerTurn(combat, [chooseEndTurnTarget(orb.id, 'bounty-target')])
@@ -939,7 +1035,7 @@ check('multiple physical Dead or Alive cards stay attached and each award Streng
     enemy({ uid: 'double-bounty-target', hp: 1, maxHp: 1 }),
     enemy({ uid: 'double-bounty-survivor', row: 1 }),
   ])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat = playCard(combat, 'p1', bounties[0].uid, { enemyUid: 'double-bounty-target' })
   combat = playCard(combat, 'p1', bounties[1].uid, { enemyUid: 'double-bounty-target' })
   assert.deepEqual(combat.enemies[0].hermitBounties.map(({ card }) => card.uid), bounties.map(({ uid }) => uid))
@@ -958,7 +1054,7 @@ check('a lethal queued Cheat relic clears every terminal mandatory choice', () =
     chamber: [cheat], hand: fodder, energy: 2,
     relics: [{ defId: 'wheel_of_change', spent: false }, { defId: 'duality', spent: false }],
   })], [enemy({ hp: 4, maxHp: 4 })])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat = playLiveHermitChamberCard(combat, 'p1', cheat.uid, {
     enemyUid: 'e1', playerId: 'p1',
     hermitDieRelics: [
@@ -985,7 +1081,7 @@ check('Snapshot Dead On Block matches modified hit damage, even through Block or
     const snapshot = instance('snapshot', 'hermit_snapshot', upgraded)
     const combat = createCombat(createRng(48), [player({ chamber: [snapshot], strength, weak })],
       [enemy({ hp, block, vulnerable, defId: defId ?? 'cultist' }), enemy({ uid: 'e2' })])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     const next = playLiveHermitChamberCard(combat, 'p1', snapshot.uid, { enemyUid: 'e1', playerId: null })
     assert.notEqual(next, combat)
     assert.equal(hp - next.enemies[0].hp, damage)
@@ -995,14 +1091,14 @@ check('Snapshot Dead On Block matches modified hit damage, even through Block or
   const snapshot = instance('buffer-snapshot', 'hermit_snapshot')
   const combat = createCombat(createRng(48), [player({ chamber: [snapshot] })],
     [enemy({ defId: 'hexaghost', hp: 36, maxHp: 36, abilityCubes: 1 })])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   const buffered = playLiveHermitChamberCard(combat, 'p1', snapshot.uid, { enemyUid: 'e1', playerId: null })
   assert.equal(buffered.enemies[0].hp, 36)
   assert.equal(buffered.enemies[0].abilityCubes, 0)
   assert.equal(buffered.players[0].block, 0)
   const boosted = createCombat(createRng(48), [player({ chamber: [snapshot] })],
     [enemy({ defId: 'hexaghost', hp: 36, maxHp: 36, abilityCubes: 1 })])
-  boosted.pendingHermitSetupLoads = []
+  skipSetupLoad(boosted)
   boosted.players[0].cardBlockBonus = 1
   const boostedBuffer = playLiveHermitChamberCard(boosted, 'p1', snapshot.uid, { enemyUid: 'e1', playerId: null })
   assert.equal(boostedBuffer.players[0].block, 0)
@@ -1011,7 +1107,7 @@ check('Snapshot Dead On Block matches modified hit damage, even through Block or
   assert.equal(boostedHit.players[0].block, 3)
   const atFloor = createCombat(createRng(48), [player({ chamber: [instance('floor-snapshot', 'hermit_snapshot', true)] })],
     [enemy({ defId: 'corrupt_heart', hp: 50, maxHp: 100, isBoss: true })])
-  atFloor.pendingHermitSetupLoads = []
+  skipSetupLoad(atFloor)
   const invincible = playLiveHermitChamberCard(atFloor, 'p1', 'floor-snapshot', { enemyUid: 'e1', playerId: null })
   assert.equal(invincible.enemies[0].hp, 50)
   assert.equal(invincible.players[0].block, 3)
@@ -1020,7 +1116,7 @@ check('Snapshot Dead On Block matches modified hit damage, even through Block or
 check('a Dead On-only Chamber attack chooses its enemy before resolving', () => {
   const headshot = instance('headshot', 'hermit_headshot')
   const combat = createCombat(createRng(481), [player({ chamber: [headshot], energy: 2 })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   assert.equal(cardNeedsEnemy(HERMIT_CARD_DEFS.hermit_headshot, combat.players[0], true, 0,
     false, undefined, headshot.uid), true)
   const stagedPlayer = { ...combat.players[0], chamber: [], hand: [{ ...headshot, hermitDeadOn: true }] }
@@ -1035,7 +1131,7 @@ check('a Dead On-only Chamber attack chooses its enemy before resolving', () => 
   assert.deepEqual(next.presentationEvents.at(-1)?.enemyIds, ['e1'])
 
   let copied = createCombat(createRng(482), [player({ chamber: [headshot], energy: 2 })], [enemy()])
-  copied.pendingHermitSetupLoads = []
+  skipSetupLoad(copied)
   copied.players[0].doubledAttacksThisTurn = 1
   copied = playLiveHermitChamberCard(copied, 'p1', headshot.uid, { enemyUid: 'e1', playerId: null })
   assert.equal(copied.enemies[0].hp, 15)
@@ -1048,7 +1144,7 @@ check('a Dead On-only Chamber attack chooses its enemy before resolving', () => 
 check('High-Caliber plus one external copy resolves four independently targeted plays', () => {
   const card = instance('high-caliber', 'hermit_high_caliber')
   let combat = createCombat(createRng(49), [player({ chamber: [card] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.players[0].doubledAttacksThisTurn = 1
   combat = playLiveHermitChamberCard(combat, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
   while (combat.pendingCardCopy) combat = playCardCopy(combat, 'p1', { enemyUid: 'e1', playerId: null })
@@ -1064,7 +1160,7 @@ check('High Noon gives starter Strikes and upgraded Defends their printed Rapid 
     const rapidFire = name === 'strike' || highNoonUpgraded
     const label = `${highNoonUpgraded ? 'High Noon+' : 'High Noon'} with ${name}${upgraded ? '+' : ''}`
     let combat = createCombat(createRng(491), [player({ hand: [highNoon, starter] })], [enemy()])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     combat = playCard(combat, 'p1', highNoon.uid, { enemyUid: null, playerId: null })
     combat = playCard(combat, 'p1', starter.uid, target)
     assert.deepEqual(combat.pendingCardCopy?.sourceNames ?? [], rapidFire ? ['Rapid Fire'] : [], label)
@@ -1083,7 +1179,7 @@ check('externally queued Hermit cards retain printed, dynamic, and Vantage Rapid
     hand: [omniscience, instance('other', 'hermit_defend')],
     draw: [itchy], energy: 3, nextAttackRapidFire: 1,
   })], [enemy({ hp: 20, maxHp: 20 })])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.players[0].nextAttackRapidFire = 1
   combat = playCard(combat, 'p1', omniscience.uid, { searchDrawUids: [itchy.uid] })
   assert.deepEqual(combat.pendingCardCopy?.sourceNames,
@@ -1098,7 +1194,7 @@ check('externally queued Hermit cards retain printed, dynamic, and Vantage Rapid
     hand: [instance('omni-magnum', 'omniscience'), instance('a', 'hermit_defend'), instance('b', 'hermit_defend')],
     draw: [magnum], energy: 3,
   })], [enemy({ hp: 30, maxHp: 30 })])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat = playCard(combat, 'p1', 'omni-magnum', { searchDrawUids: [magnum.uid] })
   assert.equal(combat.pendingCardCopy?.sourceNames.length, 6,
     'Magnum did not count every card left in hand for both external seeds')
@@ -1109,7 +1205,7 @@ check('externally queued Hermit cards retain printed, dynamic, and Vantage Rapid
     freeAttacksThisTurn: 1, nextAttackRapidFire: 1,
     powers: [instance('omni-no-holds', 'hermit_no_holds_barred')],
   })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.players[0].freeAttacksThisTurn = 1
   combat.players[0].nextAttackRapidFire = 1
   combat = playCard(combat, 'p1', 'omni-whirl', { searchDrawUids: [whirl.uid] })
@@ -1131,7 +1227,7 @@ check('Vantage is consumed by Haunting Echo without doubling its nested Attack',
   let combat = createCombat(createRng(504), [player({
     hand: [echo], energy: 3, heat: 5, nextAttackRapidFire: 1,
   })], [enemy({ hp: 20, maxHp: 20 })])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.players[0].nextAttackRapidFire = 1
   combat.playedCardsThisTurn = [{ playerId: 'p1', card: latest, copied: false, type: 'attack' }]
   combat = playCard(combat, 'p1', echo.uid, { enemyUid: 'e1', playerId: null })
@@ -1149,7 +1245,7 @@ check('draw-then-Load previews cover normal, copied, and Chamber Hermit plays', 
   const feint = instance('feint', 'hermit_feint')
   const hidden = Array.from({ length: 4 }, (_, index) => instance(`hidden-${index}`, 'hermit_defend'))
   let combat = createCombat(createRng(53), [player({ hand: [feint], draw: [...hidden] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat.players[0].doubledCardsThisTurn = 1
   const first = previewCardChoice(combat, 'p1', feint.uid)
   assert.equal(first?.kind, 'load')
@@ -1165,7 +1261,7 @@ check('draw-then-Load previews cover normal, copied, and Chamber Hermit plays', 
   const coalescence = instance('coalescence', 'hermit_coalescence')
   const chamberDraw = [instance('chamber-hidden-0', 'hermit_strike'), instance('chamber-hidden-1', 'hermit_defend')]
   combat = createCombat(createRng(54), [player({ chamber: [coalescence], draw: [...chamberDraw] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   const drawBeforeChamberPreview = combat.players[0].draw.map((card) => card.uid)
   const chamberPreview = previewHermitChamberCardChoice(combat, 'p1', coalescence.uid)
   assert.equal(chamberPreview?.kind, 'loadAny')
@@ -1182,14 +1278,14 @@ check('live Load and Load-self replace a chosen occupied Chamber slot', () => {
   const covet = instance('full-covet', 'hermit_covet')
   const loaded = instance('full-load', 'hermit_snapshot')
   let combat = createCombat(createRng(531), [player({ hand: [covet, loaded], chamber: [old, kept] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat = playCard(combat, 'p1', covet.uid, { loadUids: [loaded.uid], chamberUids: [old.uid] })
   assert.deepEqual(combat.players[0].chamber.map((card) => card.uid), [loaded.uid, kept.uid])
   assert.ok(combat.players[0].discard.some((card) => card.uid === old.uid))
 
   const tracking = instance('full-tracking', 'hermit_tracking_shots')
   combat = createCombat(createRng(532), [player({ hand: [tracking], chamber: [old, kept] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   combat = playCard(combat, 'p1', tracking.uid, {
     enemyUid: 'e1', playerId: null, chooseLoadSelf: true, chamberUids: [kept.uid],
   })
@@ -1221,7 +1317,7 @@ check('triggered Hermit Powers pause on serialized Load choices and resume exact
   const combat = createCombat(createRng(50), [player({
     hand: [choice], discard: [discardCurse], chamber: [spareChamber], powers: [takeAim],
   })], [enemy({ uid: 'take-aim-e1' }), enemy({ uid: 'take-aim-e2', row: 1 })])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   fireTriggers(combat, { kind: 'endOfTurn' })
   assert.equal(combat.pendingTriggers.length, 1)
   const trigger = combat.pendingTriggers[0]
@@ -1241,7 +1337,7 @@ check('Take Aim auto-loads its only legal card through the real end-turn pipelin
   const choice = instance('end-turn-take-aim-choice', 'hermit_strike')
   const takeAim = instance('end-turn-take-aim', 'hermit_take_aim')
   const combat = createCombat(createRng(502), [player({ hand: [choice], powers: [takeAim] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   const resolved = beginEndPlayerTurn(combat)
   assert.equal(pendingTriggerAbility(resolved), undefined)
   assert(resolved.players[0].chamber.some(({ uid }) => uid === choice.uid))
@@ -1253,7 +1349,7 @@ check('Take Aim still pauses when its owner can choose the loaded card', () => {
   const second = instance('end-turn-take-aim-second', 'hermit_defend')
   const takeAim = instance('end-turn-take-aim-choice', 'hermit_take_aim')
   const combat = createCombat(createRng(503), [player({ hand: [first, second], powers: [takeAim] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   const pending = beginEndPlayerTurn(combat)
   const preview = pendingTriggerAbility(pending)
   assert.deepEqual(preview.hermitChoices.loadCards.map(({ uid }) => uid), [first.uid, second.uid])
@@ -1266,7 +1362,7 @@ check('Take Aim auto-targets the only enemy for a loaded Curse', () => {
   const combat = createCombat(createRng(504), [player({ hand: [grudge], powers: [takeAim] })], [
     enemy({ hp: 10, maxHp: 10 }),
   ])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   const resolved = beginEndPlayerTurn(combat)
   assert.equal(pendingTriggerAbility(resolved), undefined)
   assert(resolved.players[0].chamber.some(({ uid }) => uid === grudge.uid))
@@ -1282,7 +1378,7 @@ check('Combo offers only cards in hand after its draw, not cards left in discard
   const combat = createCombat(createRng(501), [player({
     hand: [held], draw: [], discard: [discardedCurse], powers: [combo],
   })], [enemy({ uid: 'combo-discard-e1' }), enemy({ uid: 'combo-discard-e2', row: 1 })])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   Object.assign(combat.players[0], { hand: [held], draw: [...drawn], discard: [discardedCurse] })
   combat.pendingTriggers = [{ id: 501, playerId: 'p1', sourceId: `power:${combo.uid}` }]
   const preview = pendingTriggerAbility(combat)
@@ -1297,7 +1393,7 @@ check('Smoking Barrel draws only after its optional Chamber discard is paid', ()
   const draws = Array.from({ length: 4 }, (_, index) => instance(`barrel-draw-${index}`, 'hermit_strike'))
   const fixture = (chamber) => {
     const combat = createCombat(createRng(503), [player({ chamber, draw: [], powers: [barrel] })], [enemy()])
-    combat.pendingHermitSetupLoads = []
+    skipSetupLoad(combat)
     combat.players[0].draw = [...draws]
     fireTriggers(combat, { kind: 'startOfTurn' })
     return combat
@@ -1333,7 +1429,7 @@ check('active Hermit Powers require and apply their Chamber and Load choices', (
   const curse = instance('curse', 'hermit_scorn')
   const shadow = instance('shadow', 'hermit_shadow_cloak')
   let combat = createCombat(createRng(51), [player({ chamber: [curse], powers: [shadow] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   assert.equal(activatePower(combat, 'p1', shadow.uid), combat, 'missing Chamber choice is refused atomically')
   const discarded = activatePower(combat, 'p1', shadow.uid, { chamberUids: [curse.uid] })
   assert.notEqual(discarded, combat)
@@ -1343,7 +1439,7 @@ check('active Hermit Powers require and apply their Chamber and Load choices', (
   const loaded = instance('load', 'hermit_strike')
   const blackWind = instance('black-wind', 'hermit_black_wind')
   combat = createCombat(createRng(52), [player({ hand: [loaded], chamber: [curse], powers: [blackWind] })], [enemy()])
-  combat.pendingHermitSetupLoads = []
+  skipSetupLoad(combat)
   const changed = activatePower(combat, 'p1', blackWind.uid, { chamberUids: [curse.uid], loadUids: [loaded.uid] })
   assert.notEqual(changed, combat)
   assert.equal(changed.players[0].chamber[0]?.uid, loaded.uid)

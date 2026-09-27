@@ -57,8 +57,13 @@ export type CombatState = {
   pendingHermitChamberPlays?: { playerId: string; sourceCardId: string; cardUids: string[]; free: boolean }[]
   /** Dead or Alive rewards waiting for an explicit living-player recipient. */
   pendingHermitStrengthRewards?: { playerId: string; sourceUid: string }[]
-  /** Each Hermit must Load the private card drawn by their start-of-combat board ability. */
+  /** Each Hermit must Load one card from their private opening hand (start-of-combat board ability). */
   pendingHermitSetupLoads?: { playerId: string }[]
+  /**
+   * Whether the Hermit board ability has drawn this combat; it never draws twice.
+   * Absent in combats saved before it moved after the opening hand, which drew at creation.
+   */
+  hermitSetupQueued?: boolean
   pendingDieRelicChoices?: {
     id: number
     playerId: string

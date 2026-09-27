@@ -205,8 +205,7 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
         rng, players, encounter.enemies, room.id, state.potionDeck,
         state.ascension >= 4 ? 2 : 3, encounter.summonSupply, state.lastStand, state.meta.ruleset,
       )
-      roomState.preparedCombat = prepared.pendingHermitSetupLoads?.length
-        ? prepared : preparePlayerTurnThroughDraw(prepared)
+      roomState.preparedCombat = preparePlayerTurnThroughDraw(prepared)
     }
     return mirrorItemSupplies({
       ...next,
