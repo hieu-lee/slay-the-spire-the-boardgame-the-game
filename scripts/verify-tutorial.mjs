@@ -1,22 +1,20 @@
-import { CHARACTER_LESSONS, tutorialChapters } from '../src/ui/tutorial-content.ts'
-import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
+import { CHARACTER_LESSONS } from '../src/ui/tutorial/lessons.ts'
+import { HERO_TUTORIALS, tutorialChapters } from '../src/ui/tutorial/index.ts'
+import { onScript } from '../src/ui/tutorial/helpers.ts'
+import { simulateTutorial } from './lib/tutorial-sim.mjs'
+import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
 suite('tutorial content')
 
 const HEROES = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit']
-const moment = (overrides) => ({ phase: 'map', combatNumber: 0, turn: 0, combatPhase: 'player', ...overrides })
-const firstChapter = (character, overrides, seen = new Set()) =>
-  tutorialChapters(character).find((chapter) => !seen.has(chapter.id) && chapter.when(moment(overrides)))?.id
+const sorted = (items) => [...items].sort()
 
-check('every playable hero has its own lessons', () => {
+check('every playable hero has general lessons and a scripted tutorial', () => {
   assertEqual(Object.keys(CHARACTER_LESSONS).sort().join(), [...HEROES].sort().join())
-  for (const hero of HEROES) {
-    const { intro, advanced } = CHARACTER_LESSONS[hero]
-    assert(intro.length >= 2 && advanced.length >= 2, `${hero} needs two intro and two advanced steps`)
-  }
+  assertEqual(Object.keys(HERO_TUTORIALS).sort().join(), [...HEROES].sort().join())
 })
 
-check('chapters have unique ids and complete, parseable steps', () => {
+check('chapters have unique ids and complete steps that fit a phone coach', () => {
   for (const hero of HEROES) {
     const chapters = tutorialChapters(hero)
     assertEqual(new Set(chapters.map((chapter) => chapter.id)).size, chapters.length, `${hero} chapter ids`)
@@ -24,42 +22,56 @@ check('chapters have unique ids and complete, parseable steps', () => {
       assert(chapter.steps.length > 0, `${hero}/${chapter.id} has no steps`)
       for (const step of chapter.steps) {
         assert(step.title.trim() && step.body.trim(), `${hero}/${chapter.id} has an empty step`)
-        assert(step.body.length <= 330, `${hero}/${chapter.id}/${step.title} is too long for a phone coach`)
-        if (step.target) assert(/^[\w\s.,#:()[\]="'>*-]+$/.test(step.target), `${hero}/${chapter.id} has an odd selector`)
+        assert(step.body.length <= 330, `${hero}/${chapter.id}/${step.title} is too long for a phone coach (${step.body.length})`)
+        assert(!step.done || step.focus?.length, `${hero}/${chapter.id}/${step.title} is a task with nothing to press`)
+        for (const spot of step.focus ?? []) assert(/^[\w\s.,#:()[\]="'>^*+-]+$/.test(spot.css), `${hero}/${chapter.id} has an odd selector: ${spot.css}`)
       }
     }
   }
 })
 
-check('the first fight teaches the basics, then that hero', () => {
-  for (const hero of HEROES) {
-    const fight = { phase: 'combat', combatNumber: 1, turn: 1 }
-    assertEqual(firstChapter(hero, fight), 'combat', `${hero} first chapter in combat`)
-    assertEqual(firstChapter(hero, fight, new Set(['combat'])), `${hero}-intro`, `${hero} follows with its own chapter`)
-    assertEqual(firstChapter(hero, { phase: 'combat', combatNumber: 2, turn: 1 }), `${hero}-advanced`,
-      `${hero} deepens its lessons in the second fight`)
-  }
-})
-
-check('opening choices get their own chapter before cards can be played', () => {
-  assertEqual(firstChapter('hermit', { phase: 'combat', combatNumber: 1, turn: 0 }), 'hermit-setup')
-  assertEqual(firstChapter('guardian', { phase: 'combat', combatNumber: 1, turn: 1, combatPhase: 'start' }), 'guardian-setup')
-  assertEqual(firstChapter('silent', { phase: 'combat', combatNumber: 1, turn: 0 }), undefined)
-  assertEqual(firstChapter('silent', { phase: 'combat', combatNumber: 1, turn: 1, combatPhase: 'start' }), undefined,
-    'no card-play chapter covers a start-of-turn choice')
-})
-
-check('each room of the run opens its own chapter', () => {
-  assertEqual(firstChapter('ironclad', { phase: 'neow' }), 'welcome')
-  assertEqual(firstChapter('ironclad', { phase: 'map' }), 'map')
-  assertEqual(firstChapter('ironclad', { phase: 'reward' }), 'reward')
-  assertEqual(firstChapter('ironclad', { phase: 'room', roomKind: 'campfire' }), 'campfire')
-  assertEqual(firstChapter('ironclad', { phase: 'room', roomState: 'merchant' }), 'merchant')
-  assertEqual(firstChapter('ironclad', { phase: 'room', roomState: 'event' }), 'event')
-  assertEqual(firstChapter('ironclad', { phase: 'room', roomState: 'treasure' }), 'treasure')
-  const later = new Set(['ironclad-advanced'])
-  assertEqual(firstChapter('ironclad', { phase: 'combat', combatNumber: 3, turn: 1, roomKind: 'elite' }, later), 'elite')
-  assertEqual(firstChapter('ironclad', { phase: 'combat', combatNumber: 5, turn: 1, roomKind: 'boss' }, later), 'boss')
-})
+for (const hero of HEROES) {
+  const tutorial = HERO_TUTORIALS[hero]
+  if (!tutorial) continue
+  const { plan } = tutorial
+  check(`${hero}: the scripted run deals exactly what its script describes`, () => {
+    const { trace, run } = simulateTutorial(hero, plan)
+    const [neow, red, blue, map] = trace
+    assertEqual(neow.card, plan.neow.card, 'Neow card')
+    assertEqual(neow.boss, plan.boss, 'boss')
+    assertDeepEqual(red.cards, [...plan.neow.red], 'Neow Card Reward')
+    if (plan.neow.potions) assertDeepEqual(blue.potions, [...plan.neow.potions], 'Neow potions')
+    assert(plan.neow.red.includes(plan.neow.pick), 'Neow pick is offered')
+    assertEqual(map.stage, 'map')
+    const rooms = trace.filter((entry) => entry.stage === 'room')
+    assertEqual(rooms.length, plan.route.length, 'the route reaches the boss')
+    assertEqual(rooms.at(-1).kind, 'boss', 'the route ends at the boss')
+    for (const entry of rooms) {
+      const room = plan.rooms[entry.roomId]
+      assert(room, `${entry.roomId} has no plan`)
+      const where = `${hero} ${entry.roomId}`
+      if (room.kind === 'fight') {
+        assert(entry.enemies, `${where} is not a fight`)
+        assertDeepEqual(entry.enemies.map((enemy) => enemy.defId), [...room.enemies], `${where} enemies`)
+        assertDeepEqual(sorted(entry.hand), sorted(room.hand), `${where} opening hand`)
+        if (room.cards) assertDeepEqual(entry.reward?.cards, [...room.cards], `${where} Card Reward`)
+        if (room.pick) assert(room.cards?.includes(room.pick), `${where} pick is offered`)
+      } else if (room.kind === 'event') {
+        assertEqual(entry.event, room.event, `${where} event`)
+        assert(entry.options.some((option) => option.id === room.option), `${where} option ${room.option}`)
+        assertEqual(entry.end.phase, 'map', `${where} resolves back to the map`)
+      } else if (room.kind === 'merchant') {
+        assertEqual(entry.kind, 'merchant', `${where} kind`)
+        for (const item of room.buy ?? []) {
+          const stock = item.section === 'card' ? entry.shop.cards : item.section === 'potion' ? entry.shop.potions : entry.shop.relics
+          assertEqual(stock[item.slot], item.id, `${where} sells ${item.id}`)
+        }
+      } else if (room.kind === 'treasure') {
+        assertEqual(entry.relic, room.relic, `${where} relic`)
+      } else assertEqual(entry.kind, room.kind, `${where} kind`)
+    }
+    assert(onScript(plan, run), 'the finished plan is still on script')
+  })
+}
 
 report('tutorial')

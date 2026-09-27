@@ -411,6 +411,7 @@ function CombatScreenView({
   onChange,
   onAction,
   autoAdvance = true,
+  autoEndTurn = true,
   courierUsedBy,
   onCourierReveal,
   mutationsEnabled = true,
@@ -2677,12 +2678,12 @@ function CombatScreenView({
     }) ||
     viewer.relics.some((_, relicIndex) => canUseRelicNow(relicIndex)) || courierAvailable)
   useEffect(() => {
-    if (onAction || !autoAdvance || state.players.length !== 1 || state.phase !== 'player' ||
+    if (onAction || !autoAdvance || !autoEndTurn || state.players.length !== 1 || state.phase !== 'player' ||
       viewer.dead || viewerHasLegalAction || voluntaryActionsBlocked || forcedCard || distilled || pending || pendingTrigger ||
       endTurnResolving) return undefined
     const timer = window.setTimeout(finishTurn, 450)
     return () => window.clearTimeout(timer)
-  }, [autoAdvance, state.phase, state.turn, state.players.length, viewer.dead, viewerHasLegalAction,
+  }, [autoAdvance, autoEndTurn, state.phase, state.turn, state.players.length, viewer.dead, viewerHasLegalAction,
     forcedCard, distilled, pending, pendingTrigger, endTurnResolving, voluntaryActionsBlocked])
 
   function reconciliation(outcome: ActionOutcome | void) {

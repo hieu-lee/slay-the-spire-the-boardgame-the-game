@@ -1,6 +1,7 @@
-/* The guided tutorial's coach panel and the ring it draws around the part of
-   the screen it is describing. Both float above the run without blocking it:
-   only the panel's own buttons take pointer input. */
+/* The guided tutorial's coach: its panel, the rings and spotlight around the
+   controls it is describing, and the shield that keeps the rest of the run
+   from taking input while it speaks. The shield is clipped open over a task's
+   controls, so only those can be pressed. */
 
 .tutorial-coach {
   position: fixed;
@@ -8,6 +9,15 @@
   z-index: 1000;
   pointer-events: none;
 }
+
+.tutorial-coach__dim,
+.tutorial-coach__shield {
+  position: fixed;
+  inset: 0;
+}
+
+.tutorial-coach__dim { background: rgb(8 6 4 / 0.42); }
+.tutorial-coach__shield { pointer-events: auto; }
 
 .tutorial-coach__ring {
   position: fixed;
@@ -93,6 +103,9 @@
 }
 
 .tutorial-coach__panel .tutorial-coach__next:is(:hover, :focus-visible) { color: #1c1409; filter: brightness(1.08); }
+
+.tutorial-coach__panel--task { border-color: #f0c75e; }
+.tutorial-coach__panel--task .tutorial-coach__kicker { color: #ffdc60; }
 
 .tutorial-coach__panel .tutorial-coach__hide {
   margin-right: auto;

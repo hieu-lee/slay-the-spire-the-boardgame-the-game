@@ -82,7 +82,9 @@ const focusedOnlyUiOwners = new Map([
   ['src/mail.ts', ['verify-mail-browser.mjs']],
   ['src/ui/useWebMcp.ts', ['verify-webmcp-browser.mjs']],
   ['src/ui/TutorialCoach.tsx', ['verify-tutorial-browser.mjs']],
-  ['src/ui/tutorial-content.ts', ['verify-tutorial-browser.mjs']],
+  ...['common', 'general', 'helpers', 'index', 'lessons', 'run', 'types',
+    ...['defect', 'guardian', 'hermit', 'hexaghost', 'ironclad', 'silent', 'slime_boss', 'watcher'].map((hero) => `heroes/${hero}`)]
+    .map((file) => [`src/ui/tutorial/${file}.ts`, ['verify-tutorial-browser.mjs']]),
   ['src/ui/styles/tutorial.css', ['verify-tutorial-browser.mjs']],
   ['src/ui/CourierPanel.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/chrome/courier.css', ['verify-courier-browser.mjs']],

@@ -25,6 +25,8 @@ export type CombatScreenProps = {
   onChange?: (next: CombatState) => void
   onAction?: (action: Record<string, unknown>) => void | Promise<ActionOutcome | void>
   autoAdvance?: boolean
+  /** Ends a solo turn by itself once nothing is left to do; the tutorial turns it off to teach ending turns. */
+  autoEndTurn?: boolean
   courierUsedBy?: string[]
   onCourierReveal?: (kind: 'relic' | 'potion') => void
   mutationsEnabled?: boolean

@@ -77,6 +77,8 @@ import { OutsidePotionBar } from './OutsidePotionBar.tsx'
 import { GuardianSocketPanel, RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { StartMenu } from './StartMenu.tsx'
 import { TutorialCoach } from './TutorialCoach.tsx'
+import { tutorialChapters, tutorialSeed } from './tutorial/index.ts'
+import { createTutorialRun, enterTutorialRoom } from './tutorial/run.ts'
 import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { CourierPanel, CourierPeek, courierPeekPhase } from './CourierPanel.tsx'
 import { RoomScreen } from './RoomScreen.tsx'
@@ -560,9 +562,12 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   // The guided tutorial is a throwaway Act I run. The run it interrupted is
   // parked here and restored on exit, and while it lasts nothing is written to
   // the solo checkpoint, the campaign journal, the run log or the leaderboard.
-  const [tutorial, setTutorial] = useState<{ character: CharacterId; seed: string; combatIds: readonly string[] } | null>(null)
+  // `attempt` restarts the coach when the same hero's tutorial is tried again.
+  const [tutorial, setTutorial] = useState<{ character: CharacterId; seed: string; attempt: number } | null>(null)
   const [tutorialTipsHidden, setTutorialTipsHidden] = useState(false)
   const tutorialReturn = useRef<{ run: RunState; viewerId: string } | null>(null)
+  const tutorialCharacter = tutorial?.character
+  const tutorialChapterList = useMemo(() => tutorialCharacter ? tutorialChapters(tutorialCharacter) : [], [tutorialCharacter])
   const { available: runLogAvailable, discard: discardLog, load: loadRunLog } = useRunLog(
     run, active && open && !replayLog && !tutorial, viewerId,
   )
@@ -673,17 +678,13 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   const startTutorial = (character: CharacterId) => {
     if (!tutorialReturn.current) tutorialReturn.current = { run, viewerId }
-    const base = tutorialReturn.current.run
-    const progress = { ...campaignBeforeCurrentRun(base), unspentMarks: 0 }
-    const party = legalCharacters([character, ...characters.filter((candidate) => candidate !== character)])
     setViewerId('p1')
     setPauseOpen(false)
     setGiveUpOpen(false)
     setTutorialTipsHidden(false)
-    const seed = crypto.randomUUID()
-    setTutorial({ character, seed, combatIds: [] })
-    setRun(newRun(1, seed, 0, progress, false, false, party,
-      { mode: 'standard', modifiers: [], quickStartAct: 1, campaign: 'base' }))
+    const seed = tutorialSeed(character)
+    setTutorial((current) => ({ character, seed, attempt: (current?.attempt ?? 0) + 1 }))
+    setRun(createTutorialRun(character, ROSTER.find((entry) => entry.character === character)!.name, seed))
     onOpen()
   }
 
@@ -827,14 +828,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       // Keep the last atomic checkpoint; the run continues in memory.
     }
   }, [built, open, recordRunId, replayLog, run, runLogExtractedRunId, tutorial])
-
-  // Remembers the tutorial's fights so the coach can tell the first from later ones.
-  const combatId = run.combat?.combatId
-  useEffect(() => {
-    if (combatId === undefined) return
-    setTutorial((current) => !current || current.combatIds.includes(combatId)
-      ? current : { ...current, combatIds: [...current.combatIds, combatId] })
-  }, [combatId])
 
   // A finished combat folds back into the run on its own; the player should not
   // have to click through a screen that only says "you won".
@@ -1070,6 +1063,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           viewerId={viewerId}
           animateOpeningHand
           autoAdvance={!replayLog && !compendium && !pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
+          // The tutorial teaches ending the turn, and a turn that ends by
+          // itself would cut the coach off mid-sentence.
+          autoEndTurn={!tutorial}
           courierUsedBy={run.courier.usedBy}
           onCourierReveal={run.courier.offer ? undefined : revealLocalCourier}
           mutationsEnabled={!run.courier.offer}
@@ -1131,7 +1127,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
             wingChoices={pendingAcquisition ? [] : wingChoices}
             wingUses={wingBootUses(run.players.find((player) => player.id === viewerId))}
             onEnter={(roomId) => setRun((current) => wingChoices.some((room) => room.id === roomId)
-              ? enterRoom(current, roomId, viewerId) : enterRoom(current, roomId))} />
+              ? enterRoom(current, roomId, viewerId)
+              : tutorial ? enterTutorialRoom(current, roomId, tutorial.seed) : enterRoom(current, roomId))} />
         </>
       ) : null}
 
@@ -1305,15 +1302,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       <TreasureEffects room={run.roomState?.kind === 'treasure' ? run.roomState : null}
         players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />
       {replayLog && runLogMessage ? <p className="run-replay__status" role="alert">{runLogMessage}</p> : null}
-      {tutorial && !pauseOpen && !settingsOpen && !compendium ? <TutorialCoach key={tutorial.seed} character={tutorial.character}
-        hidden={tutorialTipsHidden} onHide={() => setTutorialTipsHidden(true)} moment={{
-          phase: run.phase,
-          roomKind,
-          roomState: run.roomState?.kind,
-          combatNumber: run.combat ? tutorial.combatIds.indexOf(run.combat.combatId) + 1 : 0,
-          turn: run.combat?.turn ?? 0,
-          combatPhase: run.combat?.phase,
-        }} /> : null}
+      {tutorial && !pauseOpen && !settingsOpen && !compendium ? <TutorialCoach key={tutorial.attempt}
+        chapters={tutorialChapterList} run={run} hidden={tutorialTipsHidden} onHide={() => setTutorialTipsHidden(true)} /> : null}
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
       {/* `aria-live` rather than `role="status"`: the run already has status
           regions ("Choice locked. Waiting for the party…"), and a second one
