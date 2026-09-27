@@ -102,6 +102,7 @@ try {
           const play = HTMLMediaElement.prototype.play
           HTMLMediaElement.prototype.play = function () {
             window.music = this
+            window.musicPlayCalls = (window.musicPlayCalls ?? 0) + 1
             if (window.blockBossAutoplay) {
               window.musicAttempts = (window.musicAttempts ?? 0) + 1
               return Promise.reject(new DOMException('User gesture required', 'NotAllowedError'))
@@ -128,7 +129,8 @@ try {
               react.createElement('button', { onClick: () => {
                 window.combatEnteredAt = performance.now()
                 setRun({ act: 3, phase: 'combat', combat: { combatId: 'act-3-hallway', phase: 'player', enemies: [] } })
-              } }, 'Enter Act 3 hallway'))
+              } }, 'Enter Act 3 hallway'),
+              react.createElement('button', { onClick: (event) => event.stopPropagation() }, 'Continue after reload'))
           }
           const mount = document.createElement('div')
           document.body.append(mount)
@@ -165,11 +167,22 @@ try {
       await page.evaluate(() => { window.leaveBoss(); window.rejectBossBlob = false; window.blockBossAutoplay = true })
       await page.waitForFunction(() => window.music?.paused)
       await page.getByRole('button', { name: 'Face Act 3 boss' }).click()
-      await page.waitForFunction(() => window.musicAttempts === 1)
+      await page.waitForFunction(() => window.musicAttempts >= 1)
       assert((await page.evaluate(() => window.music.src)).startsWith('blob:'), `${name} streamed despite autoplay denial`)
-      console.log(`PASS ${name}: autoplay denial does not discard preloaded music`)
-      await page.evaluate(() => { window.leaveBoss(); window.setKeepAcrossDisconnect(false); window.setConnected(false) })
+      await page.evaluate(() => { window.blockBossAutoplay = false; window.musicStartedAt = undefined })
+      await page.getByRole('button', { name: 'Continue after reload' }).click()
+      await page.waitForFunction(() => window.musicStartedAt, null, { timeout: 3000 })
+      console.log(`PASS ${name}: a player gesture restarts music after autoplay denial`)
+      await page.evaluate(() => { window.leaveBoss(); window.musicStartedAt = undefined; window.blockBossAutoplay = true })
+      await page.waitForFunction(() => window.music?.paused)
+      const previousAttempts = await page.evaluate(() => window.musicAttempts)
+      await page.getByRole('button', { name: 'Face Act 3 boss' }).click()
+      await page.waitForFunction((before) => window.musicAttempts > before, previousAttempts)
+      await page.evaluate(() => { window.leaveBoss(); window.setKeepAcrossDisconnect(false); window.setConnected(false); window.blockBossAutoplay = false })
       await page.waitForFunction((source) => window.bossRevoked === source, boss.source)
+      const playCallsBefore = await page.evaluate(() => window.musicPlayCalls)
+      await page.getByRole('button', { name: 'Continue after reload' }).click()
+      assert.equal(await page.evaluate(() => window.musicPlayCalls), playCallsBefore, `${name} retried music after leaving combat`)
       console.log(`PASS ${name}: closing the game releases the preloaded boss theme`)
       await page.evaluate(() => window.bossRoot.unmount())
       assert.equal(await page.evaluate(() => window.bossRevoked), boss.source, `${name} retained the boss theme after unmount`)

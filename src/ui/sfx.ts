@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSafariCombatRendering } from './CombatAnimation.tsx'
 import { assetPath } from '../game/assets.ts'
 import { enemyDef } from '../game/enemies.ts'
@@ -28,6 +28,28 @@ type Sound = keyof typeof SOUNDS
 type SoundPlayback = { pause: () => void }
 const activeEffects = new Set<SoundPlayback>()
 const playAudio = (audio: HTMLAudioElement) => audio.play()
+
+function playMusic(audio: HTMLAudioElement, onFailure?: (error: unknown) => void) {
+  let active = true
+  const retry = () => {
+    if (!active) return
+    document.removeEventListener('click', retry, true)
+    document.removeEventListener('keydown', retry, true)
+    void playAudio(audio).catch((error: unknown) => {
+      if (!active) return
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        document.addEventListener('click', retry, true)
+        document.addEventListener('keydown', retry, true)
+      } else onFailure?.(error)
+    })
+  }
+  retry()
+  return () => {
+    active = false
+    document.removeEventListener('click', retry, true)
+    document.removeEventListener('keydown', retry, true)
+  }
+}
 
 function audioElement(source: string) {
   const audio = new Audio()
@@ -194,22 +216,25 @@ export function useCombatMusic(run?: MusicRun | null, enabled = true, volume = 2
     bossPreload.current = null
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!track) return
     const source = track === BOSS_TRACKS[3] ? bossPreload.current?.url ?? track : track
     const next = audioElement(source)
     audio.current = next
     next.loop = true
     next.volume = volume / 100
-    void playAudio(next).catch((error: unknown) => {
-      if (source === track || audio.current !== next || error instanceof DOMException && error.name === 'NotAllowedError') return
+    let stopFallback: (() => void) | undefined
+    const stopPlayback = playMusic(next, () => {
+      if (source === track || audio.current !== next) return
       const fallback = audioElement(track)
       fallback.loop = true
       fallback.volume = next.volume
       audio.current = fallback
-      void playAudio(fallback).catch(() => {})
+      stopFallback = playMusic(fallback)
     })
     return () => {
+      stopPlayback()
+      stopFallback?.()
       releaseAudio(next)
       if (audio.current && audio.current !== next) releaseAudio(audio.current)
       audio.current = null
@@ -225,13 +250,14 @@ export function useCombatMusic(run?: MusicRun | null, enabled = true, volume = 2
 export function useVictoryMusic(active = false, enabled = true, volume = 20) {
   const audio = useRef<HTMLAudioElement | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active || !enabled) return
     const next = audioElement(VICTORY_TRACK)
     audio.current = next
     next.volume = volume / 100
-    void playAudio(next).catch(() => {})
+    const stopPlayback = playMusic(next)
     return () => {
+      stopPlayback()
       releaseAudio(next)
       if (audio.current === next) audio.current = null
     }
