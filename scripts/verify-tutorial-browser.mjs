@@ -89,7 +89,6 @@ try {
     await neowButton.waitFor()
     const buttonBox = await neowButton.boundingBox()
     await page.mouse.click(buttonBox.x + buttonBox.width / 2, buttonBox.y + buttonBox.height / 2)
-    await page.waitForTimeout(300)
     assert.equal((await getRun(page)).neow.players.p1.redGoldPending, true, `${label}: a shielded Neow button still acted`)
 
     // Walk the scripted run through the first fight and its rewards.
@@ -103,8 +102,12 @@ try {
             : step.task && step.chapter === 'neow' ? 'neow-task' : null
         if (shot && !shots.has(shot)) {
           shots.add(shot)
-          await page.waitForTimeout(250)
-          await page.screenshot({ path: join(output, `${label}-${shot}.png`) })
+          if (shot === 'map-task') await page.waitForFunction(() => ![...document.querySelectorAll('.card')].some((card) => {
+            const box = card.getBoundingClientRect()
+            return box.width > 0 && box.height > 0
+          }))
+          assert(await page.locator('.tutorial-coach__ring').count() > 0, `${label}: ${shot} has no highlighted control`)
+          await page.screenshot({ path: join(output, `${label}-${shot}.png`), animations: 'disabled' })
         }
       },
     })

@@ -12,7 +12,12 @@ async function coach(page) {
     // Aim at a point inside each ring that something interactive actually
     // covers: an enemy's box is larger than the art that takes the tap.
     const interactive = '[data-enemy-id] .enemy__portrait, .card, button, [data-room], .orbs__target, .prompt__mode'
-    const rings = [...document.querySelectorAll('.tutorial-coach__ring')].map((ring) => {
+    const ringElements = [...document.querySelectorAll('.tutorial-coach__ring')]
+    const signature = ringElements.map((ring) => {
+      const box = ring.getBoundingClientRect()
+      return `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.width)},${Math.round(box.height)}`
+    }).join(';')
+    const rings = ringElements.map((ring) => {
       const box = ring.getBoundingClientRect()
       const centre = { x: box.left + box.width / 2, y: box.top + box.height / 2 }
       for (const [fx, fy] of [[0.5, 0.5], [0.5, 0.65], [0.5, 0.35], [0.5, 0.8], [0.35, 0.5], [0.65, 0.5], [0.5, 0.2]]) {
@@ -27,6 +32,7 @@ async function coach(page) {
       title: panel.querySelector('h2')?.textContent ?? '',
       task: panel.classList.contains('tutorial-coach__panel--task'),
       rings,
+      signature,
     }
   })
 }
@@ -101,6 +107,12 @@ export async function walkTutorial(page, { onStep, until, maxActions = 600 } = {
       if (repeats > 12) throw Object.assign(new Error(`task ${key} "${current.title}" never completed`), { log })
       if (key !== last) {
         if (until?.(current)) return { chapters, log, stoppedAt: current }
+        if (current.task) await page.waitForFunction(([chapter, step]) => {
+          const root = document.querySelector('.tutorial-coach')
+          const rings = [...document.querySelectorAll('.tutorial-coach__ring')]
+          return root?.getAttribute('data-measured') === `${chapter}#${step}` && rings.length > 0 &&
+            rings.every((ring) => !ring.getAnimations().some((animation) => animation instanceof CSSTransition && animation.playState === 'running'))
+        }, [current.chapter, current.step], { timeout: 3500 })
         if (!chapters.includes(current.chapter)) chapters.push(current.chapter)
         log.push(`${key} ${current.task ? 'TASK' : 'say'} ${current.title}`)
         await onStep?.(current)
@@ -108,16 +120,17 @@ export async function walkTutorial(page, { onStep, until, maxActions = 600 } = {
       }
       if (!current.task) {
         await page.locator('.tutorial-coach__next').click()
-        await sleep(page, 120)
+        await page.waitForFunction(([chapter, step]) => {
+          const panel = document.querySelector('.tutorial-coach__panel')
+          return !panel || panel.getAttribute('data-chapter') !== chapter || panel.getAttribute('data-step') !== step
+        }, [current.chapter, current.step])
         continue
       }
-      // Let the board settle (stance and card animations swallow early taps).
-      await sleep(page, 500)
-      let rings = (await coach(page))?.rings ?? current.rings
-      for (let wait = 0; rings.length === 0 && wait < 12; wait += 1) {
-        await sleep(page, 250)
-        rings = (await coach(page))?.rings ?? []
-      }
+      await page.waitForFunction(([chapter, step]) => document.querySelector('.tutorial-coach')?.getAttribute('data-measured') === `${chapter}#${step}` &&
+        document.querySelectorAll('.tutorial-coach__ring').length > 0, [current.chapter, current.step], { timeout: 3500 })
+      const ready = await coach(page)
+      let rings = ready?.rings ?? []
+      let signature = ready?.signature ?? ''
       if (rings.length === 0) throw Object.assign(new Error(`task ${key} "${current.title}" has nothing ringed`), { log })
       // Rings can appear as the move unfolds (a Slime or orb to choose), so
       // reread them after every tap and press the next one.
@@ -139,10 +152,22 @@ export async function walkTutorial(page, { onStep, until, maxActions = 600 } = {
         pressed.push(ring)
         if (repeats > 0) log.push(`  tap ${Math.round(ring.x)},${Math.round(ring.y)} of ${rings.map((r) => `${Math.round(r.x)},${Math.round(r.y)}`).join(' ')}`)
         await page.mouse.click(ring.x, ring.y)
-        await sleep(page, 900)
+        await page.waitForFunction(([chapter, step, positions]) => {
+          const panel = document.querySelector('.tutorial-coach__panel')
+          if (!panel || panel.getAttribute('data-chapter') !== chapter || panel.getAttribute('data-step') !== step) return true
+          return [...document.querySelectorAll('.tutorial-coach__ring')].map((element) => {
+            const box = element.getBoundingClientRect()
+            return `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.width)},${Math.round(box.height)}`
+          }).join(';') !== positions
+        }, [current.chapter, current.step, signature], { polling: 50, timeout: 350 }).catch(() => {})
+        await page.waitForFunction(() => [...document.querySelectorAll('.tutorial-coach__ring')].every((element) =>
+          !element.getAnimations().some((animation) => animation instanceof CSSTransition && animation.playState === 'running')))
         const after = await coach(page)
         if (!after || `${after.chapter}#${after.step}` !== key) break
-        if (after.rings.length) rings = after.rings
+        if (after.rings.length) {
+          rings = after.rings
+          signature = after.signature
+        }
       }
       continue
     }

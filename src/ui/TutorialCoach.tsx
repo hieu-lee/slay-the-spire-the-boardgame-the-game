@@ -186,6 +186,7 @@ export function TutorialCoach({ chapters, run, hidden, onHide }: {
   const [rects, setRects] = useState<Rect[]>([])
   const [context, setContext] = useState<Rect[]>([])
   const [prompts, setPrompts] = useState<Rect[]>([])
+  const [measuredKey, setMeasuredKey] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [panelSize, setPanelSize] = useState({ width: 0, height: 0 })
   const panel = useRef<HTMLElement>(null)
@@ -221,6 +222,7 @@ export function TutorialCoach({ chapters, run, hidden, onHide }: {
   useEffect(() => {
     scrolled.current.clear()
     if (!step || hidden) {
+      setMeasuredKey('')
       setRects([])
       setContext([])
       setPrompts([])
@@ -243,6 +245,7 @@ export function TutorialCoach({ chapters, run, hidden, onHide }: {
       setPrompts((previous) => sameRects(previous, barRects) ? previous : barRects)
       setRects((previous) => sameRects(previous, found.rects) ? previous : found.rects)
       setContext((previous) => sameRects(previous, found.context) ? previous : found.context)
+      setMeasuredKey(`${chapter!.id}#${stepIndex}`)
     }
     measure()
     const timer = window.setInterval(measure, TICK_MS)
@@ -262,8 +265,10 @@ export function TutorialCoach({ chapters, run, hidden, onHide }: {
   })
 
   const showing = Boolean(chapter && step && !hidden && !dialogOpen)
+  const measured = measuredKey === `${chapter?.id}#${stepIndex}`
+  const activeRects = measured ? rects : []
   // A task whose controls cannot be found must not trap the player.
-  const shielded = showing && (!task || rects.length > 0)
+  const shielded = showing && (!task || !measured || activeRects.length > 0)
   useEffect(() => {
     if (!shielded) return undefined
     const block = (event: KeyboardEvent) => {
@@ -280,16 +285,16 @@ export function TutorialCoach({ chapters, run, hidden, onHide }: {
   if (!showing || !chapter || !step) return null
   const last = stepIndex >= chapter.steps.length - 1
   const canGoBack = stepIndex > 0 && !chapter.steps[stepIndex - 1]!.done
-  const { top, left } = placePanel(rects, context, panelSize.width, panelSize.height)
+  const { top, left } = placePanel(activeRects, measured ? context : [], panelSize.width, panelSize.height)
 
   // Portalled to the body: the run shell scales and transforms its board on
   // some screens, which would carry fixed positioning along with it.
   return createPortal(
-    <div className="tutorial-coach">
-      {rects.length ? <div className="tutorial-coach__dim" aria-hidden="true" style={{ clipPath: shieldPath(rects) }} /> : null}
+    <div className="tutorial-coach" data-measured={measured ? measuredKey : undefined}>
+      {activeRects.length ? <div className="tutorial-coach__dim" aria-hidden="true" style={{ clipPath: shieldPath(activeRects) }} /> : null}
       {shielded ? <div className="tutorial-coach__shield" aria-hidden="true"
-        style={{ clipPath: shieldPath(task ? [...rects, ...prompts] : []) }} /> : null}
-      {rects.map((rect, index) => <span key={index} className="tutorial-coach__ring" aria-hidden="true" style={{
+        style={{ clipPath: shieldPath(task && measured ? [...activeRects, ...prompts] : []) }} /> : null}
+      {activeRects.map((rect, index) => <span key={index} className="tutorial-coach__ring" aria-hidden="true" style={{
         top: rect.top - RING_PADDING,
         left: rect.left - RING_PADDING,
         width: rect.width + RING_PADDING * 2,
