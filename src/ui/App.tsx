@@ -76,6 +76,7 @@ import { RelicBar } from './RelicChip.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
 import { GuardianSocketPanel, RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { StartMenu } from './StartMenu.tsx'
+import { TutorialCoach } from './TutorialCoach.tsx'
 import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { CourierPanel, CourierPeek, courierPeekPhase } from './CourierPanel.tsx'
 import { RoomScreen } from './RoomScreen.tsx'
@@ -556,8 +557,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const replayCursorCleanup = useRef<(() => void) | null>(null)
   const replayReturn = useRef<{ run: RunState; viewerId: string } | null>(null)
   const terminalRun = useRef<RunState | null>(null)
+  // The guided tutorial is a throwaway Act I run. The run it interrupted is
+  // parked here and restored on exit, and while it lasts nothing is written to
+  // the solo checkpoint, the campaign journal, the run log or the leaderboard.
+  const [tutorial, setTutorial] = useState<{ character: CharacterId; seed: string; combatIds: readonly string[] } | null>(null)
+  const [tutorialTipsHidden, setTutorialTipsHidden] = useState(false)
+  const tutorialReturn = useRef<{ run: RunState; viewerId: string } | null>(null)
   const { available: runLogAvailable, discard: discardLog, load: loadRunLog } = useRunLog(
-    run, active && open && !replayLog, viewerId,
+    run, active && open && !replayLog && !tutorial, viewerId,
   )
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
   const metaOptions: RunMetaOptions = { mode, modifiers: customModifierIds, quickStartAct }
@@ -655,11 +662,41 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     setRunLogExtractedRunId(null)
     setRunLogMessage(null)
     setReplayLog(null)
+    setTutorial(null)
+    tutorialReturn.current = null
     terminalRun.current = null
     setBuilt({ count, seed, ascension: legalAscension, chooseYourRelic: nextChooseYourRelic, lastStand: nextLastStand, characters: nextCharacters, meta: nextMeta })
     const next = newRun(count, seed, legalAscension, progress, nextChooseYourRelic, nextLastStand, nextCharacters, nextMeta)
     void startRunLog(next)
     setRun(next)
+  }
+
+  const startTutorial = (character: CharacterId) => {
+    if (!tutorialReturn.current) tutorialReturn.current = { run, viewerId }
+    const base = tutorialReturn.current.run
+    const progress = { ...campaignBeforeCurrentRun(base), unspentMarks: 0 }
+    const party = legalCharacters([character, ...characters.filter((candidate) => candidate !== character)])
+    setViewerId('p1')
+    setPauseOpen(false)
+    setGiveUpOpen(false)
+    setTutorialTipsHidden(false)
+    const seed = crypto.randomUUID()
+    setTutorial({ character, seed, combatIds: [] })
+    setRun(newRun(1, seed, 0, progress, false, false, party,
+      { mode: 'standard', modifiers: [], quickStartAct: 1, campaign: 'base' }))
+    onOpen()
+  }
+
+  const exitTutorial = () => {
+    const previous = tutorialReturn.current
+    tutorialReturn.current = null
+    if (previous) {
+      setRun(previous.run)
+      setViewerId(previous.viewerId)
+    }
+    setTutorial(null)
+    setPauseOpen(false)
+    onClose()
   }
 
   const recordRunResult = () => {
@@ -757,16 +794,16 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   // white. Losing the campaign journal is a bad outcome; losing the game is a
   // worse one.
   useEffect(() => {
-    if (replayLog) return
+    if (replayLog || tutorial) return
     try {
       localStorage.setItem(CAMPAIGN_KEY, JSON.stringify(open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)))
     } catch {
       // Storage is unavailable; the run continues in memory.
     }
-  }, [open, replayLog, run.campaignProgress, run.campaign.finalized])
+  }, [open, replayLog, run.campaignProgress, run.campaign.finalized, tutorial])
 
   useLayoutEffect(() => {
-    if (!open || replayLog) return
+    if (!open || replayLog || tutorial) return
     if (run.campaign.finalized) {
       if (terminalRun.current?.campaign.runId !== run.campaign.runId) return discardSoloRun()
       if (recordRunId === run.campaign.runId && queuedLeaderboardRun.current !== run.campaign.runId) {
@@ -789,7 +826,15 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     } catch {
       // Keep the last atomic checkpoint; the run continues in memory.
     }
-  }, [built, open, recordRunId, replayLog, run, runLogExtractedRunId])
+  }, [built, open, recordRunId, replayLog, run, runLogExtractedRunId, tutorial])
+
+  // Remembers the tutorial's fights so the coach can tell the first from later ones.
+  const combatId = run.combat?.combatId
+  useEffect(() => {
+    if (combatId === undefined) return
+    setTutorial((current) => !current || current.combatIds.includes(combatId)
+      ? current : { ...current, combatIds: [...current.combatIds, combatId] })
+  }, [combatId])
 
   // A finished combat folds back into the run on its own; the player should not
   // have to click through a screen that only says "you won".
@@ -896,6 +941,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         restart(1, seedText, ascension, false, false, characters, { ...metaOptions, campaign })
         onOpen()
       }}
+      onTutorial={() => startTutorial(characters[0] ?? 'ironclad')}
       onResume={resume ? resumeSoloRun : undefined}
       onOnline={onOnline}
       onLeaderboard={() => setLeaderboard(true)}
@@ -915,6 +961,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       <header className="app-shell__header">
         <PlayerTitle character={headerViewer?.character} />
         <div className="run-status">
+          {tutorial ? <button type="button" className="pip pip--tutorial" aria-pressed={!tutorialTipsHidden}
+            title={tutorialTipsHidden ? 'Show tutorial tips' : 'Hide tutorial tips'}
+            onClick={() => setTutorialTipsHidden((current) => !current)}>Tutorial</button> : null}
           <span className="pip">Act {run.act}</span>
           {run.ascension > 0 ? <span className="pip">Ascension {run.ascension}</span> : null}
           {headerViewer ? (
@@ -993,10 +1042,11 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           <button type="button" className="is-chosen" onClick={() => setPauseOpen(false)}>Resume</button>
           <button type="button" onClick={() => { setPauseOpen(false); setSettingsReturnToPause(true); setSettingsOpen(true) }}>Settings</button>
           <button type="button" onClick={() => { setPauseOpen(false); setCompendium(true) }}>Compendium</button>
-          {!replayLog && canGiveUp ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
+          {!replayLog && !tutorial && canGiveUp ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
           <button type="button" onClick={() => {
             setPauseOpen(false)
-            if (replayLog) {
+            if (tutorial) exitTutorial()
+            else if (replayLog) {
               replayCursorCleanup.current?.()
               replayCursorCleanup.current = null
               const previous = replayReturn.current
@@ -1009,7 +1059,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
               setRunLogMessage(null)
             } else if (!run.campaign.finalized) setResume({ version: 1, run, built })
             onClose()
-          }}>Return to main menu</button>
+          }}>{tutorial ? 'Leave tutorial' : 'Return to main menu'}</button>
         </section>
       </dialog>
 
@@ -1193,7 +1243,24 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         </section>
       ) : null}
 
-      {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'victory' && !run.campaign.finalized ? (
+      {tutorial && !pendingAcquisition && (run.phase === 'victory' || run.phase === 'defeat') ? (
+        <section className="room-screen tutorial-end" aria-labelledby="tutorial-end-title">
+          <h2 id="tutorial-end-title" className={run.phase === 'defeat' ? 'room-screen__defeat' : undefined}>
+            {run.phase === 'victory' ? 'Tutorial complete' : 'The tutorial run has ended'}
+          </h2>
+          <RunSummary act={run.act} roomsCleared={roomsCleared}
+            ascension={run.ascension} seats={run.players.map(summarySeat)} />
+          <p>{run.phase === 'victory'
+            ? 'You defeated the Act I boss. You know the basics now: start a Single Player run to climb all three Acts and unlock new cards.'
+            : 'Every run teaches something. Try again with the same hero, or start a Single Player run when you are ready.'}</p>
+          <div className="room-screen__actions">
+            {run.phase === 'defeat' ? <button type="button" onClick={() => startTutorial(tutorial.character)}>Try again</button> : null}
+            <button type="button" onClick={exitTutorial}>Return to main menu</button>
+          </div>
+        </section>
+      ) : null}
+
+      {!tutorial && !allocatingCampaignMarks && !pendingAcquisition && run.phase === 'victory' && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
           <RunSummary act={run.act} roomsCleared={roomsCleared}
@@ -1221,7 +1288,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         </section>
       ) : null}
 
-      {!allocatingCampaignMarks && run.phase === 'defeat' && !run.campaign.finalized ? (
+      {!tutorial && !allocatingCampaignMarks && run.phase === 'defeat' && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2 className="room-screen__defeat">The party has fallen</h2>
           <RunSummary act={run.act} roomsCleared={roomsCleared}
@@ -1238,6 +1305,15 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       <TreasureEffects room={run.roomState?.kind === 'treasure' ? run.roomState : null}
         players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />
       {replayLog && runLogMessage ? <p className="run-replay__status" role="alert">{runLogMessage}</p> : null}
+      {tutorial && !pauseOpen && !settingsOpen && !compendium ? <TutorialCoach key={tutorial.seed} character={tutorial.character}
+        hidden={tutorialTipsHidden} onHide={() => setTutorialTipsHidden(true)} moment={{
+          phase: run.phase,
+          roomKind,
+          roomState: run.roomState?.kind,
+          combatNumber: run.combat ? tutorial.combatIds.indexOf(run.combat.combatId) + 1 : 0,
+          turn: run.combat?.turn ?? 0,
+          combatPhase: run.combat?.phase,
+        }} /> : null}
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
       {/* `aria-live` rather than `role="status"`: the run already has status
           regions ("Choice locked. Waiting for the party…"), and a second one

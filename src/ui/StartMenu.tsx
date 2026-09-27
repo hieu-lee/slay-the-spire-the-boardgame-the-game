@@ -28,6 +28,8 @@ type StartMenuProps = {
   onCustomModifier: (id: DailyModifierId, enabled: boolean) => void
   onQuickStartAct: (act: 1 | 2 | 3 | 4) => void
   onStart: (campaign: 'base' | 'downfall') => void
+  /** Starts the guided tutorial run for the selected hero. */
+  onTutorial: () => void
   onResume?: () => void
   onOnline?: () => void
   onLeaderboard: () => void
@@ -113,6 +115,7 @@ export function StartMenu({
   onCustomModifier,
   onQuickStartAct,
   onStart,
+  onTutorial,
   onResume,
   onOnline,
   onLeaderboard,
@@ -127,6 +130,8 @@ export function StartMenu({
   const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
   const [screen, setScreen] = useState<'main' | 'mode' | 'daily' | 'custom' | 'character' | 'campaign' | 'replay'>(initiallyChoosingCharacter ? 'character' : 'main')
   const [characterTransition, setCharacterTransition] = useState(false)
+  // The tutorial reuses the Single Player character picker without Ascension.
+  const [tutorialSetup, setTutorialSetup] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [embarking, setEmbarking] = useState(false)
   const [preparingCharacter, setPreparingCharacter] = useState(() =>
@@ -179,6 +184,7 @@ export function StartMenu({
     characterLoad.current += 1
     setEmbarking(false)
     setPreparingCharacter(false)
+    setTutorialSetup(false)
     clearTimeout(invalidReplayTimer.current)
     clearTimeout(replayStartTimer.current)
     setReplayPrompt('Give your run to me')
@@ -277,7 +283,9 @@ export function StartMenu({
         {onResume ? <button type="button" aria-label="Resume"
           onClick={onResume}>Resume</button> : null}
         <button type="button" aria-label="Single Player"
-          ref={mainMenuButton} onClick={() => { warmRunSetup(hero.id); setScreen('mode') }}>Single Player</button>
+          ref={mainMenuButton} onClick={() => { warmRunSetup(hero.id); setTutorialSetup(false); setScreen('mode') }}>Single Player</button>
+        <button type="button" aria-label="Tutorial"
+          onClick={() => { setTutorialSetup(true); startCharacterSelection() }}>Tutorial</button>
         {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" onClick={onOnline}>Multiplayer</button>
           : null}
         <button type="button" aria-label="Leaderboard" onClick={onLeaderboard}>Leaderboard</button>
@@ -355,12 +363,12 @@ export function StartMenu({
       {screen === 'character' && !preparingCharacter ? <section className="start-menu__character-select" aria-labelledby="character-select-title">
         <CharacterWallpaper key={hero.id} character={hero.id} transition={characterTransition} />
         <div className={`start-menu__character-copy start-menu__character-copy--${characterTransition ? 'a' : 'b'}`}>
-          <p>Choose your character</p>
+          <p>{tutorialSetup ? 'Tutorial · Choose your character' : 'Choose your character'}</p>
           <h1 id="character-select-title">{hero.name}</h1>
           <p>{HERO_COPY[hero.id]}</p>
           {special ? <p className="start-menu__character-special"><strong>{special.name}</strong> · {special.text}</p> : null}
         </div>
-        <section className="start-menu__ascension" aria-label="Ascension">
+        {!tutorialSetup ? <section className="start-menu__ascension" aria-label="Ascension">
           <button type="button" aria-label="Decrease Ascension" disabled={ascension === 0}
             onClick={() => onAscension(ascension - 1)}>‹</button>
           <div>
@@ -369,7 +377,7 @@ export function StartMenu({
           </div>
           <button type="button" aria-label="Increase Ascension" disabled={ascension === maxAscension}
             onClick={() => onAscension(ascension + 1)}>›</button>
-        </section>
+        </section> : null}
         <div className="start-menu__character-roster" aria-label="Characters">
           {HEROES.map((candidate) => <button type="button" key={candidate.id}
             aria-label={candidate.name} aria-pressed={candidate.id === hero.id}
@@ -385,8 +393,10 @@ export function StartMenu({
         </div>
         <button type="button" className="start-menu__character-back ribbon-back" aria-label="Back" title="Back"
           onClick={() => { returnToMain(); onCharacterBack() }}><span aria-hidden="true"></span></button>
-        <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" disabled={embarking}
-          aria-busy={embarking || undefined} onClick={startCampaign}><span aria-hidden="true">✓</span></button>
+        {tutorialSetup ? <button type="button" className="start-menu__character-embark" aria-label="Start tutorial" title="Start tutorial"
+          disabled={embarking} onClick={() => { setEmbarking(true); onTutorial() }}><span aria-hidden="true">✓</span></button>
+          : <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" disabled={embarking}
+          aria-busy={embarking || undefined} onClick={startCampaign}><span aria-hidden="true">✓</span></button>}
       </section> : null}
       {screen === 'character' && preparingCharacter ? <section className="start-menu__character-select start-menu__character-loading"
         aria-label="Preparing character selection" aria-busy="true">

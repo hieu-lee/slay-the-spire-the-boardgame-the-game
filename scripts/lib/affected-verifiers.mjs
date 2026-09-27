@@ -39,7 +39,7 @@ const focusedEngineOwners = new Map([
 ])
 const focusedUiOwners = new Map([
   ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-courier-browser.mjs',
-    'verify-combat-vfx-preload-browser.mjs']],
+    'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs']],
   ['src/ui/CampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
   ['src/ui/CompendiumScreen.tsx', ['verify-compendium-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
@@ -61,7 +61,7 @@ const focusedUiOwners = new Map([
   ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/OnlineCampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
-  ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs']],
+  ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs', 'verify-tutorial-browser.mjs']],
   ['src/ui/sfx.ts', ['verify-run-replay-browser.mjs']],
   ['src/ui/useCampfireScene.ts', ['verify-campfire-assets-browser.mjs']],
   ['src/ui/combat-screen/HermitTriggerChoice.tsx', [
@@ -81,6 +81,9 @@ const focusedUiOwners = new Map([
 const focusedOnlyUiOwners = new Map([
   ['src/mail.ts', ['verify-mail-browser.mjs']],
   ['src/ui/useWebMcp.ts', ['verify-webmcp-browser.mjs']],
+  ['src/ui/TutorialCoach.tsx', ['verify-tutorial-browser.mjs']],
+  ['src/ui/tutorial-content.ts', ['verify-tutorial-browser.mjs']],
+  ['src/ui/styles/tutorial.css', ['verify-tutorial-browser.mjs']],
   ['src/ui/CourierPanel.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/chrome/courier.css', ['verify-courier-browser.mjs']],
   ['src/ui/PowerRow.tsx', ['verify-power-hover-browser.mjs']],

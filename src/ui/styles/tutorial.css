@@ -1,0 +1,145 @@
+/* The guided tutorial's coach panel and the ring it draws around the part of
+   the screen it is describing. Both float above the run without blocking it:
+   only the panel's own buttons take pointer input. */
+
+.tutorial-coach {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.tutorial-coach__ring {
+  position: fixed;
+  border: 3px solid #f0c75e;
+  border-radius: 0.6rem;
+  box-shadow: 0 0 0 2px rgb(20 14 6 / 0.85), 0 0 1.1rem 0.25rem rgb(240 199 94 / 0.55);
+  transition: top var(--motion-fast) var(--ease), left var(--motion-fast) var(--ease),
+    width var(--motion-fast) var(--ease), height var(--motion-fast) var(--ease);
+  animation: tutorial-ring-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes tutorial-ring-pulse {
+  50% { box-shadow: 0 0 0 2px rgb(20 14 6 / 0.85), 0 0 1.8rem 0.5rem rgb(240 199 94 / 0.8); }
+}
+
+.tutorial-coach__panel {
+  position: fixed;
+  display: grid;
+  gap: 0.45rem;
+  width: min(25rem, calc(100vw - 1rem));
+  padding: 0.85rem 1rem 0.8rem;
+  border: 2px solid #c9a24e;
+  border-radius: 0.5rem;
+  color: #f7ecd6;
+  background: linear-gradient(180deg, rgb(43 35 26 / 0.97), rgb(24 20 16 / 0.97));
+  box-shadow: 0 0 0 1px #3b2d1b, 0 0.6rem 1.6rem rgb(0 0 0 / 0.65);
+  font-family: 'Kreon', Georgia, serif;
+  pointer-events: auto;
+}
+
+.tutorial-coach__panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tutorial-coach__kicker { color: #e9c95f; font-weight: 700; }
+.tutorial-coach__count { color: #bfae8f; }
+
+.tutorial-coach__panel h2 {
+  margin: 0;
+  color: #ffdc60;
+  font-size: 1.3rem;
+  line-height: 1.15;
+  text-shadow: 0 2px 1px #0b0806;
+}
+
+.tutorial-coach__panel p {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.38;
+}
+
+.tutorial-coach__panel footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.tutorial-coach__panel button {
+  min-height: 2.25rem;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid #7b6647;
+  border-radius: 0.3rem;
+  color: #eee7d7;
+  background: linear-gradient(#3a3224, #1d1a15);
+  font: 700 0.95rem 'Kreon', Georgia, serif;
+  cursor: pointer;
+}
+
+.tutorial-coach__panel button:is(:hover, :focus-visible) { border-color: #e9c95f; color: #ffe9a8; }
+
+.tutorial-coach__panel .tutorial-coach__next {
+  border-color: #c9a24e;
+  color: #1c1409;
+  background: linear-gradient(#f3d77b, #c99a3a);
+}
+
+.tutorial-coach__panel .tutorial-coach__next:is(:hover, :focus-visible) { color: #1c1409; filter: brightness(1.08); }
+
+.tutorial-coach__panel .tutorial-coach__hide {
+  margin-right: auto;
+  border-color: transparent;
+  color: #bfae8f;
+  background: none;
+}
+
+/* The header's Tutorial plate toggles the tips; it outranks the struck-plate
+   rule in chrome/run-header.css. */
+.run-status > .pip.pip--tutorial:not(.pip--energy) {
+  border: 0;
+  color: #1c1409;
+  background: linear-gradient(#f3d77b, #c99a3a);
+  font: inherit;
+  font-weight: 700;
+  text-shadow: none;
+  cursor: pointer;
+}
+
+.run-status > .pip.pip--tutorial[aria-pressed='false']:not(.pip--energy) {
+  color: var(--cream);
+  background: rgb(0 0 0 / 0.3);
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+}
+
+.tutorial-end {
+  display: grid;
+  justify-items: center;
+  gap: 0.8rem;
+  text-align: center;
+}
+
+.tutorial-end p { max-width: 36rem; margin: 0; }
+
+/* Horizontal phones lay out a 1280-pixel-wide desktop page and scale it down
+   (see index.html), so enlarge the coach to stay readable after that scale. */
+html[data-mobile-performance='true'] .tutorial-coach__panel {
+  gap: 0.35rem;
+  width: min(31rem, calc(100vw - 1rem));
+  padding: 0.7rem 0.95rem 0.7rem;
+}
+html[data-mobile-performance='true'] .tutorial-coach__panel header { font-size: 0.95rem; }
+html[data-mobile-performance='true'] .tutorial-coach__panel h2 { font-size: 1.55rem; }
+html[data-mobile-performance='true'] .tutorial-coach__panel p { font-size: 1.2rem; line-height: 1.3; }
+html[data-mobile-performance='true'] .tutorial-coach__panel button { min-height: 2.8rem; padding: 0.3rem 1.1rem; font-size: 1.15rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-coach__ring { animation: none; transition: none; }
+}

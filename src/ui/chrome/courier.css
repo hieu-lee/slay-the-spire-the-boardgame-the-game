@@ -196,8 +196,11 @@
 }
 
 /* The stage's own short-screen breakpoint: below it the stage rises into the
-   turn bar, so the peek moves to the header as one key. */
-@media (orientation: landscape) and (max-height: 26.25rem) {
+   turn bar, so the peek moves to the header as one key. A narrow phone just
+   above it has the same problem: the turn bar does not wrap, so the plaque
+   would squeeze the Potion keys underneath itself. */
+@media (orientation: landscape) and (max-height: 26.25rem),
+  (orientation: landscape) and (max-height: 31.25rem) and (max-width: 60rem) {
   /* The raised header would otherwise clip the banner on the shortest phones. */
   .courier--offer { top: calc(50% + 1.25rem); }
   .courier--bar { display: none; }
