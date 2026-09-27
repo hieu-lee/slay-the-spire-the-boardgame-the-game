@@ -156,6 +156,96 @@ try {
     await defend.click()
     await page.waitForFunction(() => document.querySelector('.hand .card[title="Defend"]') === null)
     assert(room.run.combat.players[0].block > 0, 'the next card was still locked after Load')
+    if (!unknown) {
+      const nextRun = room.run
+      nextRun.combat = createCombat(createRng(915), nextRun.players, [enemy], 'hermit-full-chamber-load')
+      nextRun.combat.pendingHermitSetupLoads = []
+      const player = nextRun.combat.players[0]
+      player.hand = [
+        { uid: 'full-chamber-defend', defId: 'hermit_defend', upgraded: false },
+        { uid: 'full-chamber-strike', defId: 'hermit_strike', upgraded: false },
+      ]
+      player.chamber = [
+        { uid: 'full-chamber-covet', defId: 'hermit_covet', upgraded: true },
+        { uid: 'full-chamber-snapshot', defId: 'hermit_snapshot', upgraded: false },
+      ]
+      nextRun.phase = 'combat'
+      room.version += 1
+      rooms.publishRoom(code)
+      await page.locator('.hand .card[title="Defend"]').waitFor()
+      const chamber = page.getByRole('button', { name: /^Chamber,/ })
+      if (await chamber.getAttribute('aria-expanded') !== 'true') await chamber.click()
+      await page.locator('.hand .card--chamber-drawn').first().click()
+      const replacement = page.getByRole('dialog', { name: 'Choose up to 2 to Load' })
+      await replacement.getByRole('button', { name: /^Defend,/ }).click()
+      await replacement.getByRole('button', { name: /^Strike,/ }).click()
+      await replacement.getByRole('button', { name: 'Load 2 cards' }).click()
+      assert.deepEqual(await page.locator('.prompt__mode').allTextContents(), ['Snapshot', 'Defend'])
+      await page.getByRole('button', { name: 'Snapshot', exact: true }).click()
+      await page.locator('.hand .card--chamber-drawn[title="Strike"]').waitFor()
+      assert.deepEqual(room.run.combat.players[0].chamber.map((card) => card.uid),
+        ['full-chamber-strike', 'full-chamber-defend'])
+
+      const staleRun = room.run
+      staleRun.combat = createCombat(createRng(916), staleRun.players, [enemy], 'hermit-stale-chamber-load')
+      staleRun.combat.pendingHermitSetupLoads = []
+      const stalePlayer = staleRun.combat.players[0]
+      stalePlayer.hand = [
+        { uid: 'stale-defend', defId: 'hermit_defend', upgraded: false },
+        { uid: 'stale-strike', defId: 'hermit_strike', upgraded: false },
+      ]
+      stalePlayer.chamber = [
+        { uid: 'stale-covet', defId: 'hermit_covet', upgraded: true },
+        { uid: 'stale-snapshot', defId: 'hermit_snapshot', upgraded: false },
+      ]
+      staleRun.phase = 'combat'
+      room.version += 1
+      rooms.publishRoom(code)
+      await page.locator('.hand .card[title="Defend"]').waitFor()
+      await page.locator('.hand .card--chamber-drawn').first().click()
+      await replacement.getByRole('button', { name: /^Defend,/ }).click()
+      await replacement.getByRole('button', { name: /^Strike,/ }).click()
+      await replacement.getByRole('button', { name: 'Load 2 cards' }).click()
+      room.run.combat.players[0].hand = room.run.combat.players[0].hand
+        .filter((card) => card.uid !== 'stale-defend')
+      assert.deepEqual(room.run.combat.players[0].hand.map((card) => card.uid), ['stale-strike'])
+      room.version += 1
+      await page.getByRole('button', { name: 'Snapshot', exact: true }).click()
+      const retry = page.getByRole('dialog', { name: 'Choose up to 1 to Load' })
+      await retry.waitFor({ timeout: 10_000 })
+      assert.equal(await retry.getByRole('button', { name: /^Defend,/ }).count(), 0)
+      await retry.getByRole('button', { name: /^Strike,/ }).click()
+      await retry.getByRole('button', { name: 'Load 1 card' }).click()
+      await page.locator('.hand .card--chamber-drawn[title="Strike"]').waitFor()
+      assert.deepEqual(room.run.combat.players[0].chamber.map((card) => card.uid),
+        ['stale-snapshot', 'stale-strike'])
+
+      const curseRun = room.run
+      const doomed = { ...enemy, uid: 'doomed', hp: 2, maxHp: 2 }
+      const survivor = { ...enemy, uid: 'survivor' }
+      curseRun.combat = createCombat(createRng(917), curseRun.players, [doomed, survivor], 'hermit-curse-retarget')
+      curseRun.combat.pendingHermitSetupLoads = []
+      curseRun.combat.players[0].hand = [{ uid: 'grudge', defId: 'hermit_grudge', upgraded: false }]
+      curseRun.combat.players[0].chamber = [{ uid: 'pistol', defId: 'hermit_pistol_whip', upgraded: false }]
+      curseRun.phase = 'combat'
+      room.version += 1
+      rooms.publishRoom(code)
+      await page.locator('.hand .card[title="Grudge"]').waitFor()
+      await page.locator('.hand .card--chamber-drawn').click()
+      const grudgeChoice = page.getByRole('dialog', { name: 'Choose 1 to Load' })
+      await grudgeChoice.getByRole('button', { name: /^Grudge,/ }).click()
+      await grudgeChoice.getByRole('button', { name: 'Load 1 card' }).click()
+      const firstEnemy = page.locator('.enemy:not(.enemy--dead) .enemy__head').first()
+      await firstEnemy.click()
+      await firstEnemy.click()
+      await grudgeChoice.waitFor({ timeout: 10_000 })
+      await grudgeChoice.getByRole('button', { name: /^Grudge,/ }).click()
+      await grudgeChoice.getByRole('button', { name: 'Load 1 card' }).click()
+      await page.locator('.enemy:not(.enemy--dead) .enemy__head').last().click()
+      await firstEnemy.click()
+      await page.locator('.hand .card--chamber-drawn[title="Grudge"]').waitFor()
+      assert(room.run.combat.enemies.some((candidate) => candidate.uid === 'doomed' && candidate.dead))
+    }
     assert.deepEqual(errors, [])
     console.log(`✓ hosted Hermit Load clears its modal after ${unknown ? 'unknown delivery' : 'a lost acknowledgement'}`)
     await context.close()

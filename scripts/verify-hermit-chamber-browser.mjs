@@ -94,6 +94,63 @@ try {
       await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 0)
       assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies.map(e => e.hp)), [40, 40 - damage])
     }
+    await load(1, 'hermit_covet')
+    await page.evaluate(() => {
+      const run = structuredClone(window.__STS_DEBUG__.getRun())
+      const hermit = run.combat.players[0]
+      hermit.chamber = [
+        { uid: 'card', defId: 'hermit_covet', upgraded: true },
+        { uid: 'kept', defId: 'hermit_snapshot', upgraded: false },
+      ]
+      hermit.hand = [
+        { uid: 'first', defId: 'hermit_defend', upgraded: false },
+        { uid: 'second', defId: 'hermit_strike', upgraded: false },
+      ]
+      window.__STS_DEBUG__.setRun(run)
+    })
+    await page.locator('.hand .card--chamber-drawn').first().click()
+    const loadChoice = page.getByRole('dialog', { name: 'Choose up to 2 to Load' })
+    await loadChoice.getByRole('button', { name: /^Defend,/ }).click()
+    await loadChoice.getByRole('button', { name: /^Strike,/ }).click()
+    await loadChoice.getByRole('button', { name: 'Load 2 cards' }).click()
+    assert.deepEqual(await page.locator('.prompt__mode').allTextContents(), ['Snapshot', 'Defend'],
+      `${name}: the played Chamber card cannot be replaced after it leaves the Chamber`)
+    await page.screenshot({ path: `${out}/${name}-covet-load-replacement.png` })
+    await page.getByRole('button', { name: 'Snapshot', exact: true }).click()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber
+      .some(card => card.uid === 'second'))
+    assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber
+      .map(card => card.uid)), ['second', 'first'])
+    await load(1, 'hermit_pistol_whip')
+    await page.evaluate(() => {
+      const run = structuredClone(window.__STS_DEBUG__.getRun())
+      run.combat.players[0].hand = [{ uid: 'load-target', defId: 'hermit_defend', upgraded: false }]
+      window.__STS_DEBUG__.setRun(run)
+    })
+    await page.locator('.hand .card--chamber-drawn').click()
+    const targetLoadChoice = page.getByRole('dialog', { name: 'Choose 1 to Load' })
+    await targetLoadChoice.getByRole('button', { name: /^Defend,/ }).click()
+    await targetLoadChoice.getByRole('button', { name: 'Load 1 card' }).click()
+    await targetLoadChoice.waitFor({ state: 'hidden' })
+    assert.equal(await page.locator('.prompt').innerText(), 'Choose an enemy',
+      `${name}: confirmed Load must prompt for the remaining enemy target`)
+    await page.locator('.enemy:not(.enemy--dead) .enemy__head').first().click()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber[0]?.uid === 'load-target')
+    await load(1, 'hermit_tracking_shots')
+    await page.locator('.hand .card--chamber-drawn').click()
+    assert.equal(await page.locator('.prompt').innerText(), 'Choose an enemy',
+      `${name}: a Chamber card cannot Load itself again`)
+    await page.locator('.enemy:not(.enemy--dead) .enemy__head').first().click()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 0)
+    await load(1, 'hermit_strike')
+    await page.evaluate(() => {
+      const run = structuredClone(window.__STS_DEBUG__.getRun())
+      run.combat.players[0].hand = [{ uid: 'tracking-hand', defId: 'hermit_tracking_shots', upgraded: false }]
+      window.__STS_DEBUG__.setRun(run)
+    })
+    await page.locator('.hand .card[title="Tracking Shots"]').click()
+    assert.match(await page.locator('.prompt').innerText(), /Load Tracking Shots after playing it\?/,
+      `${name}: a hand-played Tracking Shots must still offer Load self`)
     await page.close()
   }
   assert.deepEqual(errors, [])

@@ -157,7 +157,7 @@ export function requirementsOf(
   const chamberAmount = chamberEffect
     ? Math.min(chamberRequested, chamberEligible.length)
     : 0
-  const loadSelf = selectableEffects.some((effect) => effect.kind === 'loadSelf')
+  const loadSelf = cardInHand && !sourceDeadOn && selectableEffects.some((effect) => effect.kind === 'loadSelf')
   const chamberAfterBase = viewer.chamber.length -
     (chamberEffect?.kind === 'discardChamber' ? chamberAmount : 0)
   const openAfterBase = Math.max(0, chamberSlots - chamberAfterBase)
@@ -189,7 +189,7 @@ export function requirementsOf(
       eligibleUids: (replacementMax > 0 ? viewer.chamber : chamberEligible).map((card) => card.uid),
       ...(replacementMax > 0 ? { baseAmount: chamberAmount, openAfterBase, loadSelf } : {}),
     } : null,
-    chooseLoadSelf: selectableEffects.some((effect) => effect.kind === 'loadSelf' && effect.optional) ? null : false,
+    chooseLoadSelf: loadSelf && selectableEffects.some((effect) => effect.kind === 'loadSelf' && effect.optional) ? null : false,
     spendVigor: state.startTurnProgress?.forcedCard?.playerId === viewer.id &&
       viewer.guardianMode !== null && viewer.vigor > 0 &&
       (def.type === 'attack' || def.type === 'skill') ? null : 0,

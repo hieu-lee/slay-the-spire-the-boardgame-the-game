@@ -3053,7 +3053,8 @@ function CombatScreenView({
     if (!choice || choice.baseAmount === undefined || choice.openAfterBase === undefined) return []
     const base = next.chamberUids.slice(0, choice.baseAmount)
     const baseSet = new Set(base)
-    let chamber = viewer.chamber.filter((card) => !baseSet.has(card.uid)).map((card) => card.uid)
+    const chamber = viewer.chamber.filter((card) => !baseSet.has(card.uid) &&
+      (!next.chamberPlay || card.uid !== next.card.uid)).map((card) => card.uid)
     const capacity = chamber.length + choice.openAfterBase
     const loads = [
       ...(next.choice?.kind === 'load' || next.choice?.kind === 'loadAny' ? next.picked : []),
@@ -3232,7 +3233,8 @@ function CombatScreenView({
         next.slimeEnemyUids.length > 0 ||
         next.chamberUids.length > 0 || next.hermitEnemyUids.length > 0 || next.soulburnEnemyUids.length > 0 ||
         next.hermitDieRelics.length > 0 || next.shivEnemyUids.length > 0 || next.evokeSlots.length > 0) {
-        setPending({ ...next, enemyUids: [], playerIds: [], slimeUids: [], slimeEnemyUids: [], chamberUids: [], hermitEnemyUids: [],
+        setPending({ ...next, enemyUids: [], playerIds: [], slimeUids: [], slimeEnemyUids: [], chamberUids: [],
+          chamberChoiceConfirmed: false, hermitEnemyUids: [],
           hermitDieRelics: [], hermitDieRelicChoiceConfirmed: false,
           soulburnEnemyUids: [], shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [] })
       }
@@ -3330,6 +3332,14 @@ function CombatScreenView({
             cardRewards: viewer!.cardRewards,
             rareRewards: viewer!.rareRewards,
           }
+          const chamberCard = next.chamberPlay
+            ? authoritativePlayer.chamber.find((card) => card.uid === next.card.uid)
+            : undefined
+          const staged = chamberCard ? stageHermitChamberViewer(authoritativePlayer, chamberCard) : undefined
+          const pendingPlayer = staged?.player ?? authoritativePlayer
+          const def = effectiveCombatCardDef(
+            faceOf(cardDef(next.card.defId), next.card.upgraded), pendingPlayer.guardianMode,
+          )
           if (next.choiceCards &&
             (next.choice?.kind === 'recover' || next.choice?.kind === 'recoverExhaust')) {
             setMiracleOnCard(usingMiracle)
@@ -3351,6 +3361,18 @@ function CombatScreenView({
             })
             return
           }
+          const reconciledCombat = { ...stateRef.current, ...authoritative.combat } as CombatState
+          if (next.choiceCards && !cardNeedsChoicePreview(def, reconciledCombat, pendingPlayer)) {
+            setMiracleOnCard(usingMiracle)
+            setPending({
+              ...pendingFor(staged?.card ?? next.card, null, reconciledCombat, pendingPlayer,
+                next.cardInHand, next.cardInHand || next.chamberPlay
+                  ? undefined : authoritative.combat.pendingCardCopy?.energySpent,
+                next.cardInHand || next.chamberPlay),
+              chamberPlay: next.chamberPlay,
+            })
+            return
+          }
           if (next.choiceCards) {
             setMiracleOnCard(usingMiracle)
             const preview = outcome?.snapshot?.cardPreview
@@ -3367,6 +3389,9 @@ function CombatScreenView({
                 choiceCards: preview.cards,
                 picked: sameCards ? next.picked : [],
                 choiceConfirmed: sameCards && needsRetarget && next.choiceConfirmed,
+                chamberUids: [],
+                chamberChoiceConfirmed: false,
+                hermitEnemyUids: [],
                 scryToHandUid: sameCards ? next.scryToHandUid : undefined,
                 enemyUid: preview.enemyUid,
                 slimeUids: preview.slimeUids ?? [],
@@ -3379,15 +3404,6 @@ function CombatScreenView({
             else requestCopyChoicePreview(next.enemyUid, next)
             return
           }
-          const chamberCard = next.chamberPlay
-            ? authoritativePlayer.chamber.find((card) => card.uid === next.card.uid)
-            : undefined
-          const pendingPlayer = chamberCard
-            ? stageHermitChamberViewer(authoritativePlayer, chamberCard).player
-            : authoritativePlayer
-          const def = effectiveCombatCardDef(
-            faceOf(cardDef(next.card.defId), next.card.upgraded), pendingPlayer.guardianMode,
-          )
           const overflowShivs = overflowShivCount(authoritative.combat,
             cardShivsOnPlay(def, next.choice?.kind === 'discardAny' ? next.picked.length : 0))
           const spentShivs = cardShivChoiceCount(def, pendingPlayer)
@@ -4680,7 +4696,7 @@ function CombatScreenView({
     ? 'Choose an enemy for the Shiv'
     : spendingSoulburn
     ? 'Choose an enemy for Soulburn'
-    : pending?.choice?.kind === 'load' || pending?.choice?.kind === 'loadAny'
+    : (pending?.choice?.kind === 'load' || pending?.choice?.kind === 'loadAny') && !pending.choiceConfirmed
       ? `${pendingDef?.name ?? 'Card'} — choose ${pending.choice.kind === 'loadAny' ? 'up to ' : ''}${pending.choice.amount} card${pending.choice.amount === 1 ? '' : 's'} to Load`
     : pending?.slimeChoice && !pending.slimeChoiceConfirmed &&
       (pendingDef?.cost !== 'X' || pending.energySpent !== null)
