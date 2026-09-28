@@ -2607,7 +2607,7 @@ function CombatScreenView({
   const currentAutoAdvance = useRef({ key: logicalAutoAdvanceKey, enabled: autoAdvance })
   currentAutoAdvance.current = { key: logicalAutoAdvanceKey, enabled: autoAdvance }
   const pendingAutoAdvance = useRef<{ key: string; request: Promise<ActionOutcome | void> } | null>(null)
-  const onCultistThrowPrepared = useCallback((enemyUid: string, arrivalWithinMs = 750) => {
+  const onCultistThrowPrepared = useCallback((enemyUid: string, arrivalWithinMs: number) => {
     const key = `${state.combatId}:${authoritativeRestoration ?? ''}:${state.turn}:${enemyUid}`
     const until = performance.now() + arrivalWithinMs
     setCultistPreparedUntil(current => (current[key] ?? 0) >= until ? current : { ...current, [key]: until })
@@ -2637,8 +2637,8 @@ function CombatScreenView({
     // The CSS flight starts after art is ready; failed art gets a bounded fallback.
     const deadline = cultists.length
       ? launchTimes.every(at => at !== undefined)
-        // Leave one paint frame after the 250ms flight before resolving damage.
-        ? Math.max(enemyPhaseClock.current.at + 730, ...launchTimes.filter((at): at is number => typeof at === 'number').map(at => at + 280))
+        // Leave one paint frame after the 500ms flight before resolving damage.
+        ? Math.max(enemyPhaseClock.current.at + 730, ...launchTimes.filter((at): at is number => typeof at === 'number').map(at => at + 530))
         : Math.max(enemyPhaseClock.current.at + 5000, preparedArrival)
       : enemyPhaseClock.current.at + 730
     const retryAt = lastEnemyResolve.current.key === phaseKey ? lastEnemyResolve.current.at + 730 : 0

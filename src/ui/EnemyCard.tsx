@@ -72,7 +72,7 @@ type EnemyCardProps = {
    */
   defender?: Pick<Player, 'row' | 'vulnerable' | 'powers'>
   cancelPendingThrow?: boolean
-  onThrowPrepared?: (enemyUid: string, arrivalWithinMs?: number) => void
+  onThrowPrepared?: (enemyUid: string, arrivalWithinMs: number) => void
   onThrowStart?: (enemyUid: string) => void
   onThrowSkipped?: (enemyUid: string) => void
   onClick?: (enemy: Enemy) => void
@@ -526,7 +526,7 @@ export function EnemyCard({
     const art = cached?.source === currentBossAttackArt && cached.blob
       ? URL.createObjectURL(cached.blob)
       : (currentBossArtId === 'cultist' || useSafariCombatRendering) ? currentBossAttackArt : currentIdleArt
-    if (currentBossArtId === 'cultist') onThrowPrepared?.(enemy.uid, 1550)
+    if (currentBossArtId === 'cultist') onThrowPrepared?.(enemy.uid, 1800)
     setPresentedBossAttack({ art, artId: currentBossArtId, source: currentBossAttackArt })
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
     bossAttackTimer.current = null
@@ -738,16 +738,25 @@ export function EnemyCard({
         const targetRect = target.getBoundingClientRect()
         const body = combatBodyPoint(target)
         if (bossArtId === 'cultist' && projectile.classList.contains('boss-projectile')) {
-          // Each stick follows its own upward arc. Keep path translation separate
-          // from its spin so rotating the prop cannot pull it toward the floor.
+          // Each stick follows its own upward arc. Its wrapper translates while
+          // the image spins, so rotating the prop cannot pull it toward the floor.
           const x = body.x - startX, y = body.y - startY
-          for (const [index, stick] of [...projectile.querySelectorAll<HTMLElement>(':scope > img')].entries()) {
+          for (const [index, stick] of [...projectile.querySelectorAll<HTMLElement>(':scope > .cultist-stick')].entries()) {
             // Source-space grips are 416px apart and 33px down; the prop's
             // painted center sits 70px above its grip.
             const handX = index * 416 * fit, handY = (index * 33 - 70) * fit
             const lift = Math.min(Math.abs(x - handX) * .22, bodyHeight * .7)
             const controlY = Math.min(handY, y) - Math.abs(y - handY) / 2 - lift
-            stick.style.offsetPath = `path("M ${handX} ${handY} Q ${(handX + x) / 2} ${controlY} ${x} ${y}")`
+            // A quadratic curve with its control point midway moves linearly in
+            // x. Its height is this exact easing between hand and target. Plain
+            // translation avoids iOS offset-path origins that start at the floor.
+            const endY = Math.abs(y - handY) < 1 ? handY + 1 : y
+            const arc = (controlY - handY) / (endY - handY)
+            stick.style.setProperty('--stick-from-x', `${handX}px`)
+            stick.style.setProperty('--stick-from-y', `${handY}px`)
+            stick.style.setProperty('--stick-to-x', `${x}px`)
+            stick.style.setProperty('--stick-to-y', `${endY}px`)
+            stick.style.setProperty('--stick-arc', `cubic-bezier(${1 / 3}, ${2 * arc / 3}, ${2 / 3}, ${(2 * arc + 1) / 3})`)
           }
         }
         projectile.style.setProperty('--boss-projectile-start-x', `${(startX - cardRect.left) / rem}rem`)
@@ -757,7 +766,7 @@ export function EnemyCard({
       }
     }
     measure()
-    if (bossArtId === 'cultist') onThrowPrepared?.(enemy.uid, 750)
+    if (bossArtId === 'cultist') onThrowPrepared?.(enemy.uid, 1000)
     const onLaunch = (event: AnimationEvent) => {
       if (event.animationName === 'cultist-stick-flight') cultistLaunched = true
     }
@@ -885,8 +894,10 @@ export function EnemyCard({
           onAnimationStart={event => {
             if (event.animationName === 'cultist-stick-flight') onThrowStart?.(enemy.uid)
           }}>
-          <img src={bossProjectileArt} alt="" />
-          {bossArtId === 'cultist' ? <img src={bossProjectileArt} alt="" /> : null}
+          {bossArtId === 'cultist' ? <>
+            <span className="cultist-stick"><img src={bossProjectileArt} alt="" /></span>
+            <span className="cultist-stick"><img src={bossProjectileArt} alt="" /></span>
+          </> : <img src={bossProjectileArt} alt="" />}
         </span>
       )) : null}
 
@@ -939,7 +950,7 @@ export function EnemyCard({
             loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
             onReady={() => {
               if (!bossAttackRequested || !bossAttacking || bossAttackTimer.current) return
-              if (timedCultist) onThrowPrepared?.(enemy.uid, 1550)
+              if (timedCultist) onThrowPrepared?.(enemy.uid, 1800)
               if (!timedCultist) bossAttackTimer.current = setTimeout(finishBossAttack, bossAttackDurationFor(bossArtId))
               setBossAttackReady(true)
             }}

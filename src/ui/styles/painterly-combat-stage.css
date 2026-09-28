@@ -949,19 +949,26 @@
 .enemy[data-enemy-art='cultist'] .boss-projectile {
   width: calc(var(--stage-actor-width) * .3);
   animation-name: cultist-stick-flight;
-  animation-duration: 250ms;
+  animation-delay: 500ms;
+  animation-duration: 500ms;
   animation-timing-function: linear;
   animation-fill-mode: forwards;
 }
-.enemy[data-enemy-art='cultist'] .boss-projectile > img {
+.enemy[data-enemy-art='cultist'] .boss-projectile > .cultist-stick {
   position: absolute;
   inset: 0;
-  filter: none;
-  offset-anchor: center;
-  offset-rotate: 0deg;
-  animation: cultist-stick-spin 250ms 500ms linear both;
+  animation: cultist-stick-x 500ms 500ms both, cultist-stick-y 500ms 500ms both;
+  /* Keep the measured arc out of the shorthand: a bad easing falls back to ease, not a frozen stick. */
+  animation-timing-function: linear, var(--stick-arc, linear);
 }
-.enemy[data-enemy-art='cultist'] .enemy-projectile-impact > img { animation-delay: 750ms; }
+.enemy[data-enemy-art='cultist'] .cultist-stick > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  animation: cultist-stick-spin 500ms 500ms linear both;
+}
+.enemy[data-enemy-art='cultist'] .enemy-projectile-impact > img { animation-delay: 1000ms; }
 /* WebKit can paint a timed SVG layer late. Cover its hands during the flight,
    then return to the animated recovery after the props and impact are gone. */
 .enemy[data-cultist-cover] .enemy__portrait > .enemy__art--cutout[data-animation-layer='attack'] {
@@ -982,14 +989,23 @@
   0%, 27.31%, 81.95%, 100% { opacity: 0; }
   27.33%, 81.94% { opacity: 1; }
 }
-.enemy[data-enemy-art='cultist'] .boss-projectile > img + img {
+.enemy[data-enemy-art='cultist'] .cultist-stick + .cultist-stick {
   --stick-angle: 35deg;
 }
 @keyframes cultist-stick-flight {
   0%, 99.99% { opacity: 1; }
   100% { opacity: 0; }
 }
+/* translate carries x and transform carries y; both center the stick on its path. */
+@keyframes cultist-stick-x {
+  from { translate: calc(var(--stick-from-x, 0px) - 50%) 0; }
+  to { translate: calc(var(--stick-to-x, 0px) - 50%) 0; }
+}
+@keyframes cultist-stick-y {
+  from { transform: translateY(calc(var(--stick-from-y, 0px) - 50%)); }
+  to { transform: translateY(calc(var(--stick-to-y, 0px) - 50%)); }
+}
 @keyframes cultist-stick-spin {
-  from { offset-distance: 0%; transform: rotate(var(--stick-angle, -25deg)); }
-  to { offset-distance: 100%; transform: rotate(calc(var(--stick-angle, -25deg) - 300deg)); }
+  from { transform: rotate(var(--stick-angle, -25deg)); }
+  to { transform: rotate(calc(var(--stick-angle, -25deg) - 300deg)); }
 }

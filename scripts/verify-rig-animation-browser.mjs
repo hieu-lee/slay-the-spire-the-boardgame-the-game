@@ -238,11 +238,26 @@ try {
         assert.equal(await pose.evaluate(e=>getComputedStyle(e).opacity),'1','Watcher must raise her staff before casting')
         assert.equal(await page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig`).count(),0)
       } else assert.equal(await pose.locator(':scope > img').evaluate(i=>i.naturalWidth),rigs[character==='hexaghost'?'hero-hexaghost-heat-0':`hero-${character}`].size,character)
-      await page.waitForTimeout(character==='hexaghost'?1400:character==='ironclad'?850:600)
+      if(character!=='watcher') await page.waitForTimeout(character==='hexaghost'?1400:character==='ironclad'?850:600)
       if(character==='watcher') {
         const cast=page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--watcher-cast`)
         assert((await cast.locator('img').getAttribute('src')).endsWith('/watcher-thrust.webp'))
-        assert.equal(await cast.evaluate(e=>getComputedStyle(e).opacity),'1','Watcher must cast downward while the meteor falls')
+        // Sample in-page on the meteor clock: protocol round trips can outlast
+        // the 550ms cast window. The pose must be casting in that same frame.
+        const cast_=await cast.evaluate((e,seq)=>new Promise(resolve=>{
+          const startedAt=performance.now()
+          const sample=()=>{
+            const meteor=document.querySelector(`[data-attack-seq="${seq}"] .character-attack__meteor`)
+            const fall=meteor?.getAnimations().find(a=>a.animationName==='watcher-meteor-fall')
+            const progress=fall&&typeof fall.currentTime==='number'?(fall.currentTime-fall.effect.getTiming().delay)/500:NaN
+            if(progress>=.1) resolve({progress,opacity:getComputedStyle(e).opacity})
+            else if(performance.now()-startedAt>3000) resolve({progress,opacity:'missing meteor clock'})
+            else requestAnimationFrame(sample)
+          }
+          sample()
+        }),seq)
+        assert(cast_.progress<1,`Watcher meteor sample missed the fall (${cast_.progress})`)
+        assert.equal(cast_.opacity,'1','Watcher must cast downward while the meteor falls')
         assert(await page.locator(`[data-attack-seq="${seq}"] .character-attack__meteor`).count()>0,'Watcher lost the meteor')
       }
       await page.locator('.board').screenshot({path:resolve(output,`${screen}-${character}-attack.png`)})
@@ -735,7 +750,7 @@ try {
         if(enemyProjectileImpactPath(enemy.artId??enemy.id)) {
           const cultist = (enemy.artId ?? enemy.id) === 'cultist'
           const launch = 500
-          const arrival = cultist ? launch + 250 : 730
+          const arrival = cultist ? launch + 500 : 730
           const effect = card.locator('.enemy-projectile-impact')
           assert.equal(await effect.count(),1,`${enemy.id}: missing targeted impact`)
           const timing = await effect.locator('img').evaluate(image=>{

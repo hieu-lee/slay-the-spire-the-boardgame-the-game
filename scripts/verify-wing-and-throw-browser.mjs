@@ -80,12 +80,13 @@ async function observeCultistArrival(page) {
       const onLaunch = event => {
         if (event.animationName !== 'cultist-stick-flight') return
         board.removeEventListener('animationstart', onLaunch)
-        const paths = [...projectile.children].map(stick => stick.style.offsetPath)
+        const sticks = [...projectile.querySelectorAll('.cultist-stick')]
+        const paths = sticks.map(stick => stick.style.cssText)
         const target = document.querySelector(`.seat[data-player-id="${CSS.escape(projectile.dataset.targetPlayer)}"] .seat__portrait`)
         // A late target-image alignment must not redirect an airborne stick.
         target.style.translate = '0 80px'
         board.dispatchEvent(new Event('loadeddata'))
-        f.flightLocked = paths.every((path, index) => path === projectile.children[index].style.offsetPath)
+        f.flightLocked = paths.every((path, index) => path && path === sticks[index].style.cssText)
         target.style.removeProperty('translate')
       }
       board.addEventListener('animationstart', onLaunch)
@@ -231,14 +232,15 @@ try {
               const { delay, duration } = projectiles[0].getAnimations()[0].effect.getTiming()
               const impactDelay = enemy.querySelector('.enemy-projectile-impact > img').getAnimations()[0].effect.getTiming().delay
               const targets = projectiles.map(e => e.dataset.targetPlayer).sort()
-              const props = projectiles.flatMap(e => [...e.children])
+              const sticks = projectiles.flatMap(e => [...e.children])
+              const props = sticks.flatMap(e => [...e.children])
               const holdFrame = () => {
                 const body = enemy.querySelector('.enemy__art--cutout[data-animation-layer="attack"]')
                 const cover = enemy.querySelector('.cultist-release-cover')
-                for (const element of [...projectiles, ...props, body, cover].filter(Boolean)) {
+                for (const element of [...projectiles, ...sticks, ...props, body, cover].filter(Boolean)) {
                   const style = getComputedStyle(element)
                   element.style.transform = style.transform
-                  element.style.offsetDistance = style.offsetDistance
+                  element.style.translate = style.translate
                   element.style.opacity = style.opacity
                   element.style.animation = 'none'
                 }
@@ -247,6 +249,11 @@ try {
               }
               let live = null
               let late = null
+              // Live stick centers, per projectile, to compare with the seeked probe below.
+              const liveSticks = () => projectiles.map(projectile => [...projectile.querySelectorAll('.cultist-stick > img')].map(stick => {
+                const rect = stick.getBoundingClientRect()
+                return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+              }))
               if (capture) live = await new Promise((resolve, reject) => {
                 const startedAt = performance.now()
                 const sampleFrame = () => {
@@ -254,10 +261,10 @@ try {
                   const opacity = Number(getComputedStyle(projectiles[0]).opacity)
                   if (typeof time === 'number' && time >= delay + 100 && time < delay + duration && opacity > .5) {
                     if (stableCapture) holdFrame()
-                    else for (const element of [...projectiles, ...props, enemy.querySelector('.enemy-projectile-impact > img')]) {
+                    else for (const element of [...projectiles, ...sticks, ...props, enemy.querySelector('.enemy-projectile-impact > img')]) {
                       element.getAnimations().forEach(animation => animation.pause())
                     }
-                    resolve({ time, opacity, natural: true })
+                    resolve({ time, opacity, natural: true, sticks: liveSticks() })
                   } else if (typeof time === 'number' && time >= delay + duration || performance.now() - startedAt > 5000) {
                     if (!stableCapture) {
                       reject(new Error(`${label}: missed naturally rendered flight (time=${time})`))
@@ -266,11 +273,11 @@ try {
                     // Headless WebKit can skip every JS sample in a short flight.
                     // Stage this screenshot, but count only naturally observed
                     // frames toward the live-flight assertion below.
-                    for (const element of [...projectiles, ...props, enemy.querySelector('.enemy-projectile-impact > img')]) {
+                    for (const element of [...projectiles, ...sticks, ...props, enemy.querySelector('.enemy-projectile-impact > img')]) {
                       element.getAnimations().forEach(animation => { animation.pause(); animation.currentTime = delay + 125 })
                     }
                     holdFrame()
-                    resolve({ time, opacity: Number(getComputedStyle(projectiles[0]).opacity), natural: false, stagedAt: delay + 125 })
+                    resolve({ time, opacity: Number(getComputedStyle(projectiles[0]).opacity), natural: false, stagedAt: delay + 125, sticks: liveSticks() })
                   } else requestAnimationFrame(sampleFrame)
                 }
                 requestAnimationFrame(sampleFrame)
@@ -293,24 +300,24 @@ try {
               })
               else await new Promise(resolve => setTimeout(resolve, 550))
               await Promise.all(props.map(prop => prop.decode()))
-              const flights = projectiles.map(projectile => {
+              const flights = projectiles.map((projectile, projectileIndex) => {
                 // Seek a hidden copy so geometry assertions cannot reset live playback.
                 const probe = projectile.cloneNode(true)
-                for (const element of [probe, ...probe.children]) {
+                for (const element of [probe, ...probe.querySelectorAll('*')]) {
                   element.style.removeProperty('animation')
                   element.style.removeProperty('transform')
-                  element.style.removeProperty('offset-distance')
+                  element.style.removeProperty('translate')
                   element.style.removeProperty('opacity')
                 }
                 probe.style.visibility = 'hidden'
                 enemy.append(probe)
                 probe.getBoundingClientRect()
-                const sticks = [...probe.children]
-                const animations = [probe, ...sticks].map(element => element.getAnimations()[0])
+                const stickImages = [...probe.querySelectorAll('.cultist-stick > img')]
+                const animations = [probe, ...probe.querySelectorAll('*')].flatMap(element => element.getAnimations())
                 animations.forEach(animation => animation.pause())
                 const sample = time => {
                   animations.forEach(animation => { animation.currentTime = time })
-                  return sticks.map(stick => {
+                  return stickImages.map(stick => {
                     const rect = stick.getBoundingClientRect()
                     const matrix = new DOMMatrix(getComputedStyle(stick).transform)
                     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, bottom: rect.bottom,
@@ -322,10 +329,21 @@ try {
                 const from = sample(delay), atRelease = Number(getComputedStyle(probe).opacity)
                 const arc = [.1, .25, .5, .75, .9].map(t => sample(delay + duration * t))
                 const middle = arc[2], to = sample(delay + duration)
+                // The live sticks read their custom properties after mount; they must match the probe.
+                const liveMatch = live && sample(live.stagedAt ?? live.time).map((point, index) => {
+                  const actual = live.sticks[projectileIndex][index]
+                  return Math.hypot(point.x - actual.x, point.y - actual.y)
+                })
                 const target = document.querySelector(`.seat[data-player-id="${CSS.escape(projectile.dataset.targetPlayer)}"] .seat__portrait`)
                   .getBoundingClientRect()
-                const flight = { from, middle, to, arc, beforeRelease, atRelease, target: { left: target.left, right: target.right, top: target.top, bottom: target.bottom },
-                  spinTiming: sticks.map(stick => stick.getAnimations()[0].effect.getTiming()) }
+                const art = enemy.querySelector('.enemy__art--cutout[data-animation-layer="attack"]').getBoundingClientRect()
+                const flight = { from, middle, to, arc, beforeRelease, atRelease, liveMatch, target: { left: target.left, right: target.right, top: target.top, bottom: target.bottom },
+                  art: { left: art.left, right: art.right, top: art.top, bottom: art.bottom },
+                  offsetPath: [probe, ...probe.querySelectorAll('*')].map(element => getComputedStyle(element).offsetPath).find(path => path !== 'none') ?? 'none',
+                  stickTiming: animations.filter(animation => animation.effect.target !== probe).map(animation => {
+                    const { delay, duration } = animation.effect.getTiming()
+                    return { delay, duration }
+                  }) }
                 probe.remove()
                 return flight
               })
@@ -346,7 +364,7 @@ try {
                 if (f.finishCapture) {
                   f.finishCapture()
                   f.finishCapture = undefined
-                } else for (const element of document.querySelectorAll('.enemy--acting .boss-projectile, .enemy--acting .boss-projectile > img, .enemy--acting .enemy-projectile-impact > img')) {
+                } else for (const element of document.querySelectorAll('.enemy--acting .boss-projectile, .enemy--acting .boss-projectile *, .enemy--acting .enemy-projectile-impact > img')) {
                   element.getAnimations().forEach(animation => animation.play())
                 }
               })
@@ -375,10 +393,10 @@ try {
         assert.deepEqual(sample.targets, ['p1'], 'throw hit dead or unrelated-row player')
         assert.equal(sample.count, sample.targets.length * 2, 'two sticks per target')
         const expectedDelay = 500
-        assert.deepEqual(sample.timing, { delay: expectedDelay, duration: 250, ready: true })
+        assert.deepEqual(sample.timing, { delay: expectedDelay, duration: 500, ready: true })
         if (repeat === 0) {
           if (sample.live.natural) {
-            assert(sample.live.time >= expectedDelay + 100 && sample.live.time < expectedDelay + 250, 'screenshot missed the released throw pose')
+            assert(sample.live.time >= expectedDelay + 100 && sample.live.time < expectedDelay + 500, 'screenshot missed the released throw pose')
             naturalCaptures++
           } else {
             assert(engine === webkit && sample.live.stagedAt === expectedDelay + 125,
@@ -387,17 +405,26 @@ try {
           }
           assert(sample.live.opacity > .5, 'sticks are invisible during live flight')
         }
-        assert.equal(sample.impactDelay, expectedDelay + 250, 'impact fires before sticks arrive')
+        assert.equal(sample.impactDelay, expectedDelay + 500, 'impact fires before sticks arrive')
         for (const flight of sample.flights) {
           assert.equal(flight.beforeRelease, 0, 'sticks duplicate the held props before release')
           assert.equal(flight.atRelease, 1, 'sticks disappear at the hand-to-flight transition')
           assert(flight.from[1].x - flight.from[0].x > 30,
             `sticks do not leave separate hands: ${JSON.stringify(flight.from)}`)
+          if (flight.liveMatch) assert(flight.liveMatch.every(distance => distance < 4),
+            `live sticks left the measured arc: ${JSON.stringify(flight.liveMatch)}`)
+          assert.equal(flight.offsetPath, 'none', 'iOS Safari resolves offset-path origins at the floor')
+          assert.equal(flight.stickTiming.length, 6, 'each stick needs horizontal, vertical and spin clocks')
+          for (const timing of flight.stickTiming) {
+            assert.deepEqual(timing, { delay: expectedDelay, duration: 500 }, 'stick motion is not synchronized with flight')
+          }
           for (let index = 0; index < 2; index++) {
             const from = flight.from[index], middle = flight.middle[index], to = flight.to[index]
-            assert.deepEqual({ delay: flight.spinTiming[index].delay, duration: flight.spinTiming[index].duration },
-              { delay: expectedDelay, duration: 250 }, 'stick spin is not synchronized with flight')
             assert(from.x > flight.target.right + 30, 'stick starts away from Cultist')
+            // Raised grips sit near the middle of the overscanned art; a floor spawn sits near its bottom.
+            assert(from.x > flight.art.left && from.x < flight.art.right &&
+              from.y > flight.art.top && from.y < flight.art.top + (flight.art.bottom - flight.art.top) * .6,
+              `stick does not leave the raised hand: ${JSON.stringify({ from, art: flight.art })}`)
             assert(to.x >= flight.target.left && to.x <= flight.target.right &&
               to.y >= flight.target.top && to.y <= flight.target.bottom, 'stick misses the player')
             assert(middle.y < Math.min(from.y, to.y) - 8, 'stick does not rise above both ends of its arc')
@@ -421,8 +448,18 @@ try {
             assertCultistPixels(recoveryPath, sample.after, undefined, 'held')
             await page.evaluate(() => { window.fixture.finishCapture?.(); window.fixture.finishCapture = undefined })
           } else {
-            // Native WebP still shows empty hands just after the 250ms flight.
-            await page.waitForTimeout(200)
+            // Native WebP shows empty hands until 1500ms. Start the screenshot on the
+            // impact clock, which keeps running after the sticks land.
+            const shotAt = await page.evaluate(() => new Promise(resolve => {
+              const startedAt = performance.now()
+              const sample = () => {
+                const time = document.querySelector('.enemy--acting .enemy-projectile-impact > img')?.getAnimations()[0]?.currentTime
+                if (typeof time === 'number' && time >= 900 || performance.now() - startedAt > 3000) resolve(time ?? null)
+                else requestAnimationFrame(sample)
+              }
+              sample()
+            }))
+            assert(shotAt !== null && shotAt < 1100, `recovery screenshot started too close to the hands recovering (${shotAt})`)
             const recoveryPath = resolve(output, `${screen}-cultist-${multiplayer ? 'party' : 'solo'}-recovery.png`)
             await page.screenshot({ path: recoveryPath, scale: 'css' })
             assertCultistPixels(recoveryPath, sample.after)
@@ -534,7 +571,7 @@ try {
       `${screen}: reconnect sent duplicate resolveEnemies while the first response was pending`)
     await page.waitForFunction(() => document.querySelector('.combat')?.dataset.phase === 'roundEnd')
     await context.close()
-    console.log(`PASS ${screen}: wingbeat, 250ms rotating throws, targets, replay, reconnect and reduced motion`)
+    console.log(`PASS ${screen}: wingbeat, 500ms rotating throws, targets, replay, reconnect and reduced motion`)
   }
   if (!process.argv.includes('--cold-only')) assert(naturalCaptures >= 1, 'no naturally rendered Cultist flight was captured')
   for (const delayedAsset of engine === webkit ? ['cover', 'prop'] : ['prop']) {
@@ -595,7 +632,7 @@ try {
     'cold Cultist attack played idle art while throwing')
   assert(delayed.enemyResolvedAt - delayed.throwArrivalAt >= -10, 'damage resolves before delayed sticks arrive')
   await delayedContext.close()
-  console.log('PASS horizontal-phone: near-timeout art finishes its windup and 250ms flight before damage')
+  console.log('PASS horizontal-phone: near-timeout art finishes its windup and 500ms flight before damage')
 
   const slowContext = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true })
   await slowContext.route(/\/assets\/combat\/enemies\/animated\/cultist-(?:idle|attack)\.(?:webp|svg)(?:\?|$)/, async route => {
