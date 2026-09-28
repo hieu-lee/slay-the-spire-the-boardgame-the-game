@@ -16,6 +16,7 @@ import { bruiserSlime } from '../downfall/slime-boss.ts'
 import { GUARDIAN_PHYSICAL_DECKS } from '../downfall/guardian.ts'
 import { queueNewGuardianSockets } from '../guardian-gems.ts'
 import { buildEventDeck } from '../events.ts'
+import { DAILY_ASCENSION, dailyCampaignProgress, dailySeedText } from '../daily.ts'
 import { addBurningElite, generateMap } from '../map.ts'
 import type { RoomKind } from '../map.ts'
 import { normalizeModifierIds, rollDailyModifiers, rulesetForCharacters } from '../meta.ts'
@@ -23,7 +24,7 @@ import type { DailyModifierId, QuickSetupState, RunMetaOptions } from '../meta.t
 import { dealBlessings, NEOW_CARDS } from '../neow.ts'
 import type { NeowState } from '../neow.ts'
 import { STARTING_RELIC, createRelicDecks, createRelicInstance } from '../relics.ts'
-import { createRng, shuffle } from '../rng.ts'
+import { createRng, seedFromString, shuffle } from '../rng.ts'
 import type { RngState } from '../rng.ts'
 import { createDamageStats } from '../damage.ts'
 import { DOWNFALL_CHARACTER_IDS } from '../types.ts'
@@ -166,9 +167,18 @@ export function createRun(
   metaOptions: RunMetaOptions = {},
 ): RunState {
   if (party.length < 1 || party.length > 4) throw new Error('a run requires 1 to 4 players')
+  const mode = metaOptions.mode ?? 'standard'
+  if (mode === 'daily') {
+    // The Daily Climb is one shared run per UTC day: the day fixes the seed,
+    // and everyone climbs at the same Ascension on a fully unlocked baseline.
+    if (party.length !== 1 || !metaOptions.dailyDate) throw new Error('a Daily Climb is one player on a dated shared seed')
+    seed = seedFromString(dailySeedText(metaOptions.dailyDate))
+    ascension = DAILY_ASCENSION
+    campaignProgress = dailyCampaignProgress(campaignProgress)
+    metaOptions = { mode, dailyDate: metaOptions.dailyDate, quickStartAct: 1, campaign: 'base' }
+  }
   instanceCounter = 0
   const rng = createRng(seed)
-  const mode = metaOptions.mode ?? 'standard'
   const modifierIds = mode === 'daily'
     ? rollDailyModifiers(rng).modifiers.map(({ id }) => id)
     : mode === 'custom' ? normalizeModifierIds(metaOptions.modifiers) : []
@@ -293,6 +303,7 @@ export function createRun(
       modifierIds,
       ruleset,
       campaign,
+      ...(mode === 'daily' ? { dailyDate: metaOptions.dailyDate } : {}),
     },
     setup,
     campaignProgress: nextCampaignProgress,

@@ -1,3 +1,4 @@
+import { DAILY_ASCENSION } from '../../src/game/daily.ts'
 import { deckHash, primeStatsDeck, recordDeckClassification, soloDeck, statsDecks, validDeckType } from './stats.mjs'
 
 const CHARACTERS = new Set(['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'])
@@ -40,6 +41,28 @@ function personalDecks(value) {
   })
 }
 
+const DAY_MS = 86_400_000
+export const DAILY_RANKING_LIMIT = 100
+// A Daily Climb deck is a solo deck; the cap bounds the public ranking payload.
+export const DAILY_MAX_DECK = 200
+// Acts I–IV hold at most 13 + 10 + 9 + 4 map rows plus the Act bosses; the cap leaves margin.
+export const DAILY_MAX_FLOORS = 50
+const utcDay = (time) => new Date(time).toISOString().slice(0, 10)
+/** A real calendar day written as `YYYY-MM-DD`. */
+const isCalendarDay = (day) => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) &&
+  !Number.isNaN(Date.parse(`${day}T00:00:00Z`)) && utcDay(Date.parse(`${day}T00:00:00Z`)) === day
+
+/** A shared-seed Daily Climb is solo, A10 and starts in Act I; its day cannot be ahead of the server. */
+function dailyDate(value, recordedAt) {
+  if (value.dailyDate === undefined) return undefined
+  if (!isCalendarDay(value.dailyDate) || value.dailyDate > utcDay(recordedAt + DAY_MS)) bad('Daily date is invalid')
+  if (value.mode !== 'daily' || value.ascension !== DAILY_ASCENSION || value.startedAtAct !== 1 ||
+      (value.characters ?? [value.character]).length !== 1 ||
+      !Number.isSafeInteger(value.floorsCleared) || value.floorsCleared < 0 || value.floorsCleared > DAILY_MAX_FLOORS ||
+      Array.isArray(value.finalDeck) && value.finalDeck.length > DAILY_MAX_DECK) bad('Daily Climb run is invalid')
+  return value.dailyDate
+}
+
 function characters(value) {
   const party = value.characters ?? [value.character]
   if (!Array.isArray(party) || party.length < 1 || party.length > 4 ||
@@ -52,6 +75,7 @@ export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
   if (typeof value.id !== 'string' || !/^[a-zA-Z0-9:_-]{8,160}$/.test(value.id)) bad('Run id is invalid')
   if (!MODES.has(value.mode)) bad('Run mode is invalid')
   const party = characters(value)
+  const day = dailyDate(value, recordedAt)
   if (value.winningDecks !== undefined && (!Array.isArray(value.winningDecks) || value.winningDecks.length !== party.length ||
       value.winningDecks.some((deck) => !deck || !party.includes(deck.character)))) bad('Winning deck owners do not match the party')
   const run = {
@@ -73,6 +97,7 @@ export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
     floorsCleared: value.floorsCleared == null
       ? null : integer(value.floorsCleared, 'Floor count', 0, 1000),
     recordedAt: integer(recordedAt, 'Recorded time', 0, Number.MAX_SAFE_INTEGER),
+    ...(day === undefined ? {} : { dailyDate: day }),
   }
   primeStatsDeck(run)
   return run
@@ -102,8 +127,13 @@ export function restoreLeaderboardRuns(values) {
   return restored
 }
 
+/** The day a retry may attach to a stored row, only if that row itself is a valid climb of that day. */
+function backfilledDailyDate(stored, day) {
+  try { return dailyDate({ ...stored, dailyDate: day }, stored.recordedAt) } catch { return undefined }
+}
+
 function missingRunDetails(previous, run) {
-  return {
+  const updates = {
     ...(previous.floorsCleared == null && run.floorsCleared != null ? { floorsCleared: run.floorsCleared } : {}),
     ...(previous.finalDeck === undefined && previous.winningDecks === undefined && run.finalDeck !== undefined
       ? { finalDeck: run.finalDeck } : {}),
@@ -111,6 +141,11 @@ function missingRunDetails(previous, run) {
       ? { winningDecks: run.winningDecks, finalDeck: undefined } : {}),
     ...(previous.username === undefined && run.username !== undefined ? { username: run.username } : {}),
   }
+  // A climb first stored by a server that predates the Daily Climb gains its day on retry;
+  // the check runs on the stored row so an old run cannot be moved onto a later board.
+  const day = previous.dailyDate === undefined && run.dailyDate !== undefined
+    ? backfilledDailyDate({ ...previous, ...updates }, run.dailyDate) : undefined
+  return day === undefined ? updates : { ...updates, dailyDate: day }
 }
 
 export function mergeLeaderboardRuns(legacyRuns, archivedRuns, { preferLegacyRuns = false, journalIds = new Set() } = {}) {
@@ -250,6 +285,45 @@ export function leaderboardSnapshot(runs) {
     (right.averageDamagePerFight ?? -1) - (left.averageDamagePerFight ?? -1) ||
     right.runs - left.runs || left.characters.join(',').localeCompare(right.characters.join(',')) || left.ascension - right.ascension)
   return { totalRuns: runs.length, rows }
+}
+
+/**
+ * One day's shared-seed ranking of registered players. A player's first
+ * recorded climb that day is their entry; later attempts cannot replace it.
+ * Ties on floors go to the higher damage per fight, then to the earlier
+ * finish. Ranks are overall; `characters` only narrows the rows returned.
+ */
+export function dailyLeaderboard(runs, date, characters = []) {
+  if (!isCalendarDay(date) || characters.some((character) => !CHARACTERS.has(character))) bad('Invalid daily ranking query')
+  const entries = new Map()
+  for (const run of runs) {
+    // Anonymous rows are unverifiable and trivially repeated, so only names rank.
+    if (run.dailyDate !== date || run.username === undefined) continue
+    const player = run.username.toLowerCase()
+    const current = entries.get(player)
+    if (!current || run.recordedAt < current.recordedAt) entries.set(player, run)
+  }
+  const damagePerFight = (run) => run.damageStatsComplete && run.combatsFinished ? run.damageDealt / run.combatsFinished : null
+  const ranked = [...entries.values()].sort((left, right) =>
+    (right.floorsCleared ?? 0) - (left.floorsCleared ?? 0) ||
+    (damagePerFight(right) ?? -1) - (damagePerFight(left) ?? -1) ||
+    left.recordedAt - right.recordedAt || left.id.localeCompare(right.id))
+  const shown = ranked.map((run, index) => ({ run, rank: index + 1 }))
+    .filter(({ run }) => characters.length === 0 || characters.includes(run.character))
+  return {
+    date,
+    total: shown.length,
+    rows: shown.slice(0, DAILY_RANKING_LIMIT).map(({ run, rank }) => ({
+      rank,
+      username: run.username,
+      character: run.character,
+      floorsCleared: run.floorsCleared ?? 0,
+      averageDamagePerFight: damagePerFight(run),
+      damageBlockedRate: run.damageStatsComplete && run.damageTaken + run.damageBlocked
+        ? run.damageBlocked / (run.damageTaken + run.damageBlocked) : null,
+      cards: run.finalDeck ?? [],
+    })),
+  }
 }
 
 /** Public archive pages expose no installation IDs, profile tokens, or active runs. */

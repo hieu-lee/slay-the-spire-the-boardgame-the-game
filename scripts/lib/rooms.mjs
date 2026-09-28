@@ -407,7 +407,8 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
         room.seats = room.seats.map((seat) => ({ ...seat, connected: false }))
         room.campaignProgress = parseCampaignProgress(room.campaignProgress)
         room.campaignBaseProgress = parseCampaignProgress(room.campaignBaseProgress, room.campaignProgress)
-        room.metaOptions = room.metaOptions && ['standard', 'daily', 'custom'].includes(room.metaOptions.mode)
+        // The Daily Climb is a solo shared-seed run; a lobby saved on Daily reopens on Standard.
+        room.metaOptions = room.metaOptions && ['standard', 'custom'].includes(room.metaOptions.mode)
           ? { mode: room.metaOptions.mode, modifiers: normalizeModifierIds(room.metaOptions.modifiers), quickStartAct: [1, 2, 3, 4].includes(room.metaOptions.quickStartAct) ? room.metaOptions.quickStartAct : 1 }
           : { mode: 'standard', modifiers: [], quickStartAct: 1 }
         room.chooseYourRelic = room.chooseYourRelic === true
@@ -805,7 +806,7 @@ export function chooseRunMeta(room, seatToken, options) {
   if (seat !== room.seats[0]) fail('Only the party leader may change the run mode')
   const mode = options?.mode
   const quickStartAct = options?.quickStartAct
-  if (!['standard', 'daily', 'custom'].includes(mode) || ![1, 2, 3, 4].includes(quickStartAct)) fail('Choose a valid run mode and starting Act')
+  if (!['standard', 'custom'].includes(mode) || ![1, 2, 3, 4].includes(quickStartAct)) fail('Choose a valid run mode and starting Act')
   if (quickStartAct === 4 && room.campaignProgress.actIV < 5) fail('Act IV Quick Start is not unlocked')
   room.metaOptions = { mode, modifiers: mode === 'custom' ? normalizeModifierIds(options.modifiers) : [], quickStartAct }
   room.version += 1

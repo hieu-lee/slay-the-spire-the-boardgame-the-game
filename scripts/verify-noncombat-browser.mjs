@@ -79,8 +79,8 @@ await page.waitForFunction(() => document.querySelectorAll('.start-menu__daily l
 const localDailyModifierCount = await page.locator('.start-menu__daily li').count()
 const localDailyModifierNames = await page.locator('.start-menu__daily strong').allTextContents()
 await page.getByRole('button', { name: 'Continue', exact: true }).click()
+// The Daily Climb always uses the base campaign, so Embark starts it directly.
 await page.getByRole('button', { name: 'Embark' }).click()
-await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 const localDailyRunIds = await page.evaluate(() => window.__STS_DEBUG__.getRun().meta.modifierIds)
 await page.evaluate(() => {

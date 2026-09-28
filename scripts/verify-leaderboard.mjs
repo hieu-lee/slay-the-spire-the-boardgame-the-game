@@ -2,7 +2,7 @@
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addLeaderboardRun, leaderboardSnapshot, normalizeLeaderboardRun, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
+import { addLeaderboardRun, dailyLeaderboard, leaderboardSnapshot, mergeLeaderboardRuns, restoreLeaderboardRuns, normalizeLeaderboardRun, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
 import { createRoom, createStore, joinRoom, saveStore, startRun } from './lib/rooms.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { materializeLeaderboardArchive } from '../infra/validate-room-store.mjs'
@@ -45,6 +45,100 @@ check('submissions are validated at the public boundary', () => {
   assertThrows(() => normalizeLeaderboardRun(run({ winningDecks: [{
     username: 'x'.repeat(25), character: 'ironclad', finalDeck: [],
   }] })))
+})
+
+const daily = (overrides = {}) => run({ mode: 'daily', ascension: 10, dailyDate: '2026-09-28', highestBossActDefeated: 1, ...overrides })
+const dailyTime = Date.parse('2026-09-28T12:00:00Z')
+
+check('Daily Climb submissions must be solo A10 Act I runs on a real, current day', () => {
+  assertEqual(normalizeLeaderboardRun(daily(), dailyTime).dailyDate, '2026-09-28')
+  assertEqual(normalizeLeaderboardRun(daily({ dailyDate: '2026-09-29' }), dailyTime).dailyDate, '2026-09-29')
+  assertThrows(() => normalizeLeaderboardRun(daily({ dailyDate: '2026-09-30' }), dailyTime))
+  assertThrows(() => normalizeLeaderboardRun(daily({ dailyDate: '2026-02-30' }), dailyTime))
+  assertThrows(() => normalizeLeaderboardRun(daily({ dailyDate: 20260928 }), dailyTime))
+  assertThrows(() => normalizeLeaderboardRun(daily({ ascension: 9 }), dailyTime))
+  assertThrows(() => normalizeLeaderboardRun(daily({ mode: 'standard' }), dailyTime))
+  assertThrows(() => normalizeLeaderboardRun(daily({ startedAtAct: 2 }), dailyTime))
+  assertThrows(() => normalizeLeaderboardRun(daily({ characters: ['ironclad', 'silent'] }), dailyTime))
+  assertEqual(normalizeLeaderboardRun(daily({ floorsCleared: 50 }), dailyTime).floorsCleared, 50)
+  assertThrows(() => normalizeLeaderboardRun(daily({ floorsCleared: 51 }), dailyTime))
+  assertThrows(() => normalizeLeaderboardRun(daily({ floorsCleared: null }), dailyTime))
+  const card = { defId: 'strike', upgraded: false }
+  assertEqual(normalizeLeaderboardRun(daily({ finalDeck: Array(200).fill(card) }), dailyTime).finalDeck.length, 200)
+  assertThrows(() => normalizeLeaderboardRun(daily({ finalDeck: Array(201).fill(card) }), dailyTime))
+  assertEqual(normalizeLeaderboardRun(run(), dailyTime).dailyDate, undefined)
+})
+
+check('the daily ranking orders first named climbs by floors, damage, then finish time', () => {
+  const deck = [{ defId: 'strike', upgraded: true }]
+  const runs = [
+    normalizeLeaderboardRun(daily({ id: 'install-a:campaign-1', username: 'Ann', floorsCleared: 12, finalDeck: deck }), dailyTime + 10),
+    normalizeLeaderboardRun(daily({ id: 'install-a:campaign-2', username: 'ann', floorsCleared: 40 }), dailyTime + 20),
+    normalizeLeaderboardRun(daily({ id: 'install-b:campaign-1', username: 'Bo', character: 'silent', floorsCleared: 12, damageDealt: 200 }), dailyTime + 30),
+    normalizeLeaderboardRun(daily({ id: 'install-c:campaign-1', username: 'Cy', floorsCleared: 20, damageStatsComplete: false }), dailyTime + 40),
+    normalizeLeaderboardRun(daily({ id: 'install-d:campaign-1', username: 'Di', floorsCleared: 12 }), dailyTime + 5),
+    normalizeLeaderboardRun(daily({ id: 'install-g:campaign-1', floorsCleared: 50 }), dailyTime + 2),
+    normalizeLeaderboardRun(daily({ id: 'install-e:campaign-1', username: 'Ed', dailyDate: '2026-09-27', floorsCleared: 50 }), dailyTime + 1),
+    normalizeLeaderboardRun(run({ id: 'install-f:campaign-1', username: 'Fa', floorsCleared: 60 }), dailyTime + 1),
+  ]
+  const board = dailyLeaderboard(runs, '2026-09-28')
+  assertEqual(board.total, 4, 'anonymous, other-day, non-daily or repeat climbs were ranked')
+  assertDeepEqual(board.rows.map((row) => [row.rank, row.username, row.floorsCleared]),
+    [[1, 'Cy', 20], [2, 'Bo', 12], [3, 'Di', 12], [4, 'Ann', 12]])
+  assertEqual(board.rows[0].averageDamagePerFight, null)
+  assertEqual(board.rows[1].character, 'silent')
+  assertEqual(board.rows[1].averageDamagePerFight, 20)
+  assertEqual(board.rows[1].damageBlockedRate, 0.7)
+  assertDeepEqual(board.rows[3].cards, deck)
+  assert(!JSON.stringify(board).includes('install-'), 'installation ids leaked into the public ranking')
+  const silent = dailyLeaderboard(runs, '2026-09-28', ['silent'])
+  assertDeepEqual(silent.rows.map((row) => [row.rank, row.username]), [[2, 'Bo']], 'a hero filter renumbered the ranking')
+  assertEqual(silent.total, 1)
+  assertThrows(() => dailyLeaderboard([], 'today'))
+  assertThrows(() => dailyLeaderboard([], '2026-13-45'))
+  assertThrows(() => dailyLeaderboard([], '2026-09-28', ['cheater']))
+})
+
+check('a Daily Climb keeps its day through a store restart and archive merge', () => {
+  const saved = JSON.parse(JSON.stringify([normalizeLeaderboardRun(daily({ id: 'restore-a:campaign-1', username: 'Ann' }), dailyTime)]))
+  const [restored] = restoreLeaderboardRuns(saved)
+  assertEqual(restored.dailyDate, '2026-09-28')
+  const [merged] = mergeLeaderboardRuns([{ ...restored, dailyDate: undefined }], [restored])
+  assertEqual(merged.dailyDate, '2026-09-28')
+  assertEqual(dailyLeaderboard([merged], '2026-09-28').rows[0].username, 'Ann')
+})
+
+check('a climb stored without its day by an older server gains it on retry', () => {
+  const store = { leaderboardRuns: [], leaderboardRevision: 0 }
+  const climb = daily({ id: 'skew-a:campaign-1', username: 'Ann' })
+  const { dailyDate: _, ...withoutDay } = climb
+  addLeaderboardRun(store, withoutDay, dailyTime)
+  assertEqual(dailyLeaderboard(store.leaderboardRuns, '2026-09-28').total, 0)
+  assertEqual(addLeaderboardRun(store, climb, dailyTime + 60_000), true, 'the retry did not add the day')
+  assertEqual(store.leaderboardRuns.length, 1)
+  assertEqual(store.leaderboardRuns[0].recordedAt, dailyTime, 'the retry replaced the first finish time')
+  assertEqual(dailyLeaderboard(store.leaderboardRuns, '2026-09-28').rows[0]?.username, 'Ann')
+})
+
+check('a retry cannot move an old or non-daily run onto a daily board', () => {
+  const store = { leaderboardRuns: [], leaderboardRevision: 0 }
+  addLeaderboardRun(store, run({ id: 'skew-b:campaign-1', username: 'Bo', ascension: 0, floorsCleared: 900 }), Date.parse('2026-08-01T12:00:00Z'))
+  addLeaderboardRun(store, run({ id: 'skew-b:campaign-2', username: 'Bo', mode: 'daily', ascension: 10, floorsCleared: 20 }), Date.parse('2026-08-01T12:00:00Z'))
+  for (const id of ['skew-b:campaign-1', 'skew-b:campaign-2']) {
+    addLeaderboardRun(store, daily({ id, username: 'Bo', floorsCleared: 1 }), dailyTime)
+  }
+  assertEqual(dailyLeaderboard(store.leaderboardRuns, '2026-09-28').total, 0, 'an old run was planted on today\'s board')
+  assert(store.leaderboardRuns.every((entry) => entry.dailyDate === undefined))
+  assertEqual(restoreLeaderboardRuns(JSON.parse(JSON.stringify(store.leaderboardRuns))).length, 2, 'a rejected backfill made a stored row unrestorable')
+})
+
+check('a hero filter reaches climbs beyond the overall top 100', () => {
+  const crowd = Array.from({ length: 120 }, (_, index) => normalizeLeaderboardRun(daily({
+    id: `crowd-${index}:campaign-1`, username: `Climber${index}`, character: index === 119 ? 'watcher' : 'ironclad', floorsCleared: 50 - Math.floor(index / 3),
+  }), dailyTime + index))
+  const board = dailyLeaderboard(crowd, '2026-09-28', ['watcher'])
+  assertDeepEqual(board.rows.map((row) => [row.rank, row.username]), [[120, 'Climber119']])
+  assertEqual(dailyLeaderboard(crowd, '2026-09-28').rows.length, 100)
 })
 
 check('losing submissions retain their final deck for future result views', () => {
@@ -390,6 +484,44 @@ try {
       assert(response.rows.some((row) => row.character === 'silent' && row.act4Wins === 1))
       assertEqual(service.store.leaderboardRuns.find((run) => run.id === 'browser-1234:campaign-2').winningDecks, undefined)
     })
+
+    const today = new Date().toISOString().slice(0, 10)
+    const climber = crypto.randomUUID()
+    await fetch(`${origin}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'DailyEndpoint', token: climber }) })
+    const dailyAccepted = await submit(daily({ id: 'daily-install:campaign-9', dailyDate: today, floorsCleared: 17, profileToken: climber }))
+    const dailyAcceptedBody = await dailyAccepted.clone().json()
+    const dailyInvalid = await submit(daily({ id: 'daily-install:campaign-10', dailyDate: today, ascension: 3 }))
+    const dailyBoard = await fetch(`${origin}/api/leaderboard/daily?date=${today}`).then((value) => value.json())
+    const dailyBadDate = await fetch(`${origin}/api/leaderboard/daily?date=nope`)
+    const dailyBadQuery = await fetch(`${origin}/api/leaderboard/daily?date=${today}&cursor=1`)
+    const dailyFiltered = await fetch(`${origin}/api/leaderboard/daily?date=${today}&character=silent`).then((value) => value.json())
+    // The public write limit is spent above; the store path is what the POST handler calls.
+    addLeaderboardRun(service.store, daily({ id: 'daily-rival:campaign-1', username: 'DailyRival', character: 'silent', dailyDate: today, floorsCleared: 30 }))
+    const dailyRefreshed = await fetch(`${origin}/api/leaderboard/daily?date=${today}&character=silent&character=ironclad`).then((value) => value.json())
+    const dailyReordered = await fetch(`${origin}/api/leaderboard/daily?date=${today}&character=ironclad&character=silent&character=silent`).then((value) => value.json())
+    const dailyImpossible = await fetch(`${origin}/api/leaderboard/daily?date=2026-13-45`)
+    check('the daily ranking endpoint serves the requested day', () => {
+      assertEqual(dailyAccepted.status, 201)
+      assertEqual(dailyInvalid.status, 400)
+      assertEqual(dailyBoard.date, today)
+      assertDeepEqual(dailyBoard.rows.map((row) => [row.rank, row.username, row.floorsCleared]), [[1, 'DailyEndpoint', 17]])
+      assertEqual(dailyBadDate.status, 400)
+      assertEqual(dailyBadQuery.status, 400)
+      assertDeepEqual(dailyFiltered.rows, [])
+      assertDeepEqual(dailyRefreshed.rows.map((row) => [row.rank, row.username]), [[1, 'DailyRival'], [2, 'DailyEndpoint']], 'a new climb did not refresh the cached day')
+      assertDeepEqual(dailyReordered, dailyRefreshed)
+      assertEqual(dailyImpossible.status, 400)
+      assertEqual(dailyAcceptedBody.dailyDateAccepted, true, 'the client cannot tell this server keeps the day')
+    })
+    let dailyLimited
+    for (let read = 0; read < 30 && dailyLimited?.status !== 429; read += 1) dailyLimited = await fetch(`${origin}/api/leaderboard/daily?date=${today}`)
+    const decksAfterDailyLimit = await fetch(`${origin}/api/leaderboard/decks`)
+    check('daily ranking reads have their own rate limit', () => {
+      assertEqual(dailyLimited.status, 429)
+      assertEqual(decksAfterDailyLimit.status, 200, 'spending daily reads locked out Winning decks')
+    })
+    service.store.leaderboardRuns = service.store.leaderboardRuns.filter((entry) => !entry.dailyDate)
+    service.store.leaderboardRevision += 1
 
     const room = createRoom(service.store, { code: 'LOGRUN' })
     const leader = joinRoom(room, { name: 'Ann', character: 'silent' })

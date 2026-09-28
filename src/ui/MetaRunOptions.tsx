@@ -6,7 +6,8 @@ export type MetaRunAct = 1 | QuickStartAct
 
 export type MetaRunOptionsProps = {
   mode: MetaRunMode
-  dailyModifiers: readonly DailyModifier[]
+  /** Today's Daily Climb modifiers; the Daily Climb is chosen from the solo menu. */
+  dailyModifiers?: readonly DailyModifier[]
   customModifierIds: readonly DailyModifierId[]
   quickStartAct: MetaRunAct
   actIVUnlocked: boolean
@@ -15,11 +16,12 @@ export type MetaRunOptionsProps = {
   onQuickStartActChange: (act: MetaRunAct) => void
   expanded?: boolean
   showMode?: boolean
+  showStartingAct?: boolean
 }
 
 export function MetaRunOptions({
   mode,
-  dailyModifiers,
+  dailyModifiers = [],
   customModifierIds,
   quickStartAct,
   actIVUnlocked,
@@ -28,6 +30,7 @@ export function MetaRunOptions({
   onQuickStartActChange,
   expanded = false,
   showMode = true,
+  showStartingAct = true,
 }: MetaRunOptionsProps) {
   return <details className="start-menu__meta" open={expanded}>
     <summary>Run mode · {mode === 'daily' ? 'Daily Climb' : mode === 'custom' ? 'Custom' : 'Standard'}</summary>
@@ -37,13 +40,12 @@ export function MetaRunOptions({
       <select aria-label="Run mode" value={mode}
         onChange={(event) => onModeChange(event.target.value as MetaRunMode)}>
         <option value="standard">Standard</option>
-        <option value="daily">Daily Climb</option>
         <option value="custom">Custom Run</option>
       </select>
     </label> : null}
 
     {mode === 'daily' ? <section className="start-menu__daily" aria-label="Daily Climb modifiers">
-      <p>{dailyModifiers.length ? 'One modifier from each section affects the whole party.' : 'The server rolls one modifier from each section when the run starts.'}</p>
+      <p>One modifier from each section affects the whole run.</p>
       <ul>{dailyModifiers.map((modifier) => <li key={modifier.id}>
         <strong>{modifier.name}</strong> — {modifier.rule}
       </li>)}</ul>
@@ -58,7 +60,7 @@ export function MetaRunOptions({
       </label>)}
     </fieldset> : null}
 
-    <label>
+    {showStartingAct ? <><label>
       Starting Act
       <select aria-label="Starting Act" value={quickStartAct}
         onChange={(event) => onQuickStartActChange(Number(event.target.value) as MetaRunAct)}>
@@ -70,7 +72,7 @@ export function MetaRunOptions({
     </label>
     {quickStartAct > 1 ? <p className="start-menu__quick-start-note">
       Resolve the official Quick Start rewards from top to bottom, one at a time. New players who Catch Up at the start of an Act use the same table; only they visit the Merchant.
-    </p> : null}
+    </p> : null}</> : null}
     </div>
   </details>
 }

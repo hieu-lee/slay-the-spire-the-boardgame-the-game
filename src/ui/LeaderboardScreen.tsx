@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { assetPath } from '../game/assets.ts'
 import type { CharacterId } from '../game/types.ts'
 import { loadLeaderboard, type LeaderboardSnapshot } from '../leaderboard.ts'
+import { DailyLeaderboard } from './DailyLeaderboard.tsx'
 import { WinningDecks } from './WinningDecks.tsx'
 import { CHARACTER_LABEL } from './run-summary-data.ts'
 
@@ -12,7 +13,7 @@ const decimal = (value: number | null | undefined) => value == null ? '—' : va
 const partyOf = (row: { character: CharacterId; characters?: CharacterId[] }) => row.characters ?? [row.character]
 
 export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
-  const [tab, setTab] = useState<'statistics' | 'decks'>('statistics')
+  const [tab, setTab] = useState<'statistics' | 'decks' | 'daily'>('statistics')
   const [filters, setFilters] = useState<CharacterId[]>([])
   const [ascension, setAscension] = useState<number | 'all'>('all')
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null)
@@ -30,7 +31,8 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
   const rows = useMemo(() => (snapshot?.rows ?? [])
     .filter((row) => filters.every((filter) => partyOf(row).includes(filter)) &&
       (ascension === 'all' || row.ascension === ascension)), [ascension, filters, snapshot])
-  const filterTitle = filters.length === 0 ? 'All heroes' : tab === 'decks'
+  const filterTitle = tab === 'daily' ? `Daily Climb${filters.length ? ` · ${filters.map((filter) => CHARACTER_LABEL[filter]).join(' or ')}` : ''}`
+    : filters.length === 0 ? 'All heroes' : tab === 'decks'
     ? filters.map((filter) => CHARACTER_LABEL[filter]).join(' or ')
     : `Parties with ${filters.map((filter) => CHARACTER_LABEL[filter]).join(' + ')}`
 
@@ -49,21 +51,22 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
             <img src={assetPath(`menu/compendium-icons/${character}.webp`)} alt="" />
           </button>)}
         </div>
-        <label className="leaderboard__ascension"><span className="visually-hidden">Ascension</span><select value={ascension}
+        {tab !== 'daily' ? <label className="leaderboard__ascension"><span className="visually-hidden">Ascension</span><select value={ascension}
           onChange={(event) => setAscension(event.target.value === 'all' ? 'all' : Number(event.target.value))}>
           <option value="all">All ascensions</option>
           {Array.from({ length: 14 }, (_, value) => <option key={value} value={value}>Ascension {value}</option>)}
-        </select></label>
+        </select></label> : null}
         <div className="leaderboard__tabs" role="group" aria-label="Leaderboard view">
           <button type="button" aria-pressed={tab === 'statistics'} onClick={() => setTab('statistics')}>Win rates</button>
           <button type="button" aria-pressed={tab === 'decks'} onClick={() => setTab('decks')}>Winning decks</button>
+          <button type="button" className="leaderboard__daily-tab" aria-pressed={tab === 'daily'} onClick={() => setTab('daily')}>Daily Climb</button>
         </div>
-        <p className="leaderboard__count"><strong>{snapshot?.totalRuns ?? 0}</strong><span>run{snapshot?.totalRuns === 1 ? '' : 's'}</span></p>
+        {tab !== 'daily' ? <p className="leaderboard__count"><strong>{snapshot?.totalRuns ?? 0}</strong><span>run{snapshot?.totalRuns === 1 ? '' : 's'}</span></p> : null}
       </aside>
 
       <section className="leaderboard__archive menu-board" aria-labelledby="leaderboard-title">
-        <header><h2 id="leaderboard-title">{filterTitle}{ascension === 'all' ? '' : ` · A${ascension}`}</h2></header>
-        {tab === 'decks' ? <WinningDecks characters={filters} ascension={ascension} /> : failed ? <div className="leaderboard__message" role="alert"><strong>Archive unreachable</strong><button type="button" onClick={() => setRequest((value) => value + 1)}>Try again</button></div>
+        <header><h2 id="leaderboard-title">{filterTitle}{ascension === 'all' || tab === 'daily' ? '' : ` · A${ascension}`}</h2></header>
+        {tab === 'daily' ? <DailyLeaderboard characters={filters} /> : tab === 'decks' ? <WinningDecks characters={filters} ascension={ascension} /> : failed ? <div className="leaderboard__message" role="alert"><strong>Archive unreachable</strong><button type="button" onClick={() => setRequest((value) => value + 1)}>Try again</button></div>
           : !snapshot ? <div className="leaderboard__message" aria-live="polite"><span className="leaderboard__spinner" aria-hidden="true"></span><strong>Loading…</strong></div>
           : rows.length === 0 ? <div className="leaderboard__message"><strong>No runs yet</strong></div>
           : <div className="leaderboard__table-wrap"><table>

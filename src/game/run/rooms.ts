@@ -598,6 +598,9 @@ export function advanceAct(state: RunState): RunState {
 export function finishRun(state: RunState): RunState {
   if ((state.phase !== 'victory' && state.phase !== 'defeat') || state.campaign.finalized ||
     hasPendingRelicAcquisition(state)) return state
+  // A Daily Climb is played on a shared, fully unlocked baseline and never
+  // feeds the player's campaign journal.
+  if (state.meta.dailyDate !== undefined) return { ...state, campaign: { ...state.campaign, finalized: true } }
   const campaignProgress = finishCampaign(state.campaignProgress, {
     runId: state.campaign.runId,
     characters: state.players.map((player) => player.character),

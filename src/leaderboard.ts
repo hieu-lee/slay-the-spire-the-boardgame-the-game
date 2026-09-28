@@ -41,6 +41,7 @@ type LeaderboardSubmission = {
   damageTaken: number
   damageBlocked: number
   floorsCleared?: number
+  dailyDate?: string
 }
 
 let fallbackOutbox: LeaderboardSubmission[] = []
@@ -97,6 +98,7 @@ export function queueFinishedSoloRun(run: RunState) {
     ...(run.floorsCleared === undefined ? {} : {
       floorsCleared: Math.max(0, Math.floor(run.floorsCleared)),
     }),
+    ...(run.meta.dailyDate ? { dailyDate: run.meta.dailyDate } : {}),
   }
   const queued = readOutbox()
   const existing = queued.findIndex((entry) => entry.id === submission.id)
@@ -141,8 +143,10 @@ async function flush() {
           continue
         }
         if (!response.ok) throw new Error('Leaderboard submission failed')
-        const acknowledged = await response.json().catch(() => null) as { floorsClearedAccepted?: boolean; finalDeckAccepted?: boolean; profileAccepted?: boolean } | null
+        const acknowledged = await response.json().catch(() => null) as { floorsClearedAccepted?: boolean; finalDeckAccepted?: boolean; profileAccepted?: boolean; dailyDateAccepted?: boolean } | null
+        // An older server would store a climb without its day, so it could never rank.
         if (run.floorsCleared !== undefined && acknowledged?.floorsClearedAccepted !== true ||
+            run.dailyDate !== undefined && acknowledged?.dailyDateAccepted !== true ||
             run.finalDeck !== undefined && acknowledged?.finalDeckAccepted !== true ||
             run.profileToken !== undefined && acknowledged?.profileAccepted !== true) {
           resetRoomEndpoint()
@@ -182,6 +186,49 @@ export async function loadLeaderboard(): Promise<LeaderboardSnapshot> {
     }
   }
   throw new Error('Leaderboard unavailable')
+}
+
+export type DailyClimbRow = {
+  rank: number
+  username: string
+  character: CharacterId
+  floorsCleared: number
+  averageDamagePerFight: number | null
+  damageBlockedRate: number | null
+  cards: Omit<CardInstance, 'uid'>[]
+}
+export type DailyClimbBoard = { date: string; total: number; rows: DailyClimbRow[] }
+
+/** The server answered but declined: a 429 rate limit, a 404 from a server without the ranking, or a bad query. */
+export class DailyRankingRefused extends Error {
+  readonly reason: 'rateLimited' | 'notDeployed' | 'rejected'
+  constructor(status: number) {
+    super('Daily ranking unavailable')
+    this.reason = status === 429 ? 'rateLimited' : status === 404 ? 'notDeployed' : 'rejected'
+  }
+}
+
+/** `characters` narrows the rows; ranks stay those of the whole day. */
+export async function loadDailyLeaderboard(date: string, characters: readonly CharacterId[]): Promise<DailyClimbBoard> {
+  // A climb queued moments ago may still be uploading; wait for it without starting another flush.
+  await flushing?.catch(() => undefined)
+  const query = new URLSearchParams({ date })
+  characters.forEach((character) => query.append('character', character))
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const endpoint = await roomUrl(`/api/leaderboard/daily?${query}`)
+      const response = await fetch(endpoint, { cache: 'no-store', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      // A rate limit or bad query is an answer from a live server; retrying only burns quota.
+      if ([400, 404, 429].includes(response.status)) throw new DailyRankingRefused(response.status)
+      if (!response.ok) throw new Error('Daily ranking unavailable')
+      return await response.json() as DailyClimbBoard
+    } catch (error) {
+      if (error instanceof DailyRankingRefused) throw error
+      resetRoomEndpoint()
+      if (attempt === 1) throw error
+    }
+  }
+  throw new Error('Daily ranking unavailable')
 }
 
 export type WinningDeckSort = 'character' | 'ascension' | 'cardCount' | 'username' | 'recordedAt'

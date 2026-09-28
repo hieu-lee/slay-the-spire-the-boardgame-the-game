@@ -37,6 +37,8 @@ export type RunMetaOptions = Readonly<{
   ruleset?: RuleSet
   /** Bosses and Events; older saves fall back to ruleset. */
   campaign?: RuleSet
+  /** The UTC day of a shared-seed solo Daily Climb; see `daily.ts`. */
+  dailyDate?: string
 }>
 
 export type RunMetaState = Readonly<{
@@ -46,6 +48,8 @@ export type RunMetaState = Readonly<{
   ruleset?: RuleSet
   /** Bosses and Events; older saves fall back to ruleset. */
   campaign?: RuleSet
+  /** Present only on a shared-seed solo Daily Climb. */
+  dailyDate?: string
 }>
 
 /** Downfall content is mandatory for a party containing a Downfall character. */

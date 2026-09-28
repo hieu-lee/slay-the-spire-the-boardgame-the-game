@@ -178,6 +178,20 @@ check('a persisted legacy end-turn order resets safely into the drag flow', () =
   }
 })
 
+check('a lobby saved on the retired room Daily Climb reopens on Standard', () => {
+  const room = createRoom(createStore(), { code: 'DAILYL' })
+  joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  const saved = { ...structuredClone(room), metaOptions: { mode: 'daily', modifiers: [], quickStartAct: 2 } }
+  const directory = mkdtempSync(join(tmpdir(), 'sts-legacy-daily-'))
+  const file = join(directory, 'rooms.json')
+  try {
+    writeFileSync(file, JSON.stringify({ rooms: [saved] }))
+    assertDeepEqual(createStore({ file }).rooms.get(room.code).metaOptions, { mode: 'standard', modifiers: [], quickStartAct: 1 })
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 check('a persisted legacy Loop target auto-selects its only Orb before rebuilding the copied effect', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) player.hand = []
@@ -12970,6 +12984,9 @@ check('only the leader configures official run modes and Quick Start reconnects 
   try { startRun(room, guest.token, { seed: 913 }) } catch (error) { denied = error }
   assertEqual(denied?.name, 'RoomError')
   assertEqual(room.phase, 'lobby', 'a guest started the run')
+  denied = undefined
+  try { chooseRunMeta(room, leader.token, { mode: 'daily', modifiers: [], quickStartAct: 1 }) } catch (error) { denied = error }
+  assertEqual(denied?.name, 'RoomError', 'the solo shared-seed Daily Climb was offered to a room')
   chooseRunMeta(room, leader.token, { mode: 'custom', modifiers: ['cursed', 'bogus'], quickStartAct: 2 })
   startRun(room, leader.token, { seed: 913 })
   assertDeepEqual(room.run.meta.modifierIds, ['cursed'])

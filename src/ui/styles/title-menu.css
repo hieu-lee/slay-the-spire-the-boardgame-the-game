@@ -260,6 +260,7 @@
 
 .start-menu__run-options > h1 { margin: 0; color: #f5cf62; font-size: clamp(2rem, 4vw, 3.7rem); text-shadow: 0 3px 2px #20130d, 0 0 10px #000; }
 .start-menu__run-options > p { margin: 0; color: #d9e5e8; }
+.start-menu__run-options > .start-menu__daily-played { color: #f5cf62; font-weight: 700; }
 .start-menu__run-options .start-menu__meta { display: block; width: min(42rem, 100%); min-height: 0; align-self: stretch; }
 .start-menu__run-options .start-menu__meta > summary { display: none; }
 .start-menu__run-options .start-menu__meta-panel { position: absolute; inset: 0; width: auto; min-height: 0; max-height: none; height: auto; box-sizing: border-box; overflow-y: auto; }

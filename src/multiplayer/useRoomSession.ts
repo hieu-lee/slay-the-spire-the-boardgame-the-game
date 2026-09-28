@@ -169,7 +169,7 @@ export type RoomSnapshot = {
   ascension: number
   chooseYourRelic: boolean
   lastStand: boolean
-  metaOptions: { mode: 'standard' | 'daily' | 'custom'; modifiers: DailyModifierId[]; quickStartAct: 1 | 2 | 3 | 4 }
+  metaOptions: { mode: 'standard' | 'custom'; modifiers: DailyModifierId[]; quickStartAct: 1 | 2 | 3 | 4 }
   version: number
   you: PublicSeat
   seats: PublicSeat[]

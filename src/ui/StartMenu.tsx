@@ -3,6 +3,7 @@ import { assetPath, isPreloadedImageDecoded, preloadImages, releasePreloadedImag
 import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
 import { relicDef, STARTING_RELIC } from '../game/relics.ts'
 import { ASCENSION_RULES } from '../game/run.ts'
+import { DAILY_ASCENSION } from '../game/daily.ts'
 import type { CharacterId } from '../game/types.ts'
 import { CampaignSelect } from './CampaignSelect.tsx'
 import { MailBox } from './MailBox.tsx'
@@ -22,6 +23,10 @@ type StartMenuProps = {
   customModifierIds: readonly DailyModifierId[]
   quickStartAct: 1 | 2 | 3 | 4
   actIVUnlocked: boolean
+  /** Today's shared-seed Daily Climb has already been started on this device. */
+  dailyPlayed?: boolean
+  /** Embark found a new UTC day; today's seed is ready once the player confirms again. */
+  dailyTurned?: boolean
   onCharacter: (seat: number, character: CharacterId) => void
   onAscension: (ascension: number) => void
   onMode: (mode: RunMode) => void
@@ -109,6 +114,8 @@ export function StartMenu({
   customModifierIds,
   quickStartAct,
   actIVUnlocked,
+  dailyPlayed = false,
+  dailyTurned = false,
   onCharacter,
   onAscension,
   onMode,
@@ -149,6 +156,9 @@ export function StartMenu({
   const [replayPrompt, setReplayPrompt] = useState('Give your run to me')
   const [replayDragging, setReplayDragging] = useState(false)
   const [replayTransition, setReplayTransition] = useState(false)
+  // A Daily Climb always uses the base campaign at a fixed Ascension.
+  const daily = mode === 'daily' && !tutorialSetup
+  const shownAscension = daily ? DAILY_ASCENSION : ascension
   const startingRelic = STARTING_RELIC[hero.id]
   const special = startingRelic ? relicDef(startingRelic) : null
   useEffect(() => {
@@ -337,7 +347,7 @@ export function StartMenu({
 
       {screen === 'custom' || screen === 'daily' ? <section className="start-menu__run-options" aria-labelledby="run-options-title">
         <h1 id="run-options-title">{screen === 'daily' ? 'Daily Climb' : 'Customize your run'}</h1>
-        <p>{screen === 'daily' ? "Today's modifiers are fixed for this challenge." : 'Choose modifiers and where your run begins.'}</p>
+        <p>{screen === 'daily' ? `Everyone climbs today's shared seed at Ascension ${DAILY_ASCENSION}. Your first recorded climb of the day is ranked by floors reached.` : 'Choose modifiers and where your run begins.'}</p>
         <MetaRunOptions
           mode={mode}
           dailyModifiers={dailyModifiers}
@@ -349,14 +359,16 @@ export function StartMenu({
           onQuickStartActChange={onQuickStartAct}
           expanded
           showMode={false}
+          showStartingAct={screen !== 'daily'}
         />
+        {screen === 'daily' && dailyPlayed ? <p className="start-menu__daily-played" role="status">You have already climbed today. A new seed arrives at 00:00 UTC.</p> : null}
         <footer>
           <button type="button" className="ribbon-back" aria-label="Back" onClick={() => {
             characterLoad.current += 1
             setPreparingCharacter(false)
             setScreen('mode')
           }}><span aria-hidden="true"></span></button>
-          <button type="button" disabled={preparingCharacter} onClick={startCharacterSelection}>Continue</button>
+          <button type="button" disabled={preparingCharacter || screen === 'daily' && dailyPlayed} onClick={startCharacterSelection}>Continue</button>
         </footer>
       </section> : null}
 
@@ -367,15 +379,17 @@ export function StartMenu({
           <h1 id="character-select-title">{hero.name}</h1>
           <p>{HERO_COPY[hero.id]}</p>
           {special ? <p className="start-menu__character-special"><strong>{special.name}</strong> · {special.text}</p> : null}
+          {daily && dailyPlayed ? <p className="start-menu__character-special" role="status">You have already climbed today. A new seed arrives at 00:00 UTC.</p>
+            : daily && dailyTurned ? <p className="start-menu__character-special" role="status">A new day has begun. Embark again to climb today's seed.</p> : null}
         </div>
         {!tutorialSetup ? <section className="start-menu__ascension" aria-label="Ascension">
-          <button type="button" aria-label="Decrease Ascension" disabled={ascension === 0}
+          <button type="button" aria-label="Decrease Ascension" disabled={daily || shownAscension === 0}
             onClick={() => onAscension(ascension - 1)}>‹</button>
           <div>
-            <span className="start-menu__ascension-level" aria-hidden="true"><span>{ascension}</span></span>
-            <p><strong>Ascension {ascension}</strong><span>{ASCENSION_RULES[ascension]}</span></p>
+            <span className="start-menu__ascension-level" aria-hidden="true"><span>{shownAscension}</span></span>
+            <p><strong>Ascension {shownAscension}{daily ? ' · Daily Climb' : ''}</strong><span>{ASCENSION_RULES[shownAscension]}</span></p>
           </div>
-          <button type="button" aria-label="Increase Ascension" disabled={ascension === maxAscension}
+          <button type="button" aria-label="Increase Ascension" disabled={daily || shownAscension === maxAscension}
             onClick={() => onAscension(ascension + 1)}>›</button>
         </section> : null}
         <div className="start-menu__character-roster" aria-label="Characters">
@@ -395,8 +409,8 @@ export function StartMenu({
           onClick={() => { returnToMain(); onCharacterBack() }}><span aria-hidden="true"></span></button>
         {tutorialSetup ? <button type="button" className="start-menu__character-embark" aria-label="Start tutorial" title="Start tutorial"
           disabled={embarking} onClick={() => { setEmbarking(true); onTutorial() }}><span aria-hidden="true">✓</span></button>
-          : <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" disabled={embarking}
-          aria-busy={embarking || undefined} onClick={startCampaign}><span aria-hidden="true">✓</span></button>}
+          : <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" disabled={embarking || daily && dailyPlayed}
+          aria-busy={embarking || undefined} onClick={daily ? () => onStart('base') : startCampaign}><span aria-hidden="true">✓</span></button>}
       </section> : null}
       {screen === 'character' && preparingCharacter ? <section className="start-menu__character-select start-menu__character-loading"
         aria-label="Preparing character selection" aria-busy="true">

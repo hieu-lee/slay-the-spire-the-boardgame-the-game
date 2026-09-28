@@ -530,7 +530,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
               <fieldset disabled={!connected || !isPartyLeader} className="online-lobby__meta">
                 <MetaRunOptions
                   mode={snapshot.metaOptions.mode}
-                  dailyModifiers={[]}
                   customModifierIds={snapshot.metaOptions.modifiers}
                   quickStartAct={snapshot.metaOptions.quickStartAct}
                   actIVUnlocked={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES}

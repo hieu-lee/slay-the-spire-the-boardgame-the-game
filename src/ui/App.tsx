@@ -64,6 +64,8 @@ import { isActIVUnlocked } from '../game/campaign.ts'
 import { allocateSharedMarks, canEnterActIV } from '../game/campaign.ts'
 import type { CampaignProgress } from '../game/campaign.ts'
 import { CAMPAIGN_KEY, savedCampaign } from '../campaign-storage.ts'
+import { dailySeedText } from '../game/daily.ts'
+import { useUtcDay } from './useUtcDay.ts'
 import { eventCanStartCombat } from '../game/events.ts'
 import { MapScreen } from './MapScreen.tsx'
 import { MapOverlay } from './MapOverlay.tsx'
@@ -142,6 +144,15 @@ const ROSTER: { character: CharacterId; name: string }[] = [
 const DEFAULT_CHARACTERS = ROSTER.map((entry) => entry.character)
 
 const SOLO_RUN_KEY = 'sts-solo-run'
+const DAILY_ATTEMPT_KEY = 'sts-daily-climb-attempt'
+
+function savedDailyAttempt(): string | null {
+  try { return localStorage.getItem(DAILY_ATTEMPT_KEY) } catch { return null }
+}
+
+function rememberDailyAttempt(date: string) {
+  try { localStorage.setItem(DAILY_ATTEMPT_KEY, date) } catch { /* Storage is unavailable. */ }
+}
 
 type BuiltRun = {
   count: number
@@ -206,12 +217,18 @@ function savedSoloRun(): SoloRunSave | null {
       (built.meta.quickStartAct === undefined || [1, 2, 3, 4].includes(built.meta.quickStartAct)) &&
       (built.meta.ruleset === undefined || built.meta.ruleset === 'base' || built.meta.ruleset === 'downfall') &&
       (built.meta.campaign === undefined || built.meta.campaign === 'base' || built.meta.campaign === 'downfall') &&
+      (built.meta.dailyDate === undefined || typeof built.meta.dailyDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(built.meta.dailyDate)) &&
       resumablePhase(run)
-      ? { ...saved as SoloRunSave, run: completed ? run as RunState : resumeNeow(run as RunState) }
+      ? { ...saved as SoloRunSave, built: legacyDailyAsStandard(built as BuiltRun), run: completed ? run as RunState : resumeNeow(run as RunState) }
       : null
   } catch {
     return null
   }
+}
+
+/** A save from before the shared-seed Daily Climb cannot rebuild a daily run without its day. */
+function legacyDailyAsStandard(built: BuiltRun): BuiltRun {
+  return built.meta.mode === 'daily' && !built.meta.dailyDate ? { ...built, meta: { ...built.meta, mode: 'standard' } } : built
 }
 
 function legalCharacters(selected: readonly CharacterId[]): CharacterId[] {
@@ -234,14 +251,24 @@ function newRun(playerCount: number, seedText: string, ascension = 0, progress =
   return createRun(seedFromString(seedText), party, Math.min(ascension, progress.highestAscension), progress, chooseYourRelic, lastStand, meta)
 }
 
+// The last journal whose storage write failed; storage stays the source of truth otherwise,
+// so another tab's newer journal is never overwritten from memory.
+let unsavedJournal: CampaignProgress | null = null
+
+/** The player's own journal; a Daily Climb runs on a shared baseline instead. */
 function campaignBeforeCurrentRun(run: RunState): CampaignProgress {
+  if (run.meta.dailyDate !== undefined) {
+    // The climb still used a run number, so the next run must not reuse its id.
+    const journal = unsavedJournal ?? savedCampaign()
+    return { ...journal, nextRunNumber: Math.max(journal.nextRunNumber, run.campaignProgress.nextRunNumber) }
+  }
   return !run.campaign.finalized
     ? { ...run.campaignProgress, nextRunNumber: Math.max(0, run.campaignProgress.nextRunNumber - 1) }
     : run.campaignProgress
 }
 
 function campaignBeforePendingRun(run: RunState): CampaignProgress {
-  return !run.campaign.finalized && run.campaignProgress.unspentMarks > 0
+  return run.meta.dailyDate !== undefined || !run.campaign.finalized && run.campaignProgress.unspentMarks > 0
     ? campaignBeforeCurrentRun(run)
     : run.campaignProgress
 }
@@ -571,8 +598,21 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const { available: runLogAvailable, discard: discardLog, load: loadRunLog } = useRunLog(
     run, active && open && !replayLog && !tutorial, viewerId,
   )
-  const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
-  const metaOptions: RunMetaOptions = { mode, modifiers: customModifierIds, quickStartAct }
+  const [today, refreshToday] = useUtcDay()
+  const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(dailySeedText(today)))).modifiers, [today])
+  const [dailyPlayedOn, setDailyPlayedOn] = useState(savedDailyAttempt)
+  // Set when Embark found the UTC day had turned since the menu was drawn.
+  const [dailyTurned, setDailyTurned] = useState(false)
+  useEffect(() => {
+    // Another tab that takes today's climb locks this one at once.
+    const sync = (event: StorageEvent) => { if (event.key === DAILY_ATTEMPT_KEY || event.key === null) setDailyPlayedOn(savedDailyAttempt()) }
+    window.addEventListener('storage', sync)
+    return () => window.removeEventListener('storage', sync)
+  }, [])
+  // For a Daily Climb this reads the stored journal, which only the persist effect writes, from `run`.
+  const playerProgress = useMemo(() => campaignBeforeCurrentRun(run), [run.campaignProgress, run.campaign.finalized, run.meta.dailyDate])
+  // The engine fixes a Daily Climb's seed, Ascension and setup from its day.
+  const metaOptions: RunMetaOptions = mode === 'daily' ? { mode, dailyDate: today } : { mode, modifiers: customModifierIds, quickStartAct }
   const canGiveUp = canGiveUpRun(run, run.campaignProgress)
 
   /** The settings the run in progress was actually built from. */
@@ -585,14 +625,17 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   const resumeSoloRun = () => {
     if (!resume) return
-    setSeedText(resume.built.seed)
-    setAscension(resume.built.ascension)
+    // A Daily Climb's seed, Ascension and setup are fixed, not the player's menu choices.
+    if (resume.built.meta.dailyDate === undefined) {
+      setSeedText(resume.built.seed)
+      setAscension(resume.built.ascension)
+      setCustomModifierIds([...(resume.built.meta.modifiers ?? [])])
+      setQuickStartAct(resume.built.meta.quickStartAct ?? 1)
+    }
     setCharacters(resume.built.characters)
     setChooseYourRelic(resume.built.chooseYourRelic)
     setLastStand(resume.built.lastStand)
     setMode(resume.built.meta.mode ?? 'standard')
-    setCustomModifierIds([...(resume.built.meta.modifiers ?? [])])
-    setQuickStartAct(resume.built.meta.quickStartAct ?? 1)
     setBuilt(resume.built)
     setRun(resume.run)
     terminalRun.current = resume.terminalRun ? structuredClone(resume.terminalRun) : null
@@ -657,7 +700,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     const nextCharacters = legalCharacters(selected)
     const progress = open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)
     const legalAscension = Math.min(nextAscension, progress.highestAscension)
-    setSeedText(seed)
+    // The public day seed must never become the random seed of a later Standard run.
+    if (nextMeta.mode !== 'daily') setSeedText(seed)
     setAscension(legalAscension)
     setCharacters(nextCharacters)
     setChooseYourRelic(nextChooseYourRelic)
@@ -670,8 +714,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     setTutorial(null)
     tutorialReturn.current = null
     terminalRun.current = null
-    setBuilt({ count, seed, ascension: legalAscension, chooseYourRelic: nextChooseYourRelic, lastStand: nextLastStand, characters: nextCharacters, meta: nextMeta })
     const next = newRun(count, seed, legalAscension, progress, nextChooseYourRelic, nextLastStand, nextCharacters, nextMeta)
+    // A Daily Climb's engine overrides the requested Ascension; record what was built.
+    setBuilt({ count, seed, ascension: next.ascension, chooseYourRelic: nextChooseYourRelic, lastStand: nextLastStand, characters: nextCharacters, meta: nextMeta })
     void startRunLog(next)
     setRun(next)
   }
@@ -727,6 +772,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     discardLog()
     discardSoloRun()
     setSeedText(crypto.randomUUID())
+    if (run.meta.mode === 'daily') setMode('standard')
     setChoosingNextCharacter(true)
     onClose()
   }
@@ -776,17 +822,17 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       /** The combat state, or null outside a fight. */
       getState: () => run.combat,
       setRun: (next: RunState) => flushSync(() => setRun(next)),
-      reset: (count: number, seed: string, nextAscension = 0) => restart(count, seed, nextAscension, chooseYourRelic, lastStand, DEFAULT_CHARACTERS),
+      reset: (count: number, seed: string, nextAscension = 0) => restart(count, seed, nextAscension, chooseYourRelic, lastStand, DEFAULT_CHARACTERS, mode === 'daily' ? {} : metaOptions),
       setViewer: (id: string) => flushSync(() => setViewerId(id)),
       playUiSound: () => playSoundEffect('ui'),
       getSettings: () => settings,
     }
     ;(window as unknown as { __STS_DEBUG__?: typeof bridge }).__STS_DEBUG__ = bridge
-  }, [run, settings])
+  }, [run, settings, mode])
 
   useEffect(() => {
-    if (!replayLog) setAscension((current) => Math.min(current, run.campaignProgress.highestAscension))
-  }, [replayLog, run.campaignProgress.highestAscension])
+    if (!replayLog) setAscension((current) => Math.min(current, playerProgress.highestAscension))
+  }, [replayLog, playerProgress.highestAscension])
 
   // Guarded, like the read at `savedCampaign`. `setItem` throws on a full quota
   // and on blocked storage (Chrome's "block all cookies", enterprise policy, a
@@ -796,10 +842,13 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   // worse one.
   useEffect(() => {
     if (replayLog || tutorial) return
+    const journal = open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)
     try {
-      localStorage.setItem(CAMPAIGN_KEY, JSON.stringify(open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)))
+      localStorage.setItem(CAMPAIGN_KEY, JSON.stringify(journal))
+      unsavedJournal = null
     } catch {
       // Storage is unavailable; the run continues in memory.
+      unsavedJournal = journal
     }
   }, [open, replayLog, run.campaignProgress, run.campaign.finalized, tutorial])
 
@@ -906,12 +955,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     return <StartMenu
       characters={characters}
       ascension={ascension}
-      maxAscension={run.campaignProgress.highestAscension}
+      maxAscension={playerProgress.highestAscension}
       mode={mode}
       dailyModifiers={dailyModifiers}
       customModifierIds={customModifierIds}
       quickStartAct={quickStartAct}
-      actIVUnlocked={isActIVUnlocked(run.campaignProgress)}
+      actIVUnlocked={isActIVUnlocked(playerProgress)}
+      dailyPlayed={dailyPlayedOn === today}
+      dailyTurned={dailyTurned}
       onCharacter={(seat, character) => setCharacters((current) => {
         const next = [...current]
         const previous = next[seat]
@@ -928,10 +979,20 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         : current.filter((candidate) => candidate !== id))}
       onQuickStartAct={setQuickStartAct}
       onStart={(campaign) => {
+        // One shared-seed attempt per UTC day, read fresh so another tab or midnight cannot slip by.
+        const day = refreshToday()
+        setDailyTurned(false)
+        // Past midnight the menu previewed yesterday's modifiers; show today's before starting.
+        if (mode === 'daily' && day !== today) return setDailyTurned(true)
+        if (mode === 'daily' && savedDailyAttempt() === day) return setDailyPlayedOn(day)
         discardSoloRun()
         discardRunLog(resume?.run.campaign.runId ?? run.campaign.runId)
         setChoosingNextCharacter(false)
-        restart(1, seedText, ascension, false, false, characters, { ...metaOptions, campaign })
+        if (mode === 'daily') {
+          rememberDailyAttempt(day)
+          setDailyPlayedOn(day)
+          restart(1, dailySeedText(day), ascension, false, false, characters, { mode, dailyDate: day })
+        } else restart(1, seedText, ascension, false, false, characters, { ...metaOptions, campaign })
         onOpen()
       }}
       onTutorial={() => startTutorial(characters[0] ?? 'ironclad')}
@@ -941,7 +1002,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       onStats={() => setStats(true)}
       onCompendium={() => setCompendium(true)}
       onReplay={startReplay}
-      onCharacterBack={() => setChoosingNextCharacter(false)}
+      onCharacterBack={() => { setChoosingNextCharacter(false); setDailyTurned(false) }}
       settings={settings}
       onSettings={onSettings}
       initiallyChoosingCharacter={choosingNextCharacter}
@@ -1298,7 +1359,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         </section>
       ) : null}
 
-      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p>{!replayLog && run.campaign.finalized && leaderboardStatus ? <p key={leaderboardStatus} aria-live="polite" data-webmcp-transient-status data-webmcp-pending={leaderboardStatus === 'pending' ? 'true' : undefined}>{leaderboardStatus === 'pending' ? 'Recording run on the leaderboard…' : leaderboardStatus === 'recorded' ? 'Run recorded on the leaderboard.' : leaderboardStatus === 'queued' ? 'Leaderboard unavailable — run saved for automatic retry.' : 'Leaderboard rejected this run.'}</p> : null}{runLogMessage ? <p aria-live="polite">{runLogMessage}</p> : null}{!replayLog ? <div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && !resultRecorded ? <button type="button" onClick={recordRunResult} disabled={extractingRunLog} data-run-log-control>Record campaign result</button> : null}{run.campaign.finalized ? <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog} data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button> : null}{resultRecorded && run.campaignProgress.unspentMarks === 0 ? <button type="button" disabled={extractingRunLog} onClick={prepareNextRun}>Prepare next run →</button> : null}</div> : null}</section> : null}
+      {allocatingCampaignMarks ? <section className="campaign-end">{run.meta.dailyDate !== undefined ? <><span>Daily Climb · {run.meta.dailyDate}</span><h2>{run.floorsCleared ?? 0} floor{run.floorsCleared === 1 ? '' : 's'} reached</h2><p>Daily Climbs rank on the Daily Climb leaderboard and do not earn campaign marks.</p></> : <><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p></>}{!replayLog && run.campaign.finalized && leaderboardStatus ? <p key={leaderboardStatus} aria-live="polite" data-webmcp-transient-status data-webmcp-pending={leaderboardStatus === 'pending' ? 'true' : undefined}>{leaderboardStatus === 'pending' ? 'Recording run on the leaderboard…' : leaderboardStatus === 'recorded' ? 'Run recorded on the leaderboard.' : leaderboardStatus === 'queued' ? 'Leaderboard unavailable — run saved for automatic retry.' : 'Leaderboard rejected this run.'}</p> : null}{runLogMessage ? <p aria-live="polite">{runLogMessage}</p> : null}{!replayLog ? <div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && !resultRecorded ? <button type="button" onClick={recordRunResult} disabled={extractingRunLog} data-run-log-control>Record campaign result</button> : null}{run.campaign.finalized ? <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog} data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button> : null}{resultRecorded && run.campaignProgress.unspentMarks === 0 ? <button type="button" disabled={extractingRunLog} onClick={prepareNextRun}>Prepare next run →</button> : null}</div> : null}</section> : null}
       <TreasureEffects room={run.roomState?.kind === 'treasure' ? run.roomState : null}
         players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />
       {replayLog && runLogMessage ? <p className="run-replay__status" role="alert">{runLogMessage}</p> : null}

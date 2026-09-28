@@ -91,8 +91,9 @@
 .leaderboard__spinner { width: 2.2rem; height: 2.2rem; border: 3px solid rgb(58 38 24 / 0.4); border-top-color: #ffdc60; border-radius: 50%; animation: leaderboard-turn 1s linear infinite; }
 @keyframes leaderboard-turn { to { transform: rotate(1turn); } }
 
-.leaderboard__tabs { display: flex; gap: 0.35rem; margin: 0.8rem 0 0; }
+.leaderboard__tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.8rem 0 0; }
 .leaderboard__tabs button { flex: 1; min-width: 0; padding-inline: 0.35rem; white-space: nowrap; }
+.leaderboard__tabs .leaderboard__daily-tab { flex-basis: 100%; }
 .leaderboard__message button,
 .leaderboard__tabs button,
 .winning-decks__more {
@@ -119,7 +120,18 @@
 .winning-decks__table time { font-size: 0.85rem; }
 .winning-decks__more { display: block; margin: 1rem auto; }
 .winning-decks__status { margin: 0.8rem; text-align: center; font-size: 0.9rem; }
+.daily-board { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
+.daily-board__days { display: flex; align-items: center; justify-content: center; gap: 0.8rem; padding: 0.55rem 0; }
+.daily-board__days p { display: grid; min-width: 11rem; margin: 0; text-align: center; }
+.daily-board__days strong { color: #ffdc60; font-size: 1.15rem; }
+.daily-board__days small { font-size: 0.78rem; }
+.daily-board__days button { width: 2.2rem; height: 2.2rem; padding: 0; border: 2px solid #3a2410; border-radius: 50%; color: #fff8ea; background: linear-gradient(#6d5641, #46331f); font: 700 1.2rem 'Kreon', Georgia, serif; }
+.daily-board__days button:disabled { opacity: 0.4; }
+.daily-board__table thead th:nth-child(2) { text-align: left; }
+.daily-board__player { max-width: 14rem; overflow-wrap: anywhere; }
+.daily-board__deck { padding: 0.25rem 0.6rem; border: 2px solid #3a2410; color: #2b1b08; background: linear-gradient(#ffe68a, #d6a23e); font: 700 0.85rem 'Kreon', Georgia, serif; white-space: nowrap; }
 .leaderboard__tabs button:focus-visible,
+.daily-board button:focus-visible,
 .winning-decks button:focus-visible { outline: 2px solid #ffdc60; outline-offset: 2px; }
 
 @media (max-height: 500px) and (orientation: landscape) {
@@ -154,6 +166,13 @@
   .winning-decks__open .leaderboard__party-icons img { width: 1.7rem; height: 1.7rem; }
   .winning-decks__table time { font-size: 0.67rem; }
   .winning-decks__username { max-width: 7rem; }
+  .daily-board__days { gap: 0.5rem; padding: 0.25rem 0; }
+  .daily-board__days p { min-width: 8rem; }
+  .daily-board__days strong { font-size: 0.85rem; }
+  .daily-board__days small { font-size: 0.6rem; }
+  .daily-board__days button { width: 1.7rem; height: 1.7rem; font-size: 0.95rem; }
+  .daily-board__player { max-width: 6rem; }
+  .daily-board__deck { padding: 0.15rem 0.35rem; font-size: 0.66rem; }
 }
 
 @media (max-height: 500px) and (max-width: 700px) and (orientation: landscape) {

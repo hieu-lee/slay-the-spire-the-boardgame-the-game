@@ -277,6 +277,7 @@ export {
   rulesetForCharacters,
 } from './meta.ts'
 export type { DailyModifier, DailyModifierId, QuickSetupState, QuickStartAct, QuickStartStep, RuleSet, RunMetaOptions, RunMetaState, RunMode } from './meta.ts'
+export { DAILY_ASCENSION, dailyCampaignProgress, dailySeedText } from './daily.ts'
 
 export { triggerMatches } from './triggers.ts'
 export type { Trigger, TriggerEvent } from './triggers.ts'

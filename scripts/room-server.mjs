@@ -7,7 +7,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { basename } from 'node:path'
 import { WebSocketServer } from 'ws'
 import { classifyDeckType, codexReady } from './lib/codex-deck-classifier.mjs'
-import { addLeaderboardRun, leaderboardSnapshot, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
+import { addLeaderboardRun, dailyLeaderboard, leaderboardSnapshot, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
 import { deckHash, HERO_NAMES, SPECIFIC_ARCHETYPE_FLOOR, otherDeckType, randomDeck, recordDeckClassification, soloDeck, statsSnapshot, validClassifierThreadId, validDeckType, validSoloDeck } from './lib/stats.mjs'
 import {
   apply,
@@ -149,6 +149,7 @@ export function createRoomServer({
   const entryRetryRates = new Map()
   const leaderboardRates = new Map()
   const deckReadRates = new Map()
+  const dailyReadRates = new Map()
   const statsRates = new Map()
   const mailReadRates = new Map()
   const mailSendRates = new Map()
@@ -159,6 +160,8 @@ export function createRoomServer({
   let deckPagesRevision = store.leaderboardRevision
   let leaderboardSummary
   let leaderboardSummaryRevision = -1
+  const dailyBoards = new Map()
+  let dailyBoardsRevision = -1
   const upgradeRates = new Map()
   const invalidUpgradeRates = new Map()
   const actionRates = new Map()
@@ -459,6 +462,7 @@ export function createRoomServer({
     for (const [key, rate] of entryRetryRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) entryRetryRates.delete(key)
     for (const [key, rate] of leaderboardRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) leaderboardRates.delete(key)
     for (const [key, rate] of deckReadRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) deckReadRates.delete(key)
+    for (const [key, rate] of dailyReadRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) dailyReadRates.delete(key)
     for (const [key, rate] of statsRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) statsRates.delete(key)
     for (const [key, rate] of mailReadRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) mailReadRates.delete(key)
     for (const [key, rate] of mailSendRates) if (now - rate.startedAt >= MAIL_SEND_WINDOW_MS) mailSendRates.delete(key)
@@ -737,6 +741,25 @@ export function createRoomServer({
         if (!consume(statsRates, sourceOf(request), CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many stats requests' })
         return send(response, 200, randomDeck(store.statsRuns, url.searchParams))
       }
+      if (request.method === 'GET' && url.pathname === '/api/leaderboard/daily') {
+        if (!consume(dailyReadRates, sourceOf(request), CREATE_WINDOW_MS, MAX_DECK_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many daily ranking requests' })
+        if ([...url.searchParams.keys()].some((name) => name !== 'date' && name !== 'character') ||
+            url.searchParams.getAll('date').length !== 1) return send(response, 400, { error: 'Invalid daily ranking query' })
+        const date = url.searchParams.get('date')
+        const characters = [...new Set(url.searchParams.getAll('character'))].sort()
+        const key = JSON.stringify([date, characters])
+        if (dailyBoardsRevision !== store.leaderboardRevision) {
+          dailyBoards.clear()
+          dailyBoardsRevision = store.leaderboardRevision
+        }
+        let board = dailyBoards.get(key)
+        if (!board) {
+          board = dailyLeaderboard(store.leaderboardRuns, date, characters)
+          if (dailyBoards.size >= DECK_PAGE_CACHE_LIMIT) dailyBoards.clear()
+          dailyBoards.set(key, board)
+        }
+        return send(response, 200, board)
+      }
       if (request.method === 'GET' && url.pathname === '/api/leaderboard') {
         if (leaderboardSummaryRevision !== store.leaderboardRevision) {
           leaderboardSummary = leaderboardSnapshot(store.leaderboardRuns)
@@ -758,7 +781,7 @@ export function createRoomServer({
         const { winningDecks: _, ...submission } = body
         const added = addLeaderboardRun(store, { ...submission, username: profile?.username })
         if (added) { queueSave(); scheduleClassification() }
-        return send(response, added ? 201 : 200, { ok: true, added, floorsClearedAccepted: true, finalDeckAccepted: true, profileAccepted: true })
+        return send(response, added ? 201 : 200, { ok: true, added, floorsClearedAccepted: true, finalDeckAccepted: true, profileAccepted: true, dailyDateAccepted: true })
       }
       if (request.method === 'POST' && url.pathname === '/api/rooms') {
         sweepRooms()
