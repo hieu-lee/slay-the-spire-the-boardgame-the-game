@@ -449,10 +449,11 @@ try {
     }
     window.__SHOW_ONLINE_CAMPFIRE__ = () => {
       window.__ONLINE_REWARD_ACTIONS__ = []
-      root.render(createElement(OnlineCampfireScreen, {
+      root.render(createElement('main', { className: 'app-shell app-shell--online sts-scope' }, createElement(OnlineCampfireScreen, {
         key: 'campfire', player: { id: 'p1', name: 'Ironclad', hp: 7, maxHp: 10, deck: [], relics: [] },
-        decided: [], seats: [{ playerId: 'p1', name: 'Ironclad', character: 'ironclad', connected: true }], onAction,
-      }))
+        decided: [], seats: [{ playerId: 'p1', name: 'Ironclad', character: 'ironclad', connected: true }],
+        rubyAvailable: true, onAction,
+      })))
     }
     window.__SHOW_NEOW_REWARD__ = () => {
       window.__ONLINE_REWARD_ACTIONS__ = []
@@ -562,9 +563,23 @@ try {
   assert.equal((await page.evaluate(() => window.__ONLINE_REWARD_ACTIONS__)).length, 3,
     'double-clicking global Skip dispatched the three loot actions more than once')
 
+  const campfireStyles = await Promise.all(['styles.css', 'chrome.css'].map((file) =>
+    page.addStyleTag({ url: `http://127.0.0.1:${address.port}/src/ui/${file}` })))
   await page.evaluate(() => window.__SHOW_ONLINE_CAMPFIRE__())
   const rest = page.getByRole('button', { name: /Rest/ })
   await rest.waitFor()
+  for (const [width, height] of [[1440, 900], [844, 390]]) {
+    await page.setViewportSize({ width, height })
+    const choices = await page.locator('.campfire__choices button').evaluateAll((buttons) => buttons.map((button) => ({
+      text: button.textContent.trim(), x: button.getBoundingClientRect().left, y: button.getBoundingClientRect().top,
+    })))
+    await page.screenshot({ path: join(out, `online-campfire-${width}x${height}.png`) })
+    assert.deepEqual(choices.map(({ text }) => text.match(/^(Rest|Smith|◆ Ruby Key)/)?.[0]), ['Rest', '◆ Ruby Key', 'Smith'])
+    assert(choices.every((choice, index) => index === 0 || choice.y > choices[index - 1].y + 2 ||
+      Math.abs(choice.y - choices[index - 1].y) <= 2 && choice.x > choices[index - 1].x),
+    `campfire visual order at ${width}x${height}: ${JSON.stringify(choices)}`)
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
   await page.evaluate(() => {
     const restButton = document.querySelector('.campfire__choices button')
     restButton.click()
@@ -573,6 +588,7 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__ONLINE_REWARD_ACTIONS__), [
     { kind: 'campfire', choices: { p1: { choice: 'rest' } } },
   ], 'double-clicking a campfire choice dispatched it more than once')
+  await Promise.all(campfireStyles.map((style) => style.evaluate((element) => element.remove())))
 
   await page.evaluate(() => window.__SHOW_NEOW_REWARD__())
   await page.locator('.neow-action--offer .card').first().waitFor()

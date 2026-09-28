@@ -107,11 +107,6 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
           }}>
             <img src={assetPath('noncombat/campfire/rest.webp')} alt="" /><strong>Rest</strong><span className="muted">+{restHeal} HP{!restAllowed ? ' · blocked by Night Terrors' : ''}</span>
           </button>
-          <button type="button" disabled={hammer || upgradable.length === 0} className={decision?.choice === 'smith' ? 'is-chosen' : ''} onClick={() => {
-            setDecision({ choice: 'smith' }); setPicker('upgrade')
-          }}>
-            <img src={assetPath('noncombat/campfire/smith.webp')} alt="" /><strong>Smith</strong><span className="muted">upgrade</span>
-          </button>
           {rubyAvailable ? <button type="button" className={decision?.choice === 'ruby' ? 'is-chosen' : ''} onClick={() => confirmDecision({ choice: 'ruby' })}>
             ◆ Ruby Key <span className="muted">skip campfire</span>
           </button> : null}
@@ -119,6 +114,11 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
             onClick={() => confirmDecision({ choice: 'leave' })}>
             Leave <span className="muted">decline Ruby Key</span>
           </button> : null}
+          <button type="button" disabled={hammer || upgradable.length === 0} className={decision?.choice === 'smith' ? 'is-chosen' : ''} onClick={() => {
+            setDecision({ choice: 'smith' }); setPicker('upgrade')
+          }}>
+            <img src={assetPath('noncombat/campfire/smith.webp')} alt="" /><strong>Smith</strong><span className="muted">upgrade</span>
+          </button>
           </>}
         </div>
       </div> : <p className="campfire__spectator" role="status">Your climb has ended. You are watching the surviving party choose.</p>}
