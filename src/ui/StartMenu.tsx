@@ -23,8 +23,6 @@ type StartMenuProps = {
   customModifierIds: readonly DailyModifierId[]
   quickStartAct: 1 | 2 | 3 | 4
   actIVUnlocked: boolean
-  /** Today's shared-seed Daily Climb has already been started on this device. */
-  dailyPlayed?: boolean
   /** Embark found a new UTC day; today's seed is ready once the player confirms again. */
   dailyTurned?: boolean
   onCharacter: (seat: number, character: CharacterId) => void
@@ -114,7 +112,6 @@ export function StartMenu({
   customModifierIds,
   quickStartAct,
   actIVUnlocked,
-  dailyPlayed = false,
   dailyTurned = false,
   onCharacter,
   onAscension,
@@ -347,7 +344,7 @@ export function StartMenu({
 
       {screen === 'custom' || screen === 'daily' ? <section className="start-menu__run-options" aria-labelledby="run-options-title">
         <h1 id="run-options-title">{screen === 'daily' ? 'Daily Climb' : 'Customize your run'}</h1>
-        <p>{screen === 'daily' ? `Everyone climbs today's shared seed at Ascension ${DAILY_ASCENSION}. Your first recorded climb of the day is ranked by floors reached.` : 'Choose modifiers and where your run begins.'}</p>
+        <p>{screen === 'daily' ? `Everyone climbs today's shared seed at Ascension ${DAILY_ASCENSION}. Climb as often as you like; your best climb of the day is ranked by floors reached.` : 'Choose modifiers and where your run begins.'}</p>
         <MetaRunOptions
           mode={mode}
           dailyModifiers={dailyModifiers}
@@ -361,14 +358,13 @@ export function StartMenu({
           showMode={false}
           showStartingAct={screen !== 'daily'}
         />
-        {screen === 'daily' && dailyPlayed ? <p className="start-menu__daily-played" role="status">You have already climbed today. A new seed arrives at 00:00 UTC.</p> : null}
         <footer>
           <button type="button" className="ribbon-back" aria-label="Back" onClick={() => {
             characterLoad.current += 1
             setPreparingCharacter(false)
             setScreen('mode')
           }}><span aria-hidden="true"></span></button>
-          <button type="button" disabled={preparingCharacter || screen === 'daily' && dailyPlayed} onClick={startCharacterSelection}>Continue</button>
+          <button type="button" disabled={preparingCharacter} onClick={startCharacterSelection}>Continue</button>
         </footer>
       </section> : null}
 
@@ -379,8 +375,7 @@ export function StartMenu({
           <h1 id="character-select-title">{hero.name}</h1>
           <p>{HERO_COPY[hero.id]}</p>
           {special ? <p className="start-menu__character-special"><strong>{special.name}</strong> · {special.text}</p> : null}
-          {daily && dailyPlayed ? <p className="start-menu__character-special" role="status">You have already climbed today. A new seed arrives at 00:00 UTC.</p>
-            : daily && dailyTurned ? <p className="start-menu__character-special" role="status">A new day has begun. Embark again to climb today's seed.</p> : null}
+          {daily && dailyTurned ? <p className="start-menu__character-special" role="status">A new day has begun. Embark again to climb today's seed.</p> : null}
         </div>
         {!tutorialSetup ? <section className="start-menu__ascension" aria-label="Ascension">
           <button type="button" aria-label="Decrease Ascension" disabled={daily || shownAscension === 0}
@@ -409,7 +404,7 @@ export function StartMenu({
           onClick={() => { returnToMain(); onCharacterBack() }}><span aria-hidden="true"></span></button>
         {tutorialSetup ? <button type="button" className="start-menu__character-embark" aria-label="Start tutorial" title="Start tutorial"
           disabled={embarking} onClick={() => { setEmbarking(true); onTutorial() }}><span aria-hidden="true">✓</span></button>
-          : <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" disabled={embarking || daily && dailyPlayed}
+          : <button type="button" className="start-menu__character-embark" aria-label="Embark" title="Embark" disabled={embarking}
           aria-busy={embarking || undefined} onClick={daily ? () => onStart('base') : startCampaign}><span aria-hidden="true">✓</span></button>}
       </section> : null}
       {screen === 'character' && preparingCharacter ? <section className="start-menu__character-select start-menu__character-loading"

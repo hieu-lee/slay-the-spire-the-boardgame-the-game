@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Drives the shared-seed Daily Climb from the menu to the daily ranking:
-// fixed A10 setup, one attempt per day, no campaign marks, and the Daily
+// fixed A10 setup, repeat climbs ranked by each player's best, no campaign marks, and the Daily
 // Climb leaderboard tab on desktop and horizontal-phone screens.
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -141,13 +141,37 @@ try {
   })
   await page.getByRole('button', { name: 'Prepare next run →' }).click()
   await page.getByRole('button', { name: 'Back', exact: true }).click()
+  // Climb today's seed again: the better of the two climbs is the one that ranks.
   await page.reload()
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
   await page.getByRole('button', { name: 'Daily', exact: true }).click()
-  await page.getByText('You have already climbed today.').waitFor()
-  const continueLocked = await page.getByRole('button', { name: 'Continue', exact: true }).isDisabled()
-  check('a second Daily Climb on the same day is refused, even after a reload', () => assert(continueLocked))
-  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  // Meanwhile another tab used up run numbers this tab has not seen.
+  const otherTabNumber = await page.evaluate(() => {
+    const journal = JSON.parse(localStorage.getItem('sts-physical-campaign'))
+    journal.nextRunNumber += 5
+    localStorage.setItem('sts-physical-campaign', JSON.stringify(journal))
+    return journal.nextRunNumber
+  })
+  await page.getByRole('button', { name: 'Embark' }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__?.getRun()?.meta.dailyDate && !window.__STS_DEBUG__.getRun().campaign.finalized)
+  const secondClimbId = await page.evaluate(() => window.__STS_DEBUG__.getRun().campaign.runId)
+  check('a climb never reuses a run number another tab already took', () => assertEqual(secondClimbId, `campaign-${otherTabNumber + 1}`))
+  await page.evaluate(() => {
+    const run = structuredClone(window.__STS_DEBUG__.getRun())
+    run.neow = null
+    run.phase = 'defeat'
+    run.floorsCleared = 12
+    run.combatsFinished = 3
+    run.players[0].damageStats = { attack: 60, poison: 0, special: 0, taken: 5, blocked: 15 }
+    window.__STS_DEBUG__.setRun(run)
+  })
+  await page.getByRole('button', { name: 'Record campaign result' }).click()
+  await page.getByRole('heading', { name: '12 floors reached' }).waitFor()
+  await page.getByText('Run recorded on the leaderboard.').waitFor()
+  const climbs = rooms.store.leaderboardRuns.filter((run) => run.dailyDate === today && run.username === 'DailyTester')
+  check('a player may climb the same day again and every climb is recorded', () => assertEqual(climbs.length, 2))
+  await page.getByRole('button', { name: 'Prepare next run →' }).click()
   await page.getByRole('button', { name: 'Back', exact: true }).click()
 
   await page.getByRole('button', { name: 'Leaderboard', exact: true }).click()
@@ -160,7 +184,7 @@ try {
     assertEqual(ranking.length, 3, ranking.join('\n'))
     assert(ranking[0].startsWith('1 Champion 14 Victory · Act IV 10.0 75%'), ranking[0])
     assert(ranking[1].startsWith('2 Rival 14 Fell in Act I 20.0 75%'), ranking[1])
-    assert(ranking[2].startsWith('3 DailyTester 9 Fell in Act I 10.0 75%'), ranking[2])
+    assert(ranking[2].startsWith('3 DailyTester 12 Fell in Act I 20.0 75%'), `the better climb is not the one that ranks: ${ranking[2]}`)
     assertEqual(wonCell, 1, 'the won climb is not highlighted')
   })
   await screenshot('daily-board-desktop')
@@ -220,6 +244,12 @@ try {
   await page.evaluate(() => {
     // A save from before the shared-seed Daily Climb: daily mode with no day.
     const run = structuredClone(window.__STS_DEBUG__.getRun())
+    run.campaign = { ...run.campaign, finalized: false }
+    // Legacy dailies ran on the player's own journal, never the unlocked baseline.
+    run.campaignProgress = JSON.parse(localStorage.getItem('sts-physical-campaign'))
+    run.meta = { ...run.meta, mode: 'daily' }
+    delete run.meta.dailyDate
+    run.phase = 'map'
     localStorage.setItem('sts-solo-run', JSON.stringify({ version: 1, run, built: {
       count: 1, seed: 'legacy-daily', ascension: 0, chooseYourRelic: false, lastStand: false,
       characters: ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'],
@@ -241,38 +271,11 @@ try {
     assertEqual(legacyRebuild.mode, 'standard')
     assertEqual(legacyRebuild.dailyDate, undefined)
   })
-  const openDailyCharacterScreen = async () => {
-    await page.evaluate(() => {
-      localStorage.removeItem('sts-daily-climb-attempt')
-      localStorage.removeItem('sts-solo-run')
-    })
-    await page.reload()
-    await page.getByRole('button', { name: 'Single Player', exact: true }).click()
-    await page.getByRole('button', { name: 'Daily', exact: true }).click()
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await page.getByRole('button', { name: 'Embark' }).waitFor()
-  }
-  await openDailyCharacterScreen()
-  // Another tab takes today's climb while this one waits on the character screen.
-  await page.evaluate((day) => localStorage.setItem('sts-daily-climb-attempt', day), today)
-  await page.getByRole('button', { name: 'Embark' }).click()
-  await page.getByText('You have already climbed today.').waitFor()
-  const refused = await page.evaluate(() => ({ embarkDisabled: document.querySelector('[aria-label="Embark"]')?.disabled,
-    started: Boolean(window.__STS_DEBUG__.getRun().meta.dailyDate) }))
-  check('Embark explains a climb already taken in another tab and starts nothing', () => {
-    assert(refused.embarkDisabled && !refused.started, JSON.stringify(refused))
-  })
-
-  await openDailyCharacterScreen()
-  await page.evaluate((day) => {
-    localStorage.setItem('sts-daily-climb-attempt', day)
-    window.dispatchEvent(new StorageEvent('storage', { key: 'sts-daily-climb-attempt', newValue: day }))
-  }, today)
-  await page.getByText('You have already climbed today.').waitFor()
-  const lockedByOtherTab = await page.locator('[aria-label="Embark"]').isDisabled()
-  check('a climb taken in another tab locks Embark straight away', () => assert(lockedByOtherTab))
-
-  await openDailyCharacterScreen()
+  await page.evaluate(() => localStorage.removeItem('sts-solo-run'))
+  await page.reload()
+  await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+  await page.getByRole('button', { name: 'Daily', exact: true }).click()
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await page.getByRole('button', { name: 'Embark' }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__?.getRun()?.meta.dailyDate && !window.__STS_DEBUG__.getRun().campaign.finalized)
   const abandonedNumber = await page.evaluate(() => Number(window.__STS_DEBUG__.getRun().campaign.runId.replace('campaign-', '')))

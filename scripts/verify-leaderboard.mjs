@@ -69,11 +69,12 @@ check('Daily Climb submissions must be solo A10 Act I runs on a real, current da
   assertEqual(normalizeLeaderboardRun(run(), dailyTime).dailyDate, undefined)
 })
 
-check('the daily ranking orders first named climbs by floors, damage, then finish time', () => {
+check('the daily ranking orders each named player\'s best climb by floors, damage, then finish time', () => {
   const deck = [{ defId: 'strike', upgraded: true }]
   const runs = [
-    normalizeLeaderboardRun(daily({ id: 'install-a:campaign-1', username: 'Ann', floorsCleared: 12, finalDeck: deck }), dailyTime + 10),
-    normalizeLeaderboardRun(daily({ id: 'install-a:campaign-2', username: 'ann', floorsCleared: 40 }), dailyTime + 20),
+    normalizeLeaderboardRun(daily({ id: 'install-a:campaign-1', username: 'Ann', floorsCleared: 12 }), dailyTime + 10),
+    normalizeLeaderboardRun(daily({ id: 'install-a:campaign-2', username: 'ann', floorsCleared: 40, finalDeck: deck }), dailyTime + 20),
+    normalizeLeaderboardRun(daily({ id: 'install-a:campaign-3', username: 'Ann', floorsCleared: 30 }), dailyTime + 30),
     normalizeLeaderboardRun(daily({ id: 'install-b:campaign-1', username: 'Bo', character: 'silent', floorsCleared: 12, damageDealt: 200 }), dailyTime + 30),
     normalizeLeaderboardRun(daily({ id: 'install-c:campaign-1', username: 'Cy', floorsCleared: 20, damageStatsComplete: false }), dailyTime + 40),
     normalizeLeaderboardRun(daily({ id: 'install-d:campaign-1', username: 'Di', floorsCleared: 12 }), dailyTime + 5),
@@ -82,17 +83,17 @@ check('the daily ranking orders first named climbs by floors, damage, then finis
     normalizeLeaderboardRun(run({ id: 'install-f:campaign-1', username: 'Fa', floorsCleared: 60 }), dailyTime + 1),
   ]
   const board = dailyLeaderboard(runs, '2026-09-28')
-  assertEqual(board.total, 4, 'anonymous, other-day, non-daily or repeat climbs were ranked')
+  assertEqual(board.total, 4, 'anonymous, other-day, non-daily or extra climbs were ranked')
   assertDeepEqual(board.rows.map((row) => [row.rank, row.username, row.floorsCleared]),
-    [[1, 'Cy', 20], [2, 'Bo', 12], [3, 'Di', 12], [4, 'Ann', 12]])
-  assertEqual(board.rows[0].averageDamagePerFight, null)
-  assertEqual(board.rows[1].character, 'silent')
-  assertEqual(board.rows[1].averageDamagePerFight, 20)
-  assertEqual(board.rows[1].damageBlockedRate, 0.7)
-  assertDeepEqual(board.rows[3].cards, deck)
+    [[1, 'ann', 40], [2, 'Cy', 20], [3, 'Bo', 12], [4, 'Di', 12]], 'a player\'s best climb is not their entry')
+  assertDeepEqual(board.rows[0].cards, deck)
+  assertEqual(board.rows[1].averageDamagePerFight, null)
+  assertEqual(board.rows[2].character, 'silent')
+  assertEqual(board.rows[2].averageDamagePerFight, 20)
+  assertEqual(board.rows[2].damageBlockedRate, 0.7)
   assert(!JSON.stringify(board).includes('install-'), 'installation ids leaked into the public ranking')
   const silent = dailyLeaderboard(runs, '2026-09-28', ['silent'])
-  assertDeepEqual(silent.rows.map((row) => [row.rank, row.username]), [[2, 'Bo']], 'a hero filter renumbered the ranking')
+  assertDeepEqual(silent.rows.map((row) => [row.rank, row.username]), [[3, 'Bo']], 'a hero filter renumbered the ranking')
   assertEqual(silent.total, 1)
   assertThrows(() => dailyLeaderboard([], 'today'))
   assertThrows(() => dailyLeaderboard([], '2026-13-45'))

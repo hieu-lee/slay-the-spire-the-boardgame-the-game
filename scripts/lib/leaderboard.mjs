@@ -287,12 +287,23 @@ export function leaderboardSnapshot(runs) {
   return { totalRuns: runs.length, rows }
 }
 
+const damagePerFight = (run) => run.damageStatsComplete && run.combatsFinished ? run.damageDealt / run.combatsFinished : null
+
 /**
- * One day's shared-seed ranking of registered players. A player's first
- * recorded climb that day is their entry; later attempts cannot replace it.
- * Ties on floors go to the climb that defeated a later Act boss (beating
- * the boss outranks dying at it), then to the higher damage per fight, then
- * to the earlier finish. Ranks are overall; `characters` only narrows the rows returned.
+ * The daily ranking order: more floors, then a later Act boss defeated
+ * (beating the boss outranks dying at it), then higher damage per fight,
+ * then the earlier finish.
+ */
+const compareClimbs = (left, right) =>
+  (right.floorsCleared ?? 0) - (left.floorsCleared ?? 0) ||
+  right.highestBossActDefeated - left.highestBossActDefeated ||
+  (damagePerFight(right) ?? -1) - (damagePerFight(left) ?? -1) ||
+  left.recordedAt - right.recordedAt || left.id.localeCompare(right.id)
+
+/**
+ * One day's shared-seed ranking of registered players. Players may climb
+ * as often as they like; each player's best climb that day is their entry.
+ * Ranks are overall; `characters` only narrows the rows returned.
  */
 export function dailyLeaderboard(runs, date, characters = []) {
   if (!isCalendarDay(date) || characters.some((character) => !CHARACTERS.has(character))) bad('Invalid daily ranking query')
@@ -302,14 +313,9 @@ export function dailyLeaderboard(runs, date, characters = []) {
     if (run.dailyDate !== date || run.username === undefined) continue
     const player = run.username.toLowerCase()
     const current = entries.get(player)
-    if (!current || run.recordedAt < current.recordedAt) entries.set(player, run)
+    if (!current || compareClimbs(run, current) < 0) entries.set(player, run)
   }
-  const damagePerFight = (run) => run.damageStatsComplete && run.combatsFinished ? run.damageDealt / run.combatsFinished : null
-  const ranked = [...entries.values()].sort((left, right) =>
-    (right.floorsCleared ?? 0) - (left.floorsCleared ?? 0) ||
-    right.highestBossActDefeated - left.highestBossActDefeated ||
-    (damagePerFight(right) ?? -1) - (damagePerFight(left) ?? -1) ||
-    left.recordedAt - right.recordedAt || left.id.localeCompare(right.id))
+  const ranked = [...entries.values()].sort(compareClimbs)
   const shown = ranked.map((run, index) => ({ run, rank: index + 1 }))
     .filter(({ run }) => characters.length === 0 || characters.includes(run.character))
   return {

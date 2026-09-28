@@ -144,15 +144,6 @@ const ROSTER: { character: CharacterId; name: string }[] = [
 const DEFAULT_CHARACTERS = ROSTER.map((entry) => entry.character)
 
 const SOLO_RUN_KEY = 'sts-solo-run'
-const DAILY_ATTEMPT_KEY = 'sts-daily-climb-attempt'
-
-function savedDailyAttempt(): string | null {
-  try { return localStorage.getItem(DAILY_ATTEMPT_KEY) } catch { return null }
-}
-
-function rememberDailyAttempt(date: string) {
-  try { localStorage.setItem(DAILY_ATTEMPT_KEY, date) } catch { /* Storage is unavailable. */ }
-}
 
 type BuiltRun = {
   count: number
@@ -600,15 +591,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   )
   const [today, refreshToday] = useUtcDay()
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(dailySeedText(today)))).modifiers, [today])
-  const [dailyPlayedOn, setDailyPlayedOn] = useState(savedDailyAttempt)
   // Set when Embark found the UTC day had turned since the menu was drawn.
   const [dailyTurned, setDailyTurned] = useState(false)
-  useEffect(() => {
-    // Another tab that takes today's climb locks this one at once.
-    const sync = (event: StorageEvent) => { if (event.key === DAILY_ATTEMPT_KEY || event.key === null) setDailyPlayedOn(savedDailyAttempt()) }
-    window.addEventListener('storage', sync)
-    return () => window.removeEventListener('storage', sync)
-  }, [])
   // For a Daily Climb this reads the stored journal, which only the persist effect writes, from `run`.
   const playerProgress = useMemo(() => campaignBeforeCurrentRun(run), [run.campaignProgress, run.campaign.finalized, run.meta.dailyDate])
   // The engine fixes a Daily Climb's seed, Ascension and setup from its day.
@@ -698,7 +682,12 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   function restart(count: number, seed: string, nextAscension = 0, nextChooseYourRelic = chooseYourRelic, nextLastStand = lastStand, selected = characters, nextMeta: RunMetaOptions = metaOptions) {
     const nextCharacters = legalCharacters(selected)
-    const progress = open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)
+    const journal = open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)
+    // Every climb shares the day's seed, so its run number alone keeps it distinct on the
+    // leaderboard; another tab may already have used this tab's next number.
+    const progress = nextMeta.mode === 'daily'
+      ? { ...journal, nextRunNumber: Math.max(journal.nextRunNumber, (unsavedJournal ?? savedCampaign()).nextRunNumber) }
+      : journal
     const legalAscension = Math.min(nextAscension, progress.highestAscension)
     // The public day seed must never become the random seed of a later Standard run.
     if (nextMeta.mode !== 'daily') setSeedText(seed)
@@ -961,7 +950,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       customModifierIds={customModifierIds}
       quickStartAct={quickStartAct}
       actIVUnlocked={isActIVUnlocked(playerProgress)}
-      dailyPlayed={dailyPlayedOn === today}
       dailyTurned={dailyTurned}
       onCharacter={(seat, character) => setCharacters((current) => {
         const next = [...current]
@@ -979,20 +967,15 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         : current.filter((candidate) => candidate !== id))}
       onQuickStartAct={setQuickStartAct}
       onStart={(campaign) => {
-        // One shared-seed attempt per UTC day, read fresh so another tab or midnight cannot slip by.
+        // Read the day fresh: past midnight the menu previewed yesterday's modifiers, so show today's before starting.
         const day = refreshToday()
         setDailyTurned(false)
-        // Past midnight the menu previewed yesterday's modifiers; show today's before starting.
         if (mode === 'daily' && day !== today) return setDailyTurned(true)
-        if (mode === 'daily' && savedDailyAttempt() === day) return setDailyPlayedOn(day)
         discardSoloRun()
         discardRunLog(resume?.run.campaign.runId ?? run.campaign.runId)
         setChoosingNextCharacter(false)
-        if (mode === 'daily') {
-          rememberDailyAttempt(day)
-          setDailyPlayedOn(day)
-          restart(1, dailySeedText(day), ascension, false, false, characters, { mode, dailyDate: day })
-        } else restart(1, seedText, ascension, false, false, characters, { ...metaOptions, campaign })
+        if (mode === 'daily') restart(1, dailySeedText(day), ascension, false, false, characters, { mode, dailyDate: day })
+        else restart(1, seedText, ascension, false, false, characters, { ...metaOptions, campaign })
         onOpen()
       }}
       onTutorial={() => startTutorial(characters[0] ?? 'ironclad')}
