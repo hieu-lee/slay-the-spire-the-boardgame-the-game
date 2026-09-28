@@ -159,8 +159,10 @@ painted base at foot level; Defect's beam source retains its mouth registration.
 Byrd's idle uses three full wingbeats per 3000ms loop, with separate rigid wing
 layers behind a fixed body. Cultist draws back both sticks, releases at 500ms,
 holds empty hands through impact at 750ms and recovers by 1830ms. The two rigid
-props spin from their respective hands to each living player targeted by the
-attack. Shoulder underlays cover the surfaces exposed by the arm rotation.
+props spin along separate upward curves from their respective hands to each
+living player targeted by the attack. The 250ms paths are fixed at launch;
+late image alignment cannot redirect them. Shoulder underlays cover the
+surfaces exposed by the arm rotation.
 `wing_and_throw.py` bakes these layers; its Sunburst native-alpha sources and exact
 prompts are in `sources/wing-and-throw-prompts.json`. Rebuild via
 `python3 scripts/animation/render-rig.py scripts/animation/rigs.json --only byrd,cultist`

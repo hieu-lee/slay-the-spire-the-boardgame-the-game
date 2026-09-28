@@ -482,6 +482,7 @@ export function EnemyCard({
   const [bossAttackReady, setBossAttackReady] = useState(false)
   const [cultistCoverReady, setCultistCoverReady] = useState(false)
   const [cultistCoverFailed, setCultistCoverFailed] = useState(false)
+  const [cultistPropReady, setCultistPropReady] = useState(false)
   const finishBossAttack = () => {
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
     bossAttackTimer.current = null
@@ -516,6 +517,7 @@ export function EnemyCard({
     // The WebKit body SVG and CSS projectiles must share a start clock.
     // Decode the cover before mounting the one-shot SVG at all.
     if (timedCultist && !cultistCoverReady && !cultistCoverFailed) return
+    if (currentBossArtId === 'cultist' && !cultistPropReady) return
     // A cold Cultist request may finish just before the phase deadline.
     // Mount its preloaded blob instead of starting a second image request.
     if (currentBossArtId === 'cultist' && cached?.source !== currentBossAttackArt) return
@@ -529,7 +531,7 @@ export function EnemyCard({
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
     bossAttackTimer.current = null
     setBossAttackReady(false)
-  }, [attackPreloadRevision, bossAttackTriggered, cultistCoverFailed, cultistCoverReady,
+  }, [attackPreloadRevision, bossAttackTriggered, cultistCoverFailed, cultistCoverReady, cultistPropReady,
     currentBossArtId, currentBossAttackArt, currentIdleArt, enemy.uid, onThrowPrepared, timedCultist])
   useEffect(() => () => {
     if (presentedBossAttack?.art.startsWith('blob:')) URL.revokeObjectURL(presentedBossAttack.art)
@@ -633,13 +635,17 @@ export function EnemyCard({
     return () => { active = false }
   }, [animatedEnemy, cultistCoverFailed, cultistCoverReady, timedCultist])
   useEffect(() => {
+    let active = true
     for (const path of [currentBossProjectileArt, currentProjectileImpact]) {
       if (!path) continue
       const preload = new Image()
       preload.src = path
-      void preload.decode?.().catch(() => undefined)
+      void preload.decode().then(() => {
+        if (active && currentBossArtId === 'cultist' && path === currentBossProjectileArt) setCultistPropReady(true)
+      }).catch(() => undefined)
     }
-  }, [currentBossProjectileArt, currentProjectileImpact])
+    return () => { active = false }
+  }, [currentBossArtId, currentBossProjectileArt, currentProjectileImpact])
   const demonAttacking = bossAttackPlaying && bossArtId === 'downfall_demon'
   const bossAttackMotion = animatedEnemy ? bossAttackMotionFor(bossArtId) : 'ranged'
   const bossAttackContactLeft = bossAttackContactLeftFor(bossArtId)
@@ -701,7 +707,9 @@ export function EnemyCard({
     const initialBoss = card.querySelector<CombatArtElement>('.enemy__art--cutout[data-animation-layer="attack"]')
     const board = card.closest('.board')
     if (!initialBoss || !board) return
+    let cultistLaunched = false
     const measure = () => {
+      if (cultistLaunched) return
       const boss = card.querySelector<CombatArtElement>('.enemy__art--cutout[data-animation-layer="attack"]')
       if (!boss) return
       if (!combatArtReady(boss)) return
@@ -729,10 +737,18 @@ export function EnemyCard({
         if (!target) continue
         const targetRect = target.getBoundingClientRect()
         const body = combatBodyPoint(target)
-        if (bossArtId === 'cultist') {
-          // Source-space hand positions at the authored 500ms release.
-          projectile.style.setProperty('--cultist-hand-span', `${416 * fit / rem}rem`)
-          projectile.style.setProperty('--cultist-hand-rise', `${33 * fit / rem}rem`)
+        if (bossArtId === 'cultist' && projectile.classList.contains('boss-projectile')) {
+          // Each stick follows its own upward arc. Keep path translation separate
+          // from its spin so rotating the prop cannot pull it toward the floor.
+          const x = body.x - startX, y = body.y - startY
+          for (const [index, stick] of [...projectile.querySelectorAll<HTMLElement>(':scope > img')].entries()) {
+            // Source-space grips are 416px apart and 33px down; the prop's
+            // painted center sits 70px above its grip.
+            const handX = index * 416 * fit, handY = (index * 33 - 70) * fit
+            const lift = Math.min(Math.abs(x - handX) * .22, bodyHeight * .7)
+            const controlY = Math.min(handY, y) - Math.abs(y - handY) / 2 - lift
+            stick.style.offsetPath = `path("M ${handX} ${handY} Q ${(handX + x) / 2} ${controlY} ${x} ${y}")`
+          }
         }
         projectile.style.setProperty('--boss-projectile-start-x', `${(startX - cardRect.left) / rem}rem`)
         projectile.style.setProperty('--boss-projectile-start-y', `${(startY - cardRect.top) / rem}rem`)
@@ -742,6 +758,10 @@ export function EnemyCard({
     }
     measure()
     if (bossArtId === 'cultist') onThrowPrepared?.(enemy.uid, 750)
+    const onLaunch = (event: AnimationEvent) => {
+      if (event.animationName === 'cultist-stick-flight') cultistLaunched = true
+    }
+    card.addEventListener('animationstart', onLaunch)
     // Measure this image at the target, after its portrait's capture handler
     // aligns it. Other board images can still update the projectile's target.
     const onLoad = () => measure()
@@ -755,6 +775,7 @@ export function EnemyCard({
       board.removeEventListener('load', onLoad, true)
       board.removeEventListener('loadeddata', onLoad, true)
       removeReady()
+      card.removeEventListener('animationstart', onLaunch)
     }
   }, [art, bossArtId, bossAttackPlaying, bossProjectileArt, enemy.uid, onThrowPrepared, projectileImpact, rangedTargetKey])
   const abilities = enemyAbilities(def)
@@ -911,7 +932,7 @@ export function EnemyCard({
             src={art}
             data-animation-layer={bossAttacking ? 'attack' : 'idle'}
             data-inactive={retainIdle && !bossAttackPlaying || undefined}
-            posterSrc={!useSafariCombatRendering && !timedCultist && bossAttacking ? currentIdleArt : undefined}
+            posterSrc={(!useSafariCombatRendering || timedCultist) && bossAttacking ? currentIdleArt : undefined}
             forceWebp={useSafariCombatRendering}
             loop={!bossAttacking}
             data-animation-asset={bossAttacking ? presentedBossAttack?.source : art}

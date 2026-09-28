@@ -951,11 +951,14 @@
   animation-name: cultist-stick-flight;
   animation-duration: 250ms;
   animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
 .enemy[data-enemy-art='cultist'] .boss-projectile > img {
   position: absolute;
   inset: 0;
   filter: none;
+  offset-anchor: center;
+  offset-rotate: 0deg;
   animation: cultist-stick-spin 250ms 500ms linear both;
 }
 .enemy[data-enemy-art='cultist'] .enemy-projectile-impact > img { animation-delay: 750ms; }
@@ -980,16 +983,13 @@
   27.33%, 81.94% { opacity: 1; }
 }
 .enemy[data-enemy-art='cultist'] .boss-projectile > img + img {
-  --stick-offset: var(--cultist-hand-span);
-  --stick-rise: var(--cultist-hand-rise);
   --stick-angle: 35deg;
 }
 @keyframes cultist-stick-flight {
-  0% { opacity: 0; transform: translate(-50%, -50%); }
-  2%, 94% { opacity: 1; }
-  100% { opacity: 0; transform: translate(calc(var(--boss-projectile-x) - 50%), calc(var(--boss-projectile-y) - 50%)); }
+  0%, 99.99% { opacity: 1; }
+  100% { opacity: 0; }
 }
 @keyframes cultist-stick-spin {
-  from { transform: translate(var(--stick-offset, 0rem), var(--stick-rise, 0rem)) rotate(var(--stick-angle, -25deg)); }
-  to { transform: translate(0, 0) rotate(calc(var(--stick-angle, -25deg) - 300deg)); }
+  from { offset-distance: 0%; transform: rotate(var(--stick-angle, -25deg)); }
+  to { offset-distance: 100%; transform: rotate(calc(var(--stick-angle, -25deg) - 300deg)); }
 }

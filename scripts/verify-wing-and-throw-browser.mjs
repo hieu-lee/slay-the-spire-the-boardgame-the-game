@@ -30,7 +30,6 @@ async function createFixturePage(context) {
       document.documentElement.dataset.reducedMotion = 'false'
       const node = document.createElement('div')
       node.className = 'app-shell app-shell--combat sts-scope'
-      node.style.gridTemplateRows = 'minmax(0, 1fr)'
       document.body.append(node)
       const [R, D, { CombatScreen }, { createPlayer }, { createCombat }, { createRng }] = await Promise.all([
         import('/@id/react'), import('/@id/react-dom/client'), import('/src/ui/CombatScreen.tsx'),
@@ -39,15 +38,18 @@ async function createFixturePage(context) {
       ])
       const view = (D.createRoot ?? D.default.createRoot)(node)
       const f = window.fixture = { restoration: 0, autoAdvance: false, onAction: () => {} }
-      f.render = () => view.render((R.createElement ?? R.default.createElement)(CombatScreen, {
+      const element = R.createElement ?? R.default.createElement
+      f.render = () => view.render(element(R.Fragment ?? R.default.Fragment, null,
+        element('header', { className: 'app-shell__header' }, element('h1', null, 'Ironclad · Cultist throw')),
+        element(CombatScreen, {
         state: structuredClone(f.state), act: 1, viewerId: 'p1', autoAdvance: f.autoAdvance,
         authoritativeRestoration: f.restoration, onAction: f.onAction,
-      }))
+      })))
       f.install = (defId, multiplayer = false) => {
         if (defId === 'byrd') defId = 'byrd_encounter'
         const rng = createRng(47)
         const players = Array.from({ length: multiplayer ? 4 : 1 }, (_, i) => {
-          const player = createPlayer(rng, `p${i+1}`, `Player ${i+1}`, 'defect', i)
+          const player = createPlayer(rng, `p${i+1}`, `Player ${i+1}`, 'ironclad', i)
           player.hand = []; player.draw = []; player.relics = []
           player.hp = player.maxHp = 99
           if (i === 3) { player.dead = true; player.hp = 0 }
@@ -67,12 +69,26 @@ async function createFixturePage(context) {
 async function observeCultistArrival(page) {
   await page.evaluate(() => {
     const f = window.fixture
+    f.flightLocked = undefined
     const observer = new MutationObserver(() => {
       const projectile = document.querySelector('.boss-projectile')
       if (!projectile) return
       observer.disconnect()
       f.throwMountedAt = performance.now()
       f.throwSource = document.querySelector('.enemy__art--cutout[data-animation-layer="attack"]')?.dataset.animationAsset
+      const board = projectile.closest('.board')
+      const onLaunch = event => {
+        if (event.animationName !== 'cultist-stick-flight') return
+        board.removeEventListener('animationstart', onLaunch)
+        const paths = [...projectile.children].map(stick => stick.style.offsetPath)
+        const target = document.querySelector(`.seat[data-player-id="${CSS.escape(projectile.dataset.targetPlayer)}"] .seat__portrait`)
+        // A late target-image alignment must not redirect an airborne stick.
+        target.style.translate = '0 80px'
+        board.dispatchEvent(new Event('loadeddata'))
+        f.flightLocked = paths.every((path, index) => path === projectile.children[index].style.offsetPath)
+        target.style.removeProperty('translate')
+      }
+      board.addEventListener('animationstart', onLaunch)
       const sampleClock = () => {
         const animation = projectile.getAnimations()[0]
         const time = animation?.currentTime
@@ -107,6 +123,7 @@ async function observeCultistArrival(page) {
     }))
     throw new Error(`Cultist did not finish after cold load: ${JSON.stringify(state)}`, { cause: error })
   }
+  assert.equal(await page.evaluate(() => window.fixture.flightLocked), true, 'late image alignment redirected a launched stick')
   return page.evaluate(() => {
     const { enemyPhaseAt, throwMountedAt, throwArrivalAt, throwSource, enemyResolvedAt } = window.fixture
     return { enemyPhaseAt, throwMountedAt, throwArrivalAt, throwSource, enemyResolvedAt }
@@ -221,6 +238,7 @@ try {
                 for (const element of [...projectiles, ...props, body, cover].filter(Boolean)) {
                   const style = getComputedStyle(element)
                   element.style.transform = style.transform
+                  element.style.offsetDistance = style.offsetDistance
                   element.style.opacity = style.opacity
                   element.style.animation = 'none'
                 }
@@ -281,6 +299,7 @@ try {
                 for (const element of [probe, ...probe.children]) {
                   element.style.removeProperty('animation')
                   element.style.removeProperty('transform')
+                  element.style.removeProperty('offset-distance')
                   element.style.removeProperty('opacity')
                 }
                 probe.style.visibility = 'hidden'
@@ -294,14 +313,18 @@ try {
                   return sticks.map(stick => {
                     const rect = stick.getBoundingClientRect()
                     const matrix = new DOMMatrix(getComputedStyle(stick).transform)
-                    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
+                    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, bottom: rect.bottom,
                       angle: Math.atan2(matrix.b, matrix.a) }
                   })
                 }
-                const from = sample(delay), middle = sample(delay + 125), to = sample(delay + 250)
+                sample(delay - 1)
+                const beforeRelease = Number(getComputedStyle(probe).opacity)
+                const from = sample(delay), atRelease = Number(getComputedStyle(probe).opacity)
+                const arc = [.1, .25, .5, .75, .9].map(t => sample(delay + duration * t))
+                const middle = arc[2], to = sample(delay + duration)
                 const target = document.querySelector(`.seat[data-player-id="${CSS.escape(projectile.dataset.targetPlayer)}"] .seat__portrait`)
                   .getBoundingClientRect()
-                const flight = { from, middle, to, target: { left: target.left, right: target.right, top: target.top, bottom: target.bottom },
+                const flight = { from, middle, to, arc, beforeRelease, atRelease, target: { left: target.left, right: target.right, top: target.top, bottom: target.bottom },
                   spinTiming: sticks.map(stick => stick.getAnimations()[0].effect.getTiming()) }
                 probe.remove()
                 return flight
@@ -366,6 +389,8 @@ try {
         }
         assert.equal(sample.impactDelay, expectedDelay + 250, 'impact fires before sticks arrive')
         for (const flight of sample.flights) {
+          assert.equal(flight.beforeRelease, 0, 'sticks duplicate the held props before release')
+          assert.equal(flight.atRelease, 1, 'sticks disappear at the hand-to-flight transition')
           assert(flight.from[1].x - flight.from[0].x > 30,
             `sticks do not leave separate hands: ${JSON.stringify(flight.from)}`)
           for (let index = 0; index < 2; index++) {
@@ -375,8 +400,11 @@ try {
             assert(from.x > flight.target.right + 30, 'stick starts away from Cultist')
             assert(to.x >= flight.target.left && to.x <= flight.target.right &&
               to.y >= flight.target.top && to.y <= flight.target.bottom, 'stick misses the player')
-            assert(Math.hypot(middle.x - (from.x + to.x) / 2, middle.y - (from.y + to.y) / 2) < 12,
-              'stick detours away from its target')
+            assert(middle.y < Math.min(from.y, to.y) - 8, 'stick does not rise above both ends of its arc')
+            for (const frame of flight.arc) {
+              assert(frame[index].y <= Math.max(from.y, to.y) + 1, 'stick drops below its hand-to-target line')
+              assert(frame[index].bottom < flight.target.bottom, 'rotating stick clips the floor')
+            }
             assert(Math.abs(middle.angle - from.angle) > 1, 'stick does not rotate in flight')
           }
         }
@@ -509,18 +537,20 @@ try {
     console.log(`PASS ${screen}: wingbeat, 250ms rotating throws, targets, replay, reconnect and reduced motion`)
   }
   if (!process.argv.includes('--cold-only')) assert(naturalCaptures >= 1, 'no naturally rendered Cultist flight was captured')
-  if (engine === webkit) {
+  for (const delayedAsset of engine === webkit ? ['cover', 'prop'] : ['prop']) {
     const coverContext = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true })
     let releaseCover, coverRequested
     const coverGate = new Promise(resolve => { releaseCover = resolve })
     const coverRequest = new Promise(resolve => { coverRequested = resolve })
-    await coverContext.route(/\/assets\/combat\/enemies\/animated\/cultist-released\.webp(?:\?|$)/, async route => {
+    await coverContext.route(delayedAsset === 'cover'
+      ? /\/assets\/combat\/enemies\/animated\/cultist-released\.webp(?:\?|$)/
+      : /\/assets\/combat\/enemies\/props\/cultist-sticks\.webp(?:\?|$)/, async route => {
       coverRequested()
       await coverGate
       await route.continue()
     })
     const coverPage = await createFixturePage(coverContext)
-    const attackResponse = coverPage.waitForResponse(response => /\/cultist-attack\.svg(?:\?|$)/.test(response.url()) && response.ok())
+    const attackResponse = coverPage.waitForResponse(response => /\/cultist-attack\.(?:svg|webp)(?:\?|$)/.test(response.url()) && response.ok())
     await coverPage.evaluate(() => {
       const f = window.fixture
       f.autoAdvance = true
@@ -534,13 +564,13 @@ try {
     const prematureArt = await coverPage.locator('.enemy__art--cutout[data-animation-layer="attack"]').count()
     const prematureSticks = await coverPage.locator('.boss-projectile').count()
     releaseCover()
-    assert.equal(prematureArt, 0, 'Cultist body animated before its release cover was decoded')
-    assert.equal(prematureSticks, 0, 'Cultist threw before its release cover was decoded')
+    assert.equal(prematureArt, 0, `Cultist body animated before its ${delayedAsset} was decoded`)
+    assert.equal(prematureSticks, 0, `Cultist threw before its ${delayedAsset} was decoded`)
     const arrival = await delayedCover
     assert(arrival.throwMountedAt - arrival.enemyPhaseAt > 600, 'delayed cover did not defer the shared attack clock')
     assert(arrival.enemyResolvedAt - arrival.throwArrivalAt >= -10, 'cover delay made damage beat the sticks')
     await coverContext.close()
-    console.log('PASS horizontal-phone: delayed release cover keeps body and projectile clocks together')
+    console.log(`PASS horizontal-phone: delayed ${delayedAsset} keeps body and projectile clocks together`)
   }
   const delayedContext = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true })
   let delayedRequests = 0
