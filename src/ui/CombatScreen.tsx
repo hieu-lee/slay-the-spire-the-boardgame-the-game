@@ -193,7 +193,7 @@ import {
 import { enemyAttackTargetPlayerIds, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, turnEffectVfxRecipe } from './combat-vfx.ts'
 import { combatBodyPoint } from './combat-geometry.ts'
 import { playSoundEffect } from './sfx.ts'
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CourierPeek, courierPeekPhase, courierReady } from './CourierPanel.tsx'
 import { createPortal } from 'react-dom'
 
@@ -2597,35 +2597,82 @@ function CombatScreenView({
     previousWeakByActor.current = new Map(weakByActor)
   }, [authoritativeConnected, authoritativeRestoration, state.players, state.enemies])
 
+  const [cultistThrowAt, setCultistThrowAt] = useState<Record<string, number | null>>({})
+  const [cultistPreparedUntil, setCultistPreparedUntil] = useState<Record<string, number>>({})
+  const [expiredCultistPhase, setExpiredCultistPhase] = useState('')
+  // A reconnect can change the presentation clock while the server is still
+  // resolving this same enemy phase. Keep a timed-out throw cancelled.
+  const activeEnemyPhaseKey = `${state.combatId}:${state.turn}:enemy`
+  const logicalAutoAdvanceKey = `${state.combatId}:${state.turn}:${state.phase}`
+  const currentAutoAdvance = useRef({ key: logicalAutoAdvanceKey, enabled: autoAdvance })
+  currentAutoAdvance.current = { key: logicalAutoAdvanceKey, enabled: autoAdvance }
+  const pendingAutoAdvance = useRef<{ key: string; request: Promise<ActionOutcome | void> } | null>(null)
+  const onCultistThrowPrepared = useCallback((enemyUid: string, arrivalWithinMs = 750) => {
+    const key = `${state.combatId}:${authoritativeRestoration ?? ''}:${state.turn}:${enemyUid}`
+    const until = performance.now() + arrivalWithinMs
+    setCultistPreparedUntil(current => (current[key] ?? 0) >= until ? current : { ...current, [key]: until })
+  }, [authoritativeRestoration, state.combatId, state.turn])
+  const onCultistThrowStart = useCallback((enemyUid: string) => {
+    const key = `${state.combatId}:${authoritativeRestoration ?? ''}:${state.turn}:${enemyUid}`
+    const at = performance.now()
+    setCultistThrowAt(current => typeof current[key] === 'number' ? current : { ...current, [key]: at })
+  }, [authoritativeRestoration, state.combatId, state.turn])
+  const onCultistThrowSkipped = useCallback((enemyUid: string) => {
+    const key = `${state.combatId}:${authoritativeRestoration ?? ''}:${state.turn}:${enemyUid}`
+    setCultistThrowAt(current => key in current ? current : { ...current, [key]: null })
+  }, [authoritativeRestoration, state.combatId, state.turn])
+  const enemyPhaseClock = useRef({ key: '', at: 0 })
+  const lastEnemyResolve = useRef({ key: '', at: 0 })
   useEffect(() => {
     if (!autoAdvance || voluntaryActionsBlocked || state.phase !== 'enemy' && state.phase !== 'roundEnd') return undefined
     if (state.phase === 'enemy' && characterAttacksActive) return undefined
-    let cancelled = false
+    const phaseKey = `${state.combatId}:${authoritativeRestoration ?? ''}:${state.turn}:${state.phase}`
+    if (enemyPhaseClock.current.key !== phaseKey) enemyPhaseClock.current = { key: phaseKey, at: performance.now() }
+    const cultists = state.phase === 'enemy' && !prefersReducedMotion
+      ? state.enemies.filter(enemy => !enemy.dead && enemy.defId === 'cultist' &&
+        enemyAttackTargetPlayerIds(state, enemy).length > 0)
+      : []
+    const launchTimes = cultists.map(enemy => cultistThrowAt[`${state.combatId}:${authoritativeRestoration ?? ''}:${state.turn}:${enemy.uid}`])
+    const preparedArrival = Math.max(0, ...cultists.map(enemy => cultistPreparedUntil[`${state.combatId}:${authoritativeRestoration ?? ''}:${state.turn}:${enemy.uid}`] ?? 0))
+    // The CSS flight starts after art is ready; failed art gets a bounded fallback.
+    const deadline = cultists.length
+      ? launchTimes.every(at => at !== undefined)
+        // Leave one paint frame after the 250ms flight before resolving damage.
+        ? Math.max(enemyPhaseClock.current.at + 730, ...launchTimes.filter((at): at is number => typeof at === 'number').map(at => at + 280))
+        : Math.max(enemyPhaseClock.current.at + 5000, preparedArrival)
+      : enemyPhaseClock.current.at + 730
+    const retryAt = lastEnemyResolve.current.key === phaseKey ? lastEnemyResolve.current.at + 730 : 0
+    const resolveDelayMs = Math.max(0, deadline - performance.now(), retryAt - performance.now())
     const timer = window.setTimeout(async () => {
+      // A restoration updates the presentation clock but must not send the
+      // same turn action twice while its first server response is pending.
+      if (onAction && pendingAutoAdvance.current?.key === logicalAutoAdvanceKey) return
+      if (cultists.length && launchTimes.some(at => at === undefined)) setExpiredCultistPhase(activeEnemyPhaseKey)
+      lastEnemyResolve.current = { key: phaseKey, at: performance.now() }
       const shouldRetry = (outcome: ActionOutcome | void) => outcome && (
         outcome.status === 'refused' || outcome.status === 'unknown' ||
         outcome.status === 'reconciled' &&
           outcome.snapshot?.run?.combat?.phase === state.phase &&
           outcome.snapshot.run.combat.turn === state.turn
       )
-      if (state.phase === 'enemy') {
-        if (onAction) {
-          const outcome = await onAction({ kind: 'resolveEnemies' })
-          if (!cancelled && shouldRetry(outcome)) {
-            setAutoAdvanceRetry((attempt) => attempt + 1)
-          }
+      if (onAction) {
+        const action = state.phase === 'enemy' ? { kind: 'resolveEnemies' } as const : { kind: 'startTurn' } as const
+        const request = Promise.resolve(onAction(action))
+        pendingAutoAdvance.current = { key: logicalAutoAdvanceKey, request }
+        let outcome: ActionOutcome | void
+        try { outcome = await request }
+        finally {
+          if (pendingAutoAdvance.current?.request === request) pendingAutoAdvance.current = null
         }
-        else onChange?.(enemyTurn(state))
-      } else if (onAction) {
-        const outcome = await onAction({ kind: 'startTurn' })
-        if (!cancelled && shouldRetry(outcome)) {
+        if (currentAutoAdvance.current.key === logicalAutoAdvanceKey && currentAutoAdvance.current.enabled && shouldRetry(outcome)) {
           setAutoAdvanceRetry((attempt) => attempt + 1)
         }
-      } else onChange?.(startPlayerTurnWithChoices(state))
-    }, 730)
-    return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [autoAdvance, autoAdvanceRetry, authoritativeRefresh, characterAttacksActive, state.phase, state.turn,
-    voluntaryActionsBlocked])
+      } else if (state.phase === 'enemy') onChange?.(enemyTurn(state))
+      else onChange?.(startPlayerTurnWithChoices(state))
+    }, resolveDelayMs)
+    return () => window.clearTimeout(timer)
+  }, [autoAdvance, autoAdvanceRetry, authoritativeRefresh, authoritativeRestoration, characterAttacksActive, cultistPreparedUntil, cultistThrowAt,
+    prefersReducedMotion, state.combatId, state.phase, state.turn, voluntaryActionsBlocked])
 
   function finishTurn() {
     if (chamberClosing) return
@@ -6174,6 +6221,10 @@ function CombatScreenView({
                 hitBeats={hits.get(enemy.uid)}
                 vfx={enemyVfxFor(enemy)}
                 rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
+                cancelPendingThrow={state.phase === 'enemy' && enemy.defId === 'cultist' && expiredCultistPhase === activeEnemyPhaseKey}
+                onThrowPrepared={onCultistThrowPrepared}
+                onThrowStart={onCultistThrowStart}
+                onThrowSkipped={onCultistThrowSkipped}
                 stageIndex={stageEnemies.length + index}
                 // A boss stands in every row, so the only reading that means
                 // anything to the person looking at the screen is their own.
@@ -6706,6 +6757,10 @@ function CombatScreenView({
                       hitBeats={hits.get(enemy.uid)}
                       vfx={enemyVfxFor(enemy)}
                       rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
+                      cancelPendingThrow={state.phase === 'enemy' && enemy.defId === 'cultist' && expiredCultistPhase === activeEnemyPhaseKey}
+                      onThrowPrepared={onCultistThrowPrepared}
+                      onThrowStart={onCultistThrowStart}
+                      onThrowSkipped={onCultistThrowSkipped}
                       stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
                       rowLabel={occupant?.name ?? `Player ${row + 1}`}
                       defender={occupant}

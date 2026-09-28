@@ -48,9 +48,10 @@ These are authored from the original silhouettes, weapons and anatomy:
 ## Normal enemies and summons
 
 All 47 normal enemy art IDs have idle and attack sequences, sharing the existing
-1830ms enemy turn and 730ms contact. Melee designs brace, advance into their
-target, strike and return; ranged designs charge at home, release at 500ms,
-and recover while the projectile travels for 230ms. Impacts bloom for 480ms.
+1830ms enemy turn and 730ms contact (750ms for Cultist's two-stick throw).
+Melee designs brace, advance into their target, strike and return; ranged designs charge at home, release at 500ms,
+and recover while the projectile travels for 230ms. Cultist's sticks take 250ms.
+Impacts bloom for 480ms.
 Acid splashes rise from the target's feet. Row, facing and area attacks use the
 same living-player target rules as combat resolution.
 

@@ -949,13 +949,35 @@
 .enemy[data-enemy-art='cultist'] .boss-projectile {
   width: calc(var(--stage-actor-width) * .3);
   animation-name: cultist-stick-flight;
+  animation-duration: 250ms;
   animation-timing-function: linear;
 }
 .enemy[data-enemy-art='cultist'] .boss-projectile > img {
   position: absolute;
   inset: 0;
   filter: none;
-  animation: cultist-stick-spin 230ms 500ms linear both;
+  animation: cultist-stick-spin 250ms 500ms linear both;
+}
+.enemy[data-enemy-art='cultist'] .enemy-projectile-impact > img { animation-delay: 750ms; }
+/* WebKit can paint a timed SVG layer late. Cover its hands during the flight,
+   then return to the animated recovery after the props and impact are gone. */
+.enemy[data-cultist-cover] .enemy__portrait > .enemy__art--cutout[data-animation-layer='attack'] {
+  animation: cultist-held-visibility 1830ms linear both;
+}
+.enemy .enemy__portrait > .cultist-release-cover {
+  z-index: 2;
+  opacity: 0;
+}
+.enemy[data-cultist-cover] .enemy__portrait > .enemy__art--cutout.cultist-release-cover {
+  animation: cultist-released-visibility 1830ms linear both;
+}
+@keyframes cultist-held-visibility {
+  0%, 27.31%, 81.95%, 100% { opacity: 1; }
+  27.33%, 81.94% { opacity: 0; }
+}
+@keyframes cultist-released-visibility {
+  0%, 27.31%, 81.95%, 100% { opacity: 0; }
+  27.33%, 81.94% { opacity: 1; }
 }
 .enemy[data-enemy-art='cultist'] .boss-projectile > img + img {
   --stick-offset: var(--cultist-hand-span);

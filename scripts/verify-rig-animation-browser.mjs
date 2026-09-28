@@ -23,6 +23,7 @@ const normalsOnly = process.argv.includes('--normal-only')
 const bossesOnly = process.argv.includes('--boss-only')
 const elitesOnly = process.argv.includes('--elites-only')
 const eliteArt = e => e.elite || ['sentry_a','sentry_b','red_slaver','blue_slaver'].includes(e.id)
+const onlyEnemyIds = process.argv.filter(arg => arg.startsWith('--only=')).map(arg => arg.slice('--only='.length))
 const rigs = JSON.parse(readFileSync(resolve(root, 'scripts/animation/rigs.json'), 'utf8'))
 const enemies = [...new Map(Object.values(ENEMIES).filter((e) => bossesOnly ? e.isBoss : elitesOnly ? eliteArt(e) : normalsOnly ? !e.isBoss && !e.elite : e.isBoss || eliteArt(e)).map((e) => [e.artId ?? e.id,e])).values()]
   .filter(e=>!process.argv.some(a=>a.startsWith('--only='))||process.argv.includes(`--only=${e.id}`))
@@ -732,6 +733,9 @@ try {
             `${enemy.id}: projectile detached from body ${JSON.stringify({origin,silhouette})}`)
         }
         if(enemyProjectileImpactPath(enemy.artId??enemy.id)) {
+          const cultist = (enemy.artId ?? enemy.id) === 'cultist'
+          const launch = 500
+          const arrival = cultist ? launch + 250 : 730
           const effect = card.locator('.enemy-projectile-impact')
           assert.equal(await effect.count(),1,`${enemy.id}: missing targeted impact`)
           const timing = await effect.locator('img').evaluate(image=>{
@@ -739,12 +743,12 @@ try {
             const {delay,duration}=anim.effect.getTiming()
             return {delay,duration,loaded:image.complete&&image.naturalWidth>0}
           })
-          assert.deepEqual(timing,{delay:730,duration:480,loaded:true},`${enemy.id}: impact clock or asset`)
+          assert.deepEqual(timing,{delay:arrival,duration:480,loaded:true},`${enemy.id}: impact clock or asset`)
           const flight = await card.locator('.boss-projectile').evaluate(e=>{
             const {delay,duration}=e.getAnimations()[0].effect.getTiming()
             return {delay,duration}
           })
-          assert.deepEqual(flight,{delay:500,duration:230},`${enemy.id}: projectile arrival misses impact`)
+          assert.deepEqual(flight,{delay:launch,duration:arrival-launch},`${enemy.id}: projectile arrival misses impact`)
           if(await effect.getAttribute('data-impact-anchor')==='feet') {
             const anchor=await effect.evaluate(e=>{
               const image=e.querySelector('img').getBoundingClientRect()
@@ -779,7 +783,8 @@ try {
       }else assert.equal(await card.getAttribute('data-animation'),'idle',`${enemy.id}: nonattack intent`)
     }
     // Sample the rendered texture, with CSS travel disabled so it cannot hide a frozen rig.
-    for (const [id,isBoss] of (elitesOnly ? [['gremlin_nob',false]] : normalsOnly ? ['looter','gremlin_wizard','byrd'].map(artId=>[Object.values(ENEMIES).find(e=>(e.artId??e.id)===artId).id,false]) : [['gremlin_nob',false],['guardian_attack',true],['downfall_demon',true]])) {
+    for (const [id,isBoss] of (elitesOnly ? [['gremlin_nob',false]] : normalsOnly ? ['looter','gremlin_wizard','byrd'].map(artId=>[Object.values(ENEMIES).find(e=>(e.artId??e.id)===artId).id,false]) : [['gremlin_nob',false],['guardian_attack',true],['downfall_demon',true]])
+      .filter(([id]) => onlyEnemyIds.length === 0 || onlyEnemyIds.includes(id))) {
       await page.evaluate(([id,isBoss])=>window.fixture.install('defect',id,isBoss),[id,isBoss])
       await page.waitForTimeout(2400) // Longer than a decoded one-shot preload's entire timeline.
       let previousSrc
@@ -812,7 +817,8 @@ try {
         await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='idle')
       }
     }
-    if(normalsOnly) for(const [id,expected] of [['acid_slime',1],['gremlin_wizard',2]]) {
+    if(normalsOnly) for(const [id,expected] of [['acid_slime',1],['gremlin_wizard',2]]
+      .filter(([id]) => onlyEnemyIds.length === 0 || onlyEnemyIds.includes(id))) {
       await page.evaluate(id=>{
         const f=window.fixture;f.install('defect',id,false)
         f.state.players.push({...structuredClone(f.state.players[0]),id:'p2',name:'Second player',row:1,facingEnemyUid:undefined})

@@ -71,6 +71,10 @@ type EnemyCardProps = {
    * this row is the reading that matters to whoever owns it.
    */
   defender?: Pick<Player, 'row' | 'vulnerable' | 'powers'>
+  cancelPendingThrow?: boolean
+  onThrowPrepared?: (enemyUid: string, arrivalWithinMs?: number) => void
+  onThrowStart?: (enemyUid: string) => void
+  onThrowSkipped?: (enemyUid: string) => void
   onClick?: (enemy: Enemy) => void
 }
 
@@ -292,6 +296,10 @@ export function EnemyCard({
   stageIndex = 0,
   rowLabel,
   defender,
+  cancelPendingThrow,
+  onThrowPrepared,
+  onThrowStart,
+  onThrowSkipped,
   onClick,
 }: EnemyCardProps) {
   const cardRef = useRef<HTMLButtonElement>(null)
@@ -307,6 +315,7 @@ export function EnemyCard({
   const nextNumber = useRef(0)
   const [bulletNumbers, setBulletNumbers] = useState<{ id: number; damage: number; x: number; y: number }[]>([])
   const attackPreload = useRef<{ source: string; blob: Blob } | null>(null)
+  const [attackPreloadRevision, setAttackPreloadRevision] = useState(0)
   const bossAttackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [presentedBossAttack, setPresentedBossAttack] = useState<{
     art: string
@@ -469,8 +478,10 @@ export function EnemyCard({
   const currentIdleArt = enemyAnimationImagePath(def, 'idle')
   const currentBossProjectileArt = bossProjectileImagePath(currentBossArtId)
   const currentProjectileImpact = enemyProjectileImpactPath(currentBossArtId)
-  const bossAttackRequested = Boolean(animatedEnemy && acting && bossHasAttackAction)
+  const bossAttackRequested = Boolean(animatedEnemy && acting && bossHasAttackAction && !cancelPendingThrow)
   const [bossAttackReady, setBossAttackReady] = useState(false)
+  const [cultistCoverReady, setCultistCoverReady] = useState(false)
+  const [cultistCoverFailed, setCultistCoverFailed] = useState(false)
   const finishBossAttack = () => {
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
     bossAttackTimer.current = null
@@ -482,19 +493,44 @@ export function EnemyCard({
   }, [acting])
   const bossAttackTriggered = bossAttackRequested && !deferBossAttack &&
     !resetVisuals && !awaitingNextEnemyPhase
-  const bossAttacking = Boolean(animatedEnemy && presentedBossAttack)
-  const bossAttackPlaying = bossAttacking && bossAttackReady
+  const bossAttacking = Boolean(animatedEnemy && presentedBossAttack && !cancelPendingThrow)
+  const bossAttackPlaying = bossAttacking && bossAttackReady &&
+    (!timedCultist || cultistCoverReady || cultistCoverFailed)
+  useEffect(() => {
+    if (!timedCultist || !bossAttackPlaying || bossAttackTimer.current) return
+    bossAttackTimer.current = setTimeout(finishBossAttack, bossAttackDurationFor(currentBossArtId))
+  }, [bossAttackPlaying, currentBossArtId, timedCultist])
+  useEffect(() => {
+    if (currentBossArtId === 'cultist' && bossAttackRequested && awaitingNextEnemyPhase) onThrowSkipped?.(enemy.uid)
+  }, [awaitingNextEnemyPhase, bossAttackRequested, currentBossArtId, enemy.uid, onThrowSkipped])
+  useEffect(() => {
+    if (!presentedBossAttack || !(cancelPendingThrow || !acting && !bossAttackReady)) return
+    if (cancelPendingThrow && bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
+    if (cancelPendingThrow) bossAttackTimer.current = null
+    setBossAttackReady(false)
+    setPresentedBossAttack(null)
+  }, [acting, bossAttackReady, cancelPendingThrow, presentedBossAttack])
   useEffect(() => {
     if (!bossAttackTriggered) return
     const cached = attackPreload.current
-    // Each one-shot WebP needs its own URL; a decoded preload shares an ended timeline.
+    // The WebKit body SVG and CSS projectiles must share a start clock.
+    // Decode the cover before mounting the one-shot SVG at all.
+    if (timedCultist && !cultistCoverReady && !cultistCoverFailed) return
+    // A cold Cultist request may finish just before the phase deadline.
+    // Mount its preloaded blob instead of starting a second image request.
+    if (currentBossArtId === 'cultist' && cached?.source !== currentBossAttackArt) return
+    // A fresh blob URL restarts decoded one-shots. Cold Cultist art must load
+    // before its sticks leave; its idle image still visibly holds them.
     const art = cached?.source === currentBossAttackArt && cached.blob
-      ? URL.createObjectURL(cached.blob) : useSafariCombatRendering ? currentBossAttackArt : currentIdleArt
+      ? URL.createObjectURL(cached.blob)
+      : (currentBossArtId === 'cultist' || useSafariCombatRendering) ? currentBossAttackArt : currentIdleArt
+    if (currentBossArtId === 'cultist') onThrowPrepared?.(enemy.uid, 1550)
     setPresentedBossAttack({ art, artId: currentBossArtId, source: currentBossAttackArt })
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
     bossAttackTimer.current = null
     setBossAttackReady(false)
-  }, [bossAttackTriggered, currentBossArtId, currentBossAttackArt, currentIdleArt])
+  }, [attackPreloadRevision, bossAttackTriggered, cultistCoverFailed, cultistCoverReady,
+    currentBossArtId, currentBossAttackArt, currentIdleArt, enemy.uid, onThrowPrepared, timedCultist])
   useEffect(() => () => {
     if (presentedBossAttack?.art.startsWith('blob:')) URL.revokeObjectURL(presentedBossAttack.art)
   }, [presentedBossAttack])
@@ -566,13 +602,16 @@ export function EnemyCard({
     void fetch(bossAttackArt, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) return
       const blob = await response.blob()
-      if (!controller.signal.aborted) attackPreload.current = { source: bossAttackArt, blob }
+      if (!controller.signal.aborted) {
+        attackPreload.current = { source: bossAttackArt, blob }
+        if (currentBossArtId === 'cultist') setAttackPreloadRevision(revision => revision + 1)
+      }
     }).catch(() => undefined)
     return () => {
       controller.abort()
       attackPreload.current = null
     }
-  }, [bossAttackArt])
+  }, [bossAttackArt, currentBossArtId])
   useEffect(() => {
     if (!animatedEnemy || currentBossArtId !== 'downfall_demon') return
     for (const path of ['combat/rigged/downfall_demon-ground-slam.webp',
@@ -582,6 +621,17 @@ export function EnemyCard({
       void preload.decode?.().catch(() => undefined)
     }
   }, [animatedEnemy, currentBossArtId])
+  useEffect(() => {
+    if (!animatedEnemy || !timedCultist || cultistCoverReady || cultistCoverFailed) return
+    let active = true
+    const preload = new Image()
+    preload.src = assetPath('combat/enemies/animated/cultist-released.webp')
+    void preload.decode().then(
+      () => { if (active) setCultistCoverReady(true) },
+      () => { if (active) setCultistCoverFailed(true) },
+    )
+    return () => { active = false }
+  }, [animatedEnemy, cultistCoverFailed, cultistCoverReady, timedCultist])
   useEffect(() => {
     for (const path of [currentBossProjectileArt, currentProjectileImpact]) {
       if (!path) continue
@@ -647,7 +697,7 @@ export function EnemyCard({
   }, [art, bossArtId, bossAttacking, bossAttackContactLeft, bossAttackMotion])
   useLayoutEffect(() => {
     const card = cardRef.current
-    if (!card || !bossAttacking || !bossProjectileArt) return
+    if (!card || !bossAttackPlaying || !bossProjectileArt) return
     const initialBoss = card.querySelector<CombatArtElement>('.enemy__art--cutout[data-animation-layer="attack"]')
     const board = card.closest('.board')
     if (!initialBoss || !board) return
@@ -691,6 +741,7 @@ export function EnemyCard({
       }
     }
     measure()
+    if (bossArtId === 'cultist') onThrowPrepared?.(enemy.uid, 750)
     // Measure this image at the target, after its portrait's capture handler
     // aligns it. Other board images can still update the projectile's target.
     const onLoad = () => measure()
@@ -705,7 +756,7 @@ export function EnemyCard({
       board.removeEventListener('loadeddata', onLoad, true)
       removeReady()
     }
-  }, [art, bossArtId, bossAttacking, bossProjectileArt, projectileImpact, rangedTargetKey])
+  }, [art, bossArtId, bossAttackPlaying, bossProjectileArt, enemy.uid, onThrowPrepared, projectileImpact, rangedTargetKey])
   const abilities = enemyAbilities(def)
   const mods = attackerModsOfEnemy(visibleEnemy)
   const intent = actions.flatMap((action) => intentParts(action, (printed) => swingDamage(
@@ -765,6 +816,7 @@ export function EnemyCard({
       data-enemy-art={bossArtId}
       data-normal-size={normalSize ? true : undefined}
       data-projectile-impact={projectileImpact ? true : undefined}
+      data-cultist-cover={timedCultist && bossAttackPlaying && cultistCoverReady || undefined}
       data-animation={animatedEnemy ? bossAttacking ? 'attack' : 'idle' : 'static'}
       data-webmcp-pending={stageVisualDamage && visualSignature !== JSON.stringify(visibleEnemy) || undefined}
       data-row={enemy.row}
@@ -808,7 +860,10 @@ export function EnemyCard({
         <span className="elite-attack-effect" aria-hidden="true" />
       ) : null}
       {bossAttackPlaying && bossProjectileArt ? rangedTargetPlayerIds.map((playerId) => (
-        <span className="boss-projectile" data-target-player={playerId} key={playerId} aria-hidden="true">
+        <span className="boss-projectile" data-target-player={playerId} key={playerId} aria-hidden="true"
+          onAnimationStart={event => {
+            if (event.animationName === 'cultist-stick-flight') onThrowStart?.(enemy.uid)
+          }}>
           <img src={bossProjectileArt} alt="" />
           {bossArtId === 'cultist' ? <img src={bossProjectileArt} alt="" /> : null}
         </span>
@@ -862,11 +917,21 @@ export function EnemyCard({
             data-animation-asset={bossAttacking ? presentedBossAttack?.source : art}
             loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
             onReady={() => {
-              if (!bossAttacking || bossAttackTimer.current) return
+              if (!bossAttackRequested || !bossAttacking || bossAttackTimer.current) return
+              if (timedCultist) onThrowPrepared?.(enemy.uid, 1550)
+              if (!timedCultist) bossAttackTimer.current = setTimeout(finishBossAttack, bossAttackDurationFor(bossArtId))
               setBossAttackReady(true)
-              bossAttackTimer.current = setTimeout(finishBossAttack, bossAttackDurationFor(bossArtId))
             }}
             onError={onArtError}
+          /> : null}
+          {timedCultist && bossAttacking && !cultistCoverFailed ? <img
+            className="enemy__art--cutout cultist-release-cover"
+            src={assetPath('combat/enemies/animated/cultist-released.webp')}
+            data-animation-layer="release-cover"
+            alt=""
+            aria-hidden="true"
+            loading="eager"
+            onError={() => setCultistCoverFailed(true)}
           /> : null}
         </> : <img
           key={`${def.artId ?? def.id}-static`}

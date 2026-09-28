@@ -82,7 +82,7 @@ def render(name, spec, output):
         body = register(body)
         pivots = [(x*scale+offset[0], y*scale+offset[1]) for x,y in [(246,345),(497,395)]]
         duration = 1830
-        # Exact release at 500ms, matching the existing 230ms projectile flight.
+        # Exact release at 500ms, when the CSS projectile flight begins.
         times = sorted({t for t in range(0,duration-19,33) if abs(t-500)>=20} | {500})
         motion = PchipInterpolator([0,300,430,500,650,1000,1500,1790,1830],
                                   [0,-12,-19,20,24,16,0,0,0])
@@ -95,6 +95,10 @@ def render(name, spec, output):
             canvas.alpha_composite(rotate(layers[1], angle*.65, pivots[1]))
             canvas.alpha_composite(body)
             frames.append(canvas)
+        # WebKit may paint the animated SVG's held layer a frame late. This
+        # registered empty-handed pose covers it on the CSS release clock.
+        released_pose = frames[min(range(len(times)), key=lambda i: abs(times[i]-650))]
+        released_pose.save(output.with_name('cultist-released.webp'), quality=90, method=6)
         # WebKit can throttle animated WebP frames independently of CSS flight.
         # SMIL uses elapsed time for the same rigid layers and release boundary.
         def svg_image(image):

@@ -158,7 +158,7 @@ painted base at foot level; Defect's beam source retains its mouth registration.
 
 Byrd's idle uses three full wingbeats per 3000ms loop, with separate rigid wing
 layers behind a fixed body. Cultist draws back both sticks, releases at 500ms,
-holds empty hands through impact at 730ms and recovers by 1830ms. The two rigid
+holds empty hands through impact at 750ms and recovers by 1830ms. The two rigid
 props spin from their respective hands to each living player targeted by the
 attack. Shoulder underlays cover the surfaces exposed by the arm rotation.
 `wing_and_throw.py` bakes these layers; its Sunburst native-alpha sources and exact
@@ -167,8 +167,11 @@ prompts are in `sources/wing-and-throw-prompts.json`. Rebuild via
 from the repository root. Their exports live in
 `combat/enemies/animated/`, without unused HEVC companions or a macOS authoring
 dependency. Cultist also exports a self-contained animated SVG for WebKit:
-its elapsed-time arm transforms and release avoid native WebP frame throttling
-drifting behind the CSS projectiles. Other browsers use the baked WebP.
+its elapsed-time arm transforms avoid native WebP frame throttling. A matching
+empty-handed pose covers the SVG from the CSS release boundary to 1500ms,
+keeping held sticks from appearing beside the flying props while leaving the
+animated recovery visible.
+Other browsers use the baked WebP.
 Refresh their size calibration with
 `python3 scripts/calibrate-enemy-size.py --only=byrd,cultist`; `--check` verifies
 it without writing. Byrd's full wing clearance stays separate from body scale.
