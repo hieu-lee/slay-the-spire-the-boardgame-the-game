@@ -43,7 +43,8 @@ try {
     ['horizontal-phone', { width: 844, height: 390 }]]) {
     room.run.combat = structuredClone(originalCombat)
     publish()
-    const context = await browser.newContext({ viewport, isMobile: screen === 'horizontal-phone', hasTouch: screen === 'horizontal-phone' })
+    const context = await browser.newContext({ viewport, isMobile: screen === 'horizontal-phone',
+      hasTouch: screen === 'horizontal-phone', reducedMotion: 'no-preference' })
     const page = await context.newPage()
     const errors = []
     page.on('pageerror', error => errors.push(error.stack ?? String(error)))
@@ -60,14 +61,19 @@ try {
     const layout = async (count) => {
       await page.waitForFunction(expected => document.querySelectorAll('.app-shell--online .enemy').length === expected, count)
       await page.waitForTimeout(1000)
-      return combat.evaluate(element => ({
-        scale: +getComputedStyle(element).getPropertyValue('--stage-scale'),
-        slots: +getComputedStyle(element).getPropertyValue('--stage-enemy-count'),
-        actors: [...element.querySelectorAll('.row__seat, .enemy')].map(actor => ({
-          id: actor.dataset.enemyId ?? actor.querySelector('.seat[data-player-id]')?.dataset.playerId,
-          ...Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, actor.getBoundingClientRect()[key]])),
-        })),
-      }))
+      return combat.evaluate(element => {
+        const board = element.querySelector('.board')
+        const boardBounds = board.getBoundingClientRect()
+        return {
+          scale: +getComputedStyle(element).getPropertyValue('--stage-scale'),
+          slots: +getComputedStyle(element).getPropertyValue('--stage-enemy-count'),
+          board: { left: boardBounds.left, right: boardBounds.right, scrollLeft: board.scrollLeft },
+          actors: [...element.querySelectorAll('.row__seat, .enemy')].map(actor => ({
+            id: actor.dataset.enemyId ?? actor.querySelector('.seat[data-player-id]')?.dataset.playerId,
+            ...Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, actor.getBoundingClientRect()[key]])),
+          })),
+        }
+      })
     }
     const sameLayout = (before, after) => {
       assert.equal(after.slots, before.slots, `${screen}: reload changed enemy slots`)
@@ -80,15 +86,38 @@ try {
         }
       })
     }
+    const crowded = await layout(9)
     assert.equal(snapshot().initialEnemyCount, 9, `${screen}: original count missing from server snapshot`)
-    assert.equal((await layout(9)).slots, 9, `${screen}: initial encounter has nine enemy slots`)
+    assert.equal(crowded.slots, 9, `${screen}: initial encounter has nine enemy slots`)
+    assert(await combat.getAttribute('data-stage-motion') !== null, `${screen}: stage motion unexpectedly disabled`)
+    await page.locator('.board').evaluate(board => { board.scrollLeft = board.scrollWidth })
+    await combat.evaluate(element => {
+      window.reflowTransitions = []
+      element.addEventListener('transitionrun', event => {
+        if (event.target === element) window.reflowTransitions.push(event.propertyName)
+        else if (event.target instanceof HTMLElement && event.target.dataset.enemyId === 'enemy-8') {
+          window.reflowTransitions.push(`enemy-8:${event.propertyName}`)
+        }
+      })
+    })
 
-    for (let index = 3; index < 9; index++) {
-      Object.assign(room.run.combat.enemies[index], { hp: 0, dead: true })
+    for (let index = 0; index < 9; index++) {
+      if (![0, 4, 8].includes(index)) Object.assign(room.run.combat.enemies[index], { hp: 0, dead: true })
     }
     publish()
     const before = await layout(3)
-    assert.equal(before.slots, 9, `${screen}: kills must retain the original slots`)
+    assert.equal(snapshot().initialEnemyCount, 9, `${screen}: saved encounter count should remain available`)
+    const recoveryTransitions = await page.evaluate(() => window.reflowTransitions)
+    assert.equal(before.slots, 3, `${screen}: kills must release the empty enemy slots`)
+    assert(before.scale > crowded.scale + .05, `${screen}: survivors must grow without reload`)
+    assert(recoveryTransitions.includes('--stage-scale') && recoveryTransitions.includes('--stage-enemy-count'),
+      `${screen}: stage did not animate its scale and formation: ${recoveryTransitions}`)
+    assert(recoveryTransitions.includes('enemy-8:--stage-index'),
+      `${screen}: the rightmost survivor jumped to its new slot: ${recoveryTransitions}`)
+    assert.equal(before.board.scrollLeft, 0, `${screen}: the board must recenter when survivors fit`)
+    assert(before.actors.every(actor => actor.x >= before.board.left - 2 &&
+      actor.x + actor.width <= before.board.right + 2), `${screen}: a survivor is still offscreen`)
+    assert(before.actors.some(actor => actor.id === 'enemy-8'), `${screen}: rightmost original enemy was lost`)
     assert(before.actors.every(actor => actor.id), `${screen}: actors must be identified across reload`)
     await page.screenshot({ path: resolve(output, `${screen}-before.png`) })
 
@@ -105,7 +134,8 @@ try {
     room.run.combat.enemies.slice(-7).forEach(enemy => Object.assign(enemy, { hp: 0, dead: true }))
     publish()
     const recovered = await layout(3)
-    assert.equal(recovered.slots, 9, `${screen}: dead summons must not expand the baseline`)
+    assert.equal(recovered.slots, 3, `${screen}: dead summons must release their slots`)
+    sameLayout(before, recovered)
 
     delete room.run.combat.initialEnemyCount
     publish()
@@ -116,7 +146,7 @@ try {
     sameLayout(recovered, await layout(3))
     assert.deepEqual(errors, [], `${screen}: uncaught browser errors`)
     await context.close()
-    console.log(`PASS ${screen}: online reconnect preserves formation after deaths and summons`)
+    console.log(`PASS ${screen}: online survivors reflow smoothly and retain their formation after reconnect`)
   }
 } finally {
   await browser.close()
