@@ -69,16 +69,6 @@
     "source": "e99005081347096875c737b8af896905dd9f88ea3418543e668aadf7a798baee",
     "video": "78a1d11f4de714b5ae643e6ea5401af50f0baa2f8ef20dd1f56fdee3700a92b2"
   },
-  "public/assets/combat/rigged/byrd-attack.webp": {
-    "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "8c3e62f3a2a1e3277d08beea0989e93762fbf991e73c63cc7943f53aafa6f0f5",
-    "video": "e73f64ab4b7c31dbd8a722a125a1c4982af12cced13976b01f63e22822da4fc7"
-  },
-  "public/assets/combat/rigged/byrd-idle.webp": {
-    "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "d922852574f6efca0e1bf534459ec1651813f4730670ebfea9d4cef8c62dc30c",
-    "video": "4b4847ba2ded16e8f249e502bb4d5ae2ae39ca6fe0d5f68cc06d9b84e54f4996"
-  },
   "public/assets/combat/rigged/centurion-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
     "source": "fd3d43c37846c89630c1043cc50d82f07acf5d0075fa824a5e61f479a8584baf",
@@ -108,16 +98,6 @@
     "encoder": "hevc-alpha-vfr-q100-v1",
     "source": "e2bc18b44c488feb4719207b571667ec9308feb18ab94d6b6bc68cf7e72f9f21",
     "video": "c91b7d2fd4fde1d6ffdb33d56f2a423009f531a0358180b2381517b1c334cc4b"
-  },
-  "public/assets/combat/rigged/cultist-attack.webp": {
-    "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "8b30bb35092ea4478b71d13d7fba9257b7f73af106a6538ab70132116809c9c8",
-    "video": "e34d29d0b766291f046f8c179b75c0b17202218926d5bed65e4598ddcbe28890"
-  },
-  "public/assets/combat/rigged/cultist-idle.webp": {
-    "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "b29d364a32d21669f9cd840531b6cb1094f60c72df22cc404cf596b8966d1f9b",
-    "video": "d74191038a9125dc5ac46f6ebb8417085c2a63e1112d6981e33709f0f21ccb72"
   },
   "public/assets/combat/rigged/dagger-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",

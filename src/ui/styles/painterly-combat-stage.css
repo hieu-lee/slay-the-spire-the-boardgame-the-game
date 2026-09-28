@@ -944,3 +944,30 @@
   translate: 0 12.890625%;
   transform-origin: 50% 87.109375%;
 }
+
+/* Rigid ritual sticks retain their painted size while crossing the board. */
+.enemy[data-enemy-art='cultist'] .boss-projectile {
+  width: calc(var(--stage-actor-width) * .3);
+  animation-name: cultist-stick-flight;
+  animation-timing-function: linear;
+}
+.enemy[data-enemy-art='cultist'] .boss-projectile > img {
+  position: absolute;
+  inset: 0;
+  filter: none;
+  animation: cultist-stick-spin 230ms 500ms linear both;
+}
+.enemy[data-enemy-art='cultist'] .boss-projectile > img + img {
+  --stick-offset: var(--cultist-hand-span);
+  --stick-rise: var(--cultist-hand-rise);
+  --stick-angle: 35deg;
+}
+@keyframes cultist-stick-flight {
+  0% { opacity: 0; transform: translate(-50%, -50%); }
+  2%, 94% { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(var(--boss-projectile-x) - 50%), calc(var(--boss-projectile-y) - 50%)); }
+}
+@keyframes cultist-stick-spin {
+  from { transform: translate(var(--stick-offset, 0rem), var(--stick-rise, 0rem)) rotate(var(--stick-angle, -25deg)); }
+  to { transform: translate(0, 0) rotate(calc(var(--stick-angle, -25deg) - 300deg)); }
+}

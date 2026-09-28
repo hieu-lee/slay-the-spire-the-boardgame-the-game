@@ -316,11 +316,17 @@
     "rootMotion": "elite-pounce"
   },
   "cultist": {
-    "contactLeft": 64,
+    "contactLeft": 130,
     "height": 937,
     "scale": 1.15,
-    "attackMotion": "melee",
-    "rootMotion": "elite-thrust"
+    "attackMotion": "ranged",
+    "rootMotion": "none",
+    "projectile": "cultist-sticks",
+    "impact": "turn-damage-impact",
+    "origin": [
+      152,
+      545
+    ]
   },
   "jaw_worm": {
     "contactLeft": 122,

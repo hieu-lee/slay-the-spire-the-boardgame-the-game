@@ -173,7 +173,10 @@ if __name__ == '__main__':
             runpy.run_path(str(ROOT / 'scripts/animation/register-demon.py'), run_name='__main__')
         for pose in ('idle', 'attack'):
             output = ROOT / spec['output'] / f'{name}-{pose}.webp'
-            if pose == 'attack' and name == 'hero-guardian-defense':
+            if (name, pose) in (('byrd', 'idle'), ('cultist', 'attack')):
+                from wing_and_throw import render as render_layered
+                render_layered(name, spec, output)
+            elif pose == 'attack' and name == 'hero-guardian-defense':
                 import runpy
                 runpy.run_path(str(ROOT / 'scripts/animation/render-guardian-defense.py'), run_name='__main__')
             elif pose == 'attack' and 'drawnSheet' in spec:

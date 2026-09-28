@@ -156,6 +156,27 @@ Damage impacts and projectile destinations use the cached painted body center,
 with sprite scale, padding and object fit applied. Acid instead grows from its
 painted base at foot level; Defect's beam source retains its mouth registration.
 
+Byrd's idle uses three full wingbeats per 3000ms loop, with separate rigid wing
+layers behind a fixed body. Cultist draws back both sticks, releases at 500ms,
+holds empty hands through impact at 730ms and recovers by 1830ms. The two rigid
+props spin from their respective hands to each living player targeted by the
+attack. Shoulder underlays cover the surfaces exposed by the arm rotation.
+`wing_and_throw.py` bakes these layers; its Sunburst native-alpha sources and exact
+prompts are in `sources/wing-and-throw-prompts.json`. Rebuild via
+`python3 scripts/animation/render-rig.py scripts/animation/rigs.json --only byrd,cultist`
+from the repository root. Their exports live in
+`combat/enemies/animated/`, without unused HEVC companions or a macOS authoring
+dependency. Cultist also exports a self-contained animated SVG for WebKit:
+its elapsed-time arm transforms and release avoid native WebP frame throttling
+drifting behind the CSS projectiles. Other browsers use the baked WebP.
+Refresh their size calibration with
+`python3 scripts/calibrate-enemy-size.py --only=byrd,cultist`; `--check` verifies
+it without writing. Byrd's full wing clearance stays separate from body scale.
+Run `node scripts/verify-wing-and-throw.mjs` and
+`node scripts/verify-wing-and-throw-browser.mjs` (also with `--webkit` and `--crios`) from the
+repository root for native-frame, desktop, horizontal-phone, targeting, replay,
+reconnect and reduced-motion checks.
+
 Hero rigs export at 800px wide to preserve detail at desktop/Retina display sizes.
 Idle exports use the original `-hero.webp` texture through `idleSource` where
 available, preserving the registered canvas aspect and display scale. Ironclad's

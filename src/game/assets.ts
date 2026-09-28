@@ -197,7 +197,9 @@ export function enemyImagePath(def: EnemyDef): string {
 
 export function enemyAnimationImagePath(def: EnemyDef, pose: 'idle' | 'attack'): string {
   const artId = def.artId ?? def.id
-  return assetPath(`combat/rigged/${artId}-${pose}.webp`)
+  // These layered exports use the shared WebP playback on every browser.
+  const folder = artId === 'byrd' || artId === 'cultist' ? 'enemies/animated' : 'rigged'
+  return assetPath(`combat/${folder}/${artId}-${pose}.webp`)
 }
 
 /**

@@ -57,6 +57,7 @@ const BOSS_PROJECTILE_ART = new Set([
 
 export function bossProjectileImagePath(artId: string): string | undefined {
   const projectile = (rigMetadata as Record<string, { projectile?: string }>)[artId]?.projectile
+  if (projectile === 'cultist-sticks') return assetPath('combat/enemies/props/cultist-sticks.webp')
   if (projectile) return assetPath(`combat/vfx/actions/${projectile}.webp`)
   return BOSS_PROJECTILE_ART.has(artId)
     ? assetPath(`combat/enemies/projectiles/${artId}.webp`)

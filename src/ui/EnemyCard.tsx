@@ -31,6 +31,7 @@ import {
   combatArtSize,
   onCombatArtReady,
   useSafariCombatRendering,
+  useWebKitCombatRendering,
   type CombatArtElement,
 } from './CombatAnimation.tsx'
 
@@ -456,10 +457,15 @@ export function EnemyCard({
   const actions = actionsForEnemy(visibleEnemy, die)
   const animatedEnemy = Boolean(animateArt && !visibleEnemy.dead)
   const currentBossArtId = def.artId ?? def.id
+  const timedCultist = useWebKitCombatRendering && currentBossArtId === 'cultist'
+  // WebKit can retain the idle texture over a timed SVG after changing opacity.
+  const retainIdle = useSafariCombatRendering && !timedCultist
   const bossHasAttackAction = actions.some((action) => action.kind === 'attack' || action.kind === 'attackSequence')
   const currentBossAttackArt = currentBossArtId === 'downfall_demon'
     ? assetPath('combat/rigged/downfall_demon-airborne.webp')
-    : enemyAnimationImagePath(def, 'attack')
+    : timedCultist
+      ? assetPath('combat/enemies/animated/cultist-attack.svg')
+      : enemyAnimationImagePath(def, 'attack')
   const currentIdleArt = enemyAnimationImagePath(def, 'idle')
   const currentBossProjectileArt = bossProjectileImagePath(currentBossArtId)
   const currentProjectileImpact = enemyProjectileImpactPath(currentBossArtId)
@@ -673,6 +679,11 @@ export function EnemyCard({
         if (!target) continue
         const targetRect = target.getBoundingClientRect()
         const body = combatBodyPoint(target)
+        if (bossArtId === 'cultist') {
+          // Source-space hand positions at the authored 500ms release.
+          projectile.style.setProperty('--cultist-hand-span', `${416 * fit / rem}rem`)
+          projectile.style.setProperty('--cultist-hand-rise', `${33 * fit / rem}rem`)
+        }
         projectile.style.setProperty('--boss-projectile-start-x', `${(startX - cardRect.left) / rem}rem`)
         projectile.style.setProperty('--boss-projectile-start-y', `${(startY - cardRect.top) / rem}rem`)
         projectile.style.setProperty('--boss-projectile-x', `${(body.x - startX) / rem}rem`)
@@ -799,6 +810,7 @@ export function EnemyCard({
       {bossAttackPlaying && bossProjectileArt ? rangedTargetPlayerIds.map((playerId) => (
         <span className="boss-projectile" data-target-player={playerId} key={playerId} aria-hidden="true">
           <img src={bossProjectileArt} alt="" />
+          {bossArtId === 'cultist' ? <img src={bossProjectileArt} alt="" /> : null}
         </span>
       )) : null}
 
@@ -826,7 +838,7 @@ export function EnemyCard({
         </> : null}
         {animatedEnemy ? <>
           {/* Retain the decoded idle across handoffs; Safari native video can paint blank transitions. */}
-          {useSafariCombatRendering ? <CombatAnimation
+          {retainIdle ? <CombatAnimation
             key={`${currentBossArtId}-idle`}
             className="enemy__art--cutout"
             src={currentIdleArt}
@@ -838,13 +850,13 @@ export function EnemyCard({
             loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
             onError={onArtError}
           /> : null}
-          {!useSafariCombatRendering || bossAttacking ? <CombatAnimation
+          {!retainIdle || bossAttacking ? <CombatAnimation
             key={`${bossArtId}-${bossAttacking ? 'attack' : 'idle'}`}
             className="enemy__art--cutout"
             src={art}
             data-animation-layer={bossAttacking ? 'attack' : 'idle'}
-            data-inactive={useSafariCombatRendering && !bossAttackPlaying || undefined}
-            posterSrc={!useSafariCombatRendering && bossAttacking ? currentIdleArt : undefined}
+            data-inactive={retainIdle && !bossAttackPlaying || undefined}
+            posterSrc={!useSafariCombatRendering && !timedCultist && bossAttacking ? currentIdleArt : undefined}
             forceWebp={useSafariCombatRendering}
             loop={!bossAttacking}
             data-animation-asset={bossAttacking ? presentedBossAttack?.source : art}
