@@ -574,7 +574,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [runLogMessage, setRunLogMessage] = useState<string | null>(null)
   const [extractingRunLog, setExtractingRunLog] = useState(false)
   const [replayLog, setReplayLog] = useState<RunLog | null>(null)
-  const replayCursorCleanup = useRef<(() => void) | null>(null)
+  const [replayFinished, setReplayFinished] = useState(false)
+  const replayRunner = useRef<{ log: RunLog; controller: AbortController; removeCursor?: () => void; stop?: number } | null>(null)
   const replayReturn = useRef<{ run: RunState; viewerId: string } | null>(null)
   const terminalRun = useRef<RunState | null>(null)
   // The guided tutorial is a throwaway Act I run. The run it interrupted is
@@ -766,9 +767,31 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     onClose()
   }
 
+  const stopReplay = () => {
+    const runner = replayRunner.current
+    replayRunner.current = null
+    if (!runner) return
+    clearTimeout(runner.stop)
+    runner.controller.abort()
+    runner.removeCursor?.()
+  }
+
+  const leaveReplay = () => {
+    stopReplay()
+    const previous = replayReturn.current
+    replayReturn.current = null
+    if (previous) {
+      setRun(previous.run)
+      setViewerId(previous.viewerId)
+    }
+    setReplayLog(null)
+    setReplayFinished(false)
+    setRunLogMessage(null)
+  }
+
   const startReplay = (log: RunLog) => {
-    replayCursorCleanup.current?.()
-    replayCursorCleanup.current = null
+    stopReplay()
+    setReplayFinished(false)
     replayReturn.current = { run: structuredClone(run), viewerId }
     setRunLogMessage(null)
     setReplayLog(log)
@@ -782,24 +805,34 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   useEffect(() => {
     if (!replayLog || !open || !active) return
-    const controller = new AbortController()
-    let cleanup: (() => void) | undefined
-    void playRunLog(replayLog, {
-      setRun,
-      setViewer: setViewerId,
-      reducedMotion: settings.reducedMotion || prefersReducedMotion,
-      signal: controller.signal,
-      pause: () => setPauseOpen(true),
-    }).then((removeCursor) => {
-      if (controller.signal.aborted) removeCursor()
-      else { cleanup = removeCursor; replayCursorCleanup.current = removeCursor }
-    }).catch((error) => {
-      if (!controller.signal.aborted) setRunLogMessage(error instanceof Error ? error.message : 'Replay stopped.')
-    })
+    // StrictMode reruns this effect at once with nothing changed (also when a Suspense boundary
+    // reappears); the replay already under way keeps going instead of restarting from its first event.
+    if (replayRunner.current?.log === replayLog) clearTimeout(replayRunner.current.stop)
+    else {
+      stopReplay()
+      setReplayFinished(false)
+      setRunLogMessage(null)
+      const started = { log: replayLog, controller: new AbortController() } as NonNullable<typeof replayRunner.current>
+      replayRunner.current = started
+      void playRunLog(replayLog, {
+        setRun,
+        setViewer: setViewerId,
+        reducedMotion: settings.reducedMotion || prefersReducedMotion,
+        signal: started.controller.signal,
+        pause: () => setPauseOpen(true),
+      }).then((removeCursor) => {
+        if (started.controller.signal.aborted) removeCursor()
+        else {
+          started.removeCursor = removeCursor
+          setReplayFinished(true)
+        }
+      }).catch((error) => {
+        if (!started.controller.signal.aborted) setRunLogMessage(error instanceof Error ? error.message : 'Replay stopped.')
+      })
+    }
+    const runner = replayRunner.current!
     return () => {
-      controller.abort()
-      cleanup?.()
-      if (replayCursorCleanup.current === cleanup) replayCursorCleanup.current = null
+      runner.stop = window.setTimeout(() => { if (replayRunner.current === runner) stopReplay() })
     }
   }, [active, open, replayLog])
 
@@ -1083,18 +1116,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           <button type="button" onClick={() => {
             setPauseOpen(false)
             if (tutorial) exitTutorial()
-            else if (replayLog) {
-              replayCursorCleanup.current?.()
-              replayCursorCleanup.current = null
-              const previous = replayReturn.current
-              replayReturn.current = null
-              if (previous) {
-                setRun(previous.run)
-                setViewerId(previous.viewerId)
-              }
-              setReplayLog(null)
-              setRunLogMessage(null)
-            } else if (!run.campaign.finalized) setResume({ version: 1, run, built })
+            else if (replayLog) leaveReplay()
+            else if (!run.campaign.finalized) setResume({ version: 1, run, built })
             onClose()
           }}>{tutorial ? 'Leave tutorial' : 'Return to main menu'}</button>
         </section>
@@ -1309,23 +1332,26 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           {run.lastStand && run.players.some((player) => player.dead) && run.act < 4 ? (
             <p role="status">Last Stand won the Act, but a fallen hero means the party cannot continue to the next Act.</p>
           ) : null}
-          {!replayLog ? <div className="room-screen__actions">
-            {!runLogExtracted && !(run.lastStand && run.players.some((player) => player.dead)) &&
+          <div className="room-screen__actions">
+            {(replayLog ? !replayFinished && !runLogMessage : !runLogExtracted) && !(run.lastStand && run.players.some((player) => player.dead)) &&
             (run.act < 3 || canEnterActIV(run.campaignProgress, run.campaign.keys, run.act)) ? <button type="button" disabled={pendingAcquisition || extractingRunLog}
               onClick={() => {
-                setRunLogExtractedRunId(null)
-                setRunLogMessage(null)
-                terminalRun.current = null
+                // A replay climbs only its own copy; the parked run keeps its log and result bookkeeping.
+                if (!replayLog) {
+                  setRunLogExtractedRunId(null)
+                  setRunLogMessage(null)
+                  terminalRun.current = null
+                }
                 setRun((current) => advanceAct(current))
               }}>
               Climb to Act {run.act + 1}
             </button> : null}
-            <button type="button" disabled={pendingAcquisition || extractingRunLog}
+            {!replayLog ? <><button type="button" disabled={pendingAcquisition || extractingRunLog}
               onClick={recordRunResult} data-run-log-control>Stop and record result</button>
             <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog}
-              data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button>
-          </div> : null}
-          {runLogMessage ? <p aria-live="polite">{runLogMessage}</p> : null}
+              data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button></> : null}
+          </div>
+          {runLogMessage && !replayLog ? <p aria-live="polite">{runLogMessage}</p> : null}
         </section>
       ) : null}
 
@@ -1342,10 +1368,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         </section>
       ) : null}
 
-      {allocatingCampaignMarks ? <section className="campaign-end">{run.meta.dailyDate !== undefined ? <><span>Daily Climb · {run.meta.dailyDate}</span><h2>{run.floorsCleared ?? 0} floor{run.floorsCleared === 1 ? '' : 's'} reached</h2><p>Daily Climbs rank on the Daily Climb leaderboard and do not earn campaign marks.</p></> : <><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p></>}{!replayLog && run.campaign.finalized && leaderboardStatus ? <p key={leaderboardStatus} aria-live="polite" data-webmcp-transient-status data-webmcp-pending={leaderboardStatus === 'pending' ? 'true' : undefined}>{leaderboardStatus === 'pending' ? 'Recording run on the leaderboard…' : leaderboardStatus === 'recorded' ? 'Run recorded on the leaderboard.' : leaderboardStatus === 'queued' ? 'Leaderboard unavailable — run saved for automatic retry.' : 'Leaderboard rejected this run.'}</p> : null}{runLogMessage ? <p aria-live="polite">{runLogMessage}</p> : null}{!replayLog ? <div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && !resultRecorded ? <button type="button" onClick={recordRunResult} disabled={extractingRunLog} data-run-log-control>Record campaign result</button> : null}{run.campaign.finalized ? <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog} data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button> : null}{resultRecorded && run.campaignProgress.unspentMarks === 0 ? <button type="button" disabled={extractingRunLog} onClick={prepareNextRun}>Prepare next run →</button> : null}</div> : null}</section> : null}
+      {allocatingCampaignMarks ? <section className="campaign-end">{run.meta.dailyDate !== undefined ? <><span>Daily Climb · {run.meta.dailyDate}</span><h2>{run.floorsCleared ?? 0} floor{run.floorsCleared === 1 ? '' : 's'} reached</h2><p>Daily Climbs rank on the Daily Climb leaderboard and do not earn campaign marks.</p></> : <><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p></>}{!replayLog && run.campaign.finalized && leaderboardStatus ? <p key={leaderboardStatus} aria-live="polite" data-webmcp-transient-status data-webmcp-pending={leaderboardStatus === 'pending' ? 'true' : undefined}>{leaderboardStatus === 'pending' ? 'Recording run on the leaderboard…' : leaderboardStatus === 'recorded' ? 'Run recorded on the leaderboard.' : leaderboardStatus === 'queued' ? 'Leaderboard unavailable — run saved for automatic retry.' : 'Leaderboard rejected this run.'}</p> : null}{runLogMessage && !replayLog ? <p aria-live="polite">{runLogMessage}</p> : null}{!replayLog ? <div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && !resultRecorded ? <button type="button" onClick={recordRunResult} disabled={extractingRunLog} data-run-log-control>Record campaign result</button> : null}{run.campaign.finalized ? <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog} data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button> : null}{resultRecorded && run.campaignProgress.unspentMarks === 0 ? <button type="button" disabled={extractingRunLog} onClick={prepareNextRun}>Prepare next run →</button> : null}</div> : null}</section> : null}
       <TreasureEffects room={run.roomState?.kind === 'treasure' ? run.roomState : null}
         players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />
-      {replayLog && runLogMessage ? <p className="run-replay__status" role="alert">{runLogMessage}</p> : null}
+      {replayLog && (replayFinished || runLogMessage) ? <section className={`run-replay__banner${runLogMessage ? ' run-replay__banner--error' : ''}`}
+        data-run-log-control>
+        <p id="run-replay-banner-message" role={runLogMessage ? 'alert' : 'status'}>{runLogMessage ?? 'Replay finished'}</p>
+        <button type="button" autoFocus aria-describedby="run-replay-banner-message" onClick={() => { leaveReplay(); onClose() }}>Return to main menu</button>
+      </section> : null}
       {tutorial && !pauseOpen && !settingsOpen && !compendium ? <TutorialCoach key={tutorial.attempt}
         chapters={tutorialChapterList} run={run} hidden={tutorialTipsHidden} onHide={() => setTutorialTipsHidden(true)} /> : null}
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}

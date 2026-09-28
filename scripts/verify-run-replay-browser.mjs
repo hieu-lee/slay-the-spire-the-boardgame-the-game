@@ -37,10 +37,14 @@ const open = async (viewport, hasTouch = viewport.width === 844, isMobile = fals
   })
   const page = await context.newPage()
   const errors = []
+  const skips = []
   page.on('pageerror', (error) => errors.push(String(error)))
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+    if (message.type() === 'warning' && message.text().startsWith('Replay skipped a click')) skips.push(message.text())
+  })
   await page.goto(origin, { waitUntil: 'networkidle' })
-  return { context, page, errors }
+  return { context, page, errors, skips }
 }
 
 const droppedFile = async (page, name, text) => page.locator('.run-replay-import').evaluate((screen, file) => {
@@ -545,8 +549,7 @@ try {
     pauses: document.body.dataset.replayPauseRequests,
   })), { open: false, pauses: '1' }, 'Escape failed to close replay inspection without opening pause')
   await page.evaluate(() => window.__awaitReplay(window.__REPLAY_GUARD__))
-  assert.equal(await page.locator('.run-replay__cursor').evaluate((cursor) => cursor.getAnimations().length), 0,
-    'Replay retained completed cursor animations')
+  assert.equal(await page.locator('.run-replay__cursor').count(), 0, 'Finished replay left its idle cursor on the final screen')
   await page.getByRole('button', { name: 'Replay action fixture' }).click()
   await page.getByRole('button', { name: 'Replay inspection fixture' }).click()
   const afterReplay = await page.evaluate(() => ({ action: document.querySelector('#replay-action-fixture').dataset.clicks ?? '0',
@@ -587,6 +590,68 @@ try {
     delete document.body.dataset.replayPauseRequests
     delete window.__REPLAY_FAILURE__
   })
+
+  const pacing = await page.evaluate(async () => {
+    const { createRun } = await import('/src/game/run.ts')
+    const { playRunLog, runLogEventChoice } = await import('/src/ui/run-log.ts')
+    const initial = createRun(45, [{ id: 'p1', name: 'Replay Tester', character: 'defect' }])
+    const clicks = []
+    const button = (id, onClick, textContent = id) => {
+      const element = Object.assign(document.createElement('button'), { id, textContent })
+      element.style.cssText = `position: fixed; z-index: 200000; top: ${40 + document.querySelectorAll('[id^="pacing-"]').length * 36}px; left: 40px`
+      element.addEventListener('click', () => { clicks.push({ id, at: performance.now() }); onClick?.() })
+      document.body.append(element)
+      return element
+    }
+    // A Defect's Orb only becomes a target once its card is picked up.
+    button('pacing-card', () => button('pacing-orb'))
+    const turnSteps = ['Evoke lightning Orb 1', 'Evoke frost Orb 2', 'Resolve Defect\'s Red Mask', 'Resolve start of turn']
+    button('pacing-step-1')
+    turnSteps.forEach((name, index) => button(`pacing-step-${index + 2}`, undefined, name))
+    const pickSteps = ['Strike, cost 1, attack, deal 1 damage', 'Confirm']
+    button('pacing-deck-1')
+    pickSteps.forEach((name, index) => button(`pacing-deck-${index + 2}`, undefined, name))
+    const after = structuredClone(initial); after.players[0].gold = 7
+    // Both chains happen in a fight: its start-of-turn steps run together, but a card pick stays readable.
+    after.combat = { phase: 'player' }
+    const final = structuredClone(after); final.players[0].gold = 11
+    const picked = structuredClone(final); picked.players[0].gold = 12
+    const missing = structuredClone(picked); missing.players[0].gold = 13
+    const won = { ...structuredClone(initial), combat: { phase: 'won' } }
+    const controller = new AbortController()
+    const states = []
+    try {
+      const remove = await window.__awaitReplay({ controller, promise: playRunLog({ version: 2, runId: initial.campaign.runId, initial, events: [
+        { patch: [{ path: [], value: after }], choice: { source: { selector: '#pacing-card' }, target: { selector: '#pacing-orb' } } },
+        { patch: [{ path: [], value: final }], choice: { source: { selector: '#pacing-step-1' },
+          steps: turnSteps.map((name, index) => ({ selector: `#pacing-step-${index + 2}`, name })) } },
+        { patch: [{ path: [], value: picked }], choice: { source: { selector: '#pacing-deck-1' },
+          steps: pickSteps.map((name, index) => ({ selector: `#pacing-deck-${index + 2}`, name })) } },
+        { patch: [{ path: [], value: missing }], choice: { source: { selector: '#never-appears' } } },
+      ] }, { setRun: (run) => states.push(run.players[0].gold), setViewer() {}, reducedMotion: false, signal: controller.signal }) }, 20_000)
+      remove()
+    } finally {
+      controller.abort()
+      document.querySelectorAll('[id^="pacing-"]').forEach((element) => element.remove())
+    }
+    const at = (id) => clicks.find((click) => click.id === id)?.at
+    return {
+      order: clicks.map(({ id }) => id),
+      orbDelay: at('pacing-orb') - at('pacing-card'),
+      chain: at('pacing-step-5') - at('pacing-step-1'),
+      deckGaps: [at('pacing-deck-2') - at('pacing-deck-1'), at('pacing-deck-3') - at('pacing-deck-2')],
+      states,
+      wonClick: runLogEventChoice({ patch: [], choice: { source: { selector: '[data-enemy-id="e0"]', name: 'Cultist' } } }, won) ?? null,
+    }
+  })
+  assert.deepEqual(pacing.order, ['pacing-card', 'pacing-orb', ...[1, 2, 3, 4, 5].map((step) => `pacing-step-${step}`),
+    ...[1, 2, 3].map((step) => `pacing-deck-${step}`)])
+  assert(pacing.deckGaps.every((gap) => gap >= 900), `In-combat card-pick steps flashed by: ${pacing.deckGaps}`)
+  assert(pacing.orbDelay < 1_000, `Replay waited ${pacing.orbDelay}ms for an Orb target that appears after its card is picked up`)
+  assert(pacing.chain < 2_000, `A five-step start-of-turn choice took ${pacing.chain}ms`)
+  assert.deepEqual(pacing.states, [0, 7, 11, 12, 13], 'Replay stopped at a click whose control never appeared instead of applying its patch')
+  assert.deepEqual(desktop.skips, ['Replay skipped a click: #never-appears did not appear.'])
+  assert.equal(pacing.wonClick, null, 'A click made while a won fight folded into the run was replayed as its cause')
 
   for (const label of ['Single Player', 'Standard', 'Embark', 'Start standard campaign']) {
     await page.getByRole('button', { name: label, exact: true }).click()
@@ -684,11 +749,17 @@ try {
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'defeat')
   assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold), 3, 'Recorded decision was not replayed')
   assert.equal(await page.getByText(/^Replay stopped/).count(), 0)
-  await page.waitForTimeout(1_700)
-  await page.keyboard.press('Escape')
-  await page.getByRole('dialog', { name: 'Slay the Spire' }).waitFor()
-  await page.getByRole('button', { name: 'Return to main menu', exact: true }).click()
+  const finished = page.locator('.run-replay__banner')
+  await finished.getByText('Replay finished', { exact: true }).waitFor()
+  assert.equal(await page.locator('.run-replay__cursor').count(), 0, 'Finished replay left its cursor behind')
+  await finished.evaluate((banner) => Promise.all(banner.getAnimations().map((animation) => animation.finished)))
+  assert.deepEqual(await finished.getByRole('button').evaluate((button) => ({ focused: document.activeElement === button,
+    description: document.getElementById(button.getAttribute('aria-describedby'))?.textContent })),
+  { focused: true, description: 'Replay finished' }, 'Finished replay did not focus and describe its way back to the menu')
+  await page.screenshot({ path: join(output, 'replay-finished-desktop.png') })
+  await finished.getByRole('button', { name: 'Return to main menu', exact: true }).click()
   await page.getByRole('button', { name: 'Replay', exact: true }).waitFor()
+  assert.equal(desktop.skips.length, 1, `Recorded-run replay skipped clicks: ${desktop.skips.slice(1).join('; ')}`)
   assert.deepEqual(desktop.errors, [])
   await desktop.context.close()
 
@@ -727,9 +798,53 @@ try {
     finally { controller.abort() }
   })
   assert.deepEqual(merchantRemoval, { error: null, deckSize: 9 }, 'Replay stalled in the merchant card-removal dialog')
+  assert.deepEqual(merchantReplay.skips, [], 'Replay skipped merchant card-removal clicks')
   await merchantReplay.page.screenshot({ path: join(output, 'merchant-card-removal-replay.png') })
   assert.deepEqual(merchantReplay.errors, [])
   await merchantReplay.context.close()
+
+  // A fresh page loads the combat screen lazily mid-replay; the replay must neither restart
+  // from its first event when that Suspense boundary reappears nor hide the Act-complete climb.
+  const actReplay = await open({ width: 1600, height: 900 })
+  const actLog = await actReplay.page.evaluate(async () => {
+    const { createRun } = await import('/src/game/run.ts')
+    const { createCombat } = await import('/src/game/combat.ts')
+    const initial = createRun(54, [{ id: 'p1', name: 'Replay Tester', character: 'ironclad' }])
+    const gold = structuredClone(initial); gold.players[0].gold = 5
+    const fight = structuredClone(gold)
+    fight.combat = createCombat({ seed: 54, calls: 0 }, fight.players, [{ uid: 'act-worm', defId: 'jaw_worm', row: 0,
+      isBoss: false, actsLast: false, hp: 40, maxHp: 40, block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0,
+      goldReward: 0, cardReward: null, actionIndex: 0, abilityUsed: false, dead: false }], 'run-replay-act')
+    fight.phase = 'combat'; fight.neow = null
+    const victory = structuredClone(gold); victory.phase = 'victory'; victory.neow = null
+    const climbed = structuredClone(victory); climbed.players[0].gold = 9
+    return { version: 2, runId: initial.campaign.runId, initial, events: [
+      { patch: [{ path: [], value: gold }] }, { patch: [{ path: [], value: fight }] }, { patch: [{ path: [], value: victory }] },
+      { patch: [{ path: [], value: climbed }], choice: { source: { selector: 'main > section > div:nth-of-type(2) > button:nth-of-type(1)', name: 'Climb to Act 2' } } },
+    ] }
+  })
+  await actReplay.page.evaluate(() => {
+    window.__goldSeen = []
+    setInterval(() => {
+      const gold = window.__STS_DEBUG__?.getRun().players[0].gold
+      if (gold !== undefined && gold !== window.__goldSeen.at(-1)) window.__goldSeen.push(gold)
+    }, 10)
+  })
+  await actReplay.page.getByRole('button', { name: 'Replay', exact: true }).click()
+  await droppedFile(actReplay.page, 'act.json', JSON.stringify(actLog))
+  await actReplay.page.getByRole('button', { name: 'Climb to Act 2', exact: true }).waitFor()
+  await actReplay.page.locator('.run-replay__banner').waitFor()
+  assert.deepEqual(await actReplay.page.evaluate(() => window.__goldSeen.slice(window.__goldSeen.indexOf(5))), [5, 9],
+    'Replay restarted from its first event after the combat screen loaded')
+  assert.equal(await actReplay.page.getByRole('button', { name: 'Stop and record result' }).count(), 0,
+    'Replay offered to record the replayed run')
+  assert.deepEqual(actReplay.skips, [], 'Replay skipped its Climb to Act 2 click')
+  assert.equal(await actReplay.page.getByRole('button', { name: 'Climb to Act 2' }).count(), 0,
+    'A finished replay left its dead Climb button next to the finished banner')
+  await actReplay.page.locator('.run-replay__banner').evaluate((banner) => Promise.all(banner.getAnimations().map((animation) => animation.finished)))
+  await actReplay.page.screenshot({ path: join(output, 'replay-finished-act-desktop.png') })
+  assert.deepEqual(actReplay.errors, [])
+  await actReplay.context.close()
 
   const touchDesktop = await open({ width: 1600, height: 900 }, true)
   await touchDesktop.page.getByRole('button', { name: 'Replay', exact: true }).click()
@@ -755,8 +870,15 @@ try {
   await phone.page.locator('input[type="file"]').setInputFiles({ name: 'run.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) })
   await phone.page.getByText('Your run is accepted', { exact: true }).waitFor()
   await phone.page.locator('.app-shell').waitFor()
+  await phone.page.locator('.run-replay__banner').waitFor()
+  await phone.page.locator('.run-replay__banner').evaluate((banner) => Promise.all(banner.getAnimations().map((animation) => animation.finished)))
+  await phone.page.screenshot({ path: join(output, 'replay-finished-horizontal-phone.png') })
+  const finishedFit = await phone.page.locator('.run-replay__banner').evaluate((banner) => ({
+    box: banner.getBoundingClientRect().toJSON(), width: innerWidth, height: innerHeight }))
+  assert(finishedFit.box.x >= 0 && finishedFit.box.right <= finishedFit.width && finishedFit.box.bottom <= finishedFit.height &&
+    Math.abs(finishedFit.box.x + finishedFit.box.width / 2 - finishedFit.width / 2) < 2, JSON.stringify(finishedFit))
   await phone.page.keyboard.press('Escape')
-  await phone.page.getByRole('button', { name: 'Return to main menu', exact: true }).click()
+  await phone.page.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Return to main menu', exact: true }).click()
   await phone.page.getByRole('button', { name: 'Replay', exact: true }).waitFor()
   assert.deepEqual(phone.errors, [])
   await phone.context.close()

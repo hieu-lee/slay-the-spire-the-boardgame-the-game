@@ -655,20 +655,27 @@
 
 .run-replay__cursor[data-pressed] { filter: brightness(1.3) drop-shadow(0 0 0.45rem #fff0a0) drop-shadow(0 0.18rem 0.18rem #000); }
 
-.run-replay__status {
+.run-replay__banner {
   position: fixed;
   z-index: 190001;
   bottom: 1rem;
   left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: max-content;
   max-width: min(42rem, calc(100% - 2rem));
-  margin: 0;
-  padding: .65rem 1rem;
-  border: 1px solid #d44;
-  color: #fff;
-  background: rgb(45 4 4 / .94);
-  text-align: center;
-  transform: translateX(-50%);
+  padding: .5rem .5rem .5rem 1rem;
+  border: 1px solid #c9a14a;
+  color: #f4e3b5;
+  background: rgb(18 14 10 / .94);
+  /* `translate`, not `transform`: the entrance animation owns `transform`. */
+  translate: -50% 0;
+  animation: run-replay-text-in 240ms ease-out both;
 }
+
+.run-replay__banner p { margin: 0; }
+.run-replay__banner--error { border-color: #d44; color: #fff; background: rgb(45 4 4 / .94); }
 
 .room-screen__actions { display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap; }
 
@@ -709,6 +716,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .run-replay-import__prompt { animation-duration: 1ms; }
+  .run-replay-import__prompt, .run-replay__banner { animation-duration: 1ms; }
   .run-replay-import[data-transitioning='true'] .run-replay-import__flash { animation-duration: 1ms; clip-path: none; }
 }

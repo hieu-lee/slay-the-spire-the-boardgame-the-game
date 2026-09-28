@@ -20,7 +20,10 @@ const RUN_PHASES = new Set(['neow', 'map', 'combat', 'reward', 'betweenCombat', 
 const ROOM_KINDS = new Set(['encounter', 'elite', 'event', 'campfire', 'treasure', 'merchant', 'boss'])
 const TERMINAL_PHASES = new Set(['victory', 'defeat'])
 const REPLAY_CURSOR_MS = 150
-const REPLAY_REPEAT_CLICK_MS = 250
+const REPLAY_STEP_CURSOR_MS = 100
+const REPLAY_SETTLE_MS = 15_000
+const REPLAY_CONTROL_WAIT_MS = 5_000
+const REPLAY_STEP_MS = 250
 const REPLAY_ACTION_HOLD_MS = 1_000
 const MAX_RUN_LOG_EVENTS = 10_000
 const MAX_RUN_LOG_PATCHES = 100_000
@@ -56,6 +59,7 @@ function normalizeLegacyRunLog(log: RunLog): RunLog {
 
 const CANCEL_CHOICE = /^(cancel|close|back(?: to (?:choices|run))?)$/i
 const TURN_CONTROL = /^(End turn|Resolve (?:start|end)(?: of turn| turn \d+))$/
+const QUICK_STEP = (ref: ControlRef) => Boolean(ref.target) || /\bOrb \d+$|^(?:Resolve|Move)\b/.test(ref.name ?? '')
 const semanticDeckMutation = (event: RunLogEvent) => Boolean(event.choice?.steps?.length && event.patch.some((change) =>
   change.path[0] === 'players' && change.path[2] === 'deck'))
 
@@ -125,6 +129,9 @@ function normalizeRunLogChoice(choice: RunLogChoice | null | undefined) {
 }
 
 export function runLogEventChoice(event: RunLogEvent, before: RunState): RunLogChoice | undefined {
+  // A decided fight folds into the run by itself; a click made while it did is not the cause,
+  // so it is neither recorded nor replayed.
+  if (before.combat?.phase === 'won' || before.combat?.phase === 'lost') return undefined
   let choice = event.choice
   if (choice && choice.source.name !== 'Smith upgrade' && choice.steps?.at(-1)?.name === 'Confirm' &&
     before.phase === 'room' && !before.roomState && currentRoom(before.map)?.kind === 'campfire' && semanticDeckUpgrade(event, before)) {
@@ -1222,27 +1229,38 @@ function delay(milliseconds: number, signal: AbortSignal) {
   })
 }
 
+function skippedClick(ref: ControlRef) {
+  console.warn(`Replay skipped a click: ${ref.name ?? ref.selector} did not appear.`)
+}
+
+const paused = (doc: Document) => doc.querySelector('.pause-menu[open], .settings-dialog[open], .map-peek[open], .card-collection[open], .compendium')
+
 async function waitForControl(doc: Document, ref: ControlRef, signal: AbortSignal) {
-  const until = performance.now() + 15_000
+  let waited = 0
   let control = queryRunLogControl(doc, ref)
-  while (!control && !signal.aborted && performance.now() < until) {
+  while (!control && !signal.aborted && waited < REPLAY_CONTROL_WAIT_MS) {
     await delay(50, signal)
+    // Time spent paused or inspecting does not count against a control that is still to appear.
+    if (!paused(doc)) waited += 50
     control = queryRunLogControl(doc, ref)
   }
   return control
 }
 
 async function waitForPause(doc: Document, signal: AbortSignal) {
-  while (!signal.aborted && doc.querySelector('.pause-menu[open], .settings-dialog[open], .map-peek[open], .card-collection[open], .compendium'))
-    await delay(50, signal)
+  while (!signal.aborted && paused(doc)) await delay(50, signal)
 }
 
+// Keyframed effects tell the story and are worth waiting for; CSS transitions only ease
+// layout and hover states, and a dying enemy's row would otherwise hold the replay for seconds.
+const pacingAnimation = (animation: Animation) => animation.playState === 'running' &&
+  !(animation instanceof CSSTransition) && Number.isFinite(Number(animation.effect?.getComputedTiming().iterations))
+
 async function settle(doc: Document, signal: AbortSignal) {
-  const until = performance.now() + 15_000
+  const until = performance.now() + REPLAY_SETTLE_MS
   do {
     await delay(50, signal)
-    const active = doc.getAnimations().some((animation) => animation.playState === 'running' &&
-      Number.isFinite(Number(animation.effect?.getComputedTiming().iterations)))
+    const active = doc.getAnimations().some(pacingAnimation)
     if (!active && !doc.querySelector('[data-webmcp-pending="true"], .character-attack, .card-flight')) return
   } while (!signal.aborted && performance.now() < until)
 }
@@ -1259,7 +1277,7 @@ function installReplayGuard(doc: Document, pause?: () => void) {
       return
     }
     const element = event.target instanceof Element ? event.target : null
-    if (element?.closest(INSPECTION)) return
+    if (element?.closest(INSPECTION + ', [data-run-log-control]')) return
     if (event instanceof KeyboardEvent && !['Enter', ' '].includes(event.key)) return
     if (!element?.closest(CONTROL) && event.type !== 'submit') return
     event.preventDefault()
@@ -1269,13 +1287,13 @@ function installReplayGuard(doc: Document, pause?: () => void) {
   return () => { for (const type of ['pointerdown', 'click', 'change', 'submit', 'keydown']) doc.removeEventListener(type, block, true) }
 }
 
-async function moveCursor(cursor: HTMLElement, to: Point, pressed: boolean, reducedMotion: boolean, signal: AbortSignal) {
+async function moveCursor(cursor: HTMLElement, to: Point, pressed: boolean, reducedMotion: boolean, signal: AbortSignal, duration = REPLAY_CURSOR_MS) {
   cursor.toggleAttribute('data-pressed', pressed)
   const position = { left: `${to.x * 100}%`, top: `${to.y * 100}%` }
   const animation = cursor.animate(position, {
-    duration: reducedMotion ? 0 : REPLAY_CURSOR_MS, easing: 'ease-in-out', fill: 'forwards',
+    duration: reducedMotion ? 0 : duration, easing: 'ease-in-out', fill: 'forwards',
   })
-  await Promise.race([animation.finished.catch(() => {}), delay(REPLAY_CURSOR_MS, signal)])
+  await Promise.race([animation.finished.catch(() => {}), delay(duration, signal)])
   Object.assign(cursor.style, position)
   animation.cancel()
 }
@@ -1311,7 +1329,7 @@ export async function playRunLog(log: RunLog, options: {
   options.setViewer(state.players[0]!.id)
   try {
     await delay(100, options.signal)
-    for (const [eventIndex, logged] of log.events.entries()) {
+    for (const logged of log.events) {
       if (options.signal.aborted) break
       await waitForPause(doc, options.signal)
       if (options.signal.aborted) break
@@ -1335,26 +1353,39 @@ export async function playRunLog(log: RunLog, options: {
           ...(exit ? [{ ref: controlRef(exit), element: exit }] : []),
           { ref: choice.source }, ...(choice.steps ?? []).map((ref) => ({ ref })),
         ]
+        let skipped = false
         const choiceIndex = Number(Boolean(missedRoom)) + Number(Boolean(forced)) + Number(Boolean(entry)) + Number(Boolean(exit))
+        // In a fight, the Orb, target and turn-resolution steps after a recorded choice's first click are one
+        // start-of-turn decision and run together; card picks, and every step out of combat, stay readable.
+        const quickStep = (index: number) => Boolean(state.combat) && index > choiceIndex && QUICK_STEP(refs[index]!.ref)
         for (const [index, item] of refs.entries()) {
           if (options.signal.aborted) break
           const source = item.element ?? await waitForControl(doc, item.ref, options.signal)
           if (options.signal.aborted) break
-          if (!source) throw new Error(`Replay stopped at event ${eventIndex + 1}; ${item.ref.name ?? item.ref.selector} did not appear.`)
-          const target = index === choiceIndex && choice.target && !choice.steps?.length
-            ? await waitForControl(doc, choice.target, options.signal) : null
-          if (options.signal.aborted) break
+          // The patch, not the click, is the record: a stale or unmatched click is skipped, never fatal.
+          if (!source) {
+            skippedClick(item.ref)
+            skipped = true
+            break
+          }
           const from = point(source)
           const samePlace = Boolean(lastClick && Math.hypot(lastClick.x - from.x, lastClick.y - from.y) < .001)
-          await delay(Math.max(0, (samePlace ? REPLAY_REPEAT_CLICK_MS : REPLAY_ACTION_HOLD_MS) - (performance.now() - lastAction)), options.signal)
+          const followUp = quickStep(index)
+          const hold = samePlace ? REPLAY_STEP_MS : followUp ? 0 : REPLAY_ACTION_HOLD_MS
+          await delay(Math.max(0, hold - (performance.now() - lastAction)), options.signal)
           if (options.signal.aborted) break
-          await moveCursor(cursor, from, true, options.reducedMotion, options.signal)
+          await moveCursor(cursor, from, true, options.reducedMotion, options.signal, followUp ? REPLAY_STEP_CURSOR_MS : REPLAY_CURSOR_MS)
           if (options.signal.aborted) break
           const recordedDeckCommit = semanticDeckMutation(event) && index === refs.length - 1 && /^Confirm\b/.test(item.ref.name ?? '')
           await waitForPause(doc, options.signal)
           if (options.signal.aborted) break
           if (!recordedDeckCommit) await activateControl(source, item.ref)
           if (options.signal.aborted) break
+          // Some targets, such as a Defect's Orbs, only become choosable once their card is picked up.
+          const target = index === choiceIndex && choice.target && !choice.steps?.length
+            ? await waitForControl(doc, choice.target, options.signal) : null
+          if (options.signal.aborted) break
+          if (index === choiceIndex && choice.target && !choice.steps?.length && !target) skippedClick(choice.target)
           if (target && choice.target) {
             await moveCursor(cursor, point(target), true, options.reducedMotion, options.signal)
             if (options.signal.aborted) break
@@ -1366,13 +1397,15 @@ export async function playRunLog(log: RunLog, options: {
           cursor.removeAttribute('data-pressed')
           lastClick = target ? null : from
           lastAction = performance.now()
-          await settle(doc, options.signal)
+          // A quick step plays on into the next one; everything else waits for its effects.
+          if (index < refs.length - 1 ? !quickStep(index + 1) : !(choice.target && choice.steps?.length)) await settle(doc, options.signal)
         }
         if (options.signal.aborted) break
-        if (choice.target && choice.steps?.length && !options.signal.aborted) {
-          const target = await waitForControl(doc, choice.target, options.signal)
-          if (options.signal.aborted) break
-          if (!target) throw new Error(`Replay stopped at event ${eventIndex + 1}; its target did not appear.`)
+        const target = choice.target && choice.steps?.length && !skipped
+          ? await waitForControl(doc, choice.target, options.signal) : null
+        if (options.signal.aborted) break
+        if (choice.target && choice.steps?.length && !skipped && !target) skippedClick(choice.target)
+        if (target && choice.target) {
           await moveCursor(cursor, point(target), true, options.reducedMotion, options.signal)
           if (options.signal.aborted) break
           await waitForPause(doc, options.signal)
@@ -1391,6 +1424,8 @@ export async function playRunLog(log: RunLog, options: {
       await settle(doc, options.signal)
     }
     if (!options.signal.aborted) await delay(1_500, options.signal)
+    // The final screen stays guarded, but nothing is being clicked any more.
+    cursor.remove()
   } catch (error) {
     cursor.remove()
     throw error
