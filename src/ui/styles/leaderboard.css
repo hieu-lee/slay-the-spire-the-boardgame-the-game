@@ -129,6 +129,8 @@
 .daily-board__days button:disabled { opacity: 0.4; }
 .daily-board__table thead th:nth-child(2) { text-align: left; }
 .daily-board__player { max-width: 14rem; overflow-wrap: anywhere; }
+.daily-board__result { white-space: nowrap; }
+.daily-board__result--won { color: #ffdc60; font-weight: 700; }
 .daily-board__deck { padding: 0.25rem 0.6rem; border: 2px solid #3a2410; color: #2b1b08; background: linear-gradient(#ffe68a, #d6a23e); font: 700 0.85rem 'Kreon', Georgia, serif; white-space: nowrap; }
 .leaderboard__tabs button:focus-visible,
 .daily-board button:focus-visible,
@@ -184,6 +186,10 @@
   .winning-decks__table thead button { padding-inline: 0.15rem; letter-spacing: 0; }
   .winning-decks__open .leaderboard__party-icons img + img { margin-left: -0.9rem; }
   .winning-decks__username { max-width: 5rem; }
+  .daily-board__table tbody th,
+  .daily-board__table tbody td,
+  .daily-board__table thead th { padding-inline: 0.2rem; }
+  .daily-board__result { white-space: normal; }
 }
 
 @media (prefers-reduced-motion: reduce) {

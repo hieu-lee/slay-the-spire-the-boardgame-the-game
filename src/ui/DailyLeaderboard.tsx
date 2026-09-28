@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { assetPath } from '../game/assets.ts'
 import { cardDef } from '../game/cards.ts'
 import { dailyDate } from '../daily-date.ts'
+import { dailyClimbResult } from '../game/daily.ts'
 import type { CharacterId } from '../game/types.ts'
 import { DailyRankingRefused, loadDailyLeaderboard, type DailyClimbBoard, type DailyClimbRow } from '../leaderboard.ts'
 import { CardCollectionDialog } from './CardCollectionOverlay.tsx'
@@ -67,20 +68,21 @@ export function DailyLeaderboard({ characters }: { characters: CharacterId[] }) 
       : rows.length === 0 ? <div className="leaderboard__message"><strong>No climbs yet</strong><span>Finish a Daily Climb to claim the first place.</span></div>
       : <div className="leaderboard__table-wrap"><table className="daily-board__table">
         <thead><tr><th scope="col" title="Rank">#</th><th scope="col">Player</th><th scope="col" title="Hero">Hero</th>
-          <th scope="col" title="Floors reached">Floors</th><th scope="col" title="Damage / fight">Dmg</th>
+          <th scope="col" title="Floors reached">Floors</th><th scope="col" title="Result">Result</th><th scope="col" title="Damage / fight">Dmg</th>
           <th scope="col" title="Blocked">Block</th><th scope="col">Deck</th></tr></thead>
-        <tbody>{rows.map((row) => <tr key={`${row.rank}:${row.username}`}>
+        <tbody>{rows.map((row) => { const result = dailyClimbResult(row.highestBossActDefeated); return <tr key={`${row.rank}:${row.username}`}>
           <td data-label="Rank"><span className="leaderboard__rank">{row.rank}</span></td>
           <th scope="row" className="daily-board__player">{row.username}</th>
           <td data-label="Hero"><span className="leaderboard__party-icons" title={CHARACTER_LABEL[row.character]}>
             <img src={assetPath(`menu/compendium-icons/${row.character}.webp`)} alt={CHARACTER_LABEL[row.character]} /></span></td>
           <td data-label="Floors reached"><strong>{row.floorsCleared}</strong></td>
+          <td data-label="Result" className={result.won ? 'daily-board__result daily-board__result--won' : 'daily-board__result'}>{result.label}</td>
           <td data-label="Damage / fight">{decimal(row.averageDamagePerFight)}</td>
           <td data-label="Damage blocked">{percent(row.damageBlockedRate)}</td>
           <td data-label="Deck">{row.cards.length ? <button type="button" className="daily-board__deck"
             aria-label={`View ${row.username}'s ${CHARACTER_LABEL[row.character]} deck`}
             onClick={(event) => openDeck(row, event.currentTarget)}>{row.cards.length} card{row.cards.length === 1 ? '' : 's'}</button> : '—'}</td>
-        </tr>)}</tbody>
+        </tr> })}</tbody>
       </table></div>}
     {deckError && <div className="leaderboard__message" role="alert"><span>{deckError}</span><button type="button" onClick={() => setDeckError('')}>Dismiss</button></div>}
     {selected && <CardCollectionDialog label={`${selected.username} · ${CHARACTER_LABEL[selected.character]} · Daily Climb ${date}`}

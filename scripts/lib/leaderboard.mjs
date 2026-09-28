@@ -290,8 +290,9 @@ export function leaderboardSnapshot(runs) {
 /**
  * One day's shared-seed ranking of registered players. A player's first
  * recorded climb that day is their entry; later attempts cannot replace it.
- * Ties on floors go to the higher damage per fight, then to the earlier
- * finish. Ranks are overall; `characters` only narrows the rows returned.
+ * Ties on floors go to the climb that defeated a later Act boss (beating
+ * the boss outranks dying at it), then to the higher damage per fight, then
+ * to the earlier finish. Ranks are overall; `characters` only narrows the rows returned.
  */
 export function dailyLeaderboard(runs, date, characters = []) {
   if (!isCalendarDay(date) || characters.some((character) => !CHARACTERS.has(character))) bad('Invalid daily ranking query')
@@ -306,6 +307,7 @@ export function dailyLeaderboard(runs, date, characters = []) {
   const damagePerFight = (run) => run.damageStatsComplete && run.combatsFinished ? run.damageDealt / run.combatsFinished : null
   const ranked = [...entries.values()].sort((left, right) =>
     (right.floorsCleared ?? 0) - (left.floorsCleared ?? 0) ||
+    right.highestBossActDefeated - left.highestBossActDefeated ||
     (damagePerFight(right) ?? -1) - (damagePerFight(left) ?? -1) ||
     left.recordedAt - right.recordedAt || left.id.localeCompare(right.id))
   const shown = ranked.map((run, index) => ({ run, rank: index + 1 }))
@@ -318,6 +320,7 @@ export function dailyLeaderboard(runs, date, characters = []) {
       username: run.username,
       character: run.character,
       floorsCleared: run.floorsCleared ?? 0,
+      highestBossActDefeated: run.highestBossActDefeated,
       averageDamagePerFight: damagePerFight(run),
       damageBlockedRate: run.damageStatsComplete && run.damageTaken + run.damageBlocked
         ? run.damageBlocked / (run.damageTaken + run.damageBlocked) : null,

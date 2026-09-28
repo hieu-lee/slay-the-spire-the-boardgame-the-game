@@ -30,3 +30,12 @@ export function dailyCampaignProgress(progress: CampaignProgress): CampaignProgr
     finishedRunIds: [],
   }
 }
+
+const ACTS = ['I', 'II', 'III'] as const
+
+/** A climb is won once the Act III boss falls; otherwise it ended in the Act after its last boss. */
+export function dailyClimbResult(highestBossActDefeated: number): { won: boolean; label: string } {
+  if (highestBossActDefeated >= 4) return { won: true, label: 'Victory · Act IV' }
+  if (highestBossActDefeated >= 3) return { won: true, label: 'Victory' }
+  return { won: false, label: `Fell in Act ${ACTS[Math.max(0, highestBossActDefeated)]}` }
+}

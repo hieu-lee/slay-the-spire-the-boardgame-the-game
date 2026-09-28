@@ -3,7 +3,7 @@
 // no campaign marks, so two players with different journals start identically.
 import { createCampaignProgress } from '../src/game/campaign.ts'
 import { dailyDate } from '../src/daily-date.ts'
-import { DAILY_ASCENSION, dailySeedText } from '../src/game/daily.ts'
+import { DAILY_ASCENSION, dailyClimbResult, dailySeedText } from '../src/game/daily.ts'
 import { createRun, finishRun } from '../src/game/run.ts'
 import { rollDailyModifiers } from '../src/game/meta.ts'
 import { createRng, seedFromString } from '../src/game/rng.ts'
@@ -42,6 +42,13 @@ check('players with different campaign journals start the same climb', () => {
 check('the menu preview rolls the same modifiers the climb uses', () => {
   const preview = rollDailyModifiers(createRng(seedFromString(dailySeedText(day)))).modifiers.map(({ id }) => id)
   assertDeepEqual(preview, first.meta.modifierIds)
+})
+
+check('a climb is won once the Act III boss falls', () => {
+  assertDeepEqual([0, 1, 2, 3, 4].map(dailyClimbResult), [
+    { won: false, label: 'Fell in Act I' }, { won: false, label: 'Fell in Act II' }, { won: false, label: 'Fell in Act III' },
+    { won: true, label: 'Victory' }, { won: true, label: 'Victory · Act IV' },
+  ])
 })
 
 check('another day deals another climb', () => {

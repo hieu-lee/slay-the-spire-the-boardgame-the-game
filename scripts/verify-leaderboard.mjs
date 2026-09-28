@@ -132,6 +132,16 @@ check('a retry cannot move an old or non-daily run onto a daily board', () => {
   assertEqual(restoreLeaderboardRuns(JSON.parse(JSON.stringify(store.leaderboardRuns))).length, 2, 'a rejected backfill made a stored row unrestorable')
 })
 
+check('a climb that beat the boss outranks one that died at it on the same floor', () => {
+  const board = dailyLeaderboard([
+    normalizeLeaderboardRun(daily({ id: 'tie-a:campaign-1', username: 'Fell', floorsCleared: 32, highestBossActDefeated: 2, damageDealt: 900 }), dailyTime),
+    normalizeLeaderboardRun(daily({ id: 'tie-b:campaign-1', username: 'Won', floorsCleared: 32, highestBossActDefeated: 3 }), dailyTime + 1),
+    normalizeLeaderboardRun(daily({ id: 'tie-c:campaign-1', username: 'Deeper', floorsCleared: 33, highestBossActDefeated: 2 }), dailyTime + 2),
+  ], '2026-09-28')
+  assertDeepEqual(board.rows.map((row) => [row.rank, row.username, row.highestBossActDefeated]),
+    [[1, 'Deeper', 2], [2, 'Won', 3], [3, 'Fell', 2]])
+})
+
 check('a hero filter reaches climbs beyond the overall top 100', () => {
   const crowd = Array.from({ length: 120 }, (_, index) => normalizeLeaderboardRun(daily({
     id: `crowd-${index}:campaign-1`, username: `Climber${index}`, character: index === 119 ? 'watcher' : 'ironclad', floorsCleared: 50 - Math.floor(index / 3),

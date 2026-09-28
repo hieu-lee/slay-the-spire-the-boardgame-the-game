@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium, setTestUsername } from './lib/profile-browser.mjs'
 import { createRoomServer } from './room-server.mjs'
+import { addLeaderboardRun } from './lib/leaderboard.mjs'
 import { assert, assertEqual, check, report, suite } from './lib/harness.mjs'
 
 const root = resolve(import.meta.dirname, '..')
@@ -47,6 +48,10 @@ try {
         damageStatsComplete: true, floorsCleared, finalDeck: [{ defId: 'strike_silent', upgraded: false }] }) })
     assert(seeded.ok, `could not seed ${id}`)
   }
+  // Same floors as Rival, but this climb beat its bosses (the longest result label) instead of dying.
+  addLeaderboardRun(rooms.store, { id: 'champion-a:campaign-1', username: 'Champion', character: 'watcher', ascension: 10,
+    mode: 'daily', dailyDate: today, startedAtAct: 1, highestBossActDefeated: 4, combatsFinished: 4, damageDealt: 40,
+    damageTaken: 10, damageBlocked: 30, damageStatsComplete: true, floorsCleared: 14, finalDeck: [{ defId: 'strike_watcher', upgraded: false }] })
   await page.goto(origin)
   await setTestUsername(page, 'DailyTester')
   await page.reload()
@@ -148,20 +153,23 @@ try {
   await page.getByRole('button', { name: 'Leaderboard', exact: true }).click()
   await page.getByRole('button', { name: 'Daily Climb', exact: true }).click()
   const rows = page.locator('.daily-board tbody tr')
-  await rows.nth(1).waitFor()
+  await rows.nth(2).waitFor()
   const ranking = await rows.evaluateAll((elements) => elements.map((element) => element.innerText.replace(/\s+/g, ' ').trim()))
-  check('the daily tab ranks registered players by floors reached with their stats', () => {
-    assertEqual(ranking.length, 2, ranking.join('\n'))
-    assert(ranking[0].startsWith('1 Rival 14 20.0 75%'), ranking[0])
-    assert(ranking[1].startsWith('2 DailyTester 9 10.0 75%'), ranking[1])
+  const wonCell = await rows.first().locator('.daily-board__result--won').count()
+  check('the daily tab ranks registered players by floors reached with their result and stats', () => {
+    assertEqual(ranking.length, 3, ranking.join('\n'))
+    assert(ranking[0].startsWith('1 Champion 14 Victory · Act IV 10.0 75%'), ranking[0])
+    assert(ranking[1].startsWith('2 Rival 14 Fell in Act I 20.0 75%'), ranking[1])
+    assert(ranking[2].startsWith('3 DailyTester 9 Fell in Act I 10.0 75%'), ranking[2])
+    assertEqual(wonCell, 1, 'the won climb is not highlighted')
   })
   await screenshot('daily-board-desktop')
   await page.getByRole('button', { name: 'Ironclad', exact: true }).click()
   await page.waitForFunction(() => document.querySelectorAll('.daily-board tbody tr').length === 1)
   const ironcladRow = await rows.first().innerText()
-  check('hero filters narrow the daily ranking but keep overall ranks', () => assert(/^2\s+DailyTester/.test(ironcladRow), ironcladRow))
+  check('hero filters narrow the daily ranking but keep overall ranks', () => assert(/^3\s+DailyTester/.test(ironcladRow), ironcladRow))
   await page.getByRole('button', { name: 'All heroes' }).click()
-  await rows.nth(1).waitFor()
+  await rows.nth(2).waitFor()
   await page.getByRole('button', { name: "View DailyTester's Ironclad deck" }).click()
   const dialog = page.getByRole('dialog')
   await dialog.waitFor()
@@ -186,24 +194,27 @@ try {
   await page.getByText('No climbs yet').waitFor()
   check('day navigation stops at today and shows empty past days', () => assert(nextDisabled))
   await page.getByRole('button', { name: 'Next day' }).click()
-  await rows.nth(1).waitFor()
+  await rows.nth(2).waitFor()
 
-  await page.setViewportSize({ width: 844, height: 390 })
-  await screenshot('daily-board-horizontal-phone')
-  const phoneFit = await page.evaluate(() => ({
-    documentWidth: document.documentElement.scrollWidth,
-    tableWidth: document.querySelector('.daily-board .leaderboard__table-wrap')?.scrollWidth,
-    tableViewport: document.querySelector('.daily-board .leaderboard__table-wrap')?.clientWidth,
-    tabs: [...document.querySelectorAll('.leaderboard__tabs button')].map((button) => {
-      const box = button.getBoundingClientRect()
-      return button.scrollWidth <= button.clientWidth + 1 && box.bottom <= innerHeight
-    }),
-  }))
-  check('the daily ranking fits a horizontal phone', () => {
-    assert(phoneFit.documentWidth <= 846, JSON.stringify(phoneFit))
-    assert(phoneFit.tableWidth <= phoneFit.tableViewport + 2, JSON.stringify(phoneFit))
-    assert(phoneFit.tabs.every(Boolean), JSON.stringify(phoneFit))
-  })
+  // Both a common and a narrow horizontal phone, with the longest result label on the board.
+  for (const [width, height, name] of [[844, 390, 'daily-board-horizontal-phone'], [667, 375, 'daily-board-narrow-horizontal-phone']]) {
+    await page.setViewportSize({ width, height })
+    await screenshot(name)
+    const phoneFit = await page.evaluate(() => ({
+      documentWidth: document.documentElement.scrollWidth,
+      tableWidth: document.querySelector('.daily-board .leaderboard__table-wrap')?.scrollWidth,
+      tableViewport: document.querySelector('.daily-board .leaderboard__table-wrap')?.clientWidth,
+      tabs: [...document.querySelectorAll('.leaderboard__tabs button')].map((button) => {
+        const box = button.getBoundingClientRect()
+        return button.scrollWidth <= button.clientWidth + 1 && box.bottom <= innerHeight
+      }),
+    }))
+    check(`the daily ranking fits a ${width}px horizontal phone`, () => {
+      assert(phoneFit.documentWidth <= width + 2, JSON.stringify(phoneFit))
+      assert(phoneFit.tableWidth <= phoneFit.tableViewport + 2, JSON.stringify(phoneFit))
+      assert(phoneFit.tabs.every(Boolean), JSON.stringify(phoneFit))
+    })
+  }
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.getByRole('button', { name: 'Back to main menu' }).click()
   await page.evaluate(() => {

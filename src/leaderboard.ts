@@ -193,6 +193,8 @@ export type DailyClimbRow = {
   username: string
   character: CharacterId
   floorsCleared: number
+  /** 3 or more is a won climb; 4 also beat the Act IV boss. */
+  highestBossActDefeated: number
   averageDamagePerFight: number | null
   damageBlockedRate: number | null
   cards: Omit<CardInstance, 'uid'>[]
