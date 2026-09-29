@@ -714,6 +714,37 @@ check('mandatory Chamber plays retain their private preview exception', () => {
     [hidden.uid])
 })
 
+check('Rapid Fire Fan the Hammer cannot require a Chamber card twice after it is played', () => {
+  const fan = instance('fan', 'hermit_fan_the_hammer')
+  const chamberCard = instance('chamber-defend', 'hermit_defend')
+  let combat = createCombat(createRng(108), [player({
+    hand: [fan], chamber: [chamberCard], nextAttackRapidFire: 1,
+  })], [enemy()])
+  skipSetupLoad(combat)
+  combat.players[0].nextAttackRapidFire = 1
+  const choice = { enemyUid: 'e1', playerId: null, chamberUids: [chamberCard.uid] }
+  combat = playCard(combat, 'p1', fan.uid, choice)
+  combat = playCardCopy(combat, 'p1', choice)
+  assert.equal(combat.pendingHermitChamberPlays?.length, 1)
+  combat = playLiveHermitChamberCard(combat, 'p1', chamberCard.uid, { enemyUid: null, playerId: 'p1' })
+  assert.equal(combat.pendingHermitChamberPlays?.length, 0)
+  assert.equal(mandatoryChoicePending(combat), false)
+})
+
+check('a saved mandatory Chamber play can advance after its card left the Chamber', () => {
+  const card = instance('already-played', 'hermit_purgatory', true)
+  let combat = createCombat(createRng(109), [player({ discard: [card] })], [enemy()])
+  skipSetupLoad(combat)
+  combat.pendingHermitChamberPlays = [{
+    playerId: 'p1', sourceCardId: 'hermit_fan_the_hammer', cardUids: [card.uid], free: true,
+  }]
+  assert.equal(playLiveHermitChamberCard(combat, 'p1', 'other-card'), combat)
+  combat = playLiveHermitChamberCard(combat, 'p1', card.uid)
+  assert.equal(combat.pendingHermitChamberPlays?.length, 0)
+  assert.equal(mandatoryChoicePending(combat), false)
+  assert.equal(combat.players[0].discard[0]?.uid, card.uid)
+})
+
 check('impossible mandatory Chamber plays advance without removing the private card', () => {
   const scenarios = [
     {

@@ -151,6 +151,28 @@ try {
     await page.locator('.hand .card[title="Tracking Shots"]').click()
     assert.match(await page.locator('.prompt').innerText(), /Load Tracking Shots after playing it\?/,
       `${name}: a hand-played Tracking Shots must still offer Load self`)
+
+    await load()
+    await page.evaluate(() => {
+      const run = structuredClone(window.__STS_DEBUG__.getRun())
+      const hermit = run.combat.players[0]
+      const [played] = hermit.chamber.splice(0, 1)
+      hermit.discard.push(played)
+      hermit.hand = [{ uid: 'playable-defend', defId: 'hermit_defend', upgraded: false }]
+      run.combat.pendingHermitChamberPlays = [{
+        playerId: hermit.id, sourceCardId: 'hermit_fan_the_hammer', cardUids: [played.uid], free: true,
+      }]
+      window.__STS_DEBUG__.setRun(run)
+    })
+    const recovery = page.getByRole('button', { name: 'Continue after unavailable Chamber card' })
+    await recovery.waitFor()
+    const defend = page.locator('.hand .card[title="Defend"]')
+    assert.equal(await defend.getAttribute('aria-disabled'), 'true')
+    await page.waitForTimeout(650)
+    await page.screenshot({ path: `${out}/${name}-stale-chamber-recovery.png` })
+    await recovery.click()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.pendingHermitChamberPlays.length === 0)
+    assert.equal(await defend.getAttribute('aria-disabled'), 'false')
     await page.close()
   }
   assert.deepEqual(errors, [])

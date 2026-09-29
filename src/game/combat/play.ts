@@ -939,6 +939,11 @@ export function playHermitChamberCard(
     return skipPendingHermitChamberPlay(state, pending,
       `${owner.name}'s mandatory Chamber play was skipped because they did not survive to play it`)
   }
+  if (pending?.playerId === playerId && pending.cardUids[0] === cardUid && owner &&
+    !owner.chamber.some((card) => card.uid === cardUid)) {
+    return skipPendingHermitChamberPlay(state, pending,
+      `${owner.name}'s mandatory Chamber play was skipped because the card left the Chamber`)
+  }
   const staged = stageHermitChamberCard(state, playerId, cardUid)
   if (!staged) return state
   const actor = findPlayer(staged, playerId)!

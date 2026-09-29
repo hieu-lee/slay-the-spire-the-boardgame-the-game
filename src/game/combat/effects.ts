@@ -2751,9 +2751,12 @@ export function applyEffect(
         return
       }
       context.chamberChoiceIndex = cursor + selected.length
-      if (selected.length > 0) state.pendingHermitChamberPlays = [
+      const queued = new Set((state.pendingHermitChamberPlays ?? [])
+        .filter((pending) => pending.playerId === actor.id).flatMap((pending) => pending.cardUids))
+      const unqueued = selected.filter((uid) => !queued.has(uid))
+      if (unqueued.length > 0) state.pendingHermitChamberPlays = [
         ...(state.pendingHermitChamberPlays ?? []),
-        { playerId: actor.id, sourceCardId: context.sourceCardId ?? 'hermit_eye_of_the_storm', cardUids: selected, free: effect.free },
+        { playerId: actor.id, sourceCardId: context.sourceCardId ?? 'hermit_eye_of_the_storm', cardUids: unqueued, free: effect.free },
       ]
       return
     }

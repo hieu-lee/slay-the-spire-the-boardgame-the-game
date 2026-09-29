@@ -4709,7 +4709,15 @@ function dispatch(run, seat, action, lockedPreview) {
       if (!run.combat || typeof action.cardUid !== 'string') fail('No matching Chamber card in combat')
       const player = run.combat.players.find((candidate) => candidate.id === seat.playerId)
       const card = player?.chamber.find((held) => held.uid === action.cardUid)
-      if (!player || !card) fail('That Chamber card is not yours')
+      if (!player) fail('That Chamber card is not yours')
+      if (!card) {
+        const pending = run.combat.pendingHermitChamberPlays?.[0]
+        if (pending?.playerId !== seat.playerId || pending.cardUids[0] !== action.cardUid) {
+          fail('That Chamber card is not yours')
+        }
+        const combat = playHermitChamberCard(run.combat, seat.playerId, action.cardUid)
+        return combat === run.combat ? run : { ...run, combat }
+      }
       const def = faceOf(cardDef(card.defId), card.upgraded)
       const variableDiscard = def.effects.some((effect) => effect.kind === 'discardAny')
       const variableExhaust = def.effects.find((effect) => effect.kind === 'exhaustAny')

@@ -766,9 +766,9 @@ function CombatScreenView({
       : next)
   }
 
-  function skipUnplayableHermitChamber(card: CardInstance) {
-    if (onAction) void onAction({ kind: 'playHermitChamberCard', cardUid: card.uid, enemyUid: null })
-    else onChange?.(playHermitChamberCard(state, viewerId, card.uid))
+  function skipUnplayableHermitChamber(cardUid: string) {
+    if (onAction) void onAction({ kind: 'playHermitChamberCard', cardUid, enemyUid: null })
+    else onChange?.(playHermitChamberCard(state, viewerId, cardUid))
   }
   const viewerHasSozu = viewer?.relics.some((relic) => relic.defId === 'sozu') ?? false
   const extraCrispyPower = viewer?.powers.find((power) => power.defId === 'extra_crispy' &&
@@ -6884,10 +6884,12 @@ function CombatScreenView({
               <span aria-hidden="true">{viewer.chamber.length}/{viewer.chamberSlots}</span>
             </button>
           ) : null}
-          {requiredChamberCard && requiredChamberUnplayable ? (
+          {requiredHermitChamberCard?.playerId === viewer.id &&
+          (!requiredChamberCard || requiredChamberUnplayable) ? (
             <button type="button" className="prompt__mode hermit-chamber-skip"
-              onClick={() => skipUnplayableHermitChamber(requiredChamberCard)}>
-              Skip unplayable {cardDef(requiredChamberCard.defId).name}
+              onClick={() => skipUnplayableHermitChamber(requiredHermitChamberCard.cardUids[0]!)}>
+              {requiredChamberCard ? `Skip unplayable ${cardDef(requiredChamberCard.defId).name}`
+                : 'Continue after unavailable Chamber card'}
             </button>
           ) : null}
           <CardCollectionOverlay cards={viewer.draw} label="Draw pile" dataPile="draw" ordered={false}

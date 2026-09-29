@@ -6215,6 +6215,23 @@ check('disconnect resolves a committed mandatory Chamber preview before its fall
     'disconnect abandoned the committed mandatory Chamber play or lost its Slime target')
 })
 
+check('only the Chamber owner can clear an obsolete mandatory play', () => {
+  const { room, a, b } = twoSeatRoom()
+  const card = { uid: 'already-played-chamber', defId: 'hermit_purgatory', upgraded: true }
+  const owner = room.run.combat.players.find((player) => player.id === a.playerId)
+  Object.assign(owner, { character: 'hermit', chamber: [], discard: [card] })
+  room.run.combat.pendingHermitChamberPlays = [{
+    playerId: a.playerId, sourceCardId: 'hermit_fan_the_hammer', cardUids: [card.uid], free: true,
+  }]
+  assertThrows(() => apply(room, b.token, { kind: 'playHermitChamberCard', cardUid: card.uid }),
+    'a teammate cleared the Hermit\'s private mandatory play')
+  apply(room, a.token, { kind: 'playHermitChamberCard', cardUid: card.uid })
+  assertEqual(room.run.combat.pendingHermitChamberPlays.length, 0,
+    'the owner remained blocked by the obsolete Chamber play')
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).discard[0]?.uid,
+    card.uid, 'recovery moved the previously played card')
+})
+
 check('Hermit Chamber forwards generic topdeck choices authoritatively', () => {
   const { room, a, b } = twoSeatRoom()
   const mine = room.run.combat.players.find((player) => player.id === a.playerId)
