@@ -17,6 +17,7 @@ from scipy import ndimage
 ROOT = Path(__file__).resolve().parents[2]
 COLUMNS, ROWS = 4, 4
 MIN_FRAME_MS = 20  # browsers may stretch animated-WebP frames shorter than this
+MAX_REPAINT = .48  # above this share of repainted pixels, a RIFE morph turns into a doubled-weapon ghost
 
 
 def sheet_cells(path):
@@ -221,6 +222,8 @@ def register(spec, rest):
             frame.alpha_composite(pages)
         return frame
 
+    for sheet in sheets:  # the lunge crouch shrinks the painted body: size it back up (see README `stabSize`)
+        sheet['scales'] = sheet['scales'] * spec.get('stabSize', 1)
     first, last = 0, len(sheets) - 1
     entry = spec['stabSegments'][first].get('entry', 0)
     if fit_first:
@@ -272,28 +275,45 @@ def register(spec, rest):
     return plan
 
 
+def repainted(a, b):
+    """Share of the two drawings' union whose colour differs strongly: a large share means a big pose change,
+    which RIFE renders as two blended poses (a doubled knife)."""
+    A, B = np.array(a).astype(int), np.array(b).astype(int)
+    differs = np.abs(A[:, :, :3] * A[:, :, 3:4] // 255 - B[:, :, :3] * B[:, :, 3:4] // 255).sum(2) > 90
+    union = (A[:, :, 3] > 32) | (B[:, :, 3] > 32)
+    return (differs & union).sum() / max(union.sum(), 1)
+
+
 def overlap(a, b):
     a, b = np.array(solid(a)) > 0, np.array(solid(b)) > 0
     return (a & b).sum() / max((a | b).sum(), 1)
 
 
-def sample(keys, rest, duration, threshold):
+def sample(keys, rest, duration, threshold, max_repaint=MAX_REPAINT):
     """Frames every MIN_FRAME_MS: the canonical drawing, every keyframe, and the canonical drawing again.
 
     Between two keyframes a RIFE in-between supplies the intermediate time when both drawings overlap
     enough to be morphed safely; otherwise the nearer drawing is held (a hard cut beats a ghost of two
-    poses). The last drawing morphs onto the canonical frame (the final frame) over the last two in-between
-    frames, or cuts to it when the two drawings overlap too little to morph safely.
+    poses), and a morph that ghosts is replaced by the nearer drawing. The last drawing morphs onto the
+    canonical frame (the final frame) over the last two in-between frames, or cuts to it when the two
+    drawings overlap too little to morph safely.
     """
     from interpolate import interpolate
     keys = [(0, rest), *keys, (duration, rest)]
     times = list(range(0, duration - MIN_FRAME_MS + 1, MIN_FRAME_MS))
     cache, frames = {}, []
 
+    def translucent(frame):
+        alpha = np.array(frame.getchannel('A')).astype(int)
+        return int(((alpha > 20) & (alpha < 200) & ndimage.binary_erosion(alpha > 20, iterations=5)).sum())
+
     def morph(index, a, b, fraction):
+        """RIFE in-between, or None when it ghosts: two blended poses leave far more translucent interior
+        than either drawing has (the off-hand arm is translucent in the art itself)."""
         key = (index, round(fraction, 2))
         if key not in cache:
-            cache[key] = interpolate(a, b, key[1])
+            frame = interpolate(a, b, key[1])
+            cache[key] = frame if translucent(frame) <= 1.5 * max(translucent(a), translucent(b)) + 40 else None
         return cache[key]
 
     for t in times:
@@ -302,15 +322,13 @@ def sample(keys, rest, duration, threshold):
         fraction = (t - t0) / max(t1 - t0, 1)
         if index == len(keys) - 2:
             w = min(max((t - (times[-1] - 3 * MIN_FRAME_MS)) / (3 * MIN_FRAME_MS), 0), 1)
-            frame = a if w <= 0 else b if w >= 1 else morph(index, a, b, w) if overlap(a, b) >= .15 else a
+            frame = a if w <= 0 else b if w >= 1 else (morph(index, a, b, w) if overlap(a, b) >= .15 else None) or a
         elif fraction < .06:
             frame = a
         elif index == 0:  # canonical -> first drawing: a cut, never a two-pose ghost
             frame = b
-        elif overlap(a, b) >= threshold:
-            frame = morph(index, a, b, fraction)
         else:
-            frame = a if fraction < .5 else b
+            frame = (morph(index, a, b, fraction) if overlap(a, b) >= threshold and repainted(a, b) <= max_repaint else None) or (a if fraction < .5 else b)
         frames.append(frame)
     return times, frames
 
@@ -320,7 +338,7 @@ def render(name, spec, output):
     rest = canvas_for(spec, original)
     duration = spec.get('duration', 1830)
     plan = register(spec, rest)
-    times, frames = sample(plan, rest, duration, spec.get('stabMorph', .72))
+    times, frames = sample(plan, rest, duration, spec.get('stabMorph', .72), spec.get('stabRepaint', MAX_REPAINT))
     durations = [b - a for a, b in zip(times, times[1:] + [duration])]
     assert min(durations) >= MIN_FRAME_MS and sum(durations) == duration, (name, sorted(durations)[:4], sum(durations))
     assert frames[-1] is rest, (name, 'the attack must end on the canonical frame')

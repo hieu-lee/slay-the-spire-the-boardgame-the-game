@@ -357,14 +357,14 @@
     "rootMotion": "elite-pounce"
   },
   "looter": {
-    "contactLeft": 208,
+    "contactLeft": 177,
     "height": 800,
     "scale": 2.0,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "mugger": {
-    "contactLeft": 146,
+    "contactLeft": 128,
     "height": 822,
     "scale": 2.0,
     "attackMotion": "melee",

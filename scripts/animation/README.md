@@ -93,10 +93,12 @@ every 20ms (the shortest duration browsers honour). The Book additionally sets `
 drawing to overlay the canonical body, since the model draws the dagger smaller) and `stabPastePages` (the
 model redraws the pages at growing sizes, so they are erased and the canonical pages composited) and
 `stabGradeBlade` (grade the blade to the idle blade's colours on its own, since it is a small share of the pixels). RIFE
-fills the gaps only between near-identical drawings (`stabMorph`, silhouette IoU, default .72); otherwise
+fills the gaps only between near-identical drawings (`stabMorph`, silhouette IoU, default .72, and at most 48% repainted pixels, which otherwise render as a doubled weapon; `stabRepaint` overrides that cap per rig — the Book turns it off, since its drawings never ghost; a morph that still ghosts is discarded); otherwise
 the nearer drawing is held, because a hard cut reads better than a ghost of two poses. The last drawing
 morphs onto the canonical frame, which is always the final frame (the bake asserts it).
-Idle and attack share one canvas and `displayScale` (the Book needs 3.0 so its thrust is not clipped);
+
+`stabSize` (Looter 1.06, Mugger 1.05) scales every pose up, because the lunge crouch makes the painted body
+smaller than idle (mean linear painted size, sqrt of area, now about 0.96 and 0.98 of idle; head width about 1.0). Idle and attack share one canvas and `displayScale` (the Book needs 3.0 so its thrust is not clipped);
 overscan is restored by the metadata `scale`. `maxAreaChange` and `maxFrameDuration` relax
 `review-rigs.py` for these drawn attacks. Exports live in `combat/enemies/animated/` with no HEVC
 companion (the encoder needs macOS).
