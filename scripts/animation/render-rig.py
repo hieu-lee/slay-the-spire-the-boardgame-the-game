@@ -179,6 +179,9 @@ if __name__ == '__main__':
             elif pose == 'attack' and name == 'hero-guardian-defense':
                 import runpy
                 runpy.run_path(str(ROOT / 'scripts/animation/render-guardian-defense.py'), run_name='__main__')
+            elif pose == 'attack' and 'stabSegments' in spec:
+                from stab_frames import render as render_stab
+                render_stab(name, spec, output)
             elif pose == 'attack' and 'drawnSheet' in spec:
                 from drawn import render as render_drawn
                 render_drawn(name, spec, output)

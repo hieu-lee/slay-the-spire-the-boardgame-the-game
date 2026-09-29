@@ -39,16 +39,6 @@
     "source": "28e9787dbe7cc7abff3c5d662177acdf572dc4d46be96a9a29699ceea4611b70",
     "video": "f9b888a9850408626265a47db387f5b26545eaf99188a4b1f78c392aa9aff8b6"
   },
-  "public/assets/combat/rigged/book_of_stabbing-attack.webp": {
-    "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "60924040218551894325b54caf4f753ed4f8b9e0a56bf26a192be228f218e8e4",
-    "video": "9c3e33f4082c4da85286f18430aa6f9a9fd77805361b2a0a61816096981cc046"
-  },
-  "public/assets/combat/rigged/book_of_stabbing-idle.webp": {
-    "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "42a4cf8e73a8a01eae940dee7511386e672e0995c789f9c69137090089c1ca42",
-    "video": "8908ab5c90cdc05f122081fc3f47c23c87511d0076e7600d2641633a97ea8b2d"
-  },
   "public/assets/combat/rigged/bronze_automaton-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
     "source": "44187c036f1aef73be18060dc10b39ae5226547bcbf79170eab219944e6431e5",
@@ -659,16 +649,6 @@
     "source": "2b200c772edbcb2568d1f2024c29990e50fe3f7880628ca4e49b4afe13928f38",
     "video": "22bd2f1b0960ecf7f0fae977f73fbfadad59c19377bcdb9c7480c3b648a17017"
   },
-  "public/assets/combat/rigged/looter-attack.webp": {
-    "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "57667c584e456d844f75195f3df2f8e1bda424e86e48af1d6c5bdd2b961961b0",
-    "video": "ae55e01adf2cd06dae5aae800f0770c48631a7826d8803906abdc23b34dc3534"
-  },
-  "public/assets/combat/rigged/looter-idle.webp": {
-    "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "861b5ac57c8c627343e354982a8afa9f90bba5b15a6aebc5f3f3887ea34a5201",
-    "video": "8e8ec76ebb564c79eaa439b9e1266e689a60c9675e0ae55d0c4dc7fda738e75e"
-  },
   "public/assets/combat/rigged/mad_gremlin-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",
     "source": "4b699265d47488acfe75fd166499b2eb5a53c6506797737cbeb433255b7fc338",
@@ -688,16 +668,6 @@
     "encoder": "hevc-alpha-vfr-q100-v1",
     "source": "5b9e96ae5224c848cc9b0c62eecdb5fc738947042d59812598f36e2f6ffe7972",
     "video": "2209a21bf3c8b00a1e985d5b4cdc3c5d903ce56a150126fa4867ad99d56daae7"
-  },
-  "public/assets/combat/rigged/mugger-attack.webp": {
-    "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "b85a537bf073e82d389304587ad3dc8623c7823dc9f3b456bc510b59d2ce9f92",
-    "video": "0061a22c194ddccff795ad20f68343bfa7bd63e513da8f403513e5e2b7218bab"
-  },
-  "public/assets/combat/rigged/mugger-idle.webp": {
-    "encoder": "hevc-alpha-vfr-q100-v1",
-    "source": "8fdd85e3e7bc12ef318138f82a97e024c10b7b0b55b3405ec0232b8b6855352f",
-    "video": "7a0a8fe0fdb9b70a829e6b8c96a7672098bd58ddb6c3a20b6105207850c54c08"
   },
   "public/assets/combat/rigged/mystic-attack.webp": {
     "encoder": "hevc-alpha-vfr-q100-v1",

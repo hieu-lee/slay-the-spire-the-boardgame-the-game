@@ -762,7 +762,7 @@
 }
 .enemy--elite[data-enemy-art='lagavulin'] { --elite-attack-motion: elite-pounce; }
 .enemy--elite[data-enemy-art='sentry'] { --elite-attack-motion: elite-core; }
-.enemy--elite[data-enemy-art='book_of_stabbing'] { --elite-attack-motion: elite-stabs; }
+.enemy--elite[data-enemy-art='book_of_stabbing'] { --elite-attack-motion: elite-book-lunge; }
 .enemy--elite[data-enemy-art='gremlin_leader'] { --elite-attack-motion: elite-jab; }
 .enemy--elite[data-enemy-art='taskmaster'] { --elite-attack-motion: elite-whip; }
 .enemy--elite[data-enemy-art='giant_head'] { --elite-attack-motion: elite-slam; }
@@ -789,6 +789,15 @@
   30% { translate: 0 -4%; }
   40% { translate: 5% -1%; }
   55% { translate: 1% 0; }
+}
+/* The sprite draws both stabs (contact 730ms, second stab ~1100ms); the body only
+   closes the distance before contact (at least 2.5rem, since its blade already reaches far), holds
+   through them, then falls back. */
+@keyframes elite-book-lunge {
+  0%, 100% { translate: 0; }
+  14% { translate: 1% 0; }
+  30%, 76% { translate: min(var(--boss-dash-x, 0rem), -2.5rem) 0; }
+  92% { translate: -2% 0; }
 }
 @keyframes elite-stabs {
   0%, 100% { translate: 0; }

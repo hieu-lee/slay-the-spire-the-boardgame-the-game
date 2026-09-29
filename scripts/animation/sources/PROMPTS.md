@@ -110,3 +110,9 @@ Three-pose edit prompt:
 ```text
 Use case: identity-preserve. Edit target: these EXACT THREE consecutive game animation sprites. Upscale all three with crisp painted edges and details, preserving each original pose, anatomy, hands, face, clothing, colors, weapons and facing direction. Exactly three full body sprites in ONE horizontal row, same order, with transparent gaps and padding around every sprite. Enlarge all three consistently to use the canvas. Preserve precise hand and limb positions, physical proportions, and the original flat game art style. Do not add weapons to empty hands. No redesign, extra limbs, aura, shadows, backdrop, text or frames. Native transparent RGBA background, alpha 0 outside bodies. Input is an exact edit target, not loose inspiration.
 ```
+
+## Looter, Mugger and Book of Stabbing stabs
+
+See `stab-prompts.json`: single-pose key drawings, then 4x4 sheets of 16 successive poses generated
+from the canonical enemy plus a start and an end key drawing (Sunburst, high quality, native
+transparent background). The accepted sheets are in `stab/`; nothing was background-keyed.

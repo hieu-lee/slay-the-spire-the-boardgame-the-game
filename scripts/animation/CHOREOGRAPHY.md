@@ -34,7 +34,7 @@ These are authored from the original silhouettes, weapons and anatomy:
 | Gremlin Nob | brace knees, raise heavy skull club with one hand while the other balances, weight-forward smash, heavy follow-through, lift back to guard |
 | Lagavulin | lower shell, brace rear legs, extend front claws into a short pounce, retract claws and settle shell |
 | Sentry | upper and lower stone shells separate to expose the core; charge, discharge with recoil, close shells |
-| Book of Stabbing | curl the arm to draw the blade back, three closely spaced stabs, withdraw blade over the open book |
+| Book of Stabbing | ribbon coils back, dagger swings level, then two real thrusts along the blade (contact 730ms, second ~1100ms) as the ribbon stretches and recoils; dagger settles back over the open book |
 | Gremlin Leader | quick forward dagger jab; scarf follows the torso with a delayed swish; reset guard |
 | Taskmaster | shoulder backswing followed by wrist snap, delayed whip-tip crack and diminishing recoil |
 | Giant Head | slow heavy lift / backward tilt, drop forward, ground shock ring, weighted settle |
@@ -66,3 +66,8 @@ props use rigid motion; flesh, wings and cloth use small weighted bends.
 Rigid blades must remain rigid. If a cutout cannot reach its intended poses
 without breaking anatomy, use drawn key poses and in-betweens, preserving the
 same phase windows and a fixed body scale/ground anchor.
+
+Looter and Mugger stab for real: coil over the rear leg with the weapon fists drawn back (0-330ms),
+lunge (330-730ms) into a fully straight arm and blade at contact, hold ~150ms, withdraw (880-1180ms)
+and settle to the guard by ~1750ms. Mugger thrusts both swords together. Each weapon stays in its own
+hand for the whole sequence.

@@ -195,10 +195,12 @@ export function enemyImagePath(def: EnemyDef): string {
   return assetPath(`combat/enemies/${artId}.webp`)
 }
 
+const WEBP_ONLY_ANIMATIONS = new Set(['byrd', 'cultist', 'looter', 'mugger', 'book_of_stabbing'])
+
 export function enemyAnimationImagePath(def: EnemyDef, pose: 'idle' | 'attack'): string {
   const artId = def.artId ?? def.id
-  // These layered exports use the shared WebP playback on every browser.
-  const folder = artId === 'byrd' || artId === 'cultist' ? 'enemies/animated' : 'rigged'
+  // These exports use the shared WebP playback on every browser, with no HEVC companion.
+  const folder = WEBP_ONLY_ANIMATIONS.has(artId) ? 'enemies/animated' : 'rigged'
   return assetPath(`combat/${folder}/${artId}-${pose}.webp`)
 }
 

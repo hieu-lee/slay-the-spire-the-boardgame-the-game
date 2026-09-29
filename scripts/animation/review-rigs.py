@@ -41,7 +41,7 @@ def reviewed_rigs():
             assert all(b and b[0]>0 and b[1]>0 and b[2]<im.width and b[3]<im.height for b in boxes), (name,pose,'clipped silhouette')
             # Trickster's intentional spectral duplicate adds painted area at impact.
             if pose == 'idle' or not has_authored_attack(name) or ('drawnSheet' in spec and name not in ('downfall_trickster','hero-guardian-defense')):
-                assert max(areas)/min(areas)<(1.4 if 'drawnSheet' in spec else 1.3), (name,pose,'area changed too much',max(areas)/min(areas))
+                assert max(areas)/min(areas)<(spec.get('maxAreaChange', 1.4 if 'drawnSheet' in spec else 1.3) if pose=='attack' else 1.3 if 'drawnSheet' not in spec else 1.4), (name,pose,'area changed too much',max(areas)/min(areas))
             if pose == 'idle' and 'idleSource' in spec:
                 # Higher-resolution textures must not move or shrink the registered body.
                 reference = Image.open(ROOT / spec['source']).convert('RGBA')

@@ -1,0 +1,127 @@
+{
+  "model": "gpt-image-2.5-sunburst",
+  "background": "transparent",
+  "mode": "edit",
+  "quality": "high",
+  "sheetSize": "3072x2048",
+  "workflow": "For each attack: (1) single-pose key drawings (coil, lunge, thrust, recover) generated from the canonical enemy plus its guard drawing; (2) 4x4 sheets of 16 successive poses generated from the canonical enemy (image 1) plus a start key (image 2) and an end key (image 3); the guard-to-first and last-to-guard sheets use the canonical drawing itself as the key. Sheets are chained by silhouette overlap at each seam; the exact sheets used are listed in rigs.json.",
+  "sheetPrompt": "Use case: stylized-concept, production 2D sprite sheet for a game animation. Reference image 1 is the canonical {who} (identity, colors, painted style and body scale). Reference image 2 is the START pose and reference image 3 is the END pose of this animation segment, both facing LEFT. Draw exactly 16 successive full-body poses in a 4-column by 4-row grid, read left-to-right then top-to-bottom, each pose in its own equal wide cell with generous transparent margins; every pose, including outstretched arms and weapons, must lie completely inside its own cell, nothing cropped, nothing touching a neighbour. Pose 1 must be identical to reference 2 and pose 16 identical to reference 3. In between draw {motion} Only a tiny change between neighbouring poses, like consecutive frames of a 30fps animation: no jumps, no skipped movement. {rules} Same identity, colors and painted style, and the SAME body scale in every cell (do not zoom or resize); feet on one common ground line; no motion lines, effects, glow, shadows, text or numbers. Native transparent background.",
+  "rules": {
+    "looter": "The single red serrated dagger stays gripped in the SAME near-side fist (the lighter green arm in front of the torso) in ALL poses: it never changes hands, never hides behind the back, never changes size or shape. The darker far-side arm is only an EMPTY balancing claw hand.",
+    "mugger": "Each of the TWO cyan short swords stays in the SAME hand in ALL poses (upper sword in the near-side fist, lower sword in the far-side fist): they never change hands, never hide behind the back, never duplicate and never change size or shape. Exactly two arms.",
+    "book_of_stabbing": "The large curved cyan dagger stays gripped by the lavender petal fist in ALL poses with IDENTICAL shape, size, colors and curvature (rigid, never bending or resizing). The little open pink book stays at exactly the same spot on the ground. The purple ribbon stays attached to the book and to the petal fist and stretches and coils like a flexible tentacle."
+  },
+  "who": {
+    "looter": "Looter (green goblin thief with a black bandana, blue shirt and red trousers)",
+    "mugger": "Mugger (pale thief with red hair and goggles, yellow tunic and grey ragged skirt)",
+    "book_of_stabbing": "Book of Stabbing (purple ribbon rising from a small open pink book, ending in a fist of lavender petals gripping a large curved cyan dagger)"
+  },
+  "keyPrompt": "Use case: precise-object-edit, pose variation for a production 2D animation. Reference image 1 is the canonical {who} (identity, colors, painted style, body scale); reference image 2 is the same character in his guard pose, facing LEFT. Redraw the SAME character at the SAME scale and in the SAME painted style, facing LEFT, in a new pose: {pose} {rules} No motion lines, effects, glow, shadows or text; full body inside the canvas; native transparent background.",
+  "keys": {
+    "looter": {
+      "recover": "withdrawal after a stab: the near arm is bent at the elbow, the dagger fist pulled back toward the chest with the blade still pointing forward-left, the body rising back up out of the lunge, the empty far claw hand lowered near the knee.",
+      "coil": "coiled anticipation of a stab: the body weight shifts back onto the rear leg, the torso leans back and turns slightly away from the target, the near elbow bends tightly so the dagger fist is pulled back beside the ribs at hip height, the dagger STILL pointing forward-left and upward at almost the same angle as in the guard pose, the empty far claw hand raised forward for balance.",
+      "lunge": "mid-lunge of a stab: the front foot has stepped forward, the torso leans far forward and low, the near arm is half extended forward, the dagger pointing forward-left and only slightly upward, the empty far claw hand held back for balance."
+    },
+    "mugger": {
+      "recover": "withdrawal after a double stab: both arms bent at the elbows, both sword fists pulled back toward the chest with the blades still pointing forward-left, the body rising back up out of the lunge.",
+      "coil": "coiled anticipation of a double stab: weight shifts back onto the rear leg, the torso leans back, both elbows bend tightly so both sword fists are pulled back beside the ribs, both blades still pointing forward-left at about the same angles as in the guard pose.",
+      "lunge": "mid-lunge of a double stab: the front foot has stepped forward, the torso leans far forward and low, both arms half extended forward, both blades pointing forward-left, the lower sword slightly ahead of the upper."
+    },
+    "book_of_stabbing": {
+      "raise": "raised anticipation: the purple ribbon leans back and to the right, the petal fist lifts up, the dagger is raised and tilted so the blade points up and to the upper-left at about 45 degrees.",
+      "cock": "cocked stab: the ribbon is coiled back toward the right, the petal fist is held close to the body, the dagger points horizontally to the LEFT with its tip level, ready to thrust forward.",
+      "thrust": "full stab: the ribbon uncoils and stretches far to the LEFT, the petal fist and the dagger are thrust far forward to the left, the blade pointing horizontally left with its tip level at the target, the book unchanged on the ground.",
+      "recover": "withdrawal after the stabs: the ribbon curls back up, the dagger points to the left and slightly downward at about 30 degrees below horizontal, halfway back toward the guard pose."
+    }
+  },
+  "segments": {
+    "looter": [
+      {
+        "from": "g",
+        "to": "c",
+        "motion": "the coil: weight shifts back over the rear leg, the near elbow bends drawing the dagger fist smoothly back beside the ribs while the blade keeps pointing forward-left and upward, the free claw hand rises forward."
+      },
+      {
+        "from": "c",
+        "to": "l",
+        "motion": "the lunge begins: the front foot steps forward, the torso drives forward and low, the near arm shoots forward halfway, the blade swings toward level pointing left."
+      },
+      {
+        "from": "l",
+        "to": "e",
+        "motion": "the stab completes: the near arm straightens fully, the forearm and blade become one straight level line pointing left, the body low and stretched forward; the last poses are the fastest."
+      },
+      {
+        "from": "e",
+        "to": "r",
+        "motion": "the withdrawal: the elbow bends and the dagger is pulled back, still pointing forward-left, the body starts to rise."
+      },
+      {
+        "from": "r",
+        "to": "g",
+        "motion": "the recovery: the body rises and settles into the guard pose with the dagger up in front."
+      }
+    ],
+    "mugger": [
+      {
+        "from": "g",
+        "to": "c",
+        "motion": "the coil: weight shifts back over the rear leg, both elbows bend drawing both sword fists smoothly back beside the ribs while both blades keep pointing forward-left."
+      },
+      {
+        "from": "c",
+        "to": "l",
+        "motion": "the lunge begins: the front foot steps forward, the torso drives forward and low, both arms shoot forward halfway, blades pointing left."
+      },
+      {
+        "from": "l",
+        "to": "e",
+        "motion": "the double stab completes: both arms straighten fully, each forearm and blade one straight level line pointing left, the lower sword slightly ahead, body low and stretched forward; the last poses are the fastest."
+      },
+      {
+        "from": "e",
+        "to": "r",
+        "motion": "the withdrawal: both elbows bend and the swords are pulled back, still pointing forward-left, the body starts to rise."
+      },
+      {
+        "from": "r",
+        "to": "g",
+        "motion": "the recovery: the body rises and settles into the guard pose."
+      }
+    ],
+    "book_of_stabbing": [
+      {
+        "from": "g",
+        "to": "c",
+        "motion": "the ribbon coils back to the right while the whole dagger swings from hanging down-left up to level, the blade pointing horizontally LEFT, held back close to the body."
+      },
+      {
+        "from": "c",
+        "to": "t",
+        "motion": "the stab: the ribbon uncoils and stretches to the left while the petal fist and dagger shoot forward along the blade direction (the blade stays level pointing left) to full extension; the last poses are the fastest."
+      },
+      {
+        "from": "t",
+        "to": "c",
+        "motion": "the withdrawal between two stabs: the ribbon curls back to the right and the whole petal fist and dagger are drawn back toward the body, the blade staying level and pointing LEFT, ending cocked close to the body."
+      },
+      {
+        "from": "t",
+        "to": "r",
+        "motion": "the ribbon curls back up; the dagger is drawn back and swings from level down toward the guard angle, about 30 degrees below horizontal."
+      }
+    ]
+  },
+  "storyboard": {
+    "note": "First-pass 24-pose 6x4 storyboards (3072x2048, canonical enemy as the only reference). Poses 1, 8/6/7, 13 and 24 of the accepted candidates were cropped as the guard, coil/cock and extension key images.",
+    "looter": "Use case: stylized-concept, production 2D sprite sheet for a game animation. The reference is the canonical Looter (green goblin thief, black bandana, blue shirt, red trousers, brown boots), facing LEFT, gripping ONE red serrated dagger in his NEAR-side fist (the lighter green arm in front of his torso). Draw exactly 24 successive full-body poses of ONE real, forceful STABBING attack in a 6-column by 4-row grid, read left-to-right then top-to-bottom, each pose in its own equal cell with transparent gaps.\nCRITICAL: the dagger stays in that SAME near-side fist in ALL 24 poses. It NEVER passes to the other hand, and it is never hidden behind the back. The other, darker far-side arm is only an EMPTY balancing claw hand and never holds anything.\nChoreography (small change between neighbouring poses): poses 1-2 the reference guard. Poses 3-8 anticipation: weight shifts onto the rear leg, the near elbow bends and draws the dagger fist back beside the chest, the blade pointing forward-left and slightly upward, the empty claw hand rises forward for balance. Poses 9-12 the explosive lunge: front foot steps forward, torso drives forward, the dagger arm shoots forward and straightens, the blade level. Poses 13-15 full extension: the near arm completely straight, the forearm and the blade one straight horizontal line pointing left at the target, body low and stretched forward. Poses 16-18 the elbow bends and the dagger begins to withdraw. Poses 19-24 pull back and settle exactly into the reference guard.\nRules: same identity, colors, painted style and the SAME body scale in every cell (do not zoom); exactly two connected arms with shoulder, elbow and wrist; the SAME single dagger, same blade length, natural fist grip; feet on one common ground line; no motion lines, effects, shadows, text or numbers. Native transparent background.\n",
+    "mugger": "Use case: stylized-concept, production 2D sprite sheet for a game animation. The reference is the canonical Mugger (pale thief with red hair and goggles, yellow tunic, grey ragged skirt), facing LEFT, gripping TWO cyan short swords: the UPPER sword in his near-side fist (the pale arm across his chest) and the LOWER sword in the fist of his far-side arm. Draw exactly 24 successive full-body poses of ONE real, forceful double STABBING attack in a 6-column by 4-row grid, read left-to-right then top-to-bottom, each pose in its own equal cell with transparent gaps.\nCRITICAL: each sword stays in the SAME hand in ALL 24 poses. Swords never change hands, are never hidden behind the back, and never duplicate or change size.\nChoreography (small change between neighbouring poses): poses 1-2 the reference guard. Poses 3-8 anticipation: weight shifts onto the rear leg, both elbows bend and pull both sword fists back beside the ribs, blades pointing forward-left, body coiled. Poses 9-12 the explosive lunge: front foot steps forward, torso drives forward and low, both arms shoot forward. Poses 13-15 full extension: both arms straight, each forearm and blade one straight line pointing left at the target, the lower sword slightly ahead of the upper one, body stretched forward. Poses 16-18 elbows bend, swords begin to withdraw. Poses 19-24 pull back and settle exactly into the reference guard.\nRules: same identity, colors, painted style and the SAME body scale in every cell (do not zoom); exactly two connected arms with shoulders, elbows and wrists; feet on one common ground line; no motion lines, effects, shadows, text or numbers. Native transparent background.\n",
+    "book_of_stabbing": "Use case: stylized-concept, production 2D sprite sheet for a game animation. The reference is the canonical Book of Stabbing: a purple ribbon-tentacle rising from a small open pink book, ending in a fist of lavender petals that grips ONE large curved cyan dagger (green pommel, dark green grip, yellow-green oval crossguard). It faces LEFT (its target is on the left). Draw exactly 24 successive full-body poses of ONE real, violent STABBING attack in a 6-column by 4-row grid, read left-to-right then top-to-bottom, each pose in its own equal cell with transparent gaps.\nCRITICAL: the dagger stays gripped by the petal fist in ALL 24 poses, with IDENTICAL shape, size, colors and curvature (rigid, never bending or resizing). The little book stays at the same spot on the ground, unchanged. The ribbon stays attached to the book and to the petal fist, stretching and curling like a flexible tentacle.\nChoreography (small change between neighbouring poses): poses 1-2 the reference pose (dagger hanging down-left). Poses 3-7 anticipation: the ribbon coils back to the right and the dagger is raised and cocked, tip pointing up and back. Poses 8-10 the dagger snaps around until the blade points horizontally LEFT with the tip forward. Poses 11-13 first STAB: the ribbon uncoils and the whole dagger thrusts far to the left along its own blade direction; poses 14-15 the dagger is drawn back a little; poses 16-17 second stab thrust to the left; poses 18 draw back; poses 19-20 third stab thrust to the left; poses 21-24 the dagger swings back and the whole figure settles exactly into the reference pose.\nRules: same colors and painted style and the SAME scale in every cell (do not zoom); no motion lines, effects, shadows, text or numbers. Native transparent background.\n"
+  },
+  "bookRigidDagger": {
+    "note": "Book sheets in use, in order: 1-gc-rigid (guard->cock), 2-ct-rigid (cock->thrust) \u2014 both regenerated with bookRigidDagger prompts below; 3-tc-0 (thrust->cock, prompt: segments t->c), 4-ct-1 (cock->thrust, segments c->t), 5-tr-0 (thrust->recover, segments t->r). The last drawing morphs onto the canonical frame in stab_frames.py, so no recover->guard sheet is used. The first Book sheets bent the dagger (pommel stayed up while the blade turned), hence the rigid regenerations.",
+    "guardToCock": "Use case: stylized-concept, production 2D sprite sheet for a game animation. Reference image 1 is the canonical Book of Stabbing (a purple ribbon rising from a small open pink book, ending in a fist of lavender petals that grips ONE large curved cyan dagger with a yellow-green oval crossguard and a green grip ending in a yellow-green pommel). Reference image 2 is the START pose (the canonical pose: blade tip hanging down-left, pommel up-right). Reference image 3 is the END pose (the dagger horizontal: blade tip pointing LEFT, pommel pointing RIGHT). Draw exactly 16 successive full-body poses in a 4-column by 4-row grid, read left-to-right then top-to-bottom, each in its own wide cell with generous transparent margins, nothing cropped or touching neighbours. Pose 1 identical to reference 2, pose 16 identical to reference 3. THE DAGGER IS ONE RIGID OBJECT: blade, crossguard, grip and pommel always stay on ONE straight line through the petal fist, the pommel exactly opposite the blade tip, all at their reference size, and it only ROTATES about the fist like a clock hand, about 3 degrees per pose, so that the pommel swings from the upper-right down to the right IN STEP with the blade tip swinging from down-left up to left. The pommel must never stay pointing up while the blade turns. The ribbon leans back to the right as it goes. The little book stays fixed on the ground at the same size. Same colors, painted style and scale in every cell (do not zoom); no motion lines, effects, glow, shadows, text. Native transparent background.",
+    "cockToThrust": "Use case: stylized-concept, production 2D sprite sheet for a game animation. Reference image 1 is the canonical Book of Stabbing (a purple ribbon rising from a small open pink book, ending in a fist of lavender petals that grips ONE large curved cyan dagger with a yellow-green oval crossguard and a green grip ending in a yellow-green pommel). Reference image 2 is the START pose (the dagger horizontal, blade tip pointing LEFT, pommel pointing RIGHT, ribbon coiled back). Reference image 3 is the END pose (the same horizontal dagger thrust far forward to the LEFT along its blade, ribbon stretched out). Draw exactly 16 successive full-body poses in a 4-column by 4-row grid, read left-to-right then top-to-bottom, each in its own wide cell with generous transparent margins, nothing cropped or touching neighbours. Pose 1 identical to reference 2, pose 16 identical to reference 3. THE DAGGER IS ONE RIGID OBJECT: blade, crossguard, grip and pommel always stay on ONE straight line through the petal fist, the pommel exactly opposite the blade tip, all at their reference size, and it stays HORIZONTAL the whole time: blade tip pointing left, pommel pointing right, exactly level. The pommel must never point up. Only the fist and dagger translate forward to the left in equal steps (the fast part happens in the last third) while the ribbon uncoils and stretches. The little book stays fixed on the ground at the same size. Same colors, painted style and scale in every cell (do not zoom); no motion lines, effects, glow, shadows, text. Native transparent background."
+  }
+}

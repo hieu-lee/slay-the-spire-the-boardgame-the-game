@@ -226,9 +226,9 @@
     ]
   },
   "book_of_stabbing": {
-    "contactLeft": 237,
+    "contactLeft": 26,
     "height": 661,
-    "scale": 1.25
+    "scale": 3.0
   },
   "gremlin_leader": {
     "contactLeft": 176,
@@ -357,16 +357,16 @@
     "rootMotion": "elite-pounce"
   },
   "looter": {
-    "contactLeft": 106,
+    "contactLeft": 208,
     "height": 800,
-    "scale": 1.15,
+    "scale": 2.0,
     "attackMotion": "melee",
     "rootMotion": "elite-thrust"
   },
   "mugger": {
-    "contactLeft": 132,
+    "contactLeft": 146,
     "height": 822,
-    "scale": 1.15,
+    "scale": 2.0,
     "attackMotion": "melee",
     "rootMotion": "elite-stabs"
   },

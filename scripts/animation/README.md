@@ -78,6 +78,35 @@ separation and reduced motion. Alpha bounds and timing checks do not prove that
 a pose looks good. Generated candidates belong outside runtime assets until
 that visual audit passes.
 
+## Drawn stabs (Looter, Mugger, Book of Stabbing)
+
+These three attacks are chains of 16-pose Sunburst sheets, not rigged cutouts: a rigid blade that
+must visibly thrust is drawn, never deformed. `sources/stab-prompts.json` has the model, prompts and
+the key-drawing workflow; `sources/stab/` holds the exact sheets (lossless WebP, native alpha) and
+`rigs.json` (`stabSegments`, `stabLandmark`, `stabAnchor`) their timing and joins.
+
+`stab_frames.py` scales each pose from a rigid painted landmark (`stabLandmark`: the Looter's bandana, the
+Mugger's hair, the Book's dagger blade), plants it on the canonical anchor (`stabAnchor`: the rear foot, or for
+the Book `feature` with `stabAnchorKind: "book"`, where the ribbon meets the pages), joins sheets at the
+best-overlapping exit/entry drawings (`entry`/`exit` are a pose or a `[from, to)` range) and emits a frame
+every 20ms (the shortest duration browsers honour). The Book additionally sets `stabFitFirst` (size the first
+drawing to overlay the canonical body, since the model draws the dagger smaller) and `stabPastePages` (the
+model redraws the pages at growing sizes, so they are erased and the canonical pages composited) and
+`stabGradeBlade` (grade the blade to the idle blade's colours on its own, since it is a small share of the pixels). RIFE
+fills the gaps only between near-identical drawings (`stabMorph`, silhouette IoU, default .72); otherwise
+the nearer drawing is held, because a hard cut reads better than a ghost of two poses. The last drawing
+morphs onto the canonical frame, which is always the final frame (the bake asserts it).
+Idle and attack share one canvas and `displayScale` (the Book needs 3.0 so its thrust is not clipped);
+overscan is restored by the metadata `scale`. `maxAreaChange` and `maxFrameDuration` relax
+`review-rigs.py` for these drawn attacks. Exports live in `combat/enemies/animated/` with no HEVC
+companion (the encoder needs macOS).
+
+Rebuild: `python3 scripts/animation/render-rig.py scripts/animation/rigs.json --only looter,mugger,book_of_stabbing`,
+then `python3 scripts/animation/review-rigs.py --only=looter,mugger,book_of_stabbing --write-metadata` and
+`python3 scripts/calibrate-enemy-size.py --only=looter,mugger`. Changing the Book's `displayScale` moves its
+idle feet: rescale `book_of_stabbing[0]` in `src/ui/enemy-foot-anchors.json` about the centre: `0.5 + (x - 0.5) * old / new`.
+Review every rebuilt frame for a weapon that changes hands, ghosts, bends or resizes, and for size pops.
+
 ## Offline interpolation model
 
 `interpolate.py` uses RIFE 4.26 from the official
