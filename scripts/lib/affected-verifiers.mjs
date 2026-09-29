@@ -90,6 +90,8 @@ const focusedOnlyUiOwners = new Map([
   ['src/ui/chrome/courier.css', ['verify-courier-browser.mjs']],
   ['src/ui/PowerRow.tsx', ['verify-power-hover-browser.mjs']],
   ['src/ui/run-log.ts', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs']],
+  // Nothing imports the admin CLI, so without this it would count as uncovered and select every verifier.
+  ['scripts/mail-admin.mjs', ['verify-mail.mjs']],
   ...['src/ui/ReplayBar.tsx', 'src/ui/run-replay.ts', 'src/ui/styles/replay-bar.css']
     .map((file) => [file, ['verify-replay-controls-browser.mjs']]),
   ['src/ui/styles/powers-in-play.css', ['verify-power-hover-browser.mjs']],

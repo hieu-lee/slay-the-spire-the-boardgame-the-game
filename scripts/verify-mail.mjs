@@ -1,13 +1,14 @@
 // The developer mailbox on the room server: players write with their profile
 // token, the developer answers with an admin token, and nothing crosses between
 // players' threads.
+import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
 import { createStore, saveStore } from './lib/rooms.mjs'
 import {
-  MAX_LETTER_LENGTH, MAX_THREAD_LETTERS, MAX_UNANSWERED_LETTERS, WELCOME_LETTER, developerInbox, ownerOf, playerInbox, sendDeveloperReply, sendPlayerLetter,
+  MAX_LETTER_LENGTH, MAX_THREAD_LETTERS, MAX_UNANSWERED_LETTERS, WELCOME_LETTER, announceToPlayers, developerInbox, ownerOf, playerInbox, sendDeveloperReply, sendPlayerLetter,
 } from './lib/mail.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
@@ -223,6 +224,110 @@ check('letters survive a restart in their own file, without any profile token', 
   assertEqual(main.mail, undefined, 'the main room store carried the mail archive')
   assertEqual(JSON.parse(archive).length, 4)
   assert(!archive.includes(ann.token) && !archive.includes(bob.token), 'a profile token leaked into the mail archive')
+})
+
+// An announcement goes to every player but the delegated mailbox admins, once.
+const dee = { username: 'Dee', token: crypto.randomUUID() }
+await call('/api/profile', { body: dee })
+const news = 'Replays now have speed controls, pause and a seek bar!'
+const announceNoToken = await call('/api/mail/admin/announce', { body: { body: news } })
+const announceEmpty = await call('/api/mail/admin/announce', { admin: adminToken, body: { body: '  ' } })
+const announceDry = await call('/api/mail/admin/announce', { admin: adminToken, body: { body: news, dryRun: true } })
+const annBefore = await call('/api/mail', { body: { token: ann.token } })
+failSaves = true
+const announceUnsaved = await call('/api/mail/admin/announce', { admin: adminToken, body: { body: news } })
+failSaves = false
+const bobUntouched = await call('/api/mail', { body: { token: bob.token } })
+const announced = await call('/api/mail/admin/announce', { admin: adminToken, body: { body: news } })
+const announcedAgain = await call('/api/mail/admin/announce', { admin: adminToken, body: { body: news } })
+const annAfterNews = await call('/api/mail', { body: { token: ann.token } })
+const bobNews = await call('/api/mail', { body: { token: bob.token } })
+const deeNews = await call('/api/mail', { body: { token: dee.token } })
+check('an announcement reaches every player except the mailbox admins, exactly once', () => {
+  assertEqual(announceNoToken.status, 401)
+  assertEqual(announceEmpty.status, 400)
+  assertEqual(announceDry.status, 200)
+  assertEqual(announceDry.body.recipients, 4, 'the dry run miscounted the players (Bob, NewPlayer, Cara, Dee)')
+  assertEqual(announceDry.body.admins, 1)
+  assertEqual(announceDry.body.sent, 0)
+  assertEqual(announceUnsaved.status, 503)
+  assertEqual(bobUntouched.body.letters.length, bobNews.body.letters.length - 1, 'a failed save kept the announcement')
+  assertEqual(announced.status, 201)
+  assertEqual(announced.body.sent, 4)
+  assertEqual(announced.body.admins, 1)
+  assertEqual(Object.keys(announced.body).sort().join(','), 'admins,already,recipients,sent,stale', 'the announcement reply changed shape or leaked internals')
+  assertEqual(announcedAgain.body.sent, 0, 'the announcement went out twice')
+  assertEqual(announcedAgain.body.already, 4)
+  assertEqual(annAfterNews.body.letters.length, annBefore.body.letters.length, 'an admin received the announcement')
+  assertEqual(bobNews.body.letters.at(-1).body, news)
+  assertEqual(bobNews.body.letters.at(-1).from, 'developer')
+  assert(bobNews.body.personalUnread >= 1, 'the announcement did not arrive unread')
+  assertEqual(deeNews.body.letters.map((letter) => letter.body).join('|'), `${WELCOME_LETTER}|${news}`, 'a newcomer skipped the welcome letter')
+  assertEqual(deeNews.body.unread, 2)
+})
+
+// The admin CLI: a mistyped flag must stop a live send, and --dry-run must only count.
+const cli = (...args) => new Promise((resolve) => {
+  const child = spawn(process.execPath, [new URL('./mail-admin.mjs', import.meta.url).pathname, ...args], {
+    env: { ...process.env, STS_MAIL_ADMIN_TOKEN: adminToken, STS_MAIL_SERVER: origin },
+  })
+  let output = ''
+  child.stdout.on('data', (chunk) => { output += chunk })
+  child.stderr.on('data', (chunk) => { output += chunk })
+  child.on('close', (code) => resolve({ code, output }))
+})
+const cliTypo = await cli('announce', 'A second announcement.', '--dryrun')
+const cliDry = await cli('announce', 'A second announcement.', '--dry-run')
+const cliLive = await cli('announce', 'A', 'second', 'announcement.')
+const deeSecond = await call('/api/mail', { body: { token: dee.token } })
+check('the mail admin CLI refuses a mistyped flag, counts on --dry-run and sends otherwise', () => {
+  assertEqual(cliTypo.code, 2)
+  assert(/Unknown option --dryrun/.test(cliTypo.output), cliTypo.output)
+  assertEqual(cliDry.code, 0)
+  assert(/Dry run: would send to 4 players/.test(cliDry.output), cliDry.output)
+  assertEqual(cliLive.code, 0)
+  assert(/Sent to 4 players/.test(cliLive.output), cliLive.output)
+  assertEqual(deeSecond.body.letters.at(-1).body, 'A second announcement.')
+  assertEqual(deeSecond.body.letters.filter((letter) => letter.body === 'A second announcement.').length, 1)
+})
+
+const announceLooseFlag = await call('/api/mail/admin/announce', { admin: adminToken, body: { body: 'Never sent.', dryRun: 'true' } })
+const announceWrongMethod = await call('/api/mail/admin/announce', { method: 'GET', admin: adminToken })
+check('the announce route answers only POSTs from the admin token', () => {
+  assertEqual(announceWrongMethod.status, 405)
+  assertEqual(announceLooseFlag.status, 400, 'a non-boolean dryRun was taken for a live send')
+})
+
+check('an announcement to a full thread drops the oldest letter and undo puts it back', () => {
+  const player = { username: 'Full', token: 'full-token' }
+  const mail = []
+  for (let index = 0; index < MAX_THREAD_LETTERS; index += 1) sendDeveloperReply(mail, player.username, `Old ${index}`, [player], { now: 100 + index })
+  const before = JSON.stringify(mail)
+  const result = announceToPlayers(mail, [player], 'News', { now: 10_000 })
+  assertEqual(mail[0].letters.length, MAX_THREAD_LETTERS)
+  assertEqual(mail[0].letters.at(-1).body, 'News')
+  assertEqual(mail[0].letters[0].body, 'Old 1', 'the oldest letter was not the one dropped')
+  result.undo()
+  assertEqual(JSON.stringify(mail), before, 'undo did not restore the trimmed letter')
+})
+
+check('announceToPlayers skips admins and old owners, keeps the archive within its limits and can be undone', () => {
+  const admin = { username: 'Admin', token: 'admin-token' }
+  const one = { username: 'One', token: 'one-token' }
+  const two = { username: 'Two', token: 'two-token' }
+  const mail = []
+  sendPlayerLetter(mail, { username: 'Two', token: 'someone-before' }, 'Old owner.')
+  const before = JSON.stringify(mail)
+  const result = announceToPlayers(mail, [admin, one, two], 'News', { excludeOwners: new Set([ownerOf(admin.token)]), now: 5_000 })
+  assertEqual(result.sent, 1)
+  assertEqual(result.admins, 1)
+  assertEqual(result.stale, 1, 'a name reclaimed from an old owner received the announcement')
+  assertEqual(mail.find((thread) => thread.username === 'One').letters.length, 2, 'a newcomer skipped the welcome letter')
+  result.undo()
+  assertEqual(JSON.stringify(mail), before, 'undo left the announcement behind')
+  let full = ''
+  try { announceToPlayers([], [one], 'News', { maxCharacters: 10 }) } catch (error) { full = String(error.status) }
+  assertEqual(full, '503')
 })
 await service.close()
 

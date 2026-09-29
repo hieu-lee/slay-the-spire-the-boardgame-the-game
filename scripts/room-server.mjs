@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { claimProfile } from './lib/profiles.mjs'
-import { MAX_MAIL_CHARACTERS, WELCOME_LETTER, developerInbox, developerUnread, ownerOf, playerInbox, sendDeveloperReply, sendPlayerLetter } from './lib/mail.mjs'
+import { MAX_MAIL_CHARACTERS, WELCOME_LETTER, announceToPlayers, developerInbox, developerUnread, ownerOf, playerInbox, sendDeveloperReply, sendPlayerLetter } from './lib/mail.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { existsSync, writeFileSync } from 'node:fs'
 import { timingSafeEqual } from 'node:crypto'
@@ -694,7 +694,7 @@ export function createRoomServer({
         const updated = developerInbox(store.mail, store.profiles, { username: reply.username, excludeUsername: profile.username })
         return send(response, 201, { ...reply, threads: updated.threads, unread: updated.unread })
       }
-      if (url.pathname === '/api/mail/admin' || url.pathname === '/api/mail/admin/reply') {
+      if (url.pathname === '/api/mail/admin' || url.pathname === '/api/mail/admin/reply' || url.pathname === '/api/mail/admin/announce') {
         if (!mailAdminKey) return send(response, 404, { error: 'Not found' })
         if (!mailAdminAuthorized(request)) return send(response, 401, { error: 'Unauthorized' })
         if (request.method === 'GET' && url.pathname === '/api/mail/admin') {
@@ -712,6 +712,18 @@ export function createRoomServer({
           const { undo, ...reply } = sendDeveloperReply(store.mail, body.username, body.body, store.profiles, { maxCharacters: maxMailCharacters })
           if (!saveMail(undo)) return send(response, 503, { error: 'Could not save the reply. Please try again.' })
           return send(response, 201, reply)
+        }
+        if (request.method === 'POST' && url.pathname === '/api/mail/admin/announce') {
+          // One letter to every registered player except the delegated mailbox accounts.
+          const body = await readJson(request)
+          // A flag that is not a real boolean must not turn a rehearsal into a live send to everyone.
+          if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') return send(response, 400, { error: 'dryRun must be true or false.' })
+          const dryRun = body.dryRun === true
+          const { undo, ...announced } = announceToPlayers(store.mail, store.profiles, body.body, {
+            excludeOwners: delegatedMailOwners, dryRun, maxCharacters: maxMailCharacters,
+          })
+          if (announced.sent > 0 && !saveMail(undo)) return send(response, 503, { error: 'Could not save the announcement. Please try again.' })
+          return send(response, dryRun ? 200 : 201, announced)
         }
         return send(response, 405, { error: 'Method not allowed' })
       }

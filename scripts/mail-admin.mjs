@@ -4,6 +4,8 @@
 //   STS_MAIL_ADMIN_TOKEN=... node scripts/mail-admin.mjs            list threads
 //   STS_MAIL_ADMIN_TOKEN=... node scripts/mail-admin.mjs read NAME  show a thread and mark it read
 //   STS_MAIL_ADMIN_TOKEN=... node scripts/mail-admin.mjs reply NAME "Thanks for the report!"
+//   STS_MAIL_ADMIN_TOKEN=... node scripts/mail-admin.mjs announce "What is new" [--dry-run]
+//                                                       one letter to every player except the mailbox admins
 //
 // The server only answers these requests when it runs with the same
 // STS_MAIL_ADMIN_TOKEN (at least 24 characters). STS_MAIL_SERVER picks the
@@ -46,7 +48,26 @@ if (command === 'list') {
 } else if (command === 'reply' && username && words.length) {
   await call('/api/mail/admin/reply', { method: 'POST', body: JSON.stringify({ username, body: words.join(' ') }) })
   console.log(`Replied to ${username}.`)
+} else if (command === 'announce' && username) {
+  // A live send reaches every player, so a mistyped flag must stop it rather than end up in the letter.
+  const flags = [username, ...words].filter((word) => word.startsWith('-'))
+  const unknown = flags.filter((flag) => flag !== '--dry-run')
+  if (unknown.length) {
+    console.error(`Unknown option ${unknown[0]}: nothing was sent. Only --dry-run is accepted.`)
+    process.exit(2)
+  }
+  const dryRun = flags.length > 0
+  const text = [username, ...words].filter((word) => !word.startsWith('-')).join(' ')
+  if (!text) {
+    console.error('Write the announcement after the command: announce "message" [--dry-run]. Nothing was sent.')
+    process.exit(2)
+  }
+  const result = await call('/api/mail/admin/announce', { method: 'POST', body: JSON.stringify({ body: text, dryRun }) })
+  const skipped = [`${result.admins} mailbox admin${result.admins === 1 ? '' : 's'}`, `${result.already} who already have it`,
+    ...(result.stale ? [`${result.stale} with an old mailbox under their name`] : [])].join(', ')
+  console.log(dryRun ? `Dry run: would send to ${result.recipients} player${result.recipients === 1 ? '' : 's'} (skipping ${skipped}).`
+    : `Sent to ${result.sent} player${result.sent === 1 ? '' : 's'} (skipped ${skipped}).`)
 } else {
-  console.error('Usage: mail-admin.mjs [list | read NAME | reply NAME "message"]')
+  console.error('Usage: mail-admin.mjs [list | read NAME | reply NAME "message" | announce "message" [--dry-run]]')
   process.exit(2)
 }

@@ -147,3 +147,58 @@ export function developerInbox(mail, profiles, { username: name, markRead = fals
   })
   return { threads: summary.sort((left, right) => right.lastAt - left.lastAt), unread: developerUnread(mail, excludeUsername), changed }
 }
+
+/**
+ * One letter from the developer to every registered player except the accounts in `excludeOwners`
+ * (the delegated mailbox admins). A player whose thread already holds this exact developer letter is
+ * skipped, so running an announcement twice does not send it twice; a newcomer with no thread yet gets
+ * the welcome letter first, as they would on their first visit. `dryRun` only counts. The returned
+ * `undo` takes every letter back if the archive could not be saved.
+ */
+export function announceToPlayers(mail, profiles, value, { excludeOwners = new Set(), dryRun = false, now = Date.now(), maxCharacters = MAX_MAIL_CHARACTERS } = {}) {
+  const body = letterBody(value)
+  const threads = new Map(mail.map((thread) => [thread.username, thread]))
+  const recipients = []
+  let admins = 0
+  let already = 0
+  let stale = 0
+  for (const profile of profiles) {
+    const owner = ownerOf(profile.token)
+    if (excludeOwners.has(owner)) { admins += 1; continue }
+    const thread = threads.get(profile.username)
+    if (thread && thread.owner !== owner) { stale += 1; continue }
+    if (thread?.letters.some((letter) => letter.from === 'developer' && letter.body === body)) { already += 1; continue }
+    recipients.push({ profile, owner, thread, welcome: !thread })
+  }
+  const counts = { recipients: recipients.length, admins, already, stale }
+  if (recipients.length === 0) return { ...counts, sent: 0, undo: () => {} }
+  // Checked for a dry run too, so a rehearsal does not promise a send the archive would refuse.
+  const added = recipients.filter(({ thread }) => !thread).length
+  const size = recipients.reduce((total, { welcome }) => total + body.length + (welcome ? WELCOME_LETTER.length : 0), 0)
+  if (mail.length + added > MAX_THREADS || characters(mail) + size > maxCharacters) invalid('The mailbox is full. Please try again later.', 503)
+  if (dryRun) return { ...counts, sent: 0, undo: () => {} }
+  // Letters only need to be ordered within a thread, so one shared start keeps a big batch from stamping the future.
+  const start = Math.max(now, mail.reduce((latest, candidate) => Math.max(latest, candidate.letters.at(-1)?.at ?? 0), 0) + 1)
+  const undos = []
+  for (const { profile, owner, thread: existing, welcome } of recipients) {
+    let thread = existing
+    if (!thread) {
+      thread = { username: profile.username, owner, letters: [], playerReadAt: 0, developerReadAt: 0 }
+      mail.push(thread)
+    }
+    const first = Math.max(start, thread.playerReadAt + 1)
+    const letters = (welcome ? [WELCOME_LETTER, body] : [body]).map((text, index) =>
+      ({ id: randomUUID(), from: 'developer', body: text, at: first + index }))
+    thread.letters.push(...letters)
+    const trimmed = thread.letters.length > MAX_THREAD_LETTERS ? thread.letters.splice(0, thread.letters.length - MAX_THREAD_LETTERS) : []
+    undos.push(() => {
+      for (const letter of letters) {
+        const at = thread.letters.indexOf(letter)
+        if (at >= 0) thread.letters.splice(at, 1)
+      }
+      thread.letters.unshift(...trimmed)
+      if (thread.letters.length === 0) mail.splice(mail.indexOf(thread), 1)
+    })
+  }
+  return { ...counts, sent: recipients.length, undo: () => { for (const undo of undos.reverse()) undo() } }
+}

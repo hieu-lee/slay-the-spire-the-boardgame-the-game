@@ -125,7 +125,15 @@ export $(cat ~/.config/slay-the-spire-server/mail.env)
 node scripts/mail-admin.mjs                      # threads, newest first
 node scripts/mail-admin.mjs read TestPlayer      # a thread, marked read
 node scripts/mail-admin.mjs reply TestPlayer "Thanks — fixed in the next build!"
+node scripts/mail-admin.mjs announce "Replays now have speed, pause and a seek bar!" --dry-run
+node scripts/mail-admin.mjs announce "Replays now have speed, pause and a seek bar!"
 ```
+
+`announce` sends one developer letter to every registered player except the delegated mailbox
+accounts below. It is safe to run twice: players who already hold that exact letter are skipped
+(names whose mailbox belongs to an earlier owner are skipped too), and a player who has never
+opened the mailbox gets the welcome letter first. `--dry-run` only counts, and it reports a full
+mailbox the same way a real send would. It needs the room server to run a build that has the endpoint.
 
 Without the token the admin endpoints do not exist; players can still write.
 
