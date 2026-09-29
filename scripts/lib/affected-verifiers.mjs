@@ -38,7 +38,7 @@ const focusedEngineOwners = new Map([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = new Map([
-  ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-courier-browser.mjs',
+  ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-courier-browser.mjs',
     'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs']],
   ['src/ui/CampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
   ['src/ui/CompendiumScreen.tsx', ['verify-compendium-browser.mjs']],
@@ -76,7 +76,7 @@ const focusedUiOwners = new Map([
   ['src/ui/styles/enemy-portrait.css', ['verify-turn-targets-browser.mjs', 'verify-end-turn-drag-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
   ['src/ui/styles/stage-scale.css', ['verify-combat-layout-reload-browser.mjs']],
-  ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs']],
+  ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
   ['src/mail.ts', ['verify-mail-browser.mjs']],
@@ -89,7 +89,9 @@ const focusedOnlyUiOwners = new Map([
   ['src/ui/CourierPanel.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/chrome/courier.css', ['verify-courier-browser.mjs']],
   ['src/ui/PowerRow.tsx', ['verify-power-hover-browser.mjs']],
-  ['src/ui/run-log.ts', ['verify-run-replay-browser.mjs']],
+  ['src/ui/run-log.ts', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs']],
+  ...['src/ui/ReplayBar.tsx', 'src/ui/run-replay.ts', 'src/ui/styles/replay-bar.css']
+    .map((file) => [file, ['verify-replay-controls-browser.mjs']]),
   ['src/ui/styles/powers-in-play.css', ['verify-power-hover-browser.mjs']],
 ])
 const sourceExtensions = ['', '.ts', '.tsx', '.mjs', '.js']

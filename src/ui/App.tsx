@@ -106,6 +106,8 @@ import { useGameSettings } from './game-settings.ts'
 import { wingBootUses } from './wing-boots.ts'
 import type { GameSettings } from './game-settings.ts'
 import { useWebMcp } from './useWebMcp.ts'
+import { ReplayBar } from './ReplayBar.tsx'
+import { ReplaySession } from './run-replay.ts'
 import { flushLeaderboardOutbox, queueFinishedSoloRun } from '../leaderboard.ts'
 import {
   discardRunLog,
@@ -575,6 +577,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [extractingRunLog, setExtractingRunLog] = useState(false)
   const [replayLog, setReplayLog] = useState<RunLog | null>(null)
   const [replayFinished, setReplayFinished] = useState(false)
+  // Bumped by each seek so the screens start clean instead of carrying half-finished picks from the old position.
+  const [replayEpoch, setReplayEpoch] = useState(0)
+  const [replaySession, setReplaySession] = useState<ReplaySession | null>(null)
   const replayRunner = useRef<{ log: RunLog; controller: AbortController; removeCursor?: () => void; stop?: number } | null>(null)
   const replayReturn = useRef<{ run: RunState; viewerId: string } | null>(null)
   const terminalRun = useRef<RunState | null>(null)
@@ -701,6 +706,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     setRunLogExtractedRunId(null)
     setRunLogMessage(null)
     setReplayLog(null)
+    setReplaySession(null)
     setTutorial(null)
     tutorialReturn.current = null
     terminalRun.current = null
@@ -785,6 +791,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       setViewerId(previous.viewerId)
     }
     setReplayLog(null)
+    setReplaySession(null)
     setReplayFinished(false)
     setRunLogMessage(null)
   }
@@ -795,6 +802,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     replayReturn.current = { run: structuredClone(run), viewerId }
     setRunLogMessage(null)
     setReplayLog(log)
+    setReplaySession(new ReplaySession(log))
     setRun(structuredClone(log.initial))
     setViewerId(log.initial.players[0]!.id)
     setCompendium(false)
@@ -803,8 +811,56 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     onOpen()
   }
 
+  const launchReplay = (log: RunLog, session: ReplaySession, start?: { position: number; state: RunState }) => {
+    const started = { log, controller: new AbortController() } as NonNullable<typeof replayRunner.current>
+    replayRunner.current = started
+    session.update({ finished: false })
+    void playRunLog(log, {
+      setRun,
+      setViewer: setViewerId,
+      reducedMotion: settings.reducedMotion || prefersReducedMotion,
+      signal: started.controller.signal,
+      pause: () => setPauseOpen(true),
+      pace: session,
+      start,
+      onPosition: (position) => session.update({ position }),
+    }).then((removeCursor) => {
+      if (started.controller.signal.aborted) removeCursor()
+      else {
+        started.removeCursor = removeCursor
+        session.update({ finished: true, paused: false, position: session.timeline.total })
+        setReplayFinished(true)
+      }
+    }).catch((error) => {
+      if (started.controller.signal.aborted) return
+      session.update({ finished: true })
+      setRunLogMessage(error instanceof Error ? error.message : 'Replay stopped.')
+    })
+  }
+
+  // Jumping restarts playback from the chosen move; the run state there is rebuilt from the log.
+  const seekReplay = (position: number) => {
+    const runner = replayRunner.current
+    if (!replayLog || !replaySession || !runner) return
+    const target = Math.min(Math.max(Math.trunc(position), 0), replaySession.timeline.total)
+    let state: RunState
+    try { state = replaySession.timeline.stateAt(target) } catch (error) {
+      setRunLogMessage(error instanceof Error ? error.message : 'Replay stopped.')
+      return
+    }
+    clearTimeout(runner.stop)
+    runner.controller.abort()
+    runner.removeCursor?.()
+    setReplayFinished(false)
+    setRunLogMessage(null)
+    // The remount below replaces the game menu's dialog, so an open menu is closed with it.
+    setPauseOpen(false)
+    setReplayEpoch((epoch) => epoch + 1)
+    launchReplay(replayLog, replaySession, { position: target, state })
+  }
+
   useEffect(() => {
-    if (!replayLog || !open || !active) return
+    if (!replayLog || !replaySession || !open || !active) return
     // StrictMode reruns this effect at once with nothing changed (also when a Suspense boundary
     // reappears); the replay already under way keeps going instead of restarting from its first event.
     if (replayRunner.current?.log === replayLog) clearTimeout(replayRunner.current.stop)
@@ -812,29 +868,23 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       stopReplay()
       setReplayFinished(false)
       setRunLogMessage(null)
-      const started = { log: replayLog, controller: new AbortController() } as NonNullable<typeof replayRunner.current>
-      replayRunner.current = started
-      void playRunLog(replayLog, {
-        setRun,
-        setViewer: setViewerId,
-        reducedMotion: settings.reducedMotion || prefersReducedMotion,
-        signal: started.controller.signal,
-        pause: () => setPauseOpen(true),
-      }).then((removeCursor) => {
-        if (started.controller.signal.aborted) removeCursor()
-        else {
-          started.removeCursor = removeCursor
-          setReplayFinished(true)
-        }
-      }).catch((error) => {
-        if (!started.controller.signal.aborted) setRunLogMessage(error instanceof Error ? error.message : 'Replay stopped.')
-      })
+      // Coming back to a replay that was already under way picks up where it stopped.
+      const position = replaySession.position
+      let start: { position: number; state: RunState } | undefined
+      try { if (position > 0) start = { position, state: replaySession.timeline.stateAt(position) } } catch {}
+      launchReplay(replayLog, replaySession, start)
     }
-    const runner = replayRunner.current!
     return () => {
-      runner.stop = window.setTimeout(() => { if (replayRunner.current === runner) stopReplay() })
+      // A seek replaces the runner, so the one to stop is whichever is current when the effect ends.
+      const runner = replayRunner.current
+      if (runner) runner.stop = window.setTimeout(() => { if (replayRunner.current === runner) stopReplay() })
     }
   }, [active, open, replayLog])
+
+  useEffect(() => {
+    replaySession?.timeline.index()
+    return () => replaySession?.timeline.stopIndexing()
+  }, [replaySession])
 
   // A debug bridge for the Playwright suite: drive real clicks, assert real
   // state. Screenshots are for review; assertions read from here.
@@ -1027,7 +1077,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   return (
     <>
-    <main ref={runShell} tabIndex={-1} inert={compendium || undefined} aria-hidden={compendium || undefined} className={`app-shell sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendium ? ' app-shell--compendium-open' : ''}`}>
+    <main key={replayEpoch} ref={runShell} tabIndex={-1} inert={compendium || undefined} aria-hidden={compendium || undefined} className={`app-shell sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendium ? ' app-shell--compendium-open' : ''}`}>
       <header className="app-shell__header">
         <PlayerTitle character={headerViewer?.character} />
         <div className="run-status">
@@ -1374,7 +1424,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       {replayLog && (replayFinished || runLogMessage) ? <section className={`run-replay__banner${runLogMessage ? ' run-replay__banner--error' : ''}`}
         data-run-log-control>
         <p id="run-replay-banner-message" role={runLogMessage ? 'alert' : 'status'}>{runLogMessage ?? 'Replay finished'}</p>
-        <button type="button" autoFocus aria-describedby="run-replay-banner-message" onClick={() => { leaveReplay(); onClose() }}>Return to main menu</button>
+        <button type="button" autoFocus={!document.activeElement?.closest('.replay-bar')} aria-describedby="run-replay-banner-message" onClick={() => { leaveReplay(); onClose() }}>Return to main menu</button>
       </section> : null}
       {tutorial && !pauseOpen && !settingsOpen && !compendium ? <TutorialCoach key={tutorial.attempt}
         chapters={tutorialChapterList} run={run} hidden={tutorialTipsHidden} onHide={() => setTutorialTipsHidden(true)} /> : null}
@@ -1388,6 +1438,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       <CardMorphAnnouncement key={`${open ? run.campaign.runId : ''}:${viewerId}`} request={morph.current}
         name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
+    {replayLog && replaySession && !compendium ? <ReplayBar session={replaySession} onSeek={seekReplay}
+      onExit={() => { leaveReplay(); onClose() }} /> : null}
     {compendium ? <CompendiumScreen onBack={() => {
       setCompendium(false)
       requestAnimationFrame(() => runShell.current?.focus())

@@ -658,7 +658,8 @@
 .run-replay__banner {
   position: fixed;
   z-index: 190001;
-  bottom: 1rem;
+  /* Rests just above the replay controls. */
+  bottom: 6.25rem;
   left: 50%;
   display: flex;
   align-items: center;
@@ -691,6 +692,7 @@
 }
 
 @media (max-width: 760px), (max-height: 620px) {
+  .run-replay__banner { bottom: calc(4.9rem + env(safe-area-inset-bottom)); }
   .run-replay-import__prompt { top: 10%; left: 4%; max-width: 38%; font-size: clamp(1.35rem, 5vw, 2.4rem); }
   .run-replay-import__hint { bottom: 4%; font-size: 0.7rem; }
   .run-replay-import__back.ribbon-back { bottom: 0.35rem; left: 0.35rem; }

@@ -75,7 +75,10 @@ check('frontend surfaces select their cores and named focused browser checks', (
   assertDeepEqual(affectedBrowser('src/ui/PowerRow.tsx'), ['verify-power-hover-browser.mjs'])
   assertDeepEqual(affectedBrowser('src/ui/CourierPanel.tsx'), ['verify-courier-browser.mjs'])
   assertDeepEqual(affectedBrowser('src/ui/chrome/courier.css'), ['verify-courier-browser.mjs'])
-  assertDeepEqual(affectedBrowser('src/ui/run-log.ts'), ['verify-run-replay-browser.mjs'])
+  assertDeepEqual(affectedBrowser('src/ui/run-log.ts'), ['verify-replay-controls-browser.mjs', 'verify-run-replay-browser.mjs'])
+  for (const file of ['src/ui/ReplayBar.tsx', 'src/ui/run-replay.ts', 'src/ui/styles/replay-bar.css']) {
+    assertDeepEqual(affectedBrowser(file), ['verify-replay-controls-browser.mjs'])
+  }
   for (const file of ['src/ui/App.tsx', 'src/ui/StartMenu.tsx', 'src/ui/sfx.ts']) {
     const owners = affectedBrowser(file)
     assert(owners.includes('verify-run-replay-browser.mjs'), `${file} omitted focused replay coverage`)
