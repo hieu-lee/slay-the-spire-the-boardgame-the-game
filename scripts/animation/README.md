@@ -188,8 +188,10 @@ with sprite scale, padding and object fit applied. Acid instead grows from its
 painted base at foot level; Defect's beam source retains its mouth registration.
 
 Byrd's idle uses three full wingbeats per 3000ms loop, with separate rigid wing
-layers behind a fixed body. Cultist draws back both sticks, releases at 500ms,
-holds empty hands through impact at 1000ms and recovers by 1830ms. The two rigid
+layers behind a fixed-size body. The whole sprite rises and falls 14 pixels
+either side of its resting position with each wingbeat. Cultist draws back both
+sticks, releases at 500ms, holds empty hands through impact at 1000ms and recovers
+by 1830ms. The two rigid
 props spin along separate upward curves from their respective hands to each
 living player targeted by the attack. Each 500ms curve is a linear horizontal
 translation plus an exact quadratic vertical easing, not `offset-path`, whose
@@ -210,6 +212,7 @@ Other browsers use the baked WebP.
 Refresh their size calibration with
 `python3 scripts/calibrate-enemy-size.py --only=byrd,cultist`; `--check` verifies
 it without writing. Byrd's full wing clearance stays separate from body scale.
+Use `--byrd-only` on the browser verifier for focused Byrd idle checks.
 Run `node scripts/verify-wing-and-throw.mjs` and
 `node scripts/verify-wing-and-throw-browser.mjs` (also with `--webkit` and `--crios`) from the
 repository root for native-frame, desktop, horizontal-phone, targeting, replay,

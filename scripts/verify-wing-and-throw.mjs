@@ -13,13 +13,19 @@ root = Path('public/assets/combat/enemies/animated')
 byrd = Image.open(root/'byrd-idle.webp')
 tops = []
 bodies = []
+bottoms = []
 for i in range(byrd.n_frames):
     byrd.seek(i)
     pixels = np.array(byrd.convert('RGBA'))
     y,x = np.where(pixels[:,:,3][:,560:] > 96)
     tops.append(y.min())
-    bodies.append(pixels[285:320,405:435,:])
+    bottom = np.where(pixels[:,:,3] > 96)[0].max()
+    bottoms.append(bottom)
+    offset = bottom-bottoms[0]
+    bodies.append(pixels[285+offset:320+offset,405:435,:])
 assert max(tops)-min(tops)>100, ('wings barely move', tops)
+assert 20 <= max(bottoms)-min(bottoms) <= 40, ('missing gentle flight bob', bottoms)
+assert max(abs(previous-current) for previous,current in zip(bottoms,bottoms[1:]+bottoms[:1])) <= 5, 'flight bob jumps at a frame or loop boundary'
 assert max(np.abs(bodies[0].astype(float)-b.astype(float)).mean() for b in bodies)<3, 'wingbeat scales the torso'
 attack = Image.open(root/'cultist-attack.webp')
 elapsed = 0
@@ -49,7 +55,7 @@ assert len(svg.findall('.//s:animateTransform',ns))==2
 for transition in svg.findall('.//s:animate',ns):
     assert transition.attrib['dur']=='1830ms'
     assert abs(float(transition.attrib['keyTimes'].split(';')[1])*1830-500)<.001
-print('PASS native frames: wing amplitude, fixed torso, complete stick release, timing and size budgets')
+print('PASS native frames: wing amplitude, smooth flight bob, fixed torso size, complete stick release, timing and size budgets')
 `], { cwd: resolve(import.meta.dirname, '..'), encoding: 'utf8' })
 assert.equal(result.status, 0, result.stderr || result.stdout)
 console.log(result.stdout.trim())

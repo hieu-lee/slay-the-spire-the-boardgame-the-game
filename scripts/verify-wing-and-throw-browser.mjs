@@ -8,6 +8,7 @@ import { chromium, webkit, devices } from './lib/profile-browser.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const crios = process.argv.includes('--crios')
+const byrdOnly = process.argv.includes('--byrd-only')
 const engine = process.argv.includes('--webkit') || crios ? webkit : chromium
 const output = resolve(root, 'artifacts/wing-and-throw', crios ? 'crios' : engine === webkit ? 'webkit' : 'chromium')
 mkdirSync(output, { recursive: true })
@@ -160,7 +161,7 @@ if data.get('target'):
   assert.equal(pixels.status, 0, pixels.stderr)
 }
 
-try {
+async function verify() {
   let naturalCaptures = 0
   for (const [screen, viewport] of process.argv.includes('--cold-only') ? [] : [['desktop', { width: 1440, height: 900 }], ['horizontal-phone', { width: 844, height: 390 }]]) {
     const context = await browser.newContext({ viewport, isMobile: screen === 'horizontal-phone', hasTouch: screen === 'horizontal-phone',
@@ -181,11 +182,22 @@ try {
     const clearance = await art.evaluate(image => {
       const r = image.getBoundingClientRect()
       const fit = Math.min(r.width/image.naturalWidth, r.height/image.naturalHeight)
-      const top = r.bottom-(image.naturalHeight-47)*fit
+      const top = r.bottom-(image.naturalHeight-33)*fit
       return top-image.closest('.enemy').querySelector('.enemy__intent').getBoundingClientRect().bottom
     })
     assert(clearance > 4, `${screen}: raised wing overlaps attack intent (${clearance}px)`)
     await page.screenshot({ path: resolve(output, `${screen}-byrd-idle.png`), scale: 'css' })
+
+    if (byrdOnly) {
+      await page.evaluate(() => {
+        document.documentElement.dataset.reducedMotion = 'true'
+        window.fixture.install('byrd')
+      })
+      await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'static')
+      await context.close()
+      console.log(`PASS ${screen}: Byrd idle animation, HUD clearance and reduced motion`)
+      continue
+    }
 
     for (const multiplayer of [false, true]) {
       await page.evaluate(multiplayer => window.fixture.install('cultist', multiplayer), multiplayer)
@@ -573,6 +585,10 @@ try {
     await context.close()
     console.log(`PASS ${screen}: wingbeat, 500ms rotating throws, targets, replay, reconnect and reduced motion`)
   }
+  if (byrdOnly) {
+    assert.deepEqual(errors, [])
+    return
+  }
   if (!process.argv.includes('--cold-only')) assert(naturalCaptures >= 1, 'no naturally rendered Cultist flight was captured')
   for (const delayedAsset of engine === webkit ? ['cover', 'prop'] : ['prop']) {
     const coverContext = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true })
@@ -683,6 +699,10 @@ try {
   await slowContext.close()
   console.log('PASS horizontal-phone: timed-out art cannot throw during a delayed server response')
   assert.deepEqual(errors, [])
+}
+
+try {
+  await verify()
 } finally {
   await browser.close()
   await server.close()

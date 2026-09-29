@@ -59,7 +59,8 @@ def render(name, spec, output):
             canvas.alpha_composite(rotate(wings[0], -24*wave, pivots[0]))
             canvas.alpha_composite(rotate(wings[1], 27*wave, pivots[1]))
             canvas.alpha_composite(body)
-            frames.append(canvas)
+            frames.append(canvas.transform(size, Image.Transform.AFFINE,
+                (1, 0, 0, 0, 1, round(14*wave)), Image.Resampling.BICUBIC))
     else:
         empty = Image.open(SOURCES / 'cultist-body.png').convert('RGBA').resize(original.size, Image.Resampling.LANCZOS)
         # Only replace the released arms and feather sleeves; keep canonical head,
