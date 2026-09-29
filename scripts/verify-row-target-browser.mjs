@@ -75,6 +75,17 @@ try {
             })
             fixture.render()
           }
+          fixture.bossPair = () => {
+            fixture.state = structuredClone(state)
+            fixture.state.enemies = ['donu', 'deca'].map(uid => ({
+              ...enemy, uid, defId: uid, row: 0, isBoss: true, hp: 20, maxHp: 20, dead: false,
+            }))
+            Object.assign(fixture.state.players[0], {
+              hand: [], orbs: ['lightning', null, null],
+              powers: [{ uid: 'electrodynamics', defId: 'electrodynamics', upgraded: false }],
+            })
+            fixture.render()
+          }
           fixture.fourParty = () => {
             const party = [player, ally, ...[2, 3].map(row => {
               const member = createPlayer(createRng(49 + row), `p${row + 1}`, `Ally ${row}`, 'ironclad', 0)
@@ -127,6 +138,14 @@ try {
         await page.waitForFunction(() => window.fixture.state.enemies.find(enemy => enemy.uid === 'boss').hp === 18)
         assert.equal(await page.evaluate(() => window.fixture.state.enemies.find(enemy => enemy.uid === 'living').hp), 10,
           `${screen}: boss click also hit another row`)
+
+        await page.evaluate(() => window.fixture.bossPair())
+        await page.getByRole('button', { name: 'End turn', exact: true }).click()
+        await page.locator('.end-turn-effects button.end-turn-effect--orb').click()
+        await page.locator('[data-enemy-id="deca"].enemy--targeted').waitFor()
+        await page.screenshot({ path: resolve(output, `${engineName}-${screen}-electrodynamics-boss-pair.png`) })
+        await activate(page.locator('[data-enemy-id="deca"] .enemy__hit-area'))
+        await page.waitForFunction(() => window.fixture.state.enemies.every(enemy => enemy.hp === 19))
 
         await page.evaluate(() => window.fixture.otherEmpty())
         await page.getByRole('button', { name: 'Use Combust+' }).click()
@@ -253,8 +272,17 @@ try {
         assert.equal(await emptyGround.count(), 1, `${screen}: dragging the end-turn Orb did not light the empty row`)
         assert.equal(await page.locator('[data-enemy-id="living"].enemy--targeted').count(), 1,
           `${screen}: dragging the end-turn Orb lit the empty row but not the populated one`)
-        const endTo = await emptyGround.boundingBox()
-        await page.mouse.move(endTo.x + endTo.width / 2, endTo.y + endTo.height / 2, { steps: 10 })
+        let overGround = false
+        for (let attempt = 0; attempt < 3 && !overGround; attempt++) {
+          // Stage scaling can move the ground after the Orb starts dragging.
+          const endTo = await emptyGround.boundingBox()
+          assert(endTo, `${screen}: empty-row ground disappeared during drag`)
+          const point = { x: endTo.x + endTo.width / 2, y: endTo.y + endTo.height / 2 }
+          await page.mouse.move(point.x, point.y, { steps: 10 })
+          overGround = await page.evaluate(({ x, y }) =>
+            document.elementFromPoint(x, y)?.closest('.row__enemies--targetable')?.dataset.row === '0', point)
+        }
+        assert(overGround, `${screen}: the Orb could not reach the empty-row ground`)
         await page.mouse.up()
         await page.waitForFunction(() => document.querySelector('.end-turn-effects')?.getAttribute('aria-label')?.includes('Lightning Orb 2'))
         assert(await page.evaluate(before => window.fixture.state.enemies.find(enemy => enemy.uid === 'boss').hp < before,

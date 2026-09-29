@@ -523,6 +523,23 @@ check('a copied Electrodynamics Lightning disables an ambiguous boss target', ()
     'the copied Lightning hits the selected row and shared boss once')
 })
 
+check('Electrodynamics Lightning aimed at either Donu or Deca hits both bosses', () => {
+  for (const target of ['donu', 'deca']) {
+    const state = combat([player({
+      powers: [instance('electrodynamics')], orbs: ['lightning', null, null],
+    })], [
+      enemy({ uid: 'donu', defId: 'donu', isBoss: true }),
+      enemy({ uid: 'deca', defId: 'deca', isBoss: true }),
+    ])
+    const staged = beginEndTurnResolution(state)
+    const ability = endTurnResolutionAbility(staged)
+    if (ability) assert(ability.targets?.some((option) => option.uid === target), `${target} cannot be chosen`)
+    const resolved = ability ? resolveEndTurnAbility(staged, `${ability.id}@${target}`) : staged
+    assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [19, 19],
+      `Lightning aimed at ${target} did not damage both bosses`)
+  }
+})
+
 check('a Dark orb does nothing at end of turn', () => {
   const next = endPlayerTurn(combat([player({ orbs: ['dark', null, null] })], [enemy({ hp: 20 })]))
   assertEqual(next.enemies[0].hp, 20, 'Dark only pays out when evoked')
