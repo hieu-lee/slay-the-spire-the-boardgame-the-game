@@ -1,5 +1,56 @@
 # Combat animation sources and review
 
+## Lagavulin, Guardian boss, Gremlin Leader and Reptomancer
+
+Their native-alpha Sunburst pose sheets live in `sources/elite-signatures/`.
+The sleeping Lagavulin source is extracted and upscaled from the supplied
+sleeping reference with `gpt-image-2.5-sunburst`, `background=transparent`,
+1024px and high quality. All six-pose sheets use the same model, native alpha,
+1536x1024 and high quality, with the canonical enemy as the identity reference.
+Lagavulin's wake sheet also references the extracted sleeping pose; Guardian's
+mode sheet references both canonical forms. Guardian's attack has its own
+boss-specific sheet to preserve its yellow eyes and original armor style.
+
+Rebuild only these exports with:
+
+```sh
+python3 scripts/animation/elite_signatures.py
+python3 scripts/animation/review-rigs.py --only=lagavulin,gremlin_leader,reptomancer,guardian_attack,guardian_defensive --write-metadata --check-only
+node scripts/verify-elite-signatures-browser.mjs
+node scripts/verify-elite-signatures-browser.mjs --webkit
+```
+
+The shared rig renderer dispatches to the same exporter. Runtime assets use
+`combat/enemies/animated/`, so they need no macOS HEVC authoring dependency.
+The old rig exports remain canonical registration references, not live animations.
+Wide dagger and casting poses use transparent overscan, reduced back to an 800px
+export and compensated by metadata display scale. Body stature is registered
+from the neutral drawing once; crouches do not get resized to idle height.
+The Gremlin's six recorded head-size corrections preserve skull/horn scale,
+independently of the long scarf and dagger. All poses share a foot anchor and
+return to their exact first idle frame. Pose changes hold complete drawings
+rather than cross-fading limbs or inventing anatomy with optical flow.
+
+A0 Lagavulin sleeps only while its actual intent is idle; higher ascensions
+never show the sleeping pose. Wake and Guardian close/open sequences run for
+800ms, do not replay on restoration, and wait for an outgoing attack to finish.
+Gremlin Leader slashes at 330ms, holds for 400ms, then emits target-specific
+slash VFX and the clash cue at 730ms; the return dash starts at 1200ms.
+Reptomancer raises both hands, releases a summoned dagger at 500ms and strikes
+at 730ms with a crossed-blade effect. Guardian rolls its rigid closed shell,
+without rescaling or unfolding it during a defensive attack.
+These enemies report their decoded attack start to the existing phase clock,
+so cold artwork cannot let health loss precede visible contact. Reconnect and
+reduced-motion paths clear stale presentations without changing combat rules.
+Reduced motion uses a single-frame sleeping export at the same display scale;
+restored enemy phases report suppressed attacks to avoid waiting for a decode.
+
+The focused browser verifier records desktop and horizontal-phone runs under
+`artifacts/elite-signatures/`; it owns sleep/ascension, mode changes, target
+coverage, delayed impact, repeated attacks and restoration cleanup. Review the
+recordings and source pose sheets for limb count, rigid armor/blades, style,
+body scale, foot registration, attack contact and the final return.
+
 The runtime uses one-shot WebP attacks, looping WebP idles and the existing CSS
 travel/projectile clocks. `CHOREOGRAPHY.md` records the phase timings. Gameplay
 queues still complete through the existing presentation events; rendering never

@@ -19,7 +19,7 @@
   "downfall_wraith": [0.5062, 0.5205],
   "downfall_wrathful": [0.4925, 0.4932],
   "guardian_attack": [0.525, 0.5363],
-  "guardian_defensive": [0.5212, 0.5371],
+  "guardian_defensive": [0.525, 0.5371],
   "hexaghost": [0.51, 0.5166],
   "slime_boss": [0.4938, 0.5029],
   "the_champ": [0.515, 0.6178],
@@ -29,11 +29,11 @@
   "lagavulin": [0.5012, 0.4951],
   "sentry": [0.5125, 0.5059],
   "book_of_stabbing": [0.524, 0.6201],
-  "gremlin_leader": [0.5575, 0.5769],
+  "gremlin_leader": [0.5354, 0.5769],
   "taskmaster": [0.47, 0.4],
   "giant_head": [0.55, 0.5312],
   "nemesis": [0.6088, 0.6773],
-  "reptomancer": [0.4662, 0.5323],
+  "reptomancer": [0.4792, 0.5323],
   "spire_shield": [0.5737, 0.6436],
   "spire_spear": [0.5913, 0.6318]
 }

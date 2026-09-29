@@ -58,6 +58,7 @@ const BOSS_PROJECTILE_ART = new Set([
 export function bossProjectileImagePath(artId: string): string | undefined {
   const projectile = (rigMetadata as Record<string, { projectile?: string }>)[artId]?.projectile
   if (projectile === 'cultist-sticks') return assetPath('combat/enemies/props/cultist-sticks.webp')
+  if (projectile === 'reptomancer-dagger') return assetPath('combat/enemies/dagger.webp')
   if (projectile) return assetPath(`combat/vfx/actions/${projectile}.webp`)
   return BOSS_PROJECTILE_ART.has(artId)
     ? assetPath(`combat/enemies/projectiles/${artId}.webp`)
@@ -80,6 +81,12 @@ export function enemyAttackAnimationFor(artId: string): string | undefined {
 
 export function bossAttackDurationFor(_artId: string): number {
   return 1830
+}
+
+export function enemyAttackArrivalMsFor(artId: string): number | undefined {
+  if (artId === 'cultist') return 530
+  return ['lagavulin', 'gremlin_leader', 'reptomancer', 'guardian_attack', 'guardian_defensive'].includes(artId)
+    ? 730 : undefined
 }
 
 export function enemyArtScaleFor(artId: string): number {

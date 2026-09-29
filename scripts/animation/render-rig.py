@@ -159,6 +159,10 @@ if __name__ == '__main__':
     for name, spec in json.loads(args.manifest.read_text()).items():
         if args.only and name not in args.only.split(','):
             continue
+        from elite_signatures import NAMES, render as render_signature
+        if name in NAMES:
+            render_signature(name)
+            continue
         if name in ('gremlin_nob', 'hero-ironclad'):
             import runpy
             renderer = 'render-nob.py' if name == 'gremlin_nob' else 'render-ironclad.py'

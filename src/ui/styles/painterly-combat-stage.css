@@ -763,7 +763,7 @@
 .enemy--elite[data-enemy-art='lagavulin'] { --elite-attack-motion: elite-pounce; }
 .enemy--elite[data-enemy-art='sentry'] { --elite-attack-motion: elite-core; }
 .enemy--elite[data-enemy-art='book_of_stabbing'] { --elite-attack-motion: elite-book-lunge; }
-.enemy--elite[data-enemy-art='gremlin_leader'] { --elite-attack-motion: elite-jab; }
+.enemy--elite[data-enemy-art='gremlin_leader'] { --elite-attack-motion: gremlin-iaijutsu; }
 .enemy--elite[data-enemy-art='taskmaster'] { --elite-attack-motion: elite-whip; }
 .enemy--elite[data-enemy-art='giant_head'] { --elite-attack-motion: elite-slam; }
 .enemy--elite[data-enemy-art='nemesis'] { --elite-attack-motion: elite-scythe; }
@@ -806,12 +806,10 @@
   43%, 51% { translate: calc(var(--boss-dash-x) + 5%) 0; }
   70% { translate: -2% 0; }
 }
-@keyframes elite-jab {
-  0%, 100% { translate: 0; }
-  28% { translate: 3% 0; }
-  40%, 48% { translate: var(--boss-dash-x) 0; }
-  52% { translate: -8% 0; }
-  68% { translate: 1% 0; }
+@keyframes gremlin-iaijutsu {
+  0%, 13.661%, 100% { translate: 0; }
+  18.033%, 65.574% { translate: calc(var(--boss-dash-x) - 1.5rem) 0; }
+  75.956%, 95% { translate: 0; }
 }
 @keyframes elite-whip {
   0%, 100% { translate: 0; }

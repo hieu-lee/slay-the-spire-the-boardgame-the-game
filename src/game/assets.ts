@@ -195,7 +195,8 @@ export function enemyImagePath(def: EnemyDef): string {
   return assetPath(`combat/enemies/${artId}.webp`)
 }
 
-const WEBP_ONLY_ANIMATIONS = new Set(['byrd', 'cultist', 'looter', 'mugger', 'book_of_stabbing'])
+const WEBP_ONLY_ANIMATIONS = new Set(['byrd', 'cultist', 'looter', 'mugger', 'book_of_stabbing',
+  'lagavulin', 'gremlin_leader', 'reptomancer', 'guardian_attack', 'guardian_defensive'])
 
 export function enemyAnimationImagePath(def: EnemyDef, pose: 'idle' | 'attack'): string {
   const artId = def.artId ?? def.id

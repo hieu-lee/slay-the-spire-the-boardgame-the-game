@@ -45,8 +45,11 @@ const focusedUiOwners = new Map([
   ['src/ui/CombatScreen.tsx', [
     'verify-courier-browser.mjs', 'verify-hermit-combo-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
     'verify-hermit-online-staged-trigger-browser.mjs', 'verify-combat-layout-reload-browser.mjs',
-    'verify-row-target-browser.mjs', 'verify-turn-targets-browser.mjs',
+    'verify-row-target-browser.mjs', 'verify-turn-targets-browser.mjs', 'verify-elite-signatures-browser.mjs',
   ]],
+  ['src/ui/EnemyCard.tsx', ['verify-elite-signatures-browser.mjs']],
+  ['src/ui/combat-vfx.ts', ['verify-elite-signatures-browser.mjs']],
+  ['src/ui/styles/elite-signatures.css', ['verify-elite-signatures-browser.mjs']],
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/MailBox.tsx', ['verify-mail-browser.mjs']],
   ['src/ui/MapScreen.tsx', ['verify-wing-focus-browser.mjs']],
@@ -79,6 +82,7 @@ const focusedUiOwners = new Map([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
+  ['scripts/animation/elite_signatures.py', ['verify-assets.mjs', 'verify-elite-signatures-browser.mjs']],
   ['src/mail.ts', ['verify-mail-browser.mjs']],
   ['src/ui/useWebMcp.ts', ['verify-webmcp-browser.mjs']],
   ['src/ui/TutorialCoach.tsx', ['verify-tutorial-browser.mjs']],

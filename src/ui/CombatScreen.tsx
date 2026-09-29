@@ -190,7 +190,7 @@ import {
   shouldDisarmCardFlight,
   stageScaleFor,
 } from './board-signals.ts'
-import { enemyAttackTargetPlayerIds, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, turnEffectVfxRecipe } from './combat-vfx.ts'
+import { enemyAttackTargetPlayerIds, enemyAttackArrivalMsFor, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, turnEffectVfxRecipe } from './combat-vfx.ts'
 import { combatBodyPoint } from './combat-geometry.ts'
 import { playSoundEffect } from './sfx.ts'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -2653,7 +2653,7 @@ function CombatScreenView({
     const phaseKey = `${state.combatId}:${authoritativeRestoration ?? ''}:${state.turn}:${state.phase}`
     if (enemyPhaseClock.current.key !== phaseKey) enemyPhaseClock.current = { key: phaseKey, at: performance.now() }
     const cultists = state.phase === 'enemy' && !prefersReducedMotion
-      ? state.enemies.filter(enemy => !enemy.dead && enemy.defId === 'cultist' &&
+      ? state.enemies.filter(enemy => !enemy.dead && enemyAttackArrivalMsFor(enemy.defId) !== undefined &&
         enemyAttackTargetPlayerIds(state, enemy).length > 0)
       : []
     const launchTimes = cultists.map(enemy => cultistThrowAt[`${state.combatId}:${authoritativeRestoration ?? ''}:${state.turn}:${enemy.uid}`])
@@ -2662,7 +2662,8 @@ function CombatScreenView({
     const deadline = cultists.length
       ? launchTimes.every(at => at !== undefined)
         // Leave one paint frame after the 500ms flight before resolving damage.
-        ? Math.max(enemyPhaseClock.current.at + 730, ...launchTimes.filter((at): at is number => typeof at === 'number').map(at => at + 530))
+        ? Math.max(enemyPhaseClock.current.at + 730, ...launchTimes.map((at, index) =>
+          typeof at === 'number' ? at + (enemyAttackArrivalMsFor(cultists[index]!.defId) ?? 530) : 0))
         : Math.max(enemyPhaseClock.current.at + 5000, preparedArrival)
       : enemyPhaseClock.current.at + 730
     const retryAt = lastEnemyResolve.current.key === phaseKey ? lastEnemyResolve.current.at + 730 : 0
@@ -6251,7 +6252,7 @@ function CombatScreenView({
                 hitBeats={hits.get(enemy.uid)}
                 vfx={enemyVfxFor(enemy)}
                 rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
-                cancelPendingThrow={state.phase === 'enemy' && enemy.defId === 'cultist' && expiredCultistPhase === activeEnemyPhaseKey}
+                cancelPendingThrow={state.phase === 'enemy' && enemyAttackArrivalMsFor(enemy.defId) !== undefined && expiredCultistPhase === activeEnemyPhaseKey}
                 onThrowPrepared={onCultistThrowPrepared}
                 onThrowStart={onCultistThrowStart}
                 onThrowSkipped={onCultistThrowSkipped}
@@ -6787,7 +6788,7 @@ function CombatScreenView({
                       hitBeats={hits.get(enemy.uid)}
                       vfx={enemyVfxFor(enemy)}
                       rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
-                      cancelPendingThrow={state.phase === 'enemy' && enemy.defId === 'cultist' && expiredCultistPhase === activeEnemyPhaseKey}
+                      cancelPendingThrow={state.phase === 'enemy' && enemyAttackArrivalMsFor(enemy.defId) !== undefined && expiredCultistPhase === activeEnemyPhaseKey}
                       onThrowPrepared={onCultistThrowPrepared}
                       onThrowStart={onCultistThrowStart}
                       onThrowSkipped={onCultistThrowSkipped}
