@@ -169,8 +169,7 @@ try {
     assert.equal(await panel.getAttribute('open'), compact ? null : '', `${name}: wrong initial fold with nothing owed`)
     await page.screenshot({ path: `${out}/${name}-nothing-owed.png` })
 
-    // Worthy Sacrifice picks its Exhaust straight from the glowing hand; no
-    // duplicate strip of the hand opens over the board.
+    // Worthy Sacrifice picks its Exhaust straight from the glowing hand.
     await load({ character: 'hexaghost', player: {
       hand: ['strike_hexaghost', 'defend_hexaghost', 'strike_hexaghost'].map((defId, index) => c(`ws-hand-${index}`, defId)),
       powers: [c('worthy', 'worthy_sacrifice')],
@@ -181,7 +180,6 @@ try {
     await settle()
     assert.deepEqual(await panel.locator('.start-turn-order__badge').allTextContents(), ['Choose a card to Exhaust'])
     assert.equal(await page.locator('.hand .card.card--load-choice').count(), 3, `${name}: the hand does not offer its Exhaust choice`)
-    assert.equal(await page.locator('.start-turn-exhaust').count(), 0, `${name}: the hand Exhaust choice opened a tray`)
     assertLayout(await layout(), 'worthy sacrifice')
     await page.screenshot({ path: `${out}/${name}-exhaust-choice.png` })
     // A pick can be changed by tapping another card.
@@ -199,47 +197,38 @@ try {
     assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].exhaust.map((card) => card.uid)),
       ['ws-hand-1'], `${name}: Worthy Sacrifice exhausted the wrong card`)
 
-    // A hot-seat teammate's hand is not the one on screen, so its Exhaust
-    // choice gets its own tray beside the order panel.
-    // The viewer's own set choice keeps Reset showing beside the tray.
+    // A hot-seat teammate's Exhaust never shows their hand on this seat, and
+    // even ordered first it does not hold up this seat's own pick: the start
+    // of turn just waits until that player takes their seat.
     await load({ character: 'hexaghost', player: {
       hand: [c('own-hand-0', 'strike_hexaghost'), c('own-hand-1', 'defend_hexaghost')], powers: [c('own-worthy', 'worthy_sacrifice')],
     }, teammate: {
-      hand: ['strike_hexaghost', 'defend_hexaghost', 'strike_hexaghost', 'defend_hexaghost', 'strike_hexaghost']
-        .map((defId, index) => c(`mate-hand-${index}`, defId)),
+      hand: ['strike_hexaghost', 'defend_hexaghost', 'strike_hexaghost'].map((defId, index) => c(`mate-hand-${index}`, defId)),
       powers: [c('mate-worthy', 'worthy_sacrifice')],
     } })
     await panel.waitFor()
     await page.locator('.card-morph').waitFor({ state: 'hidden' })
     await settle()
+    await page.getByRole('button', { name: "Mate's Worthy Sacrifice earlier", exact: false }).click()
+    assert.deepEqual(await panel.locator('.start-turn-order__owner').allTextContents(), ['Mate', 'Silent'])
+    assert.equal(await page.locator('.hand .card.card--load-choice').count(), 2, `${name}: a teammate's Exhaust holds up this seat's pick`)
     await page.locator('.hand .card').nth(0).click()
-    const tray = page.locator('.start-turn-exhaust')
-    await tray.waitFor()
+    assert.deepEqual(await panel.locator('.start-turn-order__badge').allTextContents(), ['Waiting for Mate', 'Exhaust set'],
+      `${name}: wrong hot-seat Exhaust badges`)
     assert.equal(await page.locator('.hand .card.card--load-choice').count(), 0, `${name}: the viewer's hand offers a teammate's Exhaust`)
-    await page.screenshot({ path: `${out}/${name}-exhaust-tray.png` })
-    const trayLayout = await tray.evaluate((element) => {
-      const box = element.getBoundingClientRect()
-      const overlaps = (other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top
-      return {
-        inViewport: box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight,
-        coversPanel: overlaps(document.querySelector('.start-turn-order').getBoundingClientRect()),
-        coversHand: [...document.querySelectorAll('.hand .card')].some((card) => overlaps(card.getBoundingClientRect())),
-        coversHeader: [...document.querySelectorAll('.combat__turn, .combat__phase, .combat__actions > button')]
-          .some((node) => overlaps(node.getBoundingClientRect())),
-        coversIntent: [...document.querySelectorAll('.enemy__intent')].some((node) => overlaps(node.getBoundingClientRect())),
-      }
-    })
-    assert.deepEqual(trayLayout, { inViewport: true, coversPanel: false, coversHand: false, coversHeader: false, coversIntent: false },
-      `${name}: the Exhaust tray is misplaced`)
-    assert(await page.getByRole('button', { name: 'Reset start choices', exact: true }).isVisible())
-    await tray.locator('.card').nth(1).click()
-    await tray.waitFor({ state: 'detached' })
-    await page.getByRole('button', { name: 'Resolve start of turn', exact: true }).click()
+    assert.equal(await page.locator('.card').count(), 2, `${name}: a teammate's card appeared on this seat`)
+    assert.equal(await page.locator('.combat > .prompt').textContent(), 'Waiting for Mate to choose a card to Exhaust')
+    const resolve = page.getByRole('button', { name: 'Resolve start of turn', exact: true })
+    assert(await resolve.isDisabled(), `${name}: the start of turn resolves without the teammate's Exhaust`)
+    await page.screenshot({ path: `${out}/${name}-exhaust-teammate.png` })
+    await page.evaluate(() => window.__STS_DEBUG__.setViewer('mate'))
+    assert.equal(await page.locator('.hand .card.card--load-choice').count(), 3, `${name}: the teammate's own hand does not offer their Exhaust`)
+    await page.locator('.hand .card').nth(1).click()
+    await resolve.click()
     await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase === 'player')
-    assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[1].exhaust.map((card) => card.uid)),
-      ['mate-hand-1'], `${name}: the tray exhausted the wrong card`)
-    assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].exhaust.map((card) => card.uid)),
-      ['own-hand-0'], `${name}: the viewer's Worthy Sacrifice exhausted the wrong card`)
+    assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players.map((player) =>
+      player.exhaust.map((card) => card.uid))), [['own-hand-0'], ['mate-hand-1']], `${name}: a hot-seat Exhaust took the wrong card`)
+    await page.evaluate((id) => window.__STS_DEBUG__.setViewer(id), viewerId)
 
     // Before-draw Scries share the treatment, with their source art recovered from the id.
     await load({ phase: 'roundEnd', character: 'watcher', player: {
