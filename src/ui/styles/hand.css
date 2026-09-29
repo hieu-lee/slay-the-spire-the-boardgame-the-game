@@ -199,6 +199,12 @@
   filter: drop-shadow(0 0 0.55rem rgb(255 210 91 / 0.9));
 }
 
+/* A start-of-turn Exhaust already set: the other options stay tappable to
+   change it, but quieter than a choice still owed. */
+.hand .card.card--exhaust-repick:not(:focus-visible) {
+  outline: 1px dashed rgb(255 210 91 / 0.6);
+}
+
 .card--unplayable {
   filter: grayscale(0.7) brightness(0.6);
 }

@@ -506,10 +506,15 @@
   .start-turn-order__hint:not(.start-turn-order__hint--blocked) { display: none; }
 
   /* Centre prompts in the board left of the narrower docked panel. */
-  .combat:has(.start-turn-order[open]) > .prompt {
+  .combat:has(.start-turn-order[open]) > .prompt,
+  .start-turn-exhaust {
     left: calc((100% - 16rem) / 2);
     max-width: calc(100% - 18rem);
   }
+
+  .start-turn-exhaust { top: 6.75rem; padding: 0.35rem 0.5rem 0.45rem; }
+  .start-turn-exhaust__title { margin-bottom: 0.3rem; font-size: 0.85rem; }
+  .start-turn-exhaust__cards { --card-width: 4.1rem; gap: 0.3rem; }
 
   .start-turn-order > ol {
     max-height: calc(100dvh - 7.3rem - 4.5rem);

@@ -502,6 +502,8 @@ function CombatScreenView({
   >({})
   const [startTurnScryPicked, setStartTurnScryPicked] = useState<string[]>([])
   const [resolvingStartTurnScry, setResolvingStartTurnScry] = useState(false)
+  // A sent start-of-turn plan: the hand stops offering re-picks until the server answers.
+  const [sendingStartTurn, setSendingStartTurn] = useState(false)
   const [resolvingStartTurnDiscard, setResolvingStartTurnDiscard] = useState(false)
   const [triggerHermitLoadUids, setTriggerHermitLoadUids] = useState<string[]>([])
   const [triggerHermitChamberUids, setTriggerHermitChamberUids] = useState<string[]>([])
@@ -2319,6 +2321,15 @@ function CombatScreenView({
     ? startTurnEffectVisual.relicId
     : undefined
   const pendingStartExhaust = pendingStartChoice?.kind === 'exhaust' ? pendingStartChoice.ability : undefined
+  // Once every choice is made (and not yet sent), the hand keeps offering the
+  // latest Exhaust picked from it, so tapping another card changes the pick.
+  const viewerStartTurnDecided = Boolean(onAction && startTurnDecidedPlayerIds?.includes(viewer.id))
+  const handStartExhaust = pendingStartExhaust ?? (canResolveStartTurn && !pendingStartChoice &&
+    !viewerStartTurnDecided && !sendingStartTurn
+    ? [...startChoiceAbilities].reverse().find((ability) => (ability.exhaustCards?.length ?? 0) > 1 &&
+      ability.exhaustCards!.some((card) => card.uid === startTurnExhaustUids[ability.id] &&
+        viewer.hand.some((held) => held.uid === card.uid)))
+    : undefined)
   const pendingStartModeShift = pendingStartChoice?.kind === 'guardianModeShift'
     ? pendingStartChoice.ability : undefined
   const pendingStartShiv = pendingStartChoice?.kind === 'shiv' ? pendingStartChoice : undefined
@@ -2390,8 +2401,8 @@ function CombatScreenView({
   }
 
   function chooseStartTurnExhaust(cardUid: string) {
-    if (!pendingStartExhaust?.exhaustCards?.some((card) => card.uid === cardUid) || !canResolveStartTurn) return
-    setStartTurnExhaustUids({ ...startTurnExhaustUids, [pendingStartExhaust.id]: cardUid })
+    if (!handStartExhaust?.exhaustCards?.some((card) => card.uid === cardUid) || !canResolveStartTurn) return
+    setStartTurnExhaustUids({ ...startTurnExhaustUids, [handStartExhaust.id]: cardUid })
   }
 
   function chooseStartTurnMode(mode: 'attack' | 'defense') {
@@ -2551,7 +2562,11 @@ function CombatScreenView({
       evokeSlots: [...(startTurnEvokeSlots[ability.id] ?? [])],
       evokeEnemyUids: (startTurnEvokeTargets[ability.id] ?? []).map((uid) => uid ?? null),
     }))
-    if (onAction) return onAction({ kind: 'resolveStartTurn', choices })
+    if (onAction) {
+      setSendingStartTurn(true)
+      return Promise.resolve(onAction({ kind: 'resolveStartTurn', choices }))
+        .finally(() => setSendingStartTurn(false))
+    }
     onChange?.(resolveStartPlayerTurn(state, choices))
   }
 
@@ -4657,9 +4672,24 @@ function CombatScreenView({
   // The Hermit setup Load pauses the Draw step; start-of-turn order comes after it.
   const startTurnOpen = state.phase === 'start' && !forcedCard && !pendingTrigger &&
     (state.pendingHermitSetupLoads?.length ?? 0) === 0
-  const visibleStartModeShift = startTurnOpen &&
-    !stagedStartTurnTriggerPending && !activeStartTurnScry && orderedStartTurnScries.length === 0
-    ? pendingStartModeShift : undefined
+  // A start-of-turn Exhaust is picked straight from the hand. Only options the
+  // hand cannot show (a hot-seat teammate's hand, or cards an earlier step
+  // creates) need a tray of their own.
+  const startTurnChoicesOpen = startTurnOpen && !stagedStartTurnTriggerPending && !activeStartTurnScry &&
+    orderedStartTurnScries.length === 0
+  const visibleStartModeShift = startTurnChoicesOpen ? pendingStartModeShift : undefined
+  const handExhaustChoiceUids = new Set(startTurnChoicesOpen
+    ? handStartExhaust?.exhaustCards?.filter((card) => viewer.hand.some((held) => held.uid === card.uid) &&
+      card.uid !== startTurnExhaustUids[handStartExhaust.id]).map((card) => card.uid)
+    : [])
+  const trayExhaustChoices = startTurnChoicesOpen
+    ? pendingStartExhaust?.exhaustCards?.filter((card) =>
+      !viewer.hand.some((held) => held.uid === card.uid)) ?? [] : []
+  // Only picks the current plan still honours; a reorder can take a chosen card out of a step's reach.
+  const chosenStartExhaustUids = new Set(startTurnChoicesOpen
+    ? orderedStartAbilities.flatMap((ability) => ability.exhaustCards
+      ?.filter((card) => card.uid === startTurnExhaustUids[ability.id]).map((card) => card.uid) ?? [])
+    : [])
   const startTurnPrompt = pendingStartExhaust
     ? `${pendingStartExhaust.label} — choose a card to Exhaust`
     : pendingStartShiv
@@ -5138,8 +5168,7 @@ function CombatScreenView({
               </button>
             </>
           ) : null}
-          {startTurnOpen && !stagedStartTurnTriggerPending && !activeStartTurnScry &&
-          orderedStartTurnScries.length === 0 ? (
+          {startTurnChoicesOpen ? (
             <>
               {stagedStartTurnTriggers?.map((trigger) => (
                 <button type="button" key={trigger.id} onClick={() => setEditingStagedStartTurnTrigger(trigger.id)}>
@@ -5160,7 +5189,7 @@ function CombatScreenView({
                     ...ability,
                     badges: [
                       ...ability.targets ? [{ text: targetChosen ? 'Target set' : 'Choose target', done: targetChosen }]
-                        : ability.exhaustCards ? [{ text: exhaustChosen ? 'Exhaust set' : 'Choose Exhaust', done: exhaustChosen }]
+                        : ability.exhaustCards ? [{ text: exhaustChosen ? 'Exhaust set' : 'Choose a card to Exhaust', done: exhaustChosen }]
                         : [],
                       ...ability.overflowShivs > 0
                         ? [{ text: `Shiv targets ${decided}/${ability.overflowShivs}`, done: decided === ability.overflowShivs }]
@@ -5172,12 +5201,15 @@ function CombatScreenView({
                   }
                 })}
                 canMove={canCommitStartTurnOrder && !partyStartTurnOrderLocked} onMove={moveStartTurnAbility} /> : null}
-              {pendingStartExhaust?.exhaustCards ? (
-                <div className="combat__choice-cards" role="group"
-                  aria-label={`${pendingStartExhaust.label} — choose a card to Exhaust`}>
-                  {pendingStartExhaust.exhaustCards.map((card) => <Card key={card.uid} card={card} playable
-                    selected={startTurnExhaustUids[pendingStartExhaust.id] === card.uid}
-                    onClick={() => chooseStartTurnExhaust(card.uid)} />)}
+              {pendingStartExhaust && trayExhaustChoices.length > 0 ? (
+                <div className="start-turn-exhaust" role="group" aria-labelledby="start-turn-exhaust-title">
+                  <p id="start-turn-exhaust-title" className="start-turn-exhaust__title">
+                    {pendingStartExhaust.label} — choose a card to Exhaust
+                  </p>
+                  <div className="start-turn-exhaust__cards">
+                    {trayExhaustChoices.map((card) => <Card key={card.uid} card={card} playable
+                      onClick={() => chooseStartTurnExhaust(card.uid)} />)}
+                  </div>
                 </div>
               ) : null}
               {orderedStartAbilities.some((ability) =>
@@ -5214,7 +5246,7 @@ function CombatScreenView({
                 </button>
               ) : null}
               {!visibleStartModeShift && !resolvingStartTurnMode &&
-                !(onAction && startTurnDecidedPlayerIds?.includes(viewer.id))
+                !viewerStartTurnDecided
                 ? <button type="button" className="combat__end-turn" onClick={() => finishStartTurn()}
                 disabled={!startTurnReady || !canResolveStartTurn}>
                 {canResolveStartTurn
@@ -6941,19 +6973,22 @@ function CombatScreenView({
                 pending.choice?.kind === 'recoverExhaust')
             const chamberPlayable = chamberCard && !chamberClosing &&
               (chamberCardCanStartDrag(card) || chamberCancelable)
+            const exhaustChoice = !chamberCard && handExhaustChoiceUids.has(card.uid)
+            const handPicksOnly = hermitSetupPending || exhaustChoice
             return <Card
               key={card.uid}
               className={[drawnCards.has(card.uid) ? 'card--drawn' : '',
                 cardDrag?.card.uid === card.uid ? 'card--dragging' : '',
                 chamberCard ? 'card--chamber-drawn' : '',
-                setupPlayable ? 'card--load-choice' : ''].filter(Boolean).join(' ') || undefined}
+                setupPlayable || exhaustChoice && pendingStartExhaust ? 'card--load-choice' : '',
+                exhaustChoice && !pendingStartExhaust ? 'card--exhaust-repick' : ''].filter(Boolean).join(' ') || undefined}
               style={{ '--deal-index': index } as React.CSSProperties}
               inspectOnTouch
               fan={fanOf(index, visibleHand.length)}
               card={chamberCard ? displayedCard : shownCard}
               gemPowerDamage={attachedGemId !== card.attachedGemId || undefined}
               cost={card.uid === forcedCardUid ? 0 : playCost(def, cardViewer, displayedCard)}
-              playable={chamberCard ? chamberPlayable : hermitSetupPending ? setupPlayable :
+              playable={chamberCard ? chamberPlayable : exhaustChoice || (hermitSetupPending ? setupPlayable :
                 !usingCard &&
                 !pendingTrigger &&
                 !endTurnResolving &&
@@ -6971,10 +7006,10 @@ function CombatScreenView({
                     !pending.choiceCards && card.uid !== pending.card.uid) ||
                   canAfford(state, viewer, card, miracleOnCard, drawCount) ||
                   pending?.card.uid === card.uid ||
-                  (pending?.choice != null && card.uid !== pending.card.uid))
+                  (pending?.choice != null && card.uid !== pending.card.uid)))
               }
               selected={pending?.card.uid === card.uid}
-              picked={pending?.picked.includes(card.uid) === true}
+              picked={pending?.picked.includes(card.uid) === true || chosenStartExhaustUids.has(card.uid)}
               onClick={chamberCard
                 ? () => {
                   if (suppressCardClick.current === card.uid) {
@@ -6987,16 +7022,18 @@ function CombatScreenView({
                   }
                   submitHermitChamber(card)
                 }
+                : exhaustChoice
+                ? () => chooseStartTurnExhaust(card.uid)
                 : hermitSetupPending
                 ? () => setupPlayable && submitHermitSetup(card, setupTarget?.uid ?? null)
                 : activateCard}
-              onPointerDown={hermitSetupPending && !chamberCard
+              onPointerDown={handPicksOnly && !chamberCard
                 ? undefined
                 : (event) => onCardPointerDown(card, event, chamberCard)}
-              onPointerMove={hermitSetupPending && !chamberCard ? undefined : onCardPointerMove}
-              onPointerUp={hermitSetupPending && !chamberCard ? undefined : finishCardDrag}
-              onPointerCancel={hermitSetupPending && !chamberCard ? undefined : cancelCardDrag}
-              onLostPointerCapture={hermitSetupPending && !chamberCard ? undefined : cancelCardDrag}
+              onPointerMove={handPicksOnly && !chamberCard ? undefined : onCardPointerMove}
+              onPointerUp={handPicksOnly && !chamberCard ? undefined : finishCardDrag}
+              onPointerCancel={handPicksOnly && !chamberCard ? undefined : cancelCardDrag}
+              onLostPointerCapture={handPicksOnly && !chamberCard ? undefined : cancelCardDrag}
             />
           })}
         </div></div>

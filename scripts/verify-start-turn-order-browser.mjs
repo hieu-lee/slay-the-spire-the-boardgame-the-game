@@ -21,6 +21,7 @@ try {
   await server.listen()
   for (const [name, width, height] of [
     ['desktop', 1440, 900], ['desktop-1080', 1920, 1080], ['desktop-compact', 1280, 800],
+    ['desktop-laptop', 1536, 730],
     ['phone-landscape', 844, 390], ['phone-small', 667, 375],
   ]) {
     const phone = name.startsWith('phone')
@@ -167,6 +168,78 @@ try {
     await panel.waitFor()
     assert.equal(await panel.getAttribute('open'), compact ? null : '', `${name}: wrong initial fold with nothing owed`)
     await page.screenshot({ path: `${out}/${name}-nothing-owed.png` })
+
+    // Worthy Sacrifice picks its Exhaust straight from the glowing hand; no
+    // duplicate strip of the hand opens over the board.
+    await load({ character: 'hexaghost', player: {
+      hand: ['strike_hexaghost', 'defend_hexaghost', 'strike_hexaghost'].map((defId, index) => c(`ws-hand-${index}`, defId)),
+      powers: [c('worthy', 'worthy_sacrifice')],
+    } })
+    await panel.waitFor()
+    // Switching character replaces the deck; let its card morph clear the board.
+    await page.locator('.card-morph').waitFor({ state: 'hidden' })
+    await settle()
+    assert.deepEqual(await panel.locator('.start-turn-order__badge').allTextContents(), ['Choose a card to Exhaust'])
+    assert.equal(await page.locator('.hand .card.card--load-choice').count(), 3, `${name}: the hand does not offer its Exhaust choice`)
+    assert.equal(await page.locator('.start-turn-exhaust').count(), 0, `${name}: the hand Exhaust choice opened a tray`)
+    assertLayout(await layout(), 'worthy sacrifice')
+    await page.screenshot({ path: `${out}/${name}-exhaust-choice.png` })
+    // A pick can be changed by tapping another card.
+    await page.locator('.hand .card').nth(0).click()
+    assert.match(await page.locator('.hand .card').nth(0).getAttribute('class'), /card--picked/)
+    assert.equal(await page.locator('.hand .card.card--load-choice').count(), 0, `${name}: a set Exhaust still reads as owed`)
+    assert.equal(await page.locator('.hand .card.card--exhaust-repick').count(), 2, `${name}: the other cards stop offering a re-pick`)
+    await page.locator('.hand .card').nth(1).click()
+    assert.deepEqual(await panel.locator('.start-turn-order__badge--done').allTextContents(), ['Exhaust set'])
+    assert.equal(await page.locator('.hand .card.card--picked').count(), 1, `${name}: the chosen card is not marked alone`)
+    assert.match(await page.locator('.hand .card').nth(1).getAttribute('class'), /card--picked/)
+    await page.screenshot({ path: `${out}/${name}-exhaust-picked.png` })
+    await page.getByRole('button', { name: 'Resolve start of turn', exact: true }).click()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase === 'player')
+    assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].exhaust.map((card) => card.uid)),
+      ['ws-hand-1'], `${name}: Worthy Sacrifice exhausted the wrong card`)
+
+    // A hot-seat teammate's hand is not the one on screen, so its Exhaust
+    // choice gets its own tray beside the order panel.
+    // The viewer's own set choice keeps Reset showing beside the tray.
+    await load({ character: 'hexaghost', player: {
+      hand: [c('own-hand-0', 'strike_hexaghost'), c('own-hand-1', 'defend_hexaghost')], powers: [c('own-worthy', 'worthy_sacrifice')],
+    }, teammate: {
+      hand: ['strike_hexaghost', 'defend_hexaghost', 'strike_hexaghost', 'defend_hexaghost', 'strike_hexaghost']
+        .map((defId, index) => c(`mate-hand-${index}`, defId)),
+      powers: [c('mate-worthy', 'worthy_sacrifice')],
+    } })
+    await panel.waitFor()
+    await page.locator('.card-morph').waitFor({ state: 'hidden' })
+    await settle()
+    await page.locator('.hand .card').nth(0).click()
+    const tray = page.locator('.start-turn-exhaust')
+    await tray.waitFor()
+    assert.equal(await page.locator('.hand .card.card--load-choice').count(), 0, `${name}: the viewer's hand offers a teammate's Exhaust`)
+    await page.screenshot({ path: `${out}/${name}-exhaust-tray.png` })
+    const trayLayout = await tray.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const overlaps = (other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top
+      return {
+        inViewport: box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+        coversPanel: overlaps(document.querySelector('.start-turn-order').getBoundingClientRect()),
+        coversHand: [...document.querySelectorAll('.hand .card')].some((card) => overlaps(card.getBoundingClientRect())),
+        coversHeader: [...document.querySelectorAll('.combat__turn, .combat__phase, .combat__actions > button')]
+          .some((node) => overlaps(node.getBoundingClientRect())),
+        coversIntent: [...document.querySelectorAll('.enemy__intent')].some((node) => overlaps(node.getBoundingClientRect())),
+      }
+    })
+    assert.deepEqual(trayLayout, { inViewport: true, coversPanel: false, coversHand: false, coversHeader: false, coversIntent: false },
+      `${name}: the Exhaust tray is misplaced`)
+    assert(await page.getByRole('button', { name: 'Reset start choices', exact: true }).isVisible())
+    await tray.locator('.card').nth(1).click()
+    await tray.waitFor({ state: 'detached' })
+    await page.getByRole('button', { name: 'Resolve start of turn', exact: true }).click()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase === 'player')
+    assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[1].exhaust.map((card) => card.uid)),
+      ['mate-hand-1'], `${name}: the tray exhausted the wrong card`)
+    assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].exhaust.map((card) => card.uid)),
+      ['own-hand-0'], `${name}: the viewer's Worthy Sacrifice exhausted the wrong card`)
 
     // Before-draw Scries share the treatment, with their source art recovered from the id.
     await load({ phase: 'roundEnd', character: 'watcher', player: {
