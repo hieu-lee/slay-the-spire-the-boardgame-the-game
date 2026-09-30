@@ -34,12 +34,18 @@ rather than cross-fading limbs or inventing anatomy with optical flow.
 A0 Lagavulin sleeps only while its actual intent is idle; higher ascensions
 never show the sleeping pose. Wake and Guardian close/open sequences run for
 800ms, do not replay on restoration, and wait for an outgoing attack to finish.
+The previous decoded idle stays mounted until the transition decodes; its final
+frame then stays visible until the incoming idle is ready. Attacks hide retained
+idles with visibility as well as opacity and never paint an idle poster beneath
+the transparent signature sprite. Reptomancer's charge and dagger use the same
+source-space point between the extended casting hands; the charge follows the
+body's root motion and appears only during the forward casting poses.
 Gremlin Leader slashes at 330ms, holds for 400ms, then emits target-specific
 slash VFX and the clash cue at 730ms; the return dash starts at 1200ms.
 Reptomancer raises both hands, releases a summoned dagger at 500ms and strikes
 at 730ms with a crossed-blade effect. Guardian rolls its rigid closed shell,
 without rescaling or unfolding it during a defensive attack.
-These enemies report their decoded attack start to the existing phase clock,
+These enemies report their decoded body's CSS animation start to the existing phase clock,
 so cold artwork cannot let health loss precede visible contact. Reconnect and
 reduced-motion paths clear stale presentations without changing combat rules.
 Reduced motion uses a single-frame sleeping export at the same display scale;
@@ -47,7 +53,8 @@ restored enemy phases report suppressed attacks to avoid waiting for a decode.
 
 The focused browser verifier records desktop and horizontal-phone runs under
 `artifacts/elite-signatures/`; it owns sleep/ascension, mode changes, target
-coverage, delayed impact, repeated attacks and restoration cleanup. Review the
+coverage, delayed impact, repeated attacks, cold-idle continuity, single-body
+handoffs, casting-hand placement and restoration cleanup. Review the
 recordings and source pose sheets for limb count, rigid armor/blades, style,
 body scale, foot registration, attack contact and the final return.
 

@@ -473,11 +473,14 @@ export function EnemyCard({
     actions.every(action => action.kind === 'idle')
   const restPose = sleeping ? 'lagavulin-sleep' : currentBossArtId
   const previousRestPose = useRef({ pose: restPose, resetKey: visualResetKey })
-  const [restTransition, setRestTransition] = useState<{ src: string; source: string; key: number; ready: boolean } | null>(null)
+  const [restTransition, setRestTransition] = useState<{ src: string; source: string; previousSrc: string; key: number; ready: boolean; playing?: boolean; finished?: boolean } | null>(null)
+  const [idleReadySource, setIdleReadySource] = useState<string | null>(null)
+  const decodedIdleArts = useRef(new WeakSet<CombatArtElement>())
   const restTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const timedCultist = useWebKitCombatRendering && currentBossArtId === 'cultist'
   // WebKit can retain the idle texture over a timed SVG after changing opacity.
-  const retainIdle = useSafariCombatRendering && !timedCultist && !restTransition
+  const retainIdle = (useSafariCombatRendering || currentBossArtId !== 'cultist' &&
+    enemyAttackArrivalMsFor(currentBossArtId) !== undefined) && !timedCultist
   const bossHasAttackAction = actions.some((action) => action.kind === 'attack' || action.kind === 'attackSequence')
   const currentBossAttackArt = currentBossArtId === 'downfall_demon'
     ? assetPath('combat/rigged/downfall_demon-airborne.webp')
@@ -486,6 +489,16 @@ export function EnemyCard({
       : enemyAnimationImagePath(def, 'attack')
   const currentIdleArt = sleeping ? assetPath('combat/enemies/animated/lagavulin-sleep.webp')
     : enemyAnimationImagePath(def, 'idle')
+  const previousIdleArt = assetPath(`combat/enemies/animated/${previousRestPose.current.pose === 'lagavulin-sleep'
+    ? 'lagavulin-sleep' : `${previousRestPose.current.pose}-idle`}.webp`)
+  const restTransitionName = previousRestPose.current.pose === 'lagavulin-sleep' && restPose === 'lagavulin' ? 'lagavulin-wake'
+    : previousRestPose.current.pose === 'guardian_attack' && restPose === 'guardian_defensive' ? 'guardian-close'
+    : previousRestPose.current.pose === 'guardian_defensive' && restPose === 'guardian_attack' ? 'guardian-open' : null
+  useLayoutEffect(() => {
+    const idle = [...(cardRef.current?.querySelectorAll<CombatArtElement>('[data-animation-layer="idle"]') ?? [])]
+      .find(image => image.dataset.animationAsset === currentIdleArt)
+    setIdleReadySource(idle && decodedIdleArts.current.has(idle) && combatArtReady(idle) ? currentIdleArt : null)
+  }, [currentIdleArt])
   const currentBossProjectileArt = bossProjectileImagePath(currentBossArtId)
   const currentProjectileImpact = enemyProjectileImpactPath(currentBossArtId)
   const bossAttackRequested = Boolean(animatedEnemy && acting && bossHasAttackAction && !cancelPendingThrow)
@@ -517,26 +530,28 @@ export function EnemyCard({
       return
     }
     if (bossAttacking) {
-      setRestTransition(null)
+      setRestTransition(current => current ? { ...current, playing: false, finished: true } : null)
       return
     }
     previousRestPose.current = { pose: restPose, resetKey: visualResetKey }
-    const name = previous.pose === 'lagavulin-sleep' && restPose === 'lagavulin' ? 'lagavulin-wake'
-      : previous.pose === 'guardian_attack' && restPose === 'guardian_defensive' ? 'guardian-close'
-      : previous.pose === 'guardian_defensive' && restPose === 'guardian_attack' ? 'guardian-open' : null
+    const name = restTransitionName
     const controller = new AbortController()
     if (name) {
       const source = assetPath(`combat/enemies/animated/${name}.webp`)
       const key = performance.now()
-      const previousSource = assetPath(`combat/enemies/animated/${previous.pose === 'lagavulin-sleep'
-        ? 'lagavulin-sleep' : `${previous.pose}-idle`}.webp`)
-      setRestTransition({ src: previousSource, source, key, ready: false })
+      const previousImage = [...(cardRef.current?.querySelectorAll<CombatArtElement>('[data-animation-layer="idle"]') ?? [])]
+        .find(image => image.dataset.animationAsset === previousIdleArt)
+      const previousSource = restTransition && (!previousImage || !decodedIdleArts.current.has(previousImage) || !combatArtReady(previousImage))
+        ? restTransition.previousSrc : previousIdleArt
+      setRestTransition({ src: previousSource, source, previousSrc: previousSource, key, ready: false })
       void fetch(source, { signal: controller.signal }).then(async response => {
         if (!response.ok) throw new Error('Animation unavailable')
         const blob = await response.blob()
-        if (!controller.signal.aborted) setRestTransition({ src: URL.createObjectURL(blob), source, key, ready: true })
-      }).catch(() => { if (!controller.signal.aborted) setRestTransition(null) })
-    } else setRestTransition(null)
+        if (!controller.signal.aborted) setRestTransition({ src: URL.createObjectURL(blob), source, previousSrc: previousSource, key, ready: true })
+      }).catch(() => {
+        if (!controller.signal.aborted) setRestTransition(current => current ? { ...current, finished: true } : null)
+      })
+    } else setRestTransition(current => current?.finished && idleReadySource !== currentIdleArt ? current : null)
     return () => {
       controller.abort()
       if (restTransitionTimer.current) clearTimeout(restTransitionTimer.current)
@@ -544,7 +559,10 @@ export function EnemyCard({
   }, [animatedEnemy, bossAttacking, cancelPendingThrow, restPose, visualResetKey])
   useEffect(() => () => {
     if (restTransition?.src.startsWith('blob:')) URL.revokeObjectURL(restTransition.src)
-  }, [restTransition])
+  }, [restTransition?.src])
+  useEffect(() => {
+    if (restTransition?.finished && idleReadySource === currentIdleArt) setRestTransition(null)
+  }, [currentIdleArt, idleReadySource, restTransition?.finished])
   useEffect(() => {
     if (!timedCultist || !bossAttackPlaying || bossAttackTimer.current) return
     bossAttackTimer.current = setTimeout(finishBossAttack, bossAttackDurationFor(currentBossArtId))
@@ -593,6 +611,7 @@ export function EnemyCard({
     ? bossAttacking ? presentedBossAttack?.art ?? currentBossAttackArt : restTransition?.src ?? currentIdleArt
     : sleeping ? assetPath('combat/enemies/animated/lagavulin-sleep-static.webp') : enemyImagePath(def)
   const bossArtId = presentedBossAttack?.artId ?? currentBossArtId
+  const signatureAttack = bossArtId !== 'cultist' && enemyAttackArrivalMsFor(bossArtId) !== undefined
   const onArtError = (image: HTMLImageElement) => {
     // Keep combat usable if both bundled animation formats fail.
     if (image.dataset.fallback !== 'true') {
@@ -773,6 +792,13 @@ export function EnemyCard({
       const bodyWidth = naturalWidth * fit / scale
       const bodyHeight = naturalHeight * fit / scale
       const origin = enemyProjectileOriginFor(bossArtId)
+      const charge = card.querySelector<HTMLElement>('.reptomancer-charge')
+      if (charge && origin) {
+        charge.parentElement!.style.marginLeft = boss.style.marginLeft
+        const chargeFit = Math.min(boss.offsetWidth / naturalWidth, boss.offsetHeight / naturalHeight)
+        charge.style.left = `${(boss.offsetWidth - naturalWidth * chargeFit) / 2 + origin[0] * chargeFit}px`
+        charge.style.top = `${boss.offsetHeight - naturalHeight * chargeFit + origin[1] * chargeFit}px`
+      }
       const startX = origin ? bossRect.left + (bossRect.width - naturalWidth * fit) / 2 + origin[0] * fit
         : bossRect.left + bossRect.width / 2 - bodyWidth * .16
       const startY = origin ? bossRect.bottom - naturalHeight * fit + origin[1] * fit
@@ -937,7 +963,7 @@ export function EnemyCard({
           ))
         )}
       </span>
-      {bossAttackPlaying && ['sentry', 'giant_head', 'reptomancer'].includes(bossArtId) ? (
+      {bossAttackPlaying && ['sentry', 'giant_head'].includes(bossArtId) ? (
         <span className="elite-attack-effect" aria-hidden="true" />
       ) : null}
       {bossAttackPlaying && bossProjectileArt ? rangedTargetPlayerIds.map((playerId) => (
@@ -968,7 +994,12 @@ export function EnemyCard({
         </span>
       ) : null}
 
-      <span className="enemy__portrait">
+      <span className="enemy__portrait" onAnimationStart={event => {
+        if (!signatureAttack || !bossAttackPlaying || bossAttackTimer.current ||
+          !(event.target instanceof HTMLElement) || event.target.dataset.animationLayer !== 'attack') return
+        onThrowStart?.(enemy.uid)
+        bossAttackTimer.current = setTimeout(finishBossAttack, bossAttackDurationFor(bossArtId))
+      }}>
         <span className="enemy__hit-area" aria-hidden="true" />
         {sleeping ? <span className="enemy-sleep-zzz" aria-hidden="true"><span>z</span><span>z</span><span>Z</span></span> : null}
         {bossAttackPlaying && bossArtId === 'gremlin_leader' ? <>
@@ -989,44 +1020,55 @@ export function EnemyCard({
         </> : null}
         {animatedEnemy ? <>
           {/* Retain the decoded idle across handoffs; Safari native video can paint blank transitions. */}
-          {retainIdle ? <CombatAnimation
-            key={`${currentBossArtId}-idle`}
+          {retainIdle ? [...new Set([currentIdleArt, ...(restTransition ? [restTransition.previousSrc] : []),
+            ...(previousRestPose.current.resetKey === visualResetKey && restTransitionName ? [previousIdleArt] : [])])].map(source => <CombatAnimation
+            key={source}
             className="enemy__art--cutout"
-            src={currentIdleArt}
+            src={source}
             forceWebp
             style={{ animation: 'none' }}
             data-animation-layer="idle"
-            data-inactive={bossAttackPlaying || undefined}
-            data-animation-asset={currentIdleArt}
-            loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
+            data-inactive={bossAttackPlaying || (restTransition ? source !== restTransition.previousSrc || restTransition.playing : false) || undefined}
+            data-animation-asset={source}
+            loading={visibleEnemy.isBoss || restTransition ? 'eager' : 'lazy'}
+            onReady={image => {
+              decodedIdleArts.current.add(image)
+              if (source === currentIdleArt) setIdleReadySource(source)
+            }}
             onError={onArtError}
-          /> : null}
-          {!retainIdle || bossAttacking ? <CombatAnimation
+          />) : null}
+          {!retainIdle || bossAttacking || restTransition?.ready && (!restTransition.finished || restTransition.playing) ? <CombatAnimation
             key={`${bossArtId}-${bossAttacking ? 'attack' : restTransition?.key ?? restPose}`}
             className="enemy__art--cutout"
             src={art}
             data-animation-layer={bossAttacking ? 'attack' : restTransition ? 'transition' : 'idle'}
-            data-inactive={retainIdle && !bossAttackPlaying || undefined}
-            posterSrc={(!useSafariCombatRendering || timedCultist) && bossAttacking ? currentIdleArt : undefined}
+            data-inactive={retainIdle && (bossAttacking ? !bossAttackPlaying : restTransition ? !restTransition.playing : true) || undefined}
+            posterSrc={!retainIdle && (!useSafariCombatRendering || timedCultist) && bossAttacking ? currentIdleArt : undefined}
             forceWebp={useSafariCombatRendering}
             loop={!bossAttacking && !restTransition}
             data-animation-asset={bossAttacking ? presentedBossAttack?.source : restTransition?.source ?? art}
-            loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
+            loading={visibleEnemy.isBoss || bossAttacking || restTransition ? 'eager' : 'lazy'}
             onReady={() => {
-              if (restTransition?.ready && !restTransitionTimer.current) {
+              if (!bossAttacking && restTransition?.ready && !restTransition.finished && !restTransitionTimer.current) {
+                setRestTransition(current => current ? { ...current, playing: true } : null)
                 restTransitionTimer.current = setTimeout(() => {
                   restTransitionTimer.current = null
-                  setRestTransition(null)
+                  setRestTransition(current => current ? { ...current, finished: true } : null)
                 }, 800)
               }
               if (!bossAttackRequested || !bossAttacking || bossAttackTimer.current) return
               if (timedCultist) onThrowPrepared?.(enemy.uid, 1800)
-              if (bossArtId !== 'cultist' && enemyAttackArrivalMsFor(bossArtId) !== undefined) onThrowStart?.(enemy.uid)
-              if (!timedCultist) bossAttackTimer.current = setTimeout(finishBossAttack, bossAttackDurationFor(bossArtId))
+              if (!timedCultist && !signatureAttack) bossAttackTimer.current = setTimeout(finishBossAttack, bossAttackDurationFor(bossArtId))
               setBossAttackReady(true)
             }}
-            onError={onArtError}
+            onError={event => {
+              if (!bossAttacking && restTransition) setRestTransition(current => current ? { ...current, playing: false, finished: true } : null)
+              else onArtError(event)
+            }}
           /> : null}
+          {bossAttackPlaying && bossArtId === 'reptomancer' ? <span className="reptomancer-channel" aria-hidden="true">
+            <span className="reptomancer-charge" />
+          </span> : null}
           {timedCultist && bossAttacking && !cultistCoverFailed ? <img
             className="enemy__art--cutout cultist-release-cover"
             src={assetPath('combat/enemies/animated/cultist-released.webp')}

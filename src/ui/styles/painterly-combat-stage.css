@@ -879,9 +879,6 @@
   background: radial-gradient(ellipse, #d0bc8733, transparent 68%);
   animation-name: elite-ground-wave;
 }
-.enemy--elite[data-enemy-art='reptomancer'] .elite-attack-effect {
-  background: radial-gradient(circle, #ffffca, #98f783 24%, transparent 68%);
-}
 @keyframes elite-core-charge {
   0%, 12%, 66%, 100% { opacity: 0; scale: .3; }
   30% { opacity: .9; scale: 1.2; }

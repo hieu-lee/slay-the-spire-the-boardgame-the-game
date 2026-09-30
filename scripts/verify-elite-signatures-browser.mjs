@@ -19,6 +19,58 @@ try {
     await page.addInitScript(identity => localStorage.setItem('sts-profile', JSON.stringify(identity)),
       { username: `EliteAudit${randomUUID().slice(0, 8)}`, token: randomUUID() })
     await page.addInitScript(() => {
+      const decodeImage = HTMLImageElement.prototype.decode
+      HTMLImageElement.prototype.decode = function () {
+        const decoded = decodeImage.call(this)
+        if (window.holdColdDecode && (this.src.endsWith('/lagavulin-idle.webp') || this.dataset.animationLayer === 'attack')) {
+          const name = this.dataset.animationLayer === 'attack' ? 'releaseColdAttack' : 'releaseColdIdle'
+          return decoded.then(() => new Promise(resolve => { window[name] = resolve }))
+        }
+        if (window.holdGuardianDecode && this.src.endsWith('/guardian_defensive-idle.webp')) {
+          return decoded.then(() => new Promise(resolve => { window.releaseGuardianDecode = resolve }))
+        }
+        return this.src.endsWith('/lagavulin-idle.webp')
+          ? decoded.then(() => new Promise(resolve => setTimeout(resolve, 900))) : decoded
+      }
+      window.signatureLayerFaults = []
+      window.signatureCharges = []
+      window.signatureChargeSampled = false
+      const sampleLayers = () => {
+        const enemy = document.querySelector('.enemy')
+        if (enemy) {
+          const bodies = [...enemy.querySelectorAll('.enemy__portrait > .enemy__art--cutout')].filter(image => {
+            const style = getComputedStyle(image)
+            return style.visibility !== 'hidden' && Number(style.opacity) > 0
+          })
+          if (bodies.length !== 1 || !bodies[0]?.complete || !bodies[0]?.naturalWidth ||
+            getComputedStyle(bodies[0]).backgroundImage !== 'none') {
+            window.signatureLayerFaults.push({ actor: enemy.dataset.enemyDef, mode: enemy.dataset.animation,
+              layers: bodies.length, decoded: Boolean(bodies[0]?.naturalWidth), source: bodies[0]?.dataset.animationAsset,
+              poster: bodies[0] && getComputedStyle(bodies[0]).backgroundImage })
+          }
+          const charge = enemy.querySelector('.reptomancer-charge')
+          const body = bodies[0]
+          const animations = charge && body?.naturalWidth
+            ? [body, charge.parentElement, charge].flatMap(element => element.getAnimations()).filter(animation => typeof animation.animationName === 'string') : []
+          if (!window.signatureChargeSampled && animations.length === 3 && animations.every(animation => animation.currentTime !== null && animation.startTime !== null)) {
+            const clocks = animations.map(animation => animation.currentTime)
+            const states = animations.map(animation => animation.playState)
+            animations.forEach(animation => { animation.pause(); animation.currentTime = 730 })
+            const orb = charge.getBoundingClientRect(), rect = body.getBoundingClientRect()
+            const fit = Math.min(rect.width / body.naturalWidth, rect.height / body.naturalHeight)
+            window.signatureCharges.push({ opacity: Number(getComputedStyle(charge).opacity),
+              x: (orb.x + orb.width / 2 - rect.left - (rect.width - body.naturalWidth * fit) / 2) / fit,
+              y: (orb.y + orb.height / 2 - rect.bottom + body.naturalHeight * fit) / fit })
+            animations.forEach((animation, index) => {
+              animation.currentTime = clocks[index]
+              if (states[index] === 'running') animation.play()
+            })
+            window.signatureChargeSampled = true
+          }
+        }
+        requestAnimationFrame(sampleLayers)
+      }
+      requestAnimationFrame(sampleLayers)
       window.signatureBeats = []
       window.signatureSlashClocks = []
       window.signatureModes = []
@@ -98,16 +150,40 @@ try {
       fixture.install('lagavulin', 0, true)
     })
     const enemy = page.locator('.enemy[data-enemy-id="elite-review"]')
-    const activeArt = enemy.locator('.enemy__portrait > .enemy__art--cutout:not([data-inactive])')
     await page.waitForFunction(() => document.querySelector('.enemy[data-sleeping] img[data-animation-layer="idle"]')?.complete)
     assert.equal(await enemy.getAttribute('data-sleeping'), 'true', `${screen}: A0 sleep`)
     assert.equal(await enemy.locator('.enemy-sleep-zzz span').count(), 3)
     await enemy.screenshot({ path: resolve(output, `${screen}-lagavulin-sleep.png`) })
+    await page.route('**/combat/enemies/animated/lagavulin-idle.webp', async route => {
+      await new Promise(resolve => setTimeout(resolve, 1800))
+      await route.continue()
+    })
+    await page.evaluate(() => { window.signatureLayerFaults = [] })
     await page.evaluate(() => window.eliteFixture.finishSleepingTurn())
     await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'transition')
-    assert((await activeArt.getAttribute('data-animation-asset')).includes('lagavulin-wake'), `${screen}: missing wake`)
+    await page.waitForFunction(() => window.signatureModes.some(mode => mode.source.includes('lagavulin-wake')))
     await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'idle')
+    assert.deepEqual(await page.evaluate(() => window.signatureLayerFaults), [], `${screen}: wake must never lose its decoded body`)
+    await page.unroute('**/combat/enemies/animated/lagavulin-idle.webp')
     assert.equal(await enemy.locator('.enemy-sleep-zzz').count(), 0)
+    await page.evaluate(() => {
+      window.holdColdDecode = true
+      window.releaseColdIdle = null; window.releaseColdAttack = null
+      window.eliteFixture.install('lagavulin', 0, true)
+    })
+    await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.sleeping === 'true')
+    await page.evaluate(() => { window.signatureLayerFaults = []; window.eliteFixture.finishSleepingTurn() })
+    await page.waitForFunction(() => typeof window.releaseColdIdle === 'function')
+    await page.evaluate(() => window.eliteFixture.attack(false))
+    await page.waitForFunction(() => typeof window.releaseColdAttack === 'function')
+    await page.waitForTimeout(200)
+    assert.deepEqual(await page.evaluate(() => window.signatureLayerFaults), [], `${screen}: cold attack must preserve the outgoing decoded body`)
+    await page.evaluate(() => window.releaseColdAttack())
+    await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'attack')
+    await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation !== 'attack')
+    assert.deepEqual(await page.evaluate(() => window.signatureLayerFaults), [], `${screen}: cold attack return must preserve a decoded body`)
+    await page.evaluate(() => { window.holdColdDecode = false; window.releaseColdIdle() })
+    await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'idle')
     await page.evaluate(() => window.eliteFixture.install('lagavulin', 1, true))
     await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'idle')
     assert.equal(await enemy.getAttribute('data-sleeping'), null, `${screen}: A1 must not sleep`)
@@ -126,9 +202,19 @@ try {
       for (let repeat = 0; repeat < 2; repeat++) {
         await page.evaluate(() => {
           window.signatureBeats = []; window.signatureSlashClocks = []; window.signatureAttacks = []
+          window.signatureLayerFaults = []
+          window.signatureCharges = []
+          window.signatureChargeSampled = false
           window.eliteFixture.attack(false)
         })
-        await page.waitForFunction(() => window.signatureAttacks.length > 0)
+        await page.waitForFunction(() => window.signatureAttacks.length > 0).catch(async error => {
+          const state = await page.evaluate(() => ({ phase: window.eliteFixture.state.phase,
+            enemy: document.querySelector('.enemy')?.dataset.animation,
+            images: [...document.querySelectorAll('.enemy [data-animation-layer]')].map(image => ({ src: image.src,
+              layer: image.dataset.animationLayer, complete: image.complete, width: image.naturalWidth, fallback: image.dataset.fallback,
+              inactive: image.dataset.inactive, style: image.getAttribute('style') })) }))
+          throw new Error(`${screen} ${actor} repeat${repeat}: ${JSON.stringify(state)}`, { cause: error })
+        })
         const attack = await page.evaluate(() => window.signatureAttacks.at(-1))
         const source = attack.url
         if (repeat > 0) assert.notEqual(source, previousUrl, `${actor}: one-shot did not restart`)
@@ -143,6 +229,14 @@ try {
           assert((await page.evaluate(() => window.signatureBeats)).some(beat => beat.name === movement), `${actor}: generic movement overrode its signature`)
         }
         await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'idle')
+        if (actor === 'reptomancer') {
+          const charges = await page.evaluate(() => window.signatureCharges)
+          const visible = charges.filter(charge => charge.opacity > .5)
+          assert(visible.length > 0, `${screen}: charge never became visible: ${JSON.stringify(charges)}`)
+          assert(visible.every(charge => Math.abs(charge.x - 170) < 2 && Math.abs(charge.y - 742) < 2),
+            `${screen}: orb must be between casting hands: ${JSON.stringify(visible)}`)
+        }
+        assert.deepEqual(await page.evaluate(() => window.signatureLayerFaults), [], `${screen}: ${actor} must have one decoded body without an idle poster`)
         if (actor === 'gremlin_leader') {
           const beats = await page.evaluate(() => window.signatureBeats)
           const body = beats.find(beat => beat.name === 'gremlin-iaijutsu')
@@ -155,7 +249,7 @@ try {
             `slash impact must follow the 330ms dash and 400ms hold: ${JSON.stringify(beats)}`)
         }
         await page.evaluate(() => { window.eliteFixture.state.phase = 'player'; window.eliteFixture.render() })
-        await page.waitForTimeout(60)
+        await page.locator('.combat__phase--player').waitFor()
       }
     }
 
@@ -175,6 +269,21 @@ try {
       modeUrls.set(mode, url)
       await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'idle')
     }
+    await page.evaluate(() => {
+      window.signatureLayerFaults = []
+      window.holdGuardianDecode = true
+      window.releaseGuardianDecode = null
+      window.eliteFixture.state.enemies[0].defId = 'guardian_defensive'; window.eliteFixture.render()
+    })
+    await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'transition')
+    await page.waitForFunction(() => typeof window.releaseGuardianDecode === 'function')
+    await page.evaluate(() => {
+      window.eliteFixture.state.enemies[0].defId = 'guardian_attack'; window.eliteFixture.render()
+    })
+    await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.enemyDef === 'guardian_attack' &&
+      document.querySelector('.enemy')?.dataset.animation === 'idle')
+    assert.deepEqual(await page.evaluate(() => window.signatureLayerFaults), [], `${screen}: reversed mode must retain a decoded body and finish`)
+    await page.evaluate(() => { window.holdGuardianDecode = false; window.releaseGuardianDecode() })
     await page.evaluate(() => window.eliteFixture.install('gremlin_leader'))
     await page.waitForTimeout(250)
     await page.evaluate(() => window.eliteFixture.attack(true))

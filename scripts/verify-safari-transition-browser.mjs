@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium, devices, webkit } from './lib/profile-browser.mjs'
 
-// Reproduce the recorded Cultist handoff with repeated full-resolution WebP handoffs.
+// Exercise retained native WebP handoffs with Sentry; Cultist uses a timed SVG.
 // Save painted frames across both handoffs, repeated attacks, and decoder lifetimes.
 const root = resolve(import.meta.dirname, '..')
 const baseline = process.argv.includes('--baseline')
@@ -16,7 +16,7 @@ const server = await createServer({ root, logLevel: 'silent', server: { port: 0 
 await server.listen()
 const results = []
 async function paintedPose(page, path) {
-  const screenshot = await page.locator('.board').screenshot({ path, scale: 'css' })
+  const screenshot = await page.screenshot({ path, scale: 'css' })
   return page.evaluate(async source => {
     const image = new Image(); image.src = source; await image.decode()
     const canvas = document.createElement('canvas')
@@ -24,7 +24,7 @@ async function paintedPose(page, path) {
     const context = canvas.getContext('2d'); context.drawImage(image, 0, 0)
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
     let top = canvas.height, bottom = 0, count = 0
-    // The Cultist's blue feathers isolate its painted body from this brown scene.
+    // The Sentry's blue glow isolates its painted body from this brown scene.
     for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
       const i = (y * canvas.width + x) * 4
       if (pixels[i] < 100 && pixels[i + 1] > 70 && pixels[i + 1] < 200 && pixels[i + 2] > 200) {
@@ -59,7 +59,7 @@ try {
         const holdAttack = name === 'webkit'
         let releaseAttack
         const attackGate = new Promise(resolve => { releaseAttack = resolve })
-        await page.route('**/cultist-attack.webp', async route => {
+        await page.route('**/sentry-attack.webp', async route => {
           if (holdAttack) await attackGate
           await route.continue()
         })
@@ -81,7 +81,7 @@ try {
           const rng = createRng(47)
           const player = createPlayer(rng, 'p1', 'Ironclad', 'ironclad', 0)
           Object.assign(player, { hp: 99, maxHp: 99, hand: [], draw: [], discard: [], relics: [] })
-          const enemy = { uid: 'enemy-0', defId: 'cultist', row: 0, hp: 999, maxHp: 999,
+          const enemy = { uid: 'enemy-0', defId: 'sentry_a', row: 0, hp: 999, maxHp: 999,
             block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, actionIndex: 0, abilityUsed: false, dead: false }
           const state = createCombat(rng, [player], [enemy])
           state.phase = 'player'; state.presentationEvents = []
@@ -119,6 +119,7 @@ try {
         const waiting = await page.locator('.enemy__art--cutout:not([data-inactive])').evaluate(art => ({
           poster: art.poster, background: getComputedStyle(art).backgroundImage,
           rect: art.getBoundingClientRect().toJSON(),
+          viewport: { width: innerWidth, height: innerHeight },
         }))
 
         if (safari && !baseline) {
@@ -168,7 +169,7 @@ try {
           document.querySelector('#handoff-capture').remove()
           await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame)
         })
-        await page.locator('.board').screenshot({ path: resolve(output, `${label}-returned.png`) })
+        await page.screenshot({ path: resolve(output, `${label}-returned.png`), scale: 'css' })
         const retained = await page.evaluate(() => window.createdVideos
           .filter(video => !video.isConnected && video.hasAttribute('src')).map(video => video.src))
         await page.evaluate(() => window.fixture.unmount())
@@ -190,19 +191,41 @@ try {
         await page.video().saveAs(movie)
         // Check EVERY recorded frame (25fps), not just slower Playwright screenshots.
         const width = phone ? 422 : 720, height = phone ? 195 : 450
-        const pixels = execFileSync('ffmpeg', ['-loglevel', 'error', '-i', movie,
-          '-vf', `scale=${width}:${height}`, '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'],
-        { maxBuffer: 256 * 1024 * 1024 })
+        const decoder = spawn('ffmpeg', ['-loglevel', 'error', '-i', movie,
+          '-vf', `scale=${width}:${height}`, '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+        let stderr = ''
+        decoder.stderr.on('data', chunk => { stderr += chunk })
+        const exited = new Promise((resolve, reject) => {
+          decoder.once('error', reject)
+          decoder.once('close', code => code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}: ${stderr}`)))
+        })
         const frameBytes = width * height * 3, paintedFrames = []
-        for (let start = 0; start < pixels.length; start += frameBytes) {
-          const corner = start + (width * 2 + 2) * 3
-          if (!(pixels[corner] > 180 && pixels[corner + 1] < 80 && pixels[corner + 2] > 180)) continue
-          let count = 0
-          for (let i = start; i < start + frameBytes; i += 3) {
-            if (pixels[i] < 100 && pixels[i + 1] > 70 && pixels[i + 1] < 200 && pixels[i + 2] > 180) count++
-          }
-          paintedFrames.push({ frame: start / frameBytes, count })
+        const region = {
+          left: Math.max(0, Math.floor(waiting.rect.left * width / waiting.viewport.width)),
+          right: Math.min(width, Math.ceil(waiting.rect.right * width / waiting.viewport.width)),
+          top: Math.max(0, Math.floor(waiting.rect.top * height / waiting.viewport.height)),
+          bottom: Math.min(height, Math.ceil(waiting.rect.bottom * height / waiting.viewport.height)),
         }
+        let pending = Buffer.alloc(0), frameNumber = 0
+        for await (const chunk of decoder.stdout) {
+          const pixels = Buffer.concat([pending, chunk])
+          let start = 0
+          for (; start + frameBytes <= pixels.length; start += frameBytes, frameNumber++) {
+            const corner = start + (width * 2 + 2) * 3
+            if (!(pixels[corner] > 180 && pixels[corner + 1] < 80 && pixels[corner + 2] > 180)) continue
+            let count = 0
+            for (let row = region.top; row < region.bottom; row++) for (let column = region.left; column < region.right; column++) {
+              const index = start + (row * width + column) * 3
+              const blue = pixels[index] < 100 && pixels[index + 1] > 70 && pixels[index + 1] < 200 && pixels[index + 2] > 180
+              const gold = pixels[index] > 180 && pixels[index + 1] > 160 && pixels[index + 2] < 140
+              if (blue || gold) count++
+            }
+            paintedFrames.push({ frame: frameNumber, count })
+          }
+          pending = pixels.subarray(start)
+        }
+        await exited
+        assert.equal(pending.length, 0, `${label}: truncated decoded frame`)
         writeFileSync(resolve(output, `${label}-movie-frames.json`), JSON.stringify(paintedFrames, null, 2))
         assert(paintedFrames.length > 100, `${label}: movie missed the handoff capture window`)
         if (!baseline && safari) assert(paintedFrames.every(frame => frame.count > 50),

@@ -209,6 +209,8 @@ export function CombatAnimation({
   const [loadedImage, setLoadedImage] = useState('')
   const stallTimer = useRef(0)
   const cancelReadyFrame = useRef<() => void>(() => undefined)
+  const callbacks = useRef({ onReady, onError })
+  callbacks.current = { onReady, onError }
   const videoSrc = combatVideoPath(src)
   const videoRequest = mediaSrc ?? videoSrc
   const wantsVideo = !forceWebp && useSafariCombatVideo && videoSrc !== src
@@ -237,6 +239,7 @@ export function CombatAnimation({
   // A native video poster can disappear before WebKit composites its first
   // alpha frame. Paint the same canvas underneath until that frame is visible.
   const renderVideo = wantsVideo && videoWarmed && !videoFailed
+  const inactiveReady = data['data-inactive'] && (renderVideo ? videoLoaded : loadedImage === imageSrc)
   const poster = posterSrc ?? (renderVideo ? src : undefined)
   const waitingPoster = poster && !(renderVideo ? videoLoaded : loadedImage === imageSrc) ? {
     backgroundImage: `url(${poster})`,
@@ -249,7 +252,7 @@ export function CombatAnimation({
       {...data}
       ref={mountedVideo}
       className={className}
-      style={{ ...style, ...waitingPoster, visibility: hidden ? 'hidden' : style?.visibility }}
+      style={{ ...style, ...waitingPoster, visibility: hidden || inactiveReady ? 'hidden' : style?.visibility }}
       crossOrigin={videoSrc.startsWith('http') ? 'anonymous' : undefined}
       src={mediaSrc ?? videoSrc}
       poster={posterSrc ?? src}
@@ -268,7 +271,7 @@ export function CombatAnimation({
           if (!video.isConnected || video.src !== request) return
           cancelReadyFrame.current = afterVideoFrame(video, () => {
             setLoadedVideo(videoRequest)
-            onReady?.(video)
+            callbacks.current.onReady?.(video)
           })
         }, () => setFailedVideo(videoRequest))
       }}
@@ -282,11 +285,21 @@ export function CombatAnimation({
   return <img
     {...data}
     className={className}
-    style={{ ...style, ...waitingPoster, visibility: hidden ? 'hidden' : style?.visibility }}
+    style={{ ...style, ...waitingPoster, visibility: hidden || inactiveReady ? 'hidden' : style?.visibility }}
     src={imageSrc}
     alt={alt}
     loading={loading}
-    onLoad={(event) => { setLoadedImage(imageSrc); onReady?.(event.currentTarget) }}
+    onLoad={(event) => {
+      const image = event.currentTarget
+      const request = image.src
+      void image.decode().then(() => {
+        if (!image.isConnected || image.src !== request) return
+        setLoadedImage(imageSrc)
+        callbacks.current.onReady?.(image)
+      }, () => {
+        if (image.isConnected && image.src === request) callbacks.current.onError?.(image)
+      })
+    }}
     onError={(event) => onError?.(event.currentTarget)}
   />
 }
