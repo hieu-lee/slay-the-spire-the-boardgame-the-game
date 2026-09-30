@@ -83,7 +83,7 @@ def render(name):
     poses = [place(drawing, size, center, ground, scale * correction)
              for drawing, correction in zip(drawings, corrections)]
     idle = poses[neutral]
-    idle_frames = [sway(poses[1] if name != 'lagavulin' and 900 <= time < 2100 else idle,
+    idle_frames = [sway(poses[1] if name == 'reptomancer' and 900 <= time < 2100 else idle,
                         .65 * math.sin(time * math.tau / 3000) + .1 * math.sin(time * math.tau / 1500))
                    for time in range(0, 3000, 60)]
     idle_frames[0] = idle_frames[-1] = idle

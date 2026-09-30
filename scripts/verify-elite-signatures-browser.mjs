@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'vite'
@@ -197,6 +197,45 @@ try {
         return image?.complete && image.naturalWidth > 0
       })
       await page.waitForTimeout(200)
+      if (actor === 'gremlin_leader') {
+        // Decode the actual runtime asset in Chromium; include the loop seam.
+        // WebKit exercises playback and handoffs below but has no ImageDecoder.
+        if (!process.argv.includes('--webkit')) {
+          const motion = await enemy.locator('img[data-animation-layer="idle"]').evaluate(async image => {
+            const decoder = new ImageDecoder({ data: await (await fetch(image.src)).arrayBuffer(), type: 'image/webp' })
+            await decoder.tracks.ready
+            const track = decoder.tracks.selectedTrack
+            const canvas = document.createElement('canvas')
+            canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+            const ctx = canvas.getContext('2d', { willReadFrequently: true })
+            const masks = []
+            let duration = 0
+            for (let frameIndex = 0; frameIndex < track.frameCount; frameIndex++) {
+              const { image: frame } = await decoder.decode({ frameIndex })
+              ctx.clearRect(0, 0, canvas.width, canvas.height)
+              ctx.drawImage(frame, 0, 0)
+              duration += frame.duration / 1000
+              frame.close()
+              const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+              masks.push(Uint8Array.from({ length: canvas.width * canvas.height }, (_, i) => pixels[i * 4 + 3] > 32 ? 1 : 0))
+            }
+            const changes = masks.map((mask, i) => {
+              const next = masks[(i + 1) % masks.length]
+              let changed = 0, painted = 0
+              for (let p = 0; p < mask.length; p++) { changed += mask[p] !== next[p]; painted += mask[p] || next[p] }
+              return changed / painted
+            })
+            const result = { frames: track.frameCount, duration, looping: track.repetitionCount === Infinity, changes }
+            decoder.close()
+            return result
+          })
+          writeFileSync(resolve(output, `${screen}-gremlin-idle-motion.json`), JSON.stringify(motion, null, 2) + '\n')
+          assert(motion.looping && motion.duration === 3000 && motion.frames > 1, 'idle must retain its three-second loop')
+          assert(Math.max(...motion.changes) > .001, 'idle must remain animated')
+          assert(Math.max(...motion.changes) < .05, `idle stance jumps between frames: ${Math.max(...motion.changes)}`)
+        }
+        await page.waitForTimeout(3200) // Record a full idle loop before testing attacks.
+      }
       await page.screenshot({ path: resolve(output, `${screen}-${actor}-idle.png`), clip: await page.locator('.board').boundingBox() })
       let previousUrl
       for (let repeat = 0; repeat < 2; repeat++) {
