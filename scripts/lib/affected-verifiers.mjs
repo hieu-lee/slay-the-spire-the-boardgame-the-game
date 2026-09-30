@@ -26,6 +26,7 @@ const focusedEngineOwners = new Map([
   ['src/game/combat.ts', ['verify-courier-browser.mjs', 'verify-combat-layout-reload-browser.mjs']],
   ['src/game/combat/board.ts', ['verify-combat-layout-reload-browser.mjs']],
   ['src/game/combat/create.ts', ['verify-combat-layout-reload-browser.mjs']],
+  ['src/game/combat/items.ts', ['verify-die-relic-browser.mjs']],
   ['src/game/noncombat.ts', ['verify-courier-browser.mjs']],
   ['src/game/run/merchant.ts', ['verify-merchant-overflow-browser.mjs', 'verify-courier-browser.mjs']],
   ['src/game/run/neow.ts', [
@@ -43,6 +44,7 @@ const focusedUiOwners = new Map([
   ['src/ui/CampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
   ['src/ui/CompendiumScreen.tsx', ['verify-compendium-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
+    'verify-die-relic-browser.mjs',
     'verify-courier-browser.mjs', 'verify-hermit-combo-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
     'verify-hermit-online-staged-trigger-browser.mjs', 'verify-combat-layout-reload-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-turn-targets-browser.mjs', 'verify-elite-signatures-browser.mjs',

@@ -11052,6 +11052,40 @@ check('per-roll Relics activate once and Loaded Die can reroute another owned Re
     'Loaded Die paid both its Energy and reroute choices')
 })
 
+check("Dolly's Mirror copies any die face for its living owner, once on a roll of 1", () => {
+  for (const teammate of [false, true]) {
+    const state = { ...combat([
+      makePlayer({ relics: [{ defId: 'dollys_mirror', spent: false },
+        ...(!teammate ? [{ defId: 'red_mask', spent: false }] : [])] }),
+      ...(teammate ? [makePlayer({ id: 'p2', row: 1,
+        relics: [{ defId: 'red_mask', spent: false }] })] : []),
+    ], [makeEnemy(), makeEnemy({ uid: 'e2', row: 1 })]), phase: 'start', die: 1 }
+    const choice = { targetRelicPlayerId: teammate ? 'p2' : 'p1',
+      targetRelicIndex: teammate ? 0 : 1, targetAbilityIndex: 0, enemyUid: 'e2' }
+    assert(canActivateRelic(state, state.players[0], 0), 'Red Mask was excluded from Mirror choices')
+    assertEqual(activateRelic(state, 'p1', 0, { ...choice, enemyUid: undefined }), state,
+      'copying Red Mask requires an enemy')
+    assertEqual(activateRelic({ ...state, die: 2 }, 'p1', 0, choice).players[0].relics[0].spent, false)
+    const used = activateRelic(state, 'p1', 0, choice)
+    assertDeepEqual(used.enemies.map((enemy) => enemy.weak), [0, 1])
+    assertEqual(used.players[0].relics[0].spent, true)
+    assertEqual(used.players[teammate ? 1 : 0].relics[teammate ? 0 : 1].spent, false)
+    assertEqual(activateRelic(used, 'p1', 0, choice), used, 'Mirror activated twice on one roll')
+  }
+  const drawn = instance('defend_ironclad')
+  const state = { ...combat([
+    makePlayer({ relics: [{ defId: 'dollys_mirror', spent: false }] }),
+    makePlayer({ id: 'p2', row: 1, draw: [drawn], relics: [{ defId: 'pocketwatch', spent: false }] }),
+  ], [makeEnemy()]), phase: 'start', die: 1 }
+  const choice = { targetRelicPlayerId: 'p2', targetRelicIndex: 0, targetAbilityIndex: 0 }
+  const used = activateRelic(state, 'p1', 0, choice)
+  assertDeepEqual(used.players.map((player) => player.hand.map((card) => card.uid)), [[], [drawn.uid]],
+    'the copied draw must go to Pocketwatch\'s owner')
+  const fallen = structuredClone(state)
+  fallen.players[1].dead = true
+  assertEqual(activateRelic(fallen, 'p1', 0, choice), fallen)
+})
+
 check('Loaded Die requires and applies Stone Calendar\'s implicit enemy target', () => {
   const state = { ...combat([makePlayer({ relics: [
     { defId: 'loaded_die', spent: false }, { defId: 'stone_calendar', spent: false },

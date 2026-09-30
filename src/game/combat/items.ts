@@ -91,7 +91,7 @@ export function canActivateRelic(state: CombatState, player: Player, relicIndex:
     heldId === 'shot_glass' && player.potions.length === 0 ||
     heldId === 'thimble_helm' && player.energy < 1) return false
   if (reroute) {
-    const face = heldId === 'dollys_mirror' ? 1 : heldId === 'nilrys_codex' ? 2 : null
+    const face = heldId === 'nilrys_codex' ? 2 : null
     return state.players.some((owner) => !owner.dead && owner.relics.some((target, targetRelicIndex) =>
       chosenDieRelicAbilities(relicDef(target.defId)).some((ability) => ability.trigger.kind === 'dieRelic' &&
         (face === null || ability.trigger.faces.includes(face)) &&
@@ -165,7 +165,7 @@ export function activateRelic(
     const targetHeld = owner?.relics[context.targetRelicIndex ?? -1]
     const ability = targetHeld && chosenDieRelicAbilities(relicDef(targetHeld.defId))[context.targetAbilityIndex ?? 0]
     const face = ability?.trigger.kind === 'dieRelic' ? ability.trigger.faces : []
-    const targetFace = heldId === 'nilrys_codex' ? 2 : heldId === 'dollys_mirror' ? 1 : undefined
+    const targetFace = heldId === 'nilrys_codex' ? 2 : undefined
     const needsEnemy = ability && (ability.target ?? 'enemy') !== 'allEnemies' &&
       ability.effects.some((effect) => reachesEnemy(effect, owner))
     if (!owner || owner.dead || !ability || (targetFace !== undefined && !face.includes(targetFace)) ||

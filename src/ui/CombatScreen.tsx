@@ -5800,7 +5800,7 @@ function CombatScreenView({
               </details>]
             }
             if (reroute) {
-              const face = heldId === 'dollys_mirror' ? 1 : heldId === 'nilrys_codex' ? 2 : null
+              const face = heldId === 'nilrys_codex' ? 2 : null
               return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
                 {state.players.filter((owner) => !owner.dead).flatMap((owner) => owner.relics.flatMap((target, targetRelicIndex) =>
                   chosenDieRelicAbilities(relicDef(target.defId)).flatMap((ability, targetAbilityIndex) => {
