@@ -139,6 +139,25 @@ const combat = (players, enemies) => createCombat(createRng(42), players, enemie
 
 suite('combat')
 
+for (const defId of ['donu', 'deca']) for (const ascension of [0, 10]) {
+  check(`${defId} at Ascension ${ascension} attacks twice, applying Strength to each hit in every row`, () => {
+    for (const strength of [0, 2]) {
+      const state = combat([
+        makePlayer({ block: 4 }),
+        makePlayer({ id: 'p2', row: 1, block: 4 }),
+      ], [makeEnemy({
+        defId, ascension, strength, isBoss: true, hp: 50, maxHp: 50,
+        actionIndex: defId === 'donu' ? 1 : 0,
+      })])
+      const resolved = enemyTurn({ ...state, phase: 'enemy' })
+      for (const player of resolved.players) {
+        assertEqual(player.hp, strength === 0 ? 8 : 4, 'two 3-damage hits plus Strength, after 4 Block')
+        assertEqual(player.block, 0, 'the attack consumes Block')
+      }
+    }
+  })
+}
+
 check('row labels use character names and disambiguate duplicate characters', () => {
   const named = combat([
     makePlayer({ name: 'Ann', character: 'ironclad' }),

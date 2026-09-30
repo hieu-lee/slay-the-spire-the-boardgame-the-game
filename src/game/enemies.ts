@@ -1373,7 +1373,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     hpByPlayers: perPlayer(50),
     pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'strengthenAllEnemies', amount: 1 }] },
-      { actions: [{ kind: 'attack', amount: 3, times: 3 }] },
+      { actions: [{ kind: 'attack', amount: 3, times: 2 }] },
     ] },
     ascension: [{ min: 10, hpByPlayers: perPlayer(55) }],
   },
@@ -1382,11 +1382,11 @@ export const ENEMIES: Record<string, EnemyDef> = {
     id: 'deca', name: 'Deca', isBoss: true, bossAct: 3,
     hpByPlayers: perPlayer(50),
     pattern: { kind: 'cube', slots: [
-      { actions: [{ kind: 'attack', amount: 3, times: 3 }] },
+      { actions: [{ kind: 'attack', amount: 3, times: 2 }] },
       { actions: [{ kind: 'daze', amount: 1, aoe: true }, { kind: 'status', card: 'slimed', amount: 1, aoe: true }] },
     ] },
     ascension: [{ min: 10, hpByPlayers: perPlayer(55), pattern: { kind: 'cube', slots: [
-      { actions: [{ kind: 'attack', amount: 3, times: 3 }] },
+      { actions: [{ kind: 'attack', amount: 3, times: 2 }] },
       { actions: [{ kind: 'daze', amount: 1, aoe: true }, { kind: 'status', card: 'slimed', amount: 2, aoe: true }] },
     ] } }],
   },
