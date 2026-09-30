@@ -49,12 +49,11 @@ def render(name, spec, output):
         wings = [register(wing) for wing in wings]
         body = register(body)
         pivots = [(x*scale+offset[0], y*scale+offset[1]) for x,y in [(400,220),(630,245)]]
-        duration = 3000
-        times = [round(i*duration/72) for i in range(72)]
+        duration = spec['idleDuration']
+        times = [round(i*duration/24) for i in range(24)]
         frames = []
         for t in times:
-            # Three wingbeats per loop; the torso does not scale with the wings.
-            wave = math.sin(2*math.pi*t/1000)
+            wave = math.sin(2*math.pi*t/duration)
             canvas = Image.new('RGBA', size)
             canvas.alpha_composite(rotate(wings[0], -24*wave, pivots[0]))
             canvas.alpha_composite(rotate(wings[1], 27*wave, pivots[1]))

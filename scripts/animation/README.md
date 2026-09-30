@@ -245,9 +245,13 @@ Damage impacts and projectile destinations use the cached painted body center,
 with sprite scale, padding and object fit applied. Acid instead grows from its
 painted base at foot level; Defect's beam source retains its mouth registration.
 
-Byrd's idle uses three full wingbeats per 3000ms loop, with separate rigid wing
-layers behind a fixed-size body. The whole sprite rises and falls 14 pixels
-either side of its resting position with each wingbeat. Cultist draws back both
+Byrd's idle uses one full wingbeat per 1000ms loop, with separate rigid wing
+layers behind a fixed-size body. Its 24 frames keep the original 800x533
+resolution, 41/42ms frame timing and encoding quality. Repeating that single
+cycle replaces the former three identical cycles, reducing the full-RGBA frame
+storage budget from about 117MiB to 39MiB without changing the wing motion.
+The whole sprite rises and falls 14 pixels either side of its resting position
+with each wingbeat. Cultist draws back both
 sticks, releases at 500ms, holds empty hands through impact at 1000ms and recovers
 by 1830ms. The two rigid
 props spin along separate upward curves from their respective hands to each

@@ -35,9 +35,10 @@ def reviewed_rigs():
                 alpha = np.array(frame.getchannel('A'))
                 boxes.append(Image.fromarray(np.where(alpha>32,255,0).astype('uint8')).getbbox())
                 areas.append((alpha>32).sum())
-            assert len(frames) >= (spec.get('minFrames',45) if pose=='attack' else 45), (name, pose, 'insufficient motion samples')
+            expected_duration = spec.get('idleDuration',3000) if pose=='idle' else spec.get('duration',1830)
+            assert len(frames) >= (spec.get('minFrames',45) if pose=='attack' else expected_duration*45/3000), (name, pose, 'insufficient motion samples')
             assert min(durations) >= 20 and max(durations) <= (spec.get('maxFrameDuration',67) if pose=='attack' else 67), (name, pose, 'browser frame cadence')
-            assert sum(durations) == (3000 if pose == 'idle' else spec.get('duration',1830)), (name,pose,'duration')
+            assert sum(durations) == expected_duration, (name,pose,'duration')
             assert all(b and b[0]>0 and b[1]>0 and b[2]<im.width and b[3]<im.height for b in boxes), (name,pose,'clipped silhouette')
             # Trickster's intentional spectral duplicate adds painted area at impact.
             if pose == 'idle' or not has_authored_attack(name) or ('drawnSheet' in spec and name not in ('downfall_trickster','hero-guardian-defense')):
@@ -97,8 +98,9 @@ def render_gallery(group, batch):
         canvas=Image.new('RGB',(1280,640),'#26333c');draw=ImageDraw.Draw(canvas)
         for j,(name,poses,duration) in enumerate(group):
             pose='attack' if 3000<=t<3000+duration else 'idle'
-            local=t-3000 if pose=='attack' else t%3000
-            frames,ends=poses[pose];frame=frames[min(len(frames)-1,int(np.searchsorted(ends,local)))].copy()
+            frames,ends=poses[pose]
+            local=t-3000 if pose=='attack' else t%ends[-1]
+            frame=frames[min(len(frames)-1,int(np.searchsorted(ends,local)))].copy()
             frame.thumbnail((310,280),Image.Resampling.LANCZOS)
             x=j%4*320;y=j//4*320
             draw.line((x,y+291,x+320,y+291),fill='#52636f')

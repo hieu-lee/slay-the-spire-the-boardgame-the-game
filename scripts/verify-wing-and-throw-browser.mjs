@@ -47,7 +47,6 @@ async function createFixturePage(context) {
         authoritativeRestoration: f.restoration, onAction: f.onAction,
       })))
       f.install = (defId, multiplayer = false) => {
-        if (defId === 'byrd') defId = 'byrd_encounter'
         const rng = createRng(47)
         const players = Array.from({ length: multiplayer ? 4 : 1 }, (_, i) => {
           const player = createPlayer(rng, `p${i+1}`, `Player ${i+1}`, 'ironclad', i)
@@ -58,13 +57,23 @@ async function createFixturePage(context) {
         })
         const enemy = { uid: 'enemy-0', defId, row: 0, isBoss: false, hp: 99, maxHp: 99,
           block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, actionIndex: 0, abilityUsed: false, dead: false }
-        f.state = createCombat(rng, players, [enemy])
+        const enemies = defId === 'byrd' ? ['byrd_s13', 'byrd_s31', 'byrd_31s'].map((defId, index) => ({
+          ...enemy, uid: `enemy-${index}`, defId,
+        })) : [enemy]
+        f.state = createCombat(rng, players, enemies)
         f.state.players.forEach((player, i) => { player.row = i; player.facingEnemyUid = enemy.uid })
         f.state.phase = 'player'; f.state.presentationEvents = []; f.state.die = 1
         f.restoration++; f.render()
       }
   })
   return page
+}
+
+async function waitForStaticEnemies(page, count) {
+  await page.waitForFunction(count => {
+    const enemies = [...document.querySelectorAll('.enemy')]
+    return enemies.length === count && enemies.every(enemy => enemy.dataset.animation === 'static')
+  }, count)
 }
 
 async function observeCultistArrival(page) {
@@ -170,22 +179,28 @@ async function verify() {
     const page = await createFixturePage(context)
     await page.evaluate(() => window.fixture.install('byrd'))
     const art = page.locator('.enemy__art--cutout:not([data-inactive])')
-    await page.waitForFunction(() => [...document.querySelectorAll('.enemy__art--cutout')].some(image => image.complete && image.naturalWidth))
-    // CSS is static while these pixels move; this must be the baked wingbeat.
-    const firstWingPose = await art.screenshot()
-    let wingMoved = false
-    for (let attempt = 0; attempt < 4 && !wingMoved; attempt++) {
-      await page.waitForTimeout(250)
-      wingMoved = !firstWingPose.equals(await art.screenshot())
-    }
-    assert(wingMoved, `${screen}: wing texture is frozen`)
-    const clearance = await art.evaluate(image => {
-      const r = image.getBoundingClientRect()
-      const fit = Math.min(r.width/image.naturalWidth, r.height/image.naturalHeight)
-      const top = r.bottom-(image.naturalHeight-33)*fit
-      return top-image.closest('.enemy').querySelector('.enemy__intent').getBoundingClientRect().bottom
+    await page.waitForFunction(() => {
+      const images = [...document.querySelectorAll('.enemy__art--cutout:not([data-inactive])')]
+      return images.length === 3 && images.every(image => image.complete && image.naturalWidth)
     })
-    assert(clearance > 4, `${screen}: raised wing overlaps attack intent (${clearance}px)`)
+    // CSS is static while these pixels move; this must be the baked wingbeat.
+    for (let index = 0; index < 3; index++) {
+      const bird = art.nth(index)
+      const firstWingPose = await bird.screenshot()
+      let wingMoved = false
+      for (let attempt = 0; attempt < 4 && !wingMoved; attempt++) {
+        await page.waitForTimeout(250)
+        wingMoved = !firstWingPose.equals(await bird.screenshot())
+      }
+      assert(wingMoved, `${screen}: Byrd ${index} wing texture is frozen`)
+      const clearance = await bird.evaluate(image => {
+        const r = image.getBoundingClientRect()
+        const fit = Math.min(r.width/image.naturalWidth, r.height/image.naturalHeight)
+        const top = r.bottom-(image.naturalHeight-33)*fit
+        return top-image.closest('.enemy').querySelector('.enemy__intent').getBoundingClientRect().bottom
+      })
+      assert(clearance > 4, `${screen}: Byrd ${index} raised wing overlaps attack intent (${clearance}px)`)
+    }
     await page.screenshot({ path: resolve(output, `${screen}-byrd-idle.png`), scale: 'css' })
 
     if (byrdOnly) {
@@ -193,7 +208,7 @@ async function verify() {
         document.documentElement.dataset.reducedMotion = 'true'
         window.fixture.install('byrd')
       })
-      await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'static')
+      await waitForStaticEnemies(page, 3)
       await context.close()
       console.log(`PASS ${screen}: Byrd idle animation, HUD clearance and reduced motion`)
       continue
@@ -494,8 +509,7 @@ async function verify() {
         document.documentElement.dataset.reducedMotion = 'true'
         window.fixture.install(id)
       }, id)
-      await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'static')
-      assert.equal(await page.locator('.enemy').getAttribute('data-animation'), 'static')
+      await waitForStaticEnemies(page, id === 'byrd' ? 3 : 1)
       await page.evaluate(() => { const f = window.fixture; f.state.phase = 'enemy'; f.render() })
       await page.waitForTimeout(100)
       assert.equal(await page.locator('.boss-projectile').count(), 0, 'reduced motion still throws')

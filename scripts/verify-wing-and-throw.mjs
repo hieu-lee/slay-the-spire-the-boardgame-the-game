@@ -11,12 +11,16 @@ import numpy as np
 import xml.etree.ElementTree as ET
 root = Path('public/assets/combat/enemies/animated')
 byrd = Image.open(root/'byrd-idle.webp')
+assert byrd.size == (800,533), 'wingbeat lost its full-resolution canvas'
+assert byrd.width*byrd.height*4*byrd.n_frames <= 48*1024*1024, 'wingbeat exceeds its decoded frame storage budget'
 tops = []
 bodies = []
 bottoms = []
+durations = []
 for i in range(byrd.n_frames):
     byrd.seek(i)
     pixels = np.array(byrd.convert('RGBA'))
+    durations.append(byrd.info['duration'])
     y,x = np.where(pixels[:,:,3][:,560:] > 96)
     tops.append(y.min())
     bottom = np.where(pixels[:,:,3] > 96)[0].max()
@@ -27,6 +31,7 @@ assert max(tops)-min(tops)>100, ('wings barely move', tops)
 assert 20 <= max(bottoms)-min(bottoms) <= 40, ('missing gentle flight bob', bottoms)
 assert max(abs(previous-current) for previous,current in zip(bottoms,bottoms[1:]+bottoms[:1])) <= 5, 'flight bob jumps at a frame or loop boundary'
 assert max(np.abs(bodies[0].astype(float)-b.astype(float)).mean() for b in bodies)<3, 'wingbeat scales the torso'
+assert sum(durations)==1000 and all(41 <= duration <= 42 for duration in durations), 'wingbeat cadence changed'
 attack = Image.open(root/'cultist-attack.webp')
 elapsed = 0
 released = 0
@@ -42,7 +47,7 @@ for i in range(attack.n_frames):
         released += 1
     elapsed += attack.info['duration']
 assert released>20 and elapsed==1830, 'missing release/recovery samples'
-assert (root/'byrd-idle.webp').stat().st_size<4_000_000
+assert (root/'byrd-idle.webp').stat().st_size<1_200_000, 'wingbeat exceeds its download budget'
 assert (root/'cultist-attack.webp').stat().st_size<3_200_000
 svg_path = root/'cultist-attack.svg'
 svg = ET.parse(svg_path).getroot()
