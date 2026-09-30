@@ -19,7 +19,15 @@ const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
 const errors = []
 page.on('pageerror', (error) => errors.push(String(error)))
-const shot = (name) => page.screenshot({ path: join(output, `${name}.png`) })
+const shot = async (name) => {
+  await page.evaluate(() => document.fonts.ready)
+  await page.waitForFunction(() => [...document.querySelectorAll('.compendium-card > img, .compendium__detail-card > img')].every(image => {
+    const rect = image.getBoundingClientRect()
+    if (rect.bottom <= 0 || rect.top >= innerHeight || rect.right <= 0 || rect.left >= innerWidth) return true
+    return image.complete && (image.naturalWidth === 0 || getComputedStyle(image).visibility === 'visible')
+  }))
+  return page.screenshot({ path: join(output, `${name}.png`) })
+}
 const labels = () => page.locator('.compendium-card').evaluateAll((cards) => cards.map((card) => card.getAttribute('aria-label')))
 const search = page.getByRole('searchbox', { name: 'Search cards' })
 // The title element grows with its text, so a two-line title is measured

@@ -5,7 +5,7 @@
 //
 // Names and helpers live in ./icons.ts so verify scripts can import them; Node's
 // type stripping cannot parse JSX.
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { ICON_LABELS, dieIcon, iconPath, statusIconPath } from './icons.ts'
 import type { IconName, StatusIconName } from './icons.ts'
 
@@ -29,7 +29,7 @@ type IconProps = {
   decorative?: boolean
 }
 
-export function Icon({ name, size = 20, decorative = true }: IconProps) {
+export const Icon = memo(function Icon({ name, size = 20, decorative = true }: IconProps) {
   const [missing, setMissing] = useState(false)
   useEffect(() => setMissing(false), [name])
   const fallback = FALLBACKS[name]
@@ -65,9 +65,9 @@ export function Icon({ name, size = 20, decorative = true }: IconProps) {
       onError={() => setMissing(true)}
     />
   )
-}
+})
 
-export function StatusIcon({ name, size = 22 }: { name: StatusIconName; size?: number }) {
+export const StatusIcon = memo(function StatusIcon({ name, size = 22 }: { name: StatusIconName; size?: number }) {
   return (
     <img
       className="icon icon--status"
@@ -79,10 +79,10 @@ export function StatusIcon({ name, size = 22 }: { name: StatusIconName; size?: n
       draggable={false}
     />
   )
-}
+})
 
 /** An icon with a number beside it, which is how the cards themselves read. */
-export function IconValue({
+export const IconValue = memo(function IconValue({
   name,
   value,
   size = 20,
@@ -103,4 +103,4 @@ export function IconValue({
       <span className="visually-hidden">{` ${LABELS[name]}`}</span>
     </span>
   )
-}
+})

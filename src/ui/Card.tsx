@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
@@ -443,13 +443,20 @@ export function slimeCommandText(def: CardDef, level: number): string {
     effects.map(effectText).join(', then ')
 }
 
+const rulesText = new WeakMap<CardDef, string>()
+const ruleDescriptions = new WeakMap<CardDef, string>()
+
 export function cardRulesText(def: CardDef): string {
+  const cached = rulesText.get(def)
+  if (cached !== undefined) return cached
   const printed = def.printedText ?? def.guardian?.sourceText
   const slimeRules = Object.keys(def.slimeLevels ?? {})
     .map(Number).sort((left, right) => left - right)
     .map((level) => slimeCommandText(def, level)).join('; ')
   if (printed) {
-    return [printed, slimeRules].filter(Boolean).join(', ')
+    const rules = [printed, slimeRules].filter(Boolean).join(', ')
+    rulesText.set(def, rules)
+    return rules
   }
   const rules = [
     // A row always takes the boss too, wherever the boss stands (p.15). Saying
@@ -495,6 +502,7 @@ export function cardRulesText(def: CardDef): string {
   ]
     .filter(Boolean)
     .join(', ')
+  rulesText.set(def, rules)
   return rules
 }
 
@@ -504,16 +512,20 @@ export function cardPlayText(def: CardDef, cost = def.cost): string {
 }
 
 export function cardRuleDescription(def: CardDef): string {
+  const cached = ruleDescriptions.get(def)
+  if (cached !== undefined) return cached
   const tokens: Readonly<Record<string, string>> = {
     damage: 'damage', block: 'Block', copy: 'copy', vigor: 'Vigor', energy: 'Energy', strength: 'Strength',
     'mode-shift': 'Mode Shift', dazed: 'Dazed', debuff: 'Vulnerable', weak: 'Weak', aoe: 'area effect', hp: 'HP', remove: 'remove',
     vulnerable: 'Vulnerable',
   }
-  return cardRulesText(def).replace(/\[([a-z-]+)\]/gi, (token, name: string) => tokens[name.toLowerCase()] ?? token)
+  const description = cardRulesText(def).replace(/\[([a-z-]+)\]/gi, (token, name: string) => tokens[name.toLowerCase()] ?? token)
+  ruleDescriptions.set(def, description)
+  return description
 }
 
 export function cardAccessibleName(def: CardDef, cost = def.cost): string {
-  const [playability] = cardPlayText(def, cost).split(', ')
+  const playability = def.unplayable ? 'unplayable' : `cost ${costLabel(def, cost)}`
   return [def.name, playability, cardTypeLabel(def), cardRuleDescription(def)].filter(Boolean).join(', ')
 }
 
@@ -587,7 +599,9 @@ export function cardKeywordTips(def: CardDef): readonly CardKeywordTip[] {
   return tips
 }
 
-export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips = [], hover = false, children }: {
+const EMPTY_KEYWORD_TIPS: readonly CardKeywordTip[] = []
+
+export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips = EMPTY_KEYWORD_TIPS, hover = false, children }: {
   def?: CardDef
   hover?: boolean
   additionalDef?: CardDef | null
@@ -600,21 +614,23 @@ export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips 
     'data-help-on-hover'?: boolean
   }) => React.ReactNode
 }) {
-  const attachedTips = additionalDef ? cardKeywordTips(additionalDef) : []
-  const attachedGemPowerDamage = (gemPowerDamage ?? def?.guardian?.printedType === 'Gem Power') &&
-    attachedTips.some((tip) => tip.name === 'Hit')
-  const additionalTips = additionalDef ? [
-    { name: additionalDef.name, text: cardRuleDescription(additionalDef) },
-    ...attachedTips.filter((tip) => tip.name !== 'Unplayable' && !(tip.name === 'Hit' && attachedGemPowerDamage)),
-    ...(attachedGemPowerDamage ? [{
-      name: 'Gem Power damage',
-      text: 'Damage printed by a Gem on a Gem Power ignores Strength, Weak, Vulnerable, and Vigor.',
-      icon: 'attack' as IconName,
-    }] : []),
-  ] : []
-  const tips = [...(def ? cardKeywordTips(def) : []), ...additionalTips, ...extraTips]
-    .filter((tip, index, all) => all.findIndex((candidate) => candidate.name === tip.name) === index)
-  const tipsKey = JSON.stringify(tips)
+  const { tips, tipsKey, description } = useMemo(() => {
+    const attachedTips = additionalDef ? cardKeywordTips(additionalDef) : []
+    const attachedGemPowerDamage = (gemPowerDamage ?? def?.guardian?.printedType === 'Gem Power') &&
+      attachedTips.some((tip) => tip.name === 'Hit')
+    const additionalTips = additionalDef ? [
+      { name: additionalDef.name, text: cardRuleDescription(additionalDef) },
+      ...attachedTips.filter((tip) => tip.name !== 'Unplayable' && !(tip.name === 'Hit' && attachedGemPowerDamage)),
+      ...(attachedGemPowerDamage ? [{
+        name: 'Gem Power damage',
+        text: 'Damage printed by a Gem on a Gem Power ignores Strength, Weak, Vulnerable, and Vigor.',
+        icon: 'attack' as IconName,
+      }] : []),
+    ] : []
+    const tips = [...(def ? cardKeywordTips(def) : []), ...additionalTips, ...extraTips]
+      .filter((tip, index, all) => all.findIndex((candidate) => candidate.name === tip.name) === index)
+    return { tips, tipsKey: JSON.stringify(tips), description: tips.map((tip) => `${tip.name}: ${tip.text}`).join(' ') }
+  }, [def, additionalDef, gemPowerDamage, extraTips])
   const tooltipId = `card-keyword-help-${useId()}`
   const anchorRef = useRef<HTMLElement | null>(null)
   const [mounted, setMounted] = useState(false)
@@ -637,7 +653,7 @@ export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips 
   return <>
     {children(props)}
     {tips.length > 0 ? <span className="visually-hidden" id={`${tooltipId}-description`}>
-      {tips.map((tip) => `${tip.name}: ${tip.text}`).join(' ')}
+      {description}
     </span> : null}
     {host && tips.length > 0 ? createPortal(
       <span className="card-keyword-tips" id={tooltipId} role="tooltip">

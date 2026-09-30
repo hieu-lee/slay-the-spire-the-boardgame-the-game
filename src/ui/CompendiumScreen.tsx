@@ -117,6 +117,21 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
       .sort((a, b) => (ascending ? 1 : -1) * a.name.localeCompare(b.name))
   }, [ascending, cost, pool, rarities, search, type, upgraded])
 
+  const grid = useMemo(() => <div className="compendium__grid">
+    {cards.map((card) => {
+      const showUpgrade = upgraded && Boolean(card.upgrade)
+      const face = faceOf(card, showUpgrade)
+      return (
+        <CardKeywordHelp def={face} key={card.id}>{(keywordHelpProps) => (
+          <button {...keywordHelpProps} type="button" className={`compendium-card compendium-card--${card.owner}`} style={gemTint(face)}
+            onClick={() => setSelected(card)} aria-label={`${cardAccessibleName(face)}, ${face.rarity}`}>
+            <ScannedCardFace def={face} upgraded={showUpgrade} />
+          </button>
+        )}</CardKeywordHelp>
+      )
+    })}
+  </div>, [cards, upgraded])
+
   const toggleRarity = (value: CardDef['rarity']) => setRarities((current) => {
     const next = new Set(current)
     if (next.has(value)) next.delete(value)
@@ -191,20 +206,7 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
             </label>
           </div>
         </header>
-        <div className="compendium__grid">
-          {cards.map((card) => {
-            const showUpgrade = upgraded && Boolean(card.upgrade)
-            const face = faceOf(card, showUpgrade)
-            return (
-              <CardKeywordHelp def={face} key={card.id}>{(keywordHelpProps) => (
-                <button {...keywordHelpProps} type="button" className={`compendium-card compendium-card--${card.owner}`} style={gemTint(face)}
-                  onClick={() => setSelected(card)} aria-label={`${cardAccessibleName(face)}, ${face.rarity}`}>
-                  <ScannedCardFace def={face} upgraded={showUpgrade} />
-                </button>
-              )}</CardKeywordHelp>
-            )
-          })}
-        </div>
+        {grid}
         {cards.length === 0 ? <p className="compendium__empty">No cards match these filters.</p> : null}
       </section>
 

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { CardDef } from '../game/cards.ts'
 import { cardArtPath } from '../game/assets.ts'
 import { BASE_CHARACTER_IDS } from '../game/types.ts'
@@ -16,7 +17,7 @@ export function cardTypeLabel(def: CardDef): string {
 }
 
 /** Repo-native card face shown underneath an optional publisher scan. */
-export function CardFace({
+export const CardFace = memo(function CardFace({
   def, cost = def.cost, rules, className = '', illustration = true,
 }: CardFaceProps) {
   const shownCost = def.unplayable ? '—' : cost
@@ -38,4 +39,4 @@ export function CardFace({
       <span className="card-face__rules">{rules}</span>
     </span>
   )
-}
+})
