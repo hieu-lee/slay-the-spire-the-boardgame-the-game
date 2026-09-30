@@ -182,8 +182,8 @@ export function gainPotion(player: Player, potionId: string, ascension: number):
 export function removeCard(player: Player, uid: string): Player {
   const card = player.deck.find((candidate) => candidate.uid === uid)
   if (!card || card.defId === 'ascenders_bane') return player
-  const maxHp = card.defId === 'parasite' ? Math.max(1, player.maxHp - 2) : player.maxHp
-  const next = { ...player, hp: Math.min(player.hp, maxHp), maxHp,
+  const hp = card.defId === 'parasite' ? Math.max(0, player.hp - 2) : player.hp
+  const next = { ...player, hp, dead: player.dead || hp === 0,
     deck: player.deck.filter((candidate) => candidate.uid !== uid) }
   const gold = card.defId === 'hermit_fatal_desire' ? fatalDesireGold('remove', card.upgraded) : 0
   return gold > 0 ? gainGold(next, gold) : next

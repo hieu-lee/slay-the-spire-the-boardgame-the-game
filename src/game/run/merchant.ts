@@ -42,7 +42,9 @@ export function removeAtCurrentMerchant(
   if (!eligible.some((player) => player.id === playerId)) return state
   const result = removeAtMerchant(state.roomState, eligible, state.ascension, playerId, cardUid, payments)
   const byId = result && new Map(result.players.map((player) => [player.id, player]))
-  return result ? { ...state, roomState: result.shop, players: state.players.map((player) => byId?.get(player.id) ?? player) } : state
+  if (!result) return state
+  const next = { ...state, roomState: result.shop, players: state.players.map((player) => byId?.get(player.id) ?? player) }
+  return byId?.get(playerId)?.dead ? { ...next, phase: 'defeat', roomState: null, setup: null } : next
 }
 
 export function finishMerchant(state: RunState): RunState {

@@ -519,6 +519,7 @@ export function resolveNeowEffect(
       redRewardsRemaining: transformedRed ? Math.max(0, redRemaining - 1) : progress.redRewardsRemaining,
     } } },
   }
+  if (owner.dead) return { ...next, phase: 'defeat', neow: null }
   next = queueNewGuardianSockets(state, next)
   if (transformedRed) return next
   next = nextNeowReward(next, playerId)

@@ -31,6 +31,8 @@ try {
       { id: 'p2', name: 'Ironclad', character: 'ironclad' },
     ])
     fixture.players.forEach((player) => { player.gold = 30 })
+    Object.assign(fixture.players[0], { hp: 6, maxHp: 9 })
+    fixture.players[0].deck[0] = { ...fixture.players[0].deck[0], defId: 'parasite' }
     fixture.phase = 'room'
     fixture.roomState = {
       kind: 'merchant', relics: ['wing_boots', 'toxic_egg', 'anchor'],
@@ -52,9 +54,10 @@ try {
     const before = await dimensions()
     const deckSize = fixture.players[0].deck.length
     await page.getByRole('button', { name: /Card Removal Service/ }).click()
-    await page.getByRole('group', { name: 'Card to remove' }).getByRole('button').first().click()
+    await page.getByRole('group', { name: 'Card to remove' }).getByRole('button', { name: /Parasite/ }).click()
     await page.getByRole('button', { name: /Remove selected card/ }).click()
     await page.waitForFunction((size) => window.__STS_DEBUG__.getRun().players[0].deck.length === size - 1, deckSize)
+    await page.getByRole('img', { name: 'Health 4 of 9', exact: true }).waitFor()
     const hand = stage.locator('.merchant-hand')
     await hand.evaluate(async (element) => {
       for (const animation of element.getAnimations()) { animation.pause(); animation.currentTime = 400 }

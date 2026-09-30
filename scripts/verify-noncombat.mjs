@@ -20,6 +20,7 @@ import {
   pendingRelicPreview,
   revealCardReward,
   revealCourier,
+  removeAtCurrentMerchant,
   resolveCardRewards,
   resolveCombat,
   resolveCampfire,
@@ -194,15 +195,35 @@ check('A4 potion limit and A8 removal price are exact thresholds', () => {
   assertEqual(removeAtMerchant(removed.shop, removed.players, 8, 'p1', removed.players[0].deck[0].uid, { p1: 4 }), null)
 })
 
-check('removing Parasite applies its printed maximum-HP loss at the Merchant', () => {
-  const party = players(1)
-  party[0].deck[0] = { ...party[0].deck[0], defId: 'parasite' }
-  party[0].hp = 9
-  party[0].maxHp = 9
-  const shop = createMerchant(createItemDecks(createRng(404), false), party)
-  const removed = removeAtMerchant(shop, party, 0, 'p1', party[0].deck[0].uid, { p1: 3 })
-  assertEqual(removed?.players[0].maxHp, 7)
-  assertEqual(removed?.players[0].hp, 7)
+check('removing Parasite loses 2 current HP, preserves maximum HP, and can be lethal', () => {
+  for (const hp of [9, 6, 2, 1]) {
+    const party = players(1)
+    party[0].deck[0] = { ...party[0].deck[0], defId: 'parasite' }
+    party[0].hp = hp
+    party[0].maxHp = 9
+    const uid = party[0].deck[0].uid
+    const shop = createMerchant(createItemDecks(createRng(404), false), party)
+    const removed = removeAtMerchant(shop, party, 0, 'p1', uid, { p1: 3 })
+    assertEqual(removed?.players[0].maxHp, 9)
+    assertEqual(removed?.players[0].hp, Math.max(0, hp - 2))
+    assertEqual(removed?.players[0].dead, hp <= 2)
+    assert(!removed.players[0].deck.some((card) => card.uid === uid))
+    assertEqual(removed.players[0].gold, party[0].gold - 3)
+    assertEqual(party[0].hp, hp, 'removal mutated its input')
+  }
+})
+
+check('lethal Parasite removal at the Merchant ends the run immediately', () => {
+  const run = postNeowRun(404, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.players[0] = { ...run.players[0], hp: 1, gold: 12 }
+  run.players[0].deck[0] = { ...run.players[0].deck[0], defId: 'parasite' }
+  run.phase = 'room'
+  run.roomState = createMerchant(run.itemDecks, run.players)
+  const removed = removeAtCurrentMerchant(run, 'p1', run.players[0].deck[0].uid, { p1: 3 })
+  assertEqual(removed.phase, 'defeat')
+  assertEqual(removed.roomState, null)
+  assertEqual(removed.players[0].hp, 0)
+  assertEqual(removed.players[0].dead, true)
 })
 
 check('replacing one duplicate Potion bottoms exactly that copy', () => {

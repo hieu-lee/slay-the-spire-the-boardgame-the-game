@@ -84,6 +84,23 @@ check('Quick Start skips an optionless card operation before revealing the next 
   assertEqual(run.roomState?.kind, 'merchant')
 })
 
+check('Quick Start removal applies Parasite HP loss and stops setup when lethal', () => {
+  for (const hp of [6, 1]) {
+    let run = createRun(3301, [party[0]], 0, createCampaignProgress(), false, false, { quickStartAct: 3 })
+    run = { ...run, phase: 'setup', neow: null,
+      setup: { ...run.setup, rowIndex: 10, playerIndex: 0, repeatIndex: 0, die: null } }
+    run.players[0].hp = hp
+    run.players[0].deck[0] = { ...run.players[0].deck[0], defId: 'parasite' }
+    const maxHp = run.players[0].maxHp
+    run = advanceQuickSetup(run, [run.players[0].deck[0].uid])
+    assertEqual(run.players[0].hp, Math.max(0, hp - 2))
+    assertEqual(run.players[0].maxHp, maxHp)
+    assertEqual(run.players[0].dead, hp === 1)
+    assertEqual(run.phase === 'defeat', hp === 1)
+    if (hp === 1) assertEqual(run.setup, null)
+  }
+})
+
 check('Quick Start and Catch Up skip Transform when the physical replacement supply is unusable', () => {
   for (const kind of ['quick-start', 'catch-up']) {
     let run = createRun(kind === 'quick-start' ? 3302 : 3303, [party[0]], 0,

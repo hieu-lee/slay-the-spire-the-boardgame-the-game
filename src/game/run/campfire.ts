@@ -90,14 +90,12 @@ export function resolveCampfire(
       const removable = hasRelic(player, 'peace_pipe') && decision.removeCardUid
         ? player.deck.find((card) => card.uid === decision.removeCardUid)
         : undefined
-      const rested = removable ? removeCard(player, removable.uid) : player
-      const transformed = decision.transformCardUid
+      // Rest heals before Peace Pipe removes a card and applies its removal cost.
+      const healed = { ...player, hp: Math.min(healingCapFor(player, state.meta.ruleset),
+        player.hp + 3 + (hasRelic(player, 'regal_pillow') ? 3 : 0)) }
+      const rested = removable ? removeCard(healed, removable.uid) : healed
+      return decision.transformCardUid
         ? transformCard(state.rng, rested, decision.transformCardUid, `c${uid++}`) : rested
-      const healed = Math.min(transformed.maxHp, transformed.hp + 3 + (hasRelic(transformed, 'regal_pillow') ? 3 : 0))
-      return {
-        ...transformed,
-        hp: Math.min(healingCapFor(transformed, state.meta.ruleset), healed),
-      }
     }
 
     if (hasRelic(player, 'fusion_hammer')) return player
@@ -116,6 +114,10 @@ export function resolveCampfire(
     }
   })
 
+  if (players.some((player, index) => player.dead && !state.players[index]!.dead)) {
+    return { ...state, phase: 'defeat', roomState: null, players,
+      log: [...state.log, 'The party falls at a campfire.'] }
+  }
   return queueNewGuardianSockets(state, {
     ...state,
     phase: 'map',

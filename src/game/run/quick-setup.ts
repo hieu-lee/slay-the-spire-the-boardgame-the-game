@@ -187,8 +187,9 @@ function advanceQuickSetupUnit(state: RunState, cardUids: readonly string[] = []
       owner = transformed
     }
   }
-  return queueNewGuardianSockets(state,
-    withAdvancedSetup({ ...state, players: state.players.map((candidate) => candidate.id === owner.id ? owner : candidate) }))
+  const next = { ...state, players: state.players.map((candidate) => candidate.id === owner.id ? owner : candidate) }
+  if (owner.dead) return { ...next, phase: 'defeat', setup: null }
+  return queueNewGuardianSockets(state, withAdvancedSetup(next))
 }
 
 /** Advance deterministic/no-op setup rows until the next choice or revealed reward. */

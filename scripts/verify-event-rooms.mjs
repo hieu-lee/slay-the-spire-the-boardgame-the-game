@@ -515,25 +515,33 @@ check('The Last Stand ends the Act after Mind Bloom rewards instead of returning
   assertEqual(run.campaignProgress.highestAscension, 1)
 })
 
-check('Event removal applies Parasite maximum-HP loss through the shared helper', () => {
-  let run = inEvent('living_wall', 1)
-  run.players[0].deck[0] = { ...run.players[0].deck[0], defId: 'parasite' }
-  run.players[0].hp = 9
-  run.players[0].maxHp = 9
-  run = chooseEvent(run, 'p1', { optionIds: ['forget'], cardUids: [run.players[0].deck[0].uid] })
-  assertEqual(run.players[0].maxHp, 7)
-  assertEqual(run.players[0].hp, 7)
+check('Event removal applies Parasite current-HP loss through the shared helper', () => {
+  for (const hp of [9, 1]) {
+    let run = inEvent('living_wall', 1)
+    run.players[0].deck[0] = { ...run.players[0].deck[0], defId: 'parasite' }
+    run.players[0].hp = hp
+    run.players[0].maxHp = 9
+    run = chooseEvent(run, 'p1', { optionIds: ['forget'], cardUids: [run.players[0].deck[0].uid] })
+    assertEqual(run.players[0].maxHp, 9)
+    assertEqual(run.players[0].hp, Math.max(0, hp - 2))
+    assertEqual(run.players[0].dead, hp === 1)
+    assertEqual(run.phase === 'defeat', hp === 1)
+  }
 })
 
-check('Purifier applies every removed Parasite maximum-HP loss', () => {
-  let run = inEvent('purifier', 1)
-  run.players[0].deck.push({ uid: 'c901', defId: 'parasite', upgraded: false }, { uid: 'c902', defId: 'parasite', upgraded: false })
-  run.players[0].hp = 9
-  run.players[0].maxHp = 9
-  run = chooseEvent(run, 'p1', { optionIds: ['cleanse'] })
-  assertEqual(run.players[0].maxHp, 5)
-  assertEqual(run.players[0].hp, 5)
-  assert(!run.players[0].deck.some((card) => card.defId === 'parasite'))
+check('Purifier applies every removed Parasite current-HP loss', () => {
+  for (const hp of [9, 3]) {
+    let run = inEvent('purifier', 1)
+    run.players[0].deck.push({ uid: 'c901', defId: 'parasite', upgraded: false }, { uid: 'c902', defId: 'parasite', upgraded: false })
+    run.players[0].hp = hp
+    run.players[0].maxHp = 9
+    run = chooseEvent(run, 'p1', { optionIds: ['cleanse'] })
+    assertEqual(run.players[0].maxHp, 9)
+    assertEqual(run.players[0].hp, Math.max(0, hp - 4))
+    assertEqual(run.players[0].dead, hp === 3)
+    assertEqual(run.phase === 'defeat', hp === 3)
+    assert(!run.players[0].deck.some((card) => card.defId === 'parasite'))
+  }
 })
 
 check('staged item rewards accept missing targets and locked selections after reconnect', () => {

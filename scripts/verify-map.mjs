@@ -468,17 +468,21 @@ check("one-shot Relics cannot remove Ascender's Bane or count the starter twice"
   assertEqual(resolvePendingRelic(run, 'p1', [starter.uid]), run)
 })
 
-check('Empty Cage applies the printed Parasite maximum-HP loss', () => {
-  let run = postNeowRun(908, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
-  run.players[0].deck[0] = { ...run.players[0].deck[0], defId: 'parasite' }
-  run.players[0].hp = run.players[0].maxHp
-  const beforeMaxHp = run.players[0].maxHp
-  run = acquireRelic(run, 'p1', 'empty_cage')
-  const parasite = run.players[0].deck.find((card) => card.defId === 'parasite')
-  const other = run.players[0].deck.find((card) => card.uid !== parasite.uid)
-  const resolved = resolvePendingRelic(run, 'p1', [parasite.uid, other.uid])
-  assertEqual(resolved.players[0].maxHp, beforeMaxHp - 2)
-  assertEqual(resolved.players[0].hp, beforeMaxHp - 2)
+check('Empty Cage applies the printed Parasite current-HP loss', () => {
+  for (const lethal of [false, true]) {
+    let run = postNeowRun(908, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+    run.players[0].deck[0] = { ...run.players[0].deck[0], defId: 'parasite' }
+    run.players[0].hp = lethal ? 1 : run.players[0].maxHp
+    const beforeMaxHp = run.players[0].maxHp
+    run = acquireRelic(run, 'p1', 'empty_cage')
+    const parasite = run.players[0].deck.find((card) => card.defId === 'parasite')
+    const other = run.players[0].deck.find((card) => card.uid !== parasite.uid)
+    const resolved = resolvePendingRelic(run, 'p1', [parasite.uid, other.uid])
+    assertEqual(resolved.players[0].maxHp, beforeMaxHp)
+    assertEqual(resolved.players[0].hp, lethal ? 0 : beforeMaxHp - 2)
+    assertEqual(resolved.players[0].dead, lethal)
+    assertEqual(resolved.phase, lethal ? 'defeat' : run.phase)
+  }
 })
 
 check('Tiny House reveals its Potion for replacement at the slot cap', () => {
@@ -2145,18 +2149,22 @@ check('Rest heals 3 and never past the maximum', () => {
   }
 })
 
-check('Peace Pipe applies the printed Parasite maximum-HP loss', () => {
-  const room = atCampfire()
-  room.players[0].relics.push({ defId: 'peace_pipe', spent: false })
-  room.players[0].deck[0] = { ...room.players[0].deck[0], defId: 'parasite' }
-  room.players[0].hp = room.players[0].maxHp
-  const beforeMaxHp = room.players[0].maxHp
-  const next = resolveCampfire(room, {
-    p1: { choice: 'rest', removeCardUid: room.players[0].deck[0].uid },
-    p2: { choice: 'rest' },
-  })
-  assertEqual(next.players[0].maxHp, beforeMaxHp - 2)
-  assertEqual(next.players[0].hp, beforeMaxHp - 2)
+check('Peace Pipe applies Parasite HP loss after Rest without lowering maximum HP', () => {
+  for (const [hp, maxHp, expectedHp] of [[10, 10, 8], [1, 10, 2], [1, 1, 0]]) {
+    const room = atCampfire()
+    room.players[0].relics.push({ defId: 'peace_pipe', spent: false })
+    room.players[0].deck[0] = { ...room.players[0].deck[0], defId: 'parasite' }
+    Object.assign(room.players[0], { hp, maxHp })
+    const beforeMaxHp = room.players[0].maxHp
+    const next = resolveCampfire(room, {
+      p1: { choice: 'rest', removeCardUid: room.players[0].deck[0].uid },
+      p2: { choice: 'rest' },
+    })
+    assertEqual(next.players[0].maxHp, beforeMaxHp)
+    assertEqual(next.players[0].hp, expectedHp)
+    assertEqual(next.players[0].dead, expectedHp === 0)
+    assertEqual(next.phase, expectedHp === 0 ? 'defeat' : 'map')
+  }
 })
 
 check('Smith upgrades exactly the chosen card', () => {

@@ -294,6 +294,7 @@ export function resolvePendingRelic(
     nextPendingRelicId: Math.max(state.nextPendingRelicId ?? 0, (pending.pendingId ?? 0) + 1),
     players: state.players.map((candidate) => candidate.id === playerId ? owner : candidate),
   }
+  if (owner.dead) return { ...mutated, phase: 'defeat', roomState: null, neow: null, setup: null }
   let next = draftReward
     ? settleRelicRewardGems(before, mutated, playerId, pending.guardianGemGroups, rewardChoices, rewardIndices)
     : queueNewGuardianSockets(before, mutated)

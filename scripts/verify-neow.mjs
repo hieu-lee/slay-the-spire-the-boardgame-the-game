@@ -582,14 +582,29 @@ check('mandatory penalties persist when their staged positive reward is skipped'
   assertEqual(run.players[0].hp, hp2 - 2)
 })
 
+check('lethal Parasite removal during Neow ends the run before the next blessing', () => {
+  let run = forceCard(beginBlue(4701), 'neow_01')
+  run.players[0].hp = 1
+  run.players[0].deck[0] = { ...run.players[0].deck[0], defId: 'parasite' }
+  const uid = run.players[0].deck[0].uid
+  run = chooseNeow(run, 'p1', 1)
+  run = resolveNeowEffect(run, 'p1', true, { cardUids: [uid] })
+  assertEqual(run.phase, 'defeat')
+  assertEqual(run.neow, null)
+  assertEqual(run.players[0].hp, 0)
+  assertEqual(run.players[0].dead, true)
+})
+
 check('canonical removal, transforms, Eggs, curses, and one-shot Relics retain their rules', () => {
   let run = forceCard(beginBlue(4701), 'neow_01')
   run.players[0].deck[0] = { ...run.players[0].deck[0], defId: 'parasite' }
   const maxHp = run.players[0].maxHp
+  const hp = run.players[0].hp
   const parasite = run.players[0].deck[0].uid
   run = chooseNeow(run, 'p1', 1)
   run = resolveNeowEffect(run, 'p1', true, { cardUids: [parasite] })
-  assertEqual(run.players[0].maxHp, maxHp - 2)
+  assertEqual(run.players[0].maxHp, maxHp)
+  assertEqual(run.players[0].hp, hp - 2)
 
   run = forceCard(beginBlue(4702), 'neow_02')
   run.players[0].relics.push({ defId: 'molten_egg', spent: false })
