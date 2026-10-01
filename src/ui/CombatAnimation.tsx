@@ -133,6 +133,10 @@ export function preloadCombatVideo(src: string, ready: () => void, priority = fa
 }
 
 export function combatArtSize(art: CombatArtElement): { width: number; height: number } {
+  // Safari can report a blob SVG's rendered size as naturalWidth/Height.
+  // Source-space attachments must use this SVG's authored viewport instead.
+  if (art instanceof HTMLImageElement && art.naturalWidth && art.dataset.fallback !== 'true' &&
+    art.dataset.animationAsset?.endsWith('/cultist-attack.svg')) return { width: 800, height: 937 }
   return art instanceof HTMLVideoElement
     ? { width: art.videoWidth, height: art.videoHeight }
     : { width: art.naturalWidth, height: art.naturalHeight }
@@ -287,6 +291,7 @@ export function CombatAnimation({
     className={className}
     style={{ ...style, ...waitingPoster, visibility: hidden || inactiveReady ? 'hidden' : style?.visibility }}
     src={imageSrc}
+    crossOrigin={imageSrc.startsWith('http') ? 'anonymous' : undefined}
     alt={alt}
     loading={loading}
     onLoad={(event) => {

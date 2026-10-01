@@ -84,6 +84,8 @@ const focusedUiOwners = new Map([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
+  ['scripts/animation/encode-safari-attacks.py', ['verify-assets.mjs', 'verify-rig-animation-browser.mjs']],
+  ['scripts/animation/check-attack-parity.py', ['verify-rig-animation-browser.mjs']],
   ['scripts/animation/elite_signatures.py', ['verify-assets.mjs', 'verify-elite-signatures-browser.mjs']],
   ['src/mail.ts', ['verify-mail-browser.mjs']],
   ['src/ui/useWebMcp.ts', ['verify-webmcp-browser.mjs']],

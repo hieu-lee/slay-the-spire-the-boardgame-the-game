@@ -271,6 +271,25 @@ empty-handed pose covers the SVG from the CSS release boundary to 1500ms,
 keeping held sticks from appearing beside the flying props while leaving the
 animated recovery visible.
 Other browsers use the baked WebP.
+Safari can report the blob SVG's rendered size as its natural dimensions.
+Cultist attachment measurements use its authored 800x937 viewport instead;
+`verify-wing-and-throw-browser.mjs --webkit --svg-natural-size` reproduces this
+browser quirk, checks both source-space hands and saves unpaused launch pixels.
+
+Safari attacks for Looter, Mugger and the elites use pixel-identical APNG
+companions. WebKit can stretch native WebP frames while CSS root motion keeps
+running, leaving weapons behind the contact/recovery clock. Regenerate the
+companions after changing their WebPs with
+`python3 scripts/animation/encode-safari-attacks.py` (or `--only=looter,mugger`).
+Chrome and idle animations retain their existing WebPs. Hosted APNGs use the
+configured asset CDN, like HEVC/audio, to stay outside the Pages size limit.
+Audit painted contact/recovery poses with
+`node scripts/verify-rig-animation-browser.mjs --attack-parity-only`, also with
+`--webkit`; narrow iteration with `--only=looter --only=mugger --only=book_of_stabbing`.
+The checker saves screenshots, live-clock samples and `pose-report.json` under
+`artifacts/rig-animation/browser/attack-parity/<engine>/<screen>/`.
+Add `--webp-baseline` with `--webkit` to serve the original WebP bytes in place
+of the APNGs and reproduce the decoder drift without changing product files.
 Refresh their size calibration with
 `python3 scripts/calibrate-enemy-size.py --only=byrd,cultist`; `--check` verifies
 it without writing. Byrd's full wing clearance stays separate from body scale.
@@ -288,3 +307,7 @@ Watcher's static idle uses her original texture directly. Heat flame anchors
 remain in 400px authoring coordinates and scale with the exported canvas.
 Run `verify-character-size-browser.mjs` to guard resolution, placement and attacks
 on desktop and horizontal phones; regenerate contact metadata after exports.
+
+For the iOS Chrome/WebKit cold path, delay APNG loading and verify its original
+weapon poses rather than an idle fallback:
+`node scripts/verify-rig-animation-browser.mjs --attack-parity-only --webkit --crios --cold-attack --phone-only --only=sentry`.

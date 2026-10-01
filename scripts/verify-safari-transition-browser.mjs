@@ -59,7 +59,7 @@ try {
         const holdAttack = name === 'webkit'
         let releaseAttack
         const attackGate = new Promise(resolve => { releaseAttack = resolve })
-        await page.route('**/sentry-attack.webp', async route => {
+        await page.route(/\/sentry-attack\.(?:webp|png)(?:\?|$)/, async route => {
           if (holdAttack) await attackGate
           await route.continue()
         })

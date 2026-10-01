@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium, webkit } from './lib/profile-browser.mjs'
+import { chromium, webkit, devices } from './lib/profile-browser.mjs'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { bossAttackMotionFor, bossProjectileImagePath, enemyProjectileImpactPath, enemyProjectileOriginFor, enemyArtScaleFor } from '../src/ui/combat-vfx.ts'
 
@@ -22,18 +23,30 @@ const heroes = {
 const normalsOnly = process.argv.includes('--normal-only')
 const bossesOnly = process.argv.includes('--boss-only')
 const elitesOnly = process.argv.includes('--elites-only')
+const attackParityOnly = process.argv.includes('--attack-parity-only')
+const webpBaseline = attackParityOnly && process.argv.includes('--webp-baseline')
 const eliteArt = e => e.elite || ['sentry_a','sentry_b','red_slaver','blue_slaver'].includes(e.id)
 const onlyEnemyIds = process.argv.filter(arg => arg.startsWith('--only=')).map(arg => arg.slice('--only='.length))
 const rigs = JSON.parse(readFileSync(resolve(root, 'scripts/animation/rigs.json'), 'utf8'))
-const enemies = [...new Map(Object.values(ENEMIES).filter((e) => bossesOnly ? e.isBoss : elitesOnly ? eliteArt(e) : normalsOnly ? !e.isBoss && !e.elite : e.isBoss || eliteArt(e)).map((e) => [e.artId ?? e.id,e])).values()]
-  .filter(e=>!process.argv.some(a=>a.startsWith('--only='))||process.argv.includes(`--only=${e.id}`))
+const enemies = [...new Map(Object.values(ENEMIES).filter((e) => attackParityOnly ? eliteArt(e) || ['looter', 'mugger'].includes(e.artId ?? e.id) : bossesOnly ? e.isBoss : elitesOnly ? eliteArt(e) : normalsOnly ? !e.isBoss && !e.elite : e.isBoss || eliteArt(e)).map((e) => [e.artId ?? e.id,e])).values()]
+  .filter(e=>!process.argv.some(a=>a.startsWith('--only='))||process.argv.includes(`--only=${e.id}`)||process.argv.includes(`--only=${e.artId ?? e.id}`))
 try {
+  if (attackParityOnly) assert(enemies.length > 0, 'No attacks selected; check --only enemy/art IDs')
   for (const [screen,viewport] of [['desktop',{width:1440,height:900}],['horizontal-phone',{width:844,height:390}]]) {
     if(process.argv.includes('--phone-only') && screen!=='horizontal-phone')continue
-    const context = await browser.newContext({ viewport, isMobile: screen==='horizontal-phone', hasTouch: screen==='horizontal-phone', recordVideo: { dir: output, size: viewport } })
+    const context = await browser.newContext({ viewport, isMobile: screen==='horizontal-phone', hasTouch: screen==='horizontal-phone', recordVideo: { dir: output, size: viewport },
+      ...(process.argv.includes('--crios') && screen === 'horizontal-phone' ? { userAgent: devices['iPhone 13 landscape'].userAgent.replace(/Version\/[\d.]+/, 'CriOS/147.0.0.0') } : {}) })
     const page = await context.newPage()
     page.on('pageerror', e => errors.push(String(e)))
     page.on('response', r => { if (r.status()>=400 && /\/assets\/combat\/rigged\//.test(r.url())) errors.push(`${r.status()} ${r.url()}`) })
+    if (attackParityOnly && process.argv.includes('--cold-attack')) await page.route(/\/assets\/combat\/.*-attack\.png$/, async route => {
+      await new Promise(resolve => setTimeout(resolve, 1200))
+      await route.continue()
+    })
+    if (webpBaseline) await page.route(/\/assets\/combat\/.*-attack\.png$/, route => route.fulfill({
+      path: resolve(root, 'public', new URL(route.request().url()).pathname.slice(1).replace(/\.png$/, '.webp')),
+      contentType: 'image/webp',
+    }))
     if (process.argv.includes('--sfx-only')) await page.addInitScript(() => {
       window.audioPlays = []; window.audioBeats = []; window.audioPauses = []
       HTMLMediaElement.prototype.play = function () {
@@ -90,6 +103,76 @@ try {
       }
       f.install('ironclad')
     })
+    if (attackParityOnly) {
+      const engine = (process.argv.includes('--webkit') ? 'webkit' : 'chromium') + (webpBaseline ? '-webp-baseline' : '') +
+        (process.argv.includes('--crios') ? '-crios' : '') + (process.argv.includes('--cold-attack') ? '-cold' : '')
+      const directory = resolve(output, 'attack-parity', engine, screen)
+      mkdirSync(directory, { recursive: true })
+      const samples = []
+      for (const enemy of enemies) {
+        const actor = enemy.artId ?? enemy.id
+        await page.evaluate(id => window.fixture.install('defect', id, false), enemy.id)
+        await page.waitForFunction(() => [...document.querySelectorAll('.enemy img')].every(image => image.complete && image.naturalWidth > 0))
+        await page.waitForTimeout(200)
+        await page.evaluate(() => { const f = window.fixture; f.state.phase = 'enemy'; f.render() })
+        const art = page.locator('.enemy--acting img[data-animation-layer="attack"]')
+        await art.waitFor()
+        const firstReplay = await art.getAttribute('src')
+        assert(!firstReplay.includes('-idle.webp'), `${actor}: cold attack mounted idle art instead of its timed weapon poses`)
+        const waitForBeat = async time => {
+          try {
+            await page.waitForFunction(({ image, time }) => image.getAnimations()[0]?.currentTime >= time,
+              { image: await art.elementHandle(), time }, { timeout: 5000 })
+          } catch (error) {
+            throw new Error(`${actor}: attack clock did not reach ${time}ms`, { cause: error })
+          }
+        }
+        await waitForBeat(730)
+        await page.locator('.board').screenshot({ path: resolve(directory, `${actor}-contact-board.png`), scale: 'css' })
+        await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'idle')
+        await page.evaluate(() => { window.fixture.state.phase = 'player'; window.fixture.render() })
+        await page.locator('.combat__phase--player').waitFor()
+        await page.evaluate(() => { window.fixture.state.phase = 'enemy'; window.fixture.render() })
+        await art.waitFor()
+        assert.notEqual(await art.getAttribute('src'), firstReplay, `${actor}: repeated attack reused its one-shot URL`)
+        // Keep the live image and combat clock, isolating only filters and
+        // root motion. A clone can restart APNG's own decoder/timeline; a
+        // changing hash of a moving silhouette cannot prove weapon timing.
+        await art.evaluate((image, phone) => {
+          const width = phone ? 120 : 240
+          image.closest('.enemy').style.filter = 'none'
+          Object.assign(image.style, { width: `${width}px`, height: `${Math.round(width * image.naturalHeight / image.naturalWidth)}px`,
+            position: 'fixed', left: '100px', top: phone ? '100px' : '150px', bottom: 'auto', marginLeft: '0', scale: '1',
+            background: '#17222d', objectFit: 'fill', filter: 'none', zIndex: '100' })
+          image.style.setProperty('translate', '0', 'important')
+          image.style.setProperty('transform', 'none', 'important')
+        }, screen === 'horizontal-phone')
+        for (const time of [730, 1550]) {
+          await waitForBeat(time)
+          // Portrait alignment can leave the fixed image at fractional pixels;
+          // snap its capture box, not the native animation, to the pixel grid.
+          await art.evaluate(image => {
+            const rect = image.getBoundingClientRect()
+            image.style.left = `${parseFloat(image.style.left) + Math.round(rect.left) - rect.left}px`
+            image.style.top = `${parseFloat(image.style.top) + Math.round(rect.top) - rect.top}px`
+          })
+          const before = await art.evaluate(image => image.getAnimations()[0].currentTime)
+          const path = resolve(directory, `${actor}-${time}.png`)
+          await art.screenshot({ path, scale: 'css' })
+          const after = await art.evaluate(image => image.getAnimations()[0].currentTime)
+          samples.push({ actor, before, after, path })
+        }
+        await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'idle')
+      }
+      const manifest = resolve(directory, 'samples.json')
+      writeFileSync(manifest, JSON.stringify(samples, null, 2) + '\n')
+      const poses = spawnSync('python3', [resolve(root, 'scripts/animation/check-attack-parity.py'), manifest], { cwd: root, encoding: 'utf8' })
+      console.log(poses.stdout.trim())
+      assert.equal(poses.status, 0, poses.stderr || poses.stdout)
+      await context.close()
+      console.log(`PASS ${engine}/${screen}: painted enemy contact and recovery agree with the combat clock`)
+      continue
+    }
     if (process.argv.includes('--sfx-only')) {
       await page.evaluate(async () => {
         const [R, D, { useGameSettings }, { installSoundEffects }] = await Promise.all([import('/@id/react'), import('/@id/react-dom/client'), import('/src/ui/game-settings.ts'), import('/src/ui/sfx.ts')])

@@ -1,7 +1,7 @@
 // Focused coverage for Byrd wingbeats and Cultist's two rigid thrown sticks.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium, webkit, devices } from './lib/profile-browser.mjs'
@@ -16,11 +16,23 @@ const server = await createServer({ root, logLevel: 'silent', server: { host: '1
 await server.listen()
 const browser = await engine.launch({ headless: true })
 const errors = []
+let arrivalCapture = 0
 async function createFixturePage(context) {
   const page = await context.newPage()
   page.on('pageerror', error => errors.push(String(error)))
   page.on('response', response => {
     if (response.status() >= 400 && /\/assets\/combat\//.test(response.url())) errors.push(`${response.status()} ${response.url()}`)
+  })
+  if (process.argv.includes('--svg-natural-size')) await page.addInitScript(() => {
+    // Installed Safari reports a blob SVG's rendered dimensions as its natural
+    // size. Reproduce that browser quirk without changing any raster asset.
+    for (const [property, rendered] of [['naturalWidth', 'clientWidth'], ['naturalHeight', 'clientHeight']]) {
+      const original = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, property).get
+      Object.defineProperty(HTMLImageElement.prototype, property, { get() {
+        const value = original.call(this)
+        return value && this.dataset.animationAsset?.endsWith('/cultist-attack.svg') ? this[rendered] : value
+      } })
+    }
   })
   // Enemies always use WebP. Keep unrelated hero HEVC decoding out of this
   // focused check: Linux WebKit can advertise HEVC without native alpha.
@@ -80,6 +92,7 @@ async function observeCultistArrival(page) {
   await page.evaluate(() => {
     const f = window.fixture
     f.flightLocked = undefined
+    f.releaseSamples = []
     const observer = new MutationObserver(() => {
       const projectile = document.querySelector('.boss-projectile')
       if (!projectile) return
@@ -91,6 +104,19 @@ async function observeCultistArrival(page) {
         if (event.animationName !== 'cultist-stick-flight') return
         board.removeEventListener('animationstart', onLaunch)
         const sticks = [...projectile.querySelectorAll('.cultist-stick')]
+        // Inspect the natural launch, not a clone created after measurement.
+        // Compare to canonical painted hands, not the possibly incorrect
+        // naturalWidth of Safari's SVG or the projectile's own inline offsets.
+        const portrait = document.querySelector('.cultist-release-cover') ?? document.querySelector('.enemy__art--cutout[data-animation-layer="attack"]')
+        const source = portrait.getBoundingClientRect()
+        const fit = Math.min(source.width / 800, source.height / 937)
+        f.releaseSamples = sticks.map((stick, index) => {
+          const rect = stick.querySelector('img').getBoundingClientRect()
+          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
+            handX: source.left + (152 + index * 416) * fit,
+            handY: source.bottom - (937 - 545 + 70 - index * 33) * fit,
+            time: projectile.getAnimations()[0].currentTime }
+        })
         const paths = sticks.map(stick => stick.style.cssText)
         const target = document.querySelector(`.seat[data-player-id="${CSS.escape(projectile.dataset.targetPlayer)}"] .seat__portrait`)
         // A late target-image alignment must not redirect an airborne stick.
@@ -135,6 +161,12 @@ async function observeCultistArrival(page) {
     throw new Error(`Cultist did not finish after cold load: ${JSON.stringify(state)}`, { cause: error })
   }
   assert.equal(await page.evaluate(() => window.fixture.flightLocked), true, 'late image alignment redirected a launched stick')
+  const release = await page.evaluate(() => window.fixture.releaseSamples)
+  writeFileSync(resolve(output, `${++arrivalCapture}-natural-release.json`), JSON.stringify(release, null, 2) + '\n')
+  assert.equal(release.length, 2, 'natural release was not observed')
+  assert(release.every(point => Number.isFinite(point.handX) && Number.isFinite(point.handY) &&
+    Math.hypot(point.x - point.handX, point.y - point.handY) < 35),
+    `natural sticks do not start at the hands: ${JSON.stringify(release)}`)
   return page.evaluate(() => {
     const { enemyPhaseAt, throwMountedAt, throwArrivalAt, throwSource, enemyResolvedAt } = window.fixture
     return { enemyPhaseAt, throwMountedAt, throwArrivalAt, throwSource, enemyResolvedAt }
@@ -214,6 +246,49 @@ async function verify() {
       continue
     }
 
+    // Painted launch must agree with layout before any pausing/seeking or
+    // synthetic target movement can hide an incorrect source-space origin.
+    await page.evaluate(() => window.fixture.install('cultist'))
+    await page.waitForLoadState('networkidle')
+    await page.evaluate(() => { window.fixture.state.phase = 'enemy'; window.fixture.render() })
+    await page.waitForFunction(() => document.querySelector('.boss-projectile')?.getAnimations()[0]?.currentTime >= 500,
+      null, { timeout: 5000 })
+    const paintedBounds = () => page.evaluate(() => {
+      const source = (document.querySelector('.cultist-release-cover') ?? document.querySelector('.enemy__art--cutout[data-animation-layer="attack"]')).getBoundingClientRect()
+      const fit = Math.min(source.width / 800, source.height / 937)
+      return [...document.querySelectorAll('.boss-projectile .cultist-stick img')].map((image, index) => {
+        const r = image.getBoundingClientRect()
+        return { x: r.x, y: r.y, width: r.width, height: r.height, viewportWidth: innerWidth,
+          handX: source.left + (152 + index * 416) * fit,
+          handY: source.bottom - (937 - 545 + 70 - index * 33) * fit }
+      })
+    })
+    const launchBefore = await paintedBounds()
+    const launchPath = resolve(output, `${screen}-cultist-unpaused-launch.png`)
+    await page.screenshot({ path: launchPath, scale: 'css' })
+    const launchAfter = await paintedBounds()
+    writeFileSync(resolve(output, `${screen}-cultist-unpaused-launch.json`), JSON.stringify({ launchBefore, launchAfter }, null, 2) + '\n')
+    assert.equal(launchBefore.length, 2, 'missed live painted launch')
+    assert.equal(launchAfter.length, 2, 'screenshot outlasted live launch')
+    assert(launchBefore.every(r => Math.hypot(r.x + r.width / 2 - r.handX, r.y + r.height / 2 - r.handY) < 100),
+      `Live launch is not near the canonical hands: ${JSON.stringify(launchBefore)}`)
+    const launchPixels = spawnSync('python3', ['-c', `
+import json,sys
+import numpy as np
+from PIL import Image
+im=Image.open(sys.argv[1]).convert('RGB')
+before,after=json.loads(sys.argv[2])
+for a,b in zip(before,after):
+    box=(min(a['x'],b['x'])-8,min(a['y'],b['y'])-8,
+         max(a['x']+a['width'],b['x']+b['width'])+8,max(a['y']+a['height'],b['y']+b['height'])+8)
+    scale=im.width/a['viewportWidth']
+    p=np.array(im.crop(tuple(round(x*scale) for x in box)))
+    red=((p[:,:,0]>170)&(p[:,:,1]<105)&(p[:,:,2]<105)).sum()
+    assert red>10, f'Live stick painted outside its hand-origin trajectory: {red} red pixels'
+`, launchPath, JSON.stringify([launchBefore, launchAfter])], { encoding: 'utf8' })
+    assert.equal(launchPixels.status, 0, launchPixels.stderr)
+    await page.waitForFunction(() => document.querySelector('.enemy')?.dataset.animation === 'idle')
+
     for (const multiplayer of [false, true]) {
       await page.evaluate(multiplayer => window.fixture.install('cultist', multiplayer), multiplayer)
       await page.waitForFunction(multiplayer => document.querySelector('.combat')?.dataset.partySize === (multiplayer ? '4' : '1') &&
@@ -260,11 +335,16 @@ async function verify() {
               const impactDelay = enemy.querySelector('.enemy-projectile-impact > img').getAnimations()[0].effect.getTiming().delay
               const targets = projectiles.map(e => e.dataset.targetPlayer).sort()
               const sticks = projectiles.flatMap(e => [...e.children])
-              const props = sticks.flatMap(e => [...e.children])
+              const props = sticks.flatMap(e => [...e.querySelectorAll('img')])
               const holdFrame = () => {
                 const body = enemy.querySelector('.enemy__art--cutout[data-animation-layer="attack"]')
                 const cover = enemy.querySelector('.cultist-release-cover')
-                for (const element of [...projectiles, ...sticks, ...props, body, cover].filter(Boolean)) {
+                const elements = [...projectiles, ...sticks, ...props, body, cover].filter(Boolean)
+                // Freeze the original clocks together before reading styles;
+                // per-element style replacement can advance siblings a frame.
+                elements.flatMap(element => element.getAnimations()).forEach(animation => animation.pause())
+                const time = projectiles[0].getAnimations()[0]?.currentTime
+                for (const element of elements) {
                   const style = getComputedStyle(element)
                   element.style.transform = style.transform
                   element.style.translate = style.translate
@@ -273,21 +353,22 @@ async function verify() {
                 }
                 const impact = enemy.querySelector('.enemy-projectile-impact > img')
                 if (impact) { impact.style.animation = 'none'; impact.style.opacity = '0' }
+                return time
               }
               let live = null
               let late = null
               // Live stick centers, per projectile, to compare with the seeked probe below.
-              const liveSticks = () => projectiles.map(projectile => [...projectile.querySelectorAll('.cultist-stick > img')].map(stick => {
+              const liveSticks = () => projectiles.map(projectile => [...projectile.querySelectorAll('.cultist-stick img')].map(stick => {
                 const rect = stick.getBoundingClientRect()
                 return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
               }))
               if (capture) live = await new Promise((resolve, reject) => {
                 const startedAt = performance.now()
                 const sampleFrame = () => {
-                  const time = projectiles[0].getAnimations()[0]?.currentTime
+                  let time = projectiles[0].getAnimations()[0]?.currentTime
                   const opacity = Number(getComputedStyle(projectiles[0]).opacity)
                   if (typeof time === 'number' && time >= delay + 100 && time < delay + duration && opacity > .5) {
-                    if (stableCapture) holdFrame()
+                    if (stableCapture) time = holdFrame()
                     else for (const element of [...projectiles, ...sticks, ...props, enemy.querySelector('.enemy-projectile-impact > img')]) {
                       element.getAnimations().forEach(animation => animation.pause())
                     }
@@ -339,7 +420,7 @@ async function verify() {
                 probe.style.visibility = 'hidden'
                 enemy.append(probe)
                 probe.getBoundingClientRect()
-                const stickImages = [...probe.querySelectorAll('.cultist-stick > img')]
+                const stickImages = [...probe.querySelectorAll('.cultist-stick img')]
                 const animations = [probe, ...probe.querySelectorAll('*')].flatMap(element => element.getAnimations())
                 animations.forEach(animation => animation.pause())
                 const sample = time => {

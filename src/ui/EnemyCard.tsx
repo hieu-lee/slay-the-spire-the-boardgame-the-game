@@ -486,7 +486,7 @@ export function EnemyCard({
     ? assetPath('combat/rigged/downfall_demon-airborne.webp')
     : timedCultist
       ? assetPath('combat/enemies/animated/cultist-attack.svg')
-      : enemyAnimationImagePath(def, 'attack')
+      : enemyAnimationImagePath(def, 'attack', useWebKitCombatRendering)
   const currentIdleArt = sleeping ? assetPath('combat/enemies/animated/lagavulin-sleep.webp')
     : enemyAnimationImagePath(def, 'idle')
   const previousIdleArt = assetPath(`combat/enemies/animated/${previousRestPose.current.pose === 'lagavulin-sleep'
@@ -592,7 +592,7 @@ export function EnemyCard({
     const art = cached?.source === currentBossAttackArt && cached.blob
       ? URL.createObjectURL(cached.blob)
       : (['cultist', 'lagavulin', 'gremlin_leader', 'reptomancer', 'guardian_attack', 'guardian_defensive'].includes(currentBossArtId) ||
-        useSafariCombatRendering) ? currentBossAttackArt : currentIdleArt
+        useWebKitCombatRendering) ? currentBossAttackArt : currentIdleArt
     if (currentBossArtId === 'cultist') onThrowPrepared?.(enemy.uid, 1800)
     else if (enemyAttackArrivalMsFor(currentBossArtId) !== undefined) onThrowPrepared?.(enemy.uid, 730)
     setPresentedBossAttack({ art, artId: currentBossArtId, source: currentBossAttackArt })

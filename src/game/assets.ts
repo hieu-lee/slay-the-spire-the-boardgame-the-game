@@ -13,7 +13,8 @@ const campfireBackupOrigin = import.meta.env?.VITE_CAMPFIRE_BACKUP_ORIGIN?.repla
 
 /** Public asset URL under Vite's current deployment base. */
 export const assetPath = (path: string): string => assetCdnOrigin &&
-  (path.startsWith('bgm/') || path.startsWith('noncombat/campfire/') && path.endsWith('_firecamp.webp') &&
+  (path.startsWith('bgm/') || path.startsWith('combat/') && path.endsWith('-attack.png') ||
+    path.startsWith('noncombat/campfire/') && path.endsWith('_firecamp.webp') &&
     path !== 'noncombat/campfire/empty_firecamp.webp')
   ? `${assetCdnOrigin}/${path}`
   : `${import.meta.env?.BASE_URL ?? '/'}assets/${path}`
@@ -197,12 +198,16 @@ export function enemyImagePath(def: EnemyDef): string {
 
 const WEBP_ONLY_ANIMATIONS = new Set(['byrd', 'cultist', 'looter', 'mugger', 'book_of_stabbing',
   'lagavulin', 'gremlin_leader', 'reptomancer', 'guardian_attack', 'guardian_defensive'])
+const SAFARI_PNG_ATTACKS = new Set(['looter', 'mugger', 'book_of_stabbing', 'gremlin_nob', 'lagavulin',
+  'sentry', 'gremlin_leader', 'taskmaster', 'giant_head', 'nemesis', 'reptomancer',
+  'spire_shield', 'spire_spear', 'red_slaver', 'blue_slaver'])
 
-export function enemyAnimationImagePath(def: EnemyDef, pose: 'idle' | 'attack'): string {
+export function enemyAnimationImagePath(def: EnemyDef, pose: 'idle' | 'attack', webkit = false): string {
   const artId = def.artId ?? def.id
-  // These exports use the shared WebP playback on every browser, with no HEVC companion.
+  // Authored exports have no HEVC companion. Safari uses APNG for timed attacks.
   const folder = WEBP_ONLY_ANIMATIONS.has(artId) ? 'enemies/animated' : 'rigged'
-  return assetPath(`combat/${folder}/${artId}-${pose}.webp`)
+  const extension = webkit && pose === 'attack' && SAFARI_PNG_ATTACKS.has(artId) ? 'png' : 'webp'
+  return assetPath(`combat/${folder}/${artId}-${pose}.${extension}`)
 }
 
 /**
