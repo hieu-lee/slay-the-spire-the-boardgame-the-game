@@ -9,10 +9,14 @@ import type { PotionDef, RelicDef } from './relics.ts'
 import { CHARACTER_IDS, type CharacterId } from './types.ts'
 
 const assetCdnOrigin = import.meta.env?.VITE_ASSET_CDN_ORIGIN?.replace(/\/$/, '')
-const campfireBackupOrigin = import.meta.env?.VITE_CAMPFIRE_BACKUP_ORIGIN?.replace(/\/$/, '')
+const assetBackupOrigin = import.meta.env?.VITE_CAMPFIRE_BACKUP_ORIGIN?.replace(/\/$/, '')
 
 /** Public asset URL under Vite's current deployment base. */
-export const assetPath = (path: string): string => assetCdnOrigin &&
+// Large APNGs can hit jsDelivr's package limit; the existing raw media origin
+// is SHA-pinned too and serves the exact same bytes without that size limit.
+export const assetPath = (path: string): string => path.startsWith('combat/') && path.endsWith('-attack.png') && assetBackupOrigin
+  ? `${assetBackupOrigin}/${path}`
+  : assetCdnOrigin &&
   (path.startsWith('bgm/') || path.startsWith('combat/') && path.endsWith('-attack.png') ||
     path.startsWith('noncombat/campfire/') && path.endsWith('_firecamp.webp') &&
     path !== 'noncombat/campfire/empty_firecamp.webp')
@@ -138,7 +142,7 @@ export const potionIconPath = (id: string) => assetPath(`potion-icons/${id}.png`
 export function campfireScenePath(characters: CharacterId[], backup = false): string {
   const party = CHARACTER_IDS.filter((character) => characters.includes(character)).join('_')
   const path = `noncombat/campfire/${party ? `${party}_` : 'empty_'}firecamp.webp`
-  return backup && campfireBackupOrigin ? `${campfireBackupOrigin}/${path}` : assetPath(path)
+  return backup && assetBackupOrigin ? `${assetBackupOrigin}/${path}` : assetPath(path)
 }
 
 export const campfireSceneLocalPath = () => `${import.meta.env?.BASE_URL ?? '/'}assets/noncombat/campfire/empty_firecamp.webp`

@@ -9,6 +9,11 @@ import { chromium, webkit, devices } from './lib/profile-browser.mjs'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { bossAttackMotionFor, bossProjectileImagePath, enemyProjectileImpactPath, enemyProjectileOriginFor, enemyArtScaleFor } from '../src/ui/combat-vfx.ts'
 
+const hostedAttacks = process.argv.includes('--hosted-attacks')
+if (hostedAttacks) {
+  process.env.VITE_ASSET_CDN_ORIGIN = 'https://cdn.animation.example/assets'
+  process.env.VITE_CAMPFIRE_BACKUP_ORIGIN = 'https://raw.animation.example/assets'
+}
 const root = resolve(import.meta.dirname, '..')
 const output = resolve(root, 'artifacts/rig-animation/browser')
 mkdirSync(output, { recursive: true })
@@ -39,6 +44,13 @@ try {
     const page = await context.newPage()
     page.on('pageerror', e => errors.push(String(e)))
     page.on('response', r => { if (r.status()>=400 && /\/assets\/combat\/rigged\//.test(r.url())) errors.push(`${r.status()} ${r.url()}`) })
+    if (hostedAttacks) {
+      await page.route('https://cdn.animation.example/assets/**', route => route.fulfill({ status: 403 }))
+      await page.route('https://raw.animation.example/assets/**', route => route.fulfill({
+        path: resolve(root, 'public', new URL(route.request().url()).pathname.slice(1)),
+        contentType: 'application/octet-stream', headers: { 'access-control-allow-origin': '*' },
+      }))
+    }
     if (attackParityOnly && process.argv.includes('--cold-attack')) await page.route(/\/assets\/combat\/.*-attack\.png$/, async route => {
       await new Promise(resolve => setTimeout(resolve, 1200))
       await route.continue()
@@ -105,7 +117,7 @@ try {
     })
     if (attackParityOnly) {
       const engine = (process.argv.includes('--webkit') ? 'webkit' : 'chromium') + (webpBaseline ? '-webp-baseline' : '') +
-        (process.argv.includes('--crios') ? '-crios' : '') + (process.argv.includes('--cold-attack') ? '-cold' : '')
+        (process.argv.includes('--crios') ? '-crios' : '') + (process.argv.includes('--cold-attack') ? '-cold' : '') + (hostedAttacks ? '-hosted' : '')
       const directory = resolve(output, 'attack-parity', engine, screen)
       mkdirSync(directory, { recursive: true })
       const samples = []
@@ -117,6 +129,8 @@ try {
         await page.evaluate(() => { const f = window.fixture; f.state.phase = 'enemy'; f.render() })
         const art = page.locator('.enemy--acting img[data-animation-layer="attack"]')
         await art.waitFor()
+        if (hostedAttacks) assert((await art.getAttribute('data-animation-asset')).startsWith('https://raw.animation.example/'),
+          `${actor}: hosted APNG still uses the size-limited CDN`)
         const firstReplay = await art.getAttribute('src')
         assert(!firstReplay.includes('-idle.webp'), `${actor}: cold attack mounted idle art instead of its timed weapon poses`)
         const waitForBeat = async time => {
