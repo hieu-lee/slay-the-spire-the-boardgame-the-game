@@ -195,6 +195,26 @@ check('A4 potion limit and A8 removal price are exact thresholds', () => {
   assertEqual(removeAtMerchant(removed.shop, removed.players, 8, 'p1', removed.players[0].deck[0].uid, { p1: 4 }), null)
 })
 
+check('Merchant removal retains Fatal Desire gold after solo or shared payment', () => {
+  for (const upgraded of [false, true]) for (const ectoplasm of [false, true]) {
+    for (const payments of [{ p1: 3 }, { p1: 1, p2: 2 }, { p2: 3 }]) {
+      const party = players(2)
+      party[0].deck[0] = { ...party[0].deck[0], defId: 'hermit_fatal_desire', upgraded }
+      if (ectoplasm) party[0].relics.push({ defId: 'ectoplasm' })
+      const uid = party[0].deck[0].uid
+      const shop = createMerchant(createItemDecks(createRng(405), false), party)
+      const removed = removeAtMerchant(shop, party, 0, 'p1', uid, payments)
+      assert(removed)
+      assertEqual(removed.players[0].gold, 12 - (payments.p1 ?? 0) + (upgraded && !ectoplasm ? 10 : 0))
+      assertEqual(removed.players[1].gold, 12 - (payments.p2 ?? 0))
+      assert(!removed.players[0].deck.some((card) => card.uid === uid))
+      assertEqual(removeAtMerchant(removed.shop, removed.players, 0, 'p1', uid, payments), null)
+      assertEqual(party[0].gold, 12, 'removal mutated its input')
+      assert(party[0].deck.some((card) => card.uid === uid))
+    }
+  }
+})
+
 check('removing Parasite loses 2 current HP, preserves maximum HP, and can be lethal', () => {
   for (const hp of [9, 6, 2, 1]) {
     const party = players(1)

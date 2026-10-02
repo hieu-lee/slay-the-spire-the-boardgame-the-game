@@ -242,7 +242,7 @@ export function removeAtMerchant(
   const removed = removeCard(player, cardUid)
   if (removed === player) return null
   const paid = pay(players, payments).map((candidate) => candidate.id === playerId
-    ? { ...removed, gold: candidate.gold }
+    ? { ...removed, gold: candidate.gold + (removed.gold - player.gold) }
     : candidate)
   return { shop: { ...shop, removalUsed: [...shop.removalUsed, playerId] }, players: paid }
 }
