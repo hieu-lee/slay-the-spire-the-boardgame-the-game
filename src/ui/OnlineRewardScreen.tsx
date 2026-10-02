@@ -4,8 +4,8 @@ import { cardIsCurse } from '../game/cards.ts'
 import type { ActionOutcome, VisibleRun } from '../multiplayer/useRoomSession.ts'
 import type { RewardSource } from '../game/run.ts'
 import { rewardSourceLabel } from './reward-source.ts'
-import { Card } from './Card.tsx'
 import { CardRewardIcon, CardRewardPicker } from './CardRewardPicker.tsx'
+import { CardPicker } from './CardPicker.tsx'
 import { ItemLootChoice, LootChoice, PotionLootChoices } from './RewardScreen.tsx'
 
 type Props = {
@@ -17,6 +17,8 @@ type Props = {
 
 export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, onAction }: Props) {
   const [activeCard, setActiveCard] = useState(false)
+  const [activeTransform, setActiveTransform] = useState(false)
+  const [transformUid, setTransformUid] = useState<string | null>(null)
   const [cardChoicePending, setCardChoicePending] = useState(false)
   const cardChoicePendingRef = useRef(false)
   const [revealPending, setRevealPending] = useState(false)
@@ -31,6 +33,10 @@ export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, 
   const availableSourcesKey = availableSources.join(',')
   useEffect(() => setSources((current) => current.filter((source) => availableSources.includes(source))), [availableSourcesKey])
   useEffect(() => {
+    if (!offer?.transformReward) {
+      setActiveTransform(false)
+      setTransformUid(null)
+    }
     if (!offer?.cardReward) {
       cardChoicePendingRef.current = false
       setCardChoicePending(false)
@@ -40,7 +46,7 @@ export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, 
       revealPendingRef.current = false
       setRevealPending(false)
     }
-  }, [offer?.cardReward, offer?.choices, viewerId])
+  }, [offer?.cardReward, offer?.transformReward, offer?.choices, viewerId])
   if (!offer || !player) return null
   const hasLootChoice = Boolean(offer.gold || offer.potion || offer.relic ||
     Array.isArray(offer.bossRelics) && offer.bossRelics.length > 0 || offer.transformReward ||
@@ -102,6 +108,22 @@ export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, 
     dispatchLoot(actions)
   }
 
+  if (activeTransform && offer.transformReward) return <CardPicker
+    cards={(player.deck ?? []).filter((card) => !cardIsCurse(card.defId))}
+    verb="Transform"
+    backLabel="Back to loot"
+    selectedCardUids={transformUid ? [transformUid] : []}
+    onSelect={(uid) => setTransformUid((current) => current === uid ? null : uid)}
+    onClear={() => setTransformUid(null)}
+    onBack={() => { setActiveTransform(false); setTransformUid(null) }}
+    onConfirm={() => {
+      if (!transformUid) return
+      dispatchLoot([{ kind: 'transformReward', cardUid: transformUid }])
+    }}
+    confirmDisabled={lootPending || !transformUid}
+    backDisabled={lootPending}
+    disabled={lootPending} />
+
   if (activeCard && cardChoicePending) return <section className="reward-screen reward-screen--card-choice" style={backdrop} aria-busy="true">
     <h2 className="reward-screen__title">Choose a Card</h2>
     <p className="muted" role="status">Claiming card…</p>
@@ -141,11 +163,8 @@ export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, 
         setActiveCard(true)
         if (offer.choices === null && !offer.prismatic) revealCards()
       }} icon={<CardRewardIcon rare={offer.cardSource === 'rare'} />}>Add a card to your deck.</LootChoice> : null}
-      {offer.transformReward ? <div className="reward-screen__transform"><strong>Transform a card</strong>
-        <div className="reward-screen__cards">{(player.deck ?? []).filter((card) => !cardIsCurse(card.defId)).map((card) =>
-          <Card key={card.uid} card={card} playable={!lootPending} onClick={() => dispatchLoot([{ kind: 'transformReward', cardUid: card.uid }])} />)}</div>
-        <button type="button" disabled={lootPending} onClick={() => dispatchLoot([{ kind: 'transformReward', cardUid: null }])}>Skip Transform</button>
-      </div> : null}
+      {offer.transformReward ? <LootChoice disabled={lootPending} onClick={() => setActiveTransform(true)}
+        icon={<CardRewardIcon />}>Transform a card.</LootChoice> : null}
       {!hasLootChoice ? <p className="muted" role="status">Waiting for teammates…</p> : null}
     </div></div>
     {hasLootChoice ? <button className="reward-screen__skip" type="button" disabled={lootPending || waitingForTeammate}

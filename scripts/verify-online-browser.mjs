@@ -5631,15 +5631,34 @@ try {
   await b.getByRole('button', { name: 'Skip' }).click()
   await b.getByRole('heading', { name: 'Loot!' }).waitFor({ state: 'hidden' })
 
-  Object.assign(liveRoom.run, {
+  const transformOffer = () => Object.assign(liveRoom.run, {
     phase: 'reward', rewardDestination: 'map',
     rewards: [{ playerId: annRun.id, cardReward: false, transformReward: true, choices: null, upgraded: false,
       gold: false, potion: false, relic: false, bossRelics: false }],
   })
+  const annTransformer = liveRoom.run.players.find((player) => player.id === annRun.id)
+  annTransformer.cardRewards = ['anger', 'shrug_it_off', ...annTransformer.cardRewards]
+  const annDeckBeforeTransform = annTransformer.deck.map((card) => card.uid)
+  transformOffer()
   rooms.publishRoom(code)
-  await a.getByText('Transform a card', { exact: true }).waitFor()
-  const foreignTransformControls = await b.getByRole('button', { name: 'Skip Transform' }).count()
-  await a.getByRole('button', { name: 'Skip Transform' }).click()
+  await a.getByRole('button', { name: 'Transform a card.' }).click()
+  await a.getByRole('button', { name: 'Back to loot' }).click()
+  await a.getByRole('button', { name: 'Transform a card.' }).click()
+  await a.locator('.card-picker .card').first().click()
+  await a.getByRole('button', { name: 'Confirm', exact: true }).click()
+  for (let attempt = 0; attempt < 50 && liveRoom.run.phase === 'reward'; attempt += 1) await a.waitForTimeout(100)
+  const annDeckAfterTransform = liveRoom.run.players.find((player) => player.id === annRun.id).deck.map((card) => card.uid)
+  check('the owner can open, back out of, and confirm the online Transform picker', () => {
+    assertEqual(annDeckAfterTransform.length, annDeckBeforeTransform.length)
+    assertEqual(annDeckBeforeTransform.filter((uid) => !annDeckAfterTransform.includes(uid)).length, 1)
+    assertEqual(liveRoom.run.phase, 'map')
+  })
+
+  transformOffer()
+  rooms.publishRoom(code)
+  await a.getByRole('button', { name: 'Transform a card.' }).waitFor()
+  const foreignTransformControls = await b.getByRole('button', { name: 'Transform a card.' }).count()
+  await a.getByRole('button', { name: 'Skip', exact: true }).click()
   await a.getByRole('heading', { name: 'Loot!' }).waitFor({ state: 'hidden' })
   check('only the owner can resolve or skip an online Transform loot reward', () => {
     assertEqual(foreignTransformControls, 0)

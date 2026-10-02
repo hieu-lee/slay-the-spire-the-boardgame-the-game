@@ -601,6 +601,44 @@ try {
     { kind: 'neowReward', choice: 0 },
   ], 'double-clicking a Neow card reward dispatched it more than once')
 
+  const tfPage = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  await tfPage.goto(`http://127.0.0.1:${address.port}`, { waitUntil: 'domcontentloaded' })
+  await tfPage.getByRole('button', { name: 'Single Player', exact: true }).click()
+  await tfPage.getByRole('button', { name: 'Standard', exact: true }).click()
+  await tfPage.getByRole('button', { name: 'Ironclad', exact: true }).click()
+  await tfPage.getByRole('button', { name: 'Embark', exact: true }).click()
+  await tfPage.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
+  await tfPage.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+  await tfPage.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.phase = 'reward'
+    run.combat = null
+    run.rewardDestination = 'map'
+    run.rewards = [{ playerId: run.players[0].id, cardReward: false, transformReward: true, choices: null, upgraded: false,
+      gold: false, potion: false, relic: false, bossRelics: false }]
+    debug.setRun(run)
+  })
+  await tfPage.locator('.reward-screen--loot').waitFor()
+  assert.equal(await tfPage.getByRole('button', { name: 'Skip Transform' }).count(), 0, 'Transform loot still has its own Skip button')
+  const tfDeckBefore = await tfPage.evaluate(() => window.__STS_DEBUG__.getRun().players[0].deck.map((card) => card.uid))
+  await tfPage.getByRole('button', { name: 'Transform a card.' }).click()
+  await tfPage.locator('.card-picker').waitFor()
+  await tfPage.getByRole('button', { name: 'Back to loot' }).click()
+  await tfPage.locator('.reward-screen--loot').waitFor()
+  await tfPage.getByRole('button', { name: 'Transform a card.' }).click()
+  await tfPage.locator('.card-picker').waitFor()
+  await tfPage.locator('.card-picker .card').first().click()
+  await tfPage.getByRole('button', { name: 'Confirm', exact: true }).click()
+  await tfPage.waitForFunction(() => {
+    const run = window.__STS_DEBUG__.getRun()
+    return run.phase !== 'reward' || !run.rewards.some((offer) => offer.transformReward)
+  })
+  const tfDeckAfter = await tfPage.evaluate(() => window.__STS_DEBUG__.getRun().players[0].deck.map((card) => card.uid))
+  assert.equal(tfDeckAfter.length, tfDeckBefore.length, 'Transform loot changed the deck size')
+  assert.equal(tfDeckBefore.filter((uid) => !tfDeckAfter.includes(uid)).length, 1, 'Transform loot did not replace exactly one card')
+  await tfPage.close()
+
   const touchContext = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true })
   const touchPage = await touchContext.newPage()
   await touchPage.goto(`http://127.0.0.1:${address.port}`, { waitUntil: 'domcontentloaded' })

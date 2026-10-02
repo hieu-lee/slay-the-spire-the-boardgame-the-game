@@ -5,8 +5,8 @@ import type { CardRewardOffer, PotionRewardDecision, RewardSource } from '../gam
 import { potionLimit } from '../game/acquisition.ts'
 import { potionDef, relicDef } from '../game/relics.ts'
 import type { Player } from '../game/types.ts'
-import { Card } from './Card.tsx'
 import { CardRewardIcon, CardRewardPicker } from './CardRewardPicker.tsx'
+import { CardPicker } from './CardPicker.tsx'
 import { ItemImage } from './ItemImage.tsx'
 import { PotionTooltipAnchor } from './PotionIcon.tsx'
 import { rewardSourceLabel } from './reward-source.ts'
@@ -97,6 +97,8 @@ export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onR
   const [activeCardPlayerId, setActiveCardPlayerId] = useState<string | null>(() =>
     rewards.find((offer) => offer.cardReward && offer.choices !== null)?.playerId ?? null)
   const [sources, setSources] = useState<RewardSource[]>([])
+  const [transformPlayerId, setTransformPlayerId] = useState<string | null>(null)
+  const [transformUid, setTransformUid] = useState<string | null>(null)
   const backdrop = { '--reward-backdrop': `url("${new URL(assetPath(`backgrounds/boss-act-${act}.webp`), window.location.href).href}")` } as CSSProperties
   const activeOffer = activeCardPlayerId === null ? undefined : rewards.find((offer) => offer.playerId === activeCardPlayerId && offer.cardReward)
   const activePlayer = activeOffer && players.find((player) => player.id === activeOffer.playerId)
@@ -118,6 +120,23 @@ export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onR
     const skipped = Object.fromEntries(rewards.filter((offer) => offer.cardReward).map((offer) => [offer.playerId, null]))
     if (Object.keys(skipped).length > 0) onResolve(skipped)
   }
+
+  const transformPlayer = rewards.some((offer) => offer.playerId === transformPlayerId && offer.transformReward)
+    ? players.find((player) => player.id === transformPlayerId) : undefined
+  if (transformPlayer) return <CardPicker
+    cards={transformPlayer.deck.filter((card) => !cardIsCurse(card.defId))}
+    verb="Transform"
+    backLabel="Back to loot"
+    selectedCardUids={transformUid ? [transformUid] : []}
+    onSelect={(uid) => setTransformUid((current) => current === uid ? null : uid)}
+    onClear={() => setTransformUid(null)}
+    onBack={() => { setTransformPlayerId(null); setTransformUid(null) }}
+    onConfirm={() => {
+      if (!transformUid) return
+      setTransformPlayerId(null)
+      setTransformUid(null)
+      onTransform(transformPlayer.id, transformUid)
+    }} />
 
   if (activeOffer && activePlayer && activeOffer.choices === null && activeOffer.prismatic) return <section className="reward-screen reward-screen--card-choice" style={backdrop}>
     <h2 className="reward-screen__title">Choose a Card</h2>
@@ -157,11 +176,8 @@ export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onR
             if (!offer.prismatic) onReveal(player.id)
           }}
             icon={<CardRewardIcon rare={offer.cardSource === 'rare'} />}>Add a card to your deck.</LootChoice> : null}
-          {offer.transformReward ? <div className="reward-screen__transform"><strong>Transform a card</strong>
-            <div className="reward-screen__cards">{player.deck.filter((card) => !cardIsCurse(card.defId)).map((card) =>
-              <Card key={card.uid} card={card} playable onClick={() => onTransform(player.id, card.uid)} />)}</div>
-            <button type="button" onClick={() => onTransform(player.id, null)}>Skip Transform</button>
-          </div> : null}
+          {offer.transformReward ? <LootChoice onClick={() => setTransformPlayerId(player.id)}
+            icon={<CardRewardIcon />}>Transform a card.</LootChoice> : null}
         </div>
       })}
     </div>
