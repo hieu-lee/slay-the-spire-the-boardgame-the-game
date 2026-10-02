@@ -1121,14 +1121,14 @@ check('Snapshot Dead On Block matches modified hit damage, even through Block or
   }
   const snapshot = instance('buffer-snapshot', 'hermit_snapshot')
   const combat = createCombat(createRng(48), [player({ chamber: [snapshot] })],
-    [enemy({ defId: 'hexaghost', hp: 36, maxHp: 36, abilityCubes: 1 })])
+    [enemy({ defId: 'downfall_orb_master', hp: 45, maxHp: 45, abilityCubes: 1 })])
   skipSetupLoad(combat)
   const buffered = playLiveHermitChamberCard(combat, 'p1', snapshot.uid, { enemyUid: 'e1', playerId: null })
-  assert.equal(buffered.enemies[0].hp, 36)
+  assert.equal(buffered.enemies[0].hp, 45)
   assert.equal(buffered.enemies[0].abilityCubes, 0)
   assert.equal(buffered.players[0].block, 0)
   const boosted = createCombat(createRng(48), [player({ chamber: [snapshot] })],
-    [enemy({ defId: 'hexaghost', hp: 36, maxHp: 36, abilityCubes: 1 })])
+    [enemy({ defId: 'downfall_orb_master', hp: 45, maxHp: 45, abilityCubes: 1 })])
   skipSetupLoad(boosted)
   boosted.players[0].cardBlockBonus = 1
   const boostedBuffer = playLiveHermitChamberCard(boosted, 'p1', snapshot.uid, { enemyUid: 'e1', playerId: null })

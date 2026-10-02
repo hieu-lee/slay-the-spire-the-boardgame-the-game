@@ -134,11 +134,21 @@ check('enemy Strength adds to its attacks', () => {
   assertEqual(next.players[0].hp, 7, 'a 1-damage attack with 2 Strength deals 3')
 })
 
-check('Hexaghost starts with one Buffer per player', () => {
-  const state = createCombat(createRng(42), [player(), player({ id: 'p2', row: 1 })], [
-    enemy({ defId: 'hexaghost', isBoss: true, hp: 75, maxHp: 75 }),
-  ])
-  assertEqual(state.enemies[0].abilityCubes, 2)
+check('Hexaghost takes the first attack normally, including restored fights', () => {
+  for (const ascension of [0, 10]) for (const count of [1, 2, 3, 4]) {
+    for (const abilityCubes of [undefined, count]) {
+      const strike = instance('strike_ironclad')
+      const players = Array.from({ length: count }, (_, row) => player({
+        id: `p${row + 1}`, row, hand: row === 0 ? [strike] : [],
+      }))
+      const state = createCombat(createRng(42), players, [enemy({
+        defId: 'hexaghost', ascension, isBoss: true, hp: 36, maxHp: 36, abilityCubes,
+      })])
+      const attacked = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+      assertEqual(attacked.enemies[0].hp, 35,
+        `first Strike deals 1 damage at Ascension ${ascension} with ${count} players`)
+    }
+  }
 })
 
 // p.13: highest row first, left to right, and bosses always act last.

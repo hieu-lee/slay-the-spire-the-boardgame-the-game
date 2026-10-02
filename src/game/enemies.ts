@@ -1195,7 +1195,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
       { actions: [{ kind: 'attack', amount: 2 }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
       { actions: [{ kind: 'attack', amount: 3, times: 2 }, { kind: 'status', card: 'burn', amount: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
     ] },
-    ability: { kind: 'buffer', initialPerPlayer: 1, max: 4 },
     ascension: [{ min: 10, hpByPlayers: [38, 80, 120, 160], pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'attack', amount: 1 }, { kind: 'status', card: 'burn', amount: 2, aoe: true }] },
       { actions: [{ kind: 'attack', amount: 2, times: 2 }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
