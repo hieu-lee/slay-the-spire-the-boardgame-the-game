@@ -95,6 +95,8 @@ export {
   resolveHermitSetupLoad,
   resolveHermitStrengthReward,
 } from './combat/play.ts'
+export { previewCardDamage } from './combat/preview.ts'
+export type { CardDamagePreview } from './combat/preview.ts'
 export {
   defaultPendingDieRelicChoice,
   defaultStartTurnChoices,

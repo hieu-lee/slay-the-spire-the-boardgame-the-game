@@ -231,6 +231,33 @@
   background: rgb(0 0 0 / 55%);
 }
 
+/*
+ * What the hit deals right now, opposite the AoE burst. Green when Strength or
+ * Vulnerable raise it past the plain play, red when Weak or negative Strength
+ * cut it, plain when nothing changes it.
+ */
+.card__live-damage {
+  position: absolute;
+  z-index: 2;
+  top: 24%;
+  left: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px 1px 3px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 68%);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+}
+
+.card__live-damage[data-trend='up'] { color: #7dff8a; }
+.card__live-damage[data-trend='down'] { color: #ff7a72; }
+
 /* The video game keeps keyword explanations beside the enlarged card. */
 .card-keyword-tips {
   position: fixed;

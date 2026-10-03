@@ -31,6 +31,8 @@ type CardProps = {
   gemPowerDamage?: boolean
   /** Position in the fan, -1 (leftmost) to 1 (rightmost), 0 in the middle. */
   fan?: number
+  /** Damage the card would deal now, against the same play with no Strength, Weak or Vulnerable. */
+  liveDamage?: { damage: number, baseline: number }
   /** Removes an otherwise-real card button from sequential keyboard navigation. */
   tabIndex?: number
   /** Appended to the accessible name, e.g. to tell a just-drawn duplicate apart. */
@@ -688,6 +690,7 @@ export function Card({
   picked = false,
   gemPowerDamage,
   fan = 0,
+  liveDamage,
   tabIndex,
   accessibleNote,
   onClick,
@@ -785,6 +788,13 @@ export function Card({
       <CardFace def={def} cost={cost} rules={cardRulesText(def)} illustration={scanUnavailable} />
       {attachedGem && scanUnavailable ? <img className="card__gem" src={cardThumbPath(attachedGem, false)} alt=""
         draggable={false} title={`${attachedGem.name}: ${cardRuleDescription(attachedGem)}`} /> : null}
+      {liveDamage ? (
+        // The scan prints the base number; this is what the hit really deals now.
+        <span className="card__live-damage" aria-hidden="true"
+          data-trend={liveDamage.damage > liveDamage.baseline ? 'up' : liveDamage.damage < liveDamage.baseline ? 'down' : undefined}>
+          <Icon name="attack" size={14} />{liveDamage.damage}
+        </span>
+      ) : null}
       {def.target === 'row' ? (
         // The burst printed on Cleave and its like. Marked hidden because
         // `accessibleName` already says "affects a whole row" — announced here as

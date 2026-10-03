@@ -120,6 +120,7 @@ import {
   powerAbilityKey,
   powerAbilityUsed,
   previewCardChoice,
+  previewCardDamage,
   previewCardCopyChoice,
   previewHermitChamberCardChoice,
   previewPowerChoice,
@@ -153,6 +154,7 @@ import {
   startTurnScryPreview,
 } from '../game/combat.ts'
 import type {
+  CardDamagePreview,
   CombatPresentationEvent,
   CombatState,
   DiscardOrders,
@@ -608,6 +610,24 @@ function CombatScreenView({
   }
   const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
+  // Hand Attacks show what they would deal now: to the enemy being dragged onto or last
+  // pointed at, to the only enemy left, otherwise to a plain stand-in enemy.
+  const [pointedEnemyUid, setPointedEnemyUid] = useState<string | null>(null)
+  const previewEnemyUid = (() => {
+    const living = livingEnemies(state)
+    if (living.length === 1) return living[0]!.uid
+    const picked = cardDrag?.targetUid ?? pointedEnemyUid
+    return living.some((enemy) => enemy.uid === picked) ? picked : null
+  })()
+  const cardDamage = useMemo(() => {
+    const previews = new Map<string, CardDamagePreview>()
+    if (!viewer || viewer.dead || state.phase !== 'player') return previews
+    for (const card of viewer.hand) {
+      const preview = previewCardDamage(state, viewer.id, card.uid, previewEnemyUid, Boolean(onAction))
+      if (preview) previews.set(card.uid, preview)
+    }
+    return previews
+  }, [state, viewer, previewEnemyUid, onAction])
   const courierAvailable = Boolean(onCourierReveal) && courierReady(viewer, courierUsedBy ?? [])
   const canUsePotionNow = (potionId: string) => Boolean(viewer &&
     canActivatePotion(state, viewer, potionId) && !(partyStartTurnPostRollLocked &&
@@ -6233,6 +6253,11 @@ function CombatScreenView({
         ref={boardRef}
         tabIndex={0}
         aria-label="Combat board"
+        onPointerOver={(event) => {
+          const enemyUid = event.target instanceof Element
+            ? event.target.closest<HTMLElement>('[data-enemy-id]')?.dataset.enemyId : undefined
+          if (enemyUid) setPointedEnemyUid(enemyUid)
+        }}
       >
         {bosses.length > 0 ? (
           <div className="board__bosses">
@@ -6989,6 +7014,7 @@ function CombatScreenView({
               style={{ '--deal-index': index } as React.CSSProperties}
               inspectOnTouch
               fan={fanOf(index, visibleHand.length)}
+              liveDamage={chamberCard ? undefined : cardDamage.get(card.uid)}
               card={chamberCard ? displayedCard : shownCard}
               gemPowerDamage={attachedGemId !== card.attachedGemId || undefined}
               cost={card.uid === forcedCardUid ? 0 : playCost(def, cardViewer, displayedCard)}
