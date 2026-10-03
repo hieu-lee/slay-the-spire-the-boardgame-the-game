@@ -789,7 +789,7 @@ try {
           const intent=e.querySelector('.enemy__intent').getBoundingClientRect()
           const effect=e.querySelector('.enemy__ability')?.getBoundingClientRect()
           return {boardTop:e.closest('.board').getBoundingClientRect().top,artTop,intentTop:intent.top,intentBottom:intent.bottom,effectTop:effect?.top,effectBottom:effect?.bottom,
-            viewport:[innerWidth,innerHeight],floor:getComputedStyle(e).getPropertyValue('--elite-floor-offset'),bossLane:!!e.closest('.board__bosses')}
+            viewport:[innerWidth,innerHeight],bossLane:!!e.closest('.board__bosses')}
         })
         assert(bands.intentTop>=bands.boardTop,`${screen}/${enemy.id}: intent clipped by board ${JSON.stringify(bands)}`)
         assert(bands.intentBottom<=(bands.effectTop??bands.artTop)+1,`${screen}/${enemy.id}: intent overlaps effect/art ${JSON.stringify(bands)}`)

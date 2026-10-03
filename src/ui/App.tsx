@@ -318,6 +318,8 @@ export function App() {
       const anchors = [...document.querySelectorAll<HTMLElement>(
         'button, a[href], input, select, textarea, [role="button"]',
       )]
+        // Controls inside a closed <details> keep layout boxes that nobody can see.
+        .filter((element) => !element.closest('details:not([open])') || element.closest('summary'))
         .map((element) => (element.querySelector('.enemy__hit-area') ?? element).getBoundingClientRect())
         .filter((box) => box.right > 0 && box.bottom > 0 && box.left < window.innerWidth && box.top < window.innerHeight)
       const powerZoom = document.querySelector<HTMLElement>('.power__zoom')?.getBoundingClientRect()

@@ -111,9 +111,22 @@ try {
           await page.evaluate(() => {
             const run = structuredClone(window.__STS_DEBUG__.getRun())
             Object.assign(run.combat.enemies[0], { defId: 'time_eater', isBoss: true, hp: 30, maxHp: 30, abilityUsed: false })
+            // Blue Candle keeps every hand card in a closed <details>. Those controls have no visible
+            // box, but a long hand leaves them across the space beside the boss.
+            run.combat.players[0].relics = [{ defId: 'blue_candle', spent: false }]
+            run.combat.players[0].hand = Array.from({ length: 12 }, (_, i) => ({ uid: `long-${i}`, defId: i % 2 ? 'defend_ironclad' : 'strike_ironclad', upgraded: false }))
             window.__STS_DEBUG__.setRun(run)
           })
           const boss = page.locator('[data-enemy-def="time_eater"]')
+          await page.waitForTimeout(1000)
+          await boss.locator('.enemy__hit-area').hover()
+          await tip.waitFor()
+          const bossTip = await tip.boundingBox()
+          const bossBox = await boss.locator('.enemy__hit-area').boundingBox()
+          assert(Math.max(bossBox.x - (bossTip.x + bossTip.width), bossTip.x - (bossBox.x + bossBox.width)) <= 24,
+            `boss tooltip must open beside the boss, not at ${JSON.stringify(bossTip)}`)
+          await page.mouse.move(2, 2)
+          await tip.waitFor({ state: 'hidden' })
           await page.keyboard.press('Tab')
           await boss.focus()
           await tip.waitFor()

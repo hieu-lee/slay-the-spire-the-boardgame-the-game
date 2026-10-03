@@ -621,6 +621,11 @@ check('every enemy resolves to the continuous rig inventory', () => {
   assert(result.status === 0, result.stderr || result.stdout || 'rig audit requires Python and Pillow')
 })
 
+check('Elite and Boss intent placement matches their art', () => {
+  const result = spawnSync('python3', ['scripts/calibrate-elite-intent.py', '--check'], { cwd: repoRoot, encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'run python3 scripts/calibrate-elite-intent.py')
+})
+
 check('every ranged Downfall boss has one complete transparent projectile', () => {
   const artIds = [
     'downfall_blasphemer', 'downfall_corrupted', 'downfall_dark_core', 'downfall_inferno',

@@ -40,7 +40,7 @@ const focusedEngineOwners = new Map([
 ])
 const focusedUiOwners = new Map([
   ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-courier-browser.mjs',
-    'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs']],
+    'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-enemy-hover-browser.mjs']],
   ['src/ui/CampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
   ['src/ui/CompendiumScreen.tsx', ['verify-compendium-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
@@ -49,9 +49,11 @@ const focusedUiOwners = new Map([
     'verify-hermit-online-staged-trigger-browser.mjs', 'verify-combat-layout-reload-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-turn-targets-browser.mjs', 'verify-elite-signatures-browser.mjs',
   ]],
-  ['src/ui/EnemyCard.tsx', ['verify-elite-signatures-browser.mjs']],
-  ['src/ui/combat-vfx.ts', ['verify-elite-signatures-browser.mjs']],
-  ['src/ui/styles/elite-signatures.css', ['verify-elite-signatures-browser.mjs']],
+  ['src/ui/EnemyCard.tsx', ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs']],
+  ['src/ui/rig-animation-metadata.json', ['verify-elite-intent-browser.mjs']],
+  ['src/ui/elite-art-head.json', ['verify-elite-intent-browser.mjs', 'verify-assets.mjs']],
+  ['src/ui/combat-vfx.ts', ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs']],
+  ['src/ui/styles/elite-signatures.css', ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs']],
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/MailBox.tsx', ['verify-mail-browser.mjs']],
   ['src/ui/MapScreen.tsx', ['verify-wing-focus-browser.mjs']],
@@ -80,12 +82,13 @@ const focusedUiOwners = new Map([
   ]],
   ['src/ui/styles/enemy-portrait.css', ['verify-turn-targets-browser.mjs', 'verify-end-turn-drag-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
-  ['src/ui/styles/stage-scale.css', ['verify-combat-layout-reload-browser.mjs']],
+  ['src/ui/styles/stage-scale.css', ['verify-combat-layout-reload-browser.mjs', 'verify-elite-intent-browser.mjs']],
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
   ['scripts/animation/encode-safari-attacks.py', ['verify-assets.mjs', 'verify-rig-animation-browser.mjs']],
   ['scripts/animation/check-attack-parity.py', ['verify-rig-animation-browser.mjs']],
+  ['scripts/calibrate-elite-intent.py', ['verify-elite-intent-browser.mjs', 'verify-assets.mjs']],
   ['scripts/animation/elite_signatures.py', ['verify-assets.mjs', 'verify-elite-signatures-browser.mjs']],
   ['src/mail.ts', ['verify-mail-browser.mjs']],
   ['src/ui/useWebMcp.ts', ['verify-webmcp-browser.mjs']],
@@ -111,7 +114,7 @@ const stylesheetBrowserOwners = (file) => file === 'src/ui/styles/hand.css'
   ? ['verify-card-cancel-browser.mjs', 'verify-combat-hand-viewport-browser.mjs',
     'verify-combat-player-clipping-browser.mjs', 'verify-end-turn-drag-browser.mjs']
   : file === 'src/ui/styles/combat.css' || file === 'src/ui/styles/painterly-combat-stage.css'
-    ? ['verify-courier-browser.mjs']
+    ? ['verify-courier-browser.mjs', ...(file.endsWith('painterly-combat-stage.css') ? ['verify-elite-intent-browser.mjs'] : [])]
   : file === 'src/ui/chrome/stone-keys.css' || file === 'src/ui/chrome/run-header.css'
     ? ['verify-hover-overflow-browser.mjs', 'verify-courier-browser.mjs']
   : file === 'src/ui/chrome.css' || file.startsWith('src/ui/chrome/')

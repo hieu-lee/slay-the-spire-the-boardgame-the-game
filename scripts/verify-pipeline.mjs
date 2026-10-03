@@ -52,7 +52,7 @@ check('frontend surfaces select their cores and named focused browser checks', (
     'verify-turn-targets-browser.mjs', 'verify-wing-and-throw-browser.mjs', 'verify-elite-signatures-browser.mjs',
     'verify-die-relic-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 22, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 23, 'combat screen selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/TokenRow.tsx'), ['verify-turn-targets-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs'], 'Orb row')
   assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))

@@ -27,6 +27,7 @@ import {
 } from './combat-vfx.ts'
 import { combatArtBounds, combatBodyPoint } from './combat-geometry.ts'
 import enemyArtSizes from './enemy-art-size.json'
+import eliteArtHeads from './elite-art-head.json'
 import enemyFootAnchors from './enemy-foot-anchors.json'
 import {
   CombatAnimation,
@@ -883,6 +884,8 @@ export function EnemyCard({
   const normalSize = !visibleEnemy.isBoss && !def.elite
     ? (enemyArtSizes as Record<string, number[]>)[currentBossArtId] : undefined
   const sizeOffset = animatedEnemy ? 0 : 2
+  // [aspect, top] of the resting art, so an Elite or Boss telegraph can sit on its head.
+  const eliteHead = (eliteArtHeads as Record<string, number[]>)[sleeping ? 'lagavulin_sleep' : currentBossArtId]
 
   const className = [
     'enemy',
@@ -935,6 +938,8 @@ export function EnemyCard({
         '--normal-canvas-width': normalSize?.[sizeOffset],
         '--normal-canvas-height': normalSize?.[sizeOffset + 1],
         '--normal-body-height': normalSize?.[4],
+        '--elite-art-aspect': eliteHead?.[sizeOffset],
+        '--elite-art-top': eliteHead?.[sizeOffset + 1],
         '--boss-attack-duration': `${bossAttackDurationFor(bossArtId)}ms`,
       } as CSSProperties}
       disabled={enemy.dead || disabled}

@@ -373,14 +373,20 @@
 .board :is(.enemy--elite, .board__bosses .enemy--boss) {
   --elite-scale: 1.8;
   --elite-art-height: calc(var(--stage-actor-width) * 2.3 / 1.45);
-  --elite-floor-offset: 0rem;
+  /* Telegraphs sit on the painted head, not the transparent animation canvas: the
+     head's height above the portrait floor. Art is 180% of the portrait wide,
+     fitted to that floor, and animated art scales up from it. */
+  --elite-head-height: calc(var(--elite-art-scale, var(--animation-art-scale, 1)) *
+    min(var(--elite-art-height), var(--stage-actor-width) * 1.8 / var(--elite-art-aspect, 1)) *
+    (1 - var(--elite-art-top, 0)) - var(--elite-art-drop, 0px));
 }
-/* Reserve distinct bands above the full art canvas, including tall elite rigs.
-   The smaller four-player portrait ratio gives a safe bound for every row. */
+/* Nob's club swing needs overscan, so its art sits that far below the floor. */
+.enemy--elite[data-enemy-art='gremlin_nob'] { --elite-art-drop: calc(var(--elite-art-height) * .066); }
+.board .enemy[data-animation='static']:not([data-sleeping='true']) { --elite-art-scale: 1; }
 .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__intent {
   position: absolute;
   top: auto;
-  bottom: calc(var(--elite-art-height) + 4.2rem * var(--stage-scale) + var(--elite-floor-offset) + var(--enemy-name-height));
+  bottom: calc(1.7rem * var(--stage-scale) + var(--portrait-floor-extra, 0rem) + var(--enemy-name-height) + var(--elite-head-height) + .5rem * var(--stage-scale));
   right: -25%;
   left: -25%;
 }
@@ -391,12 +397,6 @@
   right: calc((var(--stage-actor-width) - var(--stage-enemy-gap)) / 2 + .25rem * var(--stage-scale));
 }
 
-/* Phones use the app's 720px virtual desktop viewport. Their longest boss
-   intents need less empty space above the art than full-height desktops. */
-html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
-  --elite-floor-offset: -1rem;
-}
-
 @media (orientation: landscape) and (max-height: 26.25rem) {
   /* Foreground summons need the space that bosses/elite enemies reserve for
      the End turn control, as well as their own full-size row. */
@@ -405,18 +405,7 @@ html[data-mobile-performance='true'] .board .board__bosses .enemy--boss {
   }
   .board :is(.enemy--elite, .board__bosses .enemy--boss) {
     --elite-art-height: min(calc(var(--stage-actor-width) * 1.45), max(4rem, calc(100dvh - 17.5rem)));
-    --elite-floor-offset: 4.75rem;
     --elite-end-turn-clearance: 8rem;
-  }
-  .board .board__bosses .enemy--boss {
-    /* Boss intents can have an additional action line on short screens. */
-    --elite-floor-offset: 3.9rem;
-  }
-}
-
-@media (orientation: landscape) and (max-height: 26.25rem) {
-  .board :is(.enemy--elite, .board__bosses .enemy--boss) > .enemy__intent {
-    bottom: calc(var(--elite-art-height) + 3.2rem * var(--stage-scale) + var(--elite-floor-offset) + var(--enemy-name-height));
   }
 }
 

@@ -200,7 +200,7 @@ export function enemyImagePath(def: EnemyDef): string {
   return assetPath(`combat/enemies/${artId}.webp`)
 }
 
-const WEBP_ONLY_ANIMATIONS = new Set(['byrd', 'cultist', 'looter', 'mugger', 'book_of_stabbing',
+export const WEBP_ONLY_ANIMATIONS = new Set(['byrd', 'cultist', 'looter', 'mugger', 'book_of_stabbing',
   'lagavulin', 'gremlin_leader', 'reptomancer', 'guardian_attack', 'guardian_defensive'])
 const SAFARI_PNG_ATTACKS = new Set(['looter', 'mugger', 'book_of_stabbing', 'gremlin_nob', 'lagavulin',
   'sentry', 'gremlin_leader', 'taskmaster', 'giant_head', 'nemesis', 'reptomancer',
