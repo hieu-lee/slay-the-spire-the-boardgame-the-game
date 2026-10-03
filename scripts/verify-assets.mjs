@@ -626,6 +626,11 @@ check('Elite and Boss intent placement matches their art', () => {
   assert(result.status === 0, result.stderr || 'run python3 scripts/calibrate-elite-intent.py')
 })
 
+check('held potions and Orbs sit on each hero\'s head', () => {
+  const result = spawnSync('python3', ['scripts/calibrate-hero-head.py', '--check'], { cwd: repoRoot, encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'run python3 scripts/calibrate-hero-head.py')
+})
+
 check('every ranged Downfall boss has one complete transparent projectile', () => {
   const artIds = [
     'downfall_blasphemer', 'downfall_corrupted', 'downfall_dark_core', 'downfall_inferno',

@@ -48,9 +48,16 @@ const focusedUiOwners = new Map([
     'verify-courier-browser.mjs', 'verify-hermit-combo-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
     'verify-hermit-online-staged-trigger-browser.mjs', 'verify-combat-layout-reload-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-turn-targets-browser.mjs', 'verify-elite-signatures-browser.mjs',
+    'verify-hero-potions-browser.mjs', 'verify-end-turn-drag-browser.mjs', 'verify-card-damage-preview-browser.mjs',
   ]],
   ['src/ui/EnemyCard.tsx', ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs']],
-  ['src/ui/rig-animation-metadata.json', ['verify-elite-intent-browser.mjs']],
+  ['src/ui/Card.tsx', ['verify-card-damage-preview-browser.mjs']],
+  ['src/ui/combat-screen/hooks.ts', ['verify-card-damage-preview-browser.mjs']],
+  ['src/ui/SettingsDialog.tsx', ['verify-card-damage-preview-browser.mjs']],
+  ['src/ui/game-settings.ts', ['verify-card-damage-preview-browser.mjs']],
+  ['src/ui/rig-animation-metadata.json', ['verify-elite-intent-browser.mjs', 'verify-hero-potions-browser.mjs']],
+  ['src/ui/hero-art-head.json', ['verify-hero-potions-browser.mjs', 'verify-assets.mjs']],
+  ['scripts/calibrate-hero-head.py', ['verify-hero-potions-browser.mjs', 'verify-assets.mjs']],
   ['src/ui/elite-art-head.json', ['verify-elite-intent-browser.mjs', 'verify-assets.mjs']],
   ['src/ui/combat-vfx.ts', ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs']],
   ['src/ui/styles/elite-signatures.css', ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs']],
@@ -82,7 +89,7 @@ const focusedUiOwners = new Map([
   ]],
   ['src/ui/styles/enemy-portrait.css', ['verify-turn-targets-browser.mjs', 'verify-end-turn-drag-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
-  ['src/ui/styles/stage-scale.css', ['verify-combat-layout-reload-browser.mjs', 'verify-elite-intent-browser.mjs']],
+  ['src/ui/styles/stage-scale.css', ['verify-combat-layout-reload-browser.mjs', 'verify-elite-intent-browser.mjs', 'verify-hero-potions-browser.mjs']],
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
@@ -112,9 +119,9 @@ const sharedBrowserOwners = ['verify-browser.mjs', 'verify-noncombat-browser.mjs
 const onlineBrowserOwners = ['verify-online-browser.mjs', 'verify-hosted-multiplayer-browser.mjs']
 const stylesheetBrowserOwners = (file) => file === 'src/ui/styles/hand.css'
   ? ['verify-card-cancel-browser.mjs', 'verify-combat-hand-viewport-browser.mjs',
-    'verify-combat-player-clipping-browser.mjs', 'verify-end-turn-drag-browser.mjs']
+    'verify-combat-player-clipping-browser.mjs', 'verify-end-turn-drag-browser.mjs', 'verify-card-damage-preview-browser.mjs']
   : file === 'src/ui/styles/combat.css' || file === 'src/ui/styles/painterly-combat-stage.css'
-    ? ['verify-courier-browser.mjs', ...(file.endsWith('painterly-combat-stage.css') ? ['verify-elite-intent-browser.mjs'] : [])]
+    ? ['verify-courier-browser.mjs', ...(file.endsWith('painterly-combat-stage.css') ? ['verify-elite-intent-browser.mjs', 'verify-hero-potions-browser.mjs', 'verify-end-turn-drag-browser.mjs'] : [])]
   : file === 'src/ui/chrome/stone-keys.css' || file === 'src/ui/chrome/run-header.css'
     ? ['verify-hover-overflow-browser.mjs', 'verify-courier-browser.mjs']
   : file === 'src/ui/chrome.css' || file.startsWith('src/ui/chrome/')

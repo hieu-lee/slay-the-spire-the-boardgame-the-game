@@ -6,6 +6,8 @@ export type GameSettings = {
   voiceVolume: number
   reducedMotion: boolean
   highContrast: boolean
+  /** Live damage numbers and the area-of-effect symbol on cards. */
+  cardHints: boolean
 }
 
 export const GAME_SETTINGS_KEY = 'sts-game-settings'
@@ -17,6 +19,7 @@ const DEFAULTS: GameSettings = {
   voiceVolume: 100,
   reducedMotion: false,
   highContrast: false,
+  cardHints: true,
 }
 let sfxVolume = 1
 
@@ -35,6 +38,7 @@ export function loadGameSettings(): GameSettings {
       voiceVolume: volume(saved.voiceVolume, DEFAULTS.voiceVolume),
       reducedMotion: typeof saved.reducedMotion === 'boolean' ? saved.reducedMotion : DEFAULTS.reducedMotion,
       highContrast: typeof saved.highContrast === 'boolean' ? saved.highContrast : DEFAULTS.highContrast,
+      cardHints: typeof saved.cardHints === 'boolean' ? saved.cardHints : DEFAULTS.cardHints,
     }
   } catch {
     return { ...DEFAULTS }
@@ -59,6 +63,7 @@ export function useGameSettings(overrides?: Partial<GameSettings>) {
     }
     document.documentElement.dataset.reducedMotion = String(settings.reducedMotion)
     document.documentElement.dataset.highContrast = String(settings.highContrast)
+    document.documentElement.dataset.cardHints = String(settings.cardHints)
   }, [overrides, settings])
   return [settings, setSettings] as const
 }

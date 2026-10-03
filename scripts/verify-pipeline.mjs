@@ -50,9 +50,10 @@ check('frontend surfaces select their cores and named focused browser checks', (
     'verify-combat-stage-scan-browser.mjs',
     'verify-enemy-attack-once-browser.mjs', 'verify-row-target-browser.mjs',
     'verify-turn-targets-browser.mjs', 'verify-wing-and-throw-browser.mjs', 'verify-elite-signatures-browser.mjs',
-    'verify-die-relic-browser.mjs'], 'combat screen')
+    'verify-die-relic-browser.mjs', 'verify-hero-potions-browser.mjs',
+    'verify-end-turn-drag-browser.mjs', 'verify-card-damage-preview-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 23, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 26, 'combat screen selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/TokenRow.tsx'), ['verify-turn-targets-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs'], 'Orb row')
   assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))
@@ -159,8 +160,9 @@ check('shared frontend changes use cores plus named visual owners', () => {
     'verify-combat-player-clipping-browser.mjs', 'verify-end-turn-drag-browser.mjs',
     'verify-enemy-layout-browser.mjs', 'verify-enemy-attack-once-browser.mjs',
     'verify-combat-stage-scan-browser.mjs',
-    'verify-row-target-browser.mjs', 'verify-wing-and-throw-browser.mjs', 'verify-elite-signatures-browser.mjs'], 'hand stylesheet')
-  assertEqual(hand.length, 23, 'hand stylesheet selected an unrelated browser suite')
+    'verify-row-target-browser.mjs', 'verify-wing-and-throw-browser.mjs', 'verify-elite-signatures-browser.mjs',
+    'verify-card-damage-preview-browser.mjs'], 'hand stylesheet')
+  assertEqual(hand.length, 24, 'hand stylesheet selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/styles/presentation-overlays.css'), [
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
     'verify-lightning-act2-browser.mjs',

@@ -1,4 +1,5 @@
 import { SmokeTrail, warmSmokeTrails } from './combat-screen/SmokeTrail.tsx'
+import heroArtHeads from './hero-art-head.json'
 import { animateCardFlight, cardFlightPath } from './combat-screen/card-flight.ts'
 import { unknownPowerRefreshDecision } from './combat-screen/unknown-power.ts'
 import { HermitTriggerChoice } from './combat-screen/HermitTriggerChoice.tsx'
@@ -27,6 +28,7 @@ import {
   rowsOf,
 } from './combat-screen/helpers.ts'
 import {
+  useCardHints,
   useCombatSoundEffects,
   useFalling,
   usePersonalCombatSoundEffects,
@@ -619,15 +621,16 @@ function CombatScreenView({
     const picked = cardDrag?.targetUid ?? pointedEnemyUid
     return living.some((enemy) => enemy.uid === picked) ? picked : null
   })()
+  const cardHints = useCardHints()
   const cardDamage = useMemo(() => {
     const previews = new Map<string, CardDamagePreview>()
-    if (!viewer || viewer.dead || state.phase !== 'player') return previews
+    if (!cardHints || !viewer || viewer.dead || state.phase !== 'player') return previews
     for (const card of viewer.hand) {
       const preview = previewCardDamage(state, viewer.id, card.uid, previewEnemyUid, Boolean(onAction))
       if (preview) previews.set(card.uid, preview)
     }
     return previews
-  }, [state, viewer, previewEnemyUid, onAction])
+  }, [cardHints, state, viewer, previewEnemyUid, onAction])
   const courierAvailable = Boolean(onCourierReveal) && courierReady(viewer, courierUsedBy ?? [])
   const canUsePotionNow = (potionId: string) => Boolean(viewer &&
     canActivatePotion(state, viewer, potionId) && !(partyStartTurnPostRollLocked &&
@@ -6342,6 +6345,11 @@ function CombatScreenView({
             ? 'combat/characters/watcher-hero.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
           const characterArtScale = prefersReducedMotion || occupant?.dead || occupant?.character === 'watcher' ? 1
             : (rigMetadata as Record<string, { scale?: number }>)[`hero-${rigId}`]?.scale ?? 1
+          // Where the painted head ends, so held potions and Orbs float just above it.
+          const animatedPortrait = !prefersReducedMotion && !occupant?.dead && !slimeSpawnEvent
+          const heroHeads = heroArtHeads as Record<string, number[]>
+          const heroHead = (slimeSpawnEvent ? heroHeads['slime_boss-spawn'] : rigId ? heroHeads[rigId] : undefined)?.[animatedPortrait ? 0 : 1]
+          const guardianShiftHead = occupant?.character === 'guardian' ? heroHeads['guardian-transition']?.[0] : undefined
           return (
             <div
               className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
@@ -6353,6 +6361,11 @@ function CombatScreenView({
                 {occupant ? (
                   <>
                     <div className="seat__interactive" data-player-id={occupant.id} data-character={occupant.character}
+                      style={heroHead === undefined ? undefined : {
+                        '--hero-art-head-height': `calc(var(--stage-actor-width) * ${+(heroHead * (slimeSpawnEvent ? 1 : characterArtScale)).toFixed(4)})`,
+                        '--hero-shift-head-height': guardianShiftHead === undefined ? undefined
+                          : `calc(var(--stage-actor-width) * ${guardianShiftHead})`,
+                      } as React.CSSProperties}
                       onPointerDown={(event) => onEndTurnOrbPointerDown(occupant, event)}
                       onPointerMove={onEndTurnEffectPointerMove}
                       onPointerUp={finishEndTurnEffectDrag}

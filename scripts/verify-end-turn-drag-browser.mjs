@@ -306,7 +306,16 @@ try {
   assert(loopOrbBox.x >= defectPortraitBox.x - defectPortraitBox.width * 0.3 &&
     loopOrbBox.x + loopOrbBox.width <= defectPortraitBox.x + defectPortraitBox.width * 1.3,
   'the selected Orb detached from the Defect portrait')
-  const defectHeadTop = defectPortraitBox.y + defectPortraitBox.height - defectPortraitBox.width * 0.66
+  // The Orb row rests on the painted head the seat reports through --hero-head-height.
+  const defectHeadHeight = () => page.locator('.seat__interactive[data-character="defect"]').evaluate((seat) => {
+    const probe = document.createElement('div')
+    probe.style.cssText = 'position:absolute;visibility:hidden;height:var(--hero-head-height)'
+    seat.append(probe)
+    const height = probe.getBoundingClientRect().height
+    probe.remove()
+    return height
+  })
+  const defectHeadTop = defectPortraitBox.y + defectPortraitBox.height - await defectHeadHeight()
   const orbGap = defectHeadTop - (loopOrbBox.y + loopOrbBox.height)
   assert(orbGap >= -1 && orbGap <= 160, `the selected Orb detached vertically from the Defect: ${orbGap}px`)
   assert(Math.abs(orbRowBox.y + orbRowBox.height - defectHeadTop) <= 1,
@@ -324,7 +333,7 @@ try {
   await page.screenshot({ path: join(output, 'defect-loop-compact.png') })
   const compactOrbGap = compactOrbRowBox && compactPortraitBox &&
     compactOrbRowBox.y + compactOrbRowBox.height -
-    (compactPortraitBox.y + compactPortraitBox.height - compactPortraitBox.width * 0.66)
+    (compactPortraitBox.y + compactPortraitBox.height - await defectHeadHeight())
   assert(compactOrbRowBox && compactPortraitBox && Math.abs(
     compactOrbGap,
   ) <= 4,

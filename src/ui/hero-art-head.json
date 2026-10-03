@@ -1,0 +1,19 @@
+{
+  "ironclad": [0.3125, 0.6523],
+  "silent": [0.5175, 0.6615],
+  "defect": [0.52, 0.6549],
+  "hermit": [0.5975, 0.9697],
+  "slime_boss": [0.5437, 0.834],
+  "watcher": [0.996, 0.996],
+  "guardian": [0.6613, 0.9443],
+  "guardian-defense": [0.6875, 0.9375],
+  "hexaghost-heat-0": [0.6525, 0.9395],
+  "hexaghost-heat-1": [0.68, 0.9648],
+  "hexaghost-heat-2": [0.6813, 0.9824],
+  "hexaghost-heat-3": [0.6813, 0.9824],
+  "hexaghost-heat-4": [0.6813, 0.9824],
+  "hexaghost-heat-5": [0.6813, 0.9824],
+  "hexaghost-heat-6": [0.6813, 0.9824],
+  "slime_boss-spawn": [0.7695, 0.7695],
+  "guardian-transition": [0.9453, 0.9453]
+}

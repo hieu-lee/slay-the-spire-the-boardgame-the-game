@@ -100,6 +100,10 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
               <span><strong>High-contrast UI</strong></span>
               <input type="checkbox" checked={settings.highContrast} onChange={(event) => set('highContrast', event.target.checked)} />
             </label>
+            <label className="settings-toggle">
+              <span><strong>Card hints</strong><small>Live damage and the area-of-effect symbol on cards</small></span>
+              <input type="checkbox" checked={settings.cardHints} onChange={(event) => set('cardHints', event.target.checked)} />
+            </label>
             {fullscreenError ? <p className="settings-dialog__error" role="alert">{fullscreenError}</p> : null}
           </section> : null}
           {tab === 'audio' ? <section id={`${id}-audio-panel`} role="tabpanel" aria-labelledby={`${id}-audio-tab`}>

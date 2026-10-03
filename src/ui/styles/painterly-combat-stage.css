@@ -204,10 +204,11 @@
   --orb-clearance: 2rem;
 }
 
-/* Defect's wide animation canvas has empty space above its head. Anchor
-   Orbs and metadata to the painted body; the ratio also fits static art. */
-.seat__interactive[data-character='defect']:has(> .orbs) {
-  --hero-head-height: calc(var(--stage-actor-width) * 0.66);
+/* CombatScreen measures the painted head, so Orbs and held potions sit just above it
+   whatever the art's empty margin. The Guardian's mode-shift art is taller than its idle pose. */
+.seat__interactive { --hero-head-height: var(--hero-art-head-height); }
+.seat__interactive:has(.seat__portrait > [data-guardian-transition]) {
+  --hero-head-height: var(--hero-shift-head-height, var(--hero-art-head-height));
 }
 .seat__interactive > .orbs {
   top: calc(100% - (3rem * var(--stage-scale)) - var(--portrait-floor-extra, 0rem) - var(--hero-head-height, var(--portrait-height)) - var(--orb-size) - var(--orb-margin));

@@ -110,6 +110,19 @@ export function useReducedEffects(): boolean {
 
 export const usePrefersReducedMotion = useReducedEffects
 
+/** Whether the Card hints setting (live damage, area-of-effect symbol) is on. */
+export function useCardHints(): boolean {
+  const read = () => document.documentElement.dataset.cardHints !== 'false'
+  const [on, setOn] = useState(read)
+  useEffect(() => {
+    const observer = new MutationObserver(() => setOn(read()))
+    setOn(read())
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-card-hints'] })
+    return () => observer.disconnect()
+  }, [])
+  return on
+}
+
 /** Keeps overlapping HP-loss bursts until each impact finishes. */
 export function useStruck(
   state: CombatState,

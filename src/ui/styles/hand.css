@@ -258,6 +258,9 @@
 .card__live-damage[data-trend='up'] { color: #7dff8a; }
 .card__live-damage[data-trend='down'] { color: #ff7a72; }
 
+/* Settings > Card hints: off hides the live damage and the area-of-effect symbol everywhere. */
+html[data-card-hints='false'] :is(.card__live-damage, .card__aoe) { display: none !important; }
+
 /* The video game keeps keyword explanations beside the enlarged card. */
 .card-keyword-tips {
   position: fixed;
