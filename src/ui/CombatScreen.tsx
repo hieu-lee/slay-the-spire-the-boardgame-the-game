@@ -4877,6 +4877,8 @@ function CombatScreenView({
   return (
     <div
       className="combat"
+      data-webmcp-solo-turn={!onAction && mutationsEnabled && state.players.length === 1 && state.phase === 'player'
+        ? `${state.combatId}:${state.turn}` : undefined}
       onClick={(event) => {
         if (!(event.target instanceof Element) || event.target.closest(
           'button, a, input, select, textarea, [role="button"], dialog, .card-keyword-tips',
@@ -4990,6 +4992,9 @@ function CombatScreenView({
                     disabled={usingPotion || Boolean(pending?.choiceCards)}
                     aria-label={`Use ${potion.name}${count > 1 ? ` ×${count}` : ''}`}
                     aria-describedby={descriptionId}
+                    data-webmcp-sequence-end={!potion.effects.length || potion.effects.some((effect) =>
+                      effect.kind === 'draw' || effect.kind === 'drawToHandSize')
+                      ? 'true' : undefined}
                     aria-pressed={needsTarget ? staged : undefined}
                     onClick={() => {
                       if (needsTarget) {

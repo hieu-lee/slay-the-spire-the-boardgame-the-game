@@ -28,6 +28,7 @@ type VisibleControl = {
   context?: string
   description?: string
   selected?: boolean
+  sequenceEnd?: boolean
   value?: string | number | boolean
   min?: number
   max?: number
@@ -53,8 +54,32 @@ let controls: Control[] = []
 let controlStateSignature = ''
 let pageSnapshot: { id: string; signature: string } | null = null
 let pageSnapshotSequence = 0
-let published: { revision: string; state: ReturnType<typeof captureGame> } | null = null
+let published: { revision: string; state: ReturnType<typeof captureGame> | ReturnType<typeof compactGame> } | null = null
 let publicationSequence = 0
+let interacting = false
+
+function compactGame(state: ReturnType<typeof captureGame>) {
+  const group = <Entry extends { id?: string; label: string }>(entries: Entry[]) => {
+    const groups = new Map<string, Entry & { copies?: string[]; count?: number }>()
+    for (const entry of entries) {
+      const { id, ...fields } = entry
+      const key = JSON.stringify(fields)
+      const previous = groups.get(key)
+      if (!previous) groups.set(key, { ...entry })
+      else if (id) (previous.copies ??= []).push(id)
+      else previous.count = (previous.count ?? 1) + 1
+    }
+    return [...groups.values()]
+  }
+  const contexts = new Set([...state.controls, ...state.unavailableControls].flatMap((entry) =>
+    [entry.label, ...('context' in entry && entry.context ? [entry.context] : [])]))
+  const screen = state.screen ? Object.fromEntries(Object.entries(state.screen).flatMap(([key, value]) => {
+    const next = key === 'observations' && Array.isArray(value) ? value.filter((entry) => !contexts.has(entry)) : value
+    return next === '' || Array.isArray(next) && next.length === 0 ? [] : [[key, next]]
+  })) : undefined
+  return { ...state, ...(screen ? { screen } : {}), compact: true,
+    controls: group(state.controls), unavailableControls: group(state.unavailableControls) }
+}
 
 function identify(current: Control[]): Control[] {
   return current.map((control) => ({ ...control, id: crypto.randomUUID().slice(0, 12) }))
@@ -120,6 +145,9 @@ function label(element: HTMLElement): string {
 function contextLabel(element: HTMLElement): string | undefined {
   const direct = element.dataset.webmcpContext?.trim()
   if (direct) return direct
+  if (element.matches('button.card') && element.closest('.hand')) {
+    return element.matches('.card--chamber-drawn') ? 'Chamber' : 'Hand'
+  }
   const group = element.parentElement?.closest<HTMLElement>(
     'fieldset, [role="group"][aria-label], [role="group"][aria-labelledby], [aria-label], [aria-labelledby]',
   )
@@ -145,6 +173,7 @@ function publicControl(element: HTMLElement, id = ''): Omit<Control, 'element'> 
   const description = referencedText(element, 'aria-describedby')
   if (context) result.context = context
   if (description) result.description = description
+  if (element.dataset.webmcpSequenceEnd === 'true') result.sequenceEnd = true
   if (element.hasAttribute('aria-pressed')) result.selected = element.getAttribute('aria-pressed') === 'true'
   if (element instanceof HTMLInputElement) result.value = kind === 'checkbox' ? element.checked
     : kind === 'number' ? Number(element.value) : element.value
@@ -207,7 +236,7 @@ function unavailableControls() {
       const alreadyDescribed = roomType && describedRooms.has(roomType)
       if (roomType) describedRooms.add(roomType)
       return [{
-        label: alreadyDescribed ? roomName : control.label,
+        label: alreadyDescribed && roomName ? roomName : control.label,
         ...(control.context ? { context: control.context } : {}),
         ...(control.description ? { description: control.description } : {}),
         ...(control.selected !== undefined ? { selected: control.selected } : {}),
@@ -371,7 +400,7 @@ function captureGame(input: unknown, acknowledge: boolean) {
   return result
 }
 
-function publishGame(state: ReturnType<typeof captureGame>, since?: string) {
+function publishGame(state: ReturnType<typeof captureGame> | ReturnType<typeof compactGame>, since?: string) {
   if ('pending' in state || state.nextOffset !== null || !state.screen || state.screen.textTruncated ||
     'textOffset' in state.screen) {
     published = null
@@ -380,12 +409,24 @@ function publishGame(state: ReturnType<typeof captureGame>, since?: string) {
   const revision = String(++publicationSequence)
   const previous = published
   published = { revision, state }
-  if (since && previous?.revision === since) {
+  if (since && previous?.revision === since &&
+    ('compact' in state) === ('compact' in previous.state)) {
     const screen = Object.fromEntries(Object.entries(state.screen).filter(([key, value]) =>
       JSON.stringify(value) !== JSON.stringify((previous.state.screen as Record<string, unknown> | undefined)?.[key])))
     const removedScreen = Object.keys(previous.state.screen ?? {}).filter((key) => !Object.hasOwn(state.screen!, key))
-    const changes = Object.fromEntries(Object.entries(state).filter(([key, value]) => key !== 'screen' &&
+    const changes: Record<string, unknown> = Object.fromEntries(Object.entries(state).filter(([key, value]) => key !== 'screen' &&
       JSON.stringify(value) !== JSON.stringify((previous.state as Record<string, unknown>)[key])))
+    if ('compact' in state && changes.controls) {
+      const metadata = (control: VisibleControl & { copies?: string[] }) => {
+        const { id: _, copies: __, ...fields } = control
+        return JSON.stringify(fields)
+      }
+      const references = new Map(previous.state.controls.map((control) => [metadata(control), control.id]))
+      changes.controls = state.controls.map((control: VisibleControl & { copies?: string[] }) => {
+        const ref = references.get(metadata(control))
+        return ref ? { id: control.id, ref, ...(control.copies ? { copies: control.copies } : {}) } : control
+      })
+    }
     const removed = Object.keys(previous.state).filter((key) => !Object.hasOwn(state, key))
     return { baseRevision: since, revision, changes: { ...changes, ...(Object.keys(screen).length ? { screen } : {}) },
       ...(removed.length ? { removed } : {}), ...(removedScreen.length ? { removedScreen } : {}) }
@@ -394,8 +435,11 @@ function publishGame(state: ReturnType<typeof captureGame>, since?: string) {
 }
 
 function inspectGame(input: unknown) {
-  const { since } = objectInput(input, ['offset', 'textOffset', 'snapshotId', 'since'])
-  return publishGame(captureGame(input, true), since as string | undefined)
+  const { since, compact, ...rest } = objectInput(input, ['offset', 'textOffset', 'snapshotId', 'since', 'compact'])
+  if (compact !== undefined && typeof compact !== 'boolean') throw new Error('compact must be a boolean.')
+  if (interacting) return { pending: true, controls: [], unavailableControls: [], nextOffset: null }
+  const state = captureGame({ ...rest, ...(since !== undefined ? { since } : {}) }, true)
+  return publishGame(compact ? compactGame(state) : state, since as string | undefined)
 }
 
 async function getStats(input: unknown, signal?: AbortSignal) {
@@ -476,13 +520,245 @@ function setValue(element: HTMLInputElement | HTMLSelectElement, value: string) 
   element.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+async function performInteraction(input: unknown, options?: { signal?: AbortSignal }) {
+  if (options?.signal?.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
+  if (interactionPending()) {
+    invalidateControls()
+    throw new Error('Game interaction is pending. Wait and call inspect_game again.')
+  }
+  const { controlId, value, targetLabel } = objectInput(input, ['controlId', 'value', 'targetLabel'])
+  if (typeof controlId !== 'string' || controlId.length === 0 || controlId.length > 64) {
+    throw new Error('controlId must be a listed control ID.')
+  }
+  if (targetLabel !== undefined && (typeof targetLabel !== 'string' || !targetLabel || targetLabel.length > TEXT_VALUE_LIMIT)) {
+    throw new Error('targetLabel must be one listed enemy label.')
+  }
+  visibleControls()
+  const entry = controls.find((control) => control.id === controlId)
+  const element = entry?.element
+  const current = element ? publicControl(element, controlId) : null
+  if (!entry || !element || !available(element) || !current || JSON.stringify(snapshot(entry)) !== JSON.stringify(snapshot({ ...current, element }))) {
+    throw new Error('Control is no longer available. Call inspect_game again.')
+  }
+  const before = stateSignature()
+  if (before !== controlStateSignature) {
+    invalidateControls()
+    throw new Error('Game state changed. Call inspect_game again.')
+  }
+  if (targetLabel !== undefined && !element.matches('button.card') && label(element) !== 'Use Shiv' &&
+    !element.getAttribute('aria-describedby')?.startsWith('potion-action-')) {
+    throw new Error('targetLabel can only follow a card, Shiv, or potion action.')
+  }
+  let targetElement: HTMLElement | undefined
+  if (targetLabel !== undefined) {
+    const matches = activeScopes().flatMap((scope) => [...scope.querySelectorAll<HTMLElement>('.enemy')])
+      .filter((candidate) => rendered(candidate) && !available(candidate) && label(candidate) === targetLabel)
+    if (matches.length !== 1) throw new Error('targetLabel must identify one visible unavailable enemy. Call inspect_game again.')
+    targetElement = matches[0]
+  }
+  if (entry.kind === 'button') {
+    if (value !== undefined) throw new Error('value must be omitted for a button.')
+    element.click()
+  } else if (entry.kind === 'checkbox') {
+    if (typeof value !== 'boolean') throw new Error('value must be a boolean for a checkbox.')
+    const checkbox = element as HTMLInputElement
+    if (checkbox.checked !== value) checkbox.click()
+  } else if (entry.kind === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('value must be a finite number for a number control.')
+    const input = element as HTMLInputElement
+    if ((input.min && value < Number(input.min)) || (input.max && value > Number(input.max))) {
+      throw new Error('value must be within the listed control range.')
+    }
+    const step = input.step && input.step !== 'any' ? Number(input.step) : 1
+    const base = input.min ? Number(input.min) : 0
+    if (Number.isFinite(step) && step > 0 && Math.abs((value - base) / step - Math.round((value - base) / step)) > 1e-9) {
+      throw new Error('value must match the listed control step.')
+    }
+    setValue(input, String(value))
+  } else {
+    let nextValue = value
+    if (element instanceof HTMLSelectElement && nextValue === undefined && element.required && element.value === '') {
+      const alternatives = [...element.options].filter((option) => !option.disabled && option.value)
+      if (alternatives.length === 1) nextValue = alternatives[0]!.value
+    }
+    if (typeof nextValue !== 'string') throw new Error(`value must be a string for a ${entry.kind}.`)
+    if (element instanceof HTMLSelectElement && ![...element.options].some((option) => !option.disabled && option.value === nextValue)) {
+      throw new Error('value must match an enabled listed option.')
+    }
+    const limit = element instanceof HTMLInputElement && element.maxLength >= 0
+      ? Math.min(element.maxLength, TEXT_VALUE_LIMIT) : TEXT_VALUE_LIMIT
+    if (nextValue.length > limit) {
+      throw new Error(`value must be at most ${limit} characters.`)
+    }
+    setValue(element as HTMLInputElement | HTMLSelectElement, nextValue)
+  }
+  invalidateControls()
+  const target = element.matches('.enemy, .seat, .row__enemies--targetable')
+  let state = await waitForInteraction(before, options?.signal, target ? 18 : 7, targetLabel === undefined)
+  const selectionNotices = targetElement && state ? announcementElements().map((node) => ({
+    node, message: text(node).slice(0, SCREEN_TEXT_LIMIT),
+  })) : []
+  let targetClicked = false
+  if (state && targetLabel !== undefined) {
+    const match = controls.find((candidate) => candidate.element === targetElement &&
+      candidate.label === targetLabel && available(candidate.element))
+    const prompt = label(element) === 'Use Shiv' ? 'Choose an enemy for the Shiv'
+      : element.getAttribute('aria-describedby')?.startsWith('potion-action-')
+        ? `Choose an enemy for ${label(element).replace(/^Use /, '').replace(/ ×\d+$/, '')}` : 'Choose an enemy'
+    const selected = element.matches('button.card') ? element.classList.contains('card--selected')
+      : element.getAttribute('aria-pressed') === 'true'
+    if (match && element.isConnected && selected &&
+      state.screen?.status.some((message) => message === prompt || message.startsWith(`${prompt} —`))) {
+      const beforeTarget = stateSignature()
+      match.element.click()
+      targetClicked = true
+      invalidateControls()
+      state = await waitForInteraction(beforeTarget, options?.signal, 18)
+    } else {
+      state = captureGame({}, true)
+    }
+  }
+  const missedAnnouncements = targetClicked ? selectionNotices.filter(({ node, message }) =>
+    node.dataset.webmcpReported !== 'true' || text(node).slice(0, SCREEN_TEXT_LIMIT) !== message)
+    .map(({ message }) => message) : []
+  if (!state && missedAnnouncements.length) acknowledgeAnnouncements(selectionNotices
+    .filter(({ node, message }) => node.isConnected && text(node).slice(0, SCREEN_TEXT_LIMIT) === message)
+    .map(({ node }) => node))
+  return { state: state ?? { pending: true as const }, selectionAnnouncements: missedAnnouncements,
+    targetUnresolved: targetLabel !== undefined && !targetClicked }
+}
+
+function soloTurn() {
+  return activeScopes().flatMap((scope) => [...scope.querySelectorAll<HTMLElement>('[data-webmcp-solo-turn]')])
+    .find((element) => rendered(element))
+}
+
+function choicePending(status = gameScreen().status) {
+  return activeScopes().some((scope) => scope.matches('[role="dialog"], dialog')) ||
+    status.some((message) => /\bchoose\b/i.test(message)) ||
+    controls.some((control) => control.element.matches('button.card.card--selected, .enemy--targeted') ||
+      control.label.startsWith('Use ') && control.element.getAttribute('aria-pressed') === 'true')
+}
+
+async function interactGame(input: unknown, options?: { signal?: AbortSignal }) {
+  const { actions, compact, since, ...single } = objectInput(input,
+    ['controlId', 'value', 'targetLabel', 'since', 'compact', 'actions'])
+  if (compact !== undefined && typeof compact !== 'boolean') throw new Error('compact must be a boolean.')
+  if (since !== undefined && (typeof since !== 'string' || !since || since.length > 32)) {
+    throw new Error('since must be a revision from the last game response.')
+  }
+  if (options?.signal?.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
+  if (interacting) throw new Error('Game interaction is pending. Another WebMCP interaction is running. Inspect before retrying.')
+  if (actions === undefined) {
+    interacting = true
+    try {
+      const outcome = await performInteraction(single, options)
+      const result = 'controls' in outcome.state
+        ? publishGame(compact ? compactGame(outcome.state) : outcome.state, since as string | undefined) : outcome.state
+      return outcome.selectionAnnouncements.length
+        ? { ...result, selectionAnnouncements: outcome.selectionAnnouncements } : result
+    } finally { interacting = false }
+  }
+  if (Object.keys(single).length) throw new Error('Use actions or controlId, not both.')
+  if (!Array.isArray(actions) || actions.length === 0 || actions.length > 20) {
+    throw new Error('actions must contain 1–20 actions.')
+  }
+  const scope = soloTurn()
+  if (!scope || interactionPending()) throw new Error('Sequences require a settled solo combat player turn, not multiplayer or a choice.')
+  const turn = scope.dataset.webmcpSoloTurn
+  const before = stateSignature()
+  if (before !== controlStateSignature) throw new Error('Game state changed. Call inspect_game again.')
+  if (choicePending()) throw new Error('Resolve the current choice before starting a sequence.')
+  let total = 0
+  const plan = actions.map((input, index) => {
+    const { controlId, value, targetLabel, repeat = 1 } = objectInput(input, ['controlId', 'value', 'targetLabel', 'repeat'])
+    if (typeof repeat !== 'number' || !Number.isInteger(repeat) || repeat < 1 || repeat > 10) {
+      throw new Error('repeat must be an integer from 1 to 10.')
+    }
+    total += repeat
+    if (total > 30) throw new Error('A sequence may execute at most 30 actions.')
+    const entry = controls.find((control) => control.id === controlId)
+    if (!entry || entry.kind !== 'button' || !available(entry.element) ||
+      !(entry.element.matches('button.card') || entry.label === 'End turn' || entry.label.startsWith('Use '))) {
+      throw new Error('Each action requires a listed combat card, potion, relic, ability, or End turn controlId.')
+    }
+    if (value !== undefined) throw new Error('value must be omitted for a combat button.')
+    if (entry.sequenceEnd && (index !== actions.length - 1 || repeat !== 1)) {
+      throw new Error('Draw and special potions must be the final action in a sequence, without repeat.')
+    }
+    if (targetLabel !== undefined && (typeof targetLabel !== 'string' || !targetLabel || targetLabel.length > TEXT_VALUE_LIMIT)) {
+      throw new Error('targetLabel must be one listed enemy label.')
+    }
+    const targets = targetLabel === undefined ? [] : activeScopes().flatMap((scope) =>
+      [...scope.querySelectorAll<HTMLElement>('.enemy')]).filter((enemy) => rendered(enemy) &&
+        !available(enemy) && label(enemy) === targetLabel)
+    if (targetLabel !== undefined && targets.length !== 1) throw new Error('targetLabel must identify one visible unavailable enemy.')
+    if (targetLabel !== undefined && !entry.element.matches('button.card') && entry.label !== 'Use Shiv' &&
+      !entry.element.getAttribute('aria-describedby')?.startsWith('potion-action-')) {
+      throw new Error('targetLabel can only follow a card, Shiv, or potion action.')
+    }
+    return { entry, repeat, target: targets[0], signature: JSON.stringify(snapshot(entry)) }
+  })
+  interacting = true
+  let completed = 0
+  let attempted = 0
+  let stopped: string | undefined
+  let error: string | undefined
+  let state: ReturnType<typeof captureGame> | { pending: true } = captureGame({}, false)
+  const notices: string[] = []
+  try {
+    for (const step of plan) {
+      for (let iteration = 0; iteration < step.repeat; iteration++) {
+        if (options?.signal?.aborted) { stopped = 'cancelled'; break }
+        if (soloTurn() !== scope || scope.dataset.webmcpSoloTurn !== turn) { stopped = 'turn_or_choice_changed'; break }
+        captureGame({}, false)
+        const candidates = controls.filter((control) => available(control.element) &&
+          JSON.stringify(snapshot(control)) === step.signature)
+        const current = candidates.find((control) => control.element === step.entry.element) ??
+          (step.entry.element.matches('button.card') ? candidates[0] : undefined)
+        if (!current) { stopped = 'control_unavailable'; break }
+        if (step.target && (!rendered(step.target) || available(step.target) || !scope.contains(step.target))) {
+          stopped = 'target_unavailable'; break
+        }
+        attempted = completed + 1
+        const outcome = await performInteraction({ controlId: current.id,
+          ...(step.target ? { targetLabel: label(step.target) } : {}) }, options)
+        state = outcome.state
+        if ('screen' in state) notices.push(...(state.screen?.announcements ?? []))
+        notices.push(...outcome.selectionAnnouncements)
+        if ('pending' in state) { stopped = 'pending'; break }
+        if (outcome.targetUnresolved) { stopped = 'choice_required'; break }
+        completed++
+        if (choicePending(state.screen?.status ?? [])) {
+          stopped = 'choice_required'; break
+        }
+      }
+      if (stopped) break
+    }
+  } catch (failure) {
+    stopped = options?.signal?.aborted ? 'cancelled' : 'action_failed'
+    error = failure instanceof Error ? failure.message : String(failure)
+    state = captureGame({}, false)
+    notices.push(...(state.screen?.announcements ?? []))
+  } finally { interacting = false }
+  if ('controls' in state && state.screen?.announcements && notices.length) {
+    const { announcements: _, ...screen } = state.screen
+    state = { ...state, screen }
+  }
+  const result = 'controls' in state
+    ? publishGame(compact !== false ? compactGame(state) : state, since as string | undefined) : state
+  return { ...result, sequence: { completed, total, ...(attempted > completed ? { attempted } : {}),
+    ...(stopped ? { stopped } : {}), ...(error ? { error } : {}) },
+    ...(notices.length ? { announcements: notices } : {}) }
+}
+
 export function useWebMcp() {
   useEffect(() => {
     const tools: Tool[] = [
       {
         name: 'inspect_game',
         title: 'Inspect game',
-        description: 'Read start-turn/relic choices. unavailableControls (future rooms) are planning-only. since gives changes; page via nextOffset/textNextOffset.',
+        description: 'Read start-turn/relic choices. unavailableControls are planning-only. Prefer compact:true (copies lists duplicate IDs; count groups unavailable copies), since for changes; page via nextOffset/textNextOffset.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -490,6 +766,7 @@ export function useWebMcp() {
             textOffset: { type: 'integer', minimum: 0, description: 'Visible-text offset from textNextOffset.' },
             snapshotId: { type: 'string', maxLength: 32, description: 'First-page ID for later pages.' },
             since: { type: 'string', maxLength: 32, description: 'Revision from prior state for lossless changes.' },
+            compact: { type: 'boolean', description: 'Group copies; omit empty/redundant screen fields. Delta ref inherits baseline metadata, replacing id/copies.' },
           },
           additionalProperties: false,
         },
@@ -499,129 +776,30 @@ export function useWebMcp() {
       {
         name: 'interact_with_game',
         title: 'Interact with game',
-        description: 'Use a listed controlId for start-turn/relic choices. targetLabel chains one listed unavailable enemy. Pass since for lossless changes; inspect if pending/timed out.',
+        description: 'Use controlId for start-turn/relic choices, or solo actions. sequenceEnd controls must be last, without repeat. Sequences stop at choices/turn changes; never replay completed/attempted steps. targetLabel chains an enemy; since gives changes.',
         inputSchema: {
           type: 'object',
           properties: {
             controlId: { type: 'string', minLength: 1, maxLength: 64, description: 'ID from the latest state.' },
+            actions: { type: 'array', minItems: 1, maxItems: 20, description: 'Solo only, current turn, max 30 plays. IDs from one snapshot; repeat plays identical available cards. Enemy identity survives HP changes.',
+              items: { type: 'object', properties: {
+                controlId: { type: 'string', minLength: 1, maxLength: 64 },
+                targetLabel: { type: 'string', minLength: 1, maxLength: TEXT_VALUE_LIMIT },
+                repeat: { type: 'integer', minimum: 1, maximum: 10 },
+              }, required: ['controlId'], additionalProperties: false } },
             since: { type: 'string', maxLength: 32, description: 'Revision from prior state for lossless changes.' },
+            compact: { type: 'boolean', description: 'Grouped output; delta ref inherits baseline metadata, replacing id/copies. Default true for sequences.' },
             targetLabel: { type: 'string', minLength: 1, maxLength: TEXT_VALUE_LIMIT, description: 'Exact visible unavailable enemy label; unique only.' },
             value: {
               oneOf: [{ type: 'string', maxLength: TEXT_VALUE_LIMIT }, { type: 'number' }, { type: 'boolean' }],
               description: 'Control value when needed.',
             },
           },
-          required: ['controlId'],
+          oneOf: [{ required: ['controlId'] }, { required: ['actions'] }],
           additionalProperties: false,
         },
         annotations: { untrustedContentHint: true },
-        execute: async (input, options) => {
-          if (options?.signal?.aborted) throw new DOMException('Tool execution was cancelled.', 'AbortError')
-          if (interactionPending()) {
-            invalidateControls()
-            throw new Error('Game interaction is pending. Wait and call inspect_game again.')
-          }
-          const { controlId, value, since, targetLabel } = objectInput(input, ['controlId', 'value', 'since', 'targetLabel'])
-          if (since !== undefined && (typeof since !== 'string' || !since || since.length > 32)) {
-            throw new Error('since must be a revision from the last game response.')
-          }
-          if (typeof controlId !== 'string' || controlId.length === 0 || controlId.length > 64) {
-            throw new Error('controlId must be a listed control ID.')
-          }
-          if (targetLabel !== undefined && (typeof targetLabel !== 'string' || !targetLabel || targetLabel.length > TEXT_VALUE_LIMIT)) {
-            throw new Error('targetLabel must be one listed enemy label.')
-          }
-          visibleControls()
-          const entry = controls.find((control) => control.id === controlId)
-          const element = entry?.element
-          const current = element ? publicControl(element, controlId) : null
-          if (!entry || !element || !available(element) || !current || JSON.stringify(snapshot(entry)) !== JSON.stringify(snapshot({ ...current, element }))) {
-            throw new Error('Control is no longer available. Call inspect_game again.')
-          }
-          const before = stateSignature()
-          if (before !== controlStateSignature) {
-            invalidateControls()
-            throw new Error('Game state changed. Call inspect_game again.')
-          }
-          if (targetLabel !== undefined && !element.matches('button.card') && label(element) !== 'Use Shiv') {
-            throw new Error('targetLabel can only follow a card or Shiv action.')
-          }
-          let targetElement: HTMLElement | undefined
-          if (targetLabel !== undefined) {
-            const matches = activeScopes().flatMap((scope) => [...scope.querySelectorAll<HTMLElement>('.enemy')])
-              .filter((candidate) => rendered(candidate) && !available(candidate) && label(candidate) === targetLabel)
-            if (matches.length !== 1) throw new Error('targetLabel must identify one visible unavailable enemy. Call inspect_game again.')
-            targetElement = matches[0]
-          }
-          if (entry.kind === 'button') {
-            if (value !== undefined) throw new Error('value must be omitted for a button.')
-            element.click()
-          } else if (entry.kind === 'checkbox') {
-            if (typeof value !== 'boolean') throw new Error('value must be a boolean for a checkbox.')
-            const checkbox = element as HTMLInputElement
-            if (checkbox.checked !== value) checkbox.click()
-          } else if (entry.kind === 'number') {
-            if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('value must be a finite number for a number control.')
-            const input = element as HTMLInputElement
-            if ((input.min && value < Number(input.min)) || (input.max && value > Number(input.max))) {
-              throw new Error('value must be within the listed control range.')
-            }
-            const step = input.step && input.step !== 'any' ? Number(input.step) : 1
-            const base = input.min ? Number(input.min) : 0
-            if (Number.isFinite(step) && step > 0 && Math.abs((value - base) / step - Math.round((value - base) / step)) > 1e-9) {
-              throw new Error('value must match the listed control step.')
-            }
-            setValue(input, String(value))
-          } else {
-            let nextValue = value
-            if (element instanceof HTMLSelectElement && nextValue === undefined && element.required && element.value === '') {
-              const alternatives = [...element.options].filter((option) => !option.disabled && option.value)
-              if (alternatives.length === 1) nextValue = alternatives[0]!.value
-            }
-            if (typeof nextValue !== 'string') throw new Error(`value must be a string for a ${entry.kind}.`)
-            if (element instanceof HTMLSelectElement && ![...element.options].some((option) => !option.disabled && option.value === nextValue)) {
-              throw new Error('value must match an enabled listed option.')
-            }
-            const limit = element instanceof HTMLInputElement && element.maxLength >= 0
-              ? Math.min(element.maxLength, TEXT_VALUE_LIMIT) : TEXT_VALUE_LIMIT
-            if (nextValue.length > limit) {
-              throw new Error(`value must be at most ${limit} characters.`)
-            }
-            setValue(element as HTMLInputElement | HTMLSelectElement, nextValue)
-          }
-          invalidateControls()
-          const target = element.matches('.enemy, .seat, .row__enemies--targetable')
-          let state = await waitForInteraction(before, options?.signal, target ? 18 : 7, targetLabel === undefined)
-          const selectionNotices = targetElement && state ? announcementElements().map((node) => ({
-            node, message: text(node).slice(0, SCREEN_TEXT_LIMIT),
-          })) : []
-          let targetClicked = false
-          if (state && targetLabel !== undefined) {
-            const match = controls.find((candidate) => candidate.element === targetElement &&
-              candidate.label === targetLabel && available(candidate.element))
-            const prompt = label(element) === 'Use Shiv' ? 'Choose an enemy for the Shiv' : 'Choose an enemy'
-            const selected = element.matches('button.card') ? element.classList.contains('card--selected')
-              : element.getAttribute('aria-pressed') === 'true'
-            if (match && element.isConnected && selected &&
-              state.screen?.status.some((message) => message === prompt || message.startsWith(`${prompt} —`))) {
-              const beforeTarget = stateSignature()
-              match.element.click()
-              targetClicked = true
-              invalidateControls()
-              state = await waitForInteraction(beforeTarget, options?.signal, 18)
-            } else {
-              state = captureGame({}, true)
-            }
-          }
-          const result = state ? publishGame(state, since as string | undefined) : { pending: true }
-          const missedAnnouncements = targetClicked ? selectionNotices.filter(({ node, message }) =>
-            node.dataset.webmcpReported !== 'true' || text(node).slice(0, SCREEN_TEXT_LIMIT) !== message)
-            .map(({ message }) => message) : []
-          if (!state && missedAnnouncements.length) acknowledgeAnnouncements(selectionNotices
-            .filter(({ node, message }) => node.isConnected && text(node).slice(0, SCREEN_TEXT_LIMIT) === message)
-            .map(({ node }) => node))
-          return missedAnnouncements.length ? { ...result, selectionAnnouncements: missedAnnouncements } : result
-        },
+        execute: interactGame,
       },
       {
         name: 'get_stats',

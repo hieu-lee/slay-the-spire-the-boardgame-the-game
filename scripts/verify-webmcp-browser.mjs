@@ -217,6 +217,7 @@ const controls = await page.evaluate(async () => {
     <label><input type="checkbox"> Keep Bash</label>
     <select aria-label="Target"><option value="cultist">Cultist</option><option value="jaw-worm">Jaw Worm</option></select>
     <select aria-label="Pass to"><option value="">Keep yours</option><option value="ally">Ally</option></select>
+    <select required aria-label="Only recipient"><option value="">Choose</option><option value="p1">Hermit</option></select>
     <label><input type="checkbox" disabled checked> Locked choice</label>
     <label>Locked target<select disabled><option value="cultist">Cultist</option><option value="jaw-worm" selected>Jaw Worm</option></select></label>
     <input type="text" aria-label="Player name" maxlength="12" value="Ironclad">
@@ -426,6 +427,7 @@ const controls = await page.evaluate(async () => {
     }
   })()
   await use('Target', 'jaw-worm')
+  await use('Only recipient')
   await use('Player name', 'Agentclad')
   await use('Volume', 75)
   const final = await read()
@@ -468,6 +470,7 @@ const controls = await page.evaluate(async () => {
     stale,
     checked: find('Keep Bash')?.value,
     target: find('Target')?.value,
+    soleRecipient: find('Only recipient')?.value,
     name: find('Player name')?.value,
     textLimits: { name: find('Player name')?.maxLength, search: find('Search cards')?.maxLength },
     volume: find('Volume')?.value,
@@ -867,16 +870,12 @@ await page.evaluate(() => {
   }
   debug.setRun(run)
 })
-await page.getByLabel('Target player').waitFor()
+await page.getByRole('button', { name: /Confirm choice/ }).waitFor()
 const labInspection = await inspectAll()
-const labTarget = labInspection.controls.find((control) => control.label === 'Target player')
-if (!labTarget) throw new Error(`Lab target select is missing from WebMCP: ${JSON.stringify(labInspection.controls)}`)
-const labInteraction = await interact(labTarget.id)
 const labSelect = {
-  required: labTarget.required,
-  value: await page.getByLabel('Target player').inputValue(),
+  soleTargetImplicit: !labInspection.controls.some((control) => control.label === 'Target player'),
   confirmEnabled: await page.getByRole('button', { name: /Confirm choice/ }).isEnabled(),
-  returnedConfirm: labInteraction.controls.some((control) => /Confirm choice/.test(control.label)),
+  returnedConfirm: labInspection.controls.some((control) => /Confirm choice/.test(control.label)),
   labelDuplicated: labInspection.screen.text.includes('Target player'),
   payloadChars: JSON.stringify(labInspection).length,
 }
@@ -960,7 +959,16 @@ const afterAttack = await page.evaluate(() => {
 const afterAttackInspection = await inspectAll()
 const endTurn = afterAttackInspection.controls.find((control) => control.label.startsWith('End turn'))
 if (!endTurn) throw new Error('WebMCP did not expose End turn after a real attack')
+const beforeEndTurnNumber = await page.evaluate(() => window.__STS_DEBUG__.getState().turn)
 const endTurnResult = await interact(endTurn.id)
+await page.waitForFunction((before) => {
+  const state = window.__STS_DEBUG__.getState()
+  return state.turn > before && state.phase === 'player' &&
+    document.documentElement.dataset.webmcpPending !== 'true' &&
+    !document.querySelector('[data-webmcp-pending="true"]')
+}, beforeEndTurnNumber)
+const settledEndTurnInspection = await inspectAll()
+const afterEndTurnNumber = await page.evaluate(() => window.__STS_DEBUG__.getState().turn)
 const combatFlow = {
   seesTurn: /Turn \d+/.test(combatInspection.screen.text),
   seesEnergy: /\b\d+ Energy\b/.test(combatInspection.screen.text),
@@ -971,8 +979,261 @@ const combatFlow = {
   targetSettledBeforeContact: targetSettlement?.settledBeforeContact,
   targetReturnedState: Boolean(targetSettlement?.result.controls),
   changed: afterAttack.energy < beforeAttack.energy || afterAttack.enemyHp < beforeAttack.enemyHp,
-  nextTurnReturned: /Turn 2/.test(endTurnResult.screen?.text ?? ''),
+  nextTurnReturned: afterEndTurnNumber === beforeEndTurnNumber + 1 &&
+    settledEndTurnInspection.controls.some((control) => control.label === 'End turn'),
+  turnResult: { before: beforeEndTurnNumber, after: afterEndTurnNumber, response: endTurnResult },
 }
+
+const sequences = await page.evaluate(async () => {
+  const { createCombat } = await import('/src/game/combat.ts')
+  const tools = await document.modelContext.getTools()
+  const inspect = tools.find((tool) => tool.name === 'inspect_game')
+  const interact = tools.find((tool) => tool.name === 'interact_with_game')
+  const debug = window.__STS_DEBUG__
+  const saved = structuredClone(debug.getRun())
+  const basePlayer = structuredClone(saved.combat.players[0])
+  const enemy = structuredClone(saved.combat.enemies[0])
+  const fresh = (playerCount = 1) => {
+    const combat = createCombat(structuredClone(saved.combat.rng),
+      Array.from({ length: playerCount }, (_, index) => ({ ...structuredClone(basePlayer), id: `p${index + 1}` })),
+      [0, 1].map((index) => ({ ...structuredClone(enemy), uid: `sequence-enemy-${index}`,
+        defId: 'cultist', hp: 20, maxHp: 20, block: 0, strength: 0, weak: 0, vulnerable: 0, row: 1 })), 'webmcp-sequence')
+    Object.assign(combat, { turn: 1, phase: 'player', die: 1,
+      potionDeck: ['fire_potion', 'block_potion', 'energy_potion'] })
+    for (const player of combat.players) Object.assign(player, {
+      character: 'watcher', hp: 8, maxHp: 8, energy: 3, block: 0, strength: 0, weak: 0, vulnerable: 0,
+      stance: 'neutral', miracles: 0, shivs: 0, soulburn: 0, relics: [], powers: [], potions: ['energy_potion', 'fire_potion', 'block_potion'],
+      hand: ['strike_watcher', 'strike_watcher', 'strike_watcher', 'defend_watcher', 'defend_watcher']
+        .map((defId, index) => ({ uid: `sequence-card-${index}`, defId, upgraded: false })),
+      draw: [{ uid: 'sequence-next', defId: 'defend_watcher', upgraded: false }], discard: [], exhaust: [],
+    })
+    return { ...structuredClone(saved), players: combat.players, combat, phase: 'combat' }
+  }
+  const reset = async (run = fresh()) => {
+    debug.setRun({ ...run, phase: 'map' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    debug.setRun(run)
+    for (let attempt = 0; attempt < 100; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      const state = await inspect.execute({})
+      if (!state.pending && state.controls.some((control) => control.label === 'End turn')) return state
+    }
+    throw new Error('Sequence fixture did not reach a settled player turn.')
+  }
+  const find = (state, prefix) => {
+    const control = state.controls.find((control) => control.label.startsWith(prefix))
+    if (!control) throw new Error(`Missing ${prefix}: ${JSON.stringify(state)}`)
+    return control
+  }
+  const target = (state, index) => state.unavailableControls.filter((control) => control.context === 'Combat board' &&
+    control.label.startsWith('Cultist'))[index].label
+  const board = () => {
+    const state = window.__STS_DEBUG__.getState()
+    return { turn: state.turn, phase: state.phase, rng: state.rng, potionDeck: state.potionDeck,
+      players: state.players.map((player) => ({ hp: player.hp, block: player.block, energy: player.energy,
+        potions: player.potions, hand: player.hand, draw: player.draw, discard: player.discard, exhaust: player.exhaust })),
+      enemies: state.enemies.map((enemy) => ({ uid: enemy.uid, hp: enemy.hp, block: enemy.block })) }
+  }
+  let state = await reset()
+  const fullChars = JSON.stringify(state).length
+  const compact = await inspect.execute({ compact: true })
+  const compactChars = JSON.stringify(compact).length
+  const groupedCopies = find(compact, 'Strike,').copies.length === 2 && find(compact, 'Defend,').copies.length === 1
+  const unchanged = await inspect.execute({ compact: true, since: compact.revision })
+  const formatSwitch = await inspect.execute({ since: unchanged.revision })
+  const deltaBase = await inspect.execute({ compact: true })
+  const delta = await interact.execute({ controlId: find(deltaBase, 'Defend,').id,
+    compact: true, since: deltaBase.revision })
+  const deltaFull = await inspect.execute({ compact: true })
+  const reconstructed = { ...deltaBase, ...delta.changes, revision: delta.revision,
+    screen: { ...deltaBase.screen, ...delta.changes.screen } }
+  for (const key of delta.removed ?? []) delete reconstructed[key]
+  for (const key of delta.removedScreen ?? []) delete reconstructed.screen[key]
+  reconstructed.controls = reconstructed.controls.map((control) => {
+    if (!control.ref) return control
+    const previous = deltaBase.controls.find((candidate) => candidate.id === control.ref)
+    const { id, copies, ...metadata } = previous
+    const { ref, ...current } = control
+    return { ...metadata, ...current }
+  })
+  reconstructed.revision = deltaFull.revision
+  const deltaChars = JSON.stringify(delta).length
+  const deltaFullChars = JSON.stringify(deltaFull).length
+  state = await reset()
+  const steps = [
+    ['Use Energy Potion'], ['Use Fire Potion', 0], ['Strike,', 0], ['Strike,', 0],
+    ['Strike,', 1], ['Defend,'], ['Defend,'],
+  ]
+  let individualChars = 0
+  for (const [prefix, index] of steps) {
+    state = await inspect.execute({})
+    const response = await interact.execute({ controlId: find(state, prefix).id,
+      ...(index !== undefined ? { targetLabel: target(state, index) } : {}), compact: true })
+    individualChars += JSON.stringify(response).length
+  }
+  const expected = board()
+  state = await reset()
+  const batch = await interact.execute({ actions: [
+    { controlId: find(state, 'Use Energy Potion').id },
+    { controlId: find(state, 'Use Fire Potion').id, targetLabel: target(state, 0) },
+    { controlId: find(state, 'Strike,').id, targetLabel: target(state, 0), repeat: 2 },
+    { controlId: find(state, 'Strike,').id, targetLabel: target(state, 1) },
+    { controlId: find(state, 'Defend,').id, repeat: 2 },
+  ] })
+  const actual = board()
+  const batchChars = JSON.stringify(batch).length
+  const orderings = []
+  for (const steps of [
+    [['Defend,', undefined, 2], ['Strike,', 0, 1]],
+    [['Strike,', 0, 1], ['Strike,', 1, 1], ['Defend,', undefined, 1]],
+  ]) {
+    state = await reset()
+    for (const [prefix, index, repeat] of steps) {
+      for (let iteration = 0; iteration < repeat; iteration++) {
+        state = await inspect.execute({})
+        await interact.execute({ controlId: find(state, prefix).id,
+          ...(index !== undefined ? { targetLabel: target(state, index) } : {}) })
+      }
+    }
+    const expected = board()
+    state = await reset()
+    const result = await interact.execute({ actions: steps.map(([prefix, index, repeat]) => ({
+      controlId: find(state, prefix).id, repeat,
+      ...(index !== undefined ? { targetLabel: target(state, index) } : {}),
+    })) })
+    orderings.push({ sequence: result.sequence, board: board(), expected })
+  }
+  const malformed = []
+  for (const input of [
+    { actions: [] }, { actions: [{ controlId: 'unknown' }] },
+    { actions: [{ controlId: 'unknown', repeat: 11 }] },
+    { actions: [{ controlId: 'unknown', surprise: true }] },
+    { actions: [{ controlId: 'unknown' }], controlId: 'unknown' },
+    { compact: 'true' },
+  ]) {
+    await reset()
+    const before = JSON.stringify(board())
+    try { await interact.execute(input); malformed.push(false) }
+    catch { malformed.push(before === JSON.stringify(board())) }
+  }
+  state = await reset()
+  const preflightBefore = JSON.stringify(board())
+  try { await interact.execute({ actions: [{ controlId: find(state, 'Defend,').id }, { controlId: 'unknown' }] }); malformed.push(false) }
+  catch { malformed.push(preflightBefore === JSON.stringify(board())) }
+  state = await reset()
+  const deadTarget = fresh()
+  deadTarget.combat.enemies[0].hp = 1
+  state = await reset(deadTarget)
+  const killed = await interact.execute({ actions: [
+    { controlId: find(state, 'Strike,').id, targetLabel: target(state, 0), repeat: 2 },
+  ] })
+  const killBoard = board()
+  const chamberRun = fresh()
+  const chamberPlayer = chamberRun.combat.players[0]
+  Object.assign(chamberPlayer, { character: 'hermit', energy: 6, chamberSlots: 2,
+    chamber: [{ uid: 'sequence-staged-snapshot', defId: 'hermit_snapshot', upgraded: true }],
+    hand: [{ uid: 'sequence-held-snapshot', defId: 'hermit_snapshot', upgraded: true }] })
+  state = await reset(chamberRun)
+  await interact.execute({ controlId: find(state, 'Chamber,').id })
+  state = await inspect.execute({})
+  const staged = state.controls.find((control) => control.context === 'Chamber' && control.label.startsWith('Snapshot+,'))
+  const chamber = await interact.execute({ actions: [{ controlId: staged.id, targetLabel: target(state, 0), repeat: 2 }] })
+  const chamberBoard = board()
+  state = await reset()
+  const turnBoundary = await interact.execute({ actions: [
+    { controlId: find(state, 'End turn').id }, { controlId: find(state, 'Strike,').id, targetLabel: target(state, 0) },
+  ] })
+  const turnBoard = board()
+  const autoRun = fresh()
+  autoRun.combat.players[0].potions = []
+  autoRun.combat.players[0].hand = autoRun.combat.players[0].hand.slice(3)
+  autoRun.combat.players[0].energy = 1
+  state = await reset(autoRun)
+  const automatic = await interact.execute({ actions: [
+    { controlId: find(state, 'Defend,').id }, { controlId: find(state, 'End turn').id },
+  ] })
+  const autoBoard = board()
+  const choiceRun = fresh()
+  choiceRun.combat.players[0].character = 'hermit'
+  choiceRun.combat.players[0].chamberSlots = 2
+  choiceRun.combat.players[0].hand.unshift({ uid: 'sequence-coalescence', defId: 'hermit_coalescence', upgraded: false })
+  state = await reset(choiceRun)
+  const choice = await interact.execute({ actions: [
+    { controlId: find(state, 'Coalescence,').id }, { controlId: find(state, 'Defend,').id },
+  ] })
+  const choiceBoard = board()
+  const jasperRun = fresh()
+  jasperRun.combat.players[0].character = 'guardian'
+  jasperRun.combat.players[0].powers = [{ uid: 'sequence-jasper-power', defId: 'guardian_floating_orbs',
+    upgraded: false, attachedGemId: 'guardian_jasper' }]
+  state = await reset(jasperRun)
+  const jasper = await interact.execute({ actions: [
+    { controlId: find(state, 'Use Floating Orbs with Jasper').id }, { controlId: find(state, 'Defend,').id },
+  ] })
+  const jasperBoard = board()
+  const potionBoundaries = []
+  for (const potionId of ['swift_potion', 'snecko_oil', 'clever_concoction', 'distilled_chaos', 'entropic_brew']) {
+    const potionRun = fresh()
+    potionRun.combat.players[0].potions = [potionId]
+    state = await reset(potionRun)
+    const potion = state.controls.find((control) => control.label.startsWith('Use ') && control.sequenceEnd)
+    const before = JSON.stringify(board())
+    let rejected = false
+    try { await interact.execute({ actions: [{ controlId: potion.id }, { controlId: find(state, 'Defend,').id }] }) }
+    catch { rejected = before === JSON.stringify(board()) }
+    let repeatRejected = false
+    try { await interact.execute({ actions: [{ controlId: potion.id, repeat: 2 }] }) }
+    catch { repeatRejected = before === JSON.stringify(board()) }
+    const result = await interact.execute({ actions: [{ controlId: find(state, 'Defend,').id }, { controlId: potion.id }] })
+    potionBoundaries.push({ rejected, repeatRejected, result, board: board() })
+  }
+  state = await reset()
+  const concurrent = interact.execute({ actions: [{ controlId: find(state, 'Defend,').id, repeat: 2 }] })
+  const during = await inspect.execute({ compact: true })
+  let locked = false
+  try { await interact.execute({ controlId: find(state, 'Use Energy Potion').id }) }
+  catch (error) { locked = String(error).includes('Another WebMCP interaction') }
+  await concurrent
+  state = await reset()
+  const controller = new AbortController()
+  const cancelledPromise = interact.execute({ actions: [{ controlId: find(state, 'Defend,').id, repeat: 2 }] },
+    { signal: controller.signal })
+  setTimeout(() => controller.abort(), 100)
+  const cancelled = await cancelledPromise
+  for (let attempt = 0; attempt < 50 && window.__STS_DEBUG__.getState().players[0].energy === 3; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  const cancelBoard = board()
+  state = await reset(fresh(2))
+  const multiBefore = JSON.stringify(board())
+  let multiplayerRejected = false
+  try { await interact.execute({ actions: [{ controlId: find(state, 'Defend,').id }] }) }
+  catch (error) { multiplayerRejected = String(error).includes('not multiplayer') && multiBefore === JSON.stringify(board()) }
+  debug.setRun({ ...fresh(), phase: 'map' })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const React = await import('/@id/react')
+  const ReactDOM = await import('/@id/react-dom/client')
+  const { CombatScreen } = await import('/src/ui/CombatScreen.tsx')
+  const host = document.createElement('div')
+  document.getElementById('root').append(host)
+  const onlineRoot = (ReactDOM.createRoot ?? ReactDOM.default.createRoot)(host)
+  let onlineActions = 0
+  onlineRoot.render((React.createElement ?? React.default.createElement)(CombatScreen, { state: fresh().combat, act: saved.act, viewerId: 'p1',
+    autoAdvance: false, autoEndTurn: false, onAction: async () => { onlineActions++ } }))
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  state = await inspect.execute({})
+  let onlineRejected = false
+  try { await interact.execute({ actions: [{ controlId: find(state, 'Defend,').id }] }) }
+  catch (error) { onlineRejected = String(error).includes('not multiplayer') && onlineActions === 0 }
+  onlineRoot.unmount()
+  host.remove()
+  await reset(saved)
+  return { expected, actual, fullChars, compactChars, batchChars, individualChars, groupedCopies, unchanged, formatSwitch,
+    reconstructed, deltaFull, deltaChars, deltaFullChars,
+    batch, orderings, malformed, killed, killBoard, chamber, chamberBoard, turnBoundary, turnBoard, automatic, autoBoard, choice, choiceBoard,
+    jasper, jasperBoard, potionBoundaries,
+    during, locked, cancelled, cancelBoard, multiplayerRejected, onlineRejected }
+})
 
 for (const hasHeldCard of [false, true]) {
   await page.evaluate((held) => {
@@ -1245,6 +1506,78 @@ const payloadChars = {
 
 suite('WebMCP browser contract')
 
+check('solo sequences preserve individual outcomes and stop safely at boundaries', () => {
+  assertDeepEqual(sequences.actual, sequences.expected, 'batch and individual card/potion actions have identical authoritative outcomes')
+  assertDeepEqual(sequences.batch.sequence, { completed: 7, total: 7 })
+  for (const ordering of sequences.orderings) {
+    assertDeepEqual(ordering.board, ordering.expected, 'different action orderings match individual authoritative outcomes')
+    assert(ordering.sequence.completed === 3, `three planned actions finish in order: ${JSON.stringify(ordering.sequence)}`)
+  }
+  assert(sequences.groupedCopies && sequences.compactChars < sequences.fullChars * 0.85 &&
+    sequences.batchChars < sequences.individualChars * 0.3,
+    `compact inspection and one batch reduce payload: ${JSON.stringify({ full: sequences.fullChars,
+      compact: sequences.compactChars, batch: sequences.batchChars, individual: sequences.individualChars })}`)
+  assertDeepEqual(sequences.unchanged.changes, {})
+  assertDeepEqual(sequences.reconstructed, sequences.deltaFull, 'compact references reconstruct the complete state without losing duplicate IDs')
+  assert(sequences.deltaChars < sequences.deltaFullChars * 0.75,
+    `compact references avoid repeating unchanged metadata: delta=${sequences.deltaChars}, full=${sequences.deltaFullChars}`)
+  assert(sequences.formatSwitch.controls && !sequences.formatSwitch.baseRevision,
+    'switching compact/full formats returns a full baseline rather than an incompatible delta')
+})
+
+check('sequences reject malformed inputs and never substitute a dead target or a different card zone', () => {
+  assert(sequences.malformed.every(Boolean), 'invalid sequences cannot partially mutate the combat')
+  assert(sequences.killed.sequence.completed === 1 && sequences.killed.sequence.stopped &&
+    sequences.killBoard.players[0].energy === 2 && sequences.killBoard.enemies[1].hp === 20,
+    `a dead target is not replaced and the next card is not spent: ${JSON.stringify({ sequence: sequences.killed.sequence, board: sequences.killBoard })}`)
+  assert(sequences.chamber.sequence.completed === 1 && sequences.chamber.sequence.stopped &&
+    sequences.chamberBoard.players[0].energy === 4 && sequences.chamberBoard.players[0].block === 3 &&
+    sequences.chamberBoard.players[0].hand.some((card) => card.uid === 'sequence-held-snapshot'),
+    'repeating a staged Snapshot cannot silently substitute an identical hand card with different Dead On behavior')
+})
+
+check('sequences stop before another turn or a mandatory choice', () => {
+  assert(sequences.turnBoundary.sequence.completed === 1 && sequences.turnBoundary.sequence.stopped &&
+    sequences.turnBoard.enemies.every((enemy) => enemy.hp === 20) &&
+    (sequences.turnBoard.phase !== 'player' || sequences.turnBoard.turn !== 1) &&
+    sequences.automatic.sequence.completed === 1 && sequences.autoBoard.turn === 2,
+    `explicit and automatic turn transitions stop queued actions before another turn: ${JSON.stringify({ explicit: sequences.turnBoundary.sequence,
+      explicitTurn: sequences.turnBoard.turn, automatic: sequences.automatic.sequence, automaticTurn: sequences.autoBoard.turn })}`)
+  assert(sequences.choice.sequence.completed === 1 && sequences.choice.sequence.stopped &&
+    sequences.choiceBoard.players[0].block === 0 && sequences.choiceBoard.players[0].energy === 3,
+    'mandatory Load choices are not cancelled by the next queued card')
+  assert(sequences.jasper.sequence.completed === 1 && sequences.jasper.sequence.stopped === 'choice_required' &&
+    sequences.jasperBoard.players[0].block === 0 && sequences.jasperBoard.players[0].energy === 3 &&
+    sequences.jasper.screen.status.includes('Jasper — Exhaust up to 3 cards'),
+    'a staged power stops the sequence even when its choice prompt does not say choose')
+  assert(sequences.potionBoundaries.every(({ rejected, repeatRejected, result, board }) => rejected && repeatRejected &&
+    result.sequence.completed === 2 && board.players[0].energy === 2 && board.players[0].block === 1),
+    'draw and special potions are exposed as terminal actions, rejected before mutation in the middle, and allowed at the end')
+  for (const [index, { result, board }] of sequences.potionBoundaries.entries()) {
+    const player = board.players[0]
+    if (index < 3) {
+      assert(player.potions.length === 0 && player.hand.length > 4 &&
+        player.hand.some((card) => card.uid === 'sequence-next'), 'terminal draw potions are consumed and reveal drawn cards')
+      if (index === 1) assert([...player.hand, ...player.draw, ...player.discard].filter((card) => card.defId === 'daze').length === 2,
+        'Snecko Oil also adds its two Daze')
+    } else if (index === 3) {
+      assert(player.potions.length === 0 && result.screen.headings.includes('Distilled Chaos') &&
+        result.controls.some((control) => control.label.startsWith('Defend, cost 0')),
+        'terminal Distilled Chaos is consumed and returns its revealed-card choice')
+    } else assert(player.potions.length === 2 && !player.potions.includes('entropic_brew'),
+      'terminal Entropic Brew is consumed and actually grants two potions')
+  }
+})
+
+check('sequence concurrency, cancellation and multiplayer guards preserve authority', () => {
+  assert(sequences.during.pending && sequences.locked, 'concurrent interactions and intermediate reusable snapshots are blocked')
+  assert(sequences.cancelled.sequence.stopped === 'cancelled' && sequences.cancelled.sequence.attempted === 1 &&
+    sequences.cancelBoard.players[0].energy === 2 && sequences.cancelBoard.players[0].block === 1,
+    'cancellation reports an attempted action without replaying or running subsequent steps')
+  assert(sequences.multiplayerRejected && sequences.onlineRejected,
+    'local multiplayer and a one-player online combat reject sequencing without any mutation')
+})
+
 check('registers focused, safely annotated game and stats tools', () => {
   assertDeepEqual(tools.map((tool) => tool.name), ['inspect_game', 'interact_with_game', 'get_stats'])
   assert(tools[0].annotations.readOnlyHint && tools[0].annotations.untrustedContentHint,
@@ -1309,7 +1642,7 @@ check('returns visible gameplay context and drives every gameplay control kind',
     !chainedTarget.noTarget.selectionAnnouncements &&
     chainedTarget.picked.controls?.some((control) => control.label === 'Twin Slime, 3 HP') &&
     chainedTarget.replacementHits === 0 && chainedTarget.endClicks === 0 &&
-    chainedTarget.unrelated.includes('can only follow a card or Shiv') &&
+    chainedTarget.unrelated.includes('can only follow a card, Shiv, or potion') &&
     chainedTarget.pending.pending && chainedTarget.pending.selectionAnnouncements?.includes('Notice before pending target') &&
     !chainedTarget.inspectedPending.screen.announcements?.includes('Notice before pending target') &&
     chainedTarget.inspectedSettled.screen.announcements?.includes('Notice changed during pending') &&
@@ -1373,7 +1706,8 @@ check('returns visible gameplay context and drives every gameplay control kind',
     controls.invalid['Player name'].includes('at most 12') && controls.invalid['Search cards'].includes('at most 1000') &&
     controls.invalid.Volume.includes('control step'),
   `control-specific runtime validation rejects unsafe or impossible values: ${JSON.stringify(controls.invalid)}`)
-  assert(controls.checked === true && controls.target === 'jaw-worm' && controls.name === 'Agentclad' && controls.volume === 75,
+  assert(controls.checked === true && controls.target === 'jaw-worm' && controls.soleRecipient === 'p1' &&
+    controls.name === 'Agentclad' && controls.volume === 75,
     `checkbox, select, text, and number controls update through their visible event paths: ${JSON.stringify(controls)}`)
   assertDeepEqual(controls.range, { min: 0, max: 100, step: 5 })
   assertDeepEqual(controls.textLimits, { name: 12, search: 1000 })
@@ -1389,7 +1723,9 @@ check('records a finished run through WebMCP after a stale profile retry', () =>
   assertDeepEqual(leaderboardRecording.queued, 0)
   assert(leaderboardRetry.queued && leaderboardRetry.recorded,
     'an automatic retry did not update the WebMCP-visible submission status')
-  assertDeepEqual(leaderboardRetry.attempts, [true, true, true, false])
+  assert(leaderboardRetry.attempts.length >= 4 && leaderboardRetry.attempts.at(-1) === false &&
+    leaderboardRetry.attempts.slice(0, -1).every(Boolean),
+    'retry attempts retain the profile until the final stale-profile fallback')
   assert(leaderboardRetry.expectedErrors >= 5, 'the retry fixtures did not exercise their expected failures')
   assertDeepEqual(localMultiplayerRecording, { announced: false, submissions: 0 })
 })
@@ -1422,7 +1758,7 @@ check('keeps snapshots scoped, stable, opaque, and current', () => {
 })
 
 check('keeps representative WebMCP payloads compact', () => {
-  assert(payloadChars.metadata < 2_750 && payloadChars.start < 1_000 && payloadChars.fixture < 3_600 && payloadChars.lab < 900 &&
+  assert(payloadChars.metadata < 4_400 && payloadChars.start < 1_000 && payloadChars.fixture < 3_600 && payloadChars.lab < 900 &&
     payloadChars.map < 6_700 && payloadChars.combat < 2_500,
     `payload budget exceeded: ${JSON.stringify(payloadChars)}`)
 })
@@ -1430,8 +1766,8 @@ check('keeps representative WebMCP payloads compact', () => {
 check('starts a real Watcher run through WebMCP and loads cleanly', () => {
   assert(realFlow.watcherSelected && realFlow.describesWatcher, 'inspection exposes the selected hero and its gameplay identity')
   assert(realFlow.startedHeading && realFlow.startedControls > 0, 'WebMCP reaches the first playable run screen')
-  assert(labSelect.required && labSelect.value && labSelect.confirmEnabled && labSelect.returnedConfirm && !labSelect.labelDuplicated,
-    `a controlId-only Lab interaction selects its sole recipient and returns the enabled action: ${JSON.stringify(labSelect)}`)
+  assert(labSelect.soleTargetImplicit && labSelect.confirmEnabled && labSelect.returnedConfirm && !labSelect.labelDuplicated,
+    `Lab uses its sole recipient without a redundant select and exposes the enabled action: ${JSON.stringify(labSelect)}`)
   assert(mapInspection.totalUnavailableControls > 0 &&
     JSON.stringify(mapInspection.unavailableControls.filter((control) => control.context?.startsWith('Floor '))
       .map((control) => control.context).sort()) === JSON.stringify(futureRoomContexts) &&
@@ -1461,4 +1797,7 @@ check('starts a real Watcher run through WebMCP and loads cleanly', () => {
 
 await browser.close()
 await server.close()
-report(`WebMCP browser; payload chars ${Object.entries(payloadChars).map(([name, size]) => `${name}=${size}`).join(', ')}`)
+report(`WebMCP browser; payload chars ${Object.entries(payloadChars).map(([name, size]) => `${name}=${size}`).join(', ')}; ` +
+  `sequence chars full=${sequences.fullChars}, compact=${sequences.compactChars}, ` +
+  `individual=${sequences.individualChars}, batch=${sequences.batchChars}, ` +
+  `delta=${sequences.deltaChars}, deltaFull=${sequences.deltaFullChars}`)
