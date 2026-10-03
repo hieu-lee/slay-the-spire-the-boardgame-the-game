@@ -287,6 +287,17 @@
   border-radius: 999px;
 }
 
+/* Held potions sit bare on the stage: icons only, no pill behind them. */
+.seat__meta > .seat__potions {
+  padding: 0.25rem 0;
+  background: none;
+  border: 0;
+}
+
+.seat__meta > .seat__potions .item-icon-image {
+  filter: drop-shadow(0 2px 3px #000);
+}
+
 .board .enemy .tokens {
   position: absolute;
   right: 0;
