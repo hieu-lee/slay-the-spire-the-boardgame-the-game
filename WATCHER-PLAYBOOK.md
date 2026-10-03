@@ -2,6 +2,8 @@
 
 This is the pre-run checklist for a consistent solo Watcher win in the board-game implementation. Read the whole file immediately before every attempt, then append only lessons that change a future decision.
 
+Current enemy rules (2026-10-03): Donu and Deca attack twice, not three times; historical ledger entries retain pre-fix observations. Hexaghost has no Buffer. Weak affects every hit in one attack action and consumes one token after that action. Use current source and live intents for new runs.
+
 ## Win condition
 
 Build a compact, flexible deck around Watcher's reliable core: enter Wrath for a calculated burst, then leave it safely. A pure archetype is optional. Reach each boss with enough ordinary defense, consistency, and sustained damage to win when the first burst is not lethal.
@@ -97,7 +99,7 @@ Generally strong flexible picks: `Cut Through Fate`, `Third Eye`, `Fear No Evil`
 - Against Slime Boss, budget cards, potions, and HP for the spawned Large Slimes; the encounter is not won merely by reducing the boss to zero. Use one-shot retention to carry defense or a small-enemy kill into the split rather than accelerating an already-safe boss turn. Enter the split with at least the exact margin implied by all spawned intents; Weak may reduce only one point.
 - At the final campfire before Slime Boss, default to Rest unless the current HP already covers the projected split or the upgrade creates a guaranteed spawned-slime kill. Account for the HP cap: healing from 7 to 9 adds only 2 HP and still needs another point of Block or damage reduction against 5 incoming with one Defend.
 - Energy without defensive cards is not a split plan. Preserve draw, real Block, or an immediate small-slime kill; an Energy Potion cannot rescue a hand whose maximum Block is below the incoming damage.
-- Against Donu and Deca, focus Donu before repeated Strength scaling makes the alternating triple attacks lethal. Preserve Weak or equivalent multi-hit mitigation for Donu's attack turn, and enter with enough ordinary Block density that one bad draw does not spend the Fairy immediately.
+- Against Donu and Deca, focus Donu before repeated Strength scaling makes the alternating double attacks lethal. Preserve Weak or equivalent multi-hit mitigation for Donu's attack turn, and enter with enough ordinary Block density that one bad draw does not spend the Fairy immediately.
 
 ## Attempt log
 
