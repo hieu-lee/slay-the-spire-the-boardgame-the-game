@@ -1272,6 +1272,51 @@ for (const hasHeldCard of [false, true]) {
     'WebMCP Feint Load confirmation must complete the play')
 }
 
+const beforeLoop = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
+for (const viewport of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) for (const upgraded of [false, true]) {
+  await page.setViewportSize(viewport)
+  await page.evaluate(async (upgraded) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const { createCombat } = await import('/src/game/combat.ts')
+    const player = { ...run.combat.players[0], name: 'Defect', character: 'defect', row: 1,
+      hp: 8, maxHp: 8, block: 0, energy: 3, weak: 0, vulnerable: 0,
+      relics: [], potions: [], hand: [{ uid: 'loop-held', defId: 'defend_defect', upgraded: false }], discard: [], exhaust: [],
+      orbs: ['lightning', 'frost', null],
+      powers: [{ uid: 'webmcp-loop', defId: 'loop', upgraded }],
+      draw: Array.from({ length: 10 }, (_, index) => ({ uid: `loop-draw-${index}`, defId: 'defend_defect', upgraded: false })),
+    }
+    const enemy = run.combat.enemies[0]
+    run.combat = createCombat({ seed: 931, calls: 0 }, [player], [0, 1].map((row) => ({
+      ...enemy, uid: `loop-enemy-${row}`, defId: 'cultist', row, hp: 20, maxHp: 20,
+      block: 0, strength: 0, weak: 0, vulnerable: 0, poison: 0, dead: false, isBoss: false,
+    })), 'webmcp-loop')
+    Object.assign(run.combat.players[0], player)
+    Object.assign(run.combat, { phase: 'player', turn: 1, die: 3 })
+    debug.setRun({ ...run, phase: 'map' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    debug.setRun(run)
+  }, upgraded)
+  await page.getByRole('button', { name: 'End turn', exact: true }).waitFor()
+  await interact((await inspectAll()).controls.find((control) => control.label === 'End turn').id)
+  await page.getByRole('button', { name: 'Choose frost Orb 2', exact: true }).waitFor()
+  let chosen
+  for (let selection = 0; selection < (upgraded ? 2 : 1); selection++) {
+    const choice = (await inspectAll()).controls.find((control) => control.label === 'Choose frost Orb 2')
+    chosen = await interact(choice.id)
+  }
+  assert(chosen.unavailableControls.some((control) => control.label.startsWith('Defect,') && control.label.includes(`Block ${upgraded ? 2 : 1}`)) &&
+    !chosen.controls.some((control) => control.label === 'Choose frost Orb 2'),
+  `WebMCP must resolve Loop's chosen Frost Orb without arming or dragging at ${viewport.width}px`)
+}
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.evaluate(async (run) => {
+  window.__STS_DEBUG__.setRun({ ...run, phase: 'map' })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  window.__STS_DEBUG__.setRun(run)
+}, beforeLoop)
+await page.getByRole('button', { name: 'End turn', exact: true }).waitFor()
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

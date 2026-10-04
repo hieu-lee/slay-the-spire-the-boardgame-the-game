@@ -6771,7 +6771,7 @@ function CombatScreenView({
                           suppressEndTurnOrbClick.current = null
                           return
                         }
-                        if (targetUid && armedEndTurnAbilityId === endTurnEffect?.id) {
+                        if (targetUid && endTurnEffect) {
                           resolveTurnEffectTarget(endTurnEffect.id, targetUid)
                         }
                       }}
