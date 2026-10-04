@@ -13721,8 +13721,8 @@ const readWatcherMeteorFrame = (layer = watcherAttackLayer) => layer.evaluate((a
   return {
     meteor: { left: meteorRect.left, top: meteorRect.top, right: meteorRect.right, bottom: meteorRect.bottom,
       width: meteorRect.width, height: meteorRect.height },
-    nose: { x: meteorRect.left + meteorRect.width * 0.8965, y: meteorRect.top + meteorRect.height * 0.8613 },
-    impact: { x: impactRect.left + impactRect.width / 2, y: impactRect.top + impactRect.height / 2,
+    nose: { x: meteorRect.left + meteorRect.width * 0.89941406, y: meteorRect.top + meteorRect.height * 0.84431538 },
+    impact: { x: impactRect.left + impactRect.width * 0.51171875, y: impactRect.top + impactRect.height * 0.7890625,
       width: impactRect.width, opacity: Number(getComputedStyle(impact).opacity) },
     target: { x: targetRect.left + targetRect.width / 2, y: targetRect.bottom },
     boardTop: boardRect.top,
@@ -14019,8 +14019,8 @@ check('personal card and potion events render distinct authoritative recipes', (
     `Watcher meteor did not start in the sky on a tall stage: ${JSON.stringify(watcherTallMeteorSky)}`)
   const meteorDx = watcherMeteorContact.nose.x - watcherMeteorSky.nose.x
   const meteorDy = watcherMeteorContact.nose.y - watcherMeteorSky.nose.y
-  assert(Math.abs(meteorDy / meteorDx - Math.tan(45.34776287123926 * Math.PI / 180)) < 0.002,
-    `Watcher meteor flight diverged from its 45.35deg asset axis: ${meteorDx},${meteorDy}`)
+  assert(Math.abs(meteorDy / meteorDx - Math.tan(44.83365264116383 * Math.PI / 180)) < 0.002,
+    `Watcher meteor flight diverged from its 44.83deg asset axis: ${meteorDx},${meteorDy}`)
   assert(Math.abs(watcherMeteorContact.nose.x - watcherMeteorContact.target.x) <= 4 &&
     Math.abs(watcherMeteorContact.nose.y - watcherMeteorContact.target.y) <= 4,
   `Watcher meteor missed enemy ground contact: ${JSON.stringify(watcherMeteorContact)}`)

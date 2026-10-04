@@ -1,0 +1,1759 @@
+{
+  "model": "gpt-image-2.5-sunburst",
+  "quality": "high",
+  "background": "transparent",
+  "references": [
+    "public/assets/combat/characters/watcher.webp",
+    "public/assets/combat/characters/ironclad.webp",
+    "public/assets/combat/enemies/hexaghost.webp",
+    "public/assets/combat/enemies/lagavulin.webp"
+  ],
+  "assets": [
+    {
+      "path": "public/assets/combat/vfx/actions/awakened-blue-fire.webp",
+      "sourceSha256": "c2f947f34091dcc93b396821e5ff4d9bd4f2177692dc08f7edd45a3c56c3d141",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        24,
+        133,
+        488,
+        378
+      ],
+      "subjectPrompt": "Subject: A single cool turquoise-blue flame projectile, compact broad tongues, traveling toward the right; no creature.\n",
+      "generatedSha256": "5002b10924c712cb5464be2ebcd7d8c7da6e2ca5f0f8c9b3c01ebdc90173f6d2",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.45794392523364486,
+        "offset": [
+          20,
+          19
+        ]
+      },
+      "sha256": "3c86a8e3d2ac754d0ff033d04be7996977af4d025d823e790230925b4b76f661",
+      "bytes": 33184
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/awakened-claw-scratch.webp",
+      "sourceSha256": "25fee3b13dd8dda47b4566b8e812a59267043798155dd36f133b5304a47eec98",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        24,
+        33,
+        488,
+        478
+      ],
+      "subjectPrompt": "Subject: Exactly three parallel pale-cyan claw scratch arcs, upper right to lower left; empty transparent gaps between strokes.\n",
+      "generatedSha256": "db25ccec8621d25d398b7466fa2b5b85f9c3270b3f96b40aa78280b6664e7181",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.45923632610939114,
+        "offset": [
+          16,
+          20
+        ]
+      },
+      "sha256": "bd410cbc6e9cd29063fe21840776f8305d2e3baac643e4d97c2d488dd4c5d1ec",
+      "bytes": 53832
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/dark-channel.webp",
+      "sourceSha256": "24efbd9a817e3bc557ff102d28a3bdf790bb18eac183f15ad068dff4fa6a34e2",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        52,
+        40,
+        470,
+        469
+      ],
+      "subjectPrompt": "Subject: A purple dark-magic orb or vortex with a dark transparent central cavity, broad purple swirling brush strokes.\n",
+      "generatedSha256": "0451f48db8ee89534a5379bc49bed1f2f09617b6c8817c1db30c62da7625853a",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.47072072072072074,
+        "offset": [
+          7,
+          13
+        ]
+      },
+      "sha256": "257e1270e258890f9b75eeb8460c5b363a987b5d97afa15a282e1832daeef512",
+      "bytes": 42036
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/defect-face-orb.webp",
+      "sourceSha256": "00f5dad775ee984648df748a88e3518341c66e8bd77ec4dde662df32d3bf3105",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        53,
+        131,
+        452,
+        356
+      ],
+      "subjectPrompt": "Subject: A small blue-cyan luminous spherical energy projectile with short painted trailing wisps to the left; preserve its rightward direction.\n",
+      "generatedSha256": "28788144a2c86fa38e86811fb566e905c36e291435e33ae418fcf23e8f51e04d",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.41058394160583944,
+        "offset": [
+          38,
+          25
+        ]
+      },
+      "sha256": "6fdb0d92f27a4ff22a6837ef4be5ed2466270665c561bdcbff2fd81b2fcad435",
+      "bytes": 29404
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/downfall-demon-ground-splat.webp",
+      "sourceSha256": "af8421590388554fe9af3c7588663bba2bed2e924e95c0bf65bf269101a6cff9",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        21,
+        132,
+        485,
+        448
+      ],
+      "subjectPrompt": "Subject: Low wide ochre-red ground impact with chunky flame tongues and a few rock chips; transparent space above.\n",
+      "generatedSha256": "022565bd7c9689f65717b52c6fdfa0c3f7dc35dfb33f022afec8324fe1f21514",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.45014245014245013,
+        "offset": [
+          23,
+          33
+        ]
+      },
+      "sha256": "9144d986d1f77d3426f89de037bfc58d6341eb2208df5e807390bc86e893fb4d",
+      "bytes": 58022
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/frost-channel.webp",
+      "sourceSha256": "547263e9c70fc183f42dd0b041f348e322be251a1c4e0e2210674c9f4c7e0522",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        44,
+        71,
+        474,
+        446
+      ],
+      "subjectPrompt": "Subject: A blue ice-crystal cluster with broad polygonal planes, pale edges and deep blue shading.\n",
+      "generatedSha256": "909aee053fe0c213a080b1c712627a5dae4bfbf687d82a12e9a325a6c99aeb63",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4764930114358323,
+        "offset": [
+          9,
+          14
+        ]
+      },
+      "sha256": "698d7e60f5b96be1be35b45322216fc88b8545edf5e1afcf7342c415bd96b13e",
+      "bytes": 45464
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/guard-bloom.webp",
+      "sourceSha256": "c0f02a642edc340eb2a2a6fac9d38ca25814b0346c689494dece6740868d96cc",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        24,
+        78,
+        488,
+        432
+      ],
+      "subjectPrompt": "Subject: protective blue energy shield blooming upwards, broad translucent arched blue barrier with layered painted highlights and a grounded gold spark, matching the original geometry. Paint the energy shield itself; do not add a literal metal shield, character or hands.\n",
+      "alphaScale": 0.6,
+      "generatedSha256": "75fbbc2b062ee43a67793eab6e0d848fb928026e2753cebcfd33824861408d31",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.43975155279503103,
+        "offset": [
+          31,
+          31
+        ]
+      },
+      "sha256": "0d26d5f65b03b22a96fd65ee6d87cdfe506fb041c9ee9fbabb9e3280a169d950",
+      "bytes": 56492
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/hermit-bullet.webp",
+      "sourceSha256": "f018a647b23bf6fc7f816d3b6054b72480fa0fc99d44f9eef39cf8fae798a822",
+      "canvas": [
+        256,
+        64
+      ],
+      "bounds": [
+        31,
+        9,
+        225,
+        55
+      ],
+      "subjectPrompt": "Subject: ONE compact elongated copper-gold projectile pointing horizontally right. Preserve the extreme wide/short silhouette. No casing, smoke plume or additional bullets.\n",
+      "generatedSha256": "761550da426ca3d51ca3894d40c4e4dadaf93f05b1e9e70a5c205628f2a4b89b",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.20292887029288703,
+        "offset": [
+          24,
+          -72
+        ]
+      },
+      "sha256": "1a0a2e1bae6065792e50be3145a9c27a94e17c194217defbbb6a45914923b166",
+      "bytes": 5392
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/hermit-impact.webp",
+      "sourceSha256": "ed931f458ce10081268c87f88a6fd21108b044d730bb0d7ac47f3a76b7ac44bc",
+      "canvas": [
+        256,
+        256
+      ],
+      "bounds": [
+        80,
+        45,
+        182,
+        206
+      ],
+      "subjectPrompt": "Subject: Small pale-gold bullet contact spark with a handful of broad irregular painted rays, no circular halo.\n",
+      "generatedSha256": "0ce3d2e34dbefa9df87b308e73a5d8a45ae204201c02bb7b610e0e20213c2dbc",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.1637239165329053,
+        "offset": [
+          42,
+          42
+        ]
+      },
+      "sha256": "fe9a6ab807ff6833f0d2cf727339f1c01a31b0f45c7b3d13569fd6affca1d5d0",
+      "bytes": 8162
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/hexaghost-flame-impact.webp",
+      "sourceSha256": "3f4e258f8df98c9527f389d41fa93e64054d425a2855bbcb1f2c3951e3783d4b",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        38,
+        4,
+        474,
+        509
+      ],
+      "subjectPrompt": "Subject: Green spectral flame impact, several broad olive-lime translucent curling tongues around an open middle.\n",
+      "generatedSha256": "8283f5e60ff49e3809b4fe0f53c91eae6122169297d0314e0c3ce2cec77241c5",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4849833147942158,
+        "offset": [
+          2,
+          7
+        ]
+      },
+      "sha256": "60f1252cbd16c19c97e3732d261229af1b40b2fd2397133896ebc4ac87372777",
+      "bytes": 70970
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/hexaghost-flame.webp",
+      "sourceSha256": "54b01ae86391ff60e1082dfcb3dc6501c38e074aae36876694204a9882d277ca",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        143,
+        31,
+        332,
+        481
+      ],
+      "subjectPrompt": "Subject: ONE upright spectral green flame with a thick lime center and darker green painted edges, matching the Hexaghost flame style.\n",
+      "generatedSha256": "e0278a916dad2aed4ff5c30a8a019e3ec0d48cd3159dbecb568ad0a3ad8260cd",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.43953488372093025,
+        "offset": [
+          13,
+          31
+        ]
+      },
+      "sha256": "6190765e6152e92228f82baa6e25a427d73f62a843f7ada90ff4757dd631c713",
+      "bytes": 24542
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/ironclad-bash.webp",
+      "sourceSha256": "d62dabb760ed77c957b7b81049ee66b1c5a78bf585fd8b0d0abb9e0de9388ffd",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        24,
+        73,
+        488,
+        438
+      ],
+      "subjectPrompt": "Subject: Strong blunt ochre-orange impact with broad short angular brush-stroke rays and one pale center.\n",
+      "generatedSha256": "f1fbbaa73e7363ba3b8f126bfe01fced2c5c180c0f87c2df5fc78eb4c761d909",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.46675191815856776,
+        "offset": [
+          16,
+          17
+        ]
+      },
+      "sha256": "0808825cc8f109bcd297c8a351907b3acab89a04a64a120b12702275f95c6719",
+      "bytes": 64538
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/ironclad-strike.webp",
+      "sourceSha256": "856ec6c49a9ab9aaf2a52573a4d843be9b32e4d27a91f0ace9ca21ec36f53524",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        24,
+        34,
+        488,
+        477
+      ],
+      "subjectPrompt": "Subject: One diagonal orange sword-swing slash, broad tapering curved painted stroke with compact pale contact center. No literal weapon.\n",
+      "generatedSha256": "16cf8e30bef074e2f90571b883e91d395f47dbb5f04867555fcf2e701d1de4c9",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.45717234262125905,
+        "offset": [
+          21,
+          20
+        ]
+      },
+      "sha256": "9deb3d6da420479b285b393867f1660850963ca80368938dc8de2b06f35520ed",
+      "bytes": 54242
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/lightning-channel.webp",
+      "sourceSha256": "5feace259617aa706edbcadf76bf0d2231adfa3eab20399bddd146e023b82837",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        11,
+        57,
+        505,
+        421
+      ],
+      "subjectPrompt": "Subject: Yellow lightning orb, broad ochre-gold circular energy silhouette with a few small painted angular arcs.\n",
+      "generatedSha256": "d6501ee0fba3b94fbceb6fcfc8489a137314ff1eacbdf10c4ca5e0ee64b51464",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4595959595959596,
+        "offset": [
+          22,
+          6
+        ]
+      },
+      "sha256": "5344b85e8edd34fc5a06daa380e1b01b381986ec4d37b1fa9cbae55eb0a15e0f",
+      "bytes": 39694
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/magic-burst.webp",
+      "sourceSha256": "6c00d1a0b2a580ab721c7f536e197cb436eff55b88f41ad819365e92abd188f1",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        25,
+        29,
+        488,
+        483
+      ],
+      "subjectPrompt": "Subject: Purple-blue general spell burst with broad curling painted arms and a compact warm pale center.\n",
+      "generatedSha256": "3de175c58cbed29622ab1ccd07f2f2ba618c4ebc597f8a3ed0c5ec243de28377",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4855614973262032,
+        "offset": [
+          4,
+          5
+        ]
+      },
+      "sha256": "e4abb81265bed498b3b93241014031953090ea9b45fd8aabe76bfe0cee272d10",
+      "bytes": 83370
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/potion-burst.webp",
+      "sourceSha256": "626b3f2665a3d4b8c302a421901c70d83611ec5394c26930dce4b357e22d69a3",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        35,
+        25,
+        476,
+        488
+      ],
+      "subjectPrompt": "Subject: Warm amber liquid splash with a few broad droplets and an empty middle. Preserve the little bottle/potion motif already present, no labels.\n",
+      "generatedSha256": "57dfd73ab277a2a9af461de3317bc6364a0b7fc58591dc933bf15c38e8a7076d",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.47115384615384615,
+        "offset": [
+          8,
+          16
+        ]
+      },
+      "sha256": "31675d37d70411acf8a97c16a57142b647a8ca79028581f7f3e4cfeea308a403",
+      "bytes": 62328
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/silent-knife.webp",
+      "sourceSha256": "f1e0f1962b980ed82eef99074afc5e2d2045d5e7bd150786825471cf704287a3",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        17,
+        220,
+        496,
+        293
+      ],
+      "subjectPrompt": "Subject: ONE slender pale teal wavy throwing blade/streak, pointing right, with its same horizontal long/short silhouette; no new blades or hands.\n",
+      "generatedSha256": "37bb01dfb971cd31e1f2cd48b1b39573612460627da7a3d6a7cd95c48cf67757",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.477124183006536,
+        "offset": [
+          10,
+          11
+        ]
+      },
+      "sha256": "29a36451101a1a33d52841b6b60e125b2b9c89aef2b54220a93591e7b28c7be1",
+      "bytes": 14826
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/silent-poison.webp",
+      "sourceSha256": "0426db0505a3ec1e8a03b2a492c343752c84a462548b5c86822f6e9a4f44fd81",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        24,
+        26,
+        488,
+        485
+      ],
+      "subjectPrompt": "Subject: Diagonal dark green poison splash with broad lime streaks and muted purple flecks; preserve the slash-like direction.\n",
+      "generatedSha256": "947e97fb843b2e49037763a645334442925870cdbf8815a5e032ce2e7a2d4589",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4731958762886598,
+        "offset": [
+          14,
+          13
+        ]
+      },
+      "sha256": "3fbe3632d625b4d991df9ade671e156f140a682a614b86dcf7d7a73c5d25f86f",
+      "bytes": 61612
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/silent-shiv.webp",
+      "sourceSha256": "0657412047b905c506f528c3b8c8cab66a18100c8706870bfa3883adcdc10385",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        51,
+        24,
+        460,
+        488
+      ],
+      "subjectPrompt": "Subject: Green curved slashing streaks intersecting at a small pale-gold contact center; no literal weapons.\n",
+      "generatedSha256": "62a5a5143167f44b31c8624749904e77faa87105404030600509afb34e8e0223",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4590347923681257,
+        "offset": [
+          14,
+          18
+        ]
+      },
+      "sha256": "b4e1e65670470dd8f52ad719c864ba99b9910701c47b415dc2424100ea0e39b3",
+      "bytes": 74502
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-block-impact.webp",
+      "sourceSha256": "c1764a5b3a154c5a085eb238aedb6903f43488a15b1d30c6cc07bc0dc716f4c4",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        59,
+        51,
+        459,
+        423
+      ],
+      "subjectPrompt": "Subject: Pale blue protective dome shield with broad overlapping translucent blue planes, preserve its lower ground anchor.\n",
+      "alphaScale": 0.6,
+      "generatedSha256": "5e016ed6bcbae16097bfcf2a5cfd9bf712c69d13b7d71193d5e91174dbdd165a",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4412811387900356,
+        "offset": [
+          34,
+          25
+        ]
+      },
+      "sha256": "f220a6b934e59d59bc3b2c48347b37f972206cd60bbef8ff369a9809bac71f87",
+      "bytes": 43094
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-block-loss-impact.webp",
+      "sourceSha256": "e49fa325d4e03b4c87ebe2841f58d8e9dfa70a1fea56d49791dc202927f34560",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        125,
+        85,
+        384,
+        443
+      ],
+      "subjectPrompt": "Subject: The existing turn block loss impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "88ae551dc2c5a229c14f5bf51d465b50b73732a30c6c26de3db0498ebfedac2a",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.38085106382978723,
+        "offset": [
+          60,
+          69
+        ]
+      },
+      "sha256": "85765d877738c2deaa784de895084f0dbc86aa5a2ef6e3b29597ae9c37806035",
+      "bytes": 39404
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-buff-impact.webp",
+      "sourceSha256": "67785f6694c1499644c845c6f50f31ddf3eedf0df418706d88379e2352c12855",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        120,
+        66,
+        392,
+        435
+      ],
+      "subjectPrompt": "Subject: The existing turn buff impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "c5d3cdd13417a9d557f37bb1853e62861d62f96361155d8aaeee31af17909b6a",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.369,
+        "offset": [
+          66,
+          62
+        ]
+      },
+      "sha256": "36e2e389b9fd5bf53ddcb3ee957eb5128fb341de92995c5fccaac9198a696330",
+      "bytes": 46728
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-burn-impact.webp",
+      "sourceSha256": "022e7a6146c044f161c688791eff1da9b775fabf78078084690b435984227558",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        112,
+        72,
+        403,
+        418
+      ],
+      "subjectPrompt": "Subject: The existing turn burn impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "9fd2f33c3a2b2af0a721eacaa7d6a8bfd66a525ca84a8901a243485e2d9f8556",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.36835443037974686,
+        "offset": [
+          62,
+          59
+        ]
+      },
+      "sha256": "7686c2b112235e2589f346e37745b2851bd98f64cba5fe093737da50c3278be5",
+      "bytes": 43862
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-countdown-impact.webp",
+      "sourceSha256": "dd2becb87826ee87c573d364d39216de24f0bacf20fbfa3b3fb4d81908e52126",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        106,
+        83,
+        417,
+        405
+      ],
+      "subjectPrompt": "Subject: The existing turn countdown impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "355c4fbedce2b34ea01bcbcd9947a64bd893b4e38ae25ca60904798338cb69c9",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.35738068812430634,
+        "offset": [
+          78,
+          63
+        ]
+      },
+      "sha256": "bc985892f718138a071ed104dab3e2c145a4388a485c6a8378978a87af2a4db7",
+      "bytes": 38636
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-damage-impact.webp",
+      "sourceSha256": "ae7393f673afd3902d52845ef04d059feb167e8496abff100c2d769905edd05c",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        92,
+        72,
+        414,
+        424
+      ],
+      "subjectPrompt": "Subject: The existing turn damage impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "2bb03756a619d9324dd5170f602284decdb322e23d72577e8e20df6975949624",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.3717001055966209,
+        "offset": [
+          61,
+          65
+        ]
+      },
+      "sha256": "5c9f0a807f6bafa3f45e4148b5e2d3a8e20a03fa68afa8e73215fea084b51338",
+      "bytes": 47968
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-dark-evoke-impact.webp",
+      "sourceSha256": "bdb5fb9dfa2e445e36197d07264386c1efd5dcaff0df35c4f95801f2a646cb1b",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        136,
+        127,
+        379,
+        374
+      ],
+      "subjectPrompt": "Subject: The existing turn dark evoke impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "e711f64ca853b5a0da57c67e4b6a203431197081b36c0d125d36bb72d39b47e2",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.31870967741935485,
+        "offset": [
+          90,
+          92
+        ]
+      },
+      "sha256": "612afd553ef44ae3064e9a6ac6c434a25f73d153e9bcf3245782cbaa18d89991",
+      "bytes": 25388
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-discard-impact.webp",
+      "sourceSha256": "5c08ca4445e8cc392bcc822d284a7f88f26baa9a386a281365d1d1f894b2d49c",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        105,
+        64,
+        388,
+        439
+      ],
+      "subjectPrompt": "Subject: The existing turn discard impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "3ea78f05d9bd9daf07a0d567da7d061a7c52eb83f666958b54ae8fba49e8a8af",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.38191632928475033,
+        "offset": [
+          50,
+          61
+        ]
+      },
+      "sha256": "ded75d44669af5c4f58cd2fd7bcba26bf54986fe9d5efe8e9b211c6c25f5edba",
+      "bytes": 48206
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-draw-impact.webp",
+      "sourceSha256": "f2ba924887e0792f047e82a54c2dd89aff5a3e4343fdd9f0a496d465d26ab4b4",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        124,
+        64,
+        383,
+        445
+      ],
+      "subjectPrompt": "Subject: The existing turn draw impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "b2e0dd153d1d9ab5cb1ece209dfe165003fa164de4452a37447f408bd771d0c4",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.40618336886993606,
+        "offset": [
+          41,
+          49
+        ]
+      },
+      "sha256": "bc07c5bfba34f575e8ae89b1fc16db38190a8a67aca7abc641f5087b97e9a38e",
+      "bytes": 42708
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-exhaust-impact.webp",
+      "sourceSha256": "a03abc2d2c0114899b32d1e74d66e2439ceb34e3459e8f01ba5e7b8f2c1c1a4e",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        155,
+        42,
+        357,
+        463
+      ],
+      "subjectPrompt": "Subject: The existing turn exhaust impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "2fa2e48db461e9c8a3fe9e42626dc00db3df6de73db1e0c9268edad3afb65857",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.46061269146608314,
+        "offset": [
+          19,
+          27
+        ]
+      },
+      "sha256": "b36b104f6c65aec8e12b3ec11af39ba9f535553d101d654b0d29ada7d282d981",
+      "bytes": 35536
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-frost-passive-impact.webp",
+      "sourceSha256": "53ded34e0cee559c4a4f78d574b53648599558dea9f4761b8486912baa01e906",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        112,
+        114,
+        400,
+        386
+      ],
+      "subjectPrompt": "Subject: The existing turn frost passive impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "de236c4dac363fc97c5516d827d5c9d30e9cfbeceebefbd3490ecc37bec5ae7b",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.33371958285052145,
+        "offset": [
+          84,
+          79
+        ]
+      },
+      "sha256": "6c0169b362a9e815e281f82f4f9c86ee47e0e3c0e817deb1cacfc0c9277a1bce",
+      "bytes": 44252
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-heal-impact.webp",
+      "sourceSha256": "ae2b70e19a0deb9c87ee13a34b3d66c3ff62b32dea1936347d1d833ed93316b8",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        122,
+        36,
+        398,
+        434
+      ],
+      "subjectPrompt": "Subject: The existing turn heal impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "0d853e4319e4a89428c6a3d8b114aefccb2973db1f74d7f97c2b0a17f5d8fa5c",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4090441932168551,
+        "offset": [
+          49,
+          26
+        ]
+      },
+      "sha256": "1fac2448b2b5053f8f9880310f942cc5816af5665c33f590b9479e047c836507",
+      "bytes": 37632
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-lightning-passive-impact.webp",
+      "sourceSha256": "82c909b376cb06854afb78d25eb3fa2377ed9380dfa2b075feada71346c7bbc2",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        111,
+        85,
+        402,
+        406
+      ],
+      "subjectPrompt": "Subject: The existing turn lightning passive impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "fea14ffd5859aa5611d57a3d09d5bbea344e0b77a5f40eeb00a2fb15089730f1",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.32655137334689727,
+        "offset": [
+          84,
+          79
+        ]
+      },
+      "sha256": "0136251396969806c675e55ec4d3c7229623bae2f64c053e600c7028b0f81a94",
+      "bytes": 42410
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-lightning-strike.webp",
+      "sourceSha256": "ba4528a3a0db3a9e5c3fe20202395a180b2532f748fcad83840c579b5e7850e6",
+      "canvas": [
+        384,
+        768
+      ],
+      "bounds": [
+        41,
+        0,
+        324,
+        750
+      ],
+      "subjectPrompt": "Subject: ONE thin vertical descending warm-white branching lightning bolt, organic angular painted strokes, with a small flat ground arc centered at x=50%, y=94% of the sprite. The top bolt extends to the top edge. Preserve the tall narrow image and original ground contact geometry. No orb, scenery or character.\n",
+      "generatedContact": [
+        512,
+        981
+      ],
+      "runtimeContact": [
+        192,
+        722
+      ],
+      "generatedSha256": "1e309ae0675a9b589d7eaac7944acba1762f7a229db37d7bc63c6285bded89f2",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.7359836901121305,
+        "offset": [
+          -185,
+          0
+        ]
+      },
+      "sha256": "8f48f3853408719f9625bc680b8645cf3189a6c1c26131420448c4110bbd91b4",
+      "bytes": 49084,
+      "quality": 75
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-poison-impact.webp",
+      "sourceSha256": "3cff42cb1be69f24ced822bab35bcd6e79d5bb872e62391a6f5f05382a45896d",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        92,
+        68,
+        423,
+        445
+      ],
+      "subjectPrompt": "Subject: The existing turn poison impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "93a94868cb0e10105a2e29ce27435567c2365f2ec854ec488f3f0147356ea19b",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.40063761955366634,
+        "offset": [
+          45,
+          51
+        ]
+      },
+      "sha256": "096cfd023b05798e7f73b582b8108a10b34fd94477652c49280362550737b388",
+      "bytes": 55634
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-strength-impact.webp",
+      "sourceSha256": "a5e8dc45d0066421b6f9aab934af2055372c808c306deb860f4309c807d3531f",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        73,
+        48,
+        447,
+        454
+      ],
+      "subjectPrompt": "Subject: The existing turn strength impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "f493f243630ba20bc2ee5a6175d4917e4ffe3a47a2f1491e8848cb48ef9b5a27",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4109311740890688,
+        "offset": [
+          48,
+          41
+        ]
+      },
+      "sha256": "dfff2dbfef047a061f7dd0323af034c0f681c959edb3c77cdcbbec67acc2fd3f",
+      "bytes": 57340
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-strength-loss-impact.webp",
+      "sourceSha256": "29fcc3f85e1ee64761f2d3679a6e0111f8077dc0c43672b85fa4a61039ee29b2",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        178,
+        62,
+        334,
+        455
+      ],
+      "subjectPrompt": "Subject: The existing turn strength loss impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "16ef284786f7f836c2afe06544e4c7763526ba7ebbab1bab596bcf4f0efec405",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4158730158730159,
+        "offset": [
+          45,
+          47
+        ]
+      },
+      "sha256": "0760ef53c78d620dd0a40fc4fa2dfc0f6b18e879fd7ef435e029c89b37405a33",
+      "bytes": 25588
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-vulnerable-impact.webp",
+      "sourceSha256": "df82e57db693972b427aefa51ace682973c5ca6d42d987e2531ec7afc6c91ed0",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        97,
+        73,
+        412,
+        420
+      ],
+      "subjectPrompt": "Subject: The existing turn vulnerable impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "7be870145ecd48cf1fc3ac6e78c47ee8e25817a958e7693c60c80d22959456a2",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.40488431876606684,
+        "offset": [
+          38,
+          52
+        ]
+      },
+      "sha256": "b2625822c05a4170b9f4eca3127069dbda8f3bf26e6d5f81590f39a2e3de36c3",
+      "bytes": 46802
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/turn-weak-impact.webp",
+      "sourceSha256": "4e495836116747e8fa8420de29cfa28b7b0c250fbbeda734cce746cf3f1257c0",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        144,
+        93,
+        360,
+        412
+      ],
+      "subjectPrompt": "Subject: The existing turn weak impact visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "8d4273397c03c84449482c2767716b4abedbadee98794f03ea3d05103ae9d76f",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.3357894736842105,
+        "offset": [
+          75,
+          78
+        ]
+      },
+      "sha256": "59284cf76847fbbbbdfbb46fa7eadf43c2a309725052d8e4b09f811ecf2170c0",
+      "bytes": 37634
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/watcher-calm-aura.webp",
+      "sourceSha256": "e20b68a4cba6cc607bc5211e43d76090187788a1faa7926af9742edbae8f86d4",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        25,
+        39,
+        487,
+        472
+      ],
+      "subjectPrompt": "Subject: The existing watcher calm aura visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects. Preserve a circular ring with a completely EMPTY transparent center; do not fill the central hole. Broad soft brush-painted ribbons, no extra objects.\n",
+      "generatedSha256": "3f6c41837e503430b40b2f43f38e9919856e464d512efa1cf951d3569f396d71",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4721919302071974,
+        "offset": [
+          14,
+          14
+        ]
+      },
+      "sha256": "000c1f8c730857bef9628b484add576b416e360687b5d12f2abb42fa5e9eddb3",
+      "bytes": 50760
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/watcher-meteor-impact.webp",
+      "sourceSha256": "2b688c5edc154c7ad20d722f5c3f916d6df472cd8ef5c40391954385fce1f954",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        6,
+        21,
+        506,
+        490
+      ],
+      "subjectPrompt": "Subject: Low wide purple-gold ground impact with a central orange hit and broad chunky purple tongues rising upwards; same overall geometry.\n",
+      "generatedSha256": "a8216234495d6a57602366241c3d3afd8915e44772fc90e73ff25c76090f8517",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4704112337011033,
+        "offset": [
+          15,
+          18
+        ]
+      },
+      "sha256": "54d9661d105d1d48ee174bfb41f48e0535298d68f83b09286e067cab54d821bd",
+      "bytes": 67154
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/watcher-meteor.webp",
+      "sourceSha256": "6c632e0c1671fbf9eb17db12f324ef72b4e386cb6898f1a678fcfed20e4170a8",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        64,
+        16,
+        476,
+        449
+      ],
+      "subjectPrompt": "Subject: ONE hot orange-red falling meteor, angled tail from upper left to heavy rocky leading nose at lower right. Paint a compact charcoal stone with ember facets and thick red-orange flame tongues. Same general diagonal direction and size as image 1, no extra meteors. The leading nose is a precise visible contact point.\n",
+      "generatedSha256": "49c6457badf72d8974ac59f04247ffb9998c1adb7b2106a224a84561cae4f338",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.47193585337915234,
+        "offset": [
+          9,
+          2
+        ]
+      },
+      "sha256": "59286fd8af8a9291bb094218d88b0bd1c8e52799da3930b5f3da7484c9667b85",
+      "bytes": 34634
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/watcher-pray.webp",
+      "sourceSha256": "251ca8e3fc19a9e43c2250ea15c8732674d677b62ce005aa7bc161685afd749e",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        87,
+        24,
+        425,
+        488
+      ],
+      "subjectPrompt": "Subject: The existing watcher pray visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "b2ef919bd426f129dc2100d3479b1aa8184bd2abe55e9f6333264074e1486a62",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4543010752688172,
+        "offset": [
+          18,
+          20
+        ]
+      },
+      "sha256": "ae370199873a1b5cf3f1355e55a2d80b2fa37ef5e0676b80382b4a533645098e",
+      "bytes": 57948
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/watcher-wrath-aura.webp",
+      "sourceSha256": "882f9ba6b31353190d292a02c405b90c8253f273ecc6b6c49a233b696fff5e63",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        24,
+        25,
+        488,
+        486
+      ],
+      "subjectPrompt": "Subject: The existing watcher wrath aura visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects. Preserve a circular ring with a completely EMPTY transparent center; do not fill the central hole. Broad soft brush-painted ribbons, no extra objects.\n",
+      "generatedSha256": "a1a462997082b5ce818bba0e014d157322da68fcb2e5a50640b594b6e4c1da07",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4909478168264111,
+        "offset": [
+          2,
+          6
+        ]
+      },
+      "sha256": "fce097b7322b3096cfe240f2ded67ee689f42ec3decab534620a0548d46eb6a2",
+      "bytes": 76946
+    },
+    {
+      "path": "public/assets/combat/vfx/death-ash.webp",
+      "sourceSha256": "1a4ba37970cb26146ccba8f23dbea06f10fc6ee9a525497f2c14f02c9e43c034",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        95,
+        6,
+        419,
+        506
+      ],
+      "subjectPrompt": "Subject: The existing death ash visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "70d772c78e6c70aea0a4ace9d2ba9d9a36b8b2e0c923e85d24c9f9a116acb73f",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4814264487369985,
+        "offset": [
+          7,
+          10
+        ]
+      },
+      "sha256": "fa9b0e642ee0bbcb309d8a272c47fa5c790e8fdbfc79d6154d8e1d31aefb2002",
+      "bytes": 65422
+    },
+    {
+      "path": "public/assets/combat/vfx/death-ring.webp",
+      "sourceSha256": "21e151df2bf05b87326ca24670d752ee5a55f8953cf070e5df2a1de6f5035ea7",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        29,
+        19,
+        489,
+        483
+      ],
+      "subjectPrompt": "Subject: The existing death ring visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects. Preserve a circular ring with a completely EMPTY transparent center; do not fill the central hole. Broad soft brush-painted ribbons, no extra objects.\n",
+      "generatedSha256": "f26e064ecb207fd4dac90dc2059b7fd147408dce23bf2d6f1b5d90b6c4cd6f5e",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.48688352570828963,
+        "offset": [
+          8,
+          0
+        ]
+      },
+      "sha256": "7a416918287cff2086444b63f6d6cd2d1f452aa0b54b2bacf0d47857353a8ae0",
+      "bytes": 69308
+    },
+    {
+      "path": "public/assets/combat/vfx/enemy-motes.webp",
+      "sourceSha256": "a0f4fce496c2ae9f04a6555be2c3a6f7b01f9bf507a92ed92e00da06e34030ca",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        31,
+        40,
+        478,
+        478
+      ],
+      "subjectPrompt": "Subject: The existing enemy motes visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects. Keep this sparse and subtle: very few softly painted motes, mostly transparent open space, no large central shape.\n",
+      "generatedSha256": "c5f7e4e23eea4aa664c3e0627f0852465b9c3a8b98dbeb8269ba5ff4f083877d",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.4506172839506173,
+        "offset": [
+          20,
+          28
+        ]
+      },
+      "sha256": "932a82dd3681db7af6e4276f4d783c0f36219e4db2e0364edbc3509ec259ab7b",
+      "bytes": 39938
+    },
+    {
+      "path": "public/assets/combat/vfx/hero-motes.webp",
+      "sourceSha256": "b707edf9c12a4717e554349706e7c9429c8dd39e6d9fd48d595b463529478624",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        51,
+        64,
+        460,
+        461
+      ],
+      "subjectPrompt": "Subject: The existing hero motes visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects. Keep this sparse and subtle: very few softly painted motes, mostly transparent open space, no large central shape.\n",
+      "generatedSha256": "0c5c1ee6954483317b7a4a81eb8f208ab5905f86121005ee559448d88c4826a5",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.46982248520710057,
+        "offset": [
+          18,
+          23
+        ]
+      },
+      "sha256": "55015bbaab4b266f019ecbbdf940970aad2ab00bc2a185b2777456c54652ca5e",
+      "bytes": 25292
+    },
+    {
+      "path": "public/assets/combat/vfx/hit-burst.webp",
+      "sourceSha256": "0bfd5054996cab91849b6bf83a50832ef5d7f879680d6ab9397c449156f94162",
+      "canvas": [
+        512,
+        512
+      ],
+      "bounds": [
+        12,
+        10,
+        499,
+        501
+      ],
+      "subjectPrompt": "Subject: The existing hit burst visual effect. Preserve the original symbolic subject, original number of components, recognizable palette, open transparent negative spaces and placement. Simplify fine details into broad hand-painted forms; retain original symbols, no new symbols or objects.\n",
+      "generatedSha256": "f2cc6518f37e10a45580f64631ca6d9e9016b833ba54b8eda48ba3415fd6286e",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.49198396793587174,
+        "offset": [
+          4,
+          4
+        ]
+      },
+      "sha256": "730353a6b1e40de610fcf78482001bb9653d8a911450df8c5af5555ee629d42c",
+      "bytes": 53658
+    },
+    {
+      "path": "public/assets/combat/enemies/projectiles/downfall_blasphemer.webp",
+      "sourceSha256": "4eb837727d9d9d4bd74bd9e8f8c698d8102e8ab69f7add5f11cb0480c10778e0",
+      "canvas": [
+        256,
+        144
+      ],
+      "bounds": [
+        11,
+        34,
+        246,
+        102
+      ],
+      "subjectPrompt": "Subject: The existing blasphemer enemy magic projectile, preserving its exact distinct subject, original number of components, original palette and direction of flight. Repaint magical wisps as broad organic layered brush shapes; retain any original central motif, without copying reference characters.\n",
+      "generatedSha256": "86fc12061345bbe69d95f2b8e4fe389e30ba4b6d24f23904cc09009dab2cc436",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.19428571428571428,
+        "offset": [
+          29,
+          -34
+        ]
+      },
+      "sha256": "a053576c6fcf2e3d9bd16f98c879e4b5a88bd21112453e96672acc154e8fce42",
+      "bytes": 9200
+    },
+    {
+      "path": "public/assets/combat/enemies/projectiles/downfall_corrupted.webp",
+      "sourceSha256": "623c4a28feda3607651d4fef2e37202984bb082d76a8d589e6daa39eb584c973",
+      "canvas": [
+        256,
+        171
+      ],
+      "bounds": [
+        15,
+        16,
+        246,
+        154
+      ],
+      "subjectPrompt": "Subject: The existing corrupted enemy magic projectile, preserving its exact distinct subject, original number of components, original palette and direction of flight. Repaint magical wisps as broad organic layered brush shapes; retain any original central motif, without copying reference characters.\n",
+      "generatedSha256": "2679a39e8bde9dcac2a310fb9993783e6e55aa1303d1862269691e47d3dfd1af",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.21068702290076335,
+        "offset": [
+          19,
+          -24
+        ]
+      },
+      "sha256": "f5c383aa9ba42d3e195cf2ba248c00521be467a32ef2ebbe26c2131bb914151a",
+      "bytes": 17170
+    },
+    {
+      "path": "public/assets/combat/enemies/projectiles/downfall_dark_core.webp",
+      "sourceSha256": "046c37d75fd37cc0531091b3d5d4f247f2c23f0a7f4a88bc46ae27adf273dc07",
+      "canvas": [
+        256,
+        171
+      ],
+      "bounds": [
+        28,
+        35,
+        236,
+        138
+      ],
+      "subjectPrompt": "Subject: The existing dark core enemy magic projectile, preserving its exact distinct subject, original number of components, original palette and direction of flight. Repaint magical wisps as broad organic layered brush shapes; retain any original central motif, without copying reference characters.\n",
+      "generatedSha256": "583892a0d58c068ed389560b0a9afb2ffa843a700b3e61a83c53431b80931294",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.18625678119349007,
+        "offset": [
+          35,
+          -9
+        ]
+      },
+      "sha256": "2a1aff4f5d4881e2f91a683111c18a9824d85d6d59e2bb03e4e37c63df6a2c94",
+      "bytes": 10632
+    },
+    {
+      "path": "public/assets/combat/enemies/projectiles/downfall_inferno.webp",
+      "sourceSha256": "b95d9c8d00480931b8884320cc730a767494f37997d172f8f593107ffd863961",
+      "canvas": [
+        256,
+        144
+      ],
+      "bounds": [
+        14,
+        29,
+        242,
+        115
+      ],
+      "subjectPrompt": "Subject: The existing inferno enemy magic projectile, preserving its exact distinct subject, original number of components, original palette and direction of flight. Repaint magical wisps as broad organic layered brush shapes; retain any original central motif, without copying reference characters.\n",
+      "generatedSha256": "59ca8f8c457f983182a5b4f606bf5bd0bc0729d0bfc8a4c58c3ec1b70206be00",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.17515274949083504,
+        "offset": [
+          38,
+          -22
+        ]
+      },
+      "sha256": "5fc41fa0df7f6b48b649e5a27a4c1fd8200214ac7ed96a3d31171aa3ccba9b76",
+      "bytes": 8546
+    },
+    {
+      "path": "public/assets/combat/enemies/projectiles/downfall_neow.webp",
+      "sourceSha256": "e0fedccd4f9f5cae50d665390ab5bb6d1742434df83de89369fffbeeea59bb34",
+      "canvas": [
+        256,
+        171
+      ],
+      "bounds": [
+        18,
+        32,
+        239,
+        136
+      ],
+      "subjectPrompt": "Subject: The existing neow enemy magic projectile, preserving its exact distinct subject, original number of components, original palette and direction of flight. Repaint magical wisps as broad organic layered brush shapes; retain any original central motif, without copying reference characters.\n",
+      "generatedSha256": "cfb753b40f955b30033fd9c4a57c46e3ea40022c656b44edce05cb5958f144a6",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.20594059405940593,
+        "offset": [
+          22,
+          -24
+        ]
+      },
+      "sha256": "817a725d1df99ae0456341e4cfb31985cec0e9f3a23c3c95f7bf3a4c6bf7753a",
+      "bytes": 12518
+    },
+    {
+      "path": "public/assets/combat/enemies/projectiles/downfall_orb_master.webp",
+      "sourceSha256": "8b14b392502af55790527d8499f334a01b4bb3a73e00e62456005c1c0013145c",
+      "canvas": [
+        256,
+        171
+      ],
+      "bounds": [
+        16,
+        24,
+        240,
+        141
+      ],
+      "subjectPrompt": "Subject: The existing orb master enemy magic projectile, preserving its exact distinct subject, original number of components, original palette and direction of flight. Repaint magical wisps as broad organic layered brush shapes; retain any original central motif, without copying reference characters.\n",
+      "generatedSha256": "4682a3c636d7e8fcf8e52fc10f50874bb565f308fe6808eddbf3921704f0098a",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.21350364963503649,
+        "offset": [
+          18,
+          -29
+        ]
+      },
+      "sha256": "a81eedb6647a56810992af637323288d37a3c3b3afb63c4dc36f89dec731bd54",
+      "bytes": 13768
+    },
+    {
+      "path": "public/assets/combat/enemies/projectiles/downfall_witch.webp",
+      "sourceSha256": "3808a9d1003b29fdd114890b8bc1ede3f48bb6c75dab210c2f1faf1a9ef44160",
+      "canvas": [
+        256,
+        171
+      ],
+      "bounds": [
+        13,
+        38,
+        244,
+        129
+      ],
+      "subjectPrompt": "Subject: The existing witch enemy magic projectile, preserving its exact distinct subject, original number of components, original palette and direction of flight. Repaint magical wisps as broad organic layered brush shapes; retain any original central motif, without copying reference characters.\n",
+      "generatedSha256": "fcb66107f39e0307e0b769786f4369309ee4444ba3191009da2b57e3fece045f",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.21016166281755197,
+        "offset": [
+          19,
+          -25
+        ]
+      },
+      "sha256": "8bc43ee51943da0e63b06a1c72dd252567082847831eb8da7954bcfb94995e96",
+      "bytes": 11782
+    },
+    {
+      "path": "public/assets/combat/enemies/projectiles/downfall_wraith.webp",
+      "sourceSha256": "f217ab28cc5cf6d202bc1d84d88f0241aa9c41acd2fbc7469de337a9b9e68e41",
+      "canvas": [
+        256,
+        171
+      ],
+      "bounds": [
+        18,
+        30,
+        238,
+        135
+      ],
+      "subjectPrompt": "Subject: The existing wraith enemy magic projectile, preserving its exact distinct subject, original number of components, original palette and direction of flight. Repaint magical wisps as broad organic layered brush shapes; retain any original central motif, without copying reference characters.\n",
+      "generatedSha256": "a0e790f91ad0b621e07254bb81195e6364abf45fbf330f1861456a45e02d9345",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "scale": 0.19056261343012704,
+        "offset": [
+          28,
+          -15
+        ]
+      },
+      "sha256": "0255da399b26bd66a3df7ce25b4112e2d3a53c5b448ff183d4e047ab3f288d40",
+      "bytes": 14636
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/defect-lightning-beam.webp",
+      "inputPath": "public/assets/combat/vfx/actions/turn-lightning-passive-impact.webp",
+      "sourceSha256": "0136251396969806c675e55ec4d3c7229623bae2f64c053e600c7028b0f81a94",
+      "canvas": [
+        512,
+        128
+      ],
+      "subjectPrompt": "Subject: A single long horizontal warm yellow lightning beam, chunky irregular jagged painted ribbon with ivory core and muted ochre edges. Connect left to right continuously, slight branching. Unlike input 1, change its silhouette to a very slender horizontal strip across the canvas center, from x=40 to x=984, centered y=512, total thickness about 70px. No radial burst or orb. Transparent everywhere else.\n",
+      "generatedSha256": "fdd6fd7e4fb86dde64e30479c3f5b570ab8c4d42666f210762302ecc3c395c57",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "crop": [
+          33,
+          468,
+          1000,
+          604
+        ],
+        "scale": 0.5129265770423992,
+        "offset": [
+          8,
+          29
+        ]
+      },
+      "sha256": "7ec8796fdeb443b60890de9ae33136d519b7c7bf63c85eb088ce62a05b591a5e",
+      "bytes": 21716,
+      "inputVersion": "restyled-runtime"
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/defect-dark-beam.webp",
+      "inputPath": "public/assets/combat/vfx/actions/turn-dark-evoke-impact.webp",
+      "sourceSha256": "612afd553ef44ae3064e9a6ac6c434a25f73d153e9bcf3245782cbaa18d89991",
+      "canvas": [
+        512,
+        128
+      ],
+      "subjectPrompt": "Subject: A single long horizontal purple dark-energy beam, twisting broad painted ribbon with lavender core, deep plum edges, a few smoky wisps. Connect left to right continuously. Unlike input 1, change silhouette to a slender horizontal strip across canvas center from x=40 to x=984 centered y=512 total thickness about 70px. No radial burst or orb. Transparent everywhere else.\n",
+      "generatedSha256": "72f5a5911e0bbf0e1a7965f1b301b99827bb92348178b7ed627d3fae22f88b08",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "crop": [
+          13,
+          428,
+          1014,
+          622
+        ],
+        "scale": 0.4955044955044955,
+        "offset": [
+          8,
+          16
+        ]
+      },
+      "sha256": "c0a5ae70a5db3aaba2fb3a1f14691901c1b428e735a34c1dbf4f9863b0dc2c51",
+      "bytes": 19918,
+      "inputVersion": "restyled-runtime"
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/speed-trail.webp",
+      "inputPath": "public/assets/combat/vfx/actions/hermit-bullet.webp",
+      "sourceSha256": "1a0a2e1bae6065792e50be3145a9c27a94e17c194217defbbb6a45914923b166",
+      "canvas": [
+        512,
+        256
+      ],
+      "subjectPrompt": "Subject: Three separated long horizontal warm ochre and pale ivory brush-painted speed streaks traveling to the right, tapering to ragged left ends. Unlike input 1, change subject to only motion trails, no bullet or prop. Group extends x=40 to x=984 around y=512, total height about 180px. Transparent everywhere else.\n",
+      "generatedSha256": "24fcb3b7c9a65be87233bcec7fa336e040eff16e2f16409bfbc225ab1783800d",
+      "generatedCanvas": [
+        1024,
+        1024
+      ],
+      "registration": {
+        "crop": [
+          41,
+          349,
+          990,
+          702
+        ],
+        "scale": 0.5226554267650158,
+        "offset": [
+          8,
+          36
+        ]
+      },
+      "sha256": "704b9488ef660f77bdf2277d39078d93dc08f8d64b9885045a2f4f0927d4d6df",
+      "bytes": 39032,
+      "inputVersion": "restyled-runtime"
+    }
+  ],
+  "sourceCommit": "17bdc88e0c5beffd026b315b54a1b63d807494c3",
+  "promptPrefix": "Use case: style-transfer\nAsset type: isolated combat VFX sprite for Slay the Spire board game.\nInput images: image 1 is the existing effect to redesign; the remaining images are the actual character and enemy art, STYLE REFERENCES ONLY, never copy their bodies into the effect.\nPrimary request: repaint image 1 in exactly the reference artwork style: bold organic silhouette, hand-painted gouache-like color planes, soft brush texture, simplified cel shading, restrained highlights and dark painted edges. The effect must look illustrated by the same artist as those characters and enemies. Replace the glossy neon, fine filament fireworks, rainbow laser appearance with readable chunky brush-painted forms. Retain the existing subject, meaning, dominant hue, direction, relative placement and general silhouette. Keep effects expressive, readable at 60px. Use layered translucent painted edges, but no luminous photographic bloom or digital lens flare.\nScene/backdrop: true transparent RGBA background including translucent wisps; no scenery, floor, checkerboard pattern, drop shadow, frame or text. One standalone sprite, complete and unclipped with clear transparent padding.\nConstraints: no characters, hands or faces from the style references; no labels, interface, numbers, new props or extra symbols.\n",
+  "meteorGeometry": {
+    "axis": [
+      0.70915675,
+      0.70505085
+    ],
+    "angleDegrees": 44.83365264116383,
+    "nose": [
+      0.89941406,
+      0.84431538
+    ],
+    "measurement": "Alpha-weighted PCA of runtime sprite; nose is mean of alpha >=204 pixels within two source pixels of maximum projection along the axis.",
+    "impactGround": [
+      0.51171875,
+      0.7890625
+    ]
+  }
+}

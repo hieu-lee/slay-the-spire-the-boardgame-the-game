@@ -39,7 +39,7 @@
   position: absolute;
   inset: 20% 0 0;
   z-index: 1;
-  background: repeating-linear-gradient(0deg, transparent 0 16%, #ffdd9566 17% 19%, transparent 20% 30%);
+  background: center / 100% 100% no-repeat url('/assets/combat/vfx/actions/speed-trail.webp');
   opacity: 0;
   pointer-events: none;
   animation: gremlin-speed-trail 1830ms linear both;
@@ -78,8 +78,7 @@
 .gremlin-delayed-slash > span {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, transparent 45%, #ffe6a5 48%, #fff 50%, #7de5ff 52%, transparent 55%);
-  filter: drop-shadow(0 0 .35rem #77d9ff);
+  background: center / contain no-repeat url('/assets/combat/vfx/actions/ironclad-strike.webp');
 }
 .gremlin-delayed-slash > span::after {
   position: absolute;
@@ -110,7 +109,7 @@
   width: calc(2rem / var(--animation-art-scale));
   aspect-ratio: 1;
   translate: -50% -50%;
-  background: radial-gradient(circle, #ffffca, #98f783 24%, transparent 68%);
+  background: center / contain no-repeat url('/assets/combat/vfx/actions/hexaghost-flame.webp');
   animation: reptomancer-charge 1830ms linear both;
 }
 @keyframes reptomancer-charge {
@@ -125,10 +124,8 @@
   bottom: 0;
   width: 80%;
   aspect-ratio: 1;
-  border: .15rem double #94ed5c;
-  border-radius: 50%;
-  background: repeating-conic-gradient(#94ed5c55 0deg 2deg, transparent 2deg 45deg);
-  box-shadow: inset 0 0 1rem #94ed5c55, 0 0 .6rem #94ed5c55;
+  background: center / contain no-repeat url('/assets/combat/vfx/actions/watcher-pray.webp');
+  filter: hue-rotate(65deg);
   pointer-events: none;
   animation: reptomancer-sigil 1830ms ease-out both;
 }

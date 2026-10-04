@@ -247,17 +247,8 @@ export function DefectEvokeVfx({ event }: { event: Extract<CombatPresentationEve
       src={assetPath('combat/vfx/actions/turn-frost-passive-impact.webp')} alt="" /> : beams.map(beam => (
       <span className="defect-evoke__ray" data-evoke-target={beam.id} key={beam.id}
         style={{ '--beam-length': `${beam.length}px`, '--beam-angle': `${beam.angle}deg` } as CSSProperties}>
-        <svg viewBox="0 0 1000 40" preserveAspectRatio="none" className="defect-evoke__beam">
-          {event.orb === 'lightning' ? <>
-            <path className="defect-evoke__glow" d="M0 20 L110 15 180 25 270 8 330 28 455 14 510 31 640 9 730 26 850 14 920 23 1000 20" />
-            <path d="M0 20 L110 15 180 25 270 8 330 28 455 14 510 31 640 9 730 26 850 14 920 23 1000 20" />
-            <path className="defect-evoke__fork" d="M200 21 L315 34 450 26 M610 15 L710 4 820 13" />
-          </> : <>
-            <path className="defect-evoke__glow" d="M0 20 Q250 10 500 20 T1000 20" />
-            <path d="M0 20 Q250 10 500 20 T1000 20" />
-            <path className="defect-evoke__fork" d="M0 20 Q250 36 500 20 T1000 20" />
-          </>}
-        </svg>
+        <img className="defect-evoke__beam"
+          src={assetPath(`combat/vfx/actions/defect-${event.orb}-beam.webp`)} alt="" />
       </span>
     ))}
   </span>
@@ -276,6 +267,14 @@ export const HERMIT_ATTACK_MS = 1_650
 export const HERMIT_FLIGHT_MS = 180
 // Both barrels arrive together: one impact and damage step per volley/target.
 export const HERMIT_IMPACT_COUNT = HERMIT_VOLLEYS.length
+
+/** A slow decode can start bullets after the wall-clock settle deadline. */
+export function hermitAnimationPending(seq: number): boolean {
+  return [...document.querySelectorAll<HTMLElement>(
+    `[data-hermit-seq="${seq}"] .hermit-shot__flight, [data-hermit-impact-seq="${seq}"]`,
+  )].some(node => node.getAnimations().some(animation =>
+    animation.pending || animation.playState === 'running'))
+}
 
 /** Mounted with the decoded one-shot pose, so every flash shares its clock. */
 export function HermitBullets({ event }: { event: CombatPresentationEvent }) {

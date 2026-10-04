@@ -89,9 +89,7 @@ html[data-mobile-performance='true'] .orbs__target .token--orb { animation: none
   }
   html:not([data-mobile-performance='true']) .seat__portrait::before,
   html:not([data-mobile-performance='true'])
-    .enemy__portrait:has(> .enemy__art--cutout)::before,
-  html:not([data-mobile-performance='true']) .combat-vfx::before,
-  html:not([data-mobile-performance='true']) .combat-vfx::after { will-change: auto; }
+    .enemy__portrait:has(> .enemy__art--cutout)::before { will-change: auto; }
 
   html:not([data-mobile-performance='true']) :is(
     .stance-aura,
@@ -100,11 +98,6 @@ html[data-mobile-performance='true'] .orbs__target .token--orb { animation: none
     .seat--attack-ironclad .character-attack--ironclad,
     .seat--attack-watcher .character-attack--watcher
   ) {
-    animation: none;
-    transform: none;
-  }
-  html:not([data-mobile-performance='true']) .combat-vfx::before,
-  html:not([data-mobile-performance='true']) .combat-vfx::after {
     animation: none;
     transform: none;
   }
@@ -119,8 +112,6 @@ html[data-mobile-performance='true'] .orbs__target .token--orb { animation: none
   html:not([data-mobile-performance='true']) .stance-aura--calm { opacity: 0.66; }
   html:not([data-mobile-performance='true']) .stance-aura--wrath { opacity: 0.78; }
   html:not([data-mobile-performance='true']) .combat-vfx { opacity: 0.55; }
-  html:not([data-mobile-performance='true']) .combat-vfx::before,
-  html:not([data-mobile-performance='true']) .combat-vfx::after { opacity: 0.45; }
 
   html:not([data-mobile-performance='true']) :is(
     .seat--dead .seat__portrait,

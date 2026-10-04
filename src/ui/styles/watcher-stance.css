@@ -4,18 +4,16 @@
   z-index: 0;
   inset: -24% -18% -12%;
   background: center / contain no-repeat;
-  mix-blend-mode: screen;
+  mix-blend-mode: normal;
   pointer-events: none;
 }
 
 .stance-aura--calm {
   background-image: url('/assets/combat/vfx/actions/watcher-calm-aura.webp');
-  filter: drop-shadow(0 0 0.45rem rgb(218 246 255 / 0.72));
   opacity: 0.82;
 }
 
 .stance-aura--wrath {
   background-image: url('/assets/combat/vfx/actions/watcher-wrath-aura.webp');
-  filter: drop-shadow(0 0 0.5rem rgb(255 54 37 / 0.82));
   opacity: 0.9;
 }

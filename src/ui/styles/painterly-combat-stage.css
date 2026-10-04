@@ -867,7 +867,7 @@
   width: 3rem;
   aspect-ratio: 1;
   border-radius: 50%;
-  background: radial-gradient(circle, #ecffff, #66dfff 22%, transparent 68%);
+  background: center / contain no-repeat url('/assets/combat/vfx/actions/defect-face-orb.webp');
   opacity: 0;
   animation: elite-core-charge 1830ms ease-in-out both;
 }
@@ -876,8 +876,7 @@
   left: 10%;
   width: 80%;
   aspect-ratio: 3;
-  border: .15rem solid #d5c49b;
-  background: radial-gradient(ellipse, #d0bc8733, transparent 68%);
+  background: center / 100% 100% no-repeat url('/assets/combat/vfx/death-ring.webp');
   animation-name: elite-ground-wave;
 }
 @keyframes elite-core-charge {

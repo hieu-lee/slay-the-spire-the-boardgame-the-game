@@ -23,9 +23,10 @@
         "public/assets/combat/enemies/downfall_witch.webp": "e7bd70c26402d48f19973ce296202ad9bde6a887990c16c9ea99bfb3a619973b",
         "public/assets/combat/enemies/animations/downfall_witch-idle.webp": "cfcd949cbb8cc2d3b20f8fc09e0f7742baab9021bb67495d34fbb1110b0a5218",
         "public/assets/combat/enemies/animations/downfall_witch-attack.webp": "1c4bbdb6a4066cd170db995fcc7d84f0c34ee80f1496873ea1bab7f296208f0f",
-        "public/assets/combat/enemies/projectiles/downfall_witch.webp": "3808a9d1003b29fdd114890b8bc1ede3f48bb6c75dab210c2f1faf1a9ef44160"
+        "public/assets/combat/enemies/projectiles/downfall_witch.webp": "8bc43ee51943da0e63b06a1c72dd252567082847831eb8da7954bcfb94995e96"
       },
-      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
     },
     {
       "artId": "downfall_dark_core",
@@ -45,9 +46,10 @@
         "public/assets/combat/enemies/downfall_dark_core.webp": "11fbffda5525671da81d52aa1f10d3e6d4b019bc18e7c02746088b2378b6e556",
         "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp": "ebafe1984088d421ebad4a62a0837cf693d0a6dfee48686c33ab2e13bdf8f20d",
         "public/assets/combat/enemies/animations/downfall_dark_core-attack.webp": "75da3b17784fa85f5c52dae9500e6035164ad5958bd59b1b5de19f066d6a30ed",
-        "public/assets/combat/enemies/projectiles/downfall_dark_core.webp": "046c37d75fd37cc0531091b3d5d4f247f2c23f0a7f4a88bc46ae27adf273dc07"
+        "public/assets/combat/enemies/projectiles/downfall_dark_core.webp": "2a1aff4f5d4881e2f91a683111c18a9824d85d6d59e2bb03e4e37c63df6a2c94"
       },
-      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
     },
     {
       "artId": "downfall_wrathful",
@@ -87,9 +89,10 @@
         "public/assets/combat/enemies/downfall_orb_master.webp": "2f0fca6b5806b259278be3c7ac97db06adc02c42240d474cd4bf52e551f6235e",
         "public/assets/combat/enemies/animations/downfall_orb_master-idle.webp": "13c7e082b5f8fd2356ac0f564c1a4fa80d9ace4b6a24f5112a2ad93362019eb2",
         "public/assets/combat/enemies/animations/downfall_orb_master-attack.webp": "f69a6b3d6d8912d567d9bca24b50c0ffd4564eb32e047521e4fbbe68ff49e609",
-        "public/assets/combat/enemies/projectiles/downfall_orb_master.webp": "8b14b392502af55790527d8499f334a01b4bb3a73e00e62456005c1c0013145c"
+        "public/assets/combat/enemies/projectiles/downfall_orb_master.webp": "a81eedb6647a56810992af637323288d37a3c3b3afb63c4dc36f89dec731bd54"
       },
-      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
     },
     {
       "artId": "downfall_inferno",
@@ -109,9 +112,10 @@
         "public/assets/combat/enemies/downfall_inferno.webp": "ef6124f4fc1caa5ad560834fcc14e8a9e464ee1fc0832602c6ce8ef1df75bf44",
         "public/assets/combat/enemies/animations/downfall_inferno-idle.webp": "11ade156f778f6aced15ffc14a9cb238df3891c7c4f38e19964e180bd4204aea",
         "public/assets/combat/enemies/animations/downfall_inferno-attack.webp": "c5f43952a4022a56bbdf66c49091fd29a69d7385a3349b955f4bafab38837e1e",
-        "public/assets/combat/enemies/projectiles/downfall_inferno.webp": "b95d9c8d00480931b8884320cc730a767494f37997d172f8f593107ffd863961"
+        "public/assets/combat/enemies/projectiles/downfall_inferno.webp": "5fc41fa0df7f6b48b649e5a27a4c1fd8200214ac7ed96a3d31171aa3ccba9b76"
       },
-      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
     },
     {
       "artId": "downfall_trickster",
@@ -153,9 +157,10 @@
         "public/assets/combat/enemies/animations/downfall_demon-idle.webp": "8549101dd24713181012065dc4c3cf23d10be33f86cbcbea90f094d3475fbab3",
         "public/assets/combat/enemies/animations/downfall_demon-airborne.webp": "c544d2c3838366ca60bb180912aea531b41551c29a8e6fec5b631dd683c52b3e",
         "public/assets/combat/enemies/animations/downfall_demon-ground-slam.webp": "25d28370e7b52ec8dff5c9aaba1b50116871e937fa82b9668b2abead250ad62f",
-        "public/assets/combat/vfx/actions/downfall-demon-ground-splat.webp": "af8421590388554fe9af3c7588663bba2bed2e924e95c0bf65bf269101a6cff9"
+        "public/assets/combat/vfx/actions/downfall-demon-ground-splat.webp": "9144d986d1f77d3426f89de037bfc58d6341eb2208df5e807390bc86e893fb4d"
       },
-      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
+      "vfxDerivative": "Ground splat repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references; see combat-vfx-restyle.json."
     },
     {
       "artId": "downfall_wraith",
@@ -175,9 +180,10 @@
         "public/assets/combat/enemies/downfall_wraith.webp": "b67439782730dc6055e254b0129c591d9198811f8be3eb86569d94835128d918",
         "public/assets/combat/enemies/animations/downfall_wraith-idle.webp": "c4c49052e073b24198438a2b9f7a4055da712f8ac43d5d9dcbfbe4f70b9b20b7",
         "public/assets/combat/enemies/animations/downfall_wraith-attack.webp": "2c1561e03b33891b277fbfde2c523f12ca2da9301699effe096498972e3be484",
-        "public/assets/combat/enemies/projectiles/downfall_wraith.webp": "f217ab28cc5cf6d202bc1d84d88f0241aa9c41acd2fbc7469de337a9b9e68e41"
+        "public/assets/combat/enemies/projectiles/downfall_wraith.webp": "0255da399b26bd66a3df7ce25b4112e2d3a53c5b448ff183d4e047ab3f288d40"
       },
-      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
     },
     {
       "artId": "downfall_blasphemer",
@@ -197,9 +203,10 @@
         "public/assets/combat/enemies/downfall_blasphemer.webp": "20c0337cfeb3c151acfefe3729fc119b26dc381cb5f07417bf749d92668a016c",
         "public/assets/combat/enemies/animations/downfall_blasphemer-idle.webp": "bbb1f082ac1e13c6cc4c226c461f16ea28732423bcc1c8039c439060c72331b8",
         "public/assets/combat/enemies/animations/downfall_blasphemer-attack.webp": "545ea3d6502d2e466d23a7ce3bea073601cb801b670d47e057aacb08b12f9274",
-        "public/assets/combat/enemies/projectiles/downfall_blasphemer.webp": "4eb837727d9d9d4bd74bd9e8f8c698d8102e8ab69f7add5f11cb0480c10778e0"
+        "public/assets/combat/enemies/projectiles/downfall_blasphemer.webp": "a053576c6fcf2e3d9bd16f98c879e4b5a88bd21112453e96672acc154e8fce42"
       },
-      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
     },
     {
       "artId": "downfall_neow",
@@ -219,9 +226,10 @@
         "public/assets/combat/enemies/downfall_neow.webp": "d951747c56d7da358b3f1e02d873e5cc02626938af6953feb831b2b27b00b727",
         "public/assets/combat/enemies/animations/downfall_neow-idle.webp": "96d4c8cf23223b87da0ad65c9b8c349283f6edcb36e3e08dca4b69b6bb291161",
         "public/assets/combat/enemies/animations/downfall_neow-attack.webp": "d8bca7804657a1c99f66f8908b19e15b51450fc360b73eaf9be529be2d8390f2",
-        "public/assets/combat/enemies/projectiles/downfall_neow.webp": "e0fedccd4f9f5cae50d665390ab5bb6d1742434df83de89369fffbeeea59bb34"
+        "public/assets/combat/enemies/projectiles/downfall_neow.webp": "817a725d1df99ae0456341e4cfb31985cec0e9f3a23c3c95f7bf3a4c6bf7753a"
       },
-      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
     },
     {
       "artId": "downfall_flame_barrier",
@@ -279,9 +287,10 @@
         "public/assets/combat/enemies/downfall_corrupted.webp": "bd4bd15f046cb0102b5a46d95fca443fcfa82239fb9f3677bd21a09894dd8f09",
         "public/assets/combat/enemies/animations/downfall_corrupted-idle.webp": "4c468f8ca90d9f1006177d79e4da4f8c15832747e9e59654038feb5b4b7231ac",
         "public/assets/combat/enemies/animations/downfall_corrupted-attack.webp": "effe048ae2ff0ac312095eefbcfcf4b5b9348e0b3bd9b709e7eed518e9480bfe",
-        "public/assets/combat/enemies/projectiles/downfall_corrupted.webp": "623c4a28feda3607651d4fef2e37202984bb082d76a8d589e6daa39eb584c973"
+        "public/assets/combat/enemies/projectiles/downfall_corrupted.webp": "f5c383aa9ba42d3e195cf2ba248c00521be467a32ef2ebbe26c2131bb914151a"
       },
-      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json."
+      "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
     },
     {
       "artId": "downfall_pc_ironclad",
@@ -365,9 +374,9 @@
     {
       "artId": "downfall_lightning_orb",
       "sourceKind": "base-game-exact-reuse",
-      "source": "public/assets/combat/vfx/actions/lightning-channel.webp",
+      "source": "docs/downfall-enemy-sources/base-game/lightning-channel.webp",
       "upstreamCode": "src/main/java/charbosses/orbs/EnemyLightning.java",
-      "pipeline": "exact reuse of the existing base-game Lightning orb runtime asset",
+      "pipeline": "exact reuse of the existing base-game Lightning orb runtime asset; original source archived from 17bdc88e0c5beffd026b315b54a1b63d807494c3 before the combat VFX repaint",
       "runtime": [
         "public/assets/combat/enemies/downfall_lightning_orb.webp"
       ],
@@ -381,9 +390,9 @@
     {
       "artId": "downfall_frost_orb",
       "sourceKind": "base-game-exact-reuse",
-      "source": "public/assets/combat/vfx/actions/frost-channel.webp",
+      "source": "docs/downfall-enemy-sources/base-game/frost-channel.webp",
       "upstreamCode": "src/main/java/charbosses/orbs/EnemyFrost.java",
-      "pipeline": "exact reuse of the existing base-game Frost orb runtime asset",
+      "pipeline": "exact reuse of the existing base-game Frost orb runtime asset; original source archived from 17bdc88e0c5beffd026b315b54a1b63d807494c3 before the combat VFX repaint",
       "runtime": [
         "public/assets/combat/enemies/downfall_frost_orb.webp"
       ],
@@ -397,9 +406,9 @@
     {
       "artId": "downfall_dark_orb",
       "sourceKind": "base-game-exact-reuse",
-      "source": "public/assets/combat/vfx/actions/dark-channel.webp",
+      "source": "docs/downfall-enemy-sources/base-game/dark-channel.webp",
       "upstreamCode": "src/main/java/charbosses/orbs/EnemyDark.java",
-      "pipeline": "exact reuse of the existing base-game Dark orb runtime asset",
+      "pipeline": "exact reuse of the existing base-game Dark orb runtime asset; original source archived from 17bdc88e0c5beffd026b315b54a1b63d807494c3 before the combat VFX repaint",
       "runtime": [
         "public/assets/combat/enemies/downfall_dark_orb.webp"
       ],

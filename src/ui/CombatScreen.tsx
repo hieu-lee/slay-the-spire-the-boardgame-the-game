@@ -221,7 +221,7 @@ function targetPresentationTiming(
 }
 
 // Weighted alpha PCA of watcher-meteor.webp: tail-to-nose y/x.
-const WATCHER_METEOR_FALL_SLOPE = 0.7113856 / 0.7028019
+const WATCHER_METEOR_FALL_SLOPE = 0.70505085 / 0.70915675
 const CHAMBER_RETURN_MS = 460
 const CHAMBER_RETURN_STAGGER_MS = 35
 const CHAMBER_REFLOW_MS = 420
@@ -6252,7 +6252,7 @@ function CombatScreenView({
         data-rows={rows.length}
         data-slime-formation={state.players.some(player => player.character === 'slime_boss') || undefined}
         data-crowded={livingEnemies(state).length >= 3 || undefined}
-        data-character-attack-assets-ready={characterAttackBlobs.size || undefined}
+        data-character-attack-assets-ready={characterAttackAssets.split('|').filter(src => characterAttackBlobs.has(src)).length || undefined}
         ref={boardRef}
         tabIndex={0}
         aria-label="Combat board"

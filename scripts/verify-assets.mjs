@@ -916,7 +916,7 @@ check('combat animation effects are complete, transparent, and compact', () => {
   ]
   const expectedActions = [
     'awakened-blue-fire.webp', 'awakened-claw-scratch.webp', 'dark-channel.webp',
-    'defect-face-orb.webp', 'downfall-demon-ground-splat.webp',
+    'defect-face-orb.webp', 'defect-lightning-beam.webp', 'defect-dark-beam.webp', 'speed-trail.webp', 'downfall-demon-ground-splat.webp',
     'frost-channel.webp', 'guard-bloom.webp', 'hermit-bullet.webp', 'hermit-impact.webp', 'hexaghost-flame-impact.webp',
     'hexaghost-flame.webp',
     'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp', 'magic-burst.webp',
@@ -963,6 +963,8 @@ check('combat animation effects are complete, transparent, and compact', () => {
       ? /  Width: 384[\s\S]*  Height: 768/
       : file === 'hermit-bullet.webp' ? /  Width: 256[\s\S]*  Height: 64/
       : file === 'hermit-impact.webp' ? /  Width: 256[\s\S]*  Height: 256/
+      : file.startsWith('defect-') && file.endsWith('-beam.webp') ? /  Width: 512[\s\S]*  Height: 128/
+      : file === 'speed-trail.webp' ? /  Width: 512[\s\S]*  Height: 256/
       : /  Width: 512[\s\S]*  Height: 512/
     assert(dimensions.test(block), `${file} has incorrect dimensions`)
     assert(/Alpha:\s+1/.test(block), `${file} has no alpha channel`)

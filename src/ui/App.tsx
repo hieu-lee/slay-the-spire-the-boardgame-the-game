@@ -129,7 +129,7 @@ const COMBAT_VFX = [
     'guard-bloom', 'hexaghost-flame-impact', 'hexaghost-flame', 'dark-channel', 'defect-face-orb',
     'frost-channel', 'ironclad-bash', 'ironclad-strike', 'lightning-channel', 'turn-lightning-strike',
     'magic-burst', 'potion-burst', 'silent-knife', 'silent-poison', 'silent-shiv', 'watcher-pray',
-    'watcher-meteor-impact', 'watcher-meteor',
+    'watcher-meteor-impact', 'watcher-meteor', 'defect-lightning-beam', 'defect-dark-beam', 'speed-trail',
   ].map((name) => `combat/vfx/actions/${name}.webp`),
 ]
 

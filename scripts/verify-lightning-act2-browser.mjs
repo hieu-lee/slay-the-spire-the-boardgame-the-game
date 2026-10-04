@@ -29,21 +29,15 @@ try {
         const phone = screen === 'horizontal-phone'
         const context = await browser.newContext({
           ...(phone ? devices['iPhone 13 landscape'] : { viewport }),
-          recordVideo: { dir: output, size: viewport },
         })
         const page = await context.newPage()
-        const activate = async (locator) => {
-          if (!phone) return locator.click()
-          const point = await locator.evaluate((element, webkit) => {
-            const rect = element.getBoundingClientRect(), viewport = visualViewport
-            return {
-              x: (rect.x + rect.width / 2 - (webkit ? viewport.offsetLeft : 0)) * (webkit ? viewport.scale : 1),
-              y: (rect.y + rect.height / 2 - (webkit ? viewport.offsetTop : 0)) * (webkit ? viewport.scale : 1),
-            }
-          }, engineName === 'webkit')
-          return page.touchscreen.tap(point.x, point.y)
-        }
+        // These checks own rendered lightning and real UI actions; pointer/touch
+        // dragging has its own verifier. Skip stability waits for fading controls.
+        const activate = locator => locator.click({ force: true })
+        // Use the page clock, which may be ahead of the host after resume.
+        const freezeTime = async () => page.clock.pauseAt(new Date(await page.evaluate(() => Date.now()) + 1000))
         page.on('pageerror', error => { errors.push(String(error)); console.error(error) })
+        await page.clock.install()
         await page.goto(`http://localhost:${server.httpServer.address().port}`)
         await page.addStyleTag({ content: 'html[data-freeze-lightning] [data-lightning-strike] { animation-play-state: paused !important; }' })
         await page.getByRole('button', { name: 'Single Player', exact: true }).click()
@@ -109,7 +103,10 @@ try {
 
         const strike = page.locator('[data-lightning-strike]')
         const fire = async (targetId, initialHp = 30, liveFirstUse = false, drag = false) => {
+          let liveAction
           if (!liveFirstUse) await page.evaluate(() => { document.documentElement.dataset.freezeLightning = 'true' })
+          // Preserve frozen frames through screenshot encoding without extending
+          // the product's event lifetime; first use runs in real time until its first flash.
           // Trigger through the real End turn -> Orb -> enemy click path.
           await activate(page.getByRole('button', { name: 'End turn', exact: true }))
           const orb = page.locator('button.end-turn-effect--orb')
@@ -120,22 +117,39 @@ try {
             await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
             await page.mouse.down()
             await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 })
+            await freezeTime()
             await page.mouse.up()
           } else {
             await activate(orb)
             await page.locator(`[data-enemy-id="${targetId}"].enemy--targeted`).waitFor()
-            await activate(targetHitArea)
+            if (!liveFirstUse) await freezeTime()
+            if (liveFirstUse) {
+              const box = await targetHitArea.boundingBox()
+              assert(box, 'lightning target is not visible')
+              liveAction = page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+            } else await activate(targetHitArea)
           }
-          // The VFX renderer removes this node on its own timer. Retain this strike,
-          // rather than making a later Locator lookup race that cleanup.
-          const strikeElement = await strike.elementHandle()
-          const geometry = await strikeElement.evaluate((node, frozen) => {
+          // Select and snapshot geometry in one page operation: a retained element
+          // handle can detach between protocol calls when the event timer expires.
+          const snapshot = await page.waitForFunction(({ targetId, frozen }) => {
+            const node = document.querySelector(`[data-lightning-strike][data-vfx-target="${CSS.escape(targetId)}"]`)
+            if (!node) return false
             const combat = node.closest('.combat'), combatRect = combat.getBoundingClientRect()
             const portrait = combat.querySelector(`.enemy[data-enemy-id="${CSS.escape(node.dataset.vfxTarget)}"] .enemy__portrait`)
             const r = node.getBoundingClientRect()
             const enemy = portrait.closest('.enemy').getBoundingClientRect()
             const board = combat.querySelector('.board').getBoundingClientRect(), s = getComputedStyle(node)
-            let travel
+            let travel, liveTime
+            // Retain the first naturally visible flash for pixel readback.
+            // Unlike frozen geometry checks, its clock advances in real time.
+            if (!frozen) {
+              const animations = node.getAnimations()
+              const flash = animations.find(a => a.animationName === 'orb-lightning-strike')
+              window.lightningProbe = { time: flash?.currentTime, opacity: s.opacity, names: animations.map(a => a.animationName) }
+              if (!flash || flash.currentTime < 130 || Number(s.opacity) < .5) return false
+              liveTime = flash.currentTime
+              animations.forEach(animation => animation.pause())
+            }
             if (frozen) {
               const animations = node.getAnimations()
               animations.forEach(animation => animation.pause())
@@ -152,10 +166,20 @@ try {
               ground: r.top + .94 * r.height,
               footY: enemy.top + portrait.offsetTop + portrait.offsetHeight,
               top: r.top,
-              combatTop: combatRect.top, boardTop: board.top,
+              combatTop: combatRect.top, boardTop: board.top, enemyTop: Math.min(enemy.top, portrait.getBoundingClientRect().top, portrait.closest('.enemy').querySelector('.enemy__intent').getBoundingClientRect().top),
               filter: s.filter, pointerEvents: s.pointerEvents, image: s.backgroundImage,
-              before: getComputedStyle(node, '::before').content, travel }
-          }, !liveFirstUse)
+              liveTime, before: getComputedStyle(node, '::before').content, travel }
+          }, { targetId, frozen: !liveFirstUse }).catch(async error => {
+            throw new Error(`${error.message}: ${JSON.stringify(await page.evaluate(() => window.lightningProbe))}`, { cause: error })
+          })
+          // Screenshot immediately while this short-lived event is still mounted.
+          const screenshot = resolve(output, liveFirstUse
+            ? `${engineName}-${screen}-${targetId}-first-use-live.png`
+            : `${engineName}-${screen}-${targetId}${initialHp === 1 ? '-lethal' : ''}-lightning.png`)
+          await page.screenshot({ path: screenshot })
+          if (liveAction) await liveAction
+          const geometry = await snapshot.jsonValue()
+          if (!liveFirstUse) await page.clock.resume()
           assert(Math.abs(geometry.x - geometry.footX) < 1 && Math.abs(geometry.ground - geometry.footY) < 1,
             `bolt misses feet: ${JSON.stringify(geometry)}`)
           assert(Math.abs(geometry.top - geometry.combatTop) < 1 && geometry.boardTop - geometry.top > 20,
@@ -168,17 +192,17 @@ try {
             `${engineName}/${screen}: VFX URL resolved relative to the CSS bundle`)
           assert.equal(await page.locator('.seat [data-lightning-strike]').count(), 0)
           if (liveFirstUse) {
-            const liveScreenshot = resolve(output, `${engineName}-${screen}-${targetId}-first-use-live.png`)
-            await page.screenshot({ path: liveScreenshot })
+            assert(geometry.liveTime >= 130 && geometry.liveTime < 360, 'first-use strike did not arrive in real time')
             const livePixels = spawnSync('python3', ['-c', `
 from PIL import Image
 import json, sys
 image = Image.open(sys.argv[1]).convert('RGB')
 g = json.loads(sys.argv[2]); scale = image.width / g['viewportWidth']
-box = [g['left'], g['top'], g['left'] + g['width'], g['top'] + g['height'] * .94]
+box = [g['left'], g['top'] + g['height'] * .04,
+       g['left'] + g['width'], g['enemyTop'] - 8]
 band = image.crop(tuple(round(v * scale) for v in box))
 assert sum(r > 220 and b > 200 and g > 210 for r, g, b in band.getdata()) >= 20, 'live first-use bolt is blank'
-`, liveScreenshot, JSON.stringify(geometry)], { encoding: 'utf8' })
+`, screenshot, JSON.stringify(geometry)], { encoding: 'utf8' })
             assert.equal(livePixels.status, 0, livePixels.stderr)
             await page.waitForFunction(() => !document.querySelector('[data-lightning-strike]'))
             const hp = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies.map(e => ({ uid: e.uid, hp: e.hp })))
@@ -190,9 +214,6 @@ assert sum(r > 220 and b > 200 and g > 210 for r, g, b in band.getdata()) >= 20,
           assert.deepEqual(travel.durations, [100, 360])
           assert(travel.halfway.includes('50%') && travel.arrived.includes('0%'),
             `bolt did not travel ceiling-to-ground in 100ms ${JSON.stringify(travel)}`)
-          // Freeze the completed travel during its first flash for a repeatable screenshot.
-          const screenshot = resolve(output, `${engineName}-${screen}-${targetId}${initialHp === 1 ? '-lethal' : ''}-lightning.png`)
-          await page.screenshot({ path: screenshot })
           // Bounding boxes cannot detect WebKit's ancestor-filter clipping.
           // Require real white bolt pixels in the band above the enemy's box.
           const pixels = spawnSync('python3', ['-c', `
@@ -201,7 +222,7 @@ import json, sys
 image = Image.open(sys.argv[1]).convert('RGB')
 g = json.loads(sys.argv[2]); scale = image.width / g['viewportWidth']
 box = [g['left'], g['top'] + g['height'] * .04,
-       g['left'] + g['width'], g['top'] + g['height'] * .50]
+       g['left'] + g['width'], g['enemyTop'] - 8]
 band = image.crop(tuple(round(v * scale) for v in box))
 assert sum(r > 220 and b > 200 and g > 210 for r, g, b in band.getdata()) >= 4, 'upper bolt is clipped'
 `, screenshot, JSON.stringify(geometry)], { encoding: 'utf8' })
@@ -226,26 +247,31 @@ assert sum(r > 220 and b > 200 and g > 210 for r, g, b in band.getdata()) >= 4, 
         await install(2, 2)
         await activate(page.getByRole('button', { name: 'End turn', exact: true }))
         await activate(page.locator('button.end-turn-effect--orb'))
+        await freezeTime()
         await activate(page.locator('[data-enemy-id="bolt-normal"] .enemy__hit-area'))
         await strike.waitFor({ state: 'attached' })
         await page.locator('button.end-turn-effect--orb').evaluate(button => button.click())
         const target = page.locator('[data-enemy-id="bolt-normal"].enemy--targeted')
         await target.waitFor({ state: 'attached' })
         const highlight = await target.evaluate(enemy => ({
-          filter: getComputedStyle(enemy).filter,
+          filter: getComputedStyle(document.documentElement.dataset.mobilePerformance === 'true'
+            ? enemy.querySelector('.enemy__portrait') : enemy).filter,
         }))
         assert(highlight.filter.includes('101, 232, 255'),
           `recently hit target lost its selection glow: ${JSON.stringify(highlight)}`)
         await page.screenshot({ path: resolve(output, `${engineName}-${screen}-consecutive-target.png`) })
         await activate(page.locator('[data-enemy-id="bolt-normal"] .enemy__hit-area'))
+        await page.clock.resume()
         await page.waitForFunction(() => !document.querySelector('[data-lightning-strike]'))
 
         // Same-batch passives keep separate flashes, and repeated uses restart.
         await install(3, 1)
+        await freezeTime()
         await activate(page.getByRole('button', { name: 'End turn', exact: true }))
         await page.waitForFunction(() => document.querySelectorAll('[data-lightning-strike]').length === 3)
         const delays = await strike.evaluateAll(nodes => nodes.map(n => getComputedStyle(n).animationDelay).sort())
         assert.deepEqual(delays, ['0.38s, 0.48s', '0.76s, 0.86s', '0s, 0.1s'])
+        await page.clock.resume()
         await page.waitForFunction(() => !document.querySelector('[data-lightning-strike]'))
 
         // A restored snapshot containing old events must never replay them.
@@ -298,7 +324,9 @@ assert sum(r > 220 and b > 200 and g > 210 for r, g, b in band.getdata()) >= 4, 
   }
   assert.deepEqual(errors, [], 'browser errors')
   assert(statSync(resolve(root, 'public/assets/combat/vfx/actions/turn-lightning-strike.webp')).size < 48 * 1024)
-  assert(statSync(resolve(root, 'public/assets/backgrounds/boss-act-2.webp')).size < 220 * 1024)
+  // The scene now ships at 3840x1920; preserve its previous bytes-per-pixel budget.
+  assert(statSync(resolve(root, 'public/assets/backgrounds/boss-act-2.webp')).size <
+    220 * 1024 * (3840 * 1920) / (2048 * 1024))
 } finally {
   writeFileSync(resolve(output, 'measurements.json'), JSON.stringify(measurements, null, 2))
   await server.close()

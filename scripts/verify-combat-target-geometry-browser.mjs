@@ -11,6 +11,7 @@ mkdirSync(output, { recursive: true })
 const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
 await server.listen()
 const errors = []
+const orbsOnly = process.argv.includes('--orbs-only')
 try {
   for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
     if (process.argv.includes('--webkit-only') && engineName !== 'webkit') continue
@@ -20,11 +21,14 @@ try {
         ['horizontal-phone', { width: 844, height: 390 }], ['small-horizontal-phone', { width: 568, height: 320 }]]) {
         const phone = screen !== 'desktop'
         const smallPhone = screen === 'small-horizontal-phone'
+        if (orbsOnly && smallPhone) continue
         const context = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone,
           recordVideo: { dir: output, size: viewport } })
         const page = await context.newPage()
         page.on('pageerror', e => errors.push(String(e)))
-        await page.goto(`http://localhost:${server.httpServer.address().port}`)
+        // Native Safari video behavior has its own focused matrix; Linux WebKit
+        // cannot preserve HEVC alpha for canvas silhouette measurements.
+        await page.goto(`http://localhost:${server.httpServer.address().port}${engineName === 'webkit' ? '?combat-webp=1' : ''}`)
         await page.evaluate(async () => {
           document.querySelector('#root').style.display = 'none'
           document.documentElement.dataset.mobilePerformance = String(matchMedia('(pointer: coarse)').matches)
@@ -127,199 +131,202 @@ try {
           const b = window.fixture.bounds(image)
           return { x: b.left + b.width / 2, y: b.top + b.height * .6 }
         }, id)
-        if (!smallPhone) for (const defs of [['deca', 'donu'], ['donu', 'deca'], ['taskmaster', 'red_slaver', 'blue_slaver'], ['sentry_a', 'sentry_b', 'sentry_a']]) {
-          await page.evaluate(defs => window.fixture.install(defs), defs)
-          await ready()
-          await page.waitForTimeout(320)
-          assert(await page.locator('.enemy').evaluateAll(enemies => enemies.every(e => getComputedStyle(e).pointerEvents === 'none')), 'empty button rectangles must not intercept neighbours')
-          for (let i = 0; i < defs.length; i++) {
-            const id = `enemy-${i}`, p = await bodyPoint(id)
-            const target = await page.evaluate(({ x, y, id }) => {
-              const element = document.elementFromPoint(x, y)
-              return { id: element?.closest('.enemy')?.dataset.enemyId, tag: element?.className, x, y,
-                hit: document.querySelector(`[data-enemy-id="${id}"] .enemy__hit-area`)?.getBoundingClientRect().toJSON() }
-            }, { ...p, id })
-            assert.equal(target.id, id, `${engineName}/${screen}: ${defs[i]} body targets its neighbour ${JSON.stringify(target)}`)
-            for (const selector of ['.enemy__head', '.bar']) {
-              const hud = page.locator(`[data-enemy-id="${id}"] ${selector}`)
-              assert.equal(await hud.evaluate(e => { const r = e.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('.enemy')?.dataset.enemyId }), id)
+        if (!orbsOnly) {
+          if (!smallPhone) for (const defs of [['deca', 'donu'], ['donu', 'deca'], ['taskmaster', 'red_slaver', 'blue_slaver'], ['sentry_a', 'sentry_b', 'sentry_a']]) {
+            await page.evaluate(defs => window.fixture.install(defs), defs)
+            await ready()
+            await page.waitForTimeout(320)
+            assert(await page.locator('.enemy').evaluateAll(enemies => enemies.every(e => getComputedStyle(e).pointerEvents === 'none')), 'empty button rectangles must not intercept neighbours')
+            for (let i = 0; i < defs.length; i++) {
+              const id = `enemy-${i}`, p = await bodyPoint(id)
+              const target = await page.evaluate(({ x, y, id }) => {
+                const element = document.elementFromPoint(x, y)
+                return { id: element?.closest('.enemy')?.dataset.enemyId, tag: element?.className, x, y,
+                  hit: document.querySelector(`[data-enemy-id="${id}"] .enemy__hit-area`)?.getBoundingClientRect().toJSON() }
+              }, { ...p, id })
+              assert.equal(target.id, id, `${engineName}/${screen}: ${defs[i]} body targets its neighbour ${JSON.stringify(target)}`)
+              for (const selector of ['.enemy__head', '.bar']) {
+                const hud = page.locator(`[data-enemy-id="${id}"] ${selector}`)
+                assert.equal(await hud.evaluate(e => { const r = e.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('.enemy')?.dataset.enemyId }), id)
+              }
             }
+            await page.locator('.board').screenshot({ path: resolve(output, `${engineName}-${screen}-${defs.join('-')}.png`) })
           }
-          await page.locator('.board').screenshot({ path: resolve(output, `${engineName}-${screen}-${defs.join('-')}.png`) })
-        }
-        // Evoke choices are made on the hero's own Orbs; tall boss hit areas
-        // must never intercept them.
-        const orbsReachable = () => page.locator('.orbs__target').evaluateAll(orbs => orbs.length > 0 && orbs.every(orb => {
-          const r = orb.getBoundingClientRect()
-          return orb.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
-        }))
-        if (!smallPhone) for (const boss of ['bronze_automaton', 'the_champ']) {
-          await page.evaluate(boss => window.fixture.install([boss], 'dark'), boss)
-          await ready()
-          const choice = page.getByRole('button', { name: 'Evoke frost Orb 3', exact: true })
-          await choice.waitFor()
-          assert(await orbsReachable(), `${engineName}/${screen}/${boss}: boss intercepts Orb choice`)
-          await page.screenshot({ path: resolve(output, `${engineName}-${screen}-${boss}-orb-choice.png`) })
-          if (phone) await tap(choice); else await choice.click()
-          await choice.waitFor({ state: 'detached' })
-        }
-        await page.evaluate(() => {
-          const f = window.fixture
-          f.install(['jaw_worm'], undefined, 2)
-          Object.assign(f.state.players[0], {
-            hand: [],
-            orbs: ['lightning', 'frost', 'dark', 'lightning'],
-            powers: [{ uid: 'phone-loop', defId: 'loop', upgraded: true }],
+          // Evoke choices are made on the hero's own Orbs; tall boss hit areas
+          // must never intercept them.
+          const orbsReachable = () => page.locator('.orbs__target').evaluateAll(orbs => orbs.length > 0 && orbs.every(orb => {
+            const r = orb.getBoundingClientRect()
+            return orb.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+          }))
+          if (!smallPhone) for (const boss of ['bronze_automaton', 'the_champ']) {
+            await page.evaluate(boss => window.fixture.install([boss], 'dark'), boss)
+            await ready()
+            const choice = page.getByRole('button', { name: 'Evoke frost Orb 3', exact: true })
+            await choice.waitFor()
+            assert(await orbsReachable(), `${engineName}/${screen}/${boss}: boss intercepts Orb choice`)
+            await page.screenshot({ path: resolve(output, `${engineName}-${screen}-${boss}-orb-choice.png`) })
+            if (phone) await tap(choice); else await choice.click()
+            await choice.waitFor({ state: 'detached' })
+          }
+          await page.evaluate(() => {
+            const f = window.fixture
+            f.install(['jaw_worm'], undefined, 2)
+            Object.assign(f.state.players[0], {
+              hand: [],
+              orbs: ['lightning', 'frost', 'dark', 'lightning'],
+              powers: [{ uid: 'phone-loop', defId: 'loop', upgraded: true }],
+            })
+            f.render()
           })
-          f.render()
-        })
-        await ready()
-        if (phone) await tap(page.getByRole('button', { name: 'End turn', exact: true }))
-        else await page.getByRole('button', { name: 'End turn', exact: true }).click()
-        const loopCard = page.locator('.end-turn-effect--card')
-        await loopCard.waitFor()
-        const loopChoices = page.getByRole('group', { name: /Choose an Orb for .*Loop/ })
-        if (phone) {
-          await page.evaluate(() => { window.fixture.viewerId = 'p2'; window.fixture.render() })
-          await page.waitForFunction(() => document.querySelector('.end-turn-effects__prompt')?.textContent.includes('Waiting for'))
-          assert.equal(await page.locator('.end-turn-effects__orb-choices').count(), 0,
-            `${engineName}/${screen}: non-owner can see Loop Orb choices`)
-          await page.evaluate(() => { window.fixture.viewerId = 'p1'; window.fixture.render() })
-          await loopChoices.waitFor()
-          await loopCard.evaluate(card => Promise.all(card.getAnimations().map(animation => animation.finished)))
-          const cardBox = await loopCard.boundingBox(), choicesBox = await loopChoices.boundingBox()
-          const visibleBottom = await page.evaluate(() =>
-            (window.visualViewport?.offsetTop ?? 0) + (window.visualViewport?.height ?? innerHeight))
-          assert(cardBox && choicesBox && choicesBox.y >= cardBox.y + cardBox.height - 1 &&
-            choicesBox.y + choicesBox.height <= visibleBottom,
-          `${engineName}/${screen}: Loop Orb choices are not visible below the card`)
-          assert.deepEqual(await loopChoices.locator('.token--orb').evaluateAll(tokens => tokens.map(token => token.className)),
-            ['token--orb token--orb-lightning', 'token--orb token--orb-frost', 'token--orb token--orb-dark'])
-          assert(await loopChoices.locator('button').evaluateAll(buttons => buttons.every(button => {
-            const style = getComputedStyle(button)
-            return style.borderWidth === '0px' && style.backgroundImage === 'none' &&
-              style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.boxShadow === 'none' && style.clipPath === 'none'
-          })), `${engineName}/${screen}: Loop Orb assets have visible button chrome`)
-          assert(await loopChoices.locator('button').evaluateAll(buttons => buttons.every(button => {
-            const box = button.getBoundingClientRect(), scale = window.visualViewport?.scale ?? 1
-            return Math.min(box.width, box.height) * scale >= 44
-          })), `${engineName}/${screen}: Loop Orb tap targets are smaller than 44 points`)
-          await page.screenshot({ path: resolve(output, `${engineName}-${screen}-loop-orb-choices.png`) })
-          await tap(page.getByRole('button', { name: 'Duplicate frost Orb effect' }))
-          await tap(page.getByRole('button', { name: 'Duplicate lightning Orb effect' }))
-          await loopCard.waitFor({ state: 'detached' })
-        } else {
-          assert.equal(await page.locator('.end-turn-effects__orb-choices:visible').count(), 0,
-            'desktop must keep the existing Orb drag interaction')
-        }
-        if (smallPhone) {
-          await context.close()
-          console.log(`PASS ${engineName} ${screen}: Loop Orb choices`)
-          continue
-        }
-        await page.evaluate(() => {
-          window.fixture.install(['bronze_automaton'])
-          window.fixture.state.players[0].hand = [{ uid: 'dual', defId: 'dual_cast', upgraded: false }]
-          window.fixture.render()
-        })
-        await ready()
-        const dual = page.locator('.hand .card').first()
-        if (phone) { await tap(dual); await tap(dual) } else await dual.click()
-        await page.locator('.orbs__target').first().waitFor()
-        assert(await orbsReachable(), `${engineName}/${screen}: boss intercepts Dual Cast Orb choice`)
-        await page.screenshot({ path: resolve(output, `${engineName}-${screen}-dual-cast-orb-choice.png`) })
-        // Stress the same stacking boundary when a tall boss's transparent hit
-        // region overhangs the Orbs, independent of asset poses.
-        assert(await page.locator('.orbs__target').nth(1).evaluate(orb => {
-          const hit = document.querySelector('.enemy__hit-area')
-          const o = orb.getBoundingClientRect(), h = hit.getBoundingClientRect()
-          hit.style.translate = `${o.x + o.width / 2 - (h.x + h.width / 2)}px ${o.y + o.height / 2 - (h.y + h.height / 2)}px`
-          const moved = hit.getBoundingClientRect()
-          return moved.left < o.x + o.width / 2 && moved.right > o.x + o.width / 2 &&
-            moved.top < o.y + o.height / 2 && moved.bottom > o.y + o.height / 2
-        }), `${engineName}/${screen}: the boss hit area was not moved over the Orbs`)
-        assert(await orbsReachable(), `${engineName}/${screen}: boss overhang intercepts the Orb choice`)
-        await page.evaluate(() => { document.querySelector('.enemy__hit-area').style.translate = '' })
-        const frost = page.getByRole('button', { name: 'Evoke frost Orb 2', exact: true })
-        if (phone) await tap(frost); else await frost.click()
-        await page.waitForFunction(() => window.fixture.state.players[0].block > 0)
-        // Boss size remains visibly larger than the hero, with hit areas following
-        // changes in the artwork's height when a desktop window is resized.
-        await page.evaluate(() => window.fixture.install(['deca', 'donu']))
-        await ready()
-        const bossRatios = await page.evaluate(async () => {
-          const f = window.fixture, heroArt = document.querySelector('.seat__portrait > :is(img, video)')
-          const bosses = [...document.querySelectorAll('.enemy__art--cutout')]
-          await Promise.all([heroArt, ...bosses].map(f.frame))
-          const hero = f.bounds(heroArt)
-          return bosses.map(i => f.bounds(i).height / hero.height)
-        })
-        assert(bossRatios.every(ratio => ratio > 1.35), `bosses should remain larger than Defect: ${bossRatios}`)
-        if (!phone) {
-          await page.setViewportSize({ width: 844, height: 390 })
           await ready()
-          const p = await bodyPoint('enemy-1')
-          assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('.enemy')?.dataset.enemyId, p), 'enemy-1')
-          await page.setViewportSize(viewport)
+          if (phone) await tap(page.getByRole('button', { name: 'End turn', exact: true }))
+          else await page.getByRole('button', { name: 'End turn', exact: true }).click()
+          const loopCard = page.locator('.end-turn-effect--card')
+          await loopCard.waitFor()
+          const loopChoices = page.getByRole('group', { name: /Choose an Orb for .*Loop/ })
+          if (phone) {
+            await page.evaluate(() => { window.fixture.viewerId = 'p2'; window.fixture.render() })
+            await page.waitForFunction(() => document.querySelector('.end-turn-effects__prompt')?.textContent.includes('Waiting for'))
+            assert.equal(await page.locator('.end-turn-effects__orb-choices').count(), 0,
+              `${engineName}/${screen}: non-owner can see Loop Orb choices`)
+            await page.evaluate(() => { window.fixture.viewerId = 'p1'; window.fixture.render() })
+            await loopChoices.waitFor()
+            await loopCard.evaluate(card => Promise.all(card.getAnimations().map(animation => animation.finished)))
+            const cardBox = await loopCard.boundingBox(), choicesBox = await loopChoices.boundingBox()
+            const visibleBottom = await page.evaluate(() =>
+              (window.visualViewport?.offsetTop ?? 0) + (window.visualViewport?.height ?? innerHeight))
+            assert(cardBox && choicesBox && choicesBox.y >= cardBox.y + cardBox.height - 1 &&
+              choicesBox.y + choicesBox.height <= visibleBottom,
+            `${engineName}/${screen}: Loop Orb choices are not visible below the card`)
+            assert.deepEqual(await loopChoices.locator('.token--orb').evaluateAll(tokens => tokens.map(token => token.className)),
+              ['token--orb token--orb-lightning', 'token--orb token--orb-frost', 'token--orb token--orb-dark'])
+            assert(await loopChoices.locator('button').evaluateAll(buttons => buttons.every(button => {
+              const style = getComputedStyle(button)
+              return style.borderWidth === '0px' && style.backgroundImage === 'none' &&
+                style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.boxShadow === 'none' && style.clipPath === 'none'
+            })), `${engineName}/${screen}: Loop Orb assets have visible button chrome`)
+            assert(await loopChoices.locator('button').evaluateAll(buttons => buttons.every(button => {
+              const box = button.getBoundingClientRect(), scale = window.visualViewport?.scale ?? 1
+              return Math.min(box.width, box.height) * scale >= 44
+            })), `${engineName}/${screen}: Loop Orb tap targets are smaller than 44 points`)
+            await page.screenshot({ path: resolve(output, `${engineName}-${screen}-loop-orb-choices.png`) })
+            await tap(page.getByRole('button', { name: 'Duplicate frost Orb effect' }))
+            await tap(page.getByRole('button', { name: 'Duplicate lightning Orb effect' }))
+            await loopCard.waitFor({ state: 'detached' })
+          } else {
+            assert.equal(await page.locator('.end-turn-effects__orb-choices:visible').count(), 0,
+              'desktop must keep the existing Orb drag interaction')
+          }
+          if (smallPhone) {
+            await context.close()
+            console.log(`PASS ${engineName} ${screen}: Loop Orb choices`)
+            continue
+          }
+          await page.evaluate(() => {
+            window.fixture.install(['bronze_automaton'])
+            window.fixture.state.players[0].hand = [{ uid: 'dual', defId: 'dual_cast', upgraded: false }]
+            window.fixture.render()
+          })
           await ready()
-        }
-        // A real Strike must damage the visible enemy for both clicks and drags.
-        for (const [target, drag] of [['enemy-1', false], ['enemy-0', true]]) {
+          const dual = page.locator('.hand .card').first()
+          if (phone) { await tap(dual); await tap(dual) } else await dual.click()
+          await page.locator('.orbs__target').first().waitFor()
+          assert(await orbsReachable(), `${engineName}/${screen}: boss intercepts Dual Cast Orb choice`)
+          await page.screenshot({ path: resolve(output, `${engineName}-${screen}-dual-cast-orb-choice.png`) })
+          // Stress the same stacking boundary when a tall boss's transparent hit
+          // region overhangs the Orbs, independent of asset poses.
+          assert(await page.locator('.orbs__target').nth(1).evaluate(orb => {
+            const hit = document.querySelector('.enemy__hit-area')
+            const o = orb.getBoundingClientRect(), h = hit.getBoundingClientRect()
+            hit.style.translate = `${o.x + o.width / 2 - (h.x + h.width / 2)}px ${o.y + o.height / 2 - (h.y + h.height / 2)}px`
+            const moved = hit.getBoundingClientRect()
+            return moved.left < o.x + o.width / 2 && moved.right > o.x + o.width / 2 &&
+              moved.top < o.y + o.height / 2 && moved.bottom > o.y + o.height / 2
+          }), `${engineName}/${screen}: the boss hit area was not moved over the Orbs`)
+          assert(await orbsReachable(), `${engineName}/${screen}: boss overhang intercepts the Orb choice`)
+          await page.evaluate(() => { document.querySelector('.enemy__hit-area').style.translate = '' })
+          const frost = page.getByRole('button', { name: 'Evoke frost Orb 2', exact: true })
+          if (phone) await tap(frost); else await frost.click()
+          await page.waitForFunction(() => window.fixture.state.players[0].block > 0)
+          // Boss size remains visibly larger than the hero, with hit areas following
+          // changes in the artwork's height when a desktop window is resized.
           await page.evaluate(() => window.fixture.install(['deca', 'donu']))
           await ready()
-          const p = await bodyPoint(target), card = page.locator('.hand .card').first()
-          // A freshly dealt card ignores the pointer until its draw animation ends.
-          await page.waitForFunction(() => !document.querySelector('.hand .card--drawn'))
-          if (drag) {
-            const r = await card.boundingBox()
-            await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2)
-            await page.mouse.down(); await page.mouse.move(p.x, p.y, { steps: 12 }); await page.mouse.up()
-          } else { await card.click(); await page.mouse.click(p.x, p.y) }
-          await page.waitForFunction(target => window.fixture.state.enemies.find(e => e.uid === target).hp < 50, target)
-          assert.equal(await page.evaluate(target => window.fixture.state.enemies.find(e => e.uid !== target).hp, target), 50)
-        }
-        // Moving rules into hover help must keep both ordinary and elite
-        // portraits targetable without an inline rule label consuming clicks.
-        for (const defId of ['green_louse', 'gremlin_nob']) {
-          await page.evaluate(defId => window.fixture.install([defId, 'jaw_worm']), defId)
+          const bossRatios = await page.evaluate(async () => {
+            const f = window.fixture, heroArt = document.querySelector('.seat__portrait > :is(img, video)')
+            const bosses = [...document.querySelectorAll('.enemy__art--cutout')]
+            await Promise.all([heroArt, ...bosses].map(f.frame))
+            const hero = f.bounds(heroArt)
+            return bosses.map(i => f.bounds(i).height / hero.height)
+          })
+          assert(bossRatios.every(ratio => ratio > 1.35), `bosses should remain larger than Defect: ${bossRatios}`)
+          if (!phone) {
+            await page.setViewportSize({ width: 844, height: 390 })
+            await ready()
+            const p = await bodyPoint('enemy-1')
+            assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('.enemy')?.dataset.enemyId, p), 'enemy-1')
+            await page.setViewportSize(viewport)
+            await ready()
+          }
+          // A real Strike must damage the visible enemy for both clicks and drags.
+          for (const [target, drag] of [['enemy-1', false], ['enemy-0', true]]) {
+            await page.evaluate(() => window.fixture.install(['deca', 'donu']))
+            await ready()
+            const p = await bodyPoint(target), card = page.locator('.hand .card').first()
+            // A freshly dealt card ignores the pointer until its draw animation ends.
+            await page.waitForFunction(() => !document.querySelector('.hand .card--drawn'))
+            if (drag) {
+              const r = await card.boundingBox()
+              await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2)
+              await page.mouse.down(); await page.mouse.move(p.x, p.y, { steps: 12 }); await page.mouse.up()
+            } else { await card.click(); await page.mouse.click(p.x, p.y) }
+            await page.waitForFunction(target => window.fixture.state.enemies.find(e => e.uid === target).hp < 50, target)
+            assert.equal(await page.evaluate(target => window.fixture.state.enemies.find(e => e.uid !== target).hp, target), 50)
+          }
+          // Moving rules into hover help must keep both ordinary and elite
+          // portraits targetable without an inline rule label consuming clicks.
+          for (const defId of ['green_louse', 'gremlin_nob']) {
+            await page.evaluate(defId => window.fixture.install([defId, 'jaw_worm']), defId)
+            await ready()
+            await page.locator('.hand .card').first().click()
+            await page.locator('[data-enemy-id="enemy-0"] .enemy__head').click()
+            await page.waitForFunction(() => window.fixture.state.enemies[0].hp < 50)
+            assert.equal(await page.evaluate(() => window.fixture.state.enemies[1].hp), 50)
+          }
+          // The native enemy button remains keyboard operable.
+          await page.evaluate(() => window.fixture.install(['deca', 'donu']))
           await ready()
           await page.locator('.hand .card').first().click()
-          await page.locator('[data-enemy-id="enemy-0"] .enemy__head').click()
-          await page.waitForFunction(() => window.fixture.state.enemies[0].hp < 50)
-          assert.equal(await page.evaluate(() => window.fixture.state.enemies[1].hp), 50)
-        }
-        // The native enemy button remains keyboard operable.
-        await page.evaluate(() => window.fixture.install(['deca', 'donu']))
-        await ready()
-        await page.locator('.hand .card').first().click()
-        await page.locator('[data-enemy-id="enemy-1"]').focus()
-        await page.keyboard.press('Enter')
-        await page.waitForFunction(() => window.fixture.state.enemies[1].hp < 50)
-        // Preserve a usable hit target with static (reduced-motion) art too.
-        await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true'; window.fixture.install(['deca', 'donu']) })
-        await ready()
-        const staticPoint = await bodyPoint('enemy-1')
-        await page.locator('.hand .card').first().click(); await page.mouse.click(staticPoint.x, staticPoint.y)
-        await page.waitForFunction(() => window.fixture.state.enemies[1].hp < 50)
-        await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'false' })
+          await page.locator('[data-enemy-id="enemy-1"]').focus()
+          await page.keyboard.press('Enter')
+          await page.waitForFunction(() => window.fixture.state.enemies[1].hp < 50)
+          // Preserve a usable hit target with static (reduced-motion) art too.
+          await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true'; window.fixture.install(['deca', 'donu']) })
+          await ready()
+          const staticPoint = await bodyPoint('enemy-1')
+          await page.locator('.hand .card').first().click(); await page.mouse.click(staticPoint.x, staticPoint.y)
+          await page.waitForFunction(() => window.fixture.state.enemies[1].hp < 50)
+          await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'false' })
 
-        // Prismatic Shard can give other heroes Orbs; Defect's short-body
-        // anchor must not pull those controls into a taller character's head.
-        await page.evaluate(() => {
-          window.fixture.install(['jaw_worm'])
-          window.fixture.state.players[0].character = 'hermit'
-          window.fixture.render()
-        })
-        await ready()
-        assert(await page.evaluate(async () => {
-          const seat = document.querySelector('.seat__interactive[data-character="hermit"]')
-          const image = seat.querySelector('.seat__portrait > :is(img, video)')
-          await window.fixture.frame(image)
-          const head = window.fixture.bounds(image).top
-          const orbs = [...seat.querySelectorAll('.token--orb')]
-          return orbs.length === 3 && orbs.every(orb => orb.getBoundingClientRect().bottom < head)
-        }), `${engineName}/${screen}: borrowed Orbs overlap Hermit's head`)
-        await page.screenshot({ path: resolve(output, `${engineName}-${screen}-hermit-orbs.png`) })
+          // Prismatic Shard can give other heroes Orbs; Defect's short-body
+          // anchor must not pull those controls into a taller character's head.
+          await page.evaluate(() => {
+            window.fixture.install(['jaw_worm'])
+            window.fixture.state.players[0].character = 'hermit'
+            window.fixture.render()
+          })
+          await ready()
+          assert(await page.evaluate(async () => {
+            const seat = document.querySelector('.seat__interactive[data-character="hermit"]')
+            const image = seat.querySelector('.seat__portrait > :is(img, video)')
+            await window.fixture.frame(image)
+            const head = window.fixture.bounds(image).top
+            const orbs = [...seat.querySelectorAll('.token--orb')]
+            return orbs.length === 3 && orbs.every(orb => orb.getBoundingClientRect().bottom < head)
+          }), `${engineName}/${screen}: borrowed Orbs overlap Hermit's head`)
+          await page.screenshot({ path: resolve(output, `${engineName}-${screen}-hermit-orbs.png`) })
+
+        }
 
         for (const partySize of [1, 4]) for (const orb of ['lightning', 'dark']) {
           await page.evaluate(({ orb, partySize }) => window.fixture.install(['jaw_worm'], orb, partySize), { orb, partySize })
@@ -333,8 +340,8 @@ try {
             const lowestOrb = Math.max(...[...seat.querySelectorAll('.token--orb')].map(el => el.getBoundingClientRect().bottom))
             return (paintedTop - lowestOrb) / parseFloat(getComputedStyle(document.documentElement).fontSize)
           })
-          assert(orbGap >= 0 && orbGap < 4, `${engineName}/${screen}/party${partySize}: Orbs too far from Defect: ${orbGap}rem`)
           await page.screenshot({ path: resolve(output, `${engineName}-${screen}-orbs-${partySize}.png`) })
+          assert(orbGap >= 0 && orbGap < 4, `${engineName}/${screen}/party${partySize}: Orbs too far from Defect: ${orbGap}rem`)
           for (let i = 0; i < 2; i++) {
             await page.getByRole('button', { name: `Evoke ${orb} Orb ${orb === 'dark' ? i + 1 : 1}`, exact: true }).click()
             await page.locator('.enemy__head').click()
@@ -370,14 +377,14 @@ try {
               if (!size.width || !size.height) return null
               const fit = Math.min(r.width / size.width, r.height / size.height)
               const sourceScale = size.width / 400
-              const svg = e.querySelector('svg'), matrix = svg.getScreenCTM()
-              const start = new DOMPoint(0, 20).matrixTransform(matrix)
-              // WebKit's SVG screen matrix includes the mobile visual viewport
-              // scale; DOM rectangles use layout pixels. Normalize to the latter.
-              const corners = [[0, 0], [1000, 0], [0, 40], [1000, 40]].map(([x, y]) => new DOMPoint(x, y).matrixTransform(matrix))
-              const xs = corners.map(p => p.x), ys = corners.map(p => p.y), box = svg.getBoundingClientRect()
-              start.x = box.left + (start.x - Math.min(...xs)) * box.width / (Math.max(...xs) - Math.min(...xs))
-              start.y = box.top + (start.y - Math.min(...ys)) * box.height / (Math.max(...ys) - Math.min(...ys))
+              const image = e.querySelector('img.defect-evoke__beam')
+              if (!image?.complete || !image.naturalWidth) return null
+              const ray = image.closest('.defect-evoke__ray')
+              const box = image.getBoundingClientRect()
+              const angle = new DOMMatrixReadOnly(getComputedStyle(ray).transform)
+              // The painted strip rotates/scales around its left center.
+              const start = { x: box.left + box.width / 2 - image.offsetWidth / 2 * angle.a,
+                y: box.top + box.height / 2 - image.offsetWidth / 2 * angle.b }
               return { start: { x: start.x, y: start.y },
                 mouth: { x: r.left + (r.width - size.width * fit) / 2 + 222 * sourceScale * fit,
                   y: r.bottom - (size.height - 89 * sourceScale) * fit } }
@@ -388,8 +395,8 @@ try {
               const rect = effect.getBoundingClientRect(), clone = effect.cloneNode(true)
               clone.classList.add('defect-evoke--test-clone')
               Object.assign(clone.style, { position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`, zIndex: 999 })
-              clone.querySelectorAll('.defect-evoke__beam').forEach(svg => {
-                svg.style.animation = 'none'; svg.style.opacity = '1'; svg.style.scale = '1 1'
+              clone.querySelectorAll('.defect-evoke__beam').forEach(image => {
+                image.style.animation = 'none'; image.style.opacity = '1'; image.style.scale = '1 1'
               })
               document.body.append(clone)
             })
@@ -433,7 +440,7 @@ try {
         }
         await context.close()
         await page.video().saveAs(resolve(output, `${engineName}-${screen}.webm`))
-        console.log(`PASS ${engineName} ${screen}: painted targets, click/drag damage, static art, repeated Lightning/Dark and restoration`)
+        console.log(`PASS ${engineName} ${screen}: ${orbsOnly ? 'painted Storm beams, mouth anchors and restoration' : 'painted targets, click/drag damage, static art, repeated Lightning/Dark and restoration'}`)
       }
     } finally { await browser.close() }
   }

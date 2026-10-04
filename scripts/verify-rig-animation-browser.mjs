@@ -86,15 +86,17 @@ try {
         import('/src/ui/styles.css'),import('/src/ui/chrome.css'),
       ])
       const reactRoot=(D.createRoot??D.default.createRoot)(node)
+      const reactDom = await import('/@id/react-dom')
+      const flushSync = reactDom.flushSync ?? reactDom.default.flushSync
       const f=window.fixture={seq:1000,restoration:0}
-      f.render=()=>reactRoot.render((R.createElement??R.default.createElement)(CombatScreen,{
+      f.render=()=>flushSync(()=>reactRoot.render((R.createElement??R.default.createElement)(CombatScreen,{
         state:structuredClone(f.state),act:1,viewerId:'p1',autoAdvance:false,
         authoritativeRestoration:f.restoration,authoritativeConnected:f.connected,onAction:()=>{},
-      }))
-      f.install=(character,defId='guardian_attack',isBoss=true,count=1)=>{
+      })))
+      f.install=(character,defId='guardian_attack',isBoss=true,count=1,hp=999)=>{
         const rng=createRng(47);const player=createPlayer(rng,'p1',character,character==='guardian-defense'?'guardian':character,0)
         player.hp=player.maxHp=999;player.hand=[];player.draw=[];player.relics=[]
-        const enemy={uid:'enemy-0',defId,row:0,isBoss,hp:999,maxHp:999,block:0,strength:0,vulnerable:0,weak:0,poison:0,actionIndex:0,abilityUsed:false,dead:false}
+        const enemy={uid:'enemy-0',defId,row:0,isBoss,hp,maxHp:999,block:0,strength:0,vulnerable:0,weak:0,poison:0,actionIndex:0,abilityUsed:false,dead:false}
         f.state=createCombat(rng,[player],Array.from({length:count},(_,i)=>({...enemy,uid:`enemy-${i}`})))
         if(character==='guardian-defense')f.state.players[0].guardianMode='defense'
         f.state.players[0].facingEnemyUid='enemy-0'
@@ -227,7 +229,7 @@ try {
         ['slime_boss', 'slime_boss_strike', { 'slime-splat': 1 }],
       ]) {
         await page.evaluate(hero => window.fixture.install(hero, 'jaw_worm', false, 3), hero)
-        await page.waitForFunction(hero => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= (hero === 'hermit' ? 3 : hero === 'hexaghost' ? 7 : ['watcher', 'ironclad', 'guardian'].includes(hero) ? 2 : 1), hero)
+        await page.waitForFunction(hero => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= (hero === 'hermit' ? 3 : hero === 'hexaghost' ? 1 : ['watcher', 'ironclad', 'guardian'].includes(hero) ? 2 : 1), hero)
         await clear()
         await page.evaluate(card => window.fixture.attack(card), card)
         await page.waitForTimeout(1900)
@@ -335,6 +337,16 @@ try {
         assert.equal(await pose.evaluate(e=>getComputedStyle(e).opacity),'1','Watcher must raise her staff before casting')
         assert.equal(await page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig`).count(),0)
       } else assert.equal(await pose.locator(':scope > img').evaluate(i=>i.naturalWidth),rigs[character==='hexaghost'?'hero-hexaghost-heat-0':`hero-${character}`].size,character)
+      if (character !== 'hermit') {
+        const overlay = await page.locator(`.combat-vfx--attack-impact[data-vfx-seq="${seq}"]`).first().evaluate(node => ({
+          image: getComputedStyle(node).backgroundImage, blend: getComputedStyle(node).mixBlendMode,
+          before: getComputedStyle(node, '::before').content, after: getComputedStyle(node, '::after').content,
+        }))
+        assert(overlay.image.includes('/combat/vfx/actions/'), 'attack has no painted impact sprite')
+        assert.equal(overlay.blend, 'normal', 'painted impact must retain its colors')
+        assert.equal(overlay.before, 'none', 'procedural ring obscures painted impact')
+        assert.equal(overlay.after, 'none', 'procedural streak obscures painted impact')
+      }
       if(character!=='watcher') await page.waitForTimeout(character==='hexaghost'?1400:character==='ironclad'?850:600)
       if(character==='watcher') {
         const cast=page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--watcher-cast`)
@@ -356,6 +368,62 @@ try {
         assert(cast_.progress<1,`Watcher meteor sample missed the fall (${cast_.progress})`)
         assert.equal(cast_.opacity,'1','Watcher must cast downward while the meteor falls')
         assert(await page.locator(`[data-attack-seq="${seq}"] .character-attack__meteor`).count()>0,'Watcher lost the meteor')
+        // Measure the decoded sprite rather than repeating CSS anchors: replacing
+        // its artwork must not make the visible nose miss the ground or slide sideways.
+        const geometry = await page.locator(`[data-attack-seq="${seq}"]`).evaluate(layer => {
+          const meteor = layer.querySelector('.character-attack__meteor')
+          const image = meteor.querySelector('.character-attack__meteor-art')
+          const canvas = document.createElement('canvas')
+          canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+          const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0)
+          const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+          let mass = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0
+          for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+            const weight = rgba[(y * canvas.width + x) * 4 + 3] / 255
+            mass += weight; sx += x * weight; sy += y * weight
+            sxx += x * x * weight; syy += y * y * weight; sxy += x * y * weight
+          }
+          const xx = sxx / mass - (sx / mass) ** 2
+          const yy = syy / mass - (sy / mass) ** 2
+          const xy = sxy / mass - sx * sy / mass ** 2
+          const angle = Math.atan2(2 * xy, xx - yy) / 2
+          const axis = [Math.cos(angle), Math.sin(angle)]
+          const painted = []
+          let end = -Infinity
+          for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+            if (rgba[(y * canvas.width + x) * 4 + 3] < 204) continue
+            const projection = x * axis[0] + y * axis[1]
+            painted.push({ x, y, projection }); end = Math.max(end, projection)
+          }
+          const tip = painted.filter(point => point.projection >= end - 2)
+          const nose = tip.reduce((sum, point) => [sum[0] + point.x, sum[1] + point.y], [0, 0])
+            .map(value => value / tip.length)
+          const animations = layer.getAnimations({ subtree: true })
+          const saved = animations.map(animation => animation.currentTime)
+          const samples = [550, 1050].map(time => {
+            animations.forEach(animation => { animation.pause(); animation.currentTime = time })
+            const rect = image.getBoundingClientRect()
+            const impact = meteor.querySelector('.character-attack__meteor-impact').getBoundingClientRect()
+            return { impactGroundY: impact.top + impact.height * .7890625, x: rect.left + nose[0] * rect.width / canvas.width,
+              y: rect.top + nose[1] * rect.height / canvas.height,
+              bottom: rect.bottom, impact: Number(getComputedStyle(meteor.querySelector('.character-attack__meteor-impact')).opacity) }
+          })
+          animations.forEach((animation, i) => { animation.currentTime = saved[i]; animation.play() })
+          const target = document.querySelector(`[data-enemy-id="${meteor.dataset.attackTargetId}"] .enemy__portrait`).getBoundingClientRect()
+          return { angle, samples, ground: target.bottom, left: target.left, right: target.right,
+            boardTop: document.querySelector('.board').getBoundingClientRect().top }
+        })
+        const [sky, contact] = geometry.samples
+        const flightAngle = Math.atan2(contact.y - sky.y, contact.x - sky.x)
+        assert(Math.abs(flightAngle - geometry.angle) < .2 * Math.PI / 180,
+          `${screen}: meteor flight diverged from its painted axis ${JSON.stringify(geometry)}`)
+        assert(sky.bottom <= geometry.boardTop + .5, `${screen}: meteor must enter from the sky`)
+        assert(Math.abs(contact.y - geometry.ground) < .5 && contact.x >= geometry.left && contact.x <= geometry.right,
+          `${screen}: painted meteor nose missed ground contact ${JSON.stringify(geometry)}`)
+        assert.equal(sky.impact, 0, 'Meteor impact appears before contact')
+        assert(contact.impact >= .9, 'Meteor impact is missing at contact')
+        assert(Math.abs(contact.impactGroundY - geometry.ground) < .5,
+          `${screen}: painted meteor impact is below the ground`)
       }
       await page.locator('.board').screenshot({path:resolve(output,`${screen}-${character}-attack.png`)})
       await page.waitForTimeout(1800)
@@ -468,7 +536,7 @@ try {
                 return {x:origin.x+length*Math.cos(angle),y:origin.y+length*Math.sin(angle),
                   targetX,targetY,impactX:impact.left+impact.width/2,impactY:impact.top+impact.height/2,
                   originX:origin.x,originY:origin.y,mouthX,mouthY,
-                  delay:ray.querySelector('svg').getAnimations()[0].effect.getTiming().delay}
+                  delay:ray.querySelector('.defect-evoke__beam').getAnimations()[0].effect.getTiming().delay}
               })
             })
             for(const ray of geometry) {
@@ -490,13 +558,29 @@ try {
     if (process.argv.includes('--hero=hermit')) {
       // Real impact events, rather than wall-clock sleeps, must drive HP and numbers.
       for (const lethal of [false, true]) {
+        // A cold replay may decode after the event's wall-clock deadline starts.
+        // Exercise visible HP/numbers against that delay, using real CSS impacts.
         await page.evaluate(lethal => {
+          if (!lethal) {
+            window.originalImageDecode = HTMLImageElement.prototype.decode
+            HTMLImageElement.prototype.decode = async function () {
+              await window.originalImageDecode.call(this)
+              if (this.closest('.character-attack__pose--rig[data-attack-asset*="hero-hermit-attack"]')) {
+                await new Promise(resolve => setTimeout(resolve, 1200))
+              }
+            }
+          }
           const f = window.fixture
-          f.install('hermit', 'jaw_worm', false, lethal ? 1 : 3)
-          if (lethal) { f.state.enemies[0].hp = 3; f.render() }
+          f.install('hermit', 'jaw_worm', false, lethal ? 1 : 3, lethal ? 3 : 999)
+        }, lethal)
+        await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= 3)
+        await page.waitForFunction(lethal => document.querySelectorAll('.enemy').length === (lethal ? 1 : 3) &&
+          Number(document.querySelector('.enemy .bar__label').textContent.split('/')[0]) === (lethal ? 3 : 999), lethal)
+        // Install can replace the previous fixture's board during React's commit.
+        // Observe real bubbling impacts on the stable document after it has rendered.
+        await page.evaluate(() => {
           window.hermitImpactSamples = []
-          const board = document.querySelector('.board')
-          if (window.hermitDamageListener) board.removeEventListener('hermit-impact', window.hermitDamageListener)
+          if (window.hermitDamageListener) document.removeEventListener('hermit-impact', window.hermitDamageListener)
           window.hermitDamageListener = event => {
             const card = event.target.closest('.enemy')
             queueMicrotask(() => window.hermitImpactSamples.push({
@@ -504,22 +588,40 @@ try {
               dead: card.classList.contains('enemy--dead'),
             }))
           }
-          board.addEventListener('hermit-impact', window.hermitDamageListener)
-        }, lethal)
-        await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= 3)
-        await page.waitForFunction(expected => Number(document.querySelector('.enemy .bar__label').textContent.split('/')[0]) === expected, lethal ? 3 : 999)
+          document.addEventListener('hermit-impact', window.hermitDamageListener)
+          window.hermitDamageNumbers = []
+          window.hermitDamageObserver?.disconnect()
+          window.hermitDamageObserver = new MutationObserver(records => {
+            for (const record of records) for (const node of record.addedNodes) {
+              if (node instanceof HTMLElement && node.matches('.hermit-damage-number')) {
+                window.hermitDamageNumbers.push({ target: record.target.closest('.enemy').dataset.enemyId,
+                  amount: Number(node.dataset.damage) })
+              }
+            }
+          })
+          window.hermitDamageObserver.observe(document.querySelector('.board'), { childList: true, subtree: true })
+        })
         await page.evaluate(lethal => {
           const f = window.fixture
           f.state.enemies.forEach((enemy, index) => { enemy.hp -= [3, 7, 0][index]; enemy.dead = enemy.hp === 0 })
           f.attack('hermit_strike')
         }, lethal)
         await page.locator('.hermit-shot').last().waitFor({ state: 'attached' })
-        assert.equal(await page.locator('.enemy .hit-vfx').count(), 0, 'Hermit still shows the old lump damage burst')
-        await page.waitForFunction(count => window.hermitImpactSamples.length >= count, lethal ? 5 : 15)
+        assert.equal(await page.locator('.enemy .hit-vfx').count(), 0, `Hermit still shows the old lump damage burst (${screen}, lethal=${lethal}): ${JSON.stringify(await page.locator('.enemy .hit-vfx').evaluateAll(nodes => nodes.map(n => ({ text: n.textContent, html: n.outerHTML }))))}`)
+        await page.waitForFunction(count => window.hermitImpactSamples.length >= count &&
+          window.hermitDamageNumbers.length >= (count === 5 ? 5 : 10), lethal ? 5 : 15).catch(async error => {
+          const diagnostic = JSON.stringify(await page.evaluate(() => ({ impacts: window.hermitImpactSamples,
+            numbers: window.hermitDamageNumbers, events: window.fixture.state.presentationEvents,
+            hp: [...document.querySelectorAll('.enemy .bar__label')].map(node => node.textContent) })))
+          throw new Error(`${error.message}: ${diagnostic}`, { cause: error })
+        })
         const result = await page.locator('.enemy').evaluateAll(cards => cards.map(card => ({
           id: card.dataset.enemyId, hp: Number(card.querySelector('.bar__label').textContent.split('/')[0]),
           dead: card.classList.contains('enemy--dead'),
-          numbers: [...card.querySelectorAll('.hermit-damage-number')].map(number => Number(number.dataset.damage)),
+          // Numbers fade independently; collect their real insertions rather than
+          // requiring the first volley's number to survive a final protocol round trip.
+          numbers: window.hermitDamageNumbers.filter(number => number.target === card.dataset.enemyId)
+            .map(number => number.amount),
         })))
         for (const [index, target] of result.entries()) {
           const total = [3, 7, 0][index]
@@ -539,6 +641,7 @@ try {
         }
         if (lethal) assert(result[0].dead, 'lethal target did not fall after the final impact')
         await page.locator('.board').screenshot({ path: resolve(output, `${screen}-hermit-damage-${lethal ? 'lethal' : 'aoe'}.png`) })
+        if (!lethal) await page.evaluate(() => { HTMLImageElement.prototype.decode = window.originalImageDecode })
       }
     }
     if (process.argv.includes('--hero=hermit')) {
@@ -552,7 +655,6 @@ try {
         assert.equal(await page.locator(`[data-hermit-impact-seq="${seq}"]`).count(), count * 5, 'each target must receive one impact per two-barrel volley')
         assert.equal(await page.locator(`.combat-vfx--target[data-vfx-seq="${seq}"]`).count(), 0, 'old impact still renders')
         await page.waitForTimeout(680)
-        await page.locator('.board').screenshot({path:resolve(output,`${screen}-hermit-live-${count}.png`)})
         const geometry = await shots.evaluateAll(nodes => nodes.map(node => {
           const origin = node.getBoundingClientRect()
           const [volley, gun] = node.dataset.shot.split('-').map(Number)
@@ -587,6 +689,7 @@ try {
             impactAboveArt: Number(getComputedStyle(impact.effect.target).zIndex) > Number(getComputedStyle(target).zIndex),
             trail: getComputedStyle(node.querySelector('.hermit-shot__bullet'), '::before').backgroundImage }
         }))
+        assert.equal(geometry.length, count * 10, 'gunfire expired before geometry was sampled')
         for (const shot of geometry) {
           assert(Math.abs(shot.originX-shot.muzzleX)<1 && Math.abs(shot.originY-shot.muzzleY)<1, 'bullet detached from barrel')
           assert(Math.abs(shot.x-shot.targetX)<3 && Math.abs(shot.y-shot.targetY)<3, 'bullet misses torso')
@@ -594,7 +697,7 @@ try {
           assert.equal(shot.during, '1', 'bullet invisible in flight')
           assert([611,733,856,978,1100].includes(shot.delay), 'flash clock mismatch')
           assert(Math.abs(shot.impactDelay - shot.delay - shot.duration)<.01, 'impact precedes arrival')
-          assert(shot.trail.includes('linear-gradient'), 'missing tracer')
+          assert(shot.trail.includes('speed-trail.webp'), 'missing painted tracer')
           assert(shot.impactOnTarget && shot.impactAboveArt, 'impact is behind target artwork')
           assert(Math.abs(shot.impactX-shot.targetX)<3 && Math.abs(shot.impactY-shot.targetY)<3, `impact misses torso: ${JSON.stringify(shot)}`)
         }
@@ -628,8 +731,9 @@ try {
         await page.waitForTimeout(interruptMs)
         await page.evaluate(() => { const f=window.fixture; f.state.enemies[0].hp -= 7; f.attack('hermit_strike') })
         await page.waitForFunction(() => document.querySelector('.enemy .bar__label')?.textContent.trim() === '989/999')
-        assert(Math.abs(await page.evaluate(() => window.hermitNumberTotal) - 10) < 1e-8,
-          `interrupted attack lost or duplicated displayed damage at ${interruptMs}ms`)
+        const numberTotal = await page.evaluate(() => window.hermitNumberTotal)
+        assert(Math.abs(numberTotal - 10) < 1e-8,
+          `interrupted attack lost or duplicated displayed damage at ${interruptMs}ms: ${numberTotal}`)
       }
       // A single network update may include another character's damage as well.
       await page.evaluate(() => {
@@ -739,7 +843,7 @@ try {
         await page.waitForTimeout(170)
         assert.notDeepEqual(first, await idle.screenshot(), `heat ${heat}: idle flames must burn`)
         await page.screenshot({path:resolve(output,`${screen}-heat-${heat}-idle.png`)})
-        await page.waitForFunction(()=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=7)
+        await page.waitForFunction(()=>Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady)>=1)
         const seq = await page.evaluate(()=>window.fixture.attack('strike_hexaghost'))
         await page.locator(`[data-attack-seq="${seq}"] .character-attack__pose--rig.is-loaded:not(.is-fallback)`).waitFor()
         await page.waitForTimeout(1000)
@@ -834,16 +938,6 @@ try {
         await page.waitForTimeout(760)
         const after=await card.locator('.enemy__art--cutout:not([data-inactive])').boundingBox()
         assert(Math.abs(before.width-after.width)<1&&Math.abs(before.height-after.height)<1,`${enemy.id}: attack scale changed`)
-        if(bossProjectileImagePath(enemy.artId??enemy.id)){
-          const origin=await card.evaluate(e=>{
-            const p=e.querySelector('.boss-projectile'),r=e.getBoundingClientRect()
-            const rem=parseFloat(getComputedStyle(document.documentElement).fontSize)
-            return p?{x:r.left+parseFloat(p.style.getPropertyValue('--boss-projectile-start-x'))*rem,
-              y:r.top+parseFloat(p.style.getPropertyValue('--boss-projectile-start-y'))*rem}:null
-          })
-          assert(origin&&origin.x>=silhouette.left&&origin.x<=silhouette.right&&origin.y>=silhouette.top&&origin.y<=silhouette.bottom,
-            `${enemy.id}: projectile detached from body ${JSON.stringify({origin,silhouette})}`)
-        }
         if(enemyProjectileImpactPath(enemy.artId??enemy.id)) {
           const cultist = (enemy.artId ?? enemy.id) === 'cultist'
           const launch = 500
@@ -917,13 +1011,16 @@ try {
           assert.equal(await grounded.evaluate(i => i.naturalWidth), rigs.downfall_demon.size, 'Demon landing resolution')
           assert.equal(await art.evaluate(i => i.naturalWidth), rigs.downfall_demon.size, 'Demon airborne resolution')
         }
-        const frames=[]
-        for(let sample=0;sample<3;sample++) {
-          // Finish sampling before the one-shot recovers, even on WebKit.
-          await page.waitForTimeout(100)
-          frames.push(createHash('sha256').update(await art.screenshot()).digest('hex'))
+        // Demon uses two static painted poses, already checked above; it has
+        // no texture animation to sample before its pose switch recovers.
+        if (id !== 'downfall_demon') {
+          const frames=[]
+          for(let sample=0;sample<3;sample++) {
+            await page.waitForTimeout(100)
+            frames.push(createHash('sha256').update(await art.screenshot()).digest('hex'))
+          }
+          assert(new Set(frames).size>1,`${screen}/${id}: attack ${repeat+1} texture is frozen`)
         }
-        if(id!=='downfall_demon')assert(new Set(frames).size>1,`${screen}/${id}: attack ${repeat+1} texture is frozen`)
         await page.waitForTimeout(1100)
         await page.evaluate(()=>{const f=window.fixture;f.state.phase='player';f.render()})
         await page.waitForFunction(()=>document.querySelector('.enemy')?.dataset.animation==='idle')

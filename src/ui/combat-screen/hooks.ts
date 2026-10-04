@@ -6,7 +6,7 @@
 // derived state the screen renders from or plays the sound the change calls for.
 // What they watch arrives as arguments or from the browser; none of them reaches
 // into the component that calls it.
-import { characterAttackContactMs, isHermitAttack, HERMIT_VOLLEYS, HERMIT_ATTACK_MS, ORB_END_TURN_STAGGER_MS,
+import { characterAttackContactMs, isHermitAttack, hermitAnimationPending, HERMIT_VOLLEYS, HERMIT_ATTACK_MS, ORB_END_TURN_STAGGER_MS,
   SLIME_COMMAND_ANIMATION_MS, SLIME_COMMAND_CONTACT_MS,
   SLIME_SPAWN_ANIMATION_MS, SLIME_SPAWN_CONTACT_MS } from './vfx.tsx'
 import { cardDef } from '../../game/cards.ts'
@@ -500,8 +500,15 @@ export function usePresentationEvents(
         : slimeAnimation ? SLIME_SPAWN_ANIMATION_MS + 100 : 900) +
         staggerIndex * ORB_END_TURN_STAGGER_MS
       const remove = () => timers.current.set(event.seq, setTimeout(() => {
-        timers.current.delete(event.seq)
-        setActive((current) => current.filter((candidate) => candidate.seq !== event.seq))
+        const settle = () => {
+          if (isHermitAttack(state, event) && hermitAnimationPending(event.seq)) {
+            timers.current.set(event.seq, setTimeout(settle, 100))
+            return
+          }
+          timers.current.delete(event.seq)
+          setActive((current) => current.filter((candidate) => candidate.seq !== event.seq))
+        }
+        settle()
       }, lifetime))
       if (delay === 0) remove()
       else timers.current.set(event.seq, setTimeout(() => {

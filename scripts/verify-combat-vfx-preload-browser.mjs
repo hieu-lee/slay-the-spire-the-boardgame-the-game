@@ -9,7 +9,7 @@ const expectedVfx = [
     'guard-bloom', 'hexaghost-flame-impact', 'hexaghost-flame', 'dark-channel', 'defect-face-orb',
     'frost-channel', 'ironclad-bash', 'ironclad-strike', 'lightning-channel', 'turn-lightning-strike',
     'magic-burst', 'potion-burst', 'silent-knife', 'silent-poison', 'silent-shiv', 'watcher-pray',
-    'watcher-meteor-impact', 'watcher-meteor'].map((name) => `actions/${name}`),
+    'watcher-meteor-impact', 'watcher-meteor', 'defect-lightning-beam', 'defect-dark-beam', 'speed-trail'].map((name) => `actions/${name}`),
 ].map((name) => `/assets/combat/vfx/${name}.webp`).sort()
 
 function observeWarmup(page) {

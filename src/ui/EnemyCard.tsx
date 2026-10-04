@@ -9,7 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { Icon, IconValue } from './Icon.tsx'
 import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
-import { HERMIT_IMPACT_COUNT } from './combat-screen/vfx.tsx'
+import { HERMIT_IMPACT_COUNT, hermitAnimationPending } from './combat-screen/vfx.tsx'
 import { healthBand } from './board-signals.ts'
 import { animationSfxRecipe } from './combat-sfx.ts'
 import { playCombatSound } from './sfx.ts'
@@ -454,8 +454,18 @@ export function EnemyCard({
       pendingVisuals.current.set(beat, { eventSeq: plan.seq, enemy, damage: plan.damage,
         recovery: plan.seq === newHermitEvents.at(-1)?.seq && plan.hermit ? recovery : 0,
         hermitSeqs: plan.hermit ? [plan.seq] : [], impacts: new Set() })
-      // Actual impacts drive Hermit; retain a bounded settle for missing/cold art.
-      displayTimers.current.set(beat, setTimeout(() => finishVisual(beat), delay + (plan.hermit ? 1_200 : 0)))
+      // Actual impacts drive Hermit. A slow replay decode shifts the CSS clock;
+      // retain its damage debt while bullets run, and settle missing art normally.
+      const settle = () => {
+        const pending = pendingVisuals.current.get(beat)
+        if (!pending) return
+        if (pending.hermitSeqs.some(hermitAnimationPending)) {
+          displayTimers.current.set(beat, setTimeout(settle, 100))
+          return
+        }
+        finishVisual(beat)
+      }
+      displayTimers.current.set(beat, setTimeout(settle, delay + (plan.hermit ? 1_200 : 0)))
     }
     publishVisual()
   }, [acting, enemy, resetVisuals, visualContactMs, visualEventSeq, visualResetKey, visualSignature])

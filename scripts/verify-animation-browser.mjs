@@ -1687,7 +1687,7 @@ try {
         })),
         speedTrail: attack && hero.character === 'ironclad'
           ? { animation: getComputedStyle(attack, '::before').animationName,
-              filter: getComputedStyle(attack, '::before').filter }
+              image: getComputedStyle(attack, '::before').backgroundImage }
           : null,
         meteorCount: attack?.querySelectorAll('.character-attack__meteor').length ?? 0,
         projectileCount: attack?.querySelectorAll(
@@ -1701,10 +1701,8 @@ try {
           image: targetVfxStyle?.backgroundImage ?? 'none',
           blend: targetVfxStyle?.mixBlendMode ?? 'normal',
           animation: targetVfxStyle?.animationName ?? 'none',
-          beforeDisplay: targetVfx ? getComputedStyle(targetVfx, '::before').display : 'none',
-          beforeAnimation: targetVfx ? getComputedStyle(targetVfx, '::before').animationName : 'none',
-          afterDisplay: targetVfx ? getComputedStyle(targetVfx, '::after').display : 'none',
-          afterAnimation: targetVfx ? getComputedStyle(targetVfx, '::after').animationName : 'none',
+          before: targetVfx ? getComputedStyle(targetVfx, '::before').content : 'none',
+          after: targetVfx ? getComputedStyle(targetVfx, '::after').content : 'none',
         },
       }
     }, { hero })
@@ -1718,19 +1716,18 @@ try {
       (hero.character !== 'watcher' || iphoneAttack.meteorCount === 1),
     `iPhone 13 OS Reduce Motion skipped ${hero.character} attack frames ${JSON.stringify(iphoneAttack)}`)
     check(!iphoneAttack.speedTrail || iphoneAttack.speedTrail.animation === 'attack-speed-trail' &&
-      iphoneAttack.speedTrail.filter !== 'none',
+      iphoneAttack.speedTrail.image.includes('speed-trail.webp'),
     `iPhone 13 lost Ironclad's PC speed trail ${JSON.stringify(iphoneAttack)}`)
     check(['silent', 'defect', 'hexaghost', 'hermit'].includes(hero.character) === (iphoneAttack.projectileCount > 0),
       `iPhone 13 changed ${hero.character}'s projectile content ${JSON.stringify(iphoneAttack)}`)
     check(iphoneAttack.hitDelay > 0, `iPhone 13 damage landed before ${hero.character} contact ${JSON.stringify(iphoneAttack)}`)
     if (hero.character === 'hermit') {
       check(iphoneAttack.projectileCount === 10 && iphoneAttack.targetVfx.display === 'none', 'Hermit must use only per-bullet impacts')
-      check(await phone.locator('.hermit-shot__impact').count() === 10, 'Hermit lost bullet impact layers')
+      check(await phone.locator('.hermit-shot__impact').count() === 5, 'Hermit lost bullet impact layers')
     } else check(iphoneAttack.hitAnimation === 'impact-bloom' && iphoneAttack.targetVfx.display !== 'none' &&
-      iphoneAttack.targetVfx.image !== 'none' && iphoneAttack.targetVfx.blend === 'screen' &&
+      iphoneAttack.targetVfx.image !== 'none' && iphoneAttack.targetVfx.blend === 'normal' &&
       iphoneAttack.targetVfx.animation === 'combat-vfx-reveal' &&
-      iphoneAttack.targetVfx.beforeDisplay !== 'none' && iphoneAttack.targetVfx.beforeAnimation === 'combat-vfx-ring' &&
-      iphoneAttack.targetVfx.afterDisplay !== 'none' && iphoneAttack.targetVfx.afterAnimation === 'combat-vfx-streak',
+      iphoneAttack.targetVfx.before === 'none' && iphoneAttack.targetVfx.after === 'none',
     `iPhone 13 lost PC impact VFX layers for ${hero.character} ${JSON.stringify(iphoneAttack)}`)
     check(iphoneAttack.portraitAnimations === 0, `damage shook the iPhone target ${JSON.stringify(iphoneAttack)}`)
     await phone.waitForTimeout(hero.contact + 120)
