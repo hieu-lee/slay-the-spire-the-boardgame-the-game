@@ -105,33 +105,12 @@ try {
         const fire = async (targetId, initialHp = 30, liveFirstUse = false, drag = false) => {
           let liveAction
           if (!liveFirstUse) await page.evaluate(() => { document.documentElement.dataset.freezeLightning = 'true' })
-          // Preserve frozen frames through screenshot encoding without extending
-          // the product's event lifetime; first use runs in real time until its first flash.
-          // Trigger through the real End turn -> Orb -> enemy click path.
-          await activate(page.getByRole('button', { name: 'End turn', exact: true }))
-          const orb = page.locator('button.end-turn-effect--orb')
-          const targetHitArea = page.locator(`[data-enemy-id="${targetId}"] .enemy__hit-area`)
-          if (drag) {
-            const [from, to] = await Promise.all([orb.boundingBox(), targetHitArea.boundingBox()])
-            assert(from && to, 'lightning drag endpoints are not visible')
-            await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
-            await page.mouse.down()
-            await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 })
-            await freezeTime()
-            await page.mouse.up()
-          } else {
-            await activate(orb)
-            await page.locator(`[data-enemy-id="${targetId}"].enemy--targeted`).waitFor()
-            if (!liveFirstUse) await freezeTime()
-            if (liveFirstUse) {
-              const box = await targetHitArea.boundingBox()
-              assert(box, 'lightning target is not visible')
-              liveAction = page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
-            } else await activate(targetHitArea)
-          }
+          // Hold event cleanup during capture. First-use CSS still advances
+          // naturally; only repeated geometry checks freeze its animation.
+          // Arm observation before clicking so protocol latency cannot miss the flash.
           // Select and snapshot geometry in one page operation: a retained element
           // handle can detach between protocol calls when the event timer expires.
-          const snapshot = await page.waitForFunction(({ targetId, frozen }) => {
+          const observe = () => page.waitForFunction(({ targetId, frozen }) => {
             const node = document.querySelector(`[data-lightning-strike][data-vfx-target="${CSS.escape(targetId)}"]`)
             if (!node) return false
             const combat = node.closest('.combat'), combatRect = combat.getBoundingClientRect()
@@ -172,6 +151,30 @@ try {
           }, { targetId, frozen: !liveFirstUse }).catch(async error => {
             throw new Error(`${error.message}: ${JSON.stringify(await page.evaluate(() => window.lightningProbe))}`, { cause: error })
           })
+          const snapshotPending = liveFirstUse ? observe() : null
+          // Trigger through the real End turn -> Orb -> enemy click path.
+          await activate(page.getByRole('button', { name: 'End turn', exact: true }))
+          const orb = page.locator('button.end-turn-effect--orb')
+          const targetHitArea = page.locator(`[data-enemy-id="${targetId}"] .enemy__hit-area`)
+          if (drag) {
+            const [from, to] = await Promise.all([orb.boundingBox(), targetHitArea.boundingBox()])
+            assert(from && to, 'lightning drag endpoints are not visible')
+            await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+            await page.mouse.down()
+            await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 })
+            await freezeTime()
+            await page.mouse.up()
+          } else {
+            await activate(orb)
+            await page.locator(`[data-enemy-id="${targetId}"].enemy--targeted`).waitFor()
+            await freezeTime()
+            if (liveFirstUse) {
+              const box = await targetHitArea.boundingBox()
+              assert(box, 'lightning target is not visible')
+              liveAction = page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+            } else await activate(targetHitArea)
+          }
+          const snapshot = await (snapshotPending ?? observe())
           // Screenshot immediately while this short-lived event is still mounted.
           const screenshot = resolve(output, liveFirstUse
             ? `${engineName}-${screen}-${targetId}-first-use-live.png`
@@ -179,7 +182,7 @@ try {
           await page.screenshot({ path: screenshot })
           if (liveAction) await liveAction
           const geometry = await snapshot.jsonValue()
-          if (!liveFirstUse) await page.clock.resume()
+          await page.clock.resume()
           assert(Math.abs(geometry.x - geometry.footX) < 1 && Math.abs(geometry.ground - geometry.footY) < 1,
             `bolt misses feet: ${JSON.stringify(geometry)}`)
           assert(Math.abs(geometry.top - geometry.combatTop) < 1 && geometry.boardTop - geometry.top > 20,

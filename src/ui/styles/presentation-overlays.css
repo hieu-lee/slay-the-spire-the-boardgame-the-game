@@ -39,7 +39,7 @@
   z-index: 75;
   left: var(--lightning-center-x);
   top: calc(var(--lightning-ground-y) - var(--lightning-height) * .94);
-  width: calc(var(--lightning-height) * .5);
+  width: calc(var(--lightning-height) * .335);
   height: var(--lightning-height);
   translate: -50% 0;
   background-size: 100% 100%;
