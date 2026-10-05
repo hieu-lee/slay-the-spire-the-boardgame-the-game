@@ -57,7 +57,8 @@ import {
   CombatVfx,
   DefectEvokeVfx,
   HermitBullets,
-  isHermitAttack,
+  splitAttackWeights,
+  KratosImpacts,
   characterAttackContactMs,
   isCharacterAttack,
   latestTargetPresentationEvent,
@@ -226,7 +227,7 @@ const CHAMBER_RETURN_MS = 460
 const CHAMBER_RETURN_STAGGER_MS = 35
 const CHAMBER_REFLOW_MS = 420
 
-const KRATOS_POSES = ['ready', 'windup', 'contact', 'followthrough'] as const
+const KRATOS_POSES = ['ready', 'anticipation', 'left-cast', 'left-extended', 'right-cast', 'right-extended', 'windup', 'slam', 'recovery', 'settle'] as const
 const kratosPoseAsset = (pose: typeof KRATOS_POSES[number]) =>
   assetPath(`combat/characters/animated/kratos-${pose}.webp`)
 
@@ -671,7 +672,7 @@ function CombatScreenView({
           ? ['ready', player.character === 'watcher' ? 'thrust' : 'impact']
             .map((pose) => assetPath(`combat/characters/${player.character}-${pose}.webp`))
           : player.character === 'kratos'
-            ? [...KRATOS_POSES.map(kratosPoseAsset), ...['slash', 'impact'].map(name => assetPath(`combat/vfx/actions/kratos/${name}.webp`))]
+            ? [...KRATOS_POSES.map(kratosPoseAsset), ...['light', 'impact'].map(name => assetPath(`combat/vfx/actions/kratos/${name}.webp`))]
           : [assetPath(`combat/rigged/hero-${player.character}-attack.webp`),
             ...(player.character === 'hermit' ? ['hermit-bullet', 'hermit-impact'].map(name => assetPath(`combat/vfx/actions/${name}.webp`)) : [])]))].sort().join('|')
   useEffect(() => {
@@ -1170,7 +1171,7 @@ function CombatScreenView({
       .includes(recipe.family)))
   const enemyVfxFor = (enemy: Enemy) => activeVfx
     .filter((active) => active.event.enemyIds.includes(enemy.uid) && !isEndTurnLightning(active.event) &&
-      !(state.players.some(p => p.id === active.event.actorId && p.character === 'hermit') && isCharacterAttack(active)))
+      !(state.players.some(p => p.id === active.event.actorId && ['hermit', 'kratos'].includes(p.character)) && isCharacterAttack(active)))
     .map((active) => <CombatVfx
       key={`${active.event.seq}-${active.recipe.asset}`}
       active={active}
@@ -1280,8 +1281,8 @@ function CombatScreenView({
       const latestAttackIsActive = actorEvents.some((active) =>
         active.event.seq === latestAttackSeq && isCharacterAttack(active))
       // Hermit rounds already in flight survive the render before a new event becomes active.
-      const attacks = latestAttackIsActive || player.character === 'hermit' ? actorEvents.filter((active) =>
-        (player.character === 'hermit' || active.event.seq > latestNonAttackSeq) && isCharacterAttack(active)) : []
+      const attacks = latestAttackIsActive || ['hermit', 'kratos'].includes(player.character) ? actorEvents.filter((active) =>
+        (['hermit', 'kratos'].includes(player.character) || active.event.seq > latestNonAttackSeq) && isCharacterAttack(active)) : []
       if (attacks.length === 0) continue
       const actor = board.querySelector<HTMLElement>(`.seat[data-player-id="${player.id}"] .seat__portrait`)
       if (!actor) continue
@@ -1321,7 +1322,7 @@ function CombatScreenView({
         const targetRect = targetElement.querySelector<HTMLElement>('.enemy__portrait')!.getBoundingClientRect()
         return [{
           active,
-          interrupted: player.character !== 'hermit' && active.event.seq <= latestNonAttackSeq,
+          interrupted: !['hermit', 'kratos'].includes(player.character) && active.event.seq <= latestNonAttackSeq,
           targetId: target.id,
           x: Math.max(0, targetRect.left - actorRect.right + actorRect.width * 0.22),
           y: targetRect.bottom - actorRect.bottom,
@@ -6303,9 +6304,11 @@ function CombatScreenView({
                 visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
                 visualResetKey={visualResetKey}
                 stageVisualDamage={!prefersReducedMotion}
-                hermitEvents={(state.presentationEvents ?? []).filter(event =>
-                  event.enemyIds.includes(enemy.uid) && isHermitAttack(state, event)).map(event => ({ seq: event.seq,
-                    damage: event.enemyHpLoss ? event.enemyHpLoss[enemy.uid] ?? 0 : undefined }))}
+                splitAttackEvents={(state.presentationEvents ?? []).flatMap(event => {
+                  const weights = event.enemyIds.includes(enemy.uid) && splitAttackWeights(state, event)
+                  return weights ? [{ seq: event.seq, weights,
+                    damage: event.enemyHpLoss ? event.enemyHpLoss[enemy.uid] ?? 0 : undefined }] : []
+                })}
                 hitBeats={hits.get(enemy.uid)}
                 vfx={enemyVfxFor(enemy)}
                 rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
@@ -6543,10 +6546,7 @@ function CombatScreenView({
                             characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <span className="character-attack__swing" />
                             ) : null}
-                            {occupant.character === 'kratos' &&
-                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
-                              <span className="character-attack__chaos-slash" />
-                            ) : null}
+                            {occupant.character === 'kratos' ? <KratosImpacts event={characterAttack.active.event} /> : null}
                             {occupant.character === 'defect' &&
                             characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <>
@@ -6856,9 +6856,11 @@ function CombatScreenView({
                       visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
                       visualResetKey={visualResetKey}
                       stageVisualDamage={!prefersReducedMotion}
-                      hermitEvents={(state.presentationEvents ?? []).filter(event =>
-                        event.enemyIds.includes(enemy.uid) && isHermitAttack(state, event)).map(event => ({ seq: event.seq,
-                          damage: event.enemyHpLoss ? event.enemyHpLoss[enemy.uid] ?? 0 : undefined }))}
+                      splitAttackEvents={(state.presentationEvents ?? []).flatMap(event => {
+                        const weights = event.enemyIds.includes(enemy.uid) && splitAttackWeights(state, event)
+                        return weights ? [{ seq: event.seq, weights,
+                          damage: event.enemyHpLoss ? event.enemyHpLoss[enemy.uid] ?? 0 : undefined }] : []
+                      })}
                       hitBeats={hits.get(enemy.uid)}
                       vfx={enemyVfxFor(enemy)}
                       rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}

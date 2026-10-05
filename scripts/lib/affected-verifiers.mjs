@@ -92,6 +92,8 @@ const focusedUiOwners = new Map([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
+  ['scripts/audio/generate-combat-sfx.py', ['verify-assets.mjs', 'verify-safari-sound-browser.mjs', 'verify-rig-animation-browser.mjs']],
+  ['scripts/lib/kratos-animation-fixture.mjs', ['verify-kratos-animation-browser.mjs']],
   ['scripts/art/export-kratos.py', ['verify-assets.mjs', 'verify-kratos-card-art-browser.mjs']],
   ['scripts/calibrate-hero-head.py', ['verify-hero-potions-browser.mjs', 'verify-assets.mjs']],
   ['scripts/animation/encode-safari-attacks.py', ['verify-assets.mjs', 'verify-rig-animation-browser.mjs']],

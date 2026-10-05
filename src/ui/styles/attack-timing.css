@@ -77,50 +77,110 @@
 .character-attack--ironclad { will-change: transform; }
 
 /* Fixed body scale: the baked drawings contain transparent weapon overscan.
-   The forward blade and target burst meet at the shared 630ms contact clock. */
+   Left blade, right blade and slam share the target's three-hit clock. */
 .character-attack--kratos {
   will-change: transform;
-  animation: kratos-blade-travel 1800ms ease-in-out both;
+  animation: kratos-blade-travel 2200ms ease-in-out both;
 }
 
 @keyframes kratos-blade-travel {
-  0%, 20%, 80%, 100% { transform: translate(0); }
-  35%, 62% { transform: translate(var(--attack-x), var(--attack-y)); }
+  0%, 5.4545%, 86.3636%, 100% { transform: translate(0); }
+  19.0909%, 67.2727% { transform: translate(var(--attack-x), var(--attack-y)); }
 }
 
-/* Held drawings and target travel use one event clock; no native replay drift. */
-.character-attack__pose--kratos-ready { animation: kratos-ready 1800ms linear both; }
-.character-attack__pose--kratos-windup { animation: kratos-windup 1800ms linear both; }
-.character-attack__pose--kratos-contact { animation: kratos-contact 1800ms linear both; }
-.character-attack__pose--kratos-followthrough { animation: kratos-followthrough 1800ms linear both; }
+/* Ten registered drawings, eleven timed keys including the exact idle return. */
+.character-attack__pose--kratos-ready { animation: kratos-ready 2200ms linear both; }
+.character-attack__pose--kratos-anticipation { animation: kratos-anticipation 2200ms linear both; }
+.character-attack__pose--kratos-left-cast { animation: kratos-left-cast 2200ms linear both; }
+.character-attack__pose--kratos-left-extended { animation: kratos-left-extended 2200ms linear both; }
+.character-attack__pose--kratos-right-cast { animation: kratos-right-cast 2200ms linear both; }
+.character-attack__pose--kratos-right-extended { animation: kratos-right-extended 2200ms linear both; }
+.character-attack__pose--kratos-windup { animation: kratos-windup 2200ms linear both; }
+.character-attack__pose--kratos-slam { animation: kratos-slam 2200ms linear both; }
+.character-attack__pose--kratos-recovery { animation: kratos-recovery 2200ms linear both; }
+.character-attack__pose--kratos-settle { animation: kratos-settle 2200ms linear both; }
 
 @keyframes kratos-ready {
-  0%, 9.999%, 80%, 100% { opacity: 1; }
-  10%, 79.999% { opacity: 0; }
-}
-@keyframes kratos-windup {
-  0%, 9.999%, 35%, 100% { opacity: 0; }
-  10%, 34.999% { opacity: 1; }
-}
-@keyframes kratos-contact {
-  0%, 34.999%, 58.8889%, 100% { opacity: 0; }
-  35%, 58.8879% { opacity: 1; }
-}
-@keyframes kratos-followthrough {
-  0%, 58.8879%, 80%, 100% { opacity: 0; }
-  58.8889%, 79.999% { opacity: 1; }
+  0%, 5.4535%, 86.3636%, 100% { opacity: 1; }
+  5.4545%, 86.3626% { opacity: 0; }
 }
 
-.character-attack__chaos-slash {
+@keyframes kratos-anticipation {
+  0%, 5.4535%, 12.7273%, 100% { opacity: 0; }
+  5.4545%, 12.7263% { opacity: 1; }
+}
+
+@keyframes kratos-left-cast {
+  0%, 12.7263%, 19.0909%, 100% { opacity: 0; }
+  12.7273%, 19.0899% { opacity: 1; }
+}
+
+@keyframes kratos-left-extended {
+  0%, 19.0899%, 29.5455%, 100% { opacity: 0; }
+  19.0909%, 29.5445% { opacity: 1; }
+}
+
+@keyframes kratos-right-cast {
+  0%, 29.5445%, 36.3636%, 100% { opacity: 0; }
+  29.5455%, 36.3626% { opacity: 1; }
+}
+
+@keyframes kratos-right-extended {
+  0%, 36.3626%, 46.3636%, 100% { opacity: 0; }
+  36.3636%, 46.3626% { opacity: 1; }
+}
+
+@keyframes kratos-windup {
+  0%, 46.3626%, 58.1818%, 100% { opacity: 0; }
+  46.3636%, 58.1808% { opacity: 1; }
+}
+
+@keyframes kratos-slam {
+  0%, 58.1808%, 67.2727%, 100% { opacity: 0; }
+  58.1818%, 67.2717% { opacity: 1; }
+}
+
+@keyframes kratos-recovery {
+  0%, 67.2717%, 77.7273%, 100% { opacity: 0; }
+  67.2727%, 77.7263% { opacity: 1; }
+}
+
+@keyframes kratos-settle {
+  0%, 77.7263%, 86.3636%, 100% { opacity: 0; }
+  77.7273%, 86.3626% { opacity: 1; }
+}
+
+.kratos-chain-cue {
   position: absolute;
-  z-index: 3;
-  top: 10%;
-  left: 48%;
-  width: 90%;
+  pointer-events: none;
+  animation: kratos-chain-swing 150ms linear both;
+}
+@keyframes kratos-chain-swing { from { opacity: 0; } to { opacity: 0; } }
+
+.kratos-hit {
+  position: absolute;
+  z-index: 4;
+  width: 115%;
   aspect-ratio: 1;
-  background: center / contain no-repeat url('/assets/combat/vfx/actions/kratos/slash.webp');
+  pointer-events: none;
+  background: center / contain no-repeat;
   opacity: 0;
-  animation: attack-swing 420ms 630ms ease-out both;
+  animation: kratos-light-hit 280ms var(--hit-delay) ease-out both;
+}
+.kratos-hit--slam {
+  width: 170%;
+  animation: kratos-slam-hit 550ms var(--hit-delay) ease-out both;
+}
+@keyframes kratos-light-hit {
+  0% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--hit-angle)) scale(.55); }
+  12% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--hit-angle)) scale(1.15); }
+}
+@keyframes kratos-slam-hit {
+  0% { opacity: 0; transform: translate(-50%, -65%) scale(.45); }
+  8% { opacity: 1; }
+  35% { opacity: .95; }
+  100% { opacity: 0; transform: translate(-50%, -65%) scale(1.2); }
 }
 
 .character-attack--guardian {

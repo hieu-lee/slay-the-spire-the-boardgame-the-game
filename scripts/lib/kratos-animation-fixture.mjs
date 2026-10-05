@@ -7,7 +7,7 @@ export async function installKratosFixture() {
   node.className = 'app-shell app-shell--combat sts-scope'
   node.style.gridTemplateRows = 'minmax(0, 1fr)'
   document.body.append(node)
-  const [R, D, DOM, { CombatScreen }, { createPlayer }, { createCombat, playCard }, { createRng }] = await Promise.all([
+  const [R, D, DOM, { CombatScreen }, { createPlayer }, { createCombat, playCard, spendShiv }, { createRng }] = await Promise.all([
     import('/@id/react'), import('/@id/react-dom/client'), import('/@id/react-dom'),
     import('/src/ui/CombatScreen.tsx'), import('/src/game/run.ts'), import('/src/game/combat.ts'),
     import('/src/game/rng.ts'), import('/src/ui/styles.css'), import('/src/ui/chrome.css'),
@@ -35,9 +35,14 @@ export async function installKratosFixture() {
     f.render()
   }
   f.attack = (id = 'strike_kratos') => {
-    const held = { uid: `art-${f.run}-${f.state.presentationEvents.length}`, defId: id, upgraded: false }
-    f.state.players[0].hand.push(held)
-    f.state = playCard(f.state, 'p1', held.uid, { enemyUid: 'enemy-0', row: 0 })
+    if (id === 'shiv') {
+      f.state.players[0].shivs++
+      f.state = spendShiv(f.state, 'p1', 'enemy-0')
+    } else {
+      const held = { uid: `art-${f.run}-${f.state.presentationEvents.length}`, defId: id, upgraded: false }
+      f.state.players[0].hand.push(held)
+      f.state = playCard(f.state, 'p1', held.uid, { enemyUid: 'enemy-0', row: 0 })
+    }
     f.render()
     return f.state.presentationEvents.at(-1).seq
   }

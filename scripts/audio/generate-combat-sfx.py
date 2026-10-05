@@ -89,3 +89,16 @@ render('slime-splat', .30, lambda t: sum(tone(np.maximum(0, t - d), f, 45, .30)
        + noise(len(t), 12) * np.exp(-t * 19) * .5)
 render('poison-hiss', .45, lambda t: noise(len(t), 4) * np.sin(np.pi * t / .45) * .45
        + tone(t, 650, 95, .45) * np.exp(-t * 17) * .16)
+
+# Greek chain blades: metallic links, a short fiery cut and a heavy ground shock.
+render('kratos-chain', .29, lambda t: noise(len(t), 4) * np.sin(np.pi * t / .29) ** 2 * .65
+       + sum(np.sin(2 * np.pi * f * t) * np.exp(-t * d) * g
+             for f, d, g in [(1861, 23, .12), (2797, 31, .09), (4139, 35, .06)]), [(.034, .12)])
+render('kratos-light', .27, lambda t: noise(len(t)) * np.exp(-t * 60) * .85
+       + tone(t, 740, 190, .27) * np.exp(-t * 24) * .25
+       + noise(len(t), 18) * np.exp(-t * 18) * .4, [(.026, .14)])
+render('kratos-slam', .86, lambda t: tone(t, 88, 24, .86) * np.exp(-t * 7) * 1.4
+       + noise(len(t), 70) * np.exp(-t * 6) * 1.1
+       + noise(len(t)) * np.exp(-t * 65) * .75
+       + noise(len(t), 8) * np.exp(-t * 11) * np.maximum(0, np.sin(t * 140)) * .35,
+       [(.068, .25), (.15, .13)])

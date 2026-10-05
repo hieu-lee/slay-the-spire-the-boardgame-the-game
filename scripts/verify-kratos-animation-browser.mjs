@@ -29,9 +29,22 @@ try {
         try {
           const page = await context.newPage()
           page.on('pageerror', e => errors.push(String(e)))
+          const soundRequests = new Set()
+          page.on('request', request => { if (/\/sfx\/kratos-/.test(request.url())) soundRequests.add(new URL(request.url()).pathname.split('/').at(-1)) })
+          await page.addInitScript(() => {
+            window.kratosSounds = []
+            const play = HTMLMediaElement.prototype.play
+            HTMLMediaElement.prototype.play = function (...args) {
+              if (this instanceof HTMLAudioElement) {
+                window.kratosSounds.push({ path: new URL(this.src).pathname.split('/').at(-1), at: performance.now() })
+                return Promise.resolve()
+              }
+              return play.apply(this, args)
+            }
+          })
           page.on('response', r => { if (r.status() >= 400 && /\/assets\/combat\//.test(r.url())) errors.push(`${r.status()} ${r.url()}`) })
           const coldArtwork = new Promise(resolve => { releaseColdArtwork = resolve })
-          await page.route('**/kratos-contact.webp', async route => {
+          await page.route('**/kratos-slam.webp', async route => {
             await coldArtwork
             await route.continue()
           })
@@ -48,33 +61,40 @@ try {
           // A truly cold play must still travel and hit on one shared clock.
           // Delaying beyond the event lifetime reproduces the reviewed regression.
           const cold = await page.evaluate(() => new Promise((resolve, reject) => {
-            const seq = window.kratosFixture.attack()
-            const started = performance.now()
-            let last
-            const sample = () => {
+            const onImpact = event => {
+              if (event.detail.index !== 0) return
+              clearTimeout(timeout)
+              document.removeEventListener('kratos-impact', onImpact)
               const attack = document.querySelector('.character-attack--kratos')
-              const transform = attack ? getComputedStyle(attack).transform : ''
-              const time = attack?.getAnimations()[0]?.currentTime
-              const target = document.querySelector(`.combat-vfx--target[data-vfx-seq="${seq}"]`)
-              last = { time, transform, exists: Boolean(attack), age: performance.now() - started }
-              if (typeof time === 'number' && time >= 650 && time <= 1100) resolve({
+              if (!attack) { reject(new Error('cold impact lost its attacking character')); return }
+              const transform = getComputedStyle(attack).transform
+              const time = attack.getAnimations()[0]?.currentTime
+              const target = document.querySelector(`[data-kratos-impact-seq="${event.detail.seq}"]`)
+              resolve({
                 time, targetTime: target?.getAnimations()[0]?.currentTime,
+                start: attack.getAnimations()[0]?.startTime, targetStart: target?.getAnimations()[0]?.startTime,
                 x: new DOMMatrix(transform).e, fallback: Boolean(attack.querySelector('.is-fallback')),
                 goal: getComputedStyle(attack).getPropertyValue('--attack-x'),
               })
-              else if (performance.now() - started > 6000) reject(new Error(`cold beat never painted ${JSON.stringify(last)}`))
-              else setTimeout(sample, 20)
             }
-            sample()
+            const timeout = setTimeout(() => {
+              document.removeEventListener('kratos-impact', onImpact)
+              reject(new Error('cold combo never produced its first impact'))
+            }, 15000)
+            document.addEventListener('kratos-impact', onImpact)
+            window.kratosFixture.attack()
           })).catch(error => { throw new Error(`${engine}/${screen}: ${error.message}`, { cause: error }) })
           assert(cold.fallback && cold.x > 10, `${engine}/${screen}: cold cutout never travels ${JSON.stringify(cold)}`)
-          assert(Math.abs(cold.time - cold.targetTime) < 150, 'cold attacker and target clocks separated')
+          // WebKit clamps a finished impact's currentTime at delay + duration.
+          // startTime is the shared clock even when a busy renderer reports it late.
+          assert(Number.isFinite(cold.start) && Number.isFinite(cold.targetStart) &&
+            Math.abs(cold.start - cold.targetStart) < 150, `cold attacker and target clocks separated: ${JSON.stringify(cold)}`)
           await page.waitForFunction(() => !document.querySelector('.character-attack'))
           releaseColdArtwork()
-          await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 6).catch(async error => {
+          await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 12).catch(async error => {
             throw new Error(`${engine}/${screen}: warmup ${JSON.stringify(await page.locator('.board').evaluate(node => node.dataset))} ${JSON.stringify(errors)}`, { cause: error })
           })
-          await page.unroute('**/kratos-contact.webp')
+          await page.unroute('**/kratos-slam.webp')
           const rest = await page.evaluate(paintedKratosBounds, idle)
           assert(rest.width > 45 && rest.height > 70, `${engine}/${screen}: missing or tiny Kratos`)
           assert.deepEqual(await page.locator(idle).evaluate(image => [
@@ -86,74 +106,117 @@ try {
             // Capture live beats in one page call; browser round trips can outlast
             // a whole pose on a busy phone renderer.
             const played = await page.evaluate(card => new Promise((resolve, reject) => {
+              const impacts = []
+              const numbers = []
+              const frameStats = { maxBodies: 0, maxTravel: 0 }
+              const damage = new Map()
+              window.kratosSounds = []
+              const onImpact = event => {
+                const enemy = event.target.closest('.enemy')
+                queueMicrotask(() => impacts.push({ seq: event.detail.seq, index: event.detail.index,
+                  target: enemy.dataset.enemyId,
+                  hp: Number(enemy.querySelector('.bar__label').textContent.split('/')[0]),
+                  dead: enemy.classList.contains('enemy--dead') }))
+              }
+              document.addEventListener('kratos-impact', onImpact)
+              const observer = new MutationObserver(records => {
+                for (const record of records) for (const node of record.addedNodes) {
+                  if (node instanceof HTMLElement && node.matches('.hermit-damage-number')) numbers.push({
+                    target: record.target.closest('.enemy').dataset.enemyId, damage: Number(node.dataset.damage) })
+                }
+              })
+              observer.observe(document.querySelector('.board'), { childList: true, subtree: true })
+              const before = new Map(window.kratosFixture.state.enemies.map(enemy => [enemy.uid, enemy.hp]))
               const seq = window.kratosFixture.attack(card)
+              const event = window.kratosFixture.state.presentationEvents.at(-1)
+              event.enemyIds.forEach(id => damage.set(id, event.enemyHpLoss[id] ?? 0))
               const started = performance.now()
-              let contact, followthrough
+              let last
+              const finish = (error, result) => {
+                document.removeEventListener('kratos-impact', onImpact); observer.disconnect()
+                error ? reject(error) : resolve(result)
+              }
               const sample = () => {
-                const attack = document.querySelector('.character-attack--kratos')
-                const transform = attack ? getComputedStyle(attack).transform : ''
+                const attack = document.querySelector(`.character-attack--kratos[data-attack-seq="${seq}"]`)
                 const time = attack?.getAnimations()[0]?.currentTime
                 if (typeof time === 'number') {
                   const portrait = attack.closest('.seat__portrait')
-                  const images = [...attack.querySelectorAll('.character-attack__pose > img')]
-                  const visible = images.filter(image => Number(getComputedStyle(image.parentElement).opacity) > .5)
-                  const image = visible[0]
-                  const snapshot = { travel: new DOMMatrix(transform).e,
-                    scale: getComputedStyle(portrait).getPropertyValue('--character-art-scale'),
-                    idleOpacity: getComputedStyle(portrait.querySelector(':scope > img')).opacity,
-                    src: image?.src, bodies: visible.length, time,
-                    decoded: image?.complete && image.naturalWidth === 800,
-                    targets: document.querySelectorAll(`.combat-vfx--target[data-vfx-seq="${seq}"]`).length }
-                  // Style reads describe the last painted compositor frame;
-                  // sample held poses away from the 630/1060ms boundaries.
-                  if (!contact && time >= 750 && time <= 1000 && image?.src.endsWith('/kratos-contact.webp')) contact = snapshot
-                  if (!followthrough && time >= 1170 && time <= 1380 && image?.src.endsWith('/kratos-followthrough.webp')) followthrough = snapshot
-                }
-                if (contact && followthrough && typeof time === 'number' && time >= 1530) {
                   const visible = [...attack.querySelectorAll('.character-attack__pose > img')]
                     .filter(image => Number(getComputedStyle(image.parentElement).opacity) > .5)
-                  const returned = new DOMMatrix(getComputedStyle(attack).transform).e
-                  if (visible.length === 1 && visible[0].src.endsWith('/kratos-ready.webp') && Math.abs(returned) < .5) {
-                    resolve({ contact, followthrough, returned, returnSrc: visible[0].src })
-                    return
+                  const image = visible[0]
+                  last = { time, src: image?.src, bodies: visible.length }
+                  frameStats.maxBodies = Math.max(frameStats.maxBodies, visible.length)
+                  frameStats.maxTravel = Math.max(frameStats.maxTravel, new DOMMatrix(getComputedStyle(attack).transform).e)
+                  if (time >= 1950 && visible.length === 1 && image?.src.endsWith('/kratos-ready.webp')) {
+                    const returned = new DOMMatrix(getComputedStyle(attack).transform).e
+                    if (Math.abs(returned) < .5) return finish(null, { frameStats, impacts,
+                      numbers, returned, damage: Object.fromEntries(damage), before: Object.fromEntries(before),
+                      sounds: window.kratosSounds, age: performance.now() - started })
                   }
                 }
-                if (performance.now() - started > 6000) reject(new Error(`contact/return never painted contact=${Boolean(contact)} finish=${Boolean(followthrough)} time=${time}`))
-                else setTimeout(sample, 20)
+                if (performance.now() - started > 6000) finish(new Error(`combo/return never painted ${JSON.stringify(last)}`))
+                else setTimeout(sample, 16)
               }
               sample()
             }), card).catch(error => { throw new Error(`${label}: ${error.message}`, { cause: error }) })
-            const { contact, followthrough, returned, returnSrc } = played
-            assert(contact.decoded, `${label}: painted pose missing or undecoded`)
-            assert(followthrough.decoded && followthrough.bodies === 1, `${label}: followthrough missing or duplicated`)
-            assert.equal(contact.bodies, 1, 'duplicate attacker bodies')
-            assert.equal(contact.targets, card === 'strike_kratos' ? 1 : 2,
-              'impact targets must come from the actual engine play')
-            assert(contact.travel > 10, `${label}: Kratos never reaches the target`)
-            assert.equal(contact.idleOpacity, '0', 'idle body paints underneath the attack')
-            assert.equal(Number(contact.scale), 2, 'weapon overscan lost its fixed scale')
-            assert(Math.abs(returned) < .5, 'Kratos did not return to his seat')
-            assert(returnSrc.endsWith('/kratos-ready.webp'), 'return retains a fighting pose')
+            assert.equal(played.frameStats.maxBodies, 1, `${label}: missing or duplicated attacker`)
+            assert(played.frameStats.maxTravel > 10, `${label}: Kratos never reaches target`)
+            assert.equal(Object.keys(played.damage).length, card === 'strike_kratos' ? 1 : 2, 'wrong authoritative targets')
+            for (const [target, total] of Object.entries(played.damage)) {
+              const hits = played.impacts.filter(impact => impact.target === target)
+              assert.deepEqual(hits.map(hit => hit.index), [0, 1, 2], `${label}: missing/repeated/out-of-order impacts`)
+              for (const [index, fraction] of [.1, .2, 1].entries()) {
+                assert(Math.abs(hits[index].hp - (played.before[target] - total * fraction)) < 1e-8,
+                  `${label}: wrong visible HP at beat ${index + 1}: ${JSON.stringify(hits)}`)
+              }
+              const numbers = played.numbers.filter(number => number.target === target)
+              assert.equal(numbers.length, total > 0 ? 3 : 0, `${label}: damage numbers duplicated`)
+              numbers.forEach((number, index) => assert(Math.abs(number.damage - total * [.1, .1, .8][index]) < 1e-8,
+                `${label}: wrong weighted number ${JSON.stringify(number)}`))
+            }
+            if (engine === 'chromium') assert.deepEqual(played.sounds.filter(sound =>
+              ['kratos-light.mp3', 'kratos-slam.mp3'].includes(sound.path)).map(sound => sound.path),
+              ['kratos-light.mp3', 'kratos-light.mp3', 'kratos-slam.mp3'], 'impact SFX missing, repeated or out of order')
             await page.waitForFunction(() => !document.querySelector('.character-attack'))
             await page.locator('.board').screenshot({ path: resolve(output, `${engine}-${screen}-${card}-returned.png`) })
           }
           // Snapshot the registered contact drawing after live playback checks.
           // Freezing every visual clock makes the exported frame reviewable.
+          await page.evaluate(() => window.kratosFixture.reset())
           await page.clock.install({ time: new Date('2026-10-05T00:00:00Z') })
           await page.clock.pauseAt(new Date('2026-10-05T00:00:10Z'))
-          await page.evaluate(async () => {
-            const seq = window.kratosFixture.attack()
+          const frozenSeq = await page.evaluate(() => window.kratosFixture.attack())
+          await page.locator('.character-attack__pose--kratos-right-extended img').waitFor({ state: 'attached' })
+          await page.evaluate(async seq => {
             await Promise.all([...document.querySelectorAll('.character-attack__pose img')].map(image => image.decode()))
-            const animations = [...document.querySelectorAll(`.character-attack, .combat-vfx[data-vfx-seq="${seq}"]`)]
+            const animations = [...document.querySelectorAll(`.character-attack, [data-kratos-impact-seq="${seq}"]`)]
               .flatMap(node => node.getAnimations({ subtree: true }))
             animations.forEach(animation => animation.pause())
             await Promise.all(animations.map(animation => animation.ready))
-            animations.forEach(animation => { animation.currentTime = 750 })
+            animations.forEach(animation => { animation.currentTime = 900 })
+          }, frozenSeq)
+          const poseChecks = await page.evaluate(() => {
+            const attack = document.querySelector('.character-attack--kratos')
+            const animations = attack.getAnimations({ subtree: true })
+            const checks = [['ready', 0], ['anticipation', 200], ['left-cast', 350], ['left-extended', 500],
+              ['right-cast', 700], ['right-extended', 900], ['windup', 1150], ['slam', 1360],
+              ['recovery', 1600], ['settle', 1800], ['ready', 2050]].map(([pose, time]) => {
+                animations.forEach(animation => { animation.currentTime = time })
+                const visible = [...attack.querySelectorAll('.character-attack__pose img')]
+                  .filter(image => Number(getComputedStyle(image.parentElement).opacity) > .5)
+                return { pose, time, count: visible.length, src: visible[0]?.src,
+                  decoded: visible[0]?.complete && visible[0].naturalWidth === 800 }
+              })
+            animations.forEach(animation => { animation.currentTime = 900 })
+            return checks
           })
-          const shotPath = resolve(output, `${engine}-${screen}-contact-frame.png`)
+          for (const drawing of poseChecks) assert(drawing.count === 1 && drawing.decoded &&
+            drawing.src.endsWith(`/kratos-${drawing.pose}.webp`),
+            `${engine}/${screen}: timed pose missing or duplicated ${JSON.stringify(drawing)}`)
+          const shotPath = resolve(output, `${engine}-${screen}-second-light-frame.png`)
           const geometry = await page.evaluate(() => ({
             board: document.querySelector('.board').getBoundingClientRect().toJSON(),
-            image: document.querySelector('.character-attack__pose--kratos-contact img').getBoundingClientRect().toJSON(),
+            image: document.querySelector('.character-attack__pose--kratos-right-extended img').getBoundingClientRect().toJSON(),
           }))
           await page.locator('.board').screenshot({ path: shotPath })
           // Sample the generated ash-white skin mask in the composited screenshot.
@@ -179,12 +242,14 @@ for y in range(0, source.height, 3):
 matched = sum(min(shot.getpixel(point)) > 140 and max(shot.getpixel(point)) - min(shot.getpixel(point)) < 55 for point in points)
 assert len(points) > 50 and matched / len(points) > .25, (matched, len(points), 'Kratos did not paint at contact')
 print(f'visible skin: {matched}/{len(points)}')
-`, shotPath, resolve(root, 'public/assets/combat/characters/animated/kratos-contact.webp')], {
+`, shotPath, resolve(root, 'public/assets/combat/characters/animated/kratos-right-extended.webp')], {
             input: JSON.stringify(geometry), encoding: 'utf8',
           })
           assert.equal(painted.status, 0, `${engine}/${screen}: ${painted.stderr || painted.stdout}`)
 
           await page.clock.resume()
+          if (engine === 'webkit') assert(['kratos-chain.mp3', 'kratos-light.mp3', 'kratos-slam.mp3']
+            .every(file => soundRequests.has(file)), 'WebKit did not decode all three original Kratos sounds')
           await page.evaluate(() => window.kratosFixture.reset())
           const settled = await page.evaluate(paintedKratosBounds, idle)
           assert(Math.abs(settled.height - rest.height) < 2, 'attack changed resting stature')
@@ -200,12 +265,50 @@ print(f'visible skin: {matched}/{len(points)}')
           assert(Math.abs(reduced.ground - rest.ground) < 2, 'reduced motion shifts planted feet')
           await page.evaluate(() => window.kratosFixture.attack())
           assert.equal(await page.locator('.character-attack').count(), 0, 'reduced motion plays attack')
+          assert.equal(await page.locator('.kratos-hit').count(), 0, 'reduced motion retains hit effects')
+          // Cards and item-granted Shivs both keep separate weighted debts.
+          // The second lethal combo must not erase the first or kill its target early.
+          for (const source of ['strike_kratos', 'shiv']) {
+            await page.evaluate(() => {
+              document.documentElement.dataset.reducedMotion = 'false'
+              const f = window.kratosFixture; f.reset()
+              f.state.enemies.splice(1); f.state.enemies[0].hp = 2; f.render()
+            })
+            await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 12)
+            const queued = await page.evaluate(source => new Promise((resolve, reject) => {
+              const f = window.kratosFixture
+              const samples = []
+              const onImpact = event => {
+                const enemy = event.target.closest('.enemy')
+                queueMicrotask(() => {
+                  samples.push({ seq: event.detail.seq, index: event.detail.index,
+                    hp: Number(enemy.querySelector('.bar__label').textContent.split('/')[0]),
+                    dead: enemy.classList.contains('enemy--dead') })
+                  if (samples.length === 6) {
+                    clearTimeout(timeout); document.removeEventListener('kratos-impact', onImpact); resolve(samples)
+                  }
+                })
+              }
+              const timeout = setTimeout(() => {
+                document.removeEventListener('kratos-impact', onImpact)
+                reject(new Error(`queued combo lost impacts: ${JSON.stringify(samples)}`))
+              }, 8000)
+              document.addEventListener('kratos-impact', onImpact)
+              f.attack(source); f.attack(source)
+            }), source)
+            assert.deepEqual(queued.map(hit => hit.index), [0, 1, 2, 0, 1, 2], `${source}: queued combos overlap or lose beats`)
+            queued.forEach((hit, index) => {
+              assert(Math.abs(hit.hp - [1.9, 1.8, 1, .9, .8, 0][index]) < 1e-8, 'queued weighted debt restores old HP')
+              assert.equal(hit.dead, index === 5, 'lethal combo falls before its slam')
+            })
+            await page.waitForFunction(() => !document.querySelector('.character-attack'))
+          }
           // Restoration clears an in-flight play and never replays it on reconnect.
           await page.evaluate(() => {
             document.documentElement.dataset.reducedMotion = 'false'
             window.kratosFixture.reset()
           })
-          await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 6)
+          await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 12)
           await page.evaluate(() => window.kratosFixture.attack())
           await page.locator('.character-attack--kratos').waitFor()
           await page.evaluate(() => {
@@ -214,7 +317,7 @@ print(f'visible skin: {matched}/{len(points)}')
           })
           await page.waitForFunction(() => !document.querySelector('.character-attack'))
           await page.locator('.board').screenshot({ path: resolve(output, `${engine}-${screen}-restored.png`) })
-          console.log(`PASS ${engine}/${screen}: Kratos scale, contact, targets, cold loading, repeated poses, reduced motion and restoration`)
+          console.log(`PASS ${engine}/${screen}: Kratos weighted three-hit combo, poses, SFX, targets, scale, cold loading, reduced motion and restoration`)
         } finally { releaseColdArtwork?.(); await context.close() }
       }
     } finally { await browser.close() }

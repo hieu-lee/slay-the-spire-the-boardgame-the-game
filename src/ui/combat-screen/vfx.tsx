@@ -41,7 +41,7 @@ export const isEndTurnLightning = (event: CombatPresentationEvent): boolean =>
   event.kind === 'orb' && event.orb === 'lightning' && event.sourceId === 'orb-end-turn'
 
 export const combatOutcomeAnimationActive = (): boolean => Boolean(document.querySelector(
-  '.slime-party__actor--commanding, .character-attack--slime_boss',
+  '.slime-party__actor--commanding, .character-attack--slime_boss, .character-attack--kratos',
 ))
 
 export const isCharacterAttack = ({ event, recipe }: ActiveCombatVfx): boolean =>
@@ -57,6 +57,31 @@ export function isHermitAttack(state: CombatState, event?: CombatPresentationEve
   return isCharacterAttack({ event, recipe: event.kind === 'shiv' ? shivVfxRecipe()
     : cardVfxRecipe('hermit', event.sourceId, event.kind === 'card' ? event.mode : undefined,
       event.kind === 'card' ? event.upgraded : undefined, event.kind === 'card' ? event.resolvedType : undefined) })
+}
+
+export function isKratosAttack(state: CombatState, event?: CombatPresentationEvent): boolean {
+  if (!event || (event.kind !== 'card' && event.kind !== 'shiv') ||
+    !state.players.some(p => p.id === event.actorId && p.character === 'kratos')) return false
+  return isCharacterAttack({ event, recipe: event.kind === 'shiv' ? shivVfxRecipe()
+    : cardVfxRecipe('kratos', event.sourceId, event.mode, event.upgraded, event.resolvedType) })
+}
+
+export const KRATOS_ATTACK_MS = 2_200
+export const KRATOS_HITS = [
+  { ms: 420, weight: .1 }, { ms: 800, weight: .1 }, { ms: 1_280, weight: .8 },
+] as const
+const KRATOS_IMPACT_WEIGHTS = KRATOS_HITS.map(hit => hit.weight)
+
+export function splitAttackWeights(state: CombatState, event?: CombatPresentationEvent): readonly number[] | undefined {
+  if (isHermitAttack(state, event)) return HERMIT_IMPACT_WEIGHTS
+  if (isKratosAttack(state, event)) return KRATOS_IMPACT_WEIGHTS
+}
+
+export function splitAttackAnimationPending(seq: number): boolean {
+  return hermitAnimationPending(seq) || [...document.querySelectorAll<HTMLElement>(
+    `.character-attack--kratos[data-attack-seq="${seq}"], [data-kratos-impact-seq="${seq}"]`,
+  )].some(node => node.getAnimations().some(animation =>
+    animation.pending || animation.playState === 'running'))
 }
 
 export function characterAttackContactMs(
@@ -82,12 +107,55 @@ export function characterAttackContactMs(
   if (!isCharacterAttack(active)) return 0
   const targetIndex = Math.max(0, event.enemyIds.indexOf(targetId))
   if (actor.character === 'hermit') return HERMIT_VOLLEYS[0].ms + HERMIT_FLIGHT_MS
+  if (actor.character === 'kratos') return KRATOS_HITS[0].ms
   if (actor.character === 'silent') return 1_025 + targetIndex * 70
   if (actor.character === 'defect') return 1_110 + targetIndex * 70
   if (actor.character === 'watcher') return 1_050 + targetIndex * 70
   if (actor.character === 'hexaghost') return 1_450 + targetIndex * 70
   if (actor.character === 'slime_boss') return SLIME_COMMAND_CONTACT_MS + targetIndex * 70
   return 630
+}
+
+/** The three target impacts share the registered pose/travel clock, even on a cold play. */
+export function KratosImpacts({ event }: { event: CombatPresentationEvent }) {
+  const anchor = useRef<HTMLSpanElement>(null)
+  const [targets, setTargets] = useState<{ id: string; portrait: HTMLElement; x: number; y: number }[]>([])
+  useLayoutEffect(() => {
+    const board = anchor.current?.closest('.board')
+    if (!board) return
+    const measure = () => setTargets(event.enemyIds.flatMap(id => {
+      const portrait = board.querySelector<HTMLElement>(`.enemy[data-enemy-id="${CSS.escape(id)}"] .enemy__portrait`)
+      if (!portrait) return []
+      const body = combatBodyPoint(portrait)
+      const rect = portrait.getBoundingClientRect()
+      return [{ id, portrait, x: body.x - rect.left, y: body.y - rect.top }]
+    }))
+    measure()
+    const resize = new ResizeObserver(measure)
+    resize.observe(board)
+    board.addEventListener('load', measure, true)
+    board.addEventListener('loadeddata', measure, true)
+    return () => {
+      resize.disconnect()
+      board.removeEventListener('load', measure, true)
+      board.removeEventListener('loadeddata', measure, true)
+    }
+  }, [event])
+  return <span ref={anchor} aria-hidden="true">
+    {[280, 650, 1_080].map((ms, index) => <span key={ms} className="kratos-chain-cue"
+      data-combo-beat={index} style={{ animationDelay: `${ms}ms` }} />)}
+    {targets.flatMap(target => KRATOS_HITS.map((hit, index) => createPortal(
+      <span key={`${target.id}:${index}`} className={`kratos-hit kratos-hit--${index === 2 ? 'slam' : 'light'}`}
+        data-kratos-impact-seq={event.seq} data-combo-beat={index}
+        style={{ left: target.x, top: index === 2 ? '92%' : target.y,
+          '--hit-delay': `${hit.ms}ms`, '--hit-angle': index === 0 ? '-25deg' : '25deg',
+          backgroundImage: `url("${assetPath(`combat/vfx/actions/kratos/${index === 2 ? 'impact' : 'light'}.webp`)}")` } as CSSProperties}
+        onAnimationStart={animation => {
+          if (!['kratos-light-hit', 'kratos-slam-hit'].includes(animation.animationName)) return
+          flushSync(() => target.portrait.dispatchEvent(new CustomEvent('kratos-impact', { bubbles: true,
+            detail: { seq: event.seq, shot: String(index), index, x: target.x, y: target.y } })))
+        }} aria-hidden="true" />, target.portrait)))}
+  </span>
 }
 
 export function latestTargetPresentationEvent(
@@ -267,6 +335,7 @@ export const HERMIT_ATTACK_MS = 1_650
 export const HERMIT_FLIGHT_MS = 180
 // Both barrels arrive together: one impact and damage step per volley/target.
 export const HERMIT_IMPACT_COUNT = HERMIT_VOLLEYS.length
+const HERMIT_IMPACT_WEIGHTS = HERMIT_VOLLEYS.map(() => 1 / HERMIT_IMPACT_COUNT)
 
 /** A slow decode can start bullets after the wall-clock settle deadline. */
 export function hermitAnimationPending(seq: number): boolean {
@@ -334,7 +403,7 @@ export function HermitBullets({ event }: { event: CombatPresentationEvent }) {
           if (animation.animationName !== 'hermit-bullet-impact') return
           // Animation events are not discrete React input: commit HP before this impact paints.
           flushSync(() => shot.target.dispatchEvent(new CustomEvent('hermit-impact', { bubbles: true,
-            detail: { seq: event.seq, shot: shot.id, x: shot.impactX, y: shot.impactY } })))
+            detail: { seq: event.seq, shot: shot.id, index: Number(shot.id.split('-')[0]), x: shot.impactX, y: shot.impactY } })))
         }}
         style={{ left: shot.impactX, top: shot.impactY, '--shot-delay': `${shot.ms}ms`,
           '--shot-flight': `${HERMIT_FLIGHT_MS}ms`,

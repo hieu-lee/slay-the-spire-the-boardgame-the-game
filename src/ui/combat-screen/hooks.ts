@@ -6,7 +6,7 @@
 // derived state the screen renders from or plays the sound the change calls for.
 // What they watch arrives as arguments or from the browser; none of them reaches
 // into the component that calls it.
-import { characterAttackContactMs, isHermitAttack, hermitAnimationPending, HERMIT_VOLLEYS, HERMIT_ATTACK_MS, ORB_END_TURN_STAGGER_MS,
+import { characterAttackContactMs, isHermitAttack, isKratosAttack, splitAttackWeights, splitAttackAnimationPending, HERMIT_VOLLEYS, HERMIT_ATTACK_MS, KRATOS_ATTACK_MS, KRATOS_HITS, ORB_END_TURN_STAGGER_MS,
   SLIME_COMMAND_ANIMATION_MS, SLIME_COMMAND_CONTACT_MS,
   SLIME_SPAWN_ANIMATION_MS, SLIME_SPAWN_CONTACT_MS } from './vfx.tsx'
 import { cardDef } from '../../game/cards.ts'
@@ -36,13 +36,14 @@ function slimeAnimationDelays(
       continue
     }
     const hermit = isHermitAttack(state, event)
-    const key = hermit ? `hermit:${event.actorId}` : event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
+    const kratos = isKratosAttack(state, event)
+    const key = hermit || kratos ? `weapon:${event.actorId}` : event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
       ? `spawn:${event.actorId}`
       : undefined
     if (!key) continue
     const start = Math.max(now, queueEnd.get(key) ?? now)
     delays.set(event.seq, start - now)
-    queueEnd.set(key, start + (hermit ? HERMIT_ATTACK_MS : SLIME_SPAWN_ANIMATION_MS))
+    queueEnd.set(key, start + (hermit ? HERMIT_ATTACK_MS : kratos ? KRATOS_ATTACK_MS : SLIME_SPAWN_ANIMATION_MS))
   }
   return delays
 }
@@ -200,11 +201,11 @@ export function useStruck(
     // do not cancel one another.
     for (const [id, totalAmount] of hurt) {
       const targetEvents = newPresentations.filter(event => event.enemyIds.includes(id))
-      const hermitEvents = targetEvents.filter(event => isHermitAttack(state, event))
-      const attributed = hermitEvents.reduce((sum, event) => sum + (event.enemyHpLoss?.[id] ?? 0), 0)
-      const legacyHermit = hermitEvents.length > 0 && hermitEvents.length === targetEvents.length &&
-        hermitEvents.some(event => event.enemyHpLoss === undefined)
-      const amount = reducedEffects ? totalAmount : Math.max(0, totalAmount - (legacyHermit ? totalAmount : attributed))
+      const splitEvents = targetEvents.filter(event => splitAttackWeights(state, event))
+      const attributed = splitEvents.reduce((sum, event) => sum + (event.enemyHpLoss?.[id] ?? 0), 0)
+      const legacySplit = splitEvents.length > 0 && splitEvents.length === targetEvents.length &&
+        splitEvents.some(event => event.enemyHpLoss === undefined)
+      const amount = reducedEffects ? totalAmount : Math.max(0, totalAmount - (legacySplit ? totalAmount : attributed))
       if (amount === 0) continue
       const beat = (nextBeats.current.get(id) ?? 0) + 1
       const token = `${id}:${beat}`
@@ -343,9 +344,10 @@ export function useFalling(
       now.set(id, entity.dead)
       if (refreshed || reducedEffects) continue
       if (previous.current.get(id) !== false || !entity.dead) continue
-      const hermit = newPresentations.some(event => event.enemyIds.includes(id) && isHermitAttack(state, event))
-      const delay = remainingTargetContactMs(contactDeadlines.current, id) +
-        (hermit ? HERMIT_VOLLEYS.at(-1)!.ms - HERMIT_VOLLEYS[0].ms : 0)
+      const tail = Math.max(0, ...newPresentations.filter(event => event.enemyIds.includes(id)).map(event =>
+        isKratosAttack(state, event) ? KRATOS_HITS.at(-1)!.ms - KRATOS_HITS[0].ms :
+          isHermitAttack(state, event) ? HERMIT_VOLLEYS.at(-1)!.ms - HERMIT_VOLLEYS[0].ms : 0))
+      const delay = remainingTargetContactMs(contactDeadlines.current, id) + tail
       setFalling((current) => new Set(current).add(id))
       const prior = timers.current.get(id)
       if (prior) clearTimeout(prior)
@@ -491,22 +493,18 @@ export function usePresentationEvents(
         : 0
       const slimeAnimation = event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
       const delay = delays.get(event.seq) ?? 0
-      const localAttackContact = isHermitAttack(state, event) ? attackContact : Math.max(0, attackContact - delay)
+      const localAttackContact = splitAttackWeights(state, event) ? attackContact : Math.max(0, attackContact - delay)
       const slimeBossAttack = state.players.some((player) =>
         player.id === event.actorId && player.character === 'slime_boss') && attackContact > 0
       const lifetime = (localAttackContact > 0
         ? slimeBossAttack ? SLIME_COMMAND_ANIMATION_MS + 100
-          : Math.max(1_800, localAttackContact + 1_200)
+          : Math.max(isKratosAttack(state, event) ? KRATOS_ATTACK_MS + 100 : 1_800, localAttackContact + 1_200)
         : slimeAnimation ? SLIME_SPAWN_ANIMATION_MS + 100 : 900) +
         staggerIndex * ORB_END_TURN_STAGGER_MS
       const remove = () => timers.current.set(event.seq, setTimeout(() => {
         const settle = () => {
-          const kratosMotion = document.querySelector<HTMLElement>(
-            `.character-attack--kratos[data-attack-seq="${event.seq}"]`)
-          const kratosMoving = kratosMotion?.getAnimations().some(animation =>
-            animation.pending || animation.playState === 'running')
-          // A busy renderer can trail the removal timer; retain the visible return.
-          if (kratosMoving || isHermitAttack(state, event) && hermitAnimationPending(event.seq)) {
+          // Busy renderers retain the final pose and any remaining target impacts.
+          if (splitAttackAnimationPending(event.seq)) {
             timers.current.set(event.seq, setTimeout(settle, 100))
             return
           }
@@ -653,8 +651,8 @@ export function usePersonalCombatSoundEffects(
     const onAnimation = (animation: AnimationEvent) => {
       if (!(animation.target instanceof HTMLElement || animation.target instanceof SVGElement)) return
       const element = animation.target
-      const source = element.closest<HTMLElement>('[data-hermit-impact-seq], [data-hermit-seq], [data-attack-seq], [data-evoke-seq], [data-vfx-seq]')
-      const seq = Number(source?.dataset.hermitImpactSeq ?? source?.dataset.hermitSeq ?? source?.dataset.attackSeq ?? source?.dataset.evokeSeq ?? source?.dataset.vfxSeq)
+      const source = element.closest<HTMLElement>('[data-kratos-impact-seq], [data-hermit-impact-seq], [data-hermit-seq], [data-attack-seq], [data-evoke-seq], [data-vfx-seq]')
+      const seq = Number(source?.dataset.kratosImpactSeq ?? source?.dataset.hermitImpactSeq ?? source?.dataset.hermitSeq ?? source?.dataset.attackSeq ?? source?.dataset.evokeSeq ?? source?.dataset.vfxSeq)
       const event = events.find(event => event.seq === seq)
       if (!event || !played.current.has(seq)) return
       const actor = state.players.find(player => player.id === event.actorId)
@@ -662,6 +660,16 @@ export function usePersonalCombatSoundEffects(
       let beat = ''
       let voices = 1
       switch (animation.animationName) {
+        case 'kratos-chain-swing':
+          sound = 'kratos-chain'
+          beat = (element as HTMLElement).dataset.comboBeat ?? ''
+          break
+        case 'kratos-light-hit':
+        case 'kratos-slam-hit':
+          sound = animation.animationName === 'kratos-slam-hit' ? 'kratos-slam' : 'kratos-light'
+          beat = (element as HTMLElement).dataset.comboBeat ?? ''
+          voices = event.enemyIds.length
+          break
         case 'hermit-bullet-flight':
           sound = 'gunshot'
           beat = element.parentElement?.dataset.shot?.split('-')[0] ?? ''

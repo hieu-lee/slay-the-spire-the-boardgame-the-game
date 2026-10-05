@@ -212,7 +212,12 @@ try {
             const samples = buffer.getChannelData(0)
             const peak = samples.reduce((peak, sample) => Math.max(peak, Math.abs(sample)), 0)
             const rms = Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length)
-            if (buffer.duration < .1 || buffer.duration > 1 || peak > 1 || rms < .01) throw Error(`${sound}: invalid audio levels/duration`)
+            // Decoded PCM may exceed nominal full scale; the cue gain sets playback level.
+            // https://www.w3.org/TR/webaudio/#AudioBuffer
+            const playbackPeak = peak * ANIMATION_SOUND_VOLUMES[sound]
+            if (buffer.duration < .1 || buffer.duration > 1 || !Number.isFinite(playbackPeak) || playbackPeak > 1 || rms < .01) {
+              throw Error(`${sound}: invalid audio levels/duration ${JSON.stringify({ duration: buffer.duration, peak, playbackPeak, rms })}`)
+            }
           }
         } finally { await context.close() }
       })
@@ -232,7 +237,13 @@ try {
         await page.waitForFunction(hero => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) >= (hero === 'hermit' ? 3 : hero === 'hexaghost' ? 1 : ['watcher', 'ironclad', 'guardian'].includes(hero) ? 2 : 1), hero)
         await clear()
         await page.evaluate(card => window.fixture.attack(card), card)
-        await page.waitForTimeout(1900)
+        await page.waitForFunction(expected => Object.entries(expected).every(([sound, count]) =>
+          window.audioPlays.filter(play => play.cue === `animation:${sound}`).length >= count), expected).catch(async error => {
+          const observed = await page.evaluate(() => ({ plays: window.audioPlays, beats: window.audioBeats,
+            attack: Boolean(document.querySelector('.character-attack')), ready: document.querySelector('.board')?.dataset.characterAttackAssetsReady }))
+          throw new Error(`${hero}: missing animation sounds ${JSON.stringify(observed)}`, { cause: error })
+        })
+        await page.waitForFunction(() => !document.querySelector('.character-attack'))
         const plays = await sounds()
         for (const [sound, count] of Object.entries(expected)) {
           assert.equal(plays.filter(play => play.cue === `animation:${sound}`).length, count, `${hero}: ${sound} beat count`)
@@ -277,13 +288,16 @@ try {
         await clear()
         await page.evaluate(() => window.fixture.attack('hermit_strike'))
         await page.waitForFunction(() => window.audioPlays.some(play => play.cue === 'animation:gunshot'))
-        const before = (await sounds()).length
-        await page.evaluate(stop => {
+        const before = await page.evaluate(stop => {
+          const gunshots = window.audioPlays.filter(play => play.cue === 'animation:gunshot').length
+          if (gunshots < 1 || gunshots >= 5) throw Error(`${stop}: cancellation must interrupt a live volley`)
+          const count = window.audioPlays.filter(play => play.cue?.startsWith('animation:')).length
           if (stop === 'restore') window.fixture.restoration++
           if (stop === 'disconnect') window.fixture.connected = false
           if (stop === 'mute') window.fixture.setVolume(0)
           if (stop === 'reduced') document.documentElement.dataset.reducedMotion = 'true'
           window.fixture.render()
+          return count
         }, stop)
         await page.waitForTimeout(1000)
         assert.equal((await sounds()).length, before, `${stop}: later gunshots leaked`)

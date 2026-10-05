@@ -5,6 +5,7 @@ import { POTIONS } from '../game/relics.ts'
 import { cardVfxRecipe, potionVfxRecipe, type VfxFamily, type VfxRecipe } from './combat-vfx.ts'
 
 export const ANIMATION_SOUND_VOLUMES = {
+  'kratos-chain': .19, 'kratos-light': .16, 'kratos-slam': .32,
   gunshot: .24, 'bullet-impact': .10, 'meteor-fall': .22, 'meteor-impact': .28,
   'sword-swing': .18, 'sword-clash': .20, 'lightning-burst': .22, 'dark-beam': .24,
   'frost-bloom': .20, 'flame-burst': .22, 'slime-splat': .20, 'poison-hiss': .16,

@@ -433,18 +433,23 @@ async function autoAdvanceLock(page) {
 
 try {
   suite('courier browser')
-  const solo = watch(await browser.newPage({ viewport: { width: 1440, height: 900 } }))
-  await autoAdvanceLock(solo)
-  await solo.close()
-  const video = await browser.newContext({ viewport: { width: 1440, height: 900 }, recordVideo: { dir: output, size: { width: 1440, height: 900 } } })
-  const videoPage = watch(await video.newPage())
-  await localFlow(videoPage, 'desktop', 900)
-  await video.close()
-  renameSync(await videoPage.video().path(), `${output}/courier-demo.webm`)
+  if (!process.argv.includes('--online-only')) {
+    const solo = watch(await browser.newPage({ viewport: { width: 1440, height: 900 } }))
+    await autoAdvanceLock(solo)
+    await solo.close()
+    const record = process.argv.includes('--record')
+    const video = await browser.newContext({ viewport: { width: 1440, height: 900 },
+      ...(record ? { recordVideo: { dir: output, size: { width: 1440, height: 900 } } } : {}) })
+    const videoPage = watch(await video.newPage())
+    await localFlow(videoPage, 'desktop', record ? 900 : 0)
+    await video.close()
+    if (record) renameSync(await videoPage.video().path(), `${output}/courier-demo.webm`)
 
-  const phone = watch(await browser.newPage({ viewport: { width: 844, height: 390 }, hasTouch: true }))
-  await localFlow(phone, 'horizontal-phone')
-  await phone.close()
+    const phone = watch(await browser.newPage({ viewport: { width: 844, height: 390 }, hasTouch: true }))
+    await localFlow(phone, 'horizontal-phone')
+    await phone.close()
+
+  }
 
   const create = await fetch(`${roomOrigin}/api/rooms`, { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name: 'Ann', character: 'ironclad' }) }).then((response) => response.json())
@@ -464,23 +469,34 @@ try {
     const context = await browser.newContext({ viewport: index === 1 ? { width: 844, height: 390 } : { width: 1440, height: 900 } })
     await context.addInitScript(({ code, token }) => sessionStorage.setItem('sts-room-session', JSON.stringify({ code, token })), { code: room.code, token: seat.token })
     await context.addInitScript(() => {
+      // Network/pledge coverage does not need continuously decoded combat sprites.
+      // The local desktop/phone flows above retain normal motion and layout checks.
+      localStorage.setItem('sts-game-settings', JSON.stringify({ reducedMotion: true }))
       const sockets = window.__ROOM_SOCKETS__ = []
+      window.__ROOM_SOCKET_CLOSES__ = []
       window.WebSocket = class extends window.WebSocket {
         constructor(...args) {
           super(...args)
           sockets.push(this)
+          this.addEventListener('close', event => window.__ROOM_SOCKET_CLOSES__.push({ code: event.code, reason: event.reason }))
         }
       }
     })
     const page = watch(await context.newPage())
     await page.goto(base, { waitUntil: 'networkidle' })
+    await page.locator('.connection--connected').waitFor()
     pages.push(page)
   }
   const [ann, bo, cy] = pages
   await ann.getByRole('group', { name: 'The Courier', exact: true }).waitFor()
   const onlineFrame = await boxes(ann)
   const teammatePlaques = await Promise.all([bo, cy].map(async (page) => {
-    await page.locator('.relic-actions').waitFor({ state: 'attached' })
+    await page.locator('.relic-actions').waitFor({ state: 'attached' }).catch(async error => {
+      const state = await page.evaluate(() => ({ phase: window.__STS_DEBUG__?.getRun()?.phase,
+        combatPhase: window.__STS_DEBUG__?.getRun()?.combat?.phase,
+        combatMounted: Boolean(document.querySelector('.combat')), text: document.body.innerText.slice(0, 500) }))
+      throw new Error(`teammate combat did not mount: ${JSON.stringify(state)}`, { cause: error })
+    })
     return page.getByRole('group', { name: 'The Courier', exact: true }).count()
   }))
   await ann.screenshot({ path: `${output}/online-desktop-available.png` })
@@ -544,6 +560,13 @@ try {
     assertEqual(await boOffer.getByRole('button', { name: 'Discard' }).count(), 0)
     const frame = await boxes(bo)
     assert(inside(frame.courier, frame.viewport) && inside(frame.banner, frame.viewport))
+  })
+  // The third client's public snapshot must include both earlier pledges.
+  await cy.getByRole('meter', { name: 'Gold pledged' }).and(cy.locator('[aria-valuenow="5"]')).waitFor().catch(async error => {
+    const client = await cy.evaluate(() => ({ text: document.body.innerText.slice(0, 1000),
+      connected: Boolean(document.querySelector('.connection--connected')), closes: window.__ROOM_SOCKET_CLOSES__ }))
+    throw new Error(`third client did not receive pledges: ${JSON.stringify({ client,
+      payments: room.courierPledge?.payments })}`, { cause: error })
   })
   await cy.getByRole('dialog', { name: 'The Courier' }).getByRole('button', { name: 'Pledge 1 Gold' }).click()
   await cy.getByRole('dialog', { name: 'The Courier' }).waitFor({ state: 'detached' })

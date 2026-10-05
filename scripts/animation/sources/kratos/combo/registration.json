@@ -1,0 +1,168 @@
+{
+  "landmarks": {
+    "idle": {
+      "skull": [
+        96,
+        325
+      ],
+      "foot": [
+        0,
+        939
+      ],
+      "stanceCenter": 450
+    },
+    "anticipation": {
+      "skull": [
+        70,
+        327
+      ],
+      "foot": [
+        0,
+        963
+      ],
+      "stanceCenter": 795
+    },
+    "left-cast": {
+      "skull": [
+        174,
+        380
+      ],
+      "foot": [
+        0,
+        898
+      ],
+      "stanceCenter": 460
+    },
+    "left-extended": {
+      "skull": [
+        186,
+        399
+      ],
+      "foot": [
+        0,
+        887
+      ],
+      "stanceCenter": 435
+    },
+    "right-cast": {
+      "skull": [
+        224,
+        418
+      ],
+      "foot": [
+        0,
+        923
+      ],
+      "stanceCenter": 510,
+      "note": "Lower jaw occluded by pauldron; projected skull endpoint audited against neck, body and blade proportions."
+    },
+    "right-extended": {
+      "skull": [
+        246,
+        433
+      ],
+      "foot": [
+        0,
+        898
+      ],
+      "stanceCenter": 440,
+      "note": "Lower jaw occluded by pauldron; projected skull endpoint audited against neck, body and blade proportions."
+    },
+    "windup": {
+      "skull": [
+        312,
+        526
+      ],
+      "foot": [
+        0,
+        1005
+      ],
+      "stanceCenter": 775
+    },
+    "slam": {
+      "skull": [
+        210,
+        429
+      ],
+      "foot": [
+        0,
+        916
+      ],
+      "stanceCenter": 480
+    },
+    "recovery": {
+      "skull": [
+        61,
+        313
+      ],
+      "foot": [
+        0,
+        973
+      ],
+      "stanceCenter": 650
+    },
+    "settle": {
+      "skull": [
+        44,
+        282
+      ],
+      "foot": [
+        0,
+        982
+      ],
+      "stanceCenter": 685
+    }
+  },
+  "runtimeCanvas": 800,
+  "displayScale": 2,
+  "ground": 784,
+  "skullPixels": 65.25,
+  "contactMs": 420,
+  "durationMs": 2200,
+  "keys": [
+    [
+      0,
+      "idle"
+    ],
+    [
+      120,
+      "anticipation"
+    ],
+    [
+      280,
+      "left-cast"
+    ],
+    [
+      420,
+      "left-extended"
+    ],
+    [
+      650,
+      "right-cast"
+    ],
+    [
+      800,
+      "right-extended"
+    ],
+    [
+      1020,
+      "windup"
+    ],
+    [
+      1280,
+      "slam"
+    ],
+    [
+      1480,
+      "recovery"
+    ],
+    [
+      1710,
+      "settle"
+    ],
+    [
+      1900,
+      "idle"
+    ]
+  ]
+}

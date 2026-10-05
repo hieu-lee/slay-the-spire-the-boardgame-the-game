@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image, ImageChops
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / 'scripts/animation/sources/kratos'
+SOURCE = ROOT / 'scripts/animation/sources/kratos/combo'
 OUT = ROOT / 'public/assets/combat/characters'
 REG = json.loads((SOURCE / 'registration.json').read_text())
 SIZE = REG['runtimeCanvas']
@@ -48,10 +48,8 @@ def main():
     # Eight slow, rigid sway drawings keep stature and blade length constant.
     idle_frames = [sway(idle, .3 * math.sin(i * math.tau / 8)) for i in range(8)]
     save(OUT / 'animated/kratos-idle.webp', idle_frames, [400] * 8, 0)
-    keys = [(0, idle), (180, sway(poses['windup'], -1)),
-            (400, poses['windup']), (630, poses['contact']),
-            (1060, poses['followthrough']), (1120, sway(poses['followthrough'], -.5)),
-            (1440, idle)]
+    keys = [(time, poses[name]) for time, name in REG['keys']]
+    assert len(keys) <= 20, 'User keyframe budget'
     frames = [frame for _, frame in keys]
     durations = [b - a for a, b in zip([time for time, _ in keys],
                                      [time for time, _ in keys][1:] + [REG['durationMs']])]
@@ -69,13 +67,13 @@ def main():
     hero.resize((512, 512), Image.Resampling.LANCZOS).save(OUT / 'kratos.webp', quality=90, method=6)
     vfx = ROOT / 'public/assets/combat/vfx/actions/kratos'
     vfx.mkdir(parents=True, exist_ok=True)
-    for name in ['slash', 'impact']:
+    for name in ['light', 'impact']:
         Image.open(SOURCE / f'{name}.webp').resize((512, 512), Image.Resampling.LANCZOS).save(
             vfx / f'{name}.webp', quality=88, method=6)
     # A contrasting contact sheet makes every delivered drawing reviewable.
-    sheet = Image.new('RGBA', (SIZE * len(poses), SIZE), '#15556c')
+    sheet = Image.new('RGBA', (SIZE * 5, SIZE * 2), '#15556c')
     for i, pose in enumerate(poses.values()):
-        sheet.alpha_composite(pose, (i * SIZE, 0))
+        sheet.alpha_composite(pose, ((i % 5) * SIZE, (i // 5) * SIZE))
     review = ROOT / 'artifacts/kratos-art'
     review.mkdir(parents=True, exist_ok=True)
     sheet.convert('RGB').save(review / 'registered-keyframes.jpg')

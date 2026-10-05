@@ -204,6 +204,7 @@ check('sound effects are complete, compact, and decodable', () => {
     'gunshot.mp3', 'bullet-impact.mp3', 'meteor-fall.mp3', 'meteor-impact.mp3',
     'sword-swing.mp3', 'sword-clash.mp3', 'lightning-burst.mp3', 'dark-beam.mp3',
     'frost-bloom.mp3', 'flame-burst.mp3', 'slime-splat.mp3', 'poison-hiss.mp3',
+    'kratos-chain.mp3', 'kratos-light.mp3', 'kratos-slam.mp3',
   ].sort()
   assertDeepEqual([...listing(sfxRoot, '.ogg'), ...listing(sfxRoot, '.mp3')].sort(), expected)
   const files = expected.map((file) => join(sfxRoot, file))
@@ -897,6 +898,17 @@ print(json.dumps(faults))
 })
 
 check('Kratos registered drawings keep native alpha, planted feet, and unclipped weapon overscan', () => {
+  const manifest = JSON.parse(readFileSync(join(repoRoot, 'docs/kratos-art.json'), 'utf8'))
+  const digest = (path) => createHash('sha256').update(readFileSync(join(repoRoot, path))).digest('hex')
+  for (const entry of manifest.generated) {
+    assertEqual(digest(entry.source), entry.sha256, entry.source)
+    assertEqual(digest(entry.prompt), entry.promptSha256, entry.prompt)
+    for (const reference of entry.inputs) assertEqual(digest(reference.path), reference.sha256, reference.path)
+  }
+  for (const entry of manifest.runtime) assertEqual(digest(entry.path), entry.sha256, entry.path)
+  const registration = JSON.parse(readFileSync(join(repoRoot, 'scripts/animation/sources/kratos/combo/registration.json'), 'utf8'))
+  assert(registration.keys.length <= 20, 'Kratos exceeds the user keyframe budget')
+
   const result = spawnSync('python3', ['-c', `
 from PIL import Image, ImageChops
 from pathlib import Path
@@ -906,7 +918,7 @@ assert idle.info['loop'] == 0 and idle.n_frames > 1
 ready = Image.open(root / 'kratos-ready.webp')
 assert ImageChops.difference(idle.getchannel('A'), ready.getchannel('A')).getbbox() is None
 images = [idle] + [Image.open(root / f'kratos-{pose}.webp') for pose in
-                   ['ready', 'windup', 'contact', 'followthrough']]
+                   ['ready', 'anticipation', 'left-cast', 'left-extended', 'right-cast', 'right-extended', 'windup', 'slam', 'recovery', 'settle']]
 for image in images:
     assert image.size == (800, 800)
     for i in range(image.n_frames):

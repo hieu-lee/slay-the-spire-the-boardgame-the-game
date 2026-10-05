@@ -65,7 +65,7 @@ export function addPresentationEvent(
     seq: (events.at(-1)?.seq ?? 0) + 1,
     ...event,
     ...((event.kind === 'card' || event.kind === 'shiv') &&
-      state.players.some(player => player.id === event.actorId && player.character === 'hermit')
+      state.players.some(player => player.id === event.actorId && (player.character === 'hermit' || player.character === 'kratos'))
       ? { enemyHpLoss: {} } : {}),
   } as CombatPresentationEvent
   state.presentationEvents = [...events, added].slice(-PRESENTATION_EVENT_LIMIT)
