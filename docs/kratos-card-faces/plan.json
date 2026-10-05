@@ -357,7 +357,7 @@
       "public/assets/icons/attack.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__zeus-fury-mask.png"
     ],
-    "symbolText": "1 [DAMAGE] 2 times, choosing any enemy for each hit."
+    "symbolText": "1 [DAMAGE] 1 [DAMAGE]"
   },
   {
     "id": "kratos_zeus_fury",
@@ -375,7 +375,7 @@
       "public/assets/icons/attack.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__zeus-fury+-mask.png"
     ],
-    "symbolText": "1 [DAMAGE] 3 times, choosing any enemy for each hit."
+    "symbolText": "1 [DAMAGE] 1 [DAMAGE] 1 [DAMAGE]"
   },
   {
     "id": "kratos_rage_of_the_gods",
@@ -504,7 +504,7 @@
       "public/assets/icons/block.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece-mask.png"
     ],
-    "symbolText": "2 [BLOCK].\nUnleash 1: Plain 1 [DAMAGE]\nper Attack icon in each enemy's intent\nif it is attacking you."
+    "symbolText": "2 [BLOCK].\nUnleash 1: 1 [DAMAGE]\nper Attack icon in each enemy's intent\nif it is attacking you."
   },
   {
     "id": "kratos_golden_fleece",
@@ -523,7 +523,7 @@
       "public/assets/icons/block.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece+-mask.png"
     ],
-    "symbolText": "3 [BLOCK] to any player.\nUnleash 1: Plain 1 [DAMAGE]\nper Attack icon in each enemy's intent\nif it is attacking Kratos."
+    "symbolText": "3 [BLOCK] to any player.\nUnleash 1: 1 [DAMAGE]\nper Attack icon in each enemy's intent\nif it is attacking Kratos."
   },
   {
     "id": "kratos_icarus_wings",
@@ -1294,7 +1294,7 @@
       "scripts/art/sources/kratos-card-faces/rage-symbol.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-titans-mask.png"
     ],
-    "symbolText": "Spend all your [RAGE].\n[AOE] Plain X [DAMAGE].\nX [BLOCK].\nX = [RAGE] spent."
+    "symbolText": "Spend all your [RAGE].\n[AOE] X [DAMAGE].\nX [BLOCK].\nX = [RAGE] spent."
   },
   {
     "id": "kratos_rage_of_the_titans",
@@ -1315,7 +1315,7 @@
       "scripts/art/sources/kratos-card-faces/rage-symbol.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-titans+-mask.png"
     ],
-    "symbolText": "Spend all your [RAGE].\n[AOE] Plain X [DAMAGE].\n(X + 1) [BLOCK].\nX = [RAGE] spent."
+    "symbolText": "Spend all your [RAGE].\n[AOE] X [DAMAGE].\n(X + 1) [BLOCK].\nX = [RAGE] spent."
   },
   {
     "id": "kratos_spartan_resolve",
@@ -1581,7 +1581,7 @@
       "public/assets/icons/weak.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__typhon-s-bane-mask.png"
     ],
-    "symbolText": "1 [WEAK], 2 times.\nChoose any enemy each time\n(same enemy allowed)."
+    "symbolText": "[WEAK] [WEAK]"
   },
   {
     "id": "kratos_typhons_bane",
@@ -1599,7 +1599,7 @@
       "public/assets/icons/weak.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__typhon-s-bane+-mask.png"
     ],
-    "symbolText": "1 [WEAK], 3 times.\nChoose any enemy each time\n(same enemy allowed)."
+    "symbolText": "[WEAK] [WEAK] [WEAK]"
   },
   {
     "id": "kratos_head_of_euryale",
@@ -1656,7 +1656,7 @@
       "public/assets/icons/attack.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__soul-summon-mask.png"
     ],
-    "symbolText": "End of turn:\n[AOE] Plain 1 [DAMAGE]."
+    "symbolText": "End of turn:\n[AOE] 1 [DAMAGE]."
   },
   {
     "id": "kratos_soul_summon",
@@ -1675,7 +1675,7 @@
       "public/assets/icons/attack.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__soul-summon+-mask.png"
     ],
-    "symbolText": "End of turn:\n[AOE] Plain 2 [DAMAGE]."
+    "symbolText": "End of turn:\n[AOE] 2 [DAMAGE]."
   },
   {
     "id": "kratos_green_orbs",
@@ -1912,7 +1912,7 @@
       "public/assets/icons/attack.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__army-of-hades-mask.png"
     ],
-    "symbolText": "End of turn:\n[AOE] Plain X [DAMAGE].\nX = your Attacks played this turn."
+    "symbolText": "End of turn:\n[AOE] X [DAMAGE].\nX = your Attacks played this turn."
   },
   {
     "id": "kratos_army_of_hades",
@@ -1931,7 +1931,7 @@
       "public/assets/icons/attack.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__army-of-hades+-mask.png"
     ],
-    "symbolText": "End of turn:\n[AOE] Plain X [DAMAGE].\nX = your Attacks played this turn."
+    "symbolText": "End of turn:\n[AOE] X [DAMAGE].\nX = your Attacks played this turn."
   },
   {
     "id": "kratos_barbarian_hammer",

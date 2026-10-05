@@ -8,7 +8,7 @@ and the production Rage of Sparta glyph. Prompts specify exact
 card information and yellow keyword emphasis. Damage, Block, Vulnerable, Weak,
 Strength, Rage and Energy use the supplied effect symbols directly in the rules,
 as the existing cards do. All values and surrounding conditions remain written;
-plain damage retains its explicit plain qualifier. Upgraded faces use the existing
+canonical plain-damage behavior remains in gameplay and tooltips. Upgraded faces use the existing
 green title (including the plus sign) and subtle gold frame glow. Their exact
 upgraded costs/effects are preserved, while keyword emphasis stays yellow.
 Upgraded requests use existing upgraded faces as style references.
@@ -24,7 +24,11 @@ The prompts forbid stray rarity badges while preserving real effect symbols.
 
 All 128 rules panels use compact Ironclad notation: `1 [DAMAGE]` and
 `[AOE] 2 [DAMAGE]`, without redundant Deal/Gain/Apply or row prose. Conditions,
-repeat counts, ownership, timing and plain damage remain visible. At the
+repeat counts, ownership and timing remain visible. Typhon's Bane uses two
+separate Weak icons (three upgraded), and Zeus' Fury uses two separate
+`1 [DAMAGE]` hits (three upgraded), without targeting prose or repeat text.
+Rage of the Titans, Soul Summon, Army of Hades and Golden Fleece omit the
+redundant Plain label in both versions. At the
 user's request, the AOE glyph represents both row and all-enemy effects on
 the printed faces; canonical rules and accessible tooltips keep their exact
 targeting distinctions. Canonical `printedText` and gameplay are unchanged.

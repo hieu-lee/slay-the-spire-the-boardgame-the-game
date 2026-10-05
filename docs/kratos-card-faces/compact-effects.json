@@ -264,10 +264,10 @@
         1395
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__zeus-fury-before.png",
-      "inputSha256": "71a808207fe6981a08d23d428ac8fc56583e205da0bd4013b2605de2cfcf009f",
+      "inputSha256": "4fb6a6cf91ae862cd5ecf49d333b02c36a47ca724847d1d841e7b8a74bf8a823",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__zeus-fury-mask.png",
-      "selectedPixelSha256": "62315c57d39eddb6a913298ee498d5a97918236d52a5564118e0f553dd0f4cb1",
-      "modelOutputSha256": "0f08eae5737427219a76ad620046ce92187b30b37cbfad1d9af005bfb9b7bdce"
+      "selectedPixelSha256": "922d7284726bf1cad01653a76550fe4d3402a28b9fd320b1b2b45143a8e87e4b",
+      "modelOutputSha256": "5320de09ad221617a63d9509b982e15fe4cc4f6d612241c7ebd7a9e857947ff4"
     },
     {
       "assetKey": "kratos__normal__zeus-fury+",
@@ -278,10 +278,10 @@
         1397
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__zeus-fury+-before.png",
-      "inputSha256": "eb31d7b1015358836b119d95a7d1a979f8d414e5dc4bd55e9bbf3e0a838de4b4",
+      "inputSha256": "a7d8584e74e1026a0e1c2398f035ba1ae580b2864ef34ef3bf438a2986236945",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__zeus-fury+-mask.png",
-      "selectedPixelSha256": "a6d12613bf24674b97855d2780bbe4f4ac74219ebc339722055dc8c49b192272",
-      "modelOutputSha256": "3ffff6fb3c41523d8ec8878f157376763e50a5ff71ba2da9680cea8a19c6eb25"
+      "selectedPixelSha256": "11b2c9ac1a61538992981091d9cddc3b0a10b486787bd62c6162a38323e0f61b",
+      "modelOutputSha256": "a632b61bb6a37675658b53a491ddec050d7ae8b2120fe95b042b3957a7ec10f8"
     },
     {
       "assetKey": "kratos__normal__rage-of-the-gods",
@@ -376,10 +376,10 @@
         1387
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece-before.png",
-      "inputSha256": "78260a314f70b909415b7982603d3b5635947c4d73a28362baad383206e07677",
+      "inputSha256": "b0805a507bc82e0fea08453b3156bb41b71b0a15acbab4d71d1f5fdfe67cae1e",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece-mask.png",
-      "selectedPixelSha256": "c87023ef0ec720f549b1455327a1eafce8e666718daec2956835f5b33e12ed0e",
-      "modelOutputSha256": "46a102b76d552aca44b5328264410494486cb60639ceaaa6b9d3f7627c296298"
+      "selectedPixelSha256": "a7d1dec0623b2f36ca4af3be5480d09cc07d50e3f7b3d6e5487f4e959c52d9d1",
+      "modelOutputSha256": "2e913ae75695f3b57e3842aec897dadfd27bf32e618208527e8fb6eeefc15650"
     },
     {
       "assetKey": "kratos__normal__golden-fleece+",
@@ -390,10 +390,10 @@
         1353
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece+-before.png",
-      "inputSha256": "726955639a7b30acb0cc09cbd84e28bcc51806a225a165dbb3cc256e4f7e5e7e",
+      "inputSha256": "e952eed545f2a393ca2087b8407d5c32fc36b1253e46c2d9efa000f23fb50252",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece+-mask.png",
-      "selectedPixelSha256": "2261d27e480e80365d7dc435d571dab64ca3863776cb305730ea45abec70852f",
-      "modelOutputSha256": "dd30991e67a6de9b64fb1c2f895c6a809e772a05323ba143ae206cb1611d4999"
+      "selectedPixelSha256": "cb57dcf9498d3366f5ae8f98753691181822813106813d95733beb03bdd50917",
+      "modelOutputSha256": "ebb1e78f5e38b2d4e46f320f20e6f04cbd14f07e80a9967bcbbf173c4e7853a5"
     },
     {
       "assetKey": "kratos__normal__icarus-wings",
@@ -964,10 +964,10 @@
         1369
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-titans-before.png",
-      "inputSha256": "44de0baedfe94c9457db9238a0ad689e78fb93b2457df867ab09cb95e9cc8134",
+      "inputSha256": "bfc9b62ab8b6c95243caa305666911f5772dc00d61f4a8dfcfa986ee20556d58",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-titans-mask.png",
-      "selectedPixelSha256": "c42509bf93b9138b46c31df494ce23fb8e95b41b8cbdf5bb1cab75a17b281743",
-      "modelOutputSha256": "afd62333e2ae24b3a9fff6f4f9d4cb1bbf9059d1303a3fc817ff9e02e5443e28"
+      "selectedPixelSha256": "77b5f9d96c85808650ae99fd4e497adec643fa80f4290eb2186e0b36218695c3",
+      "modelOutputSha256": "796ea11ae7cc2bbbd634ea44f92094bc7c929f7d2b6e3dc9e84872523e4381ce"
     },
     {
       "assetKey": "kratos__normal__rage-of-the-titans+",
@@ -978,10 +978,10 @@
         1386
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-titans+-before.png",
-      "inputSha256": "6860d9f91bf0c6fa0ebd9ebfa0fb897f7ff1e50be02b476b57c406f00953495a",
+      "inputSha256": "f033ea4a9c20a7c645986969d197fcab9b9d65a26e21d930817038f1e9b0a0db",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-titans+-mask.png",
-      "selectedPixelSha256": "d2fdc596532e17c1f319e1bf85b4bb33cca29d0f2271dd4c05747c4a5b2e2c76",
-      "modelOutputSha256": "666c91c9fc1febbbf8f32e1b87ec80bcfdede526598d22d13563abf71db14777"
+      "selectedPixelSha256": "1f409f6b92c3c6270723ab41ab63bd5d245982fdee1bafcf3d89c443ab6d9f44",
+      "modelOutputSha256": "cf1a21195768842f421e9149685bb70a016ab5ae9edac92d6ca95e439abb344b"
     },
     {
       "assetKey": "kratos__normal__spartan-resolve",
@@ -1188,10 +1188,10 @@
         1391
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__typhon-s-bane-before.png",
-      "inputSha256": "d635a9f664481a08e747edd178d87f2c5ad0c1f1d467bb57758e625ed447977b",
+      "inputSha256": "e0024dfa7fe4a0f8d2599ac220c54291abdbe7c6f12e53064fe5f9458618f5c1",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__typhon-s-bane-mask.png",
-      "selectedPixelSha256": "6f12201518a18b93cf09a9240fc18d3b2b94ce384791a08add11bf467f8f00fb",
-      "modelOutputSha256": "9562d07f6982d3428b11608aa0bd65ec5adb472f54f17b234aff7e221d06ae80"
+      "selectedPixelSha256": "5d5cb381ac5b0d90068652493a040fc658dc16b4892f2c19fecfa4d7097a7285",
+      "modelOutputSha256": "e63d3ffcc98f76d9caf40d861908379eedf8d945a0d49ec515ed2df24d51ee7b"
     },
     {
       "assetKey": "kratos__normal__typhon-s-bane+",
@@ -1202,10 +1202,10 @@
         1395
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__typhon-s-bane+-before.png",
-      "inputSha256": "c16c10b87b436a9fa65d0cd82b3b5addc92d4a25956956253fea9a7702631410",
+      "inputSha256": "045513d887d9f11cb8814ec0b52de0575f9433843f46479be45ac342122b5616",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__typhon-s-bane+-mask.png",
-      "selectedPixelSha256": "f4acf2eb28ee579ad7faf439b6ee976ba99d0bdd87f8c4c4d87349f4117ec195",
-      "modelOutputSha256": "4ae8953e13ed3810a182488c6176f8eb0e44b941071dc8b08423af2fc682d9e9"
+      "selectedPixelSha256": "d078cea3fc672030c2e781c6b30552e422cce63ece8c347f79c365f0a797d6f9",
+      "modelOutputSha256": "513d802adc7f143110ac39aea1e4fd917a075ababc9c65714e8183922448b134"
     },
     {
       "assetKey": "kratos__normal__head-of-euryale",
@@ -1244,10 +1244,10 @@
         1390
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__soul-summon-before.png",
-      "inputSha256": "eac976d92bba3f77ef47c6a7635611faca287e19a1480ad4d77039c63669085a",
+      "inputSha256": "ab37fd70edde9bbeed26615950667bafc4dbae8ea5ab5be1e086d5559fa05c5a",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__soul-summon-mask.png",
-      "selectedPixelSha256": "57f930ca0f084742cd0605015283b7b178c3c840803b6e062fdc5ff1f0e5bb33",
-      "modelOutputSha256": "0716c001923c922ee941111e7d7f7479dcd474761e1f705722bc99defd6ac5ca"
+      "selectedPixelSha256": "4845df2ab5d9a7a02d20e18fdbe51c450851f8e000805f6fca9ba8486b9f42ab",
+      "modelOutputSha256": "f2598e7853594353afb39a85f31bf86fbf5e916879ff6589dd7c3f7f17524c3d"
     },
     {
       "assetKey": "kratos__normal__soul-summon+",
@@ -1258,10 +1258,10 @@
         1392
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__soul-summon+-before.png",
-      "inputSha256": "8cb05af1e38931024b1b50b0303cd078079218af17d61dc6920a301057b45ee3",
+      "inputSha256": "11816d4765d4e83b63ea09c0ea58bb97dffe0382abba1c4e264a27b0e9975400",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__soul-summon+-mask.png",
-      "selectedPixelSha256": "58ec5cc9cf68bc4f432b9acb300aa8bf87ebb2f9de843de957f6aee882c33285",
-      "modelOutputSha256": "7a8d7ff44368bba5d40a9a579de65fc5011a5449f5d1d7ca26f3ef786ccdfe79"
+      "selectedPixelSha256": "29150d6a1bfaf1d011cdb7488e0000588c2b7ee87f94d3ddc4ef74c8f0d20347",
+      "modelOutputSha256": "24370530ac2bf0366062ae1d5dfe6cae3c6245beca51d785bcda03d5f7be14fe"
     },
     {
       "assetKey": "kratos__normal__green-orbs",
@@ -1440,10 +1440,10 @@
         1389
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__army-of-hades-before.png",
-      "inputSha256": "d21df9e75c74c8464ef4e549bfecf4ee96ceeaccd7313cafcf1d65e2f6ce1a9f",
+      "inputSha256": "f5131042ed54bc27e2a18c294346c8443b83242528355eb2eeee4d2b974608ff",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__army-of-hades-mask.png",
-      "selectedPixelSha256": "b67b5be5619edd92e724ddea9ab6817f00ca28b2835a9fd343a34ca34a522c28",
-      "modelOutputSha256": "c6e41d1457e7585e9bb5e92987a896f684bacc1408fd6f8753b7760da45fd5c9"
+      "selectedPixelSha256": "98d2425365acb1ae7281e69028fd9fe04768eff763816c1c42420972a1e2a81d",
+      "modelOutputSha256": "73f9a50d4e6b36f59195fb8247c52373654954d2697d6dc3ad4a0d93d03b1ecf"
     },
     {
       "assetKey": "kratos__rare__army-of-hades+",
@@ -1454,10 +1454,10 @@
         1395
       ],
       "input": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__army-of-hades+-before.png",
-      "inputSha256": "b6eb3d44910a72e2565ce281e125a2cabefdb4fdaf7e3c2051fbafe74717d2a3",
+      "inputSha256": "0e36d716ad5c364a42a397e38be0437d417d8c7a038878a604939538c3ec909f",
       "mask": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__army-of-hades+-mask.png",
-      "selectedPixelSha256": "5cb913ed3e3c1bdb5ae18145bebdd1d971f90e750fe4ff436ce347fd8355ccea",
-      "modelOutputSha256": "7a5f4453cc48aff0f12307cef21ebeb4609b4114b4211d7fa1d5f0c9be02399d"
+      "selectedPixelSha256": "20a5afd519253edb38a1567baf15f2fbbbf2deb4d19e88706c295d18511bc3ce",
+      "modelOutputSha256": "962de4b81d17792f94fd9cefd806b5b73aa1bf364bbd3bb0033c0926af95beed"
     },
     {
       "assetKey": "kratos__rare__barbarian-hammer",
