@@ -1,0 +1,112 @@
+/* The die Relic picker (Dolly's Mirror, Loaded Die, Destiny Draught, Cheat).
+   One tile per Relic ability: a lone Relic is a button, a Relic with several
+   targets is a heading over short target chips. Single tiles pack two to a row;
+   target groups take the full row. The list scrolls rather than growing past
+   the viewport, since a deep relic bar can still hold a dozen of these. */
+.die-relic-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.35rem;
+  width: min(24rem, calc(100vw - 4rem));
+  max-height: min(20rem, 45dvh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--trim-lit) transparent;
+  padding: 0.25rem 0.3rem 0.25rem 0.25rem;
+  background: #17110d;
+  overscroll-behavior: contain;
+  text-align: left;
+}
+
+.die-relic {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid rgb(217 180 91 / 0.35);
+  border-radius: 4px;
+  background: #241c16;
+  color: var(--ink);
+}
+
+.die-relic--group,
+/* The owner label would starve a half-width tile of room for the Relic name. */
+.die-relic-list--shared > .die-relic { grid-column: 1 / -1; }
+
+.die-relic__head,
+.die-relic--single {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.die-relic--single {
+  min-height: 44px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.die-relic--single:hover,
+.die-relic__target:hover { border-color: var(--gold); }
+
+.die-relic--single[aria-pressed='true'],
+.die-relic__target[aria-pressed='true'] {
+  border-color: var(--gold);
+  background: rgb(217 180 91 / 0.3);
+}
+
+.die-relic__icon {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  object-fit: contain;
+}
+
+.die-relic__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.1;
+  color: var(--sts-gold);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 0.85rem;
+}
+
+.die-relic__owner {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow-wrap: anywhere;
+  line-height: 1.1;
+  opacity: 0.7;
+  font-size: 0.7rem;
+}
+
+.die-relic__faces {
+  flex: none;
+  margin-left: auto;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgb(217 180 91 / 0.2);
+  color: var(--ink);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.die-relic__targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.die-relic__target {
+  min-height: 44px;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid rgb(217 180 91 / 0.45);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}

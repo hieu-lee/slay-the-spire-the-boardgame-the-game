@@ -56,6 +56,7 @@
 @import './chrome/run-header.css';
 @import './chrome/disclosures.css';
 @import './chrome/combat-relic-actions.css';
+@import './chrome/die-relic-choices.css';
 @import './chrome/framed-screens.css';
 @import './chrome/campfire.css';
 @import './chrome/reward-screen.css';

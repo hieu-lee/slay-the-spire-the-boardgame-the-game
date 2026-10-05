@@ -18250,7 +18250,7 @@ const calendarDetails = page.locator('.relic-actions details').filter({ hasText:
 await calendarDetails.locator('summary').click()
 const calendarTarget = calendarDetails.getByRole('button', { name: /Stone Calendar/ }).first()
 await calendarTarget.waitFor()
-const calendarTargetName = await calendarTarget.textContent()
+const calendarTargetName = await calendarTarget.getAttribute('aria-label')
 const calendarBefore = await readState()
 await calendarTarget.click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].relics[0]?.spent === true)

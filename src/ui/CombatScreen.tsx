@@ -169,6 +169,7 @@ import type {
   StartTurnChoice,
 } from '../game/combat.ts'
 import { chosenDieRelicAbilities, potionDef, relicDef } from '../game/relics.ts'
+import { DieRelicChoiceList, dieRelicChoices } from './DieRelicChoices.tsx'
 import { CAPS, DOWNFALL_CHARACTER_IDS } from '../game/types.ts'
 import type { CardInstance, DownfallCharacterId, Enemy, Player } from '../game/types.ts'
 import type { ActionOutcome, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
@@ -260,9 +261,6 @@ type ChamberReturnFlight = {
 }
 
 type SlimeCardZoom = { card: CardInstance; x: number; y: number }
-
-const dieRelicChoiceLabel = (owner: string, relic: string, faces: readonly number[]): string =>
-  `${owner}: ${relic} · die ${faces.join('/')}`
 
 function downfallEnergyOrbLayers(character: DownfallCharacterId, empty: boolean) {
   const layers = character === 'guardian' ? ['6', '1', '2', '3', '4', '5', '7'] : ['1', '2', '3', '4', '5', '6']
@@ -5493,52 +5491,39 @@ function CombatScreenView({
           )) : null}
           {pending?.hermitDieRelicChoice && !pending.hermitDieRelicChoiceConfirmed ? (
             <>
-              {state.players.filter((owner) => !owner.dead).flatMap((owner) => owner.relics.flatMap((held, relicIndex) =>
-                chosenDieRelicAbilities(relicDef(held.defId)).flatMap((ability, abilityIndex) => {
-                  if (ability.trigger.kind !== 'dieRelic') return []
-                  const faces = ability.trigger.faces
-                  const enemies = ability.effects.some((effect) => reachesEnemy(effect, owner))
-                    ? livingEnemies(state) : [undefined]
-                  const players = ability.supportTarget === 'anyPlayer'
-                    ? state.players.filter((player) => !player.dead) : [undefined]
-                  return enemies.flatMap((enemy) => players.map((targetPlayer) => {
-                    const choice = {
-                      playerId: owner.id,
-                      relicIndex,
-                      abilityIndex,
-                      enemyUid: enemy?.uid,
-                      targetPlayerId: targetPlayer?.id,
-                    }
-                    const sameRelic = pending.hermitDieRelics.findIndex((selected) =>
-                      selected.playerId === owner.id && selected.relicIndex === relicIndex)
-                    const selected = sameRelic >= 0 &&
-                      pending.hermitDieRelics[sameRelic]!.abilityIndex === abilityIndex &&
-                      pending.hermitDieRelics[sameRelic]!.enemyUid === enemy?.uid &&
-                      pending.hermitDieRelics[sameRelic]!.targetPlayerId === targetPlayer?.id
-                    return <button type="button" className="prompt__mode"
-                      key={`${owner.id}:${relicIndex}:${abilityIndex}:${enemy?.uid ?? ''}:${targetPlayer?.id ?? ''}`}
-                      aria-pressed={selected}
-                      onClick={() => {
-                        const hermitDieRelics = selected
-                          ? pending.hermitDieRelics.filter((_, index) => index !== sameRelic)
-                          : sameRelic >= 0
-                            ? pending.hermitDieRelics.map((current, index) => index === sameRelic ? choice : current)
-                            : pending.hermitDieRelics.length < pending.hermitDieRelicChoice!.amount
-                              ? [...pending.hermitDieRelics, choice] : pending.hermitDieRelics
-                        const exact = pending.hermitDieRelicChoice!.minimum === pending.hermitDieRelicChoice!.amount &&
-                          hermitDieRelics.length === pending.hermitDieRelicChoice!.amount
-                        const next = { ...pending, hermitDieRelics, hermitDieRelicChoiceConfirmed: false }
-                        if (exact && hermitDieRelicSelectionsReady(next)) {
-                          stageOrCommit({ ...next, hermitDieRelicChoiceConfirmed: true })
-                        }
-                        else setPending(next)
-                      }}>
-                      {dieRelicChoiceLabel(owner.name, relicDef(held.defId).name, faces)}
-                      {enemy ? ` → ${enemyLabel(state.enemies, enemy)}` : ''}
-                      {targetPlayer ? ` → ${targetPlayer.name}` : ''}
-                    </button>
-                  }))
-                })))}
+              <DieRelicChoiceList state={state} choices={dieRelicChoices(state, { needsEnemyForAll: true })}
+                pressed={(choice) => pending.hermitDieRelics.some((selected) =>
+                  selected.playerId === choice.owner.id && selected.relicIndex === choice.relicIndex &&
+                  selected.abilityIndex === choice.abilityIndex && selected.enemyUid === choice.enemy?.uid &&
+                  selected.targetPlayerId === choice.targetPlayer?.id)}
+                onChoose={(picked) => {
+                  const choice = {
+                    playerId: picked.owner.id,
+                    relicIndex: picked.relicIndex,
+                    abilityIndex: picked.abilityIndex,
+                    enemyUid: picked.enemy?.uid,
+                    targetPlayerId: picked.targetPlayer?.id,
+                  }
+                  const sameRelic = pending.hermitDieRelics.findIndex((selected) =>
+                    selected.playerId === choice.playerId && selected.relicIndex === choice.relicIndex)
+                  const selected = sameRelic >= 0 &&
+                    pending.hermitDieRelics[sameRelic]!.abilityIndex === choice.abilityIndex &&
+                    pending.hermitDieRelics[sameRelic]!.enemyUid === choice.enemyUid &&
+                    pending.hermitDieRelics[sameRelic]!.targetPlayerId === choice.targetPlayerId
+                  const hermitDieRelics = selected
+                    ? pending.hermitDieRelics.filter((_, index) => index !== sameRelic)
+                    : sameRelic >= 0
+                      ? pending.hermitDieRelics.map((current, index) => index === sameRelic ? choice : current)
+                      : pending.hermitDieRelics.length < pending.hermitDieRelicChoice!.amount
+                        ? [...pending.hermitDieRelics, choice] : pending.hermitDieRelics
+                  const exact = pending.hermitDieRelicChoice!.minimum === pending.hermitDieRelicChoice!.amount &&
+                    hermitDieRelics.length === pending.hermitDieRelicChoice!.amount
+                  const next = { ...pending, hermitDieRelics, hermitDieRelicChoiceConfirmed: false }
+                  if (exact && hermitDieRelicSelectionsReady(next)) {
+                    stageOrCommit({ ...next, hermitDieRelicChoiceConfirmed: true })
+                  }
+                  else setPending(next)
+                }} />
               {pending.hermitDieRelicChoice.minimum !== pending.hermitDieRelicChoice.amount ? (
                 <button type="button" className="prompt__mode"
                   disabled={pending.hermitDieRelics.length < pending.hermitDieRelicChoice.minimum ||
@@ -5732,26 +5717,12 @@ function CombatScreenView({
 
       {pendingPotion === 'destiny_draught' ? (
         <div className="prompt" aria-label="Destiny Draught relic ability">
-          {state.players.filter((owner) => !owner.dead).flatMap((owner) => owner.relics.flatMap((target, targetRelicIndex) =>
-            chosenDieRelicAbilities(relicDef(target.defId)).flatMap((ability, targetAbilityIndex) => {
-              if (ability.trigger.kind !== 'dieRelic') return []
-              const faces = ability.trigger.faces
-              const enemies = (ability.target ?? 'enemy') !== 'allEnemies' &&
-                ability.effects.some((effect) => reachesEnemy(effect, owner))
-                ? state.enemies.filter((enemy) => !enemy.dead) : [undefined]
-              const players = ability.supportTarget === 'anyPlayer'
-                ? state.players.filter((player) => !player.dead) : [undefined]
-              return enemies.flatMap((enemy) => players.map((targetPlayer) => <button type="button"
-                key={`${owner.id}:${targetRelicIndex}:${targetAbilityIndex}:${enemy?.uid ?? ''}:${targetPlayer?.id ?? ''}`}
-                onClick={() => consumePotion(pendingPotion, {
-                  targetRelicPlayerId: owner.id, targetRelicIndex, targetAbilityIndex, enemyUid: enemy?.uid,
-                  targetPlayerId: targetPlayer?.id,
-                })}>
-                {dieRelicChoiceLabel(owner.name, relicDef(target.defId).name, faces)}
-                {enemy ? ` → ${enemyLabel(state.enemies, enemy)}` : ''}
-                {targetPlayer ? ` → ${targetPlayer.name}` : ''}
-              </button>))
-            })))}
+          <DieRelicChoiceList state={state} choices={dieRelicChoices(state)}
+            onChoose={(choice) => consumePotion(pendingPotion, {
+              targetRelicPlayerId: choice.owner.id, targetRelicIndex: choice.relicIndex,
+              targetAbilityIndex: choice.abilityIndex, enemyUid: choice.enemy?.uid,
+              targetPlayerId: choice.targetPlayer?.id,
+            })} />
           <button type="button" className="prompt__cancel" onClick={cancelPotionChoice}>Cancel</button>
         </div>
       ) : null}
@@ -5861,29 +5832,16 @@ function CombatScreenView({
             if (reroute) {
               const face = heldId === 'nilrys_codex' ? 2 : null
               return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
-                {state.players.filter((owner) => !owner.dead).flatMap((owner) => owner.relics.flatMap((target, targetRelicIndex) =>
-                  chosenDieRelicAbilities(relicDef(target.defId)).flatMap((ability, targetAbilityIndex) => {
-                    if (ability.trigger.kind !== 'dieRelic' || face !== null && !ability.trigger.faces.includes(face) ||
-                      ['nilrys_codex', 'loaded_die'].includes(heldId) && owner.id === viewerId &&
-                      targetRelicIndex === relicIndex) return []
-                    const faces = ability.trigger.faces
-                    const enemies = (ability.target ?? 'enemy') !== 'allEnemies' &&
-                      ability.effects.some((effect) => reachesEnemy(effect, owner))
-                      ? state.enemies.filter((enemy) => !enemy.dead)
-                      : [undefined]
-                    const players = ability.supportTarget === 'anyPlayer'
-                      ? state.players.filter((player) => !player.dead) : [undefined]
-                    return enemies.flatMap((enemy) => players.map((targetPlayer) => <button type="button"
-                      key={`${owner.id}:${targetRelicIndex}:${targetAbilityIndex}:${enemy?.uid ?? ''}:${targetPlayer?.id ?? ''}`}
-                      onClick={() => useRelic(relicIndex, {
-                        targetRelicPlayerId: owner.id, targetRelicIndex, targetAbilityIndex, enemyUid: enemy?.uid,
-                        targetPlayerId: targetPlayer?.id,
-                      })}>
-                      {dieRelicChoiceLabel(owner.name, relicDef(target.defId).name, faces)}
-                      {enemy ? ` → ${enemyLabel(state.enemies, enemy)}` : ''}
-                      {targetPlayer ? ` → ${targetPlayer.name}` : ''}
-                    </button>))
-                  })))}
+                <DieRelicChoiceList state={state}
+                  choices={dieRelicChoices(state, { skip: (owner, targetRelicIndex, faces) =>
+                    face !== null && !faces.includes(face) ||
+                    ['nilrys_codex', 'loaded_die'].includes(heldId) && owner.id === viewerId &&
+                    targetRelicIndex === relicIndex })}
+                  onChoose={(choice) => useRelic(relicIndex, {
+                    targetRelicPlayerId: choice.owner.id, targetRelicIndex: choice.relicIndex,
+                    targetAbilityIndex: choice.abilityIndex, enemyUid: choice.enemy?.uid,
+                    targetPlayerId: choice.targetPlayer?.id,
+                  })} />
               </details>]
             }
             return [simpleAction]
