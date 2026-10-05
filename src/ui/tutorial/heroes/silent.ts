@@ -83,7 +83,7 @@ export const SILENT: HeroTutorial = {
       steps: [
         say('Your first fight', 'This Jaw Worm has 7 HP. Bring it to 0 to win. It stands in your row, so its attacks hit you.', at.enemy('e0')),
         say('Enemy intent', 'The icon above an enemy is its intent: what it will do on its turn. The Jaw Worm will attack for 2 and gain 1 Block. Many enemies pick their move from the die rolled at the start of each round.', at.intent('e0'), at.die),
-        say('The die', 'One die is rolled each round for the whole table. On a 6, your Loaded Die relic gives 1 extra Energy.', at.die),
+        say('The die', 'One die is rolled each round for the whole table. Loaded Die gives 1 Block on a 4 or 5. On a 6, it gives 1 Block or triggers another die relic ability.', at.die),
         say('Seven cards', 'Ring of the Snake drew 2 extra cards: Neutralize+, Deadly Poison, Survivor, 2 Strikes and 2 Defends. From turn 2 on you draw the usual 5. Cards you do not play are discarded when your turn ends.', at.hand),
         say('Energy', 'You get 3 Energy every turn, and unspent Energy is lost. A card\'s cost is in its top-left corner: Neutralize costs 0, everything else here costs 1.', at.energy),
         task('Play Neutralize', 'Neutralize+ is free: deal 2 and apply Weak. Tap Neutralize, then tap the Jaw Worm, or drag it onto the Jaw Worm.', playedDown('neutralize'), at.handCard('neutralize'), at.enemy('e0')),

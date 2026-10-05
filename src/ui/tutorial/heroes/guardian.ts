@@ -87,7 +87,7 @@ export const GUARDIAN: HeroTutorial = {
       steps: [
         say('Welcome to the Spire', 'This tutorial walks one planned Act I run with the Guardian, so every card, enemy and room can be explained. When the coach asks for a move, only the ringed controls respond. Hide tips at any time to play freely.'),
         say('Your health', 'The Guardian has 9 HP. Attacks here deal 1 to 4 damage, so every point matters. At 0 HP the run is over.', at.hp),
-        say('Deck and relics', 'Your deck holds 4 Strikes, 4 Defends, Twin Slam and Curl Up; open it here any time. The Guardian\'s own relic puts you in Attack Mode at the start of every fight, and Loaded Die gives 1 Energy on a 6. Hover over or long-press a relic to read it.', at.deck, at.relics),
+        say('Deck and relics', 'Your deck holds 4 Strikes, 4 Defends, Twin Slam and Curl Up; open it here any time. The Guardian\'s own relic puts you in Attack Mode at the start of every fight, and Loaded Die gives 1 Block on a 4 or 5; on a 6, it can give that Block or trigger another die relic ability. Hover over or long-press a relic to read it.', at.deck, at.relics),
         say("The Heart's Boon", "Downfall heroes are the Spire's villains, so the Heart offers its Boon instead of Neow's Blessing. The red reward is always 3 Gold and a Card Reward. Then you choose one of three blue options.", at.neowCard),
         task('Take the Gold', 'The red reward starts with 3 Gold. Gold buys cards, relics, potions and card removal from merchants. Take it.',
           neowGoldTaken, at.neowButton('Gain 3 Gold')),
@@ -115,7 +115,7 @@ export const GUARDIAN: HeroTutorial = {
       steps: [
         say('Your first fight', 'This Jaw Worm has 7 HP. Bring it to 0 to win. It stands in your row, so its attacks hit you.', at.enemy('e0')),
         say('Enemy intent', 'The icon above an enemy is its intent: what it will do on its turn. The die shows a 5, so the Jaw Worm will attack for 3. Many enemies pick their move from the die rolled each round.', at.intent('e0'), at.die),
-        say('The die', 'One die is rolled each round for the whole table. On a 6, your Loaded Die relic gives 1 extra Energy.', at.die),
+        say('The die', 'One die is rolled each round for the whole table. Loaded Die gives 1 Block on a 4 or 5. On a 6, it gives 1 Block or triggers another die relic ability.', at.die),
         say('Your hand', 'You drew Twin Slam, Curl Up, Speed Boost, a Strike and a Defend. You get 3 Energy every turn. A card\'s cost is in its top-left corner: Twin Slam and Curl Up cost 2, Speed Boost 0.', at.hand),
         say('Attack and Defense Mode', 'The Guardian is always in one of two Modes, and every fight starts in Attack Mode. A card line that begins "Attack Mode:" or "Defense Mode:" only happens in that Mode.', at.hero),
         say('Choose a Mode', 'At the start of each turn you choose the Mode for that turn. Twin Slam deals 2, plus 3 more in Attack Mode. Curl Up gives 2 Block, plus 1 Vigor in Defense Mode.', spot('.guardian-mode-choice')),
@@ -129,7 +129,7 @@ export const GUARDIAN: HeroTutorial = {
         task('Play Curl Up', 'Curl Up costs 2: gain 2 Block, and 1 Vigor because you are in Defense Mode. It needs no target: tap it, or drag it up.',
           playedDown('guardian_curl_up'), at.handCard('guardian_curl_up'), at.hero),
         say('Block and Vigor', 'Each point of Block stops 1 damage until your next turn. Vigor waits on your hero, across turns, until you spend it. You can hold at most 4.', at.hero),
-        task('Defend', 'Defend costs 1: 1 more Block. That makes 3, all of the Jaw Worm\'s attack.', playedDown('guardian_defend'), at.handCard('guardian_defend'), at.hero),
+        task('Defend', 'Defend costs 1: 1 more Block. With Loaded Die\'s 1 and Curl Up\'s 2, that makes 4, enough for the Jaw Worm\'s attack.', playedDown('guardian_defend'), at.handCard('guardian_defend'), at.hero),
         say('Retain', 'You are out of Energy. Twin Slam and the Strike are discarded when the turn ends, but Speed Boost has Retain, so it stays in your hand for next turn.', at.handCard('guardian_speed_boost')),
         endTurn('Enemies act after you. End the turn and watch your Block soak up the Jaw Worm\'s attack.', 2),
       ],
@@ -138,7 +138,7 @@ export const GUARDIAN: HeroTutorial = {
       id: 'start-a1r0c0-turn-2',
       when: turnStart('a1r0c0', 2),
       steps: [
-        say('Not a scratch', 'Your 3 Block stopped all 3 damage, and it is gone now that your turn has come round again. Your Vigor is still banked on your hero.', at.hero),
+        say('Not a scratch', 'Your Block stopped all 3 damage, and it is gone now that your turn has come round again. Your Vigor is still banked on your hero.', at.hero),
         say('Your new hand', 'You drew 3 Strikes and 2 Defends, and Speed Boost is still here. The Jaw Worm has all 7 HP. Time to attack.', at.hand),
         ...chooseMode('Attack', 'Back to Attack Mode', 'You stay in a Mode until you shift. Choose Attack Mode: in it, Vigor adds to every hit.'),
       ],
@@ -192,9 +192,9 @@ export const GUARDIAN: HeroTutorial = {
           playedDown('guardian_poly_beam'), at.handCard('guardian_poly_beam'), at.enemy('e0')),
         task('Twin Slam the Mad Gremlin', 'Twin Slam hits for 2, then 3: exactly its 5 HP. One card kills it before Angry can make it stronger.',
           playedDown('guardian_twin_slam'), at.handCard('guardian_twin_slam'), at.enemy('e0-summon')),
-        task('Defend', 'Your last Energy buys 1 Block against the other Sneaky Gremlin\'s 2 damage.',
+        task('Defend', 'Your last Energy buys 1 Block. With Loaded Die\'s 1 Block, that stops the other Sneaky Gremlin\'s 2 damage.',
           playedDown('guardian_defend', 1), at.handCard('guardian_defend'), at.hero),
-        endTurn('The last Sneaky Gremlin hits you for 2, and 1 of it is blocked.', 2),
+        endTurn('Loaded Die and Defend block all 2 damage from the last Sneaky Gremlin.', 2),
       ],
     },
     {
@@ -308,7 +308,7 @@ export const GUARDIAN: HeroTutorial = {
       steps: [
         say('Spore Cloud', 'Fungi Beasts have Spore Cloud: when one dies, you become Vulnerable, and the next hit on you is doubled. Kill them when no big hit is coming.', at.enemies),
         say('Their moves', 'On this 6, the big Fungi Beast (6 HP) gains 2 Strength, and the small one (5 HP) hits for 1 and gains 1. Strength adds 1 damage to each of its hits.', at.intent('e0'), at.intent('e0-summon')),
-        say('Loaded Die', 'The die shows a 6, so Loaded Die will give you 1 extra Energy this turn. Its panel on the left could spend the 6 on Nilry\'s Codex instead, but the Energy is better here, so leave it alone.', spot('.relic-actions details'), at.die),
+        say('Loaded Die', 'The die shows a 6, so Loaded Die can give you 1 Block or trigger another die relic ability. Keep the Block here to soften the small Fungi Beast\'s hit; leave its panel alone.', spot('.relic-actions details'), at.die),
         ...chooseMode('Attack', 'Stay in Attack Mode', 'Priming Shot only gives its Vigor in Attack Mode. Keep it.'),
       ],
     },
@@ -320,8 +320,8 @@ export const GUARDIAN: HeroTutorial = {
           playedDown('guardian_priming_shot'), at.handCard('guardian_priming_shot'), at.enemy('e0')),
         task('Twin Slam it', '3, then 4 with Vigor: the big Fungi Beast dies before its Strength ever matters. Its Spore Cloud makes you Vulnerable.',
           playedDown('guardian_twin_slam'), at.handCard('guardian_twin_slam'), at.enemy('e0')),
-        task('Your last Energy', 'The 6 gave you 1 extra Energy from Loaded Die. Strike the small Fungi Beast for 2, or Defend against its doubled hit. Then end your turn.',
-          turnReached(2), at.handCard('guardian_strike'), at.handCard('guardian_defend'), at.enemy('e0-summon'), at.hero, at.endTurn),
+        task('End your turn', 'You spent your 3 Energy. Loaded Die\'s 1 Block softens the small Fungi Beast\'s doubled hit. End your turn.',
+          turnReached(2), at.endTurn),
       ],
     },
     {

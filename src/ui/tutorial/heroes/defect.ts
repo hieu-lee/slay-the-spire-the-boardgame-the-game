@@ -51,7 +51,7 @@ export const DEFECT: HeroTutorial = {
       steps: [
         say('Welcome to the Spire', 'This tutorial walks one planned Act I run with the Defect, so every card, enemy and room can be explained. When the coach asks for a move, only the ringed controls respond. Hide tips at any time to play freely.'),
         say('Your health', 'The Defect has 9 HP. Most attacks here deal 1 to 4 damage, so every point matters. At 0 HP the run is over.', at.hp),
-        say('Deck and relics', 'Your deck holds 4 Strikes, 4 Defends, Zap and Dual Cast; open it here any time. Cracked Core Channels a Lightning Orb at the start of every fight. Loaded Die gives 1 Energy when the die shows 6. Hover over or long-press a relic to read it.', at.deck, at.relics),
+        say('Deck and relics', 'Your deck holds 4 Strikes, 4 Defends, Zap and Dual Cast; open it here any time. Cracked Core Channels a Lightning Orb at the start of every fight. Loaded Die gives 1 Block on a 4 or 5; on a 6, it can give that Block or trigger another die relic ability. Hover over or long-press a relic to read it.', at.deck, at.relics),
         say("Neow's Blessing", 'Every run starts with Neow. The red reward is always 3 Gold and a Card Reward. Then you choose one of three blue options.', at.neowCard),
         NEOW_GOLD,
         NEOW_REVEAL,

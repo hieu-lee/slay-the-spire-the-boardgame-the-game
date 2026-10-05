@@ -55,7 +55,7 @@ const fired = (defId: string) => (run: RunState) => !run.combat || !inChamber(de
  * follow skip themselves when the planned card did not reach the Chamber.
  */
 const covetPlayed = (run: RunState) => !run.combat || handCount(run, 'hermit_covet') === 0
-/** Played down, or no Energy left to do it with (e.g. the die did not roll the 6 the script expects). */
+/** Played down, or no Energy left to do it with. */
 const spent = (defId: string, left = 0) => (run: RunState) =>
   playedDown(defId, left)(run) || (run.combat?.players[0]?.energy ?? 0) === 0
 const CHAMBER = spot('.hermit-chamber-trigger')
@@ -78,7 +78,7 @@ export const HERMIT: HeroTutorial = {
       steps: [
         say('Welcome to the Spire', 'This tutorial walks one planned Act I run with the Hermit, a Downfall hero, so every card, enemy and room can be explained. When the coach asks for a move, only the ringed controls respond. Hide tips at any time to play freely.'),
         say('Your health', 'The Hermit has 9 HP. Enemy attacks here deal 1 to 4 damage, so Block and killing enemies before they act matter a lot. At 0 HP the run is over.', at.hp),
-        say('Deck and relics', 'Your deck holds Covet, Snapshot, 5 Strikes and 4 Defends; open it here any time. Hermit Strikes deal 1 and Defends give 1 Block. Loaded Die gives 1 extra Energy when the die rolls a 6.', at.deck, at.relics),
+        say('Deck and relics', 'Your deck holds Covet, Snapshot, 5 Strikes and 4 Defends; open it here any time. Hermit Strikes deal 1 and Defends give 1 Block. Loaded Die gives 1 Block on a 4 or 5; on a 6, it can give that Block or trigger another die relic ability.', at.deck, at.relics),
         say("The Heart's Boon", "Downfall heroes start with the Heart's Boon instead of Neow's Blessing. The red reward is always 3 Gold and a Card Reward. Then you choose one of three blue options.", at.neowCard),
         task('Take the Gold', 'The red reward starts with 3 Gold. Gold buys cards, relics, potions and card removal from merchants. Take it.',
           neowGoldTaken, at.neowButton('Gain 3 Gold')),
@@ -129,19 +129,19 @@ export const HERMIT: HeroTutorial = {
       id: 'fight-a1r0c0-turn-2',
       when: inFight('a1r0c0', 2),
       steps: [
-        say('A 6', 'The die rolled a 6, so Loaded Die gave you 1 extra Energy: 4 this turn. Covet is still in your hand thanks to Retain.', at.die, at.energy),
+        say('A 6', 'The die rolled a 6, so Loaded Die gave you 1 Block. You have the usual 3 Energy. Covet is still in your hand thanks to Retain.', at.die, at.energy),
         say('Strength', 'The Cultist now has 1 Strength, so its attack deals 2.', at.intent('e0')),
         task('Rapid Fire', 'Play High-Caliber on the Cultist. It deals 1 and gives 1 Block, then Rapid Fire plays it again: 2 damage and 2 Block, enough to stop the attack.',
           playedDown('hermit_high_caliber'), at.handCard('hermit_high_caliber'), at.enemy('e0')),
-        task('Strike twice', 'Spend your last 2 Energy on both Strikes. The Cultist is left on 1 HP.', spent('hermit_strike'), at.handCard('hermit_strike'), at.enemy('e0')),
-        task('End your turn', 'Your 2 Block covers its 2 damage.', turnReached(3), at.endTurn),
+        task('Strike', 'Spend your last Energy on a Strike. The Cultist is left on 2 HP.', spent('hermit_strike', 1), at.handCard('hermit_strike'), at.enemy('e0')),
+        task('End your turn', 'Your 3 Block covers its 2 damage.', turnReached(3), at.endTurn),
       ],
     },
     {
       id: 'fight-a1r0c0-turn-3',
       when: inFight('a1r0c0', 3),
       steps: [
-        say('Finish it', 'The Cultist has 1 HP left. Any Attack finishes it. Your draw pile ran out, so your discard pile was shuffled back in to draw from.', at.hand),
+        say('Finish it', 'The Cultist has 2 HP left. Finish it with your Attacks. Your draw pile ran out, so your discard pile was shuffled back in to draw from.', at.hand),
       ],
     },
     rewardChapter('a1r0c0', {
@@ -238,7 +238,7 @@ export const HERMIT: HeroTutorial = {
       id: 'fight-a1r4c1-turn-2',
       when: inFight('a1r4c1', 2),
       steps: [
-        say('Another 6', 'Loaded Die gave you 4 Energy again, more than enough to kill the Slime before its 4-damage attack.', at.die, at.energy),
+        say('Another 6', 'Loaded Die gave you 1 Block again. Your 3 Energy is enough to kill the Slime before its 4-damage attack.', at.die, at.energy),
         openChamber('hermit_tracking_shots', 'Tracking Shots is in the Chamber.'),
         task('Fire Tracking Shots', 'It has no Dead On, but the Chamber kept it ready: 3 damage, leaving the Slime on 1. If asked to Load it again, choose Do Not Load.',
           fired('hermit_tracking_shots'), at.handCard('hermit_tracking_shots'), at.enemy('e0'), spot('.prompt__mode', 'ot Load')),

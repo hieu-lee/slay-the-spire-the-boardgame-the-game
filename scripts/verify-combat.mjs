@@ -11019,6 +11019,19 @@ check('Gambling Chip rerolls from authoritative RNG and rejects a chosen face', 
   assert(first.die >= 1 && first.die <= 6, 'authoritative reroll was outside the die')
 })
 
+check('Loaded Die follows its printed Block faces and resolves only once per turn', () => {
+  for (let die = 1; die <= 6; die++) {
+    const state = { ...combat([makePlayer({ relics: [{ defId: 'loaded_die', spent: false }] })],
+      [makeEnemy()]), phase: 'start', die }
+    const resolved = resolveStartPlayerTurn(state, defaultStartTurnChoices(state))
+    assertEqual(resolved.players[0].block, die >= 4 ? 1 : 0, `die ${die}: printed Block`)
+    assertEqual(resolved.players[0].energy, 3, `die ${die}: Loaded Die grants no Energy`)
+    assertEqual(resolveStartPlayerTurn(resolved, []).players[0].block, resolved.players[0].block,
+      'replaying start-of-turn resolution granted Block twice')
+    assertEqual(state.players[0].block, 0, 'start-of-turn mutated the input state')
+  }
+})
+
 check('per-roll Relics activate once and Loaded Die can reroute another owned Relic', () => {
   const drawn = instance('defend_ironclad')
   const state = { ...combat([makePlayer({ draw: [drawn], relics: [
@@ -11045,11 +11058,14 @@ check('per-roll Relics activate once and Loaded Die can reroute another owned Re
   assertEqual(empty.presentationEvents.some((event) => event.kind === 'turn'), false,
     'a copied die Relic with no actual mutation published an impact')
   assertEqual(used.players[0].relics[0].spent, true)
+  const resolved = resolveStartPlayerTurn(used, defaultStartTurnChoices(used))
+  assertEqual(resolved.players[0].block, 0, 'rerouting also granted Loaded Die\'s own Block')
+  assertEqual(resolved.players[0].energy, 3, 'rerouting also granted Energy')
   assertEqual(activateRelic(used, 'p1', 0, {
     targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0,
   }), used)
   assert(!startTurnAbilities(used).some((ability) => ability.label.includes('Loaded Die')),
-    'Loaded Die paid both its Energy and reroute choices')
+    'Loaded Die paid both its Block and reroute choices')
 })
 
 check("Dolly's Mirror copies any die face for its living owner, once on a roll of 1", () => {

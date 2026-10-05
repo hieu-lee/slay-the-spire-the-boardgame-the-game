@@ -79,7 +79,7 @@ export const WATCHER: HeroTutorial = {
       steps: [
         say('Your first fight', 'This Jaw Worm has 7 HP. Bring it to 0 to win. It stands in your row, so its attacks hit you.', at.enemy('e0')),
         say('Enemy intent', 'The icon above an enemy is its intent: what it will do on its turn. The Jaw Worm will attack for 2 and gain 1 Block. Many enemies pick their move from the die rolled at the start of each round.', at.intent('e0'), at.die),
-        say('The die', 'One die is rolled each round for the whole table. On a 6, your Loaded Die relic gives 1 extra Energy.', at.die),
+        say('The die', 'One die is rolled each round for the whole table. Loaded Die gives 1 Block on a 4 or 5. On a 6, it gives 1 Block or triggers another die relic ability.', at.die),
         say('Your hand', 'You drew Vigilance, Eruption and 3 Strikes. Cards you do not play are discarded when your turn ends.', at.hand),
         say('Energy', 'You get 3 Energy every turn, and unspent Energy is lost. Vigilance costs 2, your upgraded Eruption 1, and Strike 1. That looks like 2 cards, but Stances will buy you more.', at.energy),
         task('Play Vigilance', 'Vigilance gives 2 Block and enters Calm. Tap Vigilance, then tap your hero if it asks who gets the Block.', playedDown('vigilance'), at.handCard('vigilance'), at.hero),
@@ -197,7 +197,7 @@ export const WATCHER: HeroTutorial = {
         task('Play the Defends', 'Play all 3 Defends for 3 Block. A bad hand is a turn to defend.', playedDown('defend_watcher'), at.handCard('defend_watcher'), at.hero),
         task('Use your Miracle', 'Spend the Miracle for 1 Energy.', miraclesLeft(0), miracleButton),
         task('Strike', 'Chip 1 damage off the Jaw Worm: 9 HP left.', playedDown('strike_watcher'), at.handCard('strike_watcher'), at.enemy('e0')),
-        task('End your turn', 'Flying Sleeves stays in your hand. The Jaw Worm\'s 4 damage meets 3 Block, so you lose 1 HP.', turnReached(2), at.endTurn),
+        task('End your turn', 'Flying Sleeves stays in your hand. Loaded Die added 1 Block to your Defends\' 3, so all 4 damage from the Jaw Worm is blocked.', turnReached(2), at.endTurn),
       ],
     },
     {

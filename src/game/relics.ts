@@ -458,10 +458,10 @@ RELICS.loaded_die = {
   id: 'loaded_die',
   name: 'Loaded Die',
   pool: 'solo',
-  trigger: { kind: 'dieRelic', faces: [6] },
-  effects: [{ kind: 'gainEnergy', amount: 1 }],
-  rule: 'Instead of its own Energy ability, trigger a die relic ability on another relic; its owner gains the effect.',
-  text: 'Solo only. On a 6: gain 1 Energy or trigger a die relic ability on another relic.',
+  trigger: { kind: 'dieRelic', faces: [4, 5, 6] },
+  effects: [{ kind: 'block', amount: 1 }],
+  rule: 'On a 6, instead of its own Block ability, trigger a die relic ability on another relic; its owner gains the effect.',
+  text: 'Solo only. On a 4 or 5: gain 1 Block. On a 6: gain 1 Block or trigger a die relic ability on another relic.',
 }
 
 /** All automatic faces of a relic, in their printed order. */

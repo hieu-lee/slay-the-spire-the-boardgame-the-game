@@ -140,7 +140,7 @@ export const SLIME_BOSS: HeroTutorial = {
         say('Prepare Crush', 'Your hand holds Prepare Crush. It costs all 3 Energy this turn, but at the start of your next turn it deals 15 damage, far more than the Red Slaver\'s HP.', at.handCard('slime_boss_prepare_crush')),
         task('Play Prepare Crush', 'Tap Prepare Crush to play it. Powers stay in play instead of going to the discard pile.',
           playedDown('slime_boss_prepare_crush'), at.handCard('slime_boss_prepare_crush')),
-        say('Worth the hit', 'You will take 3 this turn, but the fight ends the moment your next turn starts. Bruiser also hits for 1 at the end of this turn.', at.hero),
+        say('Worth the hit', 'Loaded Die blocks 1 of the Slaver\'s 3 damage, so you lose 2 HP this turn. The fight ends the moment your next turn starts. Bruiser also hits for 1 at the end of this turn.', at.hero),
         task('End your turn', 'End the turn. Prepare Crush fires as your next turn begins.', turnReached(2), at.endTurn),
       ],
     },
@@ -181,7 +181,7 @@ export const SLIME_BOSS: HeroTutorial = {
       id: 'fight-a1r4c1-turn-2',
       when: inFight('a1r4c1', 2),
       steps: [
-        say('Loaded Die', 'The die rolled a 6, so your Loaded Die relic gave you 1 extra Energy: 4 this turn.', at.die, at.energy),
+        say('Loaded Die', 'The die rolled a 6, so your Loaded Die relic gave you 1 Block. You have the usual 3 Energy.', at.die, at.energy),
         say('No need to Crush', 'Prepare Crush would win next turn. Slime Slap+ and Spit win this turn, before the Looter hits again.', at.hand),
         task('Slime Slap the Looter', 'Slime Slap+ deals 4 and Grows Bruiser Slime to level 2. Choose Bruiser Slime to Grow.',
           playedDown('slime_boss_slime_slap'), at.handCard('slime_boss_slime_slap'), at.enemy('e0'), bruiserChoice),

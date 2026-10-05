@@ -71,13 +71,13 @@ export const IRONCLAD: HeroTutorial = {
       steps: [
         say('Your first fight', 'This Jaw Worm has 7 HP. Bring it to 0 to win. It stands in your row, so its attacks hit you.', at.enemy('e0')),
         say('Enemy intent', 'The icon above an enemy is its intent: what it will do on its turn. The Jaw Worm will attack for 3. Many enemies pick their move from the die rolled at the start of each round.', at.intent('e0'), at.die),
-        say('The die', 'One die is rolled each round for the whole table. On a 6, your Loaded Die relic gives 1 extra Energy.', at.die),
+        say('The die', 'One die is rolled each round for the whole table. Loaded Die gives 1 Block on a 4 or 5. On a 6, it gives 1 Block or triggers another die relic ability.', at.die),
         say('Your hand', 'You drew 5 cards: Bash, Clothesline, 2 Strikes and a Defend. Cards you do not play are discarded when your turn ends.', at.hand),
         say('Energy', 'You get 3 Energy every turn, and unspent Energy is lost. A card\'s cost is in its top-left corner: Bash and Clothesline cost 2, Strike and Defend cost 1.', at.energy),
         task('Play Bash', 'Bash deals 4 and applies Vulnerable. Tap Bash, then tap the Jaw Worm, or drag Bash onto it.', playedDown('bash'), at.handCard('bash'), at.enemy('e0')),
         say('Vulnerable', 'The Jaw Worm now carries a Vulnerable token. The next hit on it is doubled, then one token is removed. It is down to 3 HP.', at.enemy('e0')),
         task('Strike', 'A Strike deals 1, doubled to 2 by Vulnerable. That leaves the Jaw Worm on 1 HP.', playedDown('strike_ironclad', 1), at.handCard('strike_ironclad'), at.enemy('e0')),
-        say('Block', 'You are out of Energy, so Defend waits. Defend gives 1 Block: each point stops 1 damage until your next turn, up to 20. Taking 3 now is fine.', at.hero),
+        say('Block', 'You are out of Energy, so Defend waits. Each point of Block stops 1 damage until your next turn, up to 20. Loaded Die gave you 1 Block, so the Jaw Worm\'s 3-damage hit will cost you 2 HP.', at.hero),
         task('End your turn', 'Enemies act after you. End the turn and watch the Jaw Worm attack.', turnReached(2), at.endTurn),
       ],
     },
@@ -85,7 +85,7 @@ export const IRONCLAD: HeroTutorial = {
       id: 'fight-a1r0c0-turn-2',
       when: inFight('a1r0c0', 2),
       steps: [
-        say('Taking damage', 'The Jaw Worm hit you for 3. Your HP stays low between fights unless you heal, so avoid damage you do not need to take.', at.hp),
+        say('Taking damage', 'The Jaw Worm dealt 3 damage, and Loaded Die blocked 1: you lost 2 HP. Your HP stays low between fights unless you heal, so avoid damage you do not need to take.', at.hp),
         say('Your piles', 'Played and unplayed cards went to the discard pile. When the draw pile runs out, the discard pile is shuffled into it. Tap a pile to look inside.', at.piles),
         task('Finish it', 'One Strike deals the last point of damage.', playedDown('strike_ironclad', 2), at.handCard('strike_ironclad'), at.enemy('e0')),
       ],
@@ -242,4 +242,3 @@ export const IRONCLAD: HeroTutorial = {
     },
   ],
 }
-
