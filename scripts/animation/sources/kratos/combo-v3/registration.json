@@ -1,0 +1,233 @@
+{
+  "note": "skull = crown-to-jaw of the original combo-v2 drawings (skullPixels at runtime). head = crown-to-goatee-tip of the combo-v3 drawings; headPixels is that length on the registered idle. Each combo-v3 drawing is scaled by the geometric mean of its head scale and its planted rear-sole scale against the median rear sole of the kept drawings, and the two must agree within 20%. Every drawing is planted on the idle rear sole. chainTrim removes whole chain links from a straight thrown chain so all three hits share one blade line.",
+  "runtimeCanvas": 1152,
+  "displayScale": 2.3,
+  "ground": 1136,
+  "skullPixels": 65.25,
+  "headPixels": 75.5,
+  "contactPoses": [
+    "left-extended",
+    "right-extended",
+    "slam"
+  ],
+  "durationMs": 2400,
+  "keys": [
+    [
+      0,
+      "idle"
+    ],
+    [
+      60,
+      "anticipation"
+    ],
+    [
+      300,
+      "left-cast"
+    ],
+    [
+      375,
+      "left-extended"
+    ],
+    [
+      450,
+      "right-cast"
+    ],
+    [
+      525,
+      "right-extended"
+    ],
+    [
+      600,
+      "right-pull"
+    ],
+    [
+      700,
+      "windup-cast"
+    ],
+    [
+      820,
+      "windup"
+    ],
+    [
+      1060,
+      "windup-cast"
+    ],
+    [
+      1120,
+      "slam-descend"
+    ],
+    [
+      1250,
+      "slam"
+    ],
+    [
+      1800,
+      "recovery"
+    ],
+    [
+      1900,
+      "retract"
+    ],
+    [
+      2000,
+      "catch"
+    ],
+    [
+      2140,
+      "settle"
+    ],
+    [
+      2280,
+      "idle"
+    ]
+  ],
+  "timing": {
+    "note": "Dash in 60-300ms; left extend 300-450ms; right extend 450-600ms; windup and slam 600-1800ms (yank the second blade back 100, rise 120, backswing held 240, overhead pass 60, over the top 130, impact held 550); retract 1800-2000ms; dash back 2000-2280ms. The overhead pass reuses the windup-cast drawing and the retract opens on the recovery drawing.",
+    "travel": {
+      "out": [
+        60,
+        300
+      ],
+      "back": [
+        2000,
+        2280
+      ]
+    },
+    "hitPoses": [
+      "left-extended",
+      "right-extended",
+      "slam"
+    ],
+    "chainCuePoses": [
+      "left-cast",
+      "right-cast",
+      "slam-descend"
+    ]
+  },
+  "poses": {
+    "idle": {
+      "source": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+      "skull": [
+        49,
+        253
+      ],
+      "foot": 978,
+      "stanceCenter": 708
+    },
+    "anticipation": {
+      "source": "scripts/animation/sources/kratos/combo-v2/anticipation.webp",
+      "skull": [
+        86,
+        287
+      ],
+      "foot": 980,
+      "stanceCenter": 800
+    },
+    "left-cast": {
+      "source": "scripts/animation/sources/kratos/combo-v3/left-cast.webp",
+      "head": [
+        527.5,
+        635.0
+      ]
+    },
+    "left-extended": {
+      "source": "scripts/animation/sources/kratos/combo-v3/left-extended.webp",
+      "head": [
+        533.2,
+        654.1
+      ],
+      "chainTrim": {
+        "x": 1005,
+        "length": 124,
+        "slope": 0.2
+      }
+    },
+    "right-cast": {
+      "source": "scripts/animation/sources/kratos/combo-v3/right-cast.webp",
+      "head": [
+        471.5,
+        577.5
+      ]
+    },
+    "right-extended": {
+      "source": "scripts/animation/sources/kratos/combo-v3/right-extended.webp",
+      "head": [
+        497.5,
+        602.5
+      ],
+      "chainTrim": {
+        "x": 980,
+        "length": 136,
+        "slope": 0.2
+      }
+    },
+    "right-pull": {
+      "source": "scripts/animation/sources/kratos/combo-v3/right-pull.webp",
+      "head": [
+        511.5,
+        615.5
+      ]
+    },
+    "windup-cast": {
+      "source": "scripts/animation/sources/kratos/combo-v3/windup-cast.webp",
+      "head": [
+        484,
+        607.5
+      ]
+    },
+    "windup": {
+      "source": "scripts/animation/sources/kratos/combo-v3/windup.webp",
+      "head": [
+        436.0,
+        549.0
+      ]
+    },
+    "slam-descend": {
+      "source": "scripts/animation/sources/kratos/combo-v3/slam-descend.webp",
+      "head": [
+        511.0,
+        631.0
+      ]
+    },
+    "slam": {
+      "source": "scripts/animation/sources/kratos/combo-v3/slam.webp",
+      "head": [
+        523.3,
+        648.3
+      ]
+    },
+    "recovery": {
+      "source": "scripts/animation/sources/kratos/combo-v3/recovery.webp",
+      "head": [
+        497.5,
+        602.5
+      ]
+    },
+    "retract": {
+      "source": "scripts/animation/sources/kratos/combo-v3/retract.webp",
+      "head": [
+        551.0,
+        669.0
+      ]
+    },
+    "catch": {
+      "source": "scripts/animation/sources/kratos/combo-v3/catch.webp",
+      "head": [
+        505.8,
+        621.9
+      ]
+    },
+    "settle": {
+      "source": "scripts/animation/sources/kratos/combo-v2/settle.webp",
+      "head": [
+        37.5,
+        270.0
+      ]
+    }
+  },
+  "vfx": {
+    "light": "scripts/animation/sources/kratos/combo-v2/light.webp",
+    "impact": "scripts/animation/sources/kratos/combo-v2/impact.webp"
+  },
+  "contactTolerance": 12
+}

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createServer } from 'vite'
@@ -13,6 +13,17 @@ const server = await createServer({ root, logLevel: 'silent', server: { port: 0 
 await server.listen()
 const origin = `http://localhost:${server.httpServer.address().port}`
 const idle = '.seat__portrait > img'
+// Every timed check follows the registered clock rather than restating its milliseconds.
+const registration = JSON.parse(readFileSync(resolve(root, 'scripts/animation/sources/kratos/combo-v3/registration.json'), 'utf8'))
+const keyEnds = [...registration.keys.slice(1).map(([time]) => time), registration.durationMs]
+const beats = registration.keys.map(([time, pose], index) => [pose === 'idle' ? 'ready' : pose, (time + keyEnds[index]) / 2])
+const beat = pose => beats.find(([name]) => name === pose)[1]
+const idleReturn = registration.keys.at(-1)[0]
+// Every registered drawing plus the light and impact VFX.
+const assetsReady = new Set(registration.keys.map(([, pose]) => pose)).size + 2
+// Every registered attack drawing, from the first cast to the blades flying home.
+const strikeBeats = beats.slice(beats.findIndex(([pose]) => pose === 'left-cast'),
+  beats.findIndex(([pose]) => pose === 'retract') + 1)
 const errors = []
 try {
   for (const [engine, type] of [['chromium', chromium], ['webkit', webkit]]
@@ -89,11 +100,18 @@ try {
           // startTime is the shared clock even when a busy renderer reports it late.
           assert(Number.isFinite(cold.start) && Number.isFinite(cold.targetStart) &&
             Math.abs(cold.start - cold.targetStart) < 2, `cold attacker and target clocks separated: ${JSON.stringify(cold)}`)
-          await page.waitForFunction(() => !document.querySelector('.character-attack'))
+          // Artwork landing mid-play must not swap in the drawings or re-aim the travel.
           releaseColdArtwork()
-          await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 16).catch(async error => {
+          await page.waitForFunction(ready => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === ready, assetsReady).catch(async error => {
             throw new Error(`${engine}/${screen}: warmup ${JSON.stringify(await page.locator('.board').evaluate(node => node.dataset))} ${JSON.stringify(errors)}`, { cause: error })
           })
+          const warmed = await page.evaluate(() => {
+            const attack = document.querySelector('.character-attack--kratos')
+            return attack && { fallback: Boolean(attack.querySelector('.is-fallback')),
+              goal: getComputedStyle(attack).getPropertyValue('--attack-x') }
+          })
+          assert.deepEqual(warmed, { fallback: true, goal: cold.goal }, `${engine}/${screen}: late artwork changed the cold play`)
+          await page.waitForFunction(() => !document.querySelector('.character-attack'))
           await page.unroute('**/kratos-slam.webp')
           const rest = await page.evaluate(paintedKratosBounds, idle)
           assert(rest.width > 45 && rest.height > 70, `${engine}/${screen}: missing or tiny Kratos`)
@@ -105,7 +123,7 @@ try {
             const label = `${engine}/${screen}/${card}`
             // Capture live beats in one page call; browser round trips can outlast
             // a whole pose on a busy phone renderer.
-            const played = await page.evaluate(card => new Promise((resolve, reject) => {
+            const played = await page.evaluate(({ card, idleReturn }) => new Promise((resolve, reject) => {
               const impacts = []
               const numbers = []
               const frameStats = { maxBodies: 0, maxTravel: 0 }
@@ -147,7 +165,7 @@ try {
                   last = { time, src: image?.src, bodies: visible.length }
                   frameStats.maxBodies = Math.max(frameStats.maxBodies, visible.length)
                   frameStats.maxTravel = Math.max(frameStats.maxTravel, new DOMMatrix(getComputedStyle(attack).transform).e)
-                  if (time >= 1950 && visible.length === 1 && image?.src.endsWith('/kratos-ready.webp')) {
+                  if (time >= idleReturn + 20 && visible.length === 1 && image?.src.endsWith('/kratos-ready.webp')) {
                     const returned = new DOMMatrix(getComputedStyle(attack).transform).e
                     if (Math.abs(returned) < .5) return finish(null, { frameStats, impacts,
                       numbers, returned, damage: Object.fromEntries(damage), before: Object.fromEntries(before),
@@ -158,7 +176,7 @@ try {
                 else setTimeout(sample, 16)
               }
               sample()
-            }), card).catch(error => { throw new Error(`${label}: ${error.message}`, { cause: error }) })
+            }), { card, idleReturn }).catch(error => { throw new Error(`${label}: ${error.message}`, { cause: error }) })
             assert.equal(played.frameStats.maxBodies, 1, `${label}: missing or duplicated attacker`)
             assert(played.frameStats.maxTravel > 10, `${label}: Kratos never reaches target`)
             assert.equal(Object.keys(played.damage).length, card === 'strike_kratos' ? 1 : 2, 'wrong authoritative targets')
@@ -187,33 +205,93 @@ try {
           await page.clock.pauseAt(new Date('2026-10-05T00:00:10Z'))
           const frozenSeq = await page.evaluate(() => window.kratosFixture.attack())
           await page.locator('.character-attack__pose--kratos-right-extended img').waitFor({ state: 'attached' })
-          await page.evaluate(async seq => {
+          const frozenAt = beat('right-extended')
+          await page.evaluate(async ({ seq, frozenAt }) => {
             await Promise.all([...document.querySelectorAll('.character-attack__pose img')].map(image => image.decode()))
             const animations = [...document.querySelectorAll(`.character-attack, [data-kratos-impact-seq="${seq}"]`)]
               .flatMap(node => node.getAnimations({ subtree: true }))
             animations.forEach(animation => animation.pause())
             await Promise.all(animations.map(animation => animation.ready))
-            animations.forEach(animation => { animation.currentTime = 900 })
-          }, frozenSeq)
-          const poseChecks = await page.evaluate(() => {
+            animations.forEach(animation => { animation.currentTime = frozenAt })
+          }, { seq: frozenSeq, frozenAt })
+          const poseChecks = await page.evaluate(({ beats, frozenAt }) => {
             const attack = document.querySelector('.character-attack--kratos')
             const animations = attack.getAnimations({ subtree: true })
-            const checks = [['ready', 0], ['anticipation', 200], ['left-cast', 350], ['left-extended', 500],
-              ['right-cast', 700], ['right-extended', 900], ['windup-cast', 1000], ['windup', 1120],
-              ['slam-descend', 1230], ['slam', 1360],
-              ['recovery', 1530], ['retract', 1650], ['catch', 1760], ['settle', 1850], ['ready', 2050]].map(([pose, time]) => {
+            const checks = beats.map(([pose, time]) => {
                 animations.forEach(animation => { animation.currentTime = time })
                 const visible = [...attack.querySelectorAll('.character-attack__pose img')]
                   .filter(image => Number(getComputedStyle(image.parentElement).opacity) > .5)
                 return { pose, time, count: visible.length, src: visible[0]?.src,
                   decoded: visible[0]?.complete && visible[0].naturalWidth === 1152 }
               })
-            animations.forEach(animation => { animation.currentTime = 900 })
+            animations.forEach(animation => { animation.currentTime = frozenAt })
             return checks
-          })
+          }, { beats, frozenAt })
           for (const drawing of poseChecks) assert(drawing.count === 1 && drawing.decoded &&
             drawing.src.endsWith(`/kratos-${drawing.pose}.webp`),
             `${engine}/${screen}: timed pose missing or duplicated ${JSON.stringify(drawing)}`)
+          // While he is out Kratos stands still: one travel, a planted rear sole, and one
+          // blade-tip line for both light hits and the slam, landing inside the target.
+          const stance = await page.evaluate(({ strikeBeats, frozenAt }) => {
+            const attack = document.querySelector('.character-attack--kratos')
+            const animations = attack.getAnimations({ subtree: true })
+            const target = document.querySelector('.enemy[data-enemy-id="enemy-0"] .enemy__portrait').getBoundingClientRect()
+            const measure = ([pose, time]) => {
+              animations.forEach(animation => { animation.currentTime = time })
+              const image = [...attack.querySelectorAll('.character-attack__pose img')]
+                .find(node => Number(getComputedStyle(node.parentElement).opacity) > .5)
+              const canvas = document.createElement('canvas')
+              canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+              const context = canvas.getContext('2d')
+              context.drawImage(image, 0, 0)
+              const data = context.getImageData(0, 0, canvas.width, canvas.height).data
+              const solid = (x, y) => data[(y * canvas.width + x) * 4 + 3] > 64
+              let right = 0, rightY = 0, bottom = 0, paintTop = canvas.height
+              for (let y = 0; y < canvas.height; y += 2) for (let x = 0; x < canvas.width; x += 2) {
+                if (!solid(x, y)) continue
+                if (x > right) { right = x; rightY = y }
+                paintTop = Math.min(paintTop, y)
+                bottom = Math.max(bottom, y)
+              }
+              // The planted rear sole is the leftmost run of solid columns in the ground band.
+              let footStart = -1, footEnd = -1
+              for (let x = 0; x < canvas.width && (footEnd < 0 || x - footEnd <= 6); x++) {
+                let touches = false
+                for (let y = bottom - 22; y <= bottom && !touches; y++) touches = solid(x, y)
+                if (touches) { if (footStart < 0) footStart = x; footEnd = x }
+              }
+              const rect = image.getBoundingClientRect()
+              const fit = Math.min(rect.width / canvas.width, rect.height / canvas.height)
+              const left = rect.left + (rect.width - canvas.width * fit) / 2
+              const top = rect.bottom - canvas.height * fit
+              return { pose, travel: new DOMMatrix(getComputedStyle(attack).transform).e,
+                tip: left + right * fit, tipY: top + rightY * fit, foot: left + (footStart + footEnd) / 2 * fit,
+                top: top + paintTop * fit, pixel: fit }
+            }
+            const poses = strikeBeats.map(measure)
+            animations.forEach(animation => { animation.currentTime = frozenAt })
+            return { poses, target: [target.left, target.right, target.top, target.bottom],
+              boardTop: document.querySelector('.board').getBoundingClientRect().top }
+          }, { strikeBeats, frozenAt })
+          const strike = stance.poses
+          const label = `${engine}/${screen}`
+          assert(strike.every(pose => Math.abs(pose.travel - strike[0].travel) < .5),
+            `${label}: Kratos moves between his hits ${JSON.stringify(strike)}`)
+          const contact = strike.filter(pose => registration.contactPoses.includes(pose.pose))
+          const tips = contact.map(pose => pose.tip)
+          assert(Math.max(...tips) - Math.min(...tips) < 8 * strike[0].pixel,
+            `${label}: light hits and slam reach different distances ${JSON.stringify(contact)}`)
+          const [targetLeft, targetRight, targetTop, targetBottom] = stance.target
+          assert(contact.every(pose => pose.tip > targetLeft && pose.tip < targetRight &&
+            pose.tipY > targetTop && pose.tipY < targetBottom),
+            `${label}: blades miss the target ${JSON.stringify({ contact, target: stance.target })}`)
+          // Integer CSS shifts leave a few canvas pixels of noise.
+          const feet = strike.map(pose => pose.foot)
+          assert(Math.max(...feet) - Math.min(...feet) < 8 * strike[0].pixel,
+            `${label}: rear foot slides while Kratos is out ${JSON.stringify(strike)}`)
+          // The board clips its overflow, so raised blades must stay below its top edge.
+          assert(strike.every(pose => pose.top >= stance.boardTop),
+            `${label}: the board clips Kratos's raised blades ${JSON.stringify({ boardTop: stance.boardTop, strike })}`)
           const shotPath = resolve(output, `${engine}-${screen}-second-light-frame.png`)
           const geometry = await page.evaluate(() => ({
             board: document.querySelector('.board').getBoundingClientRect().toJSON(),
@@ -276,7 +354,7 @@ print(f'visible skin: {matched}/{len(points)}')
               const f = window.kratosFixture; f.reset()
               f.state.enemies.splice(1); f.state.enemies[0].hp = 2; f.render()
             })
-            await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 16)
+            await page.waitForFunction(ready => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === ready, assetsReady)
             const queued = await page.evaluate(source => new Promise((resolve, reject) => {
               const f = window.kratosFixture
               const samples = []
@@ -310,7 +388,7 @@ print(f'visible skin: {matched}/{len(points)}')
             document.documentElement.dataset.reducedMotion = 'false'
             window.kratosFixture.reset()
           })
-          await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 16)
+          await page.waitForFunction(ready => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === ready, assetsReady)
           await page.evaluate(() => window.kratosFixture.attack())
           await page.locator('.character-attack--kratos').waitFor()
           await page.evaluate(() => {
@@ -319,7 +397,36 @@ print(f'visible skin: {matched}/{len(points)}')
           })
           await page.waitForFunction(() => !document.querySelector('.character-attack'))
           await page.locator('.board').screenshot({ path: resolve(output, `${engine}-${screen}-restored.png`) })
-          console.log(`PASS ${engine}/${screen}: Kratos weighted three-hit combo, poses, SFX, targets, scale, cold loading, reduced motion and restoration`)
+          // Bosses paint outside the rows; the slamming Kratos must still draw over the boss he hits.
+          await page.evaluate(() => {
+            const f = window.kratosFixture; f.reset()
+            f.state.enemies.splice(1)
+            Object.assign(f.state.enemies[0], { defId: 'time_eater', isBoss: true, hp: 60, maxHp: 60 })
+            f.render()
+          })
+          await page.waitForFunction(ready => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === ready, assetsReady)
+          const bossLayer = await page.evaluate(() => new Promise((resolve, reject) => {
+            const style = document.createElement('style')
+            style.textContent = '.character-attack, .character-attack * { pointer-events: auto !important; }'
+            const onImpact = event => {
+              if (event.detail.index !== 2) return
+              clearTimeout(timeout); document.removeEventListener('kratos-impact', onImpact)
+              document.head.append(style)
+              const portrait = document.querySelector('.board__bosses .enemy__portrait').getBoundingClientRect()
+              const hit = document.elementFromPoint(portrait.left + portrait.width / 2, portrait.top + portrait.height / 2)
+              style.remove()
+              resolve(hit?.closest('.character-attack--kratos') ? 'kratos' : hit?.closest('.enemy') ? 'boss' : String(hit?.className))
+            }
+            const timeout = setTimeout(() => {
+              document.removeEventListener('kratos-impact', onImpact)
+              reject(new Error('boss slam never landed'))
+            }, 8000)
+            document.addEventListener('kratos-impact', onImpact)
+            window.kratosFixture.attack()
+          }))
+          assert.equal(bossLayer, 'kratos', `${engine}/${screen}: Kratos slams behind the boss`)
+          await page.waitForFunction(() => !document.querySelector('.character-attack'))
+          console.log(`PASS ${engine}/${screen}: Kratos weighted three-hit combo, poses, planted stance, shared blade contact, art inside the board, boss layering, SFX, targets, scale, cold loading, reduced motion and restoration`)
         } finally { releaseColdArtwork?.(); await context.close() }
       }
     } finally { await browser.close() }

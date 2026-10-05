@@ -60,6 +60,9 @@ import {
   HermitBullets,
   splitAttackWeights,
   KratosImpacts,
+  KRATOS_CONTACT_REACH,
+  KRATOS_DISPLAY_SCALE,
+  KRATOS_POSES,
   characterAttackContactMs,
   isCharacterAttack,
   latestTargetPresentationEvent,
@@ -229,7 +232,6 @@ const CHAMBER_RETURN_MS = 460
 const CHAMBER_RETURN_STAGGER_MS = 35
 const CHAMBER_REFLOW_MS = 420
 
-const KRATOS_POSES = ['ready', 'anticipation', 'left-cast', 'left-extended', 'right-cast', 'right-extended', 'windup-cast', 'windup', 'slam-descend', 'slam', 'recovery', 'retract', 'catch', 'settle'] as const
 const kratosPoseAsset = (pose: typeof KRATOS_POSES[number]) =>
   assetPath(`combat/characters/animated/kratos-${pose}.webp`)
 
@@ -345,8 +347,7 @@ function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, att
 
 // Complete registered drawings share the travel/impact clock, including WebKit.
 function KratosAttackPose({ ready }: { ready: boolean }) {
-  const [preloaded] = useState(ready)
-  return preloaded ? <>{KRATOS_POSES.map(pose => (
+  return ready ? <>{KRATOS_POSES.map(pose => (
     <span key={pose} className={`character-attack__pose character-attack__pose--rig is-loaded character-attack__pose--kratos-${pose}`}>
       <img src={kratosPoseAsset(pose)} alt="" />
     </span>
@@ -666,6 +667,18 @@ function CombatScreenView({
     return () => { cancel(); window.removeEventListener('resize', resize) }
   }, [viewer?.character, reducedMotion])
   const [characterAttackBlobs, setCharacterAttackBlobs] = useState<Map<string, Blob | true>>(() => new Map())
+  // Each Kratos attack decides once whether its registered drawings were decoded in time.
+  // The pose layer and the travel share that answer, so the idle fallback never parks at blade reach.
+  // Presentation seqs restart each combat, so the combat id is part of the key.
+  const kratosPosesReadyByAttack = useRef(new Map<string, boolean>())
+  const kratosPosesReady = (seq: number) => {
+    const key = `${state.combatId}:${seq}`
+    const latched = kratosPosesReadyByAttack.current.get(key)
+    if (latched !== undefined) return latched
+    const ready = KRATOS_POSES.every(pose => characterAttackBlobs.has(kratosPoseAsset(pose)))
+    kratosPosesReadyByAttack.current.set(key, ready)
+    return ready
+  }
   const characterAttackAssets = prefersReducedMotion ? '' : [...new Set(state.players.filter((player) => !player.dead).flatMap((player) =>
     player.character === 'hexaghost'
       ? [assetPath(`combat/rigged/hero-hexaghost-heat-${Math.max(0, Math.min(6, player.heat))}-attack.webp`)]
@@ -1253,6 +1266,7 @@ function CombatScreenView({
     const board = boardRef.current
     if (!board) return
     if (prefersReducedMotion || !activeVfx.some(isCharacterAttack)) {
+      kratosPosesReadyByAttack.current.clear()
       setCharacterAttacks((current) => Object.keys(current).length === 0 ? current : {})
       return
     }
@@ -1322,16 +1336,26 @@ function CombatScreenView({
           : undefined
         const target = targets.find(({ id }) => id === rowTarget?.uid) ?? targets[0]!
         const targetElement = enemies.find((enemy) => enemy.dataset.enemyId === target.id)!
-        const targetRect = targetElement.querySelector<HTMLElement>('.enemy__portrait')!.getBoundingClientRect()
+        const targetPortrait = targetElement.querySelector<HTMLElement>('.enemy__portrait')!
+        const targetRect = targetPortrait.getBoundingClientRect()
         return [{
           active,
           interrupted: !['hermit', 'kratos'].includes(player.character) && active.event.seq <= latestNonAttackSeq,
           targetId: target.id,
-          x: Math.max(0, targetRect.left - actorRect.right + actorRect.width * 0.22),
+          // Kratos stops where his chained blades, not his body, reach the target.
+          x: player.character === 'kratos' && kratosPosesReady(active.event.seq)
+            ? Math.max(0, combatBodyPoint(targetPortrait).x - actorCenterX -
+              KRATOS_CONTACT_REACH * Math.min(actorRect.width, actorRect.height))
+            : Math.max(0, targetRect.left - actorRect.right + actorRect.width * 0.22),
           y: targetRect.bottom - actorRect.bottom,
           targets,
         }]
       })
+    }
+    // A finished attack forgets its latch, so a replayed seq decides afresh.
+    const running = new Set(Object.values(next).flat().map((attack) => `${state.combatId}:${attack.active.event.seq}`))
+    for (const key of kratosPosesReadyByAttack.current.keys()) {
+      if (!running.has(key)) kratosPosesReadyByAttack.current.delete(key)
     }
     setCharacterAttacks(next)
   }, [activeVfx, prefersReducedMotion, stageScale, state.enemies, state.players])
@@ -6335,7 +6359,7 @@ function CombatScreenView({
           const characterIdleAsset = occupant?.character === 'watcher'
             ? assetPath('combat/characters/watcher-hero.webp') : assetPath(occupant?.character === 'kratos' ? 'combat/characters/animated/kratos-idle.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
           const characterArtScale = prefersReducedMotion || occupant?.dead || occupant?.character === 'watcher' ? 1
-            : occupant?.character === 'kratos' ? 2.3
+            : occupant?.character === 'kratos' ? KRATOS_DISPLAY_SCALE
             : (rigMetadata as Record<string, { scale?: number }>)[`hero-${rigId}`]?.scale ?? 1
           // Where the painted head ends, so held potions and Orbs float just above it.
           const animatedPortrait = !prefersReducedMotion && !occupant?.dead && !slimeSpawnEvent
@@ -6466,7 +6490,7 @@ function CombatScreenView({
                                   <img src={assetPath('combat/characters/watcher-thrust.webp')} alt="" />
                                 </span>
                               </> : occupant.character === 'kratos' ? <KratosAttackPose
-                                ready={KRATOS_POSES.every(pose => characterAttackBlobs.has(kratosPoseAsset(pose)))}
+                                ready={kratosPosesReady(characterAttack.active.event.seq)}
                               /> : <CharacterAttackPose
                                 key={characterAttack.active.event.seq}
                                 attackSeq={characterAttack.active.event.seq}

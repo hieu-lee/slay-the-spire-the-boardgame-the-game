@@ -1,728 +1,777 @@
 {
-  "model": "gpt-image-2.5-sunburst",
-  "workflow": "imagegen bundled image_gen.py edit",
-  "quality": "high",
-  "background": "transparent",
-  "referenceVideo": {
-    "attachment": "ScreenRecording_10-05-2026 11-35-41_1.mp4",
-    "sha256": "0e63d39085a8a6dea738f11f632b80591fca8c8cce682b48561af5e6d9a7646f",
-    "note": "Inspected directly; gameplay combo drives choreography, no video/audio copied into game."
-  },
-  "sourceCommit": "5a8ebbfac84397243bc82dc44f8a3996e0d03a0b",
-  "referenceSketch": {
-    "path": "scripts/animation/sources/kratos/combo-v2/user-combo-reference.png",
-    "sha256": "977ec94fc37d7e069642105afd3b4d57c794cefbac5a844d3cf146c4a0185fec"
-  },
-  "sourceEncoding": "Selected PNGs converted to lossless WebP with exact native RGBA pixels preserved. Input WebP paths may alias pixel-identical PNGs passed to the CLI. Ground guides are input-only rigid blade placements with rough chain strokes repaired by Sunburst; they never render at runtime. Mask is listed with the second ground edit inputs. Discarded drafts are not exported. Recorded prompts trim trailing line whitespace; submitted hashes preserve the original bytes where trimming occurred.",
-  "registration": "scripts/animation/sources/kratos/combo-v2/registration.json",
-  "generated": [
+ "model": "gpt-image-2.5-sunburst",
+ "workflow": "imagegen bundled image_gen.py edit",
+ "quality": "high",
+ "background": "transparent",
+ "referenceVideo": {
+  "attachment": "ScreenRecording_10-05-2026 11-35-41_1.mp4",
+  "sha256": "0e63d39085a8a6dea738f11f632b80591fca8c8cce682b48561af5e6d9a7646f",
+  "note": "Inspected directly; gameplay combo drives choreography, no video/audio copied into game."
+ },
+ "sourceCommit": "5a8ebbfac84397243bc82dc44f8a3996e0d03a0b",
+ "referenceSketch": {
+  "path": "scripts/animation/sources/kratos/combo-v3/user-windup-slam-sketch.jpg",
+  "sha256": "e98cc6b5411f2122457042ab3639b82c809a852b23c4f42afb07f7dfca7dba24",
+  "note": "User gesture sketch: windup swings both blades back over his head; slam drives them forward into the ground."
+ },
+ "sourceEncoding": "Selected PNGs converted to lossless WebP with exact native RGBA pixels preserved. Input WebP paths may alias pixel-identical PNGs passed to the CLI, listed in submitted order; drafts used only as references are kept under combo-v3/refs/. Discarded drafts are not exported. Each combo-v3 pose was edited in place from a layout canvas holding the registered idle at 1.15x runtime scale. Prompt files are the exact submitted text; the left-extended prompt repeats its pose paragraph because two parallel jobs appended to one shared prompt file before submitting. The left and right extend sources are the model outputs; their chainTrim in registration.json is applied by kratos.py at bake time.",
+ "registration": "scripts/animation/sources/kratos/combo-v3/registration.json",
+ "generated": [
+  {
+   "name": "idle",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v2/idle-prompt.txt",
+   "promptSha256": "6024d503126d1aef6995c5f0d5b36101ca001f97728f8788b0d402d64e996aa1",
+   "source": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+   "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4",
+   "inputs": [
     {
-      "name": "idle",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/idle-prompt.txt",
-      "promptSha256": "6024d503126d1aef6995c5f0d5b36101ca001f97728f8788b0d402d64e996aa1",
-      "source": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-      "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo/user-pose-reference.jpg",
-          "sha256": "0b4d84eea725e572def76d5865645dfbea562926acfe56c0eaac4055683e3b1d"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo/idle.webp",
-          "sha256": "dbdede6d495203c704b87c6039e64cdff3a9da73a63beec4ecb1282d3fef44c0"
-        }
-      ]
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
     },
     {
-      "name": "anticipation",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/anticipation-prompt.txt",
-      "promptSha256": "62691a0046726c95f82bbdd153241d0ea71185aea1afabc86b399a8468ce5ca7",
-      "source": "scripts/animation/sources/kratos/combo-v2/anticipation.webp",
-      "sha256": "58d4de18e29f3fa06b445c9f00fe850ed88e54954dd0c7e451d6dfb727bd7d93",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo/anticipation.webp",
-          "sha256": "a2e217c3985882b99c5f64040511ee5c30d6d52681039579c7d2bf97a7773db2"
-        }
-      ],
-      "submittedPromptSha256": "a75e3cf3e338ab5bf151af24c0cfdcf43f9b53b9da1d296125a51bfd22005373"
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
     },
     {
-      "name": "left-cast",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/left-cast-prompt.txt",
-      "promptSha256": "ea18a23dc34bc6a29b2aa5fa2011341cac88b2486d072760bf4862a38ac1c9d6",
-      "source": "scripts/animation/sources/kratos/combo-v2/left-cast.webp",
-      "sha256": "31543835b30cadf3a51c546406dda99c7f65c96ec2ad9dac62ca1cdd33124579",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo/left-cast.webp",
-          "sha256": "bc62fa8c8b2d680ce4b1b4541dac7f206fbac9a6cf6516eb0f36506e5b17cfbf"
-        }
-      ],
-      "submittedPromptSha256": "4dd14565247e95f61c7d36ac0ae860289e03e89808b66fe3daf23d97fa02537f"
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
     },
     {
-      "name": "left-extended",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/left-extended-prompt.txt",
-      "promptSha256": "d35f7d680a5400c3263b622107ffbfcc2b118cbf7163e1629636e47e118cfc44",
-      "source": "scripts/animation/sources/kratos/combo-v2/left-extended.webp",
-      "sha256": "9ef0b4630c9f210b536554d02295edce51604f5af178ed77aac2e70fe52766d1",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo/left-extended.webp",
-          "sha256": "5b5fc595fc0233bc3d60e2a3e923c8533704e906520031f0ba9c0db230bf8229"
-        }
-      ],
-      "submittedPromptSha256": "ffb9cf90bb5b7126d64013844e99ab09480133dc31299cdb16fa0ab4c19bfc2a"
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
     },
     {
-      "name": "right-cast",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/right-cast-prompt.txt",
-      "promptSha256": "9be578cf04fa1892796565323ed0dccc838d4885909f4048cb61a4a995d38a2d",
-      "source": "scripts/animation/sources/kratos/combo-v2/right-cast.webp",
-      "sha256": "a2a8b8d426e152360cd407ac3948aa6cb06e212ff08f7ec320e5587bf685ca54",
-      "inputs": [
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/right-cast-before-head-fix.webp",
-          "sha256": "048dd69d1bdf5e16e8a522b46f3bb4b88abfdcd67295986014f06a79230f8153"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        }
-      ]
+     "path": "scripts/animation/sources/kratos/combo/user-pose-reference.jpg",
+     "sha256": "0b4d84eea725e572def76d5865645dfbea562926acfe56c0eaac4055683e3b1d"
     },
     {
-      "name": "right-extended",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/right-extended-prompt.txt",
-      "promptSha256": "9be578cf04fa1892796565323ed0dccc838d4885909f4048cb61a4a995d38a2d",
-      "source": "scripts/animation/sources/kratos/combo-v2/right-extended.webp",
-      "sha256": "a80bf7ca19a5d543be35943c59727b23f6758c0be5435fe81ab620028fbfc8c1",
-      "inputs": [
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/right-extended-before-head-fix.webp",
-          "sha256": "dd7ca170f9780eaa068ef694b778e009c3aad591355f063c28873c6fa5a621b3"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        }
-      ]
-    },
-    {
-      "name": "windup-cast",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/windup-cast-prompt.txt",
-      "promptSha256": "4b03bd0bf53543d6959f815fae399c5c16d9cd1560bd255902580216d14387f7",
-      "source": "scripts/animation/sources/kratos/combo-v2/windup-cast.webp",
-      "sha256": "36d917308f42cda49e4a880577cee71743dd5ddc11c847b3a281d078512f8e12",
-      "inputs": [
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/left-extended.webp",
-          "sha256": "9ef0b4630c9f210b536554d02295edce51604f5af178ed77aac2e70fe52766d1"
-        },
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/user-combo-reference.png",
-          "sha256": "977ec94fc37d7e069642105afd3b4d57c794cefbac5a844d3cf146c4a0185fec"
-        }
-      ]
-    },
-    {
-      "name": "windup",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/windup-prompt.txt",
-      "promptSha256": "e7b4c9aa4056577ca8451fed063a3e657e061545dfcdf35b14e6cd32b101dabc",
-      "source": "scripts/animation/sources/kratos/combo-v2/windup.webp",
-      "sha256": "6f9830cec0864b9c9202770e441af1cbeb92022d8428c6b47774a2992b457600",
-      "inputs": [
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/left-extended.webp",
-          "sha256": "9ef0b4630c9f210b536554d02295edce51604f5af178ed77aac2e70fe52766d1"
-        },
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/user-combo-reference.png",
-          "sha256": "977ec94fc37d7e069642105afd3b4d57c794cefbac5a844d3cf146c4a0185fec"
-        }
-      ]
-    },
-    {
-      "name": "slam-descend",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/slam-descend-prompt.txt",
-      "promptSha256": "94d62382e95fe0a4c84330221afa955428ece06da16681aa2f0ab38d8f60c68f",
-      "source": "scripts/animation/sources/kratos/combo-v2/slam-descend.webp",
-      "sha256": "086d31378fdefbe66dda5554cb4ea951011537181322d449970fb0175ab0592f",
-      "inputs": [
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/slam-descend-target.png",
-          "sha256": "86384f60999a1f51e8c60dff773ff1d8319ca96af3ce830ce9f0e9d0109fd198"
-        }
-      ]
-    },
-    {
-      "name": "slam",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/slam-ground-polish-prompt.txt",
-      "promptSha256": "4a8e0a80ce3ea50971778bc9a3fa76be3af6455b5179dc44f3a35025b7f6c261",
-      "source": "scripts/animation/sources/kratos/combo-v2/slam.webp",
-      "sha256": "6f86343d43186ebe2a798943e724283e2ef06e1e4cfcacaabc566abe0d19332c",
-      "inputs": [
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/slam-ground-target.png",
-          "sha256": "6e7f1fe33eca1667bf2a51566b6b59956ddf558c8bc8a44fd805d653a6a96703"
-        }
-      ]
-    },
-    {
-      "name": "recovery",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/recovery-prompt.txt",
-      "promptSha256": "3730e07184c8f27907f9486e47d242a069b8f93efa3a0557f7ec84216de12a53",
-      "source": "scripts/animation/sources/kratos/combo-v2/recovery.webp",
-      "sha256": "0fff5b2041700a2d5148d6d1cf74c6235853843b39593a4d536ea8794b2bd3be",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo/recovery.webp",
-          "sha256": "5e9f9c50aefc91f65236f83c554ae9d90177e2b20657aa25c4f2cae18b29d40b"
-        }
-      ],
-      "submittedPromptSha256": "92f1cdc189e1cc6712b2d8dbf529af0d56838592d91254b19f1bdb8af0956a69"
-    },
-    {
-      "name": "retract",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/retract-prompt.txt",
-      "promptSha256": "df1bb70a15bef7a2510da041c4a3004c5a609d49d0d3832b8b4a6f9f208d9d4b",
-      "source": "scripts/animation/sources/kratos/combo-v2/retract.webp",
-      "sha256": "25e716b192f8b1612af7c67e54bd279fefb02f7861dcf835d617c275e31306e8",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/recovery.webp",
-          "sha256": "0fff5b2041700a2d5148d6d1cf74c6235853843b39593a4d536ea8794b2bd3be"
-        }
-      ]
-    },
-    {
-      "name": "catch",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/catch-prompt.txt",
-      "promptSha256": "e563b26964eb970cf5f1d24a815899a49c4526a26fd164271f1b481f68cedb09",
-      "source": "scripts/animation/sources/kratos/combo-v2/catch.webp",
-      "sha256": "c4b8a6bc416b2102ca44fb86ed82b90420d67442bd3a3182f9f00d58ae3c0b79",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/recovery.webp",
-          "sha256": "0fff5b2041700a2d5148d6d1cf74c6235853843b39593a4d536ea8794b2bd3be"
-        }
-      ]
-    },
-    {
-      "name": "settle",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/settle-prompt.txt",
-      "promptSha256": "a821f36d1c078aef28ab4676fb6b96d4f5e70b5c7546c4244b1341e61d4ad597",
-      "source": "scripts/animation/sources/kratos/combo-v2/settle.webp",
-      "sha256": "29658452030c505005616ddcb2c08776124daad80ded288bf42e0b8782febc48",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo/settle.webp",
-          "sha256": "355037e6c1cd13454bf15e1f3a165a776d3dc47c93988bd5295d8393e5874cbd"
-        }
-      ],
-      "submittedPromptSha256": "6cf91953ab57f0e4e602958d15129c86e69f0dfcda444b59bee9cd8b84ea96f1"
-    },
-    {
-      "name": "light",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/light-prompt.txt",
-      "promptSha256": "3cc7c7351be48b7efd22e8288c982167c52df4cf008ec4523fbf08164327c1a0",
-      "source": "scripts/animation/sources/kratos/combo-v2/light.webp",
-      "sha256": "27cae1880de5edc1331e124ef508f4b6a561a4e42dd91baa00c1f9f67ca3e748",
-      "inputs": [
-        {
-          "path": "public/assets/combat/vfx/actions/ironclad-strike.webp",
-          "sha256": "9deb3d6da420479b285b393867f1660850963ca80368938dc8de2b06f35520ed"
-        },
-        {
-          "path": "public/assets/combat/vfx/actions/ironclad-bash.webp",
-          "sha256": "0808825cc8f109bcd297c8a351907b3acab89a04a64a120b12702275f95c6719"
-        },
-        {
-          "path": "public/assets/combat/vfx/actions/watcher-meteor-impact.webp",
-          "sha256": "54d9661d105d1d48ee174bfb41f48e0535298d68f83b09286e067cab54d821bd"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        }
-      ]
-    },
-    {
-      "name": "impact",
-      "selected": true,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/impact-prompt.txt",
-      "promptSha256": "a1d1116a9dfb873903b40f05cd4c5c8c666d4074eec70351ae8eac64988ccf1c",
-      "source": "scripts/animation/sources/kratos/combo-v2/impact.webp",
-      "sha256": "e2e382b3c190b2adc5c9f7e50032893dd4149d3b835e3474976de12c834d7d04",
-      "inputs": [
-        {
-          "path": "public/assets/combat/vfx/actions/ironclad-strike.webp",
-          "sha256": "9deb3d6da420479b285b393867f1660850963ca80368938dc8de2b06f35520ed"
-        },
-        {
-          "path": "public/assets/combat/vfx/actions/ironclad-bash.webp",
-          "sha256": "0808825cc8f109bcd297c8a351907b3acab89a04a64a120b12702275f95c6719"
-        },
-        {
-          "path": "public/assets/combat/vfx/actions/watcher-meteor-impact.webp",
-          "sha256": "54d9661d105d1d48ee174bfb41f48e0535298d68f83b09286e067cab54d821bd"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        }
-      ]
-    },
-    {
-      "name": "right-cast-before-head-fix",
-      "selected": false,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/right-cast-original-prompt.txt",
-      "promptSha256": "98cad80905e18f4bc86fb0a78451b7d4cf5a704c747dc09518b8e89a521cbc85",
-      "source": "scripts/animation/sources/kratos/combo-v2/right-cast-before-head-fix.webp",
-      "sha256": "048dd69d1bdf5e16e8a522b46f3bb4b88abfdcd67295986014f06a79230f8153",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo/right-cast.webp",
-          "sha256": "f30e5018ee9b86503fffc29ac7d49c9f59d3aba80ac8fc8c44496e45ebc9a136"
-        }
-      ],
-      "submittedPromptSha256": "f74af18f54f2d20778c388b0b8fc841d1e6f537940942e4c1f10ba84d3142e8e"
-    },
-    {
-      "name": "right-extended-before-head-fix",
-      "selected": false,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/right-extended-original-prompt.txt",
-      "promptSha256": "c4458ef49000647e01304bfb0e3bfecf207f98657d48265658233ace12c09e41",
-      "source": "scripts/animation/sources/kratos/combo-v2/right-extended-before-head-fix.webp",
-      "sha256": "dd7ca170f9780eaa068ef694b778e009c3aad591355f063c28873c6fa5a621b3",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo/right-extended.webp",
-          "sha256": "4489f992492c8a1ef1635fd7d5343a7c5606b30702dd423ef5de6a6285864ced"
-        }
-      ],
-      "submittedPromptSha256": "1e7af6700ef82036f6de8b5d8aa43405c38cb0d662436036a1a35d5a5190f51e"
-    },
-    {
-      "name": "slam-before-ground-fix",
-      "selected": false,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/slam-prompt.txt",
-      "promptSha256": "3950970538377cf6bf55724c7fa10f0d1344fb983b7dc29f935e2da1666009b9",
-      "source": "scripts/animation/sources/kratos/combo-v2/slam-before-ground-fix.webp",
-      "sha256": "e1d5758c9089f269261e6cc94ffb8acd0573d4f615fb5e29859925ba759047d9",
-      "inputs": [
-        {
-          "path": "public/assets/combat/characters/ironclad.webp",
-          "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
-        },
-        {
-          "path": "public/assets/combat/characters/silent.webp",
-          "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
-        },
-        {
-          "path": "public/assets/combat/characters/defect.webp",
-          "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
-        },
-        {
-          "path": "public/assets/combat/characters/watcher.webp",
-          "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
-          "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/user-combo-reference.png",
-          "sha256": "977ec94fc37d7e069642105afd3b4d57c794cefbac5a844d3cf146c4a0185fec"
-        }
-      ],
-      "submittedPromptSha256": "5b9f788a718965ffcca19e26decd0407a7f95468675a888e36e7f38253a39af4"
-    },
-    {
-      "name": "slam-before-ground-polish",
-      "selected": false,
-      "prompt": "scripts/animation/sources/kratos/combo-v2/slam-ground-prompt.txt",
-      "promptSha256": "e1f5790b71937d7f1da4b76bfb579736a2b3cc0feb96ae8b70adf31b0d023626",
-      "source": "scripts/animation/sources/kratos/combo-v2/slam-before-ground-polish.webp",
-      "sha256": "ccf7fd8604eb26f8bf9d9f150806649b90623a55f38abb8385871cbe93bee9e4",
-      "inputs": [
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/slam-before-ground-fix.webp",
-          "sha256": "e1d5758c9089f269261e6cc94ffb8acd0573d4f615fb5e29859925ba759047d9"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/slam-ground-guide.png",
-          "sha256": "6e833b42b9c70cbfba81f3d76f9ddf5bc456826c297f8508631088cb1553b167"
-        },
-        {
-          "path": "scripts/animation/sources/kratos/combo-v2/slam-mask.png",
-          "sha256": "bf3e9f63e9f702d6ca3e3b6176a2132fb5303fa0a57280b16ed0a50adb05be6e"
-        }
-      ]
+     "path": "scripts/animation/sources/kratos/combo/idle.webp",
+     "sha256": "dbdede6d495203c704b87c6039e64cdff3a9da73a63beec4ecb1282d3fef44c0"
     }
-  ],
-  "runtime": [
+   ]
+  },
+  {
+   "name": "anticipation",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v2/anticipation-prompt.txt",
+   "promptSha256": "62691a0046726c95f82bbdd153241d0ea71185aea1afabc86b399a8468ce5ca7",
+   "source": "scripts/animation/sources/kratos/combo-v2/anticipation.webp",
+   "sha256": "58d4de18e29f3fa06b445c9f00fe850ed88e54954dd0c7e451d6dfb727bd7d93",
+   "inputs": [
     {
-      "path": "public/assets/combat/characters/animated/kratos-anticipation.webp",
-      "sha256": "e88f79ec0723033f54d04dfc3c521fc091216ec87df49ff9181dfde018a1f7f2",
-      "bytes": 36734
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
     },
     {
-      "path": "public/assets/combat/characters/animated/kratos-catch.webp",
-      "sha256": "6578274059b4d393b327bb8f11b1bf71f9d33aed0afed6d7f43f3dc034650241",
-      "bytes": 35624
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
     },
     {
-      "path": "public/assets/combat/characters/animated/kratos-idle.webp",
-      "sha256": "c6074ba30b8c2bd911c21e97d1310e63e9fb7580115ed5a0f731daf43997701f",
-      "bytes": 286542
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
     },
     {
-      "path": "public/assets/combat/characters/animated/kratos-left-cast.webp",
-      "sha256": "f189725ea1e218caec62762b5e46725e49c19601d7354a5b40d18ccbb2e9023b",
-      "bytes": 45304
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
     },
     {
-      "path": "public/assets/combat/characters/animated/kratos-left-extended.webp",
-      "sha256": "89e3df85f9fe4206ed78ea238b6df7f4bb9e56469188bda76583150e337786ad",
-      "bytes": 42528
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
     },
     {
-      "path": "public/assets/combat/characters/animated/kratos-ready.webp",
-      "sha256": "f5e51894932793ceaa72b53cd76ee09682bf88d248b8955fb98b24cb2a8f7f4a",
-      "bytes": 36700
-    },
-    {
-      "path": "public/assets/combat/characters/animated/kratos-recovery.webp",
-      "sha256": "ebdc8eafb18941f76f66f357c91cdf2c3ba39e890fdec592c9aacf0eaebba25d",
-      "bytes": 39128
-    },
-    {
-      "path": "public/assets/combat/characters/animated/kratos-retract.webp",
-      "sha256": "e2b55787ba298046431090da9ed261b19be1cd168ff2f3b511336ddc6277fefb",
-      "bytes": 33564
-    },
-    {
-      "path": "public/assets/combat/characters/animated/kratos-right-cast.webp",
-      "sha256": "cd2c20c7020916dac05cf614e4ad0c79e9368ceb6eab493e176e035c6d07cdd1",
-      "bytes": 39588
-    },
-    {
-      "path": "public/assets/combat/characters/animated/kratos-right-extended.webp",
-      "sha256": "49e5fc1862d3a291b62e7dca2dfa1cb062d50024f4e8701498bbacf742646de4",
-      "bytes": 33384
-    },
-    {
-      "path": "public/assets/combat/characters/animated/kratos-settle.webp",
-      "sha256": "709ecfdfd23f1fadb0c876083a4e1b81e7c8762c03dfa8b76be0b61c3d894bf4",
-      "bytes": 40422
-    },
-    {
-      "path": "public/assets/combat/characters/animated/kratos-slam-descend.webp",
-      "sha256": "2509e1ad4f94760e3adbeacff85783591f69647594c39acf7a82f1e58ab25651",
-      "bytes": 47798
-    },
-    {
-      "path": "public/assets/combat/characters/animated/kratos-slam.webp",
-      "sha256": "cb29ec4bacc8e26908efede929a87939d5bd3e882f0782e3d89593d92a950823",
-      "bytes": 48510
-    },
-    {
-      "path": "public/assets/combat/characters/animated/kratos-windup-cast.webp",
-      "sha256": "31c1a201b6f6ec90c76eb731aa67353ccecc0f9703eccd840167e3875336c2fd",
-      "bytes": 60594
-    },
-    {
-      "path": "public/assets/combat/characters/animated/kratos-windup.webp",
-      "sha256": "0afdcfc7e242b0c78a8eef4409e1259142e09eb548df68c6ec499e30bb029080",
-      "bytes": 60062
-    },
-    {
-      "path": "public/assets/combat/characters/kratos-hero.webp",
-      "sha256": "2c8ed5ff82044692fd619798452b4100c95f55eab794e338a076314c16163389",
-      "bytes": 129672
-    },
-    {
-      "path": "public/assets/combat/characters/kratos.webp",
-      "sha256": "787b0e76e218b44e19032f9f4be649517c3666f2f83afdcd1325ad9db984ae57",
-      "bytes": 39804
-    },
-    {
-      "path": "public/assets/combat/vfx/actions/kratos/impact.webp",
-      "sha256": "c9223afe74ea5414724c900728bb63f404996ed02ed47d1d26e847d5aa7f9f32",
-      "bytes": 84660
-    },
-    {
-      "path": "public/assets/combat/vfx/actions/kratos/light.webp",
-      "sha256": "aae387f742e166438b470c24d78dfae2a62684fdb60a0e7ad713d72240480fc5",
-      "bytes": 35868
-    },
-    {
-      "path": "public/assets/sfx/kratos-chain.mp3",
-      "sha256": "fe94621c1536a0e365ee814eb76ef0aff5bc47af8c66b2e04d6eb7d8c1f3ea09",
-      "bytes": 3980
-    },
-    {
-      "path": "public/assets/sfx/kratos-light.mp3",
-      "sha256": "cf67ffeb75b9d4bce1862b4bdb5602482c32f01e70177614b79f9e2a41ebcb4b",
-      "bytes": 3596
-    },
-    {
-      "path": "public/assets/sfx/kratos-slam.mp3",
-      "sha256": "6131518473655e3793e2ef86eae1d6ef505841ce3cfe53370d55ddbb41c19dda",
-      "bytes": 8828
+     "path": "scripts/animation/sources/kratos/combo/anticipation.webp",
+     "sha256": "a2e217c3985882b99c5f64040511ee5c30d6d52681039579c7d2bf97a7773db2"
     }
-  ]
+   ],
+   "submittedPromptSha256": "a75e3cf3e338ab5bf151af24c0cfdcf43f9b53b9da1d296125a51bfd22005373"
+  },
+  {
+   "name": "settle",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v2/settle-prompt.txt",
+   "promptSha256": "a821f36d1c078aef28ab4676fb6b96d4f5e70b5c7546c4244b1341e61d4ad597",
+   "source": "scripts/animation/sources/kratos/combo-v2/settle.webp",
+   "sha256": "29658452030c505005616ddcb2c08776124daad80ded288bf42e0b8782febc48",
+   "inputs": [
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo/settle.webp",
+     "sha256": "355037e6c1cd13454bf15e1f3a165a776d3dc47c93988bd5295d8393e5874cbd"
+    }
+   ],
+   "submittedPromptSha256": "6cf91953ab57f0e4e602958d15129c86e69f0dfcda444b59bee9cd8b84ea96f1"
+  },
+  {
+   "name": "light",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v2/light-prompt.txt",
+   "promptSha256": "3cc7c7351be48b7efd22e8288c982167c52df4cf008ec4523fbf08164327c1a0",
+   "source": "scripts/animation/sources/kratos/combo-v2/light.webp",
+   "sha256": "27cae1880de5edc1331e124ef508f4b6a561a4e42dd91baa00c1f9f67ca3e748",
+   "inputs": [
+    {
+     "path": "public/assets/combat/vfx/actions/ironclad-strike.webp",
+     "sha256": "9deb3d6da420479b285b393867f1660850963ca80368938dc8de2b06f35520ed"
+    },
+    {
+     "path": "public/assets/combat/vfx/actions/ironclad-bash.webp",
+     "sha256": "0808825cc8f109bcd297c8a351907b3acab89a04a64a120b12702275f95c6719"
+    },
+    {
+     "path": "public/assets/combat/vfx/actions/watcher-meteor-impact.webp",
+     "sha256": "54d9661d105d1d48ee174bfb41f48e0535298d68f83b09286e067cab54d821bd"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    }
+   ]
+  },
+  {
+   "name": "impact",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v2/impact-prompt.txt",
+   "promptSha256": "a1d1116a9dfb873903b40f05cd4c5c8c666d4074eec70351ae8eac64988ccf1c",
+   "source": "scripts/animation/sources/kratos/combo-v2/impact.webp",
+   "sha256": "e2e382b3c190b2adc5c9f7e50032893dd4149d3b835e3474976de12c834d7d04",
+   "inputs": [
+    {
+     "path": "public/assets/combat/vfx/actions/ironclad-strike.webp",
+     "sha256": "9deb3d6da420479b285b393867f1660850963ca80368938dc8de2b06f35520ed"
+    },
+    {
+     "path": "public/assets/combat/vfx/actions/ironclad-bash.webp",
+     "sha256": "0808825cc8f109bcd297c8a351907b3acab89a04a64a120b12702275f95c6719"
+    },
+    {
+     "path": "public/assets/combat/vfx/actions/watcher-meteor-impact.webp",
+     "sha256": "54d9661d105d1d48ee174bfb41f48e0535298d68f83b09286e067cab54d821bd"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    }
+   ]
+  },
+  {
+   "name": "left-cast",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/left-cast-prompt.txt",
+   "promptSha256": "34bf467ed361a679cfae44fd33ccb7c6da8c5e4c977a1da705ef6df2202242c8",
+   "source": "scripts/animation/sources/kratos/combo-v3/left-cast.webp",
+   "sha256": "012087398ef13aebde454f8a88c4bb2a31e5c58821da7b96e489f9958059c49d",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-left.png",
+     "sha256": "36bb1de8bf8692892fdca30d5fd3162f3146365e8410a6914032eef412d5e744"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/left-extended.webp",
+     "sha256": "7fdac832796d374b8093f560d3a463f67de37b99fb1b7b27d93a5c0d5d45c864"
+    }
+   ]
+  },
+  {
+   "name": "left-extended",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/left-extended-prompt.txt",
+   "promptSha256": "0798ce2bd99f911428bca7dcd88d933017c367da69ed30752fbe39469da3120e",
+   "source": "scripts/animation/sources/kratos/combo-v3/left-extended.webp",
+   "sha256": "7fdac832796d374b8093f560d3a463f67de37b99fb1b7b27d93a5c0d5d45c864",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-left.png",
+     "sha256": "36bb1de8bf8692892fdca30d5fd3162f3146365e8410a6914032eef412d5e744"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/left-extended-solo-1.webp",
+     "sha256": "dad84e6a10bcb60bc39237506268843f4a9b98389c2bee9caaa19f52a4073e32"
+    }
+   ]
+  },
+  {
+   "name": "right-cast",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/right-cast-prompt.txt",
+   "promptSha256": "60b4d27677206b728aff515267fd9485a8514314b064312b24da556bd22b1f76",
+   "source": "scripts/animation/sources/kratos/combo-v3/right-cast.webp",
+   "sha256": "7bda946488063762fd496f9a3cfdb0ada08df159c1b8b16b4c4cc331fa64cdf1",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-left.png",
+     "sha256": "36bb1de8bf8692892fdca30d5fd3162f3146365e8410a6914032eef412d5e744"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/right-cast-x1-2.webp",
+     "sha256": "02f7be26f977f7c67e777e8533bf8ca9fef99a12ae43dd79206f7b60af8bc3d9"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/left-extended.webp",
+     "sha256": "7fdac832796d374b8093f560d3a463f67de37b99fb1b7b27d93a5c0d5d45c864"
+    }
+   ]
+  },
+  {
+   "name": "right-extended",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/right-extended-prompt.txt",
+   "promptSha256": "bd56bb86b1c024140b98e7019b3bd8b227d15289b9494d0fd705fb61c50515e7",
+   "source": "scripts/animation/sources/kratos/combo-v3/right-extended.webp",
+   "sha256": "817b5608ed54944a66b8075c7a69f05efc51429e58134d6517eaff566045aa95",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-left.png",
+     "sha256": "36bb1de8bf8692892fdca30d5fd3162f3146365e8410a6914032eef412d5e744"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/right-cast-x1-2.webp",
+     "sha256": "02f7be26f977f7c67e777e8533bf8ca9fef99a12ae43dd79206f7b60af8bc3d9"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/left-extended.webp",
+     "sha256": "7fdac832796d374b8093f560d3a463f67de37b99fb1b7b27d93a5c0d5d45c864"
+    }
+   ]
+  },
+  {
+   "name": "right-pull",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/right-pull-prompt.txt",
+   "promptSha256": "fa5d740988ef74f369de89f43a2f821aef97e004c60c1f778e27aa3a6cc9f746",
+   "source": "scripts/animation/sources/kratos/combo-v3/right-pull.webp",
+   "sha256": "e506292fd770e2105a44e8a58c96ae146793f8eb1e76fee2056266d3870b12f8",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-left.png",
+     "sha256": "36bb1de8bf8692892fdca30d5fd3162f3146365e8410a6914032eef412d5e744"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/right-extended.webp",
+     "sha256": "817b5608ed54944a66b8075c7a69f05efc51429e58134d6517eaff566045aa95"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/windup-cast-v3-2.webp",
+     "sha256": "8d2d869b5972f2a2198b9cabab5b7fde6d7f593edad5292560f4f356116692cc"
+    }
+   ]
+  },
+  {
+   "name": "windup-cast",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/windup-cast-prompt.txt",
+   "promptSha256": "b70484c294d7ee2a210b4c6a6f82ade34b1a14f70f89a54d4515ad5775d46f0d",
+   "source": "scripts/animation/sources/kratos/combo-v3/windup-cast.webp",
+   "sha256": "56460d385058ca264c1af43dbe4efe36bd0a2b5467ff13e08b9d8faae59f06d8",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-center.png",
+     "sha256": "2eb2a7e8ef44de591f79b606bdbf2cc03e9b6b7704129fbb4177cfa1264ede8c"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/windup-cast-v3-2.webp",
+     "sha256": "8d2d869b5972f2a2198b9cabab5b7fde6d7f593edad5292560f4f356116692cc"
+    }
+   ]
+  },
+  {
+   "name": "windup",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/windup-prompt.txt",
+   "promptSha256": "7a9b1e8681974a75083477c2cdf4897c63d332374c6254f46b508406292a687a",
+   "source": "scripts/animation/sources/kratos/combo-v3/windup.webp",
+   "sha256": "8c5e4e7a8f68046f420d34ed38cdd2be6c38419019bb58ad3c4dd0508f88f0bb",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-center-right.png",
+     "sha256": "c61ce7c2d5617598dfe4ce2af9ce19f46da6b1592f1c05b761cf86b66e225b86"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/windup-cast-v3-2.webp",
+     "sha256": "8d2d869b5972f2a2198b9cabab5b7fde6d7f593edad5292560f4f356116692cc"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/left-extended-solo-1.webp",
+     "sha256": "dad84e6a10bcb60bc39237506268843f4a9b98389c2bee9caaa19f52a4073e32"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/user-windup-slam-sketch.jpg",
+     "sha256": "e98cc6b5411f2122457042ab3639b82c809a852b23c4f42afb07f7dfca7dba24"
+    }
+   ]
+  },
+  {
+   "name": "slam-descend",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/slam-descend-prompt.txt",
+   "promptSha256": "184417213340f8031a080080573a9fc974ec48419700f24d3f26ad3bd92f5caa",
+   "source": "scripts/animation/sources/kratos/combo-v3/slam-descend.webp",
+   "sha256": "30ca802481b941d2de38a4daa0752ec42c5c9ea6882cedfbe28f313000efa501",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-left.png",
+     "sha256": "36bb1de8bf8692892fdca30d5fd3162f3146365e8410a6914032eef412d5e744"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/windup-cast-v3-2.webp",
+     "sha256": "8d2d869b5972f2a2198b9cabab5b7fde6d7f593edad5292560f4f356116692cc"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/left-extended-solo-1.webp",
+     "sha256": "dad84e6a10bcb60bc39237506268843f4a9b98389c2bee9caaa19f52a4073e32"
+    }
+   ]
+  },
+  {
+   "name": "slam",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/slam-prompt.txt",
+   "promptSha256": "82bbf887c6f686b15259f93b30c661d0ff74ebcd602e36a516c261e99239996c",
+   "source": "scripts/animation/sources/kratos/combo-v3/slam.webp",
+   "sha256": "ff7a1eb3216ebcf8fec15bfe554e58d540bb73877512e365032f51cea4f05c67",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-left.png",
+     "sha256": "36bb1de8bf8692892fdca30d5fd3162f3146365e8410a6914032eef412d5e744"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/left-extended-solo-1.webp",
+     "sha256": "dad84e6a10bcb60bc39237506268843f4a9b98389c2bee9caaa19f52a4073e32"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/user-windup-slam-sketch.jpg",
+     "sha256": "e98cc6b5411f2122457042ab3639b82c809a852b23c4f42afb07f7dfca7dba24"
+    }
+   ]
+  },
+  {
+   "name": "recovery",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/recovery-prompt.txt",
+   "promptSha256": "050366da7a3ed1f7e30fe5a274aa04a05618ae1604b26a52492107a5cade9b6c",
+   "source": "scripts/animation/sources/kratos/combo-v3/recovery.webp",
+   "sha256": "4b6459e0ab098a65b87e9da3028f961377fefeb21dd31a4c54c3af1c05115e00",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-left.png",
+     "sha256": "36bb1de8bf8692892fdca30d5fd3162f3146365e8410a6914032eef412d5e744"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/slam.webp",
+     "sha256": "ff7a1eb3216ebcf8fec15bfe554e58d540bb73877512e365032f51cea4f05c67"
+    }
+   ]
+  },
+  {
+   "name": "retract",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/retract-prompt.txt",
+   "promptSha256": "4e150843bc5cdd0105f4887bd5a4c9ce43378be08bca3b7a731b6f7a47e74c5f",
+   "source": "scripts/animation/sources/kratos/combo-v3/retract.webp",
+   "sha256": "c4669534ad551f566414b342e5d3312fde8a537f0f7d8404abe7554dc21ee878",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-left.png",
+     "sha256": "36bb1de8bf8692892fdca30d5fd3162f3146365e8410a6914032eef412d5e744"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/recovery-w1-2.webp",
+     "sha256": "ac47660741b54b58e46abb12125c7d7e687bca84ac8774f4ad8a7efb8ed867b4"
+    }
+   ]
+  },
+  {
+   "name": "catch",
+   "selected": true,
+   "prompt": "scripts/animation/sources/kratos/combo-v3/catch-prompt.txt",
+   "promptSha256": "e277614972a119b6690f5bd0e5d165d45851eaa21bb02b2b65460088bfec7ebd",
+   "source": "scripts/animation/sources/kratos/combo-v3/catch.webp",
+   "sha256": "9b97edb9c86132211e708f959682ca37763a9e17fb59beba3f95eeb8682d100c",
+   "inputs": [
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/layout-left.png",
+     "sha256": "36bb1de8bf8692892fdca30d5fd3162f3146365e8410a6914032eef412d5e744"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v2/idle.webp",
+     "sha256": "c099137806ca73a2983ed533932ff5ed412f5fb5eb0338321dc0d8bf66995de4"
+    },
+    {
+     "path": "public/assets/combat/characters/ironclad.webp",
+     "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+     "path": "public/assets/combat/characters/silent.webp",
+     "sha256": "a0b873a54085ec72df23d335f00dbdb9c5c4c537367e0106cf34ddd2e97a9cfa"
+    },
+    {
+     "path": "public/assets/combat/characters/defect.webp",
+     "sha256": "846aff513c6aca4ae164d7c69c98620040198df98ea77b0109f7a4b82e28184f"
+    },
+    {
+     "path": "public/assets/combat/characters/watcher.webp",
+     "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+     "path": "scripts/animation/sources/kratos/combo-v3/refs/retract-w2-1.webp",
+     "sha256": "121540ae365bc1cc65a077aa5d0263d8d3bf692284b81bc8641a99c77e0bafa7"
+    }
+   ]
+  }
+ ],
+ "runtime": [
+  {
+   "path": "public/assets/combat/characters/animated/kratos-anticipation.webp",
+   "sha256": "e88f79ec0723033f54d04dfc3c521fc091216ec87df49ff9181dfde018a1f7f2",
+   "bytes": 36734
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-catch.webp",
+   "sha256": "1033a3d0990ded6e30d3a5b9addb7f8655233f3bf8e016743277b07246d0e23d",
+   "bytes": 31208
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-idle.webp",
+   "sha256": "c6074ba30b8c2bd911c21e97d1310e63e9fb7580115ed5a0f731daf43997701f",
+   "bytes": 286542
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-left-cast.webp",
+   "sha256": "930364e0ee4d33f28f3a4f69d8ea080497e37beea61f2a6b12d215d3b102b9d9",
+   "bytes": 42010
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-left-extended.webp",
+   "sha256": "cb5f695c6f0baa396562b9ec817094aa189758ddb88cbd95761c82f6a77a91d7",
+   "bytes": 44702
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-ready.webp",
+   "sha256": "f5e51894932793ceaa72b53cd76ee09682bf88d248b8955fb98b24cb2a8f7f4a",
+   "bytes": 36700
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-recovery.webp",
+   "sha256": "6514a166f502cd86b3a5205ad0731903a6d8673309fc35ebd5696acf15b9a129",
+   "bytes": 47716
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-retract.webp",
+   "sha256": "81c0102f3fd018c5faa34d742a2f81bd36a3e15f36578fdaa8255be754798461",
+   "bytes": 43156
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-right-cast.webp",
+   "sha256": "501e11490139fc2616c4c19756dc8ef5f923a3124a9c76df2572459d69b6f905",
+   "bytes": 44764
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-right-extended.webp",
+   "sha256": "fc1a1b2d0eb4d48c8e37ab579cad96614e87cc33d66956bcaa3a419631678def",
+   "bytes": 47306
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-right-pull.webp",
+   "sha256": "cdd8a5a75cc2982572b6cf427fd6a9187185f545ce6b1ba375d176826d79e197"
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-settle.webp",
+   "sha256": "41d7b262e2e7f7b166d7c2f256adc01289c0038a8bfaa4ff431b9dde2f411764",
+   "bytes": 35310
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-slam-descend.webp",
+   "sha256": "93b54263bf21f84331014ffbe928a301d6df24093c4d2abbab096f5ad6295283",
+   "bytes": 52232
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-slam.webp",
+   "sha256": "917f5b38bbdd8bac49cd82bfd09d7a7a40ad59a322df274e8caa5cee3cb6d6b7",
+   "bytes": 42944
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-windup-cast.webp",
+   "sha256": "f06a72f6b4acd9a20f95631655569777f5d51b35db53525a1fe545aa27e7437c",
+   "bytes": 46040
+  },
+  {
+   "path": "public/assets/combat/characters/animated/kratos-windup.webp",
+   "sha256": "2bff9fb970f663f8371d7e3420cfc4f3b8e67d3d1eb4b35f382b48ccf11ee096",
+   "bytes": 44900
+  },
+  {
+   "path": "public/assets/combat/characters/kratos-hero.webp",
+   "sha256": "2c8ed5ff82044692fd619798452b4100c95f55eab794e338a076314c16163389",
+   "bytes": 129672
+  },
+  {
+   "path": "public/assets/combat/characters/kratos.webp",
+   "sha256": "787b0e76e218b44e19032f9f4be649517c3666f2f83afdcd1325ad9db984ae57",
+   "bytes": 39804
+  },
+  {
+   "path": "public/assets/combat/vfx/actions/kratos/impact.webp",
+   "sha256": "c9223afe74ea5414724c900728bb63f404996ed02ed47d1d26e847d5aa7f9f32",
+   "bytes": 84660
+  },
+  {
+   "path": "public/assets/combat/vfx/actions/kratos/light.webp",
+   "sha256": "aae387f742e166438b470c24d78dfae2a62684fdb60a0e7ad713d72240480fc5",
+   "bytes": 35868
+  },
+  {
+   "path": "public/assets/sfx/kratos-chain.mp3",
+   "sha256": "fe94621c1536a0e365ee814eb76ef0aff5bc47af8c66b2e04d6eb7d8c1f3ea09",
+   "bytes": 3980
+  },
+  {
+   "path": "public/assets/sfx/kratos-light.mp3",
+   "sha256": "cf67ffeb75b9d4bce1862b4bdb5602482c32f01e70177614b79f9e2a41ebcb4b",
+   "bytes": 3596
+  },
+  {
+   "path": "public/assets/sfx/kratos-slam.mp3",
+   "sha256": "6131518473655e3793e2ef86eae1d6ef505841ce3cfe53370d55ddbb41c19dda",
+   "bytes": 8828
+  }
+ ]
 }

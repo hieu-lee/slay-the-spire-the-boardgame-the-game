@@ -907,7 +907,7 @@ print(json.dumps(faults))
   }
 })
 
-check('Kratos registered drawings keep native alpha, planted feet, and unclipped weapon overscan', () => {
+check('Kratos registered drawings keep native alpha, planted feet, generated offsets, and unclipped weapon overscan', () => {
   const manifest = JSON.parse(readFileSync(join(repoRoot, 'docs/kratos-art.json'), 'utf8'))
   const digest = (path) => createHash('sha256').update(readFileSync(join(repoRoot, path))).digest('hex')
   for (const entry of manifest.generated) {
@@ -916,9 +916,13 @@ check('Kratos registered drawings keep native alpha, planted feet, and unclipped
     for (const reference of entry.inputs) assertEqual(digest(reference.path), reference.sha256, reference.path)
   }
   for (const entry of manifest.runtime) assertEqual(digest(entry.path), entry.sha256, entry.path)
-  const registration = JSON.parse(readFileSync(join(repoRoot, 'scripts/animation/sources/kratos/combo-v2/registration.json'), 'utf8'))
+  const registration = JSON.parse(readFileSync(join(repoRoot, 'scripts/animation/sources/kratos/combo-v3/registration.json'), 'utf8'))
   assert(registration.keys.length <= 20, 'Kratos exceeds the user keyframe budget')
+  // The CSS rear-foot shifts and the travel's blade-tip reach are generated from the drawings.
+  const generated = spawnSync('python3', ['scripts/animation/kratos.py', '--check'], { cwd: repoRoot, encoding: 'utf8' })
+  assert(generated.status === 0, generated.stderr || generated.stdout)
 
+  const poses = [...new Set(registration.keys.map(([, pose]) => pose === 'idle' ? 'ready' : pose))]
   const result = spawnSync('python3', ['-c', `
 from PIL import Image, ImageChops
 from pathlib import Path
@@ -928,7 +932,7 @@ assert idle.info['loop'] == 0 and idle.n_frames > 1
 ready = Image.open(root / 'kratos-ready.webp')
 assert ImageChops.difference(idle.getchannel('A'), ready.getchannel('A')).getbbox() is None
 images = [idle] + [Image.open(root / f'kratos-{pose}.webp') for pose in
-                   ['ready', 'anticipation', 'left-cast', 'left-extended', 'right-cast', 'right-extended', 'windup-cast', 'windup', 'slam-descend', 'slam', 'recovery', 'retract', 'catch', 'settle']]
+                   ${JSON.stringify(poses)}]
 for image in images:
     assert image.size == (1152, 1152)
     for i in range(image.n_frames):

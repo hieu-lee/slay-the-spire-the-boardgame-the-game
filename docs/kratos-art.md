@@ -8,26 +8,63 @@ still follows the supplied crouched Blades of Exile / Golden Fleece reference:
 ash-white skin, left red tattoo, short goatee, right ram armor and red Spartan skirt.
 Native transparency is preserved.
 
-The square-square-triangle combo uses fourteen complete drawings and fifteen timed
-keys, below the maximum of twenty. Anticipation starts at 120ms, left cast at 280ms,
-left extension at 420ms, right cast at 650ms and right extension at 800ms. Both blades
-cast upward at 940ms, extend overhead at 1080ms, descend airborne at 1180ms and strike
-at 1280ms. Both blades remain remote from the fists on separate intact chains during
-this heavy swing; the contact tips meet the same ground as his soles. Recovery at
-1480ms reels them in, 1600ms shows the halfway pull, 1710ms catches the two grips,
-1810ms settles into the held-blade stance and 1980ms returns to the exact idle drawing.
-The complete clock stays 2200ms. Idle uses eight small rigid sway frames over 3200ms.
+The square-square-triangle combo uses fifteen complete drawings and seventeen timed
+keys, below the maximum of twenty, on a 2400ms clock: dash in, left extend, right
+extend, wind up and slam, pull the blades back, dash back. Kratos dashes in from 60ms
+to 300ms in the anticipation drawing. The left extend takes 150ms (blade in flight at
+300ms, full reach and first hit at 375ms), then the arm under the ram pauldron takes the
+right extend for another 150ms (cast at 450ms while the first blade flies home to his
+rear fist, full reach and second hit at 525ms); the right-arm drawings keep a back
+view rather than mirroring him. The light strikes aim slightly down to belt height, so
+they meet short creatures. The windup and slam take 1.2s: at 600ms he yanks the second
+blade back while the first is still in his rear fist (the right-pull drawing), at 700ms
+both fists rise and the blades lift above his head, at 820ms he holds the backswing
+with both blades behind him on taut chains, as in the user's sketch, at 1060ms they
+pass back over his head, at 1120ms they whip forward and at 1250ms they bite into the ground ahead along
+the chain line, tips on the line of his soles; the impact holds until 1800ms. The
+retract takes 200ms: he yanks the blades out of the ground on taut chains at 1800ms and
+reels them in toward his fists at 1900ms. He catches both in front of him at 2000ms,
+dashes back to 2280ms through the catch and settle drawings and returns to the exact
+idle drawing. Idle uses eight small rigid sway frames over 3200ms.
 
-`combo-v2/registration.json` records inspected crown/jaw, sole and stance-center
-landmarks. Each complete drawing gets one uniform scale to a fixed 65.25px skull;
-there is no limb morphing or per-beat body scaling. A 1152px canvas with 2.3x display
-overscan leaves room for both extended chains while preserving the on-screen body
-scale. The ground anchor is 1136px. Reduced-motion static art reverses that overscan.
-The bony jaw is projected where the ram pauldron partly occludes the right-cast face.
-The gallery audit checks shoulder/elbow/wrist connections, two hands and legs,
-matching blades, chain connections, stable proportions and planted feet. Rejected
-heavy drafts stood too tall, enlarged chain reach or put tips below the soles;
-rejected right-strike drafts repeated the left arm. Those drafts are not exported.
+The twelve attack drawings in `combo-v3/` (casts, extends, pull-back, windup, slam,
+recovery, retract and catch) were redrawn by Sunburst from the registered idle
+(supplied at 1.15x runtime scale on a layout canvas) plus the Ironclad, Silent, Defect and Watcher sprites
+as the style reference, so only the poses changed. Later drawings also receive an
+approved neighbouring keyframe as a body, blade, grip and reach reference; drafts that
+served only as references are kept in `combo-v3/refs/`. Rejected drafts repeated the
+left arm on the right strike or mirrored him, grew the blades 1.3-1.9x, put both chains
+in one fist or on an elbow, bowed a chain upward, mangled the pauldron, dropped the
+pauldron arm, ran a chain blade to blade along the ground, reversed the blades, let a
+chain float loose of the hand, or drew proportions the scale check below rejects.
+
+`combo-v3/registration.json` records each crown-to-goatee-tip head landmark.
+`kratos.py` scales each combo-v3 drawing and the kept settle drawing by the geometric
+mean of its head scale (75.5px, the same length on the registered idle) and its planted
+rear-sole scale against the median rear sole of the kept idle and anticipation
+drawings, and fails if the two disagree by more than 20%. The image model draws every
+re-posed head 6-19% small against its rear sole, so the mean keeps body and head each
+within about 10% rather than letting one landmark inflate the other. Blades vary by up
+to about 12% between drawings (left-extended's is the smallest). The kept idle and
+anticipation drawings stay registered by their original crown/jaw skull at 65.25px,
+and their exports are byte-for-byte unchanged.
+
+A 1152px canvas with 2.3x display overscan keeps the on-screen body scale. Each attack
+drawing is centred in its own canvas so the long chains fit. `kratos.py` generates the
+whole Kratos clock in `attack-timing.css`: the travel, every pose's opacity keyframes
+and a per-pose shift that plants every drawing's rear sole on the idle rear sole, so
+his planted foot never slides while he is out (the front foot steps as his stance
+changes). The two light hits use `chainTrim` to remove whole
+links from their straight thrown chains, so their blade tips meet the slam's on one
+line (the bake fails if the three tips differ by more than 12 canvas px). It also
+generates `vfx.tsx`'s pose list, attack length, hit and chain-cue times, display scale and
+`KRATOS_CONTACT_REACH`; the travel parks that blade line on the target's body point,
+and while he is out he draws in front of every enemy, bosses included, so his blades
+stay visible on the target and he covers the enemy he stands over (and its intent) for
+that moment rather than vanishing behind it. A cold play
+keeps the idle fallback and its box-edge travel. `python3 scripts/animation/kratos.py
+--check`, run by `verify-assets.mjs`, fails when any generated value is stale. The
+ground anchor is 1136px; reduced-motion static art reverses the overscan.
 
 Light hits use two painted flame crescents; the slam uses a larger twin flame / rock
 shock, generated against actual Ironclad strike/bash and Watcher meteor impact VFX.
@@ -46,11 +83,12 @@ slam synchronized to the visible CSS beats. Row targets deduplicate each cue and
 mute/reconnect cleanup is unchanged. Rebuild sounds with
 `python3 scripts/audio/generate-combat-sfx.py`; no supplied video audio is copied.
 
-Selected sources and exact prompts live in `scripts/animation/sources/kratos/combo-v2/`.
-`kratos-art.json` records model sources, input references and hashes. Generation
-uses the imagegen skill's bundled CLI, `gpt-image-2.5-sunburst`, high quality and native
-alpha. Ground-position guides only help the image model repair chain connections;
-they are never runtime assets. The earlier `combo/` drawings remain pose references.
+The attack drawings, their exact prompts and layout canvases live in
+`scripts/animation/sources/kratos/combo-v3/`; the kept idle, anticipation, settle and
+VFX drawings stay in `combo-v2/`. `kratos-art.json` records model sources,
+input references and hashes. Generation uses the imagegen skill's bundled CLI,
+`gpt-image-2.5-sunburst`, high quality and native alpha. The earlier `combo/` drawings
+remain pose references.
 Original `sources/kratos/idle.webp` remains the recorded card-art identity reference.
 
 Rebuild with `python3 scripts/animation/kratos.py` and
@@ -58,8 +96,9 @@ Rebuild with `python3 scripts/animation/kratos.py` and
 `artifacts/kratos-art/` and `artifacts/kratos-revision/`.
 `verify-kratos-animation-browser.mjs` owns Chromium/WebKit on desktop and horizontal
 phone: real engine single/row plays, weighted HP/numbers, queued lethal cards/Shivs,
-sound cues, cold art, all fifteen pose beats, exact idle return, reduced motion and
-restoration. Its composited skin-mask check catches invisible WebKit cutouts.
+sound cues, cold art, all seventeen pose beats on the registered clock, a planted rear
+sole while he is out, one blade line for the three hits that lands inside the target,
+exact idle return, reduced motion and restoration. Its composited skin-mask check catches invisible WebKit cutouts.
 Asset verification owns native alpha, fixed canvases, ground, clipping, prompt/hash
 provenance and sound decoding. Hero-potion browser coverage checks head calibration.
 Kratos is released in solo and online play, including Daily and Custom runs.
