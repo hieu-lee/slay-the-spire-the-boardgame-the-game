@@ -226,6 +226,10 @@ const CHAMBER_RETURN_MS = 460
 const CHAMBER_RETURN_STAGGER_MS = 35
 const CHAMBER_REFLOW_MS = 420
 
+const KRATOS_POSES = ['ready', 'windup', 'contact', 'followthrough'] as const
+const kratosPoseAsset = (pose: typeof KRATOS_POSES[number]) =>
+  assetPath(`combat/characters/animated/kratos-${pose}.webp`)
+
 const slimeAssetSlug = (defId: string): string => defId
   .replace(/^slime_boss_/, '')
   .replace(/_slime$/, '')
@@ -337,6 +341,18 @@ function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, att
       {loaded && (replayAsset || sourceFallback) && hermitEvent ? <HermitBullets event={hermitEvent} /> : null}
     </span>
   )
+}
+
+// Complete registered drawings share the travel/impact clock, including WebKit.
+function KratosAttackPose({ ready }: { ready: boolean }) {
+  const [preloaded] = useState(ready)
+  return preloaded ? <>{KRATOS_POSES.map(pose => (
+    <span key={pose} className={`character-attack__pose character-attack__pose--rig is-loaded character-attack__pose--kratos-${pose}`}>
+      <img src={kratosPoseAsset(pose)} alt="" />
+    </span>
+  ))}</> : <span className="character-attack__pose character-attack__pose--rig is-loaded is-fallback">
+    <CombatAnimation src={assetPath('combat/characters/animated/kratos-idle.webp')} />
+  </span>
 }
 
 function GuardianPortrait({ mode, animate, restartKey }: {
@@ -654,6 +670,8 @@ function CombatScreenView({
         : player.character === 'watcher' || player.character === 'ironclad'
           ? ['ready', player.character === 'watcher' ? 'thrust' : 'impact']
             .map((pose) => assetPath(`combat/characters/${player.character}-${pose}.webp`))
+          : player.character === 'kratos'
+            ? [...KRATOS_POSES.map(kratosPoseAsset), ...['slash', 'impact'].map(name => assetPath(`combat/vfx/actions/kratos/${name}.webp`))]
           : [assetPath(`combat/rigged/hero-${player.character}-attack.webp`),
             ...(player.character === 'hermit' ? ['hermit-bullet', 'hermit-impact'].map(name => assetPath(`combat/vfx/actions/${name}.webp`)) : [])]))].sort().join('|')
   useEffect(() => {
@@ -682,6 +700,12 @@ function CombatScreenView({
       .map((src) => [src, current.get(src)!])))
     void Promise.all(assets.filter((src) => !characterAttackBlobs.has(src)).map(async (src) => {
       try {
+        if (src.includes('/characters/animated/kratos-') || src.includes('/actions/kratos/')) {
+          const image = new Image()
+          image.src = src
+          await image.decode()
+          return [src, true] as const
+        }
         const response = await fetch(src, { signal: controller.signal })
         if (!response.ok) return
         const blob = await response.blob()
@@ -697,7 +721,7 @@ function CombatScreenView({
       } catch {}
     })).then((loaded) => {
       if (controller.signal.aborted) return
-      const ready = loaded.filter((entry): entry is readonly [string, Blob] => Boolean(entry))
+      const ready = loaded.filter((entry): entry is readonly [string, Blob | true] => Boolean(entry))
       if (ready.length) setCharacterAttackBlobs((current) => new Map([...current, ...ready]))
     })
     return () => controller.abort()
@@ -6341,9 +6365,10 @@ function CombatScreenView({
             : occupant?.character === 'guardian' && occupant.guardianMode === 'defense' ? 'guardian-defense'
             : occupant?.character
           const characterAttackAsset = assetPath(`combat/rigged/hero-${rigId}-attack.webp`)
-          const characterIdleAsset = assetPath(occupant?.character === 'watcher'
-            ? 'combat/characters/watcher-hero.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
+          const characterIdleAsset = occupant?.character === 'watcher'
+            ? assetPath('combat/characters/watcher-hero.webp') : assetPath(occupant?.character === 'kratos' ? 'combat/characters/animated/kratos-idle.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
           const characterArtScale = prefersReducedMotion || occupant?.dead || occupant?.character === 'watcher' ? 1
+            : occupant?.character === 'kratos' ? 2
             : (rigMetadata as Record<string, { scale?: number }>)[`hero-${rigId}`]?.scale ?? 1
           // Where the painted head ends, so held potions and Orbs float just above it.
           const animatedPortrait = !prefersReducedMotion && !occupant?.dead && !slimeSpawnEvent
@@ -6473,7 +6498,9 @@ function CombatScreenView({
                                 <span className="character-attack__pose character-attack__pose--watcher-cast">
                                   <img src={assetPath('combat/characters/watcher-thrust.webp')} alt="" />
                                 </span>
-                              </> : <CharacterAttackPose
+                              </> : occupant.character === 'kratos' ? <KratosAttackPose
+                                ready={KRATOS_POSES.every(pose => characterAttackBlobs.has(kratosPoseAsset(pose)))}
+                              /> : <CharacterAttackPose
                                 key={characterAttack.active.event.seq}
                                 attackSeq={characterAttack.active.event.seq}
                                 hermitEvent={occupant.character === 'hermit' ? characterAttack.active.event : undefined}
@@ -6515,6 +6542,10 @@ function CombatScreenView({
                             {occupant.character === 'ironclad' &&
                             characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <span className="character-attack__swing" />
+                            ) : null}
+                            {occupant.character === 'kratos' &&
+                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
+                              <span className="character-attack__chaos-slash" />
                             ) : null}
                             {occupant.character === 'defect' &&
                             characterAttack.active.event.seq === latestCharacterAttackSeq ? (

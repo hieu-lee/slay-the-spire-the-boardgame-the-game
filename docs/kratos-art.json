@@ -1,0 +1,142 @@
+{
+  "model": "gpt-image-2.5-sunburst",
+  "workflow": "imagegen bundled image_gen.py edit",
+  "quality": "high",
+  "background": "transparent",
+  "sourceCommit": "9faa990",
+  "styleReferences": [
+    {
+      "path": "public/assets/combat/characters/ironclad.webp",
+      "sha256": "9c4b66f90d812589f6ce80fe1150cbd9d0fb594e9d402367eae8156b3ff9671d"
+    },
+    {
+      "path": "public/assets/combat/characters/watcher.webp",
+      "sha256": "1af62c76394235e6eb3cf288d3d5e4ab9851e21c4c49600bb0521e9f3d3a9f72"
+    },
+    {
+      "path": "public/assets/combat/characters/hermit.webp",
+      "sha256": "8d20c429c93745ad8eeb69976e9abcf9c4ec6b3db5536596657f3029fa434682"
+    }
+  ],
+  "generated": [
+    {
+      "name": "idle",
+      "prompt": "scripts/animation/sources/kratos/idle-prompt.txt",
+      "source": "scripts/animation/sources/kratos/idle.webp",
+      "sha256": "11e80c43b3a120ce6306088221ad6b54d7e57affdf6a153397513482683b465d",
+      "size": "1024x1024",
+      "inputs": [
+        "public/assets/combat/characters/ironclad.webp",
+        "public/assets/combat/characters/watcher.webp",
+        "public/assets/combat/characters/hermit.webp"
+      ]
+    },
+    {
+      "name": "windup",
+      "prompt": "scripts/animation/sources/kratos/windup-prompt.txt",
+      "source": "scripts/animation/sources/kratos/windup.webp",
+      "sha256": "6821f9d0413d49650f638c8ede9b41bc69e6b710d8fbf5d34e550cce31a4ab32",
+      "size": "1536x1024",
+      "inputs": [
+        "scripts/animation/sources/kratos/idle.webp",
+        "public/assets/combat/characters/ironclad.webp",
+        "public/assets/combat/characters/watcher.webp"
+      ]
+    },
+    {
+      "name": "contact",
+      "prompt": "scripts/animation/sources/kratos/contact-prompt.txt",
+      "source": "scripts/animation/sources/kratos/contact.webp",
+      "sha256": "257a849bd01ee18740ec5aaa7264ed1063ccc955d71ba617ebddae772bb63d0c",
+      "size": "1536x1024",
+      "inputs": [
+        "scripts/animation/sources/kratos/idle.webp",
+        "public/assets/combat/characters/ironclad.webp",
+        "public/assets/combat/characters/watcher.webp"
+      ]
+    },
+    {
+      "name": "followthrough",
+      "prompt": "scripts/animation/sources/kratos/followthrough-prompt.txt",
+      "source": "scripts/animation/sources/kratos/followthrough.webp",
+      "sha256": "71b1093e4e60e69c21af034d54ff966d1781b5bccb45f57742d5d0a8c5e8a965",
+      "size": "1536x1024",
+      "inputs": [
+        "scripts/animation/sources/kratos/idle.webp",
+        "public/assets/combat/characters/ironclad.webp",
+        "public/assets/combat/characters/watcher.webp"
+      ]
+    },
+    {
+      "name": "slash",
+      "prompt": "scripts/animation/sources/kratos/slash-prompt.txt",
+      "source": "scripts/animation/sources/kratos/slash.webp",
+      "sha256": "f4b17c12636148874e24c9700e99c8e74f6113749551ff76da8f0e541ed93194",
+      "size": "1024x1024",
+      "inputs": [
+        "scripts/animation/sources/kratos/idle.webp",
+        "public/assets/combat/characters/ironclad.webp",
+        "public/assets/combat/characters/watcher.webp"
+      ]
+    },
+    {
+      "name": "impact",
+      "prompt": "scripts/animation/sources/kratos/impact-prompt.txt",
+      "source": "scripts/animation/sources/kratos/impact.webp",
+      "sha256": "a3adf7b3068be9df9280408a4b2c739b84c46f6ea90c64a0c6b052d225bf4ee8",
+      "size": "1024x1024",
+      "inputs": [
+        "scripts/animation/sources/kratos/idle.webp",
+        "public/assets/combat/characters/ironclad.webp",
+        "public/assets/combat/characters/watcher.webp"
+      ]
+    }
+  ],
+  "runtime": [
+    {
+      "path": "public/assets/combat/characters/animated/kratos-contact.webp",
+      "sha256": "58b80e37be681ba09d8dd12e1452f0e4ee2b33f0123663e86464471b6b912630",
+      "bytes": 43848
+    },
+    {
+      "path": "public/assets/combat/characters/animated/kratos-followthrough.webp",
+      "sha256": "1717022f5a3151b7eb584d2ee632dbd00a932e4e7125c4d10fbad282f880cefa",
+      "bytes": 42380
+    },
+    {
+      "path": "public/assets/combat/characters/animated/kratos-idle.webp",
+      "sha256": "9aee61a874e99b866f278cd83c91fa5a8ee1c3bc98eb04620aaf48e27e8af775",
+      "bytes": 305262
+    },
+    {
+      "path": "public/assets/combat/characters/animated/kratos-ready.webp",
+      "sha256": "44a391bdedb066d326f612bb065cb09edd9bda4cbb26e034500c30ef46193b8e",
+      "bytes": 38272
+    },
+    {
+      "path": "public/assets/combat/characters/animated/kratos-windup.webp",
+      "sha256": "6d64f148948c578475dd25a1e2452f3991a3063ebf9bc1cb0f2a46485d6180c8",
+      "bytes": 45754
+    },
+    {
+      "path": "public/assets/combat/characters/kratos-hero.webp",
+      "sha256": "9cf4790d7c2486eba17747b18277dbf7e032fde4a213f613e4beae818e4e1b14",
+      "bytes": 113826
+    },
+    {
+      "path": "public/assets/combat/characters/kratos.webp",
+      "sha256": "3d24db81746b92cce32f5eda3de62fb0dcb13c763db9c821944506bda2779f4d",
+      "bytes": 58260
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/kratos/impact.webp",
+      "sha256": "6f93f660f6669725653c5055e345f44c0c27a13ad81d4527f4e250e81958f4d9",
+      "bytes": 45048
+    },
+    {
+      "path": "public/assets/combat/vfx/actions/kratos/slash.webp",
+      "sha256": "6e98cc6fa7a3504e685df5bdae45b82311ed82306ee1714410e78360982078ce",
+      "bytes": 51788
+    }
+  ]
+}

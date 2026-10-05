@@ -758,6 +758,7 @@ check('bundled combat cutouts are sized for their render box, with transparency'
     ]).flat(),
     'hexaghost-hero.webp', 'hexaghost-impact.webp', 'hexaghost-ready.webp', 'hexaghost.webp',
     'ironclad-hero.webp', 'ironclad-impact.webp', 'ironclad-ready.webp', 'ironclad.webp',
+    'kratos-hero.webp', 'kratos.webp',
     'silent-hero.webp', 'silent-throw.webp', 'silent.webp',
     'slime_boss-hero.webp', 'slime_boss-impact.webp', 'slime_boss-ready.webp', 'slime_boss-spawn.webp',
     'slime_boss.webp',
@@ -862,6 +863,31 @@ print(json.dumps(faults))
       .reduce((sum, frame) => sum + Number(frame[1]), 0), 600,
     `Guardian ${direction} transformation duration`)
   }
+})
+
+check('Kratos registered drawings keep native alpha, planted feet, and unclipped weapon overscan', () => {
+  const result = spawnSync('python3', ['-c', `
+from PIL import Image, ImageChops
+from pathlib import Path
+root = Path('public/assets/combat/characters/animated')
+idle = Image.open(root / 'kratos-idle.webp')
+assert idle.info['loop'] == 0 and idle.n_frames > 1
+ready = Image.open(root / 'kratos-ready.webp')
+assert ImageChops.difference(idle.getchannel('A'), ready.getchannel('A')).getbbox() is None
+images = [idle] + [Image.open(root / f'kratos-{pose}.webp') for pose in
+                   ['ready', 'windup', 'contact', 'followthrough']]
+for image in images:
+    assert image.size == (800, 800)
+    for i in range(image.n_frames):
+        image.seek(i)
+        alpha = image.getchannel('A')
+        assert alpha.histogram()[0] > image.width * image.height / 2
+        box = alpha.point(lambda a: 255 if a > 32 else 0).getbbox()
+        assert box and min(box[0],box[1],image.width-box[2],image.height-box[3]) >= 4
+        assert abs(box[3] - 784) <= 4, (image.filename, box)
+print('PASS: Kratos native alpha, fixed canvas, planted feet and weapon overscan')
+`], { cwd: repoRoot, encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || result.stdout)
 })
 
 check('Downfall merchant poses are complete, transparent, and edge-capped', () => {

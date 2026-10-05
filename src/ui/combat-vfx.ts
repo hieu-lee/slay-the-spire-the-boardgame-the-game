@@ -309,7 +309,7 @@ const actorAttack: Record<CharacterId, VfxRecipe> = {
   guardian: recipe('blunt', 'lunge', 'guard-bloom', 'guard-blue'),
   hexaghost: recipe('projectile', 'cast', 'hexaghost-flame-impact', 'chaos-green'),
   hermit: recipe('projectile', 'lunge', 'magic-burst', 'impact-ochre'),
-  kratos: recipe('slash', 'lunge', 'ironclad-strike', 'ember-orange'),
+  kratos: recipe('slash', 'lunge', 'kratos/impact', 'ember-orange'),
 }
 
 const actorTone: Record<CharacterId, string> = {

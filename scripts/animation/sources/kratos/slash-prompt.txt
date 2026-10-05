@@ -1,0 +1,4 @@
+Use case: stylized-concept
+Asset type: standalone transparent combat VFX sprite.
+Image 1 is Greek-era Kratos, image 2 Ironclad, image 3 Watcher; use only their PAINTED GAME STYLE, no bodies or weapons in output.
+Draw one compact paired sweeping slash effect for the Blades of Chaos: two clearly separated curved crescents sweeping from upper left toward lower right, muted oxblood red outer brushstroke, warm orange and worn golden inner edges, a few broad ember flecks trailing left. Broad layered hand-painted color planes with ragged brush tips. Restrained warm highlights, readable at 100px, no glossy neon, no delicate filaments. Empty transparent space between the two strokes. Centered on a square canvas with 10% transparent margins. True native transparent alpha, no backdrop, no checkerboard, no floor, no text, no character, no chain, no physical blade. The effect must be a clean expressive swing arc, not a fireball or a logo.

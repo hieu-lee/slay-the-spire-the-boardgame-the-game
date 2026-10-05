@@ -76,6 +76,53 @@
 
 .character-attack--ironclad { will-change: transform; }
 
+/* Fixed body scale: the baked drawings contain transparent weapon overscan.
+   The forward blade and target burst meet at the shared 630ms contact clock. */
+.character-attack--kratos {
+  will-change: transform;
+  animation: kratos-blade-travel 1800ms ease-in-out both;
+}
+
+@keyframes kratos-blade-travel {
+  0%, 20%, 80%, 100% { transform: translate(0); }
+  35%, 62% { transform: translate(var(--attack-x), var(--attack-y)); }
+}
+
+/* Held drawings and target travel use one event clock; no native replay drift. */
+.character-attack__pose--kratos-ready { animation: kratos-ready 1800ms linear both; }
+.character-attack__pose--kratos-windup { animation: kratos-windup 1800ms linear both; }
+.character-attack__pose--kratos-contact { animation: kratos-contact 1800ms linear both; }
+.character-attack__pose--kratos-followthrough { animation: kratos-followthrough 1800ms linear both; }
+
+@keyframes kratos-ready {
+  0%, 9.999%, 80%, 100% { opacity: 1; }
+  10%, 79.999% { opacity: 0; }
+}
+@keyframes kratos-windup {
+  0%, 9.999%, 35%, 100% { opacity: 0; }
+  10%, 34.999% { opacity: 1; }
+}
+@keyframes kratos-contact {
+  0%, 34.999%, 58.8889%, 100% { opacity: 0; }
+  35%, 58.8879% { opacity: 1; }
+}
+@keyframes kratos-followthrough {
+  0%, 58.8879%, 80%, 100% { opacity: 0; }
+  58.8889%, 79.999% { opacity: 1; }
+}
+
+.character-attack__chaos-slash {
+  position: absolute;
+  z-index: 3;
+  top: 10%;
+  left: 48%;
+  width: 90%;
+  aspect-ratio: 1;
+  background: center / contain no-repeat url('/assets/combat/vfx/actions/kratos/slash.webp');
+  opacity: 0;
+  animation: attack-swing 420ms 630ms ease-out both;
+}
+
 .character-attack--guardian {
   will-change: transform;
   animation: guardian-punch-travel 1650ms cubic-bezier(0.333333, 0, 0.666667, 1) both;
@@ -480,7 +527,14 @@
 
 /* WebKit clips overflowing VFX to the seat's filter surface. Keep painted
    beams and block auras outside that surface. */
-.board .seat:not(.seat--dead):has(.defect-evoke, .combat-vfx) { filter: none; }
+.board .seat:not(.seat--dead):has(.defect-evoke, .combat-vfx, .character-attack) { filter: none; }
+
+/* WebKit rasterizes scaled animated WebP at the filtered surface's small
+   layout size. Keep Kratos's overscanned idle as sharp as his attack poses. */
+.board .seat__interactive[data-character='kratos'] .seat:not(.seat--dead),
+.board .seat__interactive[data-character='kratos'] .seat:not(.seat--dead) .seat__portrait > img {
+  filter: none;
+}
 
 /* A beam stays connected to its source and target; it never flies as an orb. */
 .defect-evoke {

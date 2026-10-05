@@ -1,0 +1,54 @@
+{
+  "landmarks": {
+    "idle": {
+      "skull": [
+        31,
+        205
+      ],
+      "foot": [
+        182,
+        992
+      ],
+      "stanceCenter": 475
+    },
+    "windup": {
+      "skull": [
+        141,
+        297
+      ],
+      "foot": [
+        404,
+        991
+      ],
+      "stanceCenter": 775
+    },
+    "contact": {
+      "skull": [
+        39,
+        218
+      ],
+      "foot": [
+        105,
+        974
+      ],
+      "stanceCenter": 549
+    },
+    "followthrough": {
+      "skull": [
+        128,
+        312
+      ],
+      "foot": [
+        293,
+        978
+      ],
+      "stanceCenter": 646
+    }
+  },
+  "runtimeCanvas": 800,
+  "displayScale": 2,
+  "ground": 784,
+  "skullPixels": 65.25,
+  "contactMs": 630,
+  "durationMs": 1800
+}

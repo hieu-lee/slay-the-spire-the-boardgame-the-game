@@ -1,0 +1,4 @@
+Use case: stylized-concept
+Asset type: standalone transparent combat impact VFX sprite.
+Image 1 is Greek-era Kratos, image 2 Ironclad, image 3 Watcher; match their broad faceted PAINTED GAME STYLE, no bodies or weapons in output.
+Draw one small directional blade impact burst: a compact warm golden-orange contact center at canvas center, several broad pointed sparks spreading toward the right, muted oxblood and burnt orange paint dabs fading behind to the left. A modest asymmetrical burst with empty transparent gaps, no huge explosion, no ring, no fireball, no smoke cloud covering the enemy. Broad layered brush forms and restrained highlights, readable at 70px, not glossy neon or realistic lens flare. Square canvas with 15% transparent margins. Native transparent alpha, no backdrop, checkerboard, floor, text, character, physical blade, chain or logo.

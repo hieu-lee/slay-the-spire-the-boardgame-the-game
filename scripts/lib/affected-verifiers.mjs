@@ -57,7 +57,6 @@ const focusedUiOwners = new Map([
   ['src/ui/game-settings.ts', ['verify-card-damage-preview-browser.mjs']],
   ['src/ui/rig-animation-metadata.json', ['verify-elite-intent-browser.mjs', 'verify-hero-potions-browser.mjs']],
   ['src/ui/hero-art-head.json', ['verify-hero-potions-browser.mjs', 'verify-assets.mjs']],
-  ['scripts/calibrate-hero-head.py', ['verify-hero-potions-browser.mjs', 'verify-assets.mjs']],
   ['src/ui/elite-art-head.json', ['verify-elite-intent-browser.mjs', 'verify-assets.mjs']],
   ['src/ui/combat-vfx.ts', ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs']],
   ['src/ui/styles/elite-signatures.css', ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs']],
@@ -93,6 +92,7 @@ const focusedUiOwners = new Map([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
+  ['scripts/calibrate-hero-head.py', ['verify-hero-potions-browser.mjs', 'verify-assets.mjs']],
   ['scripts/animation/encode-safari-attacks.py', ['verify-assets.mjs', 'verify-rig-animation-browser.mjs']],
   ['scripts/animation/check-attack-parity.py', ['verify-rig-animation-browser.mjs']],
   ['scripts/calibrate-elite-intent.py', ['verify-elite-intent-browser.mjs', 'verify-assets.mjs']],
@@ -258,6 +258,11 @@ export function affectedVerifiers(root, changedFiles, scripts) {
 
   for (const file of changed) {
     let covered = [...selected].some((script) => imports(join('scripts', script), root).has(resolve(root, file)))
+    if (file === 'scripts/animation/kratos.py' || file.startsWith('scripts/animation/sources/kratos/')) {
+      selected.add('verify-assets.mjs')
+      selected.add('verify-kratos-animation-browser.mjs')
+      covered = true
+    }
     if (file === 'scripts/verify-all.mjs') {
       // Scheduler behavior is exercised with disposable light/browser fixtures
       // by verify-pipeline. Running every product suite for a scheduler-only

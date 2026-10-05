@@ -501,7 +501,12 @@ export function usePresentationEvents(
         staggerIndex * ORB_END_TURN_STAGGER_MS
       const remove = () => timers.current.set(event.seq, setTimeout(() => {
         const settle = () => {
-          if (isHermitAttack(state, event) && hermitAnimationPending(event.seq)) {
+          const kratosMotion = document.querySelector<HTMLElement>(
+            `.character-attack--kratos[data-attack-seq="${event.seq}"]`)
+          const kratosMoving = kratosMotion?.getAnimations().some(animation =>
+            animation.pending || animation.playState === 'running')
+          // A busy renderer can trail the removal timer; retain the visible return.
+          if (kratosMoving || isHermitAttack(state, event) && hermitAnimationPending(event.seq)) {
             timers.current.set(event.seq, setTimeout(settle, 100))
             return
           }

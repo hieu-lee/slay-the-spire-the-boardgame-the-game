@@ -20,6 +20,7 @@ STATES = {
     **{hero: ([f'rigged/hero-{hero}-idle.webp'], [f'characters/{hero}-hero.webp'])
        for hero in ('ironclad', 'silent', 'defect', 'hermit', 'slime_boss')},
     'watcher': (['characters/watcher-hero.webp'], ['characters/watcher-hero.webp']),
+    'kratos': (['characters/animated/kratos-idle.webp'], ['characters/kratos-hero.webp']),
     'guardian': (['rigged/hero-guardian-idle.webp'], ['characters/guardian-hero.webp']),
     'guardian-defense': (['rigged/hero-guardian-defense-idle.webp'], ['characters/guardian-defense.webp']),
     **{f'hexaghost-heat-{heat}': ([f'rigged/hero-hexaghost-heat-{heat}-idle.webp'], [f'characters/hexaghost-heat-{heat}.webp'])
