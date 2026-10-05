@@ -92,6 +92,7 @@ const focusedUiOwners = new Map([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = new Map([
+  ['scripts/art/export-kratos.py', ['verify-assets.mjs', 'verify-kratos-card-art-browser.mjs']],
   ['scripts/calibrate-hero-head.py', ['verify-hero-potions-browser.mjs', 'verify-assets.mjs']],
   ['scripts/animation/encode-safari-attacks.py', ['verify-assets.mjs', 'verify-rig-animation-browser.mjs']],
   ['scripts/animation/check-attack-parity.py', ['verify-rig-animation-browser.mjs']],
@@ -286,6 +287,11 @@ export function affectedVerifiers(root, changedFiles, scripts) {
         }
       }
       covered ||= browserCovered
+    }
+    if (file.startsWith('scripts/art/sources/kratos/')) {
+      selected.add('verify-assets.mjs')
+      selected.add('verify-kratos-card-art-browser.mjs')
+      covered = true
     }
     if (file.startsWith('public/assets/')) {
       selected.add('verify-assets.mjs')

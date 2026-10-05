@@ -34,6 +34,8 @@ export type RelicAbility = {
 }
 
 export type RelicDef = {
+  /** Original DLC relics use the native face and committed icon. */
+  publisherScan?: boolean
   id: string
   name: string
   /** Which physical deck or setup area contains this relic. */
@@ -118,6 +120,7 @@ export const RELICS: Record<string, RelicDef> = {
     id: 'ashes_of_sparta',
     name: 'Ashes of Sparta',
     pool: 'starting',
+    publisherScan: false,
     trigger: { kind: 'startOfCombat' },
     effects: [{ kind: 'gainRage', amount: 1 }],
     rule: 'Whenever you lose HP, gain 1 Rage. Each separate HP loss counts once.',

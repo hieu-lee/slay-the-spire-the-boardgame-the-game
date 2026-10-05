@@ -73,7 +73,7 @@ const sfxRoot = join(publicRoot, 'assets/sfx')
 const cardFiles = listing(cardRoot, '.webp')
 const cardThumbFiles = listing(cardThumbRoot, '.webp')
 const socketedCardThumbFiles = listing(socketedCardThumbRoot, '.webp')
-const CARD_ART_OWNERS = ['ironclad', 'silent', 'defect', 'watcher']
+const CARD_ART_OWNERS = ['ironclad', 'silent', 'defect', 'watcher', 'kratos']
 const DOWNFALL_CARD_OWNERS = ['slime_boss', 'guardian', 'hexaghost', 'hermit']
 const cardArtFiles = CARD_ART_OWNERS.flatMap((owner) =>
   listing(join(cardArtRoot, owner), '.webp').map((file) => `${owner}/${file}`))
@@ -232,9 +232,10 @@ check('every character card has exactly one committed illustration', () => {
       const id = entry.name === 'Strike' ? `strike_${owner}` : entry.name === 'Defend' ? `defend_${owner}` : slug
       return `${owner}/${id}.webp`
     }))
+  for (const def of Object.values(CARDS).filter((def) => def.owner === 'kratos')) indexed.add(`kratos/${def.id}.webp`)
   assertDeepEqual(expected.filter((file) => !cardArtFiles.includes(file)), [], 'live card art missing')
   assertDeepEqual(cardArtFiles.filter((file) => !indexed.has(file)), [], 'unknown bundled card art')
-  assertEqual(cardArtFiles.length, 251, 'complete four-character illustration inventory')
+  assertEqual(cardArtFiles.length, 315, 'complete original-hero and Kratos illustration inventory')
 })
 
 check('committed card illustrations decode at the audited size and budget', () => {
@@ -252,7 +253,37 @@ check('committed card illustrations decode at the audited size and budget', () =
   assertDeepEqual(faults, [], 'illustration dimensions')
   const sizes = files.map((file) => statSync(file).size)
   assert(Math.max(...sizes) <= 60 * 1024, 'a committed illustration exceeds 60 KiB')
-  assert(sizes.reduce((sum, bytes) => sum + bytes, 0) < 7 * 1024 * 1024, 'illustrations exceed 7 MiB')
+  assert(sizes.reduce((sum, bytes) => sum + bytes, 0) < 9 * 1024 * 1024, 'illustrations exceed 9 MiB')
+})
+
+check('Kratos selected sources, prompts and ready-to-release menu exports match their provenance', () => {
+  const manifest = JSON.parse(readFileSync(join(repoRoot, 'docs/kratos-card-art/manifest.json'), 'utf8'))
+  const expected = Object.values(CARDS).filter((def) => def.owner === 'kratos').map((def) => def.id).sort()
+  assertDeepEqual(manifest.cards.map((entry) => entry.id).sort(), expected, 'Kratos provenance inventory')
+  const verifyHash = ({ path, sha256 }) => {
+    assert(!path.startsWith('/') && !path.split('/').includes('..'), 'unsafe provenance path')
+    assertEqual(createHash('sha256').update(readFileSync(join(repoRoot, path))).digest('hex'), sha256, path)
+  }
+  for (const reference of manifest.references) verifyHash(reference)
+  for (const entry of manifest.cards) {
+    assertEqual(entry.output.path, `public/assets/card-art/kratos/${entry.id}.webp`)
+    for (const asset of [entry.source, entry.prompt, entry.output]) verifyHash(asset)
+  }
+  for (const entry of manifest.otherAssets) {
+    for (const asset of [entry.source, entry.prompt, entry.output, ...entry.references]) verifyHash(asset)
+  }
+  const probe = `
+from PIL import Image
+import sys
+portrait = Image.open(sys.argv[1]); portrait.load()
+wallpaper = Image.open(sys.argv[2]); wallpaper.load()
+assert portrait.size == (256,384) and portrait.mode == 'RGB'
+assert wallpaper.size == (1536,864) and wallpaper.mode == 'RGB'
+`
+  const result = spawnSync('python3', ['-c', probe,
+    join(menuRoot, 'character-select/portrait-kratos.png'),
+    join(menuRoot, 'character-select/character-kratos-wallpaper.webp')], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'Kratos menu exports did not decode at the audited sizes')
 })
 
 check('committed card illustration paths are stable across upgrades', () => {
@@ -512,7 +543,7 @@ check('the menu artwork and licensed UI font are bundled', () => {
     assert(existsSync(join(menuRoot, file)), `missing menu artwork: ${file}`)
   }
   const expectedIcons = [
-    'all', 'colorless', 'curse', 'defect', 'guardian', 'hermit', 'hexaghost', 'ironclad',
+    'all', 'colorless', 'curse', 'defect', 'guardian', 'hermit', 'hexaghost', 'ironclad', 'kratos',
     'silent', 'slime_boss', 'status', 'watcher',
   ]
     .map((name) => `${name}.webp`)
@@ -1043,8 +1074,7 @@ check('bundled stage and generated icon inventories are complete and decodable',
   assertDeepEqual(statusIconFiles.sort(), expectedStatus, 'status icon inventory')
   assertDeepEqual(powerIconFiles.sort(), expectedPowers, 'Power icon inventory')
   assertDeepEqual(requiredRelicIconFiles.sort(), [...new Set(Object.keys(RELICS)
-    // The playtest-only Kratos relic has no art yet.
-    .filter((id) => id !== 'hexaghost_starting_relic' && id !== 'ashes_of_sparta')
+    .filter((id) => id !== 'hexaghost_starting_relic')
     .map((id) => `${id.replace(/^downfall_/, '')}.png`))].sort(),
     'relic icon inventory')
   assertEqual(relicIconPath('downfall_ninja_scroll'), '/assets/relic-icons/ninja_scroll.png',

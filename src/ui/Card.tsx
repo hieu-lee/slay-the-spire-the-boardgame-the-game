@@ -399,6 +399,10 @@ function handEndOfTurnText(effect: HandEndOfTurnEffect): string {
 }
 
 const CARD_KEYWORD_TIPS = [
+  ['Rage', /\brage\b/i, 'Kratos banks up to 5 Rage. It stays between turns and resets each combat.'],
+  ['Unleash', /\bunleash\b/i, 'Spend the listed Rage for the bonus when you can pay. Hold Rage when playing to skip Unleash. God of War lowers the cost by 1, to a minimum of 0.'],
+  ['Godslayer', /\bgodslayer\b/i, 'The listed bonus adds damage to each hit against an enemy whose card is an Elite or a Boss.'],
+  ['Brutal Kill', /\bbrutal kill\b/i, 'Gain the listed bonus if this card kills its chosen target with its hit.'],
   ['Ethereal', /\bethereal\b/i, 'If this card is in your hand at end of turn, Exhaust it.'],
   ['Exhaust', /__exhaust__/, 'An Exhausted card is removed for this combat and returns to its deck afterward.'],
   ['Retain', /\bretain(?:ed)?\b/i, 'A retained card stays in its owner’s hand at end of turn.'],

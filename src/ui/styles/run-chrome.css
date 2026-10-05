@@ -56,7 +56,11 @@
 .card-face--silent { --card-frame: #397245; --card-panel: #172a1b; }
 .card-face--defect { --card-frame: #366d88; --card-panel: #14252f; }
 .card-face--watcher { --card-frame: #755085; --card-panel: #291b30; }
+.card-face--kratos { --card-frame: #8d322c; --card-panel: #351917; }
+.card-face--kratos.card-face--uncommon { --card-frame: #427d77; }
 .card-face--rare { --card-frame: #9a7731; }
+
+.rules-keyword { color: #f4cc78; font-weight: 800; }
 
 .card-face__title {
   align-self: center;
@@ -122,3 +126,5 @@
   line-height: 1.15;
   text-shadow: none;
 }
+
+.card-face--kratos .card-face__rules { font-size: clamp(.32rem, calc(var(--card-width) * .06), .68rem); }
