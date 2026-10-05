@@ -2,9 +2,9 @@
 
 All 64 cards have separate base and upgraded faces (128 images), authored with
 `gpt-image-2.5-sunburst`, high quality and `background: transparent`. Each request
-supplies the approved card illustration, the user's red-orb Energy symbol,
-the production Rage of Sparta glyph, two existing finished card examples and
-any applicable attack, Block, debuff or draw symbols. Prompts specify exact
+supplies the approved illustrated face, two existing finished Ironclad examples,
+and each applicable effect glyph, including the user's red-orb Energy symbol
+and the production Rage of Sparta glyph. Prompts specify exact
 card information and yellow keyword emphasis. Damage, Block, Vulnerable, Weak,
 Strength, Rage and Energy use the supplied effect symbols directly in the rules,
 as the existing cards do. All values and surrounding conditions remain written;
@@ -12,6 +12,25 @@ plain damage retains its explicit plain qualifier. Upgraded faces use the existi
 green title (including the plus sign) and subtle gold frame glow. Their exact
 upgraded costs/effects are preserved, while keyword emphasis stays yellow.
 Upgraded requests use existing upgraded faces as style references.
+
+All 128 faces were audited at the type tab and full bottom border. Masked
+model edits remove invented decorative gems from 23 base faces; upgraded faces
+are clear. `diamond-cleanup.json` records original inputs, masks and repair
+boxes. Only RGB pixels inside each repair box are composited from the model;
+all visible pixels outside are preserved. The original alpha plane is retained except
+for two protruding bottom-edge housings, restored to the adjacent frame edge
+in the explicitly recorded alpha repair boxes.
+The prompts forbid stray rarity badges while preserving real effect symbols.
+
+All 128 rules panels use compact Ironclad notation: `1 [DAMAGE]` and
+`[AOE] 2 [DAMAGE]`, without redundant Deal/Gain/Apply or row prose. Conditions,
+repeat counts, ownership, timing and plain damage remain visible. At the
+user's request, the AOE glyph represents both row and all-enemy effects on
+the printed faces; canonical rules and accessible tooltips keep their exact
+targeting distinctions. Canonical `printedText` and gameplay are unchanged.
+`compact-effects.json` records masked panel inputs and composition boxes;
+only the rules rectangles are replaced, preserving all approved headers,
+illustrations, costs, upgrade styling and the cleaned frame geometry.
 
 The Energy symbol was reconstructed from the user's cropped God of War red
 orb reference. Its source keeps native alpha; the runtime icon is 256 square.

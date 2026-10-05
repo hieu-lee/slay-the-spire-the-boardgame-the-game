@@ -9,14 +9,15 @@
     "printedText": "Deal 1 damage to a row. Gain 1 Rage.",
     "assetKey": "kratos__starter__blades-of-chaos",
     "references": [
-      "public/assets/card-art/kratos/kratos_blades_of_chaos.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__blades-of-chaos-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__blades-of-chaos-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] to a row. Gain 1 [RAGE]."
+    "symbolText": "[AOE] 1 [DAMAGE].\n1 [RAGE]."
   },
   {
     "id": "kratos_blades_of_chaos",
@@ -28,14 +29,15 @@
     "printedText": "Deal 2 damage to a row. Gain 1 Rage.",
     "assetKey": "kratos__starter__blades-of-chaos+",
     "references": [
-      "public/assets/card-art/kratos/kratos_blades_of_chaos.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__blades-of-chaos+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__blades-of-chaos+-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE] to a row. Gain 1 [RAGE]."
+    "symbolText": "[AOE] 2 [DAMAGE].\n1 [RAGE]."
   },
   {
     "id": "kratos_plume_of_prometheus",
@@ -47,14 +49,13 @@
     "printedText": "Deal 1 damage. Unleash 2: deal 4 damage instead.",
     "assetKey": "kratos__starter__plume-of-prometheus",
     "references": [
-      "public/assets/card-art/kratos/kratos_plume_of_prometheus.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__plume-of-prometheus-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__plume-of-prometheus-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE]. Unleash 2: deal 4 [DAMAGE] instead."
+    "symbolText": "1 [DAMAGE].\nUnleash 2: 4 [DAMAGE] instead."
   },
   {
     "id": "kratos_plume_of_prometheus",
@@ -66,14 +67,13 @@
     "printedText": "Deal 2 damage. Unleash 2: deal 5 damage instead.",
     "assetKey": "kratos__starter__plume-of-prometheus+",
     "references": [
-      "public/assets/card-art/kratos/kratos_plume_of_prometheus.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__plume-of-prometheus+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__plume-of-prometheus+-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE]. Unleash 2: deal 5 [DAMAGE] instead."
+    "symbolText": "2 [DAMAGE].\nUnleash 2: 5 [DAMAGE] instead."
   },
   {
     "id": "kratos_orions_harpoon",
@@ -85,14 +85,14 @@
     "printedText": "Deal 2 damage. Gain 1 Rage.",
     "assetKey": "kratos__normal__orion-s-harpoon",
     "references": [
-      "public/assets/card-art/kratos/kratos_orions_harpoon.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__orion-s-harpoon-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__orion-s-harpoon-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE]. Gain 1 [RAGE]."
+    "symbolText": "2 [DAMAGE].\n1 [RAGE]."
   },
   {
     "id": "kratos_orions_harpoon",
@@ -104,14 +104,14 @@
     "printedText": "Deal 3 damage. Gain 1 Rage.",
     "assetKey": "kratos__normal__orion-s-harpoon+",
     "references": [
-      "public/assets/card-art/kratos/kratos_orions_harpoon.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__orion-s-harpoon+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__orion-s-harpoon+-mask.png"
     ],
-    "symbolText": "Deal 3 [DAMAGE]. Gain 1 [RAGE]."
+    "symbolText": "3 [DAMAGE].\n1 [RAGE]."
   },
   {
     "id": "kratos_cyclone_of_chaos",
@@ -123,14 +123,15 @@
     "printedText": "Deal 1 damage to a row 3 times. Gain 1 Rage.",
     "assetKey": "kratos__normal__cyclone-of-chaos",
     "references": [
-      "public/assets/card-art/kratos/kratos_cyclone_of_chaos.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cyclone-of-chaos-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cyclone-of-chaos-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] to a row 3 times. Gain 1 [RAGE]."
+    "symbolText": "[AOE] 1 [DAMAGE] 3 times.\n1 [RAGE]."
   },
   {
     "id": "kratos_cyclone_of_chaos",
@@ -142,14 +143,15 @@
     "printedText": "Deal 1 damage to a row 4 times. Gain 1 Rage.",
     "assetKey": "kratos__normal__cyclone-of-chaos+",
     "references": [
-      "public/assets/card-art/kratos/kratos_cyclone_of_chaos.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cyclone-of-chaos+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cyclone-of-chaos+-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] to a row 4 times. Gain 1 [RAGE]."
+    "symbolText": "[AOE] 1 [DAMAGE] 4 times.\n1 [RAGE]."
   },
   {
     "id": "kratos_spartan_kick",
@@ -161,15 +163,14 @@
     "printedText": "Deal 1 damage. Unleash 1: apply 1 Weak.",
     "assetKey": "kratos__normal__spartan-kick",
     "references": [
-      "public/assets/card-art/kratos/kratos_spartan_kick.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-kick-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/attack.png",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/weak.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-kick-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE]. Unleash 1: apply 1 [WEAK]."
+    "symbolText": "1 [DAMAGE].\nUnleash 1: 1 [WEAK]."
   },
   {
     "id": "kratos_spartan_kick",
@@ -181,15 +182,14 @@
     "printedText": "Deal 2 damage. Unleash 1: apply 1 Weak.",
     "assetKey": "kratos__normal__spartan-kick+",
     "references": [
-      "public/assets/card-art/kratos/kratos_spartan_kick.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-kick+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/attack.png",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/weak.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-kick+-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE]. Unleash 1: apply 1 [WEAK]."
+    "symbolText": "2 [DAMAGE].\nUnleash 1: 1 [WEAK]."
   },
   {
     "id": "kratos_hyperion_charge",
@@ -201,15 +201,14 @@
     "printedText": "Unleash 2: apply 1 Vulnerable. Deal 3 damage.",
     "assetKey": "kratos__normal__hyperion-charge",
     "references": [
-      "public/assets/card-art/kratos/kratos_hyperion_charge.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hyperion-charge-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/attack.png",
-      "public/assets/icons/vulnerable.png"
+      "public/assets/icons/vulnerable.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hyperion-charge-mask.png"
     ],
-    "symbolText": "Unleash 2: apply 1 [VULNERABLE]. Deal 3 [DAMAGE]."
+    "symbolText": "Unleash 2: 1 [VULNERABLE].\n3 [DAMAGE]."
   },
   {
     "id": "kratos_hyperion_charge",
@@ -221,15 +220,14 @@
     "printedText": "Unleash 2: apply 1 Vulnerable. Deal 4 damage.",
     "assetKey": "kratos__normal__hyperion-charge+",
     "references": [
-      "public/assets/card-art/kratos/kratos_hyperion_charge.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hyperion-charge+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/attack.png",
-      "public/assets/icons/vulnerable.png"
+      "public/assets/icons/vulnerable.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hyperion-charge+-mask.png"
     ],
-    "symbolText": "Unleash 2: apply 1 [VULNERABLE]. Deal 4 [DAMAGE]."
+    "symbolText": "Unleash 2: 1 [VULNERABLE].\n4 [DAMAGE]."
   },
   {
     "id": "kratos_nemesis_whip",
@@ -241,14 +239,13 @@
     "printedText": "Deal 1 damage 2 times. Unleash 1: 3 times instead.",
     "assetKey": "kratos__normal__nemesis-whip",
     "references": [
-      "public/assets/card-art/kratos/kratos_nemesis_whip.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemesis-whip-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemesis-whip-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] 2 times. Unleash 1: 3 times instead."
+    "symbolText": "1 [DAMAGE] 2 times.\nUnleash 1: 3 times instead."
   },
   {
     "id": "kratos_nemesis_whip",
@@ -260,14 +257,13 @@
     "printedText": "Deal 1 damage 3 times. Unleash 1: 4 times instead.",
     "assetKey": "kratos__normal__nemesis-whip+",
     "references": [
-      "public/assets/card-art/kratos/kratos_nemesis_whip.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemesis-whip+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemesis-whip+-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] 3 times. Unleash 1: 4 times instead."
+    "symbolText": "1 [DAMAGE] 3 times.\nUnleash 1: 4 times instead."
   },
   {
     "id": "kratos_blade_of_artemis",
@@ -279,14 +275,13 @@
     "printedText": "Deal 3 damage. Godslayer +2.",
     "assetKey": "kratos__normal__blade-of-artemis",
     "references": [
-      "public/assets/card-art/kratos/kratos_blade_of_artemis.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__blade-of-artemis-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__blade-of-artemis-mask.png"
     ],
-    "symbolText": "Deal 3 [DAMAGE]. Godslayer +2."
+    "symbolText": "3 [DAMAGE].\nGodslayer +2."
   },
   {
     "id": "kratos_blade_of_artemis",
@@ -298,14 +293,13 @@
     "printedText": "Deal 4 damage. Godslayer +2.",
     "assetKey": "kratos__normal__blade-of-artemis+",
     "references": [
-      "public/assets/card-art/kratos/kratos_blade_of_artemis.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__blade-of-artemis+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__blade-of-artemis+-mask.png"
     ],
-    "symbolText": "Deal 4 [DAMAGE]. Godslayer +2."
+    "symbolText": "4 [DAMAGE].\nGodslayer +2."
   },
   {
     "id": "kratos_cyclops_eye_rip",
@@ -317,14 +311,15 @@
     "printedText": "Deal 2 damage. Brutal Kill: gain 1 Energy and 2 Rage.",
     "assetKey": "kratos__normal__cyclops-eye-rip",
     "references": [
-      "public/assets/card-art/kratos/kratos_cyclops_eye_rip.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cyclops-eye-rip-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cyclops-eye-rip-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE]. Brutal Kill: gain 1 [ENERGY] and 2 [RAGE]."
+    "symbolText": "2 [DAMAGE].\nBrutal Kill: 1 [ENERGY] and 2 [RAGE]."
   },
   {
     "id": "kratos_cyclops_eye_rip",
@@ -336,14 +331,15 @@
     "printedText": "Deal 3 damage. Brutal Kill: gain 1 Energy and 2 Rage.",
     "assetKey": "kratos__normal__cyclops-eye-rip+",
     "references": [
-      "public/assets/card-art/kratos/kratos_cyclops_eye_rip.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cyclops-eye-rip+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cyclops-eye-rip+-mask.png"
     ],
-    "symbolText": "Deal 3 [DAMAGE]. Brutal Kill: gain 1 [ENERGY] and 2 [RAGE]."
+    "symbolText": "3 [DAMAGE].\nBrutal Kill: 1 [ENERGY] and 2 [RAGE]."
   },
   {
     "id": "kratos_zeus_fury",
@@ -355,14 +351,13 @@
     "printedText": "Deal 1 damage 2 times, choosing any enemy for each hit.",
     "assetKey": "kratos__normal__zeus-fury",
     "references": [
-      "public/assets/card-art/kratos/kratos_zeus_fury.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__zeus-fury-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__zeus-fury-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] 2 times, choosing any enemy for each hit."
+    "symbolText": "1 [DAMAGE] 2 times, choosing any enemy for each hit."
   },
   {
     "id": "kratos_zeus_fury",
@@ -374,14 +369,13 @@
     "printedText": "Deal 1 damage 3 times, choosing any enemy for each hit.",
     "assetKey": "kratos__normal__zeus-fury+",
     "references": [
-      "public/assets/card-art/kratos/kratos_zeus_fury.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__zeus-fury+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__zeus-fury+-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] 3 times, choosing any enemy for each hit."
+    "symbolText": "1 [DAMAGE] 3 times, choosing any enemy for each hit."
   },
   {
     "id": "kratos_rage_of_the_gods",
@@ -393,13 +387,13 @@
     "printedText": "Gain 2 Rage. Exhaust.",
     "assetKey": "kratos__normal__rage-of-the-gods",
     "references": [
-      "public/assets/card-art/kratos/kratos_rage_of_the_gods.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-gods-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-gods-mask.png"
     ],
-    "symbolText": "Gain 2 [RAGE]. Exhaust."
+    "symbolText": "2 [RAGE].\nExhaust."
   },
   {
     "id": "kratos_rage_of_the_gods",
@@ -411,13 +405,13 @@
     "printedText": "Gain 3 Rage. Exhaust.",
     "assetKey": "kratos__normal__rage-of-the-gods+",
     "references": [
-      "public/assets/card-art/kratos/kratos_rage_of_the_gods.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-gods+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-gods+-mask.png"
     ],
-    "symbolText": "Gain 3 [RAGE]. Exhaust."
+    "symbolText": "3 [RAGE].\nExhaust."
   },
   {
     "id": "kratos_parry",
@@ -429,14 +423,14 @@
     "printedText": "Gain 2 Block. Gain 1 Rage.",
     "assetKey": "kratos__normal__parry",
     "references": [
-      "public/assets/card-art/kratos/kratos_parry.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__parry-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__parry-mask.png"
     ],
-    "symbolText": "Gain 2 [BLOCK]. Gain 1 [RAGE]."
+    "symbolText": "2 [BLOCK].\n1 [RAGE]."
   },
   {
     "id": "kratos_parry",
@@ -448,14 +442,14 @@
     "printedText": "Gain 3 Block. Gain 1 Rage.",
     "assetKey": "kratos__normal__parry+",
     "references": [
-      "public/assets/card-art/kratos/kratos_parry.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__parry+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__parry+-mask.png"
     ],
-    "symbolText": "Gain 3 [BLOCK]. Gain 1 [RAGE]."
+    "symbolText": "3 [BLOCK].\n1 [RAGE]."
   },
   {
     "id": "kratos_spartan_guard",
@@ -467,14 +461,13 @@
     "printedText": "Gain 2 Block. Unleash 2: gain 5 Block instead.",
     "assetKey": "kratos__normal__spartan-guard",
     "references": [
-      "public/assets/card-art/kratos/kratos_spartan_guard.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-guard-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-guard-mask.png"
     ],
-    "symbolText": "Gain 2 [BLOCK]. Unleash 2: gain 5 [BLOCK] instead."
+    "symbolText": "2 [BLOCK].\nUnleash 2: 5 [BLOCK] instead."
   },
   {
     "id": "kratos_spartan_guard",
@@ -486,14 +479,13 @@
     "printedText": "Gain 3 Block. Unleash 2: gain 6 Block instead.",
     "assetKey": "kratos__normal__spartan-guard+",
     "references": [
-      "public/assets/card-art/kratos/kratos_spartan_guard.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-guard+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-guard+-mask.png"
     ],
-    "symbolText": "Gain 3 [BLOCK]. Unleash 2: gain 6 [BLOCK] instead."
+    "symbolText": "3 [BLOCK].\nUnleash 2: 6 [BLOCK] instead."
   },
   {
     "id": "kratos_golden_fleece",
@@ -505,15 +497,14 @@
     "printedText": "Gain 2 Block. Unleash 1: deal 1 plain damage to each enemy attacking you for each Attack icon in its intent.",
     "assetKey": "kratos__normal__golden-fleece",
     "references": [
-      "public/assets/card-art/kratos/kratos_golden_fleece.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/attack.png",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece-mask.png"
     ],
-    "symbolText": "Gain 2 [BLOCK]. Unleash 1: deal 1 plain [DAMAGE] to each enemy attacking you for each Attack icon in its intent."
+    "symbolText": "2 [BLOCK].\nUnleash 1: Plain 1 [DAMAGE]\nper Attack icon in each enemy's intent\nif it is attacking you."
   },
   {
     "id": "kratos_golden_fleece",
@@ -525,15 +516,14 @@
     "printedText": "3 Block to any player. Unleash 1: deal 1 plain damage to each enemy attacking you (Kratos) for each Attack icon in its intent.",
     "assetKey": "kratos__normal__golden-fleece+",
     "references": [
-      "public/assets/card-art/kratos/kratos_golden_fleece.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/attack.png",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece+-mask.png"
     ],
-    "symbolText": "3 [BLOCK] to any player. Unleash 1: deal 1 plain [DAMAGE] to each enemy attacking you (Kratos) for each Attack icon in its intent."
+    "symbolText": "3 [BLOCK] to any player.\nUnleash 1: Plain 1 [DAMAGE]\nper Attack icon in each enemy's intent\nif it is attacking Kratos."
   },
   {
     "id": "kratos_icarus_wings",
@@ -545,15 +535,13 @@
     "printedText": "Gain 1 Block. Draw 2 cards.",
     "assetKey": "kratos__normal__icarus-wings",
     "references": [
-      "public/assets/card-art/kratos/kratos_icarus_wings.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__icarus-wings-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/block.png",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__icarus-wings-mask.png"
     ],
-    "symbolText": "Gain 1 [BLOCK]. Draw 2 cards."
+    "symbolText": "1 [BLOCK].\nDraw 2 cards."
   },
   {
     "id": "kratos_icarus_wings",
@@ -565,15 +553,13 @@
     "printedText": "Gain 2 Block. Draw 2 cards.",
     "assetKey": "kratos__normal__icarus-wings+",
     "references": [
-      "public/assets/card-art/kratos/kratos_icarus_wings.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__icarus-wings+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/block.png",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__icarus-wings+-mask.png"
     ],
-    "symbolText": "Gain 2 [BLOCK]. Draw 2 cards."
+    "symbolText": "2 [BLOCK].\nDraw 2 cards."
   },
   {
     "id": "kratos_bow_of_apollo",
@@ -585,14 +571,13 @@
     "printedText": "Deal 1 damage. Unleash 1: deal 3 damage instead.",
     "assetKey": "kratos__normal__bow-of-apollo",
     "references": [
-      "public/assets/card-art/kratos/kratos_bow_of_apollo.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__bow-of-apollo-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__bow-of-apollo-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE]. Unleash 1: deal 3 [DAMAGE] instead."
+    "symbolText": "1 [DAMAGE].\nUnleash 1: 3 [DAMAGE] instead."
   },
   {
     "id": "kratos_bow_of_apollo",
@@ -604,14 +589,13 @@
     "printedText": "Deal 2 damage. Unleash 1: deal 4 damage instead.",
     "assetKey": "kratos__normal__bow-of-apollo+",
     "references": [
-      "public/assets/card-art/kratos/kratos_bow_of_apollo.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__bow-of-apollo+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__bow-of-apollo+-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE]. Unleash 1: deal 4 [DAMAGE] instead."
+    "symbolText": "2 [DAMAGE].\nUnleash 1: 4 [DAMAGE] instead."
   },
   {
     "id": "kratos_hermes_rush",
@@ -623,15 +607,13 @@
     "printedText": "2 Block to any player. You may switch rows with another player. Unleash 1: draw 1 card.",
     "assetKey": "kratos__normal__hermes-rush",
     "references": [
-      "public/assets/card-art/kratos/kratos_hermes_rush.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hermes-rush-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/block.png",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hermes-rush-mask.png"
     ],
-    "symbolText": "2 [BLOCK] to any player. You may switch rows with another player. Unleash 1: draw 1 card."
+    "symbolText": "2 [BLOCK] to any player.\nYou may switch rows with another player.\nUnleash 1: draw 1 card."
   },
   {
     "id": "kratos_hermes_rush",
@@ -643,15 +625,13 @@
     "printedText": "3 Block to any player. You may switch rows with another player. Unleash 1: draw 1 card.",
     "assetKey": "kratos__normal__hermes-rush+",
     "references": [
-      "public/assets/card-art/kratos/kratos_hermes_rush.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hermes-rush+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/block.png",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hermes-rush+-mask.png"
     ],
-    "symbolText": "3 [BLOCK] to any player. You may switch rows with another player. Unleash 1: draw 1 card."
+    "symbolText": "3 [BLOCK] to any player.\nYou may switch rows with another player.\nUnleash 1: draw 1 card."
   },
   {
     "id": "kratos_servant_of_ares",
@@ -663,13 +643,13 @@
     "printedText": "Start of turn: gain 1 Rage.",
     "assetKey": "kratos__normal__servant-of-ares",
     "references": [
-      "public/assets/card-art/kratos/kratos_servant_of_ares.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__servant-of-ares-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__servant-of-ares-mask.png"
     ],
-    "symbolText": "Start of turn: gain 1 [RAGE]."
+    "symbolText": "Start of turn:\n1 [RAGE]."
   },
   {
     "id": "kratos_servant_of_ares",
@@ -681,13 +661,13 @@
     "printedText": "Start of turn: gain 1 Rage.",
     "assetKey": "kratos__normal__servant-of-ares+",
     "references": [
-      "public/assets/card-art/kratos/kratos_servant_of_ares.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__servant-of-ares+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__servant-of-ares+-mask.png"
     ],
-    "symbolText": "Start of turn: gain 1 [RAGE]."
+    "symbolText": "Start of turn:\n1 [RAGE]."
   },
   {
     "id": "kratos_chains_of_chaos",
@@ -699,13 +679,13 @@
     "printedText": "Whenever you lose HP, gain 1 Rage.",
     "assetKey": "kratos__normal__chains-of-chaos",
     "references": [
-      "public/assets/card-art/kratos/kratos_chains_of_chaos.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__chains-of-chaos-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__chains-of-chaos-mask.png"
     ],
-    "symbolText": "Whenever you lose HP, gain 1 [RAGE]."
+    "symbolText": "Whenever you lose HP:\n1 [RAGE]."
   },
   {
     "id": "kratos_chains_of_chaos",
@@ -717,13 +697,13 @@
     "printedText": "Whenever you lose HP, gain 1 Rage.",
     "assetKey": "kratos__normal__chains-of-chaos+",
     "references": [
-      "public/assets/card-art/kratos/kratos_chains_of_chaos.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__chains-of-chaos+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__chains-of-chaos+-mask.png"
     ],
-    "symbolText": "Whenever you lose HP, gain 1 [RAGE]."
+    "symbolText": "Whenever you lose HP:\n1 [RAGE]."
   },
   {
     "id": "kratos_bloodlust",
@@ -735,13 +715,13 @@
     "printedText": "Whenever one of your hits kills an enemy, gain 2 Rage.",
     "assetKey": "kratos__normal__bloodlust",
     "references": [
-      "public/assets/card-art/kratos/kratos_bloodlust.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__bloodlust-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__bloodlust-mask.png"
     ],
-    "symbolText": "Whenever one of your hits kills an enemy, gain 2 [RAGE]."
+    "symbolText": "Whenever your hit kills an enemy:\n2 [RAGE]."
   },
   {
     "id": "kratos_bloodlust",
@@ -753,13 +733,13 @@
     "printedText": "Whenever one of your hits kills an enemy, gain 2 Rage.",
     "assetKey": "kratos__normal__bloodlust+",
     "references": [
-      "public/assets/card-art/kratos/kratos_bloodlust.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__bloodlust+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__bloodlust+-mask.png"
     ],
-    "symbolText": "Whenever one of your hits kills an enemy, gain 2 [RAGE]."
+    "symbolText": "Whenever your hit kills an enemy:\n2 [RAGE]."
   },
   {
     "id": "kratos_ghost_of_sparta",
@@ -771,14 +751,14 @@
     "printedText": "Whenever you spend Rage on an Unleash, gain 1 Block.",
     "assetKey": "kratos__normal__ghost-of-sparta",
     "references": [
-      "public/assets/card-art/kratos/kratos_ghost_of_sparta.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__ghost-of-sparta-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__ghost-of-sparta-mask.png"
     ],
-    "symbolText": "Whenever you spend [RAGE] on an Unleash, gain 1 [BLOCK]."
+    "symbolText": "Whenever you spend [RAGE] on Unleash:\n1 [BLOCK]."
   },
   {
     "id": "kratos_ghost_of_sparta",
@@ -790,14 +770,14 @@
     "printedText": "Whenever you spend Rage on an Unleash, gain 2 Block.",
     "assetKey": "kratos__normal__ghost-of-sparta+",
     "references": [
-      "public/assets/card-art/kratos/kratos_ghost_of_sparta.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__ghost-of-sparta+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__ghost-of-sparta+-mask.png"
     ],
-    "symbolText": "Whenever you spend [RAGE] on an Unleash, gain 2 [BLOCK]."
+    "symbolText": "Whenever you spend [RAGE] on Unleash:\n2 [BLOCK]."
   },
   {
     "id": "kratos_deicide",
@@ -809,14 +789,13 @@
     "printedText": "Your hits deal +1 damage to an enemy whose card is an Elite or a Boss. Extra copies do not add more.",
     "assetKey": "kratos__normal__deicide",
     "references": [
-      "public/assets/card-art/kratos/kratos_deicide.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__deicide-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__deicide-mask.png"
     ],
-    "symbolText": "Your hits deal +1 [DAMAGE] to an enemy whose card is an Elite or a Boss. Extra copies do not add more."
+    "symbolText": "Your hits against Elite or Boss cards:\n+1 [DAMAGE].\nExtra copies do not stack."
   },
   {
     "id": "kratos_deicide",
@@ -828,14 +807,13 @@
     "printedText": "Your hits deal +1 damage to an enemy whose card is an Elite or a Boss. Extra copies do not add more.",
     "assetKey": "kratos__normal__deicide+",
     "references": [
-      "public/assets/card-art/kratos/kratos_deicide.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__deicide+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__deicide+-mask.png"
     ],
-    "symbolText": "Your hits deal +1 [DAMAGE] to an enemy whose card is an Elite or a Boss. Extra copies do not add more."
+    "symbolText": "Your hits against Elite or Boss cards:\n+1 [DAMAGE].\nExtra copies do not stack."
   },
   {
     "id": "kratos_vengeance",
@@ -847,14 +825,14 @@
     "printedText": "Deal 1 damage, +1 for each Rage you have. Does not spend Rage.",
     "assetKey": "kratos__normal__vengeance",
     "references": [
-      "public/assets/card-art/kratos/kratos_vengeance.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__vengeance-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__vengeance-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE], +1 for each [RAGE] you have. Does not spend [RAGE]."
+    "symbolText": "X [DAMAGE].\nX = 1 + your [RAGE].\nDoes not spend [RAGE]."
   },
   {
     "id": "kratos_vengeance",
@@ -866,14 +844,14 @@
     "printedText": "Deal 2 damage, +1 for each Rage you have. Does not spend Rage.",
     "assetKey": "kratos__normal__vengeance+",
     "references": [
-      "public/assets/card-art/kratos/kratos_vengeance.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__vengeance+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__vengeance+-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE], +1 for each [RAGE] you have. Does not spend [RAGE]."
+    "symbolText": "X [DAMAGE].\nX = 2 + your [RAGE].\nDoes not spend [RAGE]."
   },
   {
     "id": "kratos_poseidons_rage",
@@ -885,14 +863,14 @@
     "printedText": "Deal 3 damage to a row. Unleash 2: deal 5 damage instead.",
     "assetKey": "kratos__normal__poseidon-s-rage",
     "references": [
-      "public/assets/card-art/kratos/kratos_poseidons_rage.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__poseidon-s-rage-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__poseidon-s-rage-mask.png"
     ],
-    "symbolText": "Deal 3 [DAMAGE] to a row. Unleash 2: deal 5 [DAMAGE] instead."
+    "symbolText": "[AOE] 3 [DAMAGE].\nUnleash 2: [AOE] 5 [DAMAGE] instead."
   },
   {
     "id": "kratos_poseidons_rage",
@@ -904,14 +882,14 @@
     "printedText": "Deal 4 damage to a row. Unleash 2: deal 6 damage instead.",
     "assetKey": "kratos__normal__poseidon-s-rage+",
     "references": [
-      "public/assets/card-art/kratos/kratos_poseidons_rage.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__poseidon-s-rage+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__poseidon-s-rage+-mask.png"
     ],
-    "symbolText": "Deal 4 [DAMAGE] to a row. Unleash 2: deal 6 [DAMAGE] instead."
+    "symbolText": "[AOE] 4 [DAMAGE].\nUnleash 2: [AOE] 6 [DAMAGE] instead."
   },
   {
     "id": "kratos_atlas_quake",
@@ -923,16 +901,16 @@
     "printedText": "Deal 2 damage to a row. Unleash 2: apply 1 Weak and 1 Vulnerable to that row.",
     "assetKey": "kratos__normal__atlas-quake",
     "references": [
-      "public/assets/card-art/kratos/kratos_atlas_quake.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__atlas-quake-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
+      "public/assets/icons/weak.png",
       "public/assets/icons/vulnerable.png",
-      "public/assets/icons/weak.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__atlas-quake-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE] to a row. Unleash 2: apply 1 [WEAK] and 1 [VULNERABLE] to that row."
+    "symbolText": "[AOE] 2 [DAMAGE].\nUnleash 2: [AOE] 1 [WEAK], 1 [VULNERABLE]."
   },
   {
     "id": "kratos_atlas_quake",
@@ -944,16 +922,16 @@
     "printedText": "Deal 3 damage to a row. Unleash 2: apply 1 Weak and 1 Vulnerable to that row.",
     "assetKey": "kratos__normal__atlas-quake+",
     "references": [
-      "public/assets/card-art/kratos/kratos_atlas_quake.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__atlas-quake+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
+      "public/assets/icons/weak.png",
       "public/assets/icons/vulnerable.png",
-      "public/assets/icons/weak.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__atlas-quake+-mask.png"
     ],
-    "symbolText": "Deal 3 [DAMAGE] to a row. Unleash 2: apply 1 [WEAK] and 1 [VULNERABLE] to that row."
+    "symbolText": "[AOE] 3 [DAMAGE].\nUnleash 2: [AOE] 1 [WEAK], 1 [VULNERABLE]."
   },
   {
     "id": "kratos_cronos_rage",
@@ -965,14 +943,14 @@
     "printedText": "Deal 1 damage 3 times, choosing any enemy for each hit. Gain 2 Rage.",
     "assetKey": "kratos__normal__cronos-rage",
     "references": [
-      "public/assets/card-art/kratos/kratos_cronos_rage.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cronos-rage-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cronos-rage-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] 3 times, choosing any enemy for each hit. Gain 2 [RAGE]."
+    "symbolText": "1 [DAMAGE] 3 times, choosing any enemy for each hit.\n2 [RAGE]."
   },
   {
     "id": "kratos_cronos_rage",
@@ -984,14 +962,14 @@
     "printedText": "Deal 1 damage 4 times, choosing any enemy for each hit. Gain 2 Rage.",
     "assetKey": "kratos__normal__cronos-rage+",
     "references": [
-      "public/assets/card-art/kratos/kratos_cronos_rage.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cronos-rage+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__cronos-rage+-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] 4 times, choosing any enemy for each hit. Gain 2 [RAGE]."
+    "symbolText": "1 [DAMAGE] 4 times, choosing any enemy for each hit.\n2 [RAGE]."
   },
   {
     "id": "kratos_tartarus_rage",
@@ -1003,14 +981,14 @@
     "printedText": "Deal 1 damage to a row once for each other Attack you played this turn.",
     "assetKey": "kratos__normal__tartarus-rage",
     "references": [
-      "public/assets/card-art/kratos/kratos_tartarus_rage.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__tartarus-rage-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__tartarus-rage-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] to a row once for each other Attack you played this turn."
+    "symbolText": "[AOE] 1 [DAMAGE], X times.\nX = other Attacks played this turn."
   },
   {
     "id": "kratos_tartarus_rage",
@@ -1022,14 +1000,14 @@
     "printedText": "Deal 1 damage to a row once, plus once for each other Attack you played this turn.",
     "assetKey": "kratos__normal__tartarus-rage+",
     "references": [
-      "public/assets/card-art/kratos/kratos_tartarus_rage.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__tartarus-rage+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__tartarus-rage+-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] to a row once, plus once for each other Attack you played this turn."
+    "symbolText": "[AOE] 1 [DAMAGE], X times.\nX = 1 + other Attacks played this turn."
   },
   {
     "id": "kratos_apollos_ascension",
@@ -1041,15 +1019,14 @@
     "printedText": "Deal 2 damage. Unleash 1: apply 1 Vulnerable.",
     "assetKey": "kratos__normal__apollo-s-ascension",
     "references": [
-      "public/assets/card-art/kratos/kratos_apollos_ascension.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__apollo-s-ascension-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/attack.png",
-      "public/assets/icons/vulnerable.png"
+      "public/assets/icons/vulnerable.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__apollo-s-ascension-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE]. Unleash 1: apply 1 [VULNERABLE]."
+    "symbolText": "2 [DAMAGE].\nUnleash 1: 1 [VULNERABLE]."
   },
   {
     "id": "kratos_apollos_ascension",
@@ -1061,15 +1038,14 @@
     "printedText": "Deal 3 damage. Unleash 1: apply 1 Vulnerable.",
     "assetKey": "kratos__normal__apollo-s-ascension+",
     "references": [
-      "public/assets/card-art/kratos/kratos_apollos_ascension.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__apollo-s-ascension+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/attack.png",
-      "public/assets/icons/vulnerable.png"
+      "public/assets/icons/vulnerable.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__apollo-s-ascension+-mask.png"
     ],
-    "symbolText": "Deal 3 [DAMAGE]. Unleash 1: apply 1 [VULNERABLE]."
+    "symbolText": "3 [DAMAGE].\nUnleash 1: 1 [VULNERABLE]."
   },
   {
     "id": "kratos_nemean_cestus",
@@ -1081,15 +1057,14 @@
     "printedText": "Remove all of the target's Block. Deal 3 damage. Godslayer +2.",
     "assetKey": "kratos__normal__nemean-cestus",
     "references": [
-      "public/assets/card-art/kratos/kratos_nemean_cestus.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemean-cestus-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/attack.png",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemean-cestus-mask.png"
     ],
-    "symbolText": "Remove all of the target's [BLOCK]. Deal 3 [DAMAGE]. Godslayer +2."
+    "symbolText": "Remove all [BLOCK] from target.\n3 [DAMAGE].\nGodslayer +2."
   },
   {
     "id": "kratos_nemean_cestus",
@@ -1101,15 +1076,14 @@
     "printedText": "Remove all of the target's Block. Deal 4 damage. Godslayer +2.",
     "assetKey": "kratos__normal__nemean-cestus+",
     "references": [
-      "public/assets/card-art/kratos/kratos_nemean_cestus.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemean-cestus+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/attack.png",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemean-cestus+-mask.png"
     ],
-    "symbolText": "Remove all of the target's [BLOCK]. Deal 4 [DAMAGE]. Godslayer +2."
+    "symbolText": "Remove all [BLOCK] from target.\n4 [DAMAGE].\nGodslayer +2."
   },
   {
     "id": "kratos_claws_of_hades",
@@ -1121,15 +1095,13 @@
     "printedText": "Deal 2 damage. Brutal Kill: draw 2 cards.",
     "assetKey": "kratos__normal__claws-of-hades",
     "references": [
-      "public/assets/card-art/kratos/kratos_claws_of_hades.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__claws-of-hades-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/attack.png",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__claws-of-hades-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE]. Brutal Kill: draw 2 cards."
+    "symbolText": "2 [DAMAGE].\nBrutal Kill: draw 2 cards."
   },
   {
     "id": "kratos_claws_of_hades",
@@ -1141,15 +1113,13 @@
     "printedText": "Deal 3 damage. Brutal Kill: draw 2 cards.",
     "assetKey": "kratos__normal__claws-of-hades+",
     "references": [
-      "public/assets/card-art/kratos/kratos_claws_of_hades.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__claws-of-hades+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/attack.png",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__claws-of-hades+-mask.png"
     ],
-    "symbolText": "Deal 3 [DAMAGE]. Brutal Kill: draw 2 cards."
+    "symbolText": "3 [DAMAGE].\nBrutal Kill: draw 2 cards."
   },
   {
     "id": "kratos_nemean_roar",
@@ -1161,15 +1131,15 @@
     "printedText": "Deal 1 damage to a row. Unleash 2: apply 1 Weak to that row.",
     "assetKey": "kratos__normal__nemean-roar",
     "references": [
-      "public/assets/card-art/kratos/kratos_nemean_roar.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemean-roar-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/weak.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemean-roar-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] to a row. Unleash 2: apply 1 [WEAK] to that row."
+    "symbolText": "[AOE] 1 [DAMAGE].\nUnleash 2: [AOE] 1 [WEAK]."
   },
   {
     "id": "kratos_nemean_roar",
@@ -1181,15 +1151,15 @@
     "printedText": "Deal 2 damage to a row. Unleash 2: apply 1 Weak to that row.",
     "assetKey": "kratos__normal__nemean-roar+",
     "references": [
-      "public/assets/card-art/kratos/kratos_nemean_roar.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemean-roar+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/weak.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__nemean-roar+-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE] to a row. Unleash 2: apply 1 [WEAK] to that row."
+    "symbolText": "[AOE] 2 [DAMAGE].\nUnleash 2: [AOE] 1 [WEAK]."
   },
   {
     "id": "kratos_army_of_sparta",
@@ -1201,15 +1171,15 @@
     "printedText": "Deal 2 damage to a row. Gain 3 Block.",
     "assetKey": "kratos__normal__army-of-sparta",
     "references": [
-      "public/assets/card-art/kratos/kratos_army_of_sparta.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__army-of-sparta-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__army-of-sparta-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE] to a row. Gain 3 [BLOCK]."
+    "symbolText": "[AOE] 2 [DAMAGE].\n3 [BLOCK]."
   },
   {
     "id": "kratos_army_of_sparta",
@@ -1221,15 +1191,15 @@
     "printedText": "Deal 2 damage to a row. Gain 4 Block.",
     "assetKey": "kratos__normal__army-of-sparta+",
     "references": [
-      "public/assets/card-art/kratos/kratos_army_of_sparta.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__army-of-sparta+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__army-of-sparta+-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE] to a row. Gain 4 [BLOCK]."
+    "symbolText": "[AOE] 2 [DAMAGE].\n4 [BLOCK]."
   },
   {
     "id": "kratos_medusas_gaze",
@@ -1241,14 +1211,13 @@
     "printedText": "Apply 1 Weak. If the target has 3 or fewer HP, set its HP to 0 (not a hit).",
     "assetKey": "kratos__normal__medusa-s-gaze",
     "references": [
-      "public/assets/card-art/kratos/kratos_medusas_gaze.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__medusa-s-gaze-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/weak.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__medusa-s-gaze-mask.png"
     ],
-    "symbolText": "Apply 1 [WEAK]. If the target has 3 or fewer HP, set its HP to 0 (not a hit)."
+    "symbolText": "1 [WEAK].\nIf target HP is 3 or less,\nset its HP to 0 (not a hit)."
   },
   {
     "id": "kratos_medusas_gaze",
@@ -1260,14 +1229,13 @@
     "printedText": "Apply 1 Weak. If the target has 4 or fewer HP, set its HP to 0 (not a hit).",
     "assetKey": "kratos__normal__medusa-s-gaze+",
     "references": [
-      "public/assets/card-art/kratos/kratos_medusas_gaze.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__medusa-s-gaze+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/weak.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__medusa-s-gaze+-mask.png"
     ],
-    "symbolText": "Apply 1 [WEAK]. If the target has 4 or fewer HP, set its HP to 0 (not a hit)."
+    "symbolText": "1 [WEAK].\nIf target HP is 4 or less,\nset its HP to 0 (not a hit)."
   },
   {
     "id": "kratos_head_of_helios",
@@ -1279,15 +1247,14 @@
     "printedText": "Apply 1 Weak to a row. Draw 1 card. Exhaust.",
     "assetKey": "kratos__normal__head-of-helios",
     "references": [
-      "public/assets/card-art/kratos/kratos_head_of_helios.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__head-of-helios-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/weak.png",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__head-of-helios-mask.png"
     ],
-    "symbolText": "Apply 1 [WEAK] to a row. Draw 1 card. Exhaust."
+    "symbolText": "[AOE] 1 [WEAK].\nDraw 1 card.\nExhaust."
   },
   {
     "id": "kratos_head_of_helios",
@@ -1299,15 +1266,14 @@
     "printedText": "Apply 1 Weak to a row. Draw 1 card. Exhaust.",
     "assetKey": "kratos__normal__head-of-helios+",
     "references": [
-      "public/assets/card-art/kratos/kratos_head_of_helios.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__head-of-helios+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/weak.png",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__head-of-helios+-mask.png"
     ],
-    "symbolText": "Apply 1 [WEAK] to a row. Draw 1 card. Exhaust."
+    "symbolText": "[AOE] 1 [WEAK].\nDraw 1 card.\nExhaust."
   },
   {
     "id": "kratos_rage_of_the_titans",
@@ -1319,15 +1285,16 @@
     "printedText": "Spend all your Rage. Deal that much plain damage to a row and gain that much Block.",
     "assetKey": "kratos__normal__rage-of-the-titans",
     "references": [
-      "public/assets/card-art/kratos/kratos_rage_of_the_titans.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-titans-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-titans-mask.png"
     ],
-    "symbolText": "Spend all your [RAGE]. Deal that much plain [DAMAGE] to a row and gain that much [BLOCK]."
+    "symbolText": "Spend all your [RAGE].\n[AOE] Plain X [DAMAGE].\nX [BLOCK].\nX = [RAGE] spent."
   },
   {
     "id": "kratos_rage_of_the_titans",
@@ -1339,15 +1306,16 @@
     "printedText": "Spend all your Rage. Deal that much plain damage to a row and gain that much Block +1.",
     "assetKey": "kratos__normal__rage-of-the-titans+",
     "references": [
-      "public/assets/card-art/kratos/kratos_rage_of_the_titans.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-titans+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__rage-of-the-titans+-mask.png"
     ],
-    "symbolText": "Spend all your [RAGE]. Deal that much plain [DAMAGE] to a row and gain that much [BLOCK] +1."
+    "symbolText": "Spend all your [RAGE].\n[AOE] Plain X [DAMAGE].\n(X + 1) [BLOCK].\nX = [RAGE] spent."
   },
   {
     "id": "kratos_spartan_resolve",
@@ -1359,14 +1327,14 @@
     "printedText": "Gain Block equal to your Rage. Does not spend Rage.",
     "assetKey": "kratos__normal__spartan-resolve",
     "references": [
-      "public/assets/card-art/kratos/kratos_spartan_resolve.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-resolve-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-resolve-mask.png"
     ],
-    "symbolText": "Gain [BLOCK] equal to your [RAGE]. Does not spend [RAGE]."
+    "symbolText": "X [BLOCK].\nX = your [RAGE].\nDoes not spend [RAGE]."
   },
   {
     "id": "kratos_spartan_resolve",
@@ -1378,14 +1346,14 @@
     "printedText": "Gain 2 Block, +1 for each Rage you have. Does not spend Rage.",
     "assetKey": "kratos__normal__spartan-resolve+",
     "references": [
-      "public/assets/card-art/kratos/kratos_spartan_resolve.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-resolve+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-resolve+-mask.png"
     ],
-    "symbolText": "Gain 2 [BLOCK], +1 for each [RAGE] you have. Does not spend [RAGE]."
+    "symbolText": "X [BLOCK].\nX = 2 + your [RAGE].\nDoes not spend [RAGE]."
   },
   {
     "id": "kratos_hubris",
@@ -1397,14 +1365,12 @@
     "printedText": "Lose 1 HP. If you did, draw 2 cards.",
     "assetKey": "kratos__normal__hubris",
     "references": [
-      "public/assets/card-art/kratos/kratos_hubris.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hubris-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hubris-mask.png"
     ],
-    "symbolText": "Lose 1 HP. If you did, draw 2 cards."
+    "symbolText": "Lose 1 HP.\nIf you did, draw 2 cards."
   },
   {
     "id": "kratos_hubris",
@@ -1416,14 +1382,12 @@
     "printedText": "Lose 1 HP. If you did, draw 3 cards.",
     "assetKey": "kratos__normal__hubris+",
     "references": [
-      "public/assets/card-art/kratos/kratos_hubris.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hubris+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hubris+-mask.png"
     ],
-    "symbolText": "Lose 1 HP. If you did, draw 3 cards."
+    "symbolText": "Lose 1 HP.\nIf you did, draw 3 cards."
   },
   {
     "id": "kratos_sacrifice",
@@ -1435,13 +1399,13 @@
     "printedText": "Exhaust a card from your hand. If you did, gain 2 Rage.",
     "assetKey": "kratos__normal__sacrifice",
     "references": [
-      "public/assets/card-art/kratos/kratos_sacrifice.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__sacrifice-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__sacrifice-mask.png"
     ],
-    "symbolText": "Exhaust a card from your hand. If you did, gain 2 [RAGE]."
+    "symbolText": "Exhaust a card from your hand.\nIf you did, 2 [RAGE]."
   },
   {
     "id": "kratos_sacrifice",
@@ -1453,13 +1417,13 @@
     "printedText": "Exhaust a card from your hand. If you did, gain 3 Rage.",
     "assetKey": "kratos__normal__sacrifice+",
     "references": [
-      "public/assets/card-art/kratos/kratos_sacrifice.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__sacrifice+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__sacrifice+-mask.png"
     ],
-    "symbolText": "Exhaust a card from your hand. If you did, gain 3 [RAGE]."
+    "symbolText": "Exhaust a card from your hand.\nIf you did, 3 [RAGE]."
   },
   {
     "id": "kratos_blood_oath",
@@ -1471,13 +1435,13 @@
     "printedText": "Lose 1 HP. Gain 1 Energy. Exhaust.",
     "assetKey": "kratos__normal__blood-oath",
     "references": [
-      "public/assets/card-art/kratos/kratos_blood_oath.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__blood-oath-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__blood-oath-mask.png"
     ],
-    "symbolText": "Lose 1 HP. Gain 1 [ENERGY]. Exhaust."
+    "symbolText": "Lose 1 HP.\n1 [ENERGY].\nExhaust."
   },
   {
     "id": "kratos_blood_oath",
@@ -1489,13 +1453,13 @@
     "printedText": "Lose 1 HP. Gain 2 Energy. Exhaust.",
     "assetKey": "kratos__normal__blood-oath+",
     "references": [
-      "public/assets/card-art/kratos/kratos_blood_oath.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__blood-oath+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__blood-oath+-mask.png"
     ],
-    "symbolText": "Lose 1 HP. Gain 2 [ENERGY]. Exhaust."
+    "symbolText": "Lose 1 HP.\n2 [ENERGY].\nExhaust."
   },
   {
     "id": "kratos_athenas_blessing",
@@ -1507,13 +1471,12 @@
     "printedText": "Draw 2 cards. Unleash 2: draw 1 more card.",
     "assetKey": "kratos__normal__athena-s-blessing",
     "references": [
-      "public/assets/card-art/kratos/kratos_athenas_blessing.webp",
-      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__athena-s-blessing-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__athena-s-blessing-mask.png"
     ],
-    "symbolText": "Draw 2 cards. Unleash 2: draw 1 more card."
+    "symbolText": "Draw 2 cards.\nUnleash 2: draw 1 more card."
   },
   {
     "id": "kratos_athenas_blessing",
@@ -1525,13 +1488,12 @@
     "printedText": "Draw 3 cards. Unleash 2: draw 1 more card.",
     "assetKey": "kratos__normal__athena-s-blessing+",
     "references": [
-      "public/assets/card-art/kratos/kratos_athenas_blessing.webp",
-      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__athena-s-blessing+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__athena-s-blessing+-mask.png"
     ],
-    "symbolText": "Draw 3 cards. Unleash 2: draw 1 more card."
+    "symbolText": "Draw 3 cards.\nUnleash 2: draw 1 more card."
   },
   {
     "id": "kratos_boots_of_hermes",
@@ -1543,14 +1505,12 @@
     "printedText": "Draw 1 card. Your next Attack this turn costs 0. Exhaust.",
     "assetKey": "kratos__normal__boots-of-hermes",
     "references": [
-      "public/assets/card-art/kratos/kratos_boots_of_hermes.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__boots-of-hermes-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__boots-of-hermes-mask.png"
     ],
-    "symbolText": "Draw 1 card. Your next Attack this turn costs 0. Exhaust."
+    "symbolText": "Draw 1 card.\nYour next Attack this turn costs 0.\nExhaust."
   },
   {
     "id": "kratos_boots_of_hermes",
@@ -1562,14 +1522,12 @@
     "printedText": "Draw 2 cards. Your next Attack this turn costs 0. Exhaust.",
     "assetKey": "kratos__normal__boots-of-hermes+",
     "references": [
-      "public/assets/card-art/kratos/kratos_boots_of_hermes.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__boots-of-hermes+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__boots-of-hermes+-mask.png"
     ],
-    "symbolText": "Draw 2 cards. Your next Attack this turn costs 0. Exhaust."
+    "symbolText": "Draw 2 cards.\nYour next Attack this turn costs 0.\nExhaust."
   },
   {
     "id": "kratos_loom_of_fate",
@@ -1581,13 +1539,13 @@
     "printedText": "Put a card from your discard pile into your hand. Gain 1 Rage.",
     "assetKey": "kratos__normal__loom-of-fate",
     "references": [
-      "public/assets/card-art/kratos/kratos_loom_of_fate.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__loom-of-fate-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__loom-of-fate-mask.png"
     ],
-    "symbolText": "Put a card from your discard pile into your hand. Gain 1 [RAGE]."
+    "symbolText": "Put a card from your discard pile into your hand.\n1 [RAGE]."
   },
   {
     "id": "kratos_loom_of_fate",
@@ -1599,13 +1557,13 @@
     "printedText": "Put a card from your discard pile into your hand. Gain 2 Rage.",
     "assetKey": "kratos__normal__loom-of-fate+",
     "references": [
-      "public/assets/card-art/kratos/kratos_loom_of_fate.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__loom-of-fate+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__loom-of-fate+-mask.png"
     ],
-    "symbolText": "Put a card from your discard pile into your hand. Gain 2 [RAGE]."
+    "symbolText": "Put a card from your discard pile into your hand.\n2 [RAGE]."
   },
   {
     "id": "kratos_typhons_bane",
@@ -1617,14 +1575,13 @@
     "printedText": "Assign 2 separate 1 Weak tokens to any enemies (both may go on one enemy).",
     "assetKey": "kratos__normal__typhon-s-bane",
     "references": [
-      "public/assets/card-art/kratos/kratos_typhons_bane.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__typhon-s-bane-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/weak.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__typhon-s-bane-mask.png"
     ],
-    "symbolText": "Assign 2 separate 1 [WEAK] tokens to any enemies (both may go on one enemy)."
+    "symbolText": "1 [WEAK], 2 times.\nChoose any enemy each time\n(same enemy allowed)."
   },
   {
     "id": "kratos_typhons_bane",
@@ -1636,14 +1593,13 @@
     "printedText": "Assign 3 separate 1 Weak tokens to any enemies (several may go on one enemy).",
     "assetKey": "kratos__normal__typhon-s-bane+",
     "references": [
-      "public/assets/card-art/kratos/kratos_typhons_bane.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__typhon-s-bane+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/weak.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__typhon-s-bane+-mask.png"
     ],
-    "symbolText": "Assign 3 separate 1 [WEAK] tokens to any enemies (several may go on one enemy)."
+    "symbolText": "1 [WEAK], 3 times.\nChoose any enemy each time\n(same enemy allowed)."
   },
   {
     "id": "kratos_head_of_euryale",
@@ -1655,14 +1611,14 @@
     "printedText": "Apply 1 Weak to a row. Set the HP of each enemy in that row with 3 or fewer HP to 0 (not a hit). Exhaust.",
     "assetKey": "kratos__normal__head-of-euryale",
     "references": [
-      "public/assets/card-art/kratos/kratos_head_of_euryale.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__head-of-euryale-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/weak.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__head-of-euryale-mask.png"
     ],
-    "symbolText": "Apply 1 [WEAK] to a row. Set the HP of each enemy in that row with 3 or fewer HP to 0 (not a hit). Exhaust."
+    "symbolText": "[AOE] 1 [WEAK].\nEnemies in that row with 3 or less HP:\nset HP to 0 (not a hit).\nExhaust."
   },
   {
     "id": "kratos_head_of_euryale",
@@ -1674,14 +1630,14 @@
     "printedText": "Apply 1 Weak to a row. Set the HP of each enemy in that row with 3 or fewer HP to 0 (not a hit). Exhaust.",
     "assetKey": "kratos__normal__head-of-euryale+",
     "references": [
-      "public/assets/card-art/kratos/kratos_head_of_euryale.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__head-of-euryale+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/weak.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__head-of-euryale+-mask.png"
     ],
-    "symbolText": "Apply 1 [WEAK] to a row. Set the HP of each enemy in that row with 3 or fewer HP to 0 (not a hit). Exhaust."
+    "symbolText": "[AOE] 1 [WEAK].\nEnemies in that row with 3 or less HP:\nset HP to 0 (not a hit).\nExhaust."
   },
   {
     "id": "kratos_soul_summon",
@@ -1693,14 +1649,14 @@
     "printedText": "End of turn: deal 1 plain damage to a row.",
     "assetKey": "kratos__normal__soul-summon",
     "references": [
-      "public/assets/card-art/kratos/kratos_soul_summon.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__soul-summon-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__soul-summon-mask.png"
     ],
-    "symbolText": "End of turn: deal 1 plain [DAMAGE] to a row."
+    "symbolText": "End of turn:\n[AOE] Plain 1 [DAMAGE]."
   },
   {
     "id": "kratos_soul_summon",
@@ -1712,14 +1668,14 @@
     "printedText": "End of turn: deal 2 plain damage to a row.",
     "assetKey": "kratos__normal__soul-summon+",
     "references": [
-      "public/assets/card-art/kratos/kratos_soul_summon.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__soul-summon+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__soul-summon+-mask.png"
     ],
-    "symbolText": "End of turn: deal 2 plain [DAMAGE] to a row."
+    "symbolText": "End of turn:\n[AOE] Plain 2 [DAMAGE]."
   },
   {
     "id": "kratos_green_orbs",
@@ -1731,13 +1687,12 @@
     "printedText": "The first time one of your hits kills an enemy, heal 1 HP, then exhaust every Green Orbs you have in play.",
     "assetKey": "kratos__normal__green-orbs",
     "references": [
-      "public/assets/card-art/kratos/kratos_green_orbs.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__green-orbs-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__green-orbs-mask.png"
     ],
-    "symbolText": "The first time one of your hits kills an enemy, heal 1 HP, then exhaust every Green Orbs you have in play."
+    "symbolText": "First kill with one of your hits:\nHeal 1 HP.\nExhaust all your Green Orbs in play."
   },
   {
     "id": "kratos_green_orbs",
@@ -1749,13 +1704,12 @@
     "printedText": "The first time one of your hits kills an enemy, heal 1 HP, then exhaust every Green Orbs you have in play.",
     "assetKey": "kratos__normal__green-orbs+",
     "references": [
-      "public/assets/card-art/kratos/kratos_green_orbs.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__green-orbs+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__green-orbs+-mask.png"
     ],
-    "symbolText": "The first time one of your hits kills an enemy, heal 1 HP, then exhaust every Green Orbs you have in play."
+    "symbolText": "First kill with one of your hits:\nHeal 1 HP.\nExhaust all your Green Orbs in play."
   },
   {
     "id": "kratos_hercules_shoulder_guard",
@@ -1767,14 +1721,13 @@
     "printedText": "Gain 3 Block. Unleash 1: gain 2 more Block.",
     "assetKey": "kratos__normal__hercules-shoulder-guard",
     "references": [
-      "public/assets/card-art/kratos/kratos_hercules_shoulder_guard.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hercules-shoulder-guard-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hercules-shoulder-guard-mask.png"
     ],
-    "symbolText": "Gain 3 [BLOCK]. Unleash 1: gain 2 more [BLOCK]."
+    "symbolText": "3 [BLOCK].\nUnleash 1: +2 [BLOCK]."
   },
   {
     "id": "kratos_hercules_shoulder_guard",
@@ -1786,14 +1739,13 @@
     "printedText": "Gain 4 Block. Unleash 1: gain 2 more Block.",
     "assetKey": "kratos__normal__hercules-shoulder-guard+",
     "references": [
-      "public/assets/card-art/kratos/kratos_hercules_shoulder_guard.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hercules-shoulder-guard+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hercules-shoulder-guard+-mask.png"
     ],
-    "symbolText": "Gain 4 [BLOCK]. Unleash 1: gain 2 more [BLOCK]."
+    "symbolText": "4 [BLOCK].\nUnleash 1: +2 [BLOCK]."
   },
   {
     "id": "kratos_rage_of_sparta",
@@ -1805,14 +1757,14 @@
     "printedText": "Spend all your Rage. Gain that much Strength until end of turn. If you spent 5 Rage, you cannot lose more than 1 HP this round. Exhaust.",
     "assetKey": "kratos__rare__rage-of-sparta",
     "references": [
-      "public/assets/card-art/kratos/kratos_rage_of_sparta.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__rage-of-sparta-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/strength.png"
+      "public/assets/icons/strength.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__rage-of-sparta-mask.png"
     ],
-    "symbolText": "Spend all your [RAGE]. Gain that much [STRENGTH] until end of turn. If you spent 5 [RAGE], you cannot lose more than 1 HP this round. Exhaust."
+    "symbolText": "Spend all your [RAGE].\nX [STRENGTH] this turn.\nX = [RAGE] spent.\nIf X = 5, you cannot lose\nmore than 1 HP this round.\nExhaust."
   },
   {
     "id": "kratos_rage_of_sparta",
@@ -1824,14 +1776,14 @@
     "printedText": "Retain. Spend all your Rage. Gain that much Strength until end of turn. If you spent 5 Rage, you cannot lose more than 1 HP this round. Exhaust.",
     "assetKey": "kratos__rare__rage-of-sparta+",
     "references": [
-      "public/assets/card-art/kratos/kratos_rage_of_sparta.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__rage-of-sparta+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
-      "public/assets/icons/strength.png"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/strength.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__rage-of-sparta+-mask.png"
     ],
-    "symbolText": "Retain. Spend all your [RAGE]. Gain that much [STRENGTH] until end of turn. If you spent 5 [RAGE], you cannot lose more than 1 HP this round. Exhaust."
+    "symbolText": "Retain.\nSpend all your [RAGE].\nX [STRENGTH] this turn.\nX = [RAGE] spent.\nIf X = 5, you cannot lose\nmore than 1 HP this round.\nExhaust."
   },
   {
     "id": "kratos_blade_of_olympus",
@@ -1843,14 +1795,14 @@
     "printedText": "Deal 2 damage, +2 for each Rage you have. Then spend all your Rage.",
     "assetKey": "kratos__rare__blade-of-olympus",
     "references": [
-      "public/assets/card-art/kratos/kratos_blade_of_olympus.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blade-of-olympus-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blade-of-olympus-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE], +2 for each [RAGE] you have. Then spend all your [RAGE]."
+    "symbolText": "2 [DAMAGE], +2 per [RAGE] you have.\nThen spend all your [RAGE]."
   },
   {
     "id": "kratos_blade_of_olympus",
@@ -1862,14 +1814,14 @@
     "printedText": "Deal 4 damage, +2 for each Rage you have. Then spend all your Rage.",
     "assetKey": "kratos__rare__blade-of-olympus+",
     "references": [
-      "public/assets/card-art/kratos/kratos_blade_of_olympus.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blade-of-olympus+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blade-of-olympus+-mask.png"
     ],
-    "symbolText": "Deal 4 [DAMAGE], +2 for each [RAGE] you have. Then spend all your [RAGE]."
+    "symbolText": "4 [DAMAGE], +2 per [RAGE] you have.\nThen spend all your [RAGE]."
   },
   {
     "id": "kratos_god_of_war",
@@ -1881,13 +1833,13 @@
     "printedText": "Your Unleash costs are 1 Rage lower (minimum 0). Start of turn: gain 1 Rage. Extra copies add Rage but do not lower costs further.",
     "assetKey": "kratos__rare__god-of-war",
     "references": [
-      "public/assets/card-art/kratos/kratos_god_of_war.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__god-of-war-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__god-of-war-mask.png"
     ],
-    "symbolText": "Your Unleash costs are 1 [RAGE] lower (minimum 0). Start of turn: gain 1 [RAGE]. Extra copies add [RAGE] but do not lower costs further."
+    "symbolText": "Your Unleash costs -1 [RAGE] (minimum 0).\nStart of turn: 1 [RAGE].\nExtra copies add [RAGE],\nbut do not lower costs further."
   },
   {
     "id": "kratos_god_of_war",
@@ -1899,13 +1851,13 @@
     "printedText": "Your Unleash costs are 1 Rage lower (minimum 0). Start of turn: gain 1 Rage. Extra copies add Rage but do not lower costs further.",
     "assetKey": "kratos__rare__god-of-war+",
     "references": [
-      "public/assets/card-art/kratos/kratos_god_of_war.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__god-of-war+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__god-of-war+-mask.png"
     ],
-    "symbolText": "Your Unleash costs are 1 [RAGE] lower (minimum 0). Start of turn: gain 1 [RAGE]. Extra copies add [RAGE] but do not lower costs further."
+    "symbolText": "Your Unleash costs -1 [RAGE] (minimum 0).\nStart of turn: 1 [RAGE].\nExtra copies add [RAGE],\nbut do not lower costs further."
   },
   {
     "id": "kratos_blades_of_athena",
@@ -1917,13 +1869,13 @@
     "printedText": "After you play an Attack, gain 1 Rage.",
     "assetKey": "kratos__rare__blades-of-athena",
     "references": [
-      "public/assets/card-art/kratos/kratos_blades_of_athena.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blades-of-athena-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blades-of-athena-mask.png"
     ],
-    "symbolText": "After you play an Attack, gain 1 [RAGE]."
+    "symbolText": "After you play an Attack:\n1 [RAGE]."
   },
   {
     "id": "kratos_blades_of_athena",
@@ -1935,13 +1887,13 @@
     "printedText": "After you play an Attack, gain 1 Rage.",
     "assetKey": "kratos__rare__blades-of-athena+",
     "references": [
-      "public/assets/card-art/kratos/kratos_blades_of_athena.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blades-of-athena+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blades-of-athena+-mask.png"
     ],
-    "symbolText": "After you play an Attack, gain 1 [RAGE]."
+    "symbolText": "After you play an Attack:\n1 [RAGE]."
   },
   {
     "id": "kratos_army_of_hades",
@@ -1953,14 +1905,14 @@
     "printedText": "End of turn: deal plain damage to a row equal to the number of Attacks you played this turn.",
     "assetKey": "kratos__rare__army-of-hades",
     "references": [
-      "public/assets/card-art/kratos/kratos_army_of_hades.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__army-of-hades-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__army-of-hades-mask.png"
     ],
-    "symbolText": "End of turn: deal plain [DAMAGE] to a row equal to the number of Attacks you played this turn."
+    "symbolText": "End of turn:\n[AOE] Plain X [DAMAGE].\nX = your Attacks played this turn."
   },
   {
     "id": "kratos_army_of_hades",
@@ -1972,14 +1924,14 @@
     "printedText": "End of turn: deal plain damage to a row equal to the number of Attacks you played this turn.",
     "assetKey": "kratos__rare__army-of-hades+",
     "references": [
-      "public/assets/card-art/kratos/kratos_army_of_hades.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__army-of-hades+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__army-of-hades+-mask.png"
     ],
-    "symbolText": "End of turn: deal plain [DAMAGE] to a row equal to the number of Attacks you played this turn."
+    "symbolText": "End of turn:\n[AOE] Plain X [DAMAGE].\nX = your Attacks played this turn."
   },
   {
     "id": "kratos_barbarian_hammer",
@@ -1991,15 +1943,15 @@
     "printedText": "Unleash 2: apply 1 Vulnerable to a row. Deal 5 damage to that row.",
     "assetKey": "kratos__rare__barbarian-hammer",
     "references": [
-      "public/assets/card-art/kratos/kratos_barbarian_hammer.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__barbarian-hammer-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
-      "public/assets/icons/vulnerable.png"
+      "public/assets/icons/vulnerable.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__barbarian-hammer-mask.png"
     ],
-    "symbolText": "Unleash 2: apply 1 [VULNERABLE] to a row. Deal 5 [DAMAGE] to that row."
+    "symbolText": "Unleash 2: [AOE] 1 [VULNERABLE].\n[AOE] 5 [DAMAGE]."
   },
   {
     "id": "kratos_barbarian_hammer",
@@ -2011,15 +1963,15 @@
     "printedText": "Unleash 2: apply 1 Vulnerable to a row. Deal 6 damage to that row.",
     "assetKey": "kratos__rare__barbarian-hammer+",
     "references": [
-      "public/assets/card-art/kratos/kratos_barbarian_hammer.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__barbarian-hammer+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
-      "public/assets/icons/vulnerable.png"
+      "public/assets/icons/vulnerable.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__barbarian-hammer+-mask.png"
     ],
-    "symbolText": "Unleash 2: apply 1 [VULNERABLE] to a row. Deal 6 [DAMAGE] to that row."
+    "symbolText": "Unleash 2: [AOE] 1 [VULNERABLE].\n[AOE] 6 [DAMAGE]."
   },
   {
     "id": "kratos_patricide",
@@ -2031,14 +1983,13 @@
     "printedText": "Deal 1 damage 5 times. Godslayer +1.",
     "assetKey": "kratos__rare__patricide",
     "references": [
-      "public/assets/card-art/kratos/kratos_patricide.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__patricide-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__patricide-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] 5 times. Godslayer +1."
+    "symbolText": "1 [DAMAGE] 5 times.\nGodslayer +1."
   },
   {
     "id": "kratos_patricide",
@@ -2050,14 +2001,13 @@
     "printedText": "Deal 1 damage 6 times. Godslayer +1.",
     "assetKey": "kratos__rare__patricide+",
     "references": [
-      "public/assets/card-art/kratos/kratos_patricide.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__patricide+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__patricide+-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE] 6 times. Godslayer +1."
+    "symbolText": "1 [DAMAGE] 6 times.\nGodslayer +1."
   },
   {
     "id": "kratos_blade_of_the_gods",
@@ -2069,14 +2019,13 @@
     "printedText": "Deal 3 damage. Godslayer +4.",
     "assetKey": "kratos__rare__blade-of-the-gods",
     "references": [
-      "public/assets/card-art/kratos/kratos_blade_of_the_gods.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blade-of-the-gods-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blade-of-the-gods-mask.png"
     ],
-    "symbolText": "Deal 3 [DAMAGE]. Godslayer +4."
+    "symbolText": "3 [DAMAGE].\nGodslayer +4."
   },
   {
     "id": "kratos_blade_of_the_gods",
@@ -2088,14 +2037,13 @@
     "printedText": "Deal 4 damage. Godslayer +5.",
     "assetKey": "kratos__rare__blade-of-the-gods+",
     "references": [
-      "public/assets/card-art/kratos/kratos_blade_of_the_gods.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blade-of-the-gods+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blade-of-the-gods+-mask.png"
     ],
-    "symbolText": "Deal 4 [DAMAGE]. Godslayer +5."
+    "symbolText": "4 [DAMAGE].\nGodslayer +5."
   },
   {
     "id": "kratos_spear_of_destiny",
@@ -2107,15 +2055,15 @@
     "printedText": "Deal 3 damage to a row. Apply 1 Vulnerable to that row.",
     "assetKey": "kratos__rare__spear-of-destiny",
     "references": [
-      "public/assets/card-art/kratos/kratos_spear_of_destiny.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__spear-of-destiny-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
-      "public/assets/icons/vulnerable.png"
+      "public/assets/icons/vulnerable.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__spear-of-destiny-mask.png"
     ],
-    "symbolText": "Deal 3 [DAMAGE] to a row. Apply 1 [VULNERABLE] to that row."
+    "symbolText": "[AOE] 3 [DAMAGE].\n[AOE] 1 [VULNERABLE]."
   },
   {
     "id": "kratos_spear_of_destiny",
@@ -2127,15 +2075,15 @@
     "printedText": "Deal 4 damage to a row. Apply 1 Vulnerable to that row.",
     "assetKey": "kratos__rare__spear-of-destiny+",
     "references": [
-      "public/assets/card-art/kratos/kratos_spear_of_destiny.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__spear-of-destiny+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/aoe.png",
       "public/assets/icons/attack.png",
-      "public/assets/icons/vulnerable.png"
+      "public/assets/icons/vulnerable.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__spear-of-destiny+-mask.png"
     ],
-    "symbolText": "Deal 4 [DAMAGE] to a row. Apply 1 [VULNERABLE] to that row."
+    "symbolText": "[AOE] 4 [DAMAGE].\n[AOE] 1 [VULNERABLE]."
   },
   {
     "id": "kratos_red_orbs",
@@ -2147,13 +2095,14 @@
     "printedText": "Whenever one of your hits kills an enemy, gain 1 Energy and 1 Rage.",
     "assetKey": "kratos__rare__red-orbs",
     "references": [
-      "public/assets/card-art/kratos/kratos_red_orbs.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__red-orbs-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__red-orbs-mask.png"
     ],
-    "symbolText": "Whenever one of your hits kills an enemy, gain 1 [ENERGY] and 1 [RAGE]."
+    "symbolText": "Whenever your hit kills an enemy:\n1 [ENERGY], 1 [RAGE]."
   },
   {
     "id": "kratos_red_orbs",
@@ -2165,13 +2114,14 @@
     "printedText": "Whenever one of your hits kills an enemy, gain 1 Energy and 1 Rage.",
     "assetKey": "kratos__rare__red-orbs+",
     "references": [
-      "public/assets/card-art/kratos/kratos_red_orbs.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__red-orbs+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__red-orbs+-mask.png"
     ],
-    "symbolText": "Whenever one of your hits kills an enemy, gain 1 [ENERGY] and 1 [RAGE]."
+    "symbolText": "Whenever your hit kills an enemy:\n1 [ENERGY], 1 [RAGE]."
   },
   {
     "id": "kratos_pandoras_box",
@@ -2183,14 +2133,13 @@
     "printedText": "Lose 2 HP. Gain 5 Rage. Draw 2 cards. Exhaust.",
     "assetKey": "kratos__rare__pandora-s-box",
     "references": [
-      "public/assets/card-art/kratos/kratos_pandoras_box.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__pandora-s-box-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/status-icons/draw.png"
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__pandora-s-box-mask.png"
     ],
-    "symbolText": "Lose 2 HP. Gain 5 [RAGE]. Draw 2 cards. Exhaust."
+    "symbolText": "Lose 2 HP.\n5 [RAGE].\nDraw 2 cards.\nExhaust."
   },
   {
     "id": "kratos_pandoras_box",
@@ -2202,14 +2151,13 @@
     "printedText": "Lose 2 HP. Gain 5 Rage. Draw 2 cards. Exhaust.",
     "assetKey": "kratos__rare__pandora-s-box+",
     "references": [
-      "public/assets/card-art/kratos/kratos_pandoras_box.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__pandora-s-box+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
-      "public/assets/status-icons/draw.png"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__pandora-s-box+-mask.png"
     ],
-    "symbolText": "Lose 2 HP. Gain 5 [RAGE]. Draw 2 cards. Exhaust."
+    "symbolText": "Lose 2 HP.\n5 [RAGE].\nDraw 2 cards.\nExhaust."
   },
   {
     "id": "kratos_escape_from_hades",
@@ -2221,13 +2169,12 @@
     "printedText": "The first time you would lose your last HP, keep 1 HP instead and exhaust this Power.",
     "assetKey": "kratos__rare__escape-from-hades",
     "references": [
-      "public/assets/card-art/kratos/kratos_escape_from_hades.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__escape-from-hades-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
-      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__escape-from-hades-mask.png"
     ],
-    "symbolText": "The first time you would lose your last HP, keep 1 HP instead and exhaust this Power."
+    "symbolText": "First time you would lose your last HP:\nKeep 1 HP instead.\nExhaust this Power."
   },
   {
     "id": "kratos_escape_from_hades",
@@ -2239,13 +2186,12 @@
     "printedText": "The first time you would lose your last HP, keep 1 HP instead and exhaust this Power.",
     "assetKey": "kratos__rare__escape-from-hades+",
     "references": [
-      "public/assets/card-art/kratos/kratos_escape_from_hades.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__escape-from-hades+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__escape-from-hades+-mask.png"
     ],
-    "symbolText": "The first time you would lose your last HP, keep 1 HP instead and exhaust this Power."
+    "symbolText": "First time you would lose your last HP:\nKeep 1 HP instead.\nExhaust this Power."
   },
   {
     "id": "kratos_amulet_of_the_fates",
@@ -2257,15 +2203,15 @@
     "printedText": "Apply 2 Weak to every enemy. Gain 4 Block. Exhaust.",
     "assetKey": "kratos__rare__amulet-of-the-fates",
     "references": [
-      "public/assets/card-art/kratos/kratos_amulet_of_the_fates.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__amulet-of-the-fates-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/block.png",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/weak.png",
+      "public/assets/icons/aoe.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__amulet-of-the-fates-mask.png"
     ],
-    "symbolText": "Apply 2 [WEAK] to every enemy. Gain 4 [BLOCK]. Exhaust."
+    "symbolText": "[AOE] 2 [WEAK].\n4 [BLOCK].\nExhaust."
   },
   {
     "id": "kratos_amulet_of_the_fates",
@@ -2277,15 +2223,15 @@
     "printedText": "Apply 2 Weak to every enemy. Gain 4 Block. Exhaust.",
     "assetKey": "kratos__rare__amulet-of-the-fates+",
     "references": [
-      "public/assets/card-art/kratos/kratos_amulet_of_the_fates.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__amulet-of-the-fates+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/block.png",
-      "public/assets/icons/weak.png"
+      "public/assets/icons/weak.png",
+      "public/assets/icons/aoe.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__amulet-of-the-fates+-mask.png"
     ],
-    "symbolText": "Apply 2 [WEAK] to every enemy. Gain 4 [BLOCK]. Exhaust."
+    "symbolText": "[AOE] 2 [WEAK].\n4 [BLOCK].\nExhaust."
   },
   {
     "id": "kratos_blades_of_exile",
@@ -2297,14 +2243,14 @@
     "printedText": "Each hit of your Attacks that target a row or every enemy deals +1 damage. Extra copies do not add more.",
     "assetKey": "kratos__rare__blades-of-exile",
     "references": [
-      "public/assets/card-art/kratos/kratos_blades_of_exile.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blades-of-exile-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blades-of-exile-mask.png"
     ],
-    "symbolText": "Each hit of your Attacks that target a row or every enemy deals +1 [DAMAGE]. Extra copies do not add more."
+    "symbolText": "Your [AOE] Attacks:\n+1 [DAMAGE] per hit.\nExtra copies do not stack."
   },
   {
     "id": "kratos_blades_of_exile",
@@ -2316,14 +2262,14 @@
     "printedText": "Each hit of your Attacks that target a row or every enemy deals +1 damage. Extra copies do not add more.",
     "assetKey": "kratos__rare__blades-of-exile+",
     "references": [
-      "public/assets/card-art/kratos/kratos_blades_of_exile.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blades-of-exile+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/aoe.png",
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__blades-of-exile+-mask.png"
     ],
-    "symbolText": "Each hit of your Attacks that target a row or every enemy deals +1 [DAMAGE]. Extra copies do not add more."
+    "symbolText": "Your [AOE] Attacks:\n+1 [DAMAGE] per hit.\nExtra copies do not stack."
   },
   {
     "id": "kratos_fall_of_olympus",
@@ -2335,14 +2281,14 @@
     "printedText": "Deal 2 damage to every enemy 3 times. Exhaust.",
     "assetKey": "kratos__rare__fall-of-olympus",
     "references": [
-      "public/assets/card-art/kratos/kratos_fall_of_olympus.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__fall-of-olympus-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "public/assets/icons/aoe.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__fall-of-olympus-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE] to every enemy 3 times. Exhaust."
+    "symbolText": "[AOE] 2 [DAMAGE], 3 times.\nExhaust."
   },
   {
     "id": "kratos_fall_of_olympus",
@@ -2354,14 +2300,14 @@
     "printedText": "Deal 2 damage to every enemy 4 times. Exhaust.",
     "assetKey": "kratos__rare__fall-of-olympus+",
     "references": [
-      "public/assets/card-art/kratos/kratos_fall_of_olympus.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__fall-of-olympus+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
-      "public/assets/cards/ironclad__rare__offering+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/aoe.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__rare__fall-of-olympus+-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE] to every enemy 4 times. Exhaust."
+    "symbolText": "[AOE] 2 [DAMAGE], 4 times.\nExhaust."
   },
   {
     "id": "strike_kratos",
@@ -2373,14 +2319,13 @@
     "printedText": "Deal 1 damage.",
     "assetKey": "kratos__starter__strike",
     "references": [
-      "public/assets/card-art/kratos/strike_kratos.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__strike-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__strike-mask.png"
     ],
-    "symbolText": "Deal 1 [DAMAGE]."
+    "symbolText": "1 [DAMAGE]."
   },
   {
     "id": "strike_kratos",
@@ -2392,14 +2337,13 @@
     "printedText": "Deal 2 damage.",
     "assetKey": "kratos__starter__strike+",
     "references": [
-      "public/assets/card-art/kratos/strike_kratos.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__strike+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/attack.png"
+      "public/assets/icons/attack.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__strike+-mask.png"
     ],
-    "symbolText": "Deal 2 [DAMAGE]."
+    "symbolText": "2 [DAMAGE]."
   },
   {
     "id": "defend_kratos",
@@ -2411,14 +2355,13 @@
     "printedText": "Gain 1 Block.",
     "assetKey": "kratos__starter__defend",
     "references": [
-      "public/assets/card-art/kratos/defend_kratos.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__defend-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__defend-mask.png"
     ],
-    "symbolText": "Gain 1 [BLOCK]."
+    "symbolText": "1 [BLOCK]."
   },
   {
     "id": "defend_kratos",
@@ -2430,12 +2373,11 @@
     "printedText": "2 Block to any player.",
     "assetKey": "kratos__starter__defend+",
     "references": [
-      "public/assets/card-art/kratos/defend_kratos.webp",
-      "public/assets/icons/kratos-energy.png",
-      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__defend+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
-      "public/assets/icons/block.png"
+      "public/assets/icons/block.png",
+      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__defend+-mask.png"
     ],
     "symbolText": "2 [BLOCK] to any player."
   }
