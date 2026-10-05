@@ -189,7 +189,8 @@ export function snapshot(session, detail = false) {
   }
   for (const group of run.roomState?.rewardOffers?.[id] ?? []) for (const defId of group) cards.push({ defId, upgraded: false })
   if (run.phase === 'room' || run.neow?.players[id]?.pendingEffect) { result.deck = player.deck.map(compactCard); cards.push(...player.deck) }
-  for (const defId of run.roomState?.cards?.[id]?.choices ?? []) cards.push({ defId, upgraded: false })
+  // A bought Merchant card leaves an empty '' slot behind.
+  for (const defId of run.roomState?.cards?.[id]?.choices ?? []) if (defId) cards.push({ defId, upgraded: false })
   for (const defId of run.roomState?.colorless ?? []) if (defId) cards.push({ defId, upgraded: false })
   for (const group of prompts.relic?.rewardChoices ?? []) for (const defId of group) cards.push({ defId, upgraded: false })
   for (const slime of player.slimes ?? []) if (slime.card) cards.push(slime.card)

@@ -542,7 +542,19 @@ Rate checks:
 - Co-op support: Defend+, Golden Fleece+, and Hermes' Rush can protect an ally.
   Add more before Kratos leaves the playtest system.
 
-## 10. Revision log
+## 10. Playtest results
+
+Two A0 batches of 15 AI-directed runs (five Codex workers each) both landed inside the
+project owner's 19.0-24.0 mean-floor target, so the draft numbers are unchanged:
+
+| Batch | Mean floors | Wins | Notes |
+| --- | ---: | ---: | --- |
+| kratos-a0-b1 (seeds 7001-7015) | 22.53 | 3/15 | Merchant card purchases failed in the playtest tool, since fixed |
+| kratos-a0-b2 (seeds 8001-8015) | 23.13 | 5/15 | Merchant fix in place |
+
+Observations and card notes live in `KRATOS-PLAYBOOK.md`.
+
+## 11. Revision log
 
 Draft 2 applies the first design review:
 

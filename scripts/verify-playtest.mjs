@@ -6,7 +6,8 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execute, parseOptions } from './playtest.mjs'
-import { applyAction } from './playtest/engine.mjs'
+import { applyAction, snapshot } from './playtest/engine.mjs'
+import { createMerchant } from '../src/game/noncombat.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
 import { createRun, enterRoom, roomChoices } from '../src/game/run.ts'
 import { createCombat } from '../src/game/combat.ts'
@@ -321,6 +322,15 @@ try {
   assert.equal(won.done, true, JSON.stringify(won))
   assert.equal(invoke('report', actBatch).wins, 1)
 
+  // A bought Merchant card leaves an empty slot. Building the prompt used to throw on it,
+  // which rolled the purchase back.
+  const shopRun = createRun(5, [{ id: 'p1', name: 'Playtest', character: 'kratos' }])
+  const shop = createMerchant(shopRun.itemDecks, shopRun.players)
+  shop.cards.p1.choices[0] = ''
+  const shopView = snapshot({ worker: 0, revision: 0, run: { ...shopRun, neow: null, phase: 'room', roomState: shop }, record: { index: 0, seed: 5 }, reveal: null })
+  assert(!('' in shopView.cardText), 'an emptied Merchant slot is not described as a card')
+  assert(shop.cards.p1.choices.slice(1).every((defId) => shopView.cardText[defId]), 'the remaining Merchant cards are still described')
+
   // Finalization and per-act denominators are independent of a policy's playing strength.
   // A fatal encounter uses the real counters; no fight is declared won for this check.
   const terminal = combatRun()
@@ -374,5 +384,5 @@ try {
   assert.equal(fifty.completed, 50); assert.equal(fifty.errors.length, 0)
   assert.equal(new Set(Array.from({ length: 50 }, (_, index) => json(join(budget, `run-${String(index + 1).padStart(4, '0')}.json`)).seed)).size, 50)
   for (let worker = 0; worker < 4; worker++) assert.equal(json(join(budget, `worker-${worker}.json`)).run, null)
-  console.log('playtest: AI prompts, sequences, draw stops, reveal commitment, replay, resumption, receipts, metrics and 8-character worker isolation passed')
+  console.log(`playtest: AI prompts, sequences, draw stops, reveal commitment, replay, resumption, receipts, metrics and ${ALL_CHARACTER_IDS.length}-character worker isolation passed`)
 } finally { rmSync(temp, { recursive: true, force: true }) }
