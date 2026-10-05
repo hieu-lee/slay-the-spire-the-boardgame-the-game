@@ -19,6 +19,7 @@ const onlineUi = /^(src\/multiplayer\/|src\/ui\/Online)/
 // too broad for dependency inference. Keep the few domain owners explicit so
 // an engine helper change does not launch the entire visual matrix.
 const focusedEngineOwners = new Map([
+  ['src/game/types.ts', ['verify-kratos-release-browser.mjs']],
   ['src/game/assets.ts', ['verify-campfire-assets-browser.mjs']],
   ['src/game/guardian-gems.ts', ['verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs']],
   ['src/game/run/guardian-gems.ts', ['verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs']],
@@ -40,9 +41,11 @@ const focusedEngineOwners = new Map([
 ])
 const focusedUiOwners = new Map([
   ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-courier-browser.mjs',
-    'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-enemy-hover-browser.mjs']],
+    'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-enemy-hover-browser.mjs', 'verify-kratos-release-browser.mjs']],
   ['src/ui/CampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
-  ['src/ui/CompendiumScreen.tsx', ['verify-compendium-browser.mjs']],
+  ['src/ui/CompendiumScreen.tsx', ['verify-compendium-browser.mjs', 'verify-kratos-release-browser.mjs']],
+  ['src/ui/StatsScreen.tsx', ['verify-stats-browser.mjs', 'verify-kratos-release-browser.mjs']],
+  ['src/ui/LeaderboardScreen.tsx', ['verify-leaderboard-browser.mjs', 'verify-kratos-release-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
     'verify-die-relic-browser.mjs',
     'verify-courier-browser.mjs', 'verify-hermit-combo-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs',
@@ -70,11 +73,11 @@ const focusedUiOwners = new Map([
   ['src/ui/chrome/room-stages.css', ['verify-event-panels-browser.mjs']],
   ['src/ui/styles/non-combat-rooms.css', ['verify-event-panels-browser.mjs']],
   ['src/ui/chrome/mailbox.css', ['verify-mail-browser.mjs']],
-  ['src/multiplayer/useRoomSession.ts', ['verify-combat-layout-reload-browser.mjs']],
+  ['src/multiplayer/useRoomSession.ts', ['verify-combat-layout-reload-browser.mjs', 'verify-kratos-release-browser.mjs']],
   ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
-  ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs']],
+  ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs', 'verify-kratos-release-browser.mjs']],
   ['src/ui/OnlineCampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
-  ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs', 'verify-tutorial-browser.mjs']],
+  ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-kratos-release-browser.mjs']],
   ['src/ui/sfx.ts', ['verify-run-replay-browser.mjs']],
   ['src/ui/useCampfireScene.ts', ['verify-campfire-assets-browser.mjs']],
   ['src/ui/combat-screen/HermitTriggerChoice.tsx', [

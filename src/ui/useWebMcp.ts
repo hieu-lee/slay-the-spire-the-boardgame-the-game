@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { CARDS, releasedCardDefs } from '../game/cards.ts'
 import { parseStatsExpression, validateStatsQuery } from '../stats-query.ts'
 import { loadStats, type StatsFilters } from '../stats.ts'
+import { CHARACTER_IDS } from '../game/types.ts'
 
 type Tool = {
   name: string
@@ -46,7 +47,7 @@ const STATS_CHOICES = releasedCardDefs().flatMap((card) => [
   { id: card.id, label: card.name, upgraded: false },
   ...(card.upgrade ? [{ id: card.id, label: `${card.name}+`, upgraded: true }] : []),
 ])
-const STATS_HEROES = ['all', 'ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'] as const
+const STATS_HEROES = ['all', ...CHARACTER_IDS] as const
 const STATS_MODES = ['all', 'standard', 'daily', 'custom', 'multiplayer'] as const
 const CONTROL_SELECTOR = 'button, summary, input, select, [role="button"]'
 const STRUCTURED_TEXT_SELECTOR = 'h1, h2, h3, [role="heading"], [role="status"], [role="alert"]'

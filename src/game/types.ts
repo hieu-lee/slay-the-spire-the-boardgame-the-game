@@ -3,10 +3,11 @@
 
 export const BASE_CHARACTER_IDS = ['ironclad', 'silent', 'defect', 'watcher'] as const
 export const DOWNFALL_CHARACTER_IDS = ['slime_boss', 'guardian', 'hexaghost', 'hermit'] as const
+export const DLC_CHARACTER_IDS = ['kratos'] as const
 /** Released characters: character select, online rooms, daily runs, stats, and reward decks. */
-export const CHARACTER_IDS = [...BASE_CHARACTER_IDS, ...DOWNFALL_CHARACTER_IDS] as const
+export const CHARACTER_IDS = [...BASE_CHARACTER_IDS, ...DOWNFALL_CHARACTER_IDS, ...DLC_CHARACTER_IDS] as const
 /** Draft characters the engine can run, reachable only through the headless playtest system. */
-export const PLAYTEST_CHARACTER_IDS = ['kratos'] as const
+export const PLAYTEST_CHARACTER_IDS = [] as const
 export const ALL_CHARACTER_IDS = [...CHARACTER_IDS, ...PLAYTEST_CHARACTER_IDS] as const
 
 export type BaseCharacterId = (typeof BASE_CHARACTER_IDS)[number]

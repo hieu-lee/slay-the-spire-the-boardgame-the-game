@@ -1,8 +1,8 @@
 # Kratos, Ghost of Sparta — DLC character design (draft 5)
 
-Status: first playable draft for the headless playtest system only. Kratos is not
-selectable in solo, daily, custom, or online play until playtest data says the
-numbers are right. Scope is God of War (2005), God of War II, and God of War III:
+Status: released to players on October 5, 2026, in solo, Daily, Custom and online
+play. The headless playtest runner remains available for balance work.
+Scope is God of War (2005), God of War II, and God of War III:
 the rage-driven, vengeful Spartan who kills the Olympians. The later Norse Kratos
 is out of scope.
 
@@ -526,10 +526,10 @@ Rate checks:
   hit kills an enemy, as does Green Orbs.
   Ghost of Sparta reacts inside `unleashSpend`. Deicide, Blades of Exile, and God
   of War are read directly while in play.
-- Character ids: `kratos` is in a new `PLAYTEST_CHARACTER_IDS` list. The
-  released `CHARACTER_IDS` list (character select, online rooms, daily, stats,
-  other characters' reward decks) does not include it. The engine can create a
-  Kratos run, and `scripts/playtest.mjs --character kratos` plays him headless.
+- Character ids: `kratos` is in `DLC_CHARACTER_IDS` and the released
+  `CHARACTER_IDS` list. Solo selection, online rooms, Daily, stats and inactive
+  reward decks include him. `scripts/playtest.mjs --character kratos` continues
+  to support headless balance work.
 - Every Kratos card carries `printedText`, because the playtest prompt shows raw
   card data to the AI player.
 
@@ -540,7 +540,7 @@ Rate checks:
   Vulnerable or damage riders.
 - Whether Rage should drain (lose 1 at end of turn) if banking proves too strong.
 - Co-op support: Defend+, Golden Fleece+, and Hermes' Rush can protect an ally.
-  Add more before Kratos leaves the playtest system.
+  Watch how often these cards are chosen in public co-op runs.
 
 ## 10. Playtest results
 

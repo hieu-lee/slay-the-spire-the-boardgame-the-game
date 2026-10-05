@@ -1,4 +1,5 @@
 import { CHARACTER_LESSONS } from '../src/ui/tutorial/lessons.ts'
+import { BASE_CHARACTER_IDS, CHARACTER_IDS, DOWNFALL_CHARACTER_IDS } from '../src/game/types.ts'
 import { HERO_TUTORIALS, tutorialChapters } from '../src/ui/tutorial/index.ts'
 import { onScript } from '../src/ui/tutorial/helpers.ts'
 import { simulateTutorial } from './lib/tutorial-sim.mjs'
@@ -6,16 +7,16 @@ import { suite, check, assert, assertEqual, assertDeepEqual, report } from './li
 
 suite('tutorial content')
 
-const HEROES = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit']
+const HEROES = [...BASE_CHARACTER_IDS, ...DOWNFALL_CHARACTER_IDS]
 const sorted = (items) => [...items].sort()
 
-check('every playable hero has general lessons and a scripted tutorial', () => {
-  assertEqual(Object.keys(CHARACTER_LESSONS).sort().join(), [...HEROES].sort().join())
+check('every released hero has lessons, and the original heroes retain their scripted tutorials', () => {
+  assertEqual(Object.keys(CHARACTER_LESSONS).sort().join(), [...CHARACTER_IDS].sort().join())
   assertEqual(Object.keys(HERO_TUTORIALS).sort().join(), [...HEROES].sort().join())
 })
 
 check('chapters have unique ids and complete steps that fit a phone coach', () => {
-  for (const hero of HEROES) {
+  for (const hero of CHARACTER_IDS) {
     const chapters = tutorialChapters(hero)
     assertEqual(new Set(chapters.map((chapter) => chapter.id)).size, chapters.length, `${hero} chapter ids`)
     for (const chapter of chapters) {

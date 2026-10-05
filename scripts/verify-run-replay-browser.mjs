@@ -358,15 +358,17 @@ try {
     const summonGroup = createRun(52, [{ id: 'p1', name: 'Replay Tester', character: 'ironclad' }])
     summonGroup.enemyDecks.encounter[0] = { ...summonGroup.enemyDecks.encounter[0], summons: ['byrd'] }
     const redundant = createRun(51, [{ id: 'p1', name: 'Replay Tester', character: 'ironclad' }])
+    const beforeDlc = structuredClone(redundant)
+    delete beforeDlc.campaignProgress.characters.kratos
     delete redundant.nextPendingRelicId
     const final = structuredClone(redundant); final.phase = 'defeat'; final.neow = null
     const removal = { version: 2, runId: redundant.campaign.runId, initial: redundant, events: [
       { patch: [{ path: ['nextPendingRelicId'], remove: true }] }, { patch: [{ path: [], value: final }] },
     ] }
-    return { selectorRuns, potion: Boolean(validateRunLog(makeLog(potion))),
+    return { selectorRuns, beforeDlc: Boolean(validateRunLog(makeLog(beforeDlc))), potion: Boolean(validateRunLog(makeLog(potion))),
       summonGroup: Boolean(validateRunLog(makeLog(summonGroup))), removal: Boolean(validateRunLog(removal)) }
   })
-  assert.deepEqual(legacyCompatibility, { selectorRuns: [true, true, true], potion: true, summonGroup: true, removal: true },
+  assert.deepEqual(legacyCompatibility, { selectorRuns: [true, true, true], beforeDlc: true, potion: true, summonGroup: true, removal: true },
     'Previously recorded run-log shapes stopped validating')
 
   assert.equal(await page.evaluate(async () => {

@@ -1,6 +1,6 @@
-import { ALL_CHARACTER_IDS } from '../game/types.ts'
+import { ALL_CHARACTER_IDS, DLC_CHARACTER_IDS, PLAYTEST_CHARACTER_IDS } from '../game/types.ts'
 import type { CardType, CharacterId } from '../game/types.ts'
-import { CARDS, releasedCardDefs } from '../game/cards.ts'
+import { CARDS } from '../game/cards.ts'
 import { POTIONS } from '../game/relics.ts'
 import { cardVfxRecipe, potionVfxRecipe, type VfxFamily, type VfxRecipe } from './combat-vfx.ts'
 
@@ -83,22 +83,27 @@ const CHARACTER_RATE: Readonly<Record<CharacterId, number>> = {
 }
 
 const POTION_IDS = Object.keys(POTIONS).sort()
-// Playtest-only cards and characters come after the released ones, so they never
-// shift a released card's identity-sound slot.
-const RELEASED_CARD_IDS = releasedCardDefs().map((def) => def.id).sort()
-const RELEASED = new Set(RELEASED_CARD_IDS)
-const CARD_IDS = [...RELEASED_CARD_IDS, ...Object.keys(CARDS).filter((id) => !RELEASED.has(id)).sort()]
+// Preserve the original heroes' accents when a DLC moves out of playtesting.
+// Additional cards occupy their own grid after every character's original pool.
+const EXTRA_OWNERS = new Set<string>([...DLC_CHARACTER_IDS, ...PLAYTEST_CHARACTER_IDS])
+const ORIGINAL_CARD_IDS = Object.values(CARDS).filter((def) => !EXTRA_OWNERS.has(def.owner)).map((def) => def.id).sort()
+const ORIGINAL_CARDS = new Set(ORIGINAL_CARD_IDS)
+const EXTRA_CARD_IDS = Object.keys(CARDS).filter((id) => !ORIGINAL_CARDS.has(id)).sort()
 const CHARACTERS: readonly CharacterId[] = ALL_CHARACTER_IDS
 const IDENTITY_SOUNDS: readonly CombatSound[] = [
   'ui', 'card', 'draw', 'attack', 'magic', 'enemy', 'block', 'heal', 'weak',
 ]
+const IDENTITY_PERIOD = IDENTITY_SOUNDS.length * 8
+// Whole timing bands keep differently pitched actors' extra accents distinct.
+const EXTRA_OFFSET = Math.ceil(CHARACTERS.length * ORIGINAL_CARD_IDS.length / IDENTITY_PERIOD) * IDENTITY_PERIOD
+const EXTRA_STRIDE = Math.ceil(EXTRA_CARD_IDS.length / IDENTITY_PERIOD) * IDENTITY_PERIOD
 
 function identityLayer(slot: number): LayerTemplate {
   return {
     sound: IDENTITY_SOUNDS[slot % IDENTITY_SOUNDS.length]!,
     rate: 0.74 + Math.floor(slot / IDENTITY_SOUNDS.length) % 8 * 0.06,
     volume: 0.08,
-    delayMs: 36 + Math.floor(slot / (IDENTITY_SOUNDS.length * 8)) * 14,
+    delayMs: 36 + Math.floor(slot / IDENTITY_PERIOD) * 14,
   }
 }
 
@@ -139,8 +144,10 @@ export function cardSfxRecipe(
 ): CombatSfxRecipe {
   const baseId = cardId.endsWith('+') ? cardId.slice(0, -1) : cardId
   const visual = cardVfxRecipe(character, baseId, mode, upgraded, resolvedType)
-  // Strided by the released pool, so playtest-only cards never move a released card's slot.
-  const slot = CHARACTERS.indexOf(character) * RELEASED_CARD_IDS.length + CARD_IDS.indexOf(baseId)
+  const characterIndex = CHARACTERS.indexOf(character)
+  const originalIndex = ORIGINAL_CARD_IDS.indexOf(baseId)
+  const slot = originalIndex >= 0 ? characterIndex * ORIGINAL_CARD_IDS.length + originalIndex
+    : EXTRA_OFFSET + characterIndex * EXTRA_STRIDE + EXTRA_CARD_IDS.indexOf(baseId)
   return tunedRecipe(
     `card:${character}:${baseId}:${mode ?? 'base'}`,
     [...layersForCard(visual).map(layer => ({ ...layer,

@@ -19,6 +19,7 @@ const POOLS: { id: Pool; label: string }[] = [
   { id: 'guardian', label: 'Guardian' },
   { id: 'hexaghost', label: 'Hexaghost' },
   { id: 'hermit', label: 'Hermit' },
+  { id: 'kratos', label: 'Kratos' },
   { id: 'colorless', label: 'Colorless' },
   { id: 'curse', label: 'Curses' },
   { id: 'status', label: 'Statuses' },
@@ -65,11 +66,12 @@ function ScannedCardFace({ def, upgraded, full = false }: {
   full?: boolean
 }) {
   const src = full ? cardImagePath(def, upgraded) : cardThumbPath(def, upgraded)
-  const [scanUnavailable, setScanUnavailable] = useState(false)
-  useEffect(() => setScanUnavailable(false), [src])
+  const hasPublisherScan = def.publisherScan !== false
+  const [scanUnavailable, setScanUnavailable] = useState(!hasPublisherScan)
+  useEffect(() => setScanUnavailable(!hasPublisherScan), [hasPublisherScan, src])
   return (
     <>
-      <img src={src} alt="" loading="lazy" decoding="async"
+      {hasPublisherScan ? <img src={src} alt="" loading="lazy" decoding="async"
         onLoad={(event) => {
           const image = event.currentTarget
           revealDecodedImage(image, {
@@ -81,7 +83,7 @@ function ScannedCardFace({ def, upgraded, full = false }: {
           if (event.currentTarget.getAttribute('src') !== src) return
           event.currentTarget.style.visibility = 'hidden'
           setScanUnavailable(true)
-        }} />
+        }} /> : null}
       <CardFace def={def} rules={cardPlayText(def)} illustration={scanUnavailable} />
     </>
   )

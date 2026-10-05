@@ -142,6 +142,7 @@ const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'guardian', name: 'Guardian' },
   { character: 'hexaghost', name: 'Hexaghost' },
   { character: 'hermit', name: 'Hermit' },
+  { character: 'kratos', name: 'Kratos' },
 ]
 const DEFAULT_CHARACTERS = ROSTER.map((entry) => entry.character)
 

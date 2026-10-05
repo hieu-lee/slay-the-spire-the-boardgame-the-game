@@ -23,9 +23,9 @@ node --experimental-strip-types scripts/playtest.mjs init \
   --out artifacts/playtest/silent-a3-50
 ```
 
-Kratos (`--character kratos`) is a playtest-only draft character: the engine
-runs him, but character select and online rooms do not offer him. His design,
-keywords, and watch list are in `docs/kratos-design.md`.
+Kratos (`--character kratos`) is available in both public play and the headless
+playtest runner. His design, keywords, and watch list are in
+`docs/kratos-design.md`.
 
 Use a task-specific output directory, and keep the same directory and engine
 revision to resume. `init` refuses to change an existing batch's configuration.

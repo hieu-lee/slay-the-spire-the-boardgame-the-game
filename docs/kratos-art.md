@@ -62,7 +62,7 @@ sound cues, cold art, all fifteen pose beats, exact idle return, reduced motion 
 restoration. Its composited skin-mask check catches invisible WebKit cutouts.
 Asset verification owns native alpha, fixed canvases, ground, clipping, prompt/hash
 provenance and sound decoding. Hero-potion browser coverage checks head calibration.
-Kratos stays playtest-only until separately released.
+Kratos is released in solo and online play, including Daily and Custom runs.
 
 ## Rage of Sparta meter
 

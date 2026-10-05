@@ -1,7 +1,8 @@
 import { DAILY_ASCENSION } from '../../src/game/daily.ts'
+import { CHARACTER_IDS } from '../../src/game/types.ts'
 import { deckHash, primeStatsDeck, recordDeckClassification, soloDeck, statsDecks, validDeckType } from './stats.mjs'
 
-const CHARACTERS = new Set(['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'])
+const CHARACTERS = new Set(CHARACTER_IDS)
 const CHARACTER_ORDER = [...CHARACTERS]
 const MODES = new Set(['standard', 'daily', 'custom'])
 const compareNames = new Intl.Collator('en', { sensitivity: 'base' }).compare

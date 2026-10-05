@@ -72,6 +72,11 @@ try {
               }
               const art = card.querySelector('.card-face__illustration')
               if (art?.naturalWidth !== 748 || art?.naturalHeight !== 420 || !art.src.endsWith(`/kratos/${expected.id}.webp`)) faults.push(`${expected.uid}: missing/wrong art`)
+              const artBox = art.getBoundingClientRect()
+              const frameBox = art.closest('.card-face').getBoundingClientRect()
+              const rulesBox = card.querySelector('.card-face__rules').getBoundingClientRect()
+              if (artBox.height <= 0 || artBox.height > frameBox.height * .4 + 1 || artBox.bottom > rulesBox.top + 1)
+                faults.push(`${expected.uid}: art escapes illustration row`)
               const rules = card.querySelector('.card-face__rules')
               const range = document.createRange(); range.selectNodeContents(rules)
               const content = range.getBoundingClientRect(), box = rules.getBoundingClientRect()

@@ -1,4 +1,4 @@
-// Kratos, Ghost of Sparta: the first original DLC character, playtest-only for now.
+// Kratos, Ghost of Sparta: the first original DLC character.
 // Design and balance notes live in docs/kratos-design.md; this file is the data.
 //
 // Rage is a 0-5 token bank. "Unleash N" is a branch on `canUnleash` whose first

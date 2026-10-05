@@ -143,7 +143,7 @@ check('melee bosses dash while Deca and Corrupt Heart cast from their lane', () 
 check('every reachable card resolves a stable combat VFX recipe for every character', () => {
   const characters = CHARACTER_IDS
   const assets = new Set(['ironclad-strike', 'ironclad-bash', 'lightning-channel', 'frost-channel', 'dark-channel', 'watcher-pray',
-    'silent-poison', 'silent-shiv', 'guard-bloom', 'hexaghost-flame-impact', 'potion-burst', 'magic-burst'])
+    'silent-poison', 'silent-shiv', 'guard-bloom', 'hexaghost-flame-impact', 'potion-burst', 'magic-burst', 'kratos/impact'])
   const cards = Object.values(CARDS)
   assert(cards.filter((card) => characters.includes(card.owner)).length >= 315,
     'the integrated base and Hexaghost card pools are covered')
@@ -154,7 +154,7 @@ check('every reachable card resolves a stable combat VFX recipe for every charac
       assertEqual(JSON.stringify(upgraded), JSON.stringify(base),
         `${character}/${card.id}+ keeps the base visual identity`)
       for (const token of [base.asset, base.tone]) {
-        assert(/^[a-z0-9-]+$/.test(token), `${character}/${card.id} has a path-safe VFX token: ${token}`)
+        assert(/^(?:[a-z0-9-]+\/)*[a-z0-9-]+$/.test(token), `${character}/${card.id} has a path-safe VFX token: ${token}`)
       }
       assert(assets.has(base.asset), `${character}/${card.id} resolves to a supplied asset: ${base.asset}`)
       assertEqual(vfxAssetPath(base), `/assets/combat/vfx/actions/${base.asset}.webp`)
@@ -220,8 +220,8 @@ check('all physical potion IDs have explicit VFX recipes', () => {
   assertEqual(toneColors.size, Object.keys(POTIONS).length, 'every Potion keeps a visible tone identity')
 })
 
-check('playtest-only cards never move a released card\'s sound identity', () => {
-  // Pinned from before Kratos existed: the identity slot is strided by the released pool only.
+check('DLC and playtest cards never move an original card\'s sound identity', () => {
+  // Pinned from before Kratos existed, including after his public release.
   assertDeepEqual(cardSfxRecipe('silent', 'neutralize').layers.at(-1), { sound: 'heal', rate: 0.929, volume: 0.08, delayMs: 204 })
   assertDeepEqual(cardSfxRecipe('hermit', 'hermit_strike').layers.at(-1), { sound: 'ui', rate: 1.019, volume: 0.08, delayMs: 792 })
 })

@@ -7,7 +7,7 @@ import { DAILY_MODIFIERS } from '../game/meta.ts'
 import { neowCard } from '../game/neow.ts'
 import { POTIONS, RELICS } from '../game/relics.ts'
 import type { RunState } from '../game/run.ts'
-import { CAPS, CHARACTER_IDS } from '../game/types.ts'
+import { CAPS, CHARACTER_IDS, DLC_CHARACTER_IDS } from '../game/types.ts'
 
 // Keep the shipped storage names so runs recorded before this feature remain downloadable.
 const RUN_LOG_KEY = 'sts-run-vod'
@@ -1052,7 +1052,8 @@ function validRunState(value: unknown, runId: string): value is RunState {
             state.setup && state.roomState?.kind === 'merchant') : true
   const progress = state.campaignProgress
   const progressValid = Boolean(progress && progress.version === 1 && progress.characters && typeof progress.characters === 'object' &&
-    CHARACTER_IDS.every((id) => Number.isInteger(progress.characters[id])) &&
+    CHARACTER_IDS.every((id) => Number.isInteger(progress.characters[id]) ||
+      DLC_CHARACTER_IDS.some((dlc) => dlc === id) && progress.characters[id] === undefined) &&
     ['colorless', 'actIV', 'unspentMarks', 'highestAscension', 'nextRunNumber'].every((field) =>
       Number.isInteger(progress[field as keyof typeof progress])) && Array.isArray(progress.finishedRunIds) &&
     progress.finishedRunIds.every((id) => typeof id === 'string'))

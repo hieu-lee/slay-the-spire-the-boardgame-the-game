@@ -19,7 +19,7 @@ import { suite, check, assertDeepEqual, assertEqual, assertThrows, report } from
 
 suite('Downfall roster integration')
 
-check('browser and room vocabularies expose the same eight characters', () => {
+check('browser and room vocabularies expose the same released characters', () => {
   assertDeepEqual(CHARACTERS, [...CHARACTER_IDS])
 })
 

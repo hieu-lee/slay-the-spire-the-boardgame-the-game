@@ -6,7 +6,7 @@
 // module that was written but never wired up.
 //
 // Combat and 184 enemy definitions are live. 529 character card definitions are live in all rulesets,
-// 64 of them for the playtest-only Kratos.
+// 64 of them for the Kratos DLC.
 // Of the base game, 251 of 259 unique character cards are live as ordinary definitions; the
 // other 8 are implemented Golden Ticket rewards. 38 colorless card definitions are live in all rulesets;
 // all 22 of 22 colorless cards are live in the base game. Relics, potions, and their
@@ -17,7 +17,7 @@
 export { createRng, nextFloat, nextInt, shuffle, pick, pickMany, seedFromString } from './rng.ts'
 export type { RngState } from './rng.ts'
 
-export { CAPS, BASE_CHARACTER_IDS, CHARACTER_IDS, DOWNFALL_CHARACTER_IDS } from './types.ts'
+export { CAPS, BASE_CHARACTER_IDS, CHARACTER_IDS, DOWNFALL_CHARACTER_IDS, DLC_CHARACTER_IDS } from './types.ts'
 export type {
   CardInstance,
   CardType,

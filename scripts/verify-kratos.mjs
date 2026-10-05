@@ -1,4 +1,4 @@
-// Kratos, the playtest-only DLC character: roster gating, Rage, Unleash,
+// Kratos, the released DLC character: roster admission, Rage, Unleash,
 // Godslayer, Brutal Kill, and the cards that read those rules directly.
 // Design and numbers: docs/kratos-design.md.
 import {
@@ -16,8 +16,7 @@ import { createRng } from '../src/game/rng.ts'
 import { MAX_HP } from '../src/game/run.ts'
 import { readyForCombat } from '../src/game/run/encounters.ts'
 import { createRun } from '../src/game/state.ts'
-import { ALL_CHARACTER_IDS, CHARACTER_IDS, PLAYTEST_CHARACTER_IDS } from '../src/game/types.ts'
-import { CHARACTERS, chooseCharacter, createRoom, createStore, joinRoom } from './lib/rooms.mjs'
+import { chooseCharacter, createRoom, createStore, joinRoom, snapshotFor, startRun } from './lib/rooms.mjs'
 import { suite, check, assert, assertDeepEqual, assertEqual, assertThrows, report } from './lib/harness.mjs'
 
 let uid = 0
@@ -47,17 +46,20 @@ const hpLost = (before, after, uid = 'e1') =>
   before.enemies.find((e) => e.uid === uid).hp - after.enemies.find((e) => e.uid === uid).hp
 const kratosCards = Object.values(CARDS).filter((def) => def.owner === 'kratos')
 
-suite('Kratos (playtest-only DLC character)')
+suite('Kratos (DLC character)')
 
-check('Kratos is an engine character but not a released one', () => {
-  assertDeepEqual([...PLAYTEST_CHARACTER_IDS], ['kratos'])
-  assert(!CHARACTER_IDS.includes('kratos'), 'released character ids must not list Kratos')
-  assert(ALL_CHARACTER_IDS.includes('kratos'), 'the engine id list includes Kratos')
-  assert(!CHARACTERS.includes('kratos'), 'online rooms must not offer Kratos')
+check('players can select Kratos, start an online run, and reconnect with his starter relic', () => {
   const room = createRoom(createStore(), { code: 'KRATOS' })
   const seat = joinRoom(room, { name: 'Ann', character: 'ironclad' })
-  assertThrows(() => chooseCharacter(room, seat.token, 'kratos'), 'online lobbies reject Kratos')
-  assert(!releasedCardDefs().some((def) => def.owner === 'kratos'), 'the Compendium and stats card lists hide Kratos cards')
+  chooseCharacter(room, seat.token, 'kratos')
+  startRun(room, seat.token, { seed: 47 })
+  joinRoom(room, { token: seat.token, connected: true })
+  const view = snapshotFor(room, seat.token)
+  assertEqual(view.you.character, 'kratos')
+  assertEqual(view.run.players[0].character, 'kratos')
+  assertDeepEqual(view.run.players[0].relics.map(relic => relic.defId), ['ashes_of_sparta'])
+  assertEqual(releasedCardDefs().filter((def) => def.owner === 'kratos').length, 64,
+    'the Compendium and stats card lists expose all Kratos cards')
   assert(releasedCardDefs().some((def) => def.owner === 'hermit'), 'released pools stay listed')
 })
 
@@ -78,9 +80,13 @@ check('a Kratos run starts with his board, relic, starter deck, and his own rewa
   assertEqual(run.meta.ruleset, 'base', 'Kratos plays the base ruleset')
 })
 
-check('released characters never draw Kratos cards from inactive reward decks', () => {
-  const decks = createItemDecks(createRng(3), true, createCampaignProgress(), ['ironclad'], 'downfall')
-  assert(!('kratos' in decks.characterCards) && !('kratos' in decks.characterRares), 'no Kratos inactive decks')
+check('Kratos is an available inactive reward deck in both campaigns', () => {
+  for (const ruleset of ['base', 'downfall']) {
+    const decks = createItemDecks(createRng(3), true, createCampaignProgress(), ['ironclad'], ruleset)
+    assert(decks.characterCards.kratos.length > 0 && decks.characterRares.kratos.length > 0)
+    assert(decks.characterCards.kratos.every(id => id === 'golden_ticket' || cardDef(id).owner === 'kratos'))
+    assert(decks.characterRares.kratos.every(id => cardDef(id).owner === 'kratos'))
+  }
 })
 
 check('Kratos campaign marks are recorded and parsed without breaking released saves', () => {

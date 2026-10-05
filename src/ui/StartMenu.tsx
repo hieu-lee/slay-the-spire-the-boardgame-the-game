@@ -54,6 +54,7 @@ const HEROES: { id: ReleasedCharacterId; name: string }[] = [
   { id: 'guardian', name: 'Guardian' },
   { id: 'hexaghost', name: 'Hexaghost' },
   { id: 'hermit', name: 'Hermit' },
+  { id: 'kratos', name: 'Kratos' },
 ]
 
 const CHARACTER_WALLPAPERS = HEROES.map(({ id }) => `menu/character-select/character-${id}-wallpaper.webp`)
@@ -101,6 +102,7 @@ const HERO_COPY: Record<ReleasedCharacterId, string> = {
   guardian: 'An ancient construct that alternates between offense and defense. Socket Gems into cards, build Vigor, and shift modes to turn careful setup into a crushing counterattack.',
   hexaghost: 'A restless spirit bound to six flames. Advance and Retract the Heat track, gather Soulburn, and time its strongest effects for the hottest moments of the fight.',
   hermit: 'A lone gunslinger haunted by the Spire. Load cards into the Chamber, line up Dead On attacks, and unleash carefully prepared shots when the moment is right.',
+  kratos: 'The Ghost of Sparta wields the Blades of Chaos. Build Rage and Unleash powerful attacks. Use Godslayer against Elites and Bosses, or Hold Rage for the next blow.',
 }
 
 export function StartMenu({
@@ -161,8 +163,8 @@ export function StartMenu({
   useEffect(() => {
     if (screen === 'main' || screen === 'campaign' || screen === 'replay') return
     // Run setup gives these assets time to load before character selection.
-    // Decode only the displayed wallpaper and campaign pair: decoding all
-    // eight full-screen wallpapers would pressure small-device GPU memory.
+    // Decode only the displayed wallpaper and campaign pair: decoding every
+    // full-screen wallpaper would pressure small-device GPU memory.
     void warmRunSetup(hero.id)
   }, [hero.id, screen])
   useEffect(() => {

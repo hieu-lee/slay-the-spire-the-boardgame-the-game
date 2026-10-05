@@ -59,6 +59,7 @@ const CHARACTERS = [
   ['guardian', 'Guardian'],
   ['hexaghost', 'Hexaghost'],
   ['hermit', 'Hermit'],
+  ['kratos', 'Kratos'],
 ] as const
 
 type Props = {

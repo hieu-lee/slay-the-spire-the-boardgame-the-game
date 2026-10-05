@@ -14,7 +14,7 @@ export type CharacterLessons = {
 }
 
 /** Each hero's own mechanics: shown in the first fight, then deepened in the second. */
-/** Released heroes only; playtest-only characters have no tutorial. */
+/** Released heroes have lessons even when they use the general tutorial route. */
 export const CHARACTER_LESSONS: Readonly<Partial<Record<CharacterId, CharacterLessons>>> & Record<ReleasedCharacterId, CharacterLessons> = {
   ironclad: {
     intro: [
@@ -195,6 +195,32 @@ export const CHARACTER_LESSONS: Readonly<Partial<Record<CharacterId, CharacterLe
       {
         title: 'Burns and exhaust',
         body: 'Burn cards deal 1 damage at the end of your turn while they are in your hand, and that damage can use up your Block. Cards that Exhaust them keep you safe and power Hexaghost cards that count your exhaust pile.',
+      },
+    ],
+  },
+  kratos: {
+    intro: [
+      {
+        title: 'Playing Kratos',
+        body: 'Ashes of Sparta gives 1 Rage at the start of combat and whenever you lose HP. Rage is saved between turns, up to 5. Blades of Chaos hits a row and builds more Rage.',
+        focus: [spot('.rage-meter, .hand')],
+      },
+      {
+        title: 'Unleash and Hold Rage',
+        body: 'Unleash spends the printed amount of Rage for its bonus. Cards that say “instead” replace their normal effect. Tap the Rage meter to Hold Rage when you want to save it. Plume of Prometheus can spend 2 Rage for 4 damage.',
+        focus: [spot('.rage-meter, .hand')],
+      },
+    ],
+    advanced: [
+      {
+        title: 'Godslayer',
+        body: 'Godslayer adds its printed damage against Elites and Bosses. Against ordinary enemies, use the card’s normal damage.',
+        focus: [spot('.hand')],
+      },
+      {
+        title: 'Brutal Kill',
+        body: 'Brutal Kill rewards a finishing blow. The chosen enemy must die from that card before its bonus happens. Build Rage, weaken the target, and choose the right finisher.',
+        focus: [spot('.hand, .row__enemies')],
       },
     ],
   },

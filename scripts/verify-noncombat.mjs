@@ -62,9 +62,9 @@ check('mixed Downfall parties keep every inactive character reward stack availab
   const decks = createItemDecks(createRng(808), true, createCampaignProgress(),
     ['ironclad', 'hexaghost'], 'downfall')
   assertDeepEqual(Object.keys(decks.characterCards).sort(),
-    ['defect', 'guardian', 'hermit', 'silent', 'slime_boss', 'watcher'])
+    ['defect', 'guardian', 'hermit', 'kratos', 'silent', 'slime_boss', 'watcher'])
   assertDeepEqual(Object.keys(decks.characterRares).sort(),
-    ['defect', 'guardian', 'hermit', 'silent', 'slime_boss', 'watcher'])
+    ['defect', 'guardian', 'hermit', 'kratos', 'silent', 'slime_boss', 'watcher'])
 })
 
 check('Merchant reveals exact physical inventory and redraws only unsellable Old Coin', () => {

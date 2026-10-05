@@ -4,6 +4,7 @@ import { CARDS } from '../../src/game/cards.ts'
 export const HERO_NAMES = {
   ironclad: 'Ironclad', silent: 'Silent', defect: 'Defect', watcher: 'Watcher',
   slime_boss: 'Slime Boss', guardian: 'Guardian', hexaghost: 'Hexaghost', hermit: 'Hermit',
+  kratos: 'Kratos',
 }
 export const SPECIFIC_ARCHETYPE_FLOOR = 15
 
@@ -74,7 +75,7 @@ export const INITIAL_DECK_CLASSIFICATIONS = new Map(Object.entries(INITIAL_DECK_
 export const otherDeckType = (character) => `${HERO_NAMES[character]} Other`
 
 export const validDeckType = (name) => typeof name === 'string' && name.length <= 70 &&
-  /^(Ironclad|Silent|Defect|Watcher|Slime Boss|Guardian|Hexaghost|Hermit) [A-Za-z0-9 +/&'-]{3,60}$/.test(name)
+  /^(Ironclad|Silent|Defect|Watcher|Slime Boss|Guardian|Hexaghost|Hermit|Kratos) [A-Za-z0-9 +/&'-]{3,60}$/.test(name)
 export const validClassifierThreadId = (id) => typeof id === 'string' &&
   /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(id)
 

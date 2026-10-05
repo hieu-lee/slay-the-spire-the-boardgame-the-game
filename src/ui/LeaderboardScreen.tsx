@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { assetPath } from '../game/assets.ts'
-import type { CharacterId } from '../game/types.ts'
+import { CHARACTER_IDS, type CharacterId } from '../game/types.ts'
 import { loadLeaderboard, type LeaderboardSnapshot } from '../leaderboard.ts'
 import { DailyLeaderboard } from './DailyLeaderboard.tsx'
 import { WinningDecks } from './WinningDecks.tsx'
 import { CHARACTER_LABEL } from './run-summary-data.ts'
 
-const HEROES = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit'] as const
+const HEROES = CHARACTER_IDS
 
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`
 const decimal = (value: number | null | undefined) => value == null ? '—' : value.toFixed(1)

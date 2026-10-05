@@ -23,6 +23,20 @@ const run = (id, overrides = {}) => ({
 })
 const card = (id, upgraded = false) => ({ op: 'card', id, upgraded })
 const query = (value) => new URLSearchParams({ q: JSON.stringify(value) })
+check('Kratos results and archetype names are accepted in public stats', () => {
+  const entry = normalizeLeaderboardRun(run(901, { character: 'kratos',
+    finalDeck: [{ defId: 'kratos_plume_of_prometheus', upgraded: true }] }))
+  assert(validDeckType('Kratos Rage Unleash'))
+  const store = createStore()
+  addLeaderboardRun(store, entry)
+  const recorded = store.leaderboardRuns[0]
+  recorded.deckType = 'Kratos Rage Unleash'
+  recordDeckClassification(store, recorded)
+  const stats = statsSnapshot(store.leaderboardRuns, new URLSearchParams({ character: 'kratos' }))
+  assertEqual(stats.runs, 1)
+  assertEqual(stats.rows[0].deckType, 'Kratos Rage Unleash')
+  assertEqual(stats.rows[0].character, 'kratos')
+})
 const waitFor = async (condition) => {
   const deadline = performance.now() + 1500
   while (!condition()) {

@@ -1152,7 +1152,7 @@ check('combat Prismatic rewards follow the held relic and live shared decks', ()
   assertEqual(sharedOnly.rewards.length, 1)
   assertEqual(sharedOnly.rewards[0].prismatic, true)
   assertDeepEqual(sharedOnly.rewards[0].availableSources,
-    ['silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit', 'colorless'])
+    ['silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit', 'kratos', 'colorless'])
 
   const exhaustedTicket = win({
     ...base,
