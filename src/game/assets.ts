@@ -6,7 +6,7 @@
 import type { CardDef } from './cards.ts'
 import type { EnemyDef } from './enemies.ts'
 import type { PotionDef, RelicDef } from './relics.ts'
-import { BASE_CHARACTER_IDS, DOWNFALL_CHARACTER_IDS, type CharacterId } from './types.ts'
+import { CHARACTER_IDS, type CharacterId } from './types.ts'
 
 const assetCdnOrigin = import.meta.env?.VITE_ASSET_CDN_ORIGIN?.replace(/\/$/, '')
 const assetBackupOrigin = import.meta.env?.VITE_CAMPFIRE_BACKUP_ORIGIN?.replace(/\/$/, '')
@@ -142,9 +142,7 @@ export const relicIconPath = (id: string) => assetPath(`relic-icons/${id.replace
 export const potionIconPath = (id: string) => assetPath(`potion-icons/${id}.png`)
 
 export function campfireScenePath(characters: CharacterId[], backup = false): string {
-  // These painted party scenes cover the original eight heroes. DLC uses the
-  // existing empty/shared scene rather than requesting an unbundled asset.
-  const party = [...BASE_CHARACTER_IDS, ...DOWNFALL_CHARACTER_IDS]
+  const party = CHARACTER_IDS
     .filter((character) => characters.includes(character)).join('_')
   const path = `noncombat/campfire/${party ? `${party}_` : 'empty_'}firecamp.webp`
   return backup && assetBackupOrigin ? `${assetBackupOrigin}/${path}` : assetPath(path)

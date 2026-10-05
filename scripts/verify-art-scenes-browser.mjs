@@ -19,7 +19,7 @@ try {
       await page.getByRole('button', { name, exact: true }).click()
     await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
     await page.waitForFunction(() => window.__STS_DEBUG__)
-    for (const characters of [['ironclad'], ['guardian'], ['ironclad', 'silent', 'defect', 'watcher'], ['guardian', 'hexaghost', 'hermit']]) {
+    for (const characters of [['ironclad'], ['guardian'], ['ironclad', 'silent', 'defect', 'watcher'], ['guardian', 'hexaghost', 'hermit'], ['kratos'], ['ironclad', 'silent', 'defect', 'kratos']]) {
       const run = postNeowRun(47, characters.map((character, i) => ({ id: `p${i+1}`, name: character, character })))
       const roomId = run.map.rows[0][0]
       run.phase = 'room'; run.map.position = roomId; run.map.rooms[roomId].kind = 'campfire'

@@ -1,0 +1,3624 @@
+{
+  "model": "gpt-image-2.5-sunburst",
+  "mode": "bundled imagegen CLI edit",
+  "quality": "high",
+  "merchantModelSize": [
+    1024,
+    1536
+  ],
+  "campfireModelSize": [
+    1536,
+    1024
+  ],
+  "campfireContentCrop": [
+    0,
+    80,
+    1536,
+    944
+  ],
+  "sourceEncoding": "lossless WebP; model pixels preserved after content crop",
+  "runtimeExporter": "scripts/art/export-kratos-noncombat.py",
+  "partyCount": 93,
+  "entries": [
+    {
+      "id": "merchant",
+      "prompt": "docs/kratos-noncombat/prompts/merchant.txt",
+      "refinementPrompt": "docs/kratos-noncombat/prompts/merchant-clean.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/merchant/characters/ironclad-standing.webp",
+          "sha256": "d5c1560f2cf7c8597eddc83f69d4862be8dacdbffca5c425affe2921cd46296c",
+          "bytes": 42354
+        },
+        {
+          "path": "public/assets/noncombat/merchant/characters/hermit-standing.webp",
+          "sha256": "10e281527f466e25977eb14875d9ea39100b52228713ebceb7e2a0e88aa28d9b",
+          "bytes": 29502
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        },
+        {
+          "path": "public/assets/menu/character-select/portrait-kratos.png",
+          "sha256": "83945aa90da3143e9b72b7899192e08fede518ed85bf5b4b2ce2c7e3d46b7d48",
+          "bytes": 178142
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/merchant.webp",
+        "sha256": "0875e4e837df7bcdebe4fbd43a18f6ca6cc0c8a858e1717d7957a8491f681d44",
+        "bytes": 886422
+      },
+      "initialModelOutputSha256": "c33ac17794a41a0d2bd61e3f565567ae44d574a80b33a5126eb6c31713f4c733",
+      "modelOutputSha256": "71734b1db1fa4692f257bdec0a69d6b741ca38cb0e7a55b9a717ec55e897204a",
+      "runtime": {
+        "path": "public/assets/noncombat/merchant/characters/kratos-standing.webp",
+        "sha256": "373a014cc45795a742ba82e939ca4c354560eb21c9b5749c875c27ec5bd51698",
+        "bytes": 57402
+      }
+    },
+    {
+      "id": "seated-reference",
+      "prompt": "docs/kratos-noncombat/prompts/seated.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_firecamp.webp",
+          "sha256": "4e33896c22ce5e02f4c067bf32627a928dcb31988ab27689bce55dbc62f658c4",
+          "bytes": 663764
+        },
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_silent_defect_watcher_firecamp.webp",
+          "sha256": "0a627ec7eb05e0e4772e8178d95918fe77996e0a30b2b5c33aeac88d63a85471",
+          "bytes": 556768
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        },
+        {
+          "path": "public/assets/menu/character-select/portrait-kratos.png",
+          "sha256": "83945aa90da3143e9b72b7899192e08fede518ed85bf5b4b2ce2c7e3d46b7d48",
+          "bytes": 178142
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+        "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+        "bytes": 793988
+      },
+      "modelOutputSha256": "80c096472b15718fbb0293e87f53cdb62ff5c5bd29b7bc54c89c8430946a727c"
+    },
+    {
+      "id": "kratos",
+      "characters": [
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/empty_firecamp.webp",
+          "sha256": "3b211ccfe64c30fe0feaa527dd707daee185db1ac8dedcafb40110486f430844",
+          "bytes": 630434
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/kratos_firecamp.webp",
+        "sha256": "6336778955b4a9b0174a6ce0a3a426a8192ad3a4aa9ba6645a6c3fb7028056ce",
+        "bytes": 1410152
+      },
+      "modelOutputSha256": "f905afbb5193a85ea8fb1f487d6736d3db7a4f5298d29955933ea656fff46a2c",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/kratos_firecamp.webp",
+        "sha256": "9e328224e67a58635924bf2abe12f20f746e4e260a26233644f9e878b21d1116",
+        "bytes": 247960
+      }
+    },
+    {
+      "id": "ironclad_kratos",
+      "characters": [
+        "ironclad",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_firecamp.webp",
+          "sha256": "4e33896c22ce5e02f4c067bf32627a928dcb31988ab27689bce55dbc62f658c4",
+          "bytes": 663764
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_kratos_firecamp.webp",
+        "sha256": "fbbb88c7d285caad7c5310754c12e70ebe51bb4740d0d44fc3f5609789c71105",
+        "bytes": 1386254
+      },
+      "modelOutputSha256": "ffe433f090c8ad5dcb4b2b9db14c845a936c8e9a75af4dd0b48cf2774ad8e1fa",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_kratos_firecamp.webp",
+        "sha256": "bfdc9a3990b01ec031beccb7256486745d9159663e60e85e04d5d64cff15ba3c",
+        "bytes": 227878
+      }
+    },
+    {
+      "id": "silent_kratos",
+      "characters": [
+        "silent",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_firecamp.webp",
+          "sha256": "5a7b73daeb7562497fc5f08dd1343f8abe69a1ceed3cf60341ab89b2cef3c289",
+          "bytes": 636094
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_kratos_firecamp.webp",
+        "sha256": "d5393d8b52090ffd33b396e395810b40c36e5cea913f6c45924948ae6673fbc9",
+        "bytes": 1348100
+      },
+      "modelOutputSha256": "2e1c374dd7e0ee92b2ba60640e48167dc375c4d9c044f8912afa0cb62cda4da9",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_kratos_firecamp.webp",
+        "sha256": "b21383be82209e3f21318c8fc698a627ab0451c467c91444c207fae3e173db91",
+        "bytes": 216318
+      }
+    },
+    {
+      "id": "defect_kratos",
+      "characters": [
+        "defect",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_firecamp.webp",
+          "sha256": "937cdc65077e09008a9747c56178112bafa1af59f97693f85ff23499dd329981",
+          "bytes": 715956
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_kratos_firecamp.webp",
+        "sha256": "f9cf158037f742dfb72728d9b3ea9731a44a92066fb39c792a7f3df745250cb2",
+        "bytes": 1354944
+      },
+      "modelOutputSha256": "da265b28922d8e09691de9dccad5af9b22853f28f258049cd7f26539268ac34a",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_kratos_firecamp.webp",
+        "sha256": "21a15cf66789e84cb9cf1dc362dfdd5383233edfbee8a693baa09123695eaf83",
+        "bytes": 228188
+      }
+    },
+    {
+      "id": "watcher_kratos",
+      "characters": [
+        "watcher",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_firecamp.webp",
+          "sha256": "01d33e06bfaf1920872f56e5bf652f0c06c9e536754dbc6f90ebb716db6058c2",
+          "bytes": 688740
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_kratos_firecamp.webp",
+        "sha256": "4b0c9261555b66db2a754af9d50669dfe4d8c461791eee51b0b43c41ae416c8a",
+        "bytes": 1375658
+      },
+      "modelOutputSha256": "8323b5ddd99a15dc03ede628eb835f04252a0f3cd462e6943227332cb067f99a",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_kratos_firecamp.webp",
+        "sha256": "be83b6076566cdec83b693dc845c6d1fd9955f6b944582eab4f44c86dd9adc44",
+        "bytes": 225158
+      }
+    },
+    {
+      "id": "slime_boss_kratos",
+      "characters": [
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/slime_boss_firecamp.webp",
+          "sha256": "08ad74f49b67792920f187a83fa1aa0467ece0982688a12624635d02bfc95740",
+          "bytes": 651618
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/slime_boss_kratos_firecamp.webp",
+        "sha256": "f6b6e450e0caea272824ca9e3680506900746ad201a59f755fac2289f2f9d8a9",
+        "bytes": 1326756
+      },
+      "modelOutputSha256": "078db3cdbfd2a007b765e5316541ff3570d46475bf3193ec751a7e1a6e08d0cc",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/slime_boss_kratos_firecamp.webp",
+        "sha256": "faf3583b34df31a0cc84869df0b7c4a506c8c802aefecf93e02359c5d031fb19",
+        "bytes": 219262
+      }
+    },
+    {
+      "id": "guardian_kratos",
+      "characters": [
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/guardian_firecamp.webp",
+          "sha256": "c0b799350e455e04733a9a5f2d7c7b57ccfa727959bfae6c0d3506570d035d36",
+          "bytes": 662880
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/guardian_kratos_firecamp.webp",
+        "sha256": "4698251d8cf26c850e68b35301fca9fe730ef28a69521fef6d996ac25bb02b56",
+        "bytes": 1421064
+      },
+      "modelOutputSha256": "10212544a7023082351843479710c9118675733435b679c506b180d4bb467a6d",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/guardian_kratos_firecamp.webp",
+        "sha256": "6ee6b0a563eefe98aeca76ce8a9efed394fe4c74c791dca8d5151cda4bccba52",
+        "bytes": 231866
+      }
+    },
+    {
+      "id": "hexaghost_kratos",
+      "characters": [
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/hexaghost_firecamp.webp",
+          "sha256": "f7568398fd525714e34b20232231a77d40ffa6537a5467fcb2eaa93a1fe9cc8f",
+          "bytes": 706524
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/hexaghost_kratos_firecamp.webp",
+        "sha256": "d1087a21a58d1c5d0c4a3935a9358307d6f92a1c6549f3edea2aaf3d7576ff52",
+        "bytes": 1432288
+      },
+      "modelOutputSha256": "d843888ed36f9fe1f0ee7394ff199af8d0b78fc3edff66bbc856f58f86106375",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/hexaghost_kratos_firecamp.webp",
+        "sha256": "22beb38709203a6e28b59b38e7a5e14c7b8bcaf9fa71041bd4593f89320b273d",
+        "bytes": 249688
+      }
+    },
+    {
+      "id": "hermit_kratos",
+      "characters": [
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/hermit_firecamp.webp",
+          "sha256": "a872044821ef94d7bd80028caa44901732e405f62527393a7578a84494669c81",
+          "bytes": 672082
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/hermit_kratos_firecamp.webp",
+        "sha256": "f43970141912d1e2a8411433cd913d5d69780a0edb0c5a405868e992c4ceac10",
+        "bytes": 1356874
+      },
+      "modelOutputSha256": "acf0d829daeaef9f1919128eedbf9c3b9fe87156314cf05f8574d6087999ebc6",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/hermit_kratos_firecamp.webp",
+        "sha256": "d1475f176094c2342e9ea5f37e0745f869e2666fb6e9127ec6367b6adc44392d",
+        "bytes": 222238
+      }
+    },
+    {
+      "id": "ironclad_silent_kratos",
+      "characters": [
+        "ironclad",
+        "silent",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_silent_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_silent_firecamp.webp",
+          "sha256": "d8b115adadfa05c6740327c74b77d217fba48762c1c161c0c5c302d2c7c2bec4",
+          "bytes": 478520
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_silent_kratos_firecamp.webp",
+        "sha256": "6550ffc94b1a1734acd5ee409ac9e9c6bdf53c3e18e8b6fe5873e91c8c537566",
+        "bytes": 1305780
+      },
+      "modelOutputSha256": "b8738d2a6988e2b7beb8acd66ee855757f3648feb511b7cfce9d8b7fbd035fec",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_silent_kratos_firecamp.webp",
+        "sha256": "b47a48b8db8990b9138ff423dc1a941848ec963bbadd984ea940b0ae3d780698",
+        "bytes": 185172
+      }
+    },
+    {
+      "id": "ironclad_defect_kratos",
+      "characters": [
+        "ironclad",
+        "defect",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_defect_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_defect_firecamp.webp",
+          "sha256": "649321f30bc1fb2b423a9a092a7e6cbdb608995a21072290cf0568452712ae75",
+          "bytes": 520794
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_defect_kratos_firecamp.webp",
+        "sha256": "c3b62f5f2690be361f4d8522806d26dbe1408ee55bca9ac8fce5380f9f812a6f",
+        "bytes": 1305536
+      },
+      "modelOutputSha256": "1c09cbd6847c19fbc0edcc867b7a04d4ad279f354faf7d56144c61d125ff9e8b",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_defect_kratos_firecamp.webp",
+        "sha256": "d0593999e4eb6be9dcefcf0161006ecb6552f28573e3b4d1278f798456ef535f",
+        "bytes": 186734
+      }
+    },
+    {
+      "id": "ironclad_watcher_kratos",
+      "characters": [
+        "ironclad",
+        "watcher",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_watcher_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_watcher_firecamp.webp",
+          "sha256": "01a5baf39e3773e2ad1131869d01de466ff248101eece1b573f361e9bf9b9907",
+          "bytes": 585630
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_watcher_kratos_firecamp.webp",
+        "sha256": "ed007094f18f9738a68261da9edc2c1c2e8ac457720f001be8534100d02a6e6e",
+        "bytes": 1388116
+      },
+      "modelOutputSha256": "650bf193b652feba2b126eed3cf127a96f7db2140796e13b3d1a57182df98c6b",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_watcher_kratos_firecamp.webp",
+        "sha256": "8c60f6bc1a4197483507042a5fe8b06ce6a4f2fbf93d445456d018fb2a32c141",
+        "bytes": 215450
+      }
+    },
+    {
+      "id": "ironclad_slime_boss_kratos",
+      "characters": [
+        "ironclad",
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_slime_boss_firecamp.webp",
+          "sha256": "589ea5fba45c8d2b70b26b5afd257e5dfdff4b64a8046c8bd7e27d2083257753",
+          "bytes": 656284
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_slime_boss_kratos_firecamp.webp",
+        "sha256": "0532f24f262816a992d6ef48c61f58a351ed289bc7b27d4867da9841b8e4c782",
+        "bytes": 1397056
+      },
+      "modelOutputSha256": "02df97169f291d854f21b00c77b8ddf7134144bbf6015ee5499377505d152748",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_slime_boss_kratos_firecamp.webp",
+        "sha256": "287d146d91d5cbcfef5ecbb7e6cf83d7b0021c1033034386c62a118a62638b3a",
+        "bytes": 237206
+      }
+    },
+    {
+      "id": "ironclad_guardian_kratos",
+      "characters": [
+        "ironclad",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_guardian_firecamp.webp",
+          "sha256": "350035cf882847dd0743e035cfc36ef13bec9059219dab5381bfe4b5459c8951",
+          "bytes": 638514
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_guardian_kratos_firecamp.webp",
+        "sha256": "b0ff696378772ec2ba049068b1fa7e4156a2cc1c17aff8317e3af890a86606ff",
+        "bytes": 1411166
+      },
+      "modelOutputSha256": "26217bbd412491ae4299c121bc4d704c187007f74d18265411fbef9002b59631",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_guardian_kratos_firecamp.webp",
+        "sha256": "ab03963adeb04e69ef991174a56377f2c52c78c76783f1786119df07f7e01a70",
+        "bytes": 229542
+      }
+    },
+    {
+      "id": "ironclad_hexaghost_kratos",
+      "characters": [
+        "ironclad",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_hexaghost_firecamp.webp",
+          "sha256": "e0451537fa37dc0806292af41baa44a6abb5952193e2e6c171c87ea838265148",
+          "bytes": 619956
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_hexaghost_kratos_firecamp.webp",
+        "sha256": "833eda6d44acd8cdc28a41f4463d9364c34843ef6a005414635a357067915b32",
+        "bytes": 1419792
+      },
+      "modelOutputSha256": "e934046d33d19902caadec78c3945046f30e6bdc3a2747916e142889087f3d95",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_hexaghost_kratos_firecamp.webp",
+        "sha256": "29db333a9adb5716114c14cbf4d03e7569ca3bc207cbc1a9c4a60af67183e191",
+        "bytes": 237640
+      }
+    },
+    {
+      "id": "ironclad_hermit_kratos",
+      "characters": [
+        "ironclad",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_hermit_firecamp.webp",
+          "sha256": "8a0ef69de125702f2af46b6279c383be8aeccce45efcc8b7952fb3936c0737a5",
+          "bytes": 603696
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_hermit_kratos_firecamp.webp",
+        "sha256": "eb5112d0c95e97e0f7735607697296d0a0bb7053041800ab69606c58e6e17bde",
+        "bytes": 1423404
+      },
+      "modelOutputSha256": "5420433735a7a5fbb0a6b703677e6451692d4cba501e82de54956195e3b8aaab",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_hermit_kratos_firecamp.webp",
+        "sha256": "efa76e02291897dc039beff070c39a1bb50c277de17b707ec45818b8ff77efd1",
+        "bytes": 239694
+      }
+    },
+    {
+      "id": "silent_defect_kratos",
+      "characters": [
+        "silent",
+        "defect",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_defect_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_defect_firecamp.webp",
+          "sha256": "385f9e2845987ce2c09b19c743d904136d1130d6856898eebe0e2e3379713ced",
+          "bytes": 721002
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_defect_kratos_firecamp.webp",
+        "sha256": "067acb1cf19b0374a297c8eecd908d99e784b63635fabde81914a7c32451a6c5",
+        "bytes": 1369784
+      },
+      "modelOutputSha256": "0664db78fa7b1d7f142bf4c3c488a7e61a0a93c774fe2824e45e71cec05e0ca2",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_defect_kratos_firecamp.webp",
+        "sha256": "d20a5fc2d166d220150ecce3b5fa43cda947ec3ff58746a5278da6b28085bd99",
+        "bytes": 213370
+      }
+    },
+    {
+      "id": "silent_watcher_kratos",
+      "characters": [
+        "silent",
+        "watcher",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_watcher_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_watcher_firecamp.webp",
+          "sha256": "1747c96815cba701cc800035f13939c60e8b56c37a709013a56c469e39acb521",
+          "bytes": 626942
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_watcher_kratos_firecamp.webp",
+        "sha256": "f74497161b83e7f543647364be4e427566855bc69d58dab3001f8e2311a9052e",
+        "bytes": 1358682
+      },
+      "modelOutputSha256": "ee8136c284f562f50162d7c5eb8b7e1c1d0617af299328ed9370be8eb4793d02",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_watcher_kratos_firecamp.webp",
+        "sha256": "f9f29c47b24df2a675ac4ce89bb016f1e2f8ce770ad47f842b68ef713a6b9d95",
+        "bytes": 209222
+      }
+    },
+    {
+      "id": "silent_slime_boss_kratos",
+      "characters": [
+        "silent",
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_slime_boss_firecamp.webp",
+          "sha256": "4722d7218401f6a3bafcbc0503c78911d558a09f395273196ffc09bc8240f0b1",
+          "bytes": 663554
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_slime_boss_kratos_firecamp.webp",
+        "sha256": "b7bc41c2e114d6a4ebf67eae9d0feaac991b25f6af1241a854c44e8cec91b9aa",
+        "bytes": 1398568
+      },
+      "modelOutputSha256": "c531b79a0e44e4af198b306188b3fe5eaae253042915d3d59bfa1c511109f869",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_slime_boss_kratos_firecamp.webp",
+        "sha256": "5ea932f6ba0a3376e6260fd063d21e507934d9d5a9c1632782c6130b7d5c1f3b",
+        "bytes": 229166
+      }
+    },
+    {
+      "id": "silent_guardian_kratos",
+      "characters": [
+        "silent",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_guardian_firecamp.webp",
+          "sha256": "52f1625271e6bcd2656205150fd87c742a0a77d2c9e72955ad05407128480db5",
+          "bytes": 671804
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_guardian_kratos_firecamp.webp",
+        "sha256": "106c4c43fe5236e8b55cdb3c3298f29e994c50a6883487a0e75ab510d72984cc",
+        "bytes": 1388612
+      },
+      "modelOutputSha256": "5a5f059601076e2664983e8ad563e9f2c7006cb8f830dc51709f8204e1568132",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_guardian_kratos_firecamp.webp",
+        "sha256": "ed578e35c3e263b45206d17c45a4bd51c299d586f4c7d18eb03a7e5814f7b5d0",
+        "bytes": 223244
+      }
+    },
+    {
+      "id": "silent_hexaghost_kratos",
+      "characters": [
+        "silent",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_hexaghost_firecamp.webp",
+          "sha256": "b8937b2fb5a4442c587bfbcf1b972a2bc1f956e3bd3f53a103da14f879f59172",
+          "bytes": 678024
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_hexaghost_kratos_firecamp.webp",
+        "sha256": "8207c6f5b65d6922406f66518d0d28bc272a1b7bb5dfc6e9fd57974b9c18d2c3",
+        "bytes": 1449364
+      },
+      "modelOutputSha256": "36519c212f11793b625e9d3147aa04963345a3d98fcd6e5b77363700dfd43936",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_hexaghost_kratos_firecamp.webp",
+        "sha256": "3073824d79e2878616bfaaed713335ef9c0f626a0553fe100ce07090e0b2afe5",
+        "bytes": 249228
+      }
+    },
+    {
+      "id": "silent_hermit_kratos",
+      "characters": [
+        "silent",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_hermit_firecamp.webp",
+          "sha256": "487a513186d269d18aded5db8195fc33f22ac968c71c1ce7f303d1860542b04b",
+          "bytes": 717322
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_hermit_kratos_firecamp.webp",
+        "sha256": "b3cbb47e3843916c79434a8d707c737af89f17cd098c36eefde0b63cdd4111c3",
+        "bytes": 1483510
+      },
+      "modelOutputSha256": "0924cae25152b34ef1b5521d8142f00ef08140bdec3313cfa341db66053f8b4d",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_hermit_kratos_firecamp.webp",
+        "sha256": "c6e05b1af2bec5805043c6e04f70df48f65cb9f79069f27fa83d26d4152bb6f7",
+        "bytes": 263296
+      }
+    },
+    {
+      "id": "defect_watcher_kratos",
+      "characters": [
+        "defect",
+        "watcher",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_watcher_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_watcher_firecamp.webp",
+          "sha256": "60d4f2f0481542cf237fd64ff8ba0b58229cd3e3494e6a029eb62e4e7fa2a7eb",
+          "bytes": 680576
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_watcher_kratos_firecamp.webp",
+        "sha256": "7e980732a4f483f0ba610f2a774fd84eb749cd8b9df8b279eb1aff1a18db48a5",
+        "bytes": 1412144
+      },
+      "modelOutputSha256": "6166a3fe0f1ebba31bfcd05df326cbe84f0936f01588725163e1afc7b6f5720d",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_watcher_kratos_firecamp.webp",
+        "sha256": "edc1591b170a85a5336efe84af796f7b6f9ea1f32ecad2fa6a3da86e2b3577a3",
+        "bytes": 220488
+      }
+    },
+    {
+      "id": "defect_slime_boss_kratos",
+      "characters": [
+        "defect",
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_slime_boss_firecamp.webp",
+          "sha256": "013d8ebefe4e57e7035d9c4f04587b110c95a7617ae1123fa7cb54379cec7d1a",
+          "bytes": 688184
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_slime_boss_kratos_firecamp.webp",
+        "sha256": "cee543fdc96dfee43b36939cfa911a991becf489566b27c091d3cda4f87ec66d",
+        "bytes": 1447300
+      },
+      "modelOutputSha256": "395598e4c8fa5b8aea44977ddc92003230b86d34479be077dae158c16ee41619",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_slime_boss_kratos_firecamp.webp",
+        "sha256": "90945f2455365f09448237057eeab1ab18c6592d907740b16ea422bc8f6a85d2",
+        "bytes": 260780
+      }
+    },
+    {
+      "id": "defect_guardian_kratos",
+      "characters": [
+        "defect",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_guardian_firecamp.webp",
+          "sha256": "e00de824bbc6435fe33e4371974aaa743af27ff0d89451aa550dda7b886eea85",
+          "bytes": 677920
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_guardian_kratos_firecamp.webp",
+        "sha256": "d16f68a5492c1bfb39d69a594415fb4cdcd5c640692a5c0aca093bee18d1e694",
+        "bytes": 1451950
+      },
+      "modelOutputSha256": "adef1bdba0c480d81fe31da3bfe00be2a55b27441c41eb82f2e2fe289fb1e5ff",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_guardian_kratos_firecamp.webp",
+        "sha256": "c7ff1fe806391c71e4c15417c85e14d661df51fd69431299277f36138bc74663",
+        "bytes": 250538
+      }
+    },
+    {
+      "id": "defect_hexaghost_kratos",
+      "characters": [
+        "defect",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_hexaghost_firecamp.webp",
+          "sha256": "879780ff70d6aec50c96fe7857327154d95da7e9b9f6f8fe9e18e5ddb99efe81",
+          "bytes": 689296
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_hexaghost_kratos_firecamp.webp",
+        "sha256": "a0e2a204574c046f75f1b4827db5d1d6eeb28ee5b2ce73d96cbc9ec45ca3001f",
+        "bytes": 1501134
+      },
+      "modelOutputSha256": "48b38a5d44e9537a7bc17ca384d250a25028c0dff2fa594455f3d8323f031e37",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_hexaghost_kratos_firecamp.webp",
+        "sha256": "490d0e069113ec486b7dbb98303f5087b14954e524174c59873de70953b5793f",
+        "bytes": 267470
+      }
+    },
+    {
+      "id": "defect_hermit_kratos",
+      "characters": [
+        "defect",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_hermit_firecamp.webp",
+          "sha256": "5a39de8bf0859e19bd6fa64a13c2c14079259a77bbf83b257be356b9ce43a9ff",
+          "bytes": 660030
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_hermit_kratos_firecamp.webp",
+        "sha256": "3c9a9d4ebf35b7c258d13e22ecafdeed9e38ab881a6f62d38a6d2d41ffb470fa",
+        "bytes": 1437782
+      },
+      "modelOutputSha256": "8f9ffd9ee1dca7abd14a6418aae71b288a31a9e863aa0cf760b074ab69660441",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_hermit_kratos_firecamp.webp",
+        "sha256": "f8946a046ff7615b393209e7004ff2c9c266b329102dfd8d8a0d1314412a05cb",
+        "bytes": 252204
+      }
+    },
+    {
+      "id": "watcher_slime_boss_kratos",
+      "characters": [
+        "watcher",
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_slime_boss_firecamp.webp",
+          "sha256": "7462709bdb233e743d7c5782bec2111e71745ebc7351f3c4e2fafe6e9300f21e",
+          "bytes": 621248
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_slime_boss_kratos_firecamp.webp",
+        "sha256": "72b9c4666550dcb664896b4729cc91c3aec7406c485f6be2fb797ab7932fadb4",
+        "bytes": 1434544
+      },
+      "modelOutputSha256": "bbe307077555d86d4d838bff67ed2dfc07f956e169ffb4941fd3e666a85f7e8e",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_slime_boss_kratos_firecamp.webp",
+        "sha256": "a67e7ca2df31b1e55644d05785744c99998e7be5b5b05e727089440c8525bd23",
+        "bytes": 239870
+      }
+    },
+    {
+      "id": "watcher_guardian_kratos",
+      "characters": [
+        "watcher",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_guardian_firecamp.webp",
+          "sha256": "43751edaa820bff734ac5b9690e05f38975de36d71b6821e93cb58a65930a811",
+          "bytes": 651740
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_guardian_kratos_firecamp.webp",
+        "sha256": "54fa835a8a7d076af99fddee08b341e96a2713c5869f07c0805a1fb414cefabb",
+        "bytes": 1500478
+      },
+      "modelOutputSha256": "4d752787e4f428bca7ef208d86ddda9cab3d54426e45c918630ae45fb9d1771a",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_guardian_kratos_firecamp.webp",
+        "sha256": "4e807ae9f25b8a9d7e4464046ede82bcefab8d07f02785f6d7fb2120bb669a26",
+        "bytes": 264640
+      }
+    },
+    {
+      "id": "watcher_hexaghost_kratos",
+      "characters": [
+        "watcher",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_hexaghost_firecamp.webp",
+          "sha256": "b9ff9b06de7eb1fab535579c38c16627be8267ac12212bf53bc1b65eac3acc9f",
+          "bytes": 730990
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_hexaghost_kratos_firecamp.webp",
+        "sha256": "7e42f554e87d37d7aff85db53073767d46e674359c87233a14e9ae1454bee77c",
+        "bytes": 1470726
+      },
+      "modelOutputSha256": "dec0e4875150038103e2723fa5edc79e89b9605b0a86226997ef2bbb30c99d39",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_hexaghost_kratos_firecamp.webp",
+        "sha256": "5f33747067811de5ea3a80895172cfcaa4cbfb4f103ae3abe6f6be58c4f6c271",
+        "bytes": 257534
+      }
+    },
+    {
+      "id": "watcher_hermit_kratos",
+      "characters": [
+        "watcher",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_hermit_firecamp.webp",
+          "sha256": "4872fcb68aa0a94ddcfd9030fcb0500dc611885e099f3a4ecc45bcf89bee6e9b",
+          "bytes": 656364
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_hermit_kratos_firecamp.webp",
+        "sha256": "a105d13bc16dc776adddb71702b3222fd76b665d0b3d1198f99f790198a06ea9",
+        "bytes": 1508590
+      },
+      "modelOutputSha256": "eaf7df14d51d912f18591cf154750a3f449dea43145d56e37108c4c4097c0b6e",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_hermit_kratos_firecamp.webp",
+        "sha256": "0d971b8f87538c197efd143ca3423b2cb9c431655679166705fb094f7b469136",
+        "bytes": 268976
+      }
+    },
+    {
+      "id": "slime_boss_guardian_kratos",
+      "characters": [
+        "slime_boss",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/slime_boss_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/slime_boss_guardian_firecamp.webp",
+          "sha256": "513f565bbac0dfed0da8a9e6dba864e60d4555b517df7046eec21abedaf8947a",
+          "bytes": 567432
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/slime_boss_guardian_kratos_firecamp.webp",
+        "sha256": "09cde76e1268515557eb3b661b6c7fa34e24457f8694c187ba96a3d04bcd2799",
+        "bytes": 1393392
+      },
+      "modelOutputSha256": "fb598c18216c0ee3dddf26b0a1b35e2bc8fb2dfb31848e416395152fd5734d12",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/slime_boss_guardian_kratos_firecamp.webp",
+        "sha256": "4f804f83a0dfff0cfdb9872d03bcaaddcebb06fa9aef1528063cb4ca2d404029",
+        "bytes": 227074
+      }
+    },
+    {
+      "id": "slime_boss_hexaghost_kratos",
+      "characters": [
+        "slime_boss",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/slime_boss_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/slime_boss_hexaghost_firecamp.webp",
+          "sha256": "b29b8b186f1558613ccf1d2f221a911fbeeaab81061f0beb5c32226b369c9271",
+          "bytes": 633998
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/slime_boss_hexaghost_kratos_firecamp.webp",
+        "sha256": "bc5da36acb5e5ef69e90ceb31ae3220f0808196f8c34e67fe5da513f48d53153",
+        "bytes": 1411962
+      },
+      "modelOutputSha256": "7ecdc1f56d4e2a56061dd260b6714760b953fd8b1c274056ecfe5818804ac5c0",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/slime_boss_hexaghost_kratos_firecamp.webp",
+        "sha256": "76d8f536f2ef599ec2986e7ba0fb7ffe6f44539e4aca36023115cfb00fc253f1",
+        "bytes": 238556
+      }
+    },
+    {
+      "id": "slime_boss_hermit_kratos",
+      "characters": [
+        "slime_boss",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/slime_boss_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/slime_boss_hermit_firecamp.webp",
+          "sha256": "7cef9c09cfe31f05ab6e9118d309f172ce3bde19e6e6c6a29697afb79947ac75",
+          "bytes": 613698
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/slime_boss_hermit_kratos_firecamp.webp",
+        "sha256": "fe40edab4a5580a4cb9f5ecda63458ab1b1dc8e44db085e2caa8649aea296a38",
+        "bytes": 1422574
+      },
+      "modelOutputSha256": "b566a9aa1f5bb84a42797518b6743ed82fc31f31ad4334b905f9ba0f1e8622c5",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/slime_boss_hermit_kratos_firecamp.webp",
+        "sha256": "655d965eaadba4633195d012e1432c7ebebe7a071d79e2c4a6c6e3ad13389111",
+        "bytes": 240506
+      }
+    },
+    {
+      "id": "guardian_hexaghost_kratos",
+      "characters": [
+        "guardian",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/guardian_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/guardian_hexaghost_firecamp.webp",
+          "sha256": "6a9ceee26c261ac395fa32b5f1d923b6771acbff31b9ac6c409a311423bf851d",
+          "bytes": 561538
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "b0fc5c728b832aad31c997cd41b9d249eb9bd97abd9a496b12654e605f5be3c2",
+        "bytes": 1400068
+      },
+      "modelOutputSha256": "e21c63f0a476ea17d5cd78531c092c230628f261a67ac668731292f2c6dd81b3",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "399987509bb35eb87d261511c253949d728986cb242308bfe788b4e02735e578",
+        "bytes": 226070
+      }
+    },
+    {
+      "id": "guardian_hermit_kratos",
+      "characters": [
+        "guardian",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/guardian_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/guardian_hermit_firecamp.webp",
+          "sha256": "dc5eea5dc202d9d261075811bc3700e35e586fa23f83c9b8ac7152f8aca412fe",
+          "bytes": 546356
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/guardian_hermit_kratos_firecamp.webp",
+        "sha256": "5f07b0754f6f220d78e58c1725169ce2fed696f1e80223a590a0997c0b749988",
+        "bytes": 1365546
+      },
+      "modelOutputSha256": "05711348a9293e7c5513bf88df55926dfac7efc5953a541d9b3b78cec48ac529",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/guardian_hermit_kratos_firecamp.webp",
+        "sha256": "7ead084cd87554026bdec4582f2430e9e02fbadbd0cccb25aae62e786c192e45",
+        "bytes": 218274
+      }
+    },
+    {
+      "id": "hexaghost_hermit_kratos",
+      "characters": [
+        "hexaghost",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/hexaghost_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/hexaghost_hermit_firecamp.webp",
+          "sha256": "d61d99b3598825f30512d411d3cf95ecd21a0ab388b9db68fe9f13aeb249437e",
+          "bytes": 625116
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "9f63255ddccfd3473d068f1d8a61cd27658ed81bcf3e189d4f8cfd8074816dbf",
+        "bytes": 1426256
+      },
+      "modelOutputSha256": "5536d695403e7b5f078a359d0c0d033b6ef8da435a01fd098369bb02ad083f28",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "afb5fb3583533165f66d85d32ed9d2550845e8749d6984be33605cd6284c13b3",
+        "bytes": 241968
+      }
+    },
+    {
+      "id": "ironclad_silent_defect_kratos",
+      "characters": [
+        "ironclad",
+        "silent",
+        "defect",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_silent_defect_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_silent_defect_firecamp.webp",
+          "sha256": "a751d1a2d69cea99ea2a408d1fc3968db5f2e8d848ed7cea8c55dc5c511aadf8",
+          "bytes": 633254
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        },
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_silent_defect_watcher_firecamp.webp",
+          "sha256": "0a627ec7eb05e0e4772e8178d95918fe77996e0a30b2b5c33aeac88d63a85471",
+          "bytes": 556768
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_silent_defect_kratos_firecamp.webp",
+        "sha256": "1a145411ed857f0587fbee950765416394904350e005c2f41c3c4a132908412c",
+        "bytes": 1395438
+      },
+      "modelOutputSha256": "3ade640beb9b03c30a8d9a4f72bb70955ce64df2d13c81294bdd2d2a0a2c7f2e",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_silent_defect_kratos_firecamp.webp",
+        "sha256": "68bb9a31f7c4c0b3af05240028acc52d923997bf27aba78c87ede88a0c1af045",
+        "bytes": 224570
+      }
+    },
+    {
+      "id": "ironclad_silent_watcher_kratos",
+      "characters": [
+        "ironclad",
+        "silent",
+        "watcher",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_silent_watcher_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_silent_watcher_firecamp.webp",
+          "sha256": "9d7a921a3adf097638bcaad85b54c073eb41c02f6652f850f353f5ff3bd32a3a",
+          "bytes": 613954
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_silent_watcher_kratos_firecamp.webp",
+        "sha256": "5e0e74fe905ca81d90a148a0c5f99a7735a3f7b84c98e63362f73cc6254cebfd",
+        "bytes": 1395710
+      },
+      "modelOutputSha256": "5af553bc96fe77d9780619eef5f806e456bf9327f172f4ac7dd2fc09ff39a467",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_silent_watcher_kratos_firecamp.webp",
+        "sha256": "a200d66c7dd30f96f603d56411509c46f8b9a0718abdc7a9aa0e6920aa86d23d",
+        "bytes": 220324
+      }
+    },
+    {
+      "id": "ironclad_silent_slime_boss_kratos",
+      "characters": [
+        "ironclad",
+        "silent",
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_silent_slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_silent_slime_boss_firecamp.webp",
+          "sha256": "10778455a725160332c49955f3ab5fe002322d2799962a6e1dcb2913ed693101",
+          "bytes": 660436
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_silent_slime_boss_kratos_firecamp.webp",
+        "sha256": "3a6f397b798545890787ced12a903b8c4eda9ff518ea6dbe492a87cc11979813",
+        "bytes": 1430246
+      },
+      "modelOutputSha256": "365ad2e709792c8e023e9e4717c55cf82e84937c69e8c6c806e29d035d23c2e6",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_silent_slime_boss_kratos_firecamp.webp",
+        "sha256": "b18b266d8ff17c2643ccec688634e22c78bb8477be0c071cf234fe182594536c",
+        "bytes": 246608
+      }
+    },
+    {
+      "id": "ironclad_silent_guardian_kratos",
+      "characters": [
+        "ironclad",
+        "silent",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_silent_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_silent_guardian_firecamp.webp",
+          "sha256": "7d88628a7d22ca07b9d820e53e2141194be069590339b778a63f120fe2556bc5",
+          "bytes": 676046
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_silent_guardian_kratos_firecamp.webp",
+        "sha256": "3ea0690dfa415cc596326c66d08d88e0b9f55837f95ddca1f46c4272cf80abc3",
+        "bytes": 1410592
+      },
+      "modelOutputSha256": "45e6a586681938db7d8f4528c16bd928bd7b86a60e09b267ee024c2ec01c89a7",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_silent_guardian_kratos_firecamp.webp",
+        "sha256": "ab5231e25aa118bc6904f48f784422cb6532d9ed9303c6c3bf4db50b3ffa5a37",
+        "bytes": 227756
+      }
+    },
+    {
+      "id": "ironclad_silent_hexaghost_kratos",
+      "characters": [
+        "ironclad",
+        "silent",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_silent_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_silent_hexaghost_firecamp.webp",
+          "sha256": "cb25dfc07b1d29d5dca3321eca214b56dd78f4fb21c9ee8c1f281227a79c22da",
+          "bytes": 689668
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_silent_hexaghost_kratos_firecamp.webp",
+        "sha256": "56a45961d4910d7e9b9864cbb0181cb7f0c56b34f922ff032b94e2a8982a1688",
+        "bytes": 1433482
+      },
+      "modelOutputSha256": "03e1f4d20fa56ce05c65818ad7248acc53092b614b845706ea68de86d4d0f86a",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_silent_hexaghost_kratos_firecamp.webp",
+        "sha256": "f64fb0f508c26afde888ebb45c139bba90733d308c24c1367d019f4759bf62be",
+        "bytes": 242430
+      }
+    },
+    {
+      "id": "ironclad_silent_hermit_kratos",
+      "characters": [
+        "ironclad",
+        "silent",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_silent_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_silent_hermit_firecamp.webp",
+          "sha256": "a1553379ce8e8d4da2c5ba7db76820fb1592a8d94b36d88614186375737ff552",
+          "bytes": 654434
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_silent_hermit_kratos_firecamp.webp",
+        "sha256": "4fb1cde046102f3209dcfc91678a108f5ea81fc98eaa5a0e1b985332a6f53199",
+        "bytes": 1415086
+      },
+      "modelOutputSha256": "f5c2fba9a73a2344b96c9bab88204b7484f86b0cb3881814b8da398f70e4312f",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_silent_hermit_kratos_firecamp.webp",
+        "sha256": "989749891e16fe17aba1d98308f32ddcfc9967914c6129cbb9ea2a3d45f17b9b",
+        "bytes": 239114
+      }
+    },
+    {
+      "id": "ironclad_defect_watcher_kratos",
+      "characters": [
+        "ironclad",
+        "defect",
+        "watcher",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_defect_watcher_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_defect_watcher_firecamp.webp",
+          "sha256": "e3c46939e7a8d33831ace733d1766aed3452f09c0425f82bb6de8c38d3b10b5b",
+          "bytes": 619518
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_defect_watcher_kratos_firecamp.webp",
+        "sha256": "bc0ada8d922570fffab7e42821ba772b9089fac5918d52edcae8f1e4e3bf8797",
+        "bytes": 1328360
+      },
+      "modelOutputSha256": "9e06c8ae703af1063d2650afe4d64194da4a0a2d0fafa42e058597dc336c1ad8",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_defect_watcher_kratos_firecamp.webp",
+        "sha256": "264784f867d249820ad852d6ea9549d530925ba24b5f0e845e3352c2754b579e",
+        "bytes": 200194
+      }
+    },
+    {
+      "id": "ironclad_defect_slime_boss_kratos",
+      "characters": [
+        "ironclad",
+        "defect",
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_defect_slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_defect_slime_boss_firecamp.webp",
+          "sha256": "6539512056070b9e14b86e23ded7a6211d9f5a8a2a60e696f47509ef0417ef31",
+          "bytes": 623630
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_defect_slime_boss_kratos_firecamp.webp",
+        "sha256": "9e0f7abd3904ded7362a84b59032b61c0497a425e5e74273019d23b800dcf5c6",
+        "bytes": 1443922
+      },
+      "modelOutputSha256": "706b314add4902a8d988fd3a86fc79cba36751d95bd2fb025e6719245c8846ad",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_defect_slime_boss_kratos_firecamp.webp",
+        "sha256": "3acd45d9c113729174b2fafd2f8d2681afb360357f624a19940d7c6855b7171d",
+        "bytes": 252742
+      }
+    },
+    {
+      "id": "ironclad_defect_guardian_kratos",
+      "characters": [
+        "ironclad",
+        "defect",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_defect_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_defect_guardian_firecamp.webp",
+          "sha256": "9c63c32b90125a801dfb420bab4a7f2444167ebf8227f78e3b620523958b4237",
+          "bytes": 627896
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_defect_guardian_kratos_firecamp.webp",
+        "sha256": "21f0c6ca09843b5e3d5e87f1f310fc57cc3944c7fc6c0bb398722300f3168260",
+        "bytes": 1390028
+      },
+      "modelOutputSha256": "954c467623789f076128f88b36ff3199fe17cd62ba1e33064c53a381a0b254ae",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_defect_guardian_kratos_firecamp.webp",
+        "sha256": "c11ec66aa31ae0402e0532e0307f77724a7d16e8e1f01085149136b947983400",
+        "bytes": 222838
+      }
+    },
+    {
+      "id": "ironclad_defect_hexaghost_kratos",
+      "characters": [
+        "ironclad",
+        "defect",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_defect_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_defect_hexaghost_firecamp.webp",
+          "sha256": "046f1e1627816e7dbdd47cc269612af3d342215bd776344a3e4f33381ef0beae",
+          "bytes": 682850
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_defect_hexaghost_kratos_firecamp.webp",
+        "sha256": "43950279ce8272a76527688571f5a8beea7772bdfe0ed826fa7b5372986ceb49",
+        "bytes": 1424280
+      },
+      "modelOutputSha256": "5a5c5267b25af69687c68f206ed482edc448fa41ff212769542cbf21a0e8a5a3",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_defect_hexaghost_kratos_firecamp.webp",
+        "sha256": "4e7af3f4bd44636d0ad6f6fa6aca07883b1b63d6e79fbbb1c9ef3d1604b62abf",
+        "bytes": 243906
+      }
+    },
+    {
+      "id": "ironclad_defect_hermit_kratos",
+      "characters": [
+        "ironclad",
+        "defect",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_defect_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_defect_hermit_firecamp.webp",
+          "sha256": "1ec76473d97394a72e21b2a9458cfcbd359e9d73fec7c4cb903e539708697562",
+          "bytes": 664904
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_defect_hermit_kratos_firecamp.webp",
+        "sha256": "0b4762d60a9615d72c7403c0209d8fbb2f674ed3b3557aeb866d844465ca2d28",
+        "bytes": 1457106
+      },
+      "modelOutputSha256": "337b258c50f7925b4707102e0afded2f619199b648e3f2ebd7edf038174439c3",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_defect_hermit_kratos_firecamp.webp",
+        "sha256": "1851981a8c4d121b9b7c406337d93bb418865c870f09cad29b503cbf44154613",
+        "bytes": 254166
+      }
+    },
+    {
+      "id": "ironclad_watcher_slime_boss_kratos",
+      "characters": [
+        "ironclad",
+        "watcher",
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_watcher_slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_watcher_slime_boss_firecamp.webp",
+          "sha256": "3dbd8efe8ac0a40e5181c67c51c5085905c24d0627ec6585cf10e2c5e9ac5ec6",
+          "bytes": 650166
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_watcher_slime_boss_kratos_firecamp.webp",
+        "sha256": "586f89b5934b983aa0e579dba1fc641a83e31199e2c20bd2530563f5c531f4a8",
+        "bytes": 1498074
+      },
+      "modelOutputSha256": "293b29583c25dd021b41be38e212bbee07103685e22665cb80b9a1cc3dbbdd62",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_watcher_slime_boss_kratos_firecamp.webp",
+        "sha256": "a9f99eec8b8a09b8f66abb084b75d29d8982a5093e547e326306e6981f5c2230",
+        "bytes": 265546
+      }
+    },
+    {
+      "id": "ironclad_watcher_guardian_kratos",
+      "characters": [
+        "ironclad",
+        "watcher",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_watcher_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_watcher_guardian_firecamp.webp",
+          "sha256": "7dbe43bfb4f90f5fa7dcd52c7c5ac91567bcd3bbd3ec584ad6930b982847f2de",
+          "bytes": 580614
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_watcher_guardian_kratos_firecamp.webp",
+        "sha256": "c3863d5b3c25e54bc70092f8a15fc1d3d6454765f84694eefcac9dbf074fb70f",
+        "bytes": 1409338
+      },
+      "modelOutputSha256": "a26ae57a8a3214041ab5b2a358f1cb10beb859a816b5c4dfe33905e2cc4df0b2",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_watcher_guardian_kratos_firecamp.webp",
+        "sha256": "f5cfc1d9632fbb7e6b67a2716a02eda006ba4a3f16a59bf7be741970470bca1e",
+        "bytes": 223190
+      }
+    },
+    {
+      "id": "ironclad_watcher_hexaghost_kratos",
+      "characters": [
+        "ironclad",
+        "watcher",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_watcher_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_watcher_hexaghost_firecamp.webp",
+          "sha256": "73b51471c3a636d8e00ea65d454209189b6f6cda0439127fc56236cdd856d5b1",
+          "bytes": 699318
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_watcher_hexaghost_kratos_firecamp.webp",
+        "sha256": "60311b0c6ae7f1507cc8dcaa30ba2f0c4f07a72b2e2df7ff1c299e3978e61e26",
+        "bytes": 1454374
+      },
+      "modelOutputSha256": "191809828fe72e4ce72865b4690de099394bee1bb8b36dd78ea897417288fac9",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_watcher_hexaghost_kratos_firecamp.webp",
+        "sha256": "bd7ea78165788151612a606c9e9d8933279ad9464b273a769a748f8d6f42099a",
+        "bytes": 242322
+      }
+    },
+    {
+      "id": "ironclad_watcher_hermit_kratos",
+      "characters": [
+        "ironclad",
+        "watcher",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_watcher_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_watcher_hermit_firecamp.webp",
+          "sha256": "ad8c92c7a066a640bab67d197fb01dc7bf82b2a2fdbf8f1117ab81152e987a95",
+          "bytes": 758894
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_watcher_hermit_kratos_firecamp.webp",
+        "sha256": "240e837477f2e8a9c696500f3bf467eb04c054aeb255b1b1daead8792bfab6b8",
+        "bytes": 1520848
+      },
+      "modelOutputSha256": "333600f90ad8d21488052b229fa7836edb6432be4b2111b26db78da1b751155e",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_watcher_hermit_kratos_firecamp.webp",
+        "sha256": "4351d788b3d0f031095960b6c2048c457adf3606d5857cbf9d53a1194d4e19f2",
+        "bytes": 276546
+      }
+    },
+    {
+      "id": "ironclad_slime_boss_guardian_kratos",
+      "characters": [
+        "ironclad",
+        "slime_boss",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_slime_boss_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_slime_boss_guardian_firecamp.webp",
+          "sha256": "9252084f28e503dd4643df8459a762f922f2261260a1c3a998dcd9047e8ca977",
+          "bytes": 592364
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_slime_boss_guardian_kratos_firecamp.webp",
+        "sha256": "eae146262cf6cebe58ceed3cb35d1534885291c1e5f0cd3568c316168c9b0125",
+        "bytes": 1368516
+      },
+      "modelOutputSha256": "a67317e68cb2e385becc59b80c08f8a8847338e056c192c88816d9ab7eed7139",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_slime_boss_guardian_kratos_firecamp.webp",
+        "sha256": "03d9ee83c40ba511b4e04d432aa52cd009b0cce69183c68826893a3204d29664",
+        "bytes": 217850
+      }
+    },
+    {
+      "id": "ironclad_slime_boss_hexaghost_kratos",
+      "characters": [
+        "ironclad",
+        "slime_boss",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_slime_boss_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_slime_boss_hexaghost_firecamp.webp",
+          "sha256": "c93f9d785cd370eac542d0ee79ef7dad2868f440c5538954a219e702d72afd76",
+          "bytes": 587486
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_slime_boss_hexaghost_kratos_firecamp.webp",
+        "sha256": "035836d89f743bc2f38e1b3c80bc1eafed2143b8262c65a417b72c96a1fa2638",
+        "bytes": 1362280
+      },
+      "modelOutputSha256": "9d3d61d9d5e183ba2ed14aca765df20582b51c6cd7b0373a4774d5a40be2cb7c",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_slime_boss_hexaghost_kratos_firecamp.webp",
+        "sha256": "790bd74bbb4818453313c1e5bbc49ef7085ab397ad70aca4651d48d915d05738",
+        "bytes": 221962
+      }
+    },
+    {
+      "id": "ironclad_slime_boss_hermit_kratos",
+      "characters": [
+        "ironclad",
+        "slime_boss",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_slime_boss_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_slime_boss_hermit_firecamp.webp",
+          "sha256": "5bc17f7b4fbeb770e98440f1207aa9881e7482753ba047dcfe1f86b28f25de98",
+          "bytes": 620758
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_slime_boss_hermit_kratos_firecamp.webp",
+        "sha256": "3ca7e678240995c1f9a004ce4e78577ab681d7b24c1390c5ed6ae1e4e9802add",
+        "bytes": 1439570
+      },
+      "modelOutputSha256": "b811c95ff41e384489c2b642bd4fcc6f69fd594f5023415f6a20350f271b5cef",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_slime_boss_hermit_kratos_firecamp.webp",
+        "sha256": "3d0bd9e4417960305f6b2fb3a9a5a75bc978c0398ea1f36e046e5bf5c6400201",
+        "bytes": 243366
+      }
+    },
+    {
+      "correctionPrompt": "docs/kratos-noncombat/prompts/ironclad_guardian_hexaghost_kratos-correction.txt",
+      "correctionReferences": [
+        {
+          "path": "scripts/art/sources/kratos-noncombat/ironclad_guardian_hexaghost_kratos-edit-input.webp",
+          "sha256": "50bff6d6994d86c59569aef953d65c7e1683d5ea70aa978e167209c0f93a59ce",
+          "bytes": 1454662
+        }
+      ],
+      "id": "ironclad_guardian_hexaghost_kratos",
+      "characters": [
+        "ironclad",
+        "guardian",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_guardian_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_guardian_hexaghost_firecamp.webp",
+          "sha256": "eba38df7808e0cd89eeb979edd10c68a59bec9215fc47232f02607e88fa5e933",
+          "bytes": 631356
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "0e62a60f5f34c56b72b6808234fdd562db2f90d02ec3b74fe70810770bded395",
+        "bytes": 1342484
+      },
+      "modelOutputSha256": "63dc99fd263e7d31800f92a27366fed309005e1872bff74f8c30d92ffdb01ec2",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "11ed889f3e2291019abeafb8c4787bf5ad074d77af3813e3287ca87c06281ff9",
+        "bytes": 214718
+      }
+    },
+    {
+      "correctionPrompt": "docs/kratos-noncombat/prompts/ironclad_guardian_hermit_kratos-correction.txt",
+      "correctionReferences": [
+        {
+          "path": "scripts/art/sources/kratos-noncombat/ironclad_guardian_hermit_kratos-edit-input.webp",
+          "sha256": "bada4f215402e204dd9decd6df2ade3a1804bd2ac1b01d1d6aea33758815fb44",
+          "bytes": 1490308
+        },
+        {
+          "path": "public/assets/noncombat/campfire/hermit_firecamp.webp",
+          "sha256": "a872044821ef94d7bd80028caa44901732e405f62527393a7578a84494669c81",
+          "bytes": 672082
+        }
+      ],
+      "id": "ironclad_guardian_hermit_kratos",
+      "characters": [
+        "ironclad",
+        "guardian",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_guardian_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_guardian_hermit_firecamp.webp",
+          "sha256": "b71a33c4cf7d616dca975b9fd509e90b2eaa963ab7956f6ad9ef2640ba72308e",
+          "bytes": 649330
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_guardian_hermit_kratos_firecamp.webp",
+        "sha256": "ac983e1e3058302245e2f52ea67bd6796d1eda5796b3027be1b6c5edfd17f441",
+        "bytes": 1368820
+      },
+      "modelOutputSha256": "639a986dbca19e35346a891acc9127d9f9a6623dfaa82e8e74a87aacc8a81887",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_guardian_hermit_kratos_firecamp.webp",
+        "sha256": "0edb4b812322e6a0f735bbab6b980cf0062d8432122402a92c7a1cfc79333aeb",
+        "bytes": 227806
+      }
+    },
+    {
+      "id": "ironclad_hexaghost_hermit_kratos",
+      "characters": [
+        "ironclad",
+        "hexaghost",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/ironclad_hexaghost_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/ironclad_hexaghost_hermit_firecamp.webp",
+          "sha256": "1242527b2860f247ce0822ba3172a39c0239a5c52ae50cbe332fec8dc6649226",
+          "bytes": 643088
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/ironclad_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "ea0940507332c2b33925a5cbda80e1eb89dcec3026e704093ea92347c88194d8",
+        "bytes": 1484578
+      },
+      "modelOutputSha256": "0bebdce3332da1fe288d2eccef2af496f9c1128eab05bfbfb12e63875d13aac5",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/ironclad_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "31b17806f2101e1cdcecc863f7f769cea637069020da1d9e62154ae7e6d8752f",
+        "bytes": 258890
+      }
+    },
+    {
+      "id": "silent_defect_watcher_kratos",
+      "characters": [
+        "silent",
+        "defect",
+        "watcher",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_defect_watcher_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_defect_watcher_firecamp.webp",
+          "sha256": "d552b4c86b23898b2d3d1567e59dfa56a1b4ab64e0fbd9b3195bfd57e557f8ef",
+          "bytes": 464496
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_defect_watcher_kratos_firecamp.webp",
+        "sha256": "10b6705cc6e87d8202f9e844925d9ce9e90bcbf9d4d5af1a293a2c497d4617d5",
+        "bytes": 1280670
+      },
+      "modelOutputSha256": "d4d291add9374a1b5d5e402b5f84295a1f1c16d861f26eeec2594ec3f99fe9b7",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_defect_watcher_kratos_firecamp.webp",
+        "sha256": "339154cbd44185b3ed993663a84d485408e18f4c60ca23a0078ee14d8c136cee",
+        "bytes": 178402
+      }
+    },
+    {
+      "id": "silent_defect_slime_boss_kratos",
+      "characters": [
+        "silent",
+        "defect",
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_defect_slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_defect_slime_boss_firecamp.webp",
+          "sha256": "5661320590e05365fa1d3b498296b231e70269bc8152e8fecaf33ae9e98400c8",
+          "bytes": 647080
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_defect_slime_boss_kratos_firecamp.webp",
+        "sha256": "22c1aa92071e2423cdcc10cc8713d84f4b6f156e5f8bb76e115a6643a3092986",
+        "bytes": 1429910
+      },
+      "modelOutputSha256": "cc65a737822011bdc3d94f586bc788536cb2e120119328a8cd54fe2452cc09b8",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_defect_slime_boss_kratos_firecamp.webp",
+        "sha256": "cabb5e930181f2838e98e26c81025a7d64e19d0265a7356d9b7b5f6de117cf43",
+        "bytes": 248730
+      }
+    },
+    {
+      "id": "silent_defect_guardian_kratos",
+      "characters": [
+        "silent",
+        "defect",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_defect_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_defect_guardian_firecamp.webp",
+          "sha256": "4a9345334d1292947f2f22b8da61bfa12a255a95d7f96008a222d306df8dd036",
+          "bytes": 668500
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_defect_guardian_kratos_firecamp.webp",
+        "sha256": "5ebf2c5c37957ec5e0f13784c59579c8d12cf245d0da8e13dd0bb0535fd55276",
+        "bytes": 1404676
+      },
+      "modelOutputSha256": "ad2d7d5b0ac0b95d399184181bfe385b6aa50cf46e515e84fd9d6e1792ae6bf8",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_defect_guardian_kratos_firecamp.webp",
+        "sha256": "f6850c6edd30868881a62d7930787cc935bbd6bb59a624e60a1498411373f314",
+        "bytes": 225548
+      }
+    },
+    {
+      "id": "silent_defect_hexaghost_kratos",
+      "characters": [
+        "silent",
+        "defect",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_defect_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_defect_hexaghost_firecamp.webp",
+          "sha256": "a5bf825a876d889f2eb5a38a5e4ad2e689424a23b3f6381d611d0aad0842993f",
+          "bytes": 634140
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_defect_hexaghost_kratos_firecamp.webp",
+        "sha256": "be6cc7efc29a760abbe09f63a81d67ba43eff35a6debde416e7f3d1da213a4dc",
+        "bytes": 1427784
+      },
+      "modelOutputSha256": "4cf28a9da8460e9411638136d1ba3b1c5c384857963e15eca0058e08a62bf9e9",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_defect_hexaghost_kratos_firecamp.webp",
+        "sha256": "a05259f3283b73fb2bb579b2331c556a15be5101c645c0fe9fbb3c42e128f2a1",
+        "bytes": 237142
+      }
+    },
+    {
+      "id": "silent_defect_hermit_kratos",
+      "characters": [
+        "silent",
+        "defect",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_defect_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_defect_hermit_firecamp.webp",
+          "sha256": "dbbc39d4c8dc62192f696f8f03a23981d5b10f3fc325bdaa493c79079a76ca96",
+          "bytes": 651056
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_defect_hermit_kratos_firecamp.webp",
+        "sha256": "b8697ed7946512d000d3a864cedfb650f2470158b467514ec75ac8e1c5fc1433",
+        "bytes": 1438286
+      },
+      "modelOutputSha256": "a703a1b06f0ed960c1bc8d4fd9c2099dde9e1c1a3e86eb3d640dcf5903907147",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_defect_hermit_kratos_firecamp.webp",
+        "sha256": "56f5575fdf6df2c22f6f2c838d354252aeffff0d9ca2742efddc763f1fe94965",
+        "bytes": 247684
+      }
+    },
+    {
+      "id": "silent_watcher_slime_boss_kratos",
+      "characters": [
+        "silent",
+        "watcher",
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_watcher_slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_watcher_slime_boss_firecamp.webp",
+          "sha256": "0e0389e62c0c13537aa77ef9cef892ef607da24e64f92054d5dc3225e8b59a1b",
+          "bytes": 643156
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_watcher_slime_boss_kratos_firecamp.webp",
+        "sha256": "c1ee10228e7d67c0c91eb9e411583819d565a8e14fbce4cd08934b6919f3c4b6",
+        "bytes": 1449792
+      },
+      "modelOutputSha256": "ce84cba39cc3627f7e652de12fe784ae0b88918a4c41c5cda36e49f70f88c0e9",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_watcher_slime_boss_kratos_firecamp.webp",
+        "sha256": "3ce634b0319882ace5704c214a8c3fdefaecef61304c52fed4687860c7974953",
+        "bytes": 247230
+      }
+    },
+    {
+      "id": "silent_watcher_guardian_kratos",
+      "characters": [
+        "silent",
+        "watcher",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_watcher_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_watcher_guardian_firecamp.webp",
+          "sha256": "cd5b5d66a76416f601e39b42d0b920a9be9ac94ac797f32a5676034f932b07ce",
+          "bytes": 649322
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_watcher_guardian_kratos_firecamp.webp",
+        "sha256": "46c77f9cd8adc7ec60b9e4aea967c418a2712e35170348e63a89c3d911b301ea",
+        "bytes": 1402566
+      },
+      "modelOutputSha256": "6ef411a3de73b08f83a335efec91036f9ded451fdcc2c9b83aaa14ac3d453a91",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_watcher_guardian_kratos_firecamp.webp",
+        "sha256": "299d9aa51e960822c95578506ffabcb79fd0adaae181a3b692e6caf90056dd69",
+        "bytes": 223076
+      }
+    },
+    {
+      "id": "silent_watcher_hexaghost_kratos",
+      "characters": [
+        "silent",
+        "watcher",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_watcher_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_watcher_hexaghost_firecamp.webp",
+          "sha256": "aeeaddc882a48a5a5b427b1e058fa1d523d43f06b7173a664cd936f7ddb936f4",
+          "bytes": 773042
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_watcher_hexaghost_kratos_firecamp.webp",
+        "sha256": "7f2fb0e0f72d7d3ac025dcb35a9f922a52f91d67eed0fd37aeaa9e64068616a0",
+        "bytes": 1440436
+      },
+      "modelOutputSha256": "83db32358a38c5c63ebc73cb2a6f4eb1de13e5611aabc664078cf5a04aa2d2d2",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_watcher_hexaghost_kratos_firecamp.webp",
+        "sha256": "f3b2c180185c35239ccb2b74e71342d089f25fe83abd55fb034ec842ddad8a3d",
+        "bytes": 247336
+      }
+    },
+    {
+      "id": "silent_watcher_hermit_kratos",
+      "characters": [
+        "silent",
+        "watcher",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_watcher_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_watcher_hermit_firecamp.webp",
+          "sha256": "fde35cafbc6ca47a3de7189518f0f8b9a9f5078fdfc3e83c316006f044b3a775",
+          "bytes": 617558
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_watcher_hermit_kratos_firecamp.webp",
+        "sha256": "b301696868ff15b5adee3056962ec78abeb97cb6ade71d0d38361aa8fccbd579",
+        "bytes": 1417774
+      },
+      "modelOutputSha256": "1f36e78961d034794f357e318127e7d5073ac17909a0b45279b578beac531e06",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_watcher_hermit_kratos_firecamp.webp",
+        "sha256": "57a7b503d0a33b5a5f92638fd25bb84d13aaa6dfa8f32961e2d7fb161837f9bb",
+        "bytes": 231632
+      }
+    },
+    {
+      "id": "silent_slime_boss_guardian_kratos",
+      "characters": [
+        "silent",
+        "slime_boss",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_slime_boss_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_slime_boss_guardian_firecamp.webp",
+          "sha256": "52d7f4636a0ec11b27d8434cb25f0062bb9f9124baf8c40539ea7dee3901ab58",
+          "bytes": 560400
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_slime_boss_guardian_kratos_firecamp.webp",
+        "sha256": "991fc32bddccd9a8fcbce879d989519a5753a717424380cdaebaa1ba08e8ae1c",
+        "bytes": 1334184
+      },
+      "modelOutputSha256": "b07c2f1496797e016973200fef259a12683ecbd7e8f741a975fac0a773866bb6",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_slime_boss_guardian_kratos_firecamp.webp",
+        "sha256": "e8a2eaec62cc8158e5d59b61dd40c2e11a97a2609714217ca3b97ba47ad765bf",
+        "bytes": 202222
+      }
+    },
+    {
+      "id": "silent_slime_boss_hexaghost_kratos",
+      "characters": [
+        "silent",
+        "slime_boss",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_slime_boss_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_slime_boss_hexaghost_firecamp.webp",
+          "sha256": "8a76ff052a4082dfad85880ea55a70dcaf19abe682ad37579ad6b9988ba26a75",
+          "bytes": 707944
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_slime_boss_hexaghost_kratos_firecamp.webp",
+        "sha256": "693e0ada23f270ea7b99660db1b31c67b79f17c298462cb5dbfd61f3cd1a5987",
+        "bytes": 1443852
+      },
+      "modelOutputSha256": "637b01dca11df6853256664d6d1577f87a92efcdee9b85ffd957a642400a51e3",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_slime_boss_hexaghost_kratos_firecamp.webp",
+        "sha256": "76dc52b87ad702c0f56b30869262b976ae3a30c946727f9c7e6061a8302fad32",
+        "bytes": 253970
+      }
+    },
+    {
+      "id": "silent_slime_boss_hermit_kratos",
+      "characters": [
+        "silent",
+        "slime_boss",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_slime_boss_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_slime_boss_hermit_firecamp.webp",
+          "sha256": "0c1c748002e4a6b81a5ee4dfb7b5740c4857eb6e5e0c4c7e81574bd4017d26e1",
+          "bytes": 637572
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_slime_boss_hermit_kratos_firecamp.webp",
+        "sha256": "14474a05f2b86a96e8a6caeb86ce7ef0c940cb2b23f3311526dedeb2ce4b2a92",
+        "bytes": 1419842
+      },
+      "modelOutputSha256": "6705d5537725108b5f44c736b181a1f533c060786e0b561e323228d302e6b3f3",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_slime_boss_hermit_kratos_firecamp.webp",
+        "sha256": "47943d6ad51d91770e6cb8aaf81731151bea2df1a5f76aa23af829f5f0de3b95",
+        "bytes": 239786
+      }
+    },
+    {
+      "correctionPrompt": "docs/kratos-noncombat/prompts/silent_guardian_hexaghost_kratos-correction.txt",
+      "correctionReferences": [
+        {
+          "path": "scripts/art/sources/kratos-noncombat/silent_guardian_hexaghost_kratos-edit-input.webp",
+          "sha256": "bea1aaee57d6bc53a9adfb3ef6686b98a170145791f1869e1a2055bba9ebb179",
+          "bytes": 1447062
+        }
+      ],
+      "id": "silent_guardian_hexaghost_kratos",
+      "characters": [
+        "silent",
+        "guardian",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_guardian_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_guardian_hexaghost_firecamp.webp",
+          "sha256": "bf0b8d7414999b8f9f86fc8d5c1fc23a133a6301b77f3207fcb063c22e1df96a",
+          "bytes": 596756
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "87246437918cd83f3e4a07d3f800977411449a0d3ba1569b2cd3e3b97b6996c1",
+        "bytes": 1312430
+      },
+      "modelOutputSha256": "a5e8e2894c3d3c88f25a07400586b0e000300664bf125e5fd0bae75531d8ac7a",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "3120b0c6d25af7d52f9aa684fbb15f21105a198686a9560b69ca952f4170415e",
+        "bytes": 204972
+      }
+    },
+    {
+      "id": "silent_guardian_hermit_kratos",
+      "characters": [
+        "silent",
+        "guardian",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_guardian_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_guardian_hermit_firecamp.webp",
+          "sha256": "0df36a7776d5569e64172f8bfd8fb65b9a04fb8ab4a5c9a23556bbb6fc179012",
+          "bytes": 666530
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_guardian_hermit_kratos_firecamp.webp",
+        "sha256": "b22961526d2d8ad3e20f07a2a6aabc6ba9a153a3997e5be3bf19d9da52be5281",
+        "bytes": 1472304
+      },
+      "modelOutputSha256": "4c6b0c272fefc81916445361d5a2fa17a5ae1a53face3d87cb389c17a453f2a3",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_guardian_hermit_kratos_firecamp.webp",
+        "sha256": "5e4511572b3c482bf8066be39b2713ea6e984547d3c12d4cbbcfa92e4110cf0d",
+        "bytes": 249192
+      }
+    },
+    {
+      "id": "silent_hexaghost_hermit_kratos",
+      "characters": [
+        "silent",
+        "hexaghost",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/silent_hexaghost_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/silent_hexaghost_hermit_firecamp.webp",
+          "sha256": "9ea80a2a305196478cf52567056b9e9c7cd51209deb7455c596c8b319f104bd0",
+          "bytes": 674668
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/silent_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "ef7b1b4998958094fc2debe479d5d0a352e7ada541e44c4a0a2ef4d9e13b291f",
+        "bytes": 1476010
+      },
+      "modelOutputSha256": "01af959c8db10b8c2d4928a61b05c31f1c71b6ec6c1a095ebf0bf5c356d86b86",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/silent_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "32eb98e8d6d0352b8a0ea367d8c47b6b86b1bcc4aefac5d96d06f427aaf8154c",
+        "bytes": 257034
+      }
+    },
+    {
+      "id": "defect_watcher_slime_boss_kratos",
+      "characters": [
+        "defect",
+        "watcher",
+        "slime_boss",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_watcher_slime_boss_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_watcher_slime_boss_firecamp.webp",
+          "sha256": "65a3c9ff0e7d6554b4e5200c56ba06a83e2eb366c69469f673d597f216451b46",
+          "bytes": 672028
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_watcher_slime_boss_kratos_firecamp.webp",
+        "sha256": "7c7141c4ac4c9a70651f7c27d678be29b16bed9248a313d580cdfa56297d45d4",
+        "bytes": 1460302
+      },
+      "modelOutputSha256": "1aa9e2dcb50e761b9318dd980f944e397da07ab0b66ded3786e718f3ac7a93ef",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_watcher_slime_boss_kratos_firecamp.webp",
+        "sha256": "5b8d4e8c86bfd2fe406c867dee8c7914436bfcdf23e4868490131119f2c0fa5e",
+        "bytes": 255234
+      }
+    },
+    {
+      "id": "defect_watcher_guardian_kratos",
+      "characters": [
+        "defect",
+        "watcher",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_watcher_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_watcher_guardian_firecamp.webp",
+          "sha256": "489efbd79ff48a91eff974c9f4b51367cedcf8cbb43f735e90a94c7009f1545c",
+          "bytes": 590930
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_watcher_guardian_kratos_firecamp.webp",
+        "sha256": "242ccab569fa4ef1a24e82f22ac6b0ceb39433be8f7cbf944cacd17b0882ed26",
+        "bytes": 1418396
+      },
+      "modelOutputSha256": "6a38e802d4037a2182a68f9f9411216c92872e4c98d7fe06b39a2fdc21ad389c",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_watcher_guardian_kratos_firecamp.webp",
+        "sha256": "206b2f9a741192dd2a4eca2b09023fd39f34f78e13802f86e1ba0b5cb137f1ab",
+        "bytes": 229308
+      }
+    },
+    {
+      "id": "defect_watcher_hexaghost_kratos",
+      "characters": [
+        "defect",
+        "watcher",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_watcher_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_watcher_hexaghost_firecamp.webp",
+          "sha256": "bc4bfb42d32a994b85c3e46134514d6015f7bf157349746e8103902648b2dcfc",
+          "bytes": 699732
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_watcher_hexaghost_kratos_firecamp.webp",
+        "sha256": "bfbee71fe0cd8ffa2a5beff9175c30b0256e63a8faa3c994ad0ffcd1773c5ca8",
+        "bytes": 1426618
+      },
+      "modelOutputSha256": "4b67bf3c89033d110f81afb49d8c21daa4441c943c318d3c1fac956e31bcb66e",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_watcher_hexaghost_kratos_firecamp.webp",
+        "sha256": "aa05f93ee099e73c26362d7f7d765433449703e6f0b589f476787be7427f3d5d",
+        "bytes": 240148
+      }
+    },
+    {
+      "id": "defect_watcher_hermit_kratos",
+      "characters": [
+        "defect",
+        "watcher",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_watcher_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_watcher_hermit_firecamp.webp",
+          "sha256": "c5b4c0b743647373bd835f25d75c793d2061ac0fb851a3bd78befa89f8e1ebdf",
+          "bytes": 665182
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_watcher_hermit_kratos_firecamp.webp",
+        "sha256": "5fddd2d3ce2783f7b6fe39c676feb264a4ca7ccb0c8546ec25906c6f3c096cd9",
+        "bytes": 1437818
+      },
+      "modelOutputSha256": "c3b538b0272256a16f53c99493b1245edb050524194dce8885ef7450a65c68ac",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_watcher_hermit_kratos_firecamp.webp",
+        "sha256": "467c461d65ff7e075a6a9aa625c8a072552b2b6962f3dd3662adb471454371a6",
+        "bytes": 248544
+      }
+    },
+    {
+      "id": "defect_slime_boss_guardian_kratos",
+      "characters": [
+        "defect",
+        "slime_boss",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_slime_boss_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_slime_boss_guardian_firecamp.webp",
+          "sha256": "1c8230953fa35f0bc5362b4c0ae1253814148f8a1d08f96436e3f276bc361397",
+          "bytes": 592880
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_slime_boss_guardian_kratos_firecamp.webp",
+        "sha256": "e3182d3da17891b5ec306e6de7cb8821409782d7c395c870ae27285d1d5783ab",
+        "bytes": 1376208
+      },
+      "modelOutputSha256": "704c832d3c09b6c7f1433ce90394f2a9ce465c564c8a9102637f2d2de467a032",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_slime_boss_guardian_kratos_firecamp.webp",
+        "sha256": "998aa0899708b92d9a1da70440d9abf474c2543f8669cbb7ea7e3a5055820c06",
+        "bytes": 217978
+      }
+    },
+    {
+      "id": "defect_slime_boss_hexaghost_kratos",
+      "characters": [
+        "defect",
+        "slime_boss",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_slime_boss_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_slime_boss_hexaghost_firecamp.webp",
+          "sha256": "e91ee0ae07ac02d90678212fc1373fc0d4df6947a1b9066f0b98762ed12bddc4",
+          "bytes": 643586
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_slime_boss_hexaghost_kratos_firecamp.webp",
+        "sha256": "83b5d51d3fbccf86fb317c53c48f672073b2093b5e64b254642ab00110737758",
+        "bytes": 1432916
+      },
+      "modelOutputSha256": "0255dae50c2bf9c11c4e212f8d67393694830635898f78ebda59c11893d59e3e",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_slime_boss_hexaghost_kratos_firecamp.webp",
+        "sha256": "365424f82f296304614a6d56a910b16e593ca8566ae35836c834d95d884d3382",
+        "bytes": 243312
+      }
+    },
+    {
+      "id": "defect_slime_boss_hermit_kratos",
+      "characters": [
+        "defect",
+        "slime_boss",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_slime_boss_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_slime_boss_hermit_firecamp.webp",
+          "sha256": "5daf3285549fca31c6dec6076309ace153de48ff3a6ad87698bda4b9c7022374",
+          "bytes": 634600
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_slime_boss_hermit_kratos_firecamp.webp",
+        "sha256": "15870a2b54e34f8bee2cd091020a600b5ed8f22e6fd0a3e7d7ada15b25b90689",
+        "bytes": 1398804
+      },
+      "modelOutputSha256": "bebbbf9e16bb31164b00af113abb85bafa6dac2cb42153db54263261f61fdd33",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_slime_boss_hermit_kratos_firecamp.webp",
+        "sha256": "92a5988142f24eb28e8761d3a64844b6201928c0c5f366767e1ef06e3499ba6f",
+        "bytes": 233028
+      }
+    },
+    {
+      "id": "defect_guardian_hexaghost_kratos",
+      "characters": [
+        "defect",
+        "guardian",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_guardian_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_guardian_hexaghost_firecamp.webp",
+          "sha256": "319a6122b8ca522fbc73fa9eeba52bffa7cfe5238f4f576061222c3395fcaf12",
+          "bytes": 663204
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "fc4347ba9452105c37b719589817b20fecf7d7047eabfc274de36e60d0867fae",
+        "bytes": 1473252
+      },
+      "modelOutputSha256": "a5832018e46ebbc10b509f59524f30850c1d183f06e3b57bca39b57ae845da8c",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "f3b878087d2d357f441bee9e11f0e8f03e12615a34fdbe57ca98bfcd33b18bd6",
+        "bytes": 252252
+      }
+    },
+    {
+      "id": "defect_guardian_hermit_kratos",
+      "characters": [
+        "defect",
+        "guardian",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_guardian_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_guardian_hermit_firecamp.webp",
+          "sha256": "6abe338b8cc053169e97cfa0b08acf8ec281cb1d08450abe34afcb33efd77d92",
+          "bytes": 591286
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_guardian_hermit_kratos_firecamp.webp",
+        "sha256": "7c2e9619557ed7deada4a983ecfa3abd0a4bf1aa9df2290e9a4bb183390a54bb",
+        "bytes": 1408696
+      },
+      "modelOutputSha256": "4a0c930a0006cfadfbcf7d3ecd99621b04fda611fe74e6b622db00ace3e67da8",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_guardian_hermit_kratos_firecamp.webp",
+        "sha256": "c4c9023fdedf41c5f73b0963ebaa701f45e489b601eabae0d58ede7ddaaeb86d",
+        "bytes": 222738
+      }
+    },
+    {
+      "id": "defect_hexaghost_hermit_kratos",
+      "characters": [
+        "defect",
+        "hexaghost",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/defect_hexaghost_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/defect_hexaghost_hermit_firecamp.webp",
+          "sha256": "eb5bf00ed4a1af3af765922b1b2dfb60aa4e39bd4809e77ba70eff6074083a1d",
+          "bytes": 668590
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/defect_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "06226905e53bc8c3369ad7c2f8fa765c3435b8f07763e25ec5db7d551e8218b4",
+        "bytes": 1472876
+      },
+      "modelOutputSha256": "2fed20d2570e6611b5772511ce9b3bd59b3526ca49a046aa680abd26b71bc5f7",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/defect_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "d792d39084b05261d7691ce0b5a1476a465e9659f94e75a3d6e0af40875d7e83",
+        "bytes": 263748
+      }
+    },
+    {
+      "id": "watcher_slime_boss_guardian_kratos",
+      "characters": [
+        "watcher",
+        "slime_boss",
+        "guardian",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_slime_boss_guardian_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_slime_boss_guardian_firecamp.webp",
+          "sha256": "d460c09c2cfa0658703b86b710984e9f7cdb5773ee40164e477ad36180bcce93",
+          "bytes": 619238
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_slime_boss_guardian_kratos_firecamp.webp",
+        "sha256": "e82e5740e93c977f6d4ed1faf711277dcaea08340794c36023474a67124d2974",
+        "bytes": 1409162
+      },
+      "modelOutputSha256": "4e46fcc358b1330c6551c45caf31828de812ba5eb05b099ae608648647aecc94",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_slime_boss_guardian_kratos_firecamp.webp",
+        "sha256": "12fa856cd827bec7695d3d15765eddb5fc2fbb05981f6f4b2877c578b256c8a6",
+        "bytes": 226922
+      }
+    },
+    {
+      "id": "watcher_slime_boss_hexaghost_kratos",
+      "characters": [
+        "watcher",
+        "slime_boss",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_slime_boss_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_slime_boss_hexaghost_firecamp.webp",
+          "sha256": "632223ee6f2be6460f2912ff3498495bf56070431326a7e8d0615a1e8b697edb",
+          "bytes": 709908
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_slime_boss_hexaghost_kratos_firecamp.webp",
+        "sha256": "dd6023e7915165bd1e7f8ce956790bdc9869b304266519eed8eda7a3eff05d83",
+        "bytes": 1482652
+      },
+      "modelOutputSha256": "62d511f754ed30393fcfe1cdfebfb0ccf73101d96f1ec6849bbe2ac9c75da587",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_slime_boss_hexaghost_kratos_firecamp.webp",
+        "sha256": "8ea2ed7e57d2d9ebcfe95f21060284b5a57907cfcbe2e83a64ba8c0c38073034",
+        "bytes": 259146
+      }
+    },
+    {
+      "id": "watcher_slime_boss_hermit_kratos",
+      "characters": [
+        "watcher",
+        "slime_boss",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_slime_boss_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_slime_boss_hermit_firecamp.webp",
+          "sha256": "156000d5143cf7c968dc00a54c7dcca205c879ea852c37f3bb9d8eaf6c73656e",
+          "bytes": 631292
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_slime_boss_hermit_kratos_firecamp.webp",
+        "sha256": "bda3ab0e34224688cece879f843d39391828721ecd100a6e2b18d1a01cd7af22",
+        "bytes": 1422426
+      },
+      "modelOutputSha256": "adbb62def6fb7631f5bae36cc9465784942486bff496059f8a15850cf431101e",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_slime_boss_hermit_kratos_firecamp.webp",
+        "sha256": "e33c0c765ec588a9239b20a06940013c2197a9e1f78dc730ef845d56c3536850",
+        "bytes": 238254
+      }
+    },
+    {
+      "correctionPrompt": "docs/kratos-noncombat/prompts/watcher_guardian_hexaghost_kratos-correction.txt",
+      "correctionReferences": [
+        {
+          "path": "scripts/art/sources/kratos-noncombat/watcher_guardian_hexaghost_kratos-edit-input.webp",
+          "sha256": "ee99a698d14b96006a22e4f23863427e99052d439a51d8e8ca49249fd32b9463",
+          "bytes": 1457576
+        }
+      ],
+      "id": "watcher_guardian_hexaghost_kratos",
+      "characters": [
+        "watcher",
+        "guardian",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_guardian_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_guardian_hexaghost_firecamp.webp",
+          "sha256": "d9016769cc062a257cb70371cbb97768f0b1d2c6c49553bb23b3eec43409489e",
+          "bytes": 656554
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "cffb11e8f67722022a588aad2696273f7925079e7d7d10e15e00ad4a9417a1c8",
+        "bytes": 1363954
+      },
+      "modelOutputSha256": "cd327de6deb0fec05848e062c897905a9ef12591e708bf84421c1ee6d4c4329d",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "412569f04f3d05ce043fb0d18c8477399839b2b84f6c81e09243fe76f43e25ee",
+        "bytes": 223948
+      }
+    },
+    {
+      "id": "watcher_guardian_hermit_kratos",
+      "characters": [
+        "watcher",
+        "guardian",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_guardian_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_guardian_hermit_firecamp.webp",
+          "sha256": "6bf3e3a7caac1c08a6e99d39a7e1cfdfa50c9add2a19d3a353314f37f1080165",
+          "bytes": 679966
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_guardian_hermit_kratos_firecamp.webp",
+        "sha256": "1c0e1c700b448ed6431ce28ef37d7b695ad08cf0e39f5f02efb4a896121af6d2",
+        "bytes": 1507006
+      },
+      "modelOutputSha256": "13f2d32236e512423c70f894c594908f3893c566b9da562d2d771d0f48f6de80",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_guardian_hermit_kratos_firecamp.webp",
+        "sha256": "40269f413f4c79c331ae6c6e81f359784367687a50ce896d35a191d8521a4987",
+        "bytes": 258320
+      }
+    },
+    {
+      "id": "watcher_hexaghost_hermit_kratos",
+      "characters": [
+        "watcher",
+        "hexaghost",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/watcher_hexaghost_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/watcher_hexaghost_hermit_firecamp.webp",
+          "sha256": "90db14ddfafc449166d0e1038be743621e345cbaf359c518c9390d7667ed76e9",
+          "bytes": 674990
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/watcher_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "3a26640f4649048a73f2bd4c3a3e138d22910c9dfaccabed86dc784365ca6d6f",
+        "bytes": 1452520
+      },
+      "modelOutputSha256": "9101e38896e33ae0002624dbfd29877eb6e88cfa8a54200a6e77583aa4d62d1d",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/watcher_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "06ef0139872701db18c150252699d78fd48cafe5da9c68a8f09017f3420d0a96",
+        "bytes": 247426
+      }
+    },
+    {
+      "id": "slime_boss_guardian_hexaghost_kratos",
+      "characters": [
+        "slime_boss",
+        "guardian",
+        "hexaghost",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/slime_boss_guardian_hexaghost_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/slime_boss_guardian_hexaghost_firecamp.webp",
+          "sha256": "2ba1f3d3b5adcdd7500ba5b7cac824b6dc67c4c7e0fe0c752c5ed0e74ae28a53",
+          "bytes": 616490
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/slime_boss_guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "1ab780b74ded3dfcb0be0a0718356b0860ac20e8a0e7996ba7bf4bd1314e3f58",
+        "bytes": 1415716
+      },
+      "modelOutputSha256": "bbffb72c268390f90f5b94961ede36b787491e2f5783b18a27f222e1d8c24344",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/slime_boss_guardian_hexaghost_kratos_firecamp.webp",
+        "sha256": "ec30fbd9d122a54589cd8b01d29bb48f7141a8081a9eceb7bc756df8a7337ea4",
+        "bytes": 229356
+      }
+    },
+    {
+      "id": "slime_boss_guardian_hermit_kratos",
+      "characters": [
+        "slime_boss",
+        "guardian",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/slime_boss_guardian_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/slime_boss_guardian_hermit_firecamp.webp",
+          "sha256": "333899ec57d668070b158b9943a04ac607acd2bc986150bed93652d4f89f82a7",
+          "bytes": 579994
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/slime_boss_guardian_hermit_kratos_firecamp.webp",
+        "sha256": "53fb27dfed1a6be5c8ca9fef1e451ef8b716b96d1c668736ca1cdda9cb404781",
+        "bytes": 1388564
+      },
+      "modelOutputSha256": "6af15b0a45b4406fc29b971d7d9eac235a80a5f9e00c076cc99bbc4c8a68c5a5",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/slime_boss_guardian_hermit_kratos_firecamp.webp",
+        "sha256": "4338a3bed092172c0f867efe8f6ec8687e57242a58c85faeec9aacc0b8c178e6",
+        "bytes": 223258
+      }
+    },
+    {
+      "id": "slime_boss_hexaghost_hermit_kratos",
+      "characters": [
+        "slime_boss",
+        "hexaghost",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/slime_boss_hexaghost_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/slime_boss_hexaghost_hermit_firecamp.webp",
+          "sha256": "38295146ad0e9eb249f7b103dfba14c6573a470e50ea5ee0bf21d2f6c25847d3",
+          "bytes": 610892
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/slime_boss_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "f2fed5f74a83786108e2151518aa4f1b23518950c45987d3bafb7ef11d766a2f",
+        "bytes": 1438160
+      },
+      "modelOutputSha256": "cf68cc6ce47ee0f1e5b391a10965fc09056162512abf1dcc32d9be815c567c16",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/slime_boss_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "2a3dcb4855d2e50f53d5cbee1f78dcb9433bae5c49244f9b141b7f996d75d2e5",
+        "bytes": 244680
+      }
+    },
+    {
+      "id": "guardian_hexaghost_hermit_kratos",
+      "characters": [
+        "guardian",
+        "hexaghost",
+        "hermit",
+        "kratos"
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/guardian_hexaghost_hermit_kratos.txt",
+      "references": [
+        {
+          "path": "public/assets/noncombat/campfire/guardian_hexaghost_hermit_firecamp.webp",
+          "sha256": "29a6df9383c9ee437290cd826da2ac470cb94d170e877563626ff8dd2dc42c29",
+          "bytes": 547780
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/seated.webp",
+          "sha256": "28e02014e6dcbb7c62900616c7390cabe6dc95861711d7a4cfb01e472a849625",
+          "bytes": 793988
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/guardian_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "bc706ae55c0284810de592427185a864956777504a2ff8c267f9dd13a3400e50",
+        "bytes": 1412120
+      },
+      "modelOutputSha256": "bc8436a66d6586072091dcd4eb8248a4565d186f87c6e9b506238a812cce1d53",
+      "runtime": {
+        "path": "public/assets/noncombat/campfire/guardian_hexaghost_hermit_kratos_firecamp.webp",
+        "sha256": "76ebf4e6cae8d2582ba0eec6b388ba51ded3aa8774e506cb543f545154f9ef13",
+        "bytes": 226290
+      }
+    }
+  ]
+}

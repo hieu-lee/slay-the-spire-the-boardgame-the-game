@@ -28,7 +28,9 @@ try {
     await page.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'neow')
     const fixture = postNeowRun('merchant-overflow', [
       { id: 'p1', name: 'Silent', character: 'silent' },
-      { id: 'p2', name: 'Ironclad', character: 'ironclad' },
+      { id: 'p2', name: 'Kratos', character: 'kratos' },
+      { id: 'p3', name: 'Ironclad', character: 'ironclad' },
+      { id: 'p4', name: 'Defect', character: 'defect' },
     ])
     fixture.players.forEach((player) => { player.gold = 30 })
     Object.assign(fixture.players[0], { hp: 6, maxHp: 9 })
@@ -43,6 +45,10 @@ try {
       }])), removalUsed: [], purchasedCards: {},
     }
     await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), fixture)
+    const kratos = page.locator('.merchant-arrival__party [data-character="kratos"] img')
+    await kratos.evaluate(async (image) => { await image.decode() })
+    assert(await kratos.isVisible(), 'Kratos must appear in the merchant arrival party')
+    await page.screenshot({ path: `${output}/${name}-kratos-arrival.png` })
     await page.getByRole('button', { name: 'Enter merchant shop' }).click()
     const stage = page.locator('.merchant-shop-stage')
     await stage.waitFor()

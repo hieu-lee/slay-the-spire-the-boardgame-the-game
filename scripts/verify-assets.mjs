@@ -174,7 +174,7 @@ check('every rigged animation has a current Safari hardware-video companion', ()
 })
 
 check('every campfire party resolves to one complete wide scene', () => {
-  const characters = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit']
+  const characters = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit', 'kratos']
   const parties = []
   const choose = (start, party) => {
     if (party.length > 0) parties.push([...party])
@@ -947,19 +947,19 @@ print('PASS: Kratos native alpha, fixed canvas, planted feet and weapon overscan
   assert(result.status === 0, result.stderr || result.stdout)
 })
 
-check('Downfall merchant poses are complete, transparent, and edge-capped', () => {
-  const downfall = ['guardian', 'hermit', 'hexaghost', 'slime_boss']
+check('Downfall and Kratos merchant poses are complete, transparent, and edge-capped', () => {
+  const characters = ['guardian', 'hermit', 'hexaghost', 'slime_boss', 'kratos']
   assertDeepEqual(
-    merchantCharacterFiles.filter((file) => downfall.some((id) => file === `${id}-standing.webp`)).sort(),
-    downfall.map((id) => `${id}-standing.webp`).sort(),
-    'Downfall merchant pose inventory',
+    merchantCharacterFiles.filter((file) => characters.some((id) => file === `${id}-standing.webp`)).sort(),
+    characters.map((id) => `${id}-standing.webp`).sort(),
+    'Downfall/Kratos merchant pose inventory',
   )
-  const groups = [[merchantCharacterRoot, downfall.map((id) => `${id}-standing.webp`), MERCHANT_CHARACTER_EDGE]]
+  const groups = [[merchantCharacterRoot, characters.map((id) => `${id}-standing.webp`), MERCHANT_CHARACTER_EDGE]]
   for (const [root, names, [floor, cap]] of groups) {
     const result = spawnSync('webpinfo', ['-summary', ...names.map((file) => join(root, file))], { encoding: 'utf8' })
-    assert(result.status === 0, result.stderr || 'could not inspect Downfall noncombat poses')
+    assert(result.status === 0, result.stderr || 'could not inspect Downfall/Kratos noncombat poses')
     const inspected = result.stdout.split(/^File: /m).slice(1)
-    assertEqual(inspected.length, names.length, 'decoded Downfall noncombat pose count')
+    assertEqual(inspected.length, names.length, 'decoded Downfall/Kratos noncombat pose count')
     const faults = inspected.flatMap((block) => {
       const file = block.slice(0, block.indexOf('\n')).split('/').pop()
       const width = Number(block.match(/  Width: (\d+)/)?.[1])
@@ -968,7 +968,7 @@ check('Downfall merchant poses are complete, transparent, and edge-capped', () =
       return longEdge >= floor && longEdge <= cap && /Alpha:\s+1/.test(block)
         ? [] : [`${file} is ${width}x${height}, alpha ${/Alpha:\s+1/.test(block)}`]
     })
-    assertDeepEqual(faults, [], 'Downfall noncombat pose dimensions')
+    assertDeepEqual(faults, [], 'Downfall/Kratos noncombat pose dimensions')
   }
 })
 

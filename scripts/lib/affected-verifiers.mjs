@@ -99,6 +99,7 @@ const focusedOnlyUiOwners = new Map([
   ['scripts/lib/kratos-animation-fixture.mjs', ['verify-kratos-animation-browser.mjs']],
   ['scripts/art/export-kratos.py', ['verify-assets.mjs', 'verify-kratos-card-art-browser.mjs']],
   ['scripts/art/export-kratos-card-faces.py', ['verify-assets.mjs', 'verify-kratos-card-art-browser.mjs']],
+  ['scripts/art/export-kratos-noncombat.py', ['verify-assets.mjs', 'verify-art-scenes-browser.mjs', 'verify-merchant-overflow-browser.mjs']],
   ['scripts/calibrate-hero-head.py', ['verify-hero-potions-browser.mjs', 'verify-assets.mjs']],
   ['scripts/animation/encode-safari-attacks.py', ['verify-assets.mjs', 'verify-rig-animation-browser.mjs']],
   ['scripts/animation/check-attack-parity.py', ['verify-rig-animation-browser.mjs']],
@@ -306,6 +307,10 @@ export function affectedVerifiers(root, changedFiles, scripts) {
     if (file.startsWith('scripts/art/sources/kratos/') || file.startsWith('scripts/art/sources/kratos-card-faces/')) {
       selected.add('verify-assets.mjs')
       selected.add('verify-kratos-card-art-browser.mjs')
+      covered = true
+    }
+    if (file.startsWith('scripts/art/sources/kratos-noncombat/')) {
+      for (const script of ['verify-assets.mjs', 'verify-art-scenes-browser.mjs', 'verify-merchant-overflow-browser.mjs']) selected.add(script)
       covered = true
     }
     if (file.startsWith('public/assets/')) {
