@@ -5,7 +5,13 @@ All 64 cards have separate base and upgraded faces (128 images), authored with
 supplies the approved card illustration, the user's red-orb Energy symbol,
 the production Rage of Sparta glyph, two existing finished card examples and
 any applicable attack, Block, debuff or draw symbols. Prompts specify exact
-card information and yellow keyword emphasis; symbols must supplement words.
+card information and yellow keyword emphasis. Damage, Block, Vulnerable, Weak,
+Strength, Rage and Energy use the supplied effect symbols directly in the rules,
+as the existing cards do. All values and surrounding conditions remain written;
+plain damage retains its explicit plain qualifier. Upgraded faces use the existing
+green title (including the plus sign) and subtle gold frame glow. Their exact
+upgraded costs/effects are preserved, while keyword emphasis stays yellow.
+Upgraded requests use existing upgraded faces as style references.
 
 The Energy symbol was reconstructed from the user's cropped God of War red
 orb reference. Its source keeps native alpha; the runtime icon is 256 square.
@@ -14,12 +20,13 @@ card faces. A separate original HUD design uses that red core inside a Greek
 bronze meander ring with chain segments and red Spartan fittings. Its frame
 leaves the center clear for the live Energy count and dims when empty.
 
-`plan.json` records all 128 face definitions and input references. `prompts/`
-contains the final prompt set, including the orb extraction prompt. Early
-requests used the same card prompts before the final mandatory text-accuracy
-paragraph was added; faces with omitted words or duplicate numbers were
-regenerated. Godslayer faces were also corrected to avoid a misleading Rage
-glyph. Selected model outputs are kept as lossless WebP under
+`plan.json` records all 128 face definitions, canonical mechanics, symbolic
+rules layouts and input references. `prompts/` contains the final per-card
+model requests and the two orb prompts. Bracketed tokens in `symbolText` are
+rendering instructions for pictorial glyphs and never appear on the cards.
+The model receives both canonical mechanics and the symbolic rules layout so
+repeated effects, conditional effects and base/upgrade values stay intact.
+Selected model outputs are kept as lossless WebP under
 `scripts/art/sources/kratos-card-faces/`. `manifest.json` records source,
 reference, prompt and runtime hashes.
 
@@ -42,9 +49,15 @@ screenshots live in `artifacts/kratos-card-faces/` and
 `artifacts/kratos-card-art/`.
 
 Pages excludes hero idle WebP animations and resolves them from the existing
-SHA-pinned raw asset host, alongside large APNG attacks. This preserves the
-original image bytes and saves approximately 52 MB of the Pages package.
+SHA-pinned raw asset host, alongside large APNG attacks. Music, Safari videos
+and campfire scenes also use that host; jsDelivr failed to serve the release
+commit. Raw hosting provides the required MIME types, CORS and video byte-range
+requests. This preserves the original image bytes and saves approximately 52 MB of the Pages package.
 
-Native alpha is retained at quality 86. Kratos has a separate 16 MiB full-face
+Native alpha is retained at quality 75. Kratos has a separate 16 MiB full-face
 allowance (160 KiB per image) and 8 MiB thumbnail allowance; existing card
 budgets and the 448px thumbnail decode limit are unchanged.
+
+HEVC-alpha playback is restricted to native macOS Safari. Linux WebKit advertises
+HEVC decoding but loses its alpha plane, so it uses the animated WebP assets.
+iPhones retain their existing WebP path.

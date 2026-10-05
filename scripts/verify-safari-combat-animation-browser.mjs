@@ -27,7 +27,8 @@ try {
         const phone = screen === 'horizontal-phone'
         const context = await browser.newContext(phone ? devices['iPhone 13 landscape'] : { viewport })
         const page = await context.newPage()
-        const safariVideo = engineName === 'webkit' && !phone
+        const safariVideo = engineName === 'webkit' && !phone &&
+          await page.evaluate(() => /^Mac/.test(navigator.platform))
         const movRequests = []
         page.on('request', request => { if (/\.mov(?:\?|$)/.test(request.url())) movRequests.push(request.url()) })
         let releaseIdleVideo
@@ -50,6 +51,9 @@ try {
         const errors = []
         page.on('pageerror', error => errors.push(String(error)))
         await page.goto(`http://localhost:${server.httpServer.address().port}`)
+        assert.equal(await page.evaluate(async () =>
+          (await import('/src/ui/CombatAnimation.tsx')).useSafariCombatVideo), safariVideo,
+          'HEVC alpha must be reserved for native macOS Safari; Linux WebKit and iPhones use animated WebP')
         await page.evaluate(async () => {
           document.querySelector('#root').style.display = 'none'
           document.documentElement.dataset.mobilePerformance = String(matchMedia('(pointer: coarse)').matches)
@@ -147,9 +151,15 @@ try {
           assert.equal(await playerAttack.evaluate(element => element.tagName), 'IMG',
             'cold player MOV did not use its same-resolution WebP attack fallback')
           assert((await playerAttack.getAttribute('src')).endsWith('/hero-defect-attack.webp'))
-          const firstAttack = createHash('sha256').update(await playerAttack.screenshot()).digest('hex')
+          const attackFrame = () => playerAttack.evaluate(image => {
+            const canvas = document.createElement('canvas')
+            canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+            canvas.getContext('2d').drawImage(image, 0, 0)
+            return canvas.toDataURL()
+          })
+          const firstAttack = createHash('sha256').update(await attackFrame()).digest('hex')
           await page.waitForTimeout(180)
-          assert.notEqual(createHash('sha256').update(await playerAttack.screenshot()).digest('hex'), firstAttack,
+          assert.notEqual(createHash('sha256').update(await attackFrame()).digest('hex'), firstAttack,
             'cold player MOV fallback froze')
           await page.waitForTimeout(2_000)
           releasePlayerAttackVideo()
@@ -237,6 +247,9 @@ try {
         await webpContext.close()
 
         const stallContext = await browser.newContext()
+        // Emulate the supported platform only for transport/stall contracts.
+        // Linux WebKit cannot validate HEVC-alpha pixels.
+        await stallContext.addInitScript(() => Object.defineProperty(navigator, 'platform', { value: 'MacIntel' }))
         const stall = await stallContext.newPage()
         let releaseStalledVideo
         const stalledVideo = new Promise(resolve => { releaseStalledVideo = resolve })

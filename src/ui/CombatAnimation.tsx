@@ -12,7 +12,8 @@ export const useSafariCombatRendering = /AppleWebKit/.test(userAgent) && /Safari
   !/(?:Chrome|Chromium|CriOS|Edg|OPR|Android)/.test(userAgent)
 export const useWebKitCombatRendering = useSafariCombatRendering || iOSWebKit
 export const useSafariCombatVideo = useSafariCombatRendering && !forceWebp && typeof document !== 'undefined' &&
-  !iOSWebKit &&
+  // Linux WebKit advertises HEVC but its decoder drops the alpha plane.
+  !iOSWebKit && /^Mac/.test(navigator.platform) &&
   document.createElement('video').canPlayType('video/quicktime; codecs="hvc1"') !== ''
 
 export function combatVideoPath(src: string, origin = assetCdnOrigin): string {

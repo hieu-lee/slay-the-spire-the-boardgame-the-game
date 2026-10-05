@@ -24,7 +24,7 @@ def export_face(face):
         for folder, size in [('cards', (744, 1039)), ('cards-sm', (448, 626))]:
             target = ROOT / f'public/assets/{folder}/{key}.webp'
             target.parent.mkdir(parents=True, exist_ok=True)
-            image.resize(size, Image.Resampling.LANCZOS).save(target, quality=86, method=3)
+            image.resize(size, Image.Resampling.LANCZOS).save(target, quality=75, method=3)
             outputs.append({'path': str(target.relative_to(ROOT)), 'sha256': digest(target), 'size': size})
     return {
         'id': face['id'], 'upgraded': face['upgraded'], 'model': 'gpt-image-2.5-sunburst',
