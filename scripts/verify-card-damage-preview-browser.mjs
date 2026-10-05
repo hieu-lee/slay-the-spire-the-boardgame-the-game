@@ -29,13 +29,22 @@ try {
     const browser = await engine.launch()
     try {
       for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }], ['horizontal-phone', { width: 844, height: 390 }]]) {
+        if (process.argv.includes('--touch-only') && screen !== 'horizontal-phone') continue
         const context = await browser.newContext(screen === 'horizontal-phone' ? devices['iPhone 13 landscape'] : { viewport })
         const page = await context.newPage()
         const errors = []
         page.on('pageerror', (error) => errors.push(String(error)))
         await page.goto(`http://localhost:${server.httpServer.address().port}`)
-        for (const name of ['Single Player', 'Standard', 'Embark', 'Start standard campaign'])
-          await page.getByRole('button', { name, exact: true }).click()
+        for (const name of ['Single Player', 'Standard', 'Embark', 'Start standard campaign']) {
+          const button = page.getByRole('button', { name, exact: true })
+          if (engineName === 'webkit' && screen === 'horizontal-phone') {
+            await button.scrollIntoViewIfNeeded()
+            const box = await button.boundingBox()
+            const visual = await page.evaluate(() => ({ x: visualViewport.offsetLeft, y: visualViewport.offsetTop, scale: visualViewport.scale }))
+            await page.touchscreen.tap((box.x + box.width / 2 - visual.x) * visual.scale,
+              (box.y + box.height / 2 - visual.y) * visual.scale)
+          } else await button.click()
+        }
         const run = postNeowRun(47, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
         const id = run.map.rows[0][0]
         run.map.rooms[id].kind = 'encounter'
@@ -145,6 +154,39 @@ try {
         await marked.hover()
         await page.waitForTimeout(300)
         assert.equal(await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun().combat)), before, `${screen}: previewing changed combat`)
+        // Snecko changes the next play's price, while each full scan keeps its printed cost.
+        const snecko = structuredClone(combat)
+        snecko.players[0].character = 'kratos'
+        const kratos = snecko.combat.players[0]
+        Object.assign(kratos, { character: 'kratos', energy: 9, rage: 0, enemyNextCardCost: 3,
+          hand: ['kratos_rage_of_the_gods', 'defend_kratos', 'kratos_hyperion_charge'].map(card) })
+        snecko.combat.enemies = [enemy(base, 'snecko', 'snecko')]
+        await page.evaluate(run => window.__STS_DEBUG__.setRun(run), snecko)
+        await page.waitForFunction(() => document.querySelectorAll('.hand .card').length === 3)
+        await page.locator('.hand .card__art').evaluateAll(images => Promise.all(images.map(image => image.decode())))
+        await page.waitForFunction(() => [...document.querySelectorAll('.hand .card__art')]
+          .every(image => getComputedStyle(image).visibility === 'visible'))
+        await page.waitForFunction(() => [...document.querySelectorAll('.hand .card')].every(card => {
+          const box = card.getBoundingClientRect()
+          return box.width > 0 && box.top >= 0 && box.bottom <= innerHeight + 1 &&
+            Number(getComputedStyle(card).opacity) === 1 && card.getAnimations().every(animation => animation.playState !== 'running')
+        }))
+        assert.equal(await page.locator('.hand .card__live-cost').count(), 0, 'Snecko must not cover every printed cost with its next-play price')
+        assert((await page.locator('.hand .card').evaluateAll(cards => cards.map(card => card.getAttribute('aria-label'))))
+          .every(label => label.includes('cost 3')), 'play information must still expose the actual next-play price')
+        assert((await page.locator('.hand .card-face').evaluateAll(faces => faces.map(face => getComputedStyle(face).visibility)))
+          .every(visibility => visibility === 'hidden'), 'fallback costs must not leak through transparent scans')
+        await page.mouse.move(2, 2)
+        await page.screenshot({ path: resolve(out, `${engineName}-${screen}-snecko-hand.png`) })
+        await page.locator('.hand .card[aria-label^="Rage of the Gods"]').click()
+        await page.waitForFunction(() => {
+          const player = window.__STS_DEBUG__.getRun().combat.players[0]
+          return player.energy === 6 && player.enemyNextCardCost === null && player.hand.length === 2
+        })
+        assert.match(await page.locator('.hand .card[aria-label^="Defend"]').getAttribute('aria-label'), /cost 1/)
+        assert.match(await page.locator('.hand .card[aria-label^="Hyperion Charge"]').getAttribute('aria-label'), /cost 2/)
+        assert.equal(await page.locator('.hand .card__live-cost').count(), 0)
+        await page.screenshot({ path: resolve(out, `${engineName}-${screen}-snecko-after-first-card.png`) })
         assert.deepEqual(errors, [])
         await context.close()
         console.log(`${engineName}/${screen}: live card damage passed`)

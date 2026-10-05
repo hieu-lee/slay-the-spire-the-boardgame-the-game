@@ -104,19 +104,6 @@
   visibility: hidden;
 }
 
-/* Cover the printed orb only while the actual cost differs. */
-.card__live-cost {
-  z-index: 3;
-  font-size: calc(var(--card-width) * .15);
-  line-height: 1;
-  border-color: #68201d;
-  background-color: #351917;
-  background-size: 145%;
-  background-position: center;
-  color: #fff;
-  text-shadow: 0 1px 2px #000;
-}
-
 .card-face__illustration {
   display: block;
   width: 100%;
