@@ -65,7 +65,7 @@ def trim_chain(image, trim):
     """
     cut, length = trim['x'], trim['length']
     strip = image.getchannel('A').point(lambda a: 255 if a > 128 else 0).crop((cut, 0, cut + length, image.height))
-    heights = [sum(1 for v in strip.crop((x, 0, x + 1, strip.height)).get_flattened_data() if v) for x in range(length)]
+    heights = [strip.crop((x, 0, x + 1, strip.height)).histogram()[255] for x in range(length)]
     assert max(heights) <= 24, f'chainTrim strip at x={cut} holds more than a chain'
     out = Image.new('RGBA', image.size)
     out.alpha_composite(image.crop((0, 0, cut, image.height)))
