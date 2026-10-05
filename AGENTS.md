@@ -22,3 +22,16 @@ Before pushing `master`, require `node scripts/verify-all.mjs --changed=origin/m
 
 - A finished Slay the Spire run is not complete until its campaign result is explicitly recorded: after defeat, use `Record campaign result`; after victory, use `Stop and record result`.
 - Verify that the new run appears on the solo leaderboard before starting another run, and update playbook immediately after every finished run.
+
+## AI-directed playtest budgets
+
+For requests such as "playtest this character, budget 50 runs", follow
+`docs/playtesting.md` and use `scripts/playtest.mjs`. The AI chooses meaningful
+decisions; do not substitute a scripted policy or label verifier runs as AI
+playtests. Use the persistent JSON-lines sessions, compact deltas, and safe
+action sequences. For parallel budgets, the coordinator plays worker 0 and
+spawns three playtest subagents for workers 1–3, each with its own session.
+Record every terminal run locally, finish the entire budget, produce the report,
+and update the requested character playbook. This headless workflow does not
+write to the human leaderboard. An explicit browser/WebMCP-only request takes
+precedence and uses the WebMCP campaign runbook above.
