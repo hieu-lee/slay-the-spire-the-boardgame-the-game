@@ -63,6 +63,7 @@
   will-change: transform, opacity;
 }
 .card-flight--ironclad { --flight-trace: #e74b38; }
+.card-flight--kratos { --flight-trace: #8b1e2d; }
 .card-flight--silent { --flight-trace: #54ca68; }
 .card-flight--defect { --flight-trace: #42aef5; }
 .card-flight--watcher, .card-flight--hexaghost { --flight-trace: #a35ce5; }

@@ -26,6 +26,7 @@ import {
   SOCKETED_CARD_THUMB_ROOT,
 } from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
+import { CHARACTER_IDS } from '../src/game/types.ts'
 import { POTIONS, RELICS } from '../src/game/relics.ts'
 import {
   bossProjectileImagePath,
@@ -945,6 +946,22 @@ for image in images:
 print('PASS: Kratos native alpha, fixed canvas, planted feet and weapon overscan')
 `], { cwd: repoRoot, encoding: 'utf8' })
   assert(result.status === 0, result.stderr || result.stdout)
+})
+
+check('every released hero has registered transparent treasure pickup poses', () => {
+  const root = join(repoRoot, 'public/assets/noncombat/treasure')
+  const expected = CHARACTER_IDS.flatMap((id) => [`hand-${id}.webp`, `grip-${id}.webp`]).sort()
+  assertDeepEqual(listing(root, '.webp').filter((name) => /^(hand|grip)-/.test(name)).sort(), expected)
+  const result = spawnSync('webpinfo', ['-summary', ...expected.map((name) => join(root, name))], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not decode treasure pickup poses')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, expected.length, 'decoded treasure pickup pose count')
+  for (const block of inspected) {
+    assert(/Width: 384[\s\S]*Height: 1024/.test(block) && /Alpha:\s+1/.test(block),
+      `${block.split('\n')[0]} must retain the registered 384x1024 transparent canvas`)
+  }
+  assert(expected.reduce((bytes, name) => bytes + statSync(join(root, name)).size, 0) < 1024 * 1024,
+    'treasure pickup poses exceed 1 MiB')
 })
 
 check('Downfall and Kratos merchant poses are complete, transparent, and edge-capped', () => {

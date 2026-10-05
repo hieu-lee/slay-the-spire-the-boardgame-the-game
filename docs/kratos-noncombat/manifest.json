@@ -3619,6 +3619,90 @@
         "sha256": "76ebf4e6cae8d2582ba0eec6b388ba51ded3aa8774e506cb543f545154f9ef13",
         "bytes": 226290
       }
+    },
+    {
+      "id": "treasure-hand",
+      "modelSize": [
+        1024,
+        1536
+      ],
+      "crop": [
+        0,
+        0,
+        512,
+        1536
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/treasure-hands.txt",
+      "references": [
+        {
+          "path": "scripts/art/sources/kratos-noncombat/treasure-hands-reference.png",
+          "sha256": "e136b5a30870fbb37920cb8bd382706bfaa6095deaae70727211866b9d9fc161",
+          "bytes": 711123
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/merchant.webp",
+          "sha256": "0875e4e837df7bcdebe4fbd43a18f6ca6cc0c8a858e1717d7957a8491f681d44",
+          "bytes": 886422
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/treasure-hands.webp",
+        "sha256": "ff0087485aaa35ea5503662445ec0fa4e4aea460fce1cb840d2cd7d396753c43",
+        "bytes": 1002884
+      },
+      "modelOutputSha256": "97cb01eeb1819d1ebe594fe15ef2a97f89c06b70e4e0bdf9560fcc67329038b3",
+      "runtime": {
+        "path": "public/assets/noncombat/treasure/hand-kratos.webp",
+        "sha256": "086871006863154a7d2e3db248734e8cb42b064c1ac7f1be6ffd8b07f7922323",
+        "bytes": 69760
+      }
+    },
+    {
+      "id": "treasure-grip",
+      "modelSize": [
+        1024,
+        1536
+      ],
+      "crop": [
+        512,
+        0,
+        1024,
+        1536
+      ],
+      "prompt": "docs/kratos-noncombat/prompts/treasure-hands.txt",
+      "references": [
+        {
+          "path": "scripts/art/sources/kratos-noncombat/treasure-hands-reference.png",
+          "sha256": "e136b5a30870fbb37920cb8bd382706bfaa6095deaae70727211866b9d9fc161",
+          "bytes": 711123
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/kratos-reference.png",
+          "sha256": "d3c35286419682b5edf6ace908afeee4883b6680647e89af56b97c37ba083b37",
+          "bytes": 149498
+        },
+        {
+          "path": "scripts/art/sources/kratos-noncombat/merchant.webp",
+          "sha256": "0875e4e837df7bcdebe4fbd43a18f6ca6cc0c8a858e1717d7957a8491f681d44",
+          "bytes": 886422
+        }
+      ],
+      "source": {
+        "path": "scripts/art/sources/kratos-noncombat/treasure-hands.webp",
+        "sha256": "ff0087485aaa35ea5503662445ec0fa4e4aea460fce1cb840d2cd7d396753c43",
+        "bytes": 1002884
+      },
+      "modelOutputSha256": "97cb01eeb1819d1ebe594fe15ef2a97f89c06b70e4e0bdf9560fcc67329038b3",
+      "runtime": {
+        "path": "public/assets/noncombat/treasure/grip-kratos.webp",
+        "sha256": "d230de77e78e12fd105d383c94b2b5f0d88d993c3b167e31c917995d55178dad",
+        "bytes": 61836
+      }
     }
   ]
 }

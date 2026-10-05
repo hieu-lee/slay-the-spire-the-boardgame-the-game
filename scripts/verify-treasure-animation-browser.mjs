@@ -12,7 +12,7 @@ mkdirSync(output, { recursive: true })
 const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
 await server.listen()
 const errors = []
-const seats = ['ironclad', 'silent', 'defect', 'watcher'].map((character, index) => ({ id: `p${index + 1}`, name: ['A · Ironclad', 'B · Silent', 'C · Defect', 'D · Watcher'][index], character }))
+const seats = ['kratos', 'silent', 'defect', 'watcher'].map((character, index) => ({ id: `p${index + 1}`, name: ['A · Kratos', 'B · Silent', 'C · Defect', 'D · Watcher'][index], character }))
 function fixture(shared = true, roster = seats) {
   const run = postNeowRun('treasure-animation', roster)
   run.campaignProgress.actIV = 5
@@ -77,23 +77,46 @@ try {
         }
         assert.equal(await page.locator('.treasure-claim').count(), 0, 'No hover hand')
         await page.screenshot({ path: `${output}/${engineName}-${name}-hover.png` })
+        await page.clock.install()
+        await page.clock.pauseAt(new Date())
         if (name === 'horizontal-phone') await tap(page.locator('[data-treasure-slot="0"]'))
         else await page.locator('[data-treasure-slot="0"]').click()
         await page.locator('.treasure-claim--0').waitFor({ state: 'attached' })
         assert.equal(await page.locator('[data-treasure-slot="0"]').getAttribute('data-taken'), 'true')
         assert.equal(await page.locator('[data-treasure-slot="0"]').evaluate((element) => element.tagName), 'SPAN')
         await page.locator('.potion-tip:visible').waitFor({ state: 'detached' })
-        await page.waitForTimeout(550)
+        const pickup = page.locator('.treasure-claim--0')
+        await pickup.locator('img.treasure-claim__hand').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
+        const pose = (time) => pickup.evaluate((element, time) => {
+          for (const node of [element, ...element.querySelectorAll('*')]) {
+            for (const animation of node.getAnimations()) { animation.pause(); animation.currentTime = time }
+          }
+        }, time)
+        await pose(450)
         await page.screenshot({ path: `${output}/${engineName}-${name}-hand.png` })
+        await pose(700)
+        await page.screenshot({ path: `${output}/${engineName}-${name}-grip.png` })
+        await pickup.evaluate((element) => {
+          for (const node of [element, ...element.querySelectorAll('*')]) {
+            node.getAnimations().forEach((animation) => animation.play())
+          }
+        })
+        await page.clock.runFor(1600)
+        await page.clock.resume()
         await page.locator('.treasure-claim:not(.treasure-preview)').waitFor({ state: 'detached' })
         // Remote decisions use authoritative snapshots while the viewer stays on A.
         for (let seat = 1; seat < 4; seat++) {
           const current = await page.evaluate(() => window.__STS_DEBUG__.getRun())
           const next = chooseRelicReward(current, `p${seat + 1}`, seat)
           await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), next)
-          await page.locator(`.treasure-claim--${seat}`).waitFor({ state: 'attached' })
-          assert.match(await page.locator(`.treasure-claim--${seat} img.treasure-claim__hand--reach`).getAttribute('src'), new RegExp(seats[seat].character))
-          if (seat === 3) assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().phase), 'map')
+          const receipt = await page.waitForFunction((seat) => {
+            const hand = document.querySelector(`.treasure-claim--${seat} img.treasure-claim__hand--reach`)
+            return hand && { src: hand.getAttribute('src'), phase: window.__STS_DEBUG__.getRun().phase }
+          }, seat)
+          const observed = await receipt.jsonValue()
+          await receipt.dispose()
+          assert.match(observed.src, new RegExp(seats[seat].character))
+          if (seat === 3) assert.equal(observed.phase, 'map')
           await page.locator('.treasure-claim:not(.treasure-preview)').waitFor({ state: 'detached' })
         }
         assert.equal(await page.locator('.treasure-claim:not(.treasure-preview)').count(), 0)

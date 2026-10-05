@@ -9,7 +9,7 @@ const out = `${root}artifacts/card-trails`
 mkdirSync(out, { recursive: true })
 const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
 await server.listen()
-const colors = { ironclad: '#e74b38', silent: '#54ca68', defect: '#42aef5', watcher: '#a35ce5', hexaghost: '#a35ce5', slime_boss: '#a5df42', guardian: '#49d9c5', hermit: '#e8b650' }
+const colors = { ironclad: '#e74b38', silent: '#54ca68', defect: '#42aef5', watcher: '#a35ce5', hexaghost: '#a35ce5', slime_boss: '#a5df42', guardian: '#49d9c5', hermit: '#e8b650', kratos: '#8b1e2d' }
 const errors = []
 const recording = process.argv.includes('--record')
 try {
@@ -93,7 +93,8 @@ try {
           await first.click()
           await page.screenshot({ path: `${out}/${engineName}-${screen}-start-controls.png` })
         }
-        const cases = [['silent','defend_silent','discard'], ['ironclad','flex','exhaust'], ['watcher','tantrum','draw']]
+        if (!recording) { await page.clock.install(); await page.clock.pauseAt(new Date()) }
+        const cases = [['silent','defend_silent','discard'], ['ironclad','flex','exhaust'], ['watcher','tantrum','draw'], ['kratos','defend_kratos','discard']]
         if (engineName === 'chromium' && screen === 'desktop') for (const character of ['defect','hexaghost','slime_boss','guardian','hermit']) cases.push([character, 'defend_silent', 'discard'])
         for (const [character, card, destination] of cases) {
           await page.evaluate(({ baseline, character, card }) => {
@@ -120,8 +121,9 @@ try {
             console.log(await page.evaluate(() => ({ phase: window.__STS_DEBUG__.getState().phase, prompt: document.querySelector('.prompt')?.textContent, hand: window.__STS_DEBUG__.getState().players[0].hand.map(c => c.defId) })))
             throw error
           })
-          await flight.evaluate((element) => {
+          await flight.evaluate((element, recording) => {
             const effect = element.closest('.card-flight-effect')
+            if (!recording) effect.getAnimations({ subtree: true }).forEach(animation => animation.pause())
             window.__trailAfterLanding = new Promise((resolve) => {
               const observer = new MutationObserver(() => {
                 if (effect.querySelector('.card-flight')) return
@@ -131,7 +133,7 @@ try {
               })
               observer.observe(effect, { childList: true, subtree: true })
             })
-          })
+          }, recording)
           assert.equal(await flight.evaluate(el => getComputedStyle(el).getPropertyValue('--flight-trace').trim()), colors[character])
           await page.locator('.card-flight-trail[data-texture-ready="true"]').waitFor()
           assert.equal(await page.locator('.card-flight-effect filter').count(), 0, 'No live noise filter during playback')
@@ -155,23 +157,32 @@ try {
           const distance = recording ? 0 : await flight.evaluate(el => {
             const animation = el.getAnimations().find(a => a.id === 'card-resolve')
             const previousTime = animation.currentTime
+            const paused = animation.playState === 'paused'
             animation.pause(); animation.currentTime = 979
             const rect = el.getBoundingClientRect()
             const pile = document.querySelector(`[data-pile="${el.className.match(/card-flight--(draw|discard|exhaust)/)[1]}"]`).getBoundingClientRect()
             const distance = Math.hypot(rect.x + rect.width / 2 - pile.x - pile.width / 2, rect.y + rect.height / 2 - pile.y - pile.height / 2)
-            animation.currentTime = previousTime; animation.play()
+            animation.currentTime = previousTime; if (!paused) animation.play()
             return distance
           })
           assert(distance < 20, `${engineName} ${screen} ${destination} missed pile by ${distance}`)
-          await page.waitForTimeout(700)
-          if (!recording) await page.screenshot({ path: `${out}/${engineName}-${screen}-${character}-${destination}.png` })
+          if (recording) await page.waitForTimeout(700)
+          else {
+            // Hold the visible frame while screenshot encoding runs; drive the real cleanup timers separately.
+            await flight.evaluate(element => element.closest('.card-flight-effect').getAnimations({ subtree: true })
+              .forEach(animation => { animation.pause(); animation.currentTime = 900 }))
+            await page.screenshot({ path: `${out}/${engineName}-${screen}-${character}-${destination}.png` })
+            await page.clock.runFor(980)
+          }
           await flight.waitFor({ state: 'detached' })
           const linger = await page.evaluate(() => window.__trailAfterLanding)
           const trail = page.locator('.card-flight-trail__reveal')
           assert.equal(linger.count, 1, 'Trail should linger after card lands')
           assert(linger.opacity > 0, 'Lingering trail is visible')
+          if (!recording) await page.clock.runFor(820)
           await trail.waitFor({ state: 'detached' })
         }
+        if (!recording) await page.clock.resume()
         await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true'; const run = window.__STS_DEBUG__.getRun(); run.combat.players[0].hand = [{ uid: 'quiet', defId: 'defend_silent', upgraded: false }]; window.__STS_DEBUG__.setRun({ ...run }) })
         await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.some(card => card.uid === 'quiet'))
         await page.locator('.hand .card').first().click()
