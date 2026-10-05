@@ -1,0 +1,2316 @@
+[
+  {
+    "id": "kratos_blades_of_chaos",
+    "upgraded": false,
+    "name": "Blades of Chaos",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "starter",
+    "printedText": "Deal 1 damage to a row. Gain 1 Rage.",
+    "assetKey": "kratos__starter__blades-of-chaos",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blades_of_chaos.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_blades_of_chaos",
+    "upgraded": true,
+    "name": "Blades of Chaos+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "starter",
+    "printedText": "Deal 2 damage to a row. Gain 1 Rage.",
+    "assetKey": "kratos__starter__blades-of-chaos+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blades_of_chaos.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_plume_of_prometheus",
+    "upgraded": false,
+    "name": "Plume of Prometheus",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "starter",
+    "printedText": "Deal 1 damage. Unleash 2: deal 4 damage instead.",
+    "assetKey": "kratos__starter__plume-of-prometheus",
+    "references": [
+      "public/assets/card-art/kratos/kratos_plume_of_prometheus.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_plume_of_prometheus",
+    "upgraded": true,
+    "name": "Plume of Prometheus+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "starter",
+    "printedText": "Deal 2 damage. Unleash 2: deal 5 damage instead.",
+    "assetKey": "kratos__starter__plume-of-prometheus+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_plume_of_prometheus.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_orions_harpoon",
+    "upgraded": false,
+    "name": "Orion's Harpoon",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 2 damage. Gain 1 Rage.",
+    "assetKey": "kratos__normal__orion-s-harpoon",
+    "references": [
+      "public/assets/card-art/kratos/kratos_orions_harpoon.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_orions_harpoon",
+    "upgraded": true,
+    "name": "Orion's Harpoon+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 3 damage. Gain 1 Rage.",
+    "assetKey": "kratos__normal__orion-s-harpoon+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_orions_harpoon.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_cyclone_of_chaos",
+    "upgraded": false,
+    "name": "Cyclone of Chaos",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 1 damage to a row 3 times. Gain 1 Rage.",
+    "assetKey": "kratos__normal__cyclone-of-chaos",
+    "references": [
+      "public/assets/card-art/kratos/kratos_cyclone_of_chaos.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_cyclone_of_chaos",
+    "upgraded": true,
+    "name": "Cyclone of Chaos+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 1 damage to a row 4 times. Gain 1 Rage.",
+    "assetKey": "kratos__normal__cyclone-of-chaos+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_cyclone_of_chaos.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_spartan_kick",
+    "upgraded": false,
+    "name": "Spartan Kick",
+    "cost": 0,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 1 damage. Unleash 1: apply 1 Weak.",
+    "assetKey": "kratos__normal__spartan-kick",
+    "references": [
+      "public/assets/card-art/kratos/kratos_spartan_kick.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_spartan_kick",
+    "upgraded": true,
+    "name": "Spartan Kick+",
+    "cost": 0,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 2 damage. Unleash 1: apply 1 Weak.",
+    "assetKey": "kratos__normal__spartan-kick+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_spartan_kick.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_hyperion_charge",
+    "upgraded": false,
+    "name": "Hyperion Charge",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Unleash 2: apply 1 Vulnerable. Deal 3 damage.",
+    "assetKey": "kratos__normal__hyperion-charge",
+    "references": [
+      "public/assets/card-art/kratos/kratos_hyperion_charge.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/vulnerable.png"
+    ]
+  },
+  {
+    "id": "kratos_hyperion_charge",
+    "upgraded": true,
+    "name": "Hyperion Charge+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Unleash 2: apply 1 Vulnerable. Deal 4 damage.",
+    "assetKey": "kratos__normal__hyperion-charge+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_hyperion_charge.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/vulnerable.png"
+    ]
+  },
+  {
+    "id": "kratos_nemesis_whip",
+    "upgraded": false,
+    "name": "Nemesis Whip",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 1 damage 2 times. Unleash 1: 3 times instead.",
+    "assetKey": "kratos__normal__nemesis-whip",
+    "references": [
+      "public/assets/card-art/kratos/kratos_nemesis_whip.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_nemesis_whip",
+    "upgraded": true,
+    "name": "Nemesis Whip+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 1 damage 3 times. Unleash 1: 4 times instead.",
+    "assetKey": "kratos__normal__nemesis-whip+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_nemesis_whip.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_blade_of_artemis",
+    "upgraded": false,
+    "name": "Blade of Artemis",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 3 damage. Godslayer +2.",
+    "assetKey": "kratos__normal__blade-of-artemis",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blade_of_artemis.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_blade_of_artemis",
+    "upgraded": true,
+    "name": "Blade of Artemis+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 4 damage. Godslayer +2.",
+    "assetKey": "kratos__normal__blade-of-artemis+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blade_of_artemis.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_cyclops_eye_rip",
+    "upgraded": false,
+    "name": "Cyclops Eye Rip",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 2 damage. Brutal Kill: gain 1 Energy and 2 Rage.",
+    "assetKey": "kratos__normal__cyclops-eye-rip",
+    "references": [
+      "public/assets/card-art/kratos/kratos_cyclops_eye_rip.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_cyclops_eye_rip",
+    "upgraded": true,
+    "name": "Cyclops Eye Rip+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 3 damage. Brutal Kill: gain 1 Energy and 2 Rage.",
+    "assetKey": "kratos__normal__cyclops-eye-rip+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_cyclops_eye_rip.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_zeus_fury",
+    "upgraded": false,
+    "name": "Zeus' Fury",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 1 damage 2 times, choosing any enemy for each hit.",
+    "assetKey": "kratos__normal__zeus-fury",
+    "references": [
+      "public/assets/card-art/kratos/kratos_zeus_fury.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_zeus_fury",
+    "upgraded": true,
+    "name": "Zeus' Fury+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 1 damage 3 times, choosing any enemy for each hit.",
+    "assetKey": "kratos__normal__zeus-fury+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_zeus_fury.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_rage_of_the_gods",
+    "upgraded": false,
+    "name": "Rage of the Gods",
+    "cost": 0,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "Gain 2 Rage. Exhaust.",
+    "assetKey": "kratos__normal__rage-of-the-gods",
+    "references": [
+      "public/assets/card-art/kratos/kratos_rage_of_the_gods.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_rage_of_the_gods",
+    "upgraded": true,
+    "name": "Rage of the Gods+",
+    "cost": 0,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "Gain 3 Rage. Exhaust.",
+    "assetKey": "kratos__normal__rage-of-the-gods+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_rage_of_the_gods.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_parry",
+    "upgraded": false,
+    "name": "Parry",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "Gain 2 Block. Gain 1 Rage.",
+    "assetKey": "kratos__normal__parry",
+    "references": [
+      "public/assets/card-art/kratos/kratos_parry.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_parry",
+    "upgraded": true,
+    "name": "Parry+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "Gain 3 Block. Gain 1 Rage.",
+    "assetKey": "kratos__normal__parry+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_parry.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_spartan_guard",
+    "upgraded": false,
+    "name": "Spartan Guard",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "Gain 2 Block. Unleash 2: gain 5 Block instead.",
+    "assetKey": "kratos__normal__spartan-guard",
+    "references": [
+      "public/assets/card-art/kratos/kratos_spartan_guard.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_spartan_guard",
+    "upgraded": true,
+    "name": "Spartan Guard+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "Gain 3 Block. Unleash 2: gain 6 Block instead.",
+    "assetKey": "kratos__normal__spartan-guard+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_spartan_guard.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_golden_fleece",
+    "upgraded": false,
+    "name": "Golden Fleece",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "Gain 2 Block. Unleash 1: deal 1 plain damage to each enemy attacking you for each Attack icon in its intent.",
+    "assetKey": "kratos__normal__golden-fleece",
+    "references": [
+      "public/assets/card-art/kratos/kratos_golden_fleece.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_golden_fleece",
+    "upgraded": true,
+    "name": "Golden Fleece+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "3 Block to any player. Unleash 1: deal 1 plain damage to each enemy attacking you (Kratos) for each Attack icon in its intent.",
+    "assetKey": "kratos__normal__golden-fleece+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_golden_fleece.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_icarus_wings",
+    "upgraded": false,
+    "name": "Icarus Wings",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "Gain 1 Block. Draw 2 cards.",
+    "assetKey": "kratos__normal__icarus-wings",
+    "references": [
+      "public/assets/card-art/kratos/kratos_icarus_wings.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_icarus_wings",
+    "upgraded": true,
+    "name": "Icarus Wings+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "Gain 2 Block. Draw 2 cards.",
+    "assetKey": "kratos__normal__icarus-wings+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_icarus_wings.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_bow_of_apollo",
+    "upgraded": false,
+    "name": "Bow of Apollo",
+    "cost": 0,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 1 damage. Unleash 1: deal 3 damage instead.",
+    "assetKey": "kratos__normal__bow-of-apollo",
+    "references": [
+      "public/assets/card-art/kratos/kratos_bow_of_apollo.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_bow_of_apollo",
+    "upgraded": true,
+    "name": "Bow of Apollo+",
+    "cost": 0,
+    "type": "attack",
+    "rarity": "common",
+    "printedText": "Deal 2 damage. Unleash 1: deal 4 damage instead.",
+    "assetKey": "kratos__normal__bow-of-apollo+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_bow_of_apollo.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_hermes_rush",
+    "upgraded": false,
+    "name": "Hermes' Rush",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "2 Block to any player. You may switch rows with another player. Unleash 1: draw 1 card.",
+    "assetKey": "kratos__normal__hermes-rush",
+    "references": [
+      "public/assets/card-art/kratos/kratos_hermes_rush.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_hermes_rush",
+    "upgraded": true,
+    "name": "Hermes' Rush+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "common",
+    "printedText": "3 Block to any player. You may switch rows with another player. Unleash 1: draw 1 card.",
+    "assetKey": "kratos__normal__hermes-rush+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_hermes_rush.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_servant_of_ares",
+    "upgraded": false,
+    "name": "Servant of Ares",
+    "cost": 1,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "Start of turn: gain 1 Rage.",
+    "assetKey": "kratos__normal__servant-of-ares",
+    "references": [
+      "public/assets/card-art/kratos/kratos_servant_of_ares.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_servant_of_ares",
+    "upgraded": true,
+    "name": "Servant of Ares+",
+    "cost": 0,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "Start of turn: gain 1 Rage.",
+    "assetKey": "kratos__normal__servant-of-ares+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_servant_of_ares.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_chains_of_chaos",
+    "upgraded": false,
+    "name": "Chains of Chaos",
+    "cost": 1,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "Whenever you lose HP, gain 1 Rage.",
+    "assetKey": "kratos__normal__chains-of-chaos",
+    "references": [
+      "public/assets/card-art/kratos/kratos_chains_of_chaos.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_chains_of_chaos",
+    "upgraded": true,
+    "name": "Chains of Chaos+",
+    "cost": 0,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "Whenever you lose HP, gain 1 Rage.",
+    "assetKey": "kratos__normal__chains-of-chaos+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_chains_of_chaos.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_bloodlust",
+    "upgraded": false,
+    "name": "Bloodlust",
+    "cost": 1,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "Whenever one of your hits kills an enemy, gain 2 Rage.",
+    "assetKey": "kratos__normal__bloodlust",
+    "references": [
+      "public/assets/card-art/kratos/kratos_bloodlust.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_bloodlust",
+    "upgraded": true,
+    "name": "Bloodlust+",
+    "cost": 0,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "Whenever one of your hits kills an enemy, gain 2 Rage.",
+    "assetKey": "kratos__normal__bloodlust+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_bloodlust.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_ghost_of_sparta",
+    "upgraded": false,
+    "name": "Ghost of Sparta",
+    "cost": 1,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "Whenever you spend Rage on an Unleash, gain 1 Block.",
+    "assetKey": "kratos__normal__ghost-of-sparta",
+    "references": [
+      "public/assets/card-art/kratos/kratos_ghost_of_sparta.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_ghost_of_sparta",
+    "upgraded": true,
+    "name": "Ghost of Sparta+",
+    "cost": 1,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "Whenever you spend Rage on an Unleash, gain 2 Block.",
+    "assetKey": "kratos__normal__ghost-of-sparta+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_ghost_of_sparta.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_deicide",
+    "upgraded": false,
+    "name": "Deicide",
+    "cost": 1,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "Your hits deal +1 damage to an enemy whose card is an Elite or a Boss. Extra copies do not add more.",
+    "assetKey": "kratos__normal__deicide",
+    "references": [
+      "public/assets/card-art/kratos/kratos_deicide.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_deicide",
+    "upgraded": true,
+    "name": "Deicide+",
+    "cost": 0,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "Your hits deal +1 damage to an enemy whose card is an Elite or a Boss. Extra copies do not add more.",
+    "assetKey": "kratos__normal__deicide+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_deicide.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_vengeance",
+    "upgraded": false,
+    "name": "Vengeance",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 1 damage, +1 for each Rage you have. Does not spend Rage.",
+    "assetKey": "kratos__normal__vengeance",
+    "references": [
+      "public/assets/card-art/kratos/kratos_vengeance.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_vengeance",
+    "upgraded": true,
+    "name": "Vengeance+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 2 damage, +1 for each Rage you have. Does not spend Rage.",
+    "assetKey": "kratos__normal__vengeance+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_vengeance.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_poseidons_rage",
+    "upgraded": false,
+    "name": "Poseidon's Rage",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 3 damage to a row. Unleash 2: deal 5 damage instead.",
+    "assetKey": "kratos__normal__poseidon-s-rage",
+    "references": [
+      "public/assets/card-art/kratos/kratos_poseidons_rage.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_poseidons_rage",
+    "upgraded": true,
+    "name": "Poseidon's Rage+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 4 damage to a row. Unleash 2: deal 6 damage instead.",
+    "assetKey": "kratos__normal__poseidon-s-rage+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_poseidons_rage.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_atlas_quake",
+    "upgraded": false,
+    "name": "Atlas Quake",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 2 damage to a row. Unleash 2: apply 1 Weak and 1 Vulnerable to that row.",
+    "assetKey": "kratos__normal__atlas-quake",
+    "references": [
+      "public/assets/card-art/kratos/kratos_atlas_quake.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/weak.png",
+      "public/assets/icons/vulnerable.png"
+    ]
+  },
+  {
+    "id": "kratos_atlas_quake",
+    "upgraded": true,
+    "name": "Atlas Quake+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 3 damage to a row. Unleash 2: apply 1 Weak and 1 Vulnerable to that row.",
+    "assetKey": "kratos__normal__atlas-quake+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_atlas_quake.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/weak.png",
+      "public/assets/icons/vulnerable.png"
+    ]
+  },
+  {
+    "id": "kratos_cronos_rage",
+    "upgraded": false,
+    "name": "Cronos' Rage",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 1 damage 3 times, choosing any enemy for each hit. Gain 2 Rage.",
+    "assetKey": "kratos__normal__cronos-rage",
+    "references": [
+      "public/assets/card-art/kratos/kratos_cronos_rage.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_cronos_rage",
+    "upgraded": true,
+    "name": "Cronos' Rage+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 1 damage 4 times, choosing any enemy for each hit. Gain 2 Rage.",
+    "assetKey": "kratos__normal__cronos-rage+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_cronos_rage.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_tartarus_rage",
+    "upgraded": false,
+    "name": "Tartarus Rage",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 1 damage to a row once for each other Attack you played this turn.",
+    "assetKey": "kratos__normal__tartarus-rage",
+    "references": [
+      "public/assets/card-art/kratos/kratos_tartarus_rage.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_tartarus_rage",
+    "upgraded": true,
+    "name": "Tartarus Rage+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 1 damage to a row once, plus once for each other Attack you played this turn.",
+    "assetKey": "kratos__normal__tartarus-rage+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_tartarus_rage.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_apollos_ascension",
+    "upgraded": false,
+    "name": "Apollo's Ascension",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 2 damage. Unleash 1: apply 1 Vulnerable.",
+    "assetKey": "kratos__normal__apollo-s-ascension",
+    "references": [
+      "public/assets/card-art/kratos/kratos_apollos_ascension.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/vulnerable.png"
+    ]
+  },
+  {
+    "id": "kratos_apollos_ascension",
+    "upgraded": true,
+    "name": "Apollo's Ascension+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 3 damage. Unleash 1: apply 1 Vulnerable.",
+    "assetKey": "kratos__normal__apollo-s-ascension+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_apollos_ascension.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/vulnerable.png"
+    ]
+  },
+  {
+    "id": "kratos_nemean_cestus",
+    "upgraded": false,
+    "name": "Nemean Cestus",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Remove all of the target's Block. Deal 3 damage. Godslayer +2.",
+    "assetKey": "kratos__normal__nemean-cestus",
+    "references": [
+      "public/assets/card-art/kratos/kratos_nemean_cestus.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_nemean_cestus",
+    "upgraded": true,
+    "name": "Nemean Cestus+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Remove all of the target's Block. Deal 4 damage. Godslayer +2.",
+    "assetKey": "kratos__normal__nemean-cestus+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_nemean_cestus.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_claws_of_hades",
+    "upgraded": false,
+    "name": "Claws of Hades",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 2 damage. Brutal Kill: draw 2 cards.",
+    "assetKey": "kratos__normal__claws-of-hades",
+    "references": [
+      "public/assets/card-art/kratos/kratos_claws_of_hades.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_claws_of_hades",
+    "upgraded": true,
+    "name": "Claws of Hades+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 3 damage. Brutal Kill: draw 2 cards.",
+    "assetKey": "kratos__normal__claws-of-hades+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_claws_of_hades.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_nemean_roar",
+    "upgraded": false,
+    "name": "Nemean Roar",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 1 damage to a row. Unleash 2: apply 1 Weak to that row.",
+    "assetKey": "kratos__normal__nemean-roar",
+    "references": [
+      "public/assets/card-art/kratos/kratos_nemean_roar.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_nemean_roar",
+    "upgraded": true,
+    "name": "Nemean Roar+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 2 damage to a row. Unleash 2: apply 1 Weak to that row.",
+    "assetKey": "kratos__normal__nemean-roar+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_nemean_roar.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_army_of_sparta",
+    "upgraded": false,
+    "name": "Army of Sparta",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 2 damage to a row. Gain 3 Block.",
+    "assetKey": "kratos__normal__army-of-sparta",
+    "references": [
+      "public/assets/card-art/kratos/kratos_army_of_sparta.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_army_of_sparta",
+    "upgraded": true,
+    "name": "Army of Sparta+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "uncommon",
+    "printedText": "Deal 2 damage to a row. Gain 4 Block.",
+    "assetKey": "kratos__normal__army-of-sparta+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_army_of_sparta.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_medusas_gaze",
+    "upgraded": false,
+    "name": "Medusa's Gaze",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Apply 1 Weak. If the target has 3 or fewer HP, set its HP to 0 (not a hit).",
+    "assetKey": "kratos__normal__medusa-s-gaze",
+    "references": [
+      "public/assets/card-art/kratos/kratos_medusas_gaze.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_medusas_gaze",
+    "upgraded": true,
+    "name": "Medusa's Gaze+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Apply 1 Weak. If the target has 4 or fewer HP, set its HP to 0 (not a hit).",
+    "assetKey": "kratos__normal__medusa-s-gaze+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_medusas_gaze.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_head_of_helios",
+    "upgraded": false,
+    "name": "Head of Helios",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Apply 1 Weak to a row. Draw 1 card. Exhaust.",
+    "assetKey": "kratos__normal__head-of-helios",
+    "references": [
+      "public/assets/card-art/kratos/kratos_head_of_helios.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/weak.png",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_head_of_helios",
+    "upgraded": true,
+    "name": "Head of Helios+",
+    "cost": 0,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Apply 1 Weak to a row. Draw 1 card. Exhaust.",
+    "assetKey": "kratos__normal__head-of-helios+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_head_of_helios.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/weak.png",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_rage_of_the_titans",
+    "upgraded": false,
+    "name": "Rage of the Titans",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Spend all your Rage. Deal that much plain damage to a row and gain that much Block.",
+    "assetKey": "kratos__normal__rage-of-the-titans",
+    "references": [
+      "public/assets/card-art/kratos/kratos_rage_of_the_titans.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_rage_of_the_titans",
+    "upgraded": true,
+    "name": "Rage of the Titans+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Spend all your Rage. Deal that much plain damage to a row and gain that much Block +1.",
+    "assetKey": "kratos__normal__rage-of-the-titans+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_rage_of_the_titans.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_spartan_resolve",
+    "upgraded": false,
+    "name": "Spartan Resolve",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Gain Block equal to your Rage. Does not spend Rage.",
+    "assetKey": "kratos__normal__spartan-resolve",
+    "references": [
+      "public/assets/card-art/kratos/kratos_spartan_resolve.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_spartan_resolve",
+    "upgraded": true,
+    "name": "Spartan Resolve+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Gain 2 Block, +1 for each Rage you have. Does not spend Rage.",
+    "assetKey": "kratos__normal__spartan-resolve+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_spartan_resolve.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_hubris",
+    "upgraded": false,
+    "name": "Hubris",
+    "cost": 0,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Lose 1 HP. If you did, draw 2 cards.",
+    "assetKey": "kratos__normal__hubris",
+    "references": [
+      "public/assets/card-art/kratos/kratos_hubris.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_hubris",
+    "upgraded": true,
+    "name": "Hubris+",
+    "cost": 0,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Lose 1 HP. If you did, draw 3 cards.",
+    "assetKey": "kratos__normal__hubris+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_hubris.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_sacrifice",
+    "upgraded": false,
+    "name": "Sacrifice",
+    "cost": 0,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Exhaust a card from your hand. If you did, gain 2 Rage.",
+    "assetKey": "kratos__normal__sacrifice",
+    "references": [
+      "public/assets/card-art/kratos/kratos_sacrifice.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_sacrifice",
+    "upgraded": true,
+    "name": "Sacrifice+",
+    "cost": 0,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Exhaust a card from your hand. If you did, gain 3 Rage.",
+    "assetKey": "kratos__normal__sacrifice+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_sacrifice.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_blood_oath",
+    "upgraded": false,
+    "name": "Blood Oath",
+    "cost": 0,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Lose 1 HP. Gain 1 Energy. Exhaust.",
+    "assetKey": "kratos__normal__blood-oath",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blood_oath.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_blood_oath",
+    "upgraded": true,
+    "name": "Blood Oath+",
+    "cost": 0,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Lose 1 HP. Gain 2 Energy. Exhaust.",
+    "assetKey": "kratos__normal__blood-oath+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blood_oath.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_athenas_blessing",
+    "upgraded": false,
+    "name": "Athena's Blessing",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Draw 2 cards. Unleash 2: draw 1 more card.",
+    "assetKey": "kratos__normal__athena-s-blessing",
+    "references": [
+      "public/assets/card-art/kratos/kratos_athenas_blessing.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_athenas_blessing",
+    "upgraded": true,
+    "name": "Athena's Blessing+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Draw 3 cards. Unleash 2: draw 1 more card.",
+    "assetKey": "kratos__normal__athena-s-blessing+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_athenas_blessing.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_boots_of_hermes",
+    "upgraded": false,
+    "name": "Boots of Hermes",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Draw 1 card. Your next Attack this turn costs 0. Exhaust.",
+    "assetKey": "kratos__normal__boots-of-hermes",
+    "references": [
+      "public/assets/card-art/kratos/kratos_boots_of_hermes.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_boots_of_hermes",
+    "upgraded": true,
+    "name": "Boots of Hermes+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Draw 2 cards. Your next Attack this turn costs 0. Exhaust.",
+    "assetKey": "kratos__normal__boots-of-hermes+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_boots_of_hermes.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_loom_of_fate",
+    "upgraded": false,
+    "name": "Loom of Fate",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Put a card from your discard pile into your hand. Gain 1 Rage.",
+    "assetKey": "kratos__normal__loom-of-fate",
+    "references": [
+      "public/assets/card-art/kratos/kratos_loom_of_fate.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_loom_of_fate",
+    "upgraded": true,
+    "name": "Loom of Fate+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Put a card from your discard pile into your hand. Gain 2 Rage.",
+    "assetKey": "kratos__normal__loom-of-fate+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_loom_of_fate.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_typhons_bane",
+    "upgraded": false,
+    "name": "Typhon's Bane",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Assign 2 separate 1 Weak tokens to any enemies (both may go on one enemy).",
+    "assetKey": "kratos__normal__typhon-s-bane",
+    "references": [
+      "public/assets/card-art/kratos/kratos_typhons_bane.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_typhons_bane",
+    "upgraded": true,
+    "name": "Typhon's Bane+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Assign 3 separate 1 Weak tokens to any enemies (several may go on one enemy).",
+    "assetKey": "kratos__normal__typhon-s-bane+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_typhons_bane.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_head_of_euryale",
+    "upgraded": false,
+    "name": "Head of Euryale",
+    "cost": 2,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Apply 1 Weak to a row. Set the HP of each enemy in that row with 3 or fewer HP to 0 (not a hit). Exhaust.",
+    "assetKey": "kratos__normal__head-of-euryale",
+    "references": [
+      "public/assets/card-art/kratos/kratos_head_of_euryale.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_head_of_euryale",
+    "upgraded": true,
+    "name": "Head of Euryale+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Apply 1 Weak to a row. Set the HP of each enemy in that row with 3 or fewer HP to 0 (not a hit). Exhaust.",
+    "assetKey": "kratos__normal__head-of-euryale+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_head_of_euryale.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_soul_summon",
+    "upgraded": false,
+    "name": "Soul Summon",
+    "cost": 1,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "End of turn: deal 1 plain damage to a row.",
+    "assetKey": "kratos__normal__soul-summon",
+    "references": [
+      "public/assets/card-art/kratos/kratos_soul_summon.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_soul_summon",
+    "upgraded": true,
+    "name": "Soul Summon+",
+    "cost": 1,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "End of turn: deal 2 plain damage to a row.",
+    "assetKey": "kratos__normal__soul-summon+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_soul_summon.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_green_orbs",
+    "upgraded": false,
+    "name": "Green Orbs",
+    "cost": 1,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "The first time one of your hits kills an enemy, heal 1 HP, then exhaust every Green Orbs you have in play.",
+    "assetKey": "kratos__normal__green-orbs",
+    "references": [
+      "public/assets/card-art/kratos/kratos_green_orbs.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_green_orbs",
+    "upgraded": true,
+    "name": "Green Orbs+",
+    "cost": 0,
+    "type": "power",
+    "rarity": "uncommon",
+    "printedText": "The first time one of your hits kills an enemy, heal 1 HP, then exhaust every Green Orbs you have in play.",
+    "assetKey": "kratos__normal__green-orbs+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_green_orbs.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_hercules_shoulder_guard",
+    "upgraded": false,
+    "name": "Hercules' Shoulder Guard",
+    "cost": 2,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Gain 3 Block. Unleash 1: gain 2 more Block.",
+    "assetKey": "kratos__normal__hercules-shoulder-guard",
+    "references": [
+      "public/assets/card-art/kratos/kratos_hercules_shoulder_guard.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_hercules_shoulder_guard",
+    "upgraded": true,
+    "name": "Hercules' Shoulder Guard+",
+    "cost": 2,
+    "type": "skill",
+    "rarity": "uncommon",
+    "printedText": "Gain 4 Block. Unleash 1: gain 2 more Block.",
+    "assetKey": "kratos__normal__hercules-shoulder-guard+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_hercules_shoulder_guard.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "kratos_rage_of_sparta",
+    "upgraded": false,
+    "name": "Rage of Sparta",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "rare",
+    "printedText": "Spend all your Rage. Gain that much Strength until end of turn. If you spent 5 Rage, you cannot lose more than 1 HP this round. Exhaust.",
+    "assetKey": "kratos__rare__rage-of-sparta",
+    "references": [
+      "public/assets/card-art/kratos/kratos_rage_of_sparta.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/strength.png"
+    ]
+  },
+  {
+    "id": "kratos_rage_of_sparta",
+    "upgraded": true,
+    "name": "Rage of Sparta+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "rare",
+    "printedText": "Retain. Spend all your Rage. Gain that much Strength until end of turn. If you spent 5 Rage, you cannot lose more than 1 HP this round. Exhaust.",
+    "assetKey": "kratos__rare__rage-of-sparta+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_rage_of_sparta.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/strength.png"
+    ]
+  },
+  {
+    "id": "kratos_blade_of_olympus",
+    "upgraded": false,
+    "name": "Blade of Olympus",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Deal 2 damage, +2 for each Rage you have. Then spend all your Rage.",
+    "assetKey": "kratos__rare__blade-of-olympus",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blade_of_olympus.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_blade_of_olympus",
+    "upgraded": true,
+    "name": "Blade of Olympus+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Deal 4 damage, +2 for each Rage you have. Then spend all your Rage.",
+    "assetKey": "kratos__rare__blade-of-olympus+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blade_of_olympus.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_god_of_war",
+    "upgraded": false,
+    "name": "God of War",
+    "cost": 3,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "Your Unleash costs are 1 Rage lower (minimum 0). Start of turn: gain 1 Rage. Extra copies add Rage but do not lower costs further.",
+    "assetKey": "kratos__rare__god-of-war",
+    "references": [
+      "public/assets/card-art/kratos/kratos_god_of_war.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_god_of_war",
+    "upgraded": true,
+    "name": "God of War+",
+    "cost": 2,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "Your Unleash costs are 1 Rage lower (minimum 0). Start of turn: gain 1 Rage. Extra copies add Rage but do not lower costs further.",
+    "assetKey": "kratos__rare__god-of-war+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_god_of_war.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_blades_of_athena",
+    "upgraded": false,
+    "name": "Blades of Athena",
+    "cost": 2,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "After you play an Attack, gain 1 Rage.",
+    "assetKey": "kratos__rare__blades-of-athena",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blades_of_athena.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_blades_of_athena",
+    "upgraded": true,
+    "name": "Blades of Athena+",
+    "cost": 1,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "After you play an Attack, gain 1 Rage.",
+    "assetKey": "kratos__rare__blades-of-athena+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blades_of_athena.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_army_of_hades",
+    "upgraded": false,
+    "name": "Army of Hades",
+    "cost": 2,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "End of turn: deal plain damage to a row equal to the number of Attacks you played this turn.",
+    "assetKey": "kratos__rare__army-of-hades",
+    "references": [
+      "public/assets/card-art/kratos/kratos_army_of_hades.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_army_of_hades",
+    "upgraded": true,
+    "name": "Army of Hades+",
+    "cost": 1,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "End of turn: deal plain damage to a row equal to the number of Attacks you played this turn.",
+    "assetKey": "kratos__rare__army-of-hades+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_army_of_hades.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_barbarian_hammer",
+    "upgraded": false,
+    "name": "Barbarian Hammer",
+    "cost": 3,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Unleash 2: apply 1 Vulnerable to a row. Deal 5 damage to that row.",
+    "assetKey": "kratos__rare__barbarian-hammer",
+    "references": [
+      "public/assets/card-art/kratos/kratos_barbarian_hammer.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/vulnerable.png"
+    ]
+  },
+  {
+    "id": "kratos_barbarian_hammer",
+    "upgraded": true,
+    "name": "Barbarian Hammer+",
+    "cost": 3,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Unleash 2: apply 1 Vulnerable to a row. Deal 6 damage to that row.",
+    "assetKey": "kratos__rare__barbarian-hammer+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_barbarian_hammer.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/vulnerable.png"
+    ]
+  },
+  {
+    "id": "kratos_patricide",
+    "upgraded": false,
+    "name": "Patricide",
+    "cost": 3,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Deal 1 damage 5 times. Godslayer +1.",
+    "assetKey": "kratos__rare__patricide",
+    "references": [
+      "public/assets/card-art/kratos/kratos_patricide.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_patricide",
+    "upgraded": true,
+    "name": "Patricide+",
+    "cost": 3,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Deal 1 damage 6 times. Godslayer +1.",
+    "assetKey": "kratos__rare__patricide+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_patricide.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_blade_of_the_gods",
+    "upgraded": false,
+    "name": "Blade of the Gods",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Deal 3 damage. Godslayer +4.",
+    "assetKey": "kratos__rare__blade-of-the-gods",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blade_of_the_gods.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_blade_of_the_gods",
+    "upgraded": true,
+    "name": "Blade of the Gods+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Deal 4 damage. Godslayer +5.",
+    "assetKey": "kratos__rare__blade-of-the-gods+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blade_of_the_gods.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_spear_of_destiny",
+    "upgraded": false,
+    "name": "Spear of Destiny",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Deal 3 damage to a row. Apply 1 Vulnerable to that row.",
+    "assetKey": "kratos__rare__spear-of-destiny",
+    "references": [
+      "public/assets/card-art/kratos/kratos_spear_of_destiny.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/vulnerable.png"
+    ]
+  },
+  {
+    "id": "kratos_spear_of_destiny",
+    "upgraded": true,
+    "name": "Spear of Destiny+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Deal 4 damage to a row. Apply 1 Vulnerable to that row.",
+    "assetKey": "kratos__rare__spear-of-destiny+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_spear_of_destiny.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png",
+      "public/assets/icons/vulnerable.png"
+    ]
+  },
+  {
+    "id": "kratos_red_orbs",
+    "upgraded": false,
+    "name": "Red Orbs",
+    "cost": 2,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "Whenever one of your hits kills an enemy, gain 1 Energy and 1 Rage.",
+    "assetKey": "kratos__rare__red-orbs",
+    "references": [
+      "public/assets/card-art/kratos/kratos_red_orbs.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_red_orbs",
+    "upgraded": true,
+    "name": "Red Orbs+",
+    "cost": 1,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "Whenever one of your hits kills an enemy, gain 1 Energy and 1 Rage.",
+    "assetKey": "kratos__rare__red-orbs+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_red_orbs.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_pandoras_box",
+    "upgraded": false,
+    "name": "Pandora's Box",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "rare",
+    "printedText": "Lose 2 HP. Gain 5 Rage. Draw 2 cards. Exhaust.",
+    "assetKey": "kratos__rare__pandora-s-box",
+    "references": [
+      "public/assets/card-art/kratos/kratos_pandoras_box.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_pandoras_box",
+    "upgraded": true,
+    "name": "Pandora's Box+",
+    "cost": 0,
+    "type": "skill",
+    "rarity": "rare",
+    "printedText": "Lose 2 HP. Gain 5 Rage. Draw 2 cards. Exhaust.",
+    "assetKey": "kratos__rare__pandora-s-box+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_pandoras_box.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/status-icons/draw.png"
+    ]
+  },
+  {
+    "id": "kratos_escape_from_hades",
+    "upgraded": false,
+    "name": "Escape from Hades",
+    "cost": 2,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "The first time you would lose your last HP, keep 1 HP instead and exhaust this Power.",
+    "assetKey": "kratos__rare__escape-from-hades",
+    "references": [
+      "public/assets/card-art/kratos/kratos_escape_from_hades.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_escape_from_hades",
+    "upgraded": true,
+    "name": "Escape from Hades+",
+    "cost": 1,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "The first time you would lose your last HP, keep 1 HP instead and exhaust this Power.",
+    "assetKey": "kratos__rare__escape-from-hades+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_escape_from_hades.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp"
+    ]
+  },
+  {
+    "id": "kratos_amulet_of_the_fates",
+    "upgraded": false,
+    "name": "Amulet of the Fates",
+    "cost": 2,
+    "type": "skill",
+    "rarity": "rare",
+    "printedText": "Apply 2 Weak to every enemy. Gain 4 Block. Exhaust.",
+    "assetKey": "kratos__rare__amulet-of-the-fates",
+    "references": [
+      "public/assets/card-art/kratos/kratos_amulet_of_the_fates.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_amulet_of_the_fates",
+    "upgraded": true,
+    "name": "Amulet of the Fates+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "rare",
+    "printedText": "Apply 2 Weak to every enemy. Gain 4 Block. Exhaust.",
+    "assetKey": "kratos__rare__amulet-of-the-fates+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_amulet_of_the_fates.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png",
+      "public/assets/icons/weak.png"
+    ]
+  },
+  {
+    "id": "kratos_blades_of_exile",
+    "upgraded": false,
+    "name": "Blades of Exile",
+    "cost": 1,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "Each hit of your Attacks that target a row or every enemy deals +1 damage. Extra copies do not add more.",
+    "assetKey": "kratos__rare__blades-of-exile",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blades_of_exile.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_blades_of_exile",
+    "upgraded": true,
+    "name": "Blades of Exile+",
+    "cost": 0,
+    "type": "power",
+    "rarity": "rare",
+    "printedText": "Each hit of your Attacks that target a row or every enemy deals +1 damage. Extra copies do not add more.",
+    "assetKey": "kratos__rare__blades-of-exile+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_blades_of_exile.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_fall_of_olympus",
+    "upgraded": false,
+    "name": "Fall of Olympus",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Deal 2 damage to every enemy 3 times. Exhaust.",
+    "assetKey": "kratos__rare__fall-of-olympus",
+    "references": [
+      "public/assets/card-art/kratos/kratos_fall_of_olympus.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "kratos_fall_of_olympus",
+    "upgraded": true,
+    "name": "Fall of Olympus+",
+    "cost": 2,
+    "type": "attack",
+    "rarity": "rare",
+    "printedText": "Deal 2 damage to every enemy 4 times. Exhaust.",
+    "assetKey": "kratos__rare__fall-of-olympus+",
+    "references": [
+      "public/assets/card-art/kratos/kratos_fall_of_olympus.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "strike_kratos",
+    "upgraded": false,
+    "name": "Strike",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "starter",
+    "printedText": "Deal 1 damage.",
+    "assetKey": "kratos__starter__strike",
+    "references": [
+      "public/assets/card-art/kratos/strike_kratos.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "strike_kratos",
+    "upgraded": true,
+    "name": "Strike+",
+    "cost": 1,
+    "type": "attack",
+    "rarity": "starter",
+    "printedText": "Deal 2 damage.",
+    "assetKey": "kratos__starter__strike+",
+    "references": [
+      "public/assets/card-art/kratos/strike_kratos.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/attack.png"
+    ]
+  },
+  {
+    "id": "defend_kratos",
+    "upgraded": false,
+    "name": "Defend",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "starter",
+    "printedText": "Gain 1 Block.",
+    "assetKey": "kratos__starter__defend",
+    "references": [
+      "public/assets/card-art/kratos/defend_kratos.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  },
+  {
+    "id": "defend_kratos",
+    "upgraded": true,
+    "name": "Defend+",
+    "cost": 1,
+    "type": "skill",
+    "rarity": "starter",
+    "printedText": "2 Block to any player.",
+    "assetKey": "kratos__starter__defend+",
+    "references": [
+      "public/assets/card-art/kratos/defend_kratos.webp",
+      "public/assets/icons/kratos-energy.png",
+      "scripts/art/sources/kratos-card-faces/rage-symbol.png",
+      "public/assets/cards/ironclad__normal__cleave.webp",
+      "public/assets/cards/ironclad__normal__shrug-it-off.webp",
+      "public/assets/icons/block.png"
+    ]
+  }
+]

@@ -5,7 +5,7 @@ import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import type { Amount, Condition, CountOf, Effect, EnemyTokenKind } from '../game/cards.ts'
 import type { HandEndOfTurnEffect } from '../game/cards.ts'
-import { cardThumbPath } from '../game/assets.ts'
+import { assetPath, cardThumbPath } from '../game/assets.ts'
 import { CardFace, cardTypeLabel } from './CardFace.tsx'
 import { Icon, StatusIcon } from './Icon.tsx'
 import type { IconName, StatusIconName } from './icons.ts'
@@ -799,6 +799,10 @@ export function Card({
           setScanUnavailable(true)
         }}
       /> : null}
+      {def.owner === 'kratos' && hasPublisherScan && !scanUnavailable && cost !== undefined && cost !== def.cost
+        ? <span className="card-face__cost card__live-cost" aria-hidden="true"
+          style={{ backgroundImage: `url("${assetPath('icons/kratos-energy.png')}")` }}>{costLabel(def, cost)}</span>
+        : null}
       <CardFace def={def} cost={cost} rules={cardRulesText(def)} illustration={scanUnavailable} />
       {attachedGem && scanUnavailable ? <img className="card__gem" src={cardThumbPath(attachedGem, false)} alt=""
         draggable={false} title={`${attachedGem.name}: ${cardRuleDescription(attachedGem)}`} /> : null}

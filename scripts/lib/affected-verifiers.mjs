@@ -98,6 +98,7 @@ const focusedOnlyUiOwners = new Map([
   ['scripts/audio/generate-combat-sfx.py', ['verify-assets.mjs', 'verify-safari-sound-browser.mjs', 'verify-rig-animation-browser.mjs']],
   ['scripts/lib/kratos-animation-fixture.mjs', ['verify-kratos-animation-browser.mjs']],
   ['scripts/art/export-kratos.py', ['verify-assets.mjs', 'verify-kratos-card-art-browser.mjs']],
+  ['scripts/art/export-kratos-card-faces.py', ['verify-assets.mjs', 'verify-kratos-card-art-browser.mjs']],
   ['scripts/calibrate-hero-head.py', ['verify-hero-potions-browser.mjs', 'verify-assets.mjs']],
   ['scripts/animation/encode-safari-attacks.py', ['verify-assets.mjs', 'verify-rig-animation-browser.mjs']],
   ['scripts/animation/check-attack-parity.py', ['verify-rig-animation-browser.mjs']],
@@ -221,6 +222,13 @@ export function browserScript(script, root) {
 }
 
 export function affectedVerifiers(root, changedFiles, scripts) {
+  // Asset batches ask about the same entry points repeatedly. Walk each
+  // dependency graph once per selection, rather than once per changed image.
+  const dependencyCache = new Map()
+  const dependenciesOf = file => {
+    if (!dependencyCache.has(file)) dependencyCache.set(file, imports(file, root))
+    return dependencyCache.get(file)
+  }
   const changed = new Set(changedFiles.map(cleanPath))
   const selected = new Set()
   const browser = scripts.filter((script) => browserScript(script, root))
@@ -230,18 +238,18 @@ export function affectedVerifiers(root, changedFiles, scripts) {
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
   ].includes(script))
   const browserMentioning = (files) => browser.filter((script) =>
-    [...imports(join('scripts', script), root)].some((dependency) => {
+    [...dependenciesOf(join('scripts', script))].some((dependency) => {
       const source = sourceOf(dependency)
       return files.some((file) => source.includes(`/${cleanPath(file)}`))
     }))
   const stylesheetRootsFor = (file) => ['src/ui/styles.css', 'src/ui/chrome.css'].filter((entry) =>
-    imports(entry, root).has(resolve(root, file)))
+    dependenciesOf(entry).has(resolve(root, file)))
   const uiOwners = (file) => {
     const absolute = resolve(root, file)
     const owners = []
-    if (localRoots.some((entry) => imports(entry, root).has(absolute))) owners.push('verify-browser.mjs')
-    if (noncombatRoots.some((entry) => imports(entry, root).has(absolute))) owners.push('verify-noncombat-browser.mjs')
-    if (imports('src/ui/OnlineGame.tsx', root).has(absolute)) owners.push('verify-online-browser.mjs')
+    if (localRoots.some((entry) => dependenciesOf(entry).has(absolute))) owners.push('verify-browser.mjs')
+    if (noncombatRoots.some((entry) => dependenciesOf(entry).has(absolute))) owners.push('verify-noncombat-browser.mjs')
+    if (dependenciesOf('src/ui/OnlineGame.tsx').has(absolute)) owners.push('verify-online-browser.mjs')
     return owners
   }
   const externalReferences = [...changed].filter((file) => !file.startsWith('src/')).flatMap((file) => {
@@ -250,7 +258,7 @@ export function affectedVerifiers(root, changedFiles, scripts) {
   })
 
   for (const script of scripts) {
-    const dependencies = imports(join('scripts', script), root)
+    const dependencies = dependenciesOf(join('scripts', script))
     const source = sourceOf(resolve(root, 'scripts', script))
     const mentions = externalReferences.some((reference) => source.includes(reference))
     const directBrowserDependency = browser.includes(script)
@@ -265,7 +273,7 @@ export function affectedVerifiers(root, changedFiles, scripts) {
   }
 
   for (const file of changed) {
-    let covered = [...selected].some((script) => imports(join('scripts', script), root).has(resolve(root, file)))
+    let covered = [...selected].some((script) => dependenciesOf(join('scripts', script)).has(resolve(root, file)))
     if (file === 'scripts/animation/kratos.py' || file.startsWith('scripts/animation/sources/kratos/')) {
       selected.add('verify-assets.mjs')
       selected.add('verify-kratos-animation-browser.mjs')
@@ -288,14 +296,14 @@ export function affectedVerifiers(root, changedFiles, scripts) {
     if (file.startsWith('scripts/')) {
       let browserCovered = false
       for (const script of browser) {
-        if (imports(join('scripts', script), root).has(resolve(root, file))) {
+        if (dependenciesOf(join('scripts', script)).has(resolve(root, file))) {
           selected.add(script)
           browserCovered = true
         }
       }
       covered ||= browserCovered
     }
-    if (file.startsWith('scripts/art/sources/kratos/')) {
+    if (file.startsWith('scripts/art/sources/kratos/') || file.startsWith('scripts/art/sources/kratos-card-faces/')) {
       selected.add('verify-assets.mjs')
       selected.add('verify-kratos-card-art-browser.mjs')
       covered = true

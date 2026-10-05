@@ -14,8 +14,8 @@ const brutalKill = (effects: Effect[]): Effect => ({ kind: 'branch', condition: 
 const godslayer = (base: number, plus: number): Amount => ({ base, bonus: { plus, when: { kind: 'targetEliteOrBoss' } } })
 const perRage = (base: number, scale?: number): Amount => ({ base, per: 'rage', ...(scale ? { scale } : {}) })
 
-type KratosCard = Omit<CardDef, 'owner' | 'publisherScan'>
-const kratos = (def: KratosCard): CardDef => ({ ...def, owner: 'kratos', publisherScan: false })
+type KratosCard = Omit<CardDef, 'owner'>
+const kratos = (def: KratosCard): CardDef => ({ ...def, owner: 'kratos' })
 
 export const KRATOS_CARD_DEFS: Record<string, CardDef> = Object.fromEntries([
   // Starter

@@ -44,6 +44,9 @@ try {
   assert.equal(assetPath('noncombat/campfire/smith.webp'), '/assets/noncombat/campfire/smith.webp')
   assert.equal(assetPath('bgm/exordium.mp3'), `${cdn}/bgm/exordium.mp3`)
   assert.equal(assetPath('cards/strike.webp'), '/assets/cards/strike.webp')
+  assert.equal(assetPath('combat/rigged/hero-defect-idle.webp'), `${campfireOrigin}/combat/rigged/hero-defect-idle.webp`)
+  assert.equal(assetPath('combat/rigged/jaw_worm-idle.webp'), '/assets/combat/rigged/jaw_worm-idle.webp')
+  assert.equal(assetPath('combat/rigged/hero-defect-attack.webp'), '/assets/combat/rigged/hero-defect-attack.webp')
 } finally {
   await vite.close()
   if (previousCdn === undefined) delete process.env.VITE_ASSET_CDN_ORIGIN

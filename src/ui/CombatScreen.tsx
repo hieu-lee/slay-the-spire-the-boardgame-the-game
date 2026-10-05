@@ -6933,6 +6933,8 @@ function CombatScreenView({
           ].filter(Boolean).join(' ')} data-character={viewer.character}
           data-guardian-mode={viewer.guardianMode ?? undefined} data-empty={viewer.energy === 0 || undefined}
           title="Energy">
+            {viewer.character === 'kratos' ? <img className="energy-orb__kratos"
+              src={assetPath('combat/energy-orbs/kratos.webp')} alt="" aria-hidden="true" /> : null}
             {downfallCharacter ? <span className="energy-orb__layers" aria-hidden="true">
               {downfallEnergyOrbLayers(downfallCharacter, viewer.energy === 0).map(({ layer, src }) =>
                 <img key={layer} data-layer={layer} src={src} alt="" />)}

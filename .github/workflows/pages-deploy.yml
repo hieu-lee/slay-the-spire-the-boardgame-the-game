@@ -59,6 +59,8 @@ jobs:
             "https://cdn.jsdelivr.net/gh/$GITHUB_REPOSITORY@$DEPLOY_SHA/public/assets/bgm/exordium.mp3" | grep -qi '^content-type: audio/mpeg'
           curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 --max-time 30 --head \
             "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$DEPLOY_SHA/public/assets/combat/enemies/animated/reptomancer-attack.png" | grep -Eqi '^content-type: (image/png|application/octet-stream)'
+          curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 --max-time 30 --head \
+            "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$DEPLOY_SHA/public/assets/combat/rigged/hero-defect-idle.webp" | grep -Eqi '^content-type: (image/webp|application/octet-stream)'
           if ! curl --fail --silent --retry 2 --retry-all-errors --retry-delay 1 --max-time 10 --head \
             "https://cdn.jsdelivr.net/gh/$GITHUB_REPOSITORY@$DEPLOY_SHA/public/assets/noncombat/campfire/ironclad_silent_firecamp.webp" | grep -qi '^content-type: image/webp'; then
             curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 --max-time 30 --head \
@@ -66,6 +68,7 @@ jobs:
           fi
           find dist/assets/combat/rigged -type f -name '*.mov' -delete
           find dist/assets/combat -type f -name '*-attack.png' -delete
+          find dist/assets/combat/rigged -type f -name 'hero-*-idle.webp' -delete
           find dist/assets/bgm -type f -delete
           find dist/assets/noncombat/campfire -type f -name '*_firecamp.webp' ! -name 'empty_firecamp.webp' -delete
           test "$(find dist -type f -name '*.mov' -print -quit)" = ''

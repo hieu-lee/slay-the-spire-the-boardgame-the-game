@@ -14,7 +14,9 @@ const assetBackupOrigin = import.meta.env?.VITE_CAMPFIRE_BACKUP_ORIGIN?.replace(
 /** Public asset URL under Vite's current deployment base. */
 // Large APNGs can hit jsDelivr's package limit; the existing raw media origin
 // is SHA-pinned too and serves the exact same bytes without that size limit.
-export const assetPath = (path: string): string => path.startsWith('combat/') && path.endsWith('-attack.png') && assetBackupOrigin
+export const assetPath = (path: string): string => assetBackupOrigin &&
+  (path.startsWith('combat/') && path.endsWith('-attack.png') ||
+    path.startsWith('combat/rigged/hero-') && path.endsWith('-idle.webp'))
   ? `${assetBackupOrigin}/${path}`
   : assetCdnOrigin &&
   (path.startsWith('bgm/') || path.startsWith('combat/') && path.endsWith('-attack.png') ||

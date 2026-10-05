@@ -20,18 +20,22 @@ const vite = await createServer({ root, logLevel: 'silent', server: {
 await vite.listen()
 const origin = `http://127.0.0.1:${vite.httpServer.address().port}`
 const errors = []
-async function assertIllustrationBounds(page, selector, label) {
-  const fits = await page.locator(`${selector} .card-face__illustration`).evaluateAll(images =>
-    images.length > 0 && images.every(image => {
+async function assertCardFaces(page, selector, label, full = false) {
+  const fits = await page.locator(selector).evaluateAll((cards, full) =>
+    cards.length > 0 && cards.every(card => {
+      const box = card.getBoundingClientRect()
+      if (box.bottom <= 0 || box.top >= innerHeight || box.right <= 0 || box.left >= innerWidth) return true
+      const image = card.querySelector('img')
+      if (!image || image.naturalWidth !== (full ? 744 : 448) || image.naturalHeight !== (full ? 1039 : 626) ||
+        getComputedStyle(image).visibility !== 'visible' ||
+        getComputedStyle(card.querySelector('.card-face')).visibility !== 'hidden') return false
       const art = image.getBoundingClientRect()
-      const face = image.closest('.card-face')
-      const frame = face.getBoundingClientRect()
-      const type = face.querySelector('.card-face__type').getBoundingClientRect()
-      return art.height > 0 && art.top >= frame.top && art.bottom <= type.top + 1 &&
-        art.left >= frame.left && art.right <= frame.right + 1
-    }))
-  assert(fits, `${label}: card art escapes its illustration row`)
+      return art.height > 0 && art.top >= box.top - 1 && art.bottom <= box.bottom + 1 &&
+        art.left >= box.left - 1 && art.right <= box.right + 1
+    }), full)
+  assert(fits, `${label}: full card face is missing, hidden or outside its frame`)
 }
+
 try {
   for (const [engine, type] of [['chromium', chromium], ['webkit', webkit]]) {
     const browser = await type.launch({ headless: true })
@@ -61,9 +65,6 @@ try {
             await page.touchscreen.tap(point.x, point.y)
           }
           page.on('pageerror', error => errors.push(String(error)))
-          page.on('request', request => {
-            if (/\/assets\/cards(?:-sm)?\/kratos__/.test(request.url())) errors.push(`requested an unavailable publisher scan: ${request.url()}`)
-          })
           page.on('response', response => {
             if (response.status() >= 400 && /\/assets\//.test(response.url())) errors.push(`${response.status()} ${response.url()}`)
           })
@@ -118,10 +119,10 @@ try {
           await page.waitForFunction(() => Array.from(document.querySelectorAll('.compendium-card')).every(card => {
             const box = card.getBoundingClientRect()
             if (box.bottom <= 0 || box.top >= innerHeight || box.right <= 0 || box.left >= innerWidth) return true
-            const art = card.querySelector('.card-face__illustration')
-            return art && art.complete && art.naturalWidth > 0
+            const art = card.querySelector('img')
+            return art && art.complete && art.naturalWidth > 0 && art.style.visibility === 'visible'
           }))
-          await assertIllustrationBounds(page, '.compendium-card', `${engine}/${screen} grid`)
+          await assertCardFaces(page, '.compendium-card', `${engine}/${screen} grid`)
           await page.screenshot({ path: resolve(output, `${engine}-${screen}-compendium.png`) })
           await activate(page.getByRole('checkbox', { name: 'View upgrades', exact: true }))
           assert(await page.getByRole('checkbox', { name: 'View upgrades', exact: true }).isChecked())
@@ -129,10 +130,10 @@ try {
           await activate(page.locator('.compendium-card').first())
           await page.locator('.compendium__detail[open]').waitFor()
           await page.waitForFunction(() => {
-            const art = document.querySelector('.compendium__detail-card .card-face__illustration')
-            return art && art.complete && art.naturalWidth > 0
+            const art = document.querySelector('.compendium__detail-card > img')
+            return art && art.complete && art.naturalWidth > 0 && art.style.visibility === 'visible'
           })
-          await assertIllustrationBounds(page, '.compendium__detail-card', `${engine}/${screen} detail`)
+          await assertCardFaces(page, '.compendium__detail-card', `${engine}/${screen} detail`, true)
           const detailTextFits = await page.locator('.compendium__detail-card').evaluate(card => {
             const rules = card.querySelector('.card-face__rules')
             return parseFloat(getComputedStyle(rules).fontSize) >= Math.max(12, card.clientWidth * .035) &&
@@ -149,8 +150,8 @@ try {
           const search = page.getByRole('searchbox', { name: 'Find a card for All of these', exact: true })
           await search.fill('Plume of Prometheus')
           const suggestion = page.getByRole('listbox', { name: 'All of these suggestions' }).getByRole('option').first()
-          assert((await suggestion.locator('img').getAttribute('src')).includes('/card-art/kratos/'),
-            'Stats suggestions request an unavailable Kratos scan')
+          assert((await suggestion.locator('img').getAttribute('src')).includes('/cards-sm/kratos__'),
+            'Stats suggestions do not use the complete Kratos card')
           await activate(suggestion)
           const chip = page.getByRole('button', { name: 'Remove Plume of Prometheus from All of these', exact: true })
           await chip.waitFor()
@@ -170,8 +171,8 @@ try {
           await activate(page.getByRole('group', { name: 'Filter by hero' }).getByRole('button', { name: 'Kratos', exact: true }))
           const impact = page.locator('.stats__next-card').filter({ hasText: 'Plume of Prometheus' })
           await impact.scrollIntoViewIfNeeded()
-          assert((await impact.locator('img').getAttribute('src')).includes('/card-art/kratos/'),
-            'Stats card impact requests an unavailable Kratos scan')
+          assert((await impact.locator('img').getAttribute('src')).includes('/cards-sm/kratos__'),
+            'Stats card impact does not use the complete Kratos card')
           await page.waitForFunction(() => {
             const image = document.querySelector('.stats__next-card img')
             return image && image.complete && image.naturalWidth > 0

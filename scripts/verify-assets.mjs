@@ -310,7 +310,9 @@ const downfallCardKeys = new Set(Object.values(CARDS)
     Object.hasOwn(DOWNFALL_COLORLESS_CARD_DEFS, def.id))
   .flatMap((def) => [cardImagePath(def, false), ...(def.upgrade ? [cardImagePath(def, true)] : [])])
   .map((path) => path.split('/').pop()))
-const knownCardKeys = new Set([...indexedKeys, ...GENERATED_CARD_KEYS, ...downfallCardKeys])
+const kratosCardKeys = new Set(JSON.parse(readFileSync(join(repoRoot, 'docs/kratos-card-faces/plan.json'), 'utf8'))
+  .map((face) => `${face.assetKey}.webp`))
+const knownCardKeys = new Set([...indexedKeys, ...GENERATED_CARD_KEYS, ...downfallCardKeys, ...kratosCardKeys])
 const hasPublisherScans = cardFiles.some((file) => !GENERATED_CARD_KEYS.has(file))
 
 check('every defined card resolves to an image that exists', () => {
@@ -382,8 +384,11 @@ check('every card scan has a thumbnail inside the decode budget', () => {
     return width > 0 && width <= CARD_THUMB_WIDTH ? [] : [`${file} is ${width}px wide`]
   })
   assertDeepEqual(faults, [], `card thumbnails over ${CARD_THUMB_WIDTH}px`)
-  const bytes = files.reduce((sum, file) => sum + statSync(file).size, 0)
-  assert(bytes < 28 * 1024 * 1024, `card thumbnails total ${(bytes / 1048576).toFixed(1)} MB`)
+  for (const [kratos, budget] of [[false, 28], [true, 8]]) {
+    const bytes = cardThumbFiles.filter(file => kratosCardKeys.has(file) === kratos)
+      .reduce((sum, file) => sum + statSync(join(cardThumbRoot, file)).size, 0)
+    assert(bytes < budget * 1024 * 1024, `${kratos ? 'Kratos' : 'existing'} thumbnails total ${(bytes / 1048576).toFixed(1)} MB`)
+  }
 })
 
 check('every Guardian Socket and Gem pair has one compact combined face', () => {
@@ -434,7 +439,7 @@ check('image paths are safe, normalised browser paths', () => {
 check('the card art on disk matches the index exactly', () => {
   if (!hasPublisherScans) return
   const expected = cardIndex.reduce((count, entry) => count + (entry.hasUpgrade ? 2 : 1), 0) +
-    GENERATED_CARD_KEYS.size + downfallCardKeys.size
+    GENERATED_CARD_KEYS.size + downfallCardKeys.size + kratosCardKeys.size
   assertEqual(cardFiles.length, expected, 'every index entry should have exactly one file per face')
 })
 
@@ -481,16 +486,20 @@ check('character card art stays at source resolution', () => {
 // would add hundreds of megabytes without anyone noticing until clone time.
 check('card art stays within its size budget', () => {
   if (!hasPublisherScans) return
-  let total = 0
-  const oversized = []
-  for (const file of cardFiles) {
-    const bytes = statSync(join(cardRoot, file)).size
-    total += bytes
-    if (bytes > 60 * 1024) oversized.push(`${file} is ${Math.round(bytes / 1024)} KB`)
+  // Keep the existing crop budget; model faces preserve native alpha and have
+  // a separate bounded allowance, without raising other cards' limits.
+  for (const [kratos, budget, perFile] of [[false, 48, 60], [true, 16, 160]]) {
+    let total = 0
+    const oversized = []
+    for (const file of cardFiles.filter(file => kratosCardKeys.has(file) === kratos)) {
+      const bytes = statSync(join(cardRoot, file)).size
+      total += bytes
+      if (bytes > perFile * 1024) oversized.push(`${file} is ${Math.round(bytes / 1024)} KB`)
+    }
+    assert(oversized.length === 0, `oversized card art:\n    ${oversized.join('\n    ')}`)
+    const megabytes = total / 1024 / 1024
+    assert(megabytes < budget, `${kratos ? 'Kratos' : 'existing'} card art totals ${megabytes.toFixed(1)} MB, over the ${budget} MB budget`)
   }
-  assert(oversized.length === 0, `oversized card art:\n    ${oversized.join('\n    ')}`)
-  const megabytes = total / 1024 / 1024
-  assert(megabytes < 48, `card art totals ${megabytes.toFixed(1)} MB, over the 48 MB budget`)
 })
 
 check('no stale card images linger from an older naming scheme', () => {
@@ -504,6 +513,7 @@ check('no stale card images linger from an older naming scheme', () => {
   }
   for (const key of GENERATED_CARD_KEYS) expected.add(key)
   for (const key of downfallCardKeys) expected.add(key)
+  for (const key of kratosCardKeys) expected.add(key)
   const strays = cardFiles.filter((file) => !expected.has(file))
   assert(
     strays.length === 0,

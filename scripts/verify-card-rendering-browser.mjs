@@ -77,6 +77,33 @@ try {
         assert.equal(await card.getAttribute('aria-disabled'), 'false')
         assert.equal(await card.locator('.card-face__cost').textContent(), '1')
         assert.equal(await card.locator('.card-face__title').textContent(), 'Strike')
+        // Full scans must expose temporary costs above their printed cost.
+        const scannedProps = { card: { uid: 'same-mounted-card', defId: 'strike_kratos', upgraded: false }, cost: 1 }
+        await page.evaluate(props => window.renderCard(props), scannedProps)
+        await card.locator('.card__art').evaluate(image => image.decode())
+        await page.waitForFunction(() => getComputedStyle(document.querySelector('.card__art')).visibility === 'visible')
+        assert.equal(await card.locator('.card__live-cost').count(), 0)
+        assert.equal(await card.locator('.card-face').evaluate(face => getComputedStyle(face).visibility), 'hidden',
+          'transparent scans must not show duplicate fallback text')
+        await page.evaluate(props => window.renderCard({ ...props, cost: 0 }), scannedProps)
+        assert.equal(await card.locator('.card__live-cost').count(), 1, 'discounted scanned card must expose its live cost')
+        assert.equal(await card.locator('.card__live-cost').textContent(), '0')
+        const costVisible = await card.locator('.card__live-cost').evaluate(badge => {
+          const box = badge.getBoundingClientRect()
+          return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === badge
+        })
+        assert(costVisible, 'live cost must paint above the full scan')
+        await page.screenshot({ path: resolve(output, `${engineName}-${screen}-discounted-kratos.png`) })
+        await page.evaluate(props => window.renderCard(props), scannedProps)
+        assert.equal(await card.locator('.card__live-cost').count(), 0)
+        await page.route('**/cards-sm/kratos__starter__defend.webp', route => route.abort())
+        await page.evaluate(() => window.renderCard({ card: { uid: 'same-mounted-card', defId: 'defend_kratos', upgraded: false }, cost: 1 }))
+        await page.waitForFunction(() => document.querySelector('.card__art').style.visibility === 'hidden')
+        assert.equal(await card.locator('.card-face').evaluate(face => getComputedStyle(face).visibility), 'visible',
+          'failed scans must restore the native fallback')
+        assert.equal(await card.locator('.card-face__rules').textContent(), 'Gain 1 Block.')
+        await card.locator('.card-face__illustration').evaluate(image => image.decode())
+        await page.screenshot({ path: resolve(output, `${engineName}-${screen}-kratos-scan-fallback.png`) })
         const icon = page.locator('#rendered-icons .icon-value .icon')
         const previousSource = await icon.getAttribute('src')
         await page.evaluate(() => window.renderIcons('block', 28, 4))

@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import type { CardDef } from '../game/cards.ts'
-import { cardArtPath } from '../game/assets.ts'
+import { assetPath, cardArtPath } from '../game/assets.ts'
 import { BASE_CHARACTER_IDS } from '../game/types.ts'
 import { KeywordText } from './KeywordText.tsx'
 
@@ -32,7 +32,8 @@ export const CardFace = memo(function CardFace({
       aria-hidden="true"
     >
       <strong className="card-face__title">{def.name}</strong>
-      <span className="card-face__cost">{shownCost}</span>
+      <span className="card-face__cost" style={def.owner === 'kratos'
+        ? { backgroundImage: `url("${assetPath('icons/kratos-energy.png')}")` } : undefined}>{shownCost}</span>
       {hasIllustration
         ? <img className="card-face__illustration" src={cardArtPath(def)} alt="" loading="lazy" />
         : <span className="card-face__illustration card-face__illustration--empty" />}

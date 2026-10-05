@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium, webkit } from './lib/profile-browser.mjs'
+import { installKratosFixture } from './lib/kratos-animation-fixture.mjs'
 
 // Protect the user-visible original DLC faces: missing art, lost clauses,
 // stale upgrade costs/types, unmarked mechanics and clipped rules. Existing
@@ -70,13 +71,10 @@ try {
                 ['.card-face__type', expected.type], ['.card-face__rules', expected.rules]]) {
                 if (text(selector) !== value) faults.push(`${expected.uid} ${selector}: ${text(selector)} != ${value}`)
               }
-              const art = card.querySelector('.card-face__illustration')
-              if (art?.naturalWidth !== 748 || art?.naturalHeight !== 420 || !art.src.endsWith(`/kratos/${expected.id}.webp`)) faults.push(`${expected.uid}: missing/wrong art`)
-              const artBox = art.getBoundingClientRect()
-              const frameBox = art.closest('.card-face').getBoundingClientRect()
-              const rulesBox = card.querySelector('.card-face__rules').getBoundingClientRect()
-              if (artBox.height <= 0 || artBox.height > frameBox.height * .4 + 1 || artBox.bottom > rulesBox.top + 1)
-                faults.push(`${expected.uid}: art escapes illustration row`)
+              const art = card.querySelector('.card__art')
+              if (art?.naturalWidth !== 448 || art?.naturalHeight !== 626 || !art.src.includes('/cards-sm/kratos__') ||
+                getComputedStyle(art).visibility !== 'visible') faults.push(`${expected.uid}: missing/hidden full card face`)
+
               const rules = card.querySelector('.card-face__rules')
               const range = document.createRange(); range.selectNodeContents(rules)
               const content = range.getBoundingClientRect(), box = rules.getBoundingClientRect()
@@ -99,6 +97,21 @@ try {
           writeFileSync(resolve(output, `${engineName}-${screen}-${cardWidth}px-faces.json`), JSON.stringify(audit.faces, null, 2) + '\n')
           await page.screenshot({ path: resolve(output, `${engineName}-${screen}-${cardWidth}px-faces.png`), fullPage: cardWidth === 180 })
         }
+        await page.evaluate(() => document.querySelector('#kratos-audit').remove())
+        await page.evaluate(installKratosFixture)
+        await page.locator('.energy-orb__kratos').evaluate(image => image.decode())
+        assert.equal(await page.locator('.energy-orb__kratos').evaluate(image => image.naturalWidth), 256)
+        assert.equal(await page.locator('.pip--energy .icon-value__number').textContent(), '9')
+        await page.screenshot({ path: resolve(output, `${engineName}-${screen}-energy.png`) })
+        await page.evaluate(() => {
+          const f = window.kratosFixture
+          f.state.players[0].energy = 0; f.restoration++; f.render()
+        })
+        assert.equal(await page.locator('.pip--energy .icon-value__number').textContent(), '0')
+        assert.equal(await page.locator('.pip--energy').getAttribute('data-empty'), 'true')
+        assert.match(await page.locator('.energy-orb__kratos').evaluate(image => getComputedStyle(image).filter), /brightness\(0\.55\)/)
+        await page.evaluate(() => window.kratosFixture.reset('ironclad'))
+        assert.equal(await page.locator('.energy-orb__kratos').count(), 0)
         assert.deepEqual(errors, [])
         await page.close()
         console.log(`PASS ${engineName} ${screen}: all 128 Kratos faces and Ashes of Sparta art, rules, costs, types, keywords and text fit`)

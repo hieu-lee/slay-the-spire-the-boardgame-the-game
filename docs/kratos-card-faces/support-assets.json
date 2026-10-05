@@ -1,0 +1,38 @@
+[
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "background": "transparent",
+    "source": "scripts/art/sources/kratos-card-faces/energy-orb.webp",
+    "sourceSha256": "2a3631f9e50aba2e5c32058d14df5aa8020962e76130481e998238316f593abe",
+    "prompt": "docs/kratos-card-faces/prompts/energy-orb.txt",
+    "promptSha256": "b766598a366424f6a597f3fc45395ff7cfc75003f521c7ba3e1939164a722ab4",
+    "references": [
+      {
+        "path": "scripts/art/sources/kratos-card-faces/red-orb-crop.png",
+        "sha256": "8dc0c446653f409d497067debf5374cb6fa1a6127a21b8b690db957696676b57"
+      }
+    ],
+    "output": "public/assets/icons/kratos-energy.png",
+    "outputSha256": "fbb879b18d3a7e4dab54420129015a59c2a202fab353b97101adec3b21e14af1"
+  },
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "background": "transparent",
+    "source": "scripts/art/sources/kratos-card-faces/hud-energy-orb.webp",
+    "sourceSha256": "6b544509b15ee4aa167f62f95393c831aefb71885d437cda2963039cb1af4402",
+    "prompt": "docs/kratos-card-faces/prompts/hud-energy-orb.txt",
+    "promptSha256": "edb0d3994a8825a75725192f60c7be31bc1526e8c72c9294131def5851ac9e6a",
+    "references": [
+      {
+        "path": "public/assets/icons/kratos-energy.png",
+        "sha256": "fbb879b18d3a7e4dab54420129015a59c2a202fab353b97101adec3b21e14af1"
+      },
+      {
+        "path": "public/assets/menu/character-select/portrait-kratos.png",
+        "sha256": "83945aa90da3143e9b72b7899192e08fede518ed85bf5b4b2ce2c7e3d46b7d48"
+      }
+    ],
+    "output": "public/assets/combat/energy-orbs/kratos.webp",
+    "outputSha256": "3d2f732f81b779654415b80b11dbb5c09b072640913c908b22a15ce8f29aca68"
+  }
+]
