@@ -5,7 +5,8 @@
 // asserts every engine module is reachable from here, which is what catches a
 // module that was written but never wired up.
 //
-// Combat and 184 enemy definitions are live. 465 character card definitions are live in all rulesets.
+// Combat and 184 enemy definitions are live. 529 character card definitions are live in all rulesets,
+// 64 of them for the playtest-only Kratos.
 // Of the base game, 251 of 259 unique character cards are live as ordinary definitions; the
 // other 8 are implemented Golden Ticket rewards. 38 colorless card definitions are live in all rulesets;
 // all 22 of 22 colorless cards are live in the base game. Relics, potions, and their

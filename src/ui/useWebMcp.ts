@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { CARDS } from '../game/cards.ts'
+import { CARDS, releasedCardDefs } from '../game/cards.ts'
 import { parseStatsExpression, validateStatsQuery } from '../stats-query.ts'
 import { loadStats, type StatsFilters } from '../stats.ts'
 
@@ -42,7 +42,7 @@ type Control = VisibleControl & { kind: ControlKind; element: HTMLElement }
 const PAGE_SIZE = 30
 const SCREEN_TEXT_LIMIT = 8_000
 const TEXT_VALUE_LIMIT = 1_000
-const STATS_CHOICES = Object.values(CARDS).flatMap((card) => [
+const STATS_CHOICES = releasedCardDefs().flatMap((card) => [
   { id: card.id, label: card.name, upgraded: false },
   ...(card.upgrade ? [{ id: card.id, label: `${card.name}+`, upgraded: true }] : []),
 ])

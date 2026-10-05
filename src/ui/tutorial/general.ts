@@ -116,8 +116,10 @@ export function generalChapters(character: CharacterId, offScript: (run: RunStat
   const lessons = CHARACTER_LESSONS[character]
   const chapters: TutorialChapter[] = [
     ...GENERAL.slice(0, 2),
-    { id: 'general-hero', when: firstFight, steps: lessons.intro },
-    { id: 'general-hero-advanced', when: (run) => fighting(run) && (run.combatsFinished ?? 0) > 0, steps: lessons.advanced },
+    ...(lessons ? [
+      { id: 'general-hero', when: firstFight, steps: lessons.intro },
+      { id: 'general-hero-advanced', when: (run: RunState) => fighting(run) && (run.combatsFinished ?? 0) > 0, steps: lessons.advanced },
+    ] : []),
     ...GENERAL.slice(2),
   ]
   return chapters.map((chapter) => ({ ...chapter, when: (run: RunState) => offScript(run) && chapter.when(run) }))

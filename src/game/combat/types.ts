@@ -438,6 +438,10 @@ export type PlayContext = {
   searchDrawUids?: string[]
   /** Spend one Miracle atomically with this card, which may take Energy above 6. */
   spendMiracle?: boolean
+  /** Kratos keeps his Rage: every Unleash clause on this play is skipped. */
+  holdRage?: boolean
+  /** HP the card's own `loseOwnHp` clause actually took, for Hubris. */
+  hpLostByCard?: number
   /** One chosen target or explicit skip per immediate Shiv, in effect order. */
   shivEnemyUids?: (string | null)[]
   /** Of the cards a Scry revealed, the ones the player bins. */
@@ -516,7 +520,7 @@ export type PlayContext = {
   }[]
   /** Cards taken by this card's variable discard clause. */
   discardedByCard?: number
-  /** Cards taken by this card's automatic Exhaust clause. */
+  /** Cards taken by this card's Exhaust clause (automatic or chosen, as on Sacrifice). */
   exhaustedByCard?: number
   /** Cost of the card taken by the immediately preceding single-card Exhaust. */
   exhaustedCardCost?: number | 'X'
@@ -622,7 +626,7 @@ export type PotionContext = {
 
 export type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'miracles' | 'stance' |
   'attacksPlayedThisTurn' | 'exhaust' | 'clawCubesGainedThisCombat' | 'heat' | 'slimes' | 'chamber' |
-  'guardianMode'> & {
+  'guardianMode' | 'rage'> & {
   hand: readonly CardInstance[] | null
   powers?: readonly CardInstance[]
 }

@@ -212,7 +212,9 @@ function withRewardSourceDeck(state: RunState, source: RewardSource, rare: boole
 }
 
 export function availableRewardSources(state: RunState, rare: boolean): RewardSource[] {
-  const sources: RewardSource[] = [...CHARACTER_IDS, ...(rare ? [] : ['colorless' as const])]
+  // Playtest-only characters are never inactive decks, but an active one still owns its own deck.
+  const characters = [...new Set([...CHARACTER_IDS, ...state.players.map((player) => player.character)])]
+  const sources: RewardSource[] = [...characters, ...(rare ? [] : ['colorless' as const])]
   return sources.filter((source) => {
     const deck = rewardSourceDeck(state, source, rare)
     return deck.length > 0 && (rare || deck[0] !== GOLDEN_TICKET || rewardSourceDeck(state, source, true).length > 0)

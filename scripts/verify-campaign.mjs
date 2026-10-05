@@ -55,6 +55,7 @@ check('every physical character pack has the exact threshold, card ids, and copi
       guardian: [],
       hexaghost: [],
       hermit: [],
+      kratos: [],
     },
   )
 })
@@ -197,7 +198,7 @@ check('campaign persistence accepts only a complete bounded versioned shape', ()
   const valid = { ...createCampaignProgress(), characters: { ironclad: 8, silent: 4, defect: 1, watcher: 0 }, highestAscension: 3 }
   assertDeepEqual(parseCampaignProgress(valid), {
     ...valid,
-    characters: { ...valid.characters, slime_boss: 8, guardian: 8, hexaghost: 8, hermit: 8 },
+    characters: { ...valid.characters, slime_boss: 8, guardian: 8, hexaghost: 8, hermit: 8, kratos: 8 },
   })
   for (const corrupt of [null, {}, { ...valid, characters: null }, { ...valid, characters: {} }, { ...valid, colorless: 99 }, { ...valid, colorless: 3, actIV: 5, unspentMarks: 1 }, { ...valid, finishedRunIds: [7] }]) {
     assertDeepEqual(parseCampaignProgress(corrupt), createCampaignProgress())

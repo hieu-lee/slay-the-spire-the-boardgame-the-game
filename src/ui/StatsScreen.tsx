@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetPath, cardThumbPath } from '../game/assets.ts'
-import { CARDS } from '../game/cards.ts'
+import { CARDS, releasedCardDefs } from '../game/cards.ts'
 import type { CharacterId } from '../game/types.ts'
 import { loadSampleDeck, loadStats, type SampleDeck, type StatsFilters, type StatsQuery, type StatsSnapshot } from '../stats.ts'
 import { joinQueries, parseStatsExpression, validateStatsQuery, type CardChoice } from '../stats-query.ts'
@@ -12,7 +12,7 @@ const COLUMNS = [
   ['deckType', 'Deck'], ['averageFloors', 'Floors'],
   ['averageDamage', 'Damage'], ['averageBlock', 'Block'],
 ] as const
-const CHOICES: (CardChoice & { owner: string })[] = Object.values(CARDS).flatMap((card) => [
+const CHOICES: (CardChoice & { owner: string })[] = releasedCardDefs().flatMap((card) => [
   { id: card.id, label: card.name, upgraded: false, owner: card.owner },
   ...(card.upgrade ? [{ id: card.id, label: `${card.name}+`, upgraded: true, owner: card.owner }] : []),
 ]).sort((left, right) => left.label.localeCompare(right.label) || left.owner.localeCompare(right.owner))

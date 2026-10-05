@@ -11,7 +11,7 @@ import { createCampaignProgress } from '../src/game/campaign.ts'
 import { createRun, enterRoom, roomChoices } from '../src/game/run.ts'
 import { createCombat } from '../src/game/combat.ts'
 import { createRng } from '../src/game/rng.ts'
-import { CHARACTER_IDS } from '../src/game/types.ts'
+import { ALL_CHARACTER_IDS } from '../src/game/types.ts'
 
 const json = (file) => JSON.parse(readFileSync(file, 'utf8'))
 const save = (file, value) => writeFileSync(file, JSON.stringify(value))
@@ -342,7 +342,7 @@ try {
   assert(readFileSync(report.report, 'utf8').includes('Card deltas'))
 
   // Worker indices/seed ownership and physical component baseline hold for every character.
-  for (const character of CHARACTER_IDS) {
+  for (const character of ALL_CHARACTER_IDS) {
     const parallel = join(temp, character)
     invoke('init', parallel, { character, workers: 4, runs: 50, seed: 100 })
     const views = [0, 1, 2, 3].map((worker) => invoke('inspect', parallel, { worker }))
@@ -364,7 +364,7 @@ try {
   assert.equal(replayedRun.verified, true)
   const lastRecord = json(join(budget, 'run-0049.json'))
   const campaign = createCampaignProgress()
-  for (const character of CHARACTER_IDS) campaign.characters[character] = 8
+  for (const character of ALL_CHARACTER_IDS) campaign.characters[character] = 8
   campaign.colorless = 8
   let recovered = createRun(lastRecord.seed, [{ id: 'p1', name: 'Playtest', character: 'ironclad' }], 0, campaign)
   for (const choice of lastRecord.actions) recovered = applyAction(recovered, choice)

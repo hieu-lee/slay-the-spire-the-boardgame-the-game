@@ -3,7 +3,7 @@
 
 import { ACT_IV_UNLOCK_BOXES, CHARACTER_UNLOCK_BOXES, COLORLESS_UNLOCK, MAX_ASCENSION } from './campaign.ts'
 import type { CampaignProgress } from './campaign.ts'
-import { CHARACTER_IDS } from './types.ts'
+import { ALL_CHARACTER_IDS } from './types.ts'
 import type { CharacterId } from './types.ts'
 
 export const DAILY_ASCENSION = 10
@@ -21,7 +21,7 @@ export function dailySeedText(date: string): string {
 export function dailyCampaignProgress(progress: CampaignProgress): CampaignProgress {
   return {
     version: 1,
-    characters: Object.fromEntries(CHARACTER_IDS.map((id) => [id, CHARACTER_UNLOCK_BOXES])) as Record<CharacterId, number>,
+    characters: Object.fromEntries(ALL_CHARACTER_IDS.map((id) => [id, CHARACTER_UNLOCK_BOXES])) as Record<CharacterId, number>,
     colorless: COLORLESS_UNLOCK.boxes,
     actIV: ACT_IV_UNLOCK_BOXES,
     unspentMarks: 0,

@@ -132,6 +132,7 @@ export function createPlayer(
     clawCubesGainedThisCombat: 0,
     starterDefendBlockBonus: 0,
     miracles: 0,
+    ...(character === 'kratos' ? { rage: 0 } : {}),
     stance: 'neutral',
     wrathAttackDamageBonus: 0,
     orbs: [null, null, null],

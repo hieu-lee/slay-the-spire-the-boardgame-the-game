@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { CARDS, cardIsCurse, faceOf } from '../game/cards.ts'
+import { cardIsCurse, faceOf, releasedCardDefs } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import { assetPath, cardImagePath, cardThumbPath } from '../game/assets.ts'
 import { StatusIcon } from './Icon.tsx'
@@ -24,7 +24,7 @@ const POOLS: { id: Pool; label: string }[] = [
   { id: 'status', label: 'Statuses' },
 ]
 
-const CARDS_BY_NAME = Object.values(CARDS).sort((a, b) => a.name.localeCompare(b.name))
+const CARDS_BY_NAME = releasedCardDefs().sort((a, b) => a.name.localeCompare(b.name))
 
 const RARITIES = [
   { id: 'starter', label: 'Starter' },

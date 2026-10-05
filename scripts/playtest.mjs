@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline'
 import { spawnSync } from 'node:child_process'
 import { createRun, victoryIsTerminal } from '../src/game/run.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
-import { CHARACTER_IDS } from '../src/game/types.ts'
+import { ALL_CHARACTER_IDS } from '../src/game/types.ts'
 import { POLICY_VERSION, decodeAction, applyAction, automaticAction, snapshot, sourceFor, revealCard, requiresReveal, boundary } from './playtest/engine.mjs'
 import { observe, summarize, markdown } from './playtest/report.mjs'
 
@@ -50,7 +50,7 @@ export function parseOptions(args) {
     options[key] = ['runs', 'workers', 'worker', 'run', 'ascension', 'seed', 'maxSteps', 'revision', 'since'].includes(key) ? Number(value) : value
   }
   if (!['init', 'inspect', 'act', 'report', 'replay', 'serve', 'help'].includes(options.command)) throw new Error('Command must be init, inspect, act, or report')
-  if (!CHARACTER_IDS.includes(options.character)) throw new Error(`Character must be one of ${CHARACTER_IDS.join(', ')}`)
+  if (!ALL_CHARACTER_IDS.includes(options.character)) throw new Error(`Character must be one of ${ALL_CHARACTER_IDS.join(', ')}`)
   for (const [key, min, max] of [['runs', 1, 100000], ['run', 1, 100000], ['workers', 1, 64], ['worker', 0, 63], ['ascension', 0, 13], ['seed', 0, 0xffffffff], ['maxSteps', 1, 1000000]]) {
     if (!Number.isSafeInteger(options[key]) || options[key] < min || options[key] > max) throw new Error(`Invalid ${key}`)
   }
@@ -62,7 +62,7 @@ export function parseOptions(args) {
 function newSession(manifest, worker, index = worker, revision = 0) {
   if (index >= manifest.runs) return { worker, revision, run: null, record: null }
   const campaign = createCampaignProgress()
-  if (manifest.unlocks === 'full') { for (const hero of CHARACTER_IDS) campaign.characters[hero] = 8; campaign.colorless = 8 }
+  if (manifest.unlocks === 'full') { for (const hero of ALL_CHARACTER_IDS) campaign.characters[hero] = 8; campaign.colorless = 8 }
   const run = createRun(manifest.seed + index, [{ id: 'p1', name: 'Playtest', character: manifest.character }], manifest.ascension, campaign)
   return { worker, revision, run, record: { index, seed: manifest.seed + index, outcome: 'running', steps: 0,
     acts: { 1: { reached: true, bossDefeated: false, floors: 0, combats: 0, turns: 0, damage: 0, taken: 0, blocked: 0, blockNetGained: 0 } },

@@ -2,11 +2,13 @@
 // icons — Bash is literally "2⚔ 💔" — so an effect list is a transcription of
 // the card rather than an interpretation of it. One resolver reads them all.
 import type { CardInstance, CardType, CharacterId, OrbType, Rarity, Stance } from './types.ts'
+import { PLAYTEST_CHARACTER_IDS } from './types.ts'
 import type { Trigger } from './triggers.ts'
 import { HEXAGHOST_CARDS } from './downfall/hexaghost.ts'
 import { GUARDIAN_CARD_DEFS, GUARDIAN_PHYSICAL_DECKS } from './downfall/guardian.ts'
 import { DOWNFALL_COLORLESS_CARD_DEFS } from './downfall/items.ts'
 import { HERMIT_CARD_DEFS, HERMIT_PHYSICAL_DECKS } from './downfall/hermit.ts'
+import { KRATOS_CARD_DEFS, KRATOS_STARTER_DECK } from './dlc/kratos.ts'
 
 /** Who an effect lands on. Resolved against a chosen target when the card is played. */
 export type TargetScope =
@@ -91,6 +93,18 @@ export type Condition =
   | { kind: 'cardsInExhaustAtLeast'; amount: number }
   | { kind: 'soulburnUsedThisTurn' }
   | { kind: 'hpAtMost'; amount: number }
+  /** Kratos: holds at least this much Rage. Reading it never spends Rage. */
+  | { kind: 'rageAtLeast'; amount: number }
+  /** Unleash N is payable: enough Rage after God of War, and this play is not holding Rage. */
+  | { kind: 'canUnleash'; cost: number }
+  /** Brutal Kill: the enemy this card targeted is dead. */
+  | { kind: 'targetDead' }
+  /** Sacrifice: this card's own exhaust clause took at least one card. */
+  | { kind: 'exhaustedByThisCard' }
+  /** Hubris: this card's own HP-loss clause actually took HP. */
+  | { kind: 'lostHpToThisCard' }
+  /** Godslayer: the enemy being struck is an Elite or a Boss. */
+  | { kind: 'targetEliteOrBoss' }
   | { kind: 'hasCurseInChamber' }
   | { kind: 'hasDeadOnAttackInChamber' }
 
@@ -120,6 +134,8 @@ export type CountOf =
   | 'cursesInHandAndChamber'
   | 'starterCardsInHandAndChamber'
   | 'otherCardsInHand'
+  /** Kratos's current Rage, read without spending it. */
+  | 'rage'
 
 /** Status-token fields a card can count on an enemy. */
 export type EnemyTokenKind = 'strength' | 'vulnerable' | 'weak' | 'poison'
@@ -372,6 +388,15 @@ type EffectKind =
   | { kind: 'goldenBullet'; amount: number }
   | { kind: 'roulette'; byRoll: Record<number, Effect[]> }
   | { kind: 'attachBounty'; vulnerable: number }
+  /** Kratos: gain Rage, capped at CAPS.rage. */
+  | { kind: 'gainRage'; amount: Amount }
+  /** Kratos: discard every Rage token, after any clause that counted them. */
+  | { kind: 'loseAllRage' }
+  /**
+   * Unleash N pays its Rage. Printed as the first clause of a `branch` on
+   * `canUnleash`, whose `otherwise` is the base of an "instead" clause.
+   */
+  | { kind: 'unleashSpend'; cost: number }
 
 export type CardDef = {
   id: string
@@ -549,6 +574,11 @@ export const CARDS: Record<string, CardDef> = {
   ...(HEXAGHOST_CARDS as unknown as Record<string, CardDef>),
   ...GUARDIAN_CARD_DEFS,
   ...(HERMIT_CARD_DEFS as unknown as Record<string, CardDef>),
+  ...KRATOS_CARD_DEFS,
+  strike_kratos: { ...starterStrike('kratos'), publisherScan: false, printedText: 'Deal 1 damage.',
+    upgrade: { ...starterStrike('kratos').upgrade, printedText: 'Deal 2 damage.' } },
+  defend_kratos: { ...starterDefend('kratos'), publisherScan: false, printedText: 'Gain 1 Block.',
+    upgrade: { ...starterDefend('kratos').upgrade, printedText: '2 Block to any player.' } },
   strike_silent: starterStrike('silent'),
   defend_silent: starterDefend('silent'),
   strike_defect: { ...starterStrike('defect'), upgrade: { cost: 0 } },
@@ -2952,6 +2982,11 @@ export function cardDef(id: string): CardDef {
   return def
 }
 
+/** Every card a player can meet outside the playtest system: draft characters' pools are hidden. */
+export function releasedCardDefs(): CardDef[] {
+  return Object.values(CARDS).filter((def) => !PLAYTEST_CHARACTER_IDS.some((id) => id === def.owner))
+}
+
 export function cardIsCurse(defId: string): boolean {
   return CARDS[defId]?.type === 'curse'
 }
@@ -2976,4 +3011,5 @@ export const STARTER_DECKS: Record<CharacterId, string[]> = {
   slime_boss: [],
   guardian: [...GUARDIAN_PHYSICAL_DECKS.starter],
   hermit: [...HERMIT_PHYSICAL_DECKS.starter],
+  kratos: [...KRATOS_STARTER_DECK],
 }

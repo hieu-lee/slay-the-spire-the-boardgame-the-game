@@ -1,4 +1,4 @@
-import { BASE_CHARACTER_IDS, CHARACTER_IDS, DOWNFALL_CHARACTER_IDS } from './types.ts'
+import { ALL_CHARACTER_IDS, BASE_CHARACTER_IDS, DOWNFALL_CHARACTER_IDS, PLAYTEST_CHARACTER_IDS } from './types.ts'
 import type { CharacterId } from './types.ts'
 
 export type CampaignComponent =
@@ -43,6 +43,7 @@ export const CHARACTER_UNLOCKS: Readonly<Record<CharacterId, readonly CharacterU
   guardian: [],
   hexaghost: [],
   hermit: [],
+  kratos: [],
 }
 
 export const COLORLESS_UNLOCK = {
@@ -94,7 +95,7 @@ export type CampaignFinish = {
 export function createCampaignProgress(): CampaignProgress {
   return {
     version: 1,
-    characters: { ironclad: 0, silent: 0, defect: 0, watcher: 0, slime_boss: 8, guardian: 8, hexaghost: 8, hermit: 8 },
+    characters: { ironclad: 0, silent: 0, defect: 0, watcher: 0, slime_boss: 8, guardian: 8, hexaghost: 8, hermit: 8, kratos: 8 },
     colorless: 0,
     actIV: 0,
     unspentMarks: 0,
@@ -116,14 +117,14 @@ export function parseCampaignProgress(value: unknown, fallback = createCampaignP
   const characters = saved.characters
   if (saved.version !== 1 || !characters || typeof characters !== 'object' || Array.isArray(characters) ||
     !BASE_CHARACTER_IDS.every((id) => integer(characters[id], CHARACTER_UNLOCK_BOXES)) ||
-    !DOWNFALL_CHARACTER_IDS.every((id) => characters[id] === undefined || integer(characters[id], CHARACTER_UNLOCK_BOXES)) ||
+    ![...DOWNFALL_CHARACTER_IDS, ...PLAYTEST_CHARACTER_IDS].every((id) => characters[id] === undefined || integer(characters[id], CHARACTER_UNLOCK_BOXES)) ||
     !integer(saved.colorless, COLORLESS_UNLOCK.boxes) || !integer(saved.actIV, ACT_IV_UNLOCK_BOXES) ||
     !integer(saved.unspentMarks, COLORLESS_UNLOCK.boxes + ACT_IV_UNLOCK_BOXES) || !integer(saved.highestAscension, MAX_ASCENSION) ||
     Number(saved.colorless) + Number(saved.actIV) + Number(saved.unspentMarks) > COLORLESS_UNLOCK.boxes + ACT_IV_UNLOCK_BOXES ||
     !integer(saved.nextRunNumber, Number.MAX_SAFE_INTEGER) || !Array.isArray(saved.finishedRunIds) || saved.finishedRunIds.some((id) => typeof id !== 'string')) return safeFallback()
   return {
     version: 1,
-    characters: Object.fromEntries(CHARACTER_IDS.map((id) => [id, characters[id] ?? fallback.characters[id]])) as Record<CharacterId, number>,
+    characters: Object.fromEntries(ALL_CHARACTER_IDS.map((id) => [id, characters[id] ?? fallback.characters[id]])) as Record<CharacterId, number>,
     colorless: saved.colorless!, actIV: saved.actIV!, unspentMarks: saved.unspentMarks!, highestAscension: saved.highestAscension!, nextRunNumber: saved.nextRunNumber!, finishedRunIds: [...saved.finishedRunIds],
   }
 }
@@ -179,7 +180,7 @@ export function finishCampaign(progress: CampaignProgress, finish: CampaignFinis
   if (!runId) throw new Error('campaign finish requires a run id')
   if (progress.finishedRunIds.includes(runId)) return progress
   if (finish.characters.length < 1 || finish.characters.length > 4) throw new Error('campaign finish requires 1 to 4 players')
-  const validCharacters: readonly CharacterId[] = CHARACTER_IDS
+  const validCharacters: readonly CharacterId[] = ALL_CHARACTER_IDS
   if (new Set(finish.characters).size !== finish.characters.length || finish.characters.some((character) => !validCharacters.includes(character))) throw new Error('campaign characters must be unique physical characters')
   if (!Number.isInteger(finish.bossesDefeated) || finish.bossesDefeated < 0 || finish.bossesDefeated > 6) throw new Error('bosses defeated must be from 0 to 6')
   if (!Number.isInteger(finish.highestBossActDefeated) || finish.highestBossActDefeated < 0 || finish.highestBossActDefeated > 4) throw new Error('highest defeated Boss Act must be from 0 to 4')

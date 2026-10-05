@@ -1,4 +1,4 @@
-import type { CharacterId } from '../../game/types.ts'
+import type { CharacterId, ReleasedCharacterId } from '../../game/types.ts'
 import { spot } from './helpers.ts'
 import type { TutorialStep } from './types.ts'
 
@@ -14,7 +14,8 @@ export type CharacterLessons = {
 }
 
 /** Each hero's own mechanics: shown in the first fight, then deepened in the second. */
-export const CHARACTER_LESSONS: Record<CharacterId, CharacterLessons> = {
+/** Released heroes only; playtest-only characters have no tutorial. */
+export const CHARACTER_LESSONS: Readonly<Partial<Record<CharacterId, CharacterLessons>>> & Record<ReleasedCharacterId, CharacterLessons> = {
   ironclad: {
     intro: [
       {

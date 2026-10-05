@@ -425,6 +425,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `${effect.amount} Shiv${effect.amount === 1 ? '' : 's'}`
     case 'gainMiracle':
       return `gain ${amountLabel(effect.amount)} Miracle${effect.amount === 1 ? '' : 's'}`
+    case 'gainRage':
+      return `gain ${amountLabel(effect.amount)} Rage`
     case 'gainOrbSlots':
       return `gain ${effect.amount} Orb slots`
     case 'gainOrbEvokeBonus':

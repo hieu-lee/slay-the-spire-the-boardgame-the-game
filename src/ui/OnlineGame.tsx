@@ -8,7 +8,7 @@ import type { CombatState } from '../game/combat.ts'
 import { ASCENSION_RULES, canGiveUpRun, hasPendingRelicAcquisition, victoryIsTerminal } from '../game/run.ts'
 import { relicDef } from '../game/relics.ts'
 import type { Room } from '../game/map.ts'
-import type { Player } from '../game/types.ts'
+import type { CharacterId, Player } from '../game/types.ts'
 import { useRoomSession } from '../multiplayer/useRoomSession.ts'
 import type { PublicSeat, VisibleCombat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import { useVoiceChat } from '../multiplayer/useVoiceChat.ts'
@@ -171,7 +171,7 @@ function Seat({ seat, you }: { seat?: PublicSeat; you?: boolean }) {
 
 /** The same close-cropped hero strip used by the polished solo screen. */
 function CharacterRoster({ character, onChoose, taken, disabled = false }: {
-  character: (typeof CHARACTERS)[number][0]
+  character: CharacterId
   onChoose: (character: (typeof CHARACTERS)[number][0]) => void
   taken?: ReadonlySet<string>
   disabled?: boolean

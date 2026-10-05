@@ -3,11 +3,17 @@
 
 export const BASE_CHARACTER_IDS = ['ironclad', 'silent', 'defect', 'watcher'] as const
 export const DOWNFALL_CHARACTER_IDS = ['slime_boss', 'guardian', 'hexaghost', 'hermit'] as const
+/** Released characters: character select, online rooms, daily runs, stats, and reward decks. */
 export const CHARACTER_IDS = [...BASE_CHARACTER_IDS, ...DOWNFALL_CHARACTER_IDS] as const
+/** Draft characters the engine can run, reachable only through the headless playtest system. */
+export const PLAYTEST_CHARACTER_IDS = ['kratos'] as const
+export const ALL_CHARACTER_IDS = [...CHARACTER_IDS, ...PLAYTEST_CHARACTER_IDS] as const
 
 export type BaseCharacterId = (typeof BASE_CHARACTER_IDS)[number]
 export type DownfallCharacterId = (typeof DOWNFALL_CHARACTER_IDS)[number]
-export type CharacterId = (typeof CHARACTER_IDS)[number]
+export type ReleasedCharacterId = (typeof CHARACTER_IDS)[number]
+export type PlaytestCharacterId = (typeof PLAYTEST_CHARACTER_IDS)[number]
+export type CharacterId = (typeof ALL_CHARACTER_IDS)[number]
 export type GuardianMode = 'attack' | 'defense'
 export type SlimeType = 'bruiser' | 'leeching' | 'greed' | 'poison' | 'shield' | 'slime_spikes' | 'scrap_ooze' | 'evolution'
 export type CardType = 'attack' | 'skill' | 'power' | 'slime' | 'curse' | 'status'
@@ -39,6 +45,7 @@ export const CAPS = {
   poison: 30,
   shivs: 5,
   miracles: 5,
+  rage: 5,
   heat: 6,
   soulburn: 6,
   potions: 3,
@@ -200,6 +207,8 @@ export type Player = {
   starterDefendBlockBonus?: number
   /** Watcher. */
   miracles: number
+  /** Kratos: banked Rage, spent by Unleash clauses. Absent means 0. */
+  rage?: number
   /** Holy Water's two once-per-combat Energy cubes. */
   holyWaterCubes?: number
   stance: Stance

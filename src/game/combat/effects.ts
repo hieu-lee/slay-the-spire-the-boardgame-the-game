@@ -59,11 +59,13 @@ import {
   evokePlan,
   guardianGemForCard,
   invalidPlayChoice,
+  isEliteOrBoss,
   latestPlayableAllyAttack,
   omniscienceEligibleCards,
   reachesEnemy,
   resolutionContext,
   slimeCommandEnemyChoiceLabels,
+  unleashCost,
 } from './queries.ts'
 import type {
   CombatState,
@@ -652,18 +654,70 @@ function preventPlayerHpLoss(state: CombatState, player: Player, amount: number)
   return true
 }
 
+/** Deicide: +1 to each hit on an Elite or Boss while it is in play. Extra copies do not stack. */
+function deicideBonus(actor: Player, target: Enemy): number {
+  return actor.powers.some((power) => power.defId === 'kratos_deicide') && isEliteOrBoss(target) ? 1 : 0
+}
+
+/** Bloodlust and Red Orbs: rewards for an enemy killed by this player's own hit. */
+function rewardKill(state: CombatState, actor: Player, context: PlayContext): void {
+  for (const power of [...actor.powers]) {
+    if (power.defId === 'kratos_bloodlust') {
+      const rage = gainRage(actor, 2)
+      if (rage > 0) state.log = [...state.log, `Bloodlust: ${actor.name} gains ${rage} Rage`]
+    } else if (power.defId === 'kratos_green_orbs' && actor.powers.includes(power)) {
+      // One heal per combat however many copies are in play: every copy leaves play together.
+      const before = actor.hp
+      actor.hp = Math.min(healingCapFor(actor, state.ruleset), actor.hp + 1)
+      if (actor.hp > before) state.log = [...state.log, `Green Orbs: ${actor.name} heals ${actor.hp - before} HP`]
+      const orbs = actor.powers.filter((held) => held.defId === 'kratos_green_orbs')
+      actor.powers = actor.powers.filter((held) => held.defId !== 'kratos_green_orbs')
+      exhaustCards(state, actor, orbs, context)
+    } else if (power.defId === 'kratos_red_orbs') {
+      const energy = Math.min(CAPS.energy, actor.energy + 1) - actor.energy
+      actor.energy += energy
+      const rage = gainRage(actor, 1)
+      if (energy + rage > 0) state.log = [...state.log, `Red Orbs: ${actor.name} gains ${energy} Energy and ${rage} Rage`]
+    }
+  }
+}
+
+/** Kratos gains Rage up to the cap; returns how much was actually gained. */
+export function gainRage(player: Player, amount: number): number {
+  // Nothing to gain: never add a Rage field to a character who has none.
+  if (amount <= 0) return 0
+  const before = player.rage ?? 0
+  player.rage = Math.min(CAPS.rage, before + Math.max(0, amount))
+  return player.rage - before
+}
+
 export function losePlayerHp(state: CombatState, player: Player, amount: number, countsAsDamage = false): number {
   const remaining = remainingRoundHpLoss(player)
   const limited = remaining === undefined
     ? amount
     : Math.min(amount, remaining)
-  const losable = Math.min(player.hp, Math.max(0, limited))
+  let losable = Math.min(player.hp, Math.max(0, limited))
   if (preventPlayerHpLoss(state, player, losable)) return 0
+  const escape = losable > 0 && losable >= player.hp
+    ? player.powers.findIndex((power) => power.defId === 'kratos_escape_from_hades')
+    : -1
+  if (escape >= 0) {
+    // Escape from Hades: the first lethal HP loss leaves Kratos at 1 HP, then the Power is exhausted.
+    losable = player.hp - 1
+    const held = player.powers[escape]!
+    player.powers = player.powers.filter((_, index) => index !== escape)
+    exhaustCards(state, player, [held])
+    state.log = [...state.log, `${player.name} escapes from Hades with 1 HP`]
+  }
   const outcome = applyHpLoss(player.hp, losable)
   if (outcome.hpLost > 0) {
     player.lostHpThisCombat = true
     player.hpLostThisRound = (player.hpLostThisRound ?? 0) + outcome.hpLost
     if (countsAsDamage) recordDamageTaken(player, outcome.hpLost)
+    // Ashes of Sparta and Chains of Chaos: each separate HP loss feeds Kratos's Rage.
+    const rage = gainRage(player, (player.relics.some((relic) => relic.defId === 'ashes_of_sparta') ? 1 : 0) +
+      player.powers.filter((power) => power.defId === 'kratos_chains_of_chaos').length)
+    if (rage > 0) state.log = [...state.log, `${player.name} gains ${rage} Rage`]
   }
   player.hp = outcome.hp
   if (player.hp === 0) {
@@ -1141,7 +1195,11 @@ export function applyEffect(
       }
       return
     case 'branch': {
-      const branch = conditionIsActive(effect.condition, state, actor, context) ? effect.effects : effect.otherwise
+      // An Unleash whose bonus only lands on enemies keeps its Rage when no target is left alive.
+      const pointless = effect.condition.kind === 'canUnleash' &&
+        effect.effects.some((nested) => reachesEnemy(nested, actor)) &&
+        resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow).length === 0
+      const branch = !pointless && conditionIsActive(effect.condition, state, actor, context) ? effect.effects : effect.otherwise
       for (const nested of branch) {
         applyEffect(state, actor, nested, scope, supportScope, context, source,
           deferWeakSpend, deferVulnerableSpend)
@@ -1198,7 +1256,10 @@ export function applyEffect(
           (context.hermitRapidFireCard && actor.powers.some((power) => power.defId === 'hermit_showdown') ? 1 : 0) +
           (context.sourceCardId === 'hermit_strike' && actor.powers.some((power) => power.defId === 'hermit_maintenance' && power.upgraded) ? 1 : 0) +
           (context.sourceScryDamageBonus ?? 0) +
-          (context.sourceCardId && isStarterStrikeOrDefend(context.sourceCardId, 'Strike') ? (actor.starterStrikeDamageBonus ?? 0) : 0)
+          (context.sourceCardId && isStarterStrikeOrDefend(context.sourceCardId, 'Strike') ? (actor.starterStrikeDamageBonus ?? 0) : 0) +
+          deicideBonus(actor, target) +
+          (context.sourceCardType === 'attack' && (scope === 'row' || scope === 'allEnemies') &&
+            actor.powers.some((power) => power.defId === 'kratos_blades_of_exile') ? 1 : 0)
         let blocked = 0
         let curled = false
         let poisonAppliedTotal = 0
@@ -1267,6 +1328,7 @@ export function applyEffect(
         }
         if (wasAlive && target.dead) {
           state.log = [...state.log, `${name} is dead`]
+          if (!slimeCommand) rewardKill(state, actor, context)
           if (!slimeCommand && context.sourceCardType !== undefined && enemyHasDeathReaction(state, target)) {
             context.pendingEnemyDeathUids?.push(target.uid)
           }
@@ -1437,6 +1499,7 @@ export function applyEffect(
     }
     case 'loseOwnHp': {
       const lost = losePlayerHp(state, actor, effect.amount)
+      context.hpLostByCard = (context.hpLostByCard ?? 0) + lost
       if (lost > 0) note(`${actor.name} loses ${lost} HP`)
       return
     }
@@ -2135,6 +2198,33 @@ export function applyEffect(
       }
       return
     }
+    case 'gainRage': {
+      const gained = gainRage(actor, amountOf(effect.amount, state, actor, undefined, context))
+      if (gained > 0) {
+        note(`${actor.name} gains ${gained} Rage`)
+        markTurnEffect(context, 'buff', { actor: true })
+      }
+      return
+    }
+    case 'loseAllRage': {
+      if ((actor.rage ?? 0) > 0) note(`${actor.name} loses ${actor.rage} Rage`)
+      actor.rage = 0
+      return
+    }
+    case 'unleashSpend': {
+      const cost = unleashCost(actor, effect.cost)
+      // A God of War discount to 0 resolves the bonus but spends nothing.
+      if (cost === 0) return
+      actor.rage = Math.max(0, (actor.rage ?? 0) - cost)
+      note(`${actor.name} unleashes ${cost} Rage`)
+      // Ghost of Sparta: Block for each Unleash, read directly like Deicide and God of War.
+      for (const power of actor.powers.filter((held) => held.defId === 'kratos_ghost_of_sparta')) {
+        const before = actor.block
+        grantBlock(state, actor, power.upgraded ? 2 : 1, context.pendingTriggers)
+        if (actor.block > before) state.log = [...state.log, `Ghost of Sparta: ${actor.name} gains ${actor.block - before} Block`]
+      }
+      return
+    }
     case 'gainMiracle': {
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const available = Math.max(0, CAPS.miracles - state.players.reduce((sum, player) => sum + player.miracles, 0))
@@ -2220,6 +2310,7 @@ export function applyEffect(
         ? cardCost(faceOf(cardDef(moved[0]!.defId), moved[0]!.upgraded), actor.powers, actor.lostHpThisCombat)
         : undefined
       actor.hand = actor.hand.filter((card) => !chosen.includes(card.uid))
+      context.exhaustedByCard = moved.length
       exhaustCards(state, actor, moved, context)
       if (moved.length > 0) note(`${actor.name} exhausts ${moved.length}`)
       return

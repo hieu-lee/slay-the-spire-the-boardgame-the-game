@@ -114,6 +114,15 @@ export const RELICS: Record<string, RelicDef> = {
     id: 'guardian_starting_relic', name: 'Guardian Starting Relic', pool: 'starting', effects: [],
     text: 'Start of Combat: Enter Attack Mode.', rule: 'Attack Mode is initialized by Guardian combat setup.',
   },
+  ashes_of_sparta: {
+    id: 'ashes_of_sparta',
+    name: 'Ashes of Sparta',
+    pool: 'starting',
+    trigger: { kind: 'startOfCombat' },
+    effects: [{ kind: 'gainRage', amount: 1 }],
+    rule: 'Whenever you lose HP, gain 1 Rage. Each separate HP loss counts once.',
+    text: 'Start of combat: gain 1 Rage. Whenever you lose HP, gain 1 Rage.',
+  },
   hermit_starting_relic: {
     id: 'hermit_starting_relic', name: 'Hermit Starting Relic', pool: 'starting', effects: [],
     text: 'Hermit starting setup component.', rule: 'Reserved for the audited Hermit setup rule.',
@@ -560,6 +569,7 @@ export const STARTING_RELIC: Record<string, string> = {
   slime_boss: 'slime_boss_starting_relic',
   guardian: 'guardian_starting_relic',
   hermit: 'hermit_starting_relic',
+  kratos: 'ashes_of_sparta',
 }
 
 export type PotionDef = {

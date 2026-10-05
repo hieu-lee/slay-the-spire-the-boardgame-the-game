@@ -580,7 +580,7 @@ function validRunState(value: unknown, runId: string): value is RunState {
     const optionalBoolean = ['shuffledThisCombat', 'cardPlayLocked', 'powerPlayedThisTurn', 'damageDealtZeroThisTurn',
       'spentTwoEnergyOnCardThisTurn',
       'calipersArmed', 'soulburnUsedThisTurn', 'guardianModeLocked']
-    return typeof current.id === 'string' && typeof current.name === 'string' && CHARACTER_IDS.includes(current.character) &&
+    return typeof current.id === 'string' && typeof current.name === 'string' && CHARACTER_IDS.some((id) => id === current.character) &&
       numeric.every((field) => Number.isFinite(current[field])) && typeof current.drawLocked === 'boolean' &&
       current.hp >= 0 && current.hp <= current.maxHp && current.maxHp >= 1 && current.maxHp <= 1_000 &&
       current.block >= 0 && current.block <= CAPS.block && current.energy >= 0 && current.energy <= CAPS.energy &&

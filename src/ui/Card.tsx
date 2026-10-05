@@ -94,6 +94,7 @@ const COUNT_LABEL: Record<CountOf, string> = {
   cursesInHandAndChamber: 'Curse in your hand or Chamber',
   starterCardsInHandAndChamber: 'starter Strike or Defend in your hand or Chamber',
   otherCardsInHand: 'other card in your hand',
+  rage: 'Rage you have',
 }
 
 const TARGET_TOKEN_LABEL: Record<EnemyTokenKind, string> = {
@@ -138,6 +139,12 @@ function conditionText(condition: Condition): string {
     case 'hasCurseInChamber': return 'you have a Curse in your Chamber'
     case 'hasDeadOnAttackInChamber': return 'you have a Dead On Attack in your Chamber'
     case 'hpAtMost': return `you have ${condition.amount} or fewer hit points`
+    case 'rageAtLeast': return `you have at least ${condition.amount} Rage`
+    case 'canUnleash': return `you Unleash ${condition.cost}`
+    case 'targetDead': return 'the target died (Brutal Kill)'
+    case 'exhaustedByThisCard': return 'this card exhausted a card'
+    case 'lostHpToThisCard': return 'you lost HP to this card'
+    case 'targetEliteOrBoss': return 'the target is an Elite or Boss'
   }
 }
 
@@ -342,6 +349,9 @@ function effectText(effect: Effect): string {
     case 'goldenBullet': return `deal ${effect.amount} damage; Dead On quadruples Vulnerable damage`
     case 'roulette': return 'resolve the row matching the shared die'
     case 'attachBounty': return `apply ${effect.vulnerable} Vulnerable and attach this card as a bounty`
+    case 'gainRage': return `gain ${amountText(effect.amount)} Rage${condition}`
+    case 'loseAllRage': return `spend all your Rage${condition}`
+    case 'unleashSpend': return `spend ${effect.cost} Rage${condition}`
   }
 }
 

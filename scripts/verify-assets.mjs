@@ -1017,7 +1017,8 @@ check('bundled stage and generated icon inventories are complete and decodable',
   assertDeepEqual(statusIconFiles.sort(), expectedStatus, 'status icon inventory')
   assertDeepEqual(powerIconFiles.sort(), expectedPowers, 'Power icon inventory')
   assertDeepEqual(requiredRelicIconFiles.sort(), [...new Set(Object.keys(RELICS)
-    .filter((id) => id !== 'hexaghost_starting_relic')
+    // The playtest-only Kratos relic has no art yet.
+    .filter((id) => id !== 'hexaghost_starting_relic' && id !== 'ashes_of_sparta')
     .map((id) => `${id.replace(/^downfall_/, '')}.png`))].sort(),
     'relic icon inventory')
   assertEqual(relicIconPath('downfall_ninja_scroll'), '/assets/relic-icons/ninja_scroll.png',

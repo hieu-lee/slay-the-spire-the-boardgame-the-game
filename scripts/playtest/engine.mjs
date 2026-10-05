@@ -22,7 +22,7 @@ const combatOps = new Set(['playCard', 'playCardCopy', 'playHermitChamberCard', 
   'resolveDeterministicForcedCard'])
 const globalCombatOps = new Set(['resolveStartPlayerTurn', 'orderStartTurnScries', 'startPlayerTurnWithChoices', 'endPlayerTurn',
   'beginEndPlayerTurn', 'beginEndTurnResolution', 'resolveEndTurnAbility', 'enemyTurn', 'resolveDeterministicForcedCard'])
-const playFields = new Set('enemyUid enemyRow playerId slimeUids slimeEnemyUids loadUids chamberUids hermitEnemyUids hermitDieRelics energySpent spendVigor guardianModeShift secondGuardianModeShift corruptedShardMode guardianBlockSpend guardianPowerCardUid enemyUids soulburnEnemyUids playerIds switchWithPlayerId mode discardUids exhaustUids topdeckUids recoverDiscardUid recoverDiscardUids recoverExhaustUid recoverExhaustUids searchDrawUids spendMiracle shivEnemyUids scryDiscardUids scryToHandUid evokeSlots evokeEnemyUids chooseLoadSelf'.split(' '))
+const playFields = new Set('enemyUid enemyRow playerId slimeUids slimeEnemyUids loadUids chamberUids hermitEnemyUids hermitDieRelics energySpent spendVigor guardianModeShift secondGuardianModeShift corruptedShardMode guardianBlockSpend guardianPowerCardUid enemyUids soulburnEnemyUids playerIds switchWithPlayerId mode discardUids exhaustUids topdeckUids recoverDiscardUid recoverDiscardUids recoverExhaustUid recoverExhaustUids searchDrawUids spendMiracle holdRage shivEnemyUids scryDiscardUids scryToHandUid evokeSlots evokeEnemyUids chooseLoadSelf'.split(' '))
 function publicChoices(context) {
   if (!context || typeof context !== 'object' || Array.isArray(context) || Object.keys(context).some((key) => !playFields.has(key))) throw new Error('Use only printed PlayContext choices')
   return context

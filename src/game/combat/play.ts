@@ -670,6 +670,7 @@ export function playCard(
   const ctx = resolutionContext(context, def,
     attachedGemId ? { ...held, attachedGemId } : held, effectEnergy, doubled)
   ctx.hermitRapidFireCard = rapidFire > 0
+  pinRowAnchor(next, def, ctx)
   let remainingEffects: Effect[] | undefined
   if (resolvesOnPlay) {
     for (const [index, effect] of effects.entries()) {
@@ -1123,6 +1124,7 @@ export function playCardCopy(
     sourceIsCopy,
   )
   ctx.hermitRapidFireCard = copy.hermitRapidFireCard === true
+  pinRowAnchor(next, def, ctx)
   next.log = [...next.log, `${actor.name} played ${def.name}`]
 
   let remainingEffects: Effect[] | undefined
@@ -1502,6 +1504,16 @@ export function abandonForcedCard(state: CombatState, playerId: string): CombatS
     pendingTriggers: [...(forced.pendingTriggers ?? []), ...resumedTriggers],
   })
   return finishForcedCardPlay(settleForbiddenPendingCopy(next, actor), choices)
+}
+
+/**
+ * A row card keeps the row it was aimed at for every clause. Otherwise a clause
+ * after a lethal hit re-reads the row from the now-dead anchor and lands nowhere
+ * (Atlas Quake's debuffs, Spear of Destiny's Vulnerable).
+ */
+function pinRowAnchor(state: CombatState, def: CardDef, context: PlayContext): void {
+  if (def.target !== 'row' || context.enemyRow != null) return
+  context.enemyRow = state.enemies.find((enemy) => !enemy.dead && enemy.uid === context.enemyUid)?.row
 }
 
 function activeForcedCardEffects(

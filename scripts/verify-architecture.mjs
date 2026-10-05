@@ -469,7 +469,7 @@ check('no live card draws before exhausting from hand', () => {
 // the card would look wrong. Target-reading conditions belong inside an
 // `Amount`, where the resolver runs them per enemy.
 check('no condition reads a target that its reader was never handed', () => {
-  const TARGET_READING = new Set(['targetPoisoned', 'targetFullHp'])
+  const TARGET_READING = new Set(['targetPoisoned', 'targetFullHp', 'targetEliteOrBoss'])
   const BOARD_READING = new Set([
     'hasShiv', 'discardTopCosts', 'dieShows', 'inStance', 'notInStance', 'discardedThisTurn', 'stanceChangedThisTurn',
     'firstTurnOfCombat', 'firstCardPlayedThisTurn', 'hasNoAttacksInHand', 'allCardsInHandAreAttacks',
@@ -477,7 +477,9 @@ check('no condition reads a target that its reader was never handed', () => {
     'goldAtLeast', 'orbsAtLeast', 'drawPileEmpty',
     'handEmpty', 'drewSkill', 'retainedLastTurn', 'heatAtLeast', 'heatBelow',
     'cardsInExhaustAtLeast', 'soulburnUsedThisTurn', 'hpAtMost', 'hasCurseInChamber',
-    'hasDeadOnAttackInChamber',
+    'hasDeadOnAttackInChamber', 'rageAtLeast', 'canUnleash',
+    // Reads the play's chosen target uid from the clause's context, not a struck enemy.
+    'targetDead', 'exhaustedByThisCard', 'lostHpToThisCard',
   ])
   // A hardcoded list quietly stops covering the condition somebody adds next,
   // and this one is the whole check: an unclassified kind would be treated as

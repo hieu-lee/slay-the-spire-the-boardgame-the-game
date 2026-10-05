@@ -1,6 +1,6 @@
-import { CHARACTER_IDS } from '../game/types.ts'
+import { ALL_CHARACTER_IDS } from '../game/types.ts'
 import type { CardType, CharacterId } from '../game/types.ts'
-import { CARDS } from '../game/cards.ts'
+import { CARDS, releasedCardDefs } from '../game/cards.ts'
 import { POTIONS } from '../game/relics.ts'
 import { cardVfxRecipe, potionVfxRecipe, type VfxFamily, type VfxRecipe } from './combat-vfx.ts'
 
@@ -78,11 +78,16 @@ const CHARACTER_RATE: Readonly<Record<CharacterId, number>> = {
   guardian: 0.92,
   hexaghost: 1.16,
   hermit: 0.98,
+  kratos: 0.9,
 }
 
 const POTION_IDS = Object.keys(POTIONS).sort()
-const CARD_IDS = Object.keys(CARDS).sort()
-const CHARACTERS: readonly CharacterId[] = CHARACTER_IDS
+// Playtest-only cards and characters come after the released ones, so they never
+// shift a released card's identity-sound slot.
+const RELEASED_CARD_IDS = releasedCardDefs().map((def) => def.id).sort()
+const RELEASED = new Set(RELEASED_CARD_IDS)
+const CARD_IDS = [...RELEASED_CARD_IDS, ...Object.keys(CARDS).filter((id) => !RELEASED.has(id)).sort()]
+const CHARACTERS: readonly CharacterId[] = ALL_CHARACTER_IDS
 const IDENTITY_SOUNDS: readonly CombatSound[] = [
   'ui', 'card', 'draw', 'attack', 'magic', 'enemy', 'block', 'heal', 'weak',
 ]
@@ -133,7 +138,8 @@ export function cardSfxRecipe(
 ): CombatSfxRecipe {
   const baseId = cardId.endsWith('+') ? cardId.slice(0, -1) : cardId
   const visual = cardVfxRecipe(character, baseId, mode, upgraded, resolvedType)
-  const slot = CHARACTERS.indexOf(character) * CARD_IDS.length + CARD_IDS.indexOf(baseId)
+  // Strided by the released pool, so playtest-only cards never move a released card's slot.
+  const slot = CHARACTERS.indexOf(character) * RELEASED_CARD_IDS.length + CARD_IDS.indexOf(baseId)
   return tunedRecipe(
     `card:${character}:${baseId}:${mode ?? 'base'}`,
     [...layersForCard(visual).map(layer => ({ ...layer,

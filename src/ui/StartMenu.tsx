@@ -4,7 +4,7 @@ import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
 import { relicDef, STARTING_RELIC } from '../game/relics.ts'
 import { ASCENSION_RULES } from '../game/run.ts'
 import { DAILY_ASCENSION } from '../game/daily.ts'
-import type { CharacterId } from '../game/types.ts'
+import type { CharacterId, ReleasedCharacterId } from '../game/types.ts'
 import { CampaignSelect } from './CampaignSelect.tsx'
 import { MailBox } from './MailBox.tsx'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
@@ -45,7 +45,7 @@ type StartMenuProps = {
   initiallyChoosingCharacter?: boolean
 }
 
-const HEROES: { id: CharacterId; name: string }[] = [
+const HEROES: { id: ReleasedCharacterId; name: string }[] = [
   { id: 'ironclad', name: 'Ironclad' },
   { id: 'silent', name: 'Silent' },
   { id: 'defect', name: 'Defect' },
@@ -92,7 +92,7 @@ const RUN_MODES: { id: RunMode; name: string; copy: string }[] = [
   { id: 'custom', name: 'Custom', copy: 'Customize your own run with unique modifiers.' },
 ]
 
-const HERO_COPY: Record<CharacterId, string> = {
+const HERO_COPY: Record<ReleasedCharacterId, string> = {
   ironclad: 'The sole survivor of the Ironclads sold his soul for demonic power. He starts with the most HP, builds Strength to empower every hit, and turns Exhaust into fuel for devastating attacks.',
   silent: 'A deadly huntress from the foglands who eradicates foes with daggers and poison. She can stack lasting Poison or gather Shivs for explosive turns, rewarding patience and careful preparation.',
   defect: 'An ancient combat automaton that became self-aware and learned to manipulate Orbs. Channel Lightning, Frost, and Dark, then Evoke them at the right moment to turn stored power into victory.',

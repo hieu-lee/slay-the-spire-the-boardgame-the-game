@@ -3,7 +3,7 @@
 // card under the wrong directory, both went unnoticed.
 import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
 import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } from '../src/game/assets.ts'
-import { CARDS, faceOf } from '../src/game/cards.ts'
+import { CARDS, faceOf, releasedCardDefs } from '../src/game/cards.ts'
 import { POTIONS } from '../src/game/relics.ts'
 import {
   bossAttackMotionFor,
@@ -220,6 +220,12 @@ check('all physical potion IDs have explicit VFX recipes', () => {
   assertEqual(toneColors.size, Object.keys(POTIONS).length, 'every Potion keeps a visible tone identity')
 })
 
+check('playtest-only cards never move a released card\'s sound identity', () => {
+  // Pinned from before Kratos existed: the identity slot is strided by the released pool only.
+  assertDeepEqual(cardSfxRecipe('silent', 'neutralize').layers.at(-1), { sound: 'heal', rate: 0.929, volume: 0.08, delayMs: 204 })
+  assertDeepEqual(cardSfxRecipe('hermit', 'hermit_strike').layers.at(-1), { sound: 'ui', rate: 1.019, volume: 0.08, delayMs: 792 })
+})
+
 check('every card and acting character resolves a bounded personal SFX recipe', () => {
   const characters = CHARACTER_IDS
   const sounds = new Set(['ui', 'card', 'draw', 'attack', 'magic', 'enemy', 'block', 'heal', 'weak'])
@@ -238,7 +244,8 @@ check('every card and acting character resolves a bounded personal SFX recipe', 
       assert(base.layers.at(-1).delayMs >= 36, `${base.cue} has a perceptible identity accent`)
     }
   }
-  const accents = characters.flatMap((character) => Object.values(CARDS).map((card) =>
+  // Released characters can only ever hold released cards.
+  const accents = characters.flatMap((character) => releasedCardDefs().map((card) =>
     JSON.stringify(cardSfxRecipe(character, card.id).layers.at(-1))))
   assertEqual(new Set(accents).size, accents.length,
     'every acting-character/card pair has a distinct sound, coarse pitch, or timing accent')
