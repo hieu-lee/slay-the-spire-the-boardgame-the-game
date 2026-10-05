@@ -88,10 +88,10 @@ try {
           // WebKit clamps a finished impact's currentTime at delay + duration.
           // startTime is the shared clock even when a busy renderer reports it late.
           assert(Number.isFinite(cold.start) && Number.isFinite(cold.targetStart) &&
-            Math.abs(cold.start - cold.targetStart) < 150, `cold attacker and target clocks separated: ${JSON.stringify(cold)}`)
+            Math.abs(cold.start - cold.targetStart) < 2, `cold attacker and target clocks separated: ${JSON.stringify(cold)}`)
           await page.waitForFunction(() => !document.querySelector('.character-attack'))
           releaseColdArtwork()
-          await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 12).catch(async error => {
+          await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 16).catch(async error => {
             throw new Error(`${engine}/${screen}: warmup ${JSON.stringify(await page.locator('.board').evaluate(node => node.dataset))} ${JSON.stringify(errors)}`, { cause: error })
           })
           await page.unroute('**/kratos-slam.webp')
@@ -199,13 +199,14 @@ try {
             const attack = document.querySelector('.character-attack--kratos')
             const animations = attack.getAnimations({ subtree: true })
             const checks = [['ready', 0], ['anticipation', 200], ['left-cast', 350], ['left-extended', 500],
-              ['right-cast', 700], ['right-extended', 900], ['windup', 1150], ['slam', 1360],
-              ['recovery', 1600], ['settle', 1800], ['ready', 2050]].map(([pose, time]) => {
+              ['right-cast', 700], ['right-extended', 900], ['windup-cast', 1000], ['windup', 1120],
+              ['slam-descend', 1230], ['slam', 1360],
+              ['recovery', 1530], ['retract', 1650], ['catch', 1760], ['settle', 1850], ['ready', 2050]].map(([pose, time]) => {
                 animations.forEach(animation => { animation.currentTime = time })
                 const visible = [...attack.querySelectorAll('.character-attack__pose img')]
                   .filter(image => Number(getComputedStyle(image.parentElement).opacity) > .5)
                 return { pose, time, count: visible.length, src: visible[0]?.src,
-                  decoded: visible[0]?.complete && visible[0].naturalWidth === 800 }
+                  decoded: visible[0]?.complete && visible[0].naturalWidth === 1152 }
               })
             animations.forEach(animation => { animation.currentTime = 900 })
             return checks
@@ -262,6 +263,7 @@ print(f'visible skin: {matched}/{len(points)}')
           await page.locator(idle).evaluate(image => image.decode())
           const reduced = await page.evaluate(paintedKratosBounds, idle)
           assert(Math.abs(reduced.height - rest.height) < 2, 'reduced motion changes Kratos size')
+          assert(Math.abs(reduced.width - rest.width) < 2, 'reduced motion crops Kratos blades')
           assert(Math.abs(reduced.ground - rest.ground) < 2, 'reduced motion shifts planted feet')
           await page.evaluate(() => window.kratosFixture.attack())
           assert.equal(await page.locator('.character-attack').count(), 0, 'reduced motion plays attack')
@@ -274,7 +276,7 @@ print(f'visible skin: {matched}/{len(points)}')
               const f = window.kratosFixture; f.reset()
               f.state.enemies.splice(1); f.state.enemies[0].hp = 2; f.render()
             })
-            await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 12)
+            await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 16)
             const queued = await page.evaluate(source => new Promise((resolve, reject) => {
               const f = window.kratosFixture
               const samples = []
@@ -308,7 +310,7 @@ print(f'visible skin: {matched}/{len(points)}')
             document.documentElement.dataset.reducedMotion = 'false'
             window.kratosFixture.reset()
           })
-          await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 12)
+          await page.waitForFunction(() => Number(document.querySelector('.board')?.dataset.characterAttackAssetsReady) === 16)
           await page.evaluate(() => window.kratosFixture.attack())
           await page.locator('.character-attack--kratos').waitFor()
           await page.evaluate(() => {

@@ -1,60 +1,68 @@
 # Kratos playtest artwork
 
-Greek-era Kratos uses God of War 1/2/3 equipment and the game's simplified painted
-sprite style. The October 5 revision follows the user's supplied crouched pose,
-broad fiery Blades of Exile, short goatee, red left-side tattoo and right-side
-ram-themed Golden Fleece armor. The screenshot is supplied to Sunburst alongside
-actual Ironclad and Watcher sprites. Native transparency is preserved.
+Greek Kratos uses God of War 1/2/3 equipment and the game's soft painted sprite
+style. The October 5 correction supplies all four actual Ironclad, Silent, Defect
+and Watcher sprites to Sunburst, replacing heavy comic outlines and dense armor
+patterns with matte color planes, restrained detail and softer shading. Identity
+still follows the supplied crouched Blades of Exile / Golden Fleece reference:
+ash-white skin, left red tattoo, short goatee, right ram armor and red Spartan skirt.
+Native transparency is preserved.
 
-The square-square-triangle combo contains ten complete drawings and eleven timed
-keys, below the user's maximum of twenty. It anticipates at 120ms, casts the left
-blade at 280ms, extends it at 420ms, recoils/casts the right at 650ms, extends that
-at 800ms, lifts both blades at 1020ms, slams at 1280ms, retracts at 1480ms, settles
-at 1710ms and returns to the exact idle drawing at 1900ms. The 2200ms CSS clock
-moves the complete cutout without stretching limbs, blending duplicate bodies,
-or scaling the character. Idle is eight slow rigid sway frames over 3200ms.
+The square-square-triangle combo uses fourteen complete drawings and fifteen timed
+keys, below the maximum of twenty. Anticipation starts at 120ms, left cast at 280ms,
+left extension at 420ms, right cast at 650ms and right extension at 800ms. Both blades
+cast upward at 940ms, extend overhead at 1080ms, descend airborne at 1180ms and strike
+at 1280ms. Both blades remain remote from the fists on separate intact chains during
+this heavy swing; the contact tips meet the same ground as his soles. Recovery at
+1480ms reels them in, 1600ms shows the halfway pull, 1710ms catches the two grips,
+1810ms settles into the held-blade stance and 1980ms returns to the exact idle drawing.
+The complete clock stays 2200ms. Idle uses eight small rigid sway frames over 3200ms.
 
-`registration.json` records crown/jaw, sole and stance-center landmarks. The right
-arm's pauldron occludes the lower jaw in its turned pose; its projected endpoint
-is registered against the neck and body proportions. Each complete drawing gets
-one uniform scale, with a planted ground anchor. The 800px runtime canvas uses
-2x overscan for full chain reach; reduced-motion static art reverses that overscan.
-Inspect the registered gallery for connected shoulders/elbows/wrists, two hands,
-two legs, two matching blades, continuous pommel-to-bracer chains and stable body
-and weapon size. Rejected drafts repeated the first arm, added fingers at a flying
-blade, stood too tall, or put blade tips below the ground. They are not exported.
+`combo-v2/registration.json` records inspected crown/jaw, sole and stance-center
+landmarks. Each complete drawing gets one uniform scale to a fixed 65.25px skull;
+there is no limb morphing or per-beat body scaling. A 1152px canvas with 2.3x display
+overscan leaves room for both extended chains while preserving the on-screen body
+scale. The ground anchor is 1136px. Reduced-motion static art reverses that overscan.
+The bony jaw is projected where the ram pauldron partly occludes the right-cast face.
+The gallery audit checks shoulder/elbow/wrist connections, two hands and legs,
+matching blades, chain connections, stable proportions and planted feet. Rejected
+heavy drafts stood too tall, enlarged chain reach or put tips below the soles;
+rejected right-strike drafts repeated the left arm. Those drafts are not exported.
 
-Each target receives two light painted flame crescents and a separate heavy ground
-shock. Real CSS impact onsets drive visible HP and numbers in weights 0.1/0.1/0.8,
-using the same additive presentation-debt logic as Hermit. Authoritative damage,
-Block, powers, relic triggers and gameplay hit counts are unchanged. Rapid card or item-granted Shiv plays
-queue separate combos; a lethal target falls after the final slam. Reduced motion
+Light hits use two painted flame crescents; the slam uses a larger twin flame / rock
+shock, generated against actual Ironclad strike/bash and Watcher meteor impact VFX.
+Real CSS impact onsets drive visible HP and numbers at weights 0.1/0.1/0.8, using the
+same additive presentation debt as Hermit. Authoritative damage, Block, powers,
+relic triggers and gameplay hit counts are unchanged. Rapid cards and item-granted
+Shivs queue separate combos; lethal targets fall after the final slam. Reduced motion
 settles immediately, and restoration/disconnect clears effects and pending debt.
-A cold play retains the loaded idle drawing throughout the timed combo; later
-plays use all registered poses. Event clocks never swap poses partway through.
+A cold play retains loaded idle art throughout its timed combo; later plays use
+all registered poses. Artwork never changes partway through an active clock.
+Actor, pose, chain and target animations share an explicit document-timeline epoch,
+so delayed target-portal mounting in WebKit cannot separate their contact clocks.
 
-Three original procedural sounds provide metallic chain swings, lighter fiery
-cuts and a heavier bass/rock slam. They play from the corresponding visible CSS
-beats, deduplicate simultaneous row targets and honor mute/reconnect cleanup.
-Generate them with `python3 scripts/audio/generate-combat-sfx.py`; no audio is
-copied from the supplied video.
+Three original procedural sounds retain the chain swings, light cuts and heavy
+slam synchronized to the visible CSS beats. Row targets deduplicate each cue and
+mute/reconnect cleanup is unchanged. Rebuild sounds with
+`python3 scripts/audio/generate-combat-sfx.py`; no supplied video audio is copied.
 
-Sources and exact prompts live in `scripts/animation/sources/kratos/combo/`.
-`kratos-art.json` records selected/intermediate model sources, references and hashes.
-Generation used the imagegen skill's bundled CLI, `gpt-image-2.5-sunburst`, high
-quality and native alpha. Original `sources/kratos/idle.webp` remains the recorded
-identity reference for the separately delivered card art; combat now uses `combo/`.
+Selected sources and exact prompts live in `scripts/animation/sources/kratos/combo-v2/`.
+`kratos-art.json` records model sources, input references and hashes. Generation
+uses the imagegen skill's bundled CLI, `gpt-image-2.5-sunburst`, high quality and native
+alpha. Ground-position guides only help the image model repair chain connections;
+they are never runtime assets. The earlier `combo/` drawings remain pose references.
+Original `sources/kratos/idle.webp` remains the recorded card-art identity reference.
 
 Rebuild with `python3 scripts/animation/kratos.py` and
 `python3 scripts/calibrate-hero-head.py`. Review outputs are under
-`artifacts/kratos-art/`. `verify-kratos-animation-browser.mjs` owns Chromium/WebKit
-on desktop and horizontal phone, including actual engine single/row plays, weighted
-HP/numbers, queued lethal combos, original sound cues, cold art, exact idle return,
-reduced motion and restoration. Its screenshot skin-mask check catches invisible
-WebKit cutouts. `verify-rig-animation-browser.mjs --hero=hermit --only=jaw_worm
---normal-only` covers the shared Hermit presentation regression. Asset verification
-owns native alpha, clipping, canvases, planted feet and sound decoding. Kratos stays
-playtest-only until separately released.
+`artifacts/kratos-art/` and `artifacts/kratos-revision/`.
+`verify-kratos-animation-browser.mjs` owns Chromium/WebKit on desktop and horizontal
+phone: real engine single/row plays, weighted HP/numbers, queued lethal cards/Shivs,
+sound cues, cold art, all fifteen pose beats, exact idle return, reduced motion and
+restoration. Its composited skin-mask check catches invisible WebKit cutouts.
+Asset verification owns native alpha, fixed canvases, ground, clipping, prompt/hash
+provenance and sound decoding. Hero-potion browser coverage checks head calibration.
+Kratos stays playtest-only until separately released.
 
 ## Rage of Sparta meter
 

@@ -1,0 +1,227 @@
+{
+  "landmarks": {
+    "idle": {
+      "skull": [
+        49,
+        253
+      ],
+      "foot": [
+        0,
+        978
+      ],
+      "stanceCenter": 708
+    },
+    "anticipation": {
+      "skull": [
+        86,
+        287
+      ],
+      "foot": [
+        0,
+        980
+      ],
+      "stanceCenter": 800
+    },
+    "left-cast": {
+      "skull": [
+        176,
+        322
+      ],
+      "foot": [
+        0,
+        930
+      ],
+      "stanceCenter": 460
+    },
+    "left-extended": {
+      "skull": [
+        167,
+        316
+      ],
+      "foot": [
+        0,
+        908
+      ],
+      "stanceCenter": 420
+    },
+    "right-cast": {
+      "skull": [
+        129,
+        310
+      ],
+      "foot": [
+        0,
+        963
+      ],
+      "stanceCenter": 530,
+      "note": "Jaw partly occluded by ram pauldron; bony chin projected from visible face/neck, excluding beard."
+    },
+    "right-extended": {
+      "skull": [
+        105,
+        305
+      ],
+      "foot": [
+        0,
+        933
+      ],
+      "stanceCenter": 520
+    },
+    "windup-cast": {
+      "skull": [
+        430,
+        555
+      ],
+      "foot": [
+        0,
+        1003
+      ],
+      "stanceCenter": 445
+    },
+    "windup": {
+      "skull": [
+        735,
+        873
+      ],
+      "foot": [
+        0,
+        1461
+      ],
+      "stanceCenter": 465
+    },
+    "slam-descend": {
+      "skull": [
+        165,
+        320
+      ],
+      "foot": [
+        0,
+        819
+      ],
+      "stanceCenter": 410
+    },
+    "slam": {
+      "skull": [
+        166,
+        321
+      ],
+      "foot": [
+        0,
+        816
+      ],
+      "stanceCenter": 405
+    },
+    "recovery": {
+      "skull": [
+        36,
+        228
+      ],
+      "foot": [
+        0,
+        966
+      ],
+      "stanceCenter": 565
+    },
+    "retract": {
+      "skull": [
+        40,
+        234
+      ],
+      "foot": [
+        0,
+        987
+      ],
+      "stanceCenter": 730
+    },
+    "catch": {
+      "skull": [
+        43,
+        251
+      ],
+      "foot": [
+        0,
+        978
+      ],
+      "stanceCenter": 700
+    },
+    "settle": {
+      "skull": [
+        35,
+        227
+      ],
+      "foot": [
+        0,
+        983
+      ],
+      "stanceCenter": 655
+    }
+  },
+  "runtimeCanvas": 1152,
+  "displayScale": 2.3,
+  "ground": 1136,
+  "skullPixels": 65.25,
+  "contactMs": 420,
+  "durationMs": 2200,
+  "keys": [
+    [
+      0,
+      "idle"
+    ],
+    [
+      120,
+      "anticipation"
+    ],
+    [
+      280,
+      "left-cast"
+    ],
+    [
+      420,
+      "left-extended"
+    ],
+    [
+      650,
+      "right-cast"
+    ],
+    [
+      800,
+      "right-extended"
+    ],
+    [
+      940,
+      "windup-cast"
+    ],
+    [
+      1080,
+      "windup"
+    ],
+    [
+      1180,
+      "slam-descend"
+    ],
+    [
+      1280,
+      "slam"
+    ],
+    [
+      1480,
+      "recovery"
+    ],
+    [
+      1600,
+      "retract"
+    ],
+    [
+      1710,
+      "catch"
+    ],
+    [
+      1810,
+      "settle"
+    ],
+    [
+      1980,
+      "idle"
+    ]
+  ]
+}

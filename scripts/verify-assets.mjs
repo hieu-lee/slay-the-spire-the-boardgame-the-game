@@ -906,7 +906,7 @@ check('Kratos registered drawings keep native alpha, planted feet, and unclipped
     for (const reference of entry.inputs) assertEqual(digest(reference.path), reference.sha256, reference.path)
   }
   for (const entry of manifest.runtime) assertEqual(digest(entry.path), entry.sha256, entry.path)
-  const registration = JSON.parse(readFileSync(join(repoRoot, 'scripts/animation/sources/kratos/combo/registration.json'), 'utf8'))
+  const registration = JSON.parse(readFileSync(join(repoRoot, 'scripts/animation/sources/kratos/combo-v2/registration.json'), 'utf8'))
   assert(registration.keys.length <= 20, 'Kratos exceeds the user keyframe budget')
 
   const result = spawnSync('python3', ['-c', `
@@ -918,16 +918,16 @@ assert idle.info['loop'] == 0 and idle.n_frames > 1
 ready = Image.open(root / 'kratos-ready.webp')
 assert ImageChops.difference(idle.getchannel('A'), ready.getchannel('A')).getbbox() is None
 images = [idle] + [Image.open(root / f'kratos-{pose}.webp') for pose in
-                   ['ready', 'anticipation', 'left-cast', 'left-extended', 'right-cast', 'right-extended', 'windup', 'slam', 'recovery', 'settle']]
+                   ['ready', 'anticipation', 'left-cast', 'left-extended', 'right-cast', 'right-extended', 'windup-cast', 'windup', 'slam-descend', 'slam', 'recovery', 'retract', 'catch', 'settle']]
 for image in images:
-    assert image.size == (800, 800)
+    assert image.size == (1152, 1152)
     for i in range(image.n_frames):
         image.seek(i)
         alpha = image.getchannel('A')
         assert alpha.histogram()[0] > image.width * image.height / 2
         box = alpha.point(lambda a: 255 if a > 32 else 0).getbbox()
         assert box and min(box[0],box[1],image.width-box[2],image.height-box[3]) >= 4
-        assert abs(box[3] - 784) <= 4, (image.filename, box)
+        assert abs(box[3] - 1136) <= 4, (image.filename, box)
 print('PASS: Kratos native alpha, fixed canvas, planted feet and weapon overscan')
 `], { cwd: repoRoot, encoding: 'utf8' })
   assert(result.status === 0, result.stderr || result.stdout)

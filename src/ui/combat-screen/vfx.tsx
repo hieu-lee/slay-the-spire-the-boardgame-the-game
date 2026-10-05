@@ -119,6 +119,8 @@ export function characterAttackContactMs(
 /** The three target impacts share the registered pose/travel clock, even on a cold play. */
 export function KratosImpacts({ event }: { event: CombatPresentationEvent }) {
   const anchor = useRef<HTMLSpanElement>(null)
+  const clock = useRef<number | null>(null)
+  const synchronized = useRef(new WeakSet<Animation>())
   const [targets, setTargets] = useState<{ id: string; portrait: HTMLElement; x: number; y: number }[]>([])
   useLayoutEffect(() => {
     const board = anchor.current?.closest('.board')
@@ -141,6 +143,20 @@ export function KratosImpacts({ event }: { event: CombatPresentationEvent }) {
       board.removeEventListener('loadeddata', measure, true)
     }
   }, [event])
+  useLayoutEffect(() => {
+    const actor = anchor.current?.closest('.character-attack--kratos')
+    const board = actor?.closest('.board')
+    if (!actor || !board || typeof document.timeline.currentTime !== 'number') return
+    // Target portals mount after their geometry is measured. WebKit can paint
+    // the actor first, so CSS creation alone does not give them the same epoch.
+    clock.current ??= document.timeline.currentTime
+    const nodes = [actor, ...board.querySelectorAll(`[data-kratos-impact-seq="${event.seq}"]`)]
+    for (const node of nodes) for (const animation of node.getAnimations({ subtree: node === actor })) {
+      if (synchronized.current.has(animation)) continue
+      animation.startTime = clock.current
+      synchronized.current.add(animation)
+    }
+  }, [targets, event.seq])
   return <span ref={anchor} aria-hidden="true">
     {[280, 650, 1_080].map((ms, index) => <span key={ms} className="kratos-chain-cue"
       data-combo-beat={index} style={{ animationDelay: `${ms}ms` }} />)}

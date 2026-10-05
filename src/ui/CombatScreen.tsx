@@ -228,7 +228,7 @@ const CHAMBER_RETURN_MS = 460
 const CHAMBER_RETURN_STAGGER_MS = 35
 const CHAMBER_REFLOW_MS = 420
 
-const KRATOS_POSES = ['ready', 'anticipation', 'left-cast', 'left-extended', 'right-cast', 'right-extended', 'windup', 'slam', 'recovery', 'settle'] as const
+const KRATOS_POSES = ['ready', 'anticipation', 'left-cast', 'left-extended', 'right-cast', 'right-extended', 'windup-cast', 'windup', 'slam-descend', 'slam', 'recovery', 'retract', 'catch', 'settle'] as const
 const kratosPoseAsset = (pose: typeof KRATOS_POSES[number]) =>
   assetPath(`combat/characters/animated/kratos-${pose}.webp`)
 
@@ -6377,7 +6377,7 @@ function CombatScreenView({
           const characterIdleAsset = occupant?.character === 'watcher'
             ? assetPath('combat/characters/watcher-hero.webp') : assetPath(occupant?.character === 'kratos' ? 'combat/characters/animated/kratos-idle.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
           const characterArtScale = prefersReducedMotion || occupant?.dead || occupant?.character === 'watcher' ? 1
-            : occupant?.character === 'kratos' ? 2
+            : occupant?.character === 'kratos' ? 2.3
             : (rigMetadata as Record<string, { scale?: number }>)[`hero-${rigId}`]?.scale ?? 1
           // Where the painted head ends, so held potions and Orbs float just above it.
           const animatedPortrait = !prefersReducedMotion && !occupant?.dead && !slimeSpawnEvent

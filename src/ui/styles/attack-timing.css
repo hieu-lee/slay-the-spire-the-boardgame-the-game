@@ -88,21 +88,25 @@
   19.0909%, 67.2727% { transform: translate(var(--attack-x), var(--attack-y)); }
 }
 
-/* Ten registered drawings, eleven timed keys including the exact idle return. */
+/* Fourteen registered drawings, fifteen timed keys including the exact idle return. */
 .character-attack__pose--kratos-ready { animation: kratos-ready 2200ms linear both; }
 .character-attack__pose--kratos-anticipation { animation: kratos-anticipation 2200ms linear both; }
 .character-attack__pose--kratos-left-cast { animation: kratos-left-cast 2200ms linear both; }
 .character-attack__pose--kratos-left-extended { animation: kratos-left-extended 2200ms linear both; }
 .character-attack__pose--kratos-right-cast { animation: kratos-right-cast 2200ms linear both; }
 .character-attack__pose--kratos-right-extended { animation: kratos-right-extended 2200ms linear both; }
+.character-attack__pose--kratos-windup-cast { animation: kratos-windup-cast 2200ms linear both; }
 .character-attack__pose--kratos-windup { animation: kratos-windup 2200ms linear both; }
+.character-attack__pose--kratos-slam-descend { animation: kratos-slam-descend 2200ms linear both; }
 .character-attack__pose--kratos-slam { animation: kratos-slam 2200ms linear both; }
 .character-attack__pose--kratos-recovery { animation: kratos-recovery 2200ms linear both; }
+.character-attack__pose--kratos-retract { animation: kratos-retract 2200ms linear both; }
+.character-attack__pose--kratos-catch { animation: kratos-catch 2200ms linear both; }
 .character-attack__pose--kratos-settle { animation: kratos-settle 2200ms linear both; }
 
 @keyframes kratos-ready {
-  0%, 5.4535%, 86.3636%, 100% { opacity: 1; }
-  5.4545%, 86.3626% { opacity: 0; }
+  0%, 5.4535%, 90%, 100% { opacity: 1; }
+  5.4545%, 89.999% { opacity: 0; }
 }
 
 @keyframes kratos-anticipation {
@@ -126,13 +130,23 @@
 }
 
 @keyframes kratos-right-extended {
-  0%, 36.3626%, 46.3636%, 100% { opacity: 0; }
-  36.3636%, 46.3626% { opacity: 1; }
+  0%, 36.3626%, 42.7273%, 100% { opacity: 0; }
+  36.3636%, 42.7263% { opacity: 1; }
+}
+
+@keyframes kratos-windup-cast {
+  0%, 42.7263%, 49.0909%, 100% { opacity: 0; }
+  42.7273%, 49.0899% { opacity: 1; }
 }
 
 @keyframes kratos-windup {
-  0%, 46.3626%, 58.1818%, 100% { opacity: 0; }
-  46.3636%, 58.1808% { opacity: 1; }
+  0%, 49.0899%, 53.6364%, 100% { opacity: 0; }
+  49.0909%, 53.6354% { opacity: 1; }
+}
+
+@keyframes kratos-slam-descend {
+  0%, 53.6354%, 58.1818%, 100% { opacity: 0; }
+  53.6364%, 58.1808% { opacity: 1; }
 }
 
 @keyframes kratos-slam {
@@ -141,13 +155,23 @@
 }
 
 @keyframes kratos-recovery {
-  0%, 67.2717%, 77.7273%, 100% { opacity: 0; }
-  67.2727%, 77.7263% { opacity: 1; }
+  0%, 67.2717%, 72.7273%, 100% { opacity: 0; }
+  67.2727%, 72.7263% { opacity: 1; }
+}
+
+@keyframes kratos-retract {
+  0%, 72.7263%, 77.7273%, 100% { opacity: 0; }
+  72.7273%, 77.7263% { opacity: 1; }
+}
+
+@keyframes kratos-catch {
+  0%, 77.7263%, 82.2727%, 100% { opacity: 0; }
+  77.7273%, 82.2717% { opacity: 1; }
 }
 
 @keyframes kratos-settle {
-  0%, 77.7263%, 86.3636%, 100% { opacity: 0; }
-  77.7273%, 86.3626% { opacity: 1; }
+  0%, 82.2717%, 90%, 100% { opacity: 0; }
+  82.2727%, 89.999% { opacity: 1; }
 }
 
 .kratos-chain-cue {

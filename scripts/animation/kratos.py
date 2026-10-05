@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image, ImageChops
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / 'scripts/animation/sources/kratos/combo'
+SOURCE = ROOT / 'scripts/animation/sources/kratos/combo-v2'
 OUT = ROOT / 'public/assets/combat/characters'
 REG = json.loads((SOURCE / 'registration.json').read_text())
 SIZE = REG['runtimeCanvas']
@@ -31,14 +31,14 @@ def sway(frame, angle):
     return frame.rotate(angle, Image.Resampling.BICUBIC, center=(SIZE / 2, REG['ground']))
 
 
-def save(path, frames, durations, loop):
+def save(path, frames, durations, loop, *, method=6):
     path.parent.mkdir(parents=True, exist_ok=True)
     for frame in frames:
         box = frame.getchannel('A').point(lambda a: 255 if a > 32 else 0).getbbox()
         assert box and min(box[0], box[1], SIZE - box[2], SIZE - box[3]) >= 4, (path, box)
     assert min(durations) >= 20, 'Browsers stretch frames shorter than 20ms'
     frames[0].save(path, save_all=True, append_images=frames[1:], duration=durations,
-                   loop=loop, quality=88, method=6)
+                   loop=loop, quality=88, method=method)
     print(f'{path.relative_to(ROOT)}: {len(frames)} frames, {sum(durations)}ms')
 
 
@@ -55,7 +55,8 @@ def main():
                                      [time for time, _ in keys][1:] + [REG['durationMs']])]
     assert sum(durations) == REG['durationMs']
     assert ImageChops.difference(frames[0], frames[-1]).getbbox() is None
-    save(ROOT / 'artifacts/kratos-art/kratos-attack.webp', frames, durations, 1)
+    # This unshipped review preview needs quick encoding, not maximum compression.
+    save(ROOT / 'artifacts/kratos-art/kratos-attack.webp', frames, durations, 1, method=1)
     for name, pose in poses.items():
         pose.save(OUT / f'animated/kratos-{"ready" if name == "idle" else name}.webp', quality=88, method=6)
     # Inverse overscan gives reduced motion the same on-screen stature as idle.
@@ -71,7 +72,7 @@ def main():
         Image.open(SOURCE / f'{name}.webp').resize((512, 512), Image.Resampling.LANCZOS).save(
             vfx / f'{name}.webp', quality=88, method=6)
     # A contrasting contact sheet makes every delivered drawing reviewable.
-    sheet = Image.new('RGBA', (SIZE * 5, SIZE * 2), '#15556c')
+    sheet = Image.new('RGBA', (SIZE * 5, SIZE * math.ceil(len(poses) / 5)), '#15556c')
     for i, pose in enumerate(poses.values()):
         sheet.alpha_composite(pose, ((i % 5) * SIZE, (i // 5) * SIZE))
     review = ROOT / 'artifacts/kratos-art'
