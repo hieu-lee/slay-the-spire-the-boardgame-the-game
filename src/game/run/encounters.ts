@@ -77,7 +77,7 @@ const ACT_ENCOUNTERS: Record<number, EncounterCard[]> = {
 const FIRST_ENCOUNTERS: EncounterCard[] = [
   { defId: 'cultist', goldReward: 1, cardReward: 'normal' },
   { defId: 'jaw_worm_first', goldReward: 1, cardReward: 'normal', potionReward: true },
-  { defId: 'red_louse_first', goldReward: 1, cardReward: null, summons: ['green_louse'] },
+  { defId: 'red_louse_first', goldReward: 1, cardReward: 'normal', summons: ['green_louse'] },
   { defId: 'small_slime', goldReward: 0, cardReward: 'normal', potionReward: true, summons: ['acid_slime'] },
 ]
 

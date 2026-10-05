@@ -1004,7 +1004,7 @@ check('the fixed opening encounter uses its own printed rewards', () => {
   const printed = {
     cultist: [1, 'normal'],
     jaw_worm_first: [1, 'normal'],
-    red_louse_first: [1, null],
+    red_louse_first: [1, 'normal'],
     small_slime: [0, 'normal'],
   }
   const reward = printed[enemy.defId]
@@ -1035,7 +1035,8 @@ check('winning a combat carries HP forward into the run', () => {
   assertEqual(resolveGoldReward(after, 'p1').players[0].gold, run.players[0].gold + printedGold, 'claiming loot pays the printed gold')
   const skipped = resolveGoldReward(after, 'p1', false)
   assertEqual(skipped.players[0].gold, run.players[0].gold, 'skipping loot leaves unclaimed Gold behind')
-  assertEqual(skipped.phase, 'map', 'skipped Gold no longer blocks the reward screen')
+  assertEqual(skipped.phase, 'reward', 'skipping Gold preserves the independent Card Reward')
+  assertEqual(resolveCardRewards(skipped, { p1: null }).phase, 'map', 'skipping both rewards returns to the map')
 })
 
 check('a potion consumed in combat returns to the bottom of its deck', () => {
@@ -2010,7 +2011,7 @@ const PRINTED_HP = {
 
 check('main-enemy rewards come from the Act-specific encounter card', () => {
   const firstCardReward = {
-    red_louse_first: null,
+    red_louse_first: 'normal',
     jaw_worm_first: 'normal',
     cultist: 'normal',
     small_slime: 'normal',

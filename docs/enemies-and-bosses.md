@@ -6,6 +6,23 @@ summon, boss, and Ascension cards. The local reviewer pack in
 enemy/elite/summon scans used for the August 2026 audit. Video-game values are
 not used.
 
+## Opening Red Louse reward source
+
+The opening Red Louse (3 HP, summoning one Green Louse) awards **1 Gold and
+one normal Card Reward**, not Gold alone. The summon adds no rewards.
+
+Source: the [official base-game Tabletop Simulator mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2884027954),
+opening deck GUID `e21cbf`, card ID `313500` (sheet `3135`, zero-based cell `0`).
+The [original Act I card sheet](https://steamusercontent-a.akamaihd.net/ugc/2098170267433236144/539C190A8A6F688B51F13DA9B181E65D09A193D2/)
+is a 10-column, 3-row grid; its top-left card shows both the `1` Gold icon and
+the Card Reward scroll icon. The mod's `starter_enemy_reward_list` independently
+lists Red Louse as `{"Gold_1", "Card"}`. Audited 2026-10-05.
+
+Regression: `node --experimental-strip-types scripts/verify-opening-louse-browser.mjs`
+plays the dealt opening fight, claims Gold, reloads, and adds the card on desktop
+and horizontal phone. Screenshots and state evidence are saved under
+`artifacts/opening-louse-browser/`.
+
 ## Completed physical sets
 
 - Act I: all encounter variants; Gremlin Nob, Lagavulin, and Sentries; Slime
