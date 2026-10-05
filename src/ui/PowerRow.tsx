@@ -295,6 +295,11 @@ const POWER_ICONS = new Set([
   'feel_no_pain', 'footwork', 'fusion', 'heatsinks', 'infinite_blades', 'inflame',
   'machine_learning', 'mayhem', 'metallicize', 'noxious_fumes', 'panache', 'sadistic_nature',
   'storm', 'the_bomb',
+  // Playtest-only Kratos Powers (see docs/kratos-icons.json).
+  'kratos_army_of_hades', 'kratos_blades_of_athena', 'kratos_blades_of_exile', 'kratos_bloodlust',
+  'kratos_chains_of_chaos', 'kratos_deicide', 'kratos_escape_from_hades', 'kratos_ghost_of_sparta',
+  'kratos_god_of_war', 'kratos_green_orbs', 'kratos_red_orbs', 'kratos_servant_of_ares',
+  'kratos_soul_summon',
 ])
 
 /** Pick the printed symbol that best describes what this persistent effect does. */

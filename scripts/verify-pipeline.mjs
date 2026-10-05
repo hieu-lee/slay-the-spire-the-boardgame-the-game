@@ -51,12 +51,16 @@ check('frontend surfaces select their cores and named focused browser checks', (
     'verify-enemy-attack-once-browser.mjs', 'verify-row-target-browser.mjs',
     'verify-turn-targets-browser.mjs', 'verify-wing-and-throw-browser.mjs', 'verify-elite-signatures-browser.mjs',
     'verify-die-relic-browser.mjs', 'verify-hero-potions-browser.mjs',
-    'verify-end-turn-drag-browser.mjs', 'verify-card-damage-preview-browser.mjs'], 'combat screen')
+    'verify-end-turn-drag-browser.mjs', 'verify-card-damage-preview-browser.mjs',
+    'verify-rage-meter-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 27, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 28, 'combat screen selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/TokenRow.tsx'), ['verify-turn-targets-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs'], 'Orb row')
   assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))
+  for (const file of ['src/ui/combat-screen/RageMeter.tsx', 'src/ui/styles/rage-meter.css']) {
+    assert(affectedBrowser(file).includes('verify-rage-meter-browser.mjs'), `${file} omitted Rage meter coverage`)
+  }
   includesEvery(affectedBrowser('src/ui/combat-screen/HermitTriggerChoice.tsx'), [
     'verify-hermit-combo-browser.mjs', 'verify-hermit-online-staged-trigger-browser.mjs', 'verify-online-browser.mjs',
   ], 'Hermit trigger choice')
@@ -152,7 +156,7 @@ check('shared frontend changes use cores plus named visual owners', () => {
       'verify-enemy-layout-browser.mjs', 'verify-hover-overflow-browser.mjs', 'verify-enemy-attack-once-browser.mjs',
       'verify-combat-stage-scan-browser.mjs', 'verify-wing-and-throw-browser.mjs', 'verify-elite-signatures-browser.mjs',
     ], sheet)
-    assertEqual(affectedBrowser(sheet).length, 21, `${sheet} selected an unrelated browser suite`)
+    assertEqual(affectedBrowser(sheet).length, 22, `${sheet} selected an unrelated browser suite`)
   }
   const hand = affectedBrowser('src/ui/styles/hand.css')
   includesEvery(hand, ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
@@ -162,7 +166,7 @@ check('shared frontend changes use cores plus named visual owners', () => {
     'verify-combat-stage-scan-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-wing-and-throw-browser.mjs', 'verify-elite-signatures-browser.mjs',
     'verify-card-damage-preview-browser.mjs'], 'hand stylesheet')
-  assertEqual(hand.length, 25, 'hand stylesheet selected an unrelated browser suite')
+  assertEqual(hand.length, 26, 'hand stylesheet selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/styles/presentation-overlays.css'), [
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
     'verify-lightning-act2-browser.mjs',

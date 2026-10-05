@@ -116,6 +116,8 @@ const focusedOnlyUiOwners = new Map([
   ...['src/ui/ReplayBar.tsx', 'src/ui/run-replay.ts', 'src/ui/styles/replay-bar.css']
     .map((file) => [file, ['verify-replay-controls-browser.mjs']]),
   ['src/ui/styles/powers-in-play.css', ['verify-power-hover-browser.mjs']],
+  ...['src/ui/combat-screen/RageMeter.tsx', 'src/ui/styles/rage-meter.css']
+    .map((file) => [file, ['verify-rage-meter-browser.mjs']]),
 ])
 const sourceExtensions = ['', '.ts', '.tsx', '.mjs', '.js']
 const sharedBrowserOwners = ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs']

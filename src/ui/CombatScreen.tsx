@@ -3,6 +3,7 @@ import heroArtHeads from './hero-art-head.json'
 import { animateCardFlight, cardFlightPath } from './combat-screen/card-flight.ts'
 import { unknownPowerRefreshDecision } from './combat-screen/unknown-power.ts'
 import { HermitTriggerChoice } from './combat-screen/HermitTriggerChoice.tsx'
+import { RageMeter } from './combat-screen/RageMeter.tsx'
 import { StartTurnOrder } from './combat-screen/StartTurnOrder.tsx'
 // The combat screen: the board, the hand, and every prompt a fight puts up.
 //
@@ -472,6 +473,9 @@ function CombatScreenView({
   const [spendingSoulburn, setSpendingSoulburn] = useState(false)
   const [extraCrispySoulburn, setExtraCrispySoulburn] = useState(false)
   const [chamberOpen, setChamberOpen] = useState(false)
+  // Kratos: hold Rage, so plays skip their Unleash clauses until switched back.
+  const [holdRage, setHoldRage] = useState(false)
+  useEffect(() => setHoldRage(false), [state.combatId])
   const [chamberClosing, setChamberClosing] = useState(false)
   const [chamberContact, setChamberContact] = useState(false)
   const [chamberReturnFlights, setChamberReturnFlights] = useState<ChamberReturnFlight[]>([])
@@ -643,11 +647,12 @@ function CombatScreenView({
     const previews = new Map<string, CardDamagePreview>()
     if (!cardHints || !viewer || viewer.dead || state.phase !== 'player') return previews
     for (const card of viewer.hand) {
-      const preview = previewCardDamage(state, viewer.id, card.uid, previewEnemyUid, Boolean(onAction))
+      const preview = previewCardDamage(state, viewer.id, card.uid, previewEnemyUid, Boolean(onAction),
+        viewer.character === 'kratos' && holdRage)
       if (preview) previews.set(card.uid, preview)
     }
     return previews
-  }, [cardHints, state, viewer, previewEnemyUid, onAction])
+  }, [cardHints, state, viewer, previewEnemyUid, onAction, holdRage])
   const courierAvailable = Boolean(onCourierReveal) && courierReady(viewer, courierUsedBy ?? [])
   const canUsePotionNow = (potionId: string) => Boolean(viewer &&
     canActivatePotion(state, viewer, potionId) && !(partyStartTurnPostRollLocked &&
@@ -3344,6 +3349,7 @@ function CombatScreenView({
       guardianBlockSpend: next.guardianBlockSpend ?? undefined,
       guardianPowerCardUid: next.guardianPowerCardUid ?? undefined,
       spendMiracle: miracleOnCard,
+      holdRage: viewer!.character === 'kratos' && holdRage ? true : undefined,
       shivEnemyUids: next.shivEnemyUids,
       evokeSlots: next.evokeSlots,
       evokeEnemyUids: next.evokeEnemyUids as (string | null)[],
@@ -6959,7 +6965,8 @@ function CombatScreenView({
         </section>
       ) : null}
       <footer className="hand-area" data-character={viewer.character}
-        data-has-chamber={viewer.chamberSlots > 0 || undefined}>
+        data-has-chamber={viewer.chamberSlots > 0 || undefined}
+        data-has-rage={viewer.character === 'kratos' || undefined}>
         <div className="hand-area__stats">
           <span className={[
             'pip',
@@ -6990,6 +6997,9 @@ function CombatScreenView({
                 : 'icons/hermit-chamber-loaded.png')} alt="" />
               <span aria-hidden="true">{viewer.chamber.length}/{viewer.chamberSlots}</span>
             </button>
+          ) : null}
+          {viewer.character === 'kratos' ? (
+            <RageMeter rage={viewer.rage ?? 0} held={holdRage} onToggleHold={() => setHoldRage((held) => !held)} />
           ) : null}
           {requiredHermitChamberCard?.playerId === viewer.id &&
           (!requiredChamberCard || requiredChamberUnplayable) ? (

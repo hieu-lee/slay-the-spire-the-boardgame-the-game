@@ -1,0 +1,124 @@
+/* Kratos's Rage of Sparta meter. Like the Hermit's Chamber it is a character
+   board piece beside the Energy orb, not a corner token, and the hand keeps
+   its lane clear: pressing it toggles holding Rage for the next plays. */
+
+.rage-meter {
+  position: absolute;
+  z-index: 9;
+  bottom: 2.4rem;
+  left: calc(clamp(0.75rem, 2vw, 2rem) + 5rem);
+  width: 4.6rem;
+  height: 5.75rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+  filter: drop-shadow(0 0.25rem 0.25rem rgb(0 0 0 / 0.75));
+  transition: transform var(--motion-fast) var(--ease), filter var(--motion-fast) var(--ease);
+}
+
+.hand-area[data-has-rage='true'] .hand { padding-left: 15rem; }
+
+/* A Kratos who gained Chamber slots keeps both pieces side by side. */
+.hand-area[data-has-chamber='true'] .rage-meter { left: calc(clamp(0.75rem, 2vw, 2rem) + 9.75rem); }
+.hand-area[data-has-chamber='true'][data-has-rage='true'] .hand { padding-left: 19.75rem; }
+
+.rage-meter svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.rage-meter:is(:hover, :focus-visible) {
+  transform: translateY(-0.2rem) scale(1.05);
+  filter: brightness(1.12) drop-shadow(0 0.3rem 0.3rem rgb(0 0 0 / 0.75))
+    drop-shadow(0 0 0.45rem rgb(255 150 50 / 0.65));
+}
+
+.rage-meter__level {
+  transition: y 380ms cubic-bezier(0.2, 0.8, 0.25, 1), height 380ms cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+
+.rage-meter__count {
+  fill: #fff2c7;
+  font-family: 'Kreon', Georgia, serif;
+  /* User units, so the number scales with the glyph. */
+  font-size: 26px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: #130805;
+  stroke-width: 6px;
+  stroke-linejoin: round;
+}
+
+/* A full meter burns: the Rage of Sparta is ready. */
+.rage-meter[data-full] {
+  filter: drop-shadow(0 0.25rem 0.25rem rgb(0 0 0 / 0.75)) drop-shadow(0 0 0.3rem rgb(255 120 30 / 0.85));
+  animation: rage-meter-burn 1.6s ease-in-out infinite;
+}
+
+@keyframes rage-meter-burn {
+  50% {
+    filter: drop-shadow(0 0.25rem 0.25rem rgb(0 0 0 / 0.75)) drop-shadow(0 0 0.55rem rgb(255 160 40 / 0.95));
+  }
+}
+
+.rage-meter[data-change^='gain'] .rage-meter__emblem { animation: rage-meter-gain-a 420ms cubic-bezier(0.16, 0.8, 0.24, 1); }
+.rage-meter[data-change='gain-1'] .rage-meter__emblem { animation-name: rage-meter-gain-b; }
+.rage-meter[data-change^='spend'] .rage-meter__emblem { animation: rage-meter-spend-a 360ms ease-out; }
+.rage-meter[data-change='spend-1'] .rage-meter__emblem { animation-name: rage-meter-spend-b; }
+
+.rage-meter__emblem { transform-origin: 60px 104px; }
+
+@keyframes rage-meter-gain-a { 45% { transform: scale(1.1); filter: brightness(1.35); } }
+@keyframes rage-meter-gain-b { 45% { transform: scale(1.1); filter: brightness(1.35); } }
+@keyframes rage-meter-spend-a { 30% { filter: brightness(1.9) saturate(1.4); } }
+@keyframes rage-meter-spend-b { 30% { filter: brightness(1.9) saturate(1.4); } }
+
+/* Held Rage cools to iron so the player sees Unleash is switched off. */
+.rage-meter[data-held] .rage-meter__molten { filter: saturate(0.2) brightness(0.8); }
+.rage-meter[data-held] { animation: none; }
+
+.rage-meter__held {
+  position: absolute;
+  left: 50%;
+  bottom: -0.35rem;
+  transform: translateX(-50%);
+  padding: 0.05rem 0.4rem;
+  border: 1px solid rgb(215 177 91 / 0.7);
+  border-radius: 999px;
+  background: #1d0f0a;
+  color: #f5e3b4;
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rage-meter,
+  .rage-meter__emblem,
+  .rage-meter__level { animation: none !important; transition: none; }
+}
+
+:root[data-reduced-motion='true'] :is(.rage-meter, .rage-meter__emblem) { animation: none !important; }
+/* Phones keep the full-meter glow but skip repainting its pulse every frame. */
+:root[data-mobile-performance='true'] .rage-meter[data-full] { animation: none; }
+
+/* Short screens shrink the hand, the Energy orb and the Chamber; the meter follows. */
+@media (max-height: 43.75rem) {
+  .rage-meter {
+    bottom: 2.2rem;
+    left: calc(clamp(0.75rem, 2vw, 2rem) + 4.15rem);
+    width: 3.6rem;
+    height: 4.5rem;
+  }
+
+  .hand-area[data-has-rage='true'] .hand { padding-left: 13rem; }
+  .hand-area[data-has-chamber='true'] .rage-meter { left: calc(clamp(0.75rem, 2vw, 2rem) + 7.8rem); }
+  .hand-area[data-has-chamber='true'][data-has-rage='true'] .hand { padding-left: 16.6rem; }
+}

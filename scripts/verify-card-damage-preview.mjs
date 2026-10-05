@@ -155,4 +155,10 @@ check('only Attacks the player can resolve alone are previewed', () => {
   assertEqual(preview({ state: fight('strike_ironclad').state, card: { uid: 'missing' } }), null, 'a card not in hand')
 })
 
+check('held Rage previews the play without its Unleash clause', () => {
+  const setup = fight('kratos_plume_of_prometheus', { character: 'kratos', rage: 2 })
+  assertEqual(preview(setup).damage, 4, 'Unleash 2 fires with 2 Rage')
+  assertEqual(previewCardDamage(setup.state, 'p1', setup.card.uid, 'e1', false, true).damage, 1, 'held Rage skips Unleash')
+})
+
 report('card damage preview')

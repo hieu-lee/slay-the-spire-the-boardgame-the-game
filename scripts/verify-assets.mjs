@@ -1082,7 +1082,11 @@ check('bundled stage and generated icon inventories are complete and decodable',
     'feel_no_pain', 'footwork', 'fusion', 'heatsinks', 'infinite_blades', 'inflame',
     'machine_learning', 'mayhem', 'metallicize', 'noxious_fumes', 'panache', 'sadistic_nature',
     'storm', 'the_bomb',
-  ].map((name) => `${name}.png`)
+    // Playtest-only Kratos Powers.
+    ...['army_of_hades', 'blades_of_athena', 'blades_of_exile', 'bloodlust', 'chains_of_chaos', 'deicide',
+      'escape_from_hades', 'ghost_of_sparta', 'god_of_war', 'green_orbs', 'red_orbs', 'servant_of_ares',
+      'soul_summon'].map((name) => `kratos_${name}`),
+  ].map((name) => `${name}.png`).sort()
   assertDeepEqual(statusIconFiles.sort(), expectedStatus, 'status icon inventory')
   assertDeepEqual(powerIconFiles.sort(), expectedPowers, 'Power icon inventory')
   assertDeepEqual(requiredRelicIconFiles.sort(), [...new Set(Object.keys(RELICS)

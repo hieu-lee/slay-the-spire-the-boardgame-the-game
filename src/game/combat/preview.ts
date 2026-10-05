@@ -38,6 +38,7 @@ function damageDealt(
   plain: boolean,
   standIn: boolean,
   hiddenBoard: boolean,
+  holdRage: boolean,
 ): number | null {
   // The log can run to thousands of lines and a probe never reads it.
   const probe = clone({ ...state, log: [], presentationEvents: [] })
@@ -80,6 +81,7 @@ function damageDealt(
     enemyRow: target.row,
     playerId,
     ...(cost === 'X' ? { energySpent: Math.min(actor.energy, maximumXEnergy(def, actor)) } : {}),
+    ...(holdRage ? { holdRage: true } : {}),
   })
   if (next === probe) return null
   const after = next.enemies.find((enemy) => enemy.uid === enemyUid)
@@ -100,6 +102,8 @@ export function previewCardDamage(
   enemyUid: string | null,
   /** The state is an online client's copy, which blanks some of the board. */
   hiddenBoard = false,
+  /** Kratos is holding Rage, so the play skips its Unleash clause. */
+  holdRage = false,
 ): CardDamagePreview | null {
   const target = enemyUid ?? state.enemies.find((enemy) => !enemy.dead)?.uid
   if (!target || state.phase !== 'player') return null
@@ -109,9 +113,9 @@ export function previewCardDamage(
     (actor.wrathAttackDamageBonus ?? 0) !== 0 || (actor.akabekoAttacks ?? 0) !== 0 ||
     enemyUid !== null && (state.enemies.find((enemy) => enemy.uid === enemyUid)?.vulnerable ?? 0) !== 0
   try {
-    const damage = damageDealt(state, playerId, cardUid, target, false, enemyUid === null, hiddenBoard)
+    const damage = damageDealt(state, playerId, cardUid, target, false, enemyUid === null, hiddenBoard, holdRage)
     const baseline = damage === null ? null
-      : modified ? damageDealt(state, playerId, cardUid, target, true, enemyUid === null, hiddenBoard) : damage
+      : modified ? damageDealt(state, playerId, cardUid, target, true, enemyUid === null, hiddenBoard, holdRage) : damage
     return damage === null || baseline === null ? null : { damage, baseline }
   } catch {
     // A badge is only a hint: an engine fault here must not take the combat screen down.

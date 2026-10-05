@@ -55,3 +55,28 @@ WebKit cutouts. `verify-rig-animation-browser.mjs --hero=hermit --only=jaw_worm
 --normal-only` covers the shared Hermit presentation regression. Asset verification
 owns native alpha, clipping, canvases, planted feet and sound decoding. Kratos stays
 playtest-only until separately released.
+
+## Rage of Sparta meter
+
+Kratos's Rage resource is shown by the God of War III Rage of Sparta glyph, drawn
+in SVG by `src/ui/combat-screen/RageMeter.tsx` with styles in
+`src/ui/styles/rage-meter.css`. Two capped pillars with outward barbs join a ring
+broken at its foot. A heavy dark outline, a grained bronze bevel and an ember
+channel give it the painted look of the other icons; molten Rage rises from the
+ring up the pillars in fifths, and the count sits in the ring. A full meter burns,
+gains flare and Unleash spends flash. Like the Hermit's Chamber it is a board
+piece rather than a corner token: it docks beside the Energy orb in the Chamber's
+place, the hand keeps its lane clear, and pressing it toggles holding Rage for
+the rest of the combat. Holding sends `holdRage` with each play, makes the card
+damage numbers skip Unleash, and cools the lava to iron.
+`node scripts/verify-rage-meter-browser.mjs` checks it on desktop, short desktop
+and horizontal phone with a full hand against four enemies.
+
+## Power icons
+
+The 13 Kratos Power icons (`public/assets/power-icons/kratos_*.png`) were
+generated with `gpt-image-2.5-sunburst` through the imagegen bundled
+`image_gen.py edit`, high quality, native transparency, using existing Power
+icons as style references, then downscaled to 256px. Prompts are in
+`scripts/animation/sources/kratos/icons/`; models, references and hashes are in
+`docs/kratos-icons.json`.
