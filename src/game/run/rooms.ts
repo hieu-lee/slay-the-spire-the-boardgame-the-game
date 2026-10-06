@@ -259,6 +259,7 @@ function preparePendingBossCombat(
 export function resolveCombat(state: RunState): RunState {
   const combat = state.combat
   if (!combat || state.courier.offer || (combat.phase !== 'won' && combat.phase !== 'lost')) return state
+  state = removePrematureActThreeCredit(state)
   // A pre-counter save already contains cumulative damage from an unknowable
   // number of fights. Keep its count absent so the leaderboard omits that one
   // damage average instead of mixing old damage with only the new fights.
@@ -418,7 +419,10 @@ export function resolveCombat(state: RunState): RunState {
   const campaign = {
     ...state.campaign,
     bossesDefeated: state.campaign.bossesDefeated + (wasBoss || wasBonusBoss ? 1 : 0),
-    highestBossActDefeated: (wasBoss || lastStandActEnd ? Math.max(state.campaign.highestBossActDefeated, state.act) : state.campaign.highestBossActDefeated) as 0 | 1 | 2 | 3 | 4,
+    highestBossActDefeated: ((wasBoss || lastStandActEnd) && !(state.act === 3 &&
+      (state.pendingBossDefId || state.ascension >= 13 && !wasBoss))
+      ? Math.max(state.campaign.highestBossActDefeated, state.act)
+      : state.campaign.highestBossActDefeated) as 0 | 1 | 2 | 3 | 4,
     keys: room?.burning && !state.campaign.keys.emerald
       ? { ...state.campaign.keys, emerald: true }
       : state.campaign.keys,
@@ -476,6 +480,7 @@ export function canGiveUpRun(state: {
 /** End an active run from any screen. Combat surrender keeps its existing fold-back path. */
 export function giveUpRun(state: RunState): RunState {
   if (!canGiveUpRun(state, state.campaignProgress)) return state
+  state = removePrematureActThreeCredit(state)
   const surrendered: RunState = state.phase === 'combat' ? giveUpFight(state) : {
     ...state,
     phase: 'defeat',
@@ -524,6 +529,7 @@ export function switchBetweenCombatRow(state: RunState, playerId: string, row: n
 export function startPendingBoss(state: RunState): RunState {
   if (state.phase !== 'betweenCombat' || !state.pendingBossDefId || state.combat ||
     hasPendingRelicAcquisition(state)) return state
+  state = removePrematureActThreeCredit(state)
   const next = preparePendingBossCombat(state, state.players, { ...state.rng })
   return {
     ...state,
@@ -592,6 +598,15 @@ export function advanceAct(state: RunState): RunState {
     eventCombat: null,
     log: [...state.log, `Act ${act} begins.`],
   }
+}
+
+function removePrematureActThreeCredit(state: RunState): RunState {
+  if (state.ascension < 13 || state.act !== 3 || state.campaign.finalized ||
+    state.campaign.highestBossActDefeated !== 3 || !(state.pendingBossDefId ||
+      state.combat?.phase === 'lost' && !state.eventCombat && currentRoom(state.map)?.kind === 'boss')) return state
+  return { ...state, campaign: { ...state.campaign,
+    highestBossActDefeated: state.campaign.startedAtAct === 3 ? 0 : 2,
+  } }
 }
 
 /** Finalizes a completed/lost physical game exactly once and awards its marks. */

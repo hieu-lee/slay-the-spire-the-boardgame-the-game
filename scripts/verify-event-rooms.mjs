@@ -478,6 +478,23 @@ check('Mind Bloom War counts as a bonus Boss and awards its campaign mark', () =
   assertEqual(finished.campaignProgress.characters.ironclad, 4)
 })
 
+check('A13 Mind Bloom Last Stand cannot substitute for either main Act III boss', () => {
+  let run = inEvent('mind_bloom', 2)
+  run = { ...run, act: 3, ascension: 13, lastStand: true,
+    campaignProgress: { ...run.campaignProgress, highestAscension: 13 },
+    campaign: { ...run.campaign, bossesDefeated: 2, highestBossActDefeated: 2 },
+  }
+  run.map.position = run.map.rows[0][0]
+  run = chooseEvent(run, 'p1', { optionIds: ['war'] })
+  run = resolveCombat({ ...run, combat: { ...run.combat, phase: 'won',
+    players: run.combat.players.map((player, index) => index === 0 ? { ...player, hp: 0, dead: true } : player),
+    enemies: run.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })),
+  } })
+  assertEqual(run.campaign.bossesDefeated, 3, 'the bonus boss still earns its mark')
+  assertEqual(run.rewardDestination, 'victory', 'Last Stand still ends the physical game')
+  assertEqual(run.campaign.highestBossActDefeated, 2, 'neither required main boss was defeated')
+})
+
 check('The Last Stand ends the Act after Mind Bloom rewards instead of returning to the map', () => {
   let run = inEvent('mind_bloom', 2)
   run = {

@@ -187,8 +187,8 @@ export function finishCampaign(progress: CampaignProgress, finish: CampaignFinis
   const startedAtAct = finish.startedAtAct ?? 1
   if (!Number.isInteger(startedAtAct) || startedAtAct < 1 || startedAtAct > 4) throw new Error('starting Act must be from 1 to 4')
   const expectedMainBosses = finish.highestBossActDefeated < startedAtAct ? 0 : finish.highestBossActDefeated - startedAtAct + 1
-  const bonusBosses = (finish.highestBossActDefeated >= 2 ? 1 : 0) +
-    (finish.highestBossActDefeated >= 3 && finish.ascensionPlayed >= 13 ? 1 : 0)
+  const reachedActThree = finish.highestBossActDefeated >= 2 || startedAtAct === 3
+  const bonusBosses = Number(reachedActThree) + Number(reachedActThree && finish.ascensionPlayed >= 13)
   if (finish.bossesDefeated < expectedMainBosses || finish.bossesDefeated > expectedMainBosses + bonusBosses) throw new Error('highest defeated Boss Act does not match the Boss count')
   if (!Number.isInteger(finish.ascensionPlayed) || finish.ascensionPlayed < 0 || finish.ascensionPlayed > progress.highestAscension) throw new Error('played Ascension is not unlocked')
 

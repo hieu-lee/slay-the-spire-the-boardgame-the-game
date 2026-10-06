@@ -359,6 +359,7 @@ import {
   usePotionOutsideCombat,
   wingBootChoices,
   finishRun,
+  giveUpRun,
   MAX_HP,
   TINY_HOUSE_REWARD_CARD_UID,
 } from '../src/game/run.ts'
@@ -366,6 +367,7 @@ import { BOSS_RELIC_IDS, ORDINARY_RELIC_IDS, RELICS, POTIONS, STARTING_RELIC } f
 import { activatePotion } from '../src/game/combat.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
 import { postNeowRun } from './lib/post-neow-run.mjs'
+import { leaderboardSnapshot, normalizeLeaderboardRun, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
 
 suite('run')
 
@@ -1720,6 +1722,70 @@ check('the Act IV elite grants every player an upgraded Card Reward and the shar
   assertEqual(resolved.roomState?.kind, 'elite', 'the shared elite Relic remains queued')
 })
 
+check('A13 records an Act III win only after both bosses, including Quick Start and Mind Bloom', () => {
+  for (const startedAtAct of [1, 3]) {
+    for (const bonusBosses of [0, 1]) {
+      for (const playerCount of [1, 2]) {
+        const party = [
+          { id: 'p1', name: 'Silent', character: 'silent' },
+          { id: 'p2', name: 'Defect', character: 'defect' },
+        ].slice(0, playerCount)
+        const run = postNeowRun(915, party, 13, { ...createCampaignProgress(), highestAscension: 13 })
+        const map = build(915, 3, 13)
+        const priorBosses = startedAtAct === 1 ? 2 : 0
+        const entered = enterRoom({
+          ...run, act: 3, actBossDefId: 'time_eater',
+          map: { ...map, position: map.rows.at(-2)[0] },
+          campaign: { ...run.campaign, startedAtAct, bossesDefeated: priorBosses + bonusBosses,
+            highestBossActDefeated: priorBosses },
+        }, map.rows.at(-1)[0])
+        const completeCombat = (state, phase) => resolveCombat({ ...state,
+          combat: { ...state.combat, phase,
+            ...(phase === 'won' ? { enemies: state.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })) }
+              : { players: state.combat.players.map((player) => ({ ...player, hp: 0, dead: true })) }),
+          },
+        })
+        const first = completeCombat(entered, 'won')
+        assertEqual(first.phase, 'betweenCombat')
+        assertEqual(first.campaign.bossesDefeated, priorBosses + bonusBosses + 1)
+        assertEqual(first.campaign.highestBossActDefeated, priorBosses)
+        const second = startPendingBoss(structuredClone(first))
+        for (const phase of ['lost', 'won']) {
+          const recorded = finishRun(completeCombat(structuredClone(second), phase))
+          assert(recorded.campaign.finalized, 'both outcomes must remain recordable')
+          assertEqual(recorded.campaign.highestBossActDefeated, phase === 'won' ? 3 : priorBosses)
+          assertEqual(recorded.campaignProgress.characters.silent, priorBosses + bonusBosses + (phase === 'won' ? 3 : 2))
+          const entry = normalizeLeaderboardRun(roomLeaderboardRun({ code: 'A13TEST', run: recorded }), 1)
+          assertEqual(leaderboardSnapshot([entry]).rows[0].act3Wins, phase === 'won' ? 1 : 0)
+          assertEqual(winningDecksPage([entry]).total, phase === 'won' ? playerCount : 0)
+        }
+        const legacy = JSON.parse(JSON.stringify(first))
+        legacy.campaign.highestBossActDefeated = 3
+        const resumed = startPendingBoss(legacy)
+        assertEqual(resumed.campaign.highestBossActDefeated, priorBosses, 'resuming a legacy checkpoint removes premature credit')
+        const legacySecond = JSON.parse(JSON.stringify(second))
+        legacySecond.campaign.highestBossActDefeated = 3
+        const lostLegacy = finishRun(completeCombat(legacySecond, 'lost'))
+        assertEqual(lostLegacy.campaign.highestBossActDefeated, priorBosses, 'an already-active legacy second boss must not retain win credit')
+        const legacyEntry = normalizeLeaderboardRun(roomLeaderboardRun({ code: 'A13LEGACY', run: lostLegacy }), 1)
+        assertEqual(leaderboardSnapshot([legacyEntry]).rows[0].act3Wins, 0)
+        const wonLegacy = finishRun(completeCombat(JSON.parse(JSON.stringify(legacySecond)), 'won'))
+        assertEqual(wonLegacy.campaign.highestBossActDefeated, 3, 'a genuine legacy second-boss victory retains its credit')
+        const optionalActFour = completeCombat(structuredClone(second), 'won')
+        optionalActFour.campaignProgress.actIV = 5
+        optionalActFour.campaign.keys = { ruby: true, sapphire: true, emerald: true }
+        const surrenderedAfterWin = giveUpRun(optionalActFour)
+        assertEqual(surrenderedAfterWin.phase, 'defeat', 'surrender before optional Act IV remains legal')
+        assertEqual(finishRun(surrenderedAfterWin).campaign.highestBossActDefeated, 3, 'surrender after both bosses keeps genuine win credit')
+        const surrenderedLegacy = finishRun(giveUpRun(JSON.parse(JSON.stringify(legacy))))
+        assertEqual(surrenderedLegacy.campaign.highestBossActDefeated, priorBosses, 'surrender between legacy bosses removes premature credit')
+        const finalizedLegacy = { ...lostLegacy, campaign: { ...lostLegacy.campaign, highestBossActDefeated: 3 } }
+        assertEqual(finishRun(finalizedLegacy), finalizedLegacy, 'finalized historical results are not rewritten')
+      }
+    }
+  }
+})
+
 check('White Beast Statue offers its Potion after the first A13 boss before regrouping', () => {
   const run = postNeowRun(913, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 13)
   const bossId = run.map.rows.at(-1)[0]
@@ -1769,6 +1835,7 @@ check('The Last Stand ends A13 after the first boss instead of starting the seco
   assertEqual(offered.pendingBossDefId, null)
   assertEqual(offered.phase, 'victory')
   assertDeepEqual(offered.rewards, [])
+  assertEqual(offered.campaign.highestBossActDefeated, 0, 'Last Stand does not credit an unbeaten second boss')
 })
 
 check('one-shot Relics resolve with all remaining legal cards when the deck is depleted', () => {

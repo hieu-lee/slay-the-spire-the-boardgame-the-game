@@ -39,7 +39,9 @@ and horizontal phone. Screenshots and state evidence are saved under
 
 - Boss decks are selected per act; Ascension 10 uses the harder printed boss
   rows, Ascension 11 uses the harder Heart and Act IV elite, and Ascension 13
-  fights a second distinct Act III boss after defeating the first.
+  fights a second distinct Act III boss after defeating the first. Both must be
+  defeated for Act III win credit; losing to the second retains marks for the
+  first defeated boss but does not count as a leaderboard win.
 - Summons come from finite shuffled physical supplies and keep authoritative
   left-to-right acting order. Split and Awakened One use their printed delayed
   arrival timing.
