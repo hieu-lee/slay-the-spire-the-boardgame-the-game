@@ -1,5 +1,5 @@
 import { CHARACTER_LESSONS } from '../src/ui/tutorial/lessons.ts'
-import { BASE_CHARACTER_IDS, CHARACTER_IDS, DOWNFALL_CHARACTER_IDS } from '../src/game/types.ts'
+import { BASE_CHARACTER_IDS, CHARACTER_IDS, DLC_CHARACTER_IDS, DOWNFALL_CHARACTER_IDS } from '../src/game/types.ts'
 import { HERO_TUTORIALS, tutorialChapters } from '../src/ui/tutorial/index.ts'
 import { onScript } from '../src/ui/tutorial/helpers.ts'
 import { simulateTutorial } from './lib/tutorial-sim.mjs'
@@ -7,10 +7,10 @@ import { suite, check, assert, assertEqual, assertDeepEqual, report } from './li
 
 suite('tutorial content')
 
-const HEROES = [...BASE_CHARACTER_IDS, ...DOWNFALL_CHARACTER_IDS]
+const HEROES = [...BASE_CHARACTER_IDS, ...DOWNFALL_CHARACTER_IDS, ...DLC_CHARACTER_IDS]
 const sorted = (items) => [...items].sort()
 
-check('every released hero has lessons, and the original heroes retain their scripted tutorials', () => {
+check('every released hero has lessons and a scripted tutorial', () => {
   assertEqual(Object.keys(CHARACTER_LESSONS).sort().join(), [...CHARACTER_IDS].sort().join())
   assertEqual(Object.keys(HERO_TUTORIALS).sort().join(), [...HEROES].sort().join())
 })
@@ -60,6 +60,7 @@ for (const hero of HEROES) {
       } else if (room.kind === 'event') {
         assertEqual(entry.event, room.event, `${where} event`)
         assert(entry.options.some((option) => option.id === room.option), `${where} option ${room.option}`)
+        if (room.pick) assert(entry.offers?.some((cards) => cards.includes(room.pick)), `${where} offers ${room.pick}`)
         assertEqual(entry.end.phase, 'map', `${where} resolves back to the map`)
       } else if (room.kind === 'merchant') {
         assertEqual(entry.kind, 'merchant', `${where} kind`)
@@ -74,5 +75,16 @@ for (const hero of HEROES) {
     assert(onScript(plan, run), 'the finished plan is still on script')
   })
 }
+
+check('a card the script takes from an event counts once it resolves, and skipping it leaves the script', () => {
+  const { plan } = HERO_TUTORIALS.kratos
+  const skipped = { ...plan.rooms, a1r1c1: { ...plan.rooms.a1r1c1, pick: null } }
+  // Two rooms in, the run stands on the resolved event; three in, it has moved on.
+  for (const length of [2, 3]) {
+    const route = plan.route.slice(0, length)
+    assert(onScript(plan, simulateTutorial('kratos', { ...plan, route }).run), `the scripted pick keeps the run on script after ${length} rooms`)
+    assert(!onScript(plan, simulateTutorial('kratos', { ...plan, route, rooms: skipped }).run), `skipping the Library card is off script after ${length} rooms`)
+  }
+})
 
 report('tutorial')

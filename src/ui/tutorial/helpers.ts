@@ -96,6 +96,8 @@ export function onScript(plan: TutorialPlan, run: RunState): boolean {
     // A fight's pick joins the deck only once its reward is settled.
     if (room?.kind === 'merchant') return (room.buy ?? []).filter((item) => item.section === 'card' && id !== run.map.position)
       .map((item) => item.id)
+    // An event's card joins the deck once the event has resolved back to the map.
+    if (room?.kind === 'event') return room.pick && (id !== run.map.position || run.phase === 'map') ? [room.pick] : []
     return room?.kind === 'fight' && room.pick && (id !== run.map.position || run.phase !== 'combat' && run.phase !== 'reward')
       ? [room.pick] : []
   })]

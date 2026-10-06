@@ -116,8 +116,11 @@ function presentationEnemyScope(
   sourceDeadOn = false,
 ): TargetScope {
   const active = def.modes ? { ...def, modes: undefined, effects: [...effects] } : def
-  if (!cardNeedsEnemy(active, actor, includeEvokes, energySpent, false,
-    attachedGemId, sourceCardUid, energyCharged, sourceDeadOn)) return 'self'
+  // `cardNeedsEnemy` only asks whether to pick a target, so an every-enemy card
+  // answers no; its presentation still reaches every living enemy.
+  const reachesEnemies = cardNeedsEnemy(def.target === 'allEnemies' ? { ...active, target: 'enemy' } : active,
+    actor, includeEvokes, energySpent, false, attachedGemId, sourceCardUid, energyCharged, sourceDeadOn)
+  if (!reachesEnemies) return 'self'
   if (def.id === 'guardian_prismatic_barrier' || effects.some((effect) =>
     effect.kind === 'roulette' && effect.byRoll[state.die]?.some((nested) => nested.kind === 'rowHit'))) return 'row'
   return def.target ?? 'enemy'

@@ -547,4 +547,13 @@ check('regressions from code review: tokens, caps, rescues, and pointless Unleas
   assertDeepEqual(olympus.enemies.map((e) => 30 - e.hp), [9, 9])
 })
 
+check('an every-enemy Attack is presented against every living enemy, so Kratos attacks and each hit lands', () => {
+  const fall = card('kratos_fall_of_olympus', true)
+  const state = play(combat(kratos({ hand: [fall] }), [enemy(), enemy({ uid: 'e2', row: 1 }), enemy({ uid: 'e3', dead: true, hp: 0 })]), fall)
+  const event = state.presentationEvents.at(-1)
+  assertEqual(event.sourceId, 'kratos_fall_of_olympus')
+  assertDeepEqual(event.enemyIds, ['e1', 'e2'], 'the dead enemy is not a target')
+  assertDeepEqual(event.enemyHpLoss, { e1: 8, e2: 8 }, 'four hits of 2 on each target')
+})
+
 report('kratos')

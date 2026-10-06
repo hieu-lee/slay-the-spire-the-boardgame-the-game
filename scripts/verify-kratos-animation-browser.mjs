@@ -119,7 +119,7 @@ try {
             getComputedStyle(image).filter, getComputedStyle(image.closest('.seat')).filter,
           ]), ['none', 'none'], `${engine}/${screen}: filters pixelate overscanned idle in WebKit`)
           await page.locator('.board').screenshot({ path: resolve(output, `${engine}-${screen}-idle.png`) })
-          for (const card of ['strike_kratos', 'kratos_blades_of_chaos']) {
+          for (const card of ['strike_kratos', 'kratos_blades_of_chaos', 'kratos_fall_of_olympus']) {
             const label = `${engine}/${screen}/${card}`
             // Capture live beats in one page call; browser round trips can outlast
             // a whole pose on a busy phone renderer.
