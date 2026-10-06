@@ -36,6 +36,23 @@ targeting distinctions. Canonical `printedText` and gameplay are unchanged.
 only the rules rectangles are replaced, preserving all approved headers,
 illustrations, costs, upgrade styling and the cleaned frame geometry.
 
+All 128 faces share one cost orb. The orb of `kratos__rare__red-orbs+` is the
+benchmark: `scripts/art/unify-kratos-cost-orbs.py` cuts it out
+(`scripts/art/sources/kratos-card-faces/cost-orb/benchmark-1.png`), has
+`gpt-image-2.5-sunburst` restyle only the numeral for costs 0, 2 and 3
+(`orb-N.png`), and pastes the matching orb at the benchmark position on every
+face. Each face's old orb is located from its dark rim, and the model removes
+the old orb's fragments only inside that circle (plus its shadow and glow).
+Only that footprint, with a feathered edge, is taken from the model, so the rest
+of every face stays pixel-identical to the previous commit; the new orb is pasted
+again on top so it stays pixel-exact. Prompts are in the script.
+`cost-orb/face-samples.json` names the model sample picked by eye for the few
+faces where the first sample invented a golden arc or damaged the frame. A flood
+fill from the corner clears dark haze outside the card corner. The script
+rebuilds every face from the pre-change commit it pins and the cached model
+samples; without that cache it re-samples the model and the picks must be
+redone, so the committed source faces are the record of the result.
+
 The Energy symbol was reconstructed from the user's cropped God of War red
 orb reference. Its source keeps native alpha; the runtime icon is 256 square.
 It supplies Kratos's native fallback cost and model references for the finished
