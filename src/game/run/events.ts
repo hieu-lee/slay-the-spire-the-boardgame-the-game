@@ -105,6 +105,23 @@ function nextEventCardOffer(
 }
 
 export function chooseEvent(state: RunState, playerId: string, decision: EventDecision): RunState {
+  // Older clients could reopen a completed Card Reward. Discard that phantom
+  // preview without granting another card or charging the Event's cost again.
+  if (state.phase === 'room' && state.roomState?.kind === 'event' &&
+    state.roomState.decisions[playerId] && state.roomState.pendingDecisions?.[playerId] &&
+    state.roomState.rewardOffers?.[playerId] && !state.roomState.rewardDraws?.[playerId] &&
+    !state.roomState.itemOffers?.[playerId] && !state.roomState.pendingDecisions[playerId]?.rewardItemIds?.length) {
+    const roomState = { ...state.roomState }
+    const unusedGems = [
+      ...(roomState.guardianGemOffers?.[playerId] ?? []).flat(),
+      ...(roomState.pendingGuardianGemGroups?.[playerId] ?? []).flat(),
+    ]
+    for (const field of ['pendingDecisions', 'rewardOffers', 'guardianGemOffers',
+      'pendingGuardianGemGroups', 'pendingGuardianGemIds'] as const) {
+      roomState[field] = Object.fromEntries(Object.entries(roomState[field] ?? {}).filter(([id]) => id !== playerId))
+    }
+    return { ...bottomGuardianGems(state, unusedGems), roomState }
+  }
   const reachAgain = state.roomState?.kind === 'event' && state.roomState.card.id === 'scrap_ooze' &&
     decision?.optionIds?.[0] === 'reach_inside' && (state.roomState.pendingRolls?.[playerId]?.at(-1) ?? 3) <= 2
   const next = chooseEventOnce(state, playerId, decision)
@@ -135,6 +152,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     !state.roomState.preparedCombat.startTurnProgress?.pauseAfterDraw) return state
   const player = state.players.find((candidate) => candidate.id === playerId && !candidate.dead)
   if (!player || !decision || !Array.isArray(decision.optionIds)) return state
+  if (state.roomState.decisions[playerId]) return state
   if (!acceptedTrade && (decision.rewardItemIds !== undefined || decision.rewardItemKinds !== undefined)) return state
   if (decision.rewardItemChoices !== undefined && (!Array.isArray(decision.rewardItemChoices) || decision.rewardItemChoices.some((choice) => choice !== 'take' && choice !== 'skip'))) return state
   if (decision.rewardIndexes !== undefined && (!Array.isArray(decision.rewardIndexes) || decision.rewardIndexes.some((choice) => !Number.isInteger(choice) || choice < -1))) return state

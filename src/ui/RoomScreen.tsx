@@ -1597,7 +1597,7 @@ function EventScreen({
           <button
             type="button"
             className="room-proceed"
-            disabled={selectedOptions.length < 1 || selectedOptions.length > 2 ||
+            disabled={Boolean(decided) || selectedOptions.length < 1 || selectedOptions.length > 2 ||
               selectedOptions.some((id) => unavailableEventOptionIds.includes(id)) ||
               selectedPrismaticReward && (selectedPrismaticRare ? rareRewardSources.length !== 3 : rewardSources.length !== 3)}
             onClick={() => {
