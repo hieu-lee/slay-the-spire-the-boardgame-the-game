@@ -281,7 +281,7 @@ export function spendVigor(state: CombatState, playerId: string): CombatState {
   return next
 }
 
-/** Spend one Hexaghost Soulburn for plain damage equal to current Heat. */
+/** Spend one Hexaghost Soulburn for plain damage equal to current Heat; not a card play. */
 export function spendSoulburn(
   state: CombatState,
   playerId: string,
@@ -293,7 +293,7 @@ export function spendSoulburn(
   const player = findPlayer(state, playerId)
   if (!player || player.dead || player.soulburn < 1 ||
     player.character !== 'hexaghost' && !player.relics.some((relic) => relic.defId === 'corrupted_shard') ||
-    player.cardPlayLocked || reachedTimeWarpLimit(state, player) ||
+    player.cardPlayLocked ||
     resolveEnemyTargets(state, 'enemy', enemyUid).length === 0) return state
   const crispy = extraCrispyPowerUid === undefined ? undefined
     : player.powers.find((power) => power.uid === extraCrispyPowerUid && power.defId === 'extra_crispy')

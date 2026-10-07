@@ -5132,7 +5132,7 @@ function CombatScreenView({
                 </button>
               ) : null}
               {state.phase === 'player' && !forcedCard && !distilled && !relicScry && !endTurnResolving &&
-              !pendingTrigger && !viewer.cardPlayLocked && !reachedTimeWarpLimit(state, viewer) && viewer.soulburn > 0 ? (
+              !pendingTrigger && !viewer.cardPlayLocked && viewer.soulburn > 0 ? (
                 <button
                   type="button"
                   className={spendingSoulburn ? 'is-chosen' : undefined}
