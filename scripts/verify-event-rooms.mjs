@@ -978,6 +978,17 @@ check('accepted Relic trades preserve the physical face-up or spent state', () =
   assertEqual(run.players[0].relics.find((relic) => relic.defId === 'happy_flower')?.spent, false)
 })
 
+check('a Relic trade target who already resolved their own option can still answer the Exchange', () => {
+  let run = inEvent('face_trader', 2)
+  run.players[0].relics = [{ defId: 'anchor', spent: false }]
+  run.players[1].relics = [{ defId: 'happy_flower', spent: false }]
+  run.roomState.decisions.p2 = { optionIds: ['take_and_give'] }
+  run = chooseEvent(run, 'p1', { optionIds: ['exchange'], targetPlayerId: 'p2', relicIds: ['anchor'] })
+  run = chooseEvent(run, 'p2', { optionIds: ['accept_trade'], relicIds: ['happy_flower'] })
+  assertEqual(run.players[0].relics.map((relic) => relic.defId).join(','), 'happy_flower')
+  assertEqual(run.players[1].relics.map((relic) => relic.defId).join(','), 'anchor')
+})
+
 check('Lab lets each owner resolve their Potion before the party roll', () => {
   let run = inEvent('lab', 3)
   run.players[0].potions = ['fire_potion', 'swift_potion', 'blood_potion']

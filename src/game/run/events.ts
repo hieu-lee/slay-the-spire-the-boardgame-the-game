@@ -152,7 +152,8 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     !state.roomState.preparedCombat.startTurnProgress?.pauseAfterDraw) return state
   const player = state.players.find((candidate) => candidate.id === playerId && !candidate.dead)
   if (!player || !decision || !Array.isArray(decision.optionIds)) return state
-  if (state.roomState.decisions[playerId]) return state
+  // The target of a pending Exchange answers it even after resolving their own option.
+  if (state.roomState.decisions[playerId] && state.roomState.pendingTrade?.targetId !== playerId) return state
   if (!acceptedTrade && (decision.rewardItemIds !== undefined || decision.rewardItemKinds !== undefined)) return state
   if (decision.rewardItemChoices !== undefined && (!Array.isArray(decision.rewardItemChoices) || decision.rewardItemChoices.some((choice) => choice !== 'take' && choice !== 'skip'))) return state
   if (decision.rewardIndexes !== undefined && (!Array.isArray(decision.rewardIndexes) || decision.rewardIndexes.some((choice) => !Number.isInteger(choice) || choice < -1))) return state
