@@ -122,9 +122,10 @@ export const RELICS: Record<string, RelicDef> = {
     pool: 'starting',
     publisherScan: false,
     trigger: { kind: 'startOfCombat' },
-    effects: [{ kind: 'gainRage', amount: 1 }],
+    effects: [{ kind: 'gainRage', amount: 2 }],
+    abilities: [{ trigger: { kind: 'endOfCombat' }, effects: [{ kind: 'heal', amount: 1 }] }],
     rule: 'Whenever you lose HP, gain 1 Rage. Each separate HP loss counts once.',
-    text: 'Start of combat: gain 1 Rage. Whenever you lose HP, gain 1 Rage.',
+    text: 'Start of combat: gain 2 Rage. Whenever you lose HP, gain 1 Rage. End of combat: heal 1 HP.',
   },
   hermit_starting_relic: {
     id: 'hermit_starting_relic', name: 'Hermit Starting Relic', pool: 'starting', effects: [],

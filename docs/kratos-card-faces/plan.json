@@ -46,16 +46,16 @@
     "cost": 1,
     "type": "attack",
     "rarity": "starter",
-    "printedText": "Deal 1 damage. Unleash 2: deal 4 damage instead.",
+    "printedText": "Deal 1 damage. Unleash 2: deal 5 damage instead.",
     "assetKey": "kratos__starter__plume-of-prometheus",
     "references": [
-      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__plume-of-prometheus-before.png",
+      "scripts/art/sources/kratos-card-faces/rebalance/kratos__starter__plume-of-prometheus-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/attack.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__plume-of-prometheus-mask.png"
     ],
-    "symbolText": "1 [DAMAGE].\nUnleash 2: 4 [DAMAGE] instead."
+    "symbolText": "1 [DAMAGE].\nUnleash 2: 5 [DAMAGE] instead."
   },
   {
     "id": "kratos_plume_of_prometheus",
@@ -64,16 +64,16 @@
     "cost": 1,
     "type": "attack",
     "rarity": "starter",
-    "printedText": "Deal 2 damage. Unleash 2: deal 5 damage instead.",
+    "printedText": "Deal 2 damage. Unleash 2: deal 6 damage instead.",
     "assetKey": "kratos__starter__plume-of-prometheus+",
     "references": [
-      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__plume-of-prometheus+-before.png",
+      "scripts/art/sources/kratos-card-faces/rebalance/kratos__starter__plume-of-prometheus+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/attack.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__plume-of-prometheus+-mask.png"
     ],
-    "symbolText": "2 [DAMAGE].\nUnleash 2: 5 [DAMAGE] instead."
+    "symbolText": "2 [DAMAGE].\nUnleash 2: 6 [DAMAGE] instead."
   },
   {
     "id": "kratos_orions_harpoon",
@@ -420,17 +420,17 @@
     "cost": 1,
     "type": "skill",
     "rarity": "common",
-    "printedText": "Gain 2 Block. Gain 1 Rage.",
+    "printedText": "Gain 3 Block. Gain 1 Rage.",
     "assetKey": "kratos__normal__parry",
     "references": [
-      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__parry-before.png",
+      "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__parry-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/block.png",
       "scripts/art/sources/kratos-card-faces/rage-symbol.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__parry-mask.png"
     ],
-    "symbolText": "2 [BLOCK].\n1 [RAGE]."
+    "symbolText": "3 [BLOCK].\n1 [RAGE]."
   },
   {
     "id": "kratos_parry",
@@ -439,17 +439,17 @@
     "cost": 1,
     "type": "skill",
     "rarity": "common",
-    "printedText": "Gain 3 Block. Gain 1 Rage.",
+    "printedText": "Gain 4 Block. Gain 1 Rage.",
     "assetKey": "kratos__normal__parry+",
     "references": [
-      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__parry+-before.png",
+      "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__parry+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/block.png",
       "scripts/art/sources/kratos-card-faces/rage-symbol.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__parry+-mask.png"
     ],
-    "symbolText": "3 [BLOCK].\n1 [RAGE]."
+    "symbolText": "4 [BLOCK].\n1 [RAGE]."
   },
   {
     "id": "kratos_spartan_guard",
@@ -458,16 +458,16 @@
     "cost": 1,
     "type": "skill",
     "rarity": "common",
-    "printedText": "Gain 2 Block. Unleash 2: gain 5 Block instead.",
+    "printedText": "Gain 2 Block. Unleash 2: gain 6 Block instead.",
     "assetKey": "kratos__normal__spartan-guard",
     "references": [
-      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-guard-before.png",
+      "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__spartan-guard-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/block.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-guard-mask.png"
     ],
-    "symbolText": "2 [BLOCK].\nUnleash 2: 5 [BLOCK] instead."
+    "symbolText": "2 [BLOCK].\nUnleash 2: 6 [BLOCK] instead."
   },
   {
     "id": "kratos_spartan_guard",
@@ -476,16 +476,16 @@
     "cost": 1,
     "type": "skill",
     "rarity": "common",
-    "printedText": "Gain 3 Block. Unleash 2: gain 6 Block instead.",
+    "printedText": "Gain 3 Block. Unleash 2: gain 7 Block instead.",
     "assetKey": "kratos__normal__spartan-guard+",
     "references": [
-      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-guard+-before.png",
+      "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__spartan-guard+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/block.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-guard+-mask.png"
     ],
-    "symbolText": "3 [BLOCK].\nUnleash 2: 6 [BLOCK] instead."
+    "symbolText": "3 [BLOCK].\nUnleash 2: 7 [BLOCK] instead."
   },
   {
     "id": "kratos_golden_fleece",
@@ -494,17 +494,17 @@
     "cost": 1,
     "type": "skill",
     "rarity": "common",
-    "printedText": "Gain 2 Block. Unleash 1: deal 1 plain damage to each enemy attacking you for each Attack icon in its intent.",
+    "printedText": "Gain 3 Block. Unleash 1: deal 1 plain damage to each enemy attacking you for each Attack icon in its intent.",
     "assetKey": "kratos__normal__golden-fleece",
     "references": [
-      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece-before.png",
+      "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__golden-fleece-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/attack.png",
       "public/assets/icons/block.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece-mask.png"
     ],
-    "symbolText": "2 [BLOCK].\nUnleash 1: 1 [DAMAGE]\nper Attack icon in each enemy's intent\nif it is attacking you."
+    "symbolText": "3 [BLOCK].\nUnleash 1: 1 [DAMAGE]\nper Attack icon in each enemy's intent\nif it is attacking you."
   },
   {
     "id": "kratos_golden_fleece",
@@ -513,17 +513,17 @@
     "cost": 1,
     "type": "skill",
     "rarity": "common",
-    "printedText": "3 Block to any player. Unleash 1: deal 1 plain damage to each enemy attacking you (Kratos) for each Attack icon in its intent.",
+    "printedText": "4 Block to any player. Unleash 1: deal 1 plain damage to each enemy attacking you (Kratos) for each Attack icon in its intent.",
     "assetKey": "kratos__normal__golden-fleece+",
     "references": [
-      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece+-before.png",
+      "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__golden-fleece+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/attack.png",
       "public/assets/icons/block.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece+-mask.png"
     ],
-    "symbolText": "3 [BLOCK] to any player.\nUnleash 1: 1 [DAMAGE]\nper Attack icon in each enemy's intent\nif it is attacking Kratos."
+    "symbolText": "4 [BLOCK] to any player.\nUnleash 1: 1 [DAMAGE]\nper Attack icon in each enemy's intent\nif it is attacking Kratos."
   },
   {
     "id": "kratos_icarus_wings",
@@ -1718,16 +1718,16 @@
     "cost": 2,
     "type": "skill",
     "rarity": "uncommon",
-    "printedText": "Gain 3 Block. Unleash 1: gain 2 more Block.",
+    "printedText": "Gain 4 Block. Unleash 1: gain 2 more Block.",
     "assetKey": "kratos__normal__hercules-shoulder-guard",
     "references": [
-      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hercules-shoulder-guard-before.png",
+      "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__hercules-shoulder-guard-before.png",
       "public/assets/cards/ironclad__normal__cleave.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off.webp",
       "public/assets/icons/block.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hercules-shoulder-guard-mask.png"
     ],
-    "symbolText": "3 [BLOCK].\nUnleash 1: +2 [BLOCK]."
+    "symbolText": "4 [BLOCK].\nUnleash 1: +2 [BLOCK]."
   },
   {
     "id": "kratos_hercules_shoulder_guard",
@@ -1736,16 +1736,16 @@
     "cost": 2,
     "type": "skill",
     "rarity": "uncommon",
-    "printedText": "Gain 4 Block. Unleash 1: gain 2 more Block.",
+    "printedText": "Gain 5 Block. Unleash 1: gain 2 more Block.",
     "assetKey": "kratos__normal__hercules-shoulder-guard+",
     "references": [
-      "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hercules-shoulder-guard+-before.png",
+      "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__hercules-shoulder-guard+-before.png",
       "public/assets/cards/ironclad__normal__cleave+.webp",
       "public/assets/cards/ironclad__normal__shrug-it-off+.webp",
       "public/assets/icons/block.png",
       "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hercules-shoulder-guard+-mask.png"
     ],
-    "symbolText": "4 [BLOCK].\nUnleash 1: +2 [BLOCK]."
+    "symbolText": "5 [BLOCK].\nUnleash 1: +2 [BLOCK]."
   },
   {
     "id": "kratos_rage_of_sparta",

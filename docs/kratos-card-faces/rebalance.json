@@ -1,0 +1,112 @@
+{
+  "kratos__normal__golden-fleece": {
+    "sample": 1,
+    "box": [
+      105,
+      837,
+      925,
+      1387
+    ],
+    "modelOutputSha256": "bbda00240b6c0cab4b5a5d128d6e1b2f9d90524c794eed7e7b4246193d4fad37",
+    "input": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__golden-fleece-before.png"
+  },
+  "kratos__normal__golden-fleece+": {
+    "sample": 2,
+    "box": [
+      105,
+      821,
+      925,
+      1353
+    ],
+    "modelOutputSha256": "bbdd917e14cec5acc95e60e61de5739b14baf95af364ccfbd6f0e47e9e878224",
+    "input": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__golden-fleece+-before.png"
+  },
+  "kratos__normal__hercules-shoulder-guard": {
+    "sample": 2,
+    "box": [
+      105,
+      836,
+      925,
+      1374
+    ],
+    "modelOutputSha256": "da057e4a6379a51455e5794d4e8324d00f1989f7bdebe75bb123c7947243f31f",
+    "input": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__hercules-shoulder-guard-before.png"
+  },
+  "kratos__normal__hercules-shoulder-guard+": {
+    "sample": 1,
+    "box": [
+      105,
+      850,
+      925,
+      1395
+    ],
+    "modelOutputSha256": "af5bc8d5da3f5e1b1a4b3b414e491e8c4c4cea26439b4aa728573f22107882ca",
+    "input": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__hercules-shoulder-guard+-before.png"
+  },
+  "kratos__normal__parry": {
+    "sample": 1,
+    "box": [
+      105,
+      842,
+      925,
+      1368
+    ],
+    "modelOutputSha256": "ed15fe13817910840dc786626f5ea24e727f94dc186383fb2ab1d2f2da5be20c",
+    "input": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__parry-before.png"
+  },
+  "kratos__normal__parry+": {
+    "sample": 2,
+    "box": [
+      105,
+      856,
+      925,
+      1368
+    ],
+    "modelOutputSha256": "1ce0a50f5a608ddf20b1c8262fdae5016f6f58861fe7743a8bf1ba9dc2002688",
+    "input": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__parry+-before.png"
+  },
+  "kratos__normal__spartan-guard": {
+    "sample": 1,
+    "box": [
+      105,
+      861,
+      925,
+      1362
+    ],
+    "modelOutputSha256": "1f7caecfdc2e2c9481eaf4636d6daa8278f8b95ffae0dde3e8055d7a99676f29",
+    "input": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__spartan-guard-before.png"
+  },
+  "kratos__normal__spartan-guard+": {
+    "sample": 2,
+    "box": [
+      105,
+      867,
+      925,
+      1371
+    ],
+    "modelOutputSha256": "2061e8f59e91eec78e567b20732ee8b5d4e3be45f646bd3b254c226be6b071d6",
+    "input": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__spartan-guard+-before.png"
+  },
+  "kratos__starter__plume-of-prometheus": {
+    "sample": 2,
+    "box": [
+      105,
+      871,
+      925,
+      1366
+    ],
+    "modelOutputSha256": "bdf0da81d95b7a887325d005bdf641d0bd06b062e831405ae3541686bca85f4d",
+    "input": "scripts/art/sources/kratos-card-faces/rebalance/kratos__starter__plume-of-prometheus-before.png"
+  },
+  "kratos__starter__plume-of-prometheus+": {
+    "sample": 1,
+    "box": [
+      105,
+      877,
+      925,
+      1383
+    ],
+    "modelOutputSha256": "906f9ae0a483cdb438cf3da367cea74d3250854507283abb9e81043403aa91a7",
+    "input": "scripts/art/sources/kratos-card-faces/rebalance/kratos__starter__plume-of-prometheus+-before.png"
+  }
+}

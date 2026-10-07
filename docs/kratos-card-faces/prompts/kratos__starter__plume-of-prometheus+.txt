@@ -5,10 +5,10 @@ Images 2 and 3: existing finished Ironclad cards, compact notation and typograph
 Image 4: exact DAMAGE effect glyph to insert for [DAMAGE].
 The separate mask marks the only editable rectangle [105, 877, 925, 1383]. Keep all illustration, cost orb, title ribbon, card type tab, frame and exterior transparency exactly unchanged. Title must stay green with its plus sign. Do not add any diamond, jewel, triangle, rarity badge or ornament anywhere.
 Card information: Plume of Prometheus+; cost 1; attack; starter.
-Canonical mechanics (meaning only, NOT text to render): "Deal 2 damage. Unleash 2: deal 5 damage instead."
+Canonical mechanics (meaning only, NOT text to render): "Deal 2 damage. Unleash 2: deal 6 damage instead."
 Exact compact rules layout to render, with bracketed markers replaced by their supplied pictorial glyphs:
 2 [DAMAGE].
-Unleash 2: 5 [DAMAGE] instead.
+Unleash 2: 6 [DAMAGE] instead.
 Use large legible centered cream serif text, black outline, generous line spacing like the finished examples. Fit all lines inside the marked panel. Replace each [TOKEN] with its real supplied icon, never bracket text or a spelled-out effect name. Keep numbers before their icons. [AOE] before a number means a row effect, like Cleave. Do not write Deal/Gain/Apply or 'to a row' where the compact layout uses icons alone. Keep 'Every enemy', 'Plain', all conditions, ownership, counts and timing exactly as specified. AOE must never replace 'Every enemy'. Attack as a card type stays the word Attack, not a sword icon. HP remains HP. Highlight every occurrence of Retain, Exhaust, Unleash, Godslayer, Brutal Kill in bright yellow; other text cream. No extra words, icons, effect repetitions, decorations or footers. Return the complete 1024x1536 card on native transparent background.
 
 Critical glyph distinction: [DAMAGE] is always the RED SWORD, never the red explosion/AOE burst. [BLOCK] is the BLUE SHIELD. [RAGE] is the RED SPARTAN EMBLEM. This card has NO [AOE] marker: NEVER render the red explosion/burst symbol shown on Cleave. Follow only this card's exact compact layout; the Ironclad images supply typography, never their effects.

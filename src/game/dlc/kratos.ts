@@ -27,11 +27,11 @@ export const KRATOS_CARD_DEFS: Record<string, CardDef> = Object.fromEntries([
   }),
   kratos({
     id: 'kratos_plume_of_prometheus', name: 'Plume of Prometheus', type: 'attack', rarity: 'starter', cost: 1,
-    printedText: 'Deal 1 damage. Unleash 2: deal 4 damage instead.',
-    effects: [unleash(2, [{ kind: 'hit', amount: 4 }], [{ kind: 'hit', amount: 1 }])],
+    printedText: 'Deal 1 damage. Unleash 2: deal 5 damage instead.',
+    effects: [unleash(2, [{ kind: 'hit', amount: 5 }], [{ kind: 'hit', amount: 1 }])],
     upgrade: {
-      printedText: 'Deal 2 damage. Unleash 2: deal 5 damage instead.',
-      effects: [unleash(2, [{ kind: 'hit', amount: 5 }], [{ kind: 'hit', amount: 2 }])],
+      printedText: 'Deal 2 damage. Unleash 2: deal 6 damage instead.',
+      effects: [unleash(2, [{ kind: 'hit', amount: 6 }], [{ kind: 'hit', amount: 2 }])],
     },
   }),
 
@@ -110,27 +110,27 @@ export const KRATOS_CARD_DEFS: Record<string, CardDef> = Object.fromEntries([
   }),
   kratos({
     id: 'kratos_parry', name: 'Parry', type: 'skill', rarity: 'common', cost: 1,
-    printedText: 'Gain 2 Block. Gain 1 Rage.',
-    effects: [{ kind: 'block', amount: 2 }, { kind: 'gainRage', amount: 1 }],
-    upgrade: { printedText: 'Gain 3 Block. Gain 1 Rage.', effects: [{ kind: 'block', amount: 3 }, { kind: 'gainRage', amount: 1 }] },
+    printedText: 'Gain 3 Block. Gain 1 Rage.',
+    effects: [{ kind: 'block', amount: 3 }, { kind: 'gainRage', amount: 1 }],
+    upgrade: { printedText: 'Gain 4 Block. Gain 1 Rage.', effects: [{ kind: 'block', amount: 4 }, { kind: 'gainRage', amount: 1 }] },
   }),
   kratos({
     id: 'kratos_spartan_guard', name: 'Spartan Guard', type: 'skill', rarity: 'common', cost: 1,
-    printedText: 'Gain 2 Block. Unleash 2: gain 5 Block instead.',
-    effects: [unleash(2, [{ kind: 'block', amount: 5 }], [{ kind: 'block', amount: 2 }])],
+    printedText: 'Gain 2 Block. Unleash 2: gain 6 Block instead.',
+    effects: [unleash(2, [{ kind: 'block', amount: 6 }], [{ kind: 'block', amount: 2 }])],
     upgrade: {
-      printedText: 'Gain 3 Block. Unleash 2: gain 6 Block instead.',
-      effects: [unleash(2, [{ kind: 'block', amount: 6 }], [{ kind: 'block', amount: 3 }])],
+      printedText: 'Gain 3 Block. Unleash 2: gain 7 Block instead.',
+      effects: [unleash(2, [{ kind: 'block', amount: 7 }], [{ kind: 'block', amount: 3 }])],
     },
   }),
   kratos({
     id: 'kratos_golden_fleece', name: 'Golden Fleece', type: 'skill', rarity: 'common', cost: 1,
-    printedText: 'Gain 2 Block. Unleash 1: deal 1 plain damage to each enemy attacking you for each Attack icon in its intent.',
-    effects: [{ kind: 'block', amount: 2 }, unleash(1, [{ kind: 'damagePerAttackIntent', amount: 1 }])],
+    printedText: 'Gain 3 Block. Unleash 1: deal 1 plain damage to each enemy attacking you for each Attack icon in its intent.',
+    effects: [{ kind: 'block', amount: 3 }, unleash(1, [{ kind: 'damagePerAttackIntent', amount: 1 }])],
     upgrade: {
       supportTarget: 'anyPlayer',
-      printedText: '3 Block to any player. Unleash 1: deal 1 plain damage to each enemy attacking you (Kratos) for each Attack icon in its intent.',
-      effects: [{ kind: 'block', amount: 3, toChosen: true }, unleash(1, [{ kind: 'damagePerAttackIntent', amount: 1 }])],
+      printedText: '4 Block to any player. Unleash 1: deal 1 plain damage to each enemy attacking you (Kratos) for each Attack icon in its intent.',
+      effects: [{ kind: 'block', amount: 4, toChosen: true }, unleash(1, [{ kind: 'damagePerAttackIntent', amount: 1 }])],
     },
   }),
   kratos({
@@ -381,11 +381,11 @@ export const KRATOS_CARD_DEFS: Record<string, CardDef> = Object.fromEntries([
   }),
   kratos({
     id: 'kratos_hercules_shoulder_guard', name: "Hercules' Shoulder Guard", type: 'skill', rarity: 'uncommon', cost: 2,
-    printedText: 'Gain 3 Block. Unleash 1: gain 2 more Block.',
-    effects: [{ kind: 'block', amount: 3 }, unleash(1, [{ kind: 'block', amount: 2 }])],
+    printedText: 'Gain 4 Block. Unleash 1: gain 2 more Block.',
+    effects: [{ kind: 'block', amount: 4 }, unleash(1, [{ kind: 'block', amount: 2 }])],
     upgrade: {
-      printedText: 'Gain 4 Block. Unleash 1: gain 2 more Block.',
-      effects: [{ kind: 'block', amount: 4 }, unleash(1, [{ kind: 'block', amount: 2 }])],
+      printedText: 'Gain 5 Block. Unleash 1: gain 2 more Block.',
+      effects: [{ kind: 'block', amount: 5 }, unleash(1, [{ kind: 'block', amount: 2 }])],
     },
   }),
 

@@ -53,6 +53,20 @@ rebuilds every face from the pre-change commit it pins and the cached model
 samples; without that cache it re-samples the model and the picks must be
 redone, so the committed source faces are the record of the result.
 
+The October 2026 balance pass changed the numbers on ten faces (Plume of
+Prometheus, Parry, Spartan Guard, Golden Fleece and Hercules' Shoulder Guard, base
+and upgraded). `scripts/art/rebalance-kratos-card-faces.py` re-rendered only their
+rules panels: the approved face before the change
+(`scripts/art/sources/kratos-card-faces/rebalance/*-before.png`) was the edit target,
+the compact-effects mask limited the model to the rules rectangle, and only that
+rectangle's colour was composited back, so every visible pixel outside it and the
+whole alpha plane are unchanged. `rebalance.json` records each input, the picked
+sample and its model-output hash; the prompts in `prompts/` are the submitted
+requests. The script expects the local image tool at
+`~/.codex/skills/.system/imagegen/scripts/image_gen.py` with its Python environment in
+`~/.cache/kratos-imagegen-venv`. Because `unify-kratos-cost-orbs.py` rebuilds faces from an older pinned
+commit, rerunning it would restore the old numbers on these ten faces.
+
 The Energy symbol was reconstructed from the user's cropped God of War red
 orb reference. Its source keeps native alpha; the runtime icon is 256 square.
 It supplies Kratos's native fallback cost and model references for the finished

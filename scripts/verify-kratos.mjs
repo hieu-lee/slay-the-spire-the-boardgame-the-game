@@ -116,27 +116,35 @@ check('the pool is 64 cards: 4 starter, 15 common, 30 uncommon, 15 rare, and eve
   assertEqual(deck.filter((id) => id !== 'golden_ticket').length, 15 * 2 + 30)
 })
 
-check('Ashes of Sparta: 1 Rage at the start of combat and 1 per separate HP loss, capped at 5', () => {
+check('Ashes of Sparta: 2 Rage at the start of combat, 1 per separate HP loss, capped at 5, and 1 HP healed when combat ends', () => {
   let state = combat(kratos({ relics: [{ defId: 'ashes_of_sparta', spent: false }], draw: filler() }), [enemy({ hp: 50, maxHp: 50 })])
   state = startPlayerTurn(state)
-  assertEqual(state.players[0].rage, 1, 'start of combat grants 1 Rage')
+  assertEqual(state.players[0].rage, 2, 'start of combat grants 2 Rage')
   const hubris = card('kratos_hubris')
   state = { ...state, players: [{ ...state.players[0], hand: [...state.players[0].hand, hubris] }] }
   state = play(state, hubris)
   assertEqual(state.players[0].hp, 9)
-  assertEqual(state.players[0].rage, 2, 'self-inflicted HP loss counts')
+  assertEqual(state.players[0].rage, 3, 'self-inflicted HP loss counts')
   state = { ...state, players: [{ ...state.players[0], rage: 5 }] }
   const again = card('kratos_hubris')
   state = { ...state, players: [{ ...state.players[0], hand: [...state.players[0].hand, again] }] }
   state = play(state, again)
   assertEqual(state.players[0].rage, 5, 'Rage never exceeds 5')
+
+  const strike = card('strike_kratos')
+  const last = combat(kratos({ relics: [{ defId: 'ashes_of_sparta', spent: false }], hand: [strike], hp: 5 }), [enemy({ hp: 1, maxHp: 1 })])
+  const won = playCard(last, 'p1', strike.uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertEqual(won.phase, 'won')
+  assertEqual(won.players[0].hp, 6, 'Ashes of Sparta heals 1 HP at the end of combat')
+  const full = combat(kratos({ relics: [{ defId: 'ashes_of_sparta', spent: false }], hand: [strike] }), [enemy({ hp: 1, maxHp: 1 })])
+  assertEqual(playCard(full, 'p1', strike.uid, { enemyUid: 'e1', playerId: 'p1' }).players[0].hp, 10, 'and never above max HP')
 })
 
 check('Unleash pays its Rage for the bonus, and "instead" keeps one hit', () => {
   const plume = card('kratos_plume_of_prometheus')
   const unleashed = combat(kratos({ hand: [plume], rage: 2 }))
   const after = play(unleashed, plume)
-  assertEqual(hpLost(unleashed, after), 4, 'Unleash 2 deals 4 instead of 1')
+  assertEqual(hpLost(unleashed, after), 5, 'Unleash 2 deals 5 instead of 1')
   assertEqual(after.players[0].rage, 0, 'and spends 2 Rage')
 
   const short = combat(kratos({ hand: [plume], rage: 1 }))
@@ -160,7 +168,7 @@ check('God of War lowers Unleash by 1 (not stacking), and Ghost of Sparta pays o
   const plume = card('kratos_plume_of_prometheus')
   const two = combat(kratos({ hand: [plume], rage: 1, powers: [card('kratos_god_of_war'), card('kratos_god_of_war'), card('kratos_ghost_of_sparta', true)] }))
   const after = play(two, plume)
-  assertEqual(hpLost(two, after), 4, 'Unleash 2 costs 1')
+  assertEqual(hpLost(two, after), 5, 'Unleash 2 costs 1')
   assertEqual(after.players[0].rage, 0)
   assertEqual(after.players[0].block, 2, 'upgraded Ghost of Sparta gives 2 Block')
 
@@ -319,7 +327,7 @@ const FACES = [
   ['strike_kratos', {}, { dmg: [1, 0] }], ['strike_kratos+', {}, { dmg: [2, 0] }],
   ['defend_kratos', {}, { block: 1 }], ['defend_kratos+', {}, { block: 2 }],
   ['kratos_blades_of_chaos', {}, { dmg: [1, 1], rage: 1 }], ['kratos_blades_of_chaos+', {}, { dmg: [2, 2], rage: 1 }],
-  ['kratos_plume_of_prometheus', { rage: 2 }, { dmg: [4, 0], rage: 0 }], ['kratos_plume_of_prometheus+', { rage: 2 }, { dmg: [5, 0], rage: 0 }],
+  ['kratos_plume_of_prometheus', { rage: 2 }, { dmg: [5, 0], rage: 0 }], ['kratos_plume_of_prometheus+', { rage: 2 }, { dmg: [6, 0], rage: 0 }],
   ['kratos_orions_harpoon', {}, { dmg: [2, 0], rage: 1 }], ['kratos_orions_harpoon+', {}, { dmg: [3, 0], rage: 1 }],
   ['kratos_cyclone_of_chaos', {}, { dmg: [3, 3], rage: 1 }], ['kratos_cyclone_of_chaos+', {}, { dmg: [4, 4], rage: 1 }],
   ['kratos_spartan_kick', { rage: 1 }, { dmg: [1, 0], weak: [1, 0], rage: 0 }], ['kratos_spartan_kick+', { rage: 1 }, { dmg: [2, 0], weak: [1, 0], rage: 0 }],
@@ -330,9 +338,9 @@ const FACES = [
   ['kratos_zeus_fury', { ctx: { enemyUids: ['e1', 'e2'] } }, { dmg: [1, 1] }],
   ['kratos_zeus_fury+', { ctx: { enemyUids: ['e1', 'e1', 'e2'] } }, { dmg: [2, 1] }],
   ['kratos_rage_of_the_gods', {}, { rage: 2, exhausted: true }], ['kratos_rage_of_the_gods+', {}, { rage: 3, exhausted: true }],
-  ['kratos_parry', {}, { block: 2, rage: 1 }], ['kratos_parry+', {}, { block: 3, rage: 1 }],
-  ['kratos_spartan_guard', { rage: 2 }, { block: 5, rage: 0 }], ['kratos_spartan_guard+', { rage: 2 }, { block: 6, rage: 0 }],
-  ['kratos_golden_fleece', {}, { block: 2 }], ['kratos_golden_fleece+', {}, { block: 3 }],
+  ['kratos_parry', {}, { block: 3, rage: 1 }], ['kratos_parry+', {}, { block: 4, rage: 1 }],
+  ['kratos_spartan_guard', { rage: 2 }, { block: 6, rage: 0 }], ['kratos_spartan_guard+', { rage: 2 }, { block: 7, rage: 0 }],
+  ['kratos_golden_fleece', {}, { block: 3 }], ['kratos_golden_fleece+', {}, { block: 4 }],
   ['kratos_icarus_wings', {}, { block: 1, drawn: 2 }], ['kratos_icarus_wings+', {}, { block: 2, drawn: 2 }],
   ['kratos_bow_of_apollo', { rage: 1 }, { dmg: [3, 0], rage: 0 }], ['kratos_bow_of_apollo+', { rage: 1 }, { dmg: [4, 0], rage: 0 }],
   ['kratos_hermes_rush', { rage: 1 }, { block: 2, drawn: 1, rage: 0 }], ['kratos_hermes_rush+', { rage: 1 }, { block: 3, drawn: 1, rage: 0 }],
@@ -375,7 +383,7 @@ const FACES = [
   ['kratos_head_of_euryale+', { e1Hp: 3 }, { killed: true, weak: [1, 1], exhausted: true }],
   ['kratos_soul_summon', {}, { power: true }], ['kratos_soul_summon+', {}, { power: true }],
   ['kratos_green_orbs', {}, { power: true }], ['kratos_green_orbs+', {}, { power: true }],
-  ['kratos_hercules_shoulder_guard', { rage: 1 }, { block: 5, rage: 0 }], ['kratos_hercules_shoulder_guard+', { rage: 1 }, { block: 6, rage: 0 }],
+  ['kratos_hercules_shoulder_guard', { rage: 1 }, { block: 6, rage: 0 }], ['kratos_hercules_shoulder_guard+', { rage: 1 }, { block: 7, rage: 0 }],
   ['kratos_rage_of_sparta', { rage: 4 }, { strength: 4, rage: 0, exhausted: true }], ['kratos_rage_of_sparta+', { rage: 4 }, { strength: 4, rage: 0, exhausted: true }],
   ['kratos_blade_of_olympus', { rage: 2 }, { dmg: [6, 0], rage: 0 }], ['kratos_blade_of_olympus+', { rage: 2 }, { dmg: [8, 0], rage: 0 }],
   ['kratos_god_of_war', {}, { power: true }], ['kratos_god_of_war+', {}, { power: true }],

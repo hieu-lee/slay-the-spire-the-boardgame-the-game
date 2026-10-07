@@ -6,9 +6,9 @@ Image 4: exact DAMAGE effect glyph to insert for [DAMAGE].
 Image 5: exact BLOCK effect glyph to insert for [BLOCK].
 The separate mask marks the only editable rectangle [105, 821, 925, 1353]. Keep all illustration, cost orb, title ribbon, card type tab, frame and exterior transparency exactly unchanged. Title must stay green with its plus sign. Do not add any diamond, jewel, triangle, rarity badge or ornament anywhere.
 Card information: Golden Fleece+; cost 1; skill; common.
-Canonical mechanics (meaning only, NOT text to render): "3 Block to any player. Unleash 1: deal 1 plain damage to each enemy attacking you (Kratos) for each Attack icon in its intent."
+Canonical mechanics (meaning only, NOT text to render): "4 Block to any player. Unleash 1: deal 1 plain damage to each enemy attacking you (Kratos) for each Attack icon in its intent."
 Exact compact rules layout to render, with bracketed markers replaced by their supplied pictorial glyphs:
-3 [BLOCK] to any player.
+4 [BLOCK] to any player.
 Unleash 1: 1 [DAMAGE]
 per Attack icon in each enemy's intent
 if it is attacking Kratos.

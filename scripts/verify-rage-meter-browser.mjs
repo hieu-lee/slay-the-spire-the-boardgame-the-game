@@ -129,10 +129,10 @@ try {
     await page.screenshot({ path: resolve(output, `${screen}.png`) })
 
     // Holding Rage reaches the play: Spartan Guard keeps its Rage and gains only its base Block.
-    // The damage badges follow too: Plume of Prometheus drops from its Unleash 4 to its base 1.
+    // The damage badges follow too: Plume of Prometheus drops from its Unleash 5 to its base 1.
     await page.evaluate(() => window.rageFixture.setRage(2))
     const plumeDamage = page.locator('.hand .card').nth(1).locator('.card__live-damage')
-    assert.equal(await plumeDamage.textContent(), '4', `${screen}: Plume previews its Unleash damage`)
+    assert.equal(await plumeDamage.textContent(), '5', `${screen}: Plume previews its Unleash damage`)
     await meter.click()
     assert.equal(await meter.getAttribute('aria-pressed'), 'true', `${screen}: Hold toggles on`)
     assert.equal(await plumeDamage.textContent(), '1', `${screen}: held Rage previews Plume without Unleash`)
@@ -146,7 +146,7 @@ try {
     assert.deepEqual([played.rage, played.block], [2, 2], `${screen}: held Rage is kept and Unleash skipped`)
     await meter.screenshot({ path: resolve(output, `${screen}-held.png`) })
 
-    // Off again, the next play Unleashes: Spartan Guard spends 2 Rage for 5 Block.
+    // Off again, the next play Unleashes: Spartan Guard spends 2 Rage for 6 Block.
     await meter.click()
     assert.equal(await meter.getAttribute('aria-pressed'), 'false', `${screen}: Hold toggles off`)
     await page.evaluate(() => window.rageFixture.reset('kratos', 2, ['kratos_spartan_guard']))
@@ -157,7 +157,7 @@ try {
       return { action: f.actions.find((action) => action.kind === 'playCard'), rage: f.state.players[0].rage, block: f.state.players[0].block }
     })
     assert.equal(unleashed.action.holdRage, undefined, `${screen}: an unheld play sends no holdRage`)
-    assert.deepEqual([unleashed.rage, unleashed.block], [0, 5], `${screen}: Unleash spends Rage when not held`)
+    assert.deepEqual([unleashed.rage, unleashed.block], [0, 6], `${screen}: Unleash spends Rage when not held`)
 
     // Hold belongs to one combat: the next fight starts unleashing again.
     await meter.click()

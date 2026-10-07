@@ -119,13 +119,13 @@ the trilogy:
 
 ### Board
 
-- Max HP: 10, as for Ironclad. Kratos has no healing in his starter, so his
-  long-run sustain is below Ironclad's.
+- Max HP: 10, as for Ironclad. Ashes of Sparta heals 1 HP at the end of combat,
+  matching Burning Blood's sustain.
 - Energy, draw, and rows follow the normal rules.
 
 ### Starting relic: Ashes of Sparta
 
-> Start of combat: gain 1 Rage. Whenever you lose HP, gain 1 Rage.
+> Start of combat: gain 2 Rage. Whenever you lose HP, gain 1 Rage. End of combat: heal 1 HP.
 
 The ashes of his wife and daughter, burned into his skin by the Oracle's curse.
 Pain turns into fury.
@@ -134,12 +134,12 @@ Pain turns into fury.
   multi-hit enemy attack that gets through Block on three hits gives 3 Rage.
   Self-inflicted HP loss counts. HP loss that a cap or Buffer prevents gives no
   Rage.
-- Value: about 2-4 Rage per combat (more against multi-hit attackers; the
+- Value: about 3-5 Rage per combat (more against multi-hit attackers; the
   fallback if that proves too strong is "at most 2 Rage per enemy turn"). By the Unleash rule of thumb below that is
-  worth 3-6 damage, more than Pure Water's 1 Energy. It only pays when the deck
+  worth 4-8 damage, more than Pure Water's 1 Energy. It only pays when the deck
   has Rage spenders. Kratos also spends HP as a resource (Hubris, Blood Oath,
-  Pandora's Box), which is why he keeps Ironclad's 10 HP without Ironclad's
-  healing.
+  Pandora's Box), and the end-of-combat heal (added in the October 2026 parity
+  pass) gives him Burning Blood's sustain.
 
 ### Rage (new resource)
 
@@ -159,7 +159,7 @@ Pain turns into fury.
 > Unleash N: if you have at least N Rage, spend N Rage and resolve this bonus.
 
 - An Unleash clause is checked where it is printed. For an "instead" clause
-  ("Deal 1 damage. Unleash 2: deal 4 damage instead"), the check happens before
+  ("Deal 1 damage. Unleash 2: deal 5 damage instead"), the check happens before
   the base effect, and only one of the two effects resolves. This keeps one hit
   as one hit, which matters against Block.
 - The player may hold Rage for one play. All Unleash clauses on that play are
@@ -171,7 +171,8 @@ Pain turns into fury.
   An Unleash that costs 0 still resolves its bonus, but spends no Rage, so it
   does not trigger Ghost of Sparta.
 - Rule of thumb: Unleash N buys about N+1 damage-equivalent, because Rage costs
-  card slots and tempo to build.
+  card slots and tempo to build. Since the October 2026 parity pass two core
+  spenders pay more: Plume of Prometheus and Spartan Guard buy +4 for Unleash 2.
 
 ### Hits and damage
 
@@ -209,18 +210,17 @@ kills in co-op do not count. Green Orbs reacts the same way.
 | Strike x4 | Attack | 1 | Deal 1 damage. | Deal 2 damage. |
 | Defend x4 | Skill | 1 | Gain 1 Block. | 2 Block to any player. |
 | Blades of Chaos | Attack | 1 | Deal 1 damage to a row. Gain 1 Rage. | Deal 2 damage to a row. Gain 1 Rage. |
-| Plume of Prometheus | Attack | 1 | Deal 1 damage. Unleash 2: deal 4 damage instead. | 2 damage; Unleash 2: 5 instead. |
+| Plume of Prometheus | Attack | 1 | Deal 1 damage. Unleash 2: deal 5 damage instead. | 2 damage; Unleash 2: 6 instead. |
 
 Like Defect's Zap plus Dual Cast, the starter has one generator and one spender.
-On turn 1 Kratos has 1 Rage from the relic. Blades of Chaos or one hit taken makes
-Plume of Prometheus a 4-damage card. When both specials are in the opening hand
+On turn 1 Kratos has 2 Rage from the relic, so Plume of Prometheus is already a
+5-damage card. When both specials are in the opening hand
 (about 1 hand in 4), the 3E turn of Blades of Chaos, Plume of Prometheus, and a
-Strike deals 6 damage to one enemy, 1 of it from the row hit, which also hits
+Strike deals 7 damage to one enemy, 1 of it from the row hit, which also hits
 that enemy's neighbours. Ironclad's
 Bash then Strike deals 4 (Strike then Bash deals 3 and leaves Vulnerable); Defect's
 Zap, Dual Cast, and a Strike deal about 6 with Cracked Core's Lightning. Kratos's
-opening is level with Defect's, slightly ahead of Ironclad's in damage, and
-behind it in sustain.
+opening is ahead of both in damage and level with Ironclad's in sustain.
 
 ## 5. Routes
 
@@ -290,9 +290,9 @@ the rare deck 15 (base: 15).
 | Cyclops Eye Rip | Attack | 1 | Deal 2 damage. Brutal Kill: gain 1 Energy and 2 Rage. | 3 damage. | C |
 | Zeus' Fury | Attack | 1 | Deal 1 damage 2 times, choosing any enemy for each hit. | 3 hits. | B |
 | Rage of the Gods | Skill | 0 | Gain 2 Rage. Exhaust. | Gain 3 Rage. | A |
-| Parry | Skill | 1 | Gain 2 Block. Gain 1 Rage. | 3 Block. | A |
-| Spartan Guard | Skill | 1 | Gain 2 Block. Unleash 2: gain 5 Block instead. | 3 Block; Unleash 2: 6 instead. | A/C |
-| Golden Fleece | Skill | 1 | Gain 2 Block. Unleash 1: deal 1 plain damage to each enemy attacking you for each Attack icon in its intent. | 3 Block to any player; the reflection still answers enemies attacking Kratos. | A/C |
+| Parry | Skill | 1 | Gain 3 Block. Gain 1 Rage. | 4 Block. | A |
+| Spartan Guard | Skill | 1 | Gain 2 Block. Unleash 2: gain 6 Block instead. | 3 Block; Unleash 2: 7 instead. | A/C |
+| Golden Fleece | Skill | 1 | Gain 3 Block. Unleash 1: deal 1 plain damage to each enemy attacking you for each Attack icon in its intent. | 4 Block to any player; the reflection still answers enemies attacking Kratos. | A/C |
 | Icarus Wings | Skill | 1 | Gain 1 Block. Draw 2 cards. | 2 Block. | B |
 | Bow of Apollo | Attack | 0 | Deal 1 damage. Unleash 1: deal 3 damage instead. | 2 damage; Unleash 1: 4 instead. | B |
 | Hermes' Rush | Skill | 1 | 2 Block to any player. You may switch rows with another player. Unleash 1: draw 1 card. | 3 Block. | B |
@@ -300,15 +300,15 @@ the rare deck 15 (base: 15).
 Rate checks:
 
 - Orion's Harpoon is Pommel Strike with 1 Rage instead of a card. Parry is
-  Shrug It Off with 1 Rage instead of a card.
+  Shrug It Off's 2 Block plus 1 more, with 1 Rage instead of a card.
 - Hyperion Charge is 3 damage for 2E, or 6 with 2 Rage (Vulnerable doubles its
   own hit). Clothesline is 3 + Weak for 2E. Bludgeon is 7 for 3E.
 - Blade of Artemis is 3 for 2E in hallways and 5 against Elites and Bosses.
 - Rage of the Gods is about +1 net Energy of value, like Collect (1E for 2
   Miracles). Its Exhaust caps it at once per copy per combat. In GoW it is the
   activated rage mode; here it is the first rung of the meter.
-- Golden Fleece is a 1E Flame Barrier-lite: 2 Block, and the reflection costs
-  1 Rage. Flame Barrier is 2E for 3 Block plus the reflection.
+- Golden Fleece is Flame Barrier's 3 Block at half the cost, with a reflection
+  that costs 1 Rage. Flame Barrier is 2E for 3 Block plus the reflection.
 - Icarus Wings matches Backflip; every character needs one plain cantrip.
 - Bow of Apollo (GoW III's fire bow) is Anger-rate at 0E, or 3 damage for 1
   Rage: the cheap Attack Route B needs.
@@ -348,7 +348,7 @@ Rate checks:
 | Head of Euryale | Skill | 2 | Apply 1 Weak to a row. Set the HP of each enemy in that row with 3 or fewer HP to 0 (not a hit). Exhaust. | Cost 1. | C |
 | Soul Summon | Power | 1 | End of turn: deal 1 plain damage to a row. | 2 damage. | B |
 | Green Orbs | Power | 1 | The first time one of your hits kills an enemy, heal 1 HP, then exhaust every Green Orbs you have in play. | Cost 0. | C |
-| Hercules' Shoulder Guard | Skill | 2 | Gain 3 Block. Unleash 1: gain 2 more Block. | 4 Block. | C |
+| Hercules' Shoulder Guard | Skill | 2 | Gain 4 Block. Unleash 1: gain 2 more Block. | 5 Block. | C |
 
 Rate checks:
 
@@ -398,10 +398,10 @@ Rate checks:
   plain row damage each turn for 1E (2 upgraded).
 - Green Orbs: slain enemies drop the healing orbs. It heals 1 HP once per combat
   however many copies are in play, the same as Burning Blood but only after a
-  kill by Kratos's own hit. It is Kratos's only healing card, and no base card
-  heals, so it is on the watch list as possibly strong.
-- Hercules' Shoulder Guard (a GoW III item that reduces damage) is 3 Block for
-  2E, or 5 for 1 Rage (Protect is 3 with Retain): a defensive option that does
+  kill by Kratos's own hit. It is Kratos's only healing card, so it is on the
+  watch list as possibly strong.
+- Hercules' Shoulder Guard (a GoW III item that reduces damage) is 4 Block for
+  2E, or 6 for 1 Rage (Protect is 3 with Retain): a defensive option that does
   not need held Rage.
 
 ### Rares (15)
@@ -467,8 +467,8 @@ Rate checks:
 
 ## 7. Balance summary
 
-- Opening power is slightly ahead of Ironclad in damage and behind in sustain:
-  same HP, no heal.
+- Opening power is ahead of Ironclad in damage, with the same HP and
+  the same 1 HP heal after each combat.
 - Mid-game, Rage gives Kratos card-for-card value close to Ironclad commons, with
   more spike damage and less Block scaling.
 - Late-game ceilings (Rage of Sparta, God of War, Blades of Athena, Patricide)
@@ -476,7 +476,7 @@ Rate checks:
   exhausts; Blade of Olympus and Rage of the Titans repeat but empty the bank.
 - Weak points by design: no permanent Strength; Block scales only through Rage
   (Spartan Resolve, Ghost of Sparta, Rage of the Titans) or a one-time turn
-  (Amulet of the Fates); almost no healing (Green Orbs, 1 HP per combat);
+  (Amulet of the Fates); little healing beyond the relic (Green Orbs, 1 HP per combat);
   HP-for-power cards; and Godslayer cards that are below rate in hallway fights.
 - Watch list for the first playtest:
   - Plume of Prometheus and Ashes of Sparta together, and Ashes of Sparta against
@@ -535,7 +535,8 @@ Rate checks:
 
 ## 9. Open questions for playtesting
 
-- Whether 10 HP with only Green Orbs for healing is right, or Kratos needs 9 HP.
+- Whether 10 HP with Ashes of Sparta's 1 HP heal per combat (and Green Orbs) is
+  right; the parity pass added the heal because Act II attrition was his main loss.
 - Weak appears on 8 cards; if Kratos plays too defensively, move one or two to
   Vulnerable or damage riders.
 - Whether Rage should drain (lose 1 at end of turn) if banking proves too strong.
@@ -545,14 +546,32 @@ Rate checks:
 ## 10. Playtest results
 
 Two A0 batches of 15 AI-directed runs (five Codex workers each) both landed inside the
-project owner's 19.0-24.0 mean-floor target, so the draft numbers are unchanged:
+project owner's first 19.0-24.0 mean-floor target, so the draft numbers were kept then:
 
 | Batch | Mean floors | Wins | Notes |
 | --- | ---: | ---: | --- |
 | kratos-a0-b1 (seeds 7001-7015) | 22.53 | 3/15 | Merchant card purchases failed in the playtest tool, since fixed |
 | kratos-a0-b2 (seeds 8001-8015) | 23.13 | 5/15 | Merchant fix in place |
 
-Observations and card notes live in `KRATOS-PLAYBOOK.md`.
+Those batches predate the comparison with Ironclad. In October 2026 the owner set a
+parity target against a 30-run Ironclad baseline on the same seeds (9001-9030, A0,
+full unlocks, six gpt-6.1-sol medium Codex workers each): Kratos's mean floor within
+2.0 of Ironclad's and his win rate between 10 points below and 5 points above it.
+
+| Batch | Changes | Mean floors | Wins |
+| --- | --- | ---: | ---: |
+| ironclad-a0-bal0 | Baseline | 28.6 | 21/30 (70%) |
+| kratos-a0-bal0 | Draft numbers | 26.23 | 12/30 (40%) |
+| kratos-a0-bal1 | Ashes of Sparta heals 1 HP at the end of combat | 26.7 | 14/30 (46.7%) |
+| kratos-a0-bal2 | + Ashes 2 Rage at the start of combat; Plume Unleash 5 (6) | 29.03 | 16/30 (53.3%) |
+| kratos-a0-bal3 | + Spartan Guard Unleash 6 (7); Parry 3 (4) Block | 30.03 | 16/30 (53.3%) |
+| kratos-a0-bal4 | + Golden Fleece 3 (4) Block; Hercules' Shoulder Guard 4 (5) Block | 29.33 | 15/30 (50%) |
+
+The owner accepted the kratos-a0-bal4 numbers, which are the released balance: the
+mean floor is inside the target and the win rate is 10 points short of its lower bound.
+Kratos's Act I boss win rate passed Ironclad's (97% against 87%) and Act II came close
+(86% against 92%). Act III remains his wall: 60% of the runs reaching it beat its boss,
+against Ironclad's 87.5%. Observations and card notes live in `KRATOS-PLAYBOOK.md`.
 
 ## 11. Revision log
 
@@ -629,3 +648,10 @@ Implementation review fixes: Poseidon's Rage became an "instead" hit (two hit
 clauses spent two Weak tokens); an Unleash keeps its Rage when its enemy target
 is already dead; Rage of Sparta removes only the Strength it actually gave; Escape
 from Hades and Green Orbs exhaust through the shared exhaust rule.
+
+October 2026 parity pass (released): Ashes of Sparta gains 2 Rage at the start of
+combat (was 1) and heals 1 HP at the end of combat. Plume of Prometheus Unleash 2 deals
+5 (6 upgraded; was 4 and 5). Spartan Guard Unleash 2 gains 6 Block (7 upgraded; was 5
+and 6). Parry gains 3 Block (4 upgraded; was 2 and 3). Golden Fleece gains 3 Block (4
+to any player upgraded; was 2 and 3). Hercules' Shoulder Guard gains 4 Block (5
+upgraded; was 3 and 4). The batches are in section 10.

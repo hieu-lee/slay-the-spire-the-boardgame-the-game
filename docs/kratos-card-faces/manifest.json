@@ -118,13 +118,13 @@
     "upgraded": false,
     "model": "gpt-image-2.5-sunburst",
     "source": "scripts/art/sources/kratos-card-faces/kratos__starter__plume-of-prometheus.webp",
-    "sourceSha256": "87b7b155921e1b28bfaa8d5c9473e18c02d109c6b0d572c666b54bdc5bcfa300",
+    "sourceSha256": "721768135be29ece2b157cef94a1b9d71acaafcf98722572332e7d37f6d9d684",
     "prompt": "docs/kratos-card-faces/prompts/kratos__starter__plume-of-prometheus.txt",
-    "promptSha256": "37949e01f195d501586e7e0a16d73ebfcedac6a37c37386d46380f9eb83924a3",
+    "promptSha256": "ef7b29b08815ee0aa928ebd989946e6a7c11a631fe95bbc45e74033241a398bb",
     "references": [
       {
-        "path": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__plume-of-prometheus-before.png",
-        "sha256": "25a22b8c4201f024ade39f4d6957f57d11e8fe677945b473bcb812cb1efaec06"
+        "path": "scripts/art/sources/kratos-card-faces/rebalance/kratos__starter__plume-of-prometheus-before.png",
+        "sha256": "e567d6f7d738e36951002d5eab12102b7758ee3bac49a1356a516a845d63ab88"
       },
       {
         "path": "public/assets/cards/ironclad__normal__cleave.webp",
@@ -146,7 +146,7 @@
     "outputs": [
       {
         "path": "public/assets/cards/kratos__starter__plume-of-prometheus.webp",
-        "sha256": "b08699ae48ca7eb1109444252692da1c25cd9f805180bbec71d5d670527ec82b",
+        "sha256": "b85c4776a291d5b34db90e61f45eebbe8e1bf6f8c00a4a75a9c65f54b88151a1",
         "size": [
           744,
           1039
@@ -154,7 +154,7 @@
       },
       {
         "path": "public/assets/cards-sm/kratos__starter__plume-of-prometheus.webp",
-        "sha256": "ca1857603a5692629f7ebef9af1e0e4bfd9e1d966c3deb25800622bd76370f18",
+        "sha256": "6db8f2f09962fbbc9d9cfeda2502824572659890206974612c8fb8add7f8eddb",
         "size": [
           448,
           626
@@ -167,13 +167,13 @@
     "upgraded": true,
     "model": "gpt-image-2.5-sunburst",
     "source": "scripts/art/sources/kratos-card-faces/kratos__starter__plume-of-prometheus+.webp",
-    "sourceSha256": "a488ef735a16036e249ce5e84eadddcfc45e45ede3dfb176aa928e64978d882b",
+    "sourceSha256": "2ff946a0b3ae2109675f72abb420234338865d13880974570bc5341d4dd16171",
     "prompt": "docs/kratos-card-faces/prompts/kratos__starter__plume-of-prometheus+.txt",
-    "promptSha256": "9aec77d8fea51af4efb35eca31959b52106b521ab74db1c152d80f8627258b9c",
+    "promptSha256": "7492c23700d9cbda936110e7473e0bc823f04962329c190098d4ea3462750a88",
     "references": [
       {
-        "path": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__starter__plume-of-prometheus+-before.png",
-        "sha256": "daa0653f46671e6c5b257d7a667a8b9ed2ecfbc0f4034dd86c30bb67b42db0b4"
+        "path": "scripts/art/sources/kratos-card-faces/rebalance/kratos__starter__plume-of-prometheus+-before.png",
+        "sha256": "504dcd5f870028652bf055629010714993186620c6046389d3511da6ad59a54a"
       },
       {
         "path": "public/assets/cards/ironclad__normal__cleave+.webp",
@@ -195,7 +195,7 @@
     "outputs": [
       {
         "path": "public/assets/cards/kratos__starter__plume-of-prometheus+.webp",
-        "sha256": "b8fb01a443c2294eee5a4460af913abea65a6d41860265b171edc51d483c8ed9",
+        "sha256": "ed506f127ce596d86d13a7c4277eebd28a1750ab2043427763a688613f71ceca",
         "size": [
           744,
           1039
@@ -203,7 +203,7 @@
       },
       {
         "path": "public/assets/cards-sm/kratos__starter__plume-of-prometheus+.webp",
-        "sha256": "f5eda8b0ec2dda8867958f56e2edefe95fb6bf035531ca304e51509abaead3eb",
+        "sha256": "a4fb3ef70da61f930bc9aab9958365793f35d1502ed19b900a76ebd43a18a4b8",
         "size": [
           448,
           626
@@ -1154,13 +1154,13 @@
     "upgraded": false,
     "model": "gpt-image-2.5-sunburst",
     "source": "scripts/art/sources/kratos-card-faces/kratos__normal__parry.webp",
-    "sourceSha256": "b0d9f618a471555bd375c631f13d7a5e76da74070ff66307d066a925cf2bcf50",
+    "sourceSha256": "b8e07bc5d2af0b069266a5606983790620fc57eb84c4d6208c3cffcb7997fc5e",
     "prompt": "docs/kratos-card-faces/prompts/kratos__normal__parry.txt",
-    "promptSha256": "f99b01492f8fba1e8bb425477da88583670230f9e61ac2a9ac640bc7e52d258a",
+    "promptSha256": "27e0c8e3554177dd614daec4510dc926109f9e45ddd8902f15fa2debda58483d",
     "references": [
       {
-        "path": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__parry-before.png",
-        "sha256": "e85661da36b6f79962acc48b80562f4ff27ba01ecd81bca7eef6a920b67d3ace"
+        "path": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__parry-before.png",
+        "sha256": "dca5c415d344c654667b8d0a2581a28e2d9673ec2c7446e0e1c2b31af2fd73ea"
       },
       {
         "path": "public/assets/cards/ironclad__normal__cleave.webp",
@@ -1186,7 +1186,7 @@
     "outputs": [
       {
         "path": "public/assets/cards/kratos__normal__parry.webp",
-        "sha256": "944dc4e35fae98bccfb7a0e0e143e59bd7646baa74a9baea87a7aa7a01352cb4",
+        "sha256": "74492e384ea7ea0c7051ee9ed70f714416f82c7eb4eaae35e17b09731d89f949",
         "size": [
           744,
           1039
@@ -1194,7 +1194,7 @@
       },
       {
         "path": "public/assets/cards-sm/kratos__normal__parry.webp",
-        "sha256": "9c091b7634dc2619377780dab28a222a0599fa82e13f8132f0efb7c8fe4be8de",
+        "sha256": "71ea329b7e3e3d490bc48eec070590cbf9a24b7adc347866d821ca5786a2e23d",
         "size": [
           448,
           626
@@ -1207,13 +1207,13 @@
     "upgraded": true,
     "model": "gpt-image-2.5-sunburst",
     "source": "scripts/art/sources/kratos-card-faces/kratos__normal__parry+.webp",
-    "sourceSha256": "0827d5ccff4a71c0c8e3f19409dda1567a65d5a7fc03ff36952d098a647e3406",
+    "sourceSha256": "4c6cb2bda7c4e1a5e2936451518225673e1602b80c234c86cbcc29c004a38b7b",
     "prompt": "docs/kratos-card-faces/prompts/kratos__normal__parry+.txt",
-    "promptSha256": "1dfe640953bb1edc1dca6567ef0cc45cdd984ca8023fdac05c2909808c72dcd8",
+    "promptSha256": "1c59e93348317667bc6b5c09e7fbc3da052aa68f2ab2f98ac3b52df3f6778cde",
     "references": [
       {
-        "path": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__parry+-before.png",
-        "sha256": "0267ea664f93d04a93ea053fc74f106b191bbd9db36b192c82ae42620942cf58"
+        "path": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__parry+-before.png",
+        "sha256": "c9306c8ba45f94c0dbfff83fbf0fb39b563870ea70224ed16843c71b82318418"
       },
       {
         "path": "public/assets/cards/ironclad__normal__cleave+.webp",
@@ -1239,7 +1239,7 @@
     "outputs": [
       {
         "path": "public/assets/cards/kratos__normal__parry+.webp",
-        "sha256": "706e69083d0f956630a47f53e25a9e63678d6d1e645ae35a5220fd738969f7ba",
+        "sha256": "6282a4516232f62814c6f9df0604b777e1b37e0388cf75607e1d87eaf71086ec",
         "size": [
           744,
           1039
@@ -1247,7 +1247,7 @@
       },
       {
         "path": "public/assets/cards-sm/kratos__normal__parry+.webp",
-        "sha256": "f113d25c6bdf1e0809fa034e03479b6140ce01e16aed0901431370b1baf2eff5",
+        "sha256": "071378c175c58d451026f3864154882276ea2341711545e993b3ad9427fbe0f7",
         "size": [
           448,
           626
@@ -1260,13 +1260,13 @@
     "upgraded": false,
     "model": "gpt-image-2.5-sunburst",
     "source": "scripts/art/sources/kratos-card-faces/kratos__normal__spartan-guard.webp",
-    "sourceSha256": "373f2d5fa85df64852062edef4b8c81343815faa590405d8733df8355e052d22",
+    "sourceSha256": "6d636e21b26d463c39a43855d9765558c72eb4014ec6db23a680ffc2b9bcfc31",
     "prompt": "docs/kratos-card-faces/prompts/kratos__normal__spartan-guard.txt",
-    "promptSha256": "2fd93454f745788b69a771f090e5d2661c9bb8000f3756c2b823f59ee61b77ee",
+    "promptSha256": "d7f38aeac1a1dd32412d1647030aeb8d42c294699bbbed18e5b3d8b1ca77ef66",
     "references": [
       {
-        "path": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-guard-before.png",
-        "sha256": "0096215676adfabe7b01a6c00908f767ac144ee2e6984879b3de2e7bc2a10feb"
+        "path": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__spartan-guard-before.png",
+        "sha256": "0472a814b3b8d5d8086a12d330b81982af88b43ae273df29c87e18e7325c6707"
       },
       {
         "path": "public/assets/cards/ironclad__normal__cleave.webp",
@@ -1288,7 +1288,7 @@
     "outputs": [
       {
         "path": "public/assets/cards/kratos__normal__spartan-guard.webp",
-        "sha256": "3f6a0f4cd6261c869828015ff02486322722cdb6f4be58dc77def683d0c0e1b1",
+        "sha256": "a835c8ed98c6fd4a5d7d0ca043a168e4f7850dd6b78f2254299daba5ae22b13b",
         "size": [
           744,
           1039
@@ -1296,7 +1296,7 @@
       },
       {
         "path": "public/assets/cards-sm/kratos__normal__spartan-guard.webp",
-        "sha256": "bf35fcfc699ed2d53fc701f55c9fe4221049cbedceddf01567c87e98bdebb345",
+        "sha256": "67b0aa29469f9ca8289e1d4abe06f978350110c7348bf406059fff6bfff9cdb2",
         "size": [
           448,
           626
@@ -1309,13 +1309,13 @@
     "upgraded": true,
     "model": "gpt-image-2.5-sunburst",
     "source": "scripts/art/sources/kratos-card-faces/kratos__normal__spartan-guard+.webp",
-    "sourceSha256": "de74f532fa2fefc4b51c32a66aabbe021e69bfb43e1b72849cce2bdffaaa890d",
+    "sourceSha256": "8fc1ba8f794fffddb3b2f5addbd25d912df0631eef56f15a5ef7d5fc8ae1b06c",
     "prompt": "docs/kratos-card-faces/prompts/kratos__normal__spartan-guard+.txt",
-    "promptSha256": "76eced10271026307775c3234fa8af7b29e425c6c215926a21029f5530ff4844",
+    "promptSha256": "588b47ec0024edcea93557f6c06fd1fca0bb08fda052ff1e343ca7e478d40175",
     "references": [
       {
-        "path": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__spartan-guard+-before.png",
-        "sha256": "8e366ef8f986f0e1b93eff6aad5514f6ceefbf8533f4eabb258b7a449f4e374f"
+        "path": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__spartan-guard+-before.png",
+        "sha256": "c7fd2fd2dc0276f4151ce712c6a8101b26c99b89deae0555db45733336f9f035"
       },
       {
         "path": "public/assets/cards/ironclad__normal__cleave+.webp",
@@ -1337,7 +1337,7 @@
     "outputs": [
       {
         "path": "public/assets/cards/kratos__normal__spartan-guard+.webp",
-        "sha256": "2d740387e5395b4777ed3140aa1615e683ad8a47b8c2a366b41b865aebbc94b6",
+        "sha256": "8f036b3822502094eb32d2611c8bd747f4654f80590afdb600e3a2fe7ee53651",
         "size": [
           744,
           1039
@@ -1345,7 +1345,7 @@
       },
       {
         "path": "public/assets/cards-sm/kratos__normal__spartan-guard+.webp",
-        "sha256": "20b3fb4339e2150d08e39026e54edf9d111c6e718cf6a633c28b11e73476f090",
+        "sha256": "cf8e142872864052469d91bd90c26fe858b3d4cea874d8a10eb1f1fb7d2d1696",
         "size": [
           448,
           626
@@ -1358,13 +1358,13 @@
     "upgraded": false,
     "model": "gpt-image-2.5-sunburst",
     "source": "scripts/art/sources/kratos-card-faces/kratos__normal__golden-fleece.webp",
-    "sourceSha256": "76ec11b98f723dcb7315179ee4fe210c3ec2edd80d1212bff107854d84ce4ca3",
+    "sourceSha256": "a5ba2bcad6ab3667fe2c188161597dd4a01fab03161f73f9b01804382cbc74a3",
     "prompt": "docs/kratos-card-faces/prompts/kratos__normal__golden-fleece.txt",
-    "promptSha256": "b08b6de68dd76e1929c2fd50bdbdf2e84da3f036816a1adeb18fe0239608843b",
+    "promptSha256": "2d680df75d31ff14e0339d6079dc337cb46ef11469e7a4fdb284ceae703b6f57",
     "references": [
       {
-        "path": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece-before.png",
-        "sha256": "b0805a507bc82e0fea08453b3156bb41b71b0a15acbab4d71d1f5fdfe67cae1e"
+        "path": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__golden-fleece-before.png",
+        "sha256": "5a2ce21c07baf9f8890745df67bc7fee9fa51acb917b47e3ae3124da820a7d1c"
       },
       {
         "path": "public/assets/cards/ironclad__normal__cleave.webp",
@@ -1390,7 +1390,7 @@
     "outputs": [
       {
         "path": "public/assets/cards/kratos__normal__golden-fleece.webp",
-        "sha256": "92ebb9206392cc7157c5b5d3f10b8596424c9e4eb8ff2ee64d96b63e23011a47",
+        "sha256": "165d33381997d6f61b3a840527ede41dab5b7b6e6126982e082d6f10d394b68d",
         "size": [
           744,
           1039
@@ -1398,7 +1398,7 @@
       },
       {
         "path": "public/assets/cards-sm/kratos__normal__golden-fleece.webp",
-        "sha256": "014e5f3c1f6a70fcfa91d9271ed718521bcdf4f27c3c95eed56617c5fd2a2430",
+        "sha256": "7ce7fa07cb08502bf304cef6ce063a8f876b274fdc26c54536762dd72d6f9e9c",
         "size": [
           448,
           626
@@ -1411,13 +1411,13 @@
     "upgraded": true,
     "model": "gpt-image-2.5-sunburst",
     "source": "scripts/art/sources/kratos-card-faces/kratos__normal__golden-fleece+.webp",
-    "sourceSha256": "37c7741b4d5082fc3c31619894494da1355d73b607f1e85f8cfec14e5356faf8",
+    "sourceSha256": "e4adb5de835ac22b4b9f481ae606da543d3a5fb34a91213b1d589efa7f0ff516",
     "prompt": "docs/kratos-card-faces/prompts/kratos__normal__golden-fleece+.txt",
-    "promptSha256": "d1ad762bd5cf4d36bc595d03abf39c6398af1d5fa068ab67f8657e4feac2f0ab",
+    "promptSha256": "df517d48e65dd4bd130e4ff28ed27ffb9b53bcd1503b041d8bb3617720862cef",
     "references": [
       {
-        "path": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__golden-fleece+-before.png",
-        "sha256": "e952eed545f2a393ca2087b8407d5c32fc36b1253e46c2d9efa000f23fb50252"
+        "path": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__golden-fleece+-before.png",
+        "sha256": "19662845ad2f86787d222ca9868c7d1f8b5316d35e13567dcd5548d58ef52108"
       },
       {
         "path": "public/assets/cards/ironclad__normal__cleave+.webp",
@@ -1443,7 +1443,7 @@
     "outputs": [
       {
         "path": "public/assets/cards/kratos__normal__golden-fleece+.webp",
-        "sha256": "30df991eb3d4c68eaabfe840a8d36ba10ea297ba126360bb9ab60f916ea4a3f8",
+        "sha256": "49afd6cd71ed8aa8bbf6208234a4f85c58a4db2e5cdbfc8d9261ccc3660bbc06",
         "size": [
           744,
           1039
@@ -1451,7 +1451,7 @@
       },
       {
         "path": "public/assets/cards-sm/kratos__normal__golden-fleece+.webp",
-        "sha256": "ad1946c8b7545d1420440f7de6017a53aae1b9f0f1012f74650d696663bd2867",
+        "sha256": "0132666af7f0237896c6826841d2b641c3cc117ef066d6bb3fb353f91c62a52d",
         "size": [
           448,
           626
@@ -4736,13 +4736,13 @@
     "upgraded": false,
     "model": "gpt-image-2.5-sunburst",
     "source": "scripts/art/sources/kratos-card-faces/kratos__normal__hercules-shoulder-guard.webp",
-    "sourceSha256": "7fdeba7618c8ec6753c96332e510715e0b487131153c1d9221e984aa7aca3430",
+    "sourceSha256": "08ab733ac555266263e401572b2fb56d78e17cb6bb8b4044c723ef5480b13f24",
     "prompt": "docs/kratos-card-faces/prompts/kratos__normal__hercules-shoulder-guard.txt",
-    "promptSha256": "0566ff4c480ed640691996ede531169f65b0e09b76ecee62bd8c6510898567b1",
+    "promptSha256": "6a7039b6136126d7df2cf8cfbce3e9bb1bef793bd018ab79783179694bdce2d0",
     "references": [
       {
-        "path": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hercules-shoulder-guard-before.png",
-        "sha256": "7a71c18d90afdb8442be26146cf003a649a28c3d7dd6fdd5fd3e740e7449ec6b"
+        "path": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__hercules-shoulder-guard-before.png",
+        "sha256": "e90e92f19789157fca42aef0526b4c35347dfd47fb10f505889bf29799d7f910"
       },
       {
         "path": "public/assets/cards/ironclad__normal__cleave.webp",
@@ -4764,7 +4764,7 @@
     "outputs": [
       {
         "path": "public/assets/cards/kratos__normal__hercules-shoulder-guard.webp",
-        "sha256": "9d8ebdca3cf4d33b664c005a151da82bb9d7374ef0e5e875eadbe693fb2888a4",
+        "sha256": "11a425f60c7d3c1f216c2ab1ec00ce43f34a33b399e492b933955ec89e69f7a2",
         "size": [
           744,
           1039
@@ -4772,7 +4772,7 @@
       },
       {
         "path": "public/assets/cards-sm/kratos__normal__hercules-shoulder-guard.webp",
-        "sha256": "0e2f524b407e0a6f62b0a889fbea5627ab90031de46d4665f0a4f4fa58bca820",
+        "sha256": "de8d6ae107021f85087ca31cfc745d1c7c370be63973cdf7a20a1155ac195d46",
         "size": [
           448,
           626
@@ -4785,13 +4785,13 @@
     "upgraded": true,
     "model": "gpt-image-2.5-sunburst",
     "source": "scripts/art/sources/kratos-card-faces/kratos__normal__hercules-shoulder-guard+.webp",
-    "sourceSha256": "e707c4f240e009fabb5bb9148869e9bcb90e9fc113a70c19577d6d3265d18898",
+    "sourceSha256": "0c73501a796e397824aed052a334319983a4010b8262158b4b8804e813085275",
     "prompt": "docs/kratos-card-faces/prompts/kratos__normal__hercules-shoulder-guard+.txt",
-    "promptSha256": "ac53e20acb0eaa20e211109e295e7d233e7c3d0d30b041528acac2de388f2d85",
+    "promptSha256": "2cefc39e8822b9ece2881f1393375eb3eac607257b27dc3f4f4c5c90b8a945cb",
     "references": [
       {
-        "path": "scripts/art/sources/kratos-card-faces/compact-effects/kratos__normal__hercules-shoulder-guard+-before.png",
-        "sha256": "28cd21aaf17581367d015a7719af70c40c608057b0baf53934700aec18151c5d"
+        "path": "scripts/art/sources/kratos-card-faces/rebalance/kratos__normal__hercules-shoulder-guard+-before.png",
+        "sha256": "0015006f9638d5f792bf927fdb4943ecfe71e42221a4689f62097a624c81d9b2"
       },
       {
         "path": "public/assets/cards/ironclad__normal__cleave+.webp",
@@ -4813,7 +4813,7 @@
     "outputs": [
       {
         "path": "public/assets/cards/kratos__normal__hercules-shoulder-guard+.webp",
-        "sha256": "3c8a272f9633a556901323abc36c8406eda49093203cdb539328af04c2b81f43",
+        "sha256": "df3873e0f8226b02e7ba87321927f40a09bf31739ab1412b3bea813012637def",
         "size": [
           744,
           1039
@@ -4821,7 +4821,7 @@
       },
       {
         "path": "public/assets/cards-sm/kratos__normal__hercules-shoulder-guard+.webp",
-        "sha256": "db0ee5a0bbe2b265a13e5e1e932e56d2537c826966ae3ee5326c4aab89a0a239",
+        "sha256": "02bca1609c30b7cc57075b0aadb7628e2b4d763a77b7b0d40e53de455ed67ecc",
         "size": [
           448,
           626

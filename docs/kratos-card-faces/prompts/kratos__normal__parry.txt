@@ -6,9 +6,9 @@ Image 4: exact BLOCK effect glyph to insert for [BLOCK].
 Image 5: exact RAGE effect glyph to insert for [RAGE].
 The separate mask marks the only editable rectangle [105, 842, 925, 1368]. Keep all illustration, cost orb, title ribbon, card type tab, frame and exterior transparency exactly unchanged. Title must stay white/cream. Do not add any diamond, jewel, triangle, rarity badge or ornament anywhere.
 Card information: Parry; cost 1; skill; common.
-Canonical mechanics (meaning only, NOT text to render): "Gain 2 Block. Gain 1 Rage."
+Canonical mechanics (meaning only, NOT text to render): "Gain 3 Block. Gain 1 Rage."
 Exact compact rules layout to render, with bracketed markers replaced by their supplied pictorial glyphs:
-2 [BLOCK].
+3 [BLOCK].
 1 [RAGE].
 Use large legible centered cream serif text, black outline, generous line spacing like the finished examples. Fit all lines inside the marked panel. Replace each [TOKEN] with its real supplied icon, never bracket text or a spelled-out effect name. Keep numbers before their icons. [AOE] before a number means a row effect, like Cleave. Do not write Deal/Gain/Apply or 'to a row' where the compact layout uses icons alone. Keep 'Every enemy', 'Plain', all conditions, ownership, counts and timing exactly as specified. AOE must never replace 'Every enemy'. Attack as a card type stays the word Attack, not a sword icon. HP remains HP. Highlight every occurrence of Retain, Exhaust, Unleash, Godslayer, Brutal Kill in bright yellow; other text cream. No extra words, icons, effect repetitions, decorations or footers. Return the complete 1024x1536 card on native transparent background.
 

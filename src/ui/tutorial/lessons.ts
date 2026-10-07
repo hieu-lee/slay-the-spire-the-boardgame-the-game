@@ -202,12 +202,12 @@ export const CHARACTER_LESSONS: Readonly<Partial<Record<CharacterId, CharacterLe
     intro: [
       {
         title: 'Playing Kratos',
-        body: 'Ashes of Sparta gives 1 Rage at the start of combat and whenever you lose HP. Rage is saved between turns, up to 5. Blades of Chaos hits a row and builds more Rage.',
+        body: 'Ashes of Sparta gives 2 Rage at the start of combat and 1 whenever you lose HP, and heals 1 HP after each fight. Rage is saved between turns, up to 5. Blades of Chaos hits a row and builds more Rage.',
         focus: [spot('.rage-meter, .hand')],
       },
       {
         title: 'Unleash and Hold Rage',
-        body: 'Unleash spends the printed amount of Rage for its bonus. Cards that say “instead” replace their normal effect. Tap the Rage meter to Hold Rage when you want to save it. Plume of Prometheus can spend 2 Rage for 4 damage.',
+        body: 'Unleash spends the printed amount of Rage for its bonus. Cards that say “instead” replace their normal effect. Tap the Rage meter to Hold Rage when you want to save it. Plume of Prometheus can spend 2 Rage for 5 damage.',
         focus: [spot('.rage-meter, .hand')],
       },
     ],
