@@ -239,13 +239,13 @@ export function activateRelic(
   return settle(next)
 }
 
-/** Spend one Shiv as its own one-damage attack (p.17). */
+/** Spend one Shiv as its own one-damage attack, not a card play (p.17). */
 export function spendShiv(state: CombatState, playerId: string, enemyUid: string): CombatState {
   if (state.phase !== 'player' || state.pendingDistilled || state.pendingRelicScry || mandatoryChoicePending(state) ||
     state.startTurnProgress?.forcedCard ||
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const player = state.players.find((candidate) => candidate.id === playerId)
-  if (!player || player.dead || player.shivs < 1 || player.cardPlayLocked || reachedTimeWarpLimit(state, player)) {
+  if (!player || player.dead || player.shivs < 1 || player.cardPlayLocked) {
     return state
   }
   if (resolveEnemyTargets(state, 'enemy', enemyUid).length === 0) return state

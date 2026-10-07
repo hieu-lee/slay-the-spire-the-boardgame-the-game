@@ -5090,7 +5090,7 @@ function CombatScreenView({
                 </PotionTooltipAnchor>
               }) : null}
               {state.phase === 'player' && !forcedCard && !distilled && !relicScry && !endTurnResolving &&
-              !pendingTrigger && !viewer.cardPlayLocked && !reachedTimeWarpLimit(state, viewer) && viewer.shivs > 0 ? (
+              !pendingTrigger && !viewer.cardPlayLocked && viewer.shivs > 0 ? (
                 <button
                   type="button"
                   className={spendingShiv ? 'is-chosen' : undefined}

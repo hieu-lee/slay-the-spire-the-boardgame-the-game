@@ -8818,13 +8818,6 @@ check('a Shiv waits while an item card choice is pending', () => {
   assertEqual(spendShiv(concluded, 'p1', 'e1'), concluded,
     'a Shiv bypassed the card-play lock from Conclude or Meditate')
 
-  const timeWarped = combat(
-    [makePlayer({ character: 'silent', shivs: 1 })],
-    [makeEnemy({ defId: 'time_eater', isBoss: true, actionIndex: 2, hp: 20, maxHp: 20 })],
-  )
-  timeWarped.players[0].cardsPlayedThisTurn = 99
-  assertEqual(spendShiv(timeWarped, 'p1', 'e1'), timeWarped,
-    'a Shiv bypassed Time Warp after card play reached its limit')
 })
 
 check('enemy ability explanations state their current player impact', () => {
