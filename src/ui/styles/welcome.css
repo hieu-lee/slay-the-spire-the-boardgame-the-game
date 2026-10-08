@@ -35,3 +35,24 @@ html[data-mobile-performance='true'] .welcome[data-editing='true'] .welcome__con
 .sts-scope .welcome__panel.reward-screen { animation: welcome-reveal 450ms ease-out both; }
 @keyframes welcome-reveal { from { opacity: 0; transform: translateY(1.5rem) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @media (prefers-reduced-motion: reduce) { .sts-scope .welcome__panel.reward-screen { animation: none; } }
+.welcome__links { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem 1.2rem; }
+.welcome__links button { padding: .2rem; border: 0; color: #f6ecd6; background: none; font: .9rem 'Kreon', Georgia, serif; text-decoration: underline; text-shadow: 0 2px 2px #152022; }
+.welcome__links button:is(:hover, :focus-visible):not(:disabled) { color: #ffdc60; }
+#welcome-hint:empty { display: none; }
+@media (orientation: landscape) and (max-height: 600px) {
+  .sts-scope .welcome__panel .reward-screen__players { padding: 1.4rem 2.4rem 1rem; gap: .3rem; }
+  .welcome__panel input { min-height: 2.2rem; font-size: 1.05rem; }
+  .sts-scope button.welcome__confirm { min-height: 2.6rem; font-size: 1.8rem; }
+  .welcome__links button { font-size: .8rem; }
+}
+/* With the keyboard up there is no room for stacked rows: name and password sit side by side,
+   and the two links flank the confirm button on one row. */
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .reward-screen__players { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .reward-screen__players > input { grid-column: span 3; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .reward-screen__players > input:only-of-type { grid-column: 1 / -1; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] #welcome-error { grid-column: 1 / -1; order: 1; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .welcome__links { display: contents; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .welcome__links button { grid-column: span 2; padding: 0; font-size: 1.1rem; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .welcome__links button:first-child { order: 2; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .welcome__confirm { grid-column: span 2; justify-self: center; order: 3; }
+html[data-mobile-performance='true'] .welcome[data-editing='true'] .welcome__links button:last-child { order: 4; }

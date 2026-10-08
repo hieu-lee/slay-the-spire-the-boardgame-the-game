@@ -78,7 +78,7 @@ try {
       if (phone) assert(layout.buttons.every((button) => button.height * viewport.width / layout.width >= 22),
         `${label}: a menu target is too short to tap: ${JSON.stringify(layout)}`)
       assert.deepEqual(await page.locator('.start-menu__nav button').allTextContents(),
-        [...(saved ? ['Resume'] : []), 'Single Player', 'Tutorial', 'Multiplayer', 'Leaderboard', 'Stats', 'Replay', 'Compendium', 'Settings'])
+        [...(saved ? ['Resume'] : []), 'Single Player', 'Tutorial', 'Multiplayer', 'Leaderboard', 'Stats', 'Profile', 'Replay', 'Compendium', 'Settings'])
       assert.equal(await page.locator('.start-menu__title img').getAttribute('alt'), 'Slay the Spire')
       const flame = page.locator('.start-menu__title-flame')
       assert.equal(await flame.evaluate(element => getComputedStyle(element, '::before').animationName), 'title-flame-burn')

@@ -123,6 +123,11 @@
   text-shadow: 0 2px 1px #080b0c;
 }
 
+/* Resume plus the full roster makes ten rows; trim them so the menu clears the version line. */
+@media (min-height: 621px) {
+  .start-menu__nav:has(> button:nth-child(10)) button { font-size: clamp(1.5rem, min(2.3vw, 3.1vh), 2.25rem); }
+}
+
 .start-menu__nav button::before,
 .start-menu__nav button::after {
   position: absolute;
@@ -560,6 +565,8 @@
   /* With Resume, a ninth option would push the menu into the version line. The
      rows keep their tap height, so the logo gives up the space instead. */
   html[data-mobile-performance='true'] .start-menu__landing:has(.start-menu__nav > button:nth-child(9)) .start-menu__title img { width: 1.95em; }
+  html[data-mobile-performance='true'] .start-menu__nav:has(> button:nth-child(10)) button { padding-block: 0.6rem; }
+  html[data-mobile-performance='true'] .start-menu__landing:has(.start-menu__nav > button:nth-child(10)) .start-menu__title img { width: 1.5em; }
 }
 .start-menu__meta { position: relative; align-self: center; color: #d9c796; font-size: .65rem; text-transform: uppercase; }
 .start-menu__meta > summary { min-height: 2rem; display: flex; align-items: center; padding: .3rem .55rem; border: 1px solid #655339; border-radius: .2rem; background: #181a18; color: #f2e8d3; cursor: pointer; }

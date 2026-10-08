@@ -15,6 +15,7 @@ import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 suite('developer mail')
 
 const adminToken = 'mail-admin-token-for-verification-0001'
+const PASSWORD = 'mail test password'
 const ann = { username: 'Ann', token: crypto.randomUUID() }
 const bob = { username: 'Bob', token: crypto.randomUUID() }
 const directory = mkdtempSync(join(tmpdir(), 'sts-mail-'))
@@ -44,7 +45,7 @@ async function call(path, { method = 'POST', body, admin, source } = {}) {
   return { status: response.status, body: await response.json() }
 }
 
-for (const profile of [ann, bob]) assertEqual((await call('/api/profile', { body: profile })).status, 200)
+for (const profile of [ann, bob]) assertEqual((await call('/api/profile', { body: { ...profile, password: PASSWORD } })).status, 200)
 const sent = await call('/api/mail/send', { body: { token: ann.token, body: '  The Lab die\u0007 rolled a 7?\r\nKidding.  ' } })
 await service.close()
 ;({ service, origin } = await start())
@@ -118,7 +119,7 @@ check('one delegate can answer another delegate\'s historical letter without sho
 })
 
 const newcomer = { username: 'NewPlayer', token: crypto.randomUUID() }
-await call('/api/profile', { body: newcomer })
+await call('/api/profile', { body: { ...newcomer, password: PASSWORD } })
 const welcomed = await call('/api/mail', { body: { token: newcomer.token } })
 const welcomedAgain = await call('/api/mail', { body: { token: newcomer.token } })
 const welcomeRead = await call('/api/mail', { body: { token: newcomer.token, markRead: true } })
@@ -166,7 +167,7 @@ check('a reply lands unread in that player\'s mailbox only, and opening it clear
 })
 
 const cara = { username: 'Cara', token: crypto.randomUUID() }
-await call('/api/profile', { body: cara })
+await call('/api/profile', { body: { ...cara, password: PASSWORD } })
 const unsolicited = await call('/api/mail/desk/reply', { body: { token: ann.token, username: cara.username, body: 'Hello!' } })
 const ownReply = await call('/api/mail/desk/reply', { body: { token: ann.token, username: ann.username, body: 'Hello!' } })
 await call('/api/mail/send', { body: { token: cara.token, body: 'Can you see this?' } })
@@ -228,7 +229,7 @@ check('letters survive a restart in their own file, without any profile token', 
 
 // An announcement goes to every player but the delegated mailbox admins, once.
 const dee = { username: 'Dee', token: crypto.randomUUID() }
-await call('/api/profile', { body: dee })
+await call('/api/profile', { body: { ...dee, password: PASSWORD } })
 const news = 'Replays now have speed controls, pause and a seek bar!'
 const announceNoToken = await call('/api/mail/admin/announce', { body: { body: news } })
 const announceEmpty = await call('/api/mail/admin/announce', { admin: adminToken, body: { body: '  ' } })
@@ -341,8 +342,8 @@ const sidecarOrigin = `http://127.0.0.1:${sidecarAddress.port}`
 const post = (path, body) => fetch(`${sidecarOrigin}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 const fay = { username: 'Fay', token: crypto.randomUUID() }
 const joy = { username: 'Joy', token: crypto.randomUUID() }
-await post('/api/profile', fay)
-await post('/api/profile', joy)
+await post('/api/profile', { ...fay, password: PASSWORD })
+await post('/api/profile', { ...joy, password: PASSWORD })
 const kept = await post('/api/mail/send', { token: fay.token, body: 'Kept.' })
 mkdirSync(`${sidecarStore}.mail.json.tmp`)
 const blockedWelcome = await post('/api/mail', { token: joy.token })
@@ -382,7 +383,7 @@ const tiny = createRoomServer({ maxMailCharacters: 12 })
 const tinyAddress = await tiny.listen(0)
 const tinyOrigin = `http://127.0.0.1:${tinyAddress.port}`
 const cat = { username: 'Cat', token: crypto.randomUUID() }
-await fetch(`${tinyOrigin}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cat) })
+await fetch(`${tinyOrigin}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...cat, password: PASSWORD }) })
 const fullWelcome = await fetch(`${tinyOrigin}/api/mail`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: cat.token }) })
 const fullWelcomeBody = await fullWelcome.json()
 const fits = await fetch(`${tinyOrigin}/api/mail/send`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: cat.token, body: 'Ten chars!' }) })

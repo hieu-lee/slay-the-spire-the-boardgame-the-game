@@ -38,7 +38,7 @@ try {
   browser = await chromium.launch({ headless: true })
   const profile = async (viewport, username, token) => {
     const context = await browser.newContext({ viewport })
-    await context.addInitScript(({ username, token }) => localStorage.setItem('sts-profile', JSON.stringify({ username, token })), { username, token })
+    await context.addInitScript(({ username, token }) => localStorage.setItem('sts-profile', JSON.stringify({ username, token, secured: true })), { username, token })
     return context
   }
   const desktop = await profile({ width: 1440, height: 900 }, 'HostedHost', '00000000-0000-4000-8000-000000000011')

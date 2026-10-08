@@ -60,7 +60,8 @@ for (const origin of origins) {
     try {
       const response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(20_000) })
       const health = await response.json()
-      if (!response.ok || health.protocolVersion !== 1 || health.profiles !== true || health.webSocketActionAcks !== true) {
+      // A rollback (no expected release) may restart a release from before password accounts.
+      if (!response.ok || health.protocolVersion !== 1 || health.profiles !== true || (expectedSha && health.passwordAccounts !== true) || health.webSocketActionAcks !== true) {
         throw new Error(`Incompatible health response from ${origin}`)
       }
       if (expectedSha && health.releaseSha !== expectedSha) {

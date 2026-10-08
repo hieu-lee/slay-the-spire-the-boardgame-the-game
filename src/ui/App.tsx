@@ -102,6 +102,7 @@ import { installSoundEffects, playSoundEffect, useCombatMusic, useRunOutcomeSoun
 import { SettingsDialog } from './SettingsDialog.tsx'
 import { LeaderboardScreen } from './LeaderboardScreen.tsx'
 import { StatsScreen } from './StatsScreen.tsx'
+import { ProfileScreen } from './ProfileScreen.tsx'
 import { useGameSettings } from './game-settings.ts'
 import { wingBootUses } from './wing-boots.ts'
 import type { GameSettings } from './game-settings.ts'
@@ -564,6 +565,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [compendium, setCompendium] = useState(false)
   const [leaderboard, setLeaderboard] = useState(false)
   const [stats, setStats] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [giveUpOpen, setGiveUpOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -1027,6 +1029,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
     if (leaderboard) return <LeaderboardScreen onBack={() => setLeaderboard(false)} />
     if (stats) return <StatsScreen onBack={() => setStats(false)} />
+    if (profileOpen) return <ProfileScreen onBack={() => setProfileOpen(false)} />
     return <StartMenu
       characters={characters}
       ascension={ascension}
@@ -1069,6 +1072,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       onOnline={onOnline}
       onLeaderboard={() => setLeaderboard(true)}
       onStats={() => setStats(true)}
+      onProfile={() => setProfileOpen(true)}
       onCompendium={() => setCompendium(true)}
       onReplay={startReplay}
       onCharacterBack={() => { setChoosingNextCharacter(false); setDailyTurned(false) }}

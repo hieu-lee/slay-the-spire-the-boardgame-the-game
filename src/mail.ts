@@ -67,14 +67,11 @@ export async function fetchMailbox(markRead = false, readThroughAt?: number): Pr
 }
 
 export async function sendLetter(body: string): Promise<Mailbox> {
-  const { username, token } = profile()
-  const sent = await post('/api/mail/send', { token, body })
-  if (sent.status !== 409 || sent.body.code !== 'profile') return mailbox(sent)
-  // A server that has lost this browser's name (a reset store, another host)
-  // takes the same claim again, and the letter goes out on the second try.
-  const claimed = await post('/api/profile', { username, token })
-  if (claimed.status !== 200) throw new Error(typeof claimed.body.error === 'string' ? claimed.body.error : 'Your name could not be registered.')
-  return mailbox(await post('/api/mail/send', { token, body }))
+  const sent = await post('/api/mail/send', { token: profile().token, body })
+  // A server that has lost this browser's name (a reset store, another host) cannot
+  // re-claim it without the password, which this browser never keeps.
+  if (sent.status === 409 && sent.body.code === 'profile') throw new Error('This server does not know your account. Log out from your profile, then create it again or log in.')
+  return mailbox(sent)
 }
 
 export async function fetchMailDesk(username?: string, markRead = false, readThroughAt?: number): Promise<MailDesk> {

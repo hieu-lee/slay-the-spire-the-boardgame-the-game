@@ -17,7 +17,7 @@ try {
       recordVideo: { dir: output, size: viewport } })
     const page = await context.newPage()
     await page.addInitScript(identity => localStorage.setItem('sts-profile', JSON.stringify(identity)),
-      { username: `EliteAudit${randomUUID().slice(0, 8)}`, token: randomUUID() })
+      { username: `EliteAudit${randomUUID().slice(0, 8)}`, token: randomUUID(), secured: true })
     await page.addInitScript(() => {
       const decodeImage = HTMLImageElement.prototype.decode
       HTMLImageElement.prototype.decode = function () {

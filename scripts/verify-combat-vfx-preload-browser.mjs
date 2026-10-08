@@ -53,7 +53,8 @@ try {
   'onboarding fetches combat VFX before the player starts a game')
   await newcomer.locator('.welcome__start').click()
   await newcomer.locator('#welcome-name').fill('New Perf Player')
-  await newcomer.getByRole('button', { name: 'Confirm username' }).click()
+  await newcomer.locator('#welcome-password').fill('perf check password')
+  await newcomer.getByRole('button', { name: 'Create account' }).click()
   await newcomer.locator('.start-menu__nav').waitFor()
   await verifyNewcomerWarmup()
   await newcomer.getByRole('button', { name: 'Single Player' }).click()
@@ -77,7 +78,7 @@ try {
 
   const context = await browser.newContext()
   await context.addInitScript(() => localStorage.setItem('sts-profile', JSON.stringify({
-    username: 'PerfCheck', token: '00000000-0000-4000-8000-000000000001',
+    username: 'PerfCheck', token: '00000000-0000-4000-8000-000000000001', secured: true,
   })))
   const page = await context.newPage()
   const verifyReturningWarmup = observeWarmup(page)

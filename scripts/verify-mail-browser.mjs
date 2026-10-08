@@ -17,8 +17,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const output = join(root, 'artifacts/mail-browser')
 mkdirSync(output, { recursive: true })
 const adminToken = 'mail-browser-admin-token-000000000001'
-const player = { username: 'TestPlayer', token: '00000000-0000-4000-8000-000000000001' }
-const mailboxAdmin = { username: 'MailboxKeeper', token: '00000000-0000-4000-8000-000000000099' }
+const password = 'mail browser password'
+const player = { username: 'TestPlayer', token: '00000000-0000-4000-8000-000000000001', secured: true }
+const mailboxAdmin = { username: 'MailboxKeeper', token: '00000000-0000-4000-8000-000000000099', secured: true }
 const rooms = createRoomServer({ mailAdminToken: adminToken, mailAdminOwners: [ownerOf(mailboxAdmin.token)] })
 const roomAddress = await rooms.listen(0)
 const target = `http://127.0.0.1:${roomAddress.port}`
@@ -27,7 +28,7 @@ const api = async (path, init = {}) => {
   return response.json()
 }
 for (const profile of [player, mailboxAdmin]) {
-  await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(profile) })
+  await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...profile, password }) })
 }
 await api('/api/mail/admin/reply', { method: 'POST', body: JSON.stringify({ username: player.username, body: 'Welcome to the Spire! Tell me what you think.' }) })
 
@@ -70,6 +71,7 @@ try {
     const newcomer = {
       username: `Welcome${phone ? 'Phone' : 'Desktop'}`,
       token: `00000000-0000-4000-8000-0000000000${phone ? '07' : '06'}`,
+      secured: true,
     }
     const context = await firstVisitBrowser.newContext({ viewport, isMobile: phone, hasTouch: phone })
     const page = await context.newPage()
@@ -80,14 +82,15 @@ try {
     page.on('pageerror', (error) => errors.push(`${screen} welcome: ${error.message}`))
     page.on('console', (message) => { if (message.type() === 'error') errors.push(`${screen} welcome: ${message.text()}`) })
     if (phone) {
-      await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(newcomer) })
+      await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...newcomer, password }) })
       await page.addInitScript((profile) => localStorage.setItem('sts-profile', JSON.stringify(profile)), newcomer)
     }
     await page.goto(`http://127.0.0.1:${address.port}`)
     if (!phone) {
       await page.getByRole('button', { name: 'Tap, click, or press any key to start' }).click()
-      await page.getByRole('textbox', { name: 'How should we call you?' }).fill(newcomer.username)
-      await page.getByRole('button', { name: 'Confirm username' }).click()
+      await page.getByRole('textbox', { name: 'Username' }).fill(newcomer.username)
+      await page.getByLabel('Password', { exact: true }).fill(password)
+      await page.getByRole('button', { name: 'Create account' }).click()
     }
     await page.locator('.start-menu__nav').waitFor()
     await page.locator('.mailbox__badge').waitFor({ timeout: 1_200 })
@@ -205,10 +208,10 @@ try {
     ['admin-landscape-phone', { width: 844, height: 390 }, true],
   ]) {
     const suffix = phone ? 'Phone' : 'Desktop'
-    const reporter = { username: `Reporter${suffix}`, token: `00000000-0000-4000-8000-0000000000${phone ? '03' : '02'}` }
-    const newer = { username: `Newer${suffix}`, token: `00000000-0000-4000-8000-0000000000${phone ? '05' : '04'}` }
+    const reporter = { username: `Reporter${suffix}`, token: `00000000-0000-4000-8000-0000000000${phone ? '03' : '02'}`, secured: true }
+    const newer = { username: `Newer${suffix}`, token: `00000000-0000-4000-8000-0000000000${phone ? '05' : '04'}`, secured: true }
     for (const profile of [reporter, newer]) {
-      await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(profile) })
+      await fetch(`${target}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...profile, password }) })
     }
     await fetch(`${target}/api/mail/send`, { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ token: reporter.token, body: `The ${suffix.toLowerCase()} report is ready.` }) })

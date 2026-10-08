@@ -47,7 +47,7 @@ try {
         const context = await browser.newContext({ viewport, deviceScaleFactor: 1, isMobile: screen !== 'desktop', hasTouch: screen !== 'desktop' })
         const username = `KLaunch-${engine[0]}-${screen === 'desktop' ? 'D' : 'P'}`
         await context.addInitScript(profile => localStorage.setItem('sts-profile', JSON.stringify(profile)),
-          { username, token: randomUUID() })
+          { username, token: randomUUID(), secured: true })
         try {
           const page = await context.newPage()
           const activate = async locator => {

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { claimProfile } from './lib/profiles.mjs'
+import { claimProfile, loginProfile } from './lib/profiles.mjs'
 import { MAX_MAIL_CHARACTERS, WELCOME_LETTER, announceToPlayers, developerInbox, developerUnread, ownerOf, playerInbox, sendDeveloperReply, sendPlayerLetter } from './lib/mail.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { existsSync, writeFileSync } from 'node:fs'
@@ -7,7 +7,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { basename } from 'node:path'
 import { WebSocketServer } from 'ws'
 import { classifyDeckType, codexReady } from './lib/codex-deck-classifier.mjs'
-import { addLeaderboardRun, dailyLeaderboard, leaderboardSnapshot, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
+import { addLeaderboardRun, dailyLeaderboard, leaderboardSnapshot, personalStats, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
 import { deckHash, HERO_NAMES, SPECIFIC_ARCHETYPE_FLOOR, otherDeckType, randomDeck, recordDeckClassification, soloDeck, statsSnapshot, validClassifierThreadId, validDeckType, validSoloDeck } from './lib/stats.mjs'
 import {
   apply,
@@ -49,6 +49,9 @@ const MAX_VOICE_MESSAGES_PER_WINDOW = 600
 const MAX_ABUSIVE_MESSAGES_PER_WINDOW = 3_000
 const CREATE_WINDOW_MS = 60_000
 const MAX_PROFILE_CLAIMS_PER_WINDOW = 30
+const MAX_LOGINS_PER_WINDOW = 10
+const LOGIN_FAILURE_WINDOW_MS = 10 * 60_000
+const MAX_LOGIN_FAILURES_PER_NAME = 8
 const MAX_CREATES_PER_WINDOW = 10
 const MAX_JOINS_PER_WINDOW = 30
 const MAX_LEADERBOARD_WRITES_PER_WINDOW = 6
@@ -144,6 +147,8 @@ export function createRoomServer({
   const roomActivity = new Map()
   const roomOwners = new Map()
   const profileRates = new Map()
+  const loginRates = new Map()
+  const loginFailures = new Map()
   const createRates = new Map()
   const joinRates = new Map()
   const entryRetryRates = new Map()
@@ -457,6 +462,8 @@ export function createRoomServer({
 
   function sweepRooms(now = Date.now()) {
     for (const [key, rate] of profileRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) profileRates.delete(key)
+    for (const [key, rate] of loginRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) loginRates.delete(key)
+    for (const [key, rate] of loginFailures) if (now - rate.startedAt >= LOGIN_FAILURE_WINDOW_MS) loginFailures.delete(key)
     for (const [key, rate] of createRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) createRates.delete(key)
     for (const [key, rate] of joinRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) joinRates.delete(key)
     for (const [key, rate] of entryRetryRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) entryRetryRates.delete(key)
@@ -594,7 +601,7 @@ export function createRoomServer({
       if (request.method === 'GET' && url.pathname === '/api/health') {
         return send(response, 200, {
           ok: true, rooms: store.rooms.size, connections: sockets.size, connectionCapacity: maxConnections,
-          protocolVersion: MULTIPLAYER_PROTOCOL_VERSION, profiles: true,
+          protocolVersion: MULTIPLAYER_PROTOCOL_VERSION, profiles: true, passwordAccounts: true,
           entryRequestIds: true, webSocketActionAcks: true, releaseSha: RELEASE_SHA,
         })
       }
@@ -602,12 +609,51 @@ export function createRoomServer({
         if (!consume(profileRates, sourceOf(request), CREATE_WINDOW_MS, MAX_PROFILE_CLAIMS_PER_WINDOW)) {
           return send(response, 429, { error: 'Too many name requests. Please try again shortly.' })
         }
-        const profile = claimProfile(store.profiles, await readJson(request))
+        const profile = await claimProfile(store.profiles, await readJson(request))
         if (!attemptSave()) {
           queueSave()
-          return send(response, 503, { error: 'Could not save your name. Please try again.' })
+          return send(response, 503, { error: 'Could not save your account. Please try again.' })
         }
         return send(response, 200, { username: profile.username })
+      }
+      if (request.method === 'POST' && url.pathname === '/api/login') {
+        if (!consume(loginRates, sourceOf(request), CREATE_WINDOW_MS, MAX_LOGINS_PER_WINDOW)) {
+          return send(response, 429, { error: 'Too many log in attempts. Please try again shortly.' })
+        }
+        const body = await readJson(request)
+        const failureKey = typeof body.username === 'string' ? body.username.normalize('NFKC').trim().toLowerCase().slice(0, 64) : ''
+        // Guessing is capped per name as well as per source, so a name can be locked for a
+        // while by anyone who knows it. That trade is accepted: the cap is what stops a
+        // botnet guessing one account's password.
+        // The attempt is counted before the slow hash, so a burst of parallel guesses cannot
+        // all pass the check; a login that is not a wrong password gives its slot back.
+        const now = Date.now()
+        const failures = loginFailures.get(failureKey)
+        const attempts = failures && now - failures.startedAt < LOGIN_FAILURE_WINDOW_MS ? failures : { startedAt: now, count: 0 }
+        if (attempts.count >= MAX_LOGIN_FAILURES_PER_NAME) {
+          return send(response, 429, { error: 'Too many wrong passwords for this name. Please try again later.' })
+        }
+        // As with mail admin failures, a full table evicts its oldest name instead of skipping the count.
+        if (!failures && loginFailures.size >= MAX_RATE_KEYS) loginFailures.delete(loginFailures.keys().next().value)
+        attempts.count += 1
+        loginFailures.delete(failureKey)
+        loginFailures.set(failureKey, attempts)
+        let profile
+        try { profile = await loginProfile(store.profiles, body) } catch (error) {
+          if (error.status !== 401) attempts.count -= 1
+          throw error
+        }
+        loginFailures.delete(failureKey)
+        return send(response, 200, { username: profile.username, token: profile.token })
+      }
+      if (request.method === 'POST' && url.pathname === '/api/profile/stats') {
+        if (!consume(statsRates, `profile:${sourceOf(request)}`, CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) {
+          return send(response, 429, { error: 'Too many requests. Please try again shortly.' })
+        }
+        const body = await readJson(request)
+        const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
+        if (!profile) return send(response, 409, { error: 'Your name is not registered on this server.', code: 'profile' })
+        return send(response, 200, personalStats(store.leaderboardRuns, profile.username))
       }
       if (request.method === 'POST' && (url.pathname === '/api/mail' || url.pathname === '/api/mail/send')) {
         const sending = url.pathname === '/api/mail/send'

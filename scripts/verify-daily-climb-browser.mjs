@@ -36,11 +36,11 @@ const screenshot = async (name) => {
 try {
   suite('daily climb browser')
   const profile = await fetch(`${roomOrigin}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'DailyTester', token }) })
+    body: JSON.stringify({ username: 'DailyTester', token, password: 'daily test password' }) })
   assert(profile.ok, 'could not register the test profile')
   const rivalToken = crypto.randomUUID()
   await fetch(`${roomOrigin}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'Rival', token: rivalToken }) })
+    body: JSON.stringify({ username: 'Rival', token: rivalToken, password: 'daily test password' }) })
   for (const [id, profileToken, character, floorsCleared] of [['rival-a:campaign-1', rivalToken, 'silent', 14], ['rival-b:campaign-1', undefined, 'defect', 3]]) {
     const seeded = await fetch(`${roomOrigin}/api/leaderboard`, { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id, profileToken, character, ascension: 10, mode: 'daily', dailyDate: today, startedAtAct: 1,

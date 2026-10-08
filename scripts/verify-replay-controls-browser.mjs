@@ -17,7 +17,7 @@ if (!address || typeof address === 'string') throw new Error('Vite did not repor
 const origin = `http://127.0.0.1:${address.port}`
 const browser = await chromium.launch({ headless: true })
 const MOVES = 60
-const profile = { username: 'Replay Tester', token: '00000000-0000-4000-8000-000000000001' }
+const profile = { username: 'Replay Tester', token: '00000000-0000-4000-8000-000000000001', secured: true }
 
 // Record a real run log: one Neow click, then a climb of MOVES - 1 state changes across three acts.
 const recorder = await browser.newContext({ viewport: { width: 1600, height: 900 } })

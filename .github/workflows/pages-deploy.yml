@@ -80,7 +80,7 @@ jobs:
           curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 --max-time 30 \
             "$MULTIPLAYER_SERVER_ORIGIN/api/health" | \
             jq -e --arg sha "$DEPLOY_SHA" \
-              '.protocolVersion == 1 and .profiles == true and .webSocketActionAcks == true and .releaseSha == $sha' >/dev/null
+              '.protocolVersion == 1 and .profiles == true and .passwordAccounts == true and .webSocketActionAcks == true and .releaseSha == $sha' >/dev/null
           cp -R dist pages
           jq -n --arg origin "$MULTIPLAYER_SERVER_ORIGIN" --arg run "$GITHUB_RUN_ID" --arg sha "$DEPLOY_SHA" \
             '{origin:$origin,runId:$run,sha:$sha,protocolVersion:1,alwaysOn:true}' > pages/session.json

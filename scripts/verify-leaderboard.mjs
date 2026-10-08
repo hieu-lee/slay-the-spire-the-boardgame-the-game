@@ -498,7 +498,7 @@ try {
 
     const today = new Date().toISOString().slice(0, 10)
     const climber = crypto.randomUUID()
-    await fetch(`${origin}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'DailyEndpoint', token: climber }) })
+    await fetch(`${origin}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'DailyEndpoint', token: climber, password: 'daily endpoint password' }) })
     const dailyAccepted = await submit(daily({ id: 'daily-install:campaign-9', dailyDate: today, floorsCleared: 17, profileToken: climber }))
     const dailyAcceptedBody = await dailyAccepted.clone().json()
     const dailyInvalid = await submit(daily({ id: 'daily-install:campaign-10', dailyDate: today, ascension: 3 }))

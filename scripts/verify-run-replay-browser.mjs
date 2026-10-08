@@ -16,7 +16,7 @@ if (!address || typeof address === 'string') throw new Error('Vite did not repor
 const origin = `http://127.0.0.1:${address.port}`
 const browser = await chromium.launch({ headless: true })
 
-const profile = { username: 'Replay Tester', token: '00000000-0000-4000-8000-000000000001' }
+const profile = { username: 'Replay Tester', token: '00000000-0000-4000-8000-000000000001', secured: true }
 const open = async (viewport, hasTouch = viewport.width === 844, isMobile = false) => {
   const context = await browser.newContext({ viewport, hasTouch, isMobile })
   await context.addInitScript((saved) => localStorage.setItem('sts-profile', JSON.stringify(saved)), profile)

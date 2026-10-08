@@ -37,6 +37,7 @@ type StartMenuProps = {
   onOnline?: () => void
   onLeaderboard: () => void
   onStats: () => void
+  onProfile: () => void
   onCompendium: () => void
   onReplay: (log: RunLog) => void
   onCharacterBack: () => void
@@ -126,6 +127,7 @@ export function StartMenu({
   onOnline,
   onLeaderboard,
   onStats,
+  onProfile,
   onCompendium,
   onReplay,
   onCharacterBack,
@@ -299,6 +301,7 @@ export function StartMenu({
           : null}
         <button type="button" aria-label="Leaderboard" onClick={onLeaderboard}>Leaderboard</button>
         <button type="button" aria-label="Stats" onClick={onStats}>Stats</button>
+        <button type="button" aria-label="Profile" onClick={onProfile}>Profile</button>
         <button type="button" aria-label="Replay"
           onClick={() => setScreen('replay')}>Replay</button>
         <button type="button" aria-label="Compendium" onClick={onCompendium}>Compendium</button>

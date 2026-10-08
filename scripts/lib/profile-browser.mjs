@@ -20,7 +20,7 @@ async function seed(context) {
   await context.addInitScript(() => {
     try {
       if (!localStorage.getItem('sts-profile')) localStorage.setItem('sts-profile', JSON.stringify({
-        username: 'TestPlayer', token: '00000000-0000-4000-8000-000000000001',
+        username: 'TestPlayer', token: '00000000-0000-4000-8000-000000000001', secured: true,
       }))
     } catch { /* Sandboxed raster frames intentionally have no storage origin. */ }
   })
@@ -54,7 +54,7 @@ export const webkit = returningPlayer(webkitEngine)
 export async function setTestUsername(page, username) {
   await page.evaluate((username) => {
     localStorage.setItem('sts-profile', JSON.stringify({
-      username, token: '00000000-0000-4000-8000-000000000001',
+      username, token: '00000000-0000-4000-8000-000000000001', secured: true,
     }))
   }, username)
 }

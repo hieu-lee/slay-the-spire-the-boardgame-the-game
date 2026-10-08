@@ -48,17 +48,20 @@ async function profile(page, username) {
     }), 'mobile welcome sheet is clipped')
     await page.screenshot({ path: `${output}/landscape-phone-registration.png` })
   }
-  await page.getByRole('textbox', { name: 'How should we call you?' }).fill(username)
+  await page.getByRole('textbox', { name: 'Username' }).fill(username)
+  await page.getByLabel('Password', { exact: true }).fill('mobile client password')
   if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) {
-    assert(await page.evaluate(() => {
+    const footprint = await page.evaluate(() => {
       const title = document.querySelector('.welcome__panel .reward-screen__title').getBoundingClientRect()
       const submit = document.querySelector('.welcome__confirm').getBoundingClientRect()
-      // Playwright cannot raise iOS's software keyboard; bound the form to its compact footprint.
-      return title.top >= 0 && submit.bottom - title.top <= 240
-    }), 'mobile welcome controls exceed the keyboard-safe footprint')
+      const links = document.querySelector('.welcome__links').getBoundingClientRect()
+      return { top: title.top, height: Math.max(submit.bottom, links.bottom) - title.top }
+    })
+    // Playwright cannot raise iOS's software keyboard; bound the form to its compact footprint.
+    assert(footprint.top >= 0 && footprint.height <= 240, `mobile welcome controls exceed the keyboard-safe footprint: ${JSON.stringify(footprint)}`)
     await page.screenshot({ path: `${output}/landscape-phone-registration-focused.png` })
   }
-  await page.getByRole('button', { name: 'Confirm username' }).click()
+  await page.getByRole('button', { name: 'Create account' }).click()
   await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Play online', exact: true }).waitFor()
 }

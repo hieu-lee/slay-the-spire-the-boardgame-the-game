@@ -336,6 +336,34 @@ export function dailyLeaderboard(runs, date, characters = []) {
   }
 }
 
+/** One player's record across every run recorded under their name. */
+export function personalStats(runs, username) {
+  const key = username.toLowerCase()
+  const mine = runs.filter((run) => run.username?.toLowerCase() === key ||
+    run.winningDecks?.some((deck) => deck.username.toLowerCase() === key))
+  const heroes = new Map()
+  const stats = { runs: mine.length, act3Wins: 0, act4Wins: 0, bestFloors: 0, bestAscensionWon: null, dailyClimbs: 0, firstRunAt: null, heroes: [] }
+  for (const run of mine) {
+    const won = run.highestBossActDefeated >= 3
+    if (won) stats.act3Wins += 1
+    if (run.highestBossActDefeated >= 4) stats.act4Wins += 1
+    if (won && (stats.bestAscensionWon === null || run.ascension > stats.bestAscensionWon)) stats.bestAscensionWon = run.ascension
+    stats.bestFloors = Math.max(stats.bestFloors, run.floorsCleared ?? 0)
+    if (run.dailyDate !== undefined) stats.dailyClimbs += 1
+    stats.firstRunAt = Math.min(stats.firstRunAt ?? run.recordedAt, run.recordedAt)
+    const own = run.winningDecks?.find((deck) => deck.username.toLowerCase() === key)?.character
+    for (const character of own ? [own] : run.characters) {
+      const hero = heroes.get(character) ?? { character, runs: 0, wins: 0 }
+      hero.runs += 1
+      if (won) hero.wins += 1
+      heroes.set(character, hero)
+    }
+  }
+  stats.heroes = [...heroes.values()].sort((left, right) => right.runs - left.runs || right.wins - left.wins ||
+    CHARACTER_ORDER.indexOf(left.character) - CHARACTER_ORDER.indexOf(right.character))
+  return stats
+}
+
 /** Public archive pages expose no installation IDs, profile tokens, or active runs. */
 export function winningDecksPage(runs, params = new URLSearchParams()) {
   const sort = params.get('sort') ?? 'recordedAt'

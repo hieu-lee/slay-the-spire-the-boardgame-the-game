@@ -94,7 +94,7 @@ try {
     const response = await fetch(`${origin}/api/profile`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'cf-connecting-ip': sharedSource },
-      body: JSON.stringify({ token: crypto.randomUUID(), username: `Friend ${index}` }),
+      body: JSON.stringify({ token: crypto.randomUUID(), username: `Friend ${index}`, password: 'friendly password' }),
     })
     profileStatuses.push(response.status)
   }
