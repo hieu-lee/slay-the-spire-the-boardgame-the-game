@@ -425,6 +425,8 @@ function FlyingCard({ flight, character }: { flight: CardFlight; character: stri
   </div>
 }
 
+const START_TURN_STUCK_MS = 15_000
+
 function CombatScreenView({
   state,
   act,
@@ -460,6 +462,7 @@ function CombatScreenView({
   authoritativePendingTrigger,
   stagedStartTurnTriggers,
   authoritativeVersion,
+  onResync,
   authoritativeRefresh,
   authoritativeRestoration,
   authoritativeConnected,
@@ -1999,6 +2002,33 @@ function CombatScreenView({
     ])))
   }, [startAbilityKey, state.phase])
 
+  // A teammate's staged picks change what this plan simulates (a Shiv or Evoke can
+  // kill an enemy a later ability needs), but they arrive without resetting the
+  // viewer's own unsent picks, so refresh only the teammates' drafts.
+  const teammateChoicesKey = onAction ? JSON.stringify(baseStartAbilities
+    .filter((ability) => ability.playerId !== viewerId).map((ability) => {
+      const choice = savedStartTurnChoices?.find((candidate) => candidate.id === ability.id)
+      return [ability.id, savedStartTurnEnemyTargets?.[ability.id], choice?.enemyUid, choice?.targetPlayerId,
+        choice?.guardianModeShift, choice?.shivEnemyUids, choice?.evokeSlots, choice?.evokeEnemyUids]
+    })) : ''
+  useEffect(() => {
+    if (state.phase !== 'start' || !onAction) return
+    const teammates = baseStartAbilities.filter((ability) => ability.playerId !== viewerId)
+    if (teammates.length === 0) return
+    const savedChoices = new Map((savedStartTurnChoices ?? []).map((choice) => [choice.id, choice]))
+    const refresh = <S extends Record<string, unknown>>(pick: (ability: (typeof teammates)[number]) => S[string]) =>
+      (current: S): S => ({ ...current, ...Object.fromEntries(teammates.map((ability) => [ability.id, pick(ability)])) })
+    setStartTurnEnemyTargets(refresh((ability) => savedStartTurnEnemyTargets?.[ability.id] ??
+      savedChoices.get(ability.id)?.enemyUid ?? (ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined)))
+    setStartTurnPlayerTargets(refresh((ability) => savedChoices.get(ability.id)?.targetPlayerId ??
+      (ability.players?.length === 1 ? ability.players[0]!.id : undefined)))
+    setStartTurnModeShifts(refresh((ability) => savedChoices.get(ability.id)?.guardianModeShift))
+    setStartTurnTargets(refresh((ability) => savedChoices.get(ability.id)?.shivEnemyUids ??
+      Array(ability.overflowShivs).fill(undefined)))
+    setStartTurnEvokeSlots(refresh((ability) => savedChoices.get(ability.id)?.evokeSlots ?? []))
+    setStartTurnEvokeTargets(refresh((ability) => savedChoices.get(ability.id)?.evokeEnemyUids ?? []))
+  }, [teammateChoicesKey, state.phase])
+
   useEffect(() => {
     if (state.phase !== 'discard' || !savedDiscardOrder) return
     setDiscardOrders({ [viewerId]: savedDiscardOrder })
@@ -2338,6 +2368,8 @@ function CombatScreenView({
     (viewer.id === startTurnCoordinatorId || viewer.id !== fumesOwnerId))
   const canCommitStartTurnOrder = canResolveStartTurn &&
     (!partyStartTurnOrderPending || viewer.id === startTurnCoordinatorId)
+  const startTurnCoordinator = state.players.find((player) => player.id === startTurnCoordinatorId &&
+    player.id !== viewer.id)
   const startTurnCount = startTurnDecidedPlayerIds && requiredStartTurnPlayerIds?.length
     ? `${startTurnDecidedPlayerIds.filter((id) => requiredStartTurnPlayerIds.includes(id)).length}/${requiredStartTurnPlayerIds.length}`
     : null
@@ -4761,6 +4793,20 @@ function CombatScreenView({
   const startTurnChoicesOpen = startTurnOpen && !stagedStartTurnTriggerPending && !activeStartTurnScry &&
     orderedStartTurnScries.length === 0
   const visibleStartModeShift = startTurnChoicesOpen ? pendingStartModeShift : undefined
+  // A required, undecided seat whose Resolve button is disabled or missing, with
+  // no private prompt to answer, has no way forward. Another seat may just be
+  // slow, so this only offers a manual re-sync after a long pause.
+  const startTurnLooksStuck = Boolean(onAction && onResync && startTurnChoicesOpen &&
+    requiredStartTurnPlayerIds?.includes(viewer.id) && !viewerStartTurnDecided && !activeStartTurnDiscard &&
+    !dieRelicPending && !visibleStartModeShift && (resolvingStartTurnMode || !canResolveStartTurn))
+  const [startTurnStuck, setStartTurnStuck] = useState(false)
+  const [resyncing, setResyncing] = useState(false)
+  useEffect(() => {
+    setStartTurnStuck(false)
+    if (!startTurnLooksStuck) return undefined
+    const timer = window.setTimeout(() => setStartTurnStuck(true), START_TURN_STUCK_MS)
+    return () => window.clearTimeout(timer)
+  }, [startTurnLooksStuck, authoritativeVersion])
   const handExhaustChoiceUids = new Set(startTurnChoicesOpen
     ? handStartExhaust?.exhaustCards?.filter((card) => viewer.hand.some((held) => held.uid === card.uid) &&
       card.uid !== startTurnExhaustUids[handStartExhaust.id]).map((card) => card.uid)
@@ -5333,9 +5379,19 @@ function CombatScreenView({
                   ? partyStartTurnOrderPending && viewer.id === startTurnCoordinatorId ? 'Confirm start-of-turn order'
                     : startTurnChoiceId && viewer.id === fumesOwnerId ? 'Confirm Noxious Fumes target'
                       : startTurnCount ? `Resolve start turn ${startTurnCount}` : 'Resolve start of turn'
-                  : startTurnCount ? `Resolve start turn ${startTurnCount}` : 'Waiting for start-turn order'}
+                  : startTurnCount ? `Resolve start turn ${startTurnCount}` : startTurnCoordinator
+                    ? `Waiting for ${startTurnCoordinator.name}` : 'Waiting for start-turn order'}
                 </button> : null}
             </>
+          ) : null}
+          {startTurnStuck && onResync ? (
+            <button type="button" className="combat__resync" disabled={resyncing}
+              onClick={() => {
+                setResyncing(true)
+                void onResync().finally(() => setResyncing(false))
+              }}>
+              {resyncing ? 'Re-syncing…' : 'Stuck? Re-sync start of turn'}
+            </button>
           ) : null}
         </span>
       </header>

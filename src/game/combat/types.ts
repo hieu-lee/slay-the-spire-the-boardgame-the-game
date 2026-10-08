@@ -289,6 +289,8 @@ export type StartTurnAbility = {
   evokeTargetIndex?: number
   /** Orb slots once the staged Evokes and Channels apply, shown while they are still being chosen. */
   evokePlanOrbs?: (OrbType | null)[]
+  /** An earlier forced-card ability parks this one; its Shiv and Evoke picks are asked after that card resolves. */
+  deferredAfterForcedCard?: true
 }
 
 export type StartTurnChoice = {

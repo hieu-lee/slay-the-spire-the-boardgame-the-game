@@ -526,17 +526,29 @@ function equivalentTriggerTargets<T extends { uid?: string; id?: string }>(
   playerTargets = false,
 ): T[] {
   if (targets.length < 2) return [...targets]
-  const signatureFor = (target: T) => triggerChoiceSignature(
-    state, player, source, playerTargets ? undefined : target.uid,
-    playerTargets ? target.id : undefined,
-  )
-  const first = signatureFor(targets[0]!)
-  if (first === undefined) return [...targets]
-  for (let index = 1; index < targets.length; index++) {
-    if (signatureFor(targets[index]!) !== first) return [...targets]
+  // Planning replays the same board for every ability, seat and snapshot, and
+  // each probe clones and serialises the whole combat; reuse the verdict.
+  const key = `${gameplaySignature(state)}|${player.id}|${source.id}|${playerTargets ? 'p' : 'e'}|` +
+    targets.map((target) => target.uid ?? target.id).join(',')
+  let collapses = equivalentTargetVerdicts.get(key)
+  if (collapses === undefined) {
+    const signatureFor = (target: T) => triggerChoiceSignature(
+      state, player, source, playerTargets ? undefined : target.uid,
+      playerTargets ? target.id : undefined,
+    )
+    const first = signatureFor(targets[0]!)
+    collapses = first !== undefined
+    for (let index = 1; collapses && index < targets.length; index++) {
+      collapses = signatureFor(targets[index]!) === first
+    }
+    if (equivalentTargetVerdicts.size >= EQUIVALENT_TARGET_VERDICT_LIMIT) equivalentTargetVerdicts.clear()
+    equivalentTargetVerdicts.set(key, collapses)
   }
-  return [targets[0]!]
+  return collapses ? [targets[0]!] : [...targets]
 }
+
+const EQUIVALENT_TARGET_VERDICT_LIMIT = 128
+const equivalentTargetVerdicts = new Map<string, boolean>()
 
 function startTurnTriggerTargets(state: CombatState, player: Player, source: TriggerSource) {
   const targets = triggerTargets(state, player, source)
@@ -792,11 +804,13 @@ function startTurnAbilitiesFor(
   let plannedShivs = state.players.reduce((sum, player) => sum + player.shivs, 0)
   let planningBlocked = false
   let planningEnded = false
+  let forcedCardParked = false
   return ids.map((id) => {
     const entry = byId.get(id)!
     if (planningEnded) return { ...entry.ability, targets: undefined, overflowShivs: 0 }
     const simulationState = clone(plannedState)
     const player = findPlayer(simulationState, entry.ability.playerId)!
+    const parkedByEarlier = forcedCardParked
     if (player.dead) return {
       id: entry.ability.id,
       playerId: entry.ability.playerId,
@@ -924,6 +938,7 @@ function startTurnAbilitiesFor(
       const forcedDraw = entry.source.effects.some((effect) => effect.kind === 'drawAndPlayFree')
       if (forcedDraw) {
         planningBlocked = true
+        forcedCardParked = true
       } else if (!privateDraw) {
         const exact = clone(plannedState)
         const exactPlayer = findPlayer(exact, entry.ability.playerId)!
@@ -950,6 +965,7 @@ function startTurnAbilitiesFor(
       overflowShivs: shivEndedCombat ? choice?.shivEnemyUids.length ?? 0 : overflowShivs,
       staleShivIndex, shivTargets,
       evokeChoice, evokeTargets, evokeOrbs, evokeTargetIndex, evokePlanOrbs,
+      ...(parkedByEarlier ? { deferredAfterForcedCard: true as const } : {}),
     }
   })
 }

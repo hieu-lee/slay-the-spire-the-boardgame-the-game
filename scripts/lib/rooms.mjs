@@ -194,6 +194,8 @@ const LEGACY_DECK_TYPES = new Set([
 ])
 const CODE_ALPHABET = 'ACDEFGHJKLMNPQRTUVWXY34679'
 
+const SERVER_EPOCH = randomBytes(6).toString('hex')
+
 export function roomCode(random = randomBytes) {
   let code = ''
   // 256 is not a multiple of 26, so a plain modulo would make the first 22
@@ -698,6 +700,7 @@ export function joinRoom(room, { name, character, campaignProgress, token: exist
     }
     returning.connected = connected
     returning.name = nextName
+    if (connectionChanged && connected) reopenAutoReadyStartTurn(room, returning.playerId)
     if (nextUnlocks) returning.campaignUnlocks = nextUnlocks
     if (room.phase === 'lobby') includeSeatUnlocks(room)
     room.version += 1
@@ -1296,6 +1299,25 @@ function settleForcedCards(room, consumedPreviewPlayerId = null, suspendActiveCo
   }
 }
 
+/** Seats the server readied with fallback picks while they were away. */
+function rememberAutoReadyStartTurn(room, playerIds) {
+  const unanswered = [...playerIds].filter((playerId) => !room.startTurnReady?.[playerId])
+  room.startTurnAutoReady = [...new Set([...(room.startTurnAutoReady ?? []), ...unanswered])]
+}
+
+/**
+ * A returning seat never answered for itself: hand its Start-of-Turn decision
+ * back (its fallback picks stay as drafts) instead of hiding the prompt, which
+ * would strand the party when that seat owns the shared order.
+ */
+function reopenAutoReadyStartTurn(room, playerId) {
+  if (!room.startTurnAutoReady?.includes(playerId)) return
+  room.startTurnAutoReady = room.startTurnAutoReady.filter((id) => id !== playerId)
+  if (room.run?.combat?.phase === 'start' && room.startTurnReady?.[playerId]) {
+    room.startTurnReady = { ...room.startTurnReady, [playerId]: false }
+  }
+}
+
 function settleDisconnectedStartTurnChoices(room, readyEnsured = false) {
   const combat = room.run?.combat
   if (combat?.phase !== 'start') return
@@ -1312,6 +1334,15 @@ function settleDisconnectedStartTurnChoices(room, readyEnsured = false) {
   if (roomPostRollNestedChoicePending(room)) return
   const previousRequired = [...(room.startTurnRequired ?? [])]
   const required = readyEnsured ? room.startTurnRequired ?? [] : ensureStartTurnReady(room)
+  if (required.length === 0 && combat.startTurnProgress?.choices?.length) {
+    // A paused window whose parked pick went stale has no owner left to ask.
+    const next = resolveStartPlayerTurn(combat, defaultStartTurnChoices(combat))
+    if (next !== combat) {
+      room.run = { ...room.run, combat: next }
+      clearStartTurnPlan(room)
+    }
+    return
+  }
   if (required.length === 0 && !combat.startTurnProgress) {
     const next = resolveStartPlayerTurn(combat, defaultStartTurnChoices(combat))
     if (next !== combat) {
@@ -1323,6 +1354,7 @@ function settleDisconnectedStartTurnChoices(room, readyEnsured = false) {
   const disconnected = new Set([...previousRequired, ...(room.startTurnRequired ?? [])].filter((playerId) =>
     room.seats.find((seat) => seat.playerId === playerId)?.connected === false))
   if (roomPostRollChoicePending(room)) {
+    rememberAutoReadyStartTurn(room, disconnected)
     for (const playerId of disconnected) markStartTurnReady(room, playerId)
     if (room.startTurnRequired?.every((playerId) => room.startTurnReady?.[playerId])) {
       finishPostRollChoiceWindow(room)
@@ -1383,11 +1415,15 @@ function settleDisconnectedStartTurnChoices(room, readyEnsured = false) {
     }
   }
   room.startTurnChoices = [...stored.values()].filter(Boolean)
+  rememberAutoReadyStartTurn(room, disconnected)
   room.startTurnReady = { ...room.startTurnReady,
     ...Object.fromEntries([...disconnected].map((playerId) => [playerId, true])) }
   if (!room.startTurnRequired.every((playerId) => room.startTurnReady[playerId])) return
   const defaults = new Map(defaultStartTurnChoices(combat).map((choice) => [choice.id, choice]))
+  // A connected owner's Noxious Fumes pick lives in the target map, not the stored choices.
   const choices = fallbackOrder.map((id) => stored.get(id) ?? defaults.get(id)).filter(Boolean)
+    .map((choice) => room.startTurnEnemyTargets?.[choice.id]
+      ? { ...choice, enemyUid: room.startTurnEnemyTargets[choice.id] } : choice)
   const next = resolveStartPlayerTurn(combat, choices)
   if (next === combat) {
     if (reopenStagedStartTurnTriggers(room, choices)) {
@@ -3373,6 +3409,7 @@ function clearStartTurnPlan(room) {
   room.startTurnRequired = undefined
   room.startTurnReady = undefined
   room.startTurnStagedTriggers = undefined
+  room.startTurnAutoReady = undefined
 }
 
 function refreshStartTurnPlan(room) {
@@ -3655,12 +3692,13 @@ function validStartTurnChoice(ability, choice) {
     (ability.guardianModeShift
       ? typeof choice.guardianModeShift === 'boolean'
       : choice.guardianModeShift === undefined) &&
-    choice.shivEnemyUids.length === ability.overflowShivs &&
+    // A forced card ahead of this ability parks its Shiv and Evoke picks until that card resolves.
+    (ability.deferredAfterForcedCard || choice.shivEnemyUids.length === ability.overflowShivs &&
     (choice.evokeSlots?.length ?? 0) === (ability.evokeOrbs?.length ?? 0) &&
     (choice.evokeEnemyUids?.length ?? 0) === (ability.evokeOrbs?.length ?? 0) &&
     (ability.evokeOrbs ?? []).every((orb, index) => orb === 'frost'
       ? choice.evokeEnemyUids?.[index] === null
-      : typeof choice.evokeEnemyUids?.[index] === 'string')
+      : typeof choice.evokeEnemyUids?.[index] === 'string'))
 }
 
 function mergedStartTurnChoices(room, choices, storedChoices = savedStartTurnChoices(room) ?? [], ownerId) {
@@ -3679,14 +3717,45 @@ function mergedStartTurnChoices(room, choices, storedChoices = savedStartTurnCho
   })
 }
 
-function choicesBeforeNoxious(combat, order, choices, fumesId) {
+/**
+ * Seats may stage picks before the shared order exists. Committing an order can
+ * make another seat's staged pick illegal (its Evoke slot or Shiv overflow moved),
+ * and a pick the client re-sends unchanged would then be refused forever.
+ */
+function dropOutdatedStagedChoices(room, combat, order, committerId) {
+  const stored = savedStartTurnChoices(room) ?? []
+  if (stored.length === 0) return
+  const byId = new Map(stored.map((choice) => [choice.id, choice]))
+  const defaults = new Map(defaultStartTurnChoices(combat).map((choice) => [choice.id, choice]))
+  const planned = startTurnAbilities(combat, order, order.map((id) => byId.get(id) ?? defaults.get(id)).filter(Boolean))
+  if (planned.length !== order.length) return
+  const outdated = new Set(planned.filter((ability) => ability.playerId !== committerId && byId.has(ability.id) &&
+    !validStartTurnChoice(ability, byId.get(ability.id))).map((ability) => ability.id))
+  if (outdated.size === 0) return
+  const owners = new Set(planned.filter((ability) => outdated.has(ability.id)).map((ability) => ability.playerId))
+  room.startTurnChoices = stored.filter((choice) => !outdated.has(choice.id))
+  reopenStartTurnOwners(room, owners)
+}
+
+/** Asks these owners again, adding them to the quorum when the order left them out. */
+function reopenStartTurnOwners(room, owners) {
+  room.startTurnRequired = [...new Set([...(room.startTurnRequired ?? []), ...owners])]
+  room.startTurnReady = Object.fromEntries(room.startTurnRequired
+    .map((playerId) => [playerId, !owners.has(playerId) && room.startTurnReady?.[playerId] === true]))
+}
+
+function choicesBeforeNoxious(combat, order, choices, fumesId, ownerId) {
   const abilities = startTurnAbilities(combat, order, choices)
   const index = abilities.findIndex((ability) => ability.id === fumesId)
-  if (abilities.length !== order.length || index < 0 || abilities
-    .slice(0, index).some((ability, abilityIndex) => !validStartTurnChoice(ability, choices[abilityIndex]))) {
+  const prefix = abilities.slice(0, index)
+  if (abilities.length !== order.length || index < 0 || prefix.some((ability, abilityIndex) =>
+    ability.playerId === ownerId && !validStartTurnChoice(ability, choices[abilityIndex]))) {
     fail('Resolve every Start-of-Turn choice before Noxious Fumes')
   }
-  return choices.slice(0, index)
+  // Another owner's earlier pick may still be missing. Stage the ones that are
+  // complete; a Fumes target an earlier effect later invalidates is re-asked.
+  return choices.slice(0, index).filter((choice, abilityIndex) =>
+    validStartTurnChoice(prefix[abilityIndex], choice))
 }
 
 function connectedStartTurnPlayer(room, playerId) {
@@ -3762,11 +3831,19 @@ function startTurnCoordinator(
 }
 
 function resolveStartTurn(room, seat, action, seatToken) {
+  const result = resolveStartTurnChoices(room, seat, action, seatToken)
+  // Settling the quorum can advance the combat into a private prompt owned by a
+  // disconnected seat; every exit must default it or the room waits forever.
+  settleForcedCards(room)
+  return result
+}
+
+function resolveStartTurnChoices(room, seat, action, seatToken) {
   const combat = room.run?.combat
   if (!combat || combat.phase !== 'start') fail('The party is not resolving Start-of-Turn abilities')
   if (roomPostRollNestedChoicePending(room)) fail('Finish the die Relic choice first')
   ensureStartTurnReady(room)
-  if (!room.startTurnRequired.includes(seat.playerId)) fail('Only a Start-of-Turn effect owner may resolve it')
+  if (!room.startTurnRequired?.includes(seat.playerId)) fail('Only a Start-of-Turn effect owner may resolve it')
   const choices = action.choices
   if (!Array.isArray(choices) || choices.length > UID_LIMIT || choices.some((choice) =>
     !choice || typeof choice.id !== 'string' || !Array.isArray(choice.shivEnemyUids) ||
@@ -3814,9 +3891,15 @@ function resolveStartTurn(room, seat, action, seatToken) {
     (!pendingFumesBefore || seat.playerId !== pendingFumesBefore.playerId)) {
     const merged = mergedStartTurnChoices(room, normalized, savedStartTurnChoices(room) ?? [], seat.playerId)
     const choicesById = new Map(merged.map((choice) => [choice.id, choice]))
+    // The unstaged plan hides Shiv and Evoke prompts that this owner's own picks
+    // reveal, so validate against the plan recomputed with those picks.
+    const planOrder = [...abilitiesById.keys()]
+    const replanned = new Map(startTurnAbilities(combat, planOrder,
+      planOrder.map((id) => choicesById.get(id)).filter(Boolean)).map((ability) => [ability.id, ability]))
     if ([...abilitiesById.values()].some((ability) => ability.playerId === seat.playerId &&
-      startTurnAbilityNeedsManualChoice(ability) && !validStartTurnChoice(ability, choicesById.get(ability.id)))) {
-      fail('The Start-of-Turn order or targets are stale')
+      startTurnAbilityNeedsManualChoice(ability) &&
+      !validStartTurnChoice(replanned.get(ability.id) ?? ability, choicesById.get(ability.id)))) {
+      fail('The Start-of-Turn plan changed. Review your choices and confirm again.')
     }
     const revised = startTurnOwnerChoicesChanged(room, seat.playerId, merged)
     saveStartTurnOwnerChoices(room, seat.playerId, merged)
@@ -3867,18 +3950,27 @@ function resolveStartTurn(room, seat, action, seatToken) {
     ])]
     room.startTurnReady = Object.fromEntries(room.startTurnRequired
       .map((playerId) => [playerId, room.startTurnReady?.[playerId] === true]))
+    dropOutdatedStagedChoices(room, combat, order, seat.playerId)
     settleDisconnectedStartTurnChoices(room)
     const fumes = pendingNoxiousFumes(room)
     if (fumes) {
-      const stagedChoices = choicesBeforeNoxious(combat, order, normalized, fumes.id)
+      const stagedChoices = choicesBeforeNoxious(combat, order, normalized, fumes.id, seat.playerId)
       saveStartTurnOwnerChoices(room, seat.playerId, stagedChoices)
-      if (!plannedStartTurnAbilities(room).some((ability) => ability.playerId === seat.playerId &&
-        startTurnAbilityNeedsChoice(ability, savedStartTurnEnemyTargets(room),
-          new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))))) {
-        markStartTurnReady(room, seat.playerId)
+      // The staged prefix can leave Fumes one forced target; then nothing is left to ask.
+      if (room.run?.combat !== combat || pendingNoxiousFumes(room)) {
+        if (!plannedStartTurnAbilities(room).some((ability) => ability.playerId === seat.playerId &&
+          startTurnAbilityNeedsChoice(ability, savedStartTurnEnemyTargets(room),
+            new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))))) {
+          markStartTurnReady(room, seat.playerId)
+          // This may complete the quorum while the remaining owners are away.
+          settleDisconnectedStartTurnChoices(room)
+        }
+        room.version += 1
+        return { changed: true, snapshot: snapshotFor(room, seatToken) }
       }
-      room.version += 1
-      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+      const forced = startTurnAbilities(combat, order, normalized).find((ability) => ability.id === fumes.id)
+      const fumesChoice = normalized.find((choice) => choice.id === fumes.id)
+      if (fumesChoice && forced?.targets?.length === 1) fumesChoice.enemyUid = forced.targets[0].uid
     }
   }
   const pendingFumes = pendingNoxiousFumes(room)
@@ -3886,7 +3978,7 @@ function resolveStartTurn(room, seat, action, seatToken) {
     const order = normalized.map((choice) => choice.id)
     const prefixChoices = existingOrder
       ? savedStartTurnChoices(room) ?? []
-      : choicesBeforeNoxious(combat, order, normalized, pendingFumes.id)
+      : choicesBeforeNoxious(combat, order, normalized, pendingFumes.id, seat.playerId)
     const ownerChoices = normalized.map((choice) => choice.id === pendingFumes.id ? choice : ({
       id: choice.id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
     }))
@@ -3907,10 +3999,17 @@ function resolveStartTurn(room, seat, action, seatToken) {
     const remainingChoice = plannedStartTurnAbilities(room).some((ability) =>
       startTurnChoicePending(ability, stagedById.get(ability.id)))
     if (pendingNoxiousFumes(room) || remainingChoice) {
+      // The Fumes target can reveal a prompt (Evoke, Shiv overflow) for a seat that already answered.
+      const revealed = new Set(plannedStartTurnAbilities(room).filter((ability) =>
+        ability.playerId !== seat.playerId && startTurnChoicePending(ability, stagedById.get(ability.id)))
+        .map((ability) => ability.playerId))
+      if (revealed.size > 0) reopenStartTurnOwners(room, revealed)
       if (!plannedStartTurnAbilities(room).some((ability) => ability.playerId === seat.playerId &&
         startTurnAbilityNeedsChoice(ability, savedStartTurnEnemyTargets(room),
           new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))))) {
         markStartTurnReady(room, seat.playerId)
+        // This may complete the quorum while the remaining owners are away.
+        settleDisconnectedStartTurnChoices(room)
       }
       room.version += 1
       return { changed: true, snapshot: snapshotFor(room, seatToken) }
@@ -3928,12 +4027,26 @@ function resolveStartTurn(room, seat, action, seatToken) {
       resolvedAbilities.find((candidate) => candidate.id === ability.id) ?? ability,
       resolvedById.get(ability.id),
     ))) {
+    // An answered seat's staged pick that no longer fits can block the plan this
+    // seat sees (its Shiv or Evoke prompt stays hidden); reopen that seat first.
+    const stagedIds = new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))
+    const outdated = resolvedAbilities.filter((ability, index) => ability.playerId !== seat.playerId &&
+      stagedIds.has(ability.id) && !validStartTurnChoice(ability, resolvedChoices[index]))
+    if (outdated.length > 0) {
+      saveStartTurnOwnerChoices(room, seat.playerId, resolvedChoices)
+      const dropped = new Set(outdated.map((ability) => ability.id))
+      room.startTurnChoices = (savedStartTurnChoices(room) ?? []).filter((choice) => !dropped.has(choice.id))
+      reopenStartTurnOwners(room, new Set(outdated.map((ability) => ability.playerId)))
+      settleDisconnectedStartTurnChoices(room)
+      room.version += 1
+      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    }
     room.startTurnCombatId = previousPlan.combatId
     room.startTurnOrder = previousPlan.order
     room.startTurnEnemyTargets = previousPlan.targets
     room.startTurnChoices = previousPlan.choices
     room.startTurnReady = previousPlan.ready
-    fail('The Start-of-Turn order or targets are stale')
+    fail('The Start-of-Turn plan changed. Review your choices and confirm again.')
   }
   room.startTurnCombatId = combat.combatId
   room.startTurnOrder ??= resolvedChoices.map((choice) => choice.id)
@@ -3989,12 +4102,34 @@ function resolveStartTurn(room, seat, action, seatToken) {
       room.version += 1
       return { changed: true, snapshot: snapshotFor(room, seatToken) }
     }
+    // A staged choice that an earlier ability or a reorder made illegal belongs to
+    // another seat; reopen that seat instead of failing the last submitter.
+    const planned = startTurnAbilities(combat, finalChoices.map((choice) => choice.id), finalChoices)
+    const invalid = planned.filter((ability, index) => !validStartTurnChoice(ability, finalChoices[index]))
+    // The submitter's own malformed payload is still refused; only plan drift is repaired.
+    const drifted = (ability) => ability.enemyTargetStale || ability.staleShivIndex !== undefined ||
+      ability.evokeTargetIndex !== undefined
+    if (invalid.length > 0 && invalid.every((ability) => ability.playerId !== seat.playerId || drifted(ability))) {
+      const owners = new Set(invalid.map((ability) => ability.playerId))
+      const staleTargets = new Set(invalid.filter((ability) => ability.enemyTargetStale).map((ability) => ability.id))
+      // Other owners' picks the plan no longer admits are asked again from scratch.
+      const outdated = new Set(invalid.filter((ability) => ability.playerId !== seat.playerId &&
+        !ability.enemyTargetStale).map((ability) => ability.id))
+      room.startTurnChoices = (savedStartTurnChoices(room) ?? []).filter((choice) => !outdated.has(choice.id))
+        .map((choice) => staleTargets.has(choice.id) ? { ...choice, enemyUid: undefined } : choice)
+      room.startTurnEnemyTargets = Object.fromEntries(Object.entries(room.startTurnEnemyTargets ?? {})
+        .filter(([id]) => !staleTargets.has(id)))
+      reopenStartTurnOwners(room, owners)
+      settleDisconnectedStartTurnChoices(room)
+      room.version += 1
+      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    }
     room.startTurnCombatId = previousPlan.combatId
     room.startTurnOrder = previousPlan.order
     room.startTurnEnemyTargets = previousPlan.targets
     room.startTurnChoices = previousPlan.choices
     room.startTurnReady = previousPlan.ready
-    fail('The Start-of-Turn order or targets are stale')
+    fail('The Start-of-Turn plan changed. Review your choices and confirm again.')
   }
   room.run = { ...room.run, combat: next }
   clearStartTurnPlan(room)
@@ -5250,6 +5385,8 @@ export function snapshotFor(room, seatToken, shared = {}) {
     lastStand: room.lastStand === true,
     metaOptions: structuredClone(room.metaOptions ?? { mode: 'standard', modifiers: [], quickStartAct: 1 }),
     version: room.version,
+    /** Changes whenever the server restarts, because restored rooms may resume at a lower version. */
+    epoch: SERVER_EPOCH,
     you: seat ? seatPublic(seat) : null,
     campfireChoice: viewerId !== null && room.campfireChoices?.[viewerId]
       ? { ...room.campfireChoices[viewerId] }

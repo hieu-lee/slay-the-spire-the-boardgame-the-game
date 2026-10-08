@@ -75,6 +75,8 @@ export type CombatScreenProps = {
   }
   /** Room snapshot version; omitted for the local table. */
   authoritativeVersion?: number
+  /** Re-downloads the room and rebuilds this screen's local drafts. */
+  onResync?: () => Promise<void>
   /** Successful REST refresh count; omitted for the local table. */
   authoritativeRefresh?: number
   /** Accepted newer REST snapshot count; omitted for the local table. */

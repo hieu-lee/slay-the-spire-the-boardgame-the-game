@@ -171,6 +171,8 @@ export type RoomSnapshot = {
   lastStand: boolean
   metaOptions: { mode: 'standard' | 'custom'; modifiers: DailyModifierId[]; quickStartAct: 1 | 2 | 3 | 4 }
   version: number
+  /** Server boot id; a new one lets a restored room resume at a lower version. */
+  epoch?: string
   you: PublicSeat
   seats: PublicSeat[]
   pendingRelic?: PendingRelicPreview | null
@@ -377,14 +379,15 @@ export function useRoomSession() {
 
   const accept = useCallback((next: RoomSnapshot) => {
     const current = snapshotRef.current
-    if (current && current.code === next.code && next.version < current.version) return false
+    if (current && current.code === next.code && next.epoch === current.epoch &&
+      next.version < current.version) return false
     const received = next.giveUpVote ? {
       ...next,
       giveUpVote: { ...next.giveUpVote, receivedAt: performance.now() },
     } : next
     snapshotRef.current = received
     setSnapshot(received)
-    return !current || current.code !== next.code || next.version > current.version
+    return !current || current.code !== next.code || next.epoch !== current.epoch || next.version > current.version
   }, [])
 
   const reconcileUnknown = useCallback((target: number, actionGeneration: number, activeCredentials: Credentials) => {
@@ -419,6 +422,28 @@ export function useRoomSession() {
       if (reconciliation.current.generation === actionGeneration) reconciliation.current.running = false
     })()
   }, [accept])
+
+  /** Replaces the local snapshot with the server's, even if it looks older. */
+  const resync = useCallback(async () => {
+    if (!credentials) return
+    const resyncGeneration = generation.current
+    const before = snapshotRef.current
+    try {
+      const latest = await json(await fetch(await roomUrl(`/api/rooms/${credentials.code}`), {
+        headers: { 'x-room-token': credentials.token },
+        signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
+      })) as RoomSnapshot
+      if (generation.current !== resyncGeneration) return
+      // A pushed frame that arrived meanwhile is newer than this GET.
+      if (snapshotRef.current === before) {
+        snapshotRef.current = null
+        accept(latest)
+      }
+      setRestorationEpoch((current) => current + 1)
+    } catch {
+      resetAfterFailure()
+    }
+  }, [accept, credentials])
 
   const forget = useCallback((retireRecovery = false) => {
     generation.current += 1
@@ -864,6 +889,7 @@ export function useRoomSession() {
     snapshot,
     refreshEpoch,
     restorationEpoch,
+    resync,
     connection,
     mutationPending,
     error,

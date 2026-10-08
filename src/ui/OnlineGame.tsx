@@ -245,6 +245,11 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const name = savedProfile()?.username ?? ''
   const [code, setCode] = useState('')
   const [character, setCharacter] = useState<(typeof CHARACTERS)[number][0]>('ironclad')
+  const [combatResyncs, setCombatResyncs] = useState(0)
+  const resyncCombat = useCallback(async () => {
+    await room.resync()
+    setCombatResyncs((count) => count + 1)
+  }, [room.resync])
   const [compendiumOpen, setCompendiumOpen] = useState(false)
   const [soloGiveUpOpen, setSoloGiveUpOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
@@ -790,6 +795,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         aria-disabled={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock || undefined}>
       {run.phase === 'combat' && combat ? (
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
+          key={combatResyncs}
           state={combat}
           act={run.act}
           viewerId={snapshot.you.playerId}
@@ -819,6 +825,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           authoritativePendingTrigger={run.combat?.pendingTriggerAbility ?? null}
           stagedStartTurnTriggers={snapshot.stagedStartTurnTriggers}
           authoritativeVersion={snapshot.version}
+          onResync={resyncCombat}
           authoritativeRefresh={room.refreshEpoch}
           authoritativeRestoration={room.restorationEpoch}
           authoritativeConnected={room.connection === 'connected'}
