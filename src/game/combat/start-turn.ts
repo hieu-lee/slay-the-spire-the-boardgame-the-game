@@ -526,12 +526,16 @@ function equivalentTriggerTargets<T extends { uid?: string; id?: string }>(
   playerTargets = false,
 ): T[] {
   if (targets.length < 2) return [...targets]
-  const signatures = targets.map((target) => triggerChoiceSignature(
+  const signatureFor = (target: T) => triggerChoiceSignature(
     state, player, source, playerTargets ? undefined : target.uid,
     playerTargets ? target.id : undefined,
-  ))
-  return signatures[0] !== undefined && signatures.every((signature) => signature === signatures[0])
-    ? [targets[0]!] : [...targets]
+  )
+  const first = signatureFor(targets[0]!)
+  if (first === undefined) return [...targets]
+  for (let index = 1; index < targets.length; index++) {
+    if (signatureFor(targets[index]!) !== first) return [...targets]
+  }
+  return [targets[0]!]
 }
 
 function startTurnTriggerTargets(state: CombatState, player: Player, source: TriggerSource) {
@@ -784,7 +788,7 @@ function startTurnAbilitiesFor(
   if (!validStartTurnOrder(sources, ids)) return []
   const byId = new Map(sources.map((entry) => [entry.ability.id, entry]))
   const choiceById = new Map(choices.map((choice) => [choice.id, choice]))
-  let plannedState = clone(state)
+  let plannedState = state
   let plannedShivs = state.players.reduce((sum, player) => sum + player.shivs, 0)
   let planningBlocked = false
   let planningEnded = false
@@ -818,7 +822,8 @@ function startTurnAbilitiesFor(
       return { ...entry.ability, overflowShivs: 0 }
     }
     const players = entry.ability.players
-      ? startTurnTriggerPlayers(simulationState, planningPlayer, entry.source)
+      ? plannedState === state ? entry.ability.players
+        : startTurnTriggerPlayers(simulationState, planningPlayer, entry.source)
       : undefined
     const playerTargetStale = Boolean(players &&
       !players.some((candidate) => candidate.id === choice?.targetPlayerId))
@@ -830,7 +835,8 @@ function startTurnAbilitiesFor(
     const overflowShivs = shivs - gained
     plannedShivs += gained
     const targets = entry.ability.targets
-      ? startTurnTriggerTargets(simulationState, planningPlayer, entry.source!)
+      ? plannedState === state ? entry.ability.targets
+        : startTurnTriggerTargets(simulationState, planningPlayer, entry.source!)
       : undefined
     const enemyTargetStale = Boolean(targets?.length && choice?.enemyUid !== undefined &&
       !targets.some((target) => target.uid === choice.enemyUid))

@@ -531,7 +531,7 @@ export function createRoomServer({
       socket.send(JSON.stringify({ type: 'snapshot', snapshot: snapshotFor(room, client.token, sharedSnapshot) }))
     }
     const durationMs = Date.now() - startedAt
-    if (durationMs >= 1_000) {
+    if (durationMs >= 100) {
       try { onSlowOperation({ kind: 'broadcast', roomCode: room.code, durationMs }) } catch {}
     }
   }

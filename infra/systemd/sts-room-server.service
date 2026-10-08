@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+CPUWeight=1000
 WorkingDirectory=%h/.local/share/slay-the-spire-server/current
 Environment=NODE_ENV=production
 EnvironmentFile=-%h/.config/slay-the-spire-server/codex.env

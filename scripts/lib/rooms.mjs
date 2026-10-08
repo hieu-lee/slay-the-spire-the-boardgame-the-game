@@ -3180,17 +3180,29 @@ function savedStartTurnChoices(room) {
   return room.startTurnCombatId === combatId ? room.startTurnChoices : undefined
 }
 
+const startTurnAbilitiesCache = new WeakMap()
+
 function plannedStartTurnAbilities(room) {
   const combat = room.run?.combat
   if (!combat) return []
+  // Snapshot reads and authorization inspect the same plan repeatedly. Include
+  // its contents so in-place effects and restored rooms invalidate it too.
+  const signature = JSON.stringify([
+    combat, room.startTurnCombatId, room.startTurnOrder,
+    room.startTurnEnemyTargets, room.startTurnChoices,
+  ])
+  const cached = startTurnAbilitiesCache.get(room)
+  if (cached?.signature === signature) return cached.abilities
   const order = room.startTurnCombatId === combat.combatId ? room.startTurnOrder : undefined
-  if (!Array.isArray(order)) return startTurnAbilities(combat)
   const targets = room.startTurnEnemyTargets ?? {}
   const stored = new Map((savedStartTurnChoices(room) ?? []).map((choice) => [choice.id, choice]))
-  return startTurnAbilities(combat, order, order.map((id) => ({
+  const abilities = !Array.isArray(order) ? startTurnAbilities(combat)
+    : startTurnAbilities(combat, order, order.map((id) => ({
     id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
     ...stored.get(id), enemyUid: targets[id] ?? stored.get(id)?.enemyUid,
   })))
+  startTurnAbilitiesCache.set(room, { signature, abilities })
+  return abilities
 }
 
 // Exact order dependency checks deliberately preserve normal-table semantics,
@@ -5212,7 +5224,7 @@ export function snapshotFor(room, seatToken, shared = {}) {
       ? undefined : cachedStartTurnOrderChoicePlayerId(room, privateStartAbilities)
   }
   if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnRequired')) {
-    shared.startTurnRequired = roomStartTurnChoicePlayerIds(
+    shared.startTurnRequired = room.startTurnRequired ?? roomStartTurnChoicePlayerIds(
       room, privateStartAbilities, false, [], shared.startTurnOrderOwner,
     )
   }
