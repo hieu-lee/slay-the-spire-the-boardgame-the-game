@@ -66,8 +66,6 @@
 .start-menu[data-reduced-motion] .start-menu__icon:hover { transform: none; }
 .start-menu__icon:focus-visible { outline: 3px solid #ffe29d; outline-offset: 3px; border-radius: 0.4rem; }
 .start-menu__icon img, .start-menu__icon svg { width: 100%; height: 100%; object-fit: contain; overflow: visible; }
-.start-menu__icon-back { fill: #ecdcb2; stroke: #3a2716; stroke-width: 2.5; }
-.start-menu__icon-figure { fill: #6d4d2b; stroke: #3a2716; stroke-width: 1.5; }
 
 @media (max-height: 500px) and (orientation: landscape) {
   .start-menu__icon { width: 2.75rem; height: 2.75rem; }

@@ -285,13 +285,12 @@ export function StartMenu({
         <span><strong>THE PARTY</strong><small>Board Game Chronicle</small></span>
       </div> : null}
       {screen === 'main' ? <div className="start-menu__corner">
+        <button type="button" className="start-menu__icon" aria-label="Leaderboard" title="Leaderboard" onClick={onLeaderboard}>
+          <img src={assetPath('menu/leaderboard-trophy.png')} alt="" />
+        </button>
         {!SINGLE_PLAYER_ONLY ? <MailBox /> : null}
         <button type="button" className="start-menu__icon" aria-label="Profile" title="Profile" onClick={onProfile}>
-          <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
-            <circle className="start-menu__icon-back" cx="24" cy="24" r="21" />
-            <circle className="start-menu__icon-figure" cx="24" cy="18" r="7" />
-            <path className="start-menu__icon-figure" d="M10.5 38c1.5-8 7-12 13.5-12s12 4 13.5 12c-3.6 3.6-8.2 5.5-13.5 5.5S14.1 41.6 10.5 38z" />
-          </svg>
+          <img src={assetPath('menu/profile-medallion.png')} alt="" />
         </button>
         <button type="button" className="start-menu__icon" aria-label="Settings" title="Settings" onClick={() => setSettingsOpen(true)}>
           <img src={assetPath('menu/settings-cog.png')} alt="" />
@@ -311,7 +310,6 @@ export function StartMenu({
           onClick={() => { setTutorialSetup(true); startCharacterSelection() }}>Tutorial</button>
         {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" onClick={onOnline}>Multiplayer</button>
           : null}
-        <button type="button" aria-label="Leaderboard" onClick={onLeaderboard}>Leaderboard</button>
         <button type="button" aria-label="Stats" onClick={onStats}>Stats</button>
         <button type="button" aria-label="Replay"
           onClick={() => setScreen('replay')}>Replay</button>

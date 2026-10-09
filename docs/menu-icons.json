@@ -1,0 +1,23 @@
+{
+ "model": "gpt-image-2.5-sunburst",
+ "workflow": "imagegen bundled image_gen.py edit, 1024x1024 high quality, native transparent background, downscaled to 256x256",
+ "styleReferences": [
+  "public/assets/menu/map-scroll.png",
+  "public/assets/menu/current-deck.webp",
+  "public/assets/menu/settings-cog.png"
+ ],
+ "icons": [
+  {
+   "name": "leaderboard",
+   "runtime": "public/assets/menu/leaderboard-trophy.png",
+   "prompt": "scripts/animation/sources/menu-icons/leaderboard-prompt.txt",
+   "sha256": "ad93592f0d6cd8e1d207f3aa1ef9ba4ca08f3609310322be265c31a129a384c7"
+  },
+  {
+   "name": "profile",
+   "runtime": "public/assets/menu/profile-medallion.png",
+   "prompt": "scripts/animation/sources/menu-icons/profile-prompt.txt",
+   "sha256": "e9e3b52f012aba6f790f99f159a57cfd79e3abfffe08c40969f3faa234f9c2ba"
+  }
+ ]
+}
