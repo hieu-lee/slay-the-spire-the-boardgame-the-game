@@ -78,7 +78,27 @@ try {
       if (phone) assert(layout.buttons.every((button) => button.height * viewport.width / layout.width >= 22),
         `${label}: a menu target is too short to tap: ${JSON.stringify(layout)}`)
       assert.deepEqual(await page.locator('.start-menu__nav button').allTextContents(),
-        [...(saved ? ['Resume'] : []), 'Single Player', 'Tutorial', 'Multiplayer', 'Leaderboard', 'Stats', 'Profile', 'Replay', 'Compendium', 'Settings'])
+        [...(saved ? ['Resume'] : []), 'Single Player', 'Tutorial', 'Multiplayer', 'Leaderboard', 'Stats', 'Replay', 'Compendium'])
+      // Mail, Profile and Settings sit in the top-right corner, left to right, clear of the title and the screen edge.
+      const corner = await page.locator('.start-menu__corner').evaluate((element) => ({
+        width: innerWidth, height: innerHeight, title: document.querySelector('.start-menu__title').getBoundingClientRect().toJSON(),
+        badge: document.querySelector('.start-menu__profile').getBoundingClientRect().toJSON(),
+        buttons: [...element.querySelectorAll('.mailbox__open, .start-menu__icon')].map((button) => {
+          const box = button.getBoundingClientRect()
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+          return { name: button.getAttribute('aria-label')?.replace(/,.*/, ''), hittable: Boolean(hit && button.contains(hit)), ...box.toJSON() }
+        }),
+      }))
+      assert.deepEqual(corner.buttons.map((button) => button.name), ['Mail', 'Profile', 'Settings'])
+      for (const [index, button] of corner.buttons.entries()) {
+        assert(button.hittable, `${label}: corner button ${button.name} is covered by something else`)
+        assert(button.top >= 0 && button.right <= corner.width && button.bottom <= corner.height && button.width >= 40 && button.height >= 40,
+          `${label}: corner button ${button.name} is clipped or too small: ${JSON.stringify(button)}`)
+        if (index > 0) assert(button.left >= corner.buttons[index - 1].right, `${label}: corner buttons overlap: ${JSON.stringify(corner.buttons)}`)
+      }
+      assert(corner.buttons[0].left >= corner.badge.right, `${label}: the corner buttons overlap the profile badge: ${JSON.stringify(corner)}`)
+      assert(corner.buttons[0].left >= corner.title.right || corner.buttons[0].bottom <= corner.title.top,
+        `${label}: the corner buttons overlap the title: ${JSON.stringify(corner)}`)
       assert.equal(await page.locator('.start-menu__title img').getAttribute('alt'), 'Slay the Spire')
       const flame = page.locator('.start-menu__title-flame')
       assert.equal(await flame.evaluate(element => getComputedStyle(element, '::before').animationName), 'title-flame-burn')
@@ -101,7 +121,7 @@ try {
         `${label}: reference menu typography is missing: ${JSON.stringify(menuStyle)}`)
       await page.screenshot({ path: join(output, `${label}.png`) })
       if (!phone) {
-        const option = page.getByRole('button', { name: 'Settings', exact: true })
+        const option = page.getByRole('button', { name: 'Compendium', exact: true })
         await option.hover()
         await page.waitForFunction(() => getComputedStyle(document.querySelector('.start-menu__nav button:last-child'), '::before').opacity === '1')
         assert.equal(await option.evaluate(button => getComputedStyle(button).backgroundImage), 'none')

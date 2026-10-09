@@ -238,7 +238,7 @@ export function MailBox() {
   const badge = totalUnread > 99 ? '99+' : String(totalUnread)
   return (
     <>
-      <button type="button" className="mailbox__open" onClick={openMailbox}
+      <button type="button" className="mailbox__open start-menu__icon" onClick={openMailbox}
         aria-label={totalUnread ? `Mail, ${totalUnread} unread` : 'Mail'} title="Mail">
         <Envelope />
         {totalUnread ? <span className="mailbox__badge" aria-hidden="true">{badge}</span> : null}

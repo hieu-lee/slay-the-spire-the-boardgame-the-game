@@ -140,7 +140,8 @@ try {
     const label = await envelope.getAttribute('aria-label')
     await page.screenshot({ path: join(output, `${screen}-menu.png`) })
     check(`${screen}: the envelope sits top right and badges an unread reply`, () => {
-      assert(placement.right >= 0 && placement.right < 60 && placement.top >= 0 && placement.top < 50,
+      // The envelope leads the corner row: Mail, then the Profile and Settings icons to its right.
+      assert(placement.right >= 0 && placement.right < 200 && placement.top >= 0 && placement.top < 50,
         `the envelope is not in the top-right corner: ${JSON.stringify(placement)}`)
       assert(placement.width >= 44, 'the envelope is below the 44px touch floor')
       assert(placement.clearOfNav && placement.hittable, 'the envelope overlaps the menu or is covered')
