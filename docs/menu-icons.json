@@ -18,6 +18,16 @@
    "runtime": "public/assets/menu/profile-medallion.png",
    "prompt": "scripts/animation/sources/menu-icons/profile-prompt.txt",
    "sha256": "e9e3b52f012aba6f790f99f159a57cfd79e3abfffe08c40969f3faa234f9c2ba"
+  },
+  {
+   "name": "stats",
+   "runtime": "public/assets/menu/stats-ledger.png",
+   "prompt": "scripts/animation/sources/menu-icons/stats-prompt.txt",
+   "sha256": "7f2a8b15efd44fca4c7e742ce1b6da9f114f6ab686775c8fb7cfed40f08d6dbb",
+   "extraStyleReferences": [
+    "public/assets/menu/leaderboard-trophy.png",
+    "public/assets/menu/profile-medallion.png"
+   ]
   }
  ]
 }

@@ -288,6 +288,9 @@ export function StartMenu({
         <button type="button" className="start-menu__icon" aria-label="Leaderboard" title="Leaderboard" onClick={onLeaderboard}>
           <img src={assetPath('menu/leaderboard-trophy.png')} alt="" />
         </button>
+        <button type="button" className="start-menu__icon" aria-label="Stats" title="Stats" onClick={onStats}>
+          <img src={assetPath('menu/stats-ledger.png')} alt="" />
+        </button>
         {!SINGLE_PLAYER_ONLY ? <MailBox /> : null}
         <button type="button" className="start-menu__icon" aria-label="Profile" title="Profile" onClick={onProfile}>
           <img src={assetPath('menu/profile-medallion.png')} alt="" />
@@ -310,7 +313,6 @@ export function StartMenu({
           onClick={() => { setTutorialSetup(true); startCharacterSelection() }}>Tutorial</button>
         {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" onClick={onOnline}>Multiplayer</button>
           : null}
-        <button type="button" aria-label="Stats" onClick={onStats}>Stats</button>
         <button type="button" aria-label="Replay"
           onClick={() => setScreen('replay')}>Replay</button>
         <button type="button" aria-label="Compendium" onClick={onCompendium}>Compendium</button>

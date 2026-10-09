@@ -127,8 +127,8 @@ Open an issue and the referenced material will be removed.
 
 ### October 2026 menu icons
 
-The Leaderboard trophy and Profile medallion in the main menu's top-right corner
-(`public/assets/menu/leaderboard-trophy.png`, `profile-medallion.png`) are fan
+The Leaderboard trophy, Stats ledger and Profile medallion in the main menu's top-right corner
+(`public/assets/menu/leaderboard-trophy.png`, `stats-ledger.png`, `profile-medallion.png`) are fan
 assets generated with OpenAI `gpt-image-2.5-sunburst`, using this project's
 existing menu icons as style references. Prompts and hashes are in
 `scripts/animation/sources/menu-icons/` and `docs/menu-icons.json`.

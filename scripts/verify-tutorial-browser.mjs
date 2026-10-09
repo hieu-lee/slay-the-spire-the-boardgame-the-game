@@ -62,7 +62,7 @@ try {
     await page.getByRole('button', { name: 'Resume', exact: true }).waitFor()
     saved.campaign = await page.evaluate(() => localStorage.getItem('sts-physical-campaign'))
     assert.deepEqual(await page.locator('.start-menu__nav button').allTextContents(),
-      ['Resume', 'Single Player', 'Tutorial', 'Multiplayer', 'Stats', 'Replay', 'Compendium'])
+      ['Resume', 'Single Player', 'Tutorial', 'Multiplayer', 'Replay', 'Compendium'])
 
     await page.getByRole('button', { name: 'Tutorial', exact: true }).click()
     await page.locator('.start-menu__character-select:not(.start-menu__character-loading)').waitFor()

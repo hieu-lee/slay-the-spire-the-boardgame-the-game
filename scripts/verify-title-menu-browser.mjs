@@ -78,8 +78,8 @@ try {
       if (phone) assert(layout.buttons.every((button) => button.height * viewport.width / layout.width >= 22),
         `${label}: a menu target is too short to tap: ${JSON.stringify(layout)}`)
       assert.deepEqual(await page.locator('.start-menu__nav button').allTextContents(),
-        [...(saved ? ['Resume'] : []), 'Single Player', 'Tutorial', 'Multiplayer', 'Stats', 'Replay', 'Compendium'])
-      // Leaderboard, Mail, Profile and Settings sit in the top-right corner, left to right, clear of the title and the screen edge.
+        [...(saved ? ['Resume'] : []), 'Single Player', 'Tutorial', 'Multiplayer', 'Replay', 'Compendium'])
+      // Leaderboard, Stats, Mail, Profile and Settings sit in the top-right corner, left to right, clear of the title and the screen edge.
       const corner = await page.locator('.start-menu__corner').evaluate((element) => ({
         width: innerWidth, height: innerHeight, title: document.querySelector('.start-menu__title').getBoundingClientRect().toJSON(),
         badge: document.querySelector('.start-menu__profile').getBoundingClientRect().toJSON(),
@@ -89,7 +89,7 @@ try {
           return { name: button.getAttribute('aria-label')?.replace(/,.*/, ''), hittable: Boolean(hit && button.contains(hit)), ...box.toJSON() }
         }),
       }))
-      assert.deepEqual(corner.buttons.map((button) => button.name), ['Leaderboard', 'Mail', 'Profile', 'Settings'])
+      assert.deepEqual(corner.buttons.map((button) => button.name), ['Leaderboard', 'Stats', 'Mail', 'Profile', 'Settings'])
       for (const [index, button] of corner.buttons.entries()) {
         assert(button.hittable, `${label}: corner button ${button.name} is covered by something else`)
         assert(button.top >= 0 && button.right <= corner.width && button.bottom <= corner.height && button.width >= 40 && button.height >= 40,
