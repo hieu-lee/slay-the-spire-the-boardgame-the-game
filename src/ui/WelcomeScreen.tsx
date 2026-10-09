@@ -36,9 +36,10 @@ export function WelcomeScreen({ children }: { children: ReactNode }) {
     if (revealed && gated && (startedWithKeyboard.current || !matchMedia('(pointer: coarse)').matches)) firstField.current?.focus()
   }, [revealed, gated, securing, mode])
   if (!gated) return children
-  const choose = (next: Mode) => { setMode(next); setSwitching(true); setError(''); setPassword('') }
+  const choose = (next: Mode) => { setMode(next); setSwitching(true); setError(''); setPassword(''); setShowPassword(false) }
   const creating = securing || mode === 'create'
   const title = securing ? 'Create a password' : mode === 'login' ? 'Log in' : 'Create your account'
+  const submitLabel = securing ? 'Save password' : mode === 'login' ? 'Log in' : 'Create account'
   const ready = password.length >= MIN_PASSWORD_LENGTH && (securing || username.trim().length >= 2)
   return <main className="welcome sts-scope" data-editing={editing}>
     <img className="welcome__wallpaper" src={assetPath('menu/welcome-wallpaper.webp')} alt="" />
@@ -47,6 +48,8 @@ export function WelcomeScreen({ children }: { children: ReactNode }) {
     </button> : <form className="reward-screen reward-screen--loot welcome__panel" onSubmit={async (event) => {
       event.preventDefault()
       if (pending || !ready) return
+      // Mask the field again so password managers see a password field when the form is sent.
+      setShowPassword(false)
       setPending(true)
       setError('')
       try {
@@ -64,20 +67,24 @@ export function WelcomeScreen({ children }: { children: ReactNode }) {
         {securing ? null : <input ref={firstField} id="welcome-name" aria-label="Username" autoComplete="username" minLength={2} maxLength={24} required
           value={username} onFocus={() => setEditing(true)} onChange={(event) => setUsername(event.target.value)}
           aria-describedby="welcome-hint welcome-error" disabled={pending} placeholder="Your username" />}
-        <input ref={securing ? firstField : undefined} id="welcome-password" aria-label="Password" type={showPassword ? 'text' : 'password'}
-          autoComplete={creating ? 'new-password' : 'current-password'} minLength={creating ? MIN_PASSWORD_LENGTH : 1} maxLength={MAX_PASSWORD_LENGTH} required
-          value={password} onFocus={() => setEditing(true)} onChange={(event) => setPassword(event.target.value)}
-          aria-describedby="welcome-hint welcome-error" disabled={pending} placeholder={creating ? `Create a password (${MIN_PASSWORD_LENGTH}+ characters)` : 'Your password'} />
+        <div className="welcome__field">
+          <input ref={securing ? firstField : undefined} id="welcome-password" aria-label="Password" type={showPassword ? 'text' : 'password'}
+            autoComplete={creating ? 'new-password' : 'current-password'} minLength={creating ? MIN_PASSWORD_LENGTH : 1} maxLength={MAX_PASSWORD_LENGTH} required
+            value={password} onFocus={() => setEditing(true)} onChange={(event) => setPassword(event.target.value)}
+            aria-describedby="welcome-hint welcome-error" disabled={pending} placeholder={creating ? `Password (${MIN_PASSWORD_LENGTH}+)` : 'Your password'} />
+          <button type="button" className="welcome__reveal" aria-label="Show password" aria-pressed={showPassword} disabled={pending}
+            onPointerDown={(event) => event.preventDefault()} onClick={() => setShowPassword((shown) => !shown)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />{showPassword ? <path d="M4 20 20 4" /> : null}</svg>
+          </button>
+        </div>
         <p id="welcome-hint">{creating ? `${securing ? '' : '2–24 letters, numbers, spaces, underscores or hyphens. '}Password: at least ${MIN_PASSWORD_LENGTH} characters.` : ''}</p>
         <p id="welcome-error" role="alert">{error}</p>
-        <button type="submit" className="welcome__confirm" disabled={pending || !ready}
-          aria-label={pending ? 'Please wait' : securing ? 'Save password' : mode === 'login' ? 'Log in' : 'Create account'}><span aria-hidden="true">{pending ? '…' : '✓'}</span></button>
-        <div className="welcome__links">
-          <button type="button" onClick={() => setShowPassword((shown) => !shown)}>{showPassword ? 'Hide password' : 'Show password'}</button>
+        <button type="submit" className="welcome__confirm" disabled={pending || !ready}>{pending ? 'Please wait…' : submitLabel}</button>
+        <p className="welcome__switch">
           {securing || mode === 'create'
-            ? <button type="button" disabled={pending} onClick={() => choose('login')}>{securing ? 'Use a different account' : 'Already have an account? Log in'}</button>
-            : <button type="button" disabled={pending} onClick={() => choose('create')}>New here? Create an account</button>}
-        </div>
+            ? <button type="button" className="welcome__link" disabled={pending} onClick={() => choose('login')}>{securing ? <strong>Use a different account</strong> : <>Already have an account? <strong>Log in</strong></>}</button>
+            : <button type="button" className="welcome__link" disabled={pending} onClick={() => choose('create')}>New here? <strong>Create an account</strong></button>}
+        </p>
       </div>
     </form>}
   </main>

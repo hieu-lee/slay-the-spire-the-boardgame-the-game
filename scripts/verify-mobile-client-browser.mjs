@@ -17,9 +17,17 @@ const { port } = await rooms.listen(0)
 const roomOrigin = `http://127.0.0.1:${port}`
 const failures = []
 const browsers = []
+const reloading = new Set()
+async function reload(page) {
+  reloading.add(page)
+  try { await page.reload({ waitUntil: 'networkidle' }) } finally { reloading.delete(page) }
+}
 
 async function profile(page, username) {
-  page.on('pageerror', error => failures.push(String(error)))
+  // WebKit reports the in-flight fetches that a reload cancels as page errors; only those are expected.
+  page.on('pageerror', error => {
+    if (!(reloading.has(page) && /Fetch API cannot load .* due to access control checks/.test(String(error)))) failures.push(String(error))
+  })
   page.on('response', response => {
     if (response.url().startsWith(origin) && response.status() >= 400) failures.push(`${response.status()} ${response.url()}`)
   })
@@ -30,9 +38,10 @@ async function profile(page, username) {
   await page.goto(origin, { waitUntil: 'networkidle' })
   if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) {
     await page.keyboard.press('a')
-    assert(await page.evaluate(() => document.activeElement === document.querySelector('#welcome-name')),
-      'mobile player who started with a hardware keyboard cannot type their name')
-    await page.reload({ waitUntil: 'networkidle' })
+    // The panel focuses the name field in an effect after the keypress reveals it, so wait for it.
+    assert(await page.waitForFunction(() => document.activeElement === document.querySelector('#welcome-name'), null, { timeout: 5_000 })
+      .then(() => true, () => false), 'mobile player who started with a hardware keyboard cannot type their name')
+    await reload(page)
   }
   await page.getByRole('button', { name: 'Tap, click, or press any key to start' }).click()
   if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) {
@@ -54,7 +63,7 @@ async function profile(page, username) {
     const footprint = await page.evaluate(() => {
       const title = document.querySelector('.welcome__panel .reward-screen__title').getBoundingClientRect()
       const submit = document.querySelector('.welcome__confirm').getBoundingClientRect()
-      const links = document.querySelector('.welcome__links').getBoundingClientRect()
+      const links = document.querySelector('.welcome__switch').getBoundingClientRect()
       return { top: title.top, height: Math.max(submit.bottom, links.bottom) - title.top }
     })
     // Playwright cannot raise iOS's software keyboard; bound the form to its compact footprint.
@@ -89,7 +98,7 @@ try {
   await phone.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
   await phone.waitForFunction(() => JSON.parse(localStorage.getItem('sts-solo-run') ?? 'null')?.run?.phase === 'neow')
   await phone.screenshot({ path: `${output}/landscape-phone-solo.png` })
-  await phone.reload({ waitUntil: 'networkidle' })
+  await reload(phone)
   await phone.getByRole('button', { name: 'Resume', exact: true }).waitFor()
   await phone.getByRole('button', { name: 'Play online', exact: true }).click()
   await phone.getByRole('button', { name: 'Create room' }).click()
@@ -112,7 +121,7 @@ try {
   assert((await phone.locator('.app-shell__header').boundingBox()).height <= 70,
     'the phone multiplayer HUD wrapped over the play area')
   await phone.screenshot({ path: `${output}/landscape-phone-multiplayer-run.png` })
-  await phone.reload({ waitUntil: 'networkidle' })
+  await reload(phone)
   await phone.getByRole('heading', { name: 'Neow’s Blessing', exact: true }).waitFor()
 
   assert.deepEqual(failures, [])
