@@ -28,6 +28,17 @@
     "public/assets/menu/leaderboard-trophy.png",
     "public/assets/menu/profile-medallion.png"
    ]
+  },
+  {
+   "name": "mail",
+   "runtime": "public/assets/menu/mail-letter.png",
+   "prompt": "scripts/animation/sources/menu-icons/mail-prompt.txt",
+   "sha256": "22c055105e08fe0f98717a0cc59df2d4d15971d7b4f5b4424243b402d9d01c44",
+   "extraStyleReferences": [
+    "public/assets/menu/leaderboard-trophy.png",
+    "public/assets/menu/profile-medallion.png",
+    "public/assets/menu/stats-ledger.png"
+   ]
   }
  ]
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { assetPath } from '../game/assets.ts'
 import {
   fetchMailDesk,
   fetchMailbox,
@@ -19,18 +20,6 @@ function lastFrom(letters: Letter[], from: Letter['from']) {
     if (letter?.from === from) return letter.at
   }
   return 0
-}
-
-function Envelope() {
-  return (
-    <svg className="mailbox__envelope" viewBox="0 0 64 48" aria-hidden="true" focusable="false">
-      <path className="mailbox__envelope-back" d="M4 8.5C4 5.5 6.4 3 9.5 3h45C57.6 3 60 5.5 60 8.5v31c0 3-2.4 5.5-5.5 5.5h-45C6.4 45 4 42.5 4 39.5z" />
-      <path className="mailbox__envelope-fold" d="M6 41.5 26.5 24M58 41.5 37.5 24" />
-      <path className="mailbox__envelope-flap" d="M5.5 6.5 32 28 58.5 6.5" />
-      <circle className="mailbox__envelope-seal" cx="32" cy="27" r="7" />
-      <path className="mailbox__envelope-sigil" d="M32 22.5 35 27l-3 4.5-3-4.5z" />
-    </svg>
-  )
 }
 
 /**
@@ -240,7 +229,7 @@ export function MailBox() {
     <>
       <button type="button" className="mailbox__open start-menu__icon" onClick={openMailbox}
         aria-label={totalUnread ? `Mail, ${totalUnread} unread` : 'Mail'} title="Mail">
-        <Envelope />
+        <img src={assetPath('menu/mail-letter.png')} alt="" />
         {totalUnread ? <span className="mailbox__badge" aria-hidden="true">{badge}</span> : null}
       </button>
       <dialog ref={dialog} className="mailbox" aria-labelledby="mailbox-title"

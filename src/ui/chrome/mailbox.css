@@ -1,17 +1,6 @@
-/* Letters to the developer: a sealed envelope in the menu's top-right corner,
+/* Letters to the developer: a sealed letter icon in the menu's top-right corner,
    opening onto a sheet of the same parchment the map is drawn on. */
-.start-menu__corner .mailbox__open {
-  position: relative;
-  width: 3.6rem;
-  height: 3rem;
-}
-
-.mailbox__envelope { width: 100%; height: 100%; overflow: visible; }
-.mailbox__envelope-back { fill: #ecdcb2; stroke: #3a2716; stroke-width: 2.5; }
-.mailbox__envelope-fold,
-.mailbox__envelope-flap { fill: none; stroke: #6d4d2b; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.mailbox__envelope-seal { fill: #a4271d; stroke: #5e120c; stroke-width: 1.5; }
-.mailbox__envelope-sigil { fill: #f1c24f; }
+.start-menu__corner .mailbox__open { position: relative; }
 
 .mailbox__badge {
   position: absolute;
@@ -220,7 +209,6 @@
 .mailbox__send:focus-visible { outline: 3px solid #332718; outline-offset: 2px; }
 
 @media (max-height: 500px) and (orientation: landscape) {
-  .start-menu__corner .mailbox__open { width: 3rem; height: 2.75rem; }
   .mailbox { width: min(40rem, calc(100% - 2rem)); max-height: calc(100dvh - 1rem); }
   .mailbox__panel { max-height: calc(100dvh - 1rem); gap: 0.4rem; padding: 0.6rem 0.9rem 0.7rem; }
   .mailbox__header h2 { font-size: 1.25rem; }
