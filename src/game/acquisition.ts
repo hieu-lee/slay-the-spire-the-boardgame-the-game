@@ -1,9 +1,9 @@
 import { CARDS, cardIsCurse } from './cards.ts'
 import { createRelicInstance, POTION_DECK, POTIONS, RELIC_DECK, RELICS, relicDef } from './relics.ts'
-import { createRng, seedFromString, shuffle } from './rng.ts'
+import { shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
 import type { Player } from './types.ts'
-import { BASE_CHARACTER_IDS, DOWNFALL_CHARACTER_IDS, DLC_CHARACTER_IDS } from './types.ts'
+import { BASE_CHARACTER_IDS, DOWNFALL_CHARACTER_IDS } from './types.ts'
 import type { CharacterId } from './types.ts'
 import { CHARACTER_UNLOCKS, createCampaignProgress } from './campaign.ts'
 import type { CampaignProgress } from './campaign.ts'
@@ -91,12 +91,6 @@ export function createItemDecks(rng: RngState, colorlessUnlocked: boolean, progr
     )),
     characterCards: Object.fromEntries(inactive.map((character) => [character, shuffle(rng, characterRewardDeck(character, false, progress, packs))])),
     characterRares: Object.fromEntries(inactive.map((character) => [character, shuffle(rng, characterRewardDeck(character, true, progress, packs))])),
-  }
-  // Optional DLC pools must not shift existing seeded runs and tutorial plans.
-  const dlcRng = createRng(seedFromString(`dlc-pools:${rng.seed}:${rng.calls}`))
-  for (const character of DLC_CHARACTER_IDS.filter((id) => !activeCharacters.includes(id))) {
-    decks.characterCards[character] = shuffle(dlcRng, characterRewardDeck(character, false, progress, packs))
-    decks.characterRares[character] = shuffle(dlcRng, characterRewardDeck(character, true, progress, packs))
   }
   return decks
 }

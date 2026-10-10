@@ -1,0 +1,1667 @@
+{
+ "model": "gpt-image-2.5-sunburst",
+ "quality": "high",
+ "size": "1536x1024",
+ "cardSize": [
+  748,
+  420
+ ],
+ "references": [
+  {
+   "path": "public/assets/card-art/ironclad/cleave.webp",
+   "sha256": "a0a680775bd90af01c8d107591423a9cea004a3b9931003a69986f00c61a7b0e"
+  },
+  {
+   "path": "public/assets/card-art/ironclad/shrug_it_off.webp",
+   "sha256": "978727d547229754efc140162d8a1bce42bce7bbe3bcfd6504c91e7cf701f9f3"
+  },
+  {
+   "path": "scripts/animation/sources/kratos/idle.webp",
+   "sha256": "11e80c43b3a120ce6306088221ad6b54d7e57affdf6a153397513482683b465d"
+  }
+ ],
+ "gameImages": {
+  "athena-lvl3": {
+   "title": "File:Athena's Blades GoWII lvl3.png",
+   "page": "https://godofwar.fandom.com/wiki/File%3AAthena%27s_Blades_GoWII_lvl3.png",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/7/74/Athena%27s_Blades_GoWII_lvl3.png/revision/latest/scale-to-width-down/1280?cb=20230520052355",
+   "sha256": "94b4c0751627847bb051e8ffa8a73bbe13166f435e7d7ba06f78d641766ed34c"
+  },
+  "boc-cutscene": {
+   "title": "File:1593500 1775.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3A1593500_1775.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/d/de/1593500_1775.jpg/revision/latest/scale-to-width-down/1280?cb=20260224183558",
+   "sha256": "22ff6b87cac8d5b7d30e94b024d1951fc0a87dd6e4479fed1672a29e85b61f4e"
+  },
+  "boc-gow1": {
+   "title": "File:919864 20050318 790screen015-1-.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3A919864_20050318_790screen015-1-.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/3/37/919864_20050318_790screen015-1-.jpg/revision/latest/scale-to-width-down/1280?cb=20260521123926",
+   "sha256": "b95e8ffae5a6eac685daf6a713f5e4752744c58a7cb437f5ad05bbe90be9dc4e"
+  },
+  "boc-gow2": {
+   "title": "File:Gow 2 blades of chaos.png.png",
+   "page": "https://godofwar.fandom.com/wiki/File%3AGow_2_blades_of_chaos.png.png",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/7/76/Gow_2_blades_of_chaos.png.png/revision/latest/scale-to-width-down/1280?cb=20250823143056",
+   "sha256": "baa8822600df288359c2f17a65559eb74251712dc7001fd41ba9790589aa2c52"
+  },
+  "cerberus": {
+   "title": "File:God of War III Cerberus ride.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AGod_of_War_III_Cerberus_ride.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/3/3f/God_of_War_III_Cerberus_ride.jpg/revision/latest?cb=20100227194944",
+   "sha256": "ea3cb37e26ddfc0c6f803b8959fea692ae8126c5d5962963a4a4c8f0e940f0be"
+  },
+  "cestus": {
+   "title": "File:Gow3.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AGow3.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/7/7f/Gow3.jpg/revision/latest?cb=20100509184809",
+   "sha256": "302ff16737b08b856c2b9d0ba6dc3eeb9896ae1de42edd31a3adc1c95891d3e3"
+  },
+  "cestus2": {
+   "title": "File:Site god-of-war-iii-ss-13.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3ASite_god-of-war-iii-ss-13.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/b/b4/Site_god-of-war-iii-ss-13.jpg/revision/latest?cb=20110219071822",
+   "sha256": "97bcdb075b23937580fe5904303b94ffb94e4f57b2800c0f2f98fd7544fe65d7"
+  },
+  "colossus": {
+   "title": "File:GOWII-ColossusOfRhodes-1.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AGOWII-ColossusOfRhodes-1.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/0/00/GOWII-ColossusOfRhodes-1.jpg/revision/latest/scale-to-width-down/1280?cb=20220111104509",
+   "sha256": "dad7fab4d3162f9f8d8510179a21ef819ac2f207c39ac679f3d04504c75d7a70"
+  },
+  "exile": {
+   "title": "File:1430791-blades of exile.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3A1430791-blades_of_exile.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/0/0e/1430791-blades_of_exile.jpg/revision/latest?cb=20120701084257",
+   "sha256": "0740ae6e1d1e3eed56201bddeabae268c0434d33f0947d8598876537b761a4d9"
+  },
+  "fleece": {
+   "title": "File:895px-GOW 3 Kratos ( in game picture 3 ).jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3A895px-GOW_3_Kratos_%28_in_game_picture_3_%29.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/6/6d/895px-GOW_3_Kratos_%28_in_game_picture_3_%29.jpg/revision/latest?cb=20100103200609",
+   "sha256": "1ce33e5ca4a3c2db39291ee3b0ab232c34fbb5119dea496d5c673057efcbc5b5"
+  },
+  "hades": {
+   "title": "File:Hadesgow3.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AHadesgow3.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/f/f2/Hadesgow3.jpg/revision/latest?cb=20100908215255",
+   "sha256": "abf605118affb4f52442d1b5fb49a2c45540b1b0f5c50bb9d3db2165a07e3670"
+  },
+  "hades2": {
+   "title": "File:Kratos-killin-hades.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AKratos-killin-hades.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/b/ba/Kratos-killin-hades.jpg/revision/latest?cb=20130521144357",
+   "sha256": "990312b7a3f6a74696caadd58d90d67d166da80588f48722e73e5deb99d7f39d"
+  },
+  "hydra": {
+   "title": "File:Hydra Promo GoW.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AHydra_Promo_GoW.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/e/ee/Hydra_Promo_GoW.jpg/revision/latest/scale-to-width-down/1280?cb=20120624080432",
+   "sha256": "cff5406be1115cf951efc5a68e51cede16dd49bc6cc22709eb259fb4248a157b"
+  },
+  "kratos-athena": {
+   "title": "File:Athena (5).jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AAthena_%285%29.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/c/c9/Athena_%285%29.jpg/revision/latest?cb=20191002071920",
+   "sha256": "1a621f10fb20517ee86c8dc5f7005f0cf028b56d6e5cf4d1443ede39fd688285"
+  },
+  "kratos1": {
+   "title": "File:56473-457.png",
+   "page": "https://godofwar.fandom.com/wiki/File%3A56473-457.png",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/f/f1/56473-457.png/revision/latest/scale-to-width-down/1280?cb=20251028073243",
+   "sha256": "195093bc944b8863b9cf0c29aaa626a5916701ad32a736b2011c7d2746e7f4a0"
+  },
+  "medusa": {
+   "title": "File:Medusaa.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AMedusaa.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/e/e8/Medusaa.jpg/revision/latest?cb=20231223074744",
+   "sha256": "9550426db7870746769eca344627aed25fb912cdee0e478155886b732cd1bae5"
+  },
+  "medusa2": {
+   "title": "File:Mmmde.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AMmmde.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/1/17/Mmmde.jpg/revision/latest?cb=20231223074835",
+   "sha256": "9959b8cec3f933817df6d0df5a2b67a60a44c367563c19891337e4f6080343fe"
+  },
+  "minotaur": {
+   "title": "File:Minotaur (God of War Chains of Olympus).jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AMinotaur_%28God_of_War_Chains_of_Olympus%29.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/b/b3/Minotaur_%28God_of_War_Chains_of_Olympus%29.jpg/revision/latest/scale-to-width-down/1280?cb=20111121014925",
+   "sha256": "d1d410a6d271b1163dcefa713e67b77bccf1a01775c3ba2d27641ed83a827d33"
+  },
+  "minotaur2": {
+   "title": "File:Kratos vs minotaur hammer grunt 10 - GoW.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AKratos_vs_minotaur_hammer_grunt_10_-_GoW.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/e/e0/Kratos_vs_minotaur_hammer_grunt_10_-_GoW.jpg/revision/latest?cb=20140601041538",
+   "sha256": "472087aba5539dbecc880d4127fb559ca85c629e04928d0a3f3d4bedb32d07fa"
+  },
+  "pandora-box": {
+   "title": "File:Pandora'sBoxGow2005PS3.png",
+   "page": "https://godofwar.fandom.com/wiki/File%3APandora%27sBoxGow2005PS3.png",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/9/92/Pandora%27sBoxGow2005PS3.png/revision/latest/scale-to-width-down/1280?cb=20250901134944",
+   "sha256": "eb554c720252849ab026c843f40730123ce15ac61a5d163ddf1ab222dd61b8b0"
+  },
+  "pandora-temple": {
+   "title": "File:Gate final.jpg",
+   "page": "https://godofwar.fandom.com/wiki/File%3AGate_final.jpg",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/a/a3/Gate_final.jpg/revision/latest/scale-to-width-down/1280?cb=20130405004342",
+   "sha256": "a4a5a0edd922323d9967414b6944fc34ba104a8b12a1763924ccdd0facccdef6"
+  },
+  "poseidon": {
+   "title": "File:KratosMeetsPoseidon.PNG",
+   "page": "https://godofwar.fandom.com/wiki/File%3AKratosMeetsPoseidon.PNG",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/9/9d/KratosMeetsPoseidon.PNG/revision/latest?cb=20221030080235",
+   "sha256": "0c4164117199abd16558e489ad7148161a442ef13925a029cde943b9672e5eb1"
+  },
+  "zeus": {
+   "title": "File:Gow3introZeus.png",
+   "page": "https://godofwar.fandom.com/wiki/File%3AGow3introZeus.png",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/d/d3/Gow3introZeus.png/revision/latest/scale-to-width-down/1280?cb=20250420090125",
+   "sha256": "953d0608736519e01fa4c8a0b7ba6d9ce1380acec4a8464f2f691b2b0d31226d"
+  },
+  "zeus2": {
+   "title": "File:KratosMeetsZeus.PNG",
+   "page": "https://godofwar.fandom.com/wiki/File%3AKratosMeetsZeus.PNG",
+   "url": "https://static.wikia.nocookie.net/godofwar/images/b/b4/KratosMeetsZeus.PNG/revision/latest/scale-to-width-down/1280?cb=20260314122558",
+   "sha256": "7531f89e27416d846c9ddaaa3220547a6567cbd039c4284376729a77d4157f08"
+  }
+ },
+ "cards": [
+  {
+   "id": "slayer_armaments",
+   "scene": "Kratos tightening the Chains of his Blades of Chaos around his forearms to arm himself, sparks from a forge, spears and weapons on a rack behind him.",
+   "gameImages": [
+    "boc-gow1",
+    "kratos1"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/slayer_armaments.webp",
+    "sha256": "b2011c1958bcbbcb71bd93cbc01e49e80c79f34eb171200c5fe8d17753587581"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/slayer_armaments.txt",
+    "sha256": "ca192c155e05c1f59f1ff397bcef6f4389c70ac7020214976993bc5242b4ee2b"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/slayer_armaments.webp",
+    "sha256": "a47f097e34d27b79da7017094bbc0441dad4f251a1287982f70d4cf92adaa8f7"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "slayer_brutality",
+   "scene": "Kratos's scarred fist crushing a glowing red beating heart torn from the Hydra, purple-black blood dripping between his fingers, dark violet background.",
+   "gameImages": [
+    "hydra",
+    "kratos1"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/slayer_brutality.webp",
+    "sha256": "82efee23e9d3dadb3557909669914f06826d452608a4442ec181371a3b75d3d1"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/slayer_brutality.txt",
+    "sha256": "253f3d20a39ca96436b7cb4b8973abf9f9de3e2a1af00ee74ac908915082262f"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/slayer_brutality.webp",
+    "sha256": "6aedd4805710d62badad3366a7f30a10819f1e253f110d80a274e12566ae301d"
+   },
+   "webpQuality": 80
+  },
+  {
+   "id": "slayer_dropkick",
+   "scene": "Kratos flying through the air in a drop kick into an Undead Legionnaire, a yellow starburst at the impact, crimson background, dark silhouettes.",
+   "gameImages": [
+    "minotaur2",
+    "kratos1"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/slayer_dropkick.webp",
+    "sha256": "fa98fa9322ed7664d7e51849ceec55c6d5ebcfe1c7dc7aa62bbba210dd673acd"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/slayer_dropkick.txt",
+    "sha256": "95fb2c2d4776f664d0e728689b96aa972a75f4ee1b037968627f4dc4ade53db0"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/slayer_dropkick.webp",
+    "sha256": "91daf7fe965087fe5a09caf0f4f3718cd5166a1d344aa743fa391214c6ffe02b"
+   },
+   "webpQuality": 80
+  },
+  {
+   "id": "slayer_dual_wield",
+   "scene": "Kratos holding both Blades of Chaos crossed in front of him, a mirrored copy of the blades behind them in a ghostly echo, red and orange light.",
+   "gameImages": [
+    "boc-gow2",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/slayer_dual_wield.webp",
+    "sha256": "b1ac31f6832f569a97b6777044cff24b73b6222974d60fc4979eb50edf6b4900"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/slayer_dual_wield.txt",
+    "sha256": "3f9aa5d17b2bfc8d47dfe08478f425f5de31023bb2e28ccb821d55cc44a3e27c"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/slayer_dual_wield.webp",
+    "sha256": "236a66904138d46ac59f6a86ac479ff99c6cd26c6e95584bb79b897a78f99548"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "slayer_infernal_blade",
+   "scene": "A Blade of Chaos burning with dark hellfire, demonic faces in the flames, crimson and black, embers and ash around.",
+   "gameImages": [
+    "boc-cutscene",
+    "hades"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/slayer_infernal_blade.webp",
+    "sha256": "ff570915e2fe46a433880287b593ba54a9bf2c8f12f8e059c157cb3b193ea9eb"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/slayer_infernal_blade.txt",
+    "sha256": "1be8fbb9d4ed88e13f747d8cd2069071eb313499372ab30171fc2ed389b4470c"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/slayer_infernal_blade.webp",
+    "sha256": "0324899503d6b6812706e256ee94c390c3f5de3ffdf4296a4b96288f60984229"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "slayer_reaper",
+   "scene": "Kratos sweeping a Blade of Olympus in a reaping arc, red souls streaming off the victims and into him, healing glow, dark red.",
+   "gameImages": [
+    "athena-lvl3",
+    "hades2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/slayer_reaper.webp",
+    "sha256": "afb1ccaac26b78f99689b855b4dda5cb7c5f3f4db9c6d04f04b08bd49d0964f6"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/slayer_reaper.txt",
+    "sha256": "4de3f107a82740925425babf91f94f95a01f36058645e499ad82b3635be121a2"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/slayer_reaper.webp",
+    "sha256": "4993f8b77c15dc856a253304315ddfbdfce7c60c4069e942327df18b5c8ff6b6"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "slayer_searing_blow",
+   "scene": "A Blade of Chaos glowing white-hot, striking a shield and sending a searing white-orange burst across it, ember sparks.",
+   "gameImages": [
+    "boc-cutscene",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/slayer_searing_blow.webp",
+    "sha256": "0ddae3ed5b7a03d07f2bfa7447ab583110026feba3cadfe03fd2366ad2aafe1d"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/slayer_searing_blow.txt",
+    "sha256": "5d33da20f877c39d06a67588c0583f81da0608f9dd2ef445954c98c85bad1586"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/slayer_searing_blow.webp",
+    "sha256": "b54cb875311ce4b0991f7947cc9f9c393d6692908f4dd64142fec8dac9383459"
+   },
+   "webpQuality": 65
+  },
+  {
+   "id": "strike_ironclad",
+   "scene": "Close, dramatic view of Kratos's arm whipping a single Blade of Chaos in one clean slash: a huge bright orange-white cutting arc across a deep burgundy background, chain trailing off the edge.",
+   "gameImages": [
+    "boc-gow2",
+    "boc-cutscene"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/strike_ironclad.webp",
+    "sha256": "f373fb11d06cd873272ff3c06a7fa538c94a3170ec6ba95156e5fbdb3db9c88b"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/strike_ironclad.txt",
+    "sha256": "b81fafbc9987f64c9c5a49b85e72b1470dfaa5a70d210c01de3bec49b1bf2a9c"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/strike_ironclad.webp",
+    "sha256": "bb86367fce9b7fda57a86f1d304c2858c1af98cdf3cf5bb399eb0d35796c3a4b"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "defend_ironclad",
+   "scene": "Kratos crouched behind a round bronze-and-wood Greek hoplite shield, three arrows and harpy feathers smacking into its face with white impact sparks, teal water-stained sky behind.",
+   "gameImages": [
+    "kratos1",
+    "kratos-athena"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/defend_ironclad.webp",
+    "sha256": "1ed2ecb452e15ac7e3228d1e5bdfbcc6cc7c9fead0e494e9d49f046d9fe22c59"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/defend_ironclad.txt",
+    "sha256": "dd2e1972f20a82e8f0b6f8c9ee1f5a501d91aea8fd64e731bd760b928892fed8"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/defend_ironclad.webp",
+    "sha256": "46a900c55f13c60307c42e9af9f90dbfbdd54bab0a3d980ed7f1951fee69332a"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "twin_strike",
+   "scene": "Two Blades of Chaos slashing in an X across the frame, two glowing orange-red cutting arcs crossing, chains snapping taut, dark red background.",
+   "gameImages": [
+    "boc-gow2",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/twin_strike.webp",
+    "sha256": "d9273f1bdd922d24e739527a88f9e8e9fc9519e5c0f413c626eb238a0cd8bb30"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/twin_strike.txt",
+    "sha256": "7e7b7162f69171fa5aaaa8d9dea73fb671ec1e8cf53a5b39f6f43bd8eff0c0cb"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/twin_strike.webp",
+    "sha256": "12883ce600813def8d0d757f634442df8ade55d78cfdbab687ed081fd1856ef4"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "true_grit",
+   "scene": "Close-up of Kratos's scarred ash-white hand clenched hard around a broken golden Minotaur horn, knuckles white, a bright glint of light on the gold, dust and sparks falling.",
+   "gameImages": [
+    "minotaur",
+    "fleece"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/true_grit.webp",
+    "sha256": "faebcdf1517cac895e7d5e7e4d121f1a95a56c1cdd55328976e0a40fbbff0de3"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/true_grit.txt",
+    "sha256": "70e76fbb9770d20f0e47e85c5cf2e3f6c2d562da4249678297c5e0319cc20bbf"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/true_grit.webp",
+    "sha256": "dcb9fae39231f332690885efd2ca93d63efc198f2ae960aed7fba6d0d8e444d9"
+   },
+   "webpQuality": 80
+  },
+  {
+   "id": "burning_pact",
+   "scene": "Kratos's hand and a flame-wreathed armored hand of Ares gripping each other in a pact over a burning altar, gold fire licking up the clasped hands, red tattoo visible on Kratos's arm.",
+   "gameImages": [
+    "kratos1",
+    "hades"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/burning_pact.webp",
+    "sha256": "790925b25d6f582582dfdd4080f6dc86ec21959f8ea54e2ecd7ffe9cfcc98870"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/burning_pact.txt",
+    "sha256": "521c8fb606d0a962247328747ccd821bca704484b721a91808d77ae91eeeee87"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/burning_pact.webp",
+    "sha256": "6f5fe55738ea4a3da2e14000f56731a883fe349a0b1a7bd6e9e4e517fbc15bbb"
+   },
+   "webpQuality": 70
+  },
+  {
+   "id": "sever_soul",
+   "scene": "Kratos's Blade of Chaos ripping a glowing blue-green spirit out of an Undead Legionnaire, the soul streaming away in a jagged luminous ribbon, red-and-cyan palette.",
+   "gameImages": [
+    "boc-cutscene",
+    "hades2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/sever_soul.webp",
+    "sha256": "04cc1ca5f5539b8c01b14c76c54a7fe1e0532baf33f9aa2e1bfdf4898908c72c"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/sever_soul.txt",
+    "sha256": "020929a26eb42604befb210ddc33092143d89fc6346afd1f4fdc37dcab50062d"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/sever_soul.webp",
+    "sha256": "d04818ac33f629ecdbf6e1e538ec66d5b9490508b884a724ce624ad912531196"
+   },
+   "webpQuality": 65
+  },
+  {
+   "id": "second_wind",
+   "scene": "Kratos kneeling on one knee to catch his breath with a Blade of Chaos planted point-down in the ground, both hands on the hilt, steam rising from his shoulders, bronze bracers and dark blue dusk behind.",
+   "gameImages": [
+    "kratos1",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/second_wind.webp",
+    "sha256": "3630e6e08de2e1a145b864b265571c01b9718920bd8cd202e21ae6f8e6de151b"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/second_wind.txt",
+    "sha256": "e74904008f24f9f0c999368daa6d14b4eb7589e8d4af4a626673092e33b79d83"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/second_wind.webp",
+    "sha256": "3e11d2759afebe07fe56b136bebba6742dcda80a346d1af9f5af36cf29eaa346"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "entrench",
+   "scene": "Kratos braced behind a barricade of toppled Greek marble column drums and rubble, a Blade of Chaos resting across the top, a fierce orange sunburst sky over the ruins.",
+   "gameImages": [
+    "pandora-temple",
+    "colossus"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/entrench.webp",
+    "sha256": "5768ea4b47f12a95dab0eeec28eebfd4b16fa21a111b1b0ef507f3a47ea8a644"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/entrench.txt",
+    "sha256": "442736493528a4ff6914d1eb891696840a4f8968cff7c4a1ddf2dd3088d92bc5"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/entrench.webp",
+    "sha256": "5429c0ef52c357609dfe9ee691a7b84d173999dbae4f0cbec58c3aba36f8fd01"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "sentinel",
+   "scene": "Kratos holding up a battered bronze round shield, a blinding white blast of energy splashing against it, lightning crackle, cool grey-blue storm.",
+   "gameImages": [
+    "zeus2",
+    "kratos-athena"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/sentinel.webp",
+    "sha256": "2c97dbd1bda7440f87ec251b6dcde8f02e9bc69e6a1ca760b4fe66d4e8faf133"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/sentinel.txt",
+    "sha256": "6144adbccf392d15307de2f9c8bdbba07a0460e3ed319ba01c0d3f6df90875bb"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/sentinel.webp",
+    "sha256": "e6d61ee3a1081c8f5a92c301af04bb8adfdfdd3e849d725a20b533f1e92b1561"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "fiend_fire",
+   "scene": "Kratos in the Underworld, arms flung out with Blades of Chaos wreathed in flames, three burning ancient Greek shields spinning in the air around him, dark navy background, orange fire.",
+   "gameImages": [
+    "hades",
+    "boc-gow1"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/fiend_fire.webp",
+    "sha256": "2009d7655db2c50eeedabf765209307434aa52a2fb48e033774b1215cdd1dfd3"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/fiend_fire.txt",
+    "sha256": "f10d38237fd5551ca91af22f4b1ed5b6b64f30f57fdcccb67b1f0a8c0d4a2690"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/fiend_fire.webp",
+    "sha256": "019b49e8748a2c54c9b8fcaac52897b5841e1ceb7417ceefda0af4904f3bf3a4"
+   },
+   "webpQuality": 65
+  },
+  {
+   "id": "limit_break",
+   "scene": "Kratos in silhouette flexing both arms in a roaring pose in the Rage of Sparta, blazing gold-orange light rays bursting behind him.",
+   "gameImages": [
+    "boc-gow1",
+    "fleece"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/limit_break.webp",
+    "sha256": "f7a8d0bb9ca684a2991047fcb1be748b51f2df14bffb158b295f5690c2b7cbb9"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/limit_break.txt",
+    "sha256": "87d07ac7f0ac9e97ffe63900e74b0e5b5681433aceec834e4d2a1bf97cb24dda"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/limit_break.webp",
+    "sha256": "be2d9a59d3b94a09d7fb56a34522bde8b24ab4f0f0865d56c5da2719ca110c08"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "double_tap",
+   "scene": "A Blade of Chaos slash and its echo: Kratos in deep-blue shadow, two overlapping afterimage slashes in red and orange across his body, chain looping around.",
+   "gameImages": [
+    "boc-gow2",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/double_tap.webp",
+    "sha256": "fe3bc594a3b667d03212c8db947c22cf3d84dc9fcaf5fa37e6ad05549ab80d37"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/double_tap.txt",
+    "sha256": "2c4915a62cbff8b7f20e76adc5af802253d7030e3152395e54fd19c3f7591773"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/double_tap.webp",
+    "sha256": "5ec4ea0408403085eff9de593539b18e0fce9681372b42f221f2fd4475308482"
+   },
+   "webpQuality": 80
+  },
+  {
+   "id": "feed",
+   "scene": "Kratos standing over a fallen Gorgon, bright red orbs streaming up from its body into his open hand, orange and red palette, dark background.",
+   "gameImages": [
+    "medusa",
+    "medusa2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/feed.webp",
+    "sha256": "0e8961576e61c7c7e036f68ff4cd854800110c7b90ae915e7c5ef29ed2fd94b0"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/feed.txt",
+    "sha256": "e6998e389141234566a964d18b82dc2fe20602dd83049cc9efa043f895b8d24c"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/feed.webp",
+    "sha256": "1b156b591454ef23528388f711702bb8acf5984a99f4ba9e79a6c0ea3774abcc"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "corruption",
+   "scene": "Extreme close-up of Kratos's face half in shadow, eyes burning violet-magenta, black veins of dark corruption crawling along his red tattoo, teal darkness around.",
+   "gameImages": [
+    "kratos1",
+    "pandora-box"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/corruption.webp",
+    "sha256": "cf0c7643bbcc8171474f84a4f2991919671cb2d692af2fcea168bf96441c2e6e"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/corruption.txt",
+    "sha256": "ff57136e133a179c30f22904b6d83bb062bc637b73eea4325f27d76e045fc285"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/corruption.webp",
+    "sha256": "7147809d444769c8ef2616028cc1a19afd7e229b322613937afa502095b96833"
+   },
+   "webpQuality": 85
+  },
+  {
+   "id": "barricade",
+   "scene": "A towering barricade of stacked Greek hoplite shields, broken spears, swords and column fragments filling the frame, a bronze orb helmet on top, desaturated teal and brown.",
+   "gameImages": [
+    "pandora-temple",
+    "colossus"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/barricade.webp",
+    "sha256": "0e7387b9c70514eab93b1cc13df64de6ebb431dbe7c847152b368492d3c31c12"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/barricade.txt",
+    "sha256": "ac490f1c5051804b7fe9fe2f496720a55c05f90ed4d9759c23ee8c0342976959"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/barricade.webp",
+    "sha256": "edce243f009938e2305912f7189c999a725373486a805a40c6ceaf9a254c047c"
+   },
+   "webpQuality": 70
+  },
+  {
+   "id": "metallicize",
+   "scene": "Kratos standing front-facing in gleaming gold-trimmed bronze armor, steel plating rising across his torso, brilliant rays of light fanning out behind a deep blue sky.",
+   "gameImages": [
+    "fleece",
+    "kratos-athena"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/metallicize.webp",
+    "sha256": "3c31ee18315a2c24d72683b474f3b64a9a90b9b70b40413faf934da3528643c8"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/metallicize.txt",
+    "sha256": "e566b87f9cf60137b271f20f299f867224b23c3e734eb05aac7b115669c89ab7"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/metallicize.webp",
+    "sha256": "cf5740f86d715e54e3c3f2a91f540e0b8c8625e07a4be7d3c7c8edc3c87cad73"
+   },
+   "webpQuality": 70
+  },
+  {
+   "id": "demon_form",
+   "scene": "Kratos in full God of War rage: red body glowing from within, eyes burning yellow, arms spread wide with Blades of Chaos flaring flame, huge dark red wing shapes behind him, black background.",
+   "gameImages": [
+    "boc-gow2",
+    "fleece"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/demon_form.webp",
+    "sha256": "4d29bc8fa2a6cec9725188a6eeaa75e9da413e614687826dbca9ff82143a60df"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/demon_form.txt",
+    "sha256": "1d0db6aa9e252bafd59e433d2b0c3ed08ab766bb8e4b7bc7a100de8f65b825c9"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/demon_form.webp",
+    "sha256": "138495a632e988c5f5b038d7872d4b047f8b8ae0a77bb37aa51a05c5afbeb121"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "berserk",
+   "scene": "Kratos with arms flung wide in a bellowing roar of rage, red tattoo and muscles tense, red light rays tearing out behind him like a frenzy, dark red background.",
+   "gameImages": [
+    "kratos1",
+    "minotaur2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/berserk.webp",
+    "sha256": "8f777e3fab08dae4eeb0ddda05aa5e51e1b438507559420f041d5b11ff86bb96"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/berserk.txt",
+    "sha256": "35b9b1504bec2625c43f69ed3a646c81c36666e3d51f0fda7c030d3844cdcbcf"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/berserk.webp",
+    "sha256": "e6055883888722522b2de0f46765cbdb990c9a026888b6a495b6e5921c47ac3b"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "juggernaut",
+   "scene": "Kratos charging forward like a juggernaut through a shattering stone gate, boulders and marble slabs exploding off his shoulders, orange fire glow behind.",
+   "gameImages": [
+    "minotaur2",
+    "colossus"
+   ],
+   "candidate": 2,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/juggernaut.webp",
+    "sha256": "312a58e19f4848c96c10a9b76bcc4b276e4df4495edd83d0825544335650d835"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/juggernaut.txt",
+    "sha256": "11025696e5cfeb13387603b6868173b4dd698a45a2fe467d1a2154ad58f34c11"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/juggernaut.webp",
+    "sha256": "b67c12d1d9ae020250de1a212ed40776e731aee05500af5697d67bde89b239e0"
+   },
+   "webpQuality": 65
+  },
+  {
+   "id": "feel_no_pain",
+   "scene": "Kratos standing unflinching with his chest out, arrows and spear tips shattering against his body in golden sparks, bronze straps and bracers, stormy dark brown.",
+   "gameImages": [
+    "fleece",
+    "kratos1"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/feel_no_pain.webp",
+    "sha256": "c149942c032f9d04df8b1c0e115ccb5686b099505af8f816a7f97d665f95b0e4"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/feel_no_pain.txt",
+    "sha256": "e3289381de80ba7d1601f01d80339586ddbb3c4adb0af02b163de666d6b68251"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/feel_no_pain.webp",
+    "sha256": "77f0984ea70b547e57a2d7499fc0052bac7d13284324d98c1f30b373b3b80ba2"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "dark_embrace",
+   "scene": "Kratos in black void, pale ghostly clawed hands of the Underworld's damned clutching around his shoulders and arms, purple glow on the claws, only gold of his bracers lit.",
+   "gameImages": [
+    "hades",
+    "hades2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/dark_embrace.webp",
+    "sha256": "a9b671b46b7c6f91ce6c8ad4802ad856469a92a56bb9f13afd3cad2420326401"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/dark_embrace.txt",
+    "sha256": "40d80ae5330464a648840ba58533eb677d2f0ef01aba30a71c7017be70e2bfff"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/dark_embrace.webp",
+    "sha256": "8bfc54aa0b24599c1536fecba242fa0a3fcf90c2f67f97af086ef8bb404264e7"
+   },
+   "webpQuality": 85
+  },
+  {
+   "id": "combust",
+   "scene": "Kratos as a black silhouette inside a giant yellow fireball, Blades of Chaos burning on his arms, flames licking in great orange swirls, glowing white core.",
+   "gameImages": [
+    "boc-cutscene",
+    "boc-gow1"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/combust.webp",
+    "sha256": "2cbbf51150d8ecca8f75140a83a29a034f69222cf147391ed313025b68d0478d"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/combust.txt",
+    "sha256": "730ad90b749fe967381ae7112f78b54efa4b3619a145814f3028f9a933b91ecd"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/combust.webp",
+    "sha256": "d51768bcafdce3c7d12da4737a4ec8705746699e16532c0dc39360f3ba1b40e6"
+   },
+   "webpQuality": 70
+  },
+  {
+   "id": "evolve",
+   "scene": "A heap of Undead Legionnaire skulls with green Hydra venom oozing from empty eye sockets and glowing slime dripping, dark olive background, sickly glowing eyes.",
+   "gameImages": [
+    "hydra",
+    "hades"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/evolve.webp",
+    "sha256": "41eb60c1d290952ba6734ece33ad5d5fc05d947826c35de3756fb8d536cefaff"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/evolve.txt",
+    "sha256": "d0b75153e5e8cc3aa63c77b27ed816ce70d5ac21a7738c6bec42cd721142fb9c"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/evolve.webp",
+    "sha256": "f9097fd46b85fcc8135722009fc4deaa88bfcc31c86d1d417f7f4905c6d66c38"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "fire_breathing",
+   "scene": "A roaring Chimera head spewing a river of orange flame across the frame, teeth bared, a dark purple storm sky.",
+   "gameImages": [
+    "cerberus",
+    "minotaur"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/fire_breathing.webp",
+    "sha256": "d583a003bd3b4391a3e7b37563c7bc152604cb05e300f120c1488fa7cd7233ee"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/fire_breathing.txt",
+    "sha256": "f0ce192e5840448d82cd37261d682481611be95c191ef6a515c255f38b74279a"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/fire_breathing.webp",
+    "sha256": "b6b6bbdd149316b0b9bf09a821a18fefadeb73166bb4aea0ee7a3485645f7f11"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "inflame",
+   "scene": "A Blade of Chaos wreathed in roaring flame, blazing yellow and orange fire pouring along the blade and chain, dark blue background with drifting sparks.",
+   "gameImages": [
+    "boc-cutscene",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/inflame.webp",
+    "sha256": "93e2c26cb68f49b21fe2ca89d6f7cd2e707cb38be0de5fa537624a42ec1c73ac"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/inflame.txt",
+    "sha256": "6257278c6bf5012bdccb391bafcebf203f8a356e036c56683932faa8b4fdbaec"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/inflame.webp",
+    "sha256": "cd45c1bbfbd183b2fe429a1ad1684ab26b211de99330896bfc2f814a8a99824b"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "carnage",
+   "scene": "A heap of slain Gorgons and satyrs in a gory pile, one huge yellow serpentine eye still open, teal scales, red and yellow bodies, dark red background.",
+   "gameImages": [
+    "medusa2",
+    "hydra"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/carnage.webp",
+    "sha256": "e63ae5a060b8ce988c20c8503aef23fefef4c92e2e3c546ae497076d60ae0ca4"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/carnage.txt",
+    "sha256": "d055e94be956ab8f1a58ab234f69d34b1a026bd38a94f1ef6e8c5b551563d390"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/carnage.webp",
+    "sha256": "e0b45d5d94881fb1463376876a6047a8b334959d47c55293d5c5cd732062ff5e"
+   },
+   "webpQuality": 70
+  },
+  {
+   "id": "ghostly_armor",
+   "scene": "Kratos's silhouette wrapped in glowing translucent blue spectral Spartan armor, ghostly plates floating around him, dark blue-black background.",
+   "gameImages": [
+    "hades2",
+    "kratos-athena"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/ghostly_armor.webp",
+    "sha256": "b04137b8dccf29d2b612e7fb1506ae1d8e22a9a527a2d71cf85da1ecaf77b27c"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/ghostly_armor.txt",
+    "sha256": "fb8cef19b76eccdc9dff7fb2b71d673dd1a7f05de9f180c37b5ca579cbb05458"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/ghostly_armor.webp",
+    "sha256": "41ff5971ab56e17a701a9bf9d469a5914404f0d944570810440448875589925b"
+   },
+   "webpQuality": 80
+  },
+  {
+   "id": "battle_trance",
+   "scene": "Two shadowy Spartan fighters floating in a dark circle while a golden chain of the Blades of Chaos swings down with a burning link at its end, hypnotic rings around it.",
+   "gameImages": [
+    "boc-gow1",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/battle_trance.webp",
+    "sha256": "c30c89a069bab458a72d5c6d874e2801d77b79f6a8e78b690cb63eb470b403b9"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/battle_trance.txt",
+    "sha256": "6c0eb2bcc7feeaba07a664b85c9f22141b5b823c4f242cf222ae27540aa59f99"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/battle_trance.webp",
+    "sha256": "d7097d6f6aa1ac3e3846028fd67165222b3319b3abef6b71bb21baee58596c76"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "rupture",
+   "scene": "Kratos with arms raised, Blades of Chaos hanging from his wrists, ember-red energy bursting from fresh wounds on his torso, tattoo glowing red.",
+   "gameImages": [
+    "kratos1",
+    "boc-gow2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/rupture.webp",
+    "sha256": "48b7b4d448258c532ce3b6e65954003782162688e73285d10250eb21c7257f4f"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/rupture.txt",
+    "sha256": "f323e3e820b6ac8be59f2c69df4188263eaf7794eb6a5bdc1e56a8aada9727d6"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/rupture.webp",
+    "sha256": "e0f69fdb1bbb379d753d64c1c3f23aead0f7e2fdf17a076d8b87de999b37116b"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "whirlwind",
+   "scene": "Kratos at the center of a spinning Cyclone of Chaos, Blades of Chaos whipping in huge golden circles around him, blurred bright arcs, dark red background.",
+   "gameImages": [
+    "boc-gow2",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/whirlwind.webp",
+    "sha256": "e743b54ef9a582279f9c9aa616d41aae68716a3b14eb3864c4a755c4285e6812"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/whirlwind.txt",
+    "sha256": "6e0a529e3b4b1ba8715a11879bf5233f34d248d760ca3d75a766f565ed22f09b"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/whirlwind.webp",
+    "sha256": "37842fc400162dbe1a1b4964b358f22ccdf00f99caa48c040a4c354278ad1425"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "bash",
+   "scene": "Kratos driving the spiked Nemean Cestus gauntlet straight down onto an Undead Legionnaire's helmet, orange shockwave burst radiating from the impact, broken temple floor tiles flying.",
+   "gameImages": [
+    "cestus2",
+    "cestus"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/bash.webp",
+    "sha256": "a9994781c3f274bb58364131d858bf6cd706d8c0d9d53a1c37380aa7f481452a"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/bash.txt",
+    "sha256": "2b85cc8d8f3cffb0a1cf5d3e4cc4fcb1dae19a48561f0c286c9954d287ada018"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/bash.webp",
+    "sha256": "9e12066c30e784dc968a76bd168682fbf96b5b6d69e452a8b933f0265e2a2626"
+   },
+   "webpQuality": 60
+  },
+  {
+   "id": "cleave",
+   "scene": "A wide sweeping Blade of Chaos slash raking across three Undead Legionnaire silhouettes at once, a huge gold-white cutting arc, burgundy background.",
+   "gameImages": [
+    "boc-gow1",
+    "boc-gow2"
+   ],
+   "candidate": 2,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/cleave.webp",
+    "sha256": "bd19559175d5fe72f72830e6211c052c8ae83a6b0cb214d90dc727e5cb7adc6e"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/cleave.txt",
+    "sha256": "db4a9f6749d611cddbf90639d56b021374935129f105229bb8811b039ec91548"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/cleave.webp",
+    "sha256": "fcc6aba19a5ce196db5b20dc9a80653f3c9e420564e77bdc75f5b0e172a3596d"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "clothesline",
+   "scene": "Kratos's forearm and bronze bracer slamming across an Undead Legionnaire's throat, the helmet flying off, orange-white impact burst, dark skin tones.",
+   "gameImages": [
+    "minotaur2",
+    "kratos1"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/clothesline.webp",
+    "sha256": "0201dbff4a3d28599174f6f0f589c0020dfe8b9de6982ad5e8d62b19eb95b951"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/clothesline.txt",
+    "sha256": "3350093b89355ea69c0e38d5b4f2650fcc6a3da0627a6d40d41b55555f1d5472"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/clothesline.webp",
+    "sha256": "f4778d3f79b2d78cd06db9324cdc7d338779da959ea28ed77d71ded837b97e1c"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "pommel_strike",
+   "scene": "Kratos smashing the heavy hilt of a Blade of Athena into a soldier's helmet in a close punch, an orange triangular burst behind the impact, dark red.",
+   "gameImages": [
+    "athena-lvl3",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/pommel_strike.webp",
+    "sha256": "561f0058806933d6b817cd86a525627b5896ea5170d49517729619aba37db5b0"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/pommel_strike.txt",
+    "sha256": "fa6075305d1a7a5856714907fed136941cc87909f281de123bfd118c5454ba97"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/pommel_strike.webp",
+    "sha256": "61ccadc7f67ffce6113b57773a092872754037e659cafad1b91ac6b754991419"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "shrug_it_off",
+   "scene": "Kratos in a three-quarter view shrugging off a blow, ash-white shoulder with a worn leather cross-strap and bronze pauldron, sparks flying off him, muted blue-grey background.",
+   "gameImages": [
+    "kratos1",
+    "fleece"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/shrug_it_off.webp",
+    "sha256": "54571a1353c2f36a2002532295c996b3ac6a6cca4366d943627af62817442008"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/shrug_it_off.txt",
+    "sha256": "d89bc34d9b750e5a46d1807432ddfbbe48a40407f4f355c21fadd13dbae81105"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/shrug_it_off.webp",
+    "sha256": "69003f40d3576644fdc70ed28347ac49726cc1c30951b44413f0259e4469abc7"
+   },
+   "webpQuality": 80
+  },
+  {
+   "id": "anger",
+   "scene": "Kratos lunging forward in a furious two-handed blade swing, streaks of orange, red and blue lightning motion lines wrapping around him.",
+   "gameImages": [
+    "boc-gow2",
+    "zeus"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/anger.webp",
+    "sha256": "3265e24dabde274421a6fead4694d777c1e1e16475bdd8be161f15b051d97967"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/anger.txt",
+    "sha256": "5b16ef891796086d61370c7b5bda1b41fc05d5495892e364fc57eff98baa3911"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/anger.webp",
+    "sha256": "d2af466c4e9f5a42d247bcd42240fb81eb949225c91f1547853cb227cf38c442"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "flex",
+   "scene": "Close-up of Kratos's flexed bicep wrapped in a bronze bracer, the red tattoo stretched across the tight muscle, a sheen of light on ash-white skin.",
+   "gameImages": [
+    "kratos1",
+    "fleece"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/flex.webp",
+    "sha256": "c167c167d1ff9bd5992318074a41378c33fd4d71d87969f99576ee6c2239632d"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/flex.txt",
+    "sha256": "2bc549495e1bbfc999af0aa1d666eebf499a9bb77dba036f64ea214a176599f5"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/flex.webp",
+    "sha256": "854316f76a6b31716de5ccf09ef835cf37c99edd685eb4f87514f6f767332989"
+   },
+   "webpQuality": 80
+  },
+  {
+   "id": "warcry",
+   "scene": "Kratos bellowing a Spartan war cry with one fist raised, shockwave lines radiating from his roaring mouth, dark red background.",
+   "gameImages": [
+    "kratos1",
+    "minotaur2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/warcry.webp",
+    "sha256": "74703c83536a82749ede2f177cd0173b54b1a0f4128dbe5a640390085a5284df"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/warcry.txt",
+    "sha256": "c21bdf4b1d969c962bddff0dd3f77a176849cb0a1540e162f439e90df76d38dc"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/warcry.webp",
+    "sha256": "c449845d7e0e518e4024b701ed7cc3172c31ea1e366509a29684fd766402fe69"
+   },
+   "webpQuality": 80
+  },
+  {
+   "id": "havoc",
+   "scene": "Kratos's armored fist smashing through a marble statue in a frenzy, shards flying, a ragged scorched tree line against a crimson sky.",
+   "gameImages": [
+    "colossus",
+    "pandora-temple"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/havoc.webp",
+    "sha256": "8a1d97d143ff9711df352000d7697042fdc94341dd7d9dae606aa209ead6dfb6"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/havoc.txt",
+    "sha256": "9a446ddf4e127eac60e68906f468ea3a356c4b07f8961e5231e2b9720b50ce5b"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/havoc.webp",
+    "sha256": "3af72014f866f63269524f2b98056ccfaf7f53ccd476b43c559e6e41a3898ada"
+   },
+   "webpQuality": 55
+  },
+  {
+   "id": "perfected_strike",
+   "scene": "A single perfect Blade of Athena slash, a clean white-gold cutting arc and a spray of crimson droplets across a dark red background.",
+   "gameImages": [
+    "athena-lvl3",
+    "boc-cutscene"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/perfected_strike.webp",
+    "sha256": "f426ebaebf5d3c5d307f8f4159a3878d522c40f162d8b232e30f5f673338974d"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/perfected_strike.txt",
+    "sha256": "1144913acab32957bec45763d8a37ca8588a88829eee9944e62716b2a6df2c5d"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/perfected_strike.webp",
+    "sha256": "bbd3076a3f02c11f6797440f75fa00fca5f4bf2bd5b0e90cf4c34a12248fa478"
+   },
+   "webpQuality": 65
+  },
+  {
+   "id": "headbutt",
+   "scene": "Kratos's bald head crashing into a Minotaur's forehead in a headbutt, a starburst impact with fiery orange lines radiating.",
+   "gameImages": [
+    "minotaur",
+    "minotaur2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/headbutt.webp",
+    "sha256": "1c61e3448579f1f8a046c31807d40bb6c90e149fdd90d62ba59aa82f4c5a1443"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/headbutt.txt",
+    "sha256": "b5c8f1b09bc23c8e87615024cefbc227e82231395b7a493fc4658eb3efbafa63"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/headbutt.webp",
+    "sha256": "673c4f374b12719d30af7146d59e07ca462765ca886ebb9303b21930584c6418"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "power_through",
+   "scene": "Kratos charging forward through a hail of arrows, two arrows stuck in his bracer, bronze shoulder armor, one wound glowing red on his chest, deep blue dusk.",
+   "gameImages": [
+    "kratos1",
+    "fleece"
+   ],
+   "candidate": 2,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/power_through.webp",
+    "sha256": "870cf139cc9b25e85c237d963a545cfdbc56f8fbcc773347068088165ff23f27"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/power_through.txt",
+    "sha256": "9a9a9c45aa1cfad1506943035ff7e9dfbd3f495bce97749874c923fd06af3540"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/power_through.webp",
+    "sha256": "bcc5055a55fef13382c064dec65b7026c41736629ad998f4ab0a053383f20c1b"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "flame_barrier",
+   "scene": "Kratos conjuring a wall of fire by spinning his Blades of Chaos in front of him, a roaring red-orange fire curtain shielding him, glowing embers.",
+   "gameImages": [
+    "boc-gow1",
+    "boc-cutscene"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/flame_barrier.webp",
+    "sha256": "2d167c4af220cb93813bac77b16500d22bde91c80876b1b5bc7296d5b9b7d8d0"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/flame_barrier.txt",
+    "sha256": "4169059813c6919304699bef2e29c015e86519957d54a82ceb6ed6ddfa5f83f0"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/flame_barrier.webp",
+    "sha256": "0c0c1ece364d774a8c6311a29859031cde724fec010a90ae185aa14379f10fd5"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "rampage",
+   "scene": "Kratos's hand gripping the hilt of a Blade of Chaos mid-chop, blood and fire dripping from the heavy blade, a red scarred background.",
+   "gameImages": [
+    "boc-gow2",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/rampage.webp",
+    "sha256": "40ff3baf67ae79e49ca39192dceb5bfec507ab19dc9045dcf587f7fd41f3213f"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/rampage.txt",
+    "sha256": "676d577cbf9385eed1f8057cef79601c73500f2f403ce3998367f4a9b8ce7bcf"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/rampage.webp",
+    "sha256": "2452587ba1f8a1bbe8adb19259ec15105a1dd788510d1ee355581215725414a6"
+   },
+   "webpQuality": 65
+  },
+  {
+   "id": "exhume",
+   "scene": "Kratos's glowing hand reaching down into a cracked stone sarcophagus in the Underworld, a golden light spilling out of it and bony fingers grasping, stone tomb wall behind.",
+   "gameImages": [
+    "hades",
+    "pandora-box"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/exhume.webp",
+    "sha256": "6dd47ba5bf26b0b71cb06ad2e61da7871dfc897d345b640dda33ea0e88294eec"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/exhume.txt",
+    "sha256": "2e8764bc5fa1b0c83ec11843078ad80cf82c67c867e98e2e57e6f6560b4cf5a2"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/exhume.webp",
+    "sha256": "d15af21cf04ed6fdc43269536618beccc0d98679c94b785c1619d73a6687b640"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "iron_wave",
+   "scene": "Kratos sweeping a Blade of Chaos outward in a sheet of crackling white-gold energy, a wave of lightning with jagged orange spears, dark maroon background.",
+   "gameImages": [
+    "zeus",
+    "boc-cutscene"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/iron_wave.webp",
+    "sha256": "f9af4c30171086e47ebd95a4cfd73dcba4ac9547692a81f5ebe4a52263995728"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/iron_wave.txt",
+    "sha256": "50e1f5640c117f6212349f3c4228840c902f395f4881245ceec8f4bec9f92870"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/iron_wave.webp",
+    "sha256": "defe5f2c2ec0e42c4fe622ba4ef631f947c3ba53e3e2e8f2e329df29b4ea1f2f"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "disarm",
+   "scene": "Kratos wrenching a sword out of an Undead Legionnaire's grip and snapping it, a hooded blue shadow of the foe, blue magical circle behind them, one sword tip flying.",
+   "gameImages": [
+    "hades2",
+    "minotaur2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/disarm.webp",
+    "sha256": "c2751f956981a5537adc0e3b5142ddce0e53d4139df470ec7a3c04601648326d"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/disarm.txt",
+    "sha256": "153c0859ffb1ff6d645fd3cea0d8df56a649a5390a4bc96c14fdc01763b579c2"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/disarm.webp",
+    "sha256": "9a5e1d551d3cbd1e0ed4e0166e4c477b88f7a7d4c5c8c95d06fa677d1e6bb7c3"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "shockwave",
+   "scene": "Kratos slamming a fist into a marble floor, concentric blue-white shockwave rings rippling out in cracks, cool blue storm light.",
+   "gameImages": [
+    "zeus2",
+    "poseidon"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/shockwave.webp",
+    "sha256": "7887178cbc39a1676601def6b72bcb4ec5a3270d5d43ad7ba1d07d669a3d6e24"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/shockwave.txt",
+    "sha256": "75f6bf5bcdbf9d150494c8f599b8807ca366f57f17dc7c7dcb675011fb99c227"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/shockwave.webp",
+    "sha256": "dc95658d935157f8468524f1ab33b39ca8a467a1369c4a5760e1357fbd9fd968"
+   },
+   "webpQuality": 65
+  },
+  {
+   "id": "bludgeon",
+   "scene": "Kratos swinging a colossal Minotaur war hammer down onto the earth, the ground splitting into glowing red cracks and flying rocks, burning red sun behind.",
+   "gameImages": [
+    "minotaur",
+    "minotaur2"
+   ],
+   "candidate": 2,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/bludgeon.webp",
+    "sha256": "088effc1f91a38be407fd46ec4cdbdb2c0af605701d325592f09d4e63e263506"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/bludgeon.txt",
+    "sha256": "5625afa97afec33f9951e4100dd233e3fd545d57715c1fe8db1e769fe260eca9"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/bludgeon.webp",
+    "sha256": "a831ec8dde38b761bc8a9a6067ac4106f691489d39602a40d714cf1ea955161a"
+   },
+   "webpQuality": 70
+  },
+  {
+   "id": "impervious",
+   "scene": "Kratos in dark silhouette with hands on hips, wrapped in a barrier of blinding golden light rays, deep blue sky behind.",
+   "gameImages": [
+    "fleece",
+    "kratos-athena"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/impervious.webp",
+    "sha256": "824e94c138fe0cd2070ab7616c13e211fa8dbfb969a97e57a431866f67f411bc"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/impervious.txt",
+    "sha256": "060d13723edaa19d9a2a500a814534eaf0990fa6497ce85a70b17b8819946973"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/impervious.webp",
+    "sha256": "fa07f99801679f4779ce83b602424e0f8cd725978303b5a13b46d0060ddbca7d"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "uppercut",
+   "scene": "Kratos's flame-wrapped fist rising in a massive uppercut, fire and sparks trailing, red ember droplets scattering, dark maroon background.",
+   "gameImages": [
+    "minotaur2",
+    "boc-gow1"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/uppercut.webp",
+    "sha256": "a41d4d9962c525ef99f5b0bca46db9c1cf6742649026614d7b84b05089ebd16d"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/uppercut.txt",
+    "sha256": "3a691c98f90de7f4dbbe5eac3e26fbbc677e6987d41b786c41ccc6370f67bc3c"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/uppercut.webp",
+    "sha256": "4f6a73870bfea34193682fe96de75156d4bd7a1804d222ca226e8e31468960b9"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "offering",
+   "scene": "A Greek skull with red glowing eye sockets on an altar, a laurel wreath, crossed bones and stones, red candle glow, a dark crimson background.",
+   "gameImages": [
+    "hades",
+    "pandora-box"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/offering.webp",
+    "sha256": "81dafa9a435d1f70838c9712b48d66ae29967e6a2f3159da9129734000eeff94"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/offering.txt",
+    "sha256": "99e0d839c639252f308bca145b47318f07ebb5eb4ec81196a5b1e900455bfb6d"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/offering.webp",
+    "sha256": "67deed81d2538dfe65b0924a54a6521401e0f4353abf5d614712bcd45b30c9d5"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "immolate",
+   "scene": "A sea of orange fire rolling over hordes of Undead Legionnaires and harpies in Hades, claws and horns visible inside the flames, a red sky.",
+   "gameImages": [
+    "hades",
+    "cerberus"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/immolate.webp",
+    "sha256": "41a07b238d2fac04e77f8df75c955f126ca1dfd3e3fef115b42c9b326a4187b0"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/immolate.txt",
+    "sha256": "8864d6befd468a53a7d59bf351501a3a7ea72a0435e5d03b6d30503a70dcd656"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/immolate.webp",
+    "sha256": "e31def51362b83f84740a1eab8947ea77785d90e827073c07e898e7f46293493"
+   },
+   "webpQuality": 40
+  },
+  {
+   "id": "body_slam",
+   "scene": "Kratos barreling shoulder-first into a Gorgon, a huge impact explosion, light streaks of speed trailing behind him, red background.",
+   "gameImages": [
+    "minotaur2",
+    "medusa"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/body_slam.webp",
+    "sha256": "4a6d52a738d461c0e310942f48451cd6d71306538e35251ca30b2530a2d0717f"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/body_slam.txt",
+    "sha256": "0176d73702505550f30d33ca384a7b478aa2a6792a73076b20ef77c2bf13fca1"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/body_slam.webp",
+    "sha256": "f735a294275fb6ffedd4a3f3d87796c3ddeffd66e0b3708ffa8a6f0f58904804"
+   },
+   "webpQuality": 70
+  },
+  {
+   "id": "clash",
+   "scene": "Blades of Chaos clashing against Ares's huge golden sword with a burst of sparks and golden light rays, two weapons crossed in the centre.",
+   "gameImages": [
+    "boc-gow1",
+    "athena-lvl3"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/clash.webp",
+    "sha256": "25e8fb5e79e2d88528ddcd7d5bd9143e02ca1ed6d31f7094a144f7524c7ad3aa"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/clash.txt",
+    "sha256": "0e92dffe08041d26c66a1def743878ca12e7082bf7570fd30d28ddc0f44790b1"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/clash.webp",
+    "sha256": "894ac510d540cafa0a0d83f43acf4671da4005a711b39518c84a0e5b71976759"
+   },
+   "webpQuality": 65
+  },
+  {
+   "id": "spot_weakness",
+   "scene": "Kratos's narrowed eye reflected in a glowing circle that targets a glowing weak point on Medusa's neck, deep blue background, gold trim.",
+   "gameImages": [
+    "medusa",
+    "kratos1"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/spot_weakness.webp",
+    "sha256": "1ba6ec29126ad7205c47b78030480e112ec140edf46f8fc89b61e82efdcebcad"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/spot_weakness.txt",
+    "sha256": "6d460fd5c5f4132c51202208a0c1a0b9a1db5da9adb11da2c35bfe5c2d680889"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/spot_weakness.webp",
+    "sha256": "73e6d70d5a000e93a09e48090a2a39c5c538a0a3f283201ed2075a5ceedee6d2"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "rage",
+   "scene": "Kratos's red tattoo blazing as his hands clench into fists, red mist and red lines swirling, teeth gritted, dark crimson.",
+   "gameImages": [
+    "kratos1",
+    "boc-gow1"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/rage.webp",
+    "sha256": "906755595930f45c050814c7f78c85041b5155ad82dc71a9c4e6e9be85905f0f"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/rage.txt",
+    "sha256": "6a96feb0e6708b95f1614e24718f12f9653d8ae286d1c8f2214b33aeaaf1439e"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/rage.webp",
+    "sha256": "29b1a282cae3a8d81b8a6aeaaac0a9dcf91a09fdda3121b360a7a4f2173f7654"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "blood_for_blood",
+   "scene": "Kratos duelling Ares in silhouette on a blood-red sky, their blades locked in a clash of sparks, drops of blood in the air.",
+   "gameImages": [
+    "boc-gow1",
+    "hades2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/blood_for_blood.webp",
+    "sha256": "d1badc3db5feec8a6f778629035688e016135733ab9da7167b6ee1baa8124d81"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/blood_for_blood.txt",
+    "sha256": "43fed46a0fed57784ec09846486db7fddf7dce3d6cd52249e116e0ef9e17c6df"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/blood_for_blood.webp",
+    "sha256": "aeb7e5a1751c8a7ede8e602df5aed2a7ed96316f576af5e3adbdec52aa64281f"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "heavy_blade",
+   "scene": "A colossal Blade of Olympus half-buried in broken black rocks, gleaming white and gold, cracks across its surface.",
+   "gameImages": [
+    "athena-lvl3",
+    "colossus"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/heavy_blade.webp",
+    "sha256": "13f9d2d5fdbf0167315bd026db90b743100a44d7eafd8184f4a660d80c581b2f"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/heavy_blade.txt",
+    "sha256": "c52735e9a4807c86226a4f0b555a35cd8d05eee99f5d8ae0e59ad39e8cf8a4d7"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/heavy_blade.webp",
+    "sha256": "32235d1c8a1f5d781000e8beaeb55d9c51034ea1c04c213dc97f327ab22aff1c"
+   },
+   "webpQuality": 75
+  },
+  {
+   "id": "seeing_red",
+   "scene": "Kratos's face half in shadow with intense glowing red eyes, a blood-red haze and dark red background.",
+   "gameImages": [
+    "kratos1",
+    "minotaur2"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/seeing_red.webp",
+    "sha256": "0bd831a8146df617eceacc9e7ee827cd068489c902fd95e1d8ed1fe1343a473b"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/seeing_red.txt",
+    "sha256": "a0e5458898d59ca690bdbe5dd3deb8cb2b0d81c0518bd04eee067729586737e5"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/seeing_red.webp",
+    "sha256": "5a68e7b5d9115c6076d745099044d93d3002c248b7bbdbbf7f1edaf550d4bee4"
+   },
+   "webpQuality": 90
+  },
+  {
+   "id": "wild_strike",
+   "scene": "Kratos lunging with a wild rapid slash of his Blade of Chaos, red motion streaks and golden slash arcs across a dark crimson background.",
+   "gameImages": [
+    "boc-gow2",
+    "exile"
+   ],
+   "candidate": 1,
+   "source": {
+    "path": "scripts/art/sources/kratos-skin-cards/wild_strike.webp",
+    "sha256": "cd3375c9af19786a3a44bab60d8e18ffba8b51726b58529d32f6d35fc00e69c8"
+   },
+   "prompt": {
+    "path": "docs/skins/kratos-card-art/prompts/wild_strike.txt",
+    "sha256": "54a02c458fb235a48cac319205ce86771a0b8d5b8908edfff96adc66e30a47d8"
+   },
+   "output": {
+    "path": "public/assets/skin-card-art/kratos/ironclad/wild_strike.webp",
+    "sha256": "e31168f5966dbf54a22484146ca1fe983e7a2d899f6da265fdd7772e6115a40b"
+   },
+   "webpQuality": 75
+  }
+ ]
+}

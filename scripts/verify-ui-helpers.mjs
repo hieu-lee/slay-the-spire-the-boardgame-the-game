@@ -18,6 +18,7 @@ import {
   vfxToneColor,
 } from '../src/ui/combat-vfx.ts'
 import { CHARACTER_IDS } from '../src/game/types.ts'
+import { VISUAL_IDS } from '../src/game/skins.ts'
 import { cardSfxRecipe, potionSfxRecipe } from '../src/ui/combat-sfx.ts'
 import {
   MIN_STAGE_SCALE,
@@ -140,8 +141,8 @@ check('melee bosses dash while Deca and Corrupt Heart cast from their lane', () 
   assertEqual(bossAttackMotionFor('corrupt_heart'), 'ranged')
 })
 
-check('every reachable card resolves a stable combat VFX recipe for every character', () => {
-  const characters = CHARACTER_IDS
+check('every reachable card resolves a stable combat VFX recipe for every character and skin', () => {
+  const characters = VISUAL_IDS
   const assets = new Set(['ironclad-strike', 'ironclad-bash', 'lightning-channel', 'frost-channel', 'dark-channel', 'watcher-pray',
     'silent-poison', 'silent-shiv', 'guard-bloom', 'hexaghost-flame-impact', 'potion-burst', 'magic-burst', 'kratos/impact'])
   const cards = Object.values(CARDS)
@@ -221,14 +222,13 @@ check('all physical potion IDs have explicit VFX recipes', () => {
 })
 
 check('DLC and playtest cards never move an original card\'s sound identity', () => {
-  // Pinned from before Kratos existed, including after his public release.
+  // Pinned from before any extra pool existed.
   assertDeepEqual(cardSfxRecipe('silent', 'neutralize').layers.at(-1), { sound: 'heal', rate: 0.929, volume: 0.08, delayMs: 204 })
   assertDeepEqual(cardSfxRecipe('hermit', 'hermit_strike').layers.at(-1), { sound: 'ui', rate: 1.019, volume: 0.08, delayMs: 792 })
 })
 
 check('Shop pack cards never move an existing card\'s sound identity', () => {
   // Pinned from before The Slayer Pack: DLC extras keep their slots, pack cards take a block of their own.
-  assertDeepEqual(cardSfxRecipe('kratos', 'strike_kratos').layers.at(-1), { sound: 'ui', rate: 1.044, volume: 0.08, delayMs: 1058 })
   assertDeepEqual(cardSfxRecipe('guardian', 'guardian_strike').layers.at(-1), { sound: 'magic', rate: 0.736, volume: 0.08, delayMs: 582 })
   assertDeepEqual(cardSfxRecipe('ironclad', 'bash').layers.at(-1), { sound: 'draw', rate: 0.808, volume: 0.08, delayMs: 36 })
   assertDeepEqual(cardSfxRecipe('watcher', 'eruption+').layers.at(-1), { sound: 'ui', rate: 0.877, volume: 0.08, delayMs: 358 })

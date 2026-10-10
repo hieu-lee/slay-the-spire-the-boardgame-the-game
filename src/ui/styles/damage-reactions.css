@@ -222,7 +222,7 @@
   filter: drop-shadow(0 0.22rem 0.18rem rgb(0 0 0 / 0.8)) drop-shadow(0 0 0.65rem var(--energy-orb-glow));
 }
 
-.pip--energy[data-character='kratos'] {
+.pip--energy[data-skin-orb] {
   background: transparent;
   box-shadow: none;
   clip-path: none;
@@ -230,10 +230,10 @@
   --energy-orb-glow: rgb(255 25 45 / 0.4);
 }
 
-.pip--energy[data-character='kratos']::before,
-.pip--energy[data-character='kratos']::after { content: none; }
+.pip--energy[data-skin-orb]::before,
+.pip--energy[data-skin-orb]::after { content: none; }
 
-.energy-orb__kratos {
+.energy-orb__skin {
   position: absolute;
   inset: -5%;
   width: 110%;
@@ -241,7 +241,7 @@
   object-fit: contain;
 }
 
-.pip--energy[data-character='kratos'][data-empty] .energy-orb__kratos {
+.pip--energy[data-skin-orb][data-empty] .energy-orb__skin {
   filter: saturate(0.3) brightness(0.55);
 }
 

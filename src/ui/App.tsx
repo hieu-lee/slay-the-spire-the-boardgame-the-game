@@ -58,7 +58,11 @@ import {
 } from '../game/run.ts'
 import type { RunState } from '../game/run.ts'
 import { createRng, seedFromString } from '../game/rng.ts'
+import { CHARACTER_IDS } from '../game/types.ts'
 import type { CharacterId } from '../game/types.ts'
+import { visualId } from '../game/skins.ts'
+import { preferredSkin } from '../skin-preference.ts'
+import { SkinProvider } from './skin-context.tsx'
 import { hasRoomSession } from '../multiplayer/useRoomSession.ts'
 import { isActIVUnlocked } from '../game/campaign.ts'
 import { allocateSharedMarks, canEnterActIV } from '../game/campaign.ts'
@@ -150,7 +154,6 @@ const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'guardian', name: 'Guardian' },
   { character: 'hexaghost', name: 'Hexaghost' },
   { character: 'hermit', name: 'Hermit' },
-  { character: 'kratos', name: 'Kratos' },
 ]
 const DEFAULT_CHARACTERS = ROSTER.map((entry) => entry.character)
 
@@ -214,7 +217,8 @@ function savedSoloRun(): SoloRunSave | null {
       run.itemDecks !== null && typeof run.itemDecks === 'object' && Array.isArray(run.eventDeck) &&
       run.courier !== null && typeof run.courier === 'object' && run.meta !== null &&
       typeof run.meta === 'object' && Array.isArray(run.meta.modifierIds) && Array.isArray(run.log) &&
-      run.players.every((player) => typeof player?.id === 'string' && Array.isArray(player.deck) &&
+      // A run saved when Kratos was a character cannot continue: the engine no longer has him.
+      run.players.every((player) => typeof player?.id === 'string' && CHARACTER_IDS.some((id) => id === player.character) && Array.isArray(player.deck) &&
         Array.isArray(player.relics) && Array.isArray(player.potions)) &&
       built?.count === 1 && typeof built.seed === 'string' && typeof built.ascension === 'number' &&
       typeof built.chooseYourRelic === 'boolean' && typeof built.lastStand === 'boolean' &&
@@ -264,6 +268,8 @@ function newRun(playerCount: number, seedText: string, ascension = 0, progress =
     id: `p${index + 1}`,
     name: ROSTER.find((entry) => entry.character === character)!.name,
     character,
+    // Presentation only: the skin this account has chosen for the hero, frozen into the run.
+    skin: preferredSkin(character),
   }))
   return createRun(seedFromString(seedText), party, Math.min(ascension, progress.highestAscension), progress, chooseYourRelic, lastStand, meta)
 }
@@ -565,6 +571,7 @@ export function App() {
     }
   }, [])
   return (
+    <SkinProvider>
     <Suspense fallback={<main className="app-loading" role="status">Loading…</main>}>
       <div className="game-mode" hidden={online}>
         <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onClose={() => setLocalOpen(false)} onOnline={SINGLE_PLAYER_ONLY ? undefined : () => setOnline(true)}
@@ -572,6 +579,7 @@ export function App() {
       </div>
       {online && OnlineGame ? <OnlineGame onLocal={() => setOnline(false)} settings={settings} onSettings={setSettings} /> : null}
     </Suspense>
+    </SkinProvider>
   )
 }
 
@@ -625,7 +633,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [leaderboard, setLeaderboard] = useState(false)
   const [stats, setStats] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [shop, setShop] = useState(false)
+  const [shop, setShop] = useState<false | 'packs' | 'skins'>(false)
   const [coinGain, setCoinGain] = useState<CoinGain | null>(null)
   const clearCoinGain = useCallback(() => setCoinGain(null), [])
   const [giveUpOpen, setGiveUpOpen] = useState(false)
@@ -1116,7 +1124,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     // Warm its selected hero and the following campaign choice while players
     // assign marks or review their result.
     const campaignArt = ['menu/campaign-standard-menu.webp', 'menu/campaign-downfall-menu.webp']
-    const characterArt = `menu/character-select/character-${characters[0] ?? 'ironclad'}-wallpaper.webp`
+    const first = characters[0] ?? 'ironclad'
+    const characterArt = `menu/character-select/character-${visualId(first, preferredSkin(first))}-wallpaper.webp`
     void preloadImages(campaignArt, { decode: true, fetchPriority: 'high' })
     void preloadImages([characterArt], { decode: true, fetchPriority: 'high' })
     return () => releasePreloadedImages([...campaignArt, characterArt])
@@ -1133,8 +1142,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
     if (leaderboard) return <LeaderboardScreen onBack={() => setLeaderboard(false)} />
     if (stats) return <StatsScreen onBack={() => setStats(false)} />
-    if (profileOpen) return <ProfileScreen onBack={() => setProfileOpen(false)} />
-    if (shop) return <ShopScreen onBack={() => setShop(false)} />
+    if (profileOpen) return <ProfileScreen onBack={() => setProfileOpen(false)} onShop={() => { setProfileOpen(false); setShop('skins') }} />
+    if (shop) return <ShopScreen initialTab={shop} onBack={() => setShop(false)} />
     return <StartMenu
       characters={characters}
       ascension={ascension}
@@ -1179,7 +1188,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       onStats={() => setStats(true)}
       onProfile={() => setProfileOpen(true)}
       onCompendium={() => setCompendium(true)}
-      onShop={() => setShop(true)}
+      onShop={() => setShop('packs')}
       onReplay={startReplay}
       onCharacterBack={() => { setChoosingNextCharacter(false); setDailyTurned(false) }}
       settings={settings}
@@ -1190,6 +1199,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   return (
     <>
+    <SkinProvider seats={run.players}>
     <main key={replayEpoch} ref={runShell} tabIndex={-1} inert={compendium || undefined} aria-hidden={compendium || undefined} className={`app-shell sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendium ? ' app-shell--compendium-open' : ''}`}>
       <header className="app-shell__header">
         <PlayerTitle character={headerViewer?.character} />
@@ -1556,6 +1566,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       <CardMorphAnnouncement key={`${open ? run.campaign.runId : ''}:${viewerId}`} request={morph.current}
         name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
+    </SkinProvider>
     {replayLog && replaySession && !compendium ? <ReplayBar session={replaySession} onSeek={seekReplay}
       onExit={() => { leaveReplay(); onClose() }} /> : null}
     {compendium ? <CompendiumScreen onBack={() => {

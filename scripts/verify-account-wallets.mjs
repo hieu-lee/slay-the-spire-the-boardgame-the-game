@@ -1,5 +1,6 @@
 // The owning boundary is authenticated HTTP plus the durable account store.
-// Covers two devices, migration, retries, simultaneous spending and reconnects.
+// Covers two devices, migration, retries, simultaneous spending and reconnects,
+// for coins, packs and skins.
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -7,7 +8,7 @@ import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
 import { createStore, saveStore } from './lib/rooms.mjs'
 import { createWallet } from '../src/wallet.ts'
-import { CARD_PACK_PRICE } from '../src/game/coins.ts'
+import { CARD_PACK_PRICE, SKIN_PRICE } from '../src/game/coins.ts'
 
 const directory = mkdtempSync(join(tmpdir(), 'sts-account-wallets-'))
 const file = join(directory, 'rooms.json')
@@ -72,6 +73,51 @@ try {
   const race = await Promise.all([request({ pack: 'slayer_defect' }, other.token), request({ pack: 'slayer_silent' }, other.token)])
   assert.equal(race.filter((reply) => reply.body.purchase.ok).length, 1)
   assert.equal((await request({}, other.token)).body.wallet.coins, 0)
+  // Skins: bought with the account's coins like a pack, idempotent on retry, and migrated as spent earnings.
+  const buyer = { username: 'SkinBuyer', token: crypto.randomUUID() }
+  await fetch(`${origin}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...buyer, password: 'test wallet password' }) })
+  const buyerProfile = service.store.profiles.find((entry) => entry.token === buyer.token)
+  assert.equal((await request({ skin: 'kratos' }, buyer.token)).body.purchase.reason, 'insufficient', 'a skin sold for coins the account lacks')
+  buyerProfile.wallet.coins = SKIN_PRICE + 40
+  const sold = await request({ skin: 'kratos' }, buyer.token)
+  assert.deepEqual(sold.body.purchase, { ok: true })
+  assert.equal(sold.body.wallet.coins, 40, 'the skin did not cost exactly 2,500')
+  assert.deepEqual(sold.body.wallet.skins, ['kratos'])
+  const resold = await request({ skin: 'kratos' }, buyer.token)
+  assert.deepEqual(resold.body.purchase, { ok: true }, 'a retried purchase after a lost reply must succeed')
+  assert.equal(resold.body.wallet.coins, 40, 'a retried skin purchase spent twice')
+  assert.equal((await request({ skin: 'nobody' }, buyer.token)).body.purchase.reason, 'unknown')
+  assert.equal((await request({ skin: 'slayer_defect' }, buyer.token)).body.purchase.reason, 'unknown', 'a pack id sold as a skin')
+  assert.equal((await request({ pack: 'kratos' }, buyer.token)).body.purchase.reason, 'unknown', 'a skin id sold as a pack')
+  const restoredBuyer = createStore({ file }).profiles.find((entry) => entry.username === buyer.username)
+  assert.deepEqual(restoredBuyer.wallet.skins, ['kratos'], 'restart lost the skin')
+  // A stale browser wallet from before the purchase cannot hand the price back, and its own skin joins the account's.
+  const staleBrowser = migration({ ...createWallet(), coins: 40 + SKIN_PRICE })
+  const stale = await request({ migration: staleBrowser }, buyer.token)
+  assert.equal(stale.body.wallet.coins, 40, 'a pre-purchase browser wallet restored the skin price')
+  const boughtOffline = migration({ ...createWallet(), coins: 90, skins: ['kratos'] })
+  const merged = await request({ migration: boughtOffline }, buyer.token)
+  // Lifetime earnings merge by maximum: the browser earned 50 more than the account (90 + 2,500 against 40 + 2,500).
+  assert.equal(merged.body.wallet.coins, 90, 'migrating an owned skin refunded or double-charged it')
+  assert.deepEqual(merged.body.wallet.skins, ['kratos'])
+  // A browser that bought the skin locally brings it to an account that never had it, as spent earnings.
+  const fresh = { username: 'SkinMigrant', token: crypto.randomUUID() }
+  await fetch(`${origin}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...fresh, password: 'test wallet password' }) })
+  const carried = await request({ migration: migration({ ...createWallet(), coins: 700, skins: ['kratos'], packs: ['slayer_silent'] }) }, fresh.token)
+  assert.deepEqual(carried.body.wallet.skins, ['kratos'])
+  assert.deepEqual(carried.body.wallet.packs, ['slayer_silent'])
+  assert.equal(carried.body.wallet.coins, 700, 'earnings = coins + spent; the migrated skin must not restore its price')
+  // Two devices race for the last 2,500 coins: only one skin or pack sells.
+  const racer = { username: 'SkinRacer', token: crypto.randomUUID() }
+  await fetch(`${origin}/api/profile`, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...racer, password: 'test wallet password' }) })
+  service.store.profiles.find((entry) => entry.token === racer.token).wallet = { ...createWallet(), coins: SKIN_PRICE }
+  const raced = await Promise.all([request({ skin: 'kratos' }, racer.token), request({ pack: 'slayer_defect' }, racer.token)])
+  assert.equal(raced.filter((reply) => reply.body.purchase.ok).length, 1, 'one balance bought both a skin and a pack')
+  const left = SKIN_PRICE - (raced[0].body.purchase.ok ? SKIN_PRICE : CARD_PACK_PRICE)
+  assert.equal((await request({}, racer.token)).body.wallet.coins, left, 'the winner of the race was charged its own price')
   console.log('Account wallets: migration, cross-device credits, purchases, isolation, persistence and retries passed')
 } finally {
   await service.close()

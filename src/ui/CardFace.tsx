@@ -1,7 +1,8 @@
 import { memo } from 'react'
 import type { CardDef } from '../game/cards.ts'
-import { assetPath, cardArtPath } from '../game/assets.ts'
+import { cardArtPath } from '../game/assets.ts'
 import { BASE_CHARACTER_IDS } from '../game/types.ts'
+import { useCardSkin } from './skin-context.tsx'
 import { KeywordText } from './KeywordText.tsx'
 
 type CardFaceProps = {
@@ -21,10 +22,11 @@ export function cardTypeLabel(def: CardDef): string {
 export const CardFace = memo(function CardFace({
   def, cost = def.cost, rules, className = '', illustration = true,
 }: CardFaceProps) {
+  const skin = useCardSkin(def)
   const shownCost = def.unplayable ? '—' : cost
   // Downfall publisher illustrations are intentionally optional. Its native
   // faces stay text-first instead of requesting files a clean clone lacks.
-  const hasIllustration = illustration && !def.pack && (def.owner === 'kratos' || BASE_CHARACTER_IDS.some((owner) => owner === def.owner))
+  const hasIllustration = illustration && !def.pack && BASE_CHARACTER_IDS.some((owner) => owner === def.owner)
   return (
     <span
       className={['card-face', 'card__fallback', `card-face--${def.owner}`, `card-face--${def.rarity}`, className]
@@ -32,10 +34,9 @@ export const CardFace = memo(function CardFace({
       aria-hidden="true"
     >
       <strong className="card-face__title">{def.name}</strong>
-      <span className="card-face__cost" style={def.owner === 'kratos'
-        ? { backgroundImage: `url("${assetPath('icons/kratos-energy.png')}")` } : undefined}>{shownCost}</span>
+      <span className="card-face__cost">{shownCost}</span>
       {hasIllustration
-        ? <img className="card-face__illustration" src={cardArtPath(def)} alt="" loading="lazy" />
+        ? <img className="card-face__illustration" src={cardArtPath(def, skin)} alt="" loading="lazy" />
         : <span className="card-face__illustration card-face__illustration--empty" />}
       <span className="card-face__type">{cardTypeLabel(def)}</span>
       <span className="card-face__rules"><KeywordText text={rules} /></span>

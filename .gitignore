@@ -38,3 +38,4 @@ scripts/animation/__pycache__/
 # Raw image-model output; selected lossless sources are committed under scripts/art.
 output/imagegen/
 scripts/art/__pycache__/
+scripts/art/skin-cards/__pycache__/

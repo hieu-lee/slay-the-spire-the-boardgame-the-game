@@ -1,0 +1,99 @@
+{
+  "model": "gpt-image-2.5-sunburst",
+  "sourceCommit": "ad7b09217b0cf3e413ec3b6700450008e0bbafde",
+  "quality": "high",
+  "identityReference": "scripts/animation/sources/kratos/idle.webp",
+  "otherAssets": [
+    {
+      "source": {
+        "path": "scripts/art/sources/kratos/portrait-kratos-v2.webp",
+        "sha256": "e9f581d5da15a481e2e5318370947d79f1aa245bc35208c715bc2025be24e963"
+      },
+      "sourceSize": [
+        1024,
+        1536
+      ],
+      "outputSize": [
+        256,
+        384
+      ],
+      "output": {
+        "path": "public/assets/menu/character-select/portrait-kratos.png",
+        "sha256": "83945aa90da3143e9b72b7899192e08fede518ed85bf5b4b2ce2c7e3d46b7d48"
+      },
+      "prompt": {
+        "path": "docs/skins/kratos-menu-art/prompts/select-portrait-v2.txt",
+        "sha256": "ea3238109f1543d4f9190a2ed52f7e686af6ba3b03bbd49feb09fac215771fbc"
+      },
+      "references": [
+        {
+          "path": "public/assets/menu/character-select/portrait-ironclad.png",
+          "sha256": "b45421ed9e06e0e40ee63a3cc2536aa9e57769a4969b766e0536042cc5de3895"
+        },
+        {
+          "path": "scripts/art/sources/kratos/character-kratos-wallpaper.webp",
+          "sha256": "e1794af5e06598becec3d28d78753bcf5bd317759f0538e34cb31883afb3e80e"
+        },
+        {
+          "path": "scripts/animation/sources/kratos/idle.webp",
+          "sha256": "11e80c43b3a120ce6306088221ad6b54d7e57affdf6a153397513482683b465d"
+        }
+      ],
+      "background": "opaque"
+    },
+    {
+      "source": {
+        "path": "scripts/art/sources/kratos/character-kratos-wallpaper.webp",
+        "sha256": "e1794af5e06598becec3d28d78753bcf5bd317759f0538e34cb31883afb3e80e"
+      },
+      "sourceSize": [
+        1536,
+        1024
+      ],
+      "outputSize": [
+        1536,
+        864
+      ],
+      "output": {
+        "path": "public/assets/menu/character-select/character-kratos-wallpaper.webp",
+        "sha256": "bbb3dbfc08ad2458de0026e4ecb91ea477fa8939619928867c0fd6da0b75012f"
+      },
+      "prompt": {
+        "path": "docs/skins/kratos-menu-art/prompts/select-wallpaper.txt",
+        "sha256": "77bc2b9e134ca71881ab962dfb5fa7a55b4bdeb9dae4b0d336e78c8e1d35e39b"
+      },
+      "references": [
+        {
+          "path": "public/assets/menu/character-select/character-ironclad-wallpaper.webp",
+          "sha256": "1a7618097951ded9d1447d16adc4464b9cb99543e52347633efc048e4f202067"
+        },
+        {
+          "path": "public/assets/menu/character-select/character-hermit-wallpaper.webp",
+          "sha256": "320cc60ee40632c47beaeff6469d80c33223bfeafa6c3f65d447731c558f1c2d"
+        },
+        {
+          "path": "scripts/animation/sources/kratos/idle.webp",
+          "sha256": "11e80c43b3a120ce6306088221ad6b54d7e57affdf6a153397513482683b465d"
+        }
+      ],
+      "background": "opaque"
+    }
+  ],
+  "energyOrb": {
+    "model": "gpt-image-2.5-sunburst",
+    "background": "transparent",
+    "source": "scripts/art/sources/kratos/hud-energy-orb.webp",
+    "sourceSha256": "6b544509b15ee4aa167f62f95393c831aefb71885d437cda2963039cb1af4402",
+    "prompt": "docs/skins/kratos-menu-art/prompts/hud-energy-orb.txt",
+    "promptSha256": "edb0d3994a8825a75725192f60c7be31bc1526e8c72c9294131def5851ac9e6a",
+    "references": [
+      {
+        "path": "public/assets/menu/character-select/portrait-kratos.png",
+        "sha256": "83945aa90da3143e9b72b7899192e08fede518ed85bf5b4b2ce2c7e3d46b7d48"
+      }
+    ],
+    "output": "public/assets/combat/energy-orbs/kratos.webp",
+    "outputSha256": "3d2f732f81b779654415b80b11dbb5c09b072640913c908b22a15ce8f29aca68",
+    "note": "The first reference, the removed red-orb energy icon (public/assets/icons/kratos-energy.png), is no longer in the repository; the Kratos skin now only ships this combat HUD orb."
+  }
+}

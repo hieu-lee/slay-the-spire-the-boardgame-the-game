@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { CARDS, cardIsCurse } from "../game/cards.ts";
 import { assetPath, enemyImagePath } from "../game/assets.ts";
+import { playerVisualId } from "../game/skins.ts";
 import { enemyDef } from "../game/enemies.ts";
 import { enemyLabel, startTurnScryAbilities, startTurnScryPreview } from "../game/combat.ts";
 import { potionDef, relicDef } from "../game/relics.ts";
@@ -278,9 +279,9 @@ function MerchantScreen({
         <div className="merchant-arrival__scene">
           <div className="merchant-arrival__party" aria-label="Party at the merchant">
             {eligiblePlayers.map((candidate) => (
-              <figure key={candidate.id} data-character={candidate.character} aria-label={`${candidate.name}, ${candidate.character}`}>
+              <figure key={candidate.id} data-character={playerVisualId(candidate)} aria-label={`${candidate.name}, ${candidate.character}`}>
                 <img
-                  src={assetPath(`noncombat/merchant/characters/${candidate.character}-standing.webp`)}
+                  src={assetPath(`noncombat/merchant/characters/${playerVisualId(candidate)}-standing.webp`)}
                   alt=""
                   loading="eager"
                   decoding="async"
@@ -670,7 +671,7 @@ function RelicRoomScreen({
             : ""}
         </p>
       </div>
-        {[...new Set(players.flatMap((seat) => [treasureHandPath(seat.character), treasureHandPath(seat.character, true)]))].map((href) => <link key={href} rel="preload" as="image" href={href} />)}
+        {[...new Set(players.flatMap((seat) => [treasureHandPath(playerVisualId(seat)), treasureHandPath(playerVisualId(seat), true)]))].map((href) => <link key={href} rel="preload" as="image" href={href} />)}
         <img className="treasure-ground" src={assetPath("noncombat/treasure/background.webp")} alt="" />
         <img className="treasure-chest" src={`${assetPath(`noncombat/treasure/${!opened ? "chest-closed" : reducedMotion || !playOpening ? "chest-open" : "chest-opening"}.webp`)}${playOpening && !reducedMotion ? `?opening=${encodeURIComponent(openingId)}` : ""}`} alt="A vine-covered treasure chest" />
         {!opened ? <button className="treasure-open" type="button" ref={firstAction} onClick={(event) => { keyboardOpening.current = event.detail === 0; setPlayOpening(true); setOpened(true); }}>Open treasure chest</button> : null}

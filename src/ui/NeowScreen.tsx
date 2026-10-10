@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { assetPath, characterHeroArt } from '../game/assets.ts'
+import { playerVisualId } from '../game/skins.ts'
 import type { NeowCard, NeowDecision, NeowImmediateReward, NeowPlayerState, NeowRewardOffer } from '../game/neow.ts'
 import { neowCard } from '../game/neow.ts'
 import { neowEffectSelection } from '../game/run/neow.ts'
@@ -169,7 +170,7 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
     <img className={`neow-screen__neow${heartsBoon ? ' neow-screen__neow--heart' : ''}`}
       src={assetPath(heartsBoon ? 'combat/enemies/corrupt_heart.webp' : 'neow/neow.webp')}
       alt={heartsBoon ? 'The Heart' : 'Neow'} />
-    <img className="neow-screen__hero" src={assetPath(characterHeroArt(viewer.character))} alt={viewer.name} />
+    <img className="neow-screen__hero" src={assetPath(characterHeroArt(playerVisualId(viewer)))} alt={viewer.name} />
     <header className="neow-screen__header">
       <h2 id="neow-title">{blessingName}</h2>
       <span className="neow-screen__progress" role="status">{Object.values(progress).filter((seat) => seat?.done).length}/{participants.length} ready</span>

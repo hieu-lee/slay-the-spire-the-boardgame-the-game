@@ -1,2 +1,0 @@
-Use case: stylized-concept
-Asset type: standalone transparent Power icon for a Slay the Spire board-game port. Images 1-3 are existing Power icons: match their painted game style exactly: bold dark outline, broad faceted painted shading, saturated readable colors, one centered emblem filling about 75% of a square canvas, readable at 48px. Native transparent alpha, no backdrop, no frame, no text, no letters, no numbers, no checkerboard, no character face. Subject: a clawed bronze gauntlet open upward with three wailing blue-green spectral souls spiraling out of the palm.

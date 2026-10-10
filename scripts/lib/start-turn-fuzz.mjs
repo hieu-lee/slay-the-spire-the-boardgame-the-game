@@ -20,7 +20,7 @@ const powerPool = Object.values(CARDS).filter((c) => c.type === 'power' && (() =
 })())
 const relicPool = Object.values(RELICS).filter((r) => {
   try { return relicAbilities(r).some((a) => ['startOfTurn', 'dieRelic', 'startOfCombat'].includes(a.trigger?.kind)) } catch { return false }
-}).map((r) => r.id).filter((id) => !id.startsWith('downfall_') && !['teleportation_stone','dueling_glove','sack_of_gems','black_powder','clasped_locket','snecko_egg','greed_ooze','dented_plate','wheel_of_change','battle_buddies','chronometer','loaded_die','hexaghost_starting_relic','ashes_of_sparta','nilrys_codex','cracked_core','ring_of_the_snake','pure_water'].includes(id))
+}).map((r) => r.id).filter((id) => !id.startsWith('downfall_') && !['teleportation_stone','dueling_glove','sack_of_gems','black_powder','clasped_locket','snecko_egg','greed_ooze','dented_plate','wheel_of_change','battle_buddies','chronometer','loaded_die','hexaghost_starting_relic','nilrys_codex','cracked_core','ring_of_the_snake','pure_water'].includes(id))
 const enemyPool = ['cultist', 'red_louse', 'jaw_worm', 'fungi_beast', 'acid_slime_m', 'spike_slime_m', 'gremlin_nob', 'looter', 'darkling_bha', 'darkling_hab', 'darkling']
   .filter((id) => ENEMIES[id])
 const CHARS = ['ironclad', 'silent', 'defect', 'watcher', 'guardian', 'hexaghost']

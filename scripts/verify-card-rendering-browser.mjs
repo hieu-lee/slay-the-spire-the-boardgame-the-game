@@ -78,28 +78,26 @@ try {
         assert.equal(await card.locator('.card-face__cost').textContent(), '1')
         assert.equal(await card.locator('.card-face__title').textContent(), 'Strike')
         // Full scans retain their printed cost; temporary prices belong to play information.
-        const scannedProps = { card: { uid: 'same-mounted-card', defId: 'strike_kratos', upgraded: false }, cost: 1 }
+        const scannedProps = { card: { uid: 'same-mounted-card', defId: 'strike_ironclad', upgraded: false }, cost: 1 }
         await page.evaluate(props => window.renderCard(props), scannedProps)
         await card.locator('.card__art').evaluate(image => image.decode())
         await page.waitForFunction(() => getComputedStyle(document.querySelector('.card__art')).visibility === 'visible')
         assert.equal(await card.locator('.card__live-cost').count(), 0)
-        assert.equal(await card.locator('.card-face').evaluate(face => getComputedStyle(face).visibility), 'hidden',
-          'transparent scans must not show duplicate fallback text')
         for (const cost of [0, 3]) {
           await page.evaluate(props => window.renderCard(props), { ...scannedProps, cost })
           assert.equal(await card.locator('.card__live-cost').count(), 0, 'temporary costs must not cover the printed card')
           assert.match(await card.getAttribute('aria-label'), new RegExp(`cost ${cost}`))
-          await page.screenshot({ path: resolve(output, `${engineName}-${screen}-kratos-cost-${cost}.png`) })
+          await page.screenshot({ path: resolve(output, `${engineName}-${screen}-scan-cost-${cost}.png`) })
         }
         await page.evaluate(props => window.renderCard(props), scannedProps)
-        await page.route('**/cards-sm/kratos__starter__defend.webp', route => route.abort())
-        await page.evaluate(() => window.renderCard({ card: { uid: 'same-mounted-card', defId: 'defend_kratos', upgraded: false }, cost: 1 }))
+        await page.route('**/cards-sm/ironclad__starter__defend.webp', route => route.abort())
+        await page.evaluate(() => window.renderCard({ card: { uid: 'same-mounted-card', defId: 'defend_ironclad', upgraded: false }, cost: 1 }))
         await page.waitForFunction(() => document.querySelector('.card__art').style.visibility === 'hidden')
         assert.equal(await card.locator('.card-face').evaluate(face => getComputedStyle(face).visibility), 'visible',
           'failed scans must restore the native fallback')
-        assert.equal(await card.locator('.card-face__rules').textContent(), 'Gain 1 Block.')
+        assert.equal(await card.locator('.card-face__rules').textContent(), 'gain 1 Block')
         await card.locator('.card-face__illustration').evaluate(image => image.decode())
-        await page.screenshot({ path: resolve(output, `${engineName}-${screen}-kratos-scan-fallback.png`) })
+        await page.screenshot({ path: resolve(output, `${engineName}-${screen}-scan-fallback.png`) })
         const icon = page.locator('#rendered-icons .icon-value .icon')
         const previousSource = await icon.getAttribute('src')
         await page.evaluate(() => window.renderIcons('block', 28, 4))

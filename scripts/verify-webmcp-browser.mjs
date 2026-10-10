@@ -112,7 +112,6 @@ const statsLookup = await page.evaluate(async () => {
   const summary = await stats.execute({ character: 'hermit', ascension: 1, query: '@hermit_snapshot',
     candidates: ['hermit_brawl', 'hermit_take_cover'] })
   const full = await stats.execute({ character: 'hermit', full: true })
-  await stats.execute({ character: 'kratos', query: '@kratos_plume_of_prometheus' })
   const after = await inspect.execute({})
   let unknownCard = ''
   try { await stats.execute({ query: '@does_not_exist' }) } catch (error) { unknownCard = String(error) }
@@ -226,6 +225,9 @@ const controls = await page.evaluate(async () => {
     <input type="range" aria-label="Volume" min="0" max="100" step="5" value="50">
     <span id="fixture-status"></span>
   `
+  // The menu behind the fixture would fill the first 30-control page and push fixture controls onto the next one.
+  const menu = [...document.getElementById('root').children]
+  menu.forEach((child) => { child.inert = true })
   document.getElementById('root').append(fixture)
   let buttonClicks = 0
   let orbClicks = 0
@@ -434,6 +436,7 @@ const controls = await page.evaluate(async () => {
   const final = await read()
   const find = (name) => final.controls.find((control) => control.label === name)
   fixture.remove()
+  menu.forEach((child) => { child.inert = false })
   return {
     buttonClicks,
     orbClicks,
@@ -1651,10 +1654,9 @@ check('reads filtered stats without changing game controls or losing full result
   assertDeepEqual(statsLookup.summary.nextCards.map((card) => card.defId), ['hermit_brawl'])
   assertDeepEqual(statsLookup.summary.notInTopComparisons, ['hermit_take_cover'])
   assert(statsLookup.unknownCard.includes('Unknown card'), 'stats lookup accepted an invalid card filter')
-  assert(tools.find((tool) => tool.name === 'get_stats').inputSchema.properties.character.enum.includes('kratos'),
-    'Kratos is absent from the public stats tool schema')
-  assert(statsRequests.some((params) => params.get('character') === 'kratos' &&
-    JSON.parse(params.get('q')).id === 'kratos_plume_of_prometheus'), 'Kratos stats lookup did not reach the stats service')
+  const statsHeroes = tools.find((tool) => tool.name === 'get_stats').inputSchema.properties.character.enum
+  assert(statsHeroes.includes('hermit') && !statsHeroes.includes('kratos'),
+    'the public stats tool lists the playable heroes, not the Kratos skin')
   assert(statsRequests[0].get('character') === 'hermit' && statsRequests[0].get('ascension') === '1' &&
     statsRequests[0].get('mode') === 'standard' && JSON.parse(statsRequests[0].get('q')).id === 'hermit_snapshot',
   'stats lookup did not reuse the standard solo card filters')

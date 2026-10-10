@@ -2,7 +2,7 @@
 
 `inspect_game`, `interact_with_game` and `get_stats` operate on the visible UI. They do not expose hidden draw order, other players' private cards, or alternative game rules.
 
-Menu screens need no dedicated tool. The main menu's **Shop** row (and the coin purse, the first item of the top-right corner: purse, Leaderboard, Stats, Mail, Profile, Settings) opens the Shop, whose section tabs, **Buy**, the card fans ("Browse the N cards of the …") and confirmation buttons are ordinary labelled controls; a purchase still needs its confirmation step. See [shop.md](shop.md).
+Menu screens need no dedicated tool. The main menu's **Shop** row (and the coin purse, the first item of the top-right corner: purse, Leaderboard, Stats, Mail, Profile, Settings) opens the Shop, whose section tabs, **Buy**, the card fans ("Browse the N cards of the …") and confirmation buttons are ordinary labelled controls; a purchase still needs its confirmation step. See [shop.md](shop.md). The Profile screen's rail has **Record** and **Skins** tabs; each hero's looks (Default and its owned skins) are radio buttons labelled like "Ironclad, Kratos", and selecting one wears it at once; a skin not bought yet is a button labelled like "Ironclad, Kratos, locked: 2,500 coins. Open the Shop" that opens the Shop's Skins tab. There, the skin's button is "Buy the Kratos skin, 2,500 coins" ("Not enough coins for the Kratos skin, …" while the purse is short; its confirmation dialog is "Buy the Kratos skin?"), and once owned the toggle is "Wear: Kratos, Ironclad skin" / "Worn: Kratos, Ironclad skin".
 
 ## One call for a solo action sequence
 

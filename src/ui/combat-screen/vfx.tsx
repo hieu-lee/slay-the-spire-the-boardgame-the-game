@@ -10,6 +10,7 @@ import { combatBodyPoint } from '../combat-geometry.ts'
 import { combatArtReady, combatArtSize, onCombatArtReady, type CombatArtElement } from '../CombatAnimation.tsx'
 import type { ActiveCombatVfx } from './types.ts'
 import { cardDef } from '../../game/cards.ts'
+import { playerVisualId } from '../../game/skins.ts'
 import type { CombatPresentationEvent, CombatState } from '../../game/combat.ts'
 import { cardVfxRecipe, shivVfxRecipe, vfxAssetPath, vfxToneColor } from '../combat-vfx.ts'
 
@@ -59,9 +60,10 @@ export function isHermitAttack(state: CombatState, event?: CombatPresentationEve
       event.kind === 'card' ? event.upgraded : undefined, event.kind === 'card' ? event.resolvedType : undefined) })
 }
 
+/** The Kratos skin's chained-blade combo animation (see kratos-timing below); no other skin plays it. */
 export function isKratosAttack(state: CombatState, event?: CombatPresentationEvent): boolean {
   if (!event || (event.kind !== 'card' && event.kind !== 'shiv') ||
-    !state.players.some(p => p.id === event.actorId && p.character === 'kratos')) return false
+    !state.players.some(p => p.id === event.actorId && playerVisualId(p) === 'kratos')) return false
   return isCharacterAttack({ event, recipe: event.kind === 'shiv' ? shivVfxRecipe()
     : cardVfxRecipe('kratos', event.sourceId, event.mode, event.upgraded, event.resolvedType) })
 }
@@ -113,12 +115,13 @@ export function characterAttackContactMs(
     event,
     recipe: event.kind === 'shiv'
       ? shivVfxRecipe()
-      : cardVfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded, event.resolvedType),
+      : cardVfxRecipe(playerVisualId(actor), event.sourceId, event.mode, event.upgraded, event.resolvedType),
   }
   if (!isCharacterAttack(active)) return 0
   const targetIndex = Math.max(0, event.enemyIds.indexOf(targetId))
+  const visual = playerVisualId(actor)
   if (actor.character === 'hermit') return HERMIT_VOLLEYS[0].ms + HERMIT_FLIGHT_MS
-  if (actor.character === 'kratos') return KRATOS_HITS[0].ms
+  if (visual === 'kratos') return KRATOS_HITS[0].ms
   if (actor.character === 'silent') return 1_025 + targetIndex * 70
   if (actor.character === 'defect') return 1_110 + targetIndex * 70
   if (actor.character === 'watcher') return 1_050 + targetIndex * 70

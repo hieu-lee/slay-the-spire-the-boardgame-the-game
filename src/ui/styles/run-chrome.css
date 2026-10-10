@@ -56,8 +56,6 @@
 .card-face--silent { --card-frame: #397245; --card-panel: #172a1b; }
 .card-face--defect { --card-frame: #366d88; --card-panel: #14252f; }
 .card-face--watcher { --card-frame: #755085; --card-panel: #291b30; }
-.card-face--kratos { --card-frame: #8d322c; --card-panel: #351917; }
-.card-face--kratos.card-face--uncommon { --card-frame: #427d77; }
 .card-face--rare { --card-frame: #9a7731; }
 
 .rules-keyword { color: #f4cc78; font-weight: 800; }
@@ -88,20 +86,6 @@
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #44a8d5, #103b66 72%);
   font-weight: 800;
-}
-
-.card-face--kratos .card-face__cost {
-  border: 0;
-  background-color: transparent;
-  background-size: 145%;
-  background-position: center;
-  text-shadow: 0 1px 2px #000;
-}
-
-/* Transparent model panels must not show duplicate fallback text. */
-.card__art[style*='visibility: visible'] ~ .card-face--kratos,
-:is(.compendium-card, .compendium__detail-card) > img[style*='visibility: visible'] ~ .card-face--kratos {
-  visibility: hidden;
 }
 
 .card-face__illustration {
@@ -142,5 +126,3 @@
   line-height: 1.15;
   text-shadow: none;
 }
-
-.card-face--kratos .card-face__rules { font-size: clamp(.32rem, calc(var(--card-width) * .06), .68rem); }

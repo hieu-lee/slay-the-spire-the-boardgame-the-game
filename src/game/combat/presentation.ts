@@ -3,6 +3,7 @@
 //
 // Presentation only: dropping every event here would change nothing about who
 // wins, which is why the list is capped rather than kept whole.
+import { hasStagedAttack, playerVisualId } from '../skins.ts'
 import { lightningRowFromTarget, resolveEnemyTargets } from './board.ts'
 import type {
   CombatPresentationEvent,
@@ -65,7 +66,7 @@ export function addPresentationEvent(
     seq: (events.at(-1)?.seq ?? 0) + 1,
     ...event,
     ...((event.kind === 'card' || event.kind === 'shiv') &&
-      state.players.some(player => player.id === event.actorId && (player.character === 'hermit' || player.character === 'kratos'))
+      state.players.some(player => player.id === event.actorId && hasStagedAttack(playerVisualId(player)))
       ? { enemyHpLoss: {} } : {}),
   } as CombatPresentationEvent
   state.presentationEvents = [...events, added].slice(-PRESENTATION_EVENT_LIMIT)

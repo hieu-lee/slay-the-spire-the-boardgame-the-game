@@ -1,6 +1,6 @@
 import { DAILY_ASCENSION } from '../../src/game/daily.ts'
 import { CHARACTER_IDS } from '../../src/game/types.ts'
-import { deckHash, primeStatsDeck, recordDeckClassification, soloDeck, statsDecks, validDeckType } from './stats.mjs'
+import { deckHash, isRemovedHero, primeStatsDeck, recordDeckClassification, soloDeck, statsDecks, validDeckType } from './stats.mjs'
 
 const CHARACTERS = new Set(CHARACTER_IDS)
 const CHARACTER_ORDER = [...CHARACTERS]
@@ -103,6 +103,10 @@ export function normalizeLeaderboardRun(value, recordedAt = Date.now()) {
   primeStatsDeck(run)
   return run
 }
+
+/** A row recorded for a hero that no longer exists (Kratos): dropped on load, never an error. */
+export const isRemovedHeroRun = (value) =>
+  [value?.character, ...(Array.isArray(value?.characters) ? value.characters : [])].some(isRemovedHero)
 
 export function restoreLeaderboardRuns(values) {
   if (!Array.isArray(values)) return []

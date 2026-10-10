@@ -1,4 +1,5 @@
 // Real engine events rendered by the production combat screen; no synthetic attacks.
+// The hero is an Ironclad wearing the Kratos skin: Ironclad's cards play, Kratos's animation shows.
 export async function installKratosFixture() {
   document.querySelector('#root').style.display = 'none'
   document.documentElement.dataset.mobilePerformance = String(innerWidth < 900)
@@ -19,10 +20,10 @@ export async function installKratosFixture() {
     state: structuredClone(f.state), act: 1, viewerId: 'p1', autoAdvance: false,
     authoritativeRestoration: f.restoration, authoritativeConnected: f.connected, onAction: () => {},
   })))
-  f.reset = (character = 'kratos') => {
+  f.reset = (character = 'ironclad', skin = 'kratos') => {
     const rng = createRng(47)
-    const player = createPlayer(rng, 'p1', 'ArtTest', character, 0)
-    Object.assign(player, { hand: [], draw: [], relics: [], energy: 9, rage: 3 })
+    const player = createPlayer(rng, 'p1', 'ArtTest', character, 0, [], undefined, undefined, [], skin)
+    Object.assign(player, { hand: [], draw: [], relics: [], energy: 9 })
     const enemies = [0, 1].map(i => ({ uid: `enemy-${i}`, defId: 'jaw_worm', row: 0, isBoss: false,
       hp: 30, maxHp: 30, block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0,
       actionIndex: 0, abilityUsed: true, dead: false }))
@@ -34,7 +35,7 @@ export async function installKratosFixture() {
     f.restoration++
     f.render()
   }
-  f.attack = (id = 'strike_kratos') => {
+  f.attack = (id = 'strike_ironclad') => {
     if (id === 'shiv') {
       f.state.players[0].shivs++
       f.state = spendShiv(f.state, 'p1', 'enemy-0')

@@ -23,10 +23,14 @@ import {
   CARD_ART_ROOT,
   CARD_ASSET_ROOT,
   CARD_THUMB_ROOT,
+  SKIN_CARD_ART_ROOT,
+  SKIN_CARD_ROOT,
+  SKIN_CARD_THUMB_ROOT,
   SOCKETED_CARD_THUMB_ROOT,
 } from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { CHARACTER_IDS } from '../src/game/types.ts'
+import { SKINS } from '../src/game/skins.ts'
 import { POTIONS, RELICS } from '../src/game/relics.ts'
 import {
   bossProjectileImagePath,
@@ -36,6 +40,9 @@ import { DOWNFALL_COLORLESS_CARD_DEFS } from '../src/game/downfall/items.ts'
 // the extraction pipeline, which regenerated the very portraits this file
 // checks for — so the check asserted its own side effect and could never fail.
 import { ENEMY_ART } from './lib/enemy-art.mjs'
+import { webpSize } from './lib/webp-size.mjs'
+import { skinCardFaces } from './sync-skin-card-faces.mjs'
+import { SKIN_CARD_FACES } from '../src/game/skin-card-faces.ts'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -74,7 +81,11 @@ const sfxRoot = join(publicRoot, 'assets/sfx')
 const cardFiles = listing(cardRoot, '.webp')
 const cardThumbFiles = listing(cardThumbRoot, '.webp')
 const socketedCardThumbFiles = listing(socketedCardThumbRoot, '.webp')
-const CARD_ART_OWNERS = ['ironclad', 'silent', 'defect', 'watcher', 'kratos']
+// Per-hero art is keyed by visual id: every character, plus every skin (which
+// wears a character's slot with its own art, named by the skin id).
+const SKIN_IDS = Object.values(SKINS).flat()
+const VISUAL_IDS = [...CHARACTER_IDS, ...SKIN_IDS]
+const CARD_ART_OWNERS = ['ironclad', 'silent', 'defect', 'watcher']
 const DOWNFALL_CARD_OWNERS = ['slime_boss', 'guardian', 'hexaghost', 'hermit']
 const cardArtFiles = CARD_ART_OWNERS.flatMap((owner) =>
   listing(join(cardArtRoot, owner), '.webp').map((file) => `${owner}/${file}`))
@@ -175,12 +186,17 @@ check('every rigged animation has a current Safari hardware-video companion', ()
 })
 
 check('every campfire party resolves to one complete wide scene', () => {
-  const characters = ['ironclad', 'silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit', 'kratos']
+  // A party is a set of visual ids: every character, or its skin when one is worn,
+  // so no party holds both a character and its skin. Skins sort after the characters.
+  const skins = SKIN_IDS
+  const characters = VISUAL_IDS
+  const wornBy = (skin) => Object.entries(SKINS).find(([, list]) => list.includes(skin))[0]
   const parties = []
   const choose = (start, party) => {
     if (party.length > 0) parties.push([...party])
     if (party.length === 4) return
     for (let index = start; index < characters.length; index += 1) {
+      if (skins.includes(characters[index]) && party.includes(wornBy(characters[index]))) continue
       party.push(characters[index])
       choose(index + 1, party)
       party.pop()
@@ -235,10 +251,9 @@ check('every character card has exactly one committed illustration', () => {
       const id = entry.name === 'Strike' ? `strike_${owner}` : entry.name === 'Defend' ? `defend_${owner}` : slug
       return `${owner}/${id}.webp`
     }))
-  for (const def of Object.values(CARDS).filter((def) => def.owner === 'kratos')) indexed.add(`kratos/${def.id}.webp`)
   assertDeepEqual(expected.filter((file) => !cardArtFiles.includes(file)), [], 'live card art missing')
   assertDeepEqual(cardArtFiles.filter((file) => !indexed.has(file)), [], 'unknown bundled card art')
-  assertEqual(cardArtFiles.length, 315, 'complete original-hero and Kratos illustration inventory')
+  assertEqual(cardArtFiles.length, 251, 'complete original-hero illustration inventory')
 })
 
 check('committed card illustrations decode at the audited size and budget', () => {
@@ -259,21 +274,24 @@ check('committed card illustrations decode at the audited size and budget', () =
   assert(sizes.reduce((sum, bytes) => sum + bytes, 0) < 9 * 1024 * 1024, 'illustrations exceed 9 MiB')
 })
 
-check('Kratos selected sources, prompts and ready-to-release menu exports match their provenance', () => {
-  const manifest = JSON.parse(readFileSync(join(repoRoot, 'docs/kratos-card-art/manifest.json'), 'utf8'))
-  const expected = Object.values(CARDS).filter((def) => def.owner === 'kratos').map((def) => def.id).sort()
-  assertDeepEqual(manifest.cards.map((entry) => entry.id).sort(), expected, 'Kratos provenance inventory')
+check('Kratos skin selected sources, prompts and ready-to-release menu exports match their provenance', () => {
+  const manifest = JSON.parse(readFileSync(join(repoRoot, 'docs/skins/kratos-menu-art/manifest.json'), 'utf8'))
   const verifyHash = ({ path, sha256 }) => {
     assert(!path.startsWith('/') && !path.split('/').includes('..'), 'unsafe provenance path')
     assertEqual(createHash('sha256').update(readFileSync(join(repoRoot, path))).digest('hex'), sha256, path)
   }
-  for (const reference of manifest.references) verifyHash(reference)
-  for (const entry of manifest.cards) {
-    assertEqual(entry.output.path, `public/assets/card-art/kratos/${entry.id}.webp`)
-    for (const asset of [entry.source, entry.prompt, entry.output]) verifyHash(asset)
-  }
+  assertDeepEqual(manifest.otherAssets.map((entry) => entry.output.path).sort(), [
+    'public/assets/menu/character-select/character-kratos-wallpaper.webp',
+    'public/assets/menu/character-select/portrait-kratos.png',
+  ], 'Kratos skin menu provenance inventory')
   for (const entry of manifest.otherAssets) {
     for (const asset of [entry.source, entry.prompt, entry.output, ...entry.references]) verifyHash(asset)
+  }
+  const { energyOrb } = manifest
+  assertEqual(energyOrb.output, 'public/assets/combat/energy-orbs/kratos.webp')
+  for (const [path, sha256] of [[energyOrb.source, energyOrb.sourceSha256], [energyOrb.prompt, energyOrb.promptSha256],
+    [energyOrb.output, energyOrb.outputSha256], ...energyOrb.references.map((entry) => [entry.path, entry.sha256])]) {
+    verifyHash({ path, sha256 })
   }
   const probe = `
 from PIL import Image
@@ -287,6 +305,72 @@ assert wallpaper.size == (1536,864) and wallpaper.mode == 'RGB'
     join(menuRoot, 'character-select/portrait-kratos.png'),
     join(menuRoot, 'character-select/character-kratos-wallpaper.webp')], { encoding: 'utf8' })
   assert(result.status === 0, result.stderr || 'Kratos menu exports did not decode at the audited sizes')
+})
+
+// Cards a skin does not have art for yet, as `<skin>:<cardId>`. Each entry is a promise to
+// add the art; an Ironclad card that is neither skinned nor listed here fails this check.
+const SKIN_CARD_FACES_SKINS = Object.keys(SKIN_CARD_FACES)
+const PENDING_SKIN_CARDS = new Set([])
+
+check('every skin has a face, a thumbnail and an illustration for every card of its character, and nothing else', () => {
+  const listed = skinCardFaces()
+  assertDeepEqual(SKIN_CARD_FACES, listed, 'src/game/skin-card-faces.ts is stale; run node scripts/sync-skin-card-faces.mjs')
+  for (const [character, skins] of Object.entries(SKINS)) {
+    const owned = Object.values(CARDS).filter((def) => def.owner === character && def.publisherScan !== false)
+    for (const skin of skins) {
+      const pending = (def) => PENDING_SKIN_CARDS.has(`${skin}:${def.id}`)
+      const covered = owned.filter((def) => !pending(def))
+      const faces = covered.flatMap((def) => [cardImagePath(def, false), cardImagePath(faceOf(def, true), true)]
+        .map((path) => path.slice(CARD_ASSET_ROOT.length + 1, -'.webp'.length))).sort()
+      assertDeepEqual(listed[skin]?.faces ?? [], faces, `${skin} faces must be exactly ${character}'s cards`)
+      assertDeepEqual(listed[skin]?.art ?? [], covered.map((def) => `${def.owner}/${def.id}`).sort(), `${skin} art`)
+      assertEqual(listed[skin].faces.length, 2 * covered.length, `${skin} has both faces of every card`)
+      const thumbs = listing(join(publicRoot, 'assets/skin-cards-sm', skin), '.webp').map((file) => file.slice(0, -5)).sort()
+      assertDeepEqual(thumbs, faces, `${skin} 448px faces must match the full faces`)
+      // Every shipped path resolves into the skin roots, never a default scan.
+      for (const def of covered) {
+        assertEqual(cardImagePath(def, false, skin), `${SKIN_CARD_ROOT}/${skin}/${cardImagePath(def, false).split('/').pop()}`)
+        assertEqual(cardThumbPath(def, false, undefined, skin), `${SKIN_CARD_THUMB_ROOT}/${skin}/${cardImagePath(def, false).split('/').pop()}`)
+        assertEqual(cardArtPath(def, skin), `${SKIN_CARD_ART_ROOT}/${skin}/${def.owner}/${def.id}.webp`)
+      }
+      // Gems keep the default socketed faces, and a card the skin lacks keeps its default scan.
+      const gem = CARDS.strike_ironclad ?? owned[0]
+      assertEqual(cardThumbPath(owned[0], false, gem, skin), cardThumbPath(owned[0], false, gem))
+      assertEqual(cardImagePath(CARDS.strike_silent, false, skin), cardImagePath(CARDS.strike_silent, false))
+      assertEqual(cardArtPath(CARDS.strike_silent, skin), cardArtPath(CARDS.strike_silent))
+    }
+  }
+})
+
+check('skin card images keep the audited dimensions and sizes, and the art matches its provenance manifest', () => {
+  for (const skin of SKIN_CARD_FACES_SKINS) {
+    const dir = (name) => join(publicRoot, 'assets', name, skin)
+    for (const key of SKIN_CARD_FACES[skin].faces) {
+      const full = webpSize(join(dir('skin-cards'), `${key}.webp`))
+      const thumb = webpSize(join(dir('skin-cards-sm'), `${key}.webp`))
+      assert((full[0] === 744 && full[1] === 1039) || (full[0] === 960 && full[1] === 1341), `${key} is ${full.join('x')}`)
+      assertEqual(thumb[0], 448, `${key} thumbnail width`)
+      assert(Math.abs(thumb[1] / thumb[0] - full[1] / full[0]) < 0.01, `${key} thumbnail aspect`)
+      // The skin face replaces the default scan one for one, so it must have its geometry.
+      const original = join(cardRoot, `${key}.webp`)
+      if (existsSync(original)) assertDeepEqual(full, webpSize(original), `${key} matches the default scan size`)
+      assert(statSync(join(dir('skin-cards'), `${key}.webp`)).size <= 160 * 1024, `${key} exceeds 160 KiB`)
+      assert(statSync(join(dir('skin-cards-sm'), `${key}.webp`)).size <= 80 * 1024, `${key} thumbnail exceeds 80 KiB`)
+    }
+    const artDir = dir('skin-card-art')
+    const manifest = JSON.parse(readFileSync(join(repoRoot, `docs/skins/${skin}-card-art/manifest.json`), 'utf8'))
+    assertEqual(manifest.cards.length, SKIN_CARD_FACES[skin].art.length, `${skin} manifest covers every illustration`)
+    const sha = (path) => createHash('sha256').update(readFileSync(join(repoRoot, path))).digest('hex')
+    for (const card of manifest.cards) {
+      for (const record of [card.source, card.prompt, card.output]) {
+        assert(!record.path.startsWith('/') && !record.path.split('/').includes('..'), `unsafe path ${record.path}`)
+        assertEqual(sha(record.path), record.sha256, record.path)
+      }
+      const file = join(artDir, card.output.path.split(`skin-card-art/${skin}/`)[1])
+      assertDeepEqual(webpSize(file), [748, 420], `${card.id} art size`)
+      assert(statSync(file).size <= 40 * 1024, `${card.id} art exceeds 40 KiB`)
+    }
+  }
 })
 
 check('committed card illustration paths are stable across upgrades', () => {
@@ -312,15 +396,13 @@ const downfallCardKeys = new Set(Object.values(CARDS)
     Object.hasOwn(DOWNFALL_COLORLESS_CARD_DEFS, def.id))
   .flatMap((def) => [cardImagePath(def, false), ...(def.upgrade ? [cardImagePath(def, true)] : [])])
   .map((path) => path.split('/').pop()))
-const kratosCardKeys = new Set(JSON.parse(readFileSync(join(repoRoot, 'docs/kratos-card-faces/plan.json'), 'utf8'))
-  .map((face) => `${face.assetKey}.webp`))
 // The Slayer Pack: both faces of all 45 Shop pack cards, each filed under `slayer__<owner>__`.
 const slayerCardKeys = new Set(Object.values(CARDS)
   .filter((def) => def.pack)
   .flatMap((def) => [cardImagePath(def, false), cardImagePath(faceOf(def, true), true)])
   .map((path) => path.split('/').pop()))
-const knownCardKeys = new Set([...indexedKeys, ...GENERATED_CARD_KEYS, ...downfallCardKeys, ...kratosCardKeys, ...slayerCardKeys])
-const cardGroup = (file) => kratosCardKeys.has(file) ? 'kratos' : slayerCardKeys.has(file) ? 'slayer' : 'existing'
+const knownCardKeys = new Set([...indexedKeys, ...GENERATED_CARD_KEYS, ...downfallCardKeys, ...slayerCardKeys])
+const cardGroup = (file) => slayerCardKeys.has(file) ? 'slayer' : 'existing'
 const hasPublisherScans = cardFiles.some((file) => !GENERATED_CARD_KEYS.has(file))
 
 check('every defined card resolves to an image that exists', () => {
@@ -392,7 +474,7 @@ check('every card scan has a thumbnail inside the decode budget', () => {
     return width > 0 && width <= CARD_THUMB_WIDTH ? [] : [`${file} is ${width}px wide`]
   })
   assertDeepEqual(faults, [], `card thumbnails over ${CARD_THUMB_WIDTH}px`)
-  for (const [group, budget] of [['existing', 28], ['kratos', 8], ['slayer', 4]]) {
+  for (const [group, budget] of [['existing', 28], ['slayer', 4]]) {
     const bytes = cardThumbFiles.filter(file => cardGroup(file) === group)
       .reduce((sum, file) => sum + statSync(join(cardThumbRoot, file)).size, 0)
     assert(bytes < budget * 1024 * 1024, `${group} thumbnails total ${(bytes / 1048576).toFixed(1)} MB`)
@@ -447,7 +529,7 @@ check('image paths are safe, normalised browser paths', () => {
 check('the card art on disk matches the index exactly', () => {
   if (!hasPublisherScans) return
   const expected = cardIndex.reduce((count, entry) => count + (entry.hasUpgrade ? 2 : 1), 0) +
-    GENERATED_CARD_KEYS.size + downfallCardKeys.size + kratosCardKeys.size + slayerCardKeys.size
+    GENERATED_CARD_KEYS.size + downfallCardKeys.size + slayerCardKeys.size
   assertEqual(slayerCardKeys.size, 90, 'The Slayer Pack: 45 cards, two faces each')
   assertEqual(cardFiles.length, expected, 'every index entry should have exactly one file per face')
 })
@@ -495,9 +577,9 @@ check('character card art stays at source resolution', () => {
 // would add hundreds of megabytes without anyone noticing until clone time.
 check('card art stays within its size budget', () => {
   if (!hasPublisherScans) return
-  // Keep the existing crop budget; model faces preserve native alpha and have
-  // a separate bounded allowance, without raising other cards' limits.
-  for (const [group, budget, perFile] of [['existing', 48, 60], ['kratos', 16, 160], ['slayer', 6, 60]]) {
+  // Keep the existing crop budget; the Slayer Pack faces have a separate
+  // bounded allowance, without raising other cards' limits.
+  for (const [group, budget, perFile] of [['existing', 48, 60], ['slayer', 6, 60]]) {
     let total = 0
     const oversized = []
     for (const file of cardFiles.filter(file => cardGroup(file) === group)) {
@@ -522,7 +604,6 @@ check('no stale card images linger from an older naming scheme', () => {
   }
   for (const key of GENERATED_CARD_KEYS) expected.add(key)
   for (const key of downfallCardKeys) expected.add(key)
-  for (const key of kratosCardKeys) expected.add(key)
   for (const key of slayerCardKeys) expected.add(key)
   const strays = cardFiles.filter((file) => !expected.has(file))
   assert(
@@ -564,7 +645,7 @@ check('the menu artwork and licensed UI font are bundled', () => {
     assert(existsSync(join(menuRoot, file)), `missing menu artwork: ${file}`)
   }
   const expectedIcons = [
-    'all', 'colorless', 'curse', 'defect', 'guardian', 'hermit', 'hexaghost', 'ironclad', 'kratos',
+    'all', 'colorless', 'curse', 'defect', 'guardian', 'hermit', 'hexaghost', 'ironclad',
     'silent', 'slime_boss', 'status', 'watcher',
   ]
     .map((name) => `${name}.webp`)
@@ -918,7 +999,7 @@ print(json.dumps(faults))
 })
 
 check('Kratos registered drawings keep native alpha, planted feet, generated offsets, and unclipped weapon overscan', () => {
-  const manifest = JSON.parse(readFileSync(join(repoRoot, 'docs/kratos-art.json'), 'utf8'))
+  const manifest = JSON.parse(readFileSync(join(repoRoot, 'docs/skins/kratos-art.json'), 'utf8'))
   const digest = (path) => createHash('sha256').update(readFileSync(join(repoRoot, path))).digest('hex')
   for (const entry of manifest.generated) {
     assertEqual(digest(entry.source), entry.sha256, entry.source)
@@ -957,9 +1038,20 @@ print('PASS: Kratos native alpha, fixed canvas, planted feet and weapon overscan
   assert(result.status === 0, result.stderr || result.stdout)
 })
 
-check('every released hero has registered transparent treasure pickup poses', () => {
+check('every character and skin has its combat, menu and merchant art', () => {
+  const missing = VISUAL_IDS.flatMap((id) => [
+    `combat/characters/${id}.webp`, `combat/characters/${id}-hero.webp`,
+    `menu/character-select/portrait-${id}.png`, `menu/character-select/character-${id}-wallpaper.webp`,
+    `noncombat/merchant/characters/${id}-standing.webp`,
+  ]).filter((path) => !existsSync(join(publicRoot, 'assets', path)))
+  assertDeepEqual(missing, [], 'visual-id art inventory')
+  const heads = Object.keys(JSON.parse(readFileSync(join(repoRoot, 'src/ui/hero-art-head.json'), 'utf8')))
+  assertDeepEqual(VISUAL_IDS.filter((id) => !heads.some((head) => head === id || head.startsWith(`${id}-`))), [], 'hero head calibration per visual id')
+})
+
+check('every released hero and skin has registered transparent treasure pickup poses', () => {
   const root = join(repoRoot, 'public/assets/noncombat/treasure')
-  const expected = CHARACTER_IDS.flatMap((id) => [`hand-${id}.webp`, `grip-${id}.webp`]).sort()
+  const expected = VISUAL_IDS.flatMap((id) => [`hand-${id}.webp`, `grip-${id}.webp`]).sort()
   assertDeepEqual(listing(root, '.webp').filter((name) => /^(hand|grip)-/.test(name)).sort(), expected)
   const result = spawnSync('webpinfo', ['-summary', ...expected.map((name) => join(root, name))], { encoding: 'utf8' })
   assert(result.status === 0, result.stderr || 'could not decode treasure pickup poses')
@@ -973,19 +1065,19 @@ check('every released hero has registered transparent treasure pickup poses', ()
     'treasure pickup poses exceed 1 MiB')
 })
 
-check('Downfall and Kratos merchant poses are complete, transparent, and edge-capped', () => {
-  const characters = ['guardian', 'hermit', 'hexaghost', 'slime_boss', 'kratos']
+check('Downfall and skin merchant poses are complete, transparent, and edge-capped', () => {
+  const characters = [...CHARACTER_IDS.filter((id) => !['ironclad', 'silent', 'defect', 'watcher'].includes(id)), ...SKIN_IDS]
   assertDeepEqual(
     merchantCharacterFiles.filter((file) => characters.some((id) => file === `${id}-standing.webp`)).sort(),
     characters.map((id) => `${id}-standing.webp`).sort(),
-    'Downfall/Kratos merchant pose inventory',
+    'Downfall/skin merchant pose inventory',
   )
   const groups = [[merchantCharacterRoot, characters.map((id) => `${id}-standing.webp`), MERCHANT_CHARACTER_EDGE]]
   for (const [root, names, [floor, cap]] of groups) {
     const result = spawnSync('webpinfo', ['-summary', ...names.map((file) => join(root, file))], { encoding: 'utf8' })
-    assert(result.status === 0, result.stderr || 'could not inspect Downfall/Kratos noncombat poses')
+    assert(result.status === 0, result.stderr || 'could not inspect Downfall/skin noncombat poses')
     const inspected = result.stdout.split(/^File: /m).slice(1)
-    assertEqual(inspected.length, names.length, 'decoded Downfall/Kratos noncombat pose count')
+    assertEqual(inspected.length, names.length, 'decoded Downfall/skin noncombat pose count')
     const faults = inspected.flatMap((block) => {
       const file = block.slice(0, block.indexOf('\n')).split('/').pop()
       const width = Number(block.match(/  Width: (\d+)/)?.[1])
@@ -994,7 +1086,7 @@ check('Downfall and Kratos merchant poses are complete, transparent, and edge-ca
       return longEdge >= floor && longEdge <= cap && /Alpha:\s+1/.test(block)
         ? [] : [`${file} is ${width}x${height}, alpha ${/Alpha:\s+1/.test(block)}`]
     })
-    assertDeepEqual(faults, [], 'Downfall/Kratos noncombat pose dimensions')
+    assertDeepEqual(faults, [], 'Downfall/skin noncombat pose dimensions')
   }
 })
 
@@ -1122,10 +1214,6 @@ check('bundled stage and generated icon inventories are complete and decodable',
     'feel_no_pain', 'footwork', 'fusion', 'heatsinks', 'infinite_blades', 'inflame',
     'machine_learning', 'mayhem', 'metallicize', 'noxious_fumes', 'panache', 'sadistic_nature',
     'storm', 'the_bomb',
-    // Playtest-only Kratos Powers.
-    ...['army_of_hades', 'blades_of_athena', 'blades_of_exile', 'bloodlust', 'chains_of_chaos', 'deicide',
-      'escape_from_hades', 'ghost_of_sparta', 'god_of_war', 'green_orbs', 'red_orbs', 'servant_of_ares',
-      'soul_summon'].map((name) => `kratos_${name}`),
   ].map((name) => `${name}.png`).sort()
   assertDeepEqual(statusIconFiles.sort(), expectedStatus, 'status icon inventory')
   assertDeepEqual(powerIconFiles.sort(), expectedPowers, 'Power icon inventory')

@@ -198,32 +198,6 @@ export const CHARACTER_LESSONS: Readonly<Partial<Record<CharacterId, CharacterLe
       },
     ],
   },
-  kratos: {
-    intro: [
-      {
-        title: 'Playing Kratos',
-        body: 'Ashes of Sparta gives 2 Rage at the start of combat and 1 whenever you lose HP, and heals 1 HP after each fight. Rage is saved between turns, up to 5. Blades of Chaos hits a row and builds more Rage.',
-        focus: [spot('.rage-meter, .hand')],
-      },
-      {
-        title: 'Unleash and Hold Rage',
-        body: 'Unleash spends the printed amount of Rage for its bonus. Cards that say “instead” replace their normal effect. Tap the Rage meter to Hold Rage when you want to save it. Plume of Prometheus can spend 2 Rage for 5 damage.',
-        focus: [spot('.rage-meter, .hand')],
-      },
-    ],
-    advanced: [
-      {
-        title: 'Godslayer',
-        body: 'Godslayer adds its printed damage against Elites and Bosses. Against ordinary enemies, use the card’s normal damage.',
-        focus: [spot('.hand')],
-      },
-      {
-        title: 'Brutal Kill',
-        body: 'Brutal Kill rewards a finishing blow. The chosen enemy must die from that card before its bonus happens. Build Rage, weaken the target, and choose the right finisher.',
-        focus: [spot('.hand, .row__enemies')],
-      },
-    ],
-  },
   hermit: {
     setup: [
       {

@@ -321,7 +321,6 @@ export function resolutionContext(
     hermitDieRelicChoiceIndex: 0,
     discardedByCard: 0,
     exhaustedByCard: 0,
-    hpLostByCard: 0,
     exhaustedCardCost: undefined,
     pendingDiscards: [],
     pendingPoisonTriggers: [],
@@ -463,19 +462,10 @@ function holds(
       })
     case 'hpAtMost':
       return actor.hp <= condition.amount
-    case 'rageAtLeast':
-      return (actor.rage ?? 0) >= condition.amount
-    case 'canUnleash':
-      return (actor.rage ?? 0) >= unleashCost(actor, condition.cost)
-    case 'targetEliteOrBoss':
-      return target !== undefined && isEliteOrBoss(target)
     case 'targetVulnerable':
       return (target?.vulnerable ?? 0) > 0
     case 'notRetainedLastTurn':
       return true
-    case 'targetDead':
-    case 'exhaustedByThisCard':
-    case 'lostHpToThisCard':
     case 'targetWeak':
       return false
     case 'lostHpLastRound':
@@ -490,32 +480,16 @@ function holds(
   }
 }
 
-/** Godslayer and Deicide: the enemy's own card is an Elite or a Boss, so boss minions do not count. */
-export function isEliteOrBoss(enemy: Enemy): boolean {
-  return enemy.isBoss || enemyDef(enemy.defId, enemy.ascension).elite === true
-}
-
-/** God of War lowers every Unleash cost by 1, to a minimum of 0. Extra copies do not stack. */
-export function unleashCost(actor: Pick<Player, 'powers'>, cost: number): number {
-  return Math.max(0, cost - (actor.powers.some((power) => power.defId === 'kratos_god_of_war') ? 1 : 0))
-}
-
 export function conditionIsActive(
   condition: Condition,
   state: CombatState,
   actor: Player,
-  context?: Pick<PlayContext, 'drewSkill' | 'sourceRetainedLastTurn' | 'holdRage' | 'enemyUid' | 'exhaustedByCard' | 'hpLostByCard'>,
+  context?: Pick<PlayContext, 'drewSkill' | 'sourceRetainedLastTurn' | 'enemyUid'>,
   target?: Enemy,
 ): boolean {
   if (condition.kind === 'drewSkill') return context?.drewSkill === true
   if (condition.kind === 'retainedLastTurn') return context?.sourceRetainedLastTurn === true
   if (condition.kind === 'notRetainedLastTurn') return context?.sourceRetainedLastTurn !== true
-  if (condition.kind === 'canUnleash' && context?.holdRage === true) return false
-  if (condition.kind === 'exhaustedByThisCard') return (context?.exhaustedByCard ?? 0) > 0
-  if (condition.kind === 'lostHpToThisCard') return (context?.hpLostByCard ?? 0) > 0
-  if (condition.kind === 'targetDead') {
-    return typeof context?.enemyUid === 'string' && state.enemies.some((enemy) => enemy.uid === context.enemyUid && enemy.dead)
-  }
   // Slayer Pack: Heel Hook reads its chosen target. Death keeps an enemy's
   // tokens on its card, so a Weak target killed by the hit still counts.
   if (condition.kind === 'targetWeak') {
@@ -602,7 +576,7 @@ export function effectIsActive(
   effect: Effect,
   state: CombatState,
   actor: Player,
-  context?: Pick<PlayContext, 'drewSkill' | 'sourceRetainedLastTurn' | 'holdRage' | 'enemyUid' | 'exhaustedByCard' | 'hpLostByCard'>,
+  context?: Pick<PlayContext, 'drewSkill' | 'sourceRetainedLastTurn' | 'enemyUid'>,
 ): boolean {
   return !effect.when || conditionIsActive(effect.when, state, actor, context)
 }
@@ -707,8 +681,6 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, en
       return [...(actor.hand ?? []), ...actor.chamber].filter((card) => ['Strike', 'Defend'].includes(cardDef(card.defId).name) && cardDef(card.defId).rarity === 'starter').length
     case 'otherCardsInHand':
       return Math.max(0, (actor.hand?.length ?? 0) - 1)
-    case 'rage':
-      return actor.rage ?? 0
     case 'currentHp':
       return actor.hp
     case 'upgradedCardsInHand':
@@ -834,7 +806,7 @@ export function reachesEnemy(
   actor: CountablePlayer | undefined,
   energySpent?: number,
 ): boolean {
-  // Unleash and Brutal Kill are printed as branches; a hit inside one still needs its target.
+  // A branch holds hits on either side; a hit inside one still needs its target.
   if (effect.kind === 'branch') return [...effect.effects, ...effect.otherwise].some((nested) => reachesEnemy(nested, actor, energySpent))
   if (!ENEMY_EFFECTS.includes(effect.kind)) return false
   if (actor && effect.when?.kind === 'inStance' && actor.stance !== effect.when.stance) return false

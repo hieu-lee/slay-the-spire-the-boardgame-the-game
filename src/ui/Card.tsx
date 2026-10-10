@@ -6,6 +6,7 @@ import type { CardDef } from '../game/cards.ts'
 import type { Amount, Condition, CountOf, Effect, EnemyTokenKind } from '../game/cards.ts'
 import type { HandEndOfTurnEffect } from '../game/cards.ts'
 import { cardThumbPath } from '../game/assets.ts'
+import { useCardSkin } from './skin-context.tsx'
 import { CardFace, cardTypeLabel } from './CardFace.tsx'
 import { Icon, StatusIcon } from './Icon.tsx'
 import type { IconName, StatusIconName } from './icons.ts'
@@ -94,7 +95,6 @@ const COUNT_LABEL: Record<CountOf, string> = {
   cursesInHandAndChamber: 'Curse in your hand or Chamber',
   starterCardsInHandAndChamber: 'starter Strike or Defend in your hand or Chamber',
   otherCardsInHand: 'other card in your hand',
-  rage: 'Rage you have',
   currentHp: 'hit point you have',
   upgradedCardsInHand: 'other upgraded card in your hand',
   ownWeakAndVulnerable: 'Weak or Vulnerable you have',
@@ -143,12 +143,6 @@ function conditionText(condition: Condition): string {
     case 'hasDeadOnAttackInChamber': return 'you have a Dead On Attack in your Chamber'
     case 'targetWeak': return 'the target has Weak'
     case 'hpAtMost': return `you have ${condition.amount} or fewer hit points`
-    case 'rageAtLeast': return `you have at least ${condition.amount} Rage`
-    case 'canUnleash': return `you Unleash ${condition.cost}`
-    case 'targetDead': return 'the target died (Brutal Kill)'
-    case 'exhaustedByThisCard': return 'this card exhausted a card'
-    case 'lostHpToThisCard': return 'you lost HP to this card'
-    case 'targetEliteOrBoss': return 'the target is an Elite or Boss'
     case 'hasNoSkillsInHand': return 'you have no other Skills in hand'
     case 'lostHpLastRound': return 'you lost HP last round'
     case 'hasStatusOrCurseInHand': return 'you have a Daze, Burn, Slimed or Curse in your hand'
@@ -362,9 +356,6 @@ function effectText(effect: Effect): string {
     case 'goldenBullet': return `deal ${effect.amount} damage; Dead On quadruples Vulnerable damage`
     case 'roulette': return 'resolve the row matching the shared die'
     case 'attachBounty': return `apply ${effect.vulnerable} Vulnerable and attach this card as a bounty`
-    case 'gainRage': return `gain ${amountText(effect.amount)} Rage${condition}`
-    case 'loseAllRage': return `spend all your Rage${condition}`
-    case 'unleashSpend': return `spend ${effect.cost} Rage${condition}`
     case 'openPlayWindow': return `${effect.optional ? 'you may ' : ''}play ${effect.plays === 1 ? 'one' : effect.optional
       ? 'any number' : 'all'} of ${effect.cards === 'drawn' ? 'the drawn cards' : effect.cards === 'hand'
       ? 'the cards in your hand' : 'the Attacks in your hand'} for ${effect.cost} Energy${effect.plays === 1 ? '' : ' each'}${
@@ -445,10 +436,6 @@ function handEndOfTurnText(effect: HandEndOfTurnEffect): string {
 }
 
 const CARD_KEYWORD_TIPS = [
-  ['Rage', /\brage\b/i, 'Kratos banks up to 5 Rage. It stays between turns and resets each combat.'],
-  ['Unleash', /\bunleash\b/i, 'Spend the listed Rage for the bonus when you can pay. Press the Rage meter to hold Rage and skip Unleash. God of War lowers the cost by 1, to a minimum of 0.'],
-  ['Godslayer', /\bgodslayer\b/i, 'The listed bonus adds damage to each hit against an enemy whose card is an Elite or a Boss.'],
-  ['Brutal Kill', /\bbrutal kill\b/i, 'Gain the listed bonus if this card kills its chosen target with its hit.'],
   ['Ethereal', /\bethereal\b/i, 'If this card is in your hand at end of turn, Exhaust it.'],
   ['Exhaust', /__exhaust__/, 'An Exhausted card is removed for this combat and returns to its deck afterward.'],
   ['Retain', /\bretain(?:ed)?\b/i, 'A retained card stays in its owner’s hand at end of turn.'],
@@ -767,7 +754,8 @@ export function Card({
   const touchNeedsInspection = useRef(false)
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : null
-  const scan = cardThumbPath(def, card.upgraded, attachedGem ?? undefined)
+  const skin = useCardSkin(def)
+  const scan = cardThumbPath(def, card.upgraded, attachedGem ?? undefined, skin)
   const hasPublisherScan = def.publisherScan !== false
   const [scanUnavailable, setScanUnavailable] = useState(!hasPublisherScan)
   useEffect(() => setScanUnavailable(!hasPublisherScan), [hasPublisherScan, scan])

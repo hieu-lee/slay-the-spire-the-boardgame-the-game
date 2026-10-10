@@ -1,12 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { assetPath } from '../game/assets.ts'
+import { playerVisualId } from '../game/skins.ts'
 import type { RelicRewardState } from '../game/noncombat.ts'
 import type { Player } from '../game/types.ts'
 import { useReducedEffects } from './combat-screen/hooks.ts'
 import { ItemImage } from './ItemImage.tsx'
 
-type TreasurePlayer = Pick<Player, "id" | "gold" | "relics" | "character">
+type TreasurePlayer = Pick<Player, "id" | "gold" | "relics" | "character" | "skin">
 
 type Bounds = { left: number; top: number; width: number; height: number }
 type Scene = { stage: Bounds; chest: Bounds }
@@ -14,6 +15,7 @@ type Scene = { stage: Bounds; chest: Bounds }
 type Claim = { key: string; id: string; seat: number; character: string; x: number; y: number }
 const colors = ['#dc8060', '#82b998', '#7abde0', '#bd98df']
 export const treasurePlayerColor = (seat: number) => colors[seat % colors.length]
+/** `character` is the hand's visual id: the skin worn, else the character. */
 export const treasureHandPath = (character: string, grip = false) => assetPath(`noncombat/treasure/${grip ? 'grip' : 'hand'}-${character}.webp`)
 
 /** Lives in the game shell so the last confirmed pickup survives leaving the room. */
@@ -50,7 +52,7 @@ export function TreasureEffects({ room, players, runId, resolved }: {
         const slot = typeof choice === 'number' ? String(choice) : playerId
         const id = typeof choice === 'number' ? reward.sharedOffers?.[choice] : choice === 'take' ? reward.offers[playerId] : null
         const point = old.points.get(slot)
-        if (id && point) additions.push({ key: `${playerId}-${slot}`, id, seat, character: player.character, ...point })
+        if (id && point) additions.push({ key: `${playerId}-${slot}`, id, seat, character: playerVisualId(player), ...point })
       }
       if (additions.length) {
         setClaims((current) => [...current, ...additions])

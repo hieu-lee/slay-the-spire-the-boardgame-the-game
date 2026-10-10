@@ -1,11 +1,12 @@
 // Core vocabulary of the engine. Everything here is plain data: the whole state
 // has to survive JSON.stringify for broadcasts, saves, and replays.
 
+import type { SkinId } from './skins.ts'
+
 export const BASE_CHARACTER_IDS = ['ironclad', 'silent', 'defect', 'watcher'] as const
 export const DOWNFALL_CHARACTER_IDS = ['slime_boss', 'guardian', 'hexaghost', 'hermit'] as const
-export const DLC_CHARACTER_IDS = ['kratos'] as const
 /** Released characters: character select, online rooms, daily runs, stats, and reward decks. */
-export const CHARACTER_IDS = [...BASE_CHARACTER_IDS, ...DOWNFALL_CHARACTER_IDS, ...DLC_CHARACTER_IDS] as const
+export const CHARACTER_IDS = [...BASE_CHARACTER_IDS, ...DOWNFALL_CHARACTER_IDS] as const
 /** Draft characters the engine can run, reachable only through the headless playtest system. */
 export const PLAYTEST_CHARACTER_IDS = [] as const
 export const ALL_CHARACTER_IDS = [...CHARACTER_IDS, ...PLAYTEST_CHARACTER_IDS] as const
@@ -46,7 +47,6 @@ export const CAPS = {
   poison: 30,
   shivs: 5,
   miracles: 5,
-  rage: 5,
   heat: 6,
   soulburn: 6,
   potions: 3,
@@ -139,6 +139,8 @@ export type Player = {
   id: string
   name: string
   character: CharacterId
+  /** Presentation only: a skin of this character (see skins.ts). Absent means the default look. */
+  skin?: SkinId
   row: number
 
   hp: number
@@ -235,8 +237,6 @@ export type Player = {
   starterDefendBlockBonus?: number
   /** Watcher. */
   miracles: number
-  /** Kratos: banked Rage, spent by Unleash clauses. Absent means 0. */
-  rage?: number
   /** Holy Water's two once-per-combat Energy cubes. */
   holyWaterCubes?: number
   stance: Stance

@@ -1,5 +1,5 @@
 // The Shop wallet: the coins a browser profile has earned from boss victories,
-// the card packs it bought with them, and the ledger that makes earning exactly
+// the card packs and skins it bought with them, and the ledger that makes earning exactly
 // once per boss. Pure data and functions — `wallet-storage.ts` owns the
 // localStorage side, so everything here is testable straight from Node.
 //
@@ -9,16 +9,20 @@
 // snapshot never pays the same boss twice. The ledger keeps only the most recent
 // runs: a run that has fallen out of it is long finished, and a finished run's
 // awards never grow again.
-import { CARD_PACK_PRICE, MAX_BOSS_AWARDS } from './game/coins.ts'
+import { CARD_PACK_PRICE, MAX_BOSS_AWARDS, SKIN_PRICES } from './game/coins.ts'
 import type { BossCoinAward } from './game/coins.ts'
 import { isCardPackId, normalizeCardPacks } from './game/packs.ts'
 import type { CardPackId } from './game/packs.ts'
+import { isSkinId, normalizeSkins } from './game/skins.ts'
+import type { SkinId } from './game/skins.ts'
 
 export type Wallet = {
   version: 1
   coins: number
   /** Bought packs, in catalogue order. */
   packs: CardPackId[]
+  /** Bought skins, in catalogue order. Wearing one is a separate choice (`skin-preference.ts`). */
+  skins: SkinId[]
   /**
    * Whether bought packs join new runs. Always true for now: there is no
    * control for it yet, only `setAddPacksToRuns` for a future setting.
@@ -36,7 +40,7 @@ export const MAX_RUN_KEY_LENGTH = 160
 export const MAX_WALLET_COINS = 100_000_000
 
 export function createWallet(): Wallet {
-  return { version: 1, coins: 0, packs: [], addPacksToRuns: true, credited: {} }
+  return { version: 1, coins: 0, packs: [], skins: [], addPacksToRuns: true, credited: {} }
 }
 
 const count = (value: unknown, max: number): value is number =>
@@ -61,6 +65,7 @@ export function parseWallet(value: unknown): Wallet {
     version: 1,
     coins: count(saved.coins, MAX_WALLET_COINS) ? saved.coins : 0,
     packs: normalizeCardPacks(saved.packs),
+    skins: normalizeSkins(saved.skins),
     addPacksToRuns: typeof saved.addPacksToRuns === 'boolean' ? saved.addPacksToRuns : true,
     credited: Object.fromEntries(ledger),
   }
@@ -99,13 +104,18 @@ export function creditOncePerBrowser(wallet: Wallet, paid: PaidRuns, runKey: str
   return { wallet: credited.wallet, paid: record, coins: credited.coins }
 }
 
-/** Coins still missing before the pack can be bought; 0 when it is affordable. */
-export const coinsShort = (wallet: Wallet): number => Math.max(0, CARD_PACK_PRICE - wallet.coins)
+/** Coins still missing before something of this price can be bought; 0 when it is affordable. */
+export const coinsShort = (wallet: Wallet, price: number = CARD_PACK_PRICE): number => Math.max(0, price - wallet.coins)
 
 export const ownsPack = (wallet: Wallet, id: CardPackId): boolean => wallet.packs.includes(id)
+export const ownsSkin = (wallet: Wallet, id: SkinId): boolean => wallet.skins.includes(id)
 
-type PurchaseRefusal = 'unknown' | 'owned' | 'insufficient'
-type PurchaseResult = { ok: true; wallet: Wallet } | { ok: false; reason: PurchaseRefusal; wallet: Wallet }
+/** Coins the wallet's purchases cost: what migrating a wallet must not hand back. */
+export const spentCoins = (wallet: Wallet): number =>
+  wallet.packs.length * CARD_PACK_PRICE + wallet.skins.reduce((sum, id) => sum + SKIN_PRICES[id], 0)
+
+export type PurchaseRefusal = 'unknown' | 'owned' | 'insufficient'
+export type PurchaseResult = { ok: true; wallet: Wallet } | { ok: false; reason: PurchaseRefusal; wallet: Wallet }
 
 /** Spends `CARD_PACK_PRICE` on a pack the wallet does not own yet. A refusal returns the wallet unchanged. */
 export function buyPack(wallet: Wallet, id: unknown): PurchaseResult {
@@ -115,6 +125,17 @@ export function buyPack(wallet: Wallet, id: unknown): PurchaseResult {
   return {
     ok: true,
     wallet: { ...wallet, coins: wallet.coins - CARD_PACK_PRICE, packs: normalizeCardPacks([...wallet.packs, id]) },
+  }
+}
+
+/** Spends the skin's catalogue price on a skin the wallet does not own yet. A refusal returns the wallet unchanged. */
+export function buySkin(wallet: Wallet, id: unknown): PurchaseResult {
+  if (!isSkinId(id)) return { ok: false, reason: 'unknown', wallet }
+  if (ownsSkin(wallet, id)) return { ok: false, reason: 'owned', wallet }
+  if (wallet.coins < SKIN_PRICES[id]) return { ok: false, reason: 'insufficient', wallet }
+  return {
+    ok: true,
+    wallet: { ...wallet, coins: wallet.coins - SKIN_PRICES[id], skins: normalizeSkins([...wallet.skins, id]) },
   }
 }
 

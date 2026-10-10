@@ -13,6 +13,7 @@
 // unchanged and a run replays to the same coins.
 import { createRng, nextInt, seedFromString } from './rng.ts'
 import { MAX_ASCENSION } from './campaign.ts'
+import type { SkinId } from './skins.ts'
 
 export type BossAct = 1 | 2 | 3 | 4
 export const BOSS_ACTS: readonly BossAct[] = [1, 2, 3, 4]
@@ -70,6 +71,10 @@ export const A10_THREE_BOSS_EXPECTATION = bossCoinExpectation(1, 10) + bossCoinE
 
 /** A Slayer pack costs twice what one run through all three Act bosses at Ascension 10 pays. */
 export const CARD_PACK_PRICE = 2 * A10_THREE_BOSS_EXPECTATION
+
+/** Every skin costs the same; `SKIN_PRICES` is the catalogue, so one skin could cost more later. */
+export const SKIN_PRICE = 2500
+export const SKIN_PRICES: Readonly<Record<SkinId, number>> = { kratos: SKIN_PRICE }
 
 /** No run holds more boss awards than this (Acts I-IV plus A13's second Act III boss, with a Mind Bloom boss). */
 export const MAX_BOSS_AWARDS = 6

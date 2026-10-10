@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { CharacterId } from '../game/types.ts'
+import type { VisualId } from '../game/skins.ts'
 import { campfireSceneLocalPath, campfireScenePath } from '../game/assets.ts'
 
-export function useCampfireScene(characters: CharacterId[]): string {
+export function useCampfireScene(characters: readonly VisualId[]): string {
   const primary = campfireScenePath(characters)
   const backup = campfireScenePath(characters, true)
   const local = campfireSceneLocalPath()

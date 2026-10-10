@@ -55,6 +55,9 @@ import type { CardPackId } from '../game/packs.ts'
 import { onlineRunKey } from '../wallet.ts'
 import { browserPaidAll, creditRunCoins } from '../wallet-storage.ts'
 import { CoinGainToast, type CoinGain } from './Coins.tsx'
+import { visualId } from '../game/skins.ts'
+import { preferredSkin } from '../skin-preference.ts'
+import { SkinProvider } from './skin-context.tsx'
 
 const CHARACTERS = [
   ['ironclad', 'Ironclad'],
@@ -65,7 +68,6 @@ const CHARACTERS = [
   ['guardian', 'Guardian'],
   ['hexaghost', 'Hexaghost'],
   ['hermit', 'Hermit'],
-  ['kratos', 'Kratos'],
 ] as const
 
 /** Why a seat's boss coins were withheld; leaves on its own or when dismissed. */
@@ -208,7 +210,7 @@ function Seat({ seat, you }: { seat?: PublicSeat; you?: boolean }) {
       {seat ? (
         <>
           <span className="online-seat__portrait" aria-hidden="true">
-            <img src={assetPath(`combat/characters/${seat.character}.webp`)} alt=""
+            <img src={assetPath(`combat/characters/${visualId(seat.character, seat.skin)}.webp`)} alt=""
               onError={(event) => { event.currentTarget.style.display = 'none' }} />
           </span>
           <span className="online-seat__name" aria-hidden="true" title={seat.name}>{seat.name}</span>
@@ -232,7 +234,7 @@ function CharacterRoster({ character, onChoose, taken, disabled = false }: {
         const unavailable = Boolean(taken?.has(id) && id !== character)
         return <button type="button" className="online-character-roster__portrait" key={id} aria-label={label} aria-pressed={id === character}
           disabled={disabled || unavailable} onClick={() => onChoose(id)}>
-          <img src={assetPath(`menu/character-select/portrait-${id}.png`)} alt="" />
+          <img src={assetPath(`menu/character-select/portrait-${visualId(id, preferredSkin(id))}.png`)} alt="" />
         </button>
       })}
     </div>
@@ -770,6 +772,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     run.setup?.kind === 'catch-up' && !run.setup.playerIds.includes(snapshot.you.playerId)
   return (
     <>
+    <SkinProvider seats={run.players}>
     <main ref={runShell} tabIndex={-1} inert={compendiumOpen || undefined} aria-hidden={compendiumOpen || undefined}
       data-webmcp-pending={room.entering || room.mutationPending || leaving || undefined}
       className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendiumOpen ? ' app-shell--compendium-open' : ''}`}>
@@ -1147,6 +1150,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       <CardMorphAnnouncement key={`${snapshot?.run?.campaign.runId ?? ''}:${snapshot?.you.playerId ?? ''}`}
         request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
+    </SkinProvider>
     {compendiumOpen ? <CompendiumScreen onBack={() => {
       setCompendiumOpen(false)
       requestAnimationFrame(() => runShell.current?.focus())

@@ -3,7 +3,7 @@
 //
 // Every change is a read-modify-write of what storage holds now, never of a copy
 // kept in memory, so two tabs cannot overwrite each other's coins: a tab that
-// credits a boss and a tab that buys a pack both start from the same, latest
+// credits a boss and a tab that buys a pack or skin both start from the same, latest
 // wallet. When storage refuses a write the newer wallet is kept here, for this
 // tab, until a later write succeeds.
 //
@@ -15,8 +15,8 @@
 import { MAX_BOSS_AWARDS } from './game/coins.ts'
 import type { BossCoinAward } from './game/coins.ts'
 import { normalizeUsername, savedProfile, syncProfileWallet } from './profile.ts'
-import type { WalletCredit, WalletMigration, WalletReply } from './profile.ts'
-import { buyPack, creditBossCoins, creditOncePerBrowser, parsePaidRuns, parseWallet } from './wallet.ts'
+import type { WalletCredit, WalletMigration, WalletPurchase, WalletReply } from './profile.ts'
+import { buyPack, buySkin, creditBossCoins, creditOncePerBrowser, parsePaidRuns, parseWallet } from './wallet.ts'
 import type { PaidRuns, Wallet } from './wallet.ts'
 
 /** The anonymous wallet's key; an account's is `sts-wallet:<username>`. */
@@ -67,20 +67,20 @@ function prepareSync(key: string): SyncState {
 const syncing = new Map<string, Promise<WalletReply>>()
 
 /** Import once, send pending run credits idempotently, and refresh the account cache. */
-export async function syncAccountWallet(pack?: string): Promise<WalletReply> {
+export async function syncAccountWallet(purchase?: WalletPurchase): Promise<WalletReply> {
   const profile = savedProfile()
   if (!ACCOUNT_WALLETS || !profile) return { wallet: savedWallet() }
   const previous = syncing.get(profile.token)
   if (previous) {
-    if (pack === undefined) return previous
+    if (purchase === undefined) return previous
     await previous
     if (savedProfile()?.token !== profile.token) throw new Error('Your account changed. Please try again.')
-    return syncAccountWallet(pack)
+    return syncAccountWallet(purchase)
   }
   const key = walletKey(profile.username)
   const state = prepareSync(key)
   const pending = { ...state, credits: state.credits.slice(0, 64) }
-  const request = syncProfileWallet(profile, pending.migration, pending.credits, pack).then((reply) => {
+  const request = syncProfileWallet(profile, pending.migration, pending.credits, purchase).then((reply) => {
     if (savedProfile()?.token !== profile.token) throw new Error('Your account changed. Please try again.')
     const latest = syncState(key)
     const remaining = latest.credits.filter((credit) => !pending.credits.some((sent) =>
@@ -98,12 +98,15 @@ export async function syncAccountWallet(pack?: string): Promise<WalletReply> {
 }
 
 /** Account purchases spend the latest server balance, so two devices cannot overspend. */
-export async function purchasePack(id: string): Promise<{ ok: boolean; reason?: string }> {
-  if (ACCOUNT_WALLETS && savedProfile()) return (await syncAccountWallet(id)).purchase ?? { ok: false }
+async function spend(online: WalletPurchase, local: (wallet: Wallet) => ReturnType<typeof buyPack>): Promise<{ ok: boolean; reason?: string }> {
+  if (ACCOUNT_WALLETS && savedProfile()) return (await syncAccountWallet(online)).purchase ?? { ok: false }
   let result: ReturnType<typeof buyPack> | undefined
-  updateWallet((wallet) => { result = buyPack(wallet, id); return result.wallet })
+  updateWallet((wallet) => { result = local(wallet); return result.wallet })
   return result ?? { ok: false }
 }
+
+export const purchasePack = (id: string) => spend({ pack: id }, (wallet) => buyPack(wallet, id))
+export const purchaseSkin = (id: string) => spend({ skin: id }, (wallet) => buySkin(wallet, id))
 
 let unsaved: { key: string; wallet: Wallet } | null = null
 

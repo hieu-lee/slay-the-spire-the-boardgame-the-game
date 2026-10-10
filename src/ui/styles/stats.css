@@ -139,7 +139,7 @@
   .stats__back.ribbon-back { width: 3.4rem; }
   .stats__heroes { gap: .05rem; }
   .stats__rail { padding-right: max(1.5rem, 5.5%); }
-  /* Ten filters since Kratos (All heroes + nine heroes) fit beside narrower selects, clear of the torn edge. */
+  /* Nine filters (All heroes + eight heroes) fit beside narrower selects, clear of the torn edge. */
   .stats__heroes button { width: 1.55rem; height: 1.55rem; }
   .stats__rail-selects select { width: 5.7rem; overflow: hidden; font-size: .56rem; text-overflow: ellipsis; white-space: nowrap; }
   .stats__table tbody th { width: 58%; }

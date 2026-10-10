@@ -907,7 +907,7 @@ export function createRoomServer({
         const room = createRoom(store)
         roomOwners.set(room.code, source)
         try {
-          const seat = joinRoom(room, { name: body.name, character: body.character, campaignProgress: body.campaignProgress, cardPacks: body.cardPacks, connected: false })
+          const seat = joinRoom(room, { name: body.name, character: body.character, skin: body.skin, campaignProgress: body.campaignProgress, cardPacks: body.cardPacks, connected: false })
           if (requestId) seat.joinRequestId = requestId
           touch(room)
           queueSave()
@@ -959,7 +959,7 @@ export function createRoomServer({
         const live = [...sockets.values()].some((client) => client.code === room.code && client.token === token)
         const beforeVersion = room.version
         const seat = joinRoom(room, {
-          name: body.name, character: body.character, campaignProgress: body.campaignProgress, cardPacks: body.cardPacks,
+          name: body.name, character: body.character, skin: body.skin, campaignProgress: body.campaignProgress, cardPacks: body.cardPacks,
           token, connected: live, settle: !recoveringRestart(room),
         })
         if (requestId) seat.joinRequestId = requestId
@@ -983,7 +983,7 @@ export function createRoomServer({
       let changed = true
       let snapshot = null
       acted = { room, version: room.version, token }
-      if (operation === 'character') snapshot = chooseCharacter(room, token, body.character)
+      if (operation === 'character') snapshot = chooseCharacter(room, token, body.character, body.skin)
       else if (operation === 'relic-rule') snapshot = chooseRelicRule(room, token, body.enabled)
       else if (operation === 'last-stand-rule') snapshot = chooseLastStandRule(room, token, body.enabled)
       else if (operation === 'run-meta') snapshot = chooseRunMeta(room, token, body)

@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { cardIsCurse, faceOf, releasedCardDefs } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import { assetPath, cardImagePath, cardThumbPath } from '../game/assets.ts'
+import { useCardSkin } from './skin-context.tsx'
 import { StatusIcon } from './Icon.tsx'
 import { CardKeywordHelp, cardAccessibleName, cardPlayText, revealDecodedImage } from './Card.tsx'
 import { CardFace } from './CardFace.tsx'
@@ -20,7 +21,6 @@ const POOLS: { id: Pool; label: string }[] = [
   { id: 'guardian', label: 'Guardian' },
   { id: 'hexaghost', label: 'Hexaghost' },
   { id: 'hermit', label: 'Hermit' },
-  { id: 'kratos', label: 'Kratos' },
   { id: 'colorless', label: 'Colorless' },
   { id: 'curse', label: 'Curses' },
   { id: 'status', label: 'Statuses' },
@@ -66,7 +66,8 @@ export function ScannedCardFace({ def, upgraded, full = false }: {
   upgraded: boolean
   full?: boolean
 }) {
-  const src = full ? cardImagePath(def, upgraded) : cardThumbPath(def, upgraded)
+  const skin = useCardSkin(def)
+  const src = full ? cardImagePath(def, upgraded, skin) : cardThumbPath(def, upgraded, undefined, skin)
   const hasPublisherScan = def.publisherScan !== false
   const [scanUnavailable, setScanUnavailable] = useState(!hasPublisherScan)
   useEffect(() => setScanUnavailable(!hasPublisherScan), [hasPublisherScan, src])

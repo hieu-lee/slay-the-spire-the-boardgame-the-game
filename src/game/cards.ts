@@ -8,7 +8,6 @@ import { HEXAGHOST_CARDS } from './downfall/hexaghost.ts'
 import { GUARDIAN_CARD_DEFS, GUARDIAN_PHYSICAL_DECKS } from './downfall/guardian.ts'
 import { DOWNFALL_COLORLESS_CARD_DEFS } from './downfall/items.ts'
 import { HERMIT_CARD_DEFS, HERMIT_PHYSICAL_DECKS } from './downfall/hermit.ts'
-import { KRATOS_CARD_DEFS, KRATOS_STARTER_DECK } from './dlc/kratos.ts'
 import { SLAYER_CARD_DEFS } from './slayer/index.ts'
 import type { CardPackId } from './packs.ts'
 
@@ -95,18 +94,6 @@ export type Condition =
   | { kind: 'cardsInExhaustAtLeast'; amount: number }
   | { kind: 'soulburnUsedThisTurn' }
   | { kind: 'hpAtMost'; amount: number }
-  /** Kratos: holds at least this much Rage. Reading it never spends Rage. */
-  | { kind: 'rageAtLeast'; amount: number }
-  /** Unleash N is payable: enough Rage after God of War, and this play is not holding Rage. */
-  | { kind: 'canUnleash'; cost: number }
-  /** Brutal Kill: the enemy this card targeted is dead. */
-  | { kind: 'targetDead' }
-  /** Sacrifice: this card's own exhaust clause took at least one card. */
-  | { kind: 'exhaustedByThisCard' }
-  /** Hubris: this card's own HP-loss clause actually took HP. */
-  | { kind: 'lostHpToThisCard' }
-  /** Godslayer: the enemy being struck is an Elite or a Boss. */
-  | { kind: 'targetEliteOrBoss' }
   | { kind: 'hasCurseInChamber' }
   | { kind: 'hasDeadOnAttackInChamber' }
   /** Deep Breath: no Skill is left in hand once the played card has left it. */
@@ -150,8 +137,6 @@ export type CountOf =
   | 'cursesInHandAndChamber'
   | 'starterCardsInHandAndChamber'
   | 'otherCardsInHand'
-  /** Kratos's current Rage, read without spending it. */
-  | 'rage'
   /** Smite: the caster's current hit points, read as the clause resolves. */
   | 'currentHp'
   /**
@@ -419,15 +404,6 @@ type EffectKind =
   | { kind: 'goldenBullet'; amount: number }
   | { kind: 'roulette'; byRoll: Record<number, Effect[]> }
   | { kind: 'attachBounty'; vulnerable: number }
-  /** Kratos: gain Rage, capped at CAPS.rage. */
-  | { kind: 'gainRage'; amount: Amount }
-  /** Kratos: discard every Rage token, after any clause that counted them. */
-  | { kind: 'loseAllRage' }
-  /**
-   * Unleash N pays its Rage. Printed as the first clause of a `branch` on
-   * `canUnleash`, whose `otherwise` is the base of an "instead" clause.
-   */
-  | { kind: 'unleashSpend'; cost: number }
   /**
    * Open a card-play window: its owner plays the listed cards through the
    * ordinary card pipeline, each for exactly `cost` Energy (an X card resolves
@@ -717,12 +693,7 @@ export const CARDS: Record<string, CardDef> = {
   ...(HEXAGHOST_CARDS as unknown as Record<string, CardDef>),
   ...GUARDIAN_CARD_DEFS,
   ...(HERMIT_CARD_DEFS as unknown as Record<string, CardDef>),
-  ...KRATOS_CARD_DEFS,
   ...SLAYER_CARD_DEFS,
-  strike_kratos: { ...starterStrike('kratos'), printedText: 'Deal 1 damage.',
-    upgrade: { ...starterStrike('kratos').upgrade, printedText: 'Deal 2 damage.' } },
-  defend_kratos: { ...starterDefend('kratos'), printedText: 'Gain 1 Block.',
-    upgrade: { ...starterDefend('kratos').upgrade, printedText: '2 Block to any player.' } },
   strike_silent: starterStrike('silent'),
   defend_silent: starterDefend('silent'),
   strike_defect: { ...starterStrike('defect'), upgrade: { cost: 0 } },
@@ -3155,5 +3126,4 @@ export const STARTER_DECKS: Record<CharacterId, string[]> = {
   slime_boss: [],
   guardian: [...GUARDIAN_PHYSICAL_DECKS.starter],
   hermit: [...HERMIT_PHYSICAL_DECKS.starter],
-  kratos: [...KRATOS_STARTER_DECK],
 }

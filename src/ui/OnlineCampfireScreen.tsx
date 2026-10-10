@@ -10,6 +10,7 @@ import type { CampfireDecision } from '../game/run.ts'
 import { CardPicker } from './CardPicker.tsx'
 import { Icon } from './Icon.tsx'
 import { useCampfireScene } from './useCampfireScene.ts'
+import { playerVisualId } from '../game/skins.ts'
 
 type Decision = CampfireDecision
 
@@ -44,7 +45,7 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
   const restHeal = 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0)
   const alive = seats.some((seat) => seat.playerId === player.id)
   const seatCharacters = seats.map((seat) => seat.character)
-  const scene = useCampfireScene(seatCharacters)
+  const scene = useCampfireScene(seats.map(playerVisualId))
   const ruleset = rulesetForCharacters(seatCharacters, requestedRuleset)
   const locked = decided.includes(player.id)
   const visiblePlayer = { ...player, deck, campfireTransformAvailable: transformAvailable }

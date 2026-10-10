@@ -8,7 +8,7 @@ import { CARDS, faceOf } from '../src/game/cards.ts'
 import { addLeaderboardRun, normalizeLeaderboardRun } from './lib/leaderboard.mjs'
 import { createRoom, createStore, joinRoom, saveStore, startRun } from './lib/rooms.mjs'
 import { classifyDeckType } from './lib/codex-deck-classifier.mjs'
-import { deckHash, INITIAL_DECK_CLASSIFICATIONS, INITIAL_DECK_TYPES, randomDeck, recordDeckClassification, statsDecks, statsSnapshot, validDeckType } from './lib/stats.mjs'
+import { deckHash, INITIAL_DECK_CLASSIFICATIONS, INITIAL_DECK_TYPES, isRemovedHeroDeckType, randomDeck, recordDeckClassification, statsDecks, statsSnapshot, validDeckType } from './lib/stats.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { materializeLeaderboardArchive } from '../infra/validate-room-store.mjs'
 import { joinQueries, parseStatsExpression, validateStatsQuery } from '../src/stats-query.ts'
@@ -23,19 +23,12 @@ const run = (id, overrides = {}) => ({
 })
 const card = (id, upgraded = false) => ({ op: 'card', id, upgraded })
 const query = (value) => new URLSearchParams({ q: JSON.stringify(value) })
-check('Kratos results and archetype names are accepted in public stats', () => {
-  const entry = normalizeLeaderboardRun(run(901, { character: 'kratos',
-    finalDeck: [{ defId: 'kratos_plume_of_prometheus', upgraded: true }] }))
-  assert(validDeckType('Kratos Rage Unleash'))
-  const store = createStore()
-  addLeaderboardRun(store, entry)
-  const recorded = store.leaderboardRuns[0]
-  recorded.deckType = 'Kratos Rage Unleash'
-  recordDeckClassification(store, recorded)
-  const stats = statsSnapshot(store.leaderboardRuns, new URLSearchParams({ character: 'kratos' }))
-  assertEqual(stats.runs, 1)
-  assertEqual(stats.rows[0].deckType, 'Kratos Rage Unleash')
-  assertEqual(stats.rows[0].character, 'kratos')
+check('Kratos is no hero: his results, archetype names and stats filter are refused', () => {
+  assertThrows(() => normalizeLeaderboardRun(run(901, { character: 'kratos' })))
+  assert(!validDeckType('Kratos Rage Unleash'))
+  assert(!isRemovedHeroDeckType('Silent Poison'), 'only the removed hero\'s names are ignored on load')
+  assert(isRemovedHeroDeckType('Kratos Rage Unleash'))
+  assertThrows(() => statsSnapshot([], new URLSearchParams({ character: 'kratos' })))
 })
 const waitFor = async (condition) => {
   const deadline = performance.now() + 1500

@@ -55,7 +55,6 @@ export const MAX_HP: Record<CharacterId, number> = {
   guardian: 9,
   hexaghost: 9,
   hermit: 9,
-  kratos: 10,
 }
 
 export function nextRunUid(players: readonly Player[]): number {

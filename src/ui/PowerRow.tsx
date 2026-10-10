@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { Amount, CardDef, Effect } from '../game/cards.ts'
 import { assetPath, cardThumbPath } from '../game/assets.ts'
+import { cardSkin, useCardSkins } from './skin-context.tsx'
 import type { CardInstance } from '../game/types.ts'
 import type { StatusIconName } from './Icon.tsx'
 import { statusIconPath } from './icons.ts'
@@ -70,6 +71,7 @@ export function releaseCardZoom(close: () => void) {
 }
 
 export function PowerRow({ powers }: PowerRowProps) {
+  const skins = useCardSkins()
   const [zoom, setZoom] = useState<Zoom | null>(null)
   // The SAME function object that is registered below, so this row can ask the
   // others to close without also closing itself.
@@ -160,7 +162,7 @@ export function PowerRow({ powers }: PowerRowProps) {
     const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : undefined
     setZoom({
       uid: card.uid,
-      src: cardThumbPath(def, card.upgraded, attachedGem),
+      src: cardThumbPath(def, card.upgraded, attachedGem, cardSkin(skins, def)),
       def,
       attachedGem,
       description,
@@ -296,11 +298,6 @@ const POWER_ICONS = new Set([
   'feel_no_pain', 'footwork', 'fusion', 'heatsinks', 'infinite_blades', 'inflame',
   'machine_learning', 'mayhem', 'metallicize', 'noxious_fumes', 'panache', 'sadistic_nature',
   'storm', 'the_bomb',
-  // Playtest-only Kratos Powers (see docs/kratos-icons.json).
-  'kratos_army_of_hades', 'kratos_blades_of_athena', 'kratos_blades_of_exile', 'kratos_bloodlust',
-  'kratos_chains_of_chaos', 'kratos_deicide', 'kratos_escape_from_hades', 'kratos_ghost_of_sparta',
-  'kratos_god_of_war', 'kratos_green_orbs', 'kratos_red_orbs', 'kratos_servant_of_ares',
-  'kratos_soul_summon',
 ])
 
 /** Pick the printed symbol that best describes what this persistent effect does. */
@@ -431,8 +428,6 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `${effect.amount} Shiv${effect.amount === 1 ? '' : 's'}`
     case 'gainMiracle':
       return `gain ${amountLabel(effect.amount)} Miracle${effect.amount === 1 ? '' : 's'}`
-    case 'gainRage':
-      return `gain ${amountLabel(effect.amount)} Rage`
     case 'gainOrbSlots':
       return `gain ${effect.amount} Orb slots`
     case 'gainOrbEvokeBonus':

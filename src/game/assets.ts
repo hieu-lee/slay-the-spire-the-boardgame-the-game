@@ -6,7 +6,8 @@
 import type { CardDef } from './cards.ts'
 import type { EnemyDef } from './enemies.ts'
 import type { PotionDef, RelicDef } from './relics.ts'
-import { CHARACTER_IDS, type CharacterId } from './types.ts'
+import { SKIN_CARD_FACES } from './skin-card-faces.ts'
+import { VISUAL_IDS, type SkinId, type VisualId } from './skins.ts'
 
 const assetCdnOrigin = import.meta.env?.VITE_ASSET_CDN_ORIGIN?.replace(/\/$/, '')
 const assetBackupOrigin = import.meta.env?.VITE_CAMPFIRE_BACKUP_ORIGIN?.replace(/\/$/, '')
@@ -114,6 +115,19 @@ export const CARD_ASSET_ROOT = assetPath('cards')
 export const CARD_THUMB_ROOT = assetPath('cards-sm')
 export const SOCKETED_CARD_THUMB_ROOT = assetPath('cards-socketed-sm')
 export const CARD_ART_ROOT = assetPath('card-art')
+/**
+ * A skin's pre-composited card faces: the same scans with the skin's art in the
+ * window, under the same asset keys, at full size and at 448px, plus text-free
+ * art for the CSS fallback face. Only cards the skin has art for are listed in
+ * SKIN_CARD_FACES; every other card (and any card with a Gem socketed, whose
+ * generated combined faces are not re-skinned yet) keeps its default look.
+ */
+export const SKIN_CARD_ROOT = assetPath('skin-cards')
+export const SKIN_CARD_THUMB_ROOT = assetPath('skin-cards-sm')
+export const SKIN_CARD_ART_ROOT = assetPath('skin-card-art')
+
+const skinFaceSets = new Map(Object.entries(SKIN_CARD_FACES).map(([skin, { faces, art }]) =>
+  [skin, { faces: new Set(faces), art: new Set(art) }]))
 
 const POOL_TIERS: Record<string, string> = {
   colorless: 'colourless',
@@ -141,8 +155,9 @@ export function potionCardImagePath(def: PotionDef): string {
 export const relicIconPath = (id: string) => assetPath(`relic-icons/${id.replace(/^downfall_/, '')}.png`)
 export const potionIconPath = (id: string) => assetPath(`potion-icons/${id}.png`)
 
-export function campfireScenePath(characters: CharacterId[], backup = false): string {
-  const party = CHARACTER_IDS
+/** `characters` are the party's visual ids: a hero in a skin is lit by the skin's scene. */
+export function campfireScenePath(characters: readonly VisualId[], backup = false): string {
+  const party = VISUAL_IDS
     .filter((character) => characters.includes(character)).join('_')
   const path = `noncombat/campfire/${party ? `${party}_` : 'empty_'}firecamp.webp`
   return backup && assetBackupOrigin ? `${assetBackupOrigin}/${path}` : assetPath(path)
@@ -176,8 +191,11 @@ export function tierOf(def: CardDef): string {
  * Path to a card's image. Upgraded faces are separate scans, since the upgraded
  * card is physically the reverse side rather than a recolour.
  */
-export function cardImagePath(def: CardDef, upgraded: boolean): string {
-  return `${CARD_ASSET_ROOT}/${cardAssetKey(def, upgraded)}.webp`
+export function cardImagePath(def: CardDef, upgraded: boolean, skin?: SkinId): string {
+  const key = cardAssetKey(def, upgraded)
+  return skinFaceSets.get(skin as string)?.faces.has(key)
+    ? `${SKIN_CARD_ROOT}/${skin}/${key}.webp`
+    : `${CARD_ASSET_ROOT}/${key}.webp`
 }
 
 /**
@@ -185,10 +203,12 @@ export function cardImagePath(def: CardDef, upgraded: boolean): string {
  * Prefer this everywhere except the compendium's full-screen zoom, which is
  * the one surface that paints a card larger than 448px.
  */
-export function cardThumbPath(def: CardDef, upgraded: boolean, gem?: CardDef): string {
-  return gem
-    ? `${SOCKETED_CARD_THUMB_ROOT}/${cardAssetKey(def, upgraded)}--${slugify(gem.name)}.webp`
-    : `${CARD_THUMB_ROOT}/${cardAssetKey(def, upgraded)}.webp`
+export function cardThumbPath(def: CardDef, upgraded: boolean, gem?: CardDef, skin?: SkinId): string {
+  const key = cardAssetKey(def, upgraded)
+  if (gem) return `${SOCKETED_CARD_THUMB_ROOT}/${key}--${slugify(gem.name)}.webp`
+  return skinFaceSets.get(skin as string)?.faces.has(key)
+    ? `${SKIN_CARD_THUMB_ROOT}/${skin}/${key}.webp`
+    : `${CARD_THUMB_ROOT}/${key}.webp`
 }
 
 function cardAssetKey(def: CardDef, upgraded: boolean): string {
@@ -196,8 +216,11 @@ function cardAssetKey(def: CardDef, upgraded: boolean): string {
 }
 
 /** Committed, text-free artwork shared by the base and upgraded CSS faces. */
-export function cardArtPath(def: CardDef): string {
-  return `${CARD_ART_ROOT}/${def.owner}/${def.id}.webp`
+export function cardArtPath(def: CardDef, skin?: SkinId): string {
+  const key = `${def.owner}/${def.id}`
+  return skinFaceSets.get(skin as string)?.art.has(key)
+    ? `${SKIN_CARD_ART_ROOT}/${skin}/${key}.webp`
+    : `${CARD_ART_ROOT}/${key}.webp`
 }
 
 export function enemyImagePath(def: EnemyDef): string {

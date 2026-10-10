@@ -1,21 +1,22 @@
-# The Shop: coins, wallet and card packs
+# The Shop: coins, wallet, card packs and skins
 
-The Shop sells the five packs of **The Slayer Pack** (`docs/slayer-pack.md`) for coins that
-boss victories pay. It is reached from **Shop** on the main menu and from the coin purse, the
+The Shop sells the five packs of **The Slayer Pack** (`docs/slayer-pack.md`) and the hero
+skins (`src/game/skins.ts`) for coins that boss victories pay. It is reached from **Shop** on the main menu and from the coin purse, the
 first item of the menu's top-right corner (purse, Leaderboard, Stats, Mail, Profile, Settings).
-It has two sections: **Card Packs** and **Skins** (a locked "Coming soon" showcase with no
-function yet).
+It has two sections: **Card Packs** and **Skins**.
 
 | Piece | Where |
 |---|---|
 | Coin ranges, rolls, pack price | `src/game/coins.ts` (`verify-coins.mjs`) |
 | Pack catalogue | `src/game/packs.ts` |
+| Skin catalogue and prices | `src/game/skins.ts`, `SKIN_PRICES` in `src/game/coins.ts` |
+| Which skin is worn | `src/skin-preference.ts` (`verify-wallet.mjs`, `verify-skin-profile-browser.mjs`) |
 | Wallet rules (pure) | `src/wallet.ts` (`verify-wallet.mjs`) |
 | Wallet storage | `src/wallet-storage.ts`, hook `src/ui/useWallet.ts` |
 | Boss awards in a run | `resolveCombat` in `src/game/run/rooms.ts` (`verify-boss-coins.mjs`) |
 | Packs in runs | `createRun` / `beginCatchUp` (`verify-meta-run.mjs`) |
 | Online packs and coins | `scripts/lib/rooms.mjs`, `OnlineGame.tsx` (`verify-rooms.mjs`, `verify-room-server.mjs`) |
-| Screen | `src/ui/ShopScreen.tsx`, `src/ui/styles/shop.css`, `src/ui/Coins.tsx` (`verify-shop-browser.mjs`) |
+| Screen | `src/ui/ShopScreen.tsx`, `src/ui/styles/shop.css`, `src/ui/Coins.tsx` (`verify-shop-browser.mjs`, `verify-wallet-sync-browser.mjs`) |
 
 ## Earning coins
 
@@ -56,12 +57,16 @@ difficulty, so only the Act IV boss pays more; A13 also has a second paid Act II
 III bosses at A10 = 2 × (80 + 160 + 240) = **960 coins**. Expectations at a glance: about 16
 Act I-III wins at A0, 8 at A5, 4 at A8, or 2 at A10 (fewer with Act IV and A13's second boss).
 
+**Skin price.** Every skin costs `SKIN_PRICE` = **2,500 coins** (`SKIN_PRICES` is the per-skin
+catalogue, so a future skin may cost more; `Record<SkinId, number>` makes `tsc -b` fail until a
+new skin has a price).
+
 ## The wallet
 
-Hosted coin balances and owned packs belong to the authenticated account and are saved
+Hosted coin balances, owned packs and owned skins belong to the authenticated account and are saved
 on the room server with its persistent profile. Desktop and phone share the same wallet.
 `POST /api/profile/wallet` reads it, imports an older browser wallet once, submits pending
-recorded-run credits, or buys a pack. Replies acknowledge mutations only after the server
+recorded-run credits, or buys a pack (`{ pack }`) or a skin (`{ skin }`), one purchase per request. Replies acknowledge mutations only after the server
 store is saved; a failed save returns 503 and a retry is safe.
 
 The browser keeps `sts-wallet:<username>` as a local cache (names are NFKC-normalised,
@@ -71,11 +76,19 @@ the client refreshes the cache. A reply for an account that signed out is discar
 a run recorded while a refresh is in flight remains pending and visible until its
 next acknowledgement. Offline recorded-run credits survive reloads when storage works.
 Account purchases require the server and use its latest balance, so concurrent devices
-cannot overspend; retrying a bought pack never charges again. Anonymous and standalone
+cannot overspend; retrying a bought pack or skin never charges again. Anonymous and standalone
 builds continue using the local wallet and its browser-wide `sts-paid-runs` record.
 
-Older browser wallets migrate their packs and lifetime earnings (coins plus the price
-of owned packs). The server unions packs and takes the higher earnings rather than
+The wallet stores `skins: SkinId[]` beside `packs` (catalogue order, validated like packs;
+a wallet saved before skins parses to none, so `version` stays 1). A skin purchase refuses with
+the pack reasons (`unknown`, `owned`, `insufficient`), and the server treats `owned` on a retry
+as success. Owning a skin is separate from wearing it: the worn skin is a per-device,
+per-account preference (`sts-skins:<username>`, set in the Shop or Profile) that only ever
+reads back skins the wallet owns, so a stored choice for an unowned skin reads as Default and
+the next write drops it.
+
+Older browser wallets migrate their packs, skins and lifetime earnings (coins plus the price
+of owned packs and skins, `spentCoins`). The server unions packs and skins and takes the higher earnings rather than
 adding device balances, because old devices can contain the same legacy grant. Each
 migration id is remembered, so stale retries never restore spent money. This conservatively
 merges pre-sync wallets: separate earnings accumulated on multiple old devices cannot be
@@ -159,6 +172,16 @@ Keyboard: the section tabs use arrow keys; Escape closes the topmost dialog, the
 Shop. Reduced motion (OS or the game's setting) turns the animations off. In the Compendium,
 pack cards carry a small "Slayer Pack" badge and name their pack in the card's accessible
 name and zoom.
+
+**Skins tab.** One rack per skin in `skins.ts` (so a new skin appears on its own), lit in its
+hero's colour: the skin's character-select portrait, its name over the hero it belongs to, and
+its one button. Unowned, the button is the price (2,500 with the coin icon), disabled with the
+same gauge as a pack when the purse is short, and **Buy** opens the same confirm dialog with the
+portrait; owned, the rack carries the wax seal and a **Wear / Worn** toggle (`aria-pressed`)
+that sets the preference in one tap. Buying a skin wears it at once unless its hero already
+wears another skin. The heroes without a skin keep a locked "Coming soon" rack. Profile's
+Skins tab lists Default plus the owned skins; an unowned skin is a locked tile with its price
+that opens this tab.
 
 The Shop's painted icons (`public/assets/shop/`) were generated with `gpt-image-2.5-sunburst`
 using the menu icons as style references; prompts are in

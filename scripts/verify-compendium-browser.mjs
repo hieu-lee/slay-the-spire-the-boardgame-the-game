@@ -205,7 +205,7 @@ try {
   })
 
   check('the compendium filters the real card catalog and opens card detail', () => {
-    assertEqual(poolIconView.length, 13, 'one painted icon per card pool')
+    assertEqual(poolIconView.length, 12, 'one painted icon per card pool')
     assert(poolIconView.every((entry) => entry.loaded && entry.source?.includes('/assets/menu/compendium-icons/')),
       `compendium pool icons did not load: ${JSON.stringify(poolIconView)}`)
     assert(poolIconView.every((entry) => entry.border.every((width) => width === '0px')),

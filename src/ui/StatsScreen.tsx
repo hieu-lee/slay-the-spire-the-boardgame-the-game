@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetPath, cardArtPath, cardThumbPath } from '../game/assets.ts'
+import { useCardSkin } from './skin-context.tsx'
 import { CARDS, releasedCardDefs, type CardDef } from '../game/cards.ts'
 import { CHARACTER_IDS, type CharacterId } from '../game/types.ts'
 import { loadSampleDeck, loadStats, type SampleDeck, type StatsFilters, type StatsQuery, type StatsSnapshot } from '../stats.ts'
@@ -20,8 +21,11 @@ const CHOICES: (CardChoice & { owner: string })[] = releasedCardDefs().flatMap((
 type Bucket = 'all' | 'any' | 'none'
 type Sort = typeof COLUMNS[number][0]
 const choiceKey = (choice: CardChoice) => `${choice.id}:${choice.upgraded}`
-const cardPreviewPath = (card: CardDef, upgraded = false) =>
-  card.publisherScan === false ? cardArtPath(card) : cardThumbPath(card, upgraded)
+function CardPreview({ card, upgraded = false, lazy = false }: { card: CardDef; upgraded?: boolean; lazy?: boolean }) {
+  const skin = useCardSkin(card)
+  return <img src={card.publisherScan === false ? cardArtPath(card, skin) : cardThumbPath(card, upgraded, undefined, skin)}
+    alt="" loading={lazy ? 'lazy' : undefined} />
+}
 const cardQuery = (choice: CardChoice): StatsQuery => ({ op: 'card', id: choice.id, upgraded: choice.upgraded })
 const visualQueryFor = (buckets: Record<Bucket, CardChoice[]>) => joinQueries('and', [
   ...buckets.all.map(cardQuery),
@@ -51,7 +55,7 @@ function CardFilter({ bucket, label, choices, selected, onAdd, onRemove }: {
     <div className="stats__filter-content">
       {selected.map((choice) => <button type="button" className="stats__chip" key={choiceKey(choice)}
         title={`Remove ${choice.label}`} aria-label={`Remove ${choice.label} from ${label}`} onClick={() => onRemove(choice)}>
-        {CARDS[choice.id] && <img src={cardPreviewPath(CARDS[choice.id]!, Boolean(choice.upgraded))} alt="" />}
+        {CARDS[choice.id] && <CardPreview card={CARDS[choice.id]!} upgraded={Boolean(choice.upgraded)} />}
         {choice.label}<span aria-hidden="true">×</span>
       </button>)}
       <div className="stats__search" onBlur={(event) => {
@@ -65,7 +69,7 @@ function CardFilter({ bucket, label, choices, selected, onAdd, onRemove }: {
         {focused && available.length > 0 && <div className="stats__suggestions" role="listbox" aria-label={`${label} suggestions`}>
           {available.map((choice) => <button type="button" role="option" aria-selected="false" key={choiceKey(choice)}
             onMouseDown={(event) => event.preventDefault()} onClick={() => pick(choice)}>
-            <img src={cardPreviewPath(CARDS[choice.id]!, Boolean(choice.upgraded))} alt="" loading="lazy" />
+            <CardPreview card={CARDS[choice.id]!} upgraded={Boolean(choice.upgraded)} lazy />
             <span>{choice.label}<small>{CHARACTER_LABEL[choice.owner] ?? choice.owner}</small></span><span aria-hidden="true">＋</span>
           </button>)}
         </div>}
@@ -273,7 +277,7 @@ export function StatsScreen({ onBack }: { onBack: () => void }) {
           {snapshot && snapshot.nextCards.length > 0 ? <div className="stats__next-list">{snapshot.nextCards.map((entry) => {
             const card = CARDS[entry.defId]
             return <button type="button" key={entry.defId} className="stats__next-card" onClick={() => addNextCard(entry.defId)} title="Add to filters">
-              {card && <img src={cardPreviewPath(card)} alt="" loading="lazy" />}
+              {card && <CardPreview card={card} lazy />}
               <span className="stats__next-name"><strong>{card?.name ?? entry.defId}</strong><small><span>{entry.runs} decks</span><span>{delta(entry.deltaDamage)} dmg</span><span>{delta(entry.deltaBlock, '%')} block</span></small></span>
               <span className="stats__next-delta" data-positive={entry.deltaFloors != null && entry.deltaFloors >= 0}>{delta(entry.deltaFloors)} <small>floors</small></span><span className="stats__next-add" aria-hidden="true">＋</span>
             </button>

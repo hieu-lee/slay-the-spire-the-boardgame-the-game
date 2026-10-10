@@ -4,6 +4,8 @@ import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
 import { relicDef, STARTING_RELIC } from '../game/relics.ts'
 import { ASCENSION_RULES } from '../game/run.ts'
 import { DAILY_ASCENSION } from '../game/daily.ts'
+import { visualId } from '../game/skins.ts'
+import { preferredSkin } from '../skin-preference.ts'
 import type { CharacterId, ReleasedCharacterId } from '../game/types.ts'
 import { CampaignSelect } from './CampaignSelect.tsx'
 import { MailBox } from './MailBox.tsx'
@@ -58,14 +60,16 @@ const HEROES: { id: ReleasedCharacterId; name: string }[] = [
   { id: 'guardian', name: 'Guardian' },
   { id: 'hexaghost', name: 'Hexaghost' },
   { id: 'hermit', name: 'Hermit' },
-  { id: 'kratos', name: 'Kratos' },
 ]
 
-const CHARACTER_WALLPAPERS = HEROES.map(({ id }) => `menu/character-select/character-${id}-wallpaper.webp`)
+/** Character-select art follows the skin this account chose for the hero (Profile). */
+const heroArt = (character: CharacterId) => visualId(character, preferredSkin(character))
+const wallpaperOf = (character: CharacterId) => `menu/character-select/character-${heroArt(character)}-wallpaper.webp`
+const characterWallpapers = () => HEROES.map(({ id }) => wallpaperOf(id))
 const CAMPAIGN_ART = ['menu/campaign-standard-menu.webp', 'menu/campaign-downfall-menu.webp']
 
 function warmRunSetup(character: CharacterId): Promise<void> {
-  const selectedWallpaper = `menu/character-select/character-${character}-wallpaper.webp`
+  const selectedWallpaper = wallpaperOf(character)
   // Campaign art is the next screen's largest payload. Alternate character
   // art begins on its roster button's hover/focus, so it cannot be starved
   // behind a speculative low-priority request if the player picks it.
@@ -88,7 +92,7 @@ function CharacterWallpaper({ character, transition }: { character: CharacterId;
   }, [])
   const animation = decoded ? `start-menu__character-wallpaper--${transition ? 'a' : 'b'}` : ''
   return <img ref={image} data-decoded={decoded || undefined} className={`start-menu__character-wallpaper ${animation}`}
-    src={assetPath(`menu/character-select/character-${character}-wallpaper.webp`)} alt="" aria-hidden="true" />
+    src={assetPath(wallpaperOf(character))} alt="" aria-hidden="true" />
 }
 
 const RUN_MODES: { id: RunMode; name: string; copy: string }[] = [
@@ -106,7 +110,6 @@ const HERO_COPY: Record<ReleasedCharacterId, string> = {
   guardian: 'An ancient construct that alternates between offense and defense. Socket Gems into cards, build Vigor, and shift modes to turn careful setup into a crushing counterattack.',
   hexaghost: 'A restless spirit bound to six flames. Advance and Retract the Heat track, gather Soulburn, and time its strongest effects for the hottest moments of the fight.',
   hermit: 'A lone gunslinger haunted by the Spire. Load cards into the Chamber, line up Dead On attacks, and unleash carefully prepared shots when the moment is right.',
-  kratos: 'The Ghost of Sparta wields the Blades of Chaos. Build Rage and Unleash powerful attacks. Use Godslayer against Elites and Bosses, or Hold Rage for the next blow.',
 }
 
 export function StartMenu({
@@ -148,7 +151,7 @@ export function StartMenu({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [embarking, setEmbarking] = useState(false)
   const [preparingCharacter, setPreparingCharacter] = useState(() =>
-    initiallyChoosingCharacter && !isPreloadedImageDecoded(`menu/character-select/character-${hero.id}-wallpaper.webp`))
+    initiallyChoosingCharacter && !isPreloadedImageDecoded(wallpaperOf(hero.id)))
   const campaignLoad = useRef(0)
   const characterLoad = useRef(0)
   const characterButtons = useRef(new Map<CharacterId, HTMLButtonElement>())
@@ -192,7 +195,7 @@ export function StartMenu({
     campaignLoad.current += 1
     clearTimeout(invalidReplayTimer.current)
     clearTimeout(replayStartTimer.current)
-    releasePreloadedImages([...CHARACTER_WALLPAPERS, ...CAMPAIGN_ART])
+    releasePreloadedImages([...characterWallpapers(), ...CAMPAIGN_ART])
   }, [])
   const returnToMain = () => {
     replayRequest.current += 1
@@ -206,7 +209,7 @@ export function StartMenu({
     setReplayPrompt('Give your run to me')
     setReplayDragging(false)
     setReplayTransition(false)
-    releasePreloadedImages([...CHARACTER_WALLPAPERS, ...CAMPAIGN_ART])
+    releasePreloadedImages([...characterWallpapers(), ...CAMPAIGN_ART])
     setScreen('main')
     requestAnimationFrame(() => mainMenuButton.current?.focus())
   }
@@ -217,8 +220,8 @@ export function StartMenu({
       if (campaignLoad.current !== load) return
       // Keep the active hero ready for the campaign selector's Back action;
       // alternate wallpapers are no longer a likely next asset.
-      releasePreloadedImages(CHARACTER_WALLPAPERS.filter((path) =>
-        path !== `menu/character-select/character-${hero.id}-wallpaper.webp`))
+      releasePreloadedImages(characterWallpapers().filter((path) =>
+        path !== wallpaperOf(hero.id)))
       setScreen('campaign')
     })
   }
@@ -233,8 +236,8 @@ export function StartMenu({
     })
   }
   const warmRosterWallpaper = (character: CharacterId, decode = false) => {
-    const path = `menu/character-select/character-${character}-wallpaper.webp`
-    const selectedPath = `menu/character-select/character-${hero.id}-wallpaper.webp`
+    const path = wallpaperOf(character)
+    const selectedPath = wallpaperOf(hero.id)
     const previous = hoveredWallpaper.current
     if (previous && previous !== selectedPath && previous !== path) releasePreloadedImages([previous])
     hoveredWallpaper.current = path
@@ -243,7 +246,7 @@ export function StartMenu({
   const selectCharacter = (character: CharacterId) => {
     if (character === hero.id) return
     const load = ++characterLoad.current
-    const previousWallpaper = `menu/character-select/character-${hero.id}-wallpaper.webp`
+    const previousWallpaper = wallpaperOf(hero.id)
     setPreparingCharacter(true)
     void warmRosterWallpaper(character, true).then(() => {
       if (characterLoad.current !== load) return
@@ -421,7 +424,7 @@ export function StartMenu({
             }}
             onFocus={() => void warmRosterWallpaper(candidate.id)}
             onMouseEnter={() => void warmRosterWallpaper(candidate.id)}>
-            <img src={assetPath(`menu/character-select/portrait-${candidate.id}.png`)} alt="" />
+            <img src={assetPath(`menu/character-select/portrait-${heroArt(candidate.id)}.png`)} alt="" />
           </button>)}
         </div>
         <button type="button" className="start-menu__character-back ribbon-back" aria-label="Back" title="Back"

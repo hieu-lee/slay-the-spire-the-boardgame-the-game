@@ -14,6 +14,7 @@ import type { QuickSetupState, RunMetaState } from '../meta.ts'
 import type { NeowState } from '../neow.ts'
 import type { CourierOffer, MerchantState, RelicRewardState } from '../noncombat.ts'
 import type { RngState } from '../rng.ts'
+import type { SkinId } from '../skins.ts'
 import type { CharacterId, Enemy, Player } from '../types.ts'
 
 export type RunPhase =
@@ -176,7 +177,8 @@ export type EnemyDecks = {
   elite: EncounterCard[]
 }
 
-export type PartyMember = { id: string; name: string; character: CharacterId }
+/** `skin` is presentation only: it is kept on the run's player and never read by the rules. */
+export type PartyMember = { id: string; name: string; character: CharacterId; skin?: SkinId }
 
 export type RewardSource = CharacterId | 'colorless'
 

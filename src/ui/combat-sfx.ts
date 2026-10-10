@@ -1,5 +1,7 @@
-import { ALL_CHARACTER_IDS, DLC_CHARACTER_IDS, PLAYTEST_CHARACTER_IDS } from '../game/types.ts'
+import { ALL_CHARACTER_IDS, PLAYTEST_CHARACTER_IDS } from '../game/types.ts'
 import type { CardType, CharacterId } from '../game/types.ts'
+import { visualId } from '../game/skins.ts'
+import type { SkinId } from '../game/skins.ts'
 import { CARDS } from '../game/cards.ts'
 import { POTIONS } from '../game/relics.ts'
 import { cardVfxRecipe, potionVfxRecipe, type VfxFamily, type VfxRecipe } from './combat-vfx.ts'
@@ -70,7 +72,8 @@ const ASSET_LAYERS: Readonly<Record<string, readonly LayerTemplate[]>> = {
   'hexaghost-flame-impact': FAMILY_LAYERS.projectile,
 }
 
-const CHARACTER_RATE: Readonly<Record<CharacterId, number>> = {
+/** Keyed by visual id: a skin sounds like its own hero, not the character under it. */
+const CHARACTER_RATE: Readonly<Record<CharacterId | SkinId, number>> = {
   ironclad: 0.94,
   silent: 1.08,
   defect: 1.14,
@@ -83,9 +86,9 @@ const CHARACTER_RATE: Readonly<Record<CharacterId, number>> = {
 }
 
 const POTION_IDS = Object.keys(POTIONS).sort()
-// Preserve the original heroes' accents when a DLC moves out of playtesting.
+// Preserve the original heroes' accents when a playtest character is released.
 // Additional cards occupy their own grid after every character's original pool.
-const EXTRA_OWNERS = new Set<string>([...DLC_CHARACTER_IDS, ...PLAYTEST_CHARACTER_IDS])
+const EXTRA_OWNERS = new Set<string>(PLAYTEST_CHARACTER_IDS)
 const ORIGINAL_CARD_IDS = Object.values(CARDS).filter((def) => !EXTRA_OWNERS.has(def.owner) && !def.pack).map((def) => def.id).sort()
 const ORIGINAL_CARDS = new Set(ORIGINAL_CARD_IDS)
 const EXTRA_CARD_IDS = Object.keys(CARDS).filter((id) => !ORIGINAL_CARDS.has(id) && !CARDS[id]!.pack).sort()
@@ -146,9 +149,11 @@ export function cardSfxRecipe(
   mode?: number,
   upgraded = cardId.endsWith('+'),
   resolvedType?: CardType,
+  skin?: unknown,
 ): CombatSfxRecipe {
   const baseId = cardId.endsWith('+') ? cardId.slice(0, -1) : cardId
-  const visual = cardVfxRecipe(character, baseId, mode, upgraded, resolvedType)
+  const look = visualId(character, skin)
+  const visual = cardVfxRecipe(look, baseId, mode, upgraded, resolvedType)
   const characterIndex = CHARACTERS.indexOf(character)
   const originalIndex = ORIGINAL_CARD_IDS.indexOf(baseId)
   const packIndex = PACK_CARD_IDS.indexOf(baseId)
@@ -156,12 +161,12 @@ export function cardSfxRecipe(
     : packIndex >= 0 ? PACK_OFFSET + characterIndex * PACK_STRIDE + packIndex
       : EXTRA_OFFSET + characterIndex * EXTRA_STRIDE + EXTRA_CARD_IDS.indexOf(baseId)
   return tunedRecipe(
-    `card:${character}:${baseId}:${mode ?? 'base'}`,
+    `card:${look}:${baseId}:${mode ?? 'base'}`,
     [...layersForCard(visual).map(layer => ({ ...layer,
       // Animation cues supply the weapon/element detail; keep the original bed quieter.
       volume: layer.volume * (visual.actorMotion === 'none' ? 1 : .55),
     })), identityLayer(slot)],
-    CHARACTER_RATE[character],
+    CHARACTER_RATE[look],
   )
 }
 

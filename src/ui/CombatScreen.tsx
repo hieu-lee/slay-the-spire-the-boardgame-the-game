@@ -3,7 +3,6 @@ import heroArtHeads from './hero-art-head.json'
 import { animateCardFlight, cardFlightPath } from './combat-screen/card-flight.ts'
 import { unknownPowerRefreshDecision } from './combat-screen/unknown-power.ts'
 import { HermitTriggerChoice } from './combat-screen/HermitTriggerChoice.tsx'
-import { RageMeter } from './combat-screen/RageMeter.tsx'
 import { StartTurnOrder } from './combat-screen/StartTurnOrder.tsx'
 // The combat screen: the board, the hand, and every prompt a fight puts up.
 //
@@ -16,6 +15,7 @@ import { StartTurnOrder } from './combat-screen/StartTurnOrder.tsx'
 // vfx.tsx for the effect overlay a play puts on it.
 import rigMetadata from './rig-animation-metadata.json' with { type: 'json' }
 import { enemyDef } from '../game/enemies.ts'
+import { hasStagedAttack, playerVisualId, skinTraits } from '../game/skins.ts'
 import {
   PHASE_LABEL,
   canAfford,
@@ -490,9 +490,6 @@ function CombatScreenView({
   const [spendingSoulburn, setSpendingSoulburn] = useState(false)
   const [extraCrispySoulburn, setExtraCrispySoulburn] = useState(false)
   const [chamberOpen, setChamberOpen] = useState(false)
-  // Kratos: hold Rage, so plays skip their Unleash clauses until switched back.
-  const [holdRage, setHoldRage] = useState(false)
-  useEffect(() => setHoldRage(false), [state.combatId])
   const [chamberClosing, setChamberClosing] = useState(false)
   const [chamberContact, setChamberContact] = useState(false)
   const [chamberReturnFlights, setChamberReturnFlights] = useState<ChamberReturnFlight[]>([])
@@ -658,6 +655,8 @@ function CombatScreenView({
   }
   const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
+  const viewerVisual = viewer ? playerVisualId(viewer) : undefined
+  const skinOrb = viewerVisual !== undefined && skinTraits(viewerVisual)?.energyOrb === true
   // Hand Attacks show what they would deal now: to the enemy being dragged onto or last
   // pointed at, to the only enemy left, otherwise to a plain stand-in enemy.
   const [pointedEnemyUid, setPointedEnemyUid] = useState<string | null>(null)
@@ -672,12 +671,11 @@ function CombatScreenView({
     const previews = new Map<string, CardDamagePreview>()
     if (!cardHints || !viewer || viewer.dead || state.phase !== 'player') return previews
     for (const card of viewer.hand) {
-      const preview = previewCardDamage(state, viewer.id, card.uid, previewEnemyUid, Boolean(onAction),
-        viewer.character === 'kratos' && holdRage)
+      const preview = previewCardDamage(state, viewer.id, card.uid, previewEnemyUid, Boolean(onAction))
       if (preview) previews.set(card.uid, preview)
     }
     return previews
-  }, [cardHints, state, viewer, previewEnemyUid, onAction, holdRage])
+  }, [cardHints, state, viewer, previewEnemyUid, onAction])
   const courierAvailable = Boolean(onCourierReveal) && courierReady(viewer, courierUsedBy ?? [])
   const canUsePotionNow = (potionId: string) => Boolean(viewer &&
     canActivatePotion(state, viewer, potionId) && !(partyStartTurnPostRollLocked &&
@@ -706,15 +704,15 @@ function CombatScreenView({
     return ready
   }
   const characterAttackAssets = prefersReducedMotion ? '' : [...new Set(state.players.filter((player) => !player.dead).flatMap((player) =>
-    player.character === 'hexaghost'
+    playerVisualId(player) === 'kratos'
+      ? [...KRATOS_POSES.map(kratosPoseAsset), ...['light', 'impact'].map(name => assetPath(`combat/vfx/actions/kratos/${name}.webp`))]
+      : player.character === 'hexaghost'
       ? [assetPath(`combat/rigged/hero-hexaghost-heat-${Math.max(0, Math.min(6, player.heat))}-attack.webp`)]
       : player.character === 'guardian'
         ? ['guardian', 'guardian-defense'].map((id) => assetPath(`combat/rigged/hero-${id}-attack.webp`))
         : player.character === 'watcher' || player.character === 'ironclad'
           ? ['ready', player.character === 'watcher' ? 'thrust' : 'impact']
             .map((pose) => assetPath(`combat/characters/${player.character}-${pose}.webp`))
-          : player.character === 'kratos'
-            ? [...KRATOS_POSES.map(kratosPoseAsset), ...['light', 'impact'].map(name => assetPath(`combat/vfx/actions/kratos/${name}.webp`))]
           : [assetPath(`combat/rigged/hero-${player.character}-attack.webp`),
             ...(player.character === 'hermit' ? ['hermit-bullet', 'hermit-impact'].map(name => assetPath(`combat/vfx/actions/${name}.webp`)) : [])]))].sort().join('|')
   useEffect(() => {
@@ -1240,7 +1238,7 @@ function CombatScreenView({
             ? turnEffectVfxRecipe(event.effect)
             : event.kind === 'shiv'
               ? shivVfxRecipe()
-              : cardVfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded, event.resolvedType),
+              : cardVfxRecipe(playerVisualId(actor), event.sourceId, event.mode, event.upgraded, event.resolvedType),
       })
     }
     return resolved
@@ -1268,7 +1266,7 @@ function CombatScreenView({
       .includes(recipe.family)))
   const enemyVfxFor = (enemy: Enemy) => activeVfx
     .filter((active) => active.event.enemyIds.includes(enemy.uid) && !isEndTurnLightning(active.event) &&
-      !(state.players.some(p => p.id === active.event.actorId && ['hermit', 'kratos'].includes(p.character)) && isCharacterAttack(active)))
+      !(state.players.some(p => p.id === active.event.actorId && hasStagedAttack(playerVisualId(p))) && isCharacterAttack(active)))
     .map((active) => <CombatVfx
       key={`${active.event.seq}-${active.recipe.asset}`}
       active={active}
@@ -1365,7 +1363,7 @@ function CombatScreenView({
           ? potionVfxRecipe(event.sourceId)
           : event.kind === 'shiv'
             ? shivVfxRecipe()
-            : cardVfxRecipe(player.character, event.sourceId, event.mode, event.upgraded, event.resolvedType)
+            : cardVfxRecipe(playerVisualId(player), event.sourceId, event.mode, event.upgraded, event.resolvedType)
         return isCharacterAttack({ event, recipe }) ? latest : Math.max(latest, event.seq)
       }, -1)
       const latestAttackSeq = (state.presentationEvents ?? []).reduce((latest, event) => {
@@ -1373,14 +1371,14 @@ function CombatScreenView({
           event.kind === 'slime' || event.kind === 'turn') return latest
         const recipe = event.kind === 'shiv'
           ? shivVfxRecipe()
-          : cardVfxRecipe(player.character, event.sourceId, event.mode, event.upgraded, event.resolvedType)
+          : cardVfxRecipe(playerVisualId(player), event.sourceId, event.mode, event.upgraded, event.resolvedType)
         return isCharacterAttack({ event, recipe }) ? Math.max(latest, event.seq) : latest
       }, -1)
       const latestAttackIsActive = actorEvents.some((active) =>
         active.event.seq === latestAttackSeq && isCharacterAttack(active))
       // Hermit rounds already in flight survive the render before a new event becomes active.
-      const attacks = latestAttackIsActive || ['hermit', 'kratos'].includes(player.character) ? actorEvents.filter((active) =>
-        (['hermit', 'kratos'].includes(player.character) || active.event.seq > latestNonAttackSeq) && isCharacterAttack(active)) : []
+      const attacks = latestAttackIsActive || hasStagedAttack(playerVisualId(player)) ? actorEvents.filter((active) =>
+        (hasStagedAttack(playerVisualId(player)) || active.event.seq > latestNonAttackSeq) && isCharacterAttack(active)) : []
       if (attacks.length === 0) continue
       const actor = board.querySelector<HTMLElement>(`.seat[data-player-id="${player.id}"] .seat__portrait`)
       if (!actor) continue
@@ -1421,10 +1419,10 @@ function CombatScreenView({
         const targetRect = targetPortrait.getBoundingClientRect()
         return [{
           active,
-          interrupted: !['hermit', 'kratos'].includes(player.character) && active.event.seq <= latestNonAttackSeq,
+          interrupted: !hasStagedAttack(playerVisualId(player)) && active.event.seq <= latestNonAttackSeq,
           targetId: target.id,
           // Kratos stops where his chained blades, not his body, reach the target.
-          x: player.character === 'kratos' && kratosPosesReady(active.event.seq)
+          x: playerVisualId(player) === 'kratos' && kratosPosesReady(active.event.seq)
             ? Math.max(0, combatBodyPoint(targetPortrait).x - actorCenterX -
               KRATOS_CONTACT_REACH * Math.min(actorRect.width, actorRect.height))
             : Math.max(0, targetRect.left - actorRect.right + actorRect.width * 0.22),
@@ -3574,7 +3572,6 @@ function CombatScreenView({
       guardianBlockSpend: next.guardianBlockSpend ?? undefined,
       guardianPowerCardUid: next.guardianPowerCardUid ?? undefined,
       spendMiracle: miracleOnCard,
-      holdRage: viewer!.character === 'kratos' && holdRage ? true : undefined,
       shivEnemyUids: next.shivEnemyUids,
       evokeSlots: next.evokeSlots,
       evokeEnemyUids: next.evokeEnemyUids as (string | null)[],
@@ -6714,11 +6711,12 @@ function CombatScreenView({
 
         {rows.map((row) => {
           const occupant = state.players.find((player) => player.row === row)
+          const occupantVisual = occupant ? playerVisualId(occupant) : undefined
           const foes = stageEnemies.filter((enemy) => enemy.row === row)
           const emptyRowTargetable = foes.length === 0 && isRowLaneClickTargetable(row)
           const actorEvents = occupant ? actorVfxFor(occupant.id) : []
           const actorVfx = actorEvents.filter(({ event }) => event.enemyIds.length === 0 &&
-            !(occupant?.character === 'defect' && event.kind === 'orb' && event.sourceId === 'orb-evoke'))
+            !(occupantVisual === 'defect' && event.kind === 'orb' && event.sourceId === 'orb-evoke'))
           const characterAttackMotions = occupant ? characterAttacks[occupant.id] ?? [] : []
           const characterAttack = characterAttackMotions.filter(attack => !attack.interrupted).at(-1)
           const latestCharacterAttackSeq = characterAttack?.active.event.seq
@@ -6735,18 +6733,18 @@ function CombatScreenView({
             : 0
           const rigId = occupant?.character === 'hexaghost' ? `hexaghost-heat-${occupantHeat}`
             : occupant?.character === 'guardian' && occupant.guardianMode === 'defense' ? 'guardian-defense'
-            : occupant?.character
+            : occupantVisual
           const characterAttackAsset = assetPath(`combat/rigged/hero-${rigId}-attack.webp`)
-          const characterIdleAsset = occupant?.character === 'watcher'
-            ? assetPath('combat/characters/watcher-hero.webp') : assetPath(occupant?.character === 'kratos' ? 'combat/characters/animated/kratos-idle.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
-          const characterArtScale = prefersReducedMotion || occupant?.dead || occupant?.character === 'watcher' ? 1
-            : occupant?.character === 'kratos' ? KRATOS_DISPLAY_SCALE
+          const characterIdleAsset = occupantVisual === 'watcher'
+            ? assetPath('combat/characters/watcher-hero.webp') : assetPath(occupantVisual === 'kratos' ? 'combat/characters/animated/kratos-idle.webp' : `combat/rigged/hero-${rigId}-idle.webp`)
+          const characterArtScale = prefersReducedMotion || occupant?.dead || occupantVisual === 'watcher' ? 1
+            : occupantVisual === 'kratos' ? KRATOS_DISPLAY_SCALE
             : (rigMetadata as Record<string, { scale?: number }>)[`hero-${rigId}`]?.scale ?? 1
           // Where the painted head ends, so held potions and Orbs float just above it.
           const animatedPortrait = !prefersReducedMotion && !occupant?.dead && !slimeSpawnEvent
           const heroHeads = heroArtHeads as Record<string, number[]>
           const heroHead = (slimeSpawnEvent ? heroHeads['slime_boss-spawn'] : rigId ? heroHeads[rigId] : undefined)?.[animatedPortrait ? 0 : 1]
-          const guardianShiftHead = occupant?.character === 'guardian' ? heroHeads['guardian-transition']?.[0] : undefined
+          const guardianShiftHead = occupantVisual === 'guardian' ? heroHeads['guardian-transition']?.[0] : undefined
           return (
             <div
               className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
@@ -6757,7 +6755,7 @@ function CombatScreenView({
               <div className="row__seat">
                 {occupant ? (
                   <>
-                    <div className="seat__interactive" data-player-id={occupant.id} data-character={occupant.character}
+                    <div className="seat__interactive" data-player-id={occupant.id} data-character={occupantVisual}
                       style={heroHead === undefined ? undefined : {
                         '--hero-art-head-height': `calc(var(--stage-actor-width) * ${+(heroHead * (slimeSpawnEvent ? 1 : characterArtScale)).toFixed(4)})`,
                         '--hero-shift-head-height': guardianShiftHead === undefined ? undefined
@@ -6775,7 +6773,7 @@ function CombatScreenView({
                         occupant.id === viewerId ? 'seat--viewer' : '',
                         occupant.dead ? 'seat--dead' : '',
                         falling.has(occupant.id) ? 'seat--falling' : '',
-                        characterAttack ? `seat--attack-${occupant.character}` : '',
+                        characterAttack ? `seat--attack-${occupantVisual}` : '',
                         (!occupant.dead && ((pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
                           pendingPowerNeedsAlly ||
                           pendingStartPlayer?.players?.some((player) => player.id === occupant.id) ||
@@ -6808,10 +6806,10 @@ function CombatScreenView({
                         player.id === occupant.id) ? `. Target for ${pendingStartPlayer.label}` : ''}`}
                     >
                       <span className="seat__portrait" aria-hidden="true" style={{ '--character-art-scale': characterArtScale } as React.CSSProperties}>
-                        {occupant.character === 'watcher' && occupant.stance !== 'neutral' ? (
+                        {occupantVisual === 'watcher' && occupant.stance !== 'neutral' ? (
                           <span className={`stance-aura stance-aura--${occupant.stance}`} />
                         ) : null}
-                        {occupant.character === 'guardian' && occupant.guardianMode ? (
+                        {occupantVisual === 'guardian' && occupant.guardianMode ? (
                           <GuardianPortrait
                             mode={occupant.guardianMode}
                             animate={!prefersReducedMotion && !occupant.dead}
@@ -6819,24 +6817,24 @@ function CombatScreenView({
                           />
                         ) : !prefersReducedMotion && !occupant.dead && !slimeSpawnEvent ? (
                           <CombatAnimation
-                            key={`${occupant.character}-${occupantHeat}`}
+                            key={`${occupantVisual}-${occupantHeat}`}
                             src={characterIdleAsset}
                             data-vfx-seq={characterAttack?.active.event.seq}
                             onError={(image) => { image.style.display = 'none' }}
                           />
                         ) : (
                           <img
-                            key={`${occupant.character}-${occupantHeat}-${slimeSpawnEvent?.seq ?? characterAttack?.active.event.seq ?? 'idle'}`}
+                            key={`${occupantVisual}-${occupantHeat}-${slimeSpawnEvent?.seq ?? characterAttack?.active.event.seq ?? 'idle'}`}
                             data-static-art={Boolean(slimeSpawnEvent) || undefined}
-                            src={assetPath(occupant.character === 'hexaghost'
+                            src={assetPath(occupantVisual === 'hexaghost'
                               ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
-                              : occupant.character === 'slime_boss' && slimeSpawnEvent
+                              : occupantVisual === 'slime_boss' && slimeSpawnEvent
                                 ? 'combat/characters/slime_boss-spawn.webp'
-                              : `combat/characters/${occupant.character}-hero.webp`)}
+                              : `combat/characters/${occupantVisual}-hero.webp`)}
                             data-vfx-seq={characterAttack?.active.event.seq}
                             alt=""
                             onError={(event) => {
-                              if (occupant.character === 'slime_boss' && slimeSpawnEvent && event.currentTarget.dataset.fallback !== 'true') {
+                              if (occupantVisual === 'slime_boss' && slimeSpawnEvent && event.currentTarget.dataset.fallback !== 'true') {
                                 event.currentTarget.dataset.fallback = 'true'
                                 event.currentTarget.src = assetPath('combat/characters/slime_boss.webp')
                               } else event.currentTarget.style.display = 'none'
@@ -6845,44 +6843,44 @@ function CombatScreenView({
                         )}
                         {characterAttackMotions.map((characterAttack) => (
                           <span
-                            className={`character-attack character-attack--${occupant.character}`}
+                            className={`character-attack character-attack--${occupantVisual}`}
                             data-attack-seq={characterAttack.active.event.seq}
                             data-attack-target-count={characterAttack.targets.length}
-                            data-guardian-mode={occupant.character === 'guardian' ? occupant.guardianMode ?? 'attack' : undefined}
+                            data-guardian-mode={occupantVisual === 'guardian' ? occupant.guardianMode ?? 'attack' : undefined}
                             key={characterAttack.active.event.seq}
                             style={{
                               '--attack-x': `${characterAttack.x}px`,
                               '--attack-y': `${characterAttack.y}px`,
                             } as React.CSSProperties}
                           >
-                            {characterAttack.active.event.seq === latestCharacterAttackSeq || occupant.character === 'hermit' ? (
-                              occupant.character === 'ironclad' ? <>
+                            {characterAttack.active.event.seq === latestCharacterAttackSeq || occupantVisual === 'hermit' ? (
+                              occupantVisual === 'ironclad' ? <>
                                 <span className="character-attack__pose character-attack__pose--ironclad-ready">
                                   <img src={assetPath('combat/characters/ironclad-ready.webp')} alt="" />
                                 </span>
                                 <span className="character-attack__pose character-attack__pose--ironclad-impact">
                                   <img src={assetPath('combat/characters/ironclad-impact.webp')} alt="" />
                                 </span>
-                              </> : occupant.character === 'watcher' ? <>
+                              </> : occupantVisual === 'watcher' ? <>
                                 <span className="character-attack__pose character-attack__pose--watcher-charge">
                                   <img src={assetPath('combat/characters/watcher-ready.webp')} alt="" />
                                 </span>
                                 <span className="character-attack__pose character-attack__pose--watcher-cast">
                                   <img src={assetPath('combat/characters/watcher-thrust.webp')} alt="" />
                                 </span>
-                              </> : occupant.character === 'kratos' ? <KratosAttackPose
+                              </> : occupantVisual === 'kratos' ? <KratosAttackPose
                                 ready={kratosPosesReady(characterAttack.active.event.seq)}
                               /> : <CharacterAttackPose
                                 key={characterAttack.active.event.seq}
                                 attackSeq={characterAttack.active.event.seq}
-                                hermitEvent={occupant.character === 'hermit' ? characterAttack.active.event : undefined}
+                                hermitEvent={occupantVisual === 'hermit' ? characterAttack.active.event : undefined}
                                 firing={characterAttack.active.event.seq === latestCharacterAttackSeq}
                                 assetPath={characterAttackAsset}
                                 fallbackAsset={characterIdleAsset}
                                 asset={characterAttackBlobs.get(characterAttackAsset)}
                               />
                             ) : null}
-                            {occupant.character === 'watcher' ? (
+                            {occupantVisual === 'watcher' ? (
                               <>
                                 {characterAttack.targets.map((target, index) => (
                                   <span
@@ -6911,12 +6909,12 @@ function CombatScreenView({
                                 ))}
                               </>
                             ) : null}
-                            {occupant.character === 'ironclad' &&
+                            {occupantVisual === 'ironclad' &&
                             characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <span className="character-attack__swing" />
                             ) : null}
-                            {occupant.character === 'kratos' ? <KratosImpacts event={characterAttack.active.event} /> : null}
-                            {occupant.character === 'defect' &&
+                            {occupantVisual === 'kratos' ? <KratosImpacts event={characterAttack.active.event} /> : null}
+                            {occupantVisual === 'defect' &&
                             characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <>
                                 <span className="character-attack__core">
@@ -6924,10 +6922,10 @@ function CombatScreenView({
                                 </span>
                               </>
                             ) : null}
-                            {(occupant.character === 'silent' || occupant.character === 'defect')
+                            {(occupantVisual === 'silent' || occupantVisual === 'defect')
                               ? characterAttack.targets.map((target, index) => (
                                 <span
-                                  className={occupant.character === 'silent'
+                                  className={occupantVisual === 'silent'
                                     ? 'character-attack__dagger'
                                     : 'character-attack__bolt'}
                                   data-attack-target-id={target.id}
@@ -6938,13 +6936,13 @@ function CombatScreenView({
                                     '--attack-delay': `${index * 70}ms`,
                                   } as React.CSSProperties}
                                 >
-                                  {occupant.character === 'silent'
+                                  {occupantVisual === 'silent'
                                     ? <img src={assetPath('combat/vfx/actions/silent-knife.webp')} alt="" />
                                     : <img src={assetPath('combat/vfx/actions/defect-face-orb.webp')} alt="" />}
                                 </span>
                               ))
                               : null}
-                            {occupant.character === 'hexaghost'
+                            {occupantVisual === 'hexaghost'
                               ? characterAttack.targets.map((target, index) => (
                                 <span
                                   className="character-attack__hexaghost-flame"
@@ -6962,7 +6960,7 @@ function CombatScreenView({
                               : null}
                           </span>
                         ))}
-                        {!prefersReducedMotion && occupant.character === 'defect' ? actorEvents.map(({ event }) =>
+                        {!prefersReducedMotion && occupantVisual === 'defect' ? actorEvents.map(({ event }) =>
                           event.kind === 'orb' && event.sourceId === 'orb-evoke'
                             ? <DefectEvokeVfx key={`evoke-${event.seq}`} event={event} /> : null) : null}
                         {actorVfx.map((active) => (
@@ -7051,7 +7049,7 @@ function CombatScreenView({
                       ) : null}
                       </span>
                     </button>
-                    {occupant.character === 'slime_boss' && occupant.slimes.length > 0 ? (
+                    {occupantVisual === 'slime_boss' && occupant.slimes.length > 0 ? (
                       <span className="slime-party combat__slime-status" role="list"
                         aria-label={`${occupant.name}'s Slimes`}>
                         {occupant.slimes.map((slime) => {
@@ -7395,18 +7393,17 @@ function CombatScreenView({
         </p>
       ) : null}
       <footer className="hand-area" data-character={viewer.character}
-        data-has-chamber={viewer.chamberSlots > 0 || undefined}
-        data-has-rage={viewer.character === 'kratos' || undefined}>
+        data-has-chamber={viewer.chamberSlots > 0 || undefined}>
         <div className="hand-area__stats">
           <span className={[
             'pip',
             'pip--energy',
             motionActive.has('energy') ? `motion-pulse-${motionBeats.energy % 2}` : '',
-          ].filter(Boolean).join(' ')} data-character={viewer.character}
+          ].filter(Boolean).join(' ')} data-character={viewerVisual} data-skin-orb={skinOrb || undefined}
           data-guardian-mode={viewer.guardianMode ?? undefined} data-empty={viewer.energy === 0 || undefined}
           title="Energy">
-            {viewer.character === 'kratos' ? <img className="energy-orb__kratos"
-              src={assetPath('combat/energy-orbs/kratos.webp')} alt="" aria-hidden="true" /> : null}
+            {skinOrb ? <img className="energy-orb__skin"
+              src={assetPath(`combat/energy-orbs/${viewerVisual}.webp`)} alt="" aria-hidden="true" /> : null}
             {downfallCharacter ? <span className="energy-orb__layers" aria-hidden="true">
               {downfallEnergyOrbLayers(downfallCharacter, viewer.energy === 0).map(({ layer, src }) =>
                 <img key={layer} data-layer={layer} src={src} alt="" />)}
@@ -7429,9 +7426,6 @@ function CombatScreenView({
                 : 'icons/hermit-chamber-loaded.png')} alt="" />
               <span aria-hidden="true">{viewer.chamber.length}/{viewer.chamberSlots}</span>
             </button>
-          ) : null}
-          {viewer.character === 'kratos' ? (
-            <RageMeter rage={viewer.rage ?? 0} held={holdRage} onToggleHold={() => setHoldRage((held) => !held)} />
           ) : null}
           {requiredHermitChamberCard?.playerId === viewer.id &&
           (!requiredChamberCard || requiredChamberUnplayable) ? (

@@ -1,13 +1,14 @@
-import { CARD_PACK_PRICE, MAX_BOSS_AWARDS, MAX_BOSS_AWARD_COINS } from '../../src/game/coins.ts'
+import { MAX_BOSS_AWARDS, MAX_BOSS_AWARD_COINS } from '../../src/game/coins.ts'
 import { normalizeCardPacks } from '../../src/game/packs.ts'
-import { buyPack, createWallet, creditBossCoins, MAX_WALLET_COINS, MAX_RUN_KEY_LENGTH, parseWallet } from '../../src/wallet.ts'
+import { normalizeSkins } from '../../src/game/skins.ts'
+import { buyPack, buySkin, createWallet, creditBossCoins, MAX_WALLET_COINS, MAX_RUN_KEY_LENGTH, parseWallet, spentCoins } from '../../src/wallet.ts'
 import { grantFor, grantNameKey } from './coin-grants.mjs'
 
 const invalid = () => { throw Object.assign(new Error('Invalid wallet request'), { status: 400 }) }
 
 // Browser wallets predate account storage. Merge their lifetime earnings by
-// maximum, not addition: two devices may hold the same past-runs grant. Packs
-// count as spent earnings, so migrating a purchase never restores its price.
+// maximum, not addition: two devices may hold the same past-runs grant. Packs and
+// skins count as spent earnings, so migrating a purchase never restores its price.
 export function syncAccountWallet(store, profile, body) {
   const migration = body.migration
   const credits = body.credits ?? []
@@ -34,9 +35,10 @@ export function syncAccountWallet(store, profile, body) {
     if (profile.walletImports.length >= 256) invalid()
     const local = parseWallet(migration.wallet)
     const packs = normalizeCardPacks([...profile.wallet.packs, ...local.packs])
-    const earned = Math.max(profile.wallet.coins + profile.wallet.packs.length * CARD_PACK_PRICE,
-      local.coins + local.packs.length * CARD_PACK_PRICE)
-    profile.wallet = { ...profile.wallet, packs, coins: Math.min(MAX_WALLET_COINS, Math.max(0, earned - packs.length * CARD_PACK_PRICE)) }
+    const skins = normalizeSkins([...profile.wallet.skins, ...local.skins])
+    const earned = Math.max(profile.wallet.coins + spentCoins(profile.wallet), local.coins + spentCoins(local))
+    profile.wallet = { ...profile.wallet, packs, skins,
+      coins: Math.min(MAX_WALLET_COINS, Math.max(0, earned - spentCoins({ ...profile.wallet, packs, skins }))) }
     for (const [key, count] of Object.entries(local.credited)) {
       profile.walletPaid[key] = Math.max(profile.walletPaid[key] ?? 0, count)
     }
@@ -52,9 +54,11 @@ export function syncAccountWallet(store, profile, body) {
       store.walletsDirty = true
     }
   }
+  // One purchase per request: a pack or a skin.
+  const buy = body.pack !== undefined ? buyPack : body.skin !== undefined ? buySkin : undefined
   let purchase
-  if (body.pack !== undefined) {
-    purchase = buyPack(profile.wallet, body.pack)
+  if (buy) {
+    purchase = buy(profile.wallet, body.pack ?? body.skin)
     if (purchase.ok) { profile.wallet = purchase.wallet; store.walletsDirty = true }
     // A retried purchase after a lost reply has already succeeded.
     else if (purchase.reason === 'owned') purchase = { ok: true }

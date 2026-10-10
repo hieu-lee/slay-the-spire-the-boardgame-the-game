@@ -123,6 +123,14 @@ paid for each when they reconnect. A browser pays a seat's coins only to the acc
 the seat in that tab (remembered in sessionStorage); if another account signed in since, the
 coins are not paid and the seat is told why. See [shop.md](shop.md).
 
+## Skins at the table
+
+A seat's skin is presentation only and public to every seat. The client sends the skin its
+account **wears** (`preferredSkin`, which only returns skins the account's wallet owns), and
+the server keeps it only when it is a valid skin of the seat's character. Like packs, seats
+are client-asserted: the server does not check the wallet, so a modified client could wear a
+skin it did not buy, with no effect on rules, RNG or other players. See [shop.md](shop.md).
+
 ## Player letters
 
 The Shop announcement is prepared in `docs/announcements/shop-and-slayer-pack.txt`. After the

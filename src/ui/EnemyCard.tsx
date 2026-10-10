@@ -1,5 +1,6 @@
 import { cardDef, faceOf } from '../game/cards.ts'
 import { assetPath, enemyAnimationImagePath, cardThumbPath, enemyImagePath } from '../game/assets.ts'
+import { cardSkin, useCardSkins } from './skin-context.tsx'
 import { abilityText, actionsForEnemy, enemyAbilities, enemyAttackBonus, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 // Aliased: `hitDamage` is also this component's floating hit-VFX number.
@@ -309,6 +310,7 @@ export function EnemyCard({
   onThrowSkipped,
   onClick,
 }: EnemyCardProps) {
+  const skins = useCardSkins()
   const cardRef = useRef<HTMLButtonElement>(null)
   const [visibleEnemy, setVisibleEnemy] = useState(enemy)
   const displayTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
@@ -1013,7 +1015,7 @@ export function EnemyCard({
         <span key={entry.card.uid} className="enemy__attachment" data-slayer-attachment={entry.card.defId}
           title={`${faceOf(cardDef(entry.card.defId), entry.card.upgraded).name}: ${
             cardRuleDescription(faceOf(cardDef(entry.card.defId), entry.card.upgraded))}`}>
-          <img src={cardThumbPath(cardDef(entry.card.defId), entry.card.upgraded)} alt=""
+          <img src={cardThumbPath(cardDef(entry.card.defId), entry.card.upgraded, undefined, cardSkin(skins, cardDef(entry.card.defId)))} alt=""
             onLoad={(event) => revealDecodedImage(event.currentTarget)}
             onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
           <span>{faceOf(cardDef(entry.card.defId), entry.card.upgraded).name}</span>
@@ -1021,7 +1023,8 @@ export function EnemyCard({
       ))}
       {visibleEnemy.corpseExplosion ? (
         <span className="enemy__attachment" title={`Corpse Explosion · ${visibleEnemy.corpseExplosion.damage} row damage on death`}>
-          <img src={cardThumbPath(cardDef(visibleEnemy.corpseExplosion.card.defId), visibleEnemy.corpseExplosion.card.upgraded)} alt=""
+          <img src={cardThumbPath(cardDef(visibleEnemy.corpseExplosion.card.defId), visibleEnemy.corpseExplosion.card.upgraded,
+            undefined, cardSkin(skins, cardDef(visibleEnemy.corpseExplosion.card.defId)))} alt=""
             onLoad={(event) => revealDecodedImage(event.currentTarget)}
             onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
           <span>Corpse Explosion · {visibleEnemy.corpseExplosion.damage}</span>

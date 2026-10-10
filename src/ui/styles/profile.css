@@ -15,6 +15,25 @@
 .profile__rail h1 { margin: 0; font-size: 2rem; }
 .profile__name { margin: 0; overflow: hidden; color: #ffdc60; font-size: 1.6rem; font-weight: 700; text-overflow: ellipsis; text-shadow: 0 2px 0 #3a2410; white-space: nowrap; }
 .profile__since { margin: 0; font-size: 0.85rem; }
+.profile__tabs { display: grid; gap: 0.4rem; margin-top: 0.4rem; }
+.profile__tab {
+  display: flex;
+  min-height: 3.1rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.3rem 0.85rem 0.3rem 0.55rem;
+  border: 2px solid #3a2410;
+  color: #fff8ea;
+  background: linear-gradient(#6d5641, #46331f);
+  box-shadow: inset 0 1px rgb(255 236 190 / 0.25), 0 0.2rem 0.3rem rgb(0 0 0 / 0.4);
+  font: 700 1.05rem 'Kreon', Georgia, serif;
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 2px #1c1109;
+  cursor: pointer;
+}
+.profile__tab img { flex: none; width: 2.2rem; height: 2.2rem; object-fit: contain; filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.6)); }
+.profile__tab:hover { filter: brightness(1.12); }
+.profile__tab[aria-selected='true'] { color: #2b1b08; background: linear-gradient(#ffe68a, #d6a23e); text-shadow: none; }
 .profile__logout, .profile__message button {
   padding: 0.5rem 0.9rem;
   border: 2px solid #3a2410;
@@ -30,9 +49,10 @@
 .profile__logout:hover, .profile__message button:hover { filter: brightness(1.12); }
 .profile__message button { color: #2b1b08; background: linear-gradient(#ffe68a, #d6a23e); text-shadow: none; }
 
-.profile__record { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); padding: clamp(1rem, 2.4vw, 1.8rem) max(2.4rem, 5.5%) clamp(1.3rem, 3vw, 2.2rem); }
-.profile__record > header { padding: 0 0.4rem 0.7rem; border-bottom: 2px solid rgb(58 38 24 / 0.45); }
-.profile__record h2 { margin: 0; font-size: clamp(1.5rem, 2.8vw, 2.4rem); }
+.profile__panel[hidden] { display: none; }
+.profile__panel { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); padding: clamp(1rem, 2.4vw, 1.8rem) max(2.4rem, 5.5%) clamp(1.3rem, 3vw, 2.2rem); }
+.profile__panel > header { padding: 0 0.4rem 0.7rem; border-bottom: 2px solid rgb(58 38 24 / 0.45); }
+.profile__panel h2 { margin: 0; font-size: clamp(1.5rem, 2.8vw, 2.4rem); }
 .profile__scroll { display: grid; min-height: 0; align-content: start; gap: 0.9rem; padding-top: 1rem; overflow: auto; scrollbar-color: #7a5b36 transparent; }
 .profile__message { display: grid; align-content: center; justify-items: center; gap: 0.7rem; min-height: 0; padding: 2rem; text-align: center; }
 .profile__message strong { color: #ffdc60; font-size: 1.45rem; }
@@ -49,6 +69,81 @@
 .profile__heroes strong { color: #ffdc60; font-size: 1.05rem; }
 .profile__heroes span { font-size: 0.9rem; text-align: right; white-space: nowrap; }
 
+.profile__skins .profile__scroll { gap: 1.1rem; }
+.profile-skins__hero { display: grid; gap: 0.6rem; }
+.profile-skins__hero h3 { display: flex; align-items: center; gap: 0.6rem; margin: 0; color: #ffdc60; font-size: 1.3rem; text-shadow: 0 2px 0 #3a2410; }
+.profile-skins__hero h3 img { width: 2.2rem; height: 2.2rem; object-fit: contain; filter: drop-shadow(0 2px 2px #000); }
+.profile-skins__looks { display: flex; flex-wrap: wrap; gap: 1rem; padding: 0.4rem 0.4rem 0.6rem; }
+/* The radio group shares the row with the locked tiles that follow it. */
+.profile-skins__radios { display: contents; }
+.profile-skin {
+  --tile: clamp(7rem, min(14vw, 26vh), 16rem);
+  position: relative;
+  display: grid;
+  width: var(--tile);
+  gap: 0.4rem;
+  padding: 0.4rem 0.4rem 0.5rem;
+  border: 3px solid #3a2410;
+  border-radius: 0.5rem;
+  color: #fff8ea;
+  background: linear-gradient(#6d5641, #46331f);
+  box-shadow: inset 0 1px rgb(255 236 190 / 0.25), 0 0.3rem 0.45rem rgb(0 0 0 / 0.45);
+  font: 700 1.05rem 'Kreon', Georgia, serif;
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 2px #1c1109;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+.profile-skin__art { position: relative; display: block; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 0.25rem; background: #1c1109; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.6); }
+.profile-skin__art > img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 0.35s ease; }
+.profile-skin__name { text-align: center; }
+/* A skin not bought yet: dimmed art under a lock and its price; the tile opens the Shop. */
+.profile-skin--locked .profile-skin__art > img { filter: grayscale(1) brightness(0.4) blur(1px); }
+.profile-skin__veil { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; gap: 0.3rem; padding-bottom: 0.2rem; background: linear-gradient(transparent 45%, rgb(0 0 0 / 0.7)); }
+.profile-skin__lock { width: 42%; height: auto; filter: drop-shadow(0 3px 3px #000); }
+.profile-skin__price { color: #ffdc60; font-size: 1.05em; text-shadow: 0 2px 0 #000; }
+.profile-skin__price .coin-icon { width: 1.3em; height: 1.3em; }
+.profile-skin:hover { transform: translateY(-0.2rem); filter: brightness(1.1); }
+.profile-skin:hover .profile-skin__art > img { transform: scale(1.05); }
+.profile-skin[aria-checked='true'] {
+  border-color: #ffdc60;
+  color: #2b1b08;
+  background: linear-gradient(#ffe68a, #d6a23e);
+  box-shadow: 0 0 0 2px #3a2410, 0 0 1.1rem rgb(255 200 80 / 0.55), 0 0.3rem 0.45rem rgb(0 0 0 / 0.45);
+  text-shadow: none;
+}
+.profile-skin__check {
+  position: absolute;
+  top: -0.55rem;
+  right: -0.55rem;
+  display: grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  place-items: center;
+  border: 2px solid #3a2410;
+  border-radius: 50%;
+  color: #2b1b08;
+  background: radial-gradient(circle at 35% 30%, #fff0a8, #e0a93a);
+  box-shadow: 0 0.15rem 0.3rem rgb(0 0 0 / 0.5);
+  font-size: 1.05rem;
+  line-height: 1;
+  animation: profile-skin-check 0.28s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+@keyframes profile-skin-check { from { opacity: 0; transform: scale(0.3) rotate(-30deg); } }
+.profile .profile-skin:focus-visible { outline: 3px solid #fff8ea; outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .profile-skin, .profile-skin__art > img { transition: none; }
+  .profile-skin__check { animation: none; }
+  .profile-skin:hover { transform: none; }
+  .profile-skin:hover .profile-skin__art > img { transform: none; }
+}
+html[data-reduced-motion='true'] :is(.profile-skin, .profile-skin__art > img) { transition: none; }
+html[data-reduced-motion='true'] .profile-skin__check { animation: none; }
+html[data-reduced-motion='true'] .profile-skin:hover, html[data-reduced-motion='true'] .profile-skin:hover .profile-skin__art > img { transform: none; }
+@media (forced-colors: active) {
+  .profile-skin[aria-checked='true'], .profile__tab[aria-selected='true'] { forced-color-adjust: none; border-color: Highlight; color: HighlightText; background: Highlight; }
+}
+
 @media (max-height: 500px) and (orientation: landscape) {
   .profile { grid-template-columns: 12.5rem minmax(0, 1fr); gap: 0.5rem; padding: 0.45rem; }
   .profile__rail { gap: 0.35rem; padding: 0.65rem 0.8rem 0.75rem; }
@@ -57,9 +152,20 @@
   .profile__name { font-size: 1.2rem; }
   .profile__since, .profile__warning { font-size: 0.7rem; }
   .profile__logout { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+  .profile__tabs { gap: 0.25rem; margin-top: 0.15rem; }
+  .profile__tab { min-height: 2.2rem; gap: 0.4rem; padding: 0.15rem 0.5rem 0.15rem 0.3rem; font-size: 0.85rem; }
+  .profile__tab img { width: 1.6rem; height: 1.6rem; }
+  .profile__skins .profile__scroll { gap: 0.5rem; }
+  .profile-skins__hero { gap: 0.3rem; }
+  .profile-skins__hero h3 { font-size: 1rem; }
+  .profile-skins__hero h3 img { width: 1.6rem; height: 1.6rem; }
+  .profile-skins__looks { gap: 0.7rem; padding: 0.35rem 0.35rem 0.4rem; }
+  .profile-skin { --tile: 5.6rem; gap: 0.25rem; padding: 0.25rem 0.25rem 0.3rem; font-size: 0.8rem; }
+  .profile-skin__price { font-size: 0.8rem; }
+  .profile-skin__check { top: -0.4rem; right: -0.4rem; width: 1.4rem; height: 1.4rem; font-size: 0.85rem; }
   .profile__record { padding: 0.6rem max(1.2rem, 5.5%) 0.8rem; }
-  .profile__record > header { padding-bottom: 0.35rem; }
-  .profile__record h2 { font-size: 1.2rem; }
+  .profile__panel > header { padding-bottom: 0.35rem; }
+  .profile__panel h2 { font-size: 1.2rem; }
   .profile__scroll { gap: 0.5rem; padding-top: 0.5rem; }
   .profile__metrics { gap: 0.4rem; }
   .profile__metric { padding: 0.4rem 0.6rem; column-gap: 0.45rem; }
@@ -78,3 +184,12 @@
   .profile__rail { padding-inline: 0.6rem; }
   .profile__record { padding-inline: max(1rem, 4.5%); }
 }
+
+/* A phone's layout viewport is wider than its screen, so everything is drawn larger to stay readable and tappable. */
+html[data-mobile-performance='true'] .profile__tab { min-height: 3.4rem; gap: 0.7rem; font-size: 1.3rem; }
+html[data-mobile-performance='true'] .profile__tab img { width: 2.6rem; height: 2.6rem; }
+html[data-mobile-performance='true'] .profile-skins__hero h3 { font-size: 1.7rem; }
+html[data-mobile-performance='true'] .profile-skins__hero h3 img { width: 2.8rem; height: 2.8rem; }
+html[data-mobile-performance='true'] .profile-skin { --tile: 14rem; font-size: 1.4rem; }
+html[data-mobile-performance='true'] .profile-skin__price { font-size: 1.3rem; }
+html[data-mobile-performance='true'] .profile-skin__check { width: 2.2rem; height: 2.2rem; font-size: 1.3rem; }

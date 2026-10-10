@@ -31,11 +31,12 @@ const address = await service.listen(0)
 const origin = `http://127.0.0.1:${address.port}`
 const wsOrigin = `ws://127.0.0.1:${address.port}`
 
-async function request(path, { method = 'GET', token, body } = {}) {
+async function request(path, { method = 'GET', token, body, source } = {}) {
   const response = await fetch(`${origin}${path}`, {
     method,
     headers: {
       ...(token ? { 'x-room-token': token } : {}),
+      ...(source ? { 'cf-connecting-ip': source } : {}),
       ...(body ? { 'content-type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -133,7 +134,7 @@ try {
 
   const packSource = { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.77' }
   const packHost = await (await fetch(`${origin}/api/rooms`, { method: 'POST', headers: packSource,
-    body: JSON.stringify({ name: 'Packer', character: 'ironclad', cardPacks: ['slayer_watcher', 'slayer_kratos'] }) })).json()
+    body: JSON.stringify({ name: 'Packer', character: 'ironclad', cardPacks: ['slayer_watcher', 'slayer_nobody'] }) })).json()
   const packCode = packHost.snapshot.code
   const packGuest = await (await fetch(`${origin}/api/rooms/${packCode}/join`, { method: 'POST', headers: packSource,
     body: JSON.stringify({ name: 'Guest', character: 'silent', cardPacks: ['slayer_silent'] }) })).json()
@@ -156,6 +157,22 @@ try {
   })
   packSocket.socket.close()
   packHostSocket.socket.close()
+  const skinHost = await request('/api/rooms', { method: 'POST', body: { name: 'Skinned', character: 'ironclad', skin: 'kratos' }, source: '198.51.100.88' })
+  const skinCode = skinHost.body.snapshot.code
+  const skinGuest = await request(`/api/rooms/${skinCode}/join`, { method: 'POST', body: { name: 'Plain', character: 'silent', skin: 'kratos' }, source: '198.51.100.88' })
+  const skinSeats = (snapshot) => JSON.stringify(snapshot.seats.map((seat) => [seat.character, seat.skin ?? null]))
+  const skinChanged = await request(`/api/rooms/${skinCode}/character`, { method: 'POST', token: skinGuest.body.token, body: { character: 'defect' } })
+  const skinCleared = await request(`/api/rooms/${skinCode}/character`, { method: 'POST', token: skinHost.body.token, body: { character: 'ironclad' } })
+  const skinRestored = await request(`/api/rooms/${skinCode}/character`, { method: 'POST', token: skinHost.body.token, body: { character: 'ironclad', skin: 'kratos' } })
+  check('seats send a skin on create, join and character choice, and every seat sees it', () => {
+    assertEqual(skinSeats(skinHost.body.snapshot), JSON.stringify([['ironclad', 'kratos']]))
+    assertEqual(skinSeats(skinGuest.body.snapshot), JSON.stringify([['ironclad', 'kratos'], ['silent', null]]), 'a skin Silent cannot wear is refused')
+    assertEqual(skinSeats(skinChanged.body), JSON.stringify([['ironclad', 'kratos'], ['defect', null]]))
+    assertEqual(skinSeats(skinCleared.body), JSON.stringify([['ironclad', null], ['defect', null]]), 'a character choice without a skin clears it')
+    assertEqual(skinSeats(skinRestored.body), JSON.stringify([['ironclad', 'kratos'], ['defect', null]]))
+    assertEqual(skinSeats(service.store.rooms.get(skinCode) ? { seats: service.store.rooms.get(skinCode).seats } : { seats: [] }),
+      JSON.stringify([['ironclad', 'kratos'], ['defect', null]]), 'the server keeps the seat\'s skin for recovery')
+  })
   const departing = await request(`/api/rooms/${leavableCode}/join`, {
     method: 'POST', body: { name: 'Leaving', character: 'silent' },
   })

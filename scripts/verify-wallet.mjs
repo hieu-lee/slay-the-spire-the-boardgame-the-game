@@ -1,11 +1,12 @@
 // The Shop wallet: buying packs, crediting boss coins exactly once per boss,
 // the add-packs-to-runs switch, and what survives corrupt or blocked storage.
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
-import { CARD_PACK_PRICE, MAX_BOSS_AWARDS, catchUpAwardIndex } from '../src/game/coins.ts'
+import { CARD_PACK_PRICE, MAX_BOSS_AWARDS, SKIN_PRICE, SKIN_PRICES, catchUpAwardIndex } from '../src/game/coins.ts'
+import { SKIN_IDS } from '../src/game/skins.ts'
 import { CARD_PACK_IDS } from '../src/game/packs.ts'
 import {
-  MAX_CREDITED_RUNS, MAX_PAID_RUNS, parsePaidRuns, MAX_RUN_KEY_LENGTH, MAX_WALLET_COINS, buyPack, coinsShort, createWallet, creditBossCoins,
-  enabledCardPacks, onlineRunKey, ownsPack, parseWallet, setAddPacksToRuns, soloRunKey,
+  MAX_CREDITED_RUNS, MAX_PAID_RUNS, parsePaidRuns, MAX_RUN_KEY_LENGTH, MAX_WALLET_COINS, buyPack, buySkin, coinsShort, createWallet, creditBossCoins,
+  enabledCardPacks, onlineRunKey, ownsPack, ownsSkin, parseWallet, spentCoins, setAddPacksToRuns, soloRunKey,
 } from '../src/wallet.ts'
 
 const rich = (coins = 5000, packs = []) => ({ ...createWallet(), coins, packs })
@@ -14,7 +15,7 @@ const awards = (...coins) => coins.map((value, index) => ({ act: Math.min(4, ind
 suite('wallet purchases')
 
 check('a new wallet is empty and adds bought packs to runs by default', () => {
-  assertDeepEqual(createWallet(), { version: 1, coins: 0, packs: [], addPacksToRuns: true, credited: {} })
+  assertDeepEqual(createWallet(), { version: 1, coins: 0, packs: [], skins: [], addPacksToRuns: true, credited: {} })
 })
 
 check('buying spends exactly the pack price and owns the pack', () => {
@@ -41,7 +42,7 @@ check('an owned pack cannot be bought twice, and an unknown id never sells', () 
   assertEqual(again.ok, false)
   assertEqual(again.reason, 'owned')
   assertEqual(again.wallet.coins, 5000, 'no coins are taken for an owned pack')
-  for (const id of ['slayer_kratos', 'ironclad', '', null, 42, ['slayer_silent']]) {
+  for (const id of ['slayer_nobody', 'ironclad', '', null, 42, ['slayer_silent']]) {
     const unknown = buyPack(wallet, id)
     assertEqual(unknown.ok, false, `${JSON.stringify(id)} must not sell`)
     assertEqual(unknown.reason, 'unknown')
@@ -57,6 +58,57 @@ check('every pack can be bought once, and owned packs stay in catalogue order', 
   }
   assertEqual(wallet.coins, 7)
   assertDeepEqual(wallet.packs, [...CARD_PACK_IDS])
+})
+
+suite('wallet skins')
+
+check('every skin costs 2,500 coins, from the catalogue', () => {
+  assertEqual(SKIN_PRICE, 2500)
+  for (const id of SKIN_IDS) assertEqual(SKIN_PRICES[id], 2500, `${id} costs the skin price`)
+})
+
+check('buying a skin spends exactly its price and owns it', () => {
+  const bought = buySkin(rich(SKIN_PRICE + 7, ['slayer_defect']), 'kratos')
+  assert(bought.ok, 'an affordable skin must sell')
+  assertEqual(bought.wallet.coins, 7)
+  assertDeepEqual(bought.wallet.skins, ['kratos'])
+  assertDeepEqual(bought.wallet.packs, ['slayer_defect'], 'packs are untouched')
+  assert(ownsSkin(bought.wallet, 'kratos'))
+  assert(!ownsSkin(createWallet(), 'kratos'))
+})
+
+check('a skin one coin short is refused, an owned or unknown one never sells', () => {
+  const short = { ...createWallet(), coins: SKIN_PRICE - 1 }
+  const refused = buySkin(short, 'kratos')
+  assertEqual(refused.ok, false)
+  assertEqual(refused.reason, 'insufficient')
+  assertEqual(refused.wallet, short, 'a refusal returns the same wallet')
+  assertEqual(coinsShort(short, SKIN_PRICES.kratos), 1)
+  assertEqual(coinsShort(short), Math.max(0, CARD_PACK_PRICE - short.coins), 'the pack price is still the default')
+  const owned = { ...createWallet(), coins: 9000, skins: ['kratos'] }
+  const again = buySkin(owned, 'kratos')
+  assertEqual(again.ok, false)
+  assertEqual(again.reason, 'owned')
+  assertEqual(again.wallet.coins, 9000, 'no coins are taken for an owned skin')
+  for (const id of ['nobody', 'ironclad', 'slayer_defect', '', null, 42, ['kratos']]) {
+    const unknown = buySkin(owned, id)
+    assertEqual(unknown.ok, false, `${JSON.stringify(id)} must not sell`)
+    assertEqual(unknown.reason, 'unknown')
+  }
+  assertEqual(buyPack({ ...createWallet(), coins: 9000 }, 'kratos').reason, 'unknown', 'a skin id is not a pack')
+})
+
+check('a wallet from before skins parses to none, and stored skins are validated and in catalogue order', () => {
+  assertDeepEqual(parseWallet({ version: 1, coins: 12, packs: ['slayer_silent'], addPacksToRuns: true, credited: {} }).skins, [])
+  assertDeepEqual(parseWallet({ version: 1, coins: 12, skins: ['kratos', 'nobody', 'kratos', 3, null] }).skins, ['kratos'])
+  assertDeepEqual(parseWallet({ version: 1, coins: 12, skins: 'kratos' }).skins, [])
+  assertDeepEqual(parseWallet({ version: 1, coins: 12, skins: { kratos: true } }).skins, [])
+  assertEqual(parseWallet({ version: 1, coins: 12, skins: ['kratos'] }).coins, 12, 'a skin list never costs the coins')
+})
+
+check('what a wallet spent adds the packs and the skins', () => {
+  assertEqual(spentCoins(createWallet()), 0)
+  assertEqual(spentCoins({ ...createWallet(), packs: ['slayer_silent', 'slayer_defect'], skins: ['kratos'] }), 2 * CARD_PACK_PRICE + SKIN_PRICE)
 })
 
 suite('boss coin crediting')
@@ -186,7 +238,7 @@ check('each field is validated on its own, so one bad field costs nothing else',
   const parsed = parseWallet({
     version: 1,
     coins: -4,
-    packs: ['slayer_watcher', 'slayer_kratos', 'slayer_watcher', 7, 'slayer_ironclad'],
+    packs: ['slayer_watcher', 'slayer_nobody', 'slayer_watcher', 7, 'slayer_ironclad'],
     addPacksToRuns: 'yes',
     credited: { 'solo:ok': 2, 'solo:negative': -1, 'solo:fraction': 1.5, 'solo:huge': MAX_BOSS_AWARDS + 1, '': 1,
       ['k'.repeat(MAX_RUN_KEY_LENGTH + 1)]: 1 },
@@ -524,6 +576,60 @@ check('the browser record of a payment never reaches the disk ahead of its walle
   creditRunCoins('solo:jon-1:1:d', awards(2))
   assertEqual(paidOnDisk()['solo:ivy-2:1:c'], 1)
   signOut()
+})
+
+const { purchaseSkin } = await import('../src/wallet-storage.ts')
+for (const key of [...store.keys()]) store.delete(key)
+signIn('Dee')
+store.set('sts-wallet:dee', JSON.stringify({ ...createWallet(), coins: SKIN_PRICE + 5 }))
+const firstSkinPurchase = await purchaseSkin('kratos')
+const afterFirst = storedAt('sts-wallet:dee')
+const retriedSkinPurchase = await purchaseSkin('kratos')
+const afterRetry = storedAt('sts-wallet:dee')
+signIn('Eve')
+const eveSkins = savedWallet().skins
+const eveSkinPurchase = await purchaseSkin('kratos')
+signOut()
+
+check('buying a skin from storage persists it, a retry cannot spend twice, and it belongs to the account', () => {
+  assertEqual(firstSkinPurchase.ok, true)
+  assertDeepEqual(afterFirst.skins, ['kratos'])
+  assertEqual(afterFirst.coins, 5)
+  assertEqual(retriedSkinPurchase.ok, false)
+  assertEqual(retriedSkinPurchase.reason, 'owned')
+  assertEqual(afterRetry.coins, 5, 'a second purchase takes nothing')
+  assertDeepEqual(eveSkins, [], 'another account does not own it')
+  assertEqual(eveSkinPurchase.reason, 'insufficient')
+})
+
+const { preferredSkin, savedSkinChoices, setPreferredSkin, wearBoughtSkin } = await import('../src/skin-preference.ts')
+signIn('Fay')
+store.set('sts-skins:fay', JSON.stringify({ ironclad: 'kratos' }))
+const unownedRead = [preferredSkin('ironclad'), savedSkinChoices()]
+setPreferredSkin('ironclad', 'kratos')
+const unownedWear = store.get('sts-skins:fay')
+setPreferredSkin('ironclad', undefined)
+const dropped = store.get('sts-skins:fay')
+wearBoughtSkin('kratos')
+const unownedBought = store.get('sts-skins:fay')
+store.set('sts-wallet:fay', JSON.stringify({ ...createWallet(), skins: ['kratos'] }))
+const ownedRead = preferredSkin('ironclad')
+wearBoughtSkin('kratos')
+const worn = store.get('sts-skins:fay')
+setPreferredSkin('ironclad', undefined)
+signIn('Gus')
+const otherAccount = preferredSkin('ironclad')
+signOut()
+
+check('only a skin the wallet owns is ever worn: an unowned choice reads as Default and the next write drops it', () => {
+  assertEqual(unownedRead[0], undefined)
+  assertDeepEqual(unownedRead[1], {})
+  assertEqual(unownedWear, JSON.stringify({ ironclad: 'kratos' }), 'wearing an unowned skin changes nothing')
+  assertEqual(dropped, '{}', 'a write drops the stale choice')
+  assertEqual(unownedBought, '{}', 'an unowned skin is not worn when "bought"')
+  assertEqual(ownedRead, undefined, 'owning a skin does not wear it')
+  assertEqual(worn, JSON.stringify({ ironclad: 'kratos' }), 'a bought skin is worn at once')
+  assertEqual(otherAccount, undefined, 'another account wears nothing')
 })
 
 report('wallet')

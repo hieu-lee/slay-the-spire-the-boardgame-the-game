@@ -1,0 +1,410 @@
+{
+ "anger": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/anger.webp",
+  "webpQuality": 86,
+  "bytes": 149908
+ },
+ "barricade": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/barricade.webp",
+  "webpQuality": 80,
+  "bytes": 143140
+ },
+ "bash": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/bash.webp",
+  "webpQuality": 78,
+  "bytes": 145758
+ },
+ "battle_trance": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/battle_trance.webp",
+  "webpQuality": 86,
+  "bytes": 144198
+ },
+ "berserk": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/berserk.webp",
+  "webpQuality": 86,
+  "bytes": 153058
+ },
+ "blood_for_blood": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/blood_for_blood.webp",
+  "webpQuality": 84,
+  "bytes": 140124
+ },
+ "bludgeon": {
+  "candidate": 2,
+  "source": "scripts/art/sources/kratos-skin-cards/bludgeon.webp",
+  "webpQuality": 82,
+  "bytes": 152454
+ },
+ "body_slam": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/body_slam.webp",
+  "webpQuality": 82,
+  "bytes": 149042
+ },
+ "burning_pact": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/burning_pact.webp",
+  "webpQuality": 80,
+  "bytes": 144096
+ },
+ "carnage": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/carnage.webp",
+  "webpQuality": 80,
+  "bytes": 146290
+ },
+ "clash": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/clash.webp",
+  "webpQuality": 80,
+  "bytes": 145490
+ },
+ "cleave": {
+  "candidate": 2,
+  "source": "scripts/art/sources/kratos-skin-cards/cleave.webp",
+  "webpQuality": 82,
+  "bytes": 145042
+ },
+ "clothesline": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/clothesline.webp",
+  "webpQuality": 84,
+  "bytes": 148028
+ },
+ "combust": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/combust.webp",
+  "webpQuality": 84,
+  "bytes": 151790
+ },
+ "corruption": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/corruption.webp",
+  "webpQuality": 88,
+  "bytes": 137104
+ },
+ "dark_embrace": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/dark_embrace.webp",
+  "webpQuality": 90,
+  "bytes": 140656
+ },
+ "defend_ironclad": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/defend_ironclad.webp",
+  "webpQuality": 84,
+  "bytes": 143254
+ },
+ "demon_form": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/demon_form.webp",
+  "webpQuality": 82,
+  "bytes": 144946
+ },
+ "disarm": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/disarm.webp",
+  "webpQuality": 86,
+  "bytes": 151396
+ },
+ "double_tap": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/double_tap.webp",
+  "webpQuality": 86,
+  "bytes": 140352
+ },
+ "entrench": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/entrench.webp",
+  "webpQuality": 84,
+  "bytes": 143366
+ },
+ "evolve": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/evolve.webp",
+  "webpQuality": 82,
+  "bytes": 140662
+ },
+ "exhume": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/exhume.webp",
+  "webpQuality": 84,
+  "bytes": 152550
+ },
+ "feed": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/feed.webp",
+  "webpQuality": 84,
+  "bytes": 142004
+ },
+ "feel_no_pain": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/feel_no_pain.webp",
+  "webpQuality": 82,
+  "bytes": 144230
+ },
+ "fiend_fire": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/fiend_fire.webp",
+  "webpQuality": 80,
+  "bytes": 147192
+ },
+ "fire_breathing": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/fire_breathing.webp",
+  "webpQuality": 84,
+  "bytes": 149026
+ },
+ "flame_barrier": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/flame_barrier.webp",
+  "webpQuality": 84,
+  "bytes": 147110
+ },
+ "flex": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/flex.webp",
+  "webpQuality": 88,
+  "bytes": 149906
+ },
+ "ghostly_armor": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/ghostly_armor.webp",
+  "webpQuality": 86,
+  "bytes": 138792
+ },
+ "havoc": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/havoc.webp",
+  "webpQuality": 74,
+  "bytes": 148914
+ },
+ "headbutt": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/headbutt.webp",
+  "webpQuality": 84,
+  "bytes": 147342
+ },
+ "heavy_blade": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/heavy_blade.webp",
+  "webpQuality": 84,
+  "bytes": 149956
+ },
+ "immolate": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/immolate.webp",
+  "webpQuality": 70,
+  "bytes": 149614
+ },
+ "impervious": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/impervious.webp",
+  "webpQuality": 86,
+  "bytes": 150064
+ },
+ "inflame": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/inflame.webp",
+  "webpQuality": 84,
+  "bytes": 145330
+ },
+ "iron_wave": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/iron_wave.webp",
+  "webpQuality": 82,
+  "bytes": 143916
+ },
+ "juggernaut": {
+  "candidate": 2,
+  "source": "scripts/art/sources/kratos-skin-cards/juggernaut.webp",
+  "webpQuality": 80,
+  "bytes": 149316
+ },
+ "limit_break": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/limit_break.webp",
+  "webpQuality": 86,
+  "bytes": 143826
+ },
+ "metallicize": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/metallicize.webp",
+  "webpQuality": 82,
+  "bytes": 150550
+ },
+ "offering": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/offering.webp",
+  "webpQuality": 84,
+  "bytes": 144370
+ },
+ "perfected_strike": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/perfected_strike.webp",
+  "webpQuality": 80,
+  "bytes": 148724
+ },
+ "pommel_strike": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/pommel_strike.webp",
+  "webpQuality": 86,
+  "bytes": 150598
+ },
+ "power_through": {
+  "candidate": 2,
+  "source": "scripts/art/sources/kratos-skin-cards/power_through.webp",
+  "webpQuality": 84,
+  "bytes": 143574
+ },
+ "rage": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/rage.webp",
+  "webpQuality": 82,
+  "bytes": 142164
+ },
+ "rampage": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/rampage.webp",
+  "webpQuality": 80,
+  "bytes": 145482
+ },
+ "rupture": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/rupture.webp",
+  "webpQuality": 84,
+  "bytes": 140022
+ },
+ "second_wind": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/second_wind.webp",
+  "webpQuality": 86,
+  "bytes": 150790
+ },
+ "seeing_red": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/seeing_red.webp",
+  "webpQuality": 90,
+  "bytes": 126318
+ },
+ "sentinel": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/sentinel.webp",
+  "webpQuality": 86,
+  "bytes": 148370
+ },
+ "sever_soul": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/sever_soul.webp",
+  "webpQuality": 80,
+  "bytes": 147938
+ },
+ "shockwave": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/shockwave.webp",
+  "webpQuality": 80,
+  "bytes": 144852
+ },
+ "shrug_it_off": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/shrug_it_off.webp",
+  "webpQuality": 88,
+  "bytes": 148638
+ },
+ "slayer_armaments": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/slayer_armaments.webp",
+  "webpQuality": 84,
+  "bytes": 139666
+ },
+ "slayer_brutality": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/slayer_brutality.webp",
+  "webpQuality": 86,
+  "bytes": 141402
+ },
+ "slayer_dropkick": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/slayer_dropkick.webp",
+  "webpQuality": 88,
+  "bytes": 141440
+ },
+ "slayer_dual_wield": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/slayer_dual_wield.webp",
+  "webpQuality": 82,
+  "bytes": 141596
+ },
+ "slayer_infernal_blade": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/slayer_infernal_blade.webp",
+  "webpQuality": 84,
+  "bytes": 144526
+ },
+ "slayer_reaper": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/slayer_reaper.webp",
+  "webpQuality": 84,
+  "bytes": 148398
+ },
+ "slayer_searing_blow": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/slayer_searing_blow.webp",
+  "webpQuality": 80,
+  "bytes": 148652
+ },
+ "spot_weakness": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/spot_weakness.webp",
+  "webpQuality": 86,
+  "bytes": 147480
+ },
+ "strike_ironclad": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/strike_ironclad.webp",
+  "webpQuality": 84,
+  "bytes": 142120
+ },
+ "true_grit": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/true_grit.webp",
+  "webpQuality": 88,
+  "bytes": 152292
+ },
+ "twin_strike": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/twin_strike.webp",
+  "webpQuality": 78,
+  "bytes": 147020
+ },
+ "uppercut": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/uppercut.webp",
+  "webpQuality": 84,
+  "bytes": 145242
+ },
+ "warcry": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/warcry.webp",
+  "webpQuality": 88,
+  "bytes": 145274
+ },
+ "whirlwind": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/whirlwind.webp",
+  "webpQuality": 84,
+  "bytes": 139044
+ },
+ "wild_strike": {
+  "candidate": 1,
+  "source": "scripts/art/sources/kratos-skin-cards/wild_strike.webp",
+  "webpQuality": 82,
+  "bytes": 144200
+ }
+}

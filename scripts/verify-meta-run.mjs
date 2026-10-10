@@ -279,7 +279,7 @@ const rewardCards = (player) => [...player.cardRewards, ...player.rareRewards]
 
 check('no packs, an empty list or only unknown ids build byte-identical runs to before', () => {
   const plain = JSON.stringify(createRun(41, party, 3))
-  for (const cardPacks of [[], ['slayer_kratos'], 'slayer_ironclad', null]) {
+  for (const cardPacks of [[], ['slayer_nobody'], 'slayer_ironclad', null]) {
     assertEqual(JSON.stringify(createRun(41, party, 3, createCampaignProgress(), false, false, { cardPacks })), plain,
       `${JSON.stringify(cardPacks)} changed the run`)
   }
@@ -317,7 +317,7 @@ check('the Colorless pack stocks the Colorless supply even before the Colorless 
 
 check('pack lists are normalised: known ids, no duplicates, catalogue order', () => {
   const run = createRun(45, party, 0, createCampaignProgress(), false, false, {
-    cardPacks: ['slayer_colorless', 'slayer_kratos', 'slayer_silent', 'slayer_colorless'],
+    cardPacks: ['slayer_colorless', 'slayer_nobody', 'slayer_silent', 'slayer_colorless'],
   })
   assertDeepEqual(run.meta.cardPacks, ['slayer_silent', 'slayer_colorless'])
 })
@@ -368,7 +368,7 @@ check('run logs keep the packs a run started with, and reject forged ones', () =
   const packed = createRun(47, [party[0]], 0, createCampaignProgress(), false, false, { cardPacks: ['slayer_ironclad'] })
   assert(validateRunLog(makeLog(packed)), 'a run with packs must replay')
   assert(validateRunLog(makeLog(createRun(47, [party[0]]))), 'an old log without packs stays valid')
-  for (const cardPacks of [['slayer_kratos'], ['slayer_ironclad', 'slayer_ironclad'], 'slayer_ironclad']) {
+  for (const cardPacks of [['slayer_nobody'], ['slayer_ironclad', 'slayer_ironclad'], 'slayer_ironclad']) {
     const forged = structuredClone(packed)
     forged.meta = { ...forged.meta, cardPacks }
     assertEqual(validateRunLog(makeLog(forged)), null, `${JSON.stringify(cardPacks)} must be refused`)

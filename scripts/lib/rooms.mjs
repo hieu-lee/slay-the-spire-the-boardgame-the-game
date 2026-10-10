@@ -16,10 +16,10 @@
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, truncateSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { mergeLeaderboardRuns, restoreLeaderboardRuns } from './leaderboard.mjs'
+import { isRemovedHeroRun, mergeLeaderboardRuns, restoreLeaderboardRuns } from './leaderboard.mjs'
 import { restoreMail } from './mail.mjs'
 import { classificationRecord, deckHash, HERO_NAMES, INITIAL_DECK_CLASSIFICATIONS, INITIAL_DECK_TYPES,
-  recordDeckClassification, statsDecks, validClassifierThreadId, validDeckType, validSoloDeck } from './stats.mjs'
+  isRemovedHero, isRemovedHeroDeckType, recordDeckClassification, statsDecks, validClassifierThreadId, validDeckType, validSoloDeck } from './stats.mjs'
 import {
   CAPS,
   CHARACTER_IDS,
@@ -175,6 +175,7 @@ import { cardIsCurse } from '../../src/game/cards.ts'
 import { abandonCardPlayWindows, finishCardPlayWindow } from '../../src/game/combat/play.ts'
 import { mandatoryCardPlayWindowOwners } from '../../src/game/combat/queries.ts'
 import { normalizeCardPacks } from '../../src/game/packs.ts'
+import { isSkinOf, validSkin } from '../../src/game/skins.ts'
 import { MAX_BOSS_AWARDS, catchUpAwardIndex } from '../../src/game/coins.ts'
 import { restoreCoinGrants } from './coin-grants.mjs'
 
@@ -228,7 +229,19 @@ function token(random = randomBytes) {
   return random(24).toString('base64url')
 }
 
+/**
+ * A saved room that seats a hero that no longer exists (Kratos was a character before he became
+ * a skin) cannot continue: the engine has no such hero. Recovery discards it instead of failing.
+ */
+function roomHasRemovedHero(room) {
+  const removed = (character) => typeof character === 'string' && !CHARACTERS.includes(character)
+  return room.seats.some((seat) => removed(seat?.character)) ||
+    Array.isArray(room.run?.players) && room.run.players.some((player) => removed(player?.character))
+}
+
 function normalizeLegacyPlayer(player) {
+  // Presentation only: a skin the hero cannot wear is dropped, never an error.
+  if (player.skin !== undefined && !isSkinOf(player.character, player.skin)) delete player.skin
   player.chamber = Array.isArray(player.chamber) ? player.chamber : []
   player.chamberSlots = Number.isSafeInteger(player.chamberSlots) ? player.chamberSlots
     : player.character === 'hermit' ? 2 : 0
@@ -320,7 +333,8 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
     }
     if (archive !== undefined && !Array.isArray(archive)) throw new Error('Leaderboard archive must be an array')
     const archivedRuns = restoreLeaderboardRuns(archive)
-    if (archive !== undefined && archivedRuns.length !== archive.length) throw new Error('Leaderboard archive has invalid runs')
+    if (archive !== undefined && archivedRuns.length !== archive.filter((run) => !isRemovedHeroRun(run)).length)
+      throw new Error('Leaderboard archive has invalid runs')
     const journal = readJournal(store, `${file}.leaderboard.log`)
     if (archive === undefined && existsSync(`${file}.leaderboard.log`)) throw new Error('Leaderboard archive is missing for its log')
     const archivedById = new Map(archivedRuns.map((run) => [run.id, run]))
@@ -328,6 +342,7 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
     for (const line of journal.split('\n')) {
       if (!line) continue
       const entry = JSON.parse(line)
+      if (isRemovedHeroRun(entry)) continue
       const [run] = restoreLeaderboardRuns([entry])
       if (!run) throw new Error('Leaderboard log contains an invalid run')
       archivedById.set(run.id, run)
@@ -353,6 +368,7 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
       if (error?.code !== 'ENOENT') throw error
     }
     if (statsState !== undefined) {
+      if (Array.isArray(statsState?.deckTypes)) statsState.deckTypes = statsState.deckTypes.filter((type) => !isRemovedHeroDeckType(type))
       if (!Array.isArray(statsState?.deckTypes) || statsState.deckTypes.some((type) => !validDeckType(type)) ||
           !Number.isSafeInteger(statsState.deckClassificationBudget?.day) ||
           !Number.isSafeInteger(statsState.deckClassificationBudget?.used) || statsState.deckClassificationBudget.used < 0 ||
@@ -382,6 +398,7 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
     for (const line of statsLog.split('\n')) {
       if (!line) continue
       const record = JSON.parse(line)
+      if (isRemovedHero(record?.hero)) continue
       if (typeof record?.id !== 'string' || !Object.hasOwn(HERO_NAMES, record.hero) || !/^[0-9a-f]{64}$/.test(record.hash) ||
           record.deckType !== undefined && !validDeckType(record.deckType) ||
           record.retry !== undefined && (!Number.isSafeInteger(record.retry?.after) || record.retry.after < 0 ||
@@ -410,7 +427,7 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
     if (Number.isSafeInteger(saved.coinsLaunchedAt) && saved.coinsLaunchedAt > 0) store.coinsLaunchedAt = saved.coinsLaunchedAt
     store.coinGrants = restoreCoinGrants(saved.coinGrants)
     for (const room of saved.rooms) {
-      if (typeof room?.code === 'string' && Array.isArray(room.seats) && room.campaignProgress) {
+      if (typeof room?.code === 'string' && Array.isArray(room.seats) && room.campaignProgress && !roomHasRemovedHero(room)) {
         const connectedAtSave = new Set(room.seats
           .filter((seat) => seat.connected !== false).map((seat) => seat.playerId))
         const seatIds = new Set(room.seats.map((seat) => seat.playerId))
@@ -422,9 +439,9 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
           store.reconnectQuorums.set(room.code, { playerIds: recoverySeats, expiresAt: Date.now() + restartReconnectMs })
         }
         room.seats = room.seats.map((seat) => {
-          const { cardPacks, ...rest } = seat
+          const { cardPacks, skin, ...rest } = seat
           const packs = normalizeCardPacks(cardPacks)
-          return { ...rest, ...(packs.length ? { cardPacks: packs } : {}), connected: false }
+          return { ...rest, ...(isSkinOf(seat.character, skin) ? { skin } : {}), ...(packs.length ? { cardPacks: packs } : {}), connected: false }
         })
         room.campaignProgress = parseCampaignProgress(room.campaignProgress)
         room.campaignBaseProgress = parseCampaignProgress(room.campaignBaseProgress, room.campaignProgress)
@@ -672,6 +689,8 @@ function seatPublic(seat) {
     playerId: seat.playerId,
     name: seat.name,
     character: seat.character,
+    // Public to the whole table: every seat sees how the others look.
+    ...(seat.skin ? { skin: seat.skin } : {}),
     connected: seat.connected,
     // Which Shop packs this player brings, so the lobby can say whose they are.
     ...(seat.cardPacks?.length ? { cardPacks: [...seat.cardPacks] } : {}),
@@ -730,7 +749,7 @@ function includeSeatUnlocks(room) {
   }
 }
 
-export function joinRoom(room, { name, character, campaignProgress, cardPacks, token: existing, random, connected = true, settle = true } = {}) {
+export function joinRoom(room, { name, character, skin, campaignProgress, cardPacks, token: existing, random, connected = true, settle = true } = {}) {
   const returning = findSeat(room, existing)
   if (returning) {
     const nextName = name ? String(name).slice(0, 24) : returning.name
@@ -738,12 +757,15 @@ export function joinRoom(room, { name, character, campaignProgress, cardPacks, t
     // A seat that reports no list keeps the packs it reported before.
     const nextPacks = cardPacks === undefined ? returning.cardPacks ?? [] : normalizeCardPacks(cardPacks)
     if (room.phase !== 'lobby' && nextName !== returning.name) fail('Names are locked once the run starts')
+    // A lobby seat may change how it looks; `null` clears it. Once the run starts the look is frozen.
+    const nextSkin = skin !== undefined && room.phase === 'lobby' ? validSkin(returning.character, skin) : returning.skin
+    const skinChanged = nextSkin !== returning.skin
     const connectionChanged = returning.connected !== connected
     const unlocksChanged = JSON.stringify(nextUnlocks) !== JSON.stringify(returning.campaignUnlocks)
     const packsChanged = JSON.stringify(nextPacks) !== JSON.stringify(returning.cardPacks ?? [])
-    if (!connectionChanged && nextName === returning.name && !unlocksChanged && !packsChanged) return returning
+    if (!connectionChanged && nextName === returning.name && !unlocksChanged && !packsChanged && !skinChanged) return returning
     if (returning.pendingCatchUp && connected) {
-      const next = beginCatchUp(room.run, [{ id: returning.playerId, name: nextName, character: returning.character }])
+      const next = beginCatchUp(room.run, [{ id: returning.playerId, name: nextName, character: returning.character, skin: returning.skin }])
       if (next === room.run) fail('That player cannot Catch Up now')
       room.run = next
       delete returning.pendingCatchUp
@@ -751,6 +773,8 @@ export function joinRoom(room, { name, character, campaignProgress, cardPacks, t
     }
     returning.connected = connected
     returning.name = nextName
+    if (nextSkin) returning.skin = nextSkin
+    else delete returning.skin
     if (connectionChanged && connected) reopenAutoReadyStartTurn(room, returning.playerId)
     if (nextUnlocks) returning.campaignUnlocks = nextUnlocks
     if (nextPacks.length) returning.cardPacks = nextPacks
@@ -790,6 +814,7 @@ export function joinRoom(room, { name, character, campaignProgress, cardPacks, t
     playerId: ['p1', 'p2', 'p3', 'p4'].find((id) => !room.seats.some((other) => other.playerId === id)),
     name: String(name ?? `Player ${room.seats.length + 1}`).slice(0, 24),
     character: pick,
+    ...(validSkin(pick, skin) ? { skin: validSkin(pick, skin) } : {}),
     ...(campaignProgress === undefined ? {} : { campaignUnlocks: campaignUnlocks(campaignProgress) }),
     ...(normalizeCardPacks(cardPacks).length ? { cardPacks: normalizeCardPacks(cardPacks) } : {}),
     token: token(random),
@@ -799,7 +824,7 @@ export function joinRoom(room, { name, character, campaignProgress, cardPacks, t
   room.seats.push(seat)
   if (room.phase === 'lobby') includeSeatUnlocks(room)
   if (catchingUp && connected) {
-    const next = beginCatchUp(room.run, [{ id: seat.playerId, name: seat.name, character: seat.character }])
+    const next = beginCatchUp(room.run, [{ id: seat.playerId, name: seat.name, character: seat.character, skin: seat.skin }])
     if (next === room.run) {
       room.seats.pop()
       fail('That player cannot Catch Up now')
@@ -810,7 +835,7 @@ export function joinRoom(room, { name, character, campaignProgress, cardPacks, t
   return seat
 }
 
-export function chooseCharacter(room, seatToken, character) {
+export function chooseCharacter(room, seatToken, character, skin) {
   const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'lobby') fail('Characters are locked once the run starts')
   if (!CHARACTERS.includes(character)) fail(`Unknown character: ${character}`)
@@ -818,6 +843,10 @@ export function chooseCharacter(room, seatToken, character) {
     fail(`${character} is already taken`)
   }
   seat.character = character
+  // The skin is part of the choice: one that does not belong to the new hero is cleared, not kept.
+  const worn = validSkin(character, skin)
+  if (worn) seat.skin = worn
+  else delete seat.skin
   room.version += 1
   return snapshotFor(room, seatToken)
 }
@@ -1570,6 +1599,7 @@ export function startRun(room, seatToken, { seed, campaign } = {}) {
     id: seat.playerId,
     name: seat.name,
     character: seat.character,
+    skin: seat.skin,
   }))
   if (!Number.isInteger(room.ascension) || room.ascension < 0 || room.ascension > room.campaignProgress.highestAscension) {
     fail('That Ascension is not unlocked')
@@ -6114,6 +6144,7 @@ function redactPlayer(player, viewerId) {
     id: player.id,
     name: player.name,
     character: player.character,
+    ...(isSkinOf(player.character, player.skin) ? { skin: player.skin } : {}),
     row: player.row,
     hp: player.hp,
     maxHp: player.maxHp,

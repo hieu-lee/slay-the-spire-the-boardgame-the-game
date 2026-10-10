@@ -5,6 +5,7 @@ import { assetPath } from '../game/assets.ts'
 import rigMetadata from './rig-animation-metadata.json' with { type: 'json' }
 import { POTIONS } from '../game/relics.ts'
 import type { CombatState, TurnEffectPresentation } from '../game/combat/types.ts'
+import type { SkinId } from '../game/skins.ts'
 import type { CardType, CharacterId, OrbType, Enemy } from '../game/types.ts'
 
 export type VfxFamily =
@@ -302,7 +303,7 @@ const POTION_RECIPES: Readonly<Record<string, VfxRecipe>> = {
   whale_ale: recipe('buff', 'drink', 'potion-burst', 'whale-navy'),
 }
 
-const actorAttack: Record<CharacterId, VfxRecipe> = {
+const actorAttack: Record<CharacterId | SkinId, VfxRecipe> = {
   ironclad: recipe('blunt', 'lunge', 'ironclad-strike', 'ember-orange'),
   silent: recipe('slash', 'lunge', 'silent-shiv', 'steel-green'),
   defect: recipe('projectile', 'cast', 'magic-burst', 'voltaic-blue'),
@@ -314,7 +315,7 @@ const actorAttack: Record<CharacterId, VfxRecipe> = {
   kratos: recipe('slash', 'lunge', 'kratos/impact', 'ember-orange'),
 }
 
-const actorTone: Record<CharacterId, string> = {
+const actorTone: Record<CharacterId | SkinId, string> = {
   ironclad: 'ember-orange', silent: 'venom-green', defect: 'voltaic-blue', watcher: 'astral-violet',
   slime_boss: 'chaos-green', guardian: 'guard-blue', hexaghost: 'chaos-green', hermit: 'impact-ochre',
   kratos: 'ember-orange',
@@ -331,7 +332,7 @@ function allEffects(def: CardDef, mode?: number): Effect[] {
   ]
 }
 
-function fallbackRecipe(character: CharacterId, def: CardDef, mode?: number, resolvedType = def.type): VfxRecipe {
+function fallbackRecipe(character: CharacterId | SkinId, def: CardDef, mode?: number, resolvedType = def.type): VfxRecipe {
   const effects = allEffects(def, mode)
   const has = (...kinds: Effect['kind'][]) => effects.some((effect) => kinds.includes(effect.kind))
 
@@ -373,8 +374,9 @@ function fallbackRecipe(character: CharacterId, def: CardDef, mode?: number, res
 }
 
 /** Resolve a card ID (optionally suffixed with `+`) against the acting character and chosen mode. */
+/** `character` is the visual id: a worn skin's id, else the character's. */
 export function cardVfxRecipe(
-  character: CharacterId,
+  character: CharacterId | SkinId,
   cardId: string,
   mode?: number,
   upgraded = cardId.endsWith('+'),

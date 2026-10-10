@@ -70,6 +70,12 @@ try {
   check('a corrupt checkpoint is ignored', () => assertEqual(corruptResumeCount, 0))
   await page.evaluate(() => localStorage.removeItem('sts-solo-run'))
 
+  // The account wears the Kratos skin on Ironclad: the run freezes it and Resume must give it back.
+  // (The wallet owns it: only a bought skin can be worn.)
+  await page.evaluate(() => {
+    localStorage.setItem('sts-wallet:testplayer', JSON.stringify({ version: 1, coins: 0, packs: [], skins: ['kratos'], addPacksToRuns: true, credited: {} }))
+    localStorage.setItem('sts-skins:testplayer', JSON.stringify({ ironclad: 'kratos' }))
+  })
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
   await page.getByRole('button', { name: 'Standard', exact: true }).click()
   await page.getByRole('button', { name: 'Embark' }).click()
@@ -159,6 +165,13 @@ try {
     assertDeepEqual(firstMenuActions, ['Resume', 'Single Player'])
     assertEqual(resumedCombatSnapshot, combatSnapshot)
   })
+  check('a skinned run keeps its skin in the checkpoint and after Resume', () => {
+    const [saved, resumed] = [JSON.parse(validCheckpoint).run, JSON.parse(resumedCombatSnapshot)]
+    assertEqual(saved.players[0].character, 'ironclad')
+    assertEqual(saved.players[0].skin, 'kratos')
+    assertEqual(resumed.players[0].skin, 'kratos')
+    assertEqual(resumed.combat.players[0].skin, 'kratos')
+  })
 
   // Recorded attacks are history on Resume, not a fresh queue of Hermit volleys.
   await page.evaluate(() => {
@@ -166,8 +179,10 @@ try {
     const combat = run.combat
     run.players[0].character = 'hermit'
     run.players[0].name = 'Hermit'
+    delete run.players[0].skin
     combat.players[0].character = 'hermit'
     combat.players[0].name = 'Hermit'
+    delete combat.players[0].skin
     combat.presentationEvents = [1, 2, 3].map((seq) => ({
       seq, kind: 'card', actorId: combat.players[0].id, sourceId: 'hermit_strike',
       enemyIds: [combat.enemies[0].uid], playerIds: [], upgraded: false, copied: false, energy: 1,

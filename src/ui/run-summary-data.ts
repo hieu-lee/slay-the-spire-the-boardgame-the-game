@@ -16,7 +16,6 @@ export const CHARACTER_LABEL: Record<string, string> = {
   guardian: 'Guardian',
   hexaghost: 'Hexaghost',
   hermit: 'Hermit',
-  kratos: 'Kratos',
 }
 
 /** The seat as the summary needs it, so the online shell can pass a redacted one. */

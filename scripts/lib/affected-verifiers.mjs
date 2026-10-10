@@ -15,12 +15,24 @@ const localRoots = [
   'RewardScreen', 'StartMenu',
 ].map((name) => `src/ui/${name}.tsx`)
 const onlineUi = /^(src\/multiplayer\/|src\/ui\/Online)/
+// A Map built from a literal silently keeps the later of two equal keys, which drops the earlier owners.
+export function ownerMap(entries) {
+  const map = new Map()
+  for (const [file, owners] of entries) {
+    if (map.has(file)) throw new Error(`Duplicate verifier owner entry for ${file}`)
+    map.set(file, owners)
+  }
+  return map
+}
 // Focused browser suites often enter through the public run barrel, which is
 // too broad for dependency inference. Keep the few domain owners explicit so
 // an engine helper change does not launch the entire visual matrix.
-const focusedEngineOwners = new Map([
-  ['src/game/types.ts', ['verify-kratos-release-browser.mjs']],
-  ['src/game/assets.ts', ['verify-campfire-assets-browser.mjs']],
+const focusedEngineOwners = ownerMap([
+  ['src/game/types.ts', ['verify-skins.mjs']],
+  ['src/game/skins.ts', ['verify-skins.mjs', 'verify-skin-browser.mjs']],
+  ['src/skin-preference.ts', ['verify-skins.mjs', 'verify-wallet.mjs', 'verify-skin-browser.mjs', 'verify-skin-profile-browser.mjs', 'verify-shop-browser.mjs']],
+  ['src/game/assets.ts', ['verify-campfire-assets-browser.mjs', 'verify-skins.mjs', 'verify-skin-cards-browser.mjs']],
+  ['src/game/skin-card-faces.ts', ['verify-assets.mjs', 'verify-skin-cards-browser.mjs']],
   ['src/game/guardian-gems.ts', ['verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs']],
   ['src/game/run/guardian-gems.ts', ['verify-boon-socket-browser.mjs', 'verify-loot-browser.mjs']],
   ['src/game/acquisition.ts', ['verify-courier-browser.mjs']],
@@ -39,13 +51,18 @@ const focusedEngineOwners = new Map([
   ['src/game/run/relic-acquisition.ts', ['verify-tiny-house-browser.mjs']],
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
-const focusedUiOwners = new Map([
+const focusedUiOwners = ownerMap([
   ['src/ui/App.tsx', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-courier-browser.mjs',
-    'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-enemy-hover-browser.mjs', 'verify-kratos-release-browser.mjs']],
+    'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-enemy-hover-browser.mjs', 'verify-skin-browser.mjs']],
   ['src/ui/CampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
-  ['src/ui/CompendiumScreen.tsx', ['verify-compendium-browser.mjs', 'verify-kratos-release-browser.mjs']],
-  ['src/ui/StatsScreen.tsx', ['verify-stats-browser.mjs', 'verify-kratos-release-browser.mjs']],
-  ['src/ui/LeaderboardScreen.tsx', ['verify-leaderboard-browser.mjs', 'verify-kratos-release-browser.mjs']],
+  ['src/ui/CompendiumScreen.tsx', ['verify-compendium-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs']],
+  ['src/ui/StatsScreen.tsx', ['verify-stats-browser.mjs', 'verify-skin-cards-browser.mjs']],
+  ['src/ui/skin-context.tsx', ['verify-skin-cards-browser.mjs', 'verify-card-rendering-browser.mjs']],
+  ['src/ui/Card.tsx', ['verify-card-rendering-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-card-damage-preview-browser.mjs']],
+  ['src/ui/CardFace.tsx', ['verify-card-rendering-browser.mjs', 'verify-skin-cards-browser.mjs']],
+  ['src/ui/ShopScreen.tsx', ['verify-shop-browser.mjs', 'verify-wallet-sync-browser.mjs', 'verify-skin-cards-browser.mjs']],
+  ['src/ui/styles/shop.css', ['verify-shop-browser.mjs']],
+  ['src/ui/LeaderboardScreen.tsx', ['verify-leaderboard-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
     'verify-start-turn-resync-browser.mjs',
     'verify-die-relic-browser.mjs',
@@ -53,9 +70,9 @@ const focusedUiOwners = new Map([
     'verify-hermit-online-staged-trigger-browser.mjs', 'verify-combat-layout-reload-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-turn-targets-browser.mjs', 'verify-elite-signatures-browser.mjs',
     'verify-hero-potions-browser.mjs', 'verify-end-turn-drag-browser.mjs', 'verify-card-damage-preview-browser.mjs',
+    'verify-skin-browser.mjs',
   ]],
   ['src/ui/EnemyCard.tsx', ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs']],
-  ['src/ui/Card.tsx', ['verify-card-damage-preview-browser.mjs']],
   ['src/ui/combat-screen/hooks.ts', ['verify-card-damage-preview-browser.mjs']],
   ['src/ui/SettingsDialog.tsx', ['verify-card-damage-preview-browser.mjs']],
   ['src/ui/game-settings.ts', ['verify-card-damage-preview-browser.mjs']],
@@ -74,11 +91,13 @@ const focusedUiOwners = new Map([
   ['src/ui/chrome/room-stages.css', ['verify-event-panels-browser.mjs']],
   ['src/ui/styles/non-combat-rooms.css', ['verify-event-panels-browser.mjs']],
   ['src/ui/chrome/mailbox.css', ['verify-mail-browser.mjs']],
-  ['src/multiplayer/useRoomSession.ts', ['verify-combat-layout-reload-browser.mjs', 'verify-kratos-release-browser.mjs', 'verify-start-turn-resync-browser.mjs']],
+  ['src/multiplayer/useRoomSession.ts', ['verify-combat-layout-reload-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-start-turn-resync-browser.mjs']],
   ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
-  ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs', 'verify-kratos-release-browser.mjs', 'verify-start-turn-resync-browser.mjs']],
+  ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-start-turn-resync-browser.mjs']],
   ['src/ui/OnlineCampfireScreen.tsx', ['verify-campfire-assets-browser.mjs']],
-  ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-kratos-release-browser.mjs']],
+  ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-skin-browser.mjs']],
+  ['src/ui/ProfileScreen.tsx', ['verify-skin-profile-browser.mjs', 'verify-account-browser.mjs', 'verify-wallet-sync-browser.mjs']],
+  ['src/ui/styles/profile.css', ['verify-skin-profile-browser.mjs', 'verify-account-browser.mjs']],
   ['src/ui/sfx.ts', ['verify-run-replay-browser.mjs']],
   ['src/ui/useCampfireScene.ts', ['verify-campfire-assets-browser.mjs']],
   ['src/ui/combat-screen/HermitTriggerChoice.tsx', [
@@ -95,11 +114,10 @@ const focusedUiOwners = new Map([
   ['src/ui/styles/stage-scale.css', ['verify-combat-layout-reload-browser.mjs', 'verify-elite-intent-browser.mjs', 'verify-hero-potions-browser.mjs']],
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
-const focusedOnlyUiOwners = new Map([
+const focusedOnlyUiOwners = ownerMap([
   ['scripts/audio/generate-combat-sfx.py', ['verify-assets.mjs', 'verify-safari-sound-browser.mjs', 'verify-rig-animation-browser.mjs']],
   ['scripts/lib/kratos-animation-fixture.mjs', ['verify-kratos-animation-browser.mjs']],
-  ['scripts/art/export-kratos.py', ['verify-assets.mjs', 'verify-kratos-card-art-browser.mjs']],
-  ['scripts/art/export-kratos-card-faces.py', ['verify-assets.mjs', 'verify-kratos-card-art-browser.mjs']],
+  ['scripts/art/export-kratos-menu.py', ['verify-assets.mjs', 'verify-skin-browser.mjs']],
   ['scripts/art/export-kratos-noncombat.py', ['verify-assets.mjs', 'verify-art-scenes-browser.mjs', 'verify-merchant-overflow-browser.mjs', 'verify-treasure-animation-browser.mjs']],
   ['scripts/calibrate-hero-head.py', ['verify-hero-potions-browser.mjs', 'verify-assets.mjs']],
   ['scripts/animation/encode-safari-attacks.py', ['verify-assets.mjs', 'verify-rig-animation-browser.mjs']],
@@ -122,8 +140,6 @@ const focusedOnlyUiOwners = new Map([
   ...['src/ui/ReplayBar.tsx', 'src/ui/run-replay.ts', 'src/ui/styles/replay-bar.css']
     .map((file) => [file, ['verify-replay-controls-browser.mjs']]),
   ['src/ui/styles/powers-in-play.css', ['verify-power-hover-browser.mjs']],
-  ...['src/ui/combat-screen/RageMeter.tsx', 'src/ui/styles/rage-meter.css']
-    .map((file) => [file, ['verify-rage-meter-browser.mjs']]),
 ])
 const sourceExtensions = ['', '.ts', '.tsx', '.mjs', '.js']
 const sharedBrowserOwners = ['verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs']
@@ -305,16 +321,23 @@ export function affectedVerifiers(root, changedFiles, scripts) {
       }
       covered ||= browserCovered
     }
-    if (file.startsWith('scripts/art/sources/kratos/') || file.startsWith('scripts/art/sources/kratos-card-faces/')) {
+    if (file.startsWith('scripts/art/sources/kratos/') || file.startsWith('scripts/art/sources/kratos-skin-cards/')
+      || file.startsWith('scripts/art/skin-cards/')) {
       selected.add('verify-assets.mjs')
-      selected.add('verify-kratos-card-art-browser.mjs')
+      selected.add('verify-skin-browser.mjs')
+      selected.add('verify-skin-cards-browser.mjs')
       covered = true
     }
     if (file.startsWith('scripts/art/sources/kratos-noncombat/')) {
       for (const script of ['verify-assets.mjs', 'verify-art-scenes-browser.mjs', 'verify-merchant-overflow-browser.mjs', 'verify-treasure-animation-browser.mjs']) selected.add(script)
       covered = true
     }
-    if (file.startsWith('public/assets/')) {
+    if (/^public\/assets\/skin-card(s|s-sm|-art)\//.test(file) || file.startsWith('docs/skins/kratos-card-art/')
+      || file === 'scripts/sync-skin-card-faces.mjs') {
+      selected.add('verify-assets.mjs')
+      selected.add('verify-skin-cards-browser.mjs')
+      covered = true
+    } else if (file.startsWith('public/assets/')) {
       selected.add('verify-assets.mjs')
       const owners = file.startsWith('public/assets/noncombat/')
         ? ['verify-noncombat-browser.mjs', 'verify-online-browser.mjs']

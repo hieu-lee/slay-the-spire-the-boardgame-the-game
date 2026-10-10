@@ -13951,7 +13951,7 @@ suite('Shop card packs at the table')
 
 check('a room plays every pack any seated player bought, recomputed while in the lobby', () => {
   const room = createRoom(createStore(), { code: 'PACKSA' })
-  const ann = joinRoom(room, { name: 'Ann', character: 'ironclad', cardPacks: ['slayer_silent', 'slayer_kratos', 'slayer_silent'] })
+  const ann = joinRoom(room, { name: 'Ann', character: 'ironclad', cardPacks: ['slayer_silent', 'slayer_nobody', 'slayer_silent'] })
   const bo = joinRoom(room, { name: 'Bo', character: 'silent', cardPacks: ['slayer_ironclad'] })
   const cy = joinRoom(room, { name: 'Cy', character: 'defect' })
   const view = snapshotFor(room, cy.token)
@@ -14038,7 +14038,7 @@ check('seat packs and the run\'s packs survive a restart, and forged ones are dr
   const ann = joinRoom(room, { name: 'Ann', character: 'ironclad', cardPacks: ['slayer_watcher'] })
   joinRoom(room, { name: 'Bo', character: 'silent' })
   const lobby = structuredClone(room)
-  lobby.seats[1].cardPacks = ['slayer_kratos', 'slayer_defect', 'slayer_defect']
+  lobby.seats[1].cardPacks = ['slayer_nobody', 'slayer_defect', 'slayer_defect']
   startRun(room, ann.token, { seed: 13 })
   const running = structuredClone(room)
   running.code = 'PACKSF'
@@ -14128,6 +14128,82 @@ check('a seat away for several recorded runs still claims every one of them', ()
   assertEqual(new Set(claims.map((recorded) => recorded.runId)).size, 2)
   for (let seed = 40; seed < 52; seed += 1) playAndRecord(seed, 1)
   assertEqual(room.recordedRuns.length, 8, 'the room keeps only its most recent recorded runs')
+})
+
+check('a seat\'s skin is validated, published to every seat, cleared with its hero and kept through the run', () => {
+  const room = createRoom(createStore(), { code: 'SKINSX' })
+  const ann = joinRoom(room, { name: 'Ann', character: 'ironclad', skin: 'kratos' })
+  const bo = joinRoom(room, { name: 'Bo', character: 'silent', skin: 'kratos' })
+  const cy = joinRoom(room, { name: 'Cy', character: 'defect', skin: 'not-a-skin' })
+  assertEqual(ann.skin, 'kratos')
+  assert(!('skin' in bo), 'a skin Silent cannot wear is not stored')
+  assert(!('skin' in cy), 'an unknown skin is not stored')
+  for (const viewer of [ann, bo, cy]) {
+    const seats = snapshotFor(room, viewer.token).seats
+    assertEqual(seats.find((seat) => seat.playerId === ann.playerId).skin, 'kratos', 'every seat sees Ann\'s skin')
+    assert(seats.filter((seat) => seat.playerId !== ann.playerId).every((seat) => !('skin' in seat)))
+  }
+  assertEqual(snapshotFor(room, ann.token).you.skin, 'kratos')
+  // Switching to a hero without the skin clears it; switching back with the skin sets it again.
+  chooseCharacter(room, ann.token, 'watcher', 'kratos')
+  assert(!('skin' in ann), 'Watcher cannot wear Kratos')
+  chooseCharacter(room, ann.token, 'ironclad')
+  assert(!('skin' in ann), 'choosing a hero without naming a skin leaves the default look')
+  const version = room.version
+  chooseCharacter(room, ann.token, 'ironclad', 'kratos')
+  assertEqual(ann.skin, 'kratos')
+  assert(room.version > version, 'a skin change reaches every client')
+  // A lobby seat that reconnects with a new choice changes it; null clears it.
+  joinRoom(room, { token: ann.token, skin: null })
+  assert(!('skin' in ann))
+  joinRoom(room, { token: ann.token, skin: 'kratos' })
+  assertEqual(ann.skin, 'kratos')
+  markDisconnected(room, ann.token)
+  joinRoom(room, { token: ann.token })
+  assertEqual(ann.skin, 'kratos', 'reconnecting without a choice keeps the skin')
+  startRun(room, ann.token, { seed: 77 })
+  assertEqual(room.run.players.find((player) => player.id === ann.playerId).skin, 'kratos', 'the run is created with the skin')
+  assert(room.run.players.filter((player) => player.id !== ann.playerId).every((player) => !('skin' in player)))
+  for (const viewer of [ann, bo, cy]) {
+    const players = snapshotFor(room, viewer.token).run.players
+    assertEqual(players.find((player) => player.id === ann.playerId).skin, 'kratos', 'every seat\'s run snapshot shows the skin')
+    assert(players.filter((player) => player.id !== ann.playerId).every((player) => !('skin' in player)))
+  }
+  // Once the run has started the look is frozen, whatever a reconnect claims.
+  joinRoom(room, { token: ann.token, skin: null })
+  assertEqual(ann.skin, 'kratos')
+  assertEqual(room.run.players.find((player) => player.id === ann.playerId).skin, 'kratos')
+  // The skin is public presentation: the redacted run still hides every secret.
+  assert(!JSON.stringify(snapshotFor(room, bo.token).run.players.find((player) => player.id === ann.playerId)).includes('rareRewards'))
+})
+
+check('a skinned seat that joins for Catch Up wears its skin in the run', () => {
+  const room = createRoom(createStore(), { code: 'SKINCU' })
+  const leader = joinRoom(room, { name: 'Ann', character: 'silent' })
+  startRun(room, leader.token, { seed: 915 })
+  finishNeow(room)
+  room.run.act = 2
+  room.run.map = { ...room.run.map, act: 2, position: null }
+  const newcomer = joinRoom(room, { name: 'Bo', character: 'ironclad', skin: 'kratos' })
+  assertEqual(room.run.players.find((player) => player.id === newcomer.playerId).skin, 'kratos')
+  assertEqual(snapshotFor(room, leader.token).run.players.find((player) => player.id === newcomer.playerId).skin, 'kratos')
+})
+
+check('a skinned seat reserved for Catch Up and connected later wears its skin in the run', () => {
+  const room = createRoom(createStore(), { code: 'SKINRC' })
+  const leader = joinRoom(room, { name: 'Ann', character: 'silent' })
+  startRun(room, leader.token, { seed: 916 })
+  finishNeow(room)
+  room.run.act = 2
+  room.run.map = { ...room.run.map, act: 2, position: null }
+  const reserved = joinRoom(room, { name: 'Bo', character: 'ironclad', skin: 'kratos', connected: false })
+  assertEqual(reserved.pendingCatchUp, true)
+  assertEqual(reserved.skin, 'kratos', 'the reservation keeps the skin')
+  assert(!room.run.players.some((player) => player.id === reserved.playerId), 'the reservation is not in the run yet')
+  // The real server flow: the WebSocket then authenticates with the token alone, naming no skin.
+  joinRoom(room, { token: reserved.token, connected: true })
+  assertEqual(room.run.players.find((player) => player.id === reserved.playerId).skin, 'kratos')
+  assertEqual(snapshotFor(room, leader.token).run.players.find((player) => player.id === reserved.playerId).skin, 'kratos')
 })
 
 report('co-op rooms')

@@ -1,7 +1,7 @@
 // The Shop in a real browser, on desktop and a horizontal phone: the coin purse
 // on the main menu, the Card Packs shelf (owned, affordable and short states),
 // the confirm-and-celebrate purchase, browsing a pack's cards at full size, the
-// Skins teaser, keyboard use, and the wallet that boss victories fill — once,
+// Skins tab (buying the Kratos skin, wearing it, locked racks), keyboard use, and the wallet that boss victories fill — once,
 // and never from a replay or the tutorial. Screenshots land in artifacts/shop/.
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
@@ -11,7 +11,7 @@ import { createServer } from 'vite'
 import { chromium } from './lib/profile-browser.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { joinRoom } from './lib/rooms.mjs'
-import { CARD_PACK_PRICE } from '../src/game/coins.ts'
+import { CARD_PACK_PRICE, SKIN_PRICE } from '../src/game/coins.ts'
 import { CARD_PACK_IDS, CARD_PACKS } from '../src/game/packs.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -30,7 +30,8 @@ const url = `http://127.0.0.1:${address.port}`
 const browser = await chromium.launch()
 const price = CARD_PACK_PRICE.toLocaleString('en-US')
 
-const wallet = (coins, packs = [], extra = {}) => ({ version: 1, coins, packs, addPacksToRuns: true, credited: {}, ...extra })
+const wallet = (coins, packs = [], extra = {}) => ({ version: 1, coins, packs, skins: [], addPacksToRuns: true, credited: {}, ...extra })
+const storedSkins = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('sts-skins:testplayer') ?? 'null'))
 // The test profile is signed in, so its wallet lives under its account's key (seeded
 // anonymously below, then adopted by the account on first read).
 const storedWallet = (page) => page.evaluate(async () => {
@@ -233,7 +234,7 @@ try {
     assert(shelf.height <= 1 && shelf.width <= 1, `${screen}: the pack shelf scrolls: ${JSON.stringify(shelf)}`)
     if (phone) {
       const short = await page.locator('.shop-button, .shop__tab, .shop__back').evaluateAll((controls, factor) =>
-        controls.filter((control) => control.getBoundingClientRect().height * factor < 22).map((control) => control.textContent), scale)
+        controls.filter((control) => control.getClientRects().length && control.getBoundingClientRect().height * factor < 22).map((control) => control.textContent), scale)
       assert.deepEqual(short, [], `${screen}: Shop controls too short to tap`)
     }
     await paintedShot(page, `${screen}-packs.png`)
@@ -301,18 +302,24 @@ try {
     await browse.waitFor({ state: 'detached' })
     assert(await page.locator('.shop').isVisible())
 
-    // Skins: a locked showcase, reached from the keyboard, with nothing to press.
+    // Skins, reached from the keyboard: the Kratos offer is out of reach with the coins left after a pack, and the
+    // heroes without a skin keep locked racks.
     await page.getByRole('tab', { name: /^Card Packs/ }).focus()
     await page.keyboard.press('ArrowDown')
     const skinsTab = page.getByRole('tab', { name: /^Skins/ })
     assert.equal(await skinsTab.getAttribute('aria-selected'), 'true')
     assert(await skinsTab.evaluate((tab) => tab === document.activeElement), 'arrow keys move focus with the tab')
     const skins = page.getByRole('tabpanel', { name: /Skins/ })
-    await skins.getByText('Coming soon').waitFor()
-    assert.equal(await skins.getByRole('listitem').count(), 4)
-    assert.match(await skins.getByRole('listitem').first().getAttribute('aria-label'), /coming soon/)
-    assert.equal(await skins.locator('button, a, input').count(), 0, 'the Skins teaser must not offer anything to buy')
-    await settledImages(page, '.shop-skin img')
+    assert.equal(await skins.getByRole('listitem').count(), 4, `${screen}: Kratos and three locked racks`)
+    assert.equal(await skins.getByText('Coming soon').count(), 3)
+    assert.deepEqual(await skins.locator('.shop-skin--locked').evaluateAll((racks) => racks.map((rack) => rack.getAttribute('aria-label'))),
+      ['Silent skin, coming soon', 'Defect skin, coming soon', 'Watcher skin, coming soon'])
+    assert.equal(await skins.locator('.shop-skin--locked button, .shop-skin--locked a').count(), 0, 'a locked rack must offer nothing')
+    const short = skins.getByRole('button', { name: `Not enough coins for the Kratos skin, ${SKIN_PRICE.toLocaleString('en-US')} coins: need ${(SKIN_PRICE - (1000 - CARD_PACK_PRICE)).toLocaleString('en-US')} more` })
+    assert(await short.isDisabled(), `${screen}: Kratos is not for sale below its price`)
+    assert.match(await short.innerText(), /2,500/)
+    await settledImages(page, '.shop-skin__portrait')
+    await assertUnclipped(page, '.shop-skin, .shop-skin h3, .shop-button', `${screen} skins`)
     await paintedShot(page, `${screen}-skins.png`)
 
     // Escape with no dialog open returns to the main menu, whose purse caught up.
@@ -322,6 +329,145 @@ try {
     assert.deepEqual(errors, [], `${screen}: page errors`)
     await context.close()
     console.log(`${screen}: Shop shelf, purchase, browse and skins verified`)
+  }
+
+  // Buying the Kratos skin: confirm, spend 2,500 coins, own and wear it at once; wear it on and off; it survives a reload.
+  for (const [screen, viewport, phone] of [
+    ['desktop-1366x650', { width: 1366, height: 650 }, false],
+    ['desktop-1280x643', { width: 1280, height: 643 }, false],
+    ['desktop-1440', { width: 1440, height: 900 }, false],
+    ['landscape-phone', { width: 844, height: 390 }, true],
+    ['landscape-phone-932', { width: 932, height: 430 }, true],
+  ]) {
+    const { context, page, errors } = await open(viewport, phone, wallet(SKIN_PRICE + 300))
+    const press = (locator) => phone ? locator.tap() : locator.click()
+    await page.getByRole('button', { name: 'Shop', exact: true }).click()
+    await press(page.getByRole('tab', { name: /^Skins/ }))
+    const rack = page.locator('.shop-skin[data-skin="kratos"]')
+    await rack.waitFor()
+    await settledImages(page, '.shop-skin__portrait')
+    assert.match(await rack.locator('.shop-skin__portrait').evaluate((image) => image.currentSrc), /portrait-kratos\.png$/)
+    assert.equal(await rack.locator('h3').innerText().then((text) => text.replace(/\s+/g, ' ')), 'Kratos Ironclad')
+    assert.equal(await rack.getAttribute('data-owned'), null)
+    const buy = rack.getByRole('button', { name: `Buy the Kratos skin, ${SKIN_PRICE.toLocaleString('en-US')} coins` })
+    assert(await buy.isEnabled(), `${screen}: the price is covered`)
+    await assertUnclipped(page, '.shop-skin, .shop-skin h3, .shop-button', `${screen} skins`)
+    await paintedShot(page, `${screen}-skins-offer.png`)
+    await press(buy)
+    const dialog = page.getByRole('dialog', { name: 'Buy the Kratos skin?' })
+    await dialog.waitFor()
+    await settledImages(page, '.shop-confirm__portrait')
+    assert.match(await dialog.innerText(), /2,800[\s\S]*after buying[\s\S]*300/, `${screen}: the dialog shows the balance before and after`)
+    await assertUnclipped(page, '.shop-confirm__panel, .shop-confirm .shop-button', `${screen} skin confirm`)
+    await page.screenshot({ path: join(output, `${screen}-skin-confirm.png`) })
+    // Cancelling spends nothing.
+    await press(dialog.getByRole('button', { name: 'Cancel' }))
+    await dialog.waitFor({ state: 'detached' })
+    assert.deepEqual((await storedWallet(page)).skins, [])
+    assert.equal((await storedWallet(page)).coins, SKIN_PRICE + 300)
+    assert.equal(await storedSkins(page), null, `${screen}: nothing is worn before a purchase`)
+    await press(buy)
+    await dialog.waitFor()
+    await press(dialog.locator('.shop-button--buy'))
+    const unlocked = page.getByRole('dialog', { name: 'Kratos skin unlocked' })
+    await unlocked.waitFor()
+    await settledAnimations(unlocked)
+    await assertUnclipped(page, '.shop-confirm__panel, .shop-confirm .shop-button', `${screen} skin unlocked`)
+    await page.screenshot({ path: join(output, `${screen}-skin-unlocked.png`) })
+    const after = await storedWallet(page)
+    assert.deepEqual(after.skins, ['kratos'])
+    assert.equal(after.coins, 300, `${screen}: exactly 2,500 coins were spent`)
+    assert.deepEqual(after.packs, [], 'a skin purchase touched the packs')
+    assert.deepEqual(await storedSkins(page), { ironclad: 'kratos' }, `${screen}: a bought skin is worn at once`)
+    assert.equal(await unlocked.getByRole('button', { name: 'Browse' }).count(), 0, 'a skin has no pack to browse')
+    await press(unlocked.getByRole('button', { name: 'Done' }))
+    await unlocked.waitFor({ state: 'detached' })
+    assert.match(await page.locator('.shop__purse').innerText(), /300/)
+    // The rack: Owned seal, no price, a pressed Worn control.
+    assert.equal(await rack.getAttribute('data-owned'), 'true')
+    assert.equal(await rack.getAttribute('data-worn'), 'true')
+    assert(await rack.locator('.shop-skin__seal').isVisible(), `${screen}: the Owned seal`)
+    assert.equal(await rack.locator('.shop-skin__buy').count(), 0, 'an owned skin can be bought again')
+    const worn = rack.getByRole('button', { name: /^Worn: Kratos/ })
+    assert.equal(await worn.getAttribute('aria-pressed'), 'true')
+    await assertUnclipped(page, '.shop-skin, .shop-skin h3, .shop-button', `${screen} skin owned`)
+    if (phone) {
+      const scale = viewport.width / await page.evaluate(() => innerWidth)
+      assert.deepEqual(await page.locator('.shop-skin .shop-button').evaluateAll((controls, factor) =>
+        controls.filter((control) => control.getBoundingClientRect().height * factor < 22).map((control) => control.textContent), scale), [],
+      `${screen}: skin controls too short to tap`)
+    }
+    await paintedShot(page, `${screen}-skins-owned.png`)
+    // One tap takes it off, one tap puts it on, and the choice is the Profile's too.
+    await press(worn)
+    const wear = rack.getByRole('button', { name: /^Wear: Kratos/ })
+    assert.equal(await wear.getAttribute('aria-pressed'), 'false')
+    assert.deepEqual(await storedSkins(page), {})
+    await press(wear)
+    assert.equal(await rack.getByRole('button', { name: /^Worn: Kratos/ }).getAttribute('aria-pressed'), 'true')
+    assert.deepEqual(await storedSkins(page), { ironclad: 'kratos' })
+    // Ownership is the wallet's: it stays after a reload, and so does the pressed state.
+    await page.reload()
+    await page.locator('.start-menu__nav').waitFor()
+    await page.getByRole('button', { name: 'Shop', exact: true }).click()
+    await press(page.getByRole('tab', { name: /^Skins/ }))
+    await rack.waitFor()
+    assert.equal(await rack.getAttribute('data-worn'), 'true')
+    assert.equal((await storedWallet(page)).coins, 300)
+    assert.deepEqual(errors, [], `${screen}: page errors`)
+    await context.close()
+    console.log(`${screen}: the Kratos skin is bought, owned and worn from the Shop`)
+  }
+
+  {
+    // Refusals: not enough coins never sells, a balance spent elsewhere is refused at confirmation,
+    // and a skin already owned elsewhere is never charged twice. Owning without wearing offers Wear.
+    const { context, page } = await open({ width: 1440, height: 900 }, false, wallet(SKIN_PRICE - 1))
+    await page.getByRole('button', { name: 'Shop', exact: true }).click()
+    await page.getByRole('tab', { name: /^Skins/ }).click()
+    const buy = page.getByRole('button', { name: /^Not enough coins for the Kratos skin/ })
+    assert(await buy.isDisabled(), 'one coin short must not sell')
+    await buy.click({ force: true }).catch(() => {})
+    assert.equal(await page.locator('.shop-confirm').count(), 0, 'a disabled Buy opened the dialog')
+    await page.evaluate(() => {
+      const key = Object.keys(localStorage).find((name) => name.startsWith('sts-wallet:'))
+      localStorage.setItem(key, JSON.stringify({ ...JSON.parse(localStorage.getItem(key)), coins: 2500 }))
+      window.dispatchEvent(new Event('sts-wallet-change'))
+    })
+    await page.getByRole('button', { name: `Buy the Kratos skin, ${SKIN_PRICE.toLocaleString('en-US')} coins` }).click()
+    await page.evaluate(() => {
+      const key = Object.keys(localStorage).find((name) => name.startsWith('sts-wallet:'))
+      localStorage.setItem(key, JSON.stringify({ ...JSON.parse(localStorage.getItem(key)), coins: 10 }))
+    })
+    await page.locator('.shop-confirm .shop-button--buy').click()
+    await page.getByRole('alert').filter({ hasText: 'You no longer have enough coins.' }).waitFor()
+    assert.deepEqual((await storedWallet(page)).skins, [], 'a stale confirmation still sold the skin')
+    assert.equal((await storedWallet(page)).coins, 10)
+    assert.equal(await storedSkins(page), null)
+    await context.close()
+
+    // Owned (bought on another device) but not worn: the rack offers Wear, and wearing it is one tap.
+    const owned = await open({ width: 1440, height: 900 }, false, wallet(5, [], { skins: ['kratos'] }))
+    await owned.page.getByRole('button', { name: 'Shop', exact: true }).click()
+    await owned.page.getByRole('tab', { name: /^Skins/ }).click()
+    const rack = owned.page.locator('.shop-skin[data-skin="kratos"]')
+    assert.equal(await rack.getAttribute('data-owned'), 'true')
+    assert.equal(await rack.getAttribute('data-worn'), null)
+    assert.equal(await rack.getByRole('button', { name: /^Wear: Kratos/ }).getAttribute('aria-pressed'), 'false')
+    await rack.getByRole('button', { name: /^Wear: Kratos/ }).click()
+    assert.deepEqual(await storedSkins(owned.page), { ironclad: 'kratos' })
+    assert.equal(await rack.getAttribute('data-worn'), 'true')
+    // Another tab sees it without a reload.
+    const second = await owned.context.newPage()
+    await second.goto(url)
+    await second.locator('.start-menu__nav').waitFor()
+    await second.getByRole('button', { name: 'Shop', exact: true }).click()
+    await second.getByRole('tab', { name: /^Skins/ }).click()
+    await second.locator('.shop-skin[data-skin="kratos"][data-worn="true"]').waitFor()
+    await second.getByRole('button', { name: /^Worn: Kratos/ }).click()
+    await rack.and(owned.page.locator(':not([data-worn])')).waitFor()
+    await owned.context.close()
+    console.log('skin refusals, owned-not-worn and cross-tab wear verified')
   }
 
   {

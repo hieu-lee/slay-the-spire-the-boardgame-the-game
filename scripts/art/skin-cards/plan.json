@@ -1,0 +1,624 @@
+{
+ "model": "gpt-image-2.5-sunburst",
+ "quality": "high",
+ "size": "1536x1024",
+ "styleReferences": [
+  "public/assets/card-art/ironclad/cleave.webp",
+  "public/assets/card-art/ironclad/shrug_it_off.webp"
+ ],
+ "identityReference": "scripts/animation/sources/kratos/idle.webp",
+ "cards": {
+  "slayer_armaments": {
+   "name": "Armaments",
+   "type": "skill",
+   "scene": "Kratos tightening the Chains of his Blades of Chaos around his forearms to arm himself, sparks from a forge, spears and weapons on a rack behind him.",
+   "refs": [
+    "boc-gow1",
+    "kratos1"
+   ]
+  },
+  "slayer_brutality": {
+   "name": "Brutality",
+   "type": "power",
+   "scene": "Kratos's scarred fist crushing a glowing red beating heart torn from the Hydra, purple-black blood dripping between his fingers, dark violet background.",
+   "refs": [
+    "hydra",
+    "kratos1"
+   ]
+  },
+  "slayer_dropkick": {
+   "name": "Dropkick",
+   "type": "attack",
+   "scene": "Kratos flying through the air in a drop kick into an Undead Legionnaire, a yellow starburst at the impact, crimson background, dark silhouettes.",
+   "refs": [
+    "minotaur2",
+    "kratos1"
+   ]
+  },
+  "slayer_dual_wield": {
+   "name": "Dual Wield",
+   "type": "skill",
+   "scene": "Kratos holding both Blades of Chaos crossed in front of him, a mirrored copy of the blades behind them in a ghostly echo, red and orange light.",
+   "refs": [
+    "boc-gow2",
+    "exile"
+   ]
+  },
+  "slayer_infernal_blade": {
+   "name": "Infernal Blade",
+   "type": "power",
+   "scene": "A Blade of Chaos burning with dark hellfire, demonic faces in the flames, crimson and black, embers and ash around.",
+   "refs": [
+    "boc-cutscene",
+    "hades"
+   ]
+  },
+  "slayer_reaper": {
+   "name": "Reaper",
+   "type": "attack",
+   "scene": "Kratos sweeping a Blade of Olympus in a reaping arc, red souls streaming off the victims and into him, healing glow, dark red.",
+   "refs": [
+    "athena-lvl3",
+    "hades2"
+   ]
+  },
+  "slayer_searing_blow": {
+   "name": "Searing Blow",
+   "type": "attack",
+   "scene": "A Blade of Chaos glowing white-hot, striking a shield and sending a searing white-orange burst across it, ember sparks.",
+   "refs": [
+    "boc-cutscene",
+    "exile"
+   ]
+  },
+  "strike_ironclad": {
+   "name": "Strike",
+   "type": "attack",
+   "scene": "Close, dramatic view of Kratos's arm whipping a single Blade of Chaos in one clean slash: a huge bright orange-white cutting arc across a deep burgundy background, chain trailing off the edge.",
+   "refs": [
+    "boc-gow2",
+    "boc-cutscene"
+   ]
+  },
+  "defend_ironclad": {
+   "name": "Defend",
+   "type": "skill",
+   "scene": "Kratos crouched behind a round bronze-and-wood Greek hoplite shield, three arrows and harpy feathers smacking into its face with white impact sparks, teal water-stained sky behind.",
+   "refs": [
+    "kratos1",
+    "kratos-athena"
+   ]
+  },
+  "twin_strike": {
+   "name": "Twin Strike",
+   "type": "attack",
+   "scene": "Two Blades of Chaos slashing in an X across the frame, two glowing orange-red cutting arcs crossing, chains snapping taut, dark red background.",
+   "refs": [
+    "boc-gow2",
+    "exile"
+   ]
+  },
+  "true_grit": {
+   "name": "True Grit",
+   "type": "skill",
+   "scene": "Close-up of Kratos's scarred ash-white hand clenched hard around a broken golden Minotaur horn, knuckles white, a bright glint of light on the gold, dust and sparks falling.",
+   "refs": [
+    "minotaur",
+    "fleece"
+   ]
+  },
+  "burning_pact": {
+   "name": "Burning Pact",
+   "type": "skill",
+   "scene": "Kratos's hand and a flame-wreathed armored hand of Ares gripping each other in a pact over a burning altar, gold fire licking up the clasped hands, red tattoo visible on Kratos's arm.",
+   "refs": [
+    "kratos1",
+    "hades"
+   ]
+  },
+  "sever_soul": {
+   "name": "Sever Soul",
+   "type": "attack",
+   "scene": "Kratos's Blade of Chaos ripping a glowing blue-green spirit out of an Undead Legionnaire, the soul streaming away in a jagged luminous ribbon, red-and-cyan palette.",
+   "refs": [
+    "boc-cutscene",
+    "hades2"
+   ]
+  },
+  "second_wind": {
+   "name": "Second Wind",
+   "type": "skill",
+   "scene": "Kratos kneeling on one knee to catch his breath with a Blade of Chaos planted point-down in the ground, both hands on the hilt, steam rising from his shoulders, bronze bracers and dark blue dusk behind.",
+   "refs": [
+    "kratos1",
+    "exile"
+   ]
+  },
+  "entrench": {
+   "name": "Entrench",
+   "type": "skill",
+   "scene": "Kratos braced behind a barricade of toppled Greek marble column drums and rubble, a Blade of Chaos resting across the top, a fierce orange sunburst sky over the ruins.",
+   "refs": [
+    "pandora-temple",
+    "colossus"
+   ]
+  },
+  "sentinel": {
+   "name": "Sentinel",
+   "type": "skill",
+   "scene": "Kratos holding up a battered bronze round shield, a blinding white blast of energy splashing against it, lightning crackle, cool grey-blue storm.",
+   "refs": [
+    "zeus2",
+    "kratos-athena"
+   ]
+  },
+  "fiend_fire": {
+   "name": "Fiend Fire",
+   "type": "attack",
+   "scene": "Kratos in the Underworld, arms flung out with Blades of Chaos wreathed in flames, three burning ancient Greek shields spinning in the air around him, dark navy background, orange fire.",
+   "refs": [
+    "hades",
+    "boc-gow1"
+   ]
+  },
+  "limit_break": {
+   "name": "Limit Break",
+   "type": "skill",
+   "scene": "Kratos in silhouette flexing both arms in a roaring pose in the Rage of Sparta, blazing gold-orange light rays bursting behind him.",
+   "refs": [
+    "boc-gow1",
+    "fleece"
+   ]
+  },
+  "double_tap": {
+   "name": "Double Tap",
+   "type": "skill",
+   "scene": "A Blade of Chaos slash and its echo: Kratos in deep-blue shadow, two overlapping afterimage slashes in red and orange across his body, chain looping around.",
+   "refs": [
+    "boc-gow2",
+    "exile"
+   ]
+  },
+  "feed": {
+   "name": "Feed",
+   "type": "attack",
+   "scene": "Kratos standing over a fallen Gorgon, bright red orbs streaming up from its body into his open hand, orange and red palette, dark background.",
+   "refs": [
+    "medusa",
+    "medusa2"
+   ]
+  },
+  "corruption": {
+   "name": "Corruption",
+   "type": "power",
+   "scene": "Extreme close-up of Kratos's face half in shadow, eyes burning violet-magenta, black veins of dark corruption crawling along his red tattoo, teal darkness around.",
+   "refs": [
+    "kratos1",
+    "pandora-box"
+   ]
+  },
+  "barricade": {
+   "name": "Barricade",
+   "type": "power",
+   "scene": "A towering barricade of stacked Greek hoplite shields, broken spears, swords and column fragments filling the frame, a bronze orb helmet on top, desaturated teal and brown.",
+   "refs": [
+    "pandora-temple",
+    "colossus"
+   ]
+  },
+  "metallicize": {
+   "name": "Metallicize",
+   "type": "power",
+   "scene": "Kratos standing front-facing in gleaming gold-trimmed bronze armor, steel plating rising across his torso, brilliant rays of light fanning out behind a deep blue sky.",
+   "refs": [
+    "fleece",
+    "kratos-athena"
+   ]
+  },
+  "demon_form": {
+   "name": "Demon Form",
+   "type": "power",
+   "scene": "Kratos in full God of War rage: red body glowing from within, eyes burning yellow, arms spread wide with Blades of Chaos flaring flame, huge dark red wing shapes behind him, black background.",
+   "refs": [
+    "boc-gow2",
+    "fleece"
+   ]
+  },
+  "berserk": {
+   "name": "Berserk",
+   "type": "power",
+   "scene": "Kratos with arms flung wide in a bellowing roar of rage, red tattoo and muscles tense, red light rays tearing out behind him like a frenzy, dark red background.",
+   "refs": [
+    "kratos1",
+    "minotaur2"
+   ]
+  },
+  "juggernaut": {
+   "name": "Juggernaut",
+   "type": "power",
+   "scene": "Kratos charging forward like a juggernaut through a shattering stone gate, boulders and marble slabs exploding off his shoulders, orange fire glow behind.",
+   "refs": [
+    "minotaur2",
+    "colossus"
+   ]
+  },
+  "feel_no_pain": {
+   "name": "Feel No Pain",
+   "type": "power",
+   "scene": "Kratos standing unflinching with his chest out, arrows and spear tips shattering against his body in golden sparks, bronze straps and bracers, stormy dark brown.",
+   "refs": [
+    "fleece",
+    "kratos1"
+   ]
+  },
+  "dark_embrace": {
+   "name": "Dark Embrace",
+   "type": "power",
+   "scene": "Kratos in black void, pale ghostly clawed hands of the Underworld's damned clutching around his shoulders and arms, purple glow on the claws, only gold of his bracers lit.",
+   "refs": [
+    "hades",
+    "hades2"
+   ]
+  },
+  "combust": {
+   "name": "Combust",
+   "type": "power",
+   "scene": "Kratos as a black silhouette inside a giant yellow fireball, Blades of Chaos burning on his arms, flames licking in great orange swirls, glowing white core.",
+   "refs": [
+    "boc-cutscene",
+    "boc-gow1"
+   ]
+  },
+  "evolve": {
+   "name": "Evolve",
+   "type": "power",
+   "scene": "A heap of Undead Legionnaire skulls with green Hydra venom oozing from empty eye sockets and glowing slime dripping, dark olive background, sickly glowing eyes.",
+   "refs": [
+    "hydra",
+    "hades"
+   ]
+  },
+  "fire_breathing": {
+   "name": "Fire Breathing",
+   "type": "power",
+   "scene": "A roaring Chimera head spewing a river of orange flame across the frame, teeth bared, a dark purple storm sky.",
+   "refs": [
+    "cerberus",
+    "minotaur"
+   ]
+  },
+  "inflame": {
+   "name": "Inflame",
+   "type": "power",
+   "scene": "A Blade of Chaos wreathed in roaring flame, blazing yellow and orange fire pouring along the blade and chain, dark blue background with drifting sparks.",
+   "refs": [
+    "boc-cutscene",
+    "exile"
+   ]
+  },
+  "carnage": {
+   "name": "Carnage",
+   "type": "attack",
+   "scene": "A heap of slain Gorgons and satyrs in a gory pile, one huge yellow serpentine eye still open, teal scales, red and yellow bodies, dark red background.",
+   "refs": [
+    "medusa2",
+    "hydra"
+   ]
+  },
+  "ghostly_armor": {
+   "name": "Ghostly Armor",
+   "type": "skill",
+   "scene": "Kratos's silhouette wrapped in glowing translucent blue spectral Spartan armor, ghostly plates floating around him, dark blue-black background.",
+   "refs": [
+    "hades2",
+    "kratos-athena"
+   ]
+  },
+  "battle_trance": {
+   "name": "Battle Trance",
+   "type": "skill",
+   "scene": "Two shadowy Spartan fighters floating in a dark circle while a golden chain of the Blades of Chaos swings down with a burning link at its end, hypnotic rings around it.",
+   "refs": [
+    "boc-gow1",
+    "exile"
+   ]
+  },
+  "rupture": {
+   "name": "Rupture",
+   "type": "skill",
+   "scene": "Kratos with arms raised, Blades of Chaos hanging from his wrists, ember-red energy bursting from fresh wounds on his torso, tattoo glowing red.",
+   "refs": [
+    "kratos1",
+    "boc-gow2"
+   ]
+  },
+  "whirlwind": {
+   "name": "Whirlwind",
+   "type": "attack",
+   "scene": "Kratos at the center of a spinning Cyclone of Chaos, Blades of Chaos whipping in huge golden circles around him, blurred bright arcs, dark red background.",
+   "refs": [
+    "boc-gow2",
+    "exile"
+   ]
+  },
+  "bash": {
+   "name": "Bash",
+   "type": "attack",
+   "scene": "Kratos driving the spiked Nemean Cestus gauntlet straight down onto an Undead Legionnaire's helmet, orange shockwave burst radiating from the impact, broken temple floor tiles flying.",
+   "refs": [
+    "cestus2",
+    "cestus"
+   ]
+  },
+  "cleave": {
+   "name": "Cleave",
+   "type": "attack",
+   "scene": "A wide sweeping Blade of Chaos slash raking across three Undead Legionnaire silhouettes at once, a huge gold-white cutting arc, burgundy background.",
+   "refs": [
+    "boc-gow1",
+    "boc-gow2"
+   ]
+  },
+  "clothesline": {
+   "name": "Clothesline",
+   "type": "attack",
+   "scene": "Kratos's forearm and bronze bracer slamming across an Undead Legionnaire's throat, the helmet flying off, orange-white impact burst, dark skin tones.",
+   "refs": [
+    "minotaur2",
+    "kratos1"
+   ]
+  },
+  "pommel_strike": {
+   "name": "Pommel Strike",
+   "type": "attack",
+   "scene": "Kratos smashing the heavy hilt of a Blade of Athena into a soldier's helmet in a close punch, an orange triangular burst behind the impact, dark red.",
+   "refs": [
+    "athena-lvl3",
+    "exile"
+   ]
+  },
+  "shrug_it_off": {
+   "name": "Shrug It Off",
+   "type": "skill",
+   "scene": "Kratos in a three-quarter view shrugging off a blow, ash-white shoulder with a worn leather cross-strap and bronze pauldron, sparks flying off him, muted blue-grey background.",
+   "refs": [
+    "kratos1",
+    "fleece"
+   ]
+  },
+  "anger": {
+   "name": "Anger",
+   "type": "attack",
+   "scene": "Kratos lunging forward in a furious two-handed blade swing, streaks of orange, red and blue lightning motion lines wrapping around him.",
+   "refs": [
+    "boc-gow2",
+    "zeus"
+   ]
+  },
+  "flex": {
+   "name": "Flex",
+   "type": "skill",
+   "scene": "Close-up of Kratos's flexed bicep wrapped in a bronze bracer, the red tattoo stretched across the tight muscle, a sheen of light on ash-white skin.",
+   "refs": [
+    "kratos1",
+    "fleece"
+   ]
+  },
+  "warcry": {
+   "name": "Warcry",
+   "type": "skill",
+   "scene": "Kratos bellowing a Spartan war cry with one fist raised, shockwave lines radiating from his roaring mouth, dark red background.",
+   "refs": [
+    "kratos1",
+    "minotaur2"
+   ]
+  },
+  "havoc": {
+   "name": "Havoc",
+   "type": "skill",
+   "scene": "Kratos's armored fist smashing through a marble statue in a frenzy, shards flying, a ragged scorched tree line against a crimson sky.",
+   "refs": [
+    "colossus",
+    "pandora-temple"
+   ]
+  },
+  "perfected_strike": {
+   "name": "Perfected Strike",
+   "type": "attack",
+   "scene": "A single perfect Blade of Athena slash, a clean white-gold cutting arc and a spray of crimson droplets across a dark red background.",
+   "refs": [
+    "athena-lvl3",
+    "boc-cutscene"
+   ]
+  },
+  "headbutt": {
+   "name": "Headbutt",
+   "type": "attack",
+   "scene": "Kratos's bald head crashing into a Minotaur's forehead in a headbutt, a starburst impact with fiery orange lines radiating.",
+   "refs": [
+    "minotaur",
+    "minotaur2"
+   ]
+  },
+  "power_through": {
+   "name": "Power Through",
+   "type": "skill",
+   "scene": "Kratos charging forward through a hail of arrows, two arrows stuck in his bracer, bronze shoulder armor, one wound glowing red on his chest, deep blue dusk.",
+   "refs": [
+    "kratos1",
+    "fleece"
+   ]
+  },
+  "flame_barrier": {
+   "name": "Flame Barrier",
+   "type": "skill",
+   "scene": "Kratos conjuring a wall of fire by spinning his Blades of Chaos in front of him, a roaring red-orange fire curtain shielding him, glowing embers.",
+   "refs": [
+    "boc-gow1",
+    "boc-cutscene"
+   ]
+  },
+  "rampage": {
+   "name": "Rampage",
+   "type": "attack",
+   "scene": "Kratos's hand gripping the hilt of a Blade of Chaos mid-chop, blood and fire dripping from the heavy blade, a red scarred background.",
+   "refs": [
+    "boc-gow2",
+    "exile"
+   ]
+  },
+  "exhume": {
+   "name": "Exhume",
+   "type": "skill",
+   "scene": "Kratos's glowing hand reaching down into a cracked stone sarcophagus in the Underworld, a golden light spilling out of it and bony fingers grasping, stone tomb wall behind.",
+   "refs": [
+    "hades",
+    "pandora-box"
+   ]
+  },
+  "iron_wave": {
+   "name": "Iron Wave",
+   "type": "attack",
+   "scene": "Kratos sweeping a Blade of Chaos outward in a sheet of crackling white-gold energy, a wave of lightning with jagged orange spears, dark maroon background.",
+   "refs": [
+    "zeus",
+    "boc-cutscene"
+   ]
+  },
+  "disarm": {
+   "name": "Disarm",
+   "type": "skill",
+   "scene": "Kratos wrenching a sword out of an Undead Legionnaire's grip and snapping it, a hooded blue shadow of the foe, blue magical circle behind them, one sword tip flying.",
+   "refs": [
+    "hades2",
+    "minotaur2"
+   ]
+  },
+  "shockwave": {
+   "name": "Shockwave",
+   "type": "skill",
+   "scene": "Kratos slamming a fist into a marble floor, concentric blue-white shockwave rings rippling out in cracks, cool blue storm light.",
+   "refs": [
+    "zeus2",
+    "poseidon"
+   ]
+  },
+  "bludgeon": {
+   "name": "Bludgeon",
+   "type": "attack",
+   "scene": "Kratos swinging a colossal Minotaur war hammer down onto the earth, the ground splitting into glowing red cracks and flying rocks, burning red sun behind.",
+   "refs": [
+    "minotaur",
+    "minotaur2"
+   ]
+  },
+  "impervious": {
+   "name": "Impervious",
+   "type": "skill",
+   "scene": "Kratos in dark silhouette with hands on hips, wrapped in a barrier of blinding golden light rays, deep blue sky behind.",
+   "refs": [
+    "fleece",
+    "kratos-athena"
+   ]
+  },
+  "uppercut": {
+   "name": "Uppercut",
+   "type": "attack",
+   "scene": "Kratos's flame-wrapped fist rising in a massive uppercut, fire and sparks trailing, red ember droplets scattering, dark maroon background.",
+   "refs": [
+    "minotaur2",
+    "boc-gow1"
+   ]
+  },
+  "offering": {
+   "name": "Offering",
+   "type": "skill",
+   "scene": "A Greek skull with red glowing eye sockets on an altar, a laurel wreath, crossed bones and stones, red candle glow, a dark crimson background.",
+   "refs": [
+    "hades",
+    "pandora-box"
+   ]
+  },
+  "immolate": {
+   "name": "Immolate",
+   "type": "attack",
+   "scene": "A sea of orange fire rolling over hordes of Undead Legionnaires and harpies in Hades, claws and horns visible inside the flames, a red sky.",
+   "refs": [
+    "hades",
+    "cerberus"
+   ]
+  },
+  "body_slam": {
+   "name": "Body Slam",
+   "type": "attack",
+   "scene": "Kratos barreling shoulder-first into a Gorgon, a huge impact explosion, light streaks of speed trailing behind him, red background.",
+   "refs": [
+    "minotaur2",
+    "medusa"
+   ]
+  },
+  "clash": {
+   "name": "Clash",
+   "type": "attack",
+   "scene": "Blades of Chaos clashing against Ares's huge golden sword with a burst of sparks and golden light rays, two weapons crossed in the centre.",
+   "refs": [
+    "boc-gow1",
+    "athena-lvl3"
+   ]
+  },
+  "spot_weakness": {
+   "name": "Spot Weakness",
+   "type": "skill",
+   "scene": "Kratos's narrowed eye reflected in a glowing circle that targets a glowing weak point on Medusa's neck, deep blue background, gold trim.",
+   "refs": [
+    "medusa",
+    "kratos1"
+   ]
+  },
+  "rage": {
+   "name": "Rage",
+   "type": "skill",
+   "scene": "Kratos's red tattoo blazing as his hands clench into fists, red mist and red lines swirling, teeth gritted, dark crimson.",
+   "refs": [
+    "kratos1",
+    "boc-gow1"
+   ]
+  },
+  "blood_for_blood": {
+   "name": "Blood for Blood",
+   "type": "attack",
+   "scene": "Kratos duelling Ares in silhouette on a blood-red sky, their blades locked in a clash of sparks, drops of blood in the air.",
+   "refs": [
+    "boc-gow1",
+    "hades2"
+   ]
+  },
+  "heavy_blade": {
+   "name": "Heavy Blade",
+   "type": "attack",
+   "scene": "A colossal Blade of Olympus half-buried in broken black rocks, gleaming white and gold, cracks across its surface.",
+   "refs": [
+    "athena-lvl3",
+    "colossus"
+   ]
+  },
+  "seeing_red": {
+   "name": "Seeing Red",
+   "type": "skill",
+   "scene": "Kratos's face half in shadow with intense glowing red eyes, a blood-red haze and dark red background.",
+   "refs": [
+    "kratos1",
+    "minotaur2"
+   ]
+  },
+  "wild_strike": {
+   "name": "Wild Strike",
+   "type": "attack",
+   "scene": "Kratos lunging with a wild rapid slash of his Blade of Chaos, red motion streaks and golden slash arcs across a dark crimson background.",
+   "refs": [
+    "boc-gow2",
+    "exile"
+   ]
+  }
+ }
+}

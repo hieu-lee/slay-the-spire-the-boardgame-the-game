@@ -2946,8 +2946,6 @@ check('every newly transcribed card does what its face prints', () => {
     ...Object.values(CARDS).filter((def) => def.owner === 'slime_boss').map((def) => def.id),
     // Exact faces and focused executable clauses live in verify-downfall-items.mjs.
     ...Object.keys(DOWNFALL_COLORLESS_CARD_DEFS),
-    // Every face's outcome is checked card by card in verify-kratos.mjs.
-    ...Object.values(CARDS).filter((def) => def.owner === 'kratos').map((def) => def.id),
     // The Slayer Pack: every face is pinned in verify-slayer-pack-audit.mjs and exercised in verify-slayer-*.mjs.
     ...Object.values(CARDS).filter((def) => def.pack).map((def) => def.id),
   ])

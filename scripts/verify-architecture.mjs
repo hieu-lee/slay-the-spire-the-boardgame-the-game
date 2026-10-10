@@ -481,9 +481,7 @@ check('no condition reads a target that its reader was never handed', () => {
     'goldAtLeast', 'orbsAtLeast', 'drawPileEmpty',
     'handEmpty', 'drewSkill', 'retainedLastTurn', 'heatAtLeast', 'heatBelow',
     'cardsInExhaustAtLeast', 'soulburnUsedThisTurn', 'hpAtMost', 'hasCurseInChamber',
-    'hasDeadOnAttackInChamber', 'rageAtLeast', 'canUnleash',
-    // Reads the play's chosen target uid from the clause's context, not a struck enemy.
-    'targetDead', 'exhaustedByThisCard', 'lostHpToThisCard',
+    'hasDeadOnAttackInChamber',
     'hasNoSkillsInHand',
     // Slayer Pack: Heel Hook reads its chosen target's Weak from the context too.
     'targetWeak',

@@ -149,8 +149,7 @@ html[data-mobile-performance='true'] .compendium__detail-pack { font-size: 1.1re
   .compendium__filters { gap: 0.55rem; padding: 0.55rem 0.6rem 0.75rem; }
   .compendium__head h1 { font-size: 1.15rem; }
   .compendium .compendium__search input { padding: 0.35rem 2rem 0.35rem 0.55rem; font-size: 0.85rem; }
-  /* Thirteen pools since Kratos: seven across keeps them to two rows, so the rail never scrolls. */
-  .compendium__pools { grid-template-columns: repeat(7, 1fr); }
+  .compendium__pools { grid-template-columns: repeat(6, 1fr); }
   .compendium__filter-block { gap: 0.25rem; }
   .compendium__filter-block h2 { font-size: 0.6rem; }
   :is(.compendium__types, .compendium__segments, .compendium__toggles) button,

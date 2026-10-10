@@ -23,9 +23,9 @@ node --experimental-strip-types scripts/playtest.mjs init \
   --out artifacts/playtest/silent-a3-50
 ```
 
-Kratos (`--character kratos`) is available in both public play and the headless
-playtest runner. His design, keywords, and watch list are in
-`docs/kratos-design.md`.
+Kratos is no longer a character: he is a skin of Ironclad (presentation only, with
+Ironclad's cards, relic and rules), so there is no Kratos playbook or
+`--character kratos` run.
 
 Use a task-specific output directory, and keep the same directory and engine
 revision to resume. `init` refuses to change an existing batch's configuration.
@@ -198,8 +198,7 @@ uses `PlayContext` in `src/game/combat/types.ts`: `enemyUid`, `enemyRow`,
 `searchDrawUids`, `recoverDiscardUid(s)`, `recoverExhaustUid(s)`,
 `scryDiscardUids`, `scryToHandUid`, `evokeSlots`, `evokeEnemyUids`,
 `shivEnemyUids`, `loadUids`, `chamberUids`, `hermitEnemyUids`, `slimeUids`,
-`slimeEnemyUids`, `holdRage` (Kratos keeps his Rage and skips every Unleash on
-that play), Guardian mode/Block/Vigor choices, and other printed choices.
+`slimeEnemyUids`, Guardian mode/Block/Vigor choices, and other printed choices.
 Use the engine types for less common cards. Prepared event fights expose
 opening Load/Scry choices before the event decision, just as the browser does.
 Prismatic Shard rewards retain source selection: choose three distinct entries

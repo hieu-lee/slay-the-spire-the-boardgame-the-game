@@ -12,7 +12,8 @@ mkdirSync(output, { recursive: true })
 const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
 await server.listen()
 const errors = []
-const seats = ['kratos', 'silent', 'defect', 'watcher'].map((character, index) => ({ id: `p${index + 1}`, name: ['A · Kratos', 'B · Silent', 'C · Defect', 'D · Watcher'][index], character }))
+const seats = ['ironclad', 'silent', 'defect', 'watcher'].map((character, index) => ({ id: `p${index + 1}`, name: ['A · Kratos', 'B · Silent', 'C · Defect', 'D · Watcher'][index], character,
+  ...(character === 'ironclad' ? { skin: 'kratos' } : {}) }))
 function fixture(shared = true, roster = seats) {
   const run = postNeowRun('treasure-animation', roster)
   run.campaignProgress.actIV = 5
@@ -86,6 +87,7 @@ try {
         assert.equal(await page.locator('[data-treasure-slot="0"]').evaluate((element) => element.tagName), 'SPAN')
         await page.locator('.potion-tip:visible').waitFor({ state: 'detached' })
         const pickup = page.locator('.treasure-claim--0')
+        assert.match(await pickup.locator('img.treasure-claim__hand--reach').getAttribute('src'), /hand-kratos\.webp/, 'the Kratos skin reaches with his own hand')
         await pickup.locator('img.treasure-claim__hand').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
         const pose = (time) => pickup.evaluate((element, time) => {
           for (const node of [element, ...element.querySelectorAll('*')]) {
@@ -115,7 +117,7 @@ try {
           }, seat)
           const observed = await receipt.jsonValue()
           await receipt.dispose()
-          assert.match(observed.src, new RegExp(seats[seat].character))
+          assert.match(observed.src, new RegExp(seats[seat].skin ?? seats[seat].character))
           if (seat === 3) assert.equal(observed.phase, 'map')
           await page.locator('.treasure-claim:not(.treasure-preview)').waitFor({ state: 'detached' })
         }

@@ -29,6 +29,7 @@ import { STARTING_RELIC, createRelicDecks, createRelicInstance } from '../relics
 import { createRng, seedFromString, shuffle } from '../rng.ts'
 import type { RngState } from '../rng.ts'
 import { createDamageStats } from '../damage.ts'
+import { isSkinOf } from '../skins.ts'
 import { DOWNFALL_CHARACTER_IDS } from '../types.ts'
 import type { CardInstance, CharacterId, Player } from '../types.ts'
 
@@ -88,6 +89,7 @@ export function createPlayer(
   campaignProgress: CampaignProgress = createCampaignProgress(),
   rewardDecks?: { cardRewards: string[]; rareRewards: string[] },
   packs: readonly CardPackId[] = [],
+  skin?: unknown,
 ): Player {
   const deck = [...STARTER_DECKS[character], ...addedCards].map(makeInstance)
   const maxHp = MAX_HP[character]
@@ -95,6 +97,7 @@ export function createPlayer(
     id,
     name,
     character,
+    ...(isSkinOf(character, skin) ? { skin } : {}),
     row,
     hp: maxHp,
     maxHp,
@@ -135,7 +138,6 @@ export function createPlayer(
     clawCubesGainedThisCombat: 0,
     starterDefendBlockBonus: 0,
     miracles: 0,
-    ...(character === 'kratos' ? { rage: 0 } : {}),
     stance: 'neutral',
     wrathAttackDamageBonus: 0,
     orbs: [null, null, null],
@@ -200,6 +202,7 @@ export function createRun(
       campaignProgress,
       undefined,
       packs,
+      member.skin,
     ),
   )
   if (ascension >= 2) {
@@ -354,7 +357,7 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
     const rareRewards = itemDecks.characterRares[member.character]
     const player = createPlayer(rng, member.id, member.name, member.character, state.players.length + index,
       state.ascension >= 5 ? ['ascenders_bane'] : [], state.campaignProgress,
-      cardRewards && rareRewards ? { cardRewards, rareRewards } : undefined, state.meta.cardPacks ?? [])
+      cardRewards && rareRewards ? { cardRewards, rareRewards } : undefined, state.meta.cardPacks ?? [], member.skin)
     if (state.ascension >= 2) { player.maxHp -= 1; player.hp -= 1 }
     if (state.ascension >= 9) player.hp -= 1
     delete itemDecks.characterCards[member.character]

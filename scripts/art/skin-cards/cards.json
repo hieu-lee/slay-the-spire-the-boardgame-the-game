@@ -1,0 +1,553 @@
+[
+ {
+  "id": "slayer_armaments",
+  "name": "Armaments",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "pack": "slayer_ironclad",
+  "text": null
+ },
+ {
+  "id": "slayer_brutality",
+  "name": "Brutality",
+  "type": "power",
+  "rarity": "rare",
+  "cost": 0,
+  "pack": "slayer_ironclad",
+  "text": "When played, draw 1 card. Start of turn: If you lost HP last round, 1 [Vulnerable] to an enemy."
+ },
+ {
+  "id": "slayer_dropkick",
+  "name": "Dropkick",
+  "type": "attack",
+  "rarity": "uncommon",
+  "cost": 1,
+  "pack": "slayer_ironclad",
+  "text": null
+ },
+ {
+  "id": "slayer_dual_wield",
+  "name": "Dual Wield",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "pack": "slayer_ironclad",
+  "text": null
+ },
+ {
+  "id": "slayer_infernal_blade",
+  "name": "Infernal Blade",
+  "type": "power",
+  "rarity": "uncommon",
+  "cost": 1,
+  "pack": "slayer_ironclad",
+  "text": "Once per turn: If you have a Daze, Burn, Slimed or a Curse in your hand: 1 [Weak] to an enemy."
+ },
+ {
+  "id": "slayer_reaper",
+  "name": "Reaper",
+  "type": "attack",
+  "rarity": "rare",
+  "cost": 2,
+  "pack": "slayer_ironclad",
+  "text": null
+ },
+ {
+  "id": "slayer_searing_blow",
+  "name": "Searing Blow",
+  "type": "attack",
+  "rarity": "uncommon",
+  "cost": 2,
+  "pack": "slayer_ironclad",
+  "text": null
+ },
+ {
+  "id": "strike_ironclad",
+  "name": "Strike",
+  "type": "attack",
+  "rarity": "starter",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "defend_ironclad",
+  "name": "Defend",
+  "type": "skill",
+  "rarity": "starter",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "twin_strike",
+  "name": "Twin Strike",
+  "type": "attack",
+  "rarity": "common",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "true_grit",
+  "name": "True Grit",
+  "type": "skill",
+  "rarity": "common",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "burning_pact",
+  "name": "Burning Pact",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "sever_soul",
+  "name": "Sever Soul",
+  "type": "attack",
+  "rarity": "uncommon",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "second_wind",
+  "name": "Second Wind",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "entrench",
+  "name": "Entrench",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "sentinel",
+  "name": "Sentinel",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "fiend_fire",
+  "name": "Fiend Fire",
+  "type": "attack",
+  "rarity": "rare",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "limit_break",
+  "name": "Limit Break",
+  "type": "skill",
+  "rarity": "rare",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "double_tap",
+  "name": "Double Tap",
+  "type": "skill",
+  "rarity": "rare",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "feed",
+  "name": "Feed",
+  "type": "attack",
+  "rarity": "rare",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "corruption",
+  "name": "Corruption",
+  "type": "power",
+  "rarity": "rare",
+  "cost": 3,
+  "text": null
+ },
+ {
+  "id": "barricade",
+  "name": "Barricade",
+  "type": "power",
+  "rarity": "rare",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "metallicize",
+  "name": "Metallicize",
+  "type": "power",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "demon_form",
+  "name": "Demon Form",
+  "type": "power",
+  "rarity": "rare",
+  "cost": 3,
+  "text": null
+ },
+ {
+  "id": "berserk",
+  "name": "Berserk",
+  "type": "power",
+  "rarity": "rare",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "juggernaut",
+  "name": "Juggernaut",
+  "type": "power",
+  "rarity": "rare",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "feel_no_pain",
+  "name": "Feel No Pain",
+  "type": "power",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "dark_embrace",
+  "name": "Dark Embrace",
+  "type": "power",
+  "rarity": "uncommon",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "combust",
+  "name": "Combust",
+  "type": "power",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "evolve",
+  "name": "Evolve",
+  "type": "power",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "fire_breathing",
+  "name": "Fire Breathing",
+  "type": "power",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "inflame",
+  "name": "Inflame",
+  "type": "power",
+  "rarity": "uncommon",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "carnage",
+  "name": "Carnage",
+  "type": "attack",
+  "rarity": "uncommon",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "ghostly_armor",
+  "name": "Ghostly Armor",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "battle_trance",
+  "name": "Battle Trance",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 0,
+  "text": null
+ },
+ {
+  "id": "rupture",
+  "name": "Rupture",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "whirlwind",
+  "name": "Whirlwind",
+  "type": "attack",
+  "rarity": "uncommon",
+  "cost": "X",
+  "text": null
+ },
+ {
+  "id": "bash",
+  "name": "Bash",
+  "type": "attack",
+  "rarity": "starter",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "cleave",
+  "name": "Cleave",
+  "type": "attack",
+  "rarity": "common",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "clothesline",
+  "name": "Clothesline",
+  "type": "attack",
+  "rarity": "common",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "pommel_strike",
+  "name": "Pommel Strike",
+  "type": "attack",
+  "rarity": "common",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "shrug_it_off",
+  "name": "Shrug It Off",
+  "type": "skill",
+  "rarity": "common",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "anger",
+  "name": "Anger",
+  "type": "attack",
+  "rarity": "common",
+  "cost": 0,
+  "text": null
+ },
+ {
+  "id": "flex",
+  "name": "Flex",
+  "type": "skill",
+  "rarity": "common",
+  "cost": 0,
+  "text": null
+ },
+ {
+  "id": "warcry",
+  "name": "Warcry",
+  "type": "skill",
+  "rarity": "common",
+  "cost": 0,
+  "text": null
+ },
+ {
+  "id": "havoc",
+  "name": "Havoc",
+  "type": "skill",
+  "rarity": "common",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "perfected_strike",
+  "name": "Perfected Strike",
+  "type": "attack",
+  "rarity": "uncommon",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "headbutt",
+  "name": "Headbutt",
+  "type": "attack",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "power_through",
+  "name": "Power Through",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "flame_barrier",
+  "name": "Flame Barrier",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "rampage",
+  "name": "Rampage",
+  "type": "attack",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "exhume",
+  "name": "Exhume",
+  "type": "skill",
+  "rarity": "rare",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "iron_wave",
+  "name": "Iron Wave",
+  "type": "attack",
+  "rarity": "common",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "disarm",
+  "name": "Disarm",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "shockwave",
+  "name": "Shockwave",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "bludgeon",
+  "name": "Bludgeon",
+  "type": "attack",
+  "rarity": "rare",
+  "cost": 3,
+  "text": null
+ },
+ {
+  "id": "impervious",
+  "name": "Impervious",
+  "type": "skill",
+  "rarity": "rare",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "uppercut",
+  "name": "Uppercut",
+  "type": "attack",
+  "rarity": "rare",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "offering",
+  "name": "Offering",
+  "type": "skill",
+  "rarity": "rare",
+  "cost": 0,
+  "text": null
+ },
+ {
+  "id": "immolate",
+  "name": "Immolate",
+  "type": "attack",
+  "rarity": "rare",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "body_slam",
+  "name": "Body Slam",
+  "type": "attack",
+  "rarity": "common",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "clash",
+  "name": "Clash",
+  "type": "attack",
+  "rarity": "uncommon",
+  "cost": 0,
+  "text": null
+ },
+ {
+  "id": "spot_weakness",
+  "name": "Spot Weakness",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "rage",
+  "name": "Rage",
+  "type": "skill",
+  "rarity": "uncommon",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "blood_for_blood",
+  "name": "Blood for Blood",
+  "type": "attack",
+  "rarity": "uncommon",
+  "cost": 3,
+  "text": null
+ },
+ {
+  "id": "heavy_blade",
+  "name": "Heavy Blade",
+  "type": "attack",
+  "rarity": "common",
+  "cost": 2,
+  "text": null
+ },
+ {
+  "id": "seeing_red",
+  "name": "Seeing Red",
+  "type": "skill",
+  "rarity": "common",
+  "cost": 1,
+  "text": null
+ },
+ {
+  "id": "wild_strike",
+  "name": "Wild Strike",
+  "type": "attack",
+  "rarity": "common",
+  "cost": 1,
+  "text": null
+ }
+]

@@ -9,7 +9,7 @@ const out = `${root}artifacts/card-trails`
 mkdirSync(out, { recursive: true })
 const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
 await server.listen()
-const colors = { ironclad: '#e74b38', silent: '#54ca68', defect: '#42aef5', watcher: '#a35ce5', hexaghost: '#a35ce5', slime_boss: '#a5df42', guardian: '#49d9c5', hermit: '#e8b650', kratos: '#8b1e2d' }
+const colors = { ironclad: '#e74b38', silent: '#54ca68', defect: '#42aef5', watcher: '#a35ce5', hexaghost: '#a35ce5', slime_boss: '#a5df42', guardian: '#49d9c5', hermit: '#e8b650' }
 const errors = []
 const recording = process.argv.includes('--record')
 try {
@@ -94,7 +94,7 @@ try {
           await page.screenshot({ path: `${out}/${engineName}-${screen}-start-controls.png` })
         }
         if (!recording) { await page.clock.install(); await page.clock.pauseAt(new Date()) }
-        const cases = [['silent','defend_silent','discard'], ['ironclad','flex','exhaust'], ['watcher','tantrum','draw'], ['kratos','defend_kratos','discard']]
+        const cases = [['silent','defend_silent','discard'], ['ironclad','flex','exhaust'], ['watcher','tantrum','draw']]
         if (engineName === 'chromium' && screen === 'desktop') for (const character of ['defect','hexaghost','slime_boss','guardian','hermit']) cases.push([character, 'defend_silent', 'discard'])
         for (const [character, card, destination] of cases) {
           await page.evaluate(({ baseline, character, card }) => {

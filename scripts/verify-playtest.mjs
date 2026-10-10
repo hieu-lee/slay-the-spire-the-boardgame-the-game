@@ -324,7 +324,7 @@ try {
 
   // A bought Merchant card leaves an empty slot. Building the prompt used to throw on it,
   // which rolled the purchase back.
-  const shopRun = createRun(5, [{ id: 'p1', name: 'Playtest', character: 'kratos' }])
+  const shopRun = createRun(5, [{ id: 'p1', name: 'Playtest', character: 'ironclad' }])
   const shop = createMerchant(shopRun.itemDecks, shopRun.players)
   shop.cards.p1.choices[0] = ''
   const shopView = snapshot({ worker: 0, revision: 0, run: { ...shopRun, neow: null, phase: 'room', roomState: shop }, record: { index: 0, seed: 5 }, reveal: null })

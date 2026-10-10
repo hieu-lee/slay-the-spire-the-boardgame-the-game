@@ -36,7 +36,6 @@ try {
   for (const [label, viewport, phone, hero, heroName, firstFight, secondRoom] of [
     ['desktop', { width: 1440, height: 900 }, false, 'ironclad', 'Ironclad', 'a1r0c0', 'a1r1c1'],
     ['horizontal-phone', { width: 844, height: 390 }, true, 'hermit', 'Hermit', 'a1r0c0', null],
-    ['horizontal-phone-kratos', { width: 844, height: 390 }, true, 'kratos', 'Kratos', 'a1r0c0', null],
   ]) {
     const context = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone })
     const page = await context.newPage()
@@ -94,18 +93,10 @@ try {
 
     // Walk the scripted run through the first fight and its rewards.
     const shots = new Set()
-    let rageMeterChecked = false
     const walk = await walkTutorial(page, {
       until: (step) => secondRoom ? step.chapter === `move-${secondRoom}` : step.chapter === `reward-${firstFight}`,
       onStep: async (step) => {
         await assertPanelOnScreen(page, label, `${step.chapter}#${step.step}`)
-        if (hero === 'kratos' && step.title === 'Rage') {
-          rageMeterChecked = true
-          const meter = await page.locator('.rage-meter').boundingBox()
-          const { width, height } = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
-          assert(meter && meter.x >= 0 && meter.y >= 0 && meter.x + meter.width <= width && meter.y + meter.height <= height,
-            `${label}: the Rage meter the coach points at is off screen: ${JSON.stringify(meter)}`)
-        }
         const shot = step.task && step.chapter.startsWith('fight-') ? 'fight-task'
           : step.task && step.chapter.startsWith('move-') ? 'map-task'
             : step.task && step.chapter === 'neow' ? 'neow-task' : null
@@ -121,7 +112,6 @@ try {
       },
     })
     assert(walk.stoppedAt, `${label}: the walk did not reach the end of the first fight: ${walk.log.slice(-3).join(' | ')}`)
-    assert(hero !== 'kratos' || rageMeterChecked, `${label}: the Rage step never showed`)
     assert(walk.chapters.includes('neow') && walk.chapters.includes(`move-${firstFight}`) &&
       walk.chapters.some((chapter) => chapter.startsWith(`fight-${firstFight}`)), `${label}: chapters ${walk.chapters.join(', ')}`)
     const after = await getRun(page)

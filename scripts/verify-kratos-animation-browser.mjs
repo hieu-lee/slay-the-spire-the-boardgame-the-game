@@ -119,7 +119,7 @@ try {
             getComputedStyle(image).filter, getComputedStyle(image.closest('.seat')).filter,
           ]), ['none', 'none'], `${engine}/${screen}: filters pixelate overscanned idle in WebKit`)
           await page.locator('.board').screenshot({ path: resolve(output, `${engine}-${screen}-idle.png`) })
-          for (const card of ['strike_kratos', 'kratos_blades_of_chaos', 'kratos_fall_of_olympus']) {
+          for (const card of ['strike_ironclad', 'cleave', 'twin_strike']) {
             const label = `${engine}/${screen}/${card}`
             // Capture live beats in one page call; browser round trips can outlast
             // a whole pose on a busy phone renderer.
@@ -179,7 +179,7 @@ try {
             }), { card, idleReturn }).catch(error => { throw new Error(`${label}: ${error.message}`, { cause: error }) })
             assert.equal(played.frameStats.maxBodies, 1, `${label}: missing or duplicated attacker`)
             assert(played.frameStats.maxTravel > 10, `${label}: Kratos never reaches target`)
-            assert.equal(Object.keys(played.damage).length, card === 'strike_kratos' ? 1 : 2, 'wrong authoritative targets')
+            assert.equal(Object.keys(played.damage).length, card === 'cleave' ? 2 : 1, 'wrong authoritative targets')
             for (const [target, total] of Object.entries(played.damage)) {
               const hits = played.impacts.filter(impact => impact.target === target)
               assert.deepEqual(hits.map(hit => hit.index), [0, 1, 2], `${label}: missing/repeated/out-of-order impacts`)
@@ -348,7 +348,7 @@ print(f'visible skin: {matched}/{len(points)}')
           assert.equal(await page.locator('.kratos-hit').count(), 0, 'reduced motion retains hit effects')
           // Cards and item-granted Shivs both keep separate weighted debts.
           // The second lethal combo must not erase the first or kill its target early.
-          for (const source of ['strike_kratos', 'shiv']) {
+          for (const source of ['strike_ironclad', 'shiv']) {
             await page.evaluate(() => {
               document.documentElement.dataset.reducedMotion = 'false'
               const f = window.kratosFixture; f.reset()

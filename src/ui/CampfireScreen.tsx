@@ -10,6 +10,7 @@ import type { Player } from '../game/types.ts'
 import { CardPicker } from './CardPicker.tsx'
 import { Icon } from './Icon.tsx'
 import { useCampfireScene } from './useCampfireScene.ts'
+import { playerVisualId } from '../game/skins.ts'
 
 type CampfireScreenProps = {
   players: Player[]
@@ -37,8 +38,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(() => new Set())
   const [picker, setPicker] = useState<'remove' | 'transform' | 'upgrade' | null>(null)
   const living = players.filter((player) => !player.dead)
-  const livingCharacters = living.map((seat) => seat.character)
-  const scene = useCampfireScene(livingCharacters)
+  const scene = useCampfireScene(living.map(playerVisualId))
   const ruleset = rulesetForCharacters(players.map((seat) => seat.character), requestedRuleset)
   const [focusedId, setFocusedId] = useState(living[0]?.id ?? '')
   const player = living.find((candidate) => candidate.id === focusedId) ?? living[0]

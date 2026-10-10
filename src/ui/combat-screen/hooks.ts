@@ -10,6 +10,7 @@ import { characterAttackContactMs, isHermitAttack, isKratosAttack, splitAttackWe
   SLIME_COMMAND_ANIMATION_MS, SLIME_COMMAND_CONTACT_MS,
   SLIME_SPAWN_ANIMATION_MS, SLIME_SPAWN_CONTACT_MS } from './vfx.tsx'
 import { cardDef } from '../../game/cards.ts'
+import { playerVisualId } from '../../game/skins.ts'
 import type { CombatPresentationEvent, CombatState } from '../../game/combat.ts'
 import { drawnCardUids } from '../board-signals.ts'
 import { animationSfxRecipe, type AnimationSound, cardSfxRecipe, potionSfxRecipe, shivSfxRecipe } from '../combat-sfx.ts'
@@ -594,7 +595,7 @@ export function usePersonalCombatSoundEffects(
       const actor = state.players.find((player) => player.id === event.actorId)
       if (event.kind !== 'shiv' && !actor) continue
       const recipe = event.kind === 'shiv' ? shivSfxRecipe() :
-        cardSfxRecipe(actor!.character, event.sourceId, event.mode, event.upgraded, event.resolvedType)
+        cardSfxRecipe(actor!.character, event.sourceId, event.mode, event.upgraded, event.resolvedType, actor!.skin)
       pending.current.get(event.seq)?.()
       pending.current.set(event.seq, playCombatSound(recipe, 0, true))
       impactDue.current.delete(event.seq)
@@ -639,7 +640,7 @@ export function usePersonalCombatSoundEffects(
       const contact = !reducedMotion && target ? characterAttackContactMs(state, target, event) : 0
       pending.current.set(event.seq,
         playCombatSound(cardSfxRecipe(
-          actor.character, event.sourceId, event.mode, event.upgraded, event.resolvedType,
+          actor.character, event.sourceId, event.mode, event.upgraded, event.resolvedType, actor.skin,
         ),
           contact))
       if (contact > 0) impactDue.current.set(event.seq, performance.now() + contact)
@@ -700,7 +701,7 @@ export function usePersonalCombatSoundEffects(
               : event.kind === 'potion' ? 'flame-burst'
               : event.kind === 'slime' ? 'slime-splat'
               : !['slash', 'blunt', 'projectile', 'shiv', 'lightning', 'dark'].some(family => element.classList.contains(`combat-vfx--${family}`)) ? undefined
-              : actor?.character === 'ironclad' || actor?.character === 'guardian' ? 'sword-clash'
+              : actor && playerVisualId(actor) === 'ironclad' || actor?.character === 'guardian' ? 'sword-clash'
               : actor?.character === 'hexaghost' ? 'flame-burst'
               : actor?.character === 'slime_boss' ? 'slime-splat'
               : actor?.character === 'defect' ? 'lightning-burst'

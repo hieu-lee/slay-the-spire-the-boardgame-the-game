@@ -12,6 +12,8 @@ import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
 import { savedCampaign } from '../campaign-storage.ts'
 import type { CardPackId } from '../game/packs.ts'
 import { enabledCardPacks } from '../wallet.ts'
+import type { SkinId } from '../game/skins.ts'
+import { onSkinPreferenceChange, preferredSkin } from '../skin-preference.ts'
 import { claimSeatOwner, savedWallet } from '../wallet-storage.ts'
 import {
   resetRoomEndpoint,
@@ -33,6 +35,8 @@ export type PublicSeat = {
   playerId: string
   name: string
   character: CharacterId
+  /** The skin this seat's hero wears (presentation only, public to the table); absent for the default look. */
+  skin?: SkinId
   connected: boolean
   /** The Shop packs this player brings to the room's runs; absent when none. */
   cardPacks?: CardPackId[]
@@ -664,7 +668,7 @@ export function useRoomSession() {
           body = await json(await fetch(endpoint, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name, character, requestId, campaignProgress: savedCampaign(), cardPacks: enabledCardPacks(savedWallet()) }),
+            body: JSON.stringify({ name, character, skin: character ? preferredSkin(character) : undefined, requestId, campaignProgress: savedCampaign(), cardPacks: enabledCardPacks(savedWallet()) }),
             signal: AbortSignal.timeout(ACTION_TIMEOUT_MS),
           })) as { token: string; snapshot: RoomSnapshot }
           break
@@ -858,7 +862,24 @@ export function useRoomSession() {
     }
   }, [credentials, forget])
 
-  const chooseCharacter = useCallback((character: CharacterId) => enqueue('character', { character }), [enqueue])
+  const chooseCharacter = useCallback((character: CharacterId) =>
+    enqueue('character', { character, skin: preferredSkin(character) ?? null }), [enqueue])
+  // The lobby seat wears what the account chose in Profile: pushed once per change, so a server
+  // that does not know skins (and never echoes one back) cannot make this resend forever.
+  const [skinChoiceTick, setSkinChoiceTick] = useState(0)
+  useEffect(() => onSkinPreferenceChange(() => setSkinChoiceTick((tick) => tick + 1)), [])
+  const sentSkin = useRef('')
+  const lobbySeat = snapshot?.phase === 'lobby' ? snapshot.you : undefined
+  const lobbyCode = snapshot?.code
+  useEffect(() => {
+    if (!lobbySeat || !lobbyCode) return
+    const wanted = preferredSkin(lobbySeat.character)
+    if (lobbySeat.skin === wanted) return
+    const key = `${lobbyCode}:${lobbySeat.character}:${wanted ?? ''}`
+    if (sentSkin.current === key) return
+    sentSkin.current = key
+    void enqueue('character', { character: lobbySeat.character, skin: wanted ?? null })
+  }, [lobbySeat?.character, lobbySeat?.skin, lobbyCode, skinChoiceTick, enqueue])
   const chooseAscension = useCallback((ascension: number) => enqueue('ascension', { ascension }), [enqueue])
   // Resolved when the write is sent, so quick repeated steps compose instead of
   // each re-sending the level that was on screen when it was clicked.

@@ -4,9 +4,11 @@ import type { BossCoinAward } from './game/coins.ts'
 
 export type WalletCredit = { runKey: string; awards: BossCoinAward[]; joinedAfter: number }
 export type WalletMigration = { id: string; wallet: Wallet }
+/** What one request buys: a pack or a skin, by id. */
+export type WalletPurchase = { pack: string } | { skin: string }
 export type WalletReply = { wallet: Wallet; purchase?: { ok: boolean; reason?: string } }
-export const syncProfileWallet = (profile: Profile, migration: WalletMigration | undefined, credits: WalletCredit[], pack?: string) =>
-  post<WalletReply | { registered: false }>('/api/profile/wallet', { token: profile.token, migration, credits, pack }, 'Could not sync your coins. Please try again.')
+export const syncProfileWallet = (profile: Profile, migration: WalletMigration | undefined, credits: WalletCredit[], purchase?: WalletPurchase) =>
+  post<WalletReply | { registered: false }>('/api/profile/wallet', { token: profile.token, migration, credits, ...purchase }, 'Could not sync your coins. Please try again.')
     .then((reply) => {
       if ('registered' in reply) throw new Error('Your account is not registered on this server. Please log in again.')
       return reply

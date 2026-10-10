@@ -430,7 +430,6 @@ export function readyForCombat(rng: RngState, player: Player): Player {
     retainCardsThisTurn: 0,
     shivs: 0,
     miracles: 0,
-    ...(player.rage === undefined ? {} : { rage: 0 }),
     stance: 'neutral',
     orbs: [null, null, null],
     orbEvokeBonus: 0,

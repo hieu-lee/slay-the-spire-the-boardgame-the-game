@@ -7,14 +7,13 @@ import { GUARDIAN } from './heroes/guardian.ts'
 import { HERMIT } from './heroes/hermit.ts'
 import { HEXAGHOST } from './heroes/hexaghost.ts'
 import { IRONCLAD } from './heroes/ironclad.ts'
-import { KRATOS } from './heroes/kratos.ts'
 import { SILENT } from './heroes/silent.ts'
 import { SLIME_BOSS } from './heroes/slime_boss.ts'
 import { WATCHER } from './heroes/watcher.ts'
 import type { HeroTutorial, TutorialChapter } from './types.ts'
 
 export const HERO_TUTORIALS: Partial<Record<CharacterId, HeroTutorial>> = Object.fromEntries(
-  [IRONCLAD, SILENT, DEFECT, WATCHER, SLIME_BOSS, GUARDIAN, HEXAGHOST, HERMIT, KRATOS]
+  [IRONCLAD, SILENT, DEFECT, WATCHER, SLIME_BOSS, GUARDIAN, HEXAGHOST, HERMIT]
     .filter((hero): hero is HeroTutorial => hero !== null).map((hero) => [hero.character, hero]),
 )
 

@@ -9,7 +9,8 @@ import { MAX_BOSS_AWARD_COINS, MAX_BOSS_AWARDS } from '../game/coins.ts'
 import { neowCard } from '../game/neow.ts'
 import { POTIONS, RELICS } from '../game/relics.ts'
 import type { RunState } from '../game/run.ts'
-import { CAPS, CHARACTER_IDS, DLC_CHARACTER_IDS } from '../game/types.ts'
+import { isSkinOf } from '../game/skins.ts'
+import { CAPS, CHARACTER_IDS } from '../game/types.ts'
 
 // Keep the shipped storage names so runs recorded before this feature remain downloadable.
 const RUN_LOG_KEY = 'sts-run-vod'
@@ -45,6 +46,29 @@ type RunLogPatch = { path: (string | number)[]; value?: unknown; remove?: true }
 export type RunLogEvent = { patch: RunLogPatch[]; choice?: RunLogChoice; viewerId?: string }
 export type RunLog = { version: 2; runId: string; initial: RunState; events: RunLogEvent[] }
 
+/** Drops a skin its hero cannot wear, so an old or edited log still replays with the default look. */
+function withoutInvalidSkins(initial: RunState): RunState {
+  const clean = <T extends { character: RunState['players'][number]['character']; skin?: unknown }>(players: T[] | undefined) =>
+    Array.isArray(players) && players.some((player) => player && player.skin !== undefined && !isSkinOf(player.character, player.skin))
+      ? players.map((player) => {
+        if (!player || player.skin === undefined || isSkinOf(player.character, player.skin)) return player
+        const { skin: _skin, ...rest } = player
+        return rest as T
+      }) : players
+  const players = clean(initial.players)
+  const combatPlayers = clean(initial.combat?.players)
+  const preparedPlayers = initial.roomState?.kind === 'event' ? clean(initial.roomState.preparedCombat?.players) : undefined
+  if (players === initial.players && combatPlayers === initial.combat?.players &&
+    preparedPlayers === (initial.roomState?.kind === 'event' ? initial.roomState.preparedCombat?.players : undefined)) return initial
+  return {
+    ...initial,
+    players: players as RunState['players'],
+    ...(initial.combat ? { combat: { ...initial.combat, players: combatPlayers as NonNullable<RunState['combat']>['players'] } } : {}),
+    ...(initial.roomState?.kind === 'event' && initial.roomState.preparedCombat ? { roomState: { ...initial.roomState,
+      preparedCombat: { ...initial.roomState.preparedCombat, players: preparedPlayers as NonNullable<RunState['combat']>['players'] } } } : {}),
+  }
+}
+
 function normalizeLegacyRunLog(log: RunLog): RunLog {
   let changed = false
   const events = log.events.map((event) => {
@@ -57,7 +81,8 @@ function normalizeLegacyRunLog(log: RunLog): RunLog {
     })
     return eventChanged ? { ...event, patch } : event
   })
-  return changed ? { ...log, events } : log
+  const initial = withoutInvalidSkins(log.initial)
+  return changed || initial !== log.initial ? { ...log, initial, events } : log
 }
 
 const CANCEL_CHOICE = /^(cancel|close|back(?: to (?:choices|run))?)$/i
@@ -592,6 +617,8 @@ function validRunState(value: unknown, runId: string): value is RunState {
       'spentTwoEnergyOnCardThisTurn',
       'calipersArmed', 'soulburnUsedThisTurn', 'guardianModeLocked', 'lostHpLastRound']
     return typeof current.id === 'string' && typeof current.name === 'string' && CHARACTER_IDS.some((id) => id === current.character) &&
+      // Presentation only: a skin that does not belong to the hero is dropped on load (see normalizeLegacyRunLog).
+      (current.skin === undefined || isSkinOf(current.character, current.skin)) &&
       numeric.every((field) => Number.isFinite(current[field])) && typeof current.drawLocked === 'boolean' &&
       current.hp >= 0 && current.hp <= current.maxHp && current.maxHp >= 1 && current.maxHp <= 1_000 &&
       current.block >= 0 && current.block <= CAPS.block && current.energy >= 0 && current.energy <= CAPS.energy &&
@@ -1111,8 +1138,7 @@ function validRunState(value: unknown, runId: string): value is RunState {
             state.setup && state.roomState?.kind === 'merchant') : true
   const progress = state.campaignProgress
   const progressValid = Boolean(progress && progress.version === 1 && progress.characters && typeof progress.characters === 'object' &&
-    CHARACTER_IDS.every((id) => Number.isInteger(progress.characters[id]) ||
-      DLC_CHARACTER_IDS.some((dlc) => dlc === id) && progress.characters[id] === undefined) &&
+    CHARACTER_IDS.every((id) => Number.isInteger(progress.characters[id])) &&
     ['colorless', 'actIV', 'unspentMarks', 'highestAscension', 'nextRunNumber'].every((field) =>
       Number.isInteger(progress[field as keyof typeof progress])) && Array.isArray(progress.finishedRunIds) &&
     progress.finishedRunIds.every((id) => typeof id === 'string'))

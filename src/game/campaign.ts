@@ -1,4 +1,4 @@
-import { ALL_CHARACTER_IDS, BASE_CHARACTER_IDS, DOWNFALL_CHARACTER_IDS, DLC_CHARACTER_IDS, PLAYTEST_CHARACTER_IDS } from './types.ts'
+import { ALL_CHARACTER_IDS, BASE_CHARACTER_IDS, DOWNFALL_CHARACTER_IDS, PLAYTEST_CHARACTER_IDS } from './types.ts'
 import type { CharacterId } from './types.ts'
 
 export type CampaignComponent =
@@ -43,7 +43,6 @@ export const CHARACTER_UNLOCKS: Readonly<Record<CharacterId, readonly CharacterU
   guardian: [],
   hexaghost: [],
   hermit: [],
-  kratos: [],
 }
 
 export const COLORLESS_UNLOCK = {
@@ -95,7 +94,7 @@ export type CampaignFinish = {
 export function createCampaignProgress(): CampaignProgress {
   return {
     version: 1,
-    characters: { ironclad: 0, silent: 0, defect: 0, watcher: 0, slime_boss: 8, guardian: 8, hexaghost: 8, hermit: 8, kratos: 8 },
+    characters: { ironclad: 0, silent: 0, defect: 0, watcher: 0, slime_boss: 8, guardian: 8, hexaghost: 8, hermit: 8 },
     colorless: 0,
     actIV: 0,
     unspentMarks: 0,
@@ -117,7 +116,7 @@ export function parseCampaignProgress(value: unknown, fallback = createCampaignP
   const characters = saved.characters
   if (saved.version !== 1 || !characters || typeof characters !== 'object' || Array.isArray(characters) ||
     !BASE_CHARACTER_IDS.every((id) => integer(characters[id], CHARACTER_UNLOCK_BOXES)) ||
-    ![...DOWNFALL_CHARACTER_IDS, ...DLC_CHARACTER_IDS, ...PLAYTEST_CHARACTER_IDS].every((id) => characters[id] === undefined || integer(characters[id], CHARACTER_UNLOCK_BOXES)) ||
+    ![...DOWNFALL_CHARACTER_IDS, ...PLAYTEST_CHARACTER_IDS].every((id) => characters[id] === undefined || integer(characters[id], CHARACTER_UNLOCK_BOXES)) ||
     !integer(saved.colorless, COLORLESS_UNLOCK.boxes) || !integer(saved.actIV, ACT_IV_UNLOCK_BOXES) ||
     !integer(saved.unspentMarks, COLORLESS_UNLOCK.boxes + ACT_IV_UNLOCK_BOXES) || !integer(saved.highestAscension, MAX_ASCENSION) ||
     Number(saved.colorless) + Number(saved.actIV) + Number(saved.unspentMarks) > COLORLESS_UNLOCK.boxes + ACT_IV_UNLOCK_BOXES ||

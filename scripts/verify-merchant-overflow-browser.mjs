@@ -28,8 +28,8 @@ try {
     await page.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'neow')
     const fixture = postNeowRun('merchant-overflow', [
       { id: 'p1', name: 'Silent', character: 'silent' },
-      { id: 'p2', name: 'Kratos', character: 'kratos' },
-      { id: 'p3', name: 'Ironclad', character: 'ironclad' },
+      { id: 'p2', name: 'Kratos', character: 'ironclad', skin: 'kratos' },
+      { id: 'p3', name: 'Watcher', character: 'watcher' },
       { id: 'p4', name: 'Defect', character: 'defect' },
     ])
     fixture.players.forEach((player) => { player.gold = 30 })
@@ -47,7 +47,14 @@ try {
     await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), fixture)
     const kratos = page.locator('.merchant-arrival__party [data-character="kratos"] img')
     await kratos.evaluate(async (image) => { await image.decode() })
-    assert(await kratos.isVisible(), 'Kratos must appear in the merchant arrival party')
+    assert(await kratos.isVisible(), 'the Kratos skin must appear in the merchant arrival party')
+    // The skinned Ironclad stands as Kratos; every other seat keeps its own hero's figure.
+    assert.match(await kratos.getAttribute('src'), /\/noncombat\/merchant\/characters\/kratos-standing\.webp$/,
+      'the skinned Ironclad uses the Kratos standing figure')
+    assert.deepEqual(await page.locator('.merchant-arrival__party [data-character] img').evaluateAll((images) => images.map((image) =>
+      [image.closest('[data-character]').getAttribute('data-character'), image.getAttribute('src').split('/').pop()])),
+    [['silent', 'silent-standing.webp'], ['kratos', 'kratos-standing.webp'], ['watcher', 'watcher-standing.webp'], ['defect', 'defect-standing.webp']],
+    'every merchant arrival seat stands as its own visual id')
     await page.screenshot({ path: `${output}/${name}-kratos-arrival.png` })
     await page.getByRole('button', { name: 'Enter merchant shop' }).click()
     const stage = page.locator('.merchant-shop-stage')

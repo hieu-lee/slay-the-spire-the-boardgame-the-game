@@ -359,7 +359,8 @@ try {
     summonGroup.enemyDecks.encounter[0] = { ...summonGroup.enemyDecks.encounter[0], summons: ['byrd'] }
     const redundant = createRun(51, [{ id: 'p1', name: 'Replay Tester', character: 'ironclad' }])
     const beforeDlc = structuredClone(redundant)
-    delete beforeDlc.campaignProgress.characters.kratos
+    // A log from when Kratos was a character still carries his unlock row.
+    beforeDlc.campaignProgress.characters.kratos = 8
     delete redundant.nextPendingRelicId
     const final = structuredClone(redundant); final.phase = 'defeat'; final.neow = null
     const removal = { version: 2, runId: redundant.campaign.runId, initial: redundant, events: [
