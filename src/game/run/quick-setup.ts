@@ -5,11 +5,11 @@
 import { createEnemyDecks, rollActBoss } from './encounters.ts'
 import { availableRewardSources, revealRewardItems } from './rewards.ts'
 import { canUpgradeCard, hasModifier, hasPendingRelicAcquisition, nextRunUid } from './rules.ts'
-import { merchantItemDecks } from './supplies.ts'
+import { colorlessCardsAvailable, merchantItemDecks } from './supplies.ts'
 import type { CardRewardOffer, RewardSource, RunState } from './types.ts'
 import { queueNewGuardianSockets } from '../guardian-gems.ts'
 import { availableTransformRewards, gainGold, removeCard, transformCard, upgradeCard } from '../acquisition.ts'
-import { isActIVUnlocked, isColorlessUnlocked } from '../campaign.ts'
+import { isActIVUnlocked } from '../campaign.ts'
 import { cardIsCurse } from '../cards.ts'
 import { buildEventDeck } from '../events.ts'
 import { addBurningElite, generateMap } from '../map.ts'
@@ -31,7 +31,7 @@ export function finishQuickSetup(state: RunState): RunState {
   }
   const rng = { ...state.rng }
   const act = setup.targetAct
-  const colorlessUnlocked = isColorlessUnlocked(state.campaignProgress)
+  const colorlessUnlocked = colorlessCardsAvailable(state)
   const baseMap = generateMap(rng, act, state.ascension)
   const map = act === 4
     ? baseMap

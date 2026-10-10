@@ -8,6 +8,7 @@ import type { CharacterId } from './types.ts'
 import { CHARACTER_UNLOCKS, createCampaignProgress } from './campaign.ts'
 import type { CampaignProgress } from './campaign.ts'
 import type { RuleSet } from './meta.ts'
+import type { CardPackId } from './packs.ts'
 import { GUARDIAN_CARDS_BY_ID, GUARDIAN_PHYSICAL_DECKS, resolveGuardianCardType } from './downfall/guardian.ts'
 import { HERMIT_PHYSICAL_DECKS, fatalDesireGold } from './downfall/hermit.ts'
 import { SLIME_BOSS_RARE_DECK, SLIME_BOSS_REWARD_DECK } from './downfall/slime-boss.ts'
@@ -31,7 +32,11 @@ export type ItemDecks = {
 
 export type ItemKind = 'relic' | 'potion'
 
-export function characterRewardDeck(character: CharacterId, rare: boolean, progress: CampaignProgress): string[] {
+/** A pack card is in play only when its pack is among the run's enabled packs. */
+const inEnabledPack = (def: { pack?: CardPackId }, packs: readonly CardPackId[]): boolean =>
+  def.pack === undefined || packs.includes(def.pack)
+
+export function characterRewardDeck(character: CharacterId, rare: boolean, progress: CampaignProgress, packs: readonly CardPackId[] = []): string[] {
   if (character === 'slime_boss') {
     return rare ? [...SLIME_BOSS_RARE_DECK] : [...SLIME_BOSS_REWARD_DECK, 'golden_ticket', 'golden_ticket']
   }
@@ -49,38 +54,49 @@ export function characterRewardDeck(character: CharacterId, rare: boolean, progr
     component.kind === 'card' ? [[component.cardId, unlock.boxes] as const] : [],
   )))
   const cards = Object.values(CARDS).flatMap((def) => {
-    if (def.owner !== character || (locked.has(def.id) && progress.characters[character] < locked.get(def.id)!)) return []
+    if (def.owner !== character || !inEnabledPack(def, packs) ||
+      (locked.has(def.id) && progress.characters[character] < locked.get(def.id)!)) return []
     if (rare) return def.rarity === 'rare' ? [def.id] : []
     if (def.rarity === 'common') return Array(def.id === 'claw_claw_pack' ? 8 : 2).fill(def.id)
     return def.rarity === 'uncommon' ? [def.id] : []
   })
-  if (!rare && characterRewardDeck(character, true, progress).length > 0) cards.push(...Array(progress.characters[character] >= 4 ? 2 : 1).fill('golden_ticket'))
+  if (!rare && characterRewardDeck(character, true, progress, packs).length > 0) cards.push(...Array(progress.characters[character] >= 4 ? 2 : 1).fill('golden_ticket'))
   return cards
 }
 
-export function createItemDecks(rng: RngState, colorlessUnlocked: boolean, progress = createCampaignProgress(), activeCharacters: readonly CharacterId[] = [], ruleset?: RuleSet): ItemDecks {
+/**
+ * The physical Colorless stack. A bought Colorless pack works without the campaign's
+ * Colorless unlock: the unlock gates the base supply, not something the player owns.
+ */
+function colorlessSupply(unlocked: boolean, downfall: boolean, packs: readonly CardPackId[]): string[] {
+  const base = !unlocked ? [] : downfall ? [...DOWNFALL_COLORLESS_DECK]
+    : Object.values(CARDS).filter((card) => card.owner === 'colorless' && !card.pack && !(card.id in DOWNFALL_COLORLESS_CARD_DEFS)).map((card) => card.id)
+  const owned = Object.values(CARDS).filter((card) => card.owner === 'colorless' && card.pack && inEnabledPack(card, packs)).map((card) => card.id)
+  return [...base, ...owned]
+}
+
+export function createItemDecks(rng: RngState, colorlessUnlocked: boolean, progress = createCampaignProgress(), activeCharacters: readonly CharacterId[] = [], ruleset?: RuleSet, packs: readonly CardPackId[] = []): ItemDecks {
   const downfall = ruleset === 'downfall' || activeCharacters.some((character) =>
     DOWNFALL_CHARACTER_IDS.some((id) => id === character))
   const inactive = (downfall ? [...BASE_CHARACTER_IDS, ...DOWNFALL_CHARACTER_IDS] : BASE_CHARACTER_IDS)
     .filter((character) => !activeCharacters.includes(character))
+  const colorless = colorlessSupply(colorlessUnlocked, downfall, packs)
   const decks: ItemDecks = {
     relics: shuffle(rng, [...(downfall ? DOWNFALL_RELIC_DECK : RELIC_DECK)]),
     potions: shuffle(rng, [...(downfall ? DOWNFALL_POTION_DECK : POTION_DECK)]),
-    colorless: colorlessUnlocked
-      ? shuffle(rng, downfall ? [...DOWNFALL_COLORLESS_DECK]
-        : Object.values(CARDS).filter((card) => card.owner === 'colorless' && !(card.id in DOWNFALL_COLORLESS_CARD_DEFS)).map((card) => card.id))
-      : [],
+    // An empty supply is never shuffled, so it draws nothing from the RNG.
+    colorless: colorless.length > 0 ? shuffle(rng, colorless) : [],
     curses: shuffle(rng, Object.values(CARDS).filter((card) => card.owner === 'curse' && card.id !== 'ascenders_bane').flatMap((card) =>
       Array(['clumsy', 'injury', 'parasite', 'regret'].includes(card.id) ? 2 : 1).fill(card.id),
     )),
-    characterCards: Object.fromEntries(inactive.map((character) => [character, shuffle(rng, characterRewardDeck(character, false, progress))])),
-    characterRares: Object.fromEntries(inactive.map((character) => [character, shuffle(rng, characterRewardDeck(character, true, progress))])),
+    characterCards: Object.fromEntries(inactive.map((character) => [character, shuffle(rng, characterRewardDeck(character, false, progress, packs))])),
+    characterRares: Object.fromEntries(inactive.map((character) => [character, shuffle(rng, characterRewardDeck(character, true, progress, packs))])),
   }
   // Optional DLC pools must not shift existing seeded runs and tutorial plans.
   const dlcRng = createRng(seedFromString(`dlc-pools:${rng.seed}:${rng.calls}`))
   for (const character of DLC_CHARACTER_IDS.filter((id) => !activeCharacters.includes(id))) {
-    decks.characterCards[character] = shuffle(dlcRng, characterRewardDeck(character, false, progress))
-    decks.characterRares[character] = shuffle(dlcRng, characterRewardDeck(character, true, progress))
+    decks.characterCards[character] = shuffle(dlcRng, characterRewardDeck(character, false, progress, packs))
+    decks.characterRares[character] = shuffle(dlcRng, characterRewardDeck(character, true, progress, packs))
   }
   return decks
 }

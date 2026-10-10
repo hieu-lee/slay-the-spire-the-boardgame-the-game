@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { orbEndTurnAmount } from '../game/combat.ts'
 import type { OrbType, Player } from '../game/types.ts'
 import { StatusIcon } from './Icon.tsx'
 import type { StatusIconName } from './Icon.tsx'
@@ -49,11 +50,11 @@ export function TokenRow(props: TokenRowProps) {
 }
 
 function orbDisplayValue(player: Player, orb: OrbType): number {
+  // Slayer Pack: orbEndTurnAmount keeps Biased Cognition's -1 from showing below 0.
   if (orb === 'lightning') {
-    return player.damageDealtZeroThisTurn ? 0
-      : 1 + (player.orbEndTurnBonus ?? 0) + (player.lightningEndTurnBonus ?? 0)
+    return player.damageDealtZeroThisTurn ? 0 : orbEndTurnAmount(player, orb)
   }
-  if (orb === 'frost') return 1 + (player.orbEndTurnBonus ?? 0)
+  if (orb === 'frost') return orbEndTurnAmount(player, orb)
   return player.damageDealtZeroThisTurn ? 0
     : 3 + player.powers.length + (player.orbEvokeBonus ?? 0) + (player.darkOrbEvokeBonus ?? 0)
 }
@@ -70,11 +71,14 @@ export function OrbRow({
   targetableSlots = [],
   targetVerb = 'Choose',
   onTarget,
+  selectedSlots,
 }: {
   player: Player
   targetableSlots?: readonly number[]
   targetVerb?: string
   onTarget?: (slot: number) => void
+  /** Slayer Pack: a multi-Orb pick (Creative AI+) marks its chosen Orbs as pressed toggles. */
+  selectedSlots?: readonly number[]
 }) {
   const orbs = player.character === 'defect'
     ? player.orbs.map((orb, slot) => ({ orb, slot }))
@@ -98,7 +102,9 @@ export function OrbRow({
         return targetable.has(slot) ? (
           // The glow filter isolates each Orb, so stack left over right to keep every
           // bottom-right value clear of its neighbour's sprite.
-          <span role="button" tabIndex={0} className="orbs__target" data-orb-slot={slot} key={slot}
+          <span role="button" tabIndex={0} key={slot} data-orb-slot={slot}
+            className={`orbs__target${selectedSlots?.includes(slot) ? ' orbs__target--selected' : ''}`}
+            aria-pressed={selectedSlots ? selectedSlots.includes(slot) : undefined}
             style={{ '--orb-stack': orbs.length - index } as CSSProperties}
             onClick={(event) => {
               event.stopPropagation()

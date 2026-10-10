@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium, setTestUsername } from './lib/profile-browser.mjs'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
+import { CHARACTER_IDS } from '../src/game/types.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const out = join(root, 'artifacts/multiplayer-ui-browser')
@@ -190,7 +191,7 @@ try {
     assert(settingsChrome.keys.length > 0 && settingsChrome.keys.every((clip) => clip === 'none'), `${viewport.name}: lobby Settings keys picked up the stone-key skin: ${settingsChrome.keys}`)
     await settingsDialog.getByRole('button', { name: 'Back', exact: true }).click()
     await settingsDialog.waitFor({ state: 'detached' })
-    assert.equal(lobbyChrome.roster, 8, `${viewport.name}: party character strip lost heroes`)
+    assert.equal(lobbyChrome.roster, CHARACTER_IDS.length, `${viewport.name}: party character strip lost heroes`)
     assert.equal(lobbyChrome.selected, 'Ironclad', `${viewport.name}: lobby selection diverged from the room`)
     assert.notEqual(lobbyChrome.ribbonClip, 'none', `${viewport.name}: lobby leave ribbon lost its silhouette`)
     assert(lobbyChrome.ribbonVisible, `${viewport.name}: lobby leave ribbon leaves the viewport`)

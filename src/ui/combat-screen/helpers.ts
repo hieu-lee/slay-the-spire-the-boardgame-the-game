@@ -8,6 +8,7 @@ import type { Pending } from './types.ts'
 import { cardDef, faceOf } from '../../game/cards.ts'
 import type { CardDef, Effect } from '../../game/cards.ts'
 import {
+  activeCardPlayWindow,
   cardEnemyChoiceCount,
   cardIsPlayable,
   cardNeedsChoicePreview,
@@ -25,6 +26,7 @@ import {
   reachedTimeWarpLimit,
   remainingRoundHpLoss,
   slimeChoiceIsAvailable,
+  cardDefForTarget,
 } from '../../game/combat.ts'
 import type { CombatState } from '../../game/combat.ts'
 import { potionDef } from '../../game/relics.ts'
@@ -94,8 +96,10 @@ export function requirementsOf(
     ['overexert', 'replicateSlime'].includes((effect as { kind: string }).kind))
   const scried = selectableEffects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
     effect.kind === 'scry' && effectIsActive(effect, state, viewer))
-  const scryToHand = selectableEffects.find((effect): effect is Extract<Effect, { kind: 'scryToHand' }> =>
-    effect.kind === 'scryToHand' && effectIsActive(effect, state, viewer))
+  const scryToHand = selectableEffects.find((effect): effect is Extract<Effect, { kind: 'scryToHand' | 'scryAndPlay' }> =>
+    (effect.kind === 'scryToHand' || effect.kind === 'scryAndPlay') && effectIsActive(effect, state, viewer))
+  // Slayer Pack: Forethought puts hand cards on the bottom of the draw pile.
+  const bottomdeck = selectableEffects.find((effect) => effect.kind === 'bottomdeck')
   const load = selectableEffects.find((effect) => effect.kind === 'load')
   const chamberSlots = viewer.chamberSlots + selectableEffects
     .filter((effect) => effect.kind === 'gainChamberSlot')
@@ -121,6 +125,10 @@ export function requirementsOf(
         ? { kind: 'scry' as const, amount: scried.amount }
         : topdeck
           ? { kind: 'topdeck' as const, amount: topdeck.amount }
+        : bottomdeck
+          ? bottomdeck.amount === 'any'
+            ? { kind: 'bottomdeck' as const, amount: Math.max(0, viewer.hand.length - Number(cardInHand)), minimum: 0 }
+            : { kind: 'bottomdeck' as const, amount: bottomdeck.amount, minimum: bottomdeck.amount }
         : recover && viewer.discard.length > 0
           ? { kind: 'recover' as const, amount: recover.amount }
         : recoverExhaust && viewer.exhaust.length > 0
@@ -417,7 +425,15 @@ export function canAfford(
   const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), player.guardianMode)
   if (!cardIsPlayable(def, state, player, drawCount, sourceInHand)) return false
   if (reachedTimeWarpLimit(state, player)) return false
-  const cost = playCost(def, player, card)
+  // Slayer Pack: An open card-play window lets its owner play only what it offers.
+  // A mandatory Chamber play is the one card no window holds back.
+  const playWindow = activeCardPlayWindow(state, player.id)
+  if (playWindow && !playWindow.cardUids.includes(card.uid) &&
+    state.pendingHermitChamberPlays?.[0]?.cardUids[0] !== card.uid) return false
+  // Slayer Pack: with only Bosses left, Pressure Points can only be paid at the Boss price.
+  const living = state.enemies.filter((enemy) => !enemy.dead)
+  const cost = playCost(living.length > 0 && living.every((enemy) => enemy.isBoss)
+    ? cardDefForTarget(def, state, living[0]!.uid) : def, player, card)
   if (spendMiracle && (cost === 'X' || cost === 0)) return false
   if (def.cost === 'X' && cost !== 'X' && cost < (def.minimumX ?? 0)) return false
   const effectEnergy = def.cost === 'X' ? cost === 'X' ? def.minimumX ?? 0 : cost : 0

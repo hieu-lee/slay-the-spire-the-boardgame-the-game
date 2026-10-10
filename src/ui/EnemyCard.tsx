@@ -1,4 +1,4 @@
-import { cardDef } from '../game/cards.ts'
+import { cardDef, faceOf } from '../game/cards.ts'
 import { assetPath, enemyAnimationImagePath, cardThumbPath, enemyImagePath } from '../game/assets.ts'
 import { abilityText, actionsForEnemy, enemyAbilities, enemyAttackBonus, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
@@ -13,7 +13,7 @@ import { splitAttackAnimationPending } from './combat-screen/vfx.tsx'
 import { healthBand } from './board-signals.ts'
 import { animationSfxRecipe } from './combat-sfx.ts'
 import { playCombatSound } from './sfx.ts'
-import { CardKeywordHelp, revealDecodedImage } from './Card.tsx'
+import { CardKeywordHelp, cardRuleDescription, revealDecodedImage } from './Card.tsx'
 import {
   bossAttackContactLeftFor,
   bossAttackDurationFor,
@@ -238,6 +238,9 @@ function describeEnemy(
   parts.push(...abilities)
   if (enemy.corpseExplosion) {
     parts.push(`Corpse Explosion attached, ${enemy.corpseExplosion.damage} row damage when defeated`)
+  }
+  for (const entry of enemy.slayerAttachments ?? []) {
+    parts.push(`${faceOf(cardDef(entry.card.defId), entry.card.upgraded).name} attached`)
   }
 
   const tokens: [string, number][] = [
@@ -1006,6 +1009,16 @@ export function EnemyCard({
         </span>
       )) : null}
 
+      {(visibleEnemy.slayerAttachments ?? []).map((entry) => (
+        <span key={entry.card.uid} className="enemy__attachment" data-slayer-attachment={entry.card.defId}
+          title={`${faceOf(cardDef(entry.card.defId), entry.card.upgraded).name}: ${
+            cardRuleDescription(faceOf(cardDef(entry.card.defId), entry.card.upgraded))}`}>
+          <img src={cardThumbPath(cardDef(entry.card.defId), entry.card.upgraded)} alt=""
+            onLoad={(event) => revealDecodedImage(event.currentTarget)}
+            onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
+          <span>{faceOf(cardDef(entry.card.defId), entry.card.upgraded).name}</span>
+        </span>
+      ))}
       {visibleEnemy.corpseExplosion ? (
         <span className="enemy__attachment" title={`Corpse Explosion · ${visibleEnemy.corpseExplosion.damage} row damage on death`}>
           <img src={cardThumbPath(cardDef(visibleEnemy.corpseExplosion.card.defId), visibleEnemy.corpseExplosion.card.upgraded)} alt=""

@@ -6,6 +6,7 @@ import { assetPath, cardImagePath, cardThumbPath } from '../game/assets.ts'
 import { StatusIcon } from './Icon.tsx'
 import { CardKeywordHelp, cardAccessibleName, cardPlayText, revealDecodedImage } from './Card.tsx'
 import { CardFace } from './CardFace.tsx'
+import { CARD_PACKS } from '../game/packs.ts'
 
 type Pool = CardDef['owner'] | 'all'
 
@@ -60,7 +61,7 @@ const gemTint = (card: CardDef): CSSProperties | undefined => card.guardian?.pri
  * arrive. That is the designed fallback face — a complete, legible card — and
  * paying a moment of it once per card beats holding the grid at full resolution.
  */
-function ScannedCardFace({ def, upgraded, full = false }: {
+export function ScannedCardFace({ def, upgraded, full = false }: {
   def: CardDef
   upgraded: boolean
   full?: boolean
@@ -87,6 +88,11 @@ function ScannedCardFace({ def, upgraded, full = false }: {
       <CardFace def={def} rules={cardPlayText(def)} illustration={scanUnavailable} />
     </>
   )
+}
+
+/** Shop pack cards share names with base and Downfall cards, so their tile says which pack they come from. */
+function PackBadge() {
+  return <span className="compendium-card__pack" aria-hidden="true">Slayer Pack</span>
 }
 
 export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { onBack: () => void; backLabel?: string }) {
@@ -126,8 +132,9 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
       return (
         <CardKeywordHelp def={face} key={card.id}>{(keywordHelpProps) => (
           <button {...keywordHelpProps} type="button" className={`compendium-card compendium-card--${card.owner}`} style={gemTint(face)}
-            onClick={() => setSelected(card)} aria-label={`${cardAccessibleName(face)}, ${face.rarity}`}>
+            onClick={() => setSelected(card)} aria-label={`${cardAccessibleName(face)}${card.pack ? ', Slayer Pack' : ''}, ${face.rarity}`}>
             <ScannedCardFace def={face} upgraded={showUpgrade} />
+            {card.pack ? <PackBadge /> : null}
           </button>
         )}</CardKeywordHelp>
       )
@@ -223,6 +230,7 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
               <ScannedCardFace def={selectedFace} upgraded={upgraded && Boolean(selected?.upgrade)} full />
             </span>
           )}</CardKeywordHelp>
+          {selected?.pack ? <p className="compendium__detail-pack">{CARD_PACKS[selected.pack].name} · sold in the Shop</p> : null}
         </dialog>
       ) : null}
     </main>

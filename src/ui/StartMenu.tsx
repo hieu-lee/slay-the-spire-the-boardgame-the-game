@@ -11,6 +11,8 @@ import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { MAX_RUN_LOG_BYTES, parseRunLog, type RunLog } from './run-log.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import type { GameSettings } from './game-settings.ts'
+import { CoinAmount } from './Coins.tsx'
+import { useWallet } from './useWallet.ts'
 
 const SINGLE_PLAYER_ONLY = import.meta.env.VITE_SINGLE_PLAYER === 'true'
 
@@ -39,6 +41,7 @@ type StartMenuProps = {
   onStats: () => void
   onProfile: () => void
   onCompendium: () => void
+  onShop: () => void
   onReplay: (log: RunLog) => void
   onCharacterBack: () => void
   settings: GameSettings
@@ -129,6 +132,7 @@ export function StartMenu({
   onStats,
   onProfile,
   onCompendium,
+  onShop,
   onReplay,
   onCharacterBack,
   settings,
@@ -136,6 +140,7 @@ export function StartMenu({
   initiallyChoosingCharacter = false,
 }: StartMenuProps) {
   const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
+  const wallet = useWallet()
   const [screen, setScreen] = useState<'main' | 'mode' | 'daily' | 'custom' | 'character' | 'campaign' | 'replay'>(initiallyChoosingCharacter ? 'character' : 'main')
   const [characterTransition, setCharacterTransition] = useState(false)
   // The tutorial reuses the Single Player character picker without Ascension.
@@ -285,6 +290,10 @@ export function StartMenu({
         <span><strong>THE PARTY</strong><small>Board Game Chronicle</small></span>
       </div> : null}
       {screen === 'main' ? <div className="start-menu__corner">
+        <button type="button" className="start-menu__purse"
+          aria-label={`Shop · ${wallet.coins} ${wallet.coins === 1 ? 'coin' : 'coins'}`} title="Your coins · open the Shop" onClick={onShop}>
+          <CoinAmount coins={wallet.coins} size={30} />
+        </button>
         <button type="button" className="start-menu__icon" aria-label="Leaderboard" title="Leaderboard" onClick={onLeaderboard}>
           <img src={assetPath('menu/leaderboard-trophy.png')} alt="" />
         </button>
@@ -316,6 +325,7 @@ export function StartMenu({
         <button type="button" aria-label="Replay"
           onClick={() => setScreen('replay')}>Replay</button>
         <button type="button" aria-label="Compendium" onClick={onCompendium}>Compendium</button>
+        <button type="button" aria-label="Shop" onClick={onShop}>Shop</button>
         </nav>
       </div> : null}
 

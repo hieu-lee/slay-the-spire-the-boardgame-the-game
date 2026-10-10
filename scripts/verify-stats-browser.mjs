@@ -8,6 +8,10 @@ import { createRoomServer } from './room-server.mjs'
 import { addLeaderboardRun } from './lib/leaderboard.mjs'
 import { statsSnapshot } from './lib/stats.mjs'
 import { assert, assertEqual, check, report, suite } from './lib/harness.mjs'
+import { CHARACTER_IDS } from '../src/game/types.ts'
+
+/** One filter per hero, plus All heroes. */
+const HERO_BUTTONS = CHARACTER_IDS.length + 1
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const output = join(root, 'artifacts/stats-explorer-browser')
@@ -223,7 +227,7 @@ try {
     const back = await page.locator('.stats__back.ribbon-back').boundingBox()
     assert(back && back.width >= 44 && back.height >= 44 && back.x >= 0 && back.y >= 0 && back.y + back.height <= rail.y + rail.height, 'Back ribbon is clipped or too small')
     const heroes = await page.locator('.stats__heroes button').evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().right))
-    assert(heroes.length === 9 && heroes.every((right) => right <= selects.x), `Hero buttons hidden behind filters: ${heroes}`)
+    assert(heroes.length === HERO_BUTTONS && heroes.every((right) => right <= selects.x), `Hero buttons hidden behind filters: ${heroes}`)
   })
   await page.setViewportSize({ width: 568, height: 320 })
   await page.screenshot({ path: join(output, 'stats-small-horizontal-phone.png') })
@@ -238,7 +242,7 @@ try {
     assert(back && back.width >= 44 && back.height >= 44, 'Back ribbon touch target is too small')
     assert(await page.locator('.stats__table-scroll').evaluate((table) => table.scrollWidth <= table.clientWidth), 'Archetype table overflows the small phone')
     assert(await page.locator('.stats__row-button strong').evaluateAll((names) => names.length > 0 && names.every((name) => name.scrollHeight <= name.clientHeight + 1)), 'Archetype names are truncated on the small phone')
-    assert(!heroes.scrolls && heroes.rights.length === 9 && heroes.rights.every((right) => right <= selects.x), `Hero buttons hidden on small phone: ${heroes.rights}`)
+    assert(!heroes.scrolls && heroes.rights.length === HERO_BUTTONS && heroes.rights.every((right) => right <= selects.x), `Hero buttons hidden on small phone: ${heroes.rights} (scrolls ${heroes.scrolls}, filters at ${selects.x})`)
   })
   await page.setViewportSize({ width: 844, height: 390 })
   await page.locator('.stats__scroll').evaluate((element) => { element.scrollTop = element.scrollHeight })

@@ -122,12 +122,35 @@
 .compendium__detail-card .card-face .card-face__rules { overflow: auto; font-size: clamp(.75rem, 4cqw, 1.5rem); line-height: 1.3; }
 .compendium__detail button { position: fixed; top: 1rem; right: 1rem; z-index: 2; width: 3rem; height: 3rem; border: 1px solid #b49657; border-radius: 50%; color: #fff1cc; background: #321b17; font-size: 2rem; }
 
+/* Shop pack cards (The Slayer Pack) share names with other cards, so their tiles carry a badge. */
+.compendium-card__pack {
+  position: absolute;
+  z-index: 2;
+  bottom: 1.2%;
+  left: 50%;
+  padding: 0.08rem 0.45rem;
+  border: 1px solid #f1d58a;
+  border-radius: 999px;
+  color: #2a1a06;
+  background: linear-gradient(#ffe48a, #d4a23c);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.7);
+  font: 700 0.58rem 'Kreon', Georgia, serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.compendium__detail-pack { position: fixed; bottom: 1rem; left: 50%; margin: 0; padding: 0.3rem 0.9rem; border-radius: 999px; color: #2a1a06; background: linear-gradient(#ffe48a, #d4a23c); font: 700 0.85rem 'Kreon', Georgia, serif; letter-spacing: 0.06em; transform: translateX(-50%); }
+html[data-mobile-performance='true'] .compendium__detail-pack { font-size: 1.1rem; }
+
 @media (max-width: 760px), (max-height: 620px) {
   .compendium { grid-template-columns: 13.5rem minmax(0, 1fr); }
   .compendium__filters { gap: 0.55rem; padding: 0.55rem 0.6rem 0.75rem; }
   .compendium__head h1 { font-size: 1.15rem; }
   .compendium .compendium__search input { padding: 0.35rem 2rem 0.35rem 0.55rem; font-size: 0.85rem; }
-  .compendium__pools { grid-template-columns: repeat(6, 1fr); }
+  /* Thirteen pools since Kratos: seven across keeps them to two rows, so the rail never scrolls. */
+  .compendium__pools { grid-template-columns: repeat(7, 1fr); }
   .compendium__filter-block { gap: 0.25rem; }
   .compendium__filter-block h2 { font-size: 0.6rem; }
   :is(.compendium__types, .compendium__segments, .compendium__toggles) button,

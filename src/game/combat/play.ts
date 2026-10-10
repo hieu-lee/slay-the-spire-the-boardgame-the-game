@@ -19,6 +19,9 @@ import {
 } from './board.ts'
 import {
   applyEffect,
+  closeCardPlayWindow,
+  attachSlayerCard,
+  slayerAttachmentKeys,
   discardByCardEffect,
   drawInto,
   evokeTargetProgress,
@@ -36,12 +39,17 @@ import {
   resolveSlimeCommand,
   resolvePendingSlimeCommands,
   settle,
+  syncCardPlayWindowMarks,
 } from './effects.ts'
-import { forgetRetain, playerCanGainBlock } from './pieces.ts'
+import { consumeCopySource, forgetRetain, playedCardExhausts, playerCanGainBlock, skillExhausts } from './pieces.ts'
 import { addPresentationEvent, presentationTargets } from './presentation.ts'
 import {
+  activeCardPlayWindow,
+  adjacentDamageChoicesAreValid,
   amountOf,
   activePowerWindow,
+  cardDefForTarget,
+  mandatoryCardPlayWindowOwners,
   cardCanBeForced,
   cardHasRetain,
   cardEnemyChoiceCount,
@@ -66,11 +74,14 @@ import {
   latestPlayableAllyAttack,
   mandatoryChoicePending,
   maximumXEnergy,
+  metamorphosisCost,
+  metamorphosisPlayEffects,
   needsChosenEnemy,
   nextEvokeChoice,
   omniscienceEligibleCards,
   overflowShivCount,
   playCost,
+  powerActivationAllowed,
   reachedTimeWarpLimit,
   resolutionContext,
   slimeChoiceIsAvailable,
@@ -91,17 +102,10 @@ import type {
 import { cardDef, cardStaysInPlay, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
 import type { CardDef, Effect, TargetScope } from '../cards.ts'
 import { gainBlock, gainStrength } from '../damage.ts'
-import { enemyAbilities, enemyDef } from '../enemies.ts'
 import { addToDrawTop } from '../piles.ts'
 import { CAPS } from '../types.ts'
 import type { CardInstance, Player } from '../types.ts'
 import { slimeDef } from '../downfall/slime-boss.ts'
-
-function skillExhausts(state: CombatState, actor: Player, def: CardDef): boolean {
-  return def.type === 'skill' && (actor.powers.some((power) => cardDef(power.defId).corruptSkills) ||
-    state.enemies.some((enemy) => !enemy.dead && enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
-      .some((ability) => ability.kind === 'corruptSkills')))
-}
 
 function presentationEnemyScope(
   state: CombatState,
@@ -142,13 +146,6 @@ function presentationCardContext(
     switchWithPlayerId: effects.some((effect) => effect.kind === 'switchRows')
       ? context.switchWithPlayerId : undefined,
   }
-}
-
-function consumeCopySource(actor: Player, sources: readonly CopySource[]): void {
-  if (sources.includes('Echo Form')) actor.doubledCardsThisTurn = actor.doubledCardsThisTurn! - 1
-  else if (sources.includes('Blasphemy')) actor.tripledAttacksThisTurn = actor.tripledAttacksThisTurn! - 1
-  else if (sources.includes('Double Tap')) actor.doubledAttacksThisTurn = actor.doubledAttacksThisTurn! - 1
-  else if (sources.includes('Burst')) actor.doubledSkillsThisTurn = actor.doubledSkillsThisTurn! - 1
 }
 
 function hermitRapidFireCount(def: CardDef, actor: Player, sourceInHand = true): number {
@@ -216,7 +213,9 @@ export function previewCardChoice(
   if (mandatoryChoicePending(state, held.hermitDeadOn === true)) return null
   const printedDef = faceOf(cardDef(held.defId), held.upgraded)
   const def = effectiveCombatCardDef(printedDef, player.guardianMode)
-  const printedCost = forced?.cardUid === cardUid ? 0 : playCost(def, player, held)
+  const playWindow = forced?.cardUid === cardUid ? undefined : activeCardPlayWindow(state, playerId)
+  if (playWindow && !playWindow.cardUids.includes(cardUid)) return null
+  const printedCost = forced?.cardUid === cardUid ? 0 : playWindow ? playWindow.cost : playCost(def, player, held)
   const cost = printedCost === 'X' ? player.energy : printedCost
   if (reachedTimeWarpLimit(state, player) || !cardIsPlayable(def, state, player) ||
     cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
@@ -243,7 +242,7 @@ export function previewCardChoice(
       }))
     } else if (effect.kind === 'scry') {
       return choicePreview(preview, 'scry', actor.draw.slice(0, effect.amount))
-    } else if (effect.kind === 'scryToHand') {
+    } else if (effect.kind === 'scryToHand' || effect.kind === 'scryAndPlay') {
       return choicePreview(preview, 'scryToHand', actor.draw.slice(0, effect.amount))
     } else if (drew && effect.kind === 'discard') {
       return choicePreview(preview, 'discard', actor.hand)
@@ -283,6 +282,7 @@ function cardResolutionChoicesAreValid(
   energyCharged = energySpent,
   sourceDeadOn = false,
 ): boolean {
+  if (!adjacentDamageChoicesAreValid(effects, state, context)) return false
   const powerBeamCards = guardianPowerBeamCards(player, sourceCardUid)
   const powerBeamDefense = player.guardianMode === 'defense' ||
     player.guardianMode === null && context.corruptedShardMode === 'defense'
@@ -430,9 +430,7 @@ function cleanupPlayedCard(
     } else actor.chamber = [...actor.chamber, played]
     return
   }
-  const exhaustNext = actor.exhaustNextCardAfterUid !== undefined && actor.exhaustNextCardAfterUid !== held.uid
-  if (exhaustNext) actor.exhaustNextCardAfterUid = undefined
-  if (def.exhaust || forcedExhaust || exhaustNext || skillExhausts(state, actor, def)) {
+  if (playedCardExhausts(state, actor, def, held.uid, forcedExhaust)) {
     exhaustCards(state, actor, [played], context)
   } else if (def.cardKind === 'slime') {
     const slime = {
@@ -445,6 +443,10 @@ function cleanupPlayedCard(
       resolvePendingSlimeCommands(state, actor, context)
     }
   } else if (def.type === 'power') {
+    if (def.id === 'slayer_metamorphosis') {
+      attachMetamorphosis(state, actor, played, context)
+      return
+    }
     actor.powers = [...actor.powers, played]
     if (def.id === 'hermit_overwhelming_power') resolveOverwhelmingPower(state, actor)
   } else if (def.toDrawTop) {
@@ -452,6 +454,32 @@ function cleanupPlayedCard(
   } else {
     actor.discard = [...actor.discard, played]
   }
+}
+
+/**
+ * Slayer Pack: Metamorphosis enters play as a second copy of the chosen Power:
+ * the physical card keeps its uid but takes the copied Power's id and face, so
+ * every trigger, persistent rule and once-per-turn key treats it as that Power.
+ * `metamorphosis` remembers the real card for when it leaves play.
+ */
+function attachMetamorphosis(state: CombatState, actor: Player, played: CardInstance, context: PlayContext): void {
+  const target = actor.powers.find((power) => power.uid === context.metamorphosisPowerUid)
+  if (!target) {
+    actor.discard = [...actor.discard, played]
+    state.log = [...state.log, `${actor.name}'s Metamorphosis has no Power to attach to and is discarded`]
+    return
+  }
+  actor.powers = [...actor.powers, {
+    ...played,
+    defId: target.defId,
+    upgraded: target.upgraded,
+    metamorphosis: {
+      upgraded: played.upgraded, sourceUid: target.uid,
+      ...(faceOf(cardDef(target.defId), target.upgraded).cost === 'X'
+        ? { copiedX: target.metamorphosis?.copiedX ?? target.xPaid ?? 0 } : {}),
+    },
+  }]
+  state.log = [...state.log, `${actor.name}'s Metamorphosis attaches to ${cardDef(target.defId).name}`]
 }
 
 function resolveSpreadingSlimes(
@@ -516,6 +544,10 @@ export function playCard(
   if (state.phase !== 'player' && !forcedPlay) return state
   const player = findPlayer(state, playerId)
   if (!player) return state
+  // Slayer Pack: While a card-play window is open its owner is still
+  // resolving the card that opened it, so only the offered cards can be played.
+  const playWindow = forcedPlay || context.outsidePlayWindow ? undefined : activeCardPlayWindow(state, playerId)
+  if (playWindow && !playWindow.cardUids.includes(cardUid)) return state
   // A forced card's own retaliation (e.g. Thorns/Sharp Hide) can kill its
   // owner before a later card in the same forced chain (Distilled Chaos,
   // Mayhem, Havoc) is chosen; under Last Stand a living teammate keeps that
@@ -534,6 +566,14 @@ export function playCard(
   if (corruptedModeChoice && context.corruptedShardMode !== 'attack' && context.corruptedShardMode !== 'defense') return state
   const guardianMode = corruptedModeChoice ? context.corruptedShardMode : player.guardianMode
   const def = effectiveCombatCardDef(printedDef, guardianMode)
+  // Slayer Pack: Metamorphosis names the Power in play it attaches to and copies. A
+  // forced free play may arrive without one; it then finds nothing to attach to (cleanup).
+  const metamorphosis = def.id === 'slayer_metamorphosis'
+  const copiedPower = metamorphosis
+    ? player.powers.find((power) => power.uid === context.metamorphosisPowerUid) : undefined
+  if (metamorphosis ? !copiedPower && (!forcedPlay || context.metamorphosisPowerUid !== undefined)
+    : context.metamorphosisPowerUid !== undefined) return state
+  const copiedFace = copiedPower && faceOf(cardDef(copiedPower.defId), copiedPower.upgraded)
   if (player.cardPlayLocked) return forcedPlay ? abandonForcedCard(state, playerId) : state
   if (reachedTimeWarpLimit(state, player)) {
     return forcedPlay ? abandonForcedCard(state, playerId) : state
@@ -543,16 +583,22 @@ export function playCard(
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
     if (!cardModeIsAvailable(def, state, player, context.mode!, player.draw.length, held.uid)) return state
   } else if (context.mode !== undefined) return state
-  const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
+  const effects = copiedFace ? metamorphosisPlayEffects(copiedFace)
+    : def.modes ? def.modes[context.mode!]!.effects : def.effects
   const rapidFire = hermitRapidFireCount(def, player)
-  const resolvesOnPlay = def.type !== 'power' || def.resolvesOnPlay === true
-  const printedCost = forcedPlay ? 0 : playCost(def, player, held)
+  const resolvesOnPlay = def.type !== 'power' || def.resolvesOnPlay === true || copiedFace !== undefined
+  const printedCost = forcedPlay ? 0 : playWindow ? playWindow.cost
+    : playCost(cardDefForTarget(def, state, context.enemyUid), player,
+      held.playWindowCost === undefined ? held : { ...held, playWindowCost: undefined })
   if (def.cost === 'X' && printedCost !== 'X' && printedCost < (def.minimumX ?? 0)) return state
   const xCost = printedCost === 'X'
   if (xCost && (!Number.isInteger(context.energySpent) || context.energySpent! < (def.minimumX ?? 0) ||
     context.energySpent! > maximumXEnergy(def, player))) return state
   if (!xCost && context.energySpent !== undefined && context.energySpent !== 0) return state
   const cost = xCost ? context.energySpent! : printedCost
+  // X is the copied Power's cost. A fixed cost (a play window, a free or forced play)
+  // is the X it is played for (author FAQ), so it must match that Power exactly.
+  if (copiedPower && cost !== metamorphosisCost(player, copiedPower.uid, held.upgraded)) return state
   const vigorSpent = context.spendVigor ?? 0
   if (!Number.isSafeInteger(vigorSpent) || vigorSpent < 0 || vigorSpent > player.vigor ||
     (vigorSpent > 0 && (player.guardianMode === null ||
@@ -560,7 +606,11 @@ export function playCard(
   const blockSpent = context.guardianBlockSpend ?? 0
   if (!Number.isSafeInteger(blockSpent) || blockSpent < 0 || blockSpent > player.block ||
     (blockSpent > 0 && def.id !== 'guardian_body_crash')) return state
-  const effectEnergy = def.cost === 'X' ? cost : 0
+  // A copied X-cost Power's lasting effect uses the Energy it was played for (author FAQ).
+  // A copy of a copy reproduces the original's X, not what the copy cost.
+  const effectEnergy = copiedFace ? copiedFace.cost === 'X'
+    ? copiedPower!.metamorphosis?.copiedX ?? copiedPower!.xPaid ?? 0 : 0
+    : def.cost === 'X' ? cost : 0
   const miracleOnCard = context.spendMiracle === true
   if (forcedPlay && miracleOnCard) return state
   if (miracleOnCard && (
@@ -584,6 +634,7 @@ export function playCard(
     next.log = [...next.log, `${actor.name} gains Corrupted Shard for using ${def.name}`]
   }
   if (corruptedModeChoice) actor.guardianMode = context.corruptedShardMode!
+  if (playWindow) spendCardPlayWindowPlay(next, playerId, cardUid)
   const akabeko = def.type === 'attack' && (actor.akabekoAttacks ?? 0) > 0
   const pizzazStrength = def.type === 'attack' ? actor.nextAttackStrength ?? 0 : 0
   if (pizzazStrength > 0) actor.nextAttackStrength = 0
@@ -672,6 +723,7 @@ export function playCard(
   // would be a mutation from a function that is otherwise pure.
   const ctx = resolutionContext(context, def,
     attachedGemId ? { ...held, attachedGemId } : held, effectEnergy, doubled)
+  ctx.slayerAttachedAtStart = slayerAttachmentKeys(next)
   ctx.hermitRapidFireCard = rapidFire > 0
   pinRowAnchor(next, def, ctx)
   let remainingEffects: Effect[] | undefined
@@ -791,7 +843,7 @@ export function playCard(
     return settleForbiddenPendingCopy(next, actor)
   }
 
-  if (!doubled) cleanupPlayedCard(next, actor, held, def, ctx,
+  if (!doubled) cleanupPlayedCard(next, actor, def.type === 'power' && def.cost === 'X' ? { ...held, xPaid: cost } : held, def, ctx,
     forcedPlay && forced.exhaustNonPower && !cardStaysInPlay(def))
   if (invalidPlayChoice(ctx)) return state
   if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
@@ -958,7 +1010,9 @@ export function playHermitChamberCard(
     return skipPendingHermitChamberPlay(state, pending,
       `${actor.name}'s mandatory Chamber play of ${def.name} was skipped because it cannot be played`)
   }
-  const resolved = playCard(staged, playerId, cardUid, { ...context, hermitChamberPlay: true })
+  const resolved = playCard(staged, playerId, cardUid, {
+    ...context, hermitChamberPlay: true, ...(pending ? { outsidePlayWindow: true } : {}),
+  })
   return resolved === staged ? state : resolved
 }
 
@@ -973,6 +1027,58 @@ export function resolveHermitStrengthReward(state: CombatState, ownerId: string,
   next.pendingHermitStrengthRewards = next.pendingHermitStrengthRewards?.slice(1)
   next.log = [...next.log, `${recipient.name} gains 1 Strength from Dead or Alive`]
   return settle(next)
+}
+
+/**
+ * The owner answers their oldest Slayer Pack decision, naming it by `choiceId` (absent only for a
+ * decision saved before ids existed).
+ *
+ * Nightmare+: `enemyUid` names a living enemy other than the one that died; it
+ * may be null only once no such enemy is left, which discards the card.
+ * Ritual Dagger+: `replace` keeps (false: bottom of the rare deck) or swaps the
+ * revealed rare, which takes the dagger's place in the Exhaust pile and, for a
+ * deck card, in the deck the run keeps. This may be answered after the killing
+ * blow already won the fight; the combat then folds into the run afterwards.
+ */
+export function resolveSlayerChoice(
+  state: CombatState,
+  playerId: string,
+  decision: { choiceId?: number; enemyUid?: string | null; replace?: boolean },
+): CombatState {
+  const pending = state.pendingSlayerChoices?.[0]
+  const player = findPlayer(state, playerId)
+  if (!pending || pending.playerId !== playerId || !player || state.phase === 'lost') return state
+  // The answer names the choice it is for: a repeated or stale one is not this choice's.
+  if (decision.choiceId !== pending.id) return state
+  const next = clone(state)
+  const actor = findPlayer(next, playerId)!
+  next.pendingSlayerChoices = next.pendingSlayerChoices!.slice(1)
+  if (pending.kind === 'reattach') {
+    if (decision.replace !== undefined) return state
+    const hosts = livingEnemies(next).filter((enemy) => enemy.uid !== pending.fromUid)
+    const host = hosts.find((enemy) => enemy.uid === decision.enemyUid)
+    if (host) attachSlayerCard(next, host, { card: pending.card, playerId })
+    else if (decision.enemyUid === null && hosts.length === 0) discardByCardEffect(next, actor, [pending.card])
+    else return state
+  } else {
+    if (typeof decision.replace !== 'boolean' || decision.enemyUid !== undefined) return state
+    const [top, ...rest] = actor.rareRewards
+    if (top === pending.revealed) {
+      const name = cardDef(top).name
+      if (decision.replace) {
+        const rare = { uid: pending.cardUid, defId: top, upgraded: false }
+        actor.rareRewards = rest
+        actor.exhaust = actor.exhaust.map((card) => card.uid === pending.cardUid ? rare : card)
+        actor.deck = actor.deck.map((card) => card.uid === pending.cardUid ? rare : card)
+        next.log = [...next.log, `${actor.name} replaces Ritual Dagger with ${name}`]
+      } else {
+        actor.rareRewards = [...rest, top]
+        next.log = [...next.log, `${actor.name} puts the revealed rare reward on the bottom of their rare deck`]
+      }
+    }
+  }
+  if (next.pendingSlayerChoices.length === 0) delete next.pendingSlayerChoices
+  return next.phase === 'won' ? next : settle(next)
 }
 
 /** Resolves the Load half of the Hermit's private start-of-combat board ability. */
@@ -1126,6 +1232,7 @@ export function playCardCopy(
     context, def, attachedGemId ? { ...copy.card, attachedGemId } : copy.card, copy.energySpent,
     sourceIsCopy,
   )
+  ctx.slayerAttachedAtStart = slayerAttachmentKeys(next)
   ctx.hermitRapidFireCard = copy.hermitRapidFireCard === true
   pinRowAnchor(next, def, ctx)
   next.log = [...next.log, `${actor.name} played ${def.name}`]
@@ -1349,6 +1456,52 @@ function skipCardCopy(state: CombatState, playerId: string, reason: string): Com
   return finishCardCopy(settleForbiddenPendingCopy(next, actor), copy.forcedChoices)
 }
 
+
+/** Spends one play of the live window on the card about to resolve through it. */
+function spendCardPlayWindowPlay(state: CombatState, playerId: string, cardUid: string): void {
+  const live = activeCardPlayWindow(state, playerId)
+  if (!live) return
+  const spent = {
+    ...live,
+    cardUids: live.cardUids.filter((uid) => uid !== cardUid),
+    plays: live.plays === null ? null : live.plays - 1,
+  }
+  state.pendingCardPlayWindows = state.pendingCardPlayWindows!.map((candidate) =>
+    candidate === live ? spent : candidate)
+  syncCardPlayWindowMarks(state)
+}
+
+/**
+ * Finishes the owner's live card-play window ("play any number"). A window
+ * that must be played can be finished only once none of its cards can be.
+ * `windowId` makes a finish sent for an earlier window a no-op.
+ */
+export function finishCardPlayWindow(state: CombatState, playerId: string, windowId: string): CombatState {
+  const live = activeCardPlayWindow(state, playerId)
+  const player = findPlayer(state, playerId)
+  if (!live || !player || live.id !== windowId || state.phase !== 'player' || state.pendingCardCopy ||
+    (state.pendingTriggers?.length ?? 0) > 0 || state.startTurnProgress) return state
+  if (mandatoryCardPlayWindowOwners(state).includes(playerId)) return state
+  const next = clone(state)
+  const owner = findPlayer(next, playerId)!
+  next.log = [...next.log, `${owner.name} finishes ${cardDef(live.sourceCardId).name}`]
+  closeCardPlayWindow(next, owner)
+  return settle(next)
+}
+
+/**
+ * Drops a disconnected player's card-play windows, so a window they must play
+ * cannot hold the party's turn open forever. Discovery still discards its rest.
+ */
+export function abandonCardPlayWindows(state: CombatState, playerId: string): CombatState {
+  if (!findPlayer(state, playerId) || !activeCardPlayWindow(state, playerId)) return state
+  const next = clone(state)
+  const owner = findPlayer(next, playerId)!
+  for (let guard = 0; guard < 64 && activeCardPlayWindow(next, playerId); guard++) closeCardPlayWindow(next, owner)
+  next.log = [...next.log, `${owner.name}'s card play was skipped after disconnecting`]
+  return settle(next)
+}
+
 /** Releases a disconnected owner without letting the rest of the party deadlock. */
 export function abandonCardCopy(state: CombatState, playerId: string): CombatState {
   return skipCardCopy(state, playerId, 'was skipped after disconnecting')
@@ -1386,7 +1539,7 @@ export function previewCardCopyChoice(state: CombatState, playerId: string): Car
       }))
     } else if (effect.kind === 'scry') {
       return choicePreview(preview, 'scry', actor.draw.slice(0, effect.amount))
-    } else if (effect.kind === 'scryToHand') {
+    } else if (effect.kind === 'scryToHand' || effect.kind === 'scryAndPlay') {
       return choicePreview(preview, 'scryToHand', actor.draw.slice(0, effect.amount))
     } else if (drew && effect.kind === 'discard') {
       return choicePreview(preview, 'discard', actor.hand)
@@ -1414,6 +1567,7 @@ export function activatePower(
   if (!player || player.dead || !held) return state
   const def = faceOf(cardDef(held.defId), held.upgraded)
   if (!def.activeAbility || def.oncePerTurn && powerAbilityUsed(state, playerId, powerUid)) return state
+  if (!powerActivationAllowed(def, state, player)) return state
   if (held.defId === 'guardian_revenge_protocol') {
     const selected = player.hand.find((card) => card.uid === context.cardUid)
     const selectedDef = selected && faceOf(cardDef(selected.defId), selected.upgraded)
@@ -1438,6 +1592,9 @@ export function activatePower(
     resolveEnemyTargets(state, def.target ?? 'enemy', context.enemyUid ?? null).length === 0) return state
   if (guardianCardNeedsAlly(def, player, held.attachedGemId) && context.playerId !== undefined &&
     !state.players.some((candidate) => candidate.id === context.playerId && !candidate.dead)) return state
+  // Slayer Pack: Master Reality with nothing on its discard pile has
+  // nothing to return; refusing keeps its once-per-turn use for later.
+  if (def.effects.some((effect) => effect.kind === 'returnDiscardTop') && player.discard.length === 0) return state
 
   const next = clone(state)
   const actor = findPlayer(next, playerId)!
@@ -1454,6 +1611,7 @@ export function activatePower(
     hermitEnemyUids: context.hermitEnemyUids,
     scryDiscardUids: context.scryDiscardUids,
     sourceAttachedGemId: held.attachedGemId,
+    orbSlots: context.orbSlots,
   }
   for (const effect of def.effects) {
     applyEffect(next, actor, effect, def.target ?? 'enemy', def.supportTarget ?? 'self', playContext,
@@ -1642,10 +1800,16 @@ function deterministicForcedCardContext(
       context.scryDiscardUids = []
       continue
     }
-    if (effect.kind === 'scryToHand') {
+    if (effect.kind === 'scryToHand' || effect.kind === 'scryAndPlay') {
       const revealed = preview?.kind === 'scryToHand' ? preview.cards : player.draw.slice(0, effect.amount)
       if (revealed.length > 0) return null
       context.scryDiscardUids = []
+      continue
+    }
+    // Slayer Pack: Forethought chooses from the hand; only an empty one decides itself.
+    if (effect.kind === 'bottomdeck') {
+      if (virtualHand.length > 0) return null
+      context.topdeckUids = []
       continue
     }
     if (effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice') {
@@ -1851,6 +2015,10 @@ export function resolveDeterministicForcedCard(state: CombatState): CombatState 
     cardReferencesGuardianMode(printed, attachedGemId)) return state
   const def = effectiveCombatCardDef(printed, player.guardianMode)
   if (!cardIsPlayable(def, state, player) || def.cost === 'X' && (def.minimumX ?? 0) > 0) return state
+  // Slayer Pack: A forced play is X = 0, so Metamorphosis may still attach to any Power
+  // whose X is 0; which one is its owner's choice. With none it is discarded as usual.
+  if (def.id === 'slayer_metamorphosis' &&
+    player.powers.some((power) => metamorphosisCost(player, power.uid, held.upgraded) === 0)) return state
 
   // Vigor, Body Crash, these Mode shifts, and the two choice-bearing Gems all
   // alter the outcome while a zero/false context remains legal.

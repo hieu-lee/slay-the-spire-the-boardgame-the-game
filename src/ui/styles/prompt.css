@@ -15,8 +15,9 @@
   font-size: 0.95rem;
   color: var(--gold);
   /* A gold tint rather than the panel colour: the prompt is an instruction the
-     player must act on, and it was disappearing into the board. */
-  background: rgb(215 169 75 / 0.12);
+     player must act on, and it was disappearing into the board. The tint sits on
+     an opaque base so enemy chips and sprites behind it never read through. */
+  background: linear-gradient(rgb(215 169 75 / 0.12), rgb(215 169 75 / 0.12)), rgb(16 13 10 / 0.94);
   border: 1px solid var(--gold);
   border-radius: 6px;
   box-shadow: 0 .5rem 1.5rem #0009;
@@ -41,6 +42,51 @@
   overflow: hidden;
   border: 0;
   clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Slayer Pack: a wait on another player's card choice has no piece to glow, so it
+   stays a readable banner even without a button. */
+.prompt.prompt--status {
+  width: max-content;
+  height: auto;
+  padding: 0.5rem 0.9rem;
+  overflow: visible;
+  border: 1px solid var(--gold);
+  clip-path: none;
+  white-space: normal;
+}
+
+/* Slayer Pack: a card-given choice (Heel Hook, Magnetism) docked in the action bar. */
+.player-choice {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.player-choice > button { flex: none; }
+
+/* On a horizontal phone the offered cards' names matter more than the Power's own name. */
+@media (orientation: landscape) and (max-height: 26.25rem) {
+  .player-choice__source { display: none; }
+}
+
+/* The instruction gives way before any button does, so every choice stays in reach. */
+.player-choice .combat__power-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(22rem, 32vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Slayer Pack: Creative AI's instruction, docked beside its Power in the action bar. */
+.combat__power-hint {
+  align-self: center;
+  color: var(--gold);
+  font-size: 0.85rem;
   white-space: nowrap;
 }
 
@@ -438,4 +484,35 @@
     opacity: 0;
     transform: translateY(-4px);
   }
+}
+
+/* Slayer Pack: Ritual Dagger+'s private reveal: the card at reading size beside its
+   two answers, which sit together and stay thumb-sized on a horizontal phone. */
+.slayer-reveal {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: 40rem;
+  text-align: left;
+}
+
+.slayer-reveal > .card {
+  --card-width: min(14rem, calc((100dvh - 9rem) / var(--card-ratio)));
+  flex: none;
+}
+
+.slayer-reveal__text {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+/* After a victory the banner sits below the Victory title instead of across it. */
+.combat:has(.combat__result) .prompt[data-slayer-waiting] {
+  top: calc(var(--combat-bar-height) + 2.5rem);
+}
+
+.slayer-reveal .item-actions {
+  flex-direction: column;
+  align-items: stretch;
+  margin: 0;
 }

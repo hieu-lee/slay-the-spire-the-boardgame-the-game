@@ -7,13 +7,14 @@
 // or a Relic, and that lives a layer up, in the resolver.
 import { recordPresentationHpLoss } from './presentation.ts'
 import { enemyLabel, playersInRowOf } from './board.ts'
-import type { CombatState } from './types.ts'
+import type { CombatState, CopySource } from './types.ts'
 import { applyDamage, applyHpLoss, gainBlock, gainPoison, gainStrength, recordDamageDealt, totalPoisonInPlay } from '../damage.ts'
 import { enemyAbilities, enemyDef, startingHp } from '../enemies.ts'
 import { addToDiscardTop } from '../piles.ts'
 import { CAPS } from '../types.ts'
 import type { CardInstance, Enemy, Player } from '../types.ts'
 import { cardDef, faceOf } from '../cards.ts'
+import type { CardDef } from '../cards.ts'
 
 export function playerHasPersistentEffect(player: Player, kind: 'preventDebuffs' | 'preventBlock'): boolean {
   return player.powers.some((power) => (faceOf(cardDef(power.defId), power.upgraded).persistentEffects ?? [])
@@ -27,10 +28,12 @@ export function forgetRetain(card: CardInstance): CardInstance {
   const {
     retainedLastTurn: _retained,
     retainThisTurn: _retain,
+    mayRetainThisTurn: _mayRetain,
     stasisRetained: _stasis,
     freeThisTurn: _free,
     costReductionThisTurn: _reduction,
     scryDamageBonus: _scryBonus,
+    playWindowCost: _windowCost,
     ...rest
   } = card
   return rest
@@ -170,7 +173,7 @@ export function enemyHasDeathReaction(state: CombatState, enemy: Enemy): boolean
     ability.kind === 'splitOnDeath' || ability.kind === 'rebirth' || ability.kind === 'sporeCloud' ||
     ability.kind === 'secondWind' || ability.kind === 'blasphemy' || ability.kind === 'deathTokenCleanup' ||
     ability.kind === 'plunder')) return true
-  if (enemy.corpseExplosion || enemy.hermitBounties?.length) return true
+  if (enemy.corpseExplosion || enemy.hermitBounties?.length || enemy.slayerAttachments?.length) return true
   return state.enemies.some((ally) => !ally.dead && ally.row === enemy.row &&
     enemyAbilities(enemyDef(ally.defId, ally.ascension)).some((ability) =>
       ability.kind === 'furyOnAllyDeath' &&
@@ -222,4 +225,36 @@ export function addStatus(
   if (pile === 'draw') target.draw = [...cards, ...target.draw]
   else target.discard = addToDiscardTop(target, cards).discard
   return gained
+}
+
+/** Corruption, or an enemy that corrupts Skills, sends every played Skill to Exhaust. */
+export function skillExhausts(state: CombatState, actor: Player, def: CardDef): boolean {
+  return def.type === 'skill' && (actor.powers.some((power) => cardDef(power.defId).corruptSkills) ||
+    state.enemies.some((enemy) => !enemy.dead && enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+      .some((ability) => ability.kind === 'corruptSkills')))
+}
+
+/** Spends the one play-twice source a card used; later sources wait for the next card (p.24). */
+export function consumeCopySource(actor: Player, sources: readonly CopySource[]): void {
+  if (sources.includes('Echo Form')) actor.doubledCardsThisTurn = actor.doubledCardsThisTurn! - 1
+  else if (sources.includes('Blasphemy')) actor.tripledAttacksThisTurn = actor.tripledAttacksThisTurn! - 1
+  else if (sources.includes('Double Tap')) actor.doubledAttacksThisTurn = actor.doubledAttacksThisTurn! - 1
+  else if (sources.includes('Burst')) actor.doubledSkillsThisTurn = actor.doubledSkillsThisTurn! - 1
+}
+
+/**
+ * Whether a played card goes to Exhaust as it is cleaned up: its own Exhaust,
+ * a forced Exhaust, Corruption, or a pending "Exhaust the next card", which
+ * this spends.
+ */
+export function playedCardExhausts(
+  state: CombatState,
+  actor: Player,
+  def: CardDef,
+  cardUid: string,
+  forcedExhaust = false,
+): boolean {
+  const exhaustNext = actor.exhaustNextCardAfterUid !== undefined && actor.exhaustNextCardAfterUid !== cardUid
+  if (exhaustNext) actor.exhaustNextCardAfterUid = undefined
+  return def.exhaust === true || forcedExhaust || exhaustNext || skillExhausts(state, actor, def)
 }

@@ -1,4 +1,4 @@
-const HOSTED_SESSION = import.meta.env.VITE_HOSTED_SESSION === 'true'
+const HOSTED_SESSION = import.meta.env?.VITE_HOSTED_SESSION === 'true'
 const MULTIPLAYER_PROTOCOL_VERSION = 1
 
 let roomOrigin: string | null = null

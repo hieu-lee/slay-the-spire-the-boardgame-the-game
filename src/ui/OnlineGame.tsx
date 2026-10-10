@@ -49,6 +49,12 @@ import { useCombatMusic, useRunOutcomeSound, useVictoryMusic } from './sfx.ts'
 import { eventCanStartCombat } from '../game/events.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import type { GameSettings } from './game-settings.ts'
+import { catchUpAwardIndex, coinsOwed } from '../game/coins.ts'
+import { CARD_PACKS } from '../game/packs.ts'
+import type { CardPackId } from '../game/packs.ts'
+import { onlineRunKey } from '../wallet.ts'
+import { browserPaidAll, creditRunCoins } from '../wallet-storage.ts'
+import { CoinGainToast, type CoinGain } from './Coins.tsx'
 
 const CHARACTERS = [
   ['ironclad', 'Ironclad'],
@@ -61,6 +67,49 @@ const CHARACTERS = [
   ['hermit', 'Hermit'],
   ['kratos', 'Kratos'],
 ] as const
+
+/** Why a seat's boss coins were withheld; leaves on its own or when dismissed. */
+function ForeignSeatNotice({ onDone }: { onDone: () => void }) {
+  useEffect(() => {
+    const timer = window.setTimeout(onDone, 9_000)
+    return () => clearTimeout(timer)
+  }, [onDone])
+  return <p className="coin-gain__notice" role="status">
+    Another account signed in after this seat was taken, so its boss coins were not paid here.
+    <button type="button" className="coin-gain__dismiss" aria-label="Dismiss" onClick={onDone}>×</button>
+  </p>
+}
+
+/** "Ann Bo" → "AB", "Wanderer" → "WA": two letters that always fit a chip. */
+const ownerInitials = (name: string): string => {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  return (words.length > 1 ? words.slice(0, 2).map((word) => word[0]).join('') : (words[0] ?? '?').slice(0, 2)).toUpperCase()
+}
+
+/**
+ * The Shop packs the next run will shuffle in: every pack somebody at the table
+ * bought. One short chip per pack keeps the strip to a single line however many
+ * players and names there are; whose each pack is lives in its tooltip and label.
+ */
+function LobbyPacks({ packs, seats, you }: { packs: readonly CardPackId[]; seats: readonly PublicSeat[]; you: string }) {
+  return <section className="online-lobby__packs" aria-labelledby="online-lobby-packs-title">
+    <h2 id="online-lobby-packs-title">Slayer packs in play</h2>
+    <ul>
+      {packs.map((id) => {
+        const owners = seats.filter((seat) => seat.cardPacks?.includes(id))
+          .map((seat) => seat.playerId === you ? 'you' : seat.name)
+        const label = `${CARD_PACKS[id].name}, from ${owners.join(', ')}`
+        // Every chip carries the same compact marker, never a truncated name: "you",
+        // one owner's initials, or a count. Full names are in the label and tooltip.
+        const marker = owners.length > 1 ? `×${owners.length}` : owners[0] === 'you' ? 'you' : ownerInitials(owners[0] ?? '')
+        return <li key={id} data-pack={id} title={label} aria-label={label}>
+          <strong aria-hidden="true">{CARD_PACKS[id].name.replace(' Slayer Pack', '')}</strong>
+          <small aria-hidden="true">{marker}</small>
+        </li>
+      })}
+    </ul>
+  </section>
+}
 
 type Props = {
   onLocal: () => void
@@ -296,6 +345,65 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   useCombatMusic(snapshot?.run, settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume, true)
   useVictoryMusic(Boolean(snapshot?.run && !snapshot.run.campaign.finalized && victoryIsTerminal(snapshot.run, snapshot.campaignProgress)),
     settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume)
+  // Boss awards are promised during the run and paid when the party records its
+  // result (`finishRun` finalizes the run). Every seat then pays its own wallet,
+  // skipping the bosses beaten before its hero joined; a seat that only comes
+  // back after the party returned to the lobby is paid from `recordedRuns`. The
+  // ledger makes reconnects and repeated snapshots pay nothing twice.
+  const [coinGain, setCoinGain] = useState<CoinGain | null>(null)
+  const clearCoinGain = useCallback(() => setCoinGain(null), [])
+  const coinRunKey = snapshot?.run ? onlineRunKey(snapshot.code, snapshot.run.campaign.runId) : null
+  const bossAwards = snapshot?.run?.campaign.bossCoins
+  const bossAwardsKey = JSON.stringify(bossAwards ?? [])
+  const viewerCharacter = snapshot?.run?.players.find((player) => player.id === snapshot.you.playerId)?.character
+  const joinedAfterBosses = catchUpAwardIndex(
+    (viewerCharacter && snapshot?.run?.campaign.joinedAfterBosses?.[viewerCharacter]) || 0,
+    snapshot?.run?.campaign.bossesDefeated ?? 0, bossAwards?.length ?? 0)
+  const runFinalized = snapshot?.run?.campaign.finalized === true
+  // The account seated in this room in this tab: a seat's coins are paid only to it,
+  // even if another account signs in (here or in another tab) before the run is recorded.
+  const seatOwnsCoins = room.seatOwnsCoins
+  // The result screens promise coins only when this seat will really be paid them.
+  const summaryCoins = seatOwnsCoins && !(coinRunKey && browserPaidAll(coinRunKey, bossAwards)) ? coinsOwed(bossAwards, joinedAfterBosses) : 0
+  const [foreignSeat, setForeignSeat] = useState(false)
+  const dismissForeignSeat = useCallback(() => setForeignSeat(false), [])
+  const announcedAwards = useRef<{ key: string; count: number } | null>(null)
+  useEffect(() => {
+    // A seat whose hero has not joined the run yet (a reserved Catch Up) is owed nothing.
+    if (!coinRunKey || !viewerCharacter) return
+    const count = bossAwards?.length ?? 0
+    const previous = announcedAwards.current
+    announcedAwards.current = { key: coinRunKey, count }
+    if (runFinalized) {
+      // Tell the player only when coins are really being withheld, not ones already paid here.
+      if (!seatOwnsCoins) return setForeignSeat((current) => current ||
+        coinsOwed(bossAwards, joinedAfterBosses) > 0 && !browserPaidAll(coinRunKey, bossAwards))
+      const { coins, total } = creditRunCoins(coinRunKey, bossAwards, joinedAfterBosses)
+      if (coins > 0) setCoinGain((current) => ({ coins, total, id: (current?.id ?? 0) + 1 }))
+    } else if (previous?.key === coinRunKey && count > previous.count) {
+      const coins = coinsOwed(bossAwards?.slice(Math.max(previous.count, joinedAfterBosses)))
+      if (coins > 0) setCoinGain((current) => ({ coins, total: coinsOwed(bossAwards, joinedAfterBosses), pending: true, id: (current?.id ?? 0) + 1 }))
+    }
+    // `bossAwardsKey` stands in for the array, which every snapshot replaces.
+  }, [bossAwardsKey, coinRunKey, joinedAfterBosses, runFinalized, seatOwnsCoins, viewerCharacter])
+  const recordedRuns = snapshot?.recordedRuns
+  const recordedRunsKey = JSON.stringify(recordedRuns ?? [])
+  useEffect(() => {
+    if (!snapshot || !recordedRuns?.length) return
+    if (!seatOwnsCoins) {
+      const withheld = recordedRuns.some((recorded) => coinsOwed(recorded.bossCoins, recorded.skip) > 0 &&
+        !browserPaidAll(onlineRunKey(snapshot.code, recorded.runId), recorded.bossCoins))
+      return setForeignSeat((current) => current || withheld)
+    }
+    let paid = 0
+    let purse = 0
+    for (const recorded of recordedRuns) {
+      const { coins, total } = creditRunCoins(onlineRunKey(snapshot.code, recorded.runId), recorded.bossCoins, recorded.skip)
+      paid += coins
+      purse = total
+    }
+    if (paid > 0) setCoinGain((current) => ({ coins: paid, total: purse, id: (current?.id ?? 0) + 1 }))
+  }, [recordedRunsKey, seatOwnsCoins, snapshot?.code])
   const runPhase = snapshot?.run?.phase
   const previousRunPhase = useRef(runPhase)
   const animateOpeningHand = shouldAnimateOnlineOpeningHand(
@@ -316,7 +424,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   useEffect(() => {
     const phase = snapshot?.run?.combat?.phase
     if (compendiumOpen || pauseOpen || settingsOpen || giveUpStartPending || soloGiveUpOpen || giveUpVote || room.connection !== 'connected' ||
-      (phase !== 'won' && phase !== 'lost')) return undefined
+      (phase !== 'won' && phase !== 'lost') ||
+      // Slayer Pack: a Ritual Dagger+ killing blow is answered before the fight folds into the run.
+      (phase === 'won' && (snapshot?.run?.combat?.pendingSlayerChoices?.length ?? 0) > 0)) return undefined
     let timer: number
     const resolveWhenAnimationsFinish = () => {
       if (combatOutcomeAnimationActive()) {
@@ -331,7 +441,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     return () => clearTimeout(timer)
   }, [compendiumOpen, giveUpStartPending, giveUpVote, pauseOpen, room.act, room.connection,
     prefersReducedMotion, settings.reducedMotion, settingsOpen,
-    snapshot?.run?.combat?.phase, soloGiveUpOpen])
+    snapshot?.run?.combat?.phase, snapshot?.run?.combat?.pendingSlayerChoices?.length, soloGiveUpOpen])
 
   useEffect(() => {
     const dialog = pauseDialog.current
@@ -427,6 +537,13 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       pendingHermitStrengthRewards: asyncPlayerTurn
         ? visibleCombat.pendingHermitStrengthRewards?.filter((choice) => choice.playerId === viewerId)
         : visibleCombat.pendingHermitStrengthRewards,
+      // Slayer Pack: another seat's card choice never blocks this seat's Player Turn.
+      pendingPlayerChoices: asyncPlayerTurn
+        ? visibleCombat.pendingPlayerChoices?.filter((choice) => choice.playerId === viewerId)
+        : visibleCombat.pendingPlayerChoices,
+      pendingSlayerChoices: asyncPlayerTurn
+        ? visibleCombat.pendingSlayerChoices?.filter((choice) => choice.playerId === viewerId)
+        : visibleCombat.pendingSlayerChoices,
       rng: { seed: 0, calls: 0 },
       discardedThisTurn: [],
       stanceChangedThisTurn: [],
@@ -565,6 +682,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
                 you={snapshot.seats[index]?.playerId === snapshot.you.playerId} />
             ))}
           </div>
+          {snapshot.cardPacks?.length ? <LobbyPacks packs={snapshot.cardPacks} seats={snapshot.seats} you={snapshot.you.playerId} /> : null}
         </section>
         {room.error || voice.error ? <div className="online-lobby__alerts">
           {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
@@ -992,7 +1110,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         <section className="room-screen">
           <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
           <RunSummary act={run.act} roomsCleared={roomsCleared}
-            ascension={run.ascension} seats={run.players.map(onlineSummarySeat)} />
+            ascension={run.ascension} seats={run.players.map(onlineSummarySeat)} coins={summaryCoins} />
           {run.lastStand && run.players.some((player) => player.dead) && run.act < 4 ? (
             <p role="status">Last Stand won the Act, but a fallen hero means the party cannot continue to the next Act.</p>
           ) : null}
@@ -1003,7 +1121,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             onClick={() => room.act({ kind: 'finishRun' })}>Stop and record result</button>
         </section>
       ) : null}
-      {run.phase === 'defeat' && !run.campaign.finalized ? <section className="room-screen"><h2 className="room-screen__defeat">The party has fallen</h2><RunSummary act={run.act} roomsCleared={roomsCleared} ascension={run.ascension} seats={run.players.map(onlineSummarySeat)} /><button type="button" onClick={() => room.act({ kind: 'finishRun' })}>Record campaign result</button></section> : null}
+      {run.phase === 'defeat' && !run.campaign.finalized ? <section className="room-screen"><h2 className="room-screen__defeat">The party has fallen</h2><RunSummary act={run.act} roomsCleared={roomsCleared} ascension={run.ascension} seats={run.players.map(onlineSummarySeat)} coins={summaryCoins} /><button type="button" onClick={() => room.act({ kind: 'finishRun' })}>Record campaign result</button></section> : null}
 
       {run.campaign.finalized ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{snapshot.campaignProgress.unspentMarks} shared mark{snapshot.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. {snapshot.seats[0]?.playerId === snapshot.you.playerId ? 'Assign them before the next run.' : `Waiting for ${snapshot.seats[0]?.name ?? 'the journal keeper'}.`}</p>{snapshot.seats[0]?.playerId === snapshot.you.playerId ? <div>{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.colorless < 3 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 1, actIV: 0, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Colorless · {snapshot.campaignProgress.colorless}/3</button> : null}{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.actIV < 5 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 0, actIV: 1, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Act IV · {snapshot.campaignProgress.actIV}/5</button> : null}{snapshot.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => room.act({ kind: 'returnToLobby' })}>Prepare next run →</button> : null}</div> : null}</section> : null}
 
@@ -1024,6 +1142,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       <TreasureEffects room={run.roomState?.kind === 'treasure' ? run.roomState : null}
         players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
+      <CoinGainToast gain={coinGain} onDone={clearCoinGain} />
+      {foreignSeat ? <ForeignSeatNotice onDone={dismissForeignSeat} /> : null}
       <CardMorphAnnouncement key={`${snapshot?.run?.campaign.runId ?? ''}:${snapshot?.you.playerId ?? ''}`}
         request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>

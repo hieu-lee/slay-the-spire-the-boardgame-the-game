@@ -5,7 +5,7 @@
 // hands it to the combat engine; when the engine reports a result, this is what
 // folds it back into the run — rewards, campaign progress, the next act, or the
 // end of the run.
-import { buildEncounter, createEnemyDecks, readyForCombat, rollActBoss } from './encounters.ts'
+import { BOSSES, buildEncounter, createEnemyDecks, readyForCombat, rollActBoss } from './encounters.ts'
 import { availableRewardSources, revealRewardItems } from './rewards.ts'
 import {
   applyDeadlyEvent,
@@ -17,12 +17,14 @@ import {
 } from './rules.ts'
 import { enteringRoom } from './setup.ts'
 import { queueNewGuardianSockets } from '../guardian-gems.ts'
-import { merchantItemDecks, mirrorItemSupplies } from './supplies.ts'
+import { colorlessCardsAvailable, merchantItemDecks, mirrorItemSupplies } from './supplies.ts'
 import type { CardRewardOffer, RunPhase, RunState } from './types.ts'
 import { healingCapFor, transformCard } from '../acquisition.ts'
-import { canEnterActIV, finishCampaign, isActIVUnlocked, isColorlessUnlocked } from '../campaign.ts'
+import { canEnterActIV, finishCampaign, isActIVUnlocked } from '../campaign.ts'
 import type { CampaignProgress, SpireKeys } from '../campaign.ts'
 import { CARDS, cardIsCurse } from '../cards.ts'
+import { rollBossCoins } from '../coins.ts'
+import type { BossAct } from '../coins.ts'
 import { createCombat, preparePlayerTurnThroughDraw, startPlayerTurnWithChoices } from '../combat.ts'
 import type { CombatState } from '../combat.ts'
 import { enemyDef } from '../enemies.ts'
@@ -259,6 +261,9 @@ function preparePendingBossCombat(
 export function resolveCombat(state: RunState): RunState {
   const combat = state.combat
   if (!combat || state.courier.offer || (combat.phase !== 'won' && combat.phase !== 'lost')) return state
+  // Slayer Pack: a Ritual Dagger+ kill that won the fight still owes its owner's decision.
+  if (combat.phase === 'won' && combat.pendingSlayerChoices?.some((choice) =>
+    combat.players.some((player) => player.id === choice.playerId && !player.dead))) return state
   state = removePrematureActThreeCredit(state)
   // A pre-counter save already contains cumulative damage from an unknowable
   // number of fights. Keep its count absent so the leaderboard omits that one
@@ -416,8 +421,22 @@ export function resolveCombat(state: RunState): RunState {
     }]
   })
   const roomState = wasElite ? createRelicReward('elite', itemDecks, players, state.chooseYourRelic) : null
+  // Coins follow the Act of the boss beaten: an event boss (Mind Bloom) is an
+  // earlier Act's boss fought in this Act. A boss in no Act roster keeps this Act.
+  const roomAct = Math.min(4, Math.max(1, state.act)) as BossAct
+  const bossAct = wasBonusBoss
+    ? rosterBossAct(state.eventCombat?.bossDefId) ??
+      rosterBossAct(combat.enemies.find((enemy) => enemy.isBoss)?.defId) ?? roomAct
+    : roomAct
+  const bossCoins = state.meta.dailyDate === undefined && (wasBoss || wasBonusBoss)
+    ? [...(state.campaign.bossCoins ?? []), {
+      act: bossAct,
+      coins: rollBossCoins(state.seed, state.campaign.bossCoins?.length ?? 0, bossAct, state.ascension),
+    }]
+    : state.campaign.bossCoins
   const campaign = {
     ...state.campaign,
+    ...(bossCoins ? { bossCoins } : {}),
     bossesDefeated: state.campaign.bossesDefeated + (wasBoss || wasBonusBoss ? 1 : 0),
     highestBossActDefeated: ((wasBoss || lastStandActEnd) && !(state.act === 3 &&
       (state.pendingBossDefId || state.ascension >= 13 && !wasBoss))
@@ -448,6 +467,15 @@ export function resolveCombat(state: RunState): RunState {
       : wasBoss ? 'The Act is won.' : 'The enemies fall.'],
   }, itemDecks))
   return state.eventCombat ? applyDeadlyEvent(state, next) : next
+}
+
+/** The Act whose boss roster (base or Downfall) holds this boss. */
+function rosterBossAct(defId: string | undefined): BossAct | undefined {
+  if (!defId) return undefined
+  for (const roster of [BOSSES, DOWNFALL_BOSSES]) {
+    for (const [act, ids] of Object.entries(roster)) if (ids.includes(defId)) return Number(act) as BossAct
+  }
+  return undefined
 }
 
 /** End an active fight as a party defeat without resolving any pending combat choice. */
@@ -572,7 +600,7 @@ export function advanceAct(state: RunState): RunState {
     cardRewards: shuffle(rng, [...player.cardRewards]),
   }))
 
-  const colorlessUnlocked = isColorlessUnlocked(state.campaignProgress)
+  const colorlessUnlocked = colorlessCardsAvailable(state)
   const baseMap = generateMap(rng, act, state.ascension)
   const map = act === 4
     ? baseMap

@@ -5,6 +5,7 @@
 //   STS_MAIL_ADMIN_TOKEN=... node scripts/mail-admin.mjs read NAME  show a thread and mark it read
 //   STS_MAIL_ADMIN_TOKEN=... node scripts/mail-admin.mjs reply NAME "Thanks for the report!"
 //   STS_MAIL_ADMIN_TOKEN=... node scripts/mail-admin.mjs announce "What is new" [--dry-run]
+//   STS_MAIL_ADMIN_TOKEN=... node scripts/mail-admin.mjs announce --file docs/announcements/x.txt [--dry-run]
 //                                                       one letter to every player except the mailbox admins
 //
 // The server only answers these requests when it runs with the same
@@ -50,14 +51,31 @@ if (command === 'list') {
   console.log(`Replied to ${username}.`)
 } else if (command === 'announce' && username) {
   // A live send reaches every player, so a mistyped flag must stop it rather than end up in the letter.
-  const flags = [username, ...words].filter((word) => word.startsWith('-'))
+  const all = [username, ...words]
+  const fileIndex = all.indexOf('--file')
+  const filePath = fileIndex >= 0 ? all[fileIndex + 1] : undefined
+  const rest = fileIndex >= 0 ? all.filter((_word, index) => index !== fileIndex && index !== fileIndex + 1) : all
+  const flags = rest.filter((word) => word.startsWith('-'))
   const unknown = flags.filter((flag) => flag !== '--dry-run')
-  if (unknown.length) {
-    console.error(`Unknown option ${unknown[0]}: nothing was sent. Only --dry-run is accepted.`)
+  if (unknown.length || fileIndex >= 0 && (!filePath || filePath.startsWith('-'))) {
+    console.error(unknown.length ? `Unknown option ${unknown[0]}: nothing was sent. Only --dry-run and --file <path> are accepted.`
+      : 'Give the letter after --file: announce --file <path> [--dry-run]. Nothing was sent.')
     process.exit(2)
   }
   const dryRun = flags.length > 0
-  const text = [username, ...words].filter((word) => !word.startsWith('-')).join(' ')
+  const messageWords = rest.filter((word) => !word.startsWith('-'))
+  if (filePath && messageWords.length) {
+    console.error('Use either a message or --file, not both. Nothing was sent.')
+    process.exit(2)
+  }
+  let text = messageWords.join(' ')
+  if (filePath) {
+    const { readFileSync } = await import('node:fs')
+    try { text = readFileSync(filePath, 'utf8').trim() } catch (error) {
+      console.error(`Could not read ${filePath}: ${error instanceof Error ? error.message : String(error)}. Nothing was sent.`)
+      process.exit(2)
+    }
+  }
   if (!text) {
     console.error('Write the announcement after the command: announce "message" [--dry-run]. Nothing was sent.')
     process.exit(2)
@@ -68,6 +86,6 @@ if (command === 'list') {
   console.log(dryRun ? `Dry run: would send to ${result.recipients} player${result.recipients === 1 ? '' : 's'} (skipping ${skipped}).`
     : `Sent to ${result.sent} player${result.sent === 1 ? '' : 's'} (skipped ${skipped}).`)
 } else {
-  console.error('Usage: mail-admin.mjs [list | read NAME | reply NAME "message" | announce "message" [--dry-run]]')
+  console.error('Usage: mail-admin.mjs [list | read NAME | reply NAME "message" | announce ("message" | --file <path>) [--dry-run]]')
   process.exit(2)
 }

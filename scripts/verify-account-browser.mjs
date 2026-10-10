@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { createRoomServer } from './room-server.mjs'
+import { addLeaderboardRun } from './lib/leaderboard.mjs'
+import { legacyCoinGrant } from './lib/coin-grants.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 suite('account browser')
@@ -14,6 +16,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const output = join(root, 'artifacts/account-browser')
 mkdirSync(output, { recursive: true })
 const password = 'account browser password'
+// The past-run coin grant is asked for only where a room server serves it.
+process.env.VITE_COIN_GRANTS = 'true'
 const rooms = createRoomServer()
 const roomAddress = await rooms.listen(0)
 const vite = await createServer({ root, logLevel: 'silent', server: {
@@ -117,6 +121,71 @@ try {
       assertEqual(loggedIn.secured, true)
     })
     await context.close()
+
+    // The Shop wallet follows the account: the first account adopts the coins earned
+    // before signing in, a second account on this browser starts with an empty purse.
+    const walletContext = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone })
+    await walletContext.addInitScript(() => {
+      if (sessionStorage.getItem('wallet-seeded')) return
+      sessionStorage.setItem('wallet-seeded', '1')
+      localStorage.setItem('sts-wallet', JSON.stringify({ version: 1, coins: 33, packs: ['slayer_silent'], addPacksToRuns: true, credited: {} }))
+    })
+    const walletPage = await walletContext.newPage()
+    walletPage.on('pageerror', (error) => errors.push(`${screen} wallet: ${error.message}`))
+    const purse = () => walletPage.locator('.start-menu__purse').getAttribute('aria-label')
+    const createAccount = async (name) => {
+      await walletPage.getByLabel('Username').fill(name)
+      await walletPage.getByLabel('Password', { exact: true }).fill(password)
+      await walletPage.getByRole('button', { name: 'Create account' }).click()
+      await walletPage.locator('.start-menu__nav').waitFor()
+    }
+    const logOutHere = async () => {
+      await walletPage.getByRole('button', { name: 'Profile', exact: true }).click()
+      await walletPage.getByRole('button', { name: 'Log out' }).click()
+      // After a reload the welcome screen first asks for a tap before showing the form.
+      const tap = walletPage.getByRole('button', { name: 'Tap, click, or press any key to start' })
+      await walletPage.getByLabel('Password', { exact: true }).or(tap).first().waitFor()
+      if (await tap.isVisible()) await tap.click()
+      await walletPage.getByLabel('Password', { exact: true }).waitFor()
+    }
+    const owner = `Purse${phone ? 'Phone' : 'Desktop'}A`
+    await walletPage.goto(origin)
+    await walletPage.getByRole('button', { name: 'Tap, click, or press any key to start' }).click()
+    await walletPage.getByLabel('Password', { exact: true }).waitFor()
+    await createAccount(owner)
+    assertEqual(await purse(), 'Shop · 33 coins', `${screen}: the first account did not adopt the anonymous purse`)
+    await logOutHere()
+    // The second account's name already has a run recorded before the Shop: creating it pays
+    // that run once, with a toast, and never the first account's coins.
+    const second = `Purse${phone ? 'Phone' : 'Desktop'}B`
+    const cutoff = rooms.store.coinsLaunchedAt
+    addLeaderboardRun(rooms.store, { id: `past-run-${screen}`, username: second, character: 'ironclad', ascension: 5, mode: 'standard',
+      startedAtAct: 1, highestBossActDefeated: 2, combatsFinished: 12, damageDealt: 50, damageTaken: 20, damageBlocked: 10, floorsCleared: 30 }, cutoff - 1000)
+    const pastRuns = legacyCoinGrant(rooms.store.leaderboardRuns, second, cutoff).coins
+    assert(pastRuns > 0, 'precondition: the past run pays coins')
+    await createAccount(second)
+    const pastRunsToast = walletPage.locator('.coin-gain__toast')
+    await pastRunsToast.waitFor()
+    assert(new RegExp(`\\+${pastRuns} coins[\\s\\S]*Your past runs · ${pastRuns} in your purse`).test(await pastRunsToast.innerText()),
+      `${screen}: the past-runs toast reads ${await pastRunsToast.innerText()}`)
+    await walletPage.waitForFunction((label) => document.querySelector('.start-menu__purse')?.getAttribute('aria-label') === label,
+      `Shop · ${pastRuns} coins`)
+    // Wait for the entry animations only: the delayed one is the toast's own fade-out.
+    await walletPage.evaluate(() => Promise.all(document.querySelector('.coin-gain__toast').getAnimations({ subtree: true })
+      .filter((animation) => animation.effect?.getTiming().delay === 0).map((animation) => animation.finished)))
+    await walletPage.screenshot({ path: join(output, `${screen}-past-runs-toast.png`) })
+    await walletPage.reload()
+    await walletPage.locator('.start-menu__nav').waitFor()
+    await walletPage.waitForFunction(() => !localStorage.getItem('sts-legacy-claim:' + JSON.parse(localStorage.getItem('sts-profile')).username.toLowerCase()))
+    assertEqual(await purse(), `Shop · ${pastRuns} coins`, `${screen}: the past runs paid twice, or the second account inherited coins`)
+    await logOutHere()
+    await walletPage.getByRole('button', { name: 'Already have an account? Log in' }).click()
+    await walletPage.getByLabel('Username').fill(owner)
+    await walletPage.getByLabel('Password', { exact: true }).fill(password)
+    await walletPage.getByRole('button', { name: 'Log in', exact: true }).click()
+    await walletPage.locator('.start-menu__nav').waitFor()
+    assertEqual(await purse(), 'Shop · 33 coins', `${screen}: logging back in lost the account's coins`)
+    await walletContext.close()
 
     // A profile from before passwords existed: still on this browser and on the server, no password.
     const legacy = { username: `Legacy${phone ? 'Phone' : 'Desktop'}`, token: phone ? '00000000-0000-4000-8000-0000000000a2' : '00000000-0000-4000-8000-0000000000a1' }
@@ -233,6 +302,28 @@ try {
     await unknownPage.getByRole('button', { name: 'Try again' }).click()
     await unknownPage.getByRole('alert').filter({ hasText: 'not registered on this server' }).waitFor()
     await unknownContext.close()
+  }
+  // A stale or unknown profile token on a normal load: the past-run grant is still asked
+  // for, answers "nothing", and no request fails or logs a console error.
+  {
+    const strangerContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    await strangerContext.addInitScript(() => localStorage.setItem('sts-profile', JSON.stringify({
+      username: 'GhostAccount', token: '00000000-0000-4000-8000-00000000dead', secured: true })))
+    const strangerPage = await strangerContext.newPage()
+    const consoleErrors = []
+    const failed = []
+    strangerPage.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()) })
+    strangerPage.on('response', (response) => { if (response.status() >= 400) failed.push(`${response.status()} ${response.url()}`) })
+    const claim = strangerPage.waitForResponse((response) => response.url().endsWith('/api/profile/coins'))
+    await strangerPage.goto(origin)
+    const claimed = await claim
+    await strangerPage.waitForTimeout(500)
+    check('a load with an unknown profile token asks for its grant without a failed request or console error', () => {
+      assertEqual(claimed.status(), 200)
+      assertEqual(failed.join('\n'), '')
+      assertEqual(consoleErrors.join('\n'), '')
+    })
+    await strangerContext.close()
   }
 } finally {
   await browser.close()

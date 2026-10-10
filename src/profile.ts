@@ -1,6 +1,8 @@
 import { resetRoomEndpoint, roomUrl } from './multiplayer/room-endpoint.ts'
 
-const KEY = 'sts-profile'
+/** Where the signed-in profile is stored; other modules listen for it in `storage` events. */
+export const PROFILE_KEY = 'sts-profile'
+const KEY = PROFILE_KEY
 const TOKEN_KEY = 'sts-profile-token'
 const CLAIM_NAME_KEY = 'sts-profile-claim-name'
 const CHANGE_EVENT = 'sts-profile-change'
@@ -21,6 +23,9 @@ export type ProfileStats = {
   firstRunAt: number | null
   heroes: { character: string; runs: number; wins: number }[]
 }
+
+/** Usernames compare like the server compares them. */
+export const normalizeUsername = (username: string): string => username.normalize('NFKC').trim().toLowerCase()
 
 export function savedProfile(): Profile | null {
   try {
@@ -94,7 +99,7 @@ export function registerProfile(username: string, password: string): Promise<Pro
   // reused for the same name: another name would be refused, and the token of the profile
   // being replaced would claim the old name.
   const stored = localStorage.getItem(TOKEN_KEY)
-  const name = username.normalize('NFKC').trim().toLowerCase()
+  const name = normalizeUsername(username)
   const token = stored && stored !== savedProfile()?.token && localStorage.getItem(CLAIM_NAME_KEY) === name ? stored : crypto.randomUUID()
   localStorage.setItem(TOKEN_KEY, token)
   localStorage.setItem(CLAIM_NAME_KEY, name)
@@ -121,3 +126,9 @@ export function logOut() {
 
 export const loadProfileStats = (profile: Profile) =>
   post<ProfileStats>('/api/profile/stats', { token: profile.token }, 'Could not open your record. Please try again.')
+
+/** The account's one-time coins for the runs it recorded before the Shop (see src/legacy-coins.ts). */
+export const claimLegacyCoins = (profile: Profile, claimId: string) =>
+  post<{ coins: number; grantId?: string }>('/api/profile/coins', { token: profile.token, claimId }, UNREACHABLE)
+export const confirmLegacyCoins = (profile: Profile, claimId: string, grantId: string) =>
+  post<{ claimed: boolean }>('/api/profile/coins/confirm', { token: profile.token, claimId, grantId }, UNREACHABLE)

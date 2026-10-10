@@ -6,7 +6,7 @@
 import { createEnemyDecks, rollActBoss } from './encounters.ts'
 import { grantHeirlooms } from './rewards.ts'
 import { MAX_HP, hasModifier, hasPendingRelicAcquisition, nextRunUid } from './rules.ts'
-import { mirrorItemSupplies } from './supplies.ts'
+import { colorlessCardsAvailable, mirrorItemSupplies } from './supplies.ts'
 import type { PartyMember, RunState } from './types.ts'
 import { addCard, characterRewardDeck, createItemDecks } from '../acquisition.ts'
 import { createCampaignProgress, createSpireKeys, isActIVUnlocked, isColorlessUnlocked } from '../campaign.ts'
@@ -21,6 +21,8 @@ import { addBurningElite, generateMap } from '../map.ts'
 import type { RoomKind } from '../map.ts'
 import { normalizeModifierIds, rollDailyModifiers, rulesetForCharacters } from '../meta.ts'
 import type { DailyModifierId, QuickSetupState, RunMetaOptions } from '../meta.ts'
+import { normalizeCardPacks } from '../packs.ts'
+import type { CardPackId } from '../packs.ts'
 import { dealBlessings, NEOW_CARDS } from '../neow.ts'
 import type { NeowState } from '../neow.ts'
 import { STARTING_RELIC, createRelicDecks, createRelicInstance } from '../relics.ts'
@@ -85,6 +87,7 @@ export function createPlayer(
   addedCards: readonly string[] = [],
   campaignProgress: CampaignProgress = createCampaignProgress(),
   rewardDecks?: { cardRewards: string[]; rareRewards: string[] },
+  packs: readonly CardPackId[] = [],
 ): Player {
   const deck = [...STARTER_DECKS[character], ...addedCards].map(makeInstance)
   const maxHp = MAX_HP[character]
@@ -151,8 +154,8 @@ export function createPlayer(
     slimes: character === 'slime_boss' ? [bruiserSlime()] : [],
     relics: STARTING_RELIC[character] ? [{ defId: STARTING_RELIC[character], spent: false }] : [],
     potions: [],
-    cardRewards: rewardDecks?.cardRewards ?? shuffle(rng, characterRewardDeck(character, false, campaignProgress)),
-    rareRewards: rewardDecks?.rareRewards ?? shuffle(rng, characterRewardDeck(character, true, campaignProgress)),
+    cardRewards: rewardDecks?.cardRewards ?? shuffle(rng, characterRewardDeck(character, false, campaignProgress, packs)),
+    rareRewards: rewardDecks?.rareRewards ?? shuffle(rng, characterRewardDeck(character, true, campaignProgress, packs)),
     lootChests: 0,
     dead: false,
   }
@@ -176,8 +179,10 @@ export function createRun(
     seed = seedFromString(dailySeedText(metaOptions.dailyDate))
     ascension = DAILY_ASCENSION
     campaignProgress = dailyCampaignProgress(campaignProgress)
+    // Rebuilt without `cardPacks`: every Daily Climb player faces the same fixed pools.
     metaOptions = { mode, dailyDate: metaOptions.dailyDate, quickStartAct: 1, campaign: 'base' }
   }
+  const packs = normalizeCardPacks(metaOptions.cardPacks)
   instanceCounter = 0
   const rng = createRng(seed)
   const modifierIds = mode === 'daily'
@@ -193,6 +198,8 @@ export function createRun(
       index,
       ascension >= 5 ? ['ascenders_bane'] : [],
       campaignProgress,
+      undefined,
+      packs,
     ),
   )
   if (ascension >= 2) {
@@ -211,9 +218,11 @@ export function createRun(
   const map = isActIVUnlocked(campaignProgress) ? addBurningElite(rng, baseMap) : baseMap
   const actBossDefId = rollActBoss(rng, 1, campaign)
   const colorlessUnlocked = isColorlessUnlocked(campaignProgress)
-  const itemDecks = createItemDecks(rng, colorlessUnlocked || modifier('all_star') || modifier('prismatic_shard'), campaignProgress, party.map((member) => member.character), ruleset)
+  const itemDecks = createItemDecks(rng, colorlessUnlocked || modifier('all_star') || modifier('prismatic_shard'), campaignProgress, party.map((member) => member.character), ruleset, packs)
   itemDecks.relics = [...relicDecks.relicDeck]
-  const dealt = dealBlessings(rng, players, colorlessUnlocked)
+  // A bought Colorless pack (Slayer Pack) opens the Colorless Neow cards and Events like the unlock.
+  const colorlessCards = colorlessUnlocked || packs.includes('slayer_colorless')
+  const dealt = dealBlessings(rng, players, colorlessCards)
   const neow: NeowState = {
     deck: dealt.deck,
     heartDeck: dealt.heartDeck,
@@ -292,7 +301,7 @@ export function createRun(
     rewards: [],
     rewardDestination: null,
     itemDecks,
-    eventDeck: buildEventDeck(rng, 1, ascension, colorlessUnlocked, campaign),
+    eventDeck: buildEventDeck(rng, 1, ascension, colorlessCards, campaign),
     eventsVisited: 0,
     roomState: null,
     eventCombat: null,
@@ -305,6 +314,7 @@ export function createRun(
       ruleset,
       campaign,
       ...(mode === 'daily' ? { dailyDate: metaOptions.dailyDate } : {}),
+      ...(packs.length > 0 ? { cardPacks: packs } : {}),
     },
     setup,
     campaignProgress: nextCampaignProgress,
@@ -344,7 +354,7 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
     const rareRewards = itemDecks.characterRares[member.character]
     const player = createPlayer(rng, member.id, member.name, member.character, state.players.length + index,
       state.ascension >= 5 ? ['ascenders_bane'] : [], state.campaignProgress,
-      cardRewards && rareRewards ? { cardRewards, rareRewards } : undefined)
+      cardRewards && rareRewards ? { cardRewards, rareRewards } : undefined, state.meta.cardPacks ?? [])
     if (state.ascension >= 2) { player.maxHp -= 1; player.hp -= 1 }
     if (state.ascension >= 9) player.hp -= 1
     delete itemDecks.characterCards[member.character]
@@ -380,7 +390,7 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
     if (deck.length === 0 && newPlayers.some((player) => !DOWNFALL_CHARACTER_IDS.some((id) => id === player.character))) {
       const dealt = new Set(Object.values(state.neow.players).map((progress) => progress.cardId))
       deck.push(...shuffle(rng, NEOW_CARDS.filter((card) => !dealt.has(card.id) &&
-        (isColorlessUnlocked(state.campaignProgress) || !card.unlocked)).map((card) => card.id)))
+        (colorlessCardsAvailable(state) || !card.unlocked)).map((card) => card.id)))
     }
     const progress = Object.fromEntries(newPlayers.map((player) => {
       const downfall = DOWNFALL_CHARACTER_IDS.some((id) => id === player.character)
@@ -406,7 +416,7 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
     if (hasModifier(state, 'heirloom')) next = grantHeirlooms(next, newPlayers.map((player) => player.id))
     return next
   }
-  const dealt = dealBlessings(rng, newPlayers, isColorlessUnlocked(state.campaignProgress))
+  const dealt = dealBlessings(rng, newPlayers, colorlessCardsAvailable(state))
   let next = mirrorItemSupplies({
     ...state,
     rng,

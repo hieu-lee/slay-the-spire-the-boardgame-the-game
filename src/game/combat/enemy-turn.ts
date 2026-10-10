@@ -6,7 +6,7 @@
 // consequences run through: damage to a player, a death, and settling the
 // fight once every enemy has acted.
 import { clone, combatIsOver, enemyLabel, playersInRowOf } from './board.ts'
-import { damagePlayer, settle, triggerEnemyDeath } from './effects.ts'
+import { damagePlayer, settle, shedSlayerCardsOnLeave, triggerEnemyDeath } from './effects.ts'
 import { addDaze, addStatus, playerCanGainDebuffs, reviveAll } from './pieces.ts'
 import type { CombatState } from './types.ts'
 import { attackerModsOfEnemy, gainBlock, gainStrength, gainVulnerable, gainWeak, hitDamage } from '../damage.ts'
@@ -313,6 +313,7 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
     case 'leave':
       enemy.dead = true
       state.log = [...state.log, `${name} left combat`]
+      shedSlayerCardsOnLeave(state, enemy)
       return
     case 'die':
       enemy.hp = 0

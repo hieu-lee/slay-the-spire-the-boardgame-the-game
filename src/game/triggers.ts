@@ -25,7 +25,7 @@ export type Trigger =
   /** After a card finishes resolving. `cardType` narrows it to attacks, skills, etc. */
   | { kind: 'onPlayCard'; cardType?: CardType }
   /** Once when one card effect makes this player discard one or more cards. */
-  | { kind: 'onDiscard' }
+  | { kind: 'onDiscard'; fromHandOrDraw?: true }
   | { kind: 'onExhaust' }
   | { kind: 'onDraw'; cardType?: CardType; cardTypes?: CardType[] }
   | { kind: 'onEnterStance'; stance?: Stance }
@@ -53,6 +53,8 @@ export type TriggerEvent = {
   stance?: Stance
   /** Enemy that received a token, for `onPutEnemyToken`. */
   enemyUid?: string
+  /** Slayer Pack: Cards the discard took from hand or draw pile, for `onDiscard` (Eviscerate). */
+  count?: number
 }
 
 /** Whether a trigger fires for an event. */
@@ -71,6 +73,9 @@ export function triggerMatches(trigger: Trigger, event: TriggerEvent): boolean {
       trigger.cardType === event.cardType ||
       (event.cardType !== undefined && trigger.cardTypes?.includes(event.cardType) === true)
   }
+  // Slayer Pack: Eviscerate counts cards discarded from hand or draw pile; a card
+  // falling off a dead enemy is not one of them.
+  if (trigger.kind === 'onDiscard') return !trigger.fromHandOrDraw || (event.count ?? 0) > 0
   if (trigger.kind === 'onEnterStance') {
     return trigger.stance === undefined || trigger.stance === event.stance
   }

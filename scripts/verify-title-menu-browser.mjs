@@ -78,18 +78,18 @@ try {
       if (phone) assert(layout.buttons.every((button) => button.height * viewport.width / layout.width >= 22),
         `${label}: a menu target is too short to tap: ${JSON.stringify(layout)}`)
       assert.deepEqual(await page.locator('.start-menu__nav button').allTextContents(),
-        [...(saved ? ['Resume'] : []), 'Single Player', 'Tutorial', 'Multiplayer', 'Replay', 'Compendium'])
-      // Leaderboard, Stats, Mail, Profile and Settings sit in the top-right corner, left to right, clear of the title and the screen edge.
+        [...(saved ? ['Resume'] : []), 'Single Player', 'Tutorial', 'Multiplayer', 'Replay', 'Compendium', 'Shop'])
+      // The coin purse, Leaderboard, Stats, Mail, Profile and Settings sit in the top-right corner, left to right, clear of the title and the screen edge.
       const corner = await page.locator('.start-menu__corner').evaluate((element) => ({
         width: innerWidth, height: innerHeight, title: document.querySelector('.start-menu__title').getBoundingClientRect().toJSON(),
         badge: document.querySelector('.start-menu__profile').getBoundingClientRect().toJSON(),
-        buttons: [...element.querySelectorAll('.mailbox__open, .start-menu__icon')].map((button) => {
+        buttons: [...element.querySelectorAll('.start-menu__purse, .mailbox__open, .start-menu__icon')].map((button) => {
           const box = button.getBoundingClientRect()
           const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
           return { name: button.getAttribute('aria-label')?.replace(/,.*/, ''), hittable: Boolean(hit && button.contains(hit)), ...box.toJSON() }
         }),
       }))
-      assert.deepEqual(corner.buttons.map((button) => button.name), ['Leaderboard', 'Stats', 'Mail', 'Profile', 'Settings'])
+      assert.deepEqual(corner.buttons.map((button) => button.name.replace(/^Shop ·.*/, 'Shop purse')), ['Shop purse', 'Leaderboard', 'Stats', 'Mail', 'Profile', 'Settings'])
       for (const [index, button] of corner.buttons.entries()) {
         assert(button.hittable, `${label}: corner button ${button.name} is covered by something else`)
         assert(button.top >= 0 && button.right <= corner.width && button.bottom <= corner.height && button.width >= 40 && button.height >= 40,
@@ -123,11 +123,11 @@ try {
       if (!phone) {
         const option = page.getByRole('button', { name: 'Compendium', exact: true })
         await option.hover()
-        await page.waitForFunction(() => getComputedStyle(document.querySelector('.start-menu__nav button:last-child'), '::before').opacity === '1')
+        await page.waitForFunction(() => getComputedStyle(document.querySelector('.start-menu__nav button[aria-label="Compendium"]'), '::before').opacity === '1')
         assert.equal(await option.evaluate(button => getComputedStyle(button).backgroundImage), 'none')
         await page.screenshot({ path: join(output, `${label}-hover.png`) })
         await page.mouse.move(0, 0)
-        await page.waitForFunction(() => getComputedStyle(document.querySelector('.start-menu__nav button:last-child'), '::before').opacity === '0')
+        await page.waitForFunction(() => getComputedStyle(document.querySelector('.start-menu__nav button[aria-label="Compendium"]'), '::before').opacity === '0')
         await page.keyboard.press('Tab')
         await option.focus()
         assert.equal(await option.evaluate(button => button.matches(':focus-visible')), true)

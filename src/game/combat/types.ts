@@ -57,6 +57,13 @@ export type CombatState = {
   pendingHermitChamberPlays?: { playerId: string; sourceCardId: string; cardUids: string[]; free: boolean }[]
   /** Dead or Alive rewards waiting for an explicit living-player recipient. */
   pendingHermitStrengthRewards?: { playerId: string; sourceUid: string }[]
+  /** Slayer Pack: owner decisions that wait until their card finished (Nightmare+, Ritual Dagger+). */
+  pendingSlayerChoices?: SlayerChoice[]
+  /**
+   * Slayer Pack: Ritual Dagger rewards earned by a kill, at most one per physical play
+   * (a Double Tap/Echo copy shares the card). Applied once the card has left play.
+   */
+  slayerKillRewards?: { playerId: string; cardUid: string; reward: 'upgrade' | 'reveal' }[]
   /** Each Hermit must Load one card from their private opening hand (start-of-combat board ability). */
   pendingHermitSetupLoads?: { playerId: string }[]
   /**
@@ -165,12 +172,76 @@ export type CombatState = {
   pendingDistilled?: { playerId: string; cards: CardInstance[] }
   /** Golden Eye's private top-three reveal, persisted across reconnects. */
   pendingRelicScry?: { id: number; playerId: string; relicIndex: number; cards: CardInstance[] }
+  /** Slayer Pack: Open card-play windows; each player's last entry is the active one. */
+  pendingCardPlayWindows?: CardPlayWindow[]
+  /** Slayer Pack: decisions a card handed to one player (Heel Hook, Magnetism), oldest first. */
+  pendingPlayerChoices?: PendingPlayerChoice[]
+  /**
+   * Slayer Pack: the next `PendingPlayerChoice` or `SlayerChoice` id, one counter for both. Choices are
+   * public, so they never borrow `nextTriggerId` (masked: it counts private draw reactions); absent
+   * until a choice is queued.
+   */
+  nextPlayerChoiceId?: number
   /** Ordered public Attack/Skill plays used by Doppelganger this turn. */
   playedCardsThisTurn: PlayedCard[]
   partyAttackDiscount?: boolean
   /** Recent public actions for player-facing animation; reconnecting clients baseline the sequence. */
   presentationEvents: CombatPresentationEvent[]
   log: string[]
+}
+
+/**
+ * "Play one of these for 0 Energy", "play any number of cards for 1 Energy
+ * each": the cards a resolved card lets its owner play through the ordinary
+ * card pipeline at an exact cost. Windows stack per player, because a card
+ * played through one (Violence through Enlightenment) can open another, and
+ * only the newest is live until it closes. Plain JSON, so reconnects keep it.
+ */
+export type CardPlayWindow = {
+  /** Stable id, so a stale "finish" from an earlier window is refused. */
+  id: string
+  playerId: string
+  sourceCardId: string
+  /** The hand cards this window may still play, in the order they were offered. */
+  cardUids: string[]
+  /** Energy each card costs through this window; X-cost cards resolve with this X. */
+  cost: number
+  /** Plays left; null is "any number". */
+  plays: number | null
+  /** Whether the owner may finish while an offered card could still be played. */
+  optional: boolean
+  /** Discovery: the offered cards still in hand are discarded when the window closes. */
+  discardRest?: boolean
+}
+
+/**
+ * Slayer Pack: one player's owed decision. Only `playerId` may answer it, from their own hand
+ * or face-up discard pile, so it is safe to publish to the table.
+ *
+ * Why this is not `SlayerChoice`, although both wait for a card to finish: here the answering
+ * player may be someone other than the card's owner (Heel Hook's "any player"), nothing in the
+ * payload is hidden, it can pause and later resume the Start-of-Turn order (Magnetism), and it is
+ * dropped when combat ends. `SlayerChoice` is always its owner's, may carry a private reveal, and a
+ * Ritual Dagger+ reveal survives victory. Merging them would have to reconcile those four rules.
+ */
+export type PendingPlayerChoice = {
+  id: number
+  playerId: string
+  /** The card or Power that asked, for the prompt and the log. */
+  sourceLabel: string
+} & (
+  /** Heel Hook: draw 1, discard 1 chosen card, or decline. */
+  | { kind: 'drawOrDiscard' }
+  /** Magnetism: return 0 to `upTo` topmost discards to hand. */
+  | { kind: 'returnDiscardTop'; upTo: number }
+)
+
+/** Slayer Pack: the answer to a `PendingPlayerChoice`. Omitting every option declines it. */
+export type PlayerChoiceAnswer = {
+  choiceId: number
+  draw?: boolean
+  discardUid?: string
+  count?: number
 }
 
 export type PlayedCard = {
@@ -215,6 +286,32 @@ export type NewPresentationEvent = Omit<PresentationTargets, 'seq'> & (
   | { kind: 'turn'; effect: TurnEffectPresentation; actorTargeted: boolean }
 )
 
+/**
+ * A Slayer Pack decision its owner makes after the card that caused it finished.
+ *
+ * Why this is not `PendingPlayerChoice`: only the card's owner answers; Ritual Dagger+'s
+ * `revealed` rare reward is private to that owner (the room redacts it for everyone else); and a
+ * Ritual Dagger+ reveal from the killing blow survives victory (`clearTerminalChoices`) so the
+ * owner still decides before combat folds into the run. `PendingPlayerChoice` is public, may be
+ * answered by another player, can pause the Start-of-Turn order, and is dropped at combat's end.
+ */
+export type SlayerChoice = {
+  /**
+   * Public id, allocated from the same counter as `PendingPlayerChoice` (never reused within a combat).
+   * An answer names it, so a duplicate or stale one (a double-click, a replay) cannot resolve the
+   * owner's next choice. A state saved before ids existed has none, and then the answer carries none.
+   */
+  id?: number
+} & (
+  /** Nightmare+'s enemy died with two or more other enemies alive: the owner picks its next one. */
+  | { kind: 'reattach'; playerId: string; card: CardInstance; fromUid: string }
+  /**
+   * Ritual Dagger+ killed its target. `revealed` is the owner's top rare reward,
+   * shown to them alone; they put it on the bottom or Replace the dagger with it.
+   */
+  | { kind: 'ritualDagger'; playerId: string; cardUid: string; revealed: string }
+)
+
 export type PendingTrigger = {
   id: number
   playerId: string
@@ -223,6 +320,8 @@ export type PendingTrigger = {
   startTurn?: true
   /** Event-bound target, such as the enemy that received a token. */
   enemyUid?: string
+  /** Slayer Pack: Event-bound card count, such as the cards an `onDiscard` took. */
+  count?: number
 }
 
 export type CopySource = 'Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Omniscience' | 'Rapid Fire'
@@ -287,6 +386,8 @@ export type StartTurnAbility = {
   evokeOrbs?: OrbType[]
   /** Repeated Evokes remove one Orb but collect one target per application. */
   evokeTargetIndex?: number
+  /** Evokes that find no living enemy while a pending Summon keeps the combat going; they need no target. */
+  evokeTargetless?: number[]
   /** Orb slots once the staged Evokes and Channels apply, shown while they are still being chosen. */
   evokePlanOrbs?: (OrbType | null)[]
   /** An earlier forced-card ability parks this one; its Shiv and Evoke picks are asked after that card resolves. */
@@ -344,6 +445,16 @@ export const endTurnChoiceTarget = (choice: string): string | undefined => choic
 
 export const chooseEndTurnTarget = (id: string, targetUid: string): string =>
   `${endTurnChoiceId(id)}${END_TURN_TARGET}${targetUid}`
+
+// Slayer Pack: Companion's optional self-Exhaust is chosen together with its enemy.
+const SELF_EXHAUST_TARGET = 'exhaust:'
+
+export const selfExhaustEndTurnTarget = (targetUid: string): string => `${SELF_EXHAUST_TARGET}${targetUid}`
+
+export const parseSelfExhaustEndTurnTarget = (target: string | undefined): { targetUid: string | undefined; exhaust: boolean } =>
+  target?.startsWith(SELF_EXHAUST_TARGET)
+    ? { targetUid: target.slice(SELF_EXHAUST_TARGET.length), exhaust: true }
+    : { targetUid: target, exhaust: false }
 
 export const defaultEndTurnOrder = (abilities: readonly EndTurnAbility[]): EndTurnOrder =>
   abilities.map((ability) => ability.targets?.[0]
@@ -511,6 +622,10 @@ export type PlayContext = {
   pendingExhaustTriggers?: { playerId: string; card: CardInstance }[]
   /** Internal result of the immediately preceding direct draw effect. */
   drewSkill?: boolean
+  /** Slayer Pack: Internal: the cards the caster's preceding draw clause drew. */
+  drawnUids?: string[]
+  /** Slayer Pack: Internal: a mandatory Chamber play, which no card-play window holds back. */
+  outsidePlayWindow?: boolean
   /** Public source label for Orb channel animations, including triggered Powers and relics. */
   presentationSourceId?: string
   /** Actual visible mutations made by an opaque recurring effect, grouped by semantic. */
@@ -596,6 +711,18 @@ export type PlayContext = {
   /** HP removed by the immediately preceding hit effect. */
   lastHitDamage?: number
   lastHitDamageBeforeBlock?: number
+  /** Creative AI: the occupied Orb slots its owner removes, one per returned card. */
+  orbSlots?: number[]
+  /** Card count carried by the event that fired this trigger (Eviscerate's discards). */
+  triggerCount?: number
+  /** Companion's owner chose to also Exhaust it as part of its end-of-turn ability. */
+  optionalSelfExhaust?: boolean
+  /** Metamorphosis: the owner's Power in play that it attaches to and copies. */
+  metamorphosisPowerUid?: string
+  /** HP the immediately preceding hit took from every enemy it struck (Reaper). */
+  lastHitTotalDamage?: number
+  /** `enemyUid/cardUid` of every attached Slayer card when this play began; one moved here mid-play does not react. */
+  slayerAttachedAtStart?: string[]
 }
 
 export type CardChoicePreview = {
@@ -627,8 +754,9 @@ export type PotionContext = {
 }
 
 export type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'miracles' | 'stance' |
+  'weak' | 'vulnerable' |
   'attacksPlayedThisTurn' | 'exhaust' | 'clawCubesGainedThisCombat' | 'heat' | 'slimes' | 'chamber' |
-  'guardianMode' | 'rage'> & {
+  'guardianMode' | 'rage' | 'hp'> & {
   hand: readonly CardInstance[] | null
   powers?: readonly CardInstance[]
 }
@@ -647,6 +775,8 @@ export type PowerContext = {
   scryDiscardUids?: string[]
   /** Revenge Protocol's privately selected Attack in hand. */
   cardUid?: string
+  /** Slayer Pack: Creative AI's chosen occupied Orb slots. */
+  orbSlots?: number[]
 }
 
 export type StartTurnSource = {

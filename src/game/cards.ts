@@ -9,6 +9,8 @@ import { GUARDIAN_CARD_DEFS, GUARDIAN_PHYSICAL_DECKS } from './downfall/guardian
 import { DOWNFALL_COLORLESS_CARD_DEFS } from './downfall/items.ts'
 import { HERMIT_CARD_DEFS, HERMIT_PHYSICAL_DECKS } from './downfall/hermit.ts'
 import { KRATOS_CARD_DEFS, KRATOS_STARTER_DECK } from './dlc/kratos.ts'
+import { SLAYER_CARD_DEFS } from './slayer/index.ts'
+import type { CardPackId } from './packs.ts'
 
 /** Who an effect lands on. Resolved against a chosen target when the card is played. */
 export type TargetScope =
@@ -107,6 +109,20 @@ export type Condition =
   | { kind: 'targetEliteOrBoss' }
   | { kind: 'hasCurseInChamber' }
   | { kind: 'hasDeadOnAttackInChamber' }
+  /** Deep Breath: no Skill is left in hand once the played card has left it. */
+  | { kind: 'hasNoSkillsInHand' }
+  /** Heel Hook: the enemy this card targeted holds at least one Weak token. */
+  | { kind: 'targetWeak' }
+  /** Brutality: this player lost at least 1 HP during the previous round. */
+  | { kind: 'lostHpLastRound' }
+  /** Infernal Blade: a Daze, Burn, Slimed (Status) or Curse card is in this player's hand. */
+  | { kind: 'hasStatusOrCurseInHand' }
+  /** Metamorphosis: this player has at least one Power in play to attach to. */
+  | { kind: 'hasActivePower' }
+  /** Dropkick: "+2 damage if the target has [Vulnerable]", read per struck enemy before the hit spends it. */
+  | { kind: 'targetVulnerable' }
+  /** Glass Knife: this exact card was NOT kept by Retain last turn (a freshly drawn card qualifies). */
+  | { kind: 'notRetainedLastTurn' }
 
 /** Something on the board a card can count. Barrage deals one hit per Orb. */
 export type CountOf =
@@ -136,6 +152,16 @@ export type CountOf =
   | 'otherCardsInHand'
   /** Kratos's current Rage, read without spending it. */
   | 'rage'
+  /** Smite: the caster's current hit points, read as the clause resolves. */
+  | 'currentHp'
+  /**
+   * Searing Blow: upgraded cards in hand, never the played card itself -- the
+   * upgraded face's "every OTHER upgraded card" (author FAQ), and moot for the
+   * unupgraded base face.
+   */
+  | 'upgradedCardsInHand'
+  /** Endless Agony: each Weak and each Vulnerable token on the player themself. */
+  | 'ownWeakAndVulnerable'
 
 /** Status-token fields a card can count on an enemy. */
 export type EnemyTokenKind = 'strength' | 'vulnerable' | 'weak' | 'poison'
@@ -194,8 +220,13 @@ type EffectKind =
   /** Evaluate one condition once, then resolve the printed clauses in order. */
   | { kind: 'sequence'; effects: Effect[]; guardianAction?: 'card'; guardianGemId?: string }
   | { kind: 'branch'; condition: Condition; effects: Effect[]; otherwise: Effect[] }
-  /** A hit: modified by Strength, Weak and Vulnerable. `times` is a multi-hit. */
-  | { kind: 'hit'; amount: Amount; times?: Amount }
+  /**
+   * A hit: modified by Strength, Weak and Vulnerable. `times` is a multi-hit.
+   * `onKill` (Slayer Pack: Bite, Ritual Dagger) resolves once if this hit
+   * killed the chosen target -- even when that kill ends the combat, because
+   * its heal and deck change outlast the fight.
+   */
+  | { kind: 'hit'; amount: Amount; times?: Amount; onKill?: Effect[] }
   | { kind: 'rowHit'; amount: Amount; times?: Amount }
   /** Separate hits, each independently assigned to a living enemy. */
   | { kind: 'hitChoices'; amount: Amount; targets: number; distinct?: boolean }
@@ -322,8 +353,8 @@ type EffectKind =
   | { kind: 'gainStrengthIfTargetDead'; amount: number }
   /** Set the target's HP to 0 when it is at or below the printed threshold. */
   | { kind: 'execute'; hpAtMost: number }
-  /** Gain Block equal to the preceding hit's unblocked damage. */
-  | { kind: 'gainBlockFromLastHit' }
+  /** Gain Block equal to the preceding hit's unblocked damage; `allTargets` sums every enemy it struck (Reaper). */
+  | { kind: 'gainBlockFromLastHit'; allTargets?: boolean }
   | { kind: 'scry'; amount: number }
   /** Put chosen cards from hand on top of the draw pile, in chosen order. */
   | { kind: 'topdeck'; amount: number }
@@ -397,6 +428,103 @@ type EffectKind =
    * `canUnleash`, whose `otherwise` is the base of an "instead" clause.
    */
   | { kind: 'unleashSpend'; cost: number }
+  /**
+   * Open a card-play window: its owner plays the listed cards through the
+   * ordinary card pipeline, each for exactly `cost` Energy (an X card resolves
+   * with X equal to that cost). `drawn` is what this card's preceding draw clause
+   * drew; `hand` and `attacksInHand` read the hand as this clause resolves.
+   * `plays: null` is "any number"; `optional: false` must play while it can.
+   */
+  | {
+    kind: 'openPlayWindow'
+    cards: 'drawn' | 'hand' | 'attacksInHand'
+    cost: number
+    plays: number | null
+    optional: boolean
+    /** Discovery: discard the window's unplayed cards when it closes. */
+    discardRest?: boolean
+  }
+  /**
+   * Deceive Reality: Scry, and while Scrying put one playable revealed card
+   * (chosen in `scryToHandUid`) into hand behind a one-card 0-Energy window.
+   */
+  | { kind: 'scryAndPlay'; amount: number }
+  /**
+   * Forethought: put chosen hand cards (`topdeckUids`, in selection order) on
+   * the bottom of the draw pile and gain Energy equal to their combined cost.
+   */
+  | { kind: 'bottomdeck'; amount: number | 'any' }
+  /** Smite: the caster takes damage. Block absorbs it first. */
+  | { kind: 'takeDamage'; amount: number }
+  /**
+   * Move the topmost cards of a face-up discard pile (Dual Wield, Rebound, Master Reality): to hand or
+   * onto the draw pile. `toChosen` takes them from the chosen player's pile and gives them back to that
+   * same player. `mayRetain` lets the owner keep the returned card in this turn's discard step.
+   */
+  | ({ kind: 'returnDiscardTop'; amount: number; to: 'hand' | 'drawTop'; mayRetain?: true } & Redirectable)
+  /** Creative AI: remove the chosen Orbs (one, or any number) and return that many topmost discards to hand. */
+  | { kind: 'removeOrbsForDiscardTop'; anyNumber: boolean }
+  /** Magnetism: the owner may return up to this many topmost discards to hand — a private pending choice. */
+  | { kind: 'mayReturnDiscardTop'; upTo: number }
+  /** Aggregate: Evoke every Orb, in the chosen order, applying each one's Evoke this many times. */
+  | { kind: 'evokeAll'; times: number }
+  /**
+   * Reboot: discard the whole hand as this card's effect. Unlike Hermit's `discardHand`, discard
+   * reactions wait for the card to finish resolving (p.12), as every other card-play discard does.
+   */
+  | { kind: 'discardWholeHand' }
+  /** Reboot: shuffle the whole discard pile into the draw pile. */
+  | { kind: 'shuffleDiscardIntoDraw' }
+  /** Armaments: Retain up to `amount` cards this turn; each card kept that way gains 1 Block. */
+  | { kind: 'retainForBlock'; amount: number }
+  /** Heel Hook: the chosen player may draw a card or discard a card of their choice — their pending choice. */
+  | ({ kind: 'drawOrDiscardChoice' } & Redirectable)
+  /** Eviscerate: plain damage per card the triggering discard took (`PlayContext.triggerCount`). */
+  | { kind: 'damagePerDiscard'; amount: number }
+  /** Panic Button: the caster gains Vulnerable tokens ("Gain"), capped like any token. */
+  | { kind: 'gainVulnerable'; amount: number }
+  /** The Power whose ability is resolving Exhausts itself. */
+  | { kind: 'exhaustSelf' }
+  /** Fasting: lose a Miracle; if there is none, this Power is discarded from play. */
+  | { kind: 'loseMiracleOrDiscardSelf' }
+  /** Companion: optionally Exhaust this Power as part of its ability to resolve `effects`. */
+  | { kind: 'mayExhaustSelfFor'; effects: Effect[] }
+  /** Persistent (Panic Button): its owner cannot lose HP from any source. */
+  | { kind: 'preventAllHpLoss' }
+  /** Persistent (Bandage Up): the next HP loss is reduced, then this Power leaves play. */
+  | { kind: 'reduceHpLoss'; amount: number; then: 'exhaust' | 'discard' }
+  /** Persistent (Fasting): +amount on each hit and Block icon of the owner's Attack and Skill cards. */
+  | { kind: 'cardIconBonus'; amount: number }
+  /** Persistent (Phantasmal Killer): each Shiv its owner uses deals this much plain damage to its target's row. */
+  | { kind: 'shivRowDamage'; amount: number }
+  /**
+   * Nightmare, Pressure Points: this physical card leaves play and sits on the
+   * chosen enemy until it dies. What it does there is the card's `attached`.
+   */
+  | { kind: 'attachToTarget' }
+  /**
+   * Bowling Bash: plain damage to `targets` enemies orthogonally adjacent to the
+   * chosen target (`adjacentEnemies`). With more candidates than `targets` the
+   * player picks them in `PlayContext.enemyUids`; otherwise all of them take it.
+   */
+  | { kind: 'damageAdjacent'; amount: number; targets: number }
+  /** Ritual Dagger (inside a hit's `onKill`): permanently upgrade the physical card, deck copy included. */
+  | { kind: 'upgradeThisCard' }
+  /** Ritual Dagger+ (inside `onKill`): privately reveal the top rare reward; its owner keeps or swaps it. */
+  | { kind: 'revealRareReward' }
+
+/** What a card attached to an enemy does while it stays there. */
+export type AttachedCardText = {
+  /**
+   * Plain damage to the host whenever the card's owner plays a card of this
+   * kind. `attackAgainstHost` is one Attack (a Shiv included) that struck the
+   * host; `skill` is any Skill the owner plays.
+   */
+  damageWhen: 'attackAgainstHost' | 'skill'
+  amount: number
+  /** When the host dies: discard the card, or move it to another living enemy. */
+  onHostDeath: 'discard' | 'reattach'
+}
 
 export type CardDef = {
   id: string
@@ -405,6 +533,11 @@ export type CardDef = {
   publisherScan?: boolean
   /** `colorless`, `curse` and `status` are pools rather than characters. */
   owner: CharacterId | 'colorless' | 'curse' | 'status'
+  /**
+   * Set on cards sold as a Shop pack. They are always defined, but only a run
+   * started with the pack enabled shuffles them into its reward decks.
+   */
+  pack?: CardPackId
   type: CardType
   /** Slime cards enter the serialized Slime play area rather than the Power row. */
   cardKind?: 'slime'
@@ -480,6 +613,8 @@ export type CardDef = {
   oncePerTurn?: boolean
   /** This Power is activated by its owner during the Player Turn. */
   activeAbility?: boolean
+  /** Slayer Pack: The active ability may only be used while this holds (Infernal Blade). */
+  activationCondition?: Condition
   /** This Power is consulted directly by a shared gameplay boundary while in play. */
   persistent?: boolean
   /** A Power or Slime whose printed effects happen once when played. */
@@ -499,6 +634,14 @@ export type CardDef = {
   retainCostReduction?: boolean
   tackleCostReduction?: boolean
   costAfterSpentTwoEnergy?: number
+  /** Auto-Shields: "Whenever you draw this card, play it immediately, if able." */
+  playOnDraw?: boolean
+  /** Secret Technique: set aside and put on top of the draw pile during combat setup. */
+  combatSetupOnTop?: boolean
+  /** Pressure Points: the printed cost becomes this when the chosen target is a Boss. */
+  bossTargetCost?: number
+  /** Nightmare, Pressure Points: the text that works while the card is attached to an enemy. */
+  attached?: AttachedCardText
   /** What changes when upgraded. Merged over the base definition. */
   upgrade?: Partial<Omit<CardDef, 'id' | 'upgrade'>>
 }
@@ -575,6 +718,7 @@ export const CARDS: Record<string, CardDef> = {
   ...GUARDIAN_CARD_DEFS,
   ...(HERMIT_CARD_DEFS as unknown as Record<string, CardDef>),
   ...KRATOS_CARD_DEFS,
+  ...SLAYER_CARD_DEFS,
   strike_kratos: { ...starterStrike('kratos'), printedText: 'Deal 1 damage.',
     upgrade: { ...starterStrike('kratos').upgrade, printedText: 'Deal 2 damage.' } },
   defend_kratos: { ...starterDefend('kratos'), printedText: 'Gain 1 Block.',

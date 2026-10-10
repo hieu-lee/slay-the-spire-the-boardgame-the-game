@@ -86,9 +86,12 @@ const POTION_IDS = Object.keys(POTIONS).sort()
 // Preserve the original heroes' accents when a DLC moves out of playtesting.
 // Additional cards occupy their own grid after every character's original pool.
 const EXTRA_OWNERS = new Set<string>([...DLC_CHARACTER_IDS, ...PLAYTEST_CHARACTER_IDS])
-const ORIGINAL_CARD_IDS = Object.values(CARDS).filter((def) => !EXTRA_OWNERS.has(def.owner)).map((def) => def.id).sort()
+const ORIGINAL_CARD_IDS = Object.values(CARDS).filter((def) => !EXTRA_OWNERS.has(def.owner) && !def.pack).map((def) => def.id).sort()
 const ORIGINAL_CARDS = new Set(ORIGINAL_CARD_IDS)
-const EXTRA_CARD_IDS = Object.keys(CARDS).filter((id) => !ORIGINAL_CARDS.has(id)).sort()
+const EXTRA_CARD_IDS = Object.keys(CARDS).filter((id) => !ORIGINAL_CARDS.has(id) && !CARDS[id]!.pack).sort()
+// Shop pack cards (The Slayer Pack) get a block of their own after every
+// character's extra grid, so adding them retunes no existing card.
+const PACK_CARD_IDS = Object.keys(CARDS).filter((id) => CARDS[id]!.pack).sort()
 const CHARACTERS: readonly CharacterId[] = ALL_CHARACTER_IDS
 const IDENTITY_SOUNDS: readonly CombatSound[] = [
   'ui', 'card', 'draw', 'attack', 'magic', 'enemy', 'block', 'heal', 'weak',
@@ -97,6 +100,8 @@ const IDENTITY_PERIOD = IDENTITY_SOUNDS.length * 8
 // Whole timing bands keep differently pitched actors' extra accents distinct.
 const EXTRA_OFFSET = Math.ceil(CHARACTERS.length * ORIGINAL_CARD_IDS.length / IDENTITY_PERIOD) * IDENTITY_PERIOD
 const EXTRA_STRIDE = Math.ceil(EXTRA_CARD_IDS.length / IDENTITY_PERIOD) * IDENTITY_PERIOD
+const PACK_OFFSET = EXTRA_OFFSET + CHARACTERS.length * EXTRA_STRIDE
+const PACK_STRIDE = Math.ceil(PACK_CARD_IDS.length / IDENTITY_PERIOD) * IDENTITY_PERIOD
 
 function identityLayer(slot: number): LayerTemplate {
   return {
@@ -146,8 +151,10 @@ export function cardSfxRecipe(
   const visual = cardVfxRecipe(character, baseId, mode, upgraded, resolvedType)
   const characterIndex = CHARACTERS.indexOf(character)
   const originalIndex = ORIGINAL_CARD_IDS.indexOf(baseId)
+  const packIndex = PACK_CARD_IDS.indexOf(baseId)
   const slot = originalIndex >= 0 ? characterIndex * ORIGINAL_CARD_IDS.length + originalIndex
-    : EXTRA_OFFSET + characterIndex * EXTRA_STRIDE + EXTRA_CARD_IDS.indexOf(baseId)
+    : packIndex >= 0 ? PACK_OFFSET + characterIndex * PACK_STRIDE + packIndex
+      : EXTRA_OFFSET + characterIndex * EXTRA_STRIDE + EXTRA_CARD_IDS.indexOf(baseId)
   return tunedRecipe(
     `card:${character}:${baseId}:${mode ?? 'base'}`,
     [...layersForCard(visual).map(layer => ({ ...layer,

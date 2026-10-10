@@ -220,8 +220,9 @@ check('sound effects are complete, compact, and decodable', () => {
 })
 
 check('every character card has exactly one committed illustration', () => {
+  // Slayer Pack cards ship only their full scans; there is no text-free illustration for them.
   const expected = Object.values(CARDS)
-    .filter((def) => CARD_ART_OWNERS.includes(def.owner))
+    .filter((def) => CARD_ART_OWNERS.includes(def.owner) && !def.pack)
     .map((def) => `${def.owner}/${def.id}.webp`)
     .sort()
   // The bundled inventory already contains the pending Watcher batch. Keep its
@@ -289,7 +290,7 @@ assert wallpaper.size == (1536,864) and wallpaper.mode == 'RGB'
 })
 
 check('committed card illustration paths are stable across upgrades', () => {
-  for (const def of Object.values(CARDS).filter((card) => CARD_ART_OWNERS.includes(card.owner))) {
+  for (const def of Object.values(CARDS).filter((card) => CARD_ART_OWNERS.includes(card.owner) && !card.pack)) {
     const path = cardArtPath(def)
     assertEqual(path, `${CARD_ART_ROOT}/${def.owner}/${def.id}.webp`)
     assertEqual(cardArtPath(faceOf(def, true)), path, `${def.id} upgrade reuses its illustration`)
@@ -313,7 +314,13 @@ const downfallCardKeys = new Set(Object.values(CARDS)
   .map((path) => path.split('/').pop()))
 const kratosCardKeys = new Set(JSON.parse(readFileSync(join(repoRoot, 'docs/kratos-card-faces/plan.json'), 'utf8'))
   .map((face) => `${face.assetKey}.webp`))
-const knownCardKeys = new Set([...indexedKeys, ...GENERATED_CARD_KEYS, ...downfallCardKeys, ...kratosCardKeys])
+// The Slayer Pack: both faces of all 45 Shop pack cards, each filed under `slayer__<owner>__`.
+const slayerCardKeys = new Set(Object.values(CARDS)
+  .filter((def) => def.pack)
+  .flatMap((def) => [cardImagePath(def, false), cardImagePath(faceOf(def, true), true)])
+  .map((path) => path.split('/').pop()))
+const knownCardKeys = new Set([...indexedKeys, ...GENERATED_CARD_KEYS, ...downfallCardKeys, ...kratosCardKeys, ...slayerCardKeys])
+const cardGroup = (file) => kratosCardKeys.has(file) ? 'kratos' : slayerCardKeys.has(file) ? 'slayer' : 'existing'
 const hasPublisherScans = cardFiles.some((file) => !GENERATED_CARD_KEYS.has(file))
 
 check('every defined card resolves to an image that exists', () => {
@@ -385,10 +392,10 @@ check('every card scan has a thumbnail inside the decode budget', () => {
     return width > 0 && width <= CARD_THUMB_WIDTH ? [] : [`${file} is ${width}px wide`]
   })
   assertDeepEqual(faults, [], `card thumbnails over ${CARD_THUMB_WIDTH}px`)
-  for (const [kratos, budget] of [[false, 28], [true, 8]]) {
-    const bytes = cardThumbFiles.filter(file => kratosCardKeys.has(file) === kratos)
+  for (const [group, budget] of [['existing', 28], ['kratos', 8], ['slayer', 4]]) {
+    const bytes = cardThumbFiles.filter(file => cardGroup(file) === group)
       .reduce((sum, file) => sum + statSync(join(cardThumbRoot, file)).size, 0)
-    assert(bytes < budget * 1024 * 1024, `${kratos ? 'Kratos' : 'existing'} thumbnails total ${(bytes / 1048576).toFixed(1)} MB`)
+    assert(bytes < budget * 1024 * 1024, `${group} thumbnails total ${(bytes / 1048576).toFixed(1)} MB`)
   }
 })
 
@@ -440,7 +447,8 @@ check('image paths are safe, normalised browser paths', () => {
 check('the card art on disk matches the index exactly', () => {
   if (!hasPublisherScans) return
   const expected = cardIndex.reduce((count, entry) => count + (entry.hasUpgrade ? 2 : 1), 0) +
-    GENERATED_CARD_KEYS.size + downfallCardKeys.size + kratosCardKeys.size
+    GENERATED_CARD_KEYS.size + downfallCardKeys.size + kratosCardKeys.size + slayerCardKeys.size
+  assertEqual(slayerCardKeys.size, 90, 'The Slayer Pack: 45 cards, two faces each')
   assertEqual(cardFiles.length, expected, 'every index entry should have exactly one file per face')
 })
 
@@ -468,7 +476,7 @@ check('every Downfall card has its official full-size board-game face', () => {
 check('character card art stays at source resolution', () => {
   if (!hasPublisherScans) return
   const files = cardFiles
-    .filter((file) => /^(ironclad|silent|defect|watcher)__/.test(file))
+    .filter((file) => /^(ironclad|silent|defect|watcher|slayer)__/.test(file))
     .map((file) => join(cardRoot, file))
   const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
   assert(result.status === 0, result.stderr || 'could not inspect character card dimensions')
@@ -489,17 +497,17 @@ check('card art stays within its size budget', () => {
   if (!hasPublisherScans) return
   // Keep the existing crop budget; model faces preserve native alpha and have
   // a separate bounded allowance, without raising other cards' limits.
-  for (const [kratos, budget, perFile] of [[false, 48, 60], [true, 16, 160]]) {
+  for (const [group, budget, perFile] of [['existing', 48, 60], ['kratos', 16, 160], ['slayer', 6, 60]]) {
     let total = 0
     const oversized = []
-    for (const file of cardFiles.filter(file => kratosCardKeys.has(file) === kratos)) {
+    for (const file of cardFiles.filter(file => cardGroup(file) === group)) {
       const bytes = statSync(join(cardRoot, file)).size
       total += bytes
       if (bytes > perFile * 1024) oversized.push(`${file} is ${Math.round(bytes / 1024)} KB`)
     }
     assert(oversized.length === 0, `oversized card art:\n    ${oversized.join('\n    ')}`)
     const megabytes = total / 1024 / 1024
-    assert(megabytes < budget, `${kratos ? 'Kratos' : 'existing'} card art totals ${megabytes.toFixed(1)} MB, over the ${budget} MB budget`)
+    assert(megabytes < budget, `${group} card art totals ${megabytes.toFixed(1)} MB, over the ${budget} MB budget`)
   }
 })
 
@@ -515,6 +523,7 @@ check('no stale card images linger from an older naming scheme', () => {
   for (const key of GENERATED_CARD_KEYS) expected.add(key)
   for (const key of downfallCardKeys) expected.add(key)
   for (const key of kratosCardKeys) expected.add(key)
+  for (const key of slayerCardKeys) expected.add(key)
   const strays = cardFiles.filter((file) => !expected.has(file))
   assert(
     strays.length === 0,

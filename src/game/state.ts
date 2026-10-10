@@ -12,6 +12,8 @@
 // all 22 of 22 colorless cards are live in the base game. Relics, potions, and their
 // Ascension rules are live. Event, Merchant/Courier, Treasure, and campaign
 // presentation are composed from the separate noncombat implementation.
+// The 45 cards of The Slayer Pack (28 character, 17 Colorless; see docs/slayer-pack.md) are Shop
+// packs counted apart from the physical card counts above.
 // No scan-read cards are held back in `DEFERRED_CARDS`. Official optional run
 // modes and Quick Start/Catch Up data are live.
 export { createRng, nextFloat, nextInt, shuffle, pick, pickMany, seedFromString } from './rng.ts'
@@ -144,6 +146,9 @@ export {
   resolveEndTurnAbility,
   resolvePendingTrigger,
   resolvePendingDieRelicChoice,
+  defaultPendingPlayerChoice,
+  lapseStrandedPlayerChoices,
+  resolvePendingPlayerChoice,
   resolvePlunderRowSwitch,
   resumePlayerTurnAfterDraw,
   spendMiracle,
@@ -159,6 +164,7 @@ export {
   startTurnScryPreview,
   defaultStartTurnChoices,
   mandatoryChoicePending,
+  owedPlayerChoices,
   validEndTurnOrder,
 } from './combat.ts'
 export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PendingTrigger, PendingTriggerAbility, PlayContext, PotionContext, PowerContext, RelicContext, StartTurnAbility, StartTurnChoice, StartTurnDiscardPreview, StartTurnScryAbility, StartTurnScryPreview } from './combat.ts'
@@ -168,6 +174,7 @@ export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 export { ENEMIES, abilityText, actionsFor, advanceCube, enemyDef, startingHp } from './enemies.ts'
 export type { CubeSlot, EnemyAbility, EnemyAction, EnemyDef, EnemyPattern } from './enemies.ts'
 export { enemyActingOrder, enemyTurn } from './combat.ts'
+export { resolveSlayerChoice } from './combat.ts'
 
 export { actIVMap, addBurningElite, availableMoves, currentRoom, generateMap, isActComplete, moveTo } from './map.ts'
 export type { MapTokenBack, Room, RoomKind, SpireMap } from './map.ts'

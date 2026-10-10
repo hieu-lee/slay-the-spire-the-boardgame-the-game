@@ -75,6 +75,18 @@ export function lightningTargetsRows(
     faceOf(cardDef(power.defId), power.upgraded).effects.some((effect) => effect.kind === 'lightningTargetsRow'))
 }
 
+/**
+ * Slayer Pack: an Orb's printed end-of-turn amount after this player's
+ * modifiers. Biased Cognition's -1 can take it to 0, never below (Dark has none).
+ */
+export function orbEndTurnAmount(
+  player: Pick<Player, 'orbEndTurnBonus' | 'lightningEndTurnBonus'>,
+  orb: OrbType,
+): number {
+  if (orb === 'dark') return 0
+  return Math.max(0, 1 + (player.orbEndTurnBonus ?? 0) + (orb === 'lightning' ? player.lightningEndTurnBonus ?? 0 : 0))
+}
+
 export function lightningTargetOptions(
   state: CombatState,
   actor: Pick<Player, 'powers'>,
@@ -263,4 +275,34 @@ export function combatIsOver(state: CombatState): boolean {
 
 export function cardResolutionIsOver(state: CombatState, context: PlayContext, actor: Player): boolean {
   return actor.dead || combatIsOver(state) && (context.pendingEnemyDeathUids?.length ?? 0) === 0
+}
+
+/**
+ * Bowling Bash: the living enemies orthogonally adjacent to `targetUid`.
+ *
+ * Rows are stacked in board order and each row lays its non-boss enemies out
+ * left to right in deal order, exactly as the board draws them; a defeated
+ * enemy is taken off the table, so the survivors close up. "Left" and "right"
+ * are the neighbours in the target's own row, "up" and "down" the enemies at
+ * the same position in the rows directly above and below. A boss counts as
+ * being in every row (docs/rules.md §2), so it borders every enemy and every
+ * enemy borders it. The target keeps its own place while it is checked, so a
+ * target the hit just killed still has the same neighbours.
+ */
+export function adjacentEnemies(state: CombatState, targetUid: string | null | undefined): Enemy[] {
+  const target = state.enemies.find((enemy) => enemy.uid === targetUid)
+  if (!target) return []
+  const standing = state.enemies.filter((enemy) => !enemy.dead || enemy.uid === target.uid)
+  const others = standing.filter((enemy) => enemy.uid !== target.uid)
+  if (target.isBoss) return others
+  const rows = combatRows(state)
+  const lane = (row: number | undefined) => standing.filter((enemy) => !enemy.isBoss && enemy.row === row)
+  const own = lane(target.row)
+  const at = own.indexOf(target)
+  const index = rows.indexOf(target.row)
+  const neighbours = new Set([
+    own[at - 1], own[at + 1], lane(rows[index - 1])[at], lane(rows[index + 1])[at],
+    ...others.filter((enemy) => enemy.isBoss),
+  ])
+  return others.filter((enemy) => neighbours.has(enemy))
 }

@@ -4,6 +4,8 @@ import { CARDS, cardDef } from '../game/cards.ts'
 import { ENEMIES, isSummonGroup } from '../game/enemies.ts'
 import { currentRoom } from '../game/map.ts'
 import { DAILY_MODIFIERS } from '../game/meta.ts'
+import { CARD_PACK_IDS, isCardPackId } from '../game/packs.ts'
+import { MAX_BOSS_AWARD_COINS, MAX_BOSS_AWARDS } from '../game/coins.ts'
 import { neowCard } from '../game/neow.ts'
 import { POTIONS, RELICS } from '../game/relics.ts'
 import type { RunState } from '../game/run.ts'
@@ -555,13 +557,22 @@ function validRunState(value: unknown, runId: string): value is RunState {
         Object.entries(current.pendingRewardIndices).every(([index, choice]) =>
           Number.isInteger(Number(index)) && Number(index) >= 0 && Number.isInteger(choice))))
   }
+  const energyAmount = (value: unknown, optional = false) => optional && value === undefined ||
+    Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= CAPS.energy
+  const metamorphosisCopy = (value: unknown) => value === undefined || Boolean(value && typeof value === 'object' &&
+    typeof (value as { upgraded?: unknown }).upgraded === 'boolean' && typeof (value as { sourceUid?: unknown }).sourceUid === 'string' &&
+    energyAmount((value as { copiedX?: unknown }).copiedX, true))
   const cards = (ids: unknown) => Array.isArray(ids) && ids.length <= 512 && ids.every((card) => card && typeof card === 'object' &&
     typeof (card as { uid?: unknown }).uid === 'string' && typeof (card as { defId?: unknown }).defId === 'string' &&
     Object.hasOwn(CARDS, (card as { defId: string }).defId) && typeof (card as { upgraded?: unknown }).upgraded === 'boolean' &&
-    ['endTurnProtected', 'retainedLastTurn', 'retainThisTurn', 'stasisRetained', 'freeThisTurn', 'growOnPlay', 'hermitDeadOn']
+    ['endTurnProtected', 'retainedLastTurn', 'retainThisTurn', 'stasisRetained', 'freeThisTurn', 'growOnPlay', 'hermitDeadOn',
+      'mayRetainThisTurn']
       .every((field) => (card as Record<string, unknown>)[field] === undefined || typeof (card as Record<string, unknown>)[field] === 'boolean') &&
     ['counter', 'costReductionThisTurn', 'scryDamageBonus'].every((field) =>
       (card as Record<string, unknown>)[field] === undefined || Number.isFinite((card as Record<string, unknown>)[field])) &&
+    // Slayer Pack: Energy amounts are whole and never above the Energy cap; a Metamorphosis copy names its physical card.
+    ['playWindowCost', 'xPaid'].every((field) => energyAmount((card as Record<string, unknown>)[field], true)) &&
+    metamorphosisCopy((card as { metamorphosis?: unknown }).metamorphosis) &&
     ((card as { attachedGemId?: unknown }).attachedGemId === undefined ||
       typeof (card as { attachedGemId?: unknown }).attachedGemId === 'string' &&
       Object.hasOwn(CARDS, (card as { attachedGemId: string }).attachedGemId)))
@@ -579,7 +590,7 @@ function validRunState(value: unknown, runId: string): value is RunState {
       'orbEndTurnBonus', 'lightningEndTurnBonus', 'nextSoulburnDamageBonus', 'lootChests']
     const optionalBoolean = ['shuffledThisCombat', 'cardPlayLocked', 'powerPlayedThisTurn', 'damageDealtZeroThisTurn',
       'spentTwoEnergyOnCardThisTurn',
-      'calipersArmed', 'soulburnUsedThisTurn', 'guardianModeLocked']
+      'calipersArmed', 'soulburnUsedThisTurn', 'guardianModeLocked', 'lostHpLastRound']
     return typeof current.id === 'string' && typeof current.name === 'string' && CHARACTER_IDS.some((id) => id === current.character) &&
       numeric.every((field) => Number.isFinite(current[field])) && typeof current.drawLocked === 'boolean' &&
       current.hp >= 0 && current.hp <= current.maxHp && current.maxHp >= 1 && current.maxHp <= 1_000 &&
@@ -592,6 +603,9 @@ function validRunState(value: unknown, runId: string): value is RunState {
       current.vigorSpentThisTurn >= 0 && current.vigorSpentThisTurn <= 4 &&
       optionalNumeric.every((field) => current[field as keyof typeof current] === undefined || current[field as keyof typeof current] === null ||
         Number.isFinite(current[field as keyof typeof current])) &&
+      // Slayer Pack: Armaments' Block for each Retained card, at most one per card a hand can hold.
+      (current.retainBlockAllowance === undefined || Number.isSafeInteger(current.retainBlockAllowance) &&
+        current.retainBlockAllowance >= 0 && current.retainBlockAllowance <= MAX_STATE_COLLECTION) &&
       (current.nextAttackRapidFire === undefined || current.nextAttackRapidFire === null ||
         Number.isInteger(current.nextAttackRapidFire) && current.nextAttackRapidFire >= 0 && current.nextAttackRapidFire <= 32) &&
       optionalBoolean.every((field) => current[field as keyof typeof current] === undefined || typeof current[field as keyof typeof current] === 'boolean') &&
@@ -634,6 +648,8 @@ function validRunState(value: unknown, runId: string): value is RunState {
         typeof current.corpseExplosion.playerId === 'string' && Number.isFinite(current.corpseExplosion.damage))) &&
       (current.hermitBounties === undefined || Array.isArray(current.hermitBounties) && current.hermitBounties.every((bounty) =>
         bounty && cards([bounty.card]) && typeof bounty.playerId === 'string')) &&
+      (current.slayerAttachments === undefined || Array.isArray(current.slayerAttachments) && current.slayerAttachments.length <= 16 &&
+        current.slayerAttachments.every((entry) => entry && cards([entry.card]) && typeof entry.playerId === 'string')) &&
       (current.potionReward === undefined || typeof current.potionReward === 'boolean') &&
       (current.relicReward === undefined || typeof current.relicReward === 'boolean') &&
       (current.phase === undefined || Number.isFinite(current.phase)) &&
@@ -901,7 +917,10 @@ function validRunState(value: unknown, runId: string): value is RunState {
     Number.isFinite((value as { id?: unknown }).id) && typeof (value as { playerId?: unknown }).playerId === 'string' &&
     typeof (value as { sourceId?: unknown }).sourceId === 'string' &&
     ((value as { startTurn?: unknown }).startTurn === undefined || (value as { startTurn?: unknown }).startTurn === true) &&
-    ((value as { enemyUid?: unknown }).enemyUid === undefined || typeof (value as { enemyUid?: unknown }).enemyUid === 'string'))
+    ((value as { enemyUid?: unknown }).enemyUid === undefined || typeof (value as { enemyUid?: unknown }).enemyUid === 'string') &&
+    // Slayer Pack: the cards an onDiscard took (Eviscerate).
+    ((value as { count?: unknown }).count === undefined || Number.isSafeInteger((value as { count?: unknown }).count) &&
+      (value as { count: number }).count >= 0 && (value as { count: number }).count <= MAX_STATE_COLLECTION))
   const startTurnChoice = (value: unknown) => {
     if (!value || typeof value !== 'object') return false
     const choice = value as Record<string, unknown>
@@ -961,6 +980,18 @@ function validRunState(value: unknown, runId: string): value is RunState {
       !Array.isArray(combat.pendingTriggers) || !combat.pendingTriggers.every(pendingTrigger) || !Number.isFinite(combat.nextTriggerId) ||
       !Array.isArray(combat.presentationEvents) || combat.presentationEvents.length > 24 ||
       !combat.presentationEvents.every(presentationEvent) || !stringList(combat.log)) return false
+    const seated = (playerId: unknown) => combat.players.some((player) => player.id === playerId)
+    // Slayer Pack: a Ritual Dagger's earned kill reward names the dagger its owner still holds (or is resolving).
+    const ownDagger = (playerId: string, cardUid: unknown) => {
+      const owner = combat.players.find((player) => player.id === playerId)
+      const held = owner ? [owner.deck, owner.hand, owner.draw, owner.discard, owner.exhaust].flat() : []
+      return [...held, ...(combat.pendingCardCopy ? [combat.pendingCardCopy.card] : [])]
+        .some((card) => card.uid === cardUid && card.defId === 'slayer_ritual_dagger')
+    }
+    if (combat.slayerKillRewards !== undefined && (!Array.isArray(combat.slayerKillRewards) || combat.slayerKillRewards.length > 16 ||
+      !combat.slayerKillRewards.every((entry) => entry && typeof entry === 'object' && seated(entry.playerId) &&
+        typeof entry.cardUid === 'string' && (entry.reward === 'upgrade' || entry.reward === 'reveal') &&
+        ownDagger(entry.playerId, entry.cardUid)))) return false
     if (combat.pendingPlunderSwitches !== undefined && (!Array.isArray(combat.pendingPlunderSwitches) ||
       !combat.pendingPlunderSwitches.every((entry) => entry && typeof entry.playerId === 'string' && typeof entry.sourceUid === 'string')) ||
       combat.pendingHermitChamberPlays !== undefined && (!Array.isArray(combat.pendingHermitChamberPlays) ||
@@ -968,6 +999,15 @@ function validRunState(value: unknown, runId: string): value is RunState {
           typeof entry.sourceCardId === 'string' && stringList(entry.cardUids) && typeof entry.free === 'boolean')) ||
       combat.pendingHermitStrengthRewards !== undefined && (!Array.isArray(combat.pendingHermitStrengthRewards) ||
         !combat.pendingHermitStrengthRewards.every((entry) => entry && typeof entry.playerId === 'string' && typeof entry.sourceUid === 'string')) ||
+      combat.pendingSlayerChoices !== undefined && (!Array.isArray(combat.pendingSlayerChoices) || combat.pendingSlayerChoices.length > 16 ||
+        // The id is absent only on a choice saved before ids existed.
+        new Set(combat.pendingSlayerChoices.map((entry) => entry?.id).filter((id) => id !== undefined)).size !==
+          combat.pendingSlayerChoices.filter((entry) => entry?.id !== undefined).length ||
+        !combat.pendingSlayerChoices.every((entry) => entry && seated(entry.playerId) &&
+          (entry.id === undefined || Number.isSafeInteger(entry.id) && entry.id >= 0) && (entry.kind === 'reattach'
+          ? cards([entry.card]) && typeof entry.fromUid === 'string'
+          : entry.kind === 'ritualDagger' && typeof entry.cardUid === 'string' && typeof entry.revealed === 'string' &&
+            Object.hasOwn(CARDS, entry.revealed)))) ||
       combat.pendingHermitSetupLoads !== undefined && (!Array.isArray(combat.pendingHermitSetupLoads) ||
         !combat.pendingHermitSetupLoads.every((entry) => entry && typeof entry.playerId === 'string')) ||
       combat.pendingDieRelicChoices !== undefined && (!Array.isArray(combat.pendingDieRelicChoices) ||
@@ -975,6 +1015,25 @@ function validRunState(value: unknown, runId: string): value is RunState {
           typeof entry.relicDefId === 'string' && Number.isFinite(entry.abilityIndex) && typeof entry.sourceLabel === 'string' &&
           (entry.enemyUid === null || typeof entry.enemyUid === 'string') &&
           (entry.targetPlayerId === null || typeof entry.targetPlayerId === 'string'))) ||
+      // Slayer Pack
+      combat.pendingCardPlayWindows !== undefined && (!Array.isArray(combat.pendingCardPlayWindows) ||
+        combat.pendingCardPlayWindows.length > 16 ||
+        new Set(combat.pendingCardPlayWindows.map((entry) => entry?.id)).size !== combat.pendingCardPlayWindows.length ||
+        !combat.pendingCardPlayWindows.every((entry) => entry && typeof entry.id === 'string' && entry.id.length <= 256 &&
+          seated(entry.playerId) && typeof entry.sourceCardId === 'string' && Object.hasOwn(CARDS, entry.sourceCardId) &&
+          stringList(entry.cardUids) && entry.cardUids.length <= 64 && energyAmount(entry.cost) &&
+          (entry.plays === null || Number.isSafeInteger(entry.plays) && entry.plays >= 0 && entry.plays <= 64) &&
+          typeof entry.optional === 'boolean' && (entry.discardRest === undefined || typeof entry.discardRest === 'boolean'))) ||
+      combat.nextPlayerChoiceId !== undefined &&
+        (!Number.isSafeInteger(combat.nextPlayerChoiceId) || combat.nextPlayerChoiceId < 0) ||
+      combat.pendingPlayerChoices !== undefined && (!Array.isArray(combat.pendingPlayerChoices) ||
+        combat.pendingPlayerChoices.length > 16 ||
+        new Set(combat.pendingPlayerChoices.map((entry) => entry?.id)).size !== combat.pendingPlayerChoices.length ||
+        !combat.pendingPlayerChoices.every((entry) => entry && Number.isSafeInteger(entry.id) && entry.id >= 0 &&
+          seated(entry.playerId) && typeof entry.sourceLabel === 'string' && entry.sourceLabel.length <= 256 &&
+          (entry.kind === 'drawOrDiscard' || entry.kind === 'returnDiscardTop' &&
+            Number.isSafeInteger(entry.upTo) && entry.upTo >= 0 && entry.upTo <= 32))) ||
+      !combat.enemies.every((enemy) => (enemy.slayerAttachments ?? []).every((entry) => seated(entry.playerId))) ||
       combat.startTurnStage !== undefined && combat.startTurnStage !== 'effects' && combat.startTurnStage !== 'facing' ||
       combat.partyAttackDiscount !== undefined && typeof combat.partyAttackDiscount !== 'boolean') return false
     const end = combat.endTurnProgress
@@ -1062,13 +1121,20 @@ function validRunState(value: unknown, runId: string): value is RunState {
     Number.isInteger(campaign.bossesDefeated) && [0, 1, 2, 3, 4].includes(campaign.highestBossActDefeated) &&
     campaign.joinedAfterBosses && typeof campaign.joinedAfterBosses === 'object' && campaign.keys &&
     typeof campaign.keys.ruby === 'boolean' && typeof campaign.keys.emerald === 'boolean' &&
-    typeof campaign.keys.sapphire === 'boolean' && typeof campaign.finalized === 'boolean')
+    typeof campaign.keys.sapphire === 'boolean' && typeof campaign.finalized === 'boolean' &&
+    (campaign.bossCoins === undefined || Array.isArray(campaign.bossCoins) && campaign.bossCoins.length <= MAX_BOSS_AWARDS &&
+      campaign.bossCoins.every((award) => Boolean(award) && [1, 2, 3, 4].includes(award.act) &&
+        Number.isInteger(award.coins) && award.coins >= 1 && award.coins <= MAX_BOSS_AWARD_COINS)))
   const metaValid = Boolean(state.meta && ['standard', 'daily', 'custom'].includes(state.meta.mode) &&
     Array.isArray(state.meta.modifierIds) && state.meta.modifierIds.length <= DAILY_MODIFIERS.length &&
     new Set(state.meta.modifierIds).size === state.meta.modifierIds.length && state.meta.modifierIds.every((id) =>
       DAILY_MODIFIERS.some((modifier) => modifier.id === id)) &&
     (state.meta.ruleset === undefined || state.meta.ruleset === 'base' || state.meta.ruleset === 'downfall') &&
-    (state.meta.campaign === undefined || state.meta.campaign === 'base' || state.meta.campaign === 'downfall'))
+    (state.meta.campaign === undefined || state.meta.campaign === 'base' || state.meta.campaign === 'downfall') &&
+    // Shop packs the run was started with; older logs have none.
+    (state.meta.cardPacks === undefined || Array.isArray(state.meta.cardPacks) &&
+      state.meta.cardPacks.length <= CARD_PACK_IDS.length && state.meta.cardPacks.every(isCardPackId) &&
+      new Set(state.meta.cardPacks).size === state.meta.cardPacks.length))
   const eventCombatValid = state.eventCombat === null || Boolean(state.eventCombat &&
     ['encounter', 'elite', 'boss'].includes(state.eventCombat.kind) && typeof state.eventCombat.mindBloom === 'boolean' &&
     (state.eventCombat.bossDefId === undefined || knownId(state.eventCombat.bossDefId, ENEMIES)) &&

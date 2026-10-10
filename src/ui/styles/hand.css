@@ -199,6 +199,31 @@
   filter: drop-shadow(0 0 0.55rem rgb(255 210 91 / 0.9));
 }
 
+/* Slayer Pack: On landscape phones the card-play window's banner shares the
+   End turn row at the top of the board, clear of the enemies' intents below it. */
+@media (orientation: landscape) and (max-height: 43.75rem) {
+  .combat .prompt.prompt--play-window {
+    top: 0.55rem;
+    max-width: min(26rem, calc(100% - 22rem));
+    gap: 0.5rem;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+  }
+
+  .combat .prompt.prompt--play-window .prompt__mode {
+    min-height: 2rem;
+    padding: 0.1rem 0.6rem;
+    font-size: 0.75rem;
+  }
+}
+
+/* Slayer Pack: The cards an open card-play window offers (Discovery, Violence, ...). */
+.hand .card.card--play-window:not(.card--unplayable) {
+  outline: 2px solid rgb(126 214 255 / 0.95);
+  filter: drop-shadow(0 0 0.55rem rgb(126 214 255 / 0.85));
+}
+
 /* A start-of-turn Exhaust already set: the other options stay tappable to
    change it, but quieter than a choice still owed. */
 .hand .card.card--exhaust-repick:not(:focus-visible) {
@@ -257,6 +282,27 @@
 
 .card__live-damage[data-trend='up'] { color: #7dff8a; }
 .card__live-damage[data-trend='down'] { color: #ff7a72; }
+
+/* Slayer Pack: A card-play window's cost (Discovery's 0, Enlightenment's 1) over the printed gem. */
+.card__window-cost {
+  position: absolute;
+  z-index: 3;
+  top: 1%;
+  left: 1%;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px 6px 1px 3px;
+  border: 1px solid rgb(126 214 255 / 0.95);
+  border-radius: 999px;
+  background: rgb(6 24 38 / 88%);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+}
 
 /* Settings > Card hints: off hides the live damage and the area-of-effect symbol everywhere. */
 html[data-card-hints='false'] :is(.card__live-damage, .card__aoe) { display: none !important; }

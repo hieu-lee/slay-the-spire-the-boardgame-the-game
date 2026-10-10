@@ -231,7 +231,8 @@ export type Pending = {
   hitsRow: boolean
   /** Cards that must be picked, as Survivor, Acrobatics and Third Eye require. */
   choice: {
-    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry' | 'scryToHand' | 'topdeck' | 'recover' | 'recoverExhaust' | 'search' | 'load' | 'loadAny'
+    // Slayer Pack: `bottomdeck` picks hand cards for Forethought, between `minimum` and `amount`.
+    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry' | 'scryToHand' | 'topdeck' | 'recover' | 'recoverExhaust' | 'search' | 'load' | 'loadAny' | 'bottomdeck'
     amount: number
     minimum?: number
   } | null
@@ -270,4 +271,6 @@ export type Pending = {
   guardianBlockSpend: number | null
   guardianPowerCardUid: string | null
   scryToHandUid?: string
+  /** Slayer Pack: The Power in play Metamorphosis attaches to; unset until chosen. */
+  metamorphosisPowerUid?: string
 }

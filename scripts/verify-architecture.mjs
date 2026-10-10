@@ -330,9 +330,10 @@ check('the not-implemented list states the real card count', () => {
   // Character cards only. Physical component counts include repeated copies,
   // while CARDS holds one rule definition per unique face.
   const POOLED = new Set(['status', 'curse', 'colorless'])
-  const live = Object.values(CARDS).filter((def) => !POOLED.has(def.owner)).length
+  // Shop pack cards (The Slayer Pack) are counted on their own line, not as physical faces.
+  const live = Object.values(CARDS).filter((def) => !POOLED.has(def.owner) && !def.pack).length
   const baseLive = Object.values(CARDS).filter((def) =>
-    ['ironclad', 'silent', 'defect', 'watcher'].includes(def.owner)).length
+    ['ironclad', 'silent', 'defect', 'watcher'].includes(def.owner) && !def.pack).length
   const printed = new Set()
   const colorlessPrinted = new Set()
   const rows = readFileSync(join(repoRoot, 'data/raw/player-cards.csv'), 'utf8')
@@ -355,7 +356,7 @@ check('the not-implemented list states the real card count', () => {
   assert(colorlessClaimed !== null, 'the list should state how many unique colorless cards are live')
   const colorlessTotalClaimed = notes.match(/(\d+) colorless card definitions are live/)
   assert(colorlessTotalClaimed !== null, 'the list should state the aggregate colorless-card count')
-  assertEqual(Number(colorlessTotalClaimed[1]), Object.values(CARDS).filter((def) => def.owner === 'colorless').length)
+  assertEqual(Number(colorlessTotalClaimed[1]), Object.values(CARDS).filter((def) => def.owner === 'colorless' && !def.pack).length)
   assertEqual(Number(colorlessClaimed[2]), colorlessPrinted.size)
 
   const goldenClaimed = notes.match(/other (\d+) are implemented Golden Ticket rewards/)
@@ -391,10 +392,13 @@ check('the live character roster matches every non-Golden physical face', () => 
     else physical.add(key)
   }
   const live = new Set(Object.values(CARDS)
-    .filter((def) => [...characterIds.values()].includes(def.owner))
+    .filter((def) => [...characterIds.values()].includes(def.owner) && !def.pack)
     .map((def) => `${def.owner}:${def.id}`))
   const missing = [...physical].filter((key) => !live.has(key))
   const unexpected = [...live].filter((key) => !physical.has(key) && !golden.has(key))
+  const packCards = Object.values(CARDS).filter((def) => def.pack)
+  assertEqual(packCards.length, 45, 'The Slayer Pack is 28 character cards and 17 Colorless cards')
+  assertEqual(packCards.filter((def) => def.owner !== 'colorless').length, 28, 'The Slayer Pack has 28 character cards')
   assertEqual(golden.size, 8, 'the physical roster should contain the eight separately scoped Golden Tickets')
   assertEqual(missing.length, 0, `non-Golden faces missing from cards.ts: ${missing.join(', ')}`)
   assertEqual(unexpected.length, 0, `cards.ts contains faces outside the physical roster: ${unexpected.join(', ')}`)
@@ -469,7 +473,7 @@ check('no live card draws before exhausting from hand', () => {
 // the card would look wrong. Target-reading conditions belong inside an
 // `Amount`, where the resolver runs them per enemy.
 check('no condition reads a target that its reader was never handed', () => {
-  const TARGET_READING = new Set(['targetPoisoned', 'targetFullHp', 'targetEliteOrBoss'])
+  const TARGET_READING = new Set(['targetPoisoned', 'targetFullHp', 'targetEliteOrBoss', 'targetVulnerable'])
   const BOARD_READING = new Set([
     'hasShiv', 'discardTopCosts', 'dieShows', 'inStance', 'notInStance', 'discardedThisTurn', 'stanceChangedThisTurn',
     'firstTurnOfCombat', 'firstCardPlayedThisTurn', 'hasNoAttacksInHand', 'allCardsInHandAreAttacks',
@@ -480,6 +484,12 @@ check('no condition reads a target that its reader was never handed', () => {
     'hasDeadOnAttackInChamber', 'rageAtLeast', 'canUnleash',
     // Reads the play's chosen target uid from the clause's context, not a struck enemy.
     'targetDead', 'exhaustedByThisCard', 'lostHpToThisCard',
+    'hasNoSkillsInHand',
+    // Slayer Pack: Heel Hook reads its chosen target's Weak from the context too.
+    'targetWeak',
+    'lostHpLastRound', 'hasStatusOrCurseInHand', 'hasActivePower',
+    // Slayer Pack: reads the resolving card's own Retain flag from its context.
+    'notRetainedLastTurn',
   ])
   // A hardcoded list quietly stops covering the condition somebody adds next,
   // and this one is the whole check: an unclassified kind would be treated as

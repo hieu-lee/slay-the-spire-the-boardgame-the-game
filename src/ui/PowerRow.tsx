@@ -186,7 +186,8 @@ export function PowerRow({ powers }: PowerRowProps) {
             : undefined)
           const isDownfall = ['guardian', 'hermit', 'hexaghost', 'slime_boss'].includes(def.owner) ||
             def.printedText !== undefined
-          const described = `${isDownfall ? `${def.name}, ${cardRuleDescription(def)}` : describePower(def)}${attachedGem
+          // Slayer Pack: An attached Metamorphosis is in play as a copy of another Power.
+          const described = `${card.metamorphosis ? `Metamorphosis copying ` : ''}${isDownfall ? `${def.name}, ${cardRuleDescription(def)}` : describePower(def)}${attachedGem
             ? `, socketed with ${attachedGem.name}: ${cardRuleDescription(attachedGem)}` : ''}${counterLimit
             ? `, ${card.counter ?? 0} of ${counterLimit} cubes`
             : conjure ? `, ${card.counter ?? 0} cubes` : ''}`
@@ -439,7 +440,7 @@ function describeEffect(effect: CardDef['effects'][number]): string {
     case 'gainDarkOrbEvokeBonus':
       return `Dark Orb Evoke effects get +${effect.amount}`
     case 'gainOrbEndTurnBonus':
-      return `Orb end-of-turn effects get +${effect.amount}`
+      return `Orb end-of-turn effects get ${effect.amount < 0 ? effect.amount : `+${effect.amount}`}`
     case 'gainLightningEndTurnBonus':
       return `Lightning Orb end-of-turn effects get +${effect.amount}`
     case 'lightningTargetsRow':

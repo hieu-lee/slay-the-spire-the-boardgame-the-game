@@ -122,8 +122,11 @@ function pay(players: readonly Player[], payments: Readonly<Record<string, numbe
   return players.map((player) => ({ ...player, gold: player.gold - (payments[player.id] ?? 0) }))
 }
 
+/** The Merchant's view of the supplies; `colorlessBlocked` are Colorless cards it may not offer. */
+export type MerchantItemDecks = ItemDecks & { colorlessBlocked?: ReadonlySet<string> }
+
 export function createMerchant(
-  itemDecks: ItemDecks,
+  itemDecks: MerchantItemDecks,
   players: readonly Player[],
   guardianGemDeck?: string[],
   ruleset: RuleSet = rulesetForCharacters(players.map((player) => player.character)),
@@ -139,7 +142,7 @@ export function createMerchant(
     kind: 'merchant',
     relics: drawItems(itemDecks.relics, 3, new Set(['old_coin'])),
     potions: drawItems(itemDecks.potions, 3),
-    colorless: drawItems(itemDecks.colorless, 3),
+    colorless: drawItems(itemDecks.colorless, 3, itemDecks.colorlessBlocked),
     cards,
     removalUsed: [],
     purchasedCards: {},

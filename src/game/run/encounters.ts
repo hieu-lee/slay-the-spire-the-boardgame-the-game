@@ -13,6 +13,7 @@ import type { Enemy, Player } from '../types.ts'
 import type { RuleSet } from '../meta.ts'
 import { DOWNFALL_BOSSES, DOWNFALL_BOSS_ENCOUNTERS } from '../downfall/enemies.ts'
 import { bruiserSlime } from '../downfall/slime-boss.ts'
+import { shuffleCombatDraw } from '../combat/create.ts'
 
 /** Implemented main-enemy cards, including the Act-specific printed reward. */
 const ACT_ENCOUNTERS: Record<number, EncounterCard[]> = {
@@ -407,7 +408,7 @@ export function readyForCombat(rng: RngState, player: Player): Player {
     ...player,
     block: 0,
     energy: 3,
-    draw: shuffle(rng, deck),
+    draw: shuffleCombatDraw(rng, deck),
     hand: [],
     discard: [],
     exhaust: [],

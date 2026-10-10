@@ -292,6 +292,28 @@ check('the mail admin CLI refuses a mistyped flag, counts on --dry-run and sends
   assertEqual(deeSecond.body.letters.filter((letter) => letter.body === 'A second announcement.').length, 1)
 })
 
+// The prepared Shop announcement: sent with --file, checked here only with --dry-run.
+const shopLetter = new URL('../docs/announcements/shop-and-slayer-pack.txt', import.meta.url).pathname
+const cliFileDry = await cli('announce', '--file', shopLetter, '--dry-run')
+const cliFileMissing = await cli('announce', '--file', '/nonexistent/letter.txt', '--dry-run')
+const cliFileNoPath = await cli('announce', '--file', '--dry-run')
+const cliFileAndText = await cli('announce', 'Extra words', '--file', shopLetter, '--dry-run')
+const deeAfterDry = await call('/api/mail', { body: { token: dee.token } })
+check('the Shop announcement fits one letter, ends with the owner\'s joke, and --file only counts on --dry-run', () => {
+  const letter = readFileSync(shopLetter, 'utf8').trim()
+  assert(letter.length <= MAX_LETTER_LENGTH, `the letter is ${letter.length} characters`)
+  assert(letter.endsWith("Of course for my account - BestDefect2002, I have infinite amount of coins (developer's power)."), 'the joke sentence changed')
+  for (const fact of ['45 new cards', '5 packs', '960 coins', 'record the run', '8 to 12', '40 to 60', 'Skins are coming soon',
+    'anyone at the table owns it', 'kept in the browser you play in', 'first browser where you log in']) assert(letter.includes(fact), `the letter lost "${fact}"`)
+  assertEqual(cliFileDry.code, 0, cliFileDry.output)
+  assert(/Dry run: would send to 4 players/.test(cliFileDry.output), cliFileDry.output)
+  assertEqual(cliFileMissing.code, 2)
+  assert(/Could not read .*Nothing was sent/.test(cliFileMissing.output), cliFileMissing.output)
+  assertEqual(cliFileNoPath.code, 2)
+  assertEqual(cliFileAndText.code, 2)
+  assertEqual(deeAfterDry.body.letters.length, deeSecond.body.letters.length, 'a dry run delivered the announcement')
+})
+
 const announceLooseFlag = await call('/api/mail/admin/announce', { admin: adminToken, body: { body: 'Never sent.', dryRun: 'true' } })
 const announceWrongMethod = await call('/api/mail/admin/announce', { method: 'GET', admin: adminToken })
 check('the announce route answers only POSTs from the admin token', () => {
@@ -492,6 +514,19 @@ check('the client, deploy archive and service unit agree with the server', () =>
     'the client and server disagree on the letter length')
   const deploy = readFileSync(new URL('../infra/deploy-local-server.sh', import.meta.url), 'utf8')
   assert(/ scripts\/lib\/mail\.mjs /.test(deploy), 'the server release archive omits the mail module')
+  // Every module the room server (transitively) imports from scripts/ must ship in the release archive.
+  const archived = new Set([...deploy.matchAll(/\bscripts\/[\w./-]+\.(?:mjs|sh|json)\b/g)].map((match) => match[0]))
+  const seen = new Set()
+  const walk = (file) => {
+    if (seen.has(file)) return
+    seen.add(file)
+    for (const match of readFileSync(new URL(`../${file}`, import.meta.url), 'utf8').matchAll(/from '(\.[^']+\.mjs)'/g)) {
+      walk(new URL(match[1], new URL(`../${file}`, import.meta.url)).pathname.replace(/^.*\/(scripts\/.*)$/, '$1'))
+    }
+  }
+  walk('scripts/room-server.mjs')
+  const missing = [...seen].filter((file) => file.startsWith('scripts/') && !archived.has(file))
+  assert(missing.length === 0, `the server release archive omits: ${missing.join(', ')}`)
   const unit = readFileSync(new URL('../infra/systemd/sts-room-server.service', import.meta.url), 'utf8')
   assert(unit.includes('EnvironmentFile=-%h/.config/slay-the-spire-server/mail.env'), 'the service cannot load the mail admin token')
   assert(existsSync(new URL('./mail-admin.mjs', import.meta.url)), 'the admin CLI is missing')

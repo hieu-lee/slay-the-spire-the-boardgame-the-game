@@ -99,7 +99,44 @@ reloads Caddy, verifies the replacement HTTPS origin, updates
 `MULTIPLAYER_SERVER_ORIGIN`, and dispatches a client-only Pages refresh. Failures stay in
 `router-pinhole.log` and retry on the next hourly renewal.
 
+## Shop packs and coins at the table
+
+Each browser reports the Shop packs it owns (and has switched on) when it creates or joins
+a room and every time its socket authenticates, beside its campaign unlocks. The server keeps
+only known pack ids, in catalogue order, on the seat. A room plays every pack that **at least
+one seated player** brought: while the room is in the lobby that union is recomputed whenever
+a seat joins, leaves or reports a new list, and the lobby shows it as a "Slayer packs in play"
+strip naming whose each pack is. `startRun` freezes the union into the run's
+`meta.cardPacks`; from then on nothing a seat reports changes the run, and a Catch Up joiner
+is dealt reward decks from the frozen set. The seats' lists are saved with the room JSON and
+re-validated on restart; the next lobby (after **Prepare next run**) recomputes the union.
+
+Boss coins are only promised during the run. When the party records the result (`finishRun`
+finalizes the run), each browser pays its own wallet once from the finalized snapshot's
+`run.campaign.bossCoins`. A Catch Up joiner's snapshot carries their own hero's
+`campaign.joinedAfterBosses` entry, so they are paid only for bosses beaten after they joined.
+`returnToLobby` adds the recorded run's awards and each seat's offset to `room.recordedRuns`
+(saved with the room; the last 8 recorded runs, shares keyed by seat token so a reused player
+id inherits nothing, and dropped when their seat leaves). The lobby snapshot sends a seat its
+own shares of every run it played, so a player who was away for one or more recordings is still
+paid for each when they reconnect. A browser pays a seat's coins only to the account that took
+the seat in that tab (remembered in sessionStorage); if another account signed in since, the
+coins are not paid and the seat is told why. See [shop.md](shop.md).
+
 ## Player letters
+
+The Shop announcement is prepared in `docs/announcements/shop-and-slayer-pack.txt`. After the
+Shop is deployed, check it with a dry run, then send it once (deploy the room server before
+publishing the Pages client, so the legacy-coin cutoff is set first; see [shop.md](shop.md)):
+
+```sh
+STS_MAIL_ADMIN_TOKEN=... node scripts/mail-admin.mjs announce --file docs/announcements/shop-and-slayer-pack.txt --dry-run
+STS_MAIL_ADMIN_TOKEN=... node scripts/mail-admin.mjs announce --file docs/announcements/shop-and-slayer-pack.txt
+```
+
+Accounts' coins for their earlier runs are claimed through `POST /api/profile/coins` and
+`/api/profile/coins/confirm` (see [shop.md](shop.md)); the grants are stored in the room store
+next to the profiles.
 
 Players write to the developer from the envelope in the main menu's top-right corner, and
 the badge counts replies they have not opened. Letters live in `rooms.json.mail.json`, one

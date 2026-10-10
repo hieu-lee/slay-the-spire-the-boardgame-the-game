@@ -6,9 +6,13 @@ import type { DailyModifierId, QuickSetupState, RunMetaOptions, RunMetaState } f
 import type { EventDecision, EventRoomState } from '../game/event-room.ts'
 import type { CourierOffer, MerchantState, RelicRewardState } from '../game/noncombat.ts'
 import type { CampaignProgress, SpireKeys } from '../game/campaign.ts'
+import type { BossCoinAward } from '../game/coins.ts'
 import type { NeowCard, NeowRewardOffer } from '../game/neow.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
 import { savedCampaign } from '../campaign-storage.ts'
+import type { CardPackId } from '../game/packs.ts'
+import { enabledCardPacks } from '../wallet.ts'
+import { claimSeatOwner, savedWallet } from '../wallet-storage.ts'
 import {
   resetRoomEndpoint,
   roomUrl,
@@ -30,6 +34,8 @@ export type PublicSeat = {
   name: string
   character: CharacterId
   connected: boolean
+  /** The Shop packs this player brings to the room's runs; absent when none. */
+  cardPacks?: CardPackId[]
 }
 
 export type VisiblePlayer = Omit<
@@ -107,6 +113,11 @@ export type VisibleCombat = {
   pendingHermitSetupLoads?: CombatState['pendingHermitSetupLoads']
   pendingHermitChamberPlays?: CombatState['pendingHermitChamberPlays']
   pendingHermitStrengthRewards?: CombatState['pendingHermitStrengthRewards']
+  /** Slayer Pack: Only the viewer's own card-play windows. */
+  pendingCardPlayWindows?: CombatState['pendingCardPlayWindows']
+  pendingPlayerChoices?: CombatState['pendingPlayerChoices']
+  /** Slayer Pack: a Ritual Dagger+ reveal is null for everyone but its owner. */
+  pendingSlayerChoices?: CombatState['pendingSlayerChoices']
   playedCardsThisTurn: PlayedCard[]
   presentationEvents: CombatPresentationEvent[]
   pendingSummons: {
@@ -159,7 +170,16 @@ export type VisibleRun = {
   rewards: CardRewardOffer[]
   roomState: MerchantState | RelicRewardState | EventRoomState | null
   courier: { usedBy: string[]; offer: CourierOffer | null }
-  campaign: { runId: string; bossesDefeated: number; highestBossActDefeated: 0 | 1 | 2 | 3 | 4; keys: SpireKeys; finalized: boolean }
+  campaign: {
+    runId: string
+    bossesDefeated: number
+    highestBossActDefeated: 0 | 1 | 2 | 3 | 4
+    bossCoins?: BossCoinAward[]
+    /** Bosses beaten before a hero joined by Catch Up; only the viewer's own hero is sent. */
+    joinedAfterBosses?: Partial<Record<CharacterId, number>>
+    keys: SpireKeys
+    finalized: boolean
+  }
 }
 
 export type RoomSnapshot = {
@@ -170,6 +190,14 @@ export type RoomSnapshot = {
   chooseYourRelic: boolean
   lastStand: boolean
   metaOptions: { mode: 'standard' | 'custom'; modifiers: DailyModifierId[]; quickStartAct: 1 | 2 | 3 | 4 }
+  /**
+   * The party's recently recorded runs this seat played and may not have claimed
+   * yet: the awards and where this seat's share starts. Kept after the return to
+   * the lobby so a seat that missed a recording still claims its boss coins.
+   */
+  recordedRuns?: { runId: string; bossCoins: BossCoinAward[]; skip: number }[]
+  /** The union of the seats' packs in the lobby; the run's frozen packs once it starts. Older servers omit it. */
+  cardPacks?: CardPackId[]
   version: number
   /** Server boot id; a new one lets a restored room resume at a lower version. */
   epoch?: string
@@ -521,7 +549,8 @@ export function useRoomSession() {
         connectionTimeout = window.setTimeout(reconnect, ACTION_TIMEOUT_MS)
         next.addEventListener('open', () => {
           if (!active || socket.current !== next) return next.close()
-          next.send(JSON.stringify({ type: 'authenticate', token: credentials.token, campaignProgress: savedCampaign() }))
+          next.send(JSON.stringify({ type: 'authenticate', token: credentials.token, campaignProgress: savedCampaign(),
+            cardPacks: enabledCardPacks(savedWallet()) }))
         })
         next.addEventListener('message', (event) => {
           if (!active || generation.current !== connectedGeneration || socket.current !== next) return
@@ -635,7 +664,7 @@ export function useRoomSession() {
           body = await json(await fetch(endpoint, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name, character, requestId, campaignProgress: savedCampaign() }),
+            body: JSON.stringify({ name, character, requestId, campaignProgress: savedCampaign(), cardPacks: enabledCardPacks(savedWallet()) }),
             signal: AbortSignal.timeout(ACTION_TIMEOUT_MS),
           })) as { token: string; snapshot: RoomSnapshot }
           break
@@ -885,8 +914,13 @@ export function useRoomSession() {
     throw lastError
   }, [credentials])
 
+  // Whether the account that took this seat in this tab is still the one signed in,
+  // so the seat's coins go to it alone; the seat token stays inside this hook.
+  const seatOwnsCoins = snapshot && credentials?.code === snapshot.code ? claimSeatOwner(credentials.token) : false
+
   return {
     snapshot,
+    seatOwnsCoins,
     refreshEpoch,
     restorationEpoch,
     resync,

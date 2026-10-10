@@ -863,6 +863,9 @@ try {
     process.exit(process.exitCode ?? 0)
   }
 
+  // Seat B never opens the pause menu, so under load its 2.5s auto-resolve of the finished combat can
+  // move the run to `reward` before this test restores the combat; restore the whole run, not just the combat.
+  const onlineSettingsFreezeRunRestore = structuredClone(liveRoom.run)
   liveRoom.run.combat.phase = 'won'
   liveRoom.version += 1
   rooms.publishRoom(code)
@@ -874,6 +877,7 @@ try {
   const finishedCombatPause = await openPause(a)
   const finishedCombatGiveUpCount = await finishedCombatPause.getByRole('button', { name: 'Give up' }).count()
   await finishedCombatPause.getByRole('button', { name: 'Resume' }).click()
+  liveRoom.run = onlineSettingsFreezeRunRestore
   liveRoom.run.combat = onlineSettingsFreezeRestore
   liveRoom.version += 1
   rooms.publishRoom(code)
@@ -1036,6 +1040,11 @@ try {
     return { modal: dialog.matches(':modal'), left: box.left, right: box.right, top: box.top, bottom: box.bottom,
       width: innerWidth, height: innerHeight }
   })
+  // The vote closes after GIVE_UP_TIMEOUT_MS; a full-page screenshot on a loaded machine can outlast it and
+  // close the vote before Ann votes, so hold the deadline open while the test drives the dialog.
+  liveRoom.giveUpVote.deadlineAt = Date.now() + 60_000
+  liveRoom.version += 1
+  rooms.publishRoom(code)
   await a.screenshot({ path: join(outDir, '02a-give-up-vote.png'), fullPage: true })
   await aGiveUp.getByRole('button', { name: 'Yes, give up' }).click()
   await bGiveUp.getByText('Ann: Yes').waitFor()

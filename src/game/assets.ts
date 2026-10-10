@@ -163,6 +163,8 @@ export const campfireSceneLocalPath = () => `${import.meta.env?.BASE_URL ?? '/'}
  */
 export function tierOf(def: CardDef): string {
   if (def.id === 'ascenders_bane') return 'ascension'
+  // Pack cards reuse names of base and Downfall cards, so they get their own filing.
+  if (def.pack) return `slayer/${def.owner}`
   const pooled = POOL_TIERS[def.owner]
   if (pooled) return pooled
   if (def.rarity === 'starter') return `${def.owner}/starter`

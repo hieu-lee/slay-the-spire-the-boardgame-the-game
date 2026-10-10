@@ -8,8 +8,9 @@ import { cardDef, faceOf } from '../cards.ts'
 import type { CardDef } from '../cards.ts'
 import { clone, findPlayer } from './board.ts'
 import { playCard } from './play.ts'
-import { effectiveCombatCardDef, maximumXEnergy, playCost } from './queries.ts'
+import { effectiveCombatCardDef, maximumXEnergy, persistentEffectOf, playCost } from './queries.ts'
 import type { CombatState } from './types.ts'
+import type { CardInstance } from '../types.ts'
 
 /** Headroom added to the target so no single card can kill it. */
 const STAND_IN_HP = 9999
@@ -30,6 +31,8 @@ const textOf = (def: CardDef) => {
   return defText.get(def)!
 }
 
+const hasCardIconBonus = (power: CardInstance): boolean => persistentEffectOf(power, 'cardIconBonus') !== undefined
+
 function damageDealt(
   state: CombatState,
   playerId: string,
@@ -48,7 +51,7 @@ function damageDealt(
     if (!first) return null
     probe.enemies = [{ ...first, uid: enemyUid, defId: 'cultist', ascension: undefined, isBoss: false, strength: 0,
       vulnerable: 0, weak: 0, poison: 0, abilityUsed: false, abilityCubes: undefined, phase: undefined,
-      corpseExplosion: undefined, hermitBounties: undefined }]
+      corpseExplosion: undefined, hermitBounties: undefined, slayerAttachments: undefined }]
   }
   const actor = findPlayer(probe, playerId)
   const target = probe.enemies.find((enemy) => enemy.uid === enemyUid && !enemy.dead)
@@ -68,6 +71,8 @@ function damageDealt(
     actor.stance = 'neutral'
     actor.wrathAttackDamageBonus = 0
     actor.akabekoAttacks = 0
+    // Slayer Pack: Fasting's per-icon bonus is a modifier like Strength, not printed text.
+    actor.powers = actor.powers.filter((power) => !hasCardIconBonus(power))
     target.vulnerable = 0
   }
   // Add headroom rather than overwrite, so "full HP" rules (Backstab) still see the real target.
@@ -110,7 +115,7 @@ export function previewCardDamage(
   const actor = findPlayer(state, playerId)
   // With nothing to switch off, the plain play is this play: skip the second probe.
   const modified = !actor || actor.strength !== 0 || actor.weak !== 0 || actor.stance !== 'neutral' ||
-    (actor.wrathAttackDamageBonus ?? 0) !== 0 || (actor.akabekoAttacks ?? 0) !== 0 ||
+    (actor.wrathAttackDamageBonus ?? 0) !== 0 || (actor.akabekoAttacks ?? 0) !== 0 || actor.powers.some(hasCardIconBonus) ||
     enemyUid !== null && (state.enemies.find((enemy) => enemy.uid === enemyUid)?.vulnerable ?? 0) !== 0
   try {
     const damage = damageDealt(state, playerId, cardUid, target, false, enemyUid === null, hiddenBoard, holdRage)

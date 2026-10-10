@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { claimProfile, loginProfile } from './lib/profiles.mjs'
+import { claimCoinGrant, confirmCoinGrant } from './lib/coin-grants.mjs'
 import { MAX_MAIL_CHARACTERS, WELCOME_LETTER, announceToPlayers, developerInbox, developerUnread, ownerOf, playerInbox, sendDeveloperReply, sendPlayerLetter } from './lib/mail.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { existsSync, writeFileSync } from 'node:fs'
@@ -655,6 +656,27 @@ export function createRoomServer({
         if (!profile) return send(response, 409, { error: 'Your name is not registered on this server.', code: 'profile' })
         return send(response, 200, personalStats(store.leaderboardRuns, profile.username))
       }
+      if (request.method === 'POST' && (url.pathname === '/api/profile/coins' || url.pathname === '/api/profile/coins/confirm')) {
+        if (!consume(statsRates, `coins:${sourceOf(request)}`, CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) {
+          return send(response, 429, { error: 'Too many requests. Please try again shortly.' })
+        }
+        const body = await readJson(request)
+        const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
+        // An unregistered or anonymous player simply has no grant: no error for a first visit to log.
+        if (!profile) return send(response, 200, url.pathname === '/api/profile/coins' ? { coins: 0 } : { claimed: false })
+        const reply = url.pathname === '/api/profile/coins'
+          ? claimCoinGrant(store, profile.username, body.claimId)
+          : confirmCoinGrant(store, profile.username, body.claimId, body.grantId)
+        if (store.coinGrantsChanged) {
+          // The reservation or the spend must be on disk before the client acts on it.
+          if (!attemptSave()) {
+            queueSave()
+            return send(response, 503, { error: 'Could not save. Please try again.' })
+          }
+          store.coinGrantsChanged = false
+        }
+        return send(response, 200, reply)
+      }
       if (request.method === 'POST' && (url.pathname === '/api/mail' || url.pathname === '/api/mail/send')) {
         const sending = url.pathname === '/api/mail/send'
         if (!consume(sending ? mailSendRates : mailReadRates, sourceOf(request), sending ? MAIL_SEND_WINDOW_MS : CREATE_WINDOW_MS,
@@ -866,7 +888,7 @@ export function createRoomServer({
         const room = createRoom(store)
         roomOwners.set(room.code, source)
         try {
-          const seat = joinRoom(room, { name: body.name, character: body.character, campaignProgress: body.campaignProgress, connected: false })
+          const seat = joinRoom(room, { name: body.name, character: body.character, campaignProgress: body.campaignProgress, cardPacks: body.cardPacks, connected: false })
           if (requestId) seat.joinRequestId = requestId
           touch(room)
           queueSave()
@@ -918,7 +940,7 @@ export function createRoomServer({
         const live = [...sockets.values()].some((client) => client.code === room.code && client.token === token)
         const beforeVersion = room.version
         const seat = joinRoom(room, {
-          name: body.name, character: body.character, campaignProgress: body.campaignProgress,
+          name: body.name, character: body.character, campaignProgress: body.campaignProgress, cardPacks: body.cardPacks,
           token, connected: live, settle: !recoveringRestart(room),
         })
         if (requestId) seat.joinRequestId = requestId
@@ -1091,7 +1113,7 @@ export function createRoomServer({
             return socket.close(4009, 'Server connection capacity reached')
           }
           seat = joinRoom(room, {
-            token: message.token, campaignProgress: message.campaignProgress,
+            token: message.token, campaignProgress: message.campaignProgress, cardPacks: message.cardPacks,
             settle: !recoveringRestart(room),
           })
           finishRestartRecovery(room, seat)

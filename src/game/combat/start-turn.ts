@@ -23,7 +23,9 @@ import {
   pendingTriggerSlimeEnemyChoiceCount,
   publishTurnEffect,
   publishTurnEffectApplications,
+  discardTopLine,
   resolveTriggerSource,
+  takeDiscardTop,
   resolveShivAttack,
   settle,
   triggerHermitChoices,
@@ -38,10 +40,11 @@ import {
 import { applyEnemyAction } from './enemy-turn.ts'
 import { canActivatePotion, canActivateRelic } from './items.ts'
 import { addStatus, damageEnemy } from './pieces.ts'
-import { discardOrderNeedsChoice, effectEvokePlan, effectIsActive, invalidPlayChoice, mandatoryChoicePending, reachesEnemy } from './queries.ts'
+import { discardOrderNeedsChoice, effectEvokePlan, effectIsActive, invalidPlayChoice, mandatoryChoicePending, owedPlayerChoices, reachesEnemy } from './queries.ts'
 import type {
   CombatState,
   EvokeChoice,
+  PlayerChoiceAnswer,
   StartTurnAbility,
   StartTurnChoice,
   StartTurnDiscardPreview,
@@ -307,6 +310,10 @@ function beginPlayerTurn(next: CombatState, pauseAfterDraw = false): CombatState
     if (!keepBlock) player.block = 0
     player.calipersArmed = false
     player.drawLocked = false
+    // Slayer Pack: Brutality reads the round that just ended; kept only when true so
+    // existing saves and replays serialise exactly as before.
+    if ((player.hpLostThisRound ?? 0) > 0) player.lostHpLastRound = true
+    else delete player.lostHpLastRound
     player.hpLostThisRound = 0
     player.hpLossLimitThisRound = undefined
     player.freeCardsThisTurn = 0
@@ -319,6 +326,7 @@ function beginPlayerTurn(next: CombatState, pauseAfterDraw = false): CombatState
     player.doubledCardsThisTurn = 0
     player.doubledSkillsThisTurn = 0
     player.retainCardsThisTurn = 0
+    delete player.retainBlockAllowance
     player.cardsPlayedThisTurn = 0
     player.energySpentThisTurn = 0
     player.spentTwoEnergyOnCardThisTurn = false
@@ -347,8 +355,7 @@ function beginPlayerTurn(next: CombatState, pauseAfterDraw = false): CombatState
     const player = findPlayer(next, playerId)!
     const source = triggerSourceById(player, sourceId)!
     if (player.draw.length > 0) return true
-    resolveTriggerSource(next, player, source, false, undefined, undefined, undefined,
-      undefined, undefined, [], undefined, undefined)
+    resolveTriggerSource(next, player, source, { scryDiscardUids: [] })
     return false
   })
   if (actionableBeforeDraw.length > 0) {
@@ -486,9 +493,7 @@ export function resolveStartTurnScry(
   progress.sources = progress.sources.slice(1)
   const actor = findPlayer(next, playerId)!
   const liveSource = triggerSourceById(actor, pending.sourceId)!
-  if (!resolveTriggerSource(
-    next, actor, liveSource, false, undefined, undefined, undefined, undefined, undefined, discardUids,
-  )) return state
+  if (!resolveTriggerSource(next, actor, liveSource, { scryDiscardUids: discardUids })) return state
   return resolveEmptyStartTurnScries(continueBeforeDraw(next))
 }
 
@@ -510,10 +515,8 @@ function triggerChoiceSignature(
   const next = clone(state)
   const actor = findPlayer(next, player.id)
   const liveSource = actor && triggerSourceById(actor, source.id)
-  if (!actor || !liveSource || !resolveTriggerSource(
-    next, actor, liveSource, false, undefined, enemyUid, undefined,
-    undefined, undefined, undefined, targetPlayerId,
-  )) return undefined
+  if (!actor || !liveSource ||
+    !resolveTriggerSource(next, actor, liveSource, { enemyUid, targetPlayerId })) return undefined
   return gameplaySignature(next)
 }
 
@@ -783,6 +786,16 @@ export function facingChoicesAreValid(state: CombatState, choices: readonly Star
   return facingRowPlan(state, choices) !== null
 }
 
+/** Slayer Pack: Whether an ordered `<player>/power:<uid>` ability names a Power no longer in play. */
+function startTurnPowerLeftPlay(state: CombatState, abilityId: string): boolean {
+  const player = state.players.find((candidate) => abilityId.startsWith(`${candidate.id}/power:`))
+  if (!player) return false
+  const powerKey = abilityId.slice(player.id.length + '/power:'.length)
+  const extraAt = powerKey.lastIndexOf(':extra:')
+  const powerUid = extraAt < 0 ? powerKey : powerKey.slice(0, extraAt)
+  return !player.powers.some((power) => power.uid === powerUid)
+}
+
 function validStartTurnOrder(sources: readonly StartTurnSource[], order: readonly string[]): boolean {
   const expected = new Set(sources.map(({ ability }) => ability.id))
   return order.length === expected.size && new Set(order).size === expected.size &&
@@ -818,6 +831,10 @@ function startTurnAbilitiesFor(
       overflowShivs: 0,
     }
     const planningPlayer = player
+    // Slayer Pack: Planned behind an ability that takes this Power out of play.
+    if (entry.source?.powerUid && !player.powers.some((power) => power.uid === entry.source!.powerUid)) {
+      return { ...entry.ability, targets: undefined, players: undefined, overflowShivs: 0 }
+    }
     const plannedEnemies = simulationState.enemies
     const targetOptions = () => plannedEnemies.filter((enemy) => !enemy.dead)
       .map((enemy) => ({ uid: enemy.uid, label: enemyLabel(plannedEnemies, enemy) }))
@@ -890,6 +907,7 @@ function startTurnAbilitiesFor(
     let evokeTargets: StartTurnAbility['evokeTargets']
     let evokeOrbs: OrbType[] = []
     let evokeTargetIndex: number | undefined
+    const evokeTargetless: number[] = []
     let evokePlanComplete = false
     let evokeEndedCombat = false
     let evokePlanOrbs: (OrbType | null)[] | undefined
@@ -903,6 +921,11 @@ function startTurnAbilitiesFor(
         const damageTargets = orbDamageTargets(
           simulationState, planningPlayer, orb!, choice?.evokeEnemyUids?.[index],
         )
+        if (!damageTargets && targetOptions().length === 0) {
+          // The last enemy fell but its Summons are pending, so the combat goes on with nothing to hit.
+          evokeTargetless.push(index)
+          continue
+        }
         if (!damageTargets) {
           evokeTargetIndex = index
           evokeTargets = orb === 'lightning'
@@ -916,7 +939,7 @@ function startTurnAbilitiesFor(
             3 + player.powers.length + (player.darkOrbEvokeBonus ?? 0)) +
             (player.orbEvokeBonus ?? 0))
         }
-        if (targetOptions().length === 0) {
+        if (combatIsOver(simulationState)) {
           evokeEndedCombat = true
           break
         }
@@ -942,13 +965,16 @@ function startTurnAbilitiesFor(
       } else if (!privateDraw) {
         const exact = clone(plannedState)
         const exactPlayer = findPlayer(exact, entry.ability.playerId)!
-        if (resolveTriggerSource(
-          exact, exactPlayer, entry.source, false, choice?.shivEnemyUids,
-          choice?.trigger?.enemyUid ?? choice?.enemyUid, choice?.trigger?.enemyRow,
-          choice?.evokeSlots, choice?.evokeEnemyUids, undefined,
-          choice?.trigger?.targetPlayerId ?? choice?.targetPlayerId, choice?.exhaustUids,
-          choice?.trigger,
-        )) {
+        if (resolveTriggerSource(exact, exactPlayer, entry.source, {
+          shivEnemyUids: choice?.shivEnemyUids,
+          enemyUid: choice?.trigger?.enemyUid ?? choice?.enemyUid,
+          enemyRow: choice?.trigger?.enemyRow,
+          evokeSlots: choice?.evokeSlots,
+          evokeEnemyUids: choice?.evokeEnemyUids,
+          targetPlayerId: choice?.trigger?.targetPlayerId ?? choice?.targetPlayerId,
+          exhaustUids: choice?.exhaustUids,
+          hermitContext: choice?.trigger,
+        })) {
           plannedState = exact
           if (combatIsOver(exact)) planningEnded = true
           if (planningEnded || exact.startTurnProgress?.forcedCard) planningBlocked = true
@@ -965,6 +991,7 @@ function startTurnAbilitiesFor(
       overflowShivs: shivEndedCombat ? choice?.shivEnemyUids.length ?? 0 : overflowShivs,
       staleShivIndex, shivTargets,
       evokeChoice, evokeTargets, evokeOrbs, evokeTargetIndex, evokePlanOrbs,
+      ...(evokeTargetless.length > 0 ? { evokeTargetless } : {}),
       ...(parkedByEarlier ? { deferredAfterForcedCard: true as const } : {}),
     }
   })
@@ -1064,7 +1091,7 @@ export function resolveStartPlayerTurn(
   if (state.phase !== 'start' || state.startTurnProgress?.forcedCard ||
     state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending ||
     state.startTurnProgress?.pauseAfterDraw || state.startTurnProgress?.discard ||
-    (state.pendingTriggers?.length ?? 0) > 0) return state
+    (state.pendingTriggers?.length ?? 0) > 0 || owedPlayerChoices(state).length > 0) return state
   const sources = pendingStartTurnSources(state)
   const order = choices.map((choice) => choice.id)
   if (!validStartTurnOrder(sources, order)) return state
@@ -1117,6 +1144,8 @@ function validStartTurnEvokeChoice(
       if (targets[index] !== null) return false
       continue
     }
+    // Summons still pending keep the combat going with nothing left to hit; the target is moot.
+    if (livingEnemies(simulation).length === 0) continue
     const damageTargets = orbDamageTargets(simulation, actor, orb, targets[index])
     if (!damageTargets) return false
     for (const target of damageTargets) {
@@ -1125,7 +1154,7 @@ function validStartTurnEvokeChoice(
         (actor.orbEvokeBonus ?? 0))
     }
   }
-  return targets.length === plan.chosen.length && (!plan.next || livingEnemies(simulation).length === 0)
+  return targets.length === plan.chosen.length && (!plan.next || combatIsOver(simulation))
 }
 
 export function continueStartTurn(
@@ -1138,12 +1167,16 @@ export function continueStartTurn(
   if (state.startTurnStage === 'facing' && !facingRows) return rollback ?? state
   const next = state
   if (facingRows) for (const player of next.players) player.row = facingRows.get(player.id) ?? player.row
+  let forcedDrawResolved = false
   for (let index = 0; index < choices.length; index++) {
     const choice = choices[index]!
     const entry = startTurnSources(next).find(({ ability }) => ability.id === choice.id)
     if (!entry) {
       const inactive = startTurnSources(next, true).find(({ ability }) => ability.id === choice.id)
       if (inactive && findPlayer(next, inactive.ability.playerId)?.dead) continue
+      // Slayer Pack: An earlier ability took this Power out of play (a Metamorphosis
+      // follows the Power it copied); a Power that is gone has nothing left to resolve.
+      if (!inactive && startTurnPowerLeftPlay(next, choice.id)) continue
     }
     const player = entry && findPlayer(next, entry.ability.playerId)
     const ability = entry ? startTurnAbilitiesFor(next, [entry])[0] : undefined
@@ -1156,11 +1189,17 @@ export function continueStartTurn(
         : choice.targetPlayerId !== undefined) ||
       (ability.guardianModeShift
         ? typeof choice.guardianModeShift !== 'boolean'
-        : choice.guardianModeShift !== undefined) ||
-      !validStartTurnShivChoice(next, player, ability.overflowShivs, choice.shivEnemyUids) ||
-      !validStartTurnEvokeChoice(next, player, entry.source, choice)) {
+        : choice.guardianModeShift !== undefined)) {
       next.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
       return rollback ?? next
+    }
+    if (!validStartTurnShivChoice(next, player, ability.overflowShivs, choice.shivEnemyUids) ||
+      !validStartTurnEvokeChoice(next, player, entry.source, choice)) {
+      next.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
+      // A forced draw ahead of this ability (Mayhem) was planned as a card that must be played, so this
+      // ability's Shiv and Evoke picks were parked behind it. When that card turned out unplayable and
+      // was discarded, nothing was played to resume the order: keep the draw and ask for the picks now.
+      return forcedDrawResolved ? settle(next) : rollback ?? next
     }
     if (!entry.source) {
       if (entry.guardianModeShiftPlayerId) {
@@ -1270,18 +1309,28 @@ export function continueStartTurn(
         ...(choice.enemyUid === undefined ? {} : { enemyUid: choice.enemyUid }),
       })
       flushPendingTriggers(next)
-    } else if (!resolveTriggerSource(
-      next, player, entry.source, false, choice.shivEnemyUids,
-      choice.trigger?.enemyUid ?? choice.enemyUid, choice.trigger?.enemyRow,
-      choice.evokeSlots, choice.evokeEnemyUids, undefined,
-      choice.trigger?.targetPlayerId ?? choice.targetPlayerId, choice.exhaustUids,
-      choice.trigger ?? deterministicTrigger ?? undefined,
-    )) {
+    } else if (!resolveTriggerSource(next, player, entry.source, {
+      shivEnemyUids: choice.shivEnemyUids,
+      enemyUid: choice.trigger?.enemyUid ?? choice.enemyUid,
+      enemyRow: choice.trigger?.enemyRow,
+      evokeSlots: choice.evokeSlots,
+      evokeEnemyUids: choice.evokeEnemyUids,
+      targetPlayerId: choice.trigger?.targetPlayerId ?? choice.targetPlayerId,
+      exhaustUids: choice.exhaustUids,
+      hermitContext: choice.trigger ?? deterministicTrigger ?? undefined,
+    })) {
       if (rollback) return rollback
       checkpoint!.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
       return checkpoint!
     }
+    if (entry.source.effects.some((effect) => effect.kind === 'drawAndPlayFree')) forcedDrawResolved = true
     if ((next.pendingTriggers?.length ?? 0) > 0) {
+      next.startTurnProgress = { choices: choices.slice(index + 1).map((pending) => ({ ...pending })) }
+      return settle(next)
+    }
+    // Slayer Pack: a private "you may" (Magnetism) pauses the order here
+    // and `resolvePendingPlayerChoice` resumes it with the abilities after it.
+    if (owedPlayerChoices(next).length > 0) {
       next.startTurnProgress = { choices: choices.slice(index + 1).map((pending) => ({ ...pending })) }
       return settle(next)
     }
@@ -1492,6 +1541,97 @@ export function resolveStartTurnDiscard(
   return continueStartTurn(settle(next), choices)
 }
 
+/**
+ * Answers a decision a card handed to one player: Heel Hook's draw-or-discard
+ * or Magnetism's return-from-discard. Only that player may answer, from their
+ * own hand or face-up discard pile; declining is always legal. A pause in the
+ * ordered Start of Turn resumes with the abilities queued after it.
+ */
+export function resolvePendingPlayerChoice(
+  state: CombatState,
+  playerId: string,
+  answer: PlayerChoiceAnswer,
+): CombatState {
+  const pending = state.pendingPlayerChoices?.find((choice) =>
+    choice.id === answer.choiceId && choice.playerId === playerId)
+  const owner = pending && findPlayer(state, playerId)
+  if (!pending) return state
+  const { draw, discardUid, count } = answer
+  // A dead (Last Stand) or departed owner can only decline: the choice lapses.
+  if (!owner || owner.dead) {
+    if (draw !== undefined || discardUid !== undefined || count !== undefined) return state
+    const next = clone(state)
+    next.pendingPlayerChoices = next.pendingPlayerChoices!.filter((choice) => choice.id !== pending.id)
+    if (next.pendingPlayerChoices.length === 0) delete next.pendingPlayerChoices
+    next.log = [...next.log, `${pending.sourceLabel}: ${owner?.name ?? 'its chooser'} is gone; the choice lapses`]
+    return resumeAfterPlayerChoice(settle(next))
+  }
+  if (draw !== undefined && typeof draw !== 'boolean' ||
+    discardUid !== undefined && typeof discardUid !== 'string' ||
+    count !== undefined && !Number.isSafeInteger(count)) return state
+  if (pending.kind === 'drawOrDiscard') {
+    if (count !== undefined || draw === true && discardUid !== undefined) return state
+    if (draw === true && (owner.drawLocked || owner.draw.length + owner.discard.length === 0)) return state
+    if (discardUid !== undefined && !owner.hand.some((card) => card.uid === discardUid)) return state
+  } else if (draw !== undefined || discardUid !== undefined ||
+    count !== undefined && (count < 0 || count > Math.min(pending.upTo, owner.discard.length))) return state
+
+  const next = clone(state)
+  const actor = findPlayer(next, playerId)!
+  next.pendingPlayerChoices = next.pendingPlayerChoices!.filter((choice) => choice.id !== pending.id)
+  if (next.pendingPlayerChoices.length === 0) delete next.pendingPlayerChoices
+  if (pending.kind === 'drawOrDiscard') {
+    if (draw === true) {
+      const drawn = drawInto(next, actor, 1)
+      next.log = [...next.log, `${pending.sourceLabel}: ${actor.name} draws ${drawn.length}`]
+    } else if (discardUid !== undefined) {
+      next.log = [...next.log, `${pending.sourceLabel}: ${actor.name} chooses to discard`]
+      discardByCardEffect(next, actor, [actor.hand.find((card) => card.uid === discardUid)!])
+    } else {
+      next.log = [...next.log, `${pending.sourceLabel}: ${actor.name} neither draws nor discards`]
+    }
+  } else if ((count ?? 0) > 0) {
+    next.log = [...next.log, `${pending.sourceLabel}: ${discardTopLine(actor, takeDiscardTop(actor, count!, 'hand', false), 'hand')}`]
+  } else {
+    next.log = [...next.log, `${pending.sourceLabel}: ${actor.name} leaves their discard pile alone`]
+  }
+  return resumeAfterPlayerChoice(settle(next))
+}
+
+/** Resumes a Start of Turn that a now-answered (or lapsed) player choice paused. */
+function resumeAfterPlayerChoice(settled: CombatState): CombatState {
+  return settled.phase === 'start' && settled.startTurnProgress && owedPlayerChoices(settled).length === 0 &&
+    (settled.pendingTriggers?.length ?? 0) === 0 && !mandatoryChoicePending(settled) &&
+    !settled.startTurnProgress.forcedCard && !settled.startTurnProgress.beforeDraw &&
+    !settled.startTurnProgress.rollPending && !settled.startTurnProgress.pauseAfterDraw &&
+    !settled.startTurnProgress.discard
+    ? continueStartTurn(settled, settled.startTurnProgress.choices)
+    : settled
+}
+
+/** Disconnect and death fallback for `resolvePendingPlayerChoice`: an absent player declines; a dead one's lapses. */
+export function defaultPendingPlayerChoice(state: CombatState, playerId: string): CombatState {
+  const pending = state.pendingPlayerChoices?.find((choice) => choice.playerId === playerId)
+  return pending ? resolvePendingPlayerChoice(state, playerId, { choiceId: pending.id }) : state
+}
+
+/**
+ * Every choice whose owner died (Last Stand) or left the combat lapses, resuming a Start of Turn it
+ * paused. Deterministic; the same reference when none is stranded. Callers: the room server's
+ * settle loop and the local client, so a loaded or resumed state can never stay wedged.
+ */
+export function lapseStrandedPlayerChoices(state: CombatState): CombatState {
+  let next = state
+  for (;;) {
+    const stranded = next.pendingPlayerChoices?.find((choice) =>
+      !next.players.some((player) => player.id === choice.playerId && !player.dead))
+    if (!stranded) return next
+    const lapsed = resolvePendingPlayerChoice(next, stranded.playerId, { choiceId: stranded.id })
+    if (lapsed === next) return next
+    next = lapsed
+  }
+}
+
 /** Backwards-compatible deterministic start for simulations with no UI choice. */
 export function startPlayerTurn(state: CombatState): CombatState {
   let prepared = preparePlayerTurn(state)
@@ -1612,6 +1752,8 @@ export function startTurnOrderChoicePlayerId(
   const pileWriterKinds = new Set([
     'addDaze', 'topdeck', 'recoverDiscard', 'recoverExhaustToDraw', 'recoverExhaustToDiscard',
     'recoverDiscardTopCosts', 'recoverAllDiscardCosts', 'exhaustDrawTop', 'exhaustDrawPile',
+    // Slayer Pack: Magnetism takes from the discard pile a draw could reshuffle.
+    'mayReturnDiscardTop',
   ])
   for (const player of state.players) {
     const owned = abilities.flatMap((ability) => {

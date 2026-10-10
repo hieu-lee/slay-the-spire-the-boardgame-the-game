@@ -113,11 +113,15 @@ import {
   resolveEndTurnAbility,
   resolveDeterministicForcedCard,
   resolvePendingDieRelicChoice,
+  defaultPendingPlayerChoice,
+  owedPlayerChoices,
+  resolvePendingPlayerChoice,
   resolvePendingRelic,
   relicDef,
   resolvePlunderRowSwitch,
   resolveHermitSetupLoad,
   resolveHermitStrengthReward,
+  resolveSlayerChoice,
   resolveGuardianSocket,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
@@ -153,6 +157,7 @@ import {
   initialEnemySlots,
   isPostRollStartTurnPotionChoice,
   isPostRollStartTurnRelicChoice,
+  scryPlayCardPlayable,
 } from '../../src/game/combat.ts'
 import { previewTinyHouseRewardCard } from '../../src/game/run/relic-acquisition.ts'
 import { chosenDieRelicAbilities } from '../../src/game/relics.ts'
@@ -167,6 +172,11 @@ import {
 } from '../../src/game/combat/start-turn.ts'
 import { campfireNeedsDecision, campfireTransformAvailable } from '../../src/game/run/campfire.ts'
 import { cardIsCurse } from '../../src/game/cards.ts'
+import { abandonCardPlayWindows, finishCardPlayWindow } from '../../src/game/combat/play.ts'
+import { mandatoryCardPlayWindowOwners } from '../../src/game/combat/queries.ts'
+import { normalizeCardPacks } from '../../src/game/packs.ts'
+import { MAX_BOSS_AWARDS, catchUpAwardIndex } from '../../src/game/coins.ts'
+import { restoreCoinGrants } from './coin-grants.mjs'
 
 /** Characters a seat may pick. Two players may not take the same one (p.4). */
 export const CHARACTERS = [...CHARACTER_IDS]
@@ -294,7 +304,10 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
   const store = { rooms: new Map(), leaderboardRuns: [], statsRuns: [], leaderboardRevision: 0, leaderboardDirty: true, leaderboardChanges: new Map(),
     statsStateDirty: true, statsChanges: new Map(), interruptedJournals: new Map(),
     deckTypes: [...INITIAL_DECK_TYPES], deckClassificationBudget: { day: -1, used: 0 },
-    deckClassifierThreadId: undefined, deckClassifierRelease: undefined, profiles: [], mail: [], mailDirty: false, file, reconnectQuorums: new Map() }
+    deckClassifierThreadId: undefined, deckClassifierRelease: undefined, profiles: [], mail: [], mailDirty: false, file, reconnectQuorums: new Map(),
+    // Runs recorded before this moment are paid by a one-time coin grant (coin-grants.mjs);
+    // set once, the first time a server with the Shop starts, and kept from then on.
+    coinsLaunchedAt: Date.now(), coinGrants: [] }
   if (!file) return store
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8'))
@@ -394,6 +407,8 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
       }
     }
     store.profiles = saved.profiles ?? []
+    if (Number.isSafeInteger(saved.coinsLaunchedAt) && saved.coinsLaunchedAt > 0) store.coinsLaunchedAt = saved.coinsLaunchedAt
+    store.coinGrants = restoreCoinGrants(saved.coinGrants)
     for (const room of saved.rooms) {
       if (typeof room?.code === 'string' && Array.isArray(room.seats) && room.campaignProgress) {
         const connectedAtSave = new Set(room.seats
@@ -406,7 +421,11 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
         if (restartRecovery && recoverySeats.size > 0) {
           store.reconnectQuorums.set(room.code, { playerIds: recoverySeats, expiresAt: Date.now() + restartReconnectMs })
         }
-        room.seats = room.seats.map((seat) => ({ ...seat, connected: false }))
+        room.seats = room.seats.map((seat) => {
+          const { cardPacks, ...rest } = seat
+          const packs = normalizeCardPacks(cardPacks)
+          return { ...rest, ...(packs.length ? { cardPacks: packs } : {}), connected: false }
+        })
         room.campaignProgress = parseCampaignProgress(room.campaignProgress)
         room.campaignBaseProgress = parseCampaignProgress(room.campaignBaseProgress, room.campaignProgress)
         // The Daily Climb is a solo shared-seed run; a lobby saved on Daily reopens on Standard.
@@ -415,6 +434,18 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
           : { mode: 'standard', modifiers: [], quickStartAct: 1 }
         room.chooseYourRelic = room.chooseYourRelic === true
         room.lastStand = room.lastStand === true && room.seats.length > 1
+        // Recorded runs' unclaimed shares: only well-formed ones, only for seats still here.
+        const tokens = new Set(room.seats.map((seat) => seat.token))
+        const recordedValid = (recorded) => recorded && typeof recorded.runId === 'string' && Array.isArray(recorded.bossCoins) &&
+          recorded.bossCoins.length <= MAX_BOSS_AWARDS && recorded.bossCoins.every((award) => award && Number.isSafeInteger(award.coins) && award.coins >= 0) &&
+          recorded.skips && typeof recorded.skips === 'object' && !Array.isArray(recorded.skips) &&
+          Object.values(recorded.skips).every((skip) => Number.isSafeInteger(skip) && skip >= 0)
+        const recordedRuns = (Array.isArray(room.recordedRuns) ? room.recordedRuns : [])
+          .filter(recordedValid).slice(-MAX_RECORDED_RUNS)
+          .map((recorded) => ({ ...recorded, skips: Object.fromEntries(Object.entries(recorded.skips).filter(([token]) => tokens.has(token))) }))
+          .filter((recorded) => Object.keys(recorded.skips).length > 0)
+        if (recordedRuns.length) room.recordedRuns = recordedRuns
+        else delete room.recordedRuns
         if (room.run) {
           for (const player of room.run.players ?? []) normalizeLegacyPlayer(player)
           assignPendingRelicIds(room.run)
@@ -436,6 +467,11 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
               ? storedRuleset
               : rulesetForCharacters(Array.isArray(room.run.players)
                 ? room.run.players.map((player) => player.character) : []),
+          }
+          if (room.run.meta.cardPacks !== undefined) {
+            const packs = normalizeCardPacks(room.run.meta.cardPacks)
+            if (packs.length) room.run.meta.cardPacks = packs
+            else delete room.run.meta.cardPacks
           }
           room.run.setup ??= null
           room.run.lastStand = room.run.lastStand == null ? room.lastStand : room.run.lastStand === true
@@ -559,7 +595,8 @@ export function saveStore(store) {
   }]))
   const main = { version: 1, rooms: [...store.rooms.values()], deckTypes: store.deckTypes,
     deckClassificationBudget: store.deckClassificationBudget, deckClassifierThreadId: store.deckClassifierThreadId,
-    deckClassifierRelease: store.deckClassifierRelease, profiles: store.profiles, reconnectQuorums }
+    deckClassifierRelease: store.deckClassifierRelease, profiles: store.profiles, reconnectQuorums,
+    coinsLaunchedAt: store.coinsLaunchedAt, coinGrants: store.coinGrants }
   if (!existsSync(store.file) || store.leaderboardDirty) {
     writeFileSync(temporary, JSON.stringify({ ...main, leaderboardRuns: store.leaderboardRuns }), { mode: 0o600 })
     renameSync(temporary, store.file)
@@ -636,7 +673,18 @@ function seatPublic(seat) {
     name: seat.name,
     character: seat.character,
     connected: seat.connected,
+    // Which Shop packs this player brings, so the lobby can say whose they are.
+    ...(seat.cardPacks?.length ? { cardPacks: [...seat.cardPacks] } : {}),
   }
+}
+
+/**
+ * The Shop packs a run started now would use: every pack at least one seated
+ * player bought (and has switched on). `startRun` freezes it into the run, so a
+ * late Catch Up joiner or a seat that changes its packs mid-run changes nothing.
+ */
+function roomCardPacks(room) {
+  return normalizeCardPacks(room.seats.flatMap((seat) => seat.cardPacks ?? []))
 }
 
 class RoomError extends Error {
@@ -682,15 +730,18 @@ function includeSeatUnlocks(room) {
   }
 }
 
-export function joinRoom(room, { name, character, campaignProgress, token: existing, random, connected = true, settle = true } = {}) {
+export function joinRoom(room, { name, character, campaignProgress, cardPacks, token: existing, random, connected = true, settle = true } = {}) {
   const returning = findSeat(room, existing)
   if (returning) {
     const nextName = name ? String(name).slice(0, 24) : returning.name
     const nextUnlocks = campaignProgress === undefined ? returning.campaignUnlocks : campaignUnlocks(campaignProgress)
+    // A seat that reports no list keeps the packs it reported before.
+    const nextPacks = cardPacks === undefined ? returning.cardPacks ?? [] : normalizeCardPacks(cardPacks)
     if (room.phase !== 'lobby' && nextName !== returning.name) fail('Names are locked once the run starts')
     const connectionChanged = returning.connected !== connected
     const unlocksChanged = JSON.stringify(nextUnlocks) !== JSON.stringify(returning.campaignUnlocks)
-    if (!connectionChanged && nextName === returning.name && !unlocksChanged) return returning
+    const packsChanged = JSON.stringify(nextPacks) !== JSON.stringify(returning.cardPacks ?? [])
+    if (!connectionChanged && nextName === returning.name && !unlocksChanged && !packsChanged) return returning
     if (returning.pendingCatchUp && connected) {
       const next = beginCatchUp(room.run, [{ id: returning.playerId, name: nextName, character: returning.character }])
       if (next === room.run) fail('That player cannot Catch Up now')
@@ -702,6 +753,8 @@ export function joinRoom(room, { name, character, campaignProgress, token: exist
     returning.name = nextName
     if (connectionChanged && connected) reopenAutoReadyStartTurn(room, returning.playerId)
     if (nextUnlocks) returning.campaignUnlocks = nextUnlocks
+    if (nextPacks.length) returning.cardPacks = nextPacks
+    else delete returning.cardPacks
     if (room.phase === 'lobby') includeSeatUnlocks(room)
     room.version += 1
     // They may be the last answer the table was waiting on, or the first one
@@ -714,8 +767,8 @@ export function joinRoom(room, { name, character, campaignProgress, token: exist
       settleReward(room)
       settleEndTurn(room)
       settleDisconnectedEndTurnEffects(room)
-      settleDiscard(room)
       settleForcedCards(room)
+      settleDiscard(room)
     }
     return returning
   }
@@ -738,6 +791,7 @@ export function joinRoom(room, { name, character, campaignProgress, token: exist
     name: String(name ?? `Player ${room.seats.length + 1}`).slice(0, 24),
     character: pick,
     ...(campaignProgress === undefined ? {} : { campaignUnlocks: campaignUnlocks(campaignProgress) }),
+    ...(normalizeCardPacks(cardPacks).length ? { cardPacks: normalizeCardPacks(cardPacks) } : {}),
     token: token(random),
     connected,
     ...(catchingUp && !connected ? { pendingCatchUp: true, reservedAt: Date.now() } : {}),
@@ -820,6 +874,14 @@ export function removeSeat(room, seatToken) {
   const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'lobby' && !seat.pendingCatchUp) fail('A run seat must be preserved for reconnection')
   room.seats = room.seats.filter((candidate) => candidate !== seat)
+  // A seat that leaves takes its unclaimed share of the recorded run with it.
+  if (room.recordedRuns) {
+    room.recordedRuns = room.recordedRuns.map((recorded) => {
+      const { [seat.token]: _left, ...skips } = recorded.skips
+      return { ...recorded, skips }
+    }).filter((recorded) => Object.keys(recorded.skips).length > 0)
+    if (room.recordedRuns.length === 0) delete room.recordedRuns
+  }
   if (room.phase === 'lobby') includeSeatUnlocks(room)
   if (room.seats.length < 2) {
     room.chooseYourRelic = false
@@ -848,8 +910,8 @@ export function markDisconnected(room, seatToken) {
   settleReward(room)
   settleEndTurn(room)
   settleDisconnectedEndTurnEffects(room)
-  settleDiscard(room)
   settleForcedCards(room)
+  settleDiscard(room)
   settlePostRollNestedChoice(room)
   settleDisconnectedRunChoices(room)
   settleReward(room)
@@ -1173,6 +1235,19 @@ function settleForcedCards(room, consumedPreviewPlayerId = null, suspendActiveCo
       combat = resolved
       settled = true
     }
+    // Slayer Pack: an absent player declines a card's draw/discard or return choice; a dead
+    // (Last Stand) or departed player's choice lapses, resuming a Start of Turn it paused.
+    while (combat?.pendingPlayerChoices?.length > 0) {
+      const pending = combat.pendingPlayerChoices.find(({ playerId }) =>
+        room.seats.find((seat) => seat.playerId === playerId)?.connected === false ||
+        !combat.players.some((player) => player.id === playerId && !player.dead))
+      if (!pending) break
+      const next = defaultPendingPlayerChoice(combat, pending.playerId)
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+    }
     while (combat?.pendingHermitStrengthRewards?.length > 0) {
       const choiceCombat = prioritizePendingChoice(combat, 'pendingHermitStrengthRewards', ({ playerId }) =>
         room.seats.find((seat) => seat.playerId === playerId)?.connected === false)
@@ -1181,6 +1256,23 @@ function settleForcedCards(room, consumedPreviewPlayerId = null, suspendActiveCo
       const target = choiceCombat.players.find((player) => !player.dead)
       if (!target) break
       const next = resolveHermitStrengthReward(choiceCombat, pending.playerId, target.id)
+      if (next === choiceCombat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+    }
+    // Slayer Pack: an absent owner keeps their deck (Ritual Dagger+ bottoms the
+    // reveal) and Nightmare+ moves to the first other living enemy.
+    while (combat?.pendingSlayerChoices?.length > 0) {
+      // A dead owner (Last Stand) can never answer either, connected or not.
+      const choiceCombat = prioritizePendingChoice(combat, 'pendingSlayerChoices', ({ playerId }) =>
+        room.seats.find((seat) => seat.playerId === playerId)?.connected === false ||
+        combat.players.some((player) => player.id === playerId && player.dead))
+      const pending = choiceCombat?.pendingSlayerChoices[0]
+      if (!pending) break
+      const host = choiceCombat.enemies.find((enemy) => !enemy.dead && enemy.uid !== pending.fromUid)
+      const next = resolveSlayerChoice(choiceCombat, pending.playerId, pending.kind === 'ritualDagger'
+        ? { choiceId: pending.id, replace: false } : { choiceId: pending.id, enemyUid: host?.uid ?? null })
       if (next === choiceCombat) break
       room.run = { ...room.run, combat: next }
       combat = next
@@ -1378,8 +1470,16 @@ function settleDisconnectedStartTurnChoices(room, readyEnsured = false) {
   const fallbackOrder = room.startTurnOrder ?? defaultStartTurnChoices(combat).map((choice) => choice.id)
   if (!startTurnOrderPending(room) || !startTurnOrderCoordinator(room)) room.startTurnOrder = fallbackOrder
   const stored = new Map((savedStartTurnChoices(room) ?? []).map((choice) => [choice.id, choice]))
-  for (const id of fallbackOrder) {
-    room.startTurnChoices = [...stored.values()].filter(Boolean)
+  const defaults = new Map(defaultStartTurnChoices(combat).map((choice) => [choice.id, choice]))
+  // An earlier ability with no pick yet resolves with its default, so a later pick must be judged against
+  // that plan. Planning without it leaves the earlier single-target ability blocking the later one, and the
+  // later (empty) pick is accepted here but refused by `resolveStartPlayerTurn`.
+  const planningChoices = (before) => [
+    ...stored.values(),
+    ...fallbackOrder.slice(0, before).filter((id) => !stored.has(id)).map((id) => defaults.get(id)),
+  ].filter(Boolean)
+  for (const [position, id] of fallbackOrder.entries()) {
+    room.startTurnChoices = planningChoices(position)
     let ability = plannedStartTurnAbilities(room).find((candidate) => candidate.id === id)
     if (!ability || !disconnected.has(ability.playerId)) continue
     if (!stored.has(ability.id) || !validStartTurnChoice(ability, stored.get(ability.id))) {
@@ -1395,7 +1495,7 @@ function settleDisconnectedStartTurnChoices(room, readyEnsured = false) {
       }
       for (let step = 0; step < UID_LIMIT; step += 1) {
         stored.set(id, fallback)
-        room.startTurnChoices = [...stored.values()].filter(Boolean)
+        room.startTurnChoices = planningChoices(position)
         ability = plannedStartTurnAbilities(room).find((candidate) => candidate.id === id)
         if (!ability || validStartTurnChoice(ability, fallback)) break
         if (ability.enemyTargetStale && ability.targets?.[0]) fallback.enemyUid = ability.targets[0].uid
@@ -1419,7 +1519,6 @@ function settleDisconnectedStartTurnChoices(room, readyEnsured = false) {
   room.startTurnReady = { ...room.startTurnReady,
     ...Object.fromEntries([...disconnected].map((playerId) => [playerId, true])) }
   if (!room.startTurnRequired.every((playerId) => room.startTurnReady[playerId])) return
-  const defaults = new Map(defaultStartTurnChoices(combat).map((choice) => [choice.id, choice]))
   // A connected owner's Noxious Fumes pick lives in the target map, not the stored choices.
   const choices = fallbackOrder.map((id) => stored.get(id) ?? defaults.get(id)).filter(Boolean)
     .map((choice) => room.startTurnEnemyTargets?.[choice.id]
@@ -1475,7 +1574,7 @@ export function startRun(room, seatToken, { seed, campaign } = {}) {
   if (!Number.isInteger(room.ascension) || room.ascension < 0 || room.ascension > room.campaignProgress.highestAscension) {
     fail('That Ascension is not unlocked')
   }
-  room.run = createRun(seed ?? Number(BigInt('0x' + randomBytes(4).toString('hex'))), party, room.ascension, room.campaignProgress, room.chooseYourRelic && party.length > 1, room.lastStand && party.length > 1, { ...room.metaOptions, campaign })
+  room.run = createRun(seed ?? Number(BigInt('0x' + randomBytes(4).toString('hex'))), party, room.ascension, room.campaignProgress, room.chooseYourRelic && party.length > 1, room.lastStand && party.length > 1, { ...room.metaOptions, campaign, cardPacks: roomCardPacks(room) })
   room.concurrentCardCopies = undefined
   room.concurrentDistilled = undefined
   room.concurrentRelicScries = undefined
@@ -1784,6 +1883,9 @@ export function apply(
       // forced-card/copy continuations). Reassess a suspended post-roll item
       // chain at the transaction boundary so none can strand or close it.
       settlePostRollNestedChoice(room)
+      // Any accepted action can land the turn in the discard phase owing only a disconnected seat's Retain
+      // choice (the last end-of-turn effect or a trigger answer, not just the final vote or discard).
+      settleDiscard(room)
       return { ...result, snapshot: snapshotFor(room, seatToken) }
     }
     if (JSON.stringify(room) === checkpointJson) return result
@@ -1817,7 +1919,8 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     combat?.phase === 'copy' && activeCopy?.resumePhase === 'player'
   const choiceFields = [
     'pendingPlunderSwitches', 'pendingDieRelicChoices', 'pendingHermitSetupLoads',
-    'pendingHermitChamberPlays', 'pendingHermitStrengthRewards',
+    'pendingHermitChamberPlays', 'pendingHermitStrengthRewards', 'pendingSlayerChoices',
+    'pendingPlayerChoices',
   ]
   const choiceBelongsToSeat = (field, choice) => choice.playerId === seat.playerId &&
     (field !== 'pendingDieRelicChoices' || dieRelicChoiceNeedsInput(combat, choice))
@@ -1939,6 +2042,16 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
         room.concurrentDistilled = undefined
         room.concurrentRelicScries = undefined
         room.concurrentForcedCards = undefined
+        // Slayer Pack: set-aside choices end with the combat exactly as
+        // `clearTerminalChoices` ends them, except a Ritual Dagger+ reveal: that
+        // kill already happened, and its owner still answers after a victory
+        // that another seat's blow decided.
+        const ritual = room.run.combat.phase === 'won'
+          ? foreignChoices.pendingSlayerChoices.filter((choice) => choice.kind === 'ritualDagger') : []
+        if (ritual.length > 0) {
+          room.run = { ...room.run, combat: { ...room.run.combat,
+            pendingSlayerChoices: [...ritual, ...(room.run.combat.pendingSlayerChoices ?? [])] } }
+        }
       }
       return { ...result, snapshot: snapshotFor(room, seatToken) }
     } catch (error) {
@@ -2072,9 +2185,14 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     delete room.cardPreviews[seat.playerId]
   }
   const locked = room.cardPreviews?.[seat.playerId]
-  if (stagedPower && !((action?.kind === 'previewPowerChoice' || action?.kind === 'activatePower') &&
+  // Slayer Pack: an owed card-given choice (a Nightmare+ move, Ritual Dagger+, Heel Hook, Magnetism)
+  // can land while this seat holds a reveal, copy window, Distilled Chaos pick, Golden Eye Scry or
+  // forced card. It is answerable through every one of those windows: the mandatory-choice gate below
+  // already limits the answer to its owner, and each window stays exactly as it was until it is done.
+  const answeringOwedChoice = action?.kind === 'resolvePlayerChoice' || action?.kind === 'resolveSlayerChoice'
+  if (stagedPower && !answeringOwedChoice && !((action?.kind === 'previewPowerChoice' || action?.kind === 'activatePower') &&
     action.powerUid === stagedPower.powerUid)) fail('Finish the revealed Power before taking another action')
-  if (locked && !(
+  if (locked && !answeringOwedChoice && !(
     ((locked.copy === true && (action?.kind === 'previewCardCopy' || action?.kind === 'playCardCopy')) ||
       (locked.chamber === true && (action?.kind === 'previewHermitChamberCard' || action?.kind === 'playHermitChamberCard')) ||
       (locked.copy !== true && locked.chamber !== true && (action?.kind === 'previewCard' || action?.kind === 'playCard'))) &&
@@ -2155,7 +2273,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     clearInvalidPreviews(room, suspendedWork)
     clearEndTurnOrdering(room)
     room.version += 1
-    publishEndTurnEffect(room)
+    if (publishEndTurnEffect(room)) settleDisconnectedEndTurnEffects(room)
     return { changed: true, snapshot: snapshotFor(room, seatToken) }
   }
   if (mandatoryChoicePending(room.run.combat)) {
@@ -2169,28 +2287,38 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
         : combat.pendingHermitChamberPlays?.[0]
           ? { choice: combat.pendingHermitChamberPlays[0],
             kinds: ['previewHermitChamberCard', 'playHermitChamberCard'], label: 'Hermit Chamber' }
-          : { choice: combat.pendingHermitStrengthRewards[0],
-            kinds: ['resolveHermitStrengthReward'], label: 'Hermit reward' }
+          : owedPlayerChoices(combat).length
+            // Slayer Pack: each owner answers their own card-given choice.
+            ? { choice: owedPlayerChoices(combat).find(({ playerId }) => playerId === seat.playerId) ??
+              owedPlayerChoices(combat)[0], kinds: ['resolvePlayerChoice'],
+              label: owedPlayerChoices(combat)[0].sourceLabel }
+          : combat.pendingHermitStrengthRewards?.[0]
+            ? { choice: combat.pendingHermitStrengthRewards[0],
+              kinds: ['resolveHermitStrengthReward'], label: 'Hermit reward' }
+            : { choice: combat.pendingSlayerChoices[0],
+              kinds: ['resolveSlayerChoice'], label: combat.pendingSlayerChoices[0].kind === 'ritualDagger'
+                ? 'Ritual Dagger' : 'Nightmare' }
     if (pending.choice.playerId !== seat.playerId || !pending.kinds.includes(action?.kind)) {
       fail(pending.choice.playerId === seat.playerId
         ? `Finish the ${pending.label} choice` : `Wait for the ${pending.label} choice`)
     }
   }
-  if (forcedCard && !(
+  if (forcedCard && !answeringOwedChoice && !(
     forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
     action.cardUid === forcedCard.cardUid
   )) fail('Finish the forced card before taking another action')
-  if (pendingCopy && !(copyForSeat &&
+  if (pendingCopy && !answeringOwedChoice && !(copyForSeat &&
     (action?.kind === 'previewCardCopy' || action?.kind === 'playCardCopy'))) {
     fail(copyForSeat ? 'Finish resolving the original card' : 'Wait for the original card')
   }
-  if (pendingDistilled && !room.run.combat?.startTurnProgress?.forcedCard &&
+  if (pendingDistilled && !answeringOwedChoice && !room.run.combat?.startTurnProgress?.forcedCard &&
     !(room.run.combat?.pendingTriggers?.length) && !room.run.combat?.pendingCardCopy &&
     action?.kind !== 'chooseDistilledCard') {
     fail(pendingDistilled.playerId === seat.playerId ? 'Choose the next Distilled Chaos card' : 'Wait for Distilled Chaos')
   }
   const pendingRelicScry = room.run.combat?.pendingRelicScry
-  if (pendingRelicScry && (action?.kind !== 'activateRelic' || action.relicScryId !== pendingRelicScry.id)) {
+  if (pendingRelicScry && !answeringOwedChoice &&
+    (action?.kind !== 'activateRelic' || action.relicScryId !== pendingRelicScry.id)) {
     fail(pendingRelicScry.playerId === seat.playerId ? 'Finish Golden Eye Scry' : 'Wait for Golden Eye')
   }
 
@@ -2441,7 +2569,12 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
   if (action?.kind === 'resolveStartTurnDiscard') return resolvePrivateStartTurnDiscard(room, seat, action, seatToken)
   if (action?.kind === 'resolveStartTurn') return resolveStartTurn(room, seat, action, seatToken)
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
-  if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
+  // Slayer Pack: an end-of-turn effect can kill a Nightmare+ host and owe its owner a choice; the
+  // mandatory-choice gate above holds that owner's own end-turn effect until it is answered.
+  const orderingEndTurn = room.endTurnAbilities !== undefined
+  if (orderingEndTurn && action?.kind !== 'resolveSlayerChoice') {
+    fail('The party is ordering end-of-turn abilities')
+  }
   if (roomPostRollChoiceDone(room) && isPostRollItemAction(room, seat, action)) {
     fail('The post-roll item window is already closed')
   }
@@ -2453,6 +2586,9 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     action?.kind === 'previewPowerChoice' ||
     // The Hermit setup Load pauses the Draw step; the mandatory-choice gate above already checked its owner.
     action?.kind === 'resolveHermitSetupLoad' ||
+    // Slayer Pack: Magnetism's choice pauses the ordered abilities; same owner check. A forced card can
+    // also owe its owner a Nightmare+ or Ritual Dagger+ answer mid-Start-of-Turn; refusing it deadlocks.
+    action?.kind === 'resolvePlayerChoice' || action?.kind === 'resolveSlayerChoice' ||
     forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
     action.cardUid === forcedCard.cardUid
   )) fail('Finish the Start-of-Turn abilities')
@@ -2540,6 +2676,8 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
   settleDisconnectedRewards(room)
   settleReward(room)
   room.version += 1
+  // The answer cleared the published end-turn effect like any combat action; the same effect is next.
+  if (orderingEndTurn && publishEndTurnEffect(room)) settleDisconnectedEndTurnEffects(room)
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
 
@@ -2959,10 +3097,40 @@ function allocateCampaign(room, seat, action, seatToken) {
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
 
+/** Recorded runs a room keeps unclaimed shares for. */
+const MAX_RECORDED_RUNS = 8
+
+/**
+ * The boss coins of a recorded run, kept once the party leaves it so that a seat
+ * that was away when it was recorded can still claim its share: where each
+ * player's share starts in the awards (their Catch Up offset). Shares are keyed by
+ * seat token, never by player id: a freed id goes to the next joiner, who played
+ * none of it.
+ */
+function recordedRunOf(room) {
+  const run = room.run
+  const awards = run?.campaign.bossCoins
+  if (!run?.campaign.finalized || !Array.isArray(awards) || awards.length === 0) return undefined
+  return {
+    runId: run.campaign.runId,
+    bossCoins: structuredClone(awards),
+    skips: Object.fromEntries(run.players.flatMap((player) => {
+      const seat = room.seats.find((candidate) => candidate.playerId === player.id)
+      return seat ? [[seat.token, catchUpAwardIndex(
+        run.campaign.joinedAfterBosses?.[player.character] ?? 0, run.campaign.bossesDefeated, awards.length)]] : []
+    })),
+  }
+}
+
 function returnToLobby(room, seat, seatToken) {
   if (!room.run?.campaign.finalized || room.campaignProgress.unspentMarks > 0) fail('Finish assigning campaign marks first')
   if (room.seats[0]?.playerId !== seat.playerId) fail('The journal keeper begins the next run')
   room.phase = 'lobby'
+  // Each recorded run's shares are kept beside the earlier ones, so a seat away for
+  // several runs still claims them all; the room keeps the last few runs.
+  const recorded = recordedRunOf(room)
+  if (recorded) room.recordedRuns = [...(room.recordedRuns ?? []).filter((entry) => entry.runId !== recorded.runId), recorded]
+    .slice(-MAX_RECORDED_RUNS)
   room.run = null
   includeSeatUnlocks(room)
   room.version += 1
@@ -2989,6 +3157,8 @@ function endTurn(room, seat, _action, seatToken) {
   if (combat.phase !== 'player') fail('The party is not taking its turn')
   const player = combat.players.find((candidate) => candidate.id === seat.playerId)
   if (!player || player.dead) fail('This seat cannot end the turn')
+  // Slayer Pack: Discovery, Violence and Deceive Reality must play their cards first.
+  if (mandatoryCardPlayWindowOwners(combat).includes(seat.playerId)) fail('Play the card you must play before ending the turn')
   room.endTurnReady ??= Object.fromEntries(combat.players
     .filter((candidate) => !candidate.dead && room.seats
       .find((other) => other.playerId === candidate.id)?.connected)
@@ -3020,13 +3190,34 @@ function settleEndTurn(room) {
       connected.has(player.id) && !room.endTurnReady[player.id]))
     .map((player) => player.id)
   if (waiting.length > 0) return waiting
+  // Slayer Pack: A connected owner of a card-play window that must be played
+  // cannot be ready (`endTurn` refuses them); a disconnected owner forfeits it
+  // so the party is never stranded. The forfeit can set off a trigger (Discovery
+  // discards its offer into Eviscerate): the absent owner's trigger resolves in
+  // this same pass, so the turn still ends on everyone's existing votes. Any trigger
+  // it sets off is the absent owner's (and a seat with its own trigger cannot vote),
+  // so nothing is left pending when the turn end begins.
+  const forfeits = mandatoryCardPlayWindowOwners(combat).filter((playerId) => !connected.has(playerId))
+  for (const ownerId of forfeits) {
+    combat = abandonCardPlayWindows(combat, ownerId)
+    room.run = { ...room.run, combat }
+  }
+  if (forfeits.length > 0) {
+    settleForcedCards(room)
+    combat = room.run?.combat
+    if (!combat || combat.phase !== 'player') {
+      room.endTurnReady = undefined
+      return null
+    }
+  }
   room.run = { ...room.run, combat: beginEndTurnResolution(combat) }
   settleForcedCards(room)
   room.endTurnReady = undefined
   publishEndTurnEffect(room)
   settleDisconnectedEndTurnEffects(room)
   room.endTurnOrders = undefined
-  return null
+  // The turn end can land in the discard phase owing only a disconnected seat's Retain choice.
+  return settleDiscard(room)
 }
 
 /** Publishes only the next live target effect, so each owner resolves its own source immediately. */
@@ -3104,6 +3295,18 @@ function resolveAbandonedPreviews(room) {
       const loaded = preview.cards.find((card) => card.uid === uid)
       if (loaded) chamber.push(loaded)
     }
+    // Deceive Reality must play a revealed card when any can be played: take the first one,
+    // judged as the engine will (the source out of hand and counted as played). With none
+    // playable, naming nothing is the legal plain Scry.
+    const scryPlayUid = preview.kind === 'scryToHand' && effects.some((effect) => effect.kind === 'scryAndPlay')
+      ? (() => {
+        const judged = { ...room.run.combat, players: room.run.combat.players.map((candidate) =>
+          candidate.id === playerId ? { ...candidate,
+            hand: candidate.hand.filter((card) => card.uid !== preview.cardUid),
+            cardsPlayedThisTurn: (candidate.cardsPlayedThisTurn ?? 0) + 1 } : candidate) }
+        return preview.cards.find((card) => scryPlayCardPlayable(judged, playerId, preview.cards, card.uid, []))?.uid
+      })()
+      : undefined
     const fallbackEnemyUid = room.run?.combat?.enemies.find((enemy) => !enemy.dead)?.uid
     const targetedCurses = new Set(['hermit_grudge', 'hermit_malice', 'hermit_horror'])
     const hermitEnemyUids = fallbackEnemyUid ? loadUids
@@ -3135,7 +3338,7 @@ function resolveAbandonedPreviews(room) {
           : preview.slimeEnemyUids,
         discardUids: preview.kind === 'discard' ? preview.cards.map((card) => card.uid) : undefined,
         scryDiscardUids: preview.kind === 'scry' || preview.kind === 'scryToHand' ? [] : undefined,
-        scryToHandUid: undefined,
+        scryToHandUid: scryPlayUid,
         topdeckUids: preview.kind === 'topdeck' ? preview.cards.slice(0, 1).map((card) => card.uid) : undefined,
         searchDrawUids: preview.kind === 'search'
           ? preview.cards.slice(0, searchAmount).map((card) => card.uid)
@@ -3698,7 +3901,9 @@ function validStartTurnChoice(ability, choice) {
     (choice.evokeEnemyUids?.length ?? 0) === (ability.evokeOrbs?.length ?? 0) &&
     (ability.evokeOrbs ?? []).every((orb, index) => orb === 'frost'
       ? choice.evokeEnemyUids?.[index] === null
-      : typeof choice.evokeEnemyUids?.[index] === 'string'))
+      // With no living enemy left (Summons pending) the target is moot, so a null or stale uid is fine.
+      : typeof choice.evokeEnemyUids?.[index] === 'string' ||
+        ability.evokeTargetless?.includes(index) && choice.evokeEnemyUids?.[index] === null))
 }
 
 function mergedStartTurnChoices(room, choices, storedChoices = savedStartTurnChoices(room) ?? [], ownerId) {
@@ -4199,25 +4404,35 @@ function submitDiscard(room, seat, action, seatToken) {
   if (!discardOrderIsValid(player, order)) fail('Discard order may omit only cards this player can Retain')
   room.endTurnOrders = { ...room.endTurnOrders, [seat.playerId]: order }
   room.version += 1
-  const waiting = settleDiscard(room)
+  const waiting = settleDiscard(room, true)
   return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
 }
 
-function settleDiscard(room) {
+function settleDiscard(room, strict = false) {
   const combat = room.run?.combat
-  if (!combat || combat.phase !== 'discard' || !room.endTurnOrders) return null
+  if (!combat || combat.phase !== 'discard') return null
   if (!room.seats.some((seat) => seat.connected)) return null
+  // A forced card (Revenge Protocol), a copy window or an owed choice is still to be played or answered;
+  // the discard step must not end the turn around it.
+  if (combat.startTurnProgress?.forcedCard || combat.pendingCardCopy || mandatoryChoicePending(combat)) return null
+  // No orders yet is a real state: the turn just ended and only a disconnected seat (an Armaments or
+  // Master Reality+ Retain choice) may owe one, so the party must not wait for them.
+  const submitted = room.endTurnOrders ?? {}
   const connected = new Set(room.seats.filter((seat) => seat.connected).map((seat) => seat.playerId))
   const waiting = combat.players
-    .filter((player) => discardNeedsChoice(player) && connected.has(player.id) && !room.endTurnOrders[player.id])
+    .filter((player) => discardNeedsChoice(player) && connected.has(player.id) && !submitted[player.id])
     .map((player) => player.id)
   if (waiting.length > 0) return waiting
   const orders = Object.fromEntries(combat.players.map((player) => [
     player.id,
-    room.endTurnOrders[player.id] ?? player.hand.map((card) => card.uid),
+    submitted[player.id] ?? player.hand.map((card) => card.uid),
   ]))
   const next = endPlayerTurn(combat, orders)
-  if (next === combat) fail('Discard order is no longer valid')
+  if (next === combat) {
+    // A seat's own submission is told; a settle pass has nobody to tell and the turn simply stays open.
+    if (strict) fail('Discard order is no longer valid')
+    return null
+  }
   room.run = { ...room.run, combat: next }
   room.endTurnOrders = undefined
   return null
@@ -4511,6 +4726,8 @@ function combatForPreview(combat, playerId, suspendedWork) {
     pendingHermitSetupLoads: [],
     pendingHermitChamberPlays: chamberPlays,
     pendingHermitStrengthRewards: [],
+    pendingPlayerChoices: undefined,
+    pendingSlayerChoices: undefined,
     startTurnProgress: forcedCard
       ? { ...combat.startTurnProgress, choices: combat.startTurnProgress?.choices ?? [], forcedCard }
       : combat.startTurnProgress?.forcedCard ? { ...combat.startTurnProgress, forcedCard: undefined }
@@ -4830,6 +5047,8 @@ function dispatch(run, seat, action, lockedPreview) {
         guardianPowerCardUid: action.guardianPowerCardUid,
         evokeSlots: slotList(action.evokeSlots),
         evokeEnemyUids: targetList(action.evokeEnemyUids),
+        // Slayer Pack: Metamorphosis's chosen Power; the engine rejects anything else.
+        metamorphosisPowerUid: typeof action.metamorphosisPowerUid === 'string' ? action.metamorphosisPowerUid : undefined,
       }
       const combat = playWithReservedRng(run.combat, lockedPreview, (state) => copied
         ? playCardCopy(state, seat.playerId, context)
@@ -4960,6 +5179,7 @@ function dispatch(run, seat, action, lockedPreview) {
         guardianPowerCardUid: action.guardianPowerCardUid,
         evokeSlots: slotList(action.evokeSlots),
         evokeEnemyUids: targetList(action.evokeEnemyUids),
+        metamorphosisPowerUid: typeof action.metamorphosisPowerUid === 'string' ? action.metamorphosisPowerUid : undefined,
       }))
       if (combat === run.combat && action.preflight === true) fail('That Chamber play is no longer legal')
       return combat === run.combat ? run : { ...run, combat }
@@ -4993,10 +5213,46 @@ function dispatch(run, seat, action, lockedPreview) {
       return { ...run, combat }
     }
 
+    // Slayer Pack: Heel Hook's draw/discard and Magnetism's return answer.
+    case 'resolvePlayerChoice': {
+      if (!run.combat || !Number.isInteger(action.choiceId)) fail('No card choice is pending')
+      // Only the answer's own fields (and the transport's envelope) may arrive.
+      if (Object.keys(action).some((key) =>
+        !['kind', 'choiceId', 'draw', 'discardUid', 'count', 'type', 'requestId', 'preflight'].includes(key))) {
+        fail('A card choice answer carries only draw, discardUid or count')
+      }
+      if (action.draw !== undefined && typeof action.draw !== 'boolean') fail('Draw must be true or false')
+      if (action.discardUid !== undefined && typeof action.discardUid !== 'string') fail('Discard must be a card id')
+      if (action.count !== undefined && !Number.isSafeInteger(action.count)) fail('Count must be a whole number')
+      const combat = resolvePendingPlayerChoice(run.combat, seat.playerId, {
+        choiceId: action.choiceId, draw: action.draw, discardUid: action.discardUid, count: action.count,
+      })
+      if (combat === run.combat) fail('That card choice is no longer legal')
+      return { ...run, combat }
+    }
+
     case 'resolveHermitStrengthReward': {
       if (!run.combat || typeof action.playerId !== 'string') fail('No Hermit Strength reward is pending')
       const combat = resolveHermitStrengthReward(run.combat, seat.playerId, action.playerId)
       if (combat === run.combat) fail('That Hermit Strength reward is no longer legal')
+      return { ...run, combat }
+    }
+
+    case 'resolveSlayerChoice': {
+      if (!run.combat) fail('No Slayer Pack choice is pending')
+      if (action.enemyUid !== undefined && action.enemyUid !== null && typeof action.enemyUid !== 'string') {
+        fail('A Nightmare target must be an enemy id')
+      }
+      if (action.replace !== undefined && typeof action.replace !== 'boolean') fail('Replace must be true or false')
+      // Each answer names its choice, so a repeated or stale one cannot resolve the owner's next. An id is
+      // absent only for a choice saved before ids existed.
+      if (action.choiceId !== undefined && !Number.isSafeInteger(action.choiceId)) fail('The choice id must be a whole number')
+      const combat = resolveSlayerChoice(run.combat, seat.playerId, {
+        ...(action.choiceId !== undefined ? { choiceId: action.choiceId } : {}),
+        ...(action.enemyUid !== undefined ? { enemyUid: action.enemyUid } : {}),
+        ...(action.replace !== undefined ? { replace: action.replace } : {}),
+      })
+      if (combat === run.combat) fail('That choice is no longer legal')
       return { ...run, combat }
     }
 
@@ -5027,6 +5283,7 @@ function dispatch(run, seat, action, lockedPreview) {
         hermitEnemyUids,
         scryDiscardUids,
         cardUid: typeof action.cardUid === 'string' ? action.cardUid : undefined,
+        orbSlots: slotList(action.orbSlots),
       })
       if (combat === run.combat && action.preflight === true) {
         fail('That Power ability is no longer legal; choose again')
@@ -5092,6 +5349,13 @@ function dispatch(run, seat, action, lockedPreview) {
       if (!run.combat) fail('No combat in progress')
       const combat = spendMiracle(run.combat, seat.playerId)
       return combat === run.combat ? run : { ...run, combat }
+    }
+    // Slayer Pack: The owner ends a "play any number" card-play window.
+    case 'finishCardPlayWindow': {
+      if (!run.combat || typeof action.windowId !== 'string') fail('No card-play window is open')
+      const combat = finishCardPlayWindow(run.combat, seat.playerId, action.windowId)
+      if (combat === run.combat) fail('That card-play window cannot be finished now')
+      return { ...run, combat }
     }
     case 'chooseDistilledCard': {
       if (!run.combat) fail('No combat in progress')
@@ -5384,6 +5648,14 @@ export function snapshotFor(room, seatToken, shared = {}) {
     chooseYourRelic: room.chooseYourRelic === true,
     lastStand: room.lastStand === true,
     metaOptions: structuredClone(room.metaOptions ?? { mode: 'standard', modifiers: [], quickStartAct: 1 }),
+    // In the lobby, the packs a run started now would use; once it starts, the packs it froze.
+    cardPacks: run ? [...(run.meta?.cardPacks ?? [])] : roomCardPacks(room),
+    // Only a seat that played a recorded run hears of its coins, and only its own share.
+    ...(seat && room.recordedRuns?.some((recorded) => Object.hasOwn(recorded.skips, seat.token)) ? {
+      recordedRuns: room.recordedRuns.filter((recorded) => Object.hasOwn(recorded.skips, seat.token)).map((recorded) => ({
+        runId: recorded.runId, bossCoins: structuredClone(recorded.bossCoins), skip: recorded.skips[seat.token],
+      })),
+    } : {}),
     version: room.version,
     /** Changes whenever the server restarts, because restored rooms may resume at a lower version. */
     epoch: SERVER_EPOCH,
@@ -5537,6 +5809,7 @@ function publicEndTurnId(room, id) {
 }
 
 function redactRun(run, viewerId, room) {
+  const viewerCharacter = run.players.find((player) => player.id === viewerId)?.character
   const preparedCombat = run.roomState?.kind === 'event' ? run.roomState.preparedCombat : undefined
   const preparedScry = preparedCombat ? startTurnScryPreview(preparedCombat) : undefined
   const roomState = run.roomState?.kind === 'event'
@@ -5673,6 +5946,10 @@ function redactRun(run, viewerId, room) {
       runId: run.campaign.runId,
       bossesDefeated: run.campaign.bossesDefeated,
       highestBossActDefeated: run.campaign.highestBossActDefeated,
+      ...(run.campaign.bossCoins ? { bossCoins: structuredClone(run.campaign.bossCoins) } : {}),
+      // A Catch Up joiner is owed only the bosses beaten after their hero arrived.
+      ...(viewerCharacter && run.campaign.joinedAfterBosses?.[viewerCharacter]
+        ? { joinedAfterBosses: { [viewerCharacter]: run.campaign.joinedAfterBosses[viewerCharacter] } } : {}),
       keys: structuredClone(run.campaign.keys),
       finalized: run.campaign.finalized,
     },
@@ -5765,6 +6042,19 @@ function redactCombat(combat, viewerId) {
       cardCount: pending.cardUids.length,
     })),
     pendingHermitStrengthRewards: structuredClone(combat.pendingHermitStrengthRewards ?? []),
+    // Slayer Pack: A window offers private hand cards, so only its owner sees it.
+    ...(combat.pendingCardPlayWindows?.some((window) => window.playerId === viewerId) ? {
+      pendingCardPlayWindows: structuredClone(combat.pendingCardPlayWindows
+        .filter((window) => window.playerId === viewerId)),
+    } : {}),
+    // Slayer Pack: public: who owes which choice, never the cards it reveals.
+    pendingPlayerChoices: structuredClone(combat.pendingPlayerChoices ?? []),
+    // Slayer Pack: the revealed rare reward is its owner's alone.
+    ...(combat.pendingSlayerChoices?.length ? {
+      pendingSlayerChoices: combat.pendingSlayerChoices.map((choice) => choice.kind === 'ritualDagger'
+        ? { ...choice, revealed: choice.playerId === viewerId ? choice.revealed : null }
+        : structuredClone(choice)),
+    } : {}),
     pendingPlunderSwitches: structuredClone(combat.pendingPlunderSwitches ?? []),
     pendingRelicScry: combat.pendingRelicScry ? {
       id: combat.pendingRelicScry.playerId === viewerId ? combat.pendingRelicScry.id : 0,
@@ -5837,6 +6127,7 @@ function redactPlayer(player, viewerId) {
     drawLocked: player.drawLocked === true,
     lostHpThisCombat: player.lostHpThisCombat === true,
     hpLostThisRound: player.hpLostThisRound ?? 0,
+    ...(player.lostHpLastRound ? { lostHpLastRound: true } : {}),
     hpLossLimitThisRound: player.hpLossLimitThisRound,
     freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
     nextCardCost: player.nextCardCost ?? null,

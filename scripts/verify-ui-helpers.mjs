@@ -226,6 +226,17 @@ check('DLC and playtest cards never move an original card\'s sound identity', ()
   assertDeepEqual(cardSfxRecipe('hermit', 'hermit_strike').layers.at(-1), { sound: 'ui', rate: 1.019, volume: 0.08, delayMs: 792 })
 })
 
+check('Shop pack cards never move an existing card\'s sound identity', () => {
+  // Pinned from before The Slayer Pack: DLC extras keep their slots, pack cards take a block of their own.
+  assertDeepEqual(cardSfxRecipe('kratos', 'strike_kratos').layers.at(-1), { sound: 'ui', rate: 1.044, volume: 0.08, delayMs: 1058 })
+  assertDeepEqual(cardSfxRecipe('guardian', 'guardian_strike').layers.at(-1), { sound: 'magic', rate: 0.736, volume: 0.08, delayMs: 582 })
+  assertDeepEqual(cardSfxRecipe('ironclad', 'bash').layers.at(-1), { sound: 'draw', rate: 0.808, volume: 0.08, delayMs: 36 })
+  assertDeepEqual(cardSfxRecipe('watcher', 'eruption+').layers.at(-1), { sound: 'ui', rate: 0.877, volume: 0.08, delayMs: 358 })
+  const packSlots = new Set(Object.values(CARDS).filter((card) => card.pack)
+    .map((card) => JSON.stringify(cardSfxRecipe('ironclad', card.id).layers.at(-1))))
+  assertEqual(packSlots.size, Object.values(CARDS).filter((card) => card.pack).length, 'every pack card keeps a distinct accent')
+})
+
 check('every card and acting character resolves a bounded personal SFX recipe', () => {
   const characters = CHARACTER_IDS
   const sounds = new Set(['ui', 'card', 'draw', 'attack', 'magic', 'enemy', 'block', 'heal', 'weak'])

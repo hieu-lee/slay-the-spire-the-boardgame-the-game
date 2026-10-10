@@ -95,6 +95,9 @@ const COUNT_LABEL: Record<CountOf, string> = {
   starterCardsInHandAndChamber: 'starter Strike or Defend in your hand or Chamber',
   otherCardsInHand: 'other card in your hand',
   rage: 'Rage you have',
+  currentHp: 'hit point you have',
+  upgradedCardsInHand: 'other upgraded card in your hand',
+  ownWeakAndVulnerable: 'Weak or Vulnerable you have',
 }
 
 const TARGET_TOKEN_LABEL: Record<EnemyTokenKind, string> = {
@@ -138,6 +141,7 @@ function conditionText(condition: Condition): string {
     case 'soulburnUsedThisTurn': return 'you used Soulburn this turn'
     case 'hasCurseInChamber': return 'you have a Curse in your Chamber'
     case 'hasDeadOnAttackInChamber': return 'you have a Dead On Attack in your Chamber'
+    case 'targetWeak': return 'the target has Weak'
     case 'hpAtMost': return `you have ${condition.amount} or fewer hit points`
     case 'rageAtLeast': return `you have at least ${condition.amount} Rage`
     case 'canUnleash': return `you Unleash ${condition.cost}`
@@ -145,6 +149,12 @@ function conditionText(condition: Condition): string {
     case 'exhaustedByThisCard': return 'this card exhausted a card'
     case 'lostHpToThisCard': return 'you lost HP to this card'
     case 'targetEliteOrBoss': return 'the target is an Elite or Boss'
+    case 'hasNoSkillsInHand': return 'you have no other Skills in hand'
+    case 'lostHpLastRound': return 'you lost HP last round'
+    case 'hasStatusOrCurseInHand': return 'you have a Daze, Burn, Slimed or Curse in your hand'
+    case 'hasActivePower': return 'you have a Power in play'
+    case 'targetVulnerable': return 'the target has Vulnerable'
+    case 'notRetainedLastTurn': return 'this card was not Retained last turn'
   }
 }
 
@@ -198,7 +208,8 @@ function effectText(effect: Effect): string {
     case 'hit': return typeof effect.amount !== 'number' && effect.amount.per === 'miracles' &&
       effect.amount.base === 0 && !effect.amount.bonus && !effect.amount.targetTokens
       ? `deal ${effect.amount.scale ?? 1} damage per ${COUNT_LABEL.miracles}${condition}`
-      : `deal ${amountText(effect.amount, true)} damage${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}`
+      : `deal ${amountText(effect.amount, true)} damage${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}${
+        effect.onKill?.length ? `; if this killed the target, ${effect.onKill.map(effectText).join(', then ')}` : ''}`
     case 'rowHit': return `deal ${amountText(effect.amount, true)} damage to a row and any boss${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}`
     case 'hitChoices': return effect.targets === 1
       ? `deal ${amountText(effect.amount, true)} damage to one enemy${condition}`
@@ -307,7 +318,7 @@ function effectText(effect: Effect): string {
     case 'gainOrbSlots': return `gain ${effect.amount} Orb slots${condition}`
     case 'gainOrbEvokeBonus': return `Orb Evoke effects get +${effect.amount}${condition}`
     case 'gainDarkOrbEvokeBonus': return `Dark Orb Evoke effects get +${effect.amount}${condition}`
-    case 'gainOrbEndTurnBonus': return `Orb end-of-turn effects get +${effect.amount}${condition}`
+    case 'gainOrbEndTurnBonus': return `Orb end-of-turn effects get ${effect.amount < 0 ? effect.amount : `+${effect.amount}`}${condition}`
     case 'gainLightningEndTurnBonus': return `Lightning Orb end-of-turn effects get +${effect.amount}${condition}`
     case 'lightningTargetsRow': return `Lightning damages every enemy in a chosen row, plus the boss${condition}`
     case 'triggerOrbEndTurn': return `trigger 1 Orb's end-of-turn ability ${effect.amount === 1 ? 'once' : `${effect.amount} times`}${condition}`
@@ -320,7 +331,9 @@ function effectText(effect: Effect): string {
     case 'gainEnergyIfTargetDead': return `gain ${effect.amount} energy if the target dies${condition}`
     case 'gainStrengthIfTargetDead': return `gain ${effect.amount} Strength if the target dies${condition}`
     case 'execute': return `set the target's hit points to 0 if it has ${effect.hpAtMost} or fewer${condition}`
-    case 'gainBlockFromLastHit': return `gain Block equal to the preceding hit's unblocked damage${condition}`
+    case 'gainBlockFromLastHit': return effect.allTargets
+      ? `gain Block equal to the unblocked damage dealt${condition}`
+      : `gain Block equal to the preceding hit's unblocked damage${condition}`
     case 'discard': return `discard ${effect.amount} cards${condition}`
     case 'discardAny': return `discard any number of cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} card${effect.amount === 1 ? '' : 's'} from hand${condition}`
@@ -352,6 +365,39 @@ function effectText(effect: Effect): string {
     case 'gainRage': return `gain ${amountText(effect.amount)} Rage${condition}`
     case 'loseAllRage': return `spend all your Rage${condition}`
     case 'unleashSpend': return `spend ${effect.cost} Rage${condition}`
+    case 'openPlayWindow': return `${effect.optional ? 'you may ' : ''}play ${effect.plays === 1 ? 'one' : effect.optional
+      ? 'any number' : 'all'} of ${effect.cards === 'drawn' ? 'the drawn cards' : effect.cards === 'hand'
+      ? 'the cards in your hand' : 'the Attacks in your hand'} for ${effect.cost} Energy${effect.plays === 1 ? '' : ' each'}${
+      effect.discardRest ? ', then discard the rest' : ''}${condition}`
+    case 'scryAndPlay': return `scry ${effect.amount}; while scrying, play one of the revealed cards for 0 Energy${condition}`
+    case 'bottomdeck': return `put ${effect.amount === 'any' ? 'any number of cards' : `${effect.amount} card${effect.amount === 1 ? '' : 's'}`} from your hand on the bottom of your draw pile and gain Energy equal to their cost${condition}`
+    case 'takeDamage': return `take ${effect.amount} damage${condition}`
+    case 'returnDiscardTop': return `${effect.toChosen ? "return the topmost card of any player's discard pile"
+      : 'return the topmost card of your discard pile'} ${effect.to === 'hand'
+      ? `to ${effect.toChosen ? 'their' : 'your'} hand` : `on top of ${effect.toChosen ? 'their' : 'your'} draw pile`}` +
+      `${effect.mayRetain ? '; you may Retain it this turn' : ''}${condition}`
+    case 'removeOrbsForDiscardTop': return effect.anyNumber
+      ? `remove any number of Orbs to return that many cards from the top of your discard pile to your hand${condition}`
+      : `remove an Orb to return the topmost card of your discard pile to your hand${condition}`
+    case 'mayReturnDiscardTop': return `you may return up to ${effect.upTo} cards from the top of your discard pile to your hand${condition}`
+    case 'evokeAll': return `evoke all of your Orbs ${effect.times === 2 ? 'twice' : `${effect.times} times`}${condition}`
+    case 'discardWholeHand': return `discard your hand${condition}`
+    case 'shuffleDiscardIntoDraw': return `shuffle your discard pile into your draw pile${condition}`
+    case 'retainForBlock': return `Retain up to ${effect.amount} cards; gain 1 Block for each card Retained this way${condition}`
+    case 'drawOrDiscardChoice': return `any player may either draw a card or discard a card${condition}`
+    case 'damagePerDiscard': return `deal ${effect.amount} damage per discarded card${condition}`
+    case 'gainVulnerable': return `gain ${effect.amount} Vulnerable${condition}`
+    case 'exhaustSelf': return `exhaust this Power${condition}`
+    case 'loseMiracleOrDiscardSelf': return 'lose a Miracle; if you cannot, discard this Power'
+    case 'mayExhaustSelfFor': return `you may also exhaust this Power to ${effect.effects.map(effectText).join(', then ')}`
+    case 'preventAllHpLoss': return 'you cannot lose hit points'
+    case 'reduceHpLoss': return `when you lose hit points, lose ${effect.amount} less and ${effect.then} this Power`
+    case 'cardIconBonus': return `each hit and Block icon on your Attacks and Skills gives +${effect.amount}`
+    case 'shivRowDamage': return `whenever you use a Shiv, deal ${effect.amount} damage to its target's row`
+    case 'attachToTarget': return `attach this card to the target${condition}`
+    case 'damageAdjacent': return `deal ${effect.amount} damage to ${effect.targets} enemies adjacent to the target (up, down, left, right)${condition}`
+    case 'upgradeThisCard': return 'Upgrade this card'
+    case 'revealRareReward': return 'reveal a card from your rare rewards; either put it on the bottom of your rare deck or Replace this card with it'
   }
 }
 
@@ -489,6 +535,7 @@ export function cardRulesText(def: CardDef): string {
       ? `costs ${def.costAfterHpLoss} after you lose hit points this combat`
       : '',
     def.minimumX ? `must spend at least ${def.minimumX} Energy` : '',
+    def.bossTargetCost !== undefined ? `costs ${def.bossTargetCost} if the target is a Boss` : '',
     def.corruptSkills ? 'your Skills cost 0 and Exhaust when played' : '',
     def.retainBlock ? 'at start of turn, keep your leftover Block from last turn, maximum Block 20' : '',
     def.playCondition ? `can only be played if ${conditionText(def.playCondition)}` : '',
@@ -502,6 +549,9 @@ export function cardRulesText(def: CardDef): string {
     ...(def.additionalTriggers ?? []).map(({ trigger, effects }) =>
       `${triggerText(trigger)}, ${effects.map(effectText).join(', then ')}`),
     ...(def.persistentEffects ?? []).map(effectText),
+    def.attached ? `while attached, whenever you play ${def.attached.damageWhen === 'skill'
+      ? 'a Skill' : 'an Attack against the target (Shivs included)'}, deal ${def.attached.amount} damage to the target; when it dies, ${
+      def.attached.onHostDeath === 'reattach' ? 'attach this card to another target' : 'discard this card'}` : '',
     ...(def.handEndOfTurn ?? []).map(handEndOfTurnText),
     ...(def.discardReaction?.effects ?? []).map((effect) =>
       `when discarded by a card effect, ${effectText(effect)}`),
@@ -807,6 +857,12 @@ export function Card({
         <span className="card__live-damage" aria-hidden="true"
           data-trend={liveDamage.damage > liveDamage.baseline ? 'up' : liveDamage.damage < liveDamage.baseline ? 'down' : undefined}>
           <Icon name="attack" size={14} />{liveDamage.damage}
+        </span>
+      ) : null}
+      {card.playWindowCost !== undefined ? (
+        // Slayer Pack: The exact cost an open card-play window charges, over the printed gem.
+        <span className="card__window-cost" aria-hidden="true">
+          <Icon name="energy" size={14} />{card.playWindowCost}
         </span>
       ) : null}
       {def.target === 'row' ? (

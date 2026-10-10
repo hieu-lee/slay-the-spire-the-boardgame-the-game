@@ -461,7 +461,8 @@ check('a stance trigger narrows to that stance, or matches any', () => {
 
 check('every Power declares a resolution model', () => {
   for (const def of Object.values(CARDS)) {
-    if (def.type !== 'power') continue
+    // The Slayer Pack's Powers are required to declare a model by verify-slayer-pack-audit.mjs.
+    if (def.type !== 'power' || def.pack) continue
     const persistent = def.persistent === true || def.corruptSkills === true || def.retainBlock === true
     assert(
       [def.trigger !== undefined, def.resolvesOnPlay === true, def.activeAbility === true, persistent]

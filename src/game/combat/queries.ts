@@ -7,8 +7,8 @@
 // Every function here is a question, not an action: none of them changes the
 // state, so a UI can call them to grey out a card or count a prompt without
 // risking a half-resolved play.
-import { findPlayer, livingEnemies, playersInRowOf, resolveEnemyTargets } from './board.ts'
-import type { CombatState, CopySource, CountablePlayer, EvokeChoice, PlayContext } from './types.ts'
+import { adjacentEnemies, findPlayer, livingEnemies, playersInRowOf, resolveEnemyTargets } from './board.ts'
+import type { CardPlayWindow, CombatState, CopySource, CountablePlayer, EvokeChoice, PendingPlayerChoice, PlayContext } from './types.ts'
 import { cardCost, cardDef, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
 import type { Amount, CardDef, Condition, CountOf, Effect } from '../cards.ts'
 import { actionsForEnemy, enemyAbilities, enemyDef } from '../enemies.ts'
@@ -53,6 +53,15 @@ export function reachedTimeWarpLimit(state: CombatState, player: Player): boolea
   return (player.cardsPlayedThisTurn ?? 0) >= timeWarpLimit(state)
 }
 
+/**
+ * Slayer Pack: the card-given choices a living player still owes. A choice whose owner
+ * died (Last Stand) or left the combat is declined by `defaultPendingPlayerChoice` and blocks nothing.
+ */
+export function owedPlayerChoices(state: Pick<CombatState, 'pendingPlayerChoices' | 'players'>): PendingPlayerChoice[] {
+  return (state.pendingPlayerChoices ?? []).filter((choice) =>
+    state.players.some((player) => player.id === choice.playerId && !player.dead))
+}
+
 /** Mandatory Downfall choices freeze every voluntary combat action until resolved. */
 export function mandatoryChoicePending(state: CombatState | null | undefined, allowHermitChamberPlay = false): boolean {
   if (!state) return false
@@ -60,7 +69,61 @@ export function mandatoryChoicePending(state: CombatState | null | undefined, al
     (state.pendingDieRelicChoices?.length ?? 0) > 0 ||
     (state.pendingHermitSetupLoads?.length ?? 0) > 0 ||
     (!allowHermitChamberPlay && (state.pendingHermitChamberPlays?.length ?? 0) > 0) ||
-    (state.pendingHermitStrengthRewards?.length ?? 0) > 0
+    (state.pendingHermitStrengthRewards?.length ?? 0) > 0 ||
+    // Slayer Pack: a dead or absent owner's choice holds nobody (see `owedPlayerChoices`).
+    owedPlayerChoices(state).length > 0 ||
+    // Slayer Pack: a dead owner's choice resolves itself (`resolveDeadOwnerSlayerChoices`) and never holds the table.
+    (state.pendingSlayerChoices ?? []).some((choice) =>
+      state.players.some((player) => player.id === choice.playerId && !player.dead))
+}
+
+/** The card-play window this player is resolving now: their newest open one. */
+export function activeCardPlayWindow(
+  state: Pick<CombatState, 'pendingCardPlayWindows'>,
+  playerId: string,
+): CardPlayWindow | undefined {
+  const windows = state.pendingCardPlayWindows ?? []
+  for (let index = windows.length - 1; index >= 0; index--) {
+    if (windows[index]!.playerId === playerId) return windows[index]
+  }
+  return undefined
+}
+
+/**
+ * Whether a card could be played through a window at `cost` on this board,
+ * Energy aside. A card that fails is skipped rather than allowed to strand a
+ * window that must be played: unplayable cards, a play lock or Time Warp, an
+ * X card whose minimum exceeds the window's fixed X, or a printed choice the
+ * board can never supply.
+ */
+export function cardPlayWindowCardPlayable(
+  state: CombatState,
+  player: Player,
+  card: CardInstance,
+  cost: number,
+): boolean {
+  const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), player.guardianMode)
+  return !player.dead && cardIsPlayable(def, state, player) && !reachedTimeWarpLimit(state, player) &&
+    (def.cost !== 'X' || (def.minimumX ?? 0) <= cost) &&
+    // Slayer Pack: The window's fixed cost is Metamorphosis's X; it needs a Power to match.
+    (def.id !== 'slayer_metamorphosis' ||
+      player.powers.some((power) => metamorphosisCost(player, power.uid, card.upgraded) === cost)) &&
+    cardCanBeForced(def, state, player, guardianGemForCard(player, card), card.uid)
+}
+
+/**
+ * Players whose live card-play window must still be played: it is not optional
+ * and one of its offered cards can be played. Every window that must be played
+ * costs 0, so Energy never decides it. Like any mandatory choice, this holds
+ * the Player Turn open.
+ */
+export function mandatoryCardPlayWindowOwners(state: CombatState): string[] {
+  return state.players.filter((player) => {
+    const live = activeCardPlayWindow(state, player.id)
+    return live !== undefined && !live.optional && !player.dead &&
+      player.hand.some((card) => live.cardUids.includes(card.uid) &&
+        cardPlayWindowCardPlayable(state, player, card, live.cost))
+  }).map((player) => player.id)
 }
 
 /** A printed active Power may be used anywhere in the Player Turn, but not mid-step. */
@@ -127,8 +190,10 @@ export function guardianGemForCard(
 export function playCost(
   def: CardDef,
   player: Pick<Player, 'powers' | 'relics' | 'lostHpThisCombat' | 'freeCardsThisTurn' | 'nextCardCost' | 'enemyNextCardCost' | 'freeAttacksThisTurn' | 'freeGemCardsThisTurn' | 'freePowersThisTurn' | 'nextPowerOrSlimeDiscount' | 'spentTwoEnergyOnCardThisTurn' | 'exhaust' | 'heat' | 'chamber' | 'attacksPlayedThisTurn' | 'guardianMode'> & { hand: readonly CardInstance[] | null },
-  card?: Pick<CardInstance, 'freeThisTurn' | 'costReductionThisTurn' | 'stasisRetained' | 'hermitDeadOn'>,
+  card?: Pick<CardInstance, 'freeThisTurn' | 'costReductionThisTurn' | 'stasisRetained' | 'hermitDeadOn' | 'playWindowCost'>,
 ): number | 'X' {
+  // Slayer Pack: An open card-play window charges exactly its own cost.
+  if (card?.playWindowCost !== undefined) return card.playWindowCost
   if (player.enemyNextCardCost !== null && player.enemyNextCardCost !== undefined) return player.enemyNextCardCost
   if (card?.freeThisTurn === true || (player.freeCardsThisTurn ?? 0) > 0 ||
     card?.stasisRetained === true ||
@@ -387,6 +452,10 @@ function holds(
       return actor.soulburnUsedThisTurn === true
     case 'hasCurseInChamber':
       return actor.chamber.some((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'curse')
+    case 'hasNoSkillsInHand':
+      return actor.hand.every((card) => effectiveCombatCardDef(
+        faceOf(cardDef(card.defId), card.upgraded), actor.guardianMode,
+      ).type !== 'skill')
     case 'hasDeadOnAttackInChamber':
       return actor.chamber.some((card) => {
         const def = faceOf(cardDef(card.defId), card.upgraded)
@@ -400,10 +469,24 @@ function holds(
       return (actor.rage ?? 0) >= unleashCost(actor, condition.cost)
     case 'targetEliteOrBoss':
       return target !== undefined && isEliteOrBoss(target)
+    case 'targetVulnerable':
+      return (target?.vulnerable ?? 0) > 0
+    case 'notRetainedLastTurn':
+      return true
     case 'targetDead':
     case 'exhaustedByThisCard':
     case 'lostHpToThisCard':
+    case 'targetWeak':
       return false
+    case 'lostHpLastRound':
+      return actor.lostHpLastRound === true
+    case 'hasStatusOrCurseInHand':
+      return actor.hand.some((card) => {
+        const type = faceOf(cardDef(card.defId), card.upgraded).type
+        return type === 'status' || type === 'curse'
+      })
+    case 'hasActivePower':
+      return actor.powers.length > 0
   }
 }
 
@@ -426,13 +509,92 @@ export function conditionIsActive(
 ): boolean {
   if (condition.kind === 'drewSkill') return context?.drewSkill === true
   if (condition.kind === 'retainedLastTurn') return context?.sourceRetainedLastTurn === true
+  if (condition.kind === 'notRetainedLastTurn') return context?.sourceRetainedLastTurn !== true
   if (condition.kind === 'canUnleash' && context?.holdRage === true) return false
   if (condition.kind === 'exhaustedByThisCard') return (context?.exhaustedByCard ?? 0) > 0
   if (condition.kind === 'lostHpToThisCard') return (context?.hpLostByCard ?? 0) > 0
   if (condition.kind === 'targetDead') {
     return typeof context?.enemyUid === 'string' && state.enemies.some((enemy) => enemy.uid === context.enemyUid && enemy.dead)
   }
+  // Slayer Pack: Heel Hook reads its chosen target. Death keeps an enemy's
+  // tokens on its card, so a Weak target killed by the hit still counts.
+  if (condition.kind === 'targetWeak') {
+    return typeof context?.enemyUid === 'string' && state.enemies.some((enemy) => enemy.uid === context.enemyUid && enemy.weak > 0)
+  }
   return holds(condition, state, actor, target)
+}
+
+/** Slayer Pack: This Power's printed persistent effect of one kind, read off its current face. */
+export function persistentEffectOf<K extends Effect['kind']>(
+  power: CardInstance,
+  kind: K,
+): Extract<Effect, { kind: K }> | undefined {
+  return (faceOf(cardDef(power.defId), power.upgraded).persistentEffects ?? [])
+    .find((effect): effect is Extract<Effect, { kind: K }> => effect.kind === kind)
+}
+
+/** Slayer Pack: Whether an active Power's printed precondition (Infernal Blade) allows using it now. */
+export function powerActivationAllowed(def: CardDef, state: CombatState, actor: Player): boolean {
+  return !def.activationCondition || holds(def.activationCondition, state, actor)
+}
+
+/**
+ * Slayer Pack: Hit icons in this enemy's current intent that will land on
+ * `player`, read the way the Enemy Turn aims them: AoE hits everyone, a Facing
+ * attack only its facing players, anything else the players in its row (bosses
+ * reach every row; Last Stand redirects an empty row). Flame Barrier and Caltrops.
+ */
+export function attackIconsAgainst(
+  state: CombatState,
+  enemy: Enemy,
+  player: Pick<Player, 'id' | 'facingEnemyUid'>,
+): number {
+  const targetsRow = playersInRowOf(state, enemy).some((candidate) => candidate.id === player.id)
+  return actionsForEnemy(enemy, state.die).reduce((total, action) => {
+    if (action.kind === 'attackSequence') return total + action.hits.filter((hit) => hit.aoe || targetsRow).length
+    if (action.kind !== 'attack') return total
+    const lands = action.aoe || (action.facing ? player.facingEnemyUid === enemy.uid : targetsRow)
+    return total + (lands ? action.times ?? 1 : 0)
+  }, 0)
+}
+
+/**
+ * Slayer Pack: Metamorphosis's X for attaching to this Power in play: the
+ * copied Power's Energy cost, +1 on the base face. An X-cost Power (including
+ * another Metamorphosis) costs what it was played for (author FAQ).
+ */
+export function metamorphosisCost(
+  player: Pick<Player, 'powers'>,
+  powerUid: string | undefined,
+  upgraded: boolean,
+): number | undefined {
+  const target = player.powers.find((power) => power.uid === powerUid)
+  if (!target) return undefined
+  const face = faceOf(cardDef(target.defId), target.upgraded)
+  const cost = target.metamorphosis || face.cost === 'X' ? target.xPaid ?? 0 : face.cost
+  return cost + (upgraded ? 0 : 1)
+}
+
+/** Effects that make a Power's printed effect a lasting modifier when applied on play. */
+const LASTING_PLAY_EFFECTS = new Set<Effect['kind']>([
+  'gainStrength', 'gainShivDamageBonus', 'gainCardBlockBonus', 'gainHitPoison', 'gainWrathAttackDamageBonus',
+  'gainOrbEvokeBonus', 'gainDarkOrbEvokeBonus', 'gainOrbEndTurnBonus', 'gainLightningEndTurnBonus', 'gainOrbSlots',
+  'upgradeStarterCards', 'empowerStarterStrikes', 'gainChamberSlot', 'lightningTargetsRow',
+])
+
+/**
+ * The copied Power's printed play clauses that Metamorphosis takes on. A Power
+ * whose whole printed effect is a lasting modifier applied when played (Accuracy,
+ * Inflame) is copied by applying it again; a Power with its own "When played"
+ * line beside a trigger (Brutality's draw) keeps that line to itself, because
+ * Metamorphosis copies what the Power does while it is in play.
+ */
+export function metamorphosisPlayEffects(copied: CardDef): Effect[] {
+  // Only lasting modifiers are copied: one-shot "When played" clauses (Bandage Up's draw,
+  // Electrodynamics' Channel, Last Stand's Block) stay with the original.
+  return copied.resolvesOnPlay && !copied.trigger && !copied.additionalTriggers?.length && !copied.activeAbility &&
+    !copied.persistentEffects?.length && !copied.persistent
+    ? copied.effects.filter((effect) => LASTING_PLAY_EFFECTS.has(effect.kind)) : []
 }
 
 /** Whether a conditional printed clause applies to the current board. */
@@ -547,6 +709,12 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, en
       return Math.max(0, (actor.hand?.length ?? 0) - 1)
     case 'rage':
       return actor.rage ?? 0
+    case 'currentHp':
+      return actor.hp
+    case 'upgradedCardsInHand':
+      return actor.hand?.filter((card) => card.uid !== sourceCardUid && card.upgraded).length ?? 0
+    case 'ownWeakAndVulnerable':
+      return actor.weak + actor.vulnerable
   }
 }
 
@@ -628,6 +796,7 @@ export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?
   for (const effect of def.effects) {
     if (state && actor && !effectIsActive(effect, state, actor)) continue
     if (effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice' || effect.kind === 'scryToHand' ||
+      effect.kind === 'scryAndPlay' ||
       ['overexert', 'replicateSlime'].includes((effect as { kind: string }).kind)) return true
     if (effect.kind === 'draw') drew = true
     if (effect.kind === 'scry' || (drew && (effect.kind === 'discard' || effect.kind === 'topdeck' || effect.kind === 'load'))) return true
@@ -645,6 +814,9 @@ export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?
 const ENEMY_EFFECTS = [
   'hit', 'rowHit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'multiplyPoison',
   'evoke', 'recurseOrb', 'fission', 'clearTargetBlock', 'hitPerExhaust', 'execute', 'attachBounty', 'goldenBullet', 'roulette',
+  'evokeAll',
+  'damagePerDiscard',
+  'attachToTarget',
 ]
 
 /**
@@ -680,6 +852,9 @@ export function reachesEnemy(
   }
   if (effect.kind === 'fission') {
     if (!effect.evoke) return false
+    return !actor || actor.orbs.some((orb) => orb === 'lightning' || orb === 'dark')
+  }
+  if (effect.kind === 'evokeAll') {
     return !actor || actor.orbs.some((orb) => orb === 'lightning' || orb === 'dark')
   }
   if (effect.kind !== 'hit' || effect.times === undefined || !actor) return true
@@ -864,7 +1039,8 @@ export function cardNeedsEnemy(
     actor?.chamber.some((card) => card.uid === sourceCardUid && cardDef(card.defId).hermit?.deadOn === true) === true
   )
   const targetsEnemy = (effect: Effect) =>
-    (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb' && effect.kind !== 'fission')) &&
+    (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb' && effect.kind !== 'fission' &&
+      effect.kind !== 'evokeAll')) &&
     reachesEnemy(effect, actor, energySpent)
   const effects = def.modes?.flatMap((mode) => mode.effects) ?? def.effects
   return effects.some((effect) => targetsEnemy(effect) || sourceIsDeadOn && effect.kind === 'deadOnEffects' &&
@@ -1124,6 +1300,11 @@ export function effectEvokePlan(
         const open = orbs.indexOf(null)
         if (open >= 0) orbs[open] = effect.kind === 'channel' ? effect.orb : 'lightning'
       }
+    } else if (effect.kind === 'evokeAll') {
+      // Slayer Pack: Aggregate: every Orb, in the order chosen, `times` each.
+      while (orbs.some((orb) => orb !== null)) {
+        if (!evoke(effect.times)) return { chosen, index, next, invalid, orbs }
+      }
     } else if (effect.kind === 'evoke' || effect.kind === 'recurseOrb' ||
       (effect.kind === 'fission' && effect.evoke)) {
       if (effect.kind === 'fission') {
@@ -1242,4 +1423,46 @@ export function hasInvalidRowSwitch(
   if (typeof chosenId !== 'string') return true
   const chosen = findPlayer(state, chosenId)
   return !chosen || chosen.dead || chosen.id === actor.id
+}
+
+/**
+ * Pressure Points: "If it's a Boss, this card costs 2 [Energy] instead." The
+ * printed number is replaced before every other cost rule applies, so a
+ * discount still reduces the Boss price.
+ */
+export function cardDefForTarget(def: CardDef, state: CombatState, enemyUid: string | null | undefined): CardDef {
+  if (def.bossTargetCost === undefined) return def
+  const target = livingEnemies(state).find((enemy) => enemy.uid === enemyUid)
+  return target?.isBoss ? { ...def, cost: def.bossTargetCost } : def
+}
+
+/** How many adjacent enemies the player must pick for Bowling Bash; 0 when all of them take the damage. */
+export function adjacentDamageChoiceCount(
+  effects: readonly Effect[],
+  state: CombatState,
+  enemyUid: string | null | undefined,
+): number {
+  const effect = effects.find((candidate) => candidate.kind === 'damageAdjacent')
+  if (effect?.kind !== 'damageAdjacent') return 0
+  return adjacentEnemies(state, enemyUid).length > effect.targets ? effect.targets : 0
+}
+
+/**
+ * Bowling Bash's chosen adjacent enemies. With no more candidates than the card
+ * names, every one of them takes the damage and the play names none (or all of
+ * them); otherwise it names exactly that many distinct candidates.
+ */
+export function adjacentDamageChoicesAreValid(
+  effects: readonly Effect[],
+  state: CombatState,
+  context: Pick<PlayContext, 'enemyUid' | 'enemyUids'>,
+): boolean {
+  const effect = effects.find((candidate) => candidate.kind === 'damageAdjacent')
+  if (effect?.kind !== 'damageAdjacent') return true
+  const candidates = new Set(adjacentEnemies(state, context.enemyUid).map((enemy) => enemy.uid))
+  const chosen = context.enemyUids ?? []
+  if (new Set(chosen).size !== chosen.length || chosen.some((uid) => !candidates.has(uid))) return false
+  return candidates.size <= effect.targets
+    ? chosen.length === 0 || chosen.length === candidates.size
+    : chosen.length === effect.targets
 }

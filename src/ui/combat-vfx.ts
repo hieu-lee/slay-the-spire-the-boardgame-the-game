@@ -261,6 +261,8 @@ const CARD_OVERRIDES: Readonly<Record<string, VfxRecipe>> = {
   storm_of_steel: shiv,
   unload: shiv,
   riddle_with_holes: shiv,
+  // Slayer Pack: The unplayable egg has no effects; both faces read as the hatched dragon.
+  slayer_companion: recipe('projectile', 'cast', 'magic-burst', 'ember-orange'),
 }
 
 const POTION_RECIPES: Readonly<Record<string, VfxRecipe>> = {

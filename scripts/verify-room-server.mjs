@@ -67,14 +67,14 @@ check('health publishes the intended fifty-connection capacity', () => {
   assertEqual(capacityHealth.body.connections, 0)
 })
 
-async function connect(code, token, campaignProgress) {
+async function connect(code, token, campaignProgress, cardPacks) {
   const socket = new WebSocket(`${wsOrigin}/ws?room=${code}`)
   const first = nextMessage(socket, 'snapshot')
   await new Promise((resolve, reject) => {
     socket.once('open', resolve)
     socket.once('error', reject)
   })
-  socket.send(JSON.stringify({ type: 'authenticate', token, campaignProgress }))
+  socket.send(JSON.stringify({ type: 'authenticate', token, campaignProgress, cardPacks }))
   return { socket, snapshot: (await first).snapshot }
 }
 
@@ -130,6 +130,32 @@ try {
     assertEqual(legacySocket.snapshot.campaignProgress.actIV, 5)
   })
   legacySocket.socket.close()
+
+  const packSource = { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.77' }
+  const packHost = await (await fetch(`${origin}/api/rooms`, { method: 'POST', headers: packSource,
+    body: JSON.stringify({ name: 'Packer', character: 'ironclad', cardPacks: ['slayer_watcher', 'slayer_kratos'] }) })).json()
+  const packCode = packHost.snapshot.code
+  const packGuest = await (await fetch(`${origin}/api/rooms/${packCode}/join`, { method: 'POST', headers: packSource,
+    body: JSON.stringify({ name: 'Guest', character: 'silent', cardPacks: ['slayer_silent'] }) })).json()
+  const packHostSocket = await connect(packCode, packHost.token)
+  const packSocket = await connect(packCode, packGuest.token, undefined, ['slayer_colorless', 'slayer_silent'])
+  const packStart = await request(`/api/rooms/${packCode}/start`, { method: 'POST', token: packHost.token, body: {} })
+  check('seats report their Shop packs on create, join and socket authentication', () => {
+    assertEqual(JSON.stringify(packHost.snapshot.cardPacks), JSON.stringify(['slayer_watcher']))
+    assertEqual(JSON.stringify(packGuest.snapshot.cardPacks), JSON.stringify(['slayer_silent', 'slayer_watcher']))
+    assertEqual(JSON.stringify(packSocket.snapshot.cardPacks), JSON.stringify(['slayer_silent', 'slayer_watcher', 'slayer_colorless']),
+      'the socket\'s fresher list replaces the one sent on join')
+    assertEqual(JSON.stringify(packSocket.snapshot.seats.map((seat) => seat.cardPacks)),
+      JSON.stringify([['slayer_watcher'], ['slayer_silent', 'slayer_colorless']]))
+  })
+  check('the run starts with the union of the seats\' packs', () => {
+    assertEqual(packStart.status, 200)
+    assertEqual(JSON.stringify(service.store.rooms.get(packCode).run.meta.cardPacks),
+      JSON.stringify(['slayer_silent', 'slayer_watcher', 'slayer_colorless']))
+    assertEqual(JSON.stringify(packStart.body.cardPacks), JSON.stringify(['slayer_silent', 'slayer_watcher', 'slayer_colorless']))
+  })
+  packSocket.socket.close()
+  packHostSocket.socket.close()
   const departing = await request(`/api/rooms/${leavableCode}/join`, {
     method: 'POST', body: { name: 'Leaving', character: 'silent' },
   })

@@ -67,6 +67,8 @@ export type CardInstance = {
   retainedLastTurn?: boolean
   /** Meditate guarantees this card is kept during the upcoming discard step. */
   retainThisTurn?: boolean
+  /** Slayer Pack: Master Reality+ lets its owner choose to keep this card in the upcoming discard step. */
+  mayRetainThisTurn?: boolean
   /** Stasis Engine selected this exact retained card to cost 0 next turn. */
   stasisRetained?: boolean
   /** Cubes accumulated on a Power such as The Bomb. */
@@ -83,6 +85,24 @@ export type CardInstance = {
   growOnPlay?: boolean
   /** Hermit: this play originated in the private Chamber. */
   hermitDeadOn?: boolean
+  /**
+   * Slayer Pack: What this card costs while it is offered by its owner's
+   * open card-play window (Discovery, Enlightenment, ...). A display mirror of
+   * `CombatState.pendingCardPlayWindows`; the engine charges from the window.
+   */
+  playWindowCost?: number
+  /** Energy an X-cost Power was played for; Metamorphosis reads it as that Power's cost. */
+  xPaid?: number
+  /**
+   * Set while a Metamorphosis is in play as a copy of another Power: `defId` and
+   * `upgraded` then name the copied Power, and this remembers the physical card.
+   */
+  metamorphosis?: {
+    upgraded: boolean
+    sourceUid: string
+    /** The X the original X-cost Power was played for, carried through chains of copies. */
+    copiedX?: number
+  }
 }
 
 /** A Slime card in play. Plain fields survive JSON saves and reconnects. */
@@ -156,6 +176,8 @@ export type Player = {
   shuffledThisCombat?: boolean
   /** HP already lost this round, including damage and direct HP loss. */
   hpLostThisRound?: number
+  /** Slayer Pack: Brutality: HP was lost during the previous round (set only when true). */
+  lostHpLastRound?: boolean
   /** Apparition caps the total HP this player can lose during this round. */
   hpLossLimitThisRound?: number
   /** Madness makes this many subsequently played cards cost 0 this turn. */
@@ -185,6 +207,11 @@ export type Player = {
   doubledSkillsThisTurn?: number
   /** Equilibrium lets this many otherwise-discarded cards stay in hand this turn. */
   retainCardsThisTurn?: number
+  /**
+   * Slayer Pack: Armaments: how many of this turn's optional Retains each pay 1 Block when the
+   * discard step keeps them. Absent means none; cleared with the discard step.
+   */
+  retainBlockAllowance?: number
   /** FTL checks this public per-turn card-play ledger. Copies count; Shivs do not. */
   cardsPlayedThisTurn?: number
   /** Mummified Hand checks whether any Power was played this turn. */
@@ -287,6 +314,8 @@ export type Enemy = {
   corpseExplosion?: { card: CardInstance; playerId: string; damage: number }
   /** Physical Hermit Dead or Alive cards remain attached until this enemy dies. */
   hermitBounties?: { card: CardInstance; playerId: string }[]
+  /** Slayer Pack: face-up Nightmare / Pressure Points cards, each with its owner, until this enemy dies. */
+  slayerAttachments?: { card: CardInstance; playerId: string }[]
 
   /** Reward printed by the encounter card that spawned this enemy. */
   goldReward: number

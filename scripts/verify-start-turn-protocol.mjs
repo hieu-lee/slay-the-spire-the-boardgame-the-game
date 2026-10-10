@@ -2,6 +2,7 @@
 // submit built from the latest snapshot must never be rejected as stale.
 import { createStore, createRoom, joinRoom, startRun, apply, snapshotFor, markDisconnected } from './lib/rooms.mjs'
 import { createCombat } from '../src/game/combat/create.ts'
+import { defaultStartTurnChoices, preparePlayerTurn, resolveStartPlayerTurn, startTurnAbilities } from '../src/game/combat/start-turn.ts'
 import { enemyDef, startingHp } from '../src/game/enemies.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
@@ -161,6 +162,91 @@ check('a seat the server readied with fallback picks while it was away gets its 
   // Changing a pick reopens everyone, so the returning seat confirms once more.
   submit(room, 1)
   assertEqual(room.run.combat.phase, 'player')
+})
+
+// Two start-of-turn Evokes with full Orbs and a 1-HP Slime Boss: the first kills it, but its Split is still
+// pending, so the combat goes on with no living enemy and the second Evoke has nothing to target.
+const twoStormsSlimeBoss = (player) => {
+  player.powers = [card('s1', 'storm'), card('s2', 'storm')]
+  player.orbs = ['lightning', 'lightning', 'lightning']
+}
+const slimeBossAlone = (count) => [enemy('boss', 'slime_boss', 0, count, { hp: 1, isBoss: true })]
+
+check('solo defaults finish a Start of Turn whose first Evoke leaves Summons pending', () => {
+  const room = makeRoom(['defect'], [twoStormsSlimeBoss], slimeBossAlone, { die: 4 })
+  const prepared = preparePlayerTurn({ ...room.run.combat, phase: 'roundEnd' })
+  const next = resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+  assert(next !== prepared, 'the default picks were refused with only Summons left')
+  assertEqual(next.phase, 'player')
+  assertEqual(next.pendingSummons.length, 1)
+  assert(next.enemies[0].dead, 'the first Evoke did not kill the boss')
+})
+
+check('online owner finishes a Start of Turn whose first Evoke leaves Summons pending', () => {
+  const room = makeRoom(['defect'], [twoStormsSlimeBoss], slimeBossAlone, { die: 4 })
+  assertEqual(room.run.combat.phase, 'start')
+  const abilities = snapshotFor(room, token(room, 0)).startTurnAbilities
+  // What the client sends: a null target where nothing is left to hit.
+  submit(room, 0, {
+    [abilities[0].id]: { evokeSlots: [0], evokeEnemyUids: ['boss'] },
+    [abilities[1].id]: { evokeSlots: [0], evokeEnemyUids: [null] },
+  })
+  assertEqual(room.run.combat.phase, 'player', 'the window could not be completed')
+  assert(room.run.combat.enemies[0].dead, 'the first Evoke did not kill the boss')
+})
+
+check('a connected non-coordinator Defect answers a Start of Turn left with only Summons', () => {
+  const room = makeRoom(['silent', 'defect'], [(player) => { player.relics.push({ defId: 'stone_calendar', spent: false }) }, twoStormsSlimeBoss], slimeBossAlone, { die: 4 })
+  assertEqual(room.run.combat.phase, 'start')
+  const abilities = snapshotFor(room, token(room, 1)).startTurnAbilities.filter((ability) => ability.playerId === 'p2')
+  // The moot second target travels as null, and the seat that sends it is not the coordinator.
+  submit(room, 1, {
+    [abilities[0].id]: { evokeSlots: [0], evokeEnemyUids: ['boss'] },
+    [abilities[1].id]: { evokeSlots: [0], evokeEnemyUids: [null] },
+  })
+  for (let attempt = 0; attempt < 3 && room.run.combat.phase === 'start'; attempt += 1) submit(room, 0)
+  assertEqual(room.run.combat.phase, 'player', 'the null-target answer was rejected as a changed plan')
+  assert(room.run.combat.enemies[0].dead, 'the first Evoke did not kill the boss')
+})
+
+// Storm+ channels twice into full Orbs, so one ability Evokes twice: the first kills the last enemy, 1-HP, while an
+// earlier Summon is still queued, leaving the second Evoke with the combat going on but nothing to hit.
+const stormPlusSlimeBoss = (player) => {
+  player.powers = [{ uid: 's1', defId: 'storm', upgraded: true }]
+  player.orbs = ['lightning', 'lightning', 'lightning']
+}
+const queuedSummonRoom = () => {
+  const room = makeRoom(['defect'], [stormPlusSlimeBoss], slimeBossAlone, { die: 4 })
+  room.run.combat.pendingSummons = [{ sourceUid: 'earlier', row: 1, defIds: ['cultist'], turn: 99 }]
+  return room
+}
+
+check('an Evoke after the last enemy fell with Summons pending is planned as targetless, not ended', () => {
+  const room = queuedSummonRoom()
+  const [storm] = startTurnAbilities(room.run.combat, undefined, [
+    { id: 'p1/power:s1', shivEnemyUids: [], evokeSlots: [0, 1], evokeEnemyUids: ['boss', null] },
+  ])
+  assertEqual(storm.evokeTargetless?.join(','), '1', 'the moot second Evoke was not planned')
+  assertEqual(storm.evokeChoice, undefined, 'a finished plan still asks for an Orb')
+  assertEqual(storm.evokeTargetIndex, undefined, 'a targetless Evoke asked for a target')
+})
+
+check('an incomplete Evoke pick is refused while Summons keep the combat going', () => {
+  const room = queuedSummonRoom()
+  const prepared = preparePlayerTurn({ ...room.run.combat, phase: 'roundEnd' })
+  // Only the first Orb is picked; the second Evoke still needs its Orb although no enemy is left alive.
+  const next = resolveStartPlayerTurn(prepared, [
+    { id: 'p1/power:s1', shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: ['boss'] },
+  ])
+  assertEqual(next.phase, 'start', 'a pick missing its second Orb was accepted')
+  assert(!next.enemies[0].dead, 'the refused pick still hit the boss')
+})
+
+check('a disconnected owner is defaulted through a Start of Turn left with only Summons', () => {
+  const room = makeRoom(['defect', 'silent'], [twoStormsSlimeBoss], slimeBossAlone, { die: 4 })
+  assertEqual(room.run.combat.phase, 'start')
+  markDisconnected(room, token(room, 0))
+  assertEqual(room.run.combat.phase, 'player', 'the absent owner stranded the window')
 })
 
 report('start-of-turn protocol')

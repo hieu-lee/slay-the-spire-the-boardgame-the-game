@@ -172,10 +172,40 @@ try {
   const slimedLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
   await search.fill('')
   await page.getByRole('button', { name: 'All cards' }).click()
+  // Shop pack cards share names with other cards: only the pack's tile carries the badge.
+  await search.fill('Bite')
+  const biteTiles = await page.locator('.compendium-card').evaluateAll((tiles) => tiles.map((tile) => {
+    const badge = tile.querySelector('.compendium-card__pack')
+    const box = tile.getBoundingClientRect()
+    const badgeBox = badge?.getBoundingClientRect()
+    return { label: tile.getAttribute('aria-label'), badge: badge?.textContent ?? null, hidden: badge?.getAttribute('aria-hidden'),
+      inside: badgeBox ? badgeBox.left >= box.left && badgeBox.right <= box.right && badgeBox.bottom <= box.bottom : null }
+  }))
+  await page.locator('.compendium-card').filter({ has: page.locator('.compendium-card__pack') }).click()
+  const packDetail = await page.locator('.compendium__detail-pack').textContent()
+  await page.keyboard.press('Escape')
+  await page.locator('.compendium__detail').waitFor({ state: 'detached' })
+  await page.locator('.compendium-card').filter({ hasNot: page.locator('.compendium-card__pack') }).first().click()
+  const plainDetailPack = await page.locator('.compendium__detail-pack').count()
+  await page.keyboard.press('Escape')
+  await page.locator('.compendium__detail').waitFor({ state: 'detached' })
+  await search.fill('')
   await shot('desktop')
+  check('Shop pack cards carry a pack badge and name their pack in the card detail', () => {
+    const packTiles = biteTiles.filter((tile) => tile.badge !== null)
+    assertEqual(biteTiles.length >= 2, true, `both Bites are listed: ${JSON.stringify(biteTiles)}`)
+    assertEqual(packTiles.length, 1, `only the pack Bite has a badge: ${JSON.stringify(biteTiles)}`)
+    assertEqual(packTiles[0].badge, 'Slayer Pack')
+    assertEqual(packTiles[0].hidden, 'true', 'the badge is decoration; the label already names the pack')
+    assert(packTiles[0].inside, 'the badge spills out of its card')
+    assert(/, Slayer Pack, (common|uncommon|rare)$/.test(packTiles[0].label), packTiles[0].label)
+    assert(biteTiles.filter((tile) => tile.badge === null).every((tile) => !tile.label.includes('Slayer Pack')))
+    assertEqual(packDetail, 'Colorless Slayer Pack · sold in the Shop')
+    assertEqual(plainDetailPack, 0, 'a card from no pack names no pack')
+  })
 
   check('the compendium filters the real card catalog and opens card detail', () => {
-    assertEqual(poolIconView.length, 12, 'one painted icon per card pool')
+    assertEqual(poolIconView.length, 13, 'one painted icon per card pool')
     assert(poolIconView.every((entry) => entry.loaded && entry.source?.includes('/assets/menu/compendium-icons/')),
       `compendium pool icons did not load: ${JSON.stringify(poolIconView)}`)
     assert(poolIconView.every((entry) => entry.border.every((width) => width === '0px')),

@@ -18,15 +18,19 @@ import {
   lightningTargetsRows,
   livingEnemies,
   loopOrbTargets,
+  orbEndTurnAmount,
   parseLoopOrbTarget,
   resolveEnemyTargets,
   rowExists,
 } from './board.ts'
 import {
   applyEffect,
+  cardIconBonus,
+  closeAllCardPlayWindows,
   damagePlayer,
   exhaustCards,
   flushPendingTriggers,
+  grantBlock,
   losePlayerHp,
   pendingTriggerSlimeEnemyChoiceCount,
   publishTurnEffect,
@@ -56,8 +60,14 @@ import {
   stageStartTurnTriggerChoice,
   triggerTargets,
 } from './start-turn.ts'
-import { chooseEndTurnTarget, defaultEndTurnOrder, endTurnChoiceId, endTurnChoiceTarget } from './types.ts'
-import { amountOf, cardHasRetain, conditionIsActive, discardOrderNeedsChoice, effectIsActive, mandatoryChoicePending } from './queries.ts'
+import {
+  chooseEndTurnTarget, defaultEndTurnOrder, endTurnChoiceId, endTurnChoiceTarget, parseSelfExhaustEndTurnTarget,
+  selfExhaustEndTurnTarget,
+} from './types.ts'
+import {
+  amountOf, cardHasRetain, conditionIsActive, discardOrderNeedsChoice, effectIsActive, mandatoryCardPlayWindowOwners,
+  mandatoryChoicePending,
+} from './queries.ts'
 import type {
   CombatState,
   DiscardOrders,
@@ -90,10 +100,14 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
           : source.presentationSourceId === 'guardian_laser_turret'
             ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
             : triggerTargets(state, player, source)
+      // Slayer Pack: "You may also Exhaust this": every target is offered with and without it.
+      const selfExhaust = targets && source.effects.some((effect) => effect.kind === 'mayExhaustSelfFor')
       return {
         id: source.id,
         label: source.name.replace(`${player.name}'s `, ''),
-        targets,
+        targets: selfExhaust ? [...targets, ...targets.map((target) => ({
+          uid: selfExhaustEndTurnTarget(target.uid), label: `${target.label} (also Exhaust)`,
+        }))] : targets,
         visual: source.id.startsWith('power:')
           ? { kind: 'card' as const, cardUid: source.id.slice(6) }
           : undefined,
@@ -236,7 +250,9 @@ function refreshEndTurnTargets(state: CombatState, order: EndTurnOrder): EndTurn
     // Loop repeats the Orb the player selected; only its enemy may change.
     const fallback = loopTarget
       ? ability.targets.find((candidate) => parseLoopOrbTarget(candidate.uid)?.slot === loopTarget.slot)
-      : ability.targets[0]
+      : parseSelfExhaustEndTurnTarget(target).exhaust
+        ? ability.targets.find((candidate) => parseSelfExhaustEndTurnTarget(candidate.uid).exhaust)
+        : ability.targets[0]
     return fallback ? chooseEndTurnTarget(id, fallback.uid) : choice
   })
 }
@@ -435,6 +451,9 @@ function continueEndPlayerTurn(
         }
         const optionalInvincible = source?.effects.some((effect) => effect.kind === 'optionalPreventRoundHpLoss')
         if (optionalInvincible && target === 'skip') continue
+        const selfExhaust = source?.effects.some((effect) => effect.kind === 'mayExhaustSelfFor')
+          ? parseSelfExhaustEndTurnTarget(target) : undefined
+        const enemyTarget = selfExhaust ? selfExhaust.targetUid : target
         const loop = source?.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
         const loopChoice = loop ? parseLoopOrbTarget(target) : undefined
         // A row is chosen when the order is submitted. Preserve that row if
@@ -458,11 +477,16 @@ function continueEndPlayerTurn(
         } else if (source && (optionalInvincible
           ? !resolveTriggerSource(next, player, source)
           : loop
-          ? !resolveTriggerSource(next, player, source, false, undefined, undefined, undefined,
-            loopChoice ? [loopChoice.slot] : undefined, loopChoice ? [loopChoice.enemyUid] : undefined)
+          ? !resolveTriggerSource(next, player, source, {
+            evokeSlots: loopChoice ? [loopChoice.slot] : undefined,
+            evokeEnemyUids: loopChoice ? [loopChoice.enemyUid] : undefined,
+          })
           : ((source.scope !== 'row' && triggerTargets(next, player, source) &&
-            resolveEnemyTargets(next, source.scope, target ?? null).length === 0) ||
-            !resolveTriggerSource(next, player, source, false, undefined, target, selectedRow)))) {
+            resolveEnemyTargets(next, source.scope, enemyTarget ?? null).length === 0) ||
+            !resolveTriggerSource(next, player, source, {
+              enemyUid: enemyTarget, enemyRow: selectedRow,
+              hermitContext: selfExhaust?.exhaust ? { optionalSelfExhaust: true } : undefined,
+            })))) {
           continue
         }
       } else if (localId === 'strength') {
@@ -569,7 +593,9 @@ export function discardNeedsChoice(player: Player): boolean {
   if (player.dead) return false
   const discarding = player.hand.filter((card) => !card.endTurnProtected && !card.retainThisTurn &&
     !cardHasRetain(player, card))
-  return (player.retainCardsThisTurn ?? 0) > 0 && discarding.length > 0 || discardTopNeedsChoice(player)
+  return (player.retainCardsThisTurn ?? 0) > 0 && discarding.length > 0 || discardTopNeedsChoice(player) ||
+    // Slayer Pack: Master Reality+'s returned card may be kept.
+    discarding.some((card) => card.mayRetainThisTurn)
 }
 
 function endTurnSource(state: CombatState, ability: EndTurnAbility) {
@@ -611,6 +637,9 @@ function deterministicEndTurnTarget(state: CombatState, ability: EndTurnAbility)
       source?.presentationSourceId === 'guardian_laser_turret')) {
     return targets[0]!.uid
   }
+  // Slayer Pack: Biased Cognition can leave a Lightning Orb nothing to deal.
+  const orb = localId.startsWith('orb:') ? player.orbs[Number(localId.slice(4))] : undefined
+  if (orb && orbEndTurnAmount(player, orb) === 0) return targets[0]!.uid
 
   const targetsRows = source ? sourceTargetsRows(player, source) : localId.startsWith('orb:') &&
     lightningTargetsRows(player)
@@ -660,6 +689,9 @@ function ambiguousBossRowTarget(state: CombatState, ability: EndTurnAbility, tar
 
 function prepareEndTurn(state: CombatState): CombatState {
   const next = clone(state)
+  // Slayer Pack: Ending the turn ends any card-play window still open
+  // (only optional or unplayable ones remain: a window that must be played blocks the turn end).
+  closeAllCardPlayWindows(next)
   for (const player of next.players) {
     player.hand = player.hand.map(({ stasisRetained: _stasis, ...card }) => card)
     if (player.block === 0 && playerCanGainBlock(player) && player.relics.some((relic) => relic.defId === 'orichalcum')) {
@@ -676,8 +708,10 @@ function prepareEndTurn(state: CombatState): CombatState {
 
 /** Begins end-of-turn resolution and stops only when a live effect needs a target. */
 export function beginEndTurnResolution(state: CombatState): CombatState {
-  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard ||
-    (state.pendingTriggers?.length ?? 0) > 0) return state
+  // Slayer Pack: an owed choice (Heel Hook, Magnetism, Nightmare+, Ritual Dagger+) is answered in
+  // this Player Turn first, exactly as `beginEndPlayerTurn` and the room server require.
+  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard || mandatoryChoicePending(state) ||
+    (state.pendingTriggers?.length ?? 0) > 0 || mandatoryCardPlayWindowOwners(state).length > 0) return state
   const next = prepareEndTurn(state)
   return advanceDeterministicEndTurnChoices(
     continueEndPlayerTurn(next, defaultEndTurnOrder(endTurnAbilities(next)), true),
@@ -751,7 +785,7 @@ export function beginEndPlayerTurn(
   order: EndTurnOrder = defaultEndTurnOrder(endTurnAbilities(state)),
 ): CombatState {
   if (state.phase !== 'player' || state.startTurnProgress?.forcedCard || mandatoryChoicePending(state) ||
-    (state.pendingTriggers?.length ?? 0) > 0) return state
+    (state.pendingTriggers?.length ?? 0) > 0 || mandatoryCardPlayWindowOwners(state).length > 0) return state
   const abilities = endTurnAbilities(state)
   if (!validEndTurnOrder(abilities, order)) return state
   if (abilities.some((ability) => ability.orbChoice)) return beginEndTurnResolution(state)
@@ -766,7 +800,7 @@ export function discardOrderIsValid(player: Player, order: readonly string[]): b
   const ordered = new Set(order)
   const optionallyRetained = player.hand.filter((card) =>
     !ordered.has(card.uid) && !card.endTurnProtected && !card.retainThisTurn &&
-      !cardHasRetain(player, card))
+      !cardHasRetain(player, card) && !card.mayRetainThisTurn)
   return optionallyRetained.length <= (player.retainCardsThisTurn ?? 0)
 }
 
@@ -801,6 +835,10 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
       .filter((card) => !ordered.has(card.uid) && !card.endTurnProtected && !card.retainThisTurn &&
         !cardHasRetain(player, card))
       .map((card) => card.uid))
+    // Master Reality+'s own card is kept by that card's rule, not by an
+    // allowance, so it never counts as one of Armaments' Retains.
+    const armamentsRetained = Math.min(player.retainBlockAllowance ?? 0,
+      player.hand.filter((card) => chosenRetain.has(card.uid) && !card.mayRetainThisTurn).length)
     const keep = hand
       .filter((held) => chosenRetain.has(held.uid) || held.endTurnProtected || held.retainThisTurn ||
         cardHasRetain(player, held))
@@ -820,6 +858,18 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
     if (discarded > 0) {
       next.log = [...next.log, `${player.name} discards ${discarded} at end of turn`]
     }
+    // Slayer Pack: Armaments pays 1 Block for each card it Retained. Each
+    // is a Skill's Block icon, so Footwork's and Fasting's per-icon bonuses apply.
+    const blockBefore = player.block
+    const armamentsIcon = 1 + player.cardBlockBonus +
+      cardIconBonus(player, { enemyUid: null, playerId: player.id, sourceCardType: 'skill' })
+    for (let index = 0; index < armamentsRetained; index++) {
+      grantBlock(next, player, armamentsIcon)
+    }
+    if (player.block > blockBefore) {
+      next.log = [...next.log, `${player.name} gains ${player.block - blockBefore} Block from Armaments`]
+    }
+    delete player.retainBlockAllowance
     player.retainCardsThisTurn = 0
     // Guardian's Spent zone empties after every Player Turn; cubes return to the supply.
     player.vigorSpentThisTurn = 0
@@ -974,7 +1024,7 @@ export function resolvePendingTrigger(
       : undefined),
     needsRow ? enemyRow : liveSource.scope === 'row' ? combatRows(next)[0] : undefined,
     targetPlayerId,
-    hermitChoices,
+    queued.count === undefined ? hermitChoices : { ...hermitChoices, triggerCount: queued.count },
   )
   if (!resolved) return state
   if (queued.startTurn) {

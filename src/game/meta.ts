@@ -2,6 +2,7 @@ import { nextInt } from './rng.ts'
 import type { RngState } from './rng.ts'
 import { DOWNFALL_CHARACTER_IDS } from './types.ts'
 import type { CharacterId } from './types.ts'
+import type { CardPackId } from './packs.ts'
 
 export type DieFace = 1 | 2 | 3 | 4 | 5 | 6
 export type DailyModifierSection = 'upper' | 'lower'
@@ -39,6 +40,8 @@ export type RunMetaOptions = Readonly<{
   campaign?: RuleSet
   /** The UTC day of a shared-seed solo Daily Climb; see `daily.ts`. */
   dailyDate?: string
+  /** Bought Shop packs whose cards join this run's reward decks. A Daily Climb ignores them. */
+  cardPacks?: readonly CardPackId[]
 }>
 
 export type RunMetaState = Readonly<{
@@ -50,6 +53,8 @@ export type RunMetaState = Readonly<{
   campaign?: RuleSet
   /** Present only on a shared-seed solo Daily Climb. */
   dailyDate?: string
+  /** Shop packs enabled for this run; absent on older saves and therefore none. */
+  cardPacks?: readonly CardPackId[]
 }>
 
 /** Downfall content is mandatory for a party containing a Downfall character. */

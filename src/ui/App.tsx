@@ -110,6 +110,13 @@ import { useWebMcp } from './useWebMcp.ts'
 import { ReplayBar } from './ReplayBar.tsx'
 import { ReplaySession } from './run-replay.ts'
 import { flushLeaderboardOutbox, queueFinishedSoloRun } from '../leaderboard.ts'
+import { coinsOwed } from '../game/coins.ts'
+import { isCardPackId } from '../game/packs.ts'
+import { enabledCardPacks, MAX_RUN_KEY_LENGTH, soloRunKey } from '../wallet.ts'
+import { creditRunCoins, currentWalletKey, savedWallet } from '../wallet-storage.ts'
+import { CoinGainToast, type CoinGain } from './Coins.tsx'
+import { onProfileChange, PROFILE_KEY } from '../profile.ts'
+import { COIN_GRANTS, settleLegacyCoins } from '../legacy-coins.ts'
 import {
   discardRunLog,
   downloadRunLog,
@@ -123,6 +130,7 @@ const SINGLE_PLAYER_ONLY = import.meta.env.VITE_SINGLE_PLAYER === 'true'
 const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
 const OnlineGame = SINGLE_PLAYER_ONLY ? null : lazy(() => import('./OnlineGame.tsx').then((module) => ({ default: module.OnlineGame })))
 const CompendiumScreen = lazy(() => import('./CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
+const ShopScreen = lazy(() => import('./ShopScreen.tsx').then((module) => ({ default: module.ShopScreen })))
 const COMBAT_VFX = [
   'combat/vfx/hit-burst.webp', 'combat/vfx/death-ash.webp', 'combat/vfx/death-ring.webp',
   ...[
@@ -157,6 +165,13 @@ type BuiltRun = {
   lastStand: boolean
   characters: CharacterId[]
   meta: RunMetaOptions
+  /** The wallet ledger's key for this run's boss coins; drawn fresh at every start, absent on older saves. */
+  coinKey?: string
+  /**
+   * The wallet of the account that started the run (`currentWalletKey()`): only it is
+   * paid when the result is recorded. Absent on older saves, which pay whoever records.
+   */
+  owner?: string
 }
 
 type SoloRunSave = {
@@ -213,6 +228,11 @@ function savedSoloRun(): SoloRunSave | null {
       (built.meta.ruleset === undefined || built.meta.ruleset === 'base' || built.meta.ruleset === 'downfall') &&
       (built.meta.campaign === undefined || built.meta.campaign === 'base' || built.meta.campaign === 'downfall') &&
       (built.meta.dailyDate === undefined || typeof built.meta.dailyDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(built.meta.dailyDate)) &&
+      (built.meta.cardPacks === undefined || Array.isArray(built.meta.cardPacks) && built.meta.cardPacks.every(isCardPackId)) &&
+      (built.coinKey === undefined || typeof built.coinKey === 'string' && built.coinKey.length > 0 && built.coinKey.length <= MAX_RUN_KEY_LENGTH) &&
+      (built.owner === undefined || typeof built.owner === 'string' && built.owner.length > 0 && built.owner.length <= MAX_RUN_KEY_LENGTH) &&
+      // Another account's run is never offered to the one signed in now.
+      ownsRun(built as BuiltRun) &&
       resumablePhase(run)
       ? { ...saved as SoloRunSave, built: legacyDailyAsStandard(built as BuiltRun), run: completed ? run as RunState : resumeNeow(run as RunState) }
       : null
@@ -225,6 +245,9 @@ function savedSoloRun(): SoloRunSave | null {
 function legacyDailyAsStandard(built: BuiltRun): BuiltRun {
   return built.meta.mode === 'daily' && !built.meta.dailyDate ? { ...built, meta: { ...built.meta, mode: 'standard' } } : built
 }
+
+/** Whether the account signed in now started this run (older saves name no owner). */
+const ownsRun = (built: Pick<BuiltRun, 'owner'>): boolean => built.owner === undefined || built.owner === currentWalletKey()
 
 function legalCharacters(selected: readonly CharacterId[]): CharacterId[] {
   const result: CharacterId[] = []
@@ -270,6 +293,20 @@ function campaignBeforePendingRun(run: RunState): CampaignProgress {
 
 export function App() {
   useWebMcp()
+  // Accounts that played before the Shop are paid once for the runs they recorded:
+  // checked on load and whenever an account signs in, quietly retried on failure.
+  const [pastRunsGain, setPastRunsGain] = useState<CoinGain | null>(null)
+  const clearPastRunsGain = useCallback(() => setPastRunsGain(null), [])
+  useEffect(() => {
+    let active = true
+    const settle = () => void settleLegacyCoins().then(({ coins, total }) => {
+      if (active && coins > 0) setPastRunsGain({ coins, total, id: Date.now(), source: 'pastRuns' })
+    })
+    if (!COIN_GRANTS) return () => { active = false }
+    settle()
+    const stop = onProfileChange(settle)
+    return () => { active = false; stop() }
+  }, [])
   const [online, setOnline] = useState(() => !SINGLE_PLAYER_ONLY && hasRoomSession())
   const [localOpen, setLocalOpen] = useState(false)
   const [settings, setSettings] = useGameSettings()
@@ -528,6 +565,7 @@ export function App() {
           settings={settings} onSettings={setSettings} active={!online} />
       </div>
       {online && OnlineGame ? <OnlineGame onLocal={() => setOnline(false)} settings={settings} onSettings={setSettings} /> : null}
+      <CoinGainToast gain={pastRunsGain} onDone={clearPastRunsGain} placement="menu" />
     </Suspense>
   )
 }
@@ -551,6 +589,22 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
   const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
   const [resume, setResume] = useState<SoloRunSave | null>(savedSoloRun)
+  // Play in progress belongs to the account that started it: profile.ts clears the
+  // saved run on an account change, so the Resume offered here follows the save.
+  const ownership = useRef<{ open: boolean; built: Pick<BuiltRun, 'owner'>; playing: boolean }>({ open, built: {}, playing: false })
+  useEffect(() => {
+    const refresh = () => {
+      setResume(savedSoloRun())
+      // A run left open in this tab belongs to the account that started it: leave it
+      // when another account signs in (here or in another tab).
+      const current = ownership.current
+      if (current.open && current.playing && !ownsRun(current.built)) onClose()
+    }
+    const storage = (event: StorageEvent) => { if (event.key === null || event.key === PROFILE_KEY || event.key === SOLO_RUN_KEY) refresh() }
+    const stop = onProfileChange(refresh)
+    window.addEventListener('storage', storage)
+    return () => { stop(); window.removeEventListener('storage', storage) }
+  }, [])
   const [choosingNextCharacter, setChoosingNextCharacter] = useState(false)
   const prefersReducedMotion = usePrefersReducedMotion()
   const updateCombat = useCallback((next: CombatState) => {
@@ -566,6 +620,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [leaderboard, setLeaderboard] = useState(false)
   const [stats, setStats] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [shop, setShop] = useState(false)
+  const [coinGain, setCoinGain] = useState<CoinGain | null>(null)
+  const clearCoinGain = useCallback(() => setCoinGain(null), [])
   const [giveUpOpen, setGiveUpOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -612,6 +669,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
   /** The settings the run in progress was actually built from. */
   const [built, setBuilt] = useState<BuiltRun>({ count: 1, seed: seedText, ascension: 0, chooseYourRelic: false, lastStand: false, characters: [...DEFAULT_CHARACTERS], meta: {} })
+  const coinKey = built.coinKey ?? soloRunKey(run.campaign.runId, run.seed)
 
   const discardSoloRun = () => {
     try { localStorage.removeItem(SOLO_RUN_KEY) } catch { /* Storage is unavailable. */ }
@@ -710,14 +768,19 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     setRecordRunId(null)
     setRunLogExtractedRunId(null)
     setRunLogMessage(null)
+    setCoinGain(null)
     setReplayLog(null)
     setReplaySession(null)
     setTutorial(null)
     tutorialReturn.current = null
     terminalRun.current = null
-    const next = newRun(count, seed, legalAscension, progress, nextChooseYourRelic, nextLastStand, nextCharacters, nextMeta)
+    // Bought Shop packs join every new run except a Daily Climb, whose pools everyone shares.
+    const packs = nextMeta.mode === 'daily' ? [] : enabledCardPacks(savedWallet())
+    const meta: RunMetaOptions = packs.length > 0 ? { ...nextMeta, cardPacks: packs } : nextMeta
+    const next = newRun(count, seed, legalAscension, progress, nextChooseYourRelic, nextLastStand, nextCharacters, meta)
     // A Daily Climb's engine overrides the requested Ascension; record what was built.
-    setBuilt({ count, seed, ascension: next.ascension, chooseYourRelic: nextChooseYourRelic, lastStand: nextLastStand, characters: nextCharacters, meta: nextMeta })
+    setBuilt({ count, seed, ascension: next.ascension, chooseYourRelic: nextChooseYourRelic, lastStand: nextLastStand, characters: nextCharacters, meta,
+      coinKey: soloRunKey(next.campaign.runId, next.seed, crypto.randomUUID()), owner: currentWalletKey() })
     void startRunLog(next)
     setRun(next)
   }
@@ -747,7 +810,20 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   }
 
   const recordRunResult = () => {
+    // Recording the result is what pays the run's boss coins, once: the ledger
+    // refuses a second payment however often this is reached for the same run.
+    if (!replayLog && !tutorial) {
+      if (!ownsRun(built)) {
+        // Another account signed in since this run began (possibly in another tab): its coins are not theirs.
+        if (coinsOwed(run.campaign.bossCoins) > 0) setRunLogMessage('This run was started by another account, so its coins were not paid. Sign in to that account to play its runs.')
+      } else {
+        const { coins, total } = creditRunCoins(coinKey, run.campaign.bossCoins)
+        if (coins > 0) setCoinGain((current) => ({ coins, total, id: (current?.id ?? 0) + 1 }))
+      }
+    }
     setRecordRunId(run.campaign.runId)
+    // The pre-record snapshot of this run must never be offered again.
+    setResume(null)
     setRun((current) => {
       if (current.campaign.finalized) return current
       terminalRun.current = structuredClone(current)
@@ -929,6 +1005,27 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     }
   }, [open, replayLog, run.campaignProgress, run.campaign.finalized, tutorial])
 
+  ownership.current = { open, built, playing: !tutorial && !replayLog }
+  // A bounty toast belongs to the screen it was raised on; leaving the run drops it.
+  useEffect(() => { if (!open) setCoinGain(null) }, [open])
+
+  // A fallen boss only promises its coins: they reach the wallet when the run's
+  // result is recorded (`recordRunResult`). This announces each new award as
+  // pending; a resume or reload announces nothing, and a replay or the tutorial
+  // plays somebody's — or nobody's — finished boss again.
+  const announcedAwards = useRef<{ key: string; count: number } | null>(null)
+  useEffect(() => {
+    // A tutorial or replay is not the parked run: leave its count alone, so returning announces nothing.
+    if (replayLog || tutorial) return
+    const count = run.campaign.bossCoins?.length ?? 0
+    const key = `${coinKey}|${run.campaign.runId}`
+    const previous = announcedAwards.current
+    announcedAwards.current = { key, count }
+    if (previous?.key !== key || count <= previous.count) return
+    const coins = coinsOwed(run.campaign.bossCoins?.slice(previous.count))
+    if (coins > 0) setCoinGain((current) => ({ coins, total: coinsOwed(run.campaign.bossCoins), pending: true, id: (current?.id ?? 0) + 1 }))
+  }, [coinKey, replayLog, run.campaign.bossCoins, tutorial])
+
   useLayoutEffect(() => {
     if (!open || replayLog || tutorial) return
     if (run.campaign.finalized) {
@@ -942,6 +1039,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         } else setLeaderboardStatus(null)
       }
     }
+    // A run that belongs to another account is never saved for the one signed in now.
+    if (!ownsRun(built)) return
     const saved: SoloRunSave = {
       version: 1, run, built,
       terminalRun: terminalRun.current?.campaign.runId === run.campaign.runId ? terminalRun.current : null,
@@ -1030,6 +1129,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     if (leaderboard) return <LeaderboardScreen onBack={() => setLeaderboard(false)} />
     if (stats) return <StatsScreen onBack={() => setStats(false)} />
     if (profileOpen) return <ProfileScreen onBack={() => setProfileOpen(false)} />
+    if (shop) return <ShopScreen onBack={() => setShop(false)} />
     return <StartMenu
       characters={characters}
       ascension={ascension}
@@ -1074,6 +1174,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       onStats={() => setStats(true)}
       onProfile={() => setProfileOpen(true)}
       onCompendium={() => setCompendium(true)}
+      onShop={() => setShop(true)}
       onReplay={startReplay}
       onCharacterBack={() => { setChoosingNextCharacter(false); setDailyTurned(false) }}
       settings={settings}
@@ -1174,7 +1275,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
             setPauseOpen(false)
             if (tutorial) exitTutorial()
             else if (replayLog) leaveReplay()
-            else if (!run.campaign.finalized) setResume({ version: 1, run, built })
+            // A recorded run resumes from its save (the campaign journal), never from the
+            // victory it was recorded from.
+            else setResume(run.campaign.finalized ? savedSoloRun() : { version: 1, run, built })
             onClose()
           }}>{tutorial ? 'Leave tutorial' : 'Return to main menu'}</button>
         </section>
@@ -1385,7 +1488,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         <section className="room-screen">
           <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
           <RunSummary act={run.act} roomsCleared={roomsCleared}
-            ascension={run.ascension} seats={run.players.map(summarySeat)} />
+            ascension={run.ascension} seats={run.players.map(summarySeat)} coins={coinsOwed(run.campaign.bossCoins)}
+            coinsClaimed={Boolean(replayLog) || resultRecorded} />
           {run.lastStand && run.players.some((player) => player.dead) && run.act < 4 ? (
             <p role="status">Last Stand won the Act, but a fallen hero means the party cannot continue to the next Act.</p>
           ) : null}
@@ -1416,7 +1520,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         <section className="room-screen">
           <h2 className="room-screen__defeat">The party has fallen</h2>
           <RunSummary act={run.act} roomsCleared={roomsCleared}
-            ascension={run.ascension} seats={run.players.map(summarySeat)} />
+            ascension={run.ascension} seats={run.players.map(summarySeat)} coins={coinsOwed(run.campaign.bossCoins)}
+            coinsClaimed={Boolean(replayLog) || resultRecorded} />
           {!run.campaign.finalized && !replayLog ? <><div className="room-screen__actions">
             <button type="button" onClick={recordRunResult} disabled={extractingRunLog} data-run-log-control>Record campaign result</button>
             <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog}
@@ -1436,6 +1541,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       {tutorial && !pauseOpen && !settingsOpen && !compendium ? <TutorialCoach key={tutorial.attempt}
         chapters={tutorialChapterList} run={run} hidden={tutorialTipsHidden} onHide={() => setTutorialTipsHidden(true)} /> : null}
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
+      <CoinGainToast gain={coinGain} onDone={clearCoinGain} />
       {/* `aria-live` rather than `role="status"`: the run already has status
           regions ("Choice locked. Waiting for the party…"), and a second one
           would both compete with them and make `getByRole('status')` ambiguous

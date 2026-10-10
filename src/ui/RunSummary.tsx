@@ -9,6 +9,7 @@ import { PotionTooltipAnchor } from './PotionIcon.tsx'
 import { IconValue } from './Icon.tsx'
 import { assetPath } from '../game/assets.ts'
 import { CHARACTER_LABEL, damageTotals, deckHighlights } from './run-summary-data.ts'
+import { CoinAmount } from './Coins.tsx'
 import type { SummarySeat } from './run-summary-data.ts'
 
 // Re-exported so call sites keep importing the summary from one place.
@@ -24,11 +25,15 @@ export type { SummarySeat } from './run-summary-data.ts'
  * `defeat` modifier class was carried here for a while and styled nothing; the
  * outcome is legible from the heading and from the red `--dead` seat cards.
  */
-export function RunSummary({ act, roomsCleared, ascension, seats }: {
+export function RunSummary({ act, roomsCleared, ascension, seats, coins = 0, coinsClaimed = false }: {
   act: number
   roomsCleared: number
   ascension: number
   seats: readonly SummarySeat[]
+  /** Shop coins this run's bosses earned the viewer; the tally is left out while there are none. */
+  coins?: number
+  /** Whether those coins are in the wallet yet: they are claimed by recording the run's result. */
+  coinsClaimed?: boolean
 }) {
   const chart = seats.map((seat) => ({ seat, totals: damageTotals(seat.damageStats) }))
   const greatestDealt = Math.max(1, ...chart.map(({ totals }) => totals.dealt))
@@ -39,6 +44,10 @@ export function RunSummary({ act, roomsCleared, ascension, seats }: {
         <div><dt>Act</dt><dd>{act}</dd></div>
         <div><dt>Rooms this act</dt><dd>{roomsCleared}</dd></div>
         <div><dt>Ascension</dt><dd>{ascension}</dd></div>
+        {coins > 0 ? <div className="run-summary__coins" data-claimed={coinsClaimed || undefined}>
+          <dt>{coinsClaimed ? 'Coins earned' : 'Coins to claim'}</dt>
+          <dd><CoinAmount coins={coins} size={22} />{coinsClaimed ? null : <small className="run-summary__coins-note">record the run to claim</small>}</dd>
+        </div> : null}
       </dl>
       <section className="run-summary__damage" aria-labelledby="run-summary-damage-heading">
         <h3 id="run-summary-damage-heading">Damage chart</h3>

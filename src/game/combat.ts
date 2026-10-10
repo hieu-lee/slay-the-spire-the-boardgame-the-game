@@ -4,7 +4,10 @@
 // action returns the SAME REFERENCE, which is how callers and the server tell
 // "not allowed" from "allowed but nothing changed".
 
-export { chooseEndTurnTarget, defaultEndTurnOrder, endTurnChoiceId, endTurnChoiceTarget } from './combat/types.ts'
+export {
+  chooseEndTurnTarget, defaultEndTurnOrder, endTurnChoiceId, endTurnChoiceTarget, parseSelfExhaustEndTurnTarget,
+  selfExhaustEndTurnTarget,
+} from './combat/types.ts'
 export type {
   CardChoicePreview,
   CombatPhase,
@@ -16,6 +19,8 @@ export type {
   EvokeChoice,
   PendingTrigger,
   PendingTriggerAbility,
+  PendingPlayerChoice,
+  PlayerChoiceAnswer,
   PlayedCard,
   PlayContext,
   PotionContext,
@@ -35,6 +40,7 @@ export {
   lightningRowTarget,
   lightningTargetsRows,
   livingEnemies,
+  orbEndTurnAmount,
   powerAbilityKey,
   powerAbilityUsed,
   remainingRoundHpLoss,
@@ -63,9 +69,12 @@ export {
   activePowerWindow,
   nextEvokeChoice,
   mandatoryChoicePending,
+  owedPlayerChoices,
   maximumXEnergy,
+  metamorphosisCost,
   overflowShivCount,
   playCost,
+  powerActivationAllowed,
   reachesEnemy,
   reachedTimeWarpLimit,
   slimeChoiceIsAvailable,
@@ -110,6 +119,9 @@ export {
   preparePlayerTurnThroughDraw,
   resumePlayerTurnAfterDraw,
   resolvePendingDieRelicChoice,
+  defaultPendingPlayerChoice,
+  lapseStrandedPlayerChoices,
+  resolvePendingPlayerChoice,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
   resolveStartTurnScry,
@@ -153,3 +165,11 @@ export {
   resolvePlunderRowSwitch,
 } from './combat/items.ts'
 export { createCombat } from './combat/create.ts'
+export { scryPlayCardPlayable } from './combat/effects.ts'
+export { activeCardPlayWindow, cardPlayWindowCardPlayable } from './combat/queries.ts'
+export { finishCardPlayWindow } from './combat/play.ts'
+export type { CardPlayWindow } from './combat/types.ts'
+export { adjacentEnemies } from './combat/board.ts'
+export { adjacentDamageChoiceCount, cardDefForTarget } from './combat/queries.ts'
+export { resolveSlayerChoice } from './combat/play.ts'
+export type { SlayerChoice } from './combat/types.ts'

@@ -24,7 +24,7 @@ export const CardFace = memo(function CardFace({
   const shownCost = def.unplayable ? '—' : cost
   // Downfall publisher illustrations are intentionally optional. Its native
   // faces stay text-first instead of requesting files a clean clone lacks.
-  const hasIllustration = illustration && (def.owner === 'kratos' || BASE_CHARACTER_IDS.some((owner) => owner === def.owner))
+  const hasIllustration = illustration && !def.pack && (def.owner === 'kratos' || BASE_CHARACTER_IDS.some((owner) => owner === def.owner))
   return (
     <span
       className={['card-face', 'card__fallback', `card-face--${def.owner}`, `card-face--${def.rarity}`, className]

@@ -1,0 +1,15 @@
+Hello, climber!
+
+The Spire has a merchant of its own now. Open the Shop from the main menu, or tap the coin purse in the top-right corner.
+
+The Slayer Pack is here: 45 new cards in 5 packs, one each for the Ironclad, the Silent, the Defect and the Watcher, plus a Colorless pack any hero can find. A pack costs 960 coins. Once you own it, its cards are shuffled into the reward decks of every run you start. Playing online? A pack joins the run if anyone at the table owns it.
+
+Coins come from bosses. Each boss you defeat pays a roll of coins, and they reach your purse when you record the run's result at the end, so remember to press "Stop and record result" or "Record campaign result". At Ascension 0 an Act I boss pays 8 to 12 coins, an Act II boss 16 to 24, an Act III boss 24 to 36 and the Act IV boss 40 to 60. Higher Ascensions pay much more: twice as much at Ascension 5, eight times as much at Ascension 10, where the three Act bosses pay 64 to 96, 128 to 192 and 192 to 288 coins, and the Act IV boss 320 to 480. Daily Climbs pay no coins.
+
+Skins are coming soon. You can already peek at the locked wardrobe in the Shop.
+
+Already climbed before today? If your account has runs already recorded, you receive coins for them, worked out from the Ascension and the bosses of each run (an account with no recorded runs, or only Daily Climbs, receives none). Coins and packs are kept in the browser you play in, not on the server, so these coins arrive once, in the first browser where you log in after this update. Log in on the browser you usually play with (not a private window), and they appear in your purse.
+
+Thank you for climbing with us, and good luck at the top.
+
+Of course for my account - BestDefect2002, I have infinite amount of coins (developer's power).

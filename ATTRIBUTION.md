@@ -143,3 +143,15 @@ to their original painted bounds; scenes retain their framing and exposure.
 See `docs/asset-resolution.json` for the original hashes and final dimensions,
 and `docs/asset-resolution-prompts.md` for prompts and processing settings.
 Printed card scans remain unmodified.
+
+### The Slayer Pack (Shop card packs)
+
+The 45 player cards sold in the Shop come from *The Slayer Pack*, a free fan-made
+homebrew expansion for the Slay the Spire board game by silbo (Mousecore Games),
+published on BoardGameGeek (thread 3368240) and r/slaythespire. The card scans are
+the author's English-version files from the pack's public Google Drive folder; the
+upgraded faces are the backs of the double-sided cards and are rotated upright, and
+every scan is otherwise unmodified apart from a 1px stretch to the repo-wide 744x1039,
+lossy WebP encoding (quality 74) and a 448px thumbnail
+(`scripts/sync-slayer-pack-assets.mjs`). The transcription and the author's FAQ rulings
+are in `docs/slayer-pack.md`. This is unofficial fan content; please support the author.

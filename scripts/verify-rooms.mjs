@@ -36,6 +36,7 @@ import { fireTriggers } from '../src/game/combat/effects.ts'
 import { pendingTriggerAbility } from '../src/game/combat/end-turn.ts'
 import { stageStartTurnTriggerChoice, startTurnAbilities } from '../src/game/combat/start-turn.ts'
 import { createRng, nextInt } from '../src/game/rng.ts'
+import { CARD_PACKS } from '../src/game/packs.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, assertThrows, report } from './lib/harness.mjs'
 
 /** Every string that appears anywhere in a structure, at any depth. */
@@ -57,6 +58,9 @@ function allKeys(value, out = []) {
   }
   return out
 }
+
+const CARD_PACKS_IRONCLAD = CARD_PACKS.slayer_ironclad.cardIds
+const CARD_PACKS_COLORLESS = CARD_PACKS.slayer_colorless.cardIds
 
 function finishNeow(room) {
   for (let attempts = 0; room.run.phase === 'neow'; attempts++) {
@@ -1969,6 +1973,32 @@ check('online end-turn effects wait for every seat, then only their owner can re
   apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: second.id, targetUid: secondEnemy.uid })
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === secondEnemy.uid).dead, true,
     'the second drag sees the live board and resolves itself')
+})
+
+check('resolving a trigger settles the next end-turn effect when its owner disconnected', () => {
+  const { room, a, b } = twoSeatRoom()
+  for (const player of room.run.combat.players) player.hand = []
+  const ironclad = room.run.combat.players.find((player) => player.id === a.playerId)
+  const defect = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(ironclad, {
+    block: 0,
+    powers: [
+      { uid: 'room-end-trigger-juggernaut', defId: 'juggernaut', upgraded: false },
+      { uid: 'room-end-trigger-metallicize', defId: 'metallicize', upgraded: false },
+    ],
+  })
+  Object.assign(defect, { character: 'defect', orbs: ['lightning', null, null] })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const pending = room.run.combat.pendingTriggers.find((trigger) => trigger.playerId === a.playerId)
+  assert(pending, 'Metallicize did not set off Juggernaut')
+  assertEqual(snapshotFor(room, a.token).endTurnAbilities, undefined, 'the trigger resolves before the Orb is published')
+  markDisconnected(room, b.token)
+  const enemyUid = room.run.combat.enemies.find((enemy) => !enemy.dead).uid
+  apply(room, a.token, { kind: 'resolveTrigger', triggerId: pending.id, enemyUid, preflight: true })
+  assertEqual(snapshotFor(room, a.token).endTurnAbilities, undefined,
+    'the disconnected Defect\'s Orb effect was left published for the connected seat')
+  assert(room.run.combat.phase !== 'player', 'the turn stayed stuck in end-turn ordering')
 })
 
 check('online Loop selection and copied Orb effects stay with the Defect owner', () => {
@@ -4342,6 +4372,43 @@ check('Storm preserves full-slot Orb and target choices across coordinator recon
   const resolvedBo = room.run.combat.players.find((player) => player.id === b.playerId)
   assertDeepEqual(resolvedBo.orbs, ['lightning', 'lightning', 'dark'])
   assertEqual(resolvedBo.block, 1)
+})
+
+check('a disconnected later Orb fallback is planned behind an earlier single-target ability', () => {
+  const { room, a, b, c } = threeSeatRoom()
+  const fumesOwner = room.run.combat.players.find((player) => player.id === a.playerId)
+  const stormOwner = room.run.combat.players.find((player) => player.id === b.playerId)
+  const idle = room.run.combat.players.find((player) => player.id === c.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined, pendingTriggers: [] })
+  Object.assign(fumesOwner, {
+    relics: [], hand: [], powers: [{ uid: 'room-planned-fumes', defId: 'noxious_fumes', upgraded: false }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-planned-a-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+  })
+  Object.assign(stormOwner, {
+    character: 'defect', relics: [], hand: [], orbs: ['lightning', 'frost', 'dark'],
+    powers: [{ uid: 'room-planned-storm', defId: 'storm', upgraded: true }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-planned-b-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+  })
+  Object.assign(idle, { relics: [], hand: [], powers: [], draw: Array.from({ length: 5 }, (_, index) => ({
+    uid: `room-planned-c-${index}`, defId: 'defend_defect', upgraded: false,
+  })) })
+  const [only, ...rest] = room.run.combat.enemies
+  for (const enemy of rest) Object.assign(enemy, { hp: 0, dead: true })
+  Object.assign(only, { hp: 40, maxHp: 40, block: 0, dead: false, abilityUsed: true })
+  // Open the window without the auto-resolution `startTurn` would give a plan with no real choice.
+  room.run.combat = preparePlayerTurn(room.run.combat)
+  assertEqual(room.run.combat.phase, 'start')
+  snapshotFor(room, c.token)
+  markDisconnected(room, a.token)
+  markDisconnected(room, b.token)
+  assertEqual(room.run.combat.phase, 'player',
+    'a later disconnected Orb owner was judged against a plan an earlier single-target ability blocked')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === only.uid).poison, 1)
+  assertEqual(room.run.combat.players.find((player) => player.id === b.playerId).orbs.filter(Boolean).length, 3)
 })
 
 check('start-turn readiness is effect-owner-only and excludes an idle third player', () => {
@@ -7156,8 +7223,10 @@ check('Revenge Protocol forced cards resolve and disconnect safely during discar
     const actor = room.run.combat.players.find((player) => player.id === a.playerId)
     const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
     const strike = { uid: 'room-revenge-strike', defId: 'guardian_strike', upgraded: false }
+    // A real discard phase only lasts while a seat owes a Retain choice; the finished one ends the turn.
+    const kept = { uid: 'room-revenge-kept', defId: 'guardian_defend', upgraded: false }
     Object.assign(actor, {
-      character: 'guardian', guardianMode: 'attack', hand: [strike], energy: 3,
+      character: 'guardian', guardianMode: 'attack', hand: [strike, kept], energy: 3, retainCardsThisTurn: 1,
       powers: [{ uid: 'room-revenge', defId: 'guardian_revenge_protocol', upgraded: false }],
     })
     room.run.combat.phase = 'discard'
@@ -7185,6 +7254,26 @@ check('Revenge Protocol forced cards resolve and disconnect safely during discar
     const combat = snapshotFor(room, b.token).run.combat
     assertEqual(combat.startTurnProgress, undefined)
     assert(combat.players.find((player) => player.id === a.playerId).discard.some((card) => card.uid === strike.uid))
+    // The forced card must resolve BEFORE the discard step, or the turn stays parked in `discard`.
+    assertEqual(combat.phase, 'enemy', 'a disconnecting Revenge Protocol owner left the turn parked in discard')
+  }
+
+  {
+    // Reconnect path: the forced card is still owed when the seat that can end the turn comes back.
+    const { room, a, b } = twoSeatRoom()
+    const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+    const strike = { uid: 'room-rejoin-revenge', defId: 'guardian_strike', upgraded: false }
+    Object.assign(actor, {
+      character: 'guardian', guardianMode: 'attack', hand: [strike], energy: 3,
+      powers: [{ uid: 'room-rejoin-revenge-power', defId: 'guardian_revenge_protocol', upgraded: false }],
+    })
+    room.run.combat.phase = 'discard'
+    apply(room, a.token, {
+      kind: 'activatePower', powerUid: 'room-rejoin-revenge-power', cardUid: strike.uid, preflight: true,
+    })
+    for (const seat of room.seats) seat.connected = false
+    joinRoom(room, { token: b.token })
+    assertEqual(room.run.combat.phase, 'enemy', 'a reconnecting seat left the turn parked in discard behind a forced card')
   }
 })
 
@@ -13856,6 +13945,189 @@ check('Mysterious Sphere settles disconnected owners after Scry ordering and res
     assert(room.run.roomState.preparedCombat.startTurnProgress?.pauseAfterDraw,
       'resolving a connected Scry did not settle the next disconnected owner')
   }
+})
+
+suite('Shop card packs at the table')
+
+check('a room plays every pack any seated player bought, recomputed while in the lobby', () => {
+  const room = createRoom(createStore(), { code: 'PACKSA' })
+  const ann = joinRoom(room, { name: 'Ann', character: 'ironclad', cardPacks: ['slayer_silent', 'slayer_kratos', 'slayer_silent'] })
+  const bo = joinRoom(room, { name: 'Bo', character: 'silent', cardPacks: ['slayer_ironclad'] })
+  const cy = joinRoom(room, { name: 'Cy', character: 'defect' })
+  const view = snapshotFor(room, cy.token)
+  assertDeepEqual(view.cardPacks, ['slayer_ironclad', 'slayer_silent'])
+  assertDeepEqual(view.seats.map((seat) => seat.cardPacks), [['slayer_silent'], ['slayer_ironclad'], undefined])
+
+  const version = room.version
+  joinRoom(room, { token: bo.token, cardPacks: [] })
+  assert(room.version > version, 'a changed pack list must reach the other seats')
+  assertDeepEqual(snapshotFor(room, ann.token).cardPacks, ['slayer_silent'])
+  joinRoom(room, { token: bo.token, cardPacks: ['slayer_defect'] })
+  const quiet = room.version
+  joinRoom(room, { token: bo.token })
+  assertEqual(room.version, quiet, 'a reconnect that reports nothing keeps the seat\'s packs')
+  assertDeepEqual(snapshotFor(room, ann.token).cardPacks, ['slayer_silent', 'slayer_defect'])
+  removeSeat(room, ann.token)
+  assertDeepEqual(snapshotFor(room, bo.token).cardPacks, ['slayer_defect'], 'a player who leaves takes their packs')
+})
+
+check('the packs freeze into the run at start; seats changing theirs later change nothing', () => {
+  const room = createRoom(createStore(), { code: 'PACKSB' })
+  const ann = joinRoom(room, { name: 'Ann', character: 'ironclad', cardPacks: ['slayer_ironclad'] })
+  const bo = joinRoom(room, { name: 'Bo', character: 'silent', cardPacks: ['slayer_colorless'] })
+  startRun(room, ann.token, { seed: 5 })
+  assertDeepEqual(room.run.meta.cardPacks, ['slayer_ironclad', 'slayer_colorless'])
+  const ironclad = room.run.players.find((player) => player.character === 'ironclad')
+  assert(CARD_PACKS_IRONCLAD.every((id) => [...ironclad.cardRewards, ...ironclad.rareRewards].includes(id)),
+    'the leader\'s pack did not reach the Ironclad reward decks')
+  assert(CARD_PACKS_COLORLESS.every((id) => room.run.itemDecks.colorless.includes(id)),
+    'the Colorless pack is played even though only Bo owns it and nobody unlocked Colorless')
+  joinRoom(room, { token: bo.token, cardPacks: ['slayer_watcher'] })
+  assertDeepEqual(room.run.meta.cardPacks, ['slayer_ironclad', 'slayer_colorless'])
+  assertDeepEqual(snapshotFor(room, ann.token).cardPacks, ['slayer_ironclad', 'slayer_colorless'],
+    'a running room reports the packs its run froze')
+})
+
+check('a table without packs starts the same run as before and reports none', () => {
+  const build = (cardPacks) => {
+    const room = createRoom(createStore(), { code: 'PACKSC' })
+    const ann = joinRoom(room, { name: 'Ann', character: 'ironclad', cardPacks })
+    joinRoom(room, { name: 'Bo', character: 'silent', cardPacks })
+    startRun(room, ann.token, { seed: 9 })
+    return room
+  }
+  const plain = build(undefined)
+  assertEqual(JSON.stringify(build([]).run), JSON.stringify(plain.run))
+  assertEqual(JSON.stringify(build(['not_a_pack']).run), JSON.stringify(plain.run))
+  assertEqual(plain.run.meta.cardPacks, undefined)
+  const view = snapshotFor(plain, plain.seats[0].token)
+  assertDeepEqual(view.cardPacks, [])
+  assert(view.seats.every((seat) => !('cardPacks' in seat)), 'seats without packs keep their old public shape')
+})
+
+check('Catch Up joiners keep the frozen packs and each sees only their own boss offset', () => {
+  const room = createRoom(createStore(), { code: 'PACKSD' })
+  const ann = joinRoom(room, { name: 'Ann', character: 'ironclad', cardPacks: ['slayer_ironclad'] })
+  startRun(room, ann.token, { seed: 11 })
+  finishNeow(room)
+  room.run = {
+    ...room.run, phase: 'map', act: 2, map: { ...room.run.map, act: 2, position: null },
+    campaign: { ...room.run.campaign, bossesDefeated: 1, bossCoins: [{ act: 1, coins: 11 }] },
+  }
+  const late = joinRoom(room, { name: 'Lu', character: 'silent', cardPacks: ['slayer_silent', 'slayer_defect'] })
+  assertDeepEqual(room.run.meta.cardPacks, ['slayer_ironclad'], 'a late joiner cannot add packs to a running run')
+  assertEqual(room.run.campaign.joinedAfterBosses.silent, 1)
+  const theirs = snapshotFor(room, late.token).run.campaign
+  assertDeepEqual(theirs.bossCoins, [{ act: 1, coins: 11 }])
+  assertDeepEqual(theirs.joinedAfterBosses, { silent: 1 })
+  const leaders = snapshotFor(room, ann.token).run.campaign
+  assertEqual(leaders.joinedAfterBosses, undefined, 'only the viewer\'s own offset is sent')
+  assertDeepEqual(leaders.bossCoins, [{ act: 1, coins: 11 }])
+
+  // A second late hero: each joiner sees its own offset and never the other's.
+  const next = joinRoom(room, { name: 'Di', character: 'defect' })
+  room.run.campaign.joinedAfterBosses.defect = 2
+  assertDeepEqual(Object.keys(room.run.campaign.joinedAfterBosses).sort(), ['defect', 'silent'])
+  assertDeepEqual(snapshotFor(room, late.token).run.campaign.joinedAfterBosses, { silent: 1 })
+  assertDeepEqual(snapshotFor(room, next.token).run.campaign.joinedAfterBosses, { defect: 2 })
+  assertEqual(snapshotFor(room, ann.token).run.campaign.joinedAfterBosses, undefined)
+})
+
+check('seat packs and the run\'s packs survive a restart, and forged ones are dropped', () => {
+  const room = createRoom(createStore(), { code: 'PACKSE' })
+  const ann = joinRoom(room, { name: 'Ann', character: 'ironclad', cardPacks: ['slayer_watcher'] })
+  joinRoom(room, { name: 'Bo', character: 'silent' })
+  const lobby = structuredClone(room)
+  lobby.seats[1].cardPacks = ['slayer_kratos', 'slayer_defect', 'slayer_defect']
+  startRun(room, ann.token, { seed: 13 })
+  const running = structuredClone(room)
+  running.code = 'PACKSF'
+  running.run.meta.cardPacks = ['slayer_watcher', 'bogus']
+  const directory = mkdtempSync(join(tmpdir(), 'sts-packs-'))
+  const file = join(directory, 'rooms.json')
+  try {
+    writeFileSync(file, JSON.stringify({ rooms: [lobby, running] }))
+    const store = createStore({ file })
+    const restoredLobby = store.rooms.get('PACKSE')
+    assertDeepEqual(restoredLobby.seats.map((seat) => seat.cardPacks), [['slayer_watcher'], ['slayer_defect']])
+    assertDeepEqual(snapshotFor(restoredLobby, restoredLobby.seats[0].token).cardPacks, ['slayer_defect', 'slayer_watcher'])
+    assertDeepEqual(store.rooms.get('PACKSF').run.meta.cardPacks, ['slayer_watcher'])
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+check('boss coins are paid from the recorded run: each seat sees its own share, even back in the lobby', () => {
+  const room = createRoom(createStore(), { code: 'COINSA' })
+  const ann = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  startRun(room, ann.token, { seed: 21 })
+  finishNeow(room)
+  room.run = { ...room.run, phase: 'map', act: 2, map: { ...room.run.map, act: 2, position: null },
+    campaign: { ...room.run.campaign, bossesDefeated: 1, bossCoins: [{ act: 1, coins: 11 }] } }
+  const late = joinRoom(room, { name: 'Lu', character: 'silent' })
+  room.run = { ...room.run, phase: 'defeat', neow: null, setup: null, combat: null,
+    campaign: { ...room.run.campaign, bossesDefeated: 2, highestBossActDefeated: 2, bossCoins: [{ act: 1, coins: 11 }, { act: 2, coins: 22 }] } }
+  assertEqual(snapshotFor(room, ann.token).recordedRuns, undefined, 'nothing is claimable before the run is recorded')
+  assertEqual(snapshotFor(room, ann.token).run.campaign.finalized, false)
+  apply(room, ann.token, { kind: 'finishRun' })
+  assertEqual(snapshotFor(room, late.token).run.campaign.finalized, true, 'recording finalizes the run every seat sees')
+  room.campaignProgress = { ...room.campaignProgress, unspentMarks: 0 }
+  apply(room, ann.token, { kind: 'returnToLobby' })
+  assertEqual(room.run, null)
+  const runId = room.recordedRuns[0].runId
+  assertDeepEqual(snapshotFor(room, ann.token).recordedRuns, [{ runId, bossCoins: [{ act: 1, coins: 11 }, { act: 2, coins: 22 }], skip: 0 }])
+  assertDeepEqual(snapshotFor(room, late.token).recordedRuns?.[0].skip, 1, 'the Catch Up joiner is owed only the later boss')
+  const newcomer = joinRoom(room, { name: 'Di', character: 'defect' })
+  assertEqual(snapshotFor(room, newcomer.token).recordedRuns, undefined, 'a seat that did not play the run claims nothing')
+
+  // Lu leaves; a stranger takes Lu's freed player id and must not inherit Lu's share.
+  const luId = late.playerId
+  removeSeat(room, late.token)
+  const stranger = joinRoom(room, { name: 'Zed', character: 'silent' })
+  assertEqual(stranger.playerId, luId, 'precondition: the freed player id is reused')
+  assertEqual(snapshotFor(room, stranger.token).recordedRuns, undefined, 'a reused player id claims nothing')
+  assertEqual(Object.hasOwn(room.recordedRuns[0].skips, late.token), false, 'the leaver took their share')
+  // Ann, away when the party returned, reconnects and still sees her own share.
+  markDisconnected(room, ann.token)
+  joinRoom(room, { token: ann.token })
+  assertEqual(snapshotFor(room, ann.token).recordedRuns?.[0].skip, 0, 'a reconnecting original seat keeps its share')
+  assert(!JSON.stringify(snapshotFor(room, stranger.token)).includes(ann.token), 'a share key leaked another seat\'s token')
+
+  const directory = mkdtempSync(join(tmpdir(), 'sts-recorded-'))
+  const file = join(directory, 'rooms.json')
+  try {
+    const forged = { ...structuredClone(room), code: 'COINSB', recordedRuns: [{ runId, bossCoins: 'lots', skips: {} }] }
+    writeFileSync(file, JSON.stringify({ rooms: [structuredClone(room), forged] }))
+    const store = createStore({ file })
+    assertDeepEqual(store.rooms.get('COINSA').recordedRuns, room.recordedRuns, 'the recorded run survives a restart')
+    assertEqual(store.rooms.get('COINSB').recordedRuns, undefined, 'a malformed recorded run is dropped')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+check('a seat away for several recorded runs still claims every one of them', () => {
+  const room = createRoom(createStore(), { code: 'COINSC' })
+  const ann = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  const bo = joinRoom(room, { name: 'Bo', character: 'silent' })
+  const playAndRecord = (seed, coins) => {
+    startRun(room, ann.token, { seed })
+    finishNeow(room)
+    room.run = { ...room.run, phase: 'defeat', neow: null, setup: null, combat: null,
+      campaign: { ...room.run.campaign, bossesDefeated: 1, highestBossActDefeated: 1, bossCoins: [{ act: 1, coins }] } }
+    apply(room, ann.token, { kind: 'finishRun' })
+    room.campaignProgress = { ...room.campaignProgress, unspentMarks: 0 }
+    apply(room, ann.token, { kind: 'returnToLobby' })
+  }
+  playAndRecord(31, 9)
+  markDisconnected(room, bo.token)
+  playAndRecord(32, 12)
+  joinRoom(room, { token: bo.token })
+  const claims = snapshotFor(room, bo.token).recordedRuns
+  assertDeepEqual(claims.map((recorded) => recorded.bossCoins[0].coins), [9, 12], 'the earlier run\'s share was replaced by the later one')
+  assertEqual(new Set(claims.map((recorded) => recorded.runId)).size, 2)
+  for (let seed = 40; seed < 52; seed += 1) playAndRecord(seed, 1)
+  assertEqual(room.recordedRuns.length, 8, 'the room keeps only its most recent recorded runs')
 })
 
 report('co-op rooms')

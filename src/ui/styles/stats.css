@@ -136,11 +136,12 @@
   .stats__table tbody td { font-size: .85rem; }
 }
 @media (max-height: 500px) and (max-width: 700px) and (orientation: landscape) {
-  .stats__back.ribbon-back { width: 3.9rem; }
+  .stats__back.ribbon-back { width: 3.4rem; }
   .stats__heroes { gap: .05rem; }
   .stats__rail { padding-right: max(1.5rem, 5.5%); }
-  .stats__heroes button { width: 1.6rem; height: 1.6rem; }
-  .stats__rail-selects select { width: 6.1rem; font-size: .58rem; }
+  /* Ten filters since Kratos (All heroes + nine heroes) fit beside narrower selects, clear of the torn edge. */
+  .stats__heroes button { width: 1.55rem; height: 1.55rem; }
+  .stats__rail-selects select { width: 5.7rem; overflow: hidden; font-size: .56rem; text-overflow: ellipsis; white-space: nowrap; }
   .stats__table tbody th { width: 58%; }
   .stats__row-button > img { width: 2rem; height: 2rem; }
   .stats__row-button strong { font-size: .9rem; }

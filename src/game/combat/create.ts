@@ -9,7 +9,8 @@ import type { RuleSet } from '../meta.ts'
 import { healingCapFor } from '../acquisition.ts'
 import { shuffle } from '../rng.ts'
 import type { RngState } from '../rng.ts'
-import type { Enemy, Player } from '../types.ts'
+import type { CardInstance, Enemy, Player } from '../types.ts'
+import { cardDef } from '../cards.ts'
 
 export function createCombat(
   rng: RngState,
@@ -118,11 +119,23 @@ export function createCombat(
       if (ability.kind === 'startCombatStatus') for (const player of state.players.filter((candidate) => !candidate.dead)) {
         const gained = addStatus(state, player, ability.card, ability.amount, source.uid)
         if (gained === 0) continue
-        player.draw = shuffle(state.rng, [...player.draw, ...player.discard])
+        player.draw = shuffleCombatDraw(state.rng, [...player.draw, ...player.discard])
         player.discard = []
         state.log = [...state.log, `${enemyDef(source.defId).name} shuffled ${gained} ${ability.card} into ${player.name}'s deck`]
       }
     }
   }
   return state
+}
+
+/**
+ * Shuffles a fresh combat draw pile. Secret Technique is set aside first and put
+ * on top afterwards (author FAQ). With several, there is no setup prompt: they
+ * go on top in deck order, the first in the deck uppermost. A deck without one
+ * shuffles exactly as before, so seeded runs are unchanged.
+ */
+export function shuffleCombatDraw(rng: RngState, cards: readonly CardInstance[]): CardInstance[] {
+  const onTop = cards.filter((card) => cardDef(card.defId).combatSetupOnTop)
+  if (onTop.length === 0) return shuffle(rng, [...cards])
+  return [...onTop, ...shuffle(rng, cards.filter((card) => !onTop.includes(card)))]
 }

@@ -5,6 +5,7 @@
 // behaviour.
 import type { ItemDecks } from '../acquisition.ts'
 import type { CampaignProgress, SpireKeys } from '../campaign.ts'
+import type { BossCoinAward } from '../coins.ts'
 import type { CombatState } from '../combat.ts'
 import type { EventRoomState } from '../event-room.ts'
 import type { EventCard, EventEffect } from '../events.ts'
@@ -85,6 +86,11 @@ export type RunState = {
     /** Boss count already defeated before each character joined through Catch Up. */
     joinedAfterBosses: Partial<Record<CharacterId, number>>
     highestBossActDefeated: 0 | 1 | 2 | 3 | 4
+    /**
+     * Coins each boss victory paid, in the order the bosses fell. Absent on saves from
+     * before the Shop, and always absent on a Daily Climb, which pays nothing.
+     */
+    bossCoins?: BossCoinAward[]
     keys: SpireKeys
     finalized: boolean
   }
