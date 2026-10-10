@@ -31,7 +31,7 @@ const PACK_ACCENT: Record<CardPackId, string> = {
   slayer_colorless: '#a3a7ad',
 }
 
-/** The three cards fanned on each pack: the two its tagline names, and one between. */
+/** The three cards fanned on each pack: a showcase of its signature cards. */
 const PACK_FAN: Record<CardPackId, readonly [string, string, string]> = {
   slayer_ironclad: ['slayer_brutality', 'slayer_reaper', 'slayer_searing_blow'],
   slayer_silent: ['slayer_caltrops', 'slayer_nightmare', 'slayer_phantasmal_killer'],
@@ -42,8 +42,22 @@ const PACK_FAN: Record<CardPackId, readonly [string, string, string]> = {
 
 const SKIN_TEASERS = ['ironclad', 'silent', 'defect', 'watcher'] as const
 
+/** The Shop's painted icons (see docs/shop-icons.json). */
+const ICON = {
+  pack: assetPath('shop/pack.webp'),
+  skins: assetPath('shop/skins.webp'),
+  browse: assetPath('shop/browse.webp'),
+  owned: assetPath('shop/owned.webp'),
+  lock: assetPath('shop/lock.webp'),
+  deck: assetPath('menu/current-deck.webp'),
+}
+
 const ownerLabel = (pack: CardPackDef) => pack.owner === 'colorless' ? 'Colorless' : CHARACTER_LABEL[pack.owner]
 const accentStyle = (id: CardPackId) => ({ '--pack-accent': PACK_ACCENT[id] }) as CSSProperties
+
+function Icon({ src, className }: { src: string; className: string }) {
+  return <img className={className} src={src} alt="" aria-hidden="true" draggable={false} />
+}
 
 function PackFan({ id, size = 'tile' }: { id: CardPackId; size?: 'tile' | 'dialog' }) {
   return <span className={`shop-fan shop-fan--${size}`} aria-hidden="true">
@@ -51,6 +65,11 @@ function PackFan({ id, size = 'tile' }: { id: CardPackId; size?: 'tile' | 'dialo
       <img key={cardId} className={`shop-fan__card shop-fan__card--${index}`} src={cardThumbPath(cardDef(cardId), false)}
         alt="" draggable={false} />)}
   </span>
+}
+
+/** The hero's emblem from the Compendium, crowning the pack. */
+function PackCrest({ pack }: { pack: CardPackDef }) {
+  return <Icon className="shop-crest" src={assetPath(`menu/compendium-icons/${pack.owner}.webp`)} />
 }
 
 function PackTile({ pack, owned, short, onBuy, onBrowse }: {
@@ -61,31 +80,25 @@ function PackTile({ pack, owned, short, onBuy, onBrowse }: {
   onBrowse: () => void
 }) {
   const headingId = `shop-pack-${pack.id}`
+  const progress = { '--progress': (CARD_PACK_PRICE - short) / CARD_PACK_PRICE } as CSSProperties
+  // The name keeps the visible price, so "click 960" works for voice control.
+  const price = `${formatCoins(CARD_PACK_PRICE)} coins`
   return <li className="shop-pack" data-pack={pack.id} data-owned={owned || undefined} style={accentStyle(pack.id)}
     aria-labelledby={headingId}>
-    <div className="shop-pack__art">
+    <PackCrest pack={pack} />
+    <button type="button" className="shop-pack__art" aria-label={`Browse the ${pack.cardIds.length} cards of the ${pack.name}`}
+      onClick={onBrowse}>
       <PackFan id={pack.id} />
-      {owned ? <span className="shop-pack__seal">Owned</span> : null}
-    </div>
-    <div className="shop-pack__body">
-      <h3 id={headingId}><span className="shop-pack__owner">{ownerLabel(pack)}</span> <span className="shop-pack__kind">Slayer Pack</span></h3>
-      <p className="shop-pack__eyebrow">{pack.cardIds.length} cards</p>
-      <p className="shop-pack__tagline">{pack.tagline}</p>
-      <div className="shop-pack__price">
-        {owned ? <span className="shop-pack__owned-note">In your runs</span>
-          : <><CoinAmount coins={CARD_PACK_PRICE} size={24} />
-            {short > 0 ? <small className="shop-pack__short">Need {formatCoins(short)} more</small> : null}</>}
-      </div>
-      <div className="shop-pack__actions">
-        {owned ? <button type="button" className="shop-button shop-button--owned" disabled>Owned</button>
-          : <button type="button" className="shop-button shop-button--buy" disabled={short > 0}
-            aria-label={short > 0 ? `Not enough coins for ${pack.name}` : `Buy ${pack.name}`} onClick={onBuy}>
-            {short > 0 ? 'Not enough coins' : 'Buy'}
-          </button>}
-        <button type="button" className="shop-button shop-button--browse" aria-label={`Browse ${pack.name} cards`}
-          onClick={onBrowse}>Browse cards</button>
-      </div>
-    </div>
+      <span className="shop-pack__count" aria-hidden="true"><Icon className="shop-pack__count-icon" src={ICON.deck} />{pack.cardIds.length}</span>
+      <Icon className="shop-pack__zoom" src={ICON.browse} />
+    </button>
+    <h3 id={headingId}>{ownerLabel(pack)}<span className="visually-hidden"> Slayer Pack</span></h3>
+    {owned ? <p className="shop-pack__owned"><Icon className="shop-pack__owned-icon" src={ICON.owned} />Owned</p>
+      : <button type="button" className="shop-button shop-button--buy shop-pack__buy" disabled={short > 0} style={progress}
+        aria-label={short > 0 ? `Not enough coins for ${pack.name}, ${price}: need ${formatCoins(short)} more` : `Buy ${pack.name}, ${price}`}
+        onClick={onBuy}>
+        <CoinAmount coins={CARD_PACK_PRICE} size={26} />
+      </button>}
   </li>
 }
 
@@ -109,10 +122,8 @@ function PackBrowser({ pack, onClose }: { pack: CardPackDef; onClose: () => void
     onClose={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="shop-browse__panel">
       <header>
-        <div>
-          <p className="shop-browse__eyebrow">{ownerLabel(pack)} · {cards.length} cards</p>
-          <h2 id="shop-browse-title">{pack.name}</h2>
-        </div>
+        <PackCrest pack={pack} />
+        <h2 id="shop-browse-title">{pack.name}</h2>
         <label className="shop-browse__upgrade">
           <input type="checkbox" checked={upgraded} onChange={(event) => setUpgraded(event.target.checked)} />
           Upgrades
@@ -184,35 +195,38 @@ function PurchaseDialog({ pack, coins, onClose, onBrowse }: {
     finally { setBuying(false) }
   }
   return <dialog ref={dialog} className="shop-confirm" style={accentStyle(pack.id)} data-bought={bought || undefined}
-    aria-labelledby="shop-confirm-title" aria-describedby="shop-confirm-copy" onClose={onClose}>
+    aria-label={bought ? `${pack.name} unlocked` : `Buy the ${pack.name}?`} aria-describedby="shop-confirm-copy" onClose={onClose}>
     <section className="shop-confirm__panel menu-board">
       <div className="shop-confirm__art">
         {bought ? <span className="shop-confirm__burst" aria-hidden="true" /> : null}
         <PackFan id={pack.id} size="dialog" />
+        {bought ? <Icon className="shop-confirm__seal" src={ICON.owned} /> : null}
       </div>
+      <h2><PackCrest pack={pack} />{pack.name}</h2>
+      <p id="shop-confirm-copy" className="shop-confirm__copy">
+        <Icon className="shop-confirm__deck" src={ICON.deck} />
+        {pack.cardIds.length} cards join every run you start
+      </p>
       {bought ? <>
-        <p className="shop-confirm__eyebrow">Pack unlocked</p>
-        <h2 id="shop-confirm-title">{pack.name}</h2>
-        <p id="shop-confirm-copy">Its {pack.cardIds.length} cards now join the reward decks of every run you start.</p>
-        <p className="shop-confirm__balance"><CoinAmount coins={coins} size={22} /> left</p>
+        <p className="shop-confirm__balance"><CoinAmount coins={coins} size={26} /><span className="visually-hidden"> left</span></p>
         <div className="shop-confirm__actions">
-          <button type="button" className="shop-button shop-button--browse" onClick={onBrowse}>Browse cards</button>
+          <button type="button" className="shop-button" onClick={onBrowse}>
+            <Icon className="shop-button__icon" src={ICON.browse} />Browse
+          </button>
           <button ref={done} type="button" className="shop-button shop-button--buy" onClick={() => dialog.current?.close()}>Done</button>
         </div>
       </> : <>
-        <p className="shop-confirm__eyebrow">Confirm purchase</p>
-        <h2 id="shop-confirm-title">Buy the {pack.name}?</h2>
-        <p id="shop-confirm-copy">Its {pack.cardIds.length} cards join the reward decks of every run you start from now on.</p>
         <p className="shop-confirm__balance">
-          <CoinAmount coins={CARD_PACK_PRICE} size={22} />
-          <span aria-hidden="true">→</span>
-          <span>{formatCoins(Math.max(0, coins - CARD_PACK_PRICE))} left</span>
+          <CoinAmount coins={coins} size={26} />
+          <span className="shop-confirm__arrow" aria-hidden="true" />
+          <span className="visually-hidden">, after buying: </span>
+          <CoinAmount coins={Math.max(0, coins - CARD_PACK_PRICE)} size={26} />
         </p>
         {refusal ? <p className="shop-confirm__refusal" role="alert">{refusal}</p> : null}
         <div className="shop-confirm__actions">
-          <button ref={cancel} type="button" className="shop-button shop-button--browse" onClick={() => dialog.current?.close()}>Cancel</button>
+          <button ref={cancel} type="button" className="shop-button" onClick={() => dialog.current?.close()}>Cancel</button>
           <button type="button" className="shop-button shop-button--buy" disabled={buying} aria-busy={buying} onClick={confirm}>
-            Buy for <CoinAmount coins={CARD_PACK_PRICE} size={20} />
+            Buy <CoinAmount coins={CARD_PACK_PRICE} size={22} />
           </button>
         </div>
       </>}
@@ -221,22 +235,14 @@ function PurchaseDialog({ pack, coins, onClose, onBrowse }: {
 }
 
 function SkinsTeaser() {
-  return <div className="shop-skins">
-    <header className="shop__section-head">
-      <h2 id="shop-skins-title">Skins</h2>
-    </header>
-    <div className="shop-skins__display">
+  return <div className="shop-skins shop__scene">
     <ul className="shop-skins__racks" aria-label="Skins on display">
       {SKIN_TEASERS.map((hero) => <li key={hero} className="shop-skin" aria-label={`${CHARACTER_LABEL[hero]} skin, coming soon`}>
         <img src={assetPath(`menu/character-select/portrait-${hero}.png`)} alt="" draggable={false} />
-        <span className="shop-skin__veil" aria-hidden="true">
-          <svg viewBox="0 0 24 24" className="shop-skin__lock"><path d="M7 10V7a5 5 0 0 1 10 0v3" /><rect x="4.5" y="10" width="15" height="11" rx="2" /><circle cx="12" cy="15.2" r="1.6" /></svg>
-        </span>
-        <span className="shop-skin__name" aria-hidden="true">{CHARACTER_LABEL[hero]}</span>
+        <span className="shop-skin__veil" aria-hidden="true"><Icon className="shop-skin__lock" src={ICON.lock} /></span>
       </li>)}
     </ul>
     <p className="shop-skins__ribbon"><span>Coming soon</span></p>
-    </div>
   </div>
 }
 
@@ -267,11 +273,11 @@ export function ShopScreen({ onBack }: { onBack: () => void }) {
       choose(event.key === 'Home' ? 'packs' : event.key === 'End' ? 'skins' : tab === 'packs' ? 'skins' : 'packs')
     }
   }
-  const tabButton = (id: Tab, label: string, note?: string) =>
+  const tabButton = (id: Tab, label: string, icon: string) =>
     <button type="button" role="tab" className="shop__tab" id={`shop-tab-${id}`} aria-selected={tab === id} aria-controls={`shop-panel-${id}`}
       tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={tabKeys}
       ref={(element) => { if (element) tabs.current.set(id, element); else tabs.current.delete(id) }}>
-      <span>{label}</span>{note ? <small>{note}</small> : null}
+      <Icon className="shop__tab-icon" src={icon} /><span>{label}</span>
     </button>
   return (
     <main className="shop menu-ground" data-tab={tab}>
@@ -281,27 +287,28 @@ export function ShopScreen({ onBack }: { onBack: () => void }) {
         <p className="shop__purse">
           <span className="visually-hidden">Your purse: </span>
           <CoinIcon size={52} className="shop__purse-icon" />
-          <span><strong>{formatCoins(wallet.coins)}</strong><small>{wallet.coins === 1 ? 'coin' : 'coins'}</small></span>
+          <strong>{formatCoins(wallet.coins)}</strong>
+          <span className="visually-hidden"> {wallet.coins === 1 ? 'coin' : 'coins'}</span>
         </p>
         <div className="shop__tabs" role="tablist" aria-label="Shop sections" aria-orientation="vertical">
-          {tabButton('packs', 'Card Packs', `${wallet.packs.length}/${CARD_PACK_IDS.length}`)}
-          {tabButton('skins', 'Skins', 'Soon')}
+          {tabButton('packs', 'Card Packs', ICON.pack)}
+          {tabButton('skins', 'Skins', ICON.skins)}
         </div>
+        <Icon className="shop__merchant" src={assetPath('noncombat/merchant/merchant-seated.webp')} />
       </aside>
 
       {/* One stable panel per tab, so each tab's aria-controls always names a real element. */}
       <section className="shop__stock menu-board" role="tabpanel" id="shop-panel-packs" aria-labelledby="shop-tab-packs"
         hidden={tab !== 'packs'}>
-          <header className="shop__section-head">
-            <h2>The Slayer Pack</h2>
-          </header>
-          <ul className="shop__packs">
-            {CARD_PACK_IDS.map((id) => <PackTile key={id} pack={CARD_PACKS[id]} owned={ownsPack(wallet, id)} short={short}
-              onBuy={() => setBuying(id)} onBrowse={() => setBrowsing(id)} />)}
-          </ul>
+        <h2 className="shop__title">The Slayer Pack</h2>
+        <ul className="shop__packs shop__scene">
+          {CARD_PACK_IDS.map((id) => <PackTile key={id} pack={CARD_PACKS[id]} owned={ownsPack(wallet, id)} short={short}
+            onBuy={() => setBuying(id)} onBrowse={() => setBrowsing(id)} />)}
+        </ul>
       </section>
       <section className="shop__stock menu-board" role="tabpanel" id="shop-panel-skins" aria-labelledby="shop-tab-skins"
         hidden={tab !== 'skins'}>
+        <h2 className="shop__title">Skins</h2>
         <SkinsTeaser />
       </section>
 

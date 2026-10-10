@@ -2,7 +2,7 @@
 
 `inspect_game`, `interact_with_game` and `get_stats` operate on the visible UI. They do not expose hidden draw order, other players' private cards, or alternative game rules.
 
-Menu screens need no dedicated tool. The main menu's **Shop** row (and the coin purse, the first item of the top-right corner: purse, Leaderboard, Stats, Mail, Profile, Settings) opens the Shop, whose section tabs, **Buy**, **Browse cards** and confirmation buttons are ordinary labelled controls; a purchase still needs its confirmation step. See [shop.md](shop.md).
+Menu screens need no dedicated tool. The main menu's **Shop** row (and the coin purse, the first item of the top-right corner: purse, Leaderboard, Stats, Mail, Profile, Settings) opens the Shop, whose section tabs, **Buy**, the card fans ("Browse the N cards of the …") and confirmation buttons are ordinary labelled controls; a purchase still needs its confirmation step. See [shop.md](shop.md).
 
 ## One call for a solo action sequence
 

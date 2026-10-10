@@ -155,7 +155,7 @@ async function assertTilesHoldTheirButtons(page, label) {
     const box = tile.getBoundingClientRect()
     const out = []
     if (tile.scrollHeight > tile.clientHeight + 1) out.push(`${tile.dataset.pack} clips ${tile.scrollHeight - tile.clientHeight}px of its content`)
-    for (const button of tile.querySelectorAll('.shop-button')) {
+    for (const button of tile.querySelectorAll('.shop-button, .shop-pack__owned')) {
       const own = button.getBoundingClientRect()
       if (own.bottom > box.bottom - 2 || own.top < box.top) out.push(`${tile.dataset.pack}: "${button.textContent}" spans ${Math.round(own.top)}-${Math.round(own.bottom)}, tile ${Math.round(box.top)}-${Math.round(box.bottom)}`)
     }
@@ -215,16 +215,19 @@ try {
       images.every((image) => /\/assets\/cards-sm\/slayer__/.test(image.src))), 'pack art is not the packs\' own scans')
     for (const id of CARD_PACK_IDS) {
       const tile = page.locator(`.shop-pack[data-pack="${id}"]`)
-      assert.match(await tile.innerText(), new RegExp(`${CARD_PACKS[id].cardIds.length} cards`, 'i'))
+      assert.equal(await tile.locator('.shop-pack__count').textContent(), String(CARD_PACKS[id].cardIds.length))
+      await tile.getByRole('button', { name: `Browse the ${CARD_PACKS[id].cardIds.length} cards of the ${CARD_PACKS[id].name}`, exact: true }).waitFor()
       if (id === 'slayer_silent') {
         assert.equal(await tile.getAttribute('data-owned'), 'true')
-        assert(await tile.getByRole('button', { name: 'Owned' }).isDisabled(), 'an owned pack can be bought again')
+        assert(await tile.locator('.shop-pack__owned').isVisible())
+        assert.equal(await tile.locator('.shop-pack__buy').count(), 0, 'an owned pack can be bought again')
       } else {
-        assert.match(await tile.locator('.shop-pack__price').innerText(), new RegExp(price))
-        assert(await tile.getByRole('button', { name: `Buy ${CARD_PACKS[id].name}` }).isEnabled())
+        const buy = tile.getByRole('button', { name: `Buy ${CARD_PACKS[id].name}, ${price} coins`, exact: true })
+        assert.match(await buy.innerText(), new RegExp(price))
+        assert(await buy.isEnabled())
       }
     }
-    await assertUnclipped(page, '.shop-pack, .shop-pack h3 > span, .shop-pack__price, .shop-button, .shop__tab, .shop__purse', `${screen} shelf`)
+    await assertUnclipped(page, '.shop-pack, .shop-pack h3, .shop-pack__owned, .shop-button, .shop__tab, .shop__purse', `${screen} shelf`)
     await assertTilesHoldTheirButtons(page, screen)
     const shelf = await page.locator('.shop__packs').evaluate((list) => ({ height: list.scrollHeight - list.clientHeight, width: list.scrollWidth - list.clientWidth }))
     assert(shelf.height <= 1 && shelf.width <= 1, `${screen}: the pack shelf scrolls: ${JSON.stringify(shelf)}`)
@@ -250,7 +253,7 @@ try {
 
     await page.getByRole('button', { name: 'Buy Ironclad Slayer Pack' }).click()
     await page.locator('.shop-confirm .shop-button--buy').click()
-    await page.getByText('Pack unlocked').waitFor()
+    await page.getByRole('dialog', { name: 'Ironclad Slayer Pack unlocked' }).waitFor()
     assert.deepEqual(await storedWallet(page), { ...wallet(1000 - CARD_PACK_PRICE, ['slayer_ironclad', 'slayer_silent']), credited: {} })
     await page.waitForTimeout(900)
     await paintedShot(page, `${screen}-bought.png`)
@@ -258,19 +261,20 @@ try {
     await page.locator('.shop-confirm').waitFor({ state: 'detached' })
     assert.equal(await page.locator('.shop-pack[data-pack="slayer_ironclad"]').getAttribute('data-owned'), 'true')
     assert.match(await page.locator('.shop__purse').innerText(), new RegExp(String(1000 - CARD_PACK_PRICE)))
-    assert.match(await page.getByRole('tab', { name: /^Card Packs/ }).innerText(), /2\/5/)
 
-    // The rest are now out of reach, each saying how far.
+    // The rest are now out of reach, each saying how far and filling toward the price.
     const needed = CARD_PACK_PRICE - (1000 - CARD_PACK_PRICE)
     for (const id of ['slayer_defect', 'slayer_watcher', 'slayer_colorless']) {
       const tile = page.locator(`.shop-pack[data-pack="${id}"]`)
-      assert(await tile.getByRole('button', { name: `Not enough coins for ${CARD_PACKS[id].name}` }).isDisabled())
-      assert.match(await tile.innerText(), new RegExp(`Need ${needed} more`))
+      const buy = tile.getByRole('button', { name: `Not enough coins for ${CARD_PACKS[id].name}, ${price} coins: need ${needed} more`, exact: true })
+      assert(await buy.isDisabled())
+      assert.equal(Number(await buy.evaluate((button) => getComputedStyle(button).getPropertyValue('--progress'))),
+        (1000 - CARD_PACK_PRICE) / CARD_PACK_PRICE)
     }
     await paintedShot(page, `${screen}-insufficient.png`)
 
     // Browsing a pack: every card, either face, and a zoom of both faces at once.
-    await page.getByRole('button', { name: 'Browse Colorless Slayer Pack cards' }).click()
+    await page.getByRole('button', { name: 'Browse the 17 cards of the Colorless Slayer Pack' }).click()
     const browse = page.getByRole('dialog', { name: 'Colorless Slayer Pack' })
     await browse.waitFor()
     const cards = browse.locator('.shop-browse__card')
@@ -327,9 +331,13 @@ try {
     await page.getByRole('button', { name: 'Shop', exact: true }).click()
     await page.locator('.shop').waitFor()
     const buyDefect = page.getByRole('button', { name: 'Buy Defect Slayer Pack' })
-    for (let presses = 0; presses < 40 && !await buyDefect.evaluate((button) => button === document.activeElement); presses += 1) {
+    const browseDefect = page.getByRole('button', { name: 'Browse the 7 cards of the Defect Slayer Pack' })
+    for (let presses = 0; presses < 40 && !await browseDefect.evaluate((button) => button === document.activeElement); presses += 1) {
       await page.keyboard.press('Tab')
     }
+    assert(await browseDefect.evaluate((button) => button === document.activeElement && button.matches(':focus-visible')),
+      'a pack\'s card fan is not reachable with Tab')
+    await page.keyboard.press('Tab')
     assert(await buyDefect.evaluate((button) => button === document.activeElement && button.matches(':focus-visible')),
       'Buy is not reachable with Tab')
     await settledImages(page, '.shop-fan__card')
@@ -338,10 +346,17 @@ try {
     await page.getByRole('dialog', { name: 'Buy the Defect Slayer Pack?' }).waitFor()
     await page.keyboard.press('Tab')
     await page.keyboard.press('Enter')
-    await page.getByText('Pack unlocked').waitFor()
+    await page.getByRole('dialog', { name: 'Defect Slayer Pack unlocked' }).waitFor()
     assert.deepEqual((await storedWallet(page)).packs, ['slayer_defect'])
-    await page.keyboard.press('Escape')
+    // The celebration's Browse (just before the focused Done) opens the new pack's cards.
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Enter')
+    const boughtBrowse = page.getByRole('dialog', { name: 'Defect Slayer Pack' })
+    await boughtBrowse.waitFor()
     await page.locator('.shop-confirm').waitFor({ state: 'detached' })
+    assert.equal(await boughtBrowse.locator('.shop-browse__card').count(), CARD_PACKS.slayer_defect.cardIds.length)
+    await page.keyboard.press('Escape')
+    await boughtBrowse.waitFor({ state: 'detached' })
     await page.getByRole('button', { name: 'Buy Watcher Slayer Pack' }).click()
     await page.evaluate(() => {
       const key = Object.keys(localStorage).find((name) => name.startsWith('sts-wallet:'))

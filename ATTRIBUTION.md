@@ -133,6 +133,10 @@ top-right corner (`public/assets/menu/leaderboard-trophy.png`, `stats-ledger.png
 `gpt-image-2.5-sunburst`, using this project's existing menu icons as style references.
 Prompts and hashes are in `scripts/animation/sources/menu-icons/` and `docs/menu-icons.json`.
 
+The Shop's icons (`public/assets/shop/`: card pack, skins mannequin, magnifying glass, owned
+seal and padlock) were generated the same way, with the menu icons as style references.
+Prompts and hashes are in `scripts/animation/sources/shop-icons/` and `docs/shop-icons.json`.
+
 ### September 2026 resolution derivatives
 
 Selected existing combat cutouts, authored poses, animation sheets and scene

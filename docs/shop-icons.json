@@ -1,0 +1,49 @@
+{
+ "model": "gpt-image-2.5-sunburst",
+ "workflow": "imagegen bundled image_gen.py edit, 1024x1024 high quality, native transparent background, downscaled to 256x256 WebP (quality 90)",
+ "styleReferences": [
+  "public/assets/menu/leaderboard-trophy.png",
+  "public/assets/menu/profile-medallion.png",
+  "public/assets/menu/stats-ledger.png",
+  "public/assets/menu/mail-letter.png",
+  "public/assets/menu/current-deck.webp",
+  "public/assets/menu/compendium-icons/ironclad.webp"
+ ],
+ "icons": [
+  {
+   "name": "pack",
+   "use": "Card Packs tab",
+   "runtime": "public/assets/shop/pack.webp",
+   "prompt": "scripts/animation/sources/shop-icons/pack-prompt.txt",
+   "sha256": "42a87a07367a021f9161485c00f2cc528accf65c30768d5fc8c9bc5cbf471e49"
+  },
+  {
+   "name": "skins",
+   "use": "Skins tab",
+   "runtime": "public/assets/shop/skins.webp",
+   "prompt": "scripts/animation/sources/shop-icons/skins-prompt.txt",
+   "sha256": "564f8c8fe893ad34a8c60c971f94ee884729822133c6dc012bb44ddda5773476"
+  },
+  {
+   "name": "browse",
+   "use": "browse a pack",
+   "runtime": "public/assets/shop/browse.webp",
+   "prompt": "scripts/animation/sources/shop-icons/browse-prompt.txt",
+   "sha256": "6f86f21ceeeee9eedd0d7fead86449360a0c454f0f4c0fd3e5fd2c7033bda20d"
+  },
+  {
+   "name": "owned",
+   "use": "owned pack seal",
+   "runtime": "public/assets/shop/owned.webp",
+   "prompt": "scripts/animation/sources/shop-icons/owned-prompt.txt",
+   "sha256": "824308c4a1c70a84c1a182d993854584d3bf0fc2dc2dc6c9954ef963d4d3cd35"
+  },
+  {
+   "name": "lock",
+   "use": "locked skin",
+   "runtime": "public/assets/shop/lock.webp",
+   "prompt": "scripts/animation/sources/shop-icons/lock-prompt.txt",
+   "sha256": "ad049f310a90276fcc257dbc6b951bdc47387b0410a0dc8936483bbeaf1093a2"
+  }
+ ]
+}

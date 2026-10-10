@@ -143,16 +143,26 @@ choose. Turning it off keeps ownership; the Shop still shows the packs as owned.
 ## The screen
 
 Desktop and horizontal phones only (phones lay out on a 1280+×720 viewport and scale it, so
-the phone rules in `shop.css` enlarge type and tap targets rather than rearranging). Each
-pack is a display case lit in its hero's colour with three of its real card scans fanned on
-top, its card count, tagline (desktop), price and **Buy** / disabled **Not enough coins**
-(with "Need N more") / **Owned**, plus **Browse cards**: every card of the pack, with an
-Upgrades toggle, and a click opens both faces side by side at full size (the Compendium's scan
-component). Purchases are confirmed in a dialog, then celebrated with the cards fanning open
-and the `magic` sound. Keyboard: the section tabs use arrow keys; Escape closes the topmost
-dialog, then leaves the Shop. Reduced motion (OS or the game's setting) turns the animations
-off. In the Compendium, pack cards carry a small "Slayer Pack" badge and name their pack in
-the card's accessible name and zoom.
+the phone rules in `shop.css` enlarge type and tap targets rather than rearranging). The
+shelf is set inside the merchant's tent (the in-run Merchant backdrop), with the seated
+merchant at the foot of the rail, and leans on icons rather than words: the tabs carry
+painted icons, and each pack is a display case lit in its hero's colour, crowned by the
+hero's Compendium emblem, with three of its real card scans fanned out, its card count
+beside a deck icon (part of the fan's accessible name), and the hero's name. Its one button is the price: **Buy** (coin and
+960), disabled with a gauge filling toward the price when the purse is short (its accessible
+name says how many coins are missing), or a green **Owned** plate with a wax seal. Pressing
+the fan (marked with a magnifying glass) browses every card of the pack, with an Upgrades
+toggle, and a click opens both faces side by side at full size (the Compendium's scan
+component). Purchases are confirmed in a dialog showing the purse before and after, then
+celebrated with the cards fanning open, the seal stamping down and the `magic` sound.
+Keyboard: the section tabs use arrow keys; Escape closes the topmost dialog, then leaves the
+Shop. Reduced motion (OS or the game's setting) turns the animations off. In the Compendium,
+pack cards carry a small "Slayer Pack" badge and name their pack in the card's accessible
+name and zoom.
+
+The Shop's painted icons (`public/assets/shop/`) were generated with `gpt-image-2.5-sunburst`
+using the menu icons as style references; prompts are in
+`scripts/animation/sources/shop-icons/` and hashes in `docs/shop-icons.json`.
 
 WebMCP needs no special tool: the Shop's buttons, tabs and dialogs are ordinary labelled
 controls that `inspect_game` lists and `interact_with_game` presses.
